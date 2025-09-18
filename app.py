@@ -75,16 +75,10 @@ try:
         base_path.mkdir(exist_ok=True) # Ensure models directory exists
 
         # Mappings from tracker name to filenames. This assumes user places files here.
+        # FIX: Pruned to only include models available in the UI dropdown.
         checkpoints = {
             "sam2.1": "sam2_hiera_l.pt",
             "sam21pp-L": "sam2_hiera_l.pt",
-            "sam21pp-B": "sam2_hiera_b_plus.pt",
-            "sam21pp-S": "sam2_hiera_s.pt",
-            "sam21pp-T": "sam2_hiera_t.pt",
-            "sam2pp-L": "sam2_hiera_l_2.pt",
-            "sam2pp-B": "sam2_hiera_b_plus_2.pt",
-            "sam2pp-S": "sam2_hiera_s_2.pt",
-            "sam2pp-T": "sam2_hiera_t_2.pt",
         }
         model_configs = {
             # In the original code, the model config path was passed but often the same.
@@ -110,9 +104,6 @@ try:
             Args:
             - tracker_name (str): Name of the tracker to use. Options are:
                 - "sam2.1" / "sam21pp-L": DAM4SAM (2.1) Hiera Large
-                - "sam21pp-B": DAM4SAM (2.1) Hiera Base+
-                - "sam21pp-S": DAM4SAM (2.1) Hiera Small
-                # ... and others as defined in determine_tracker
             """
             # Set seed for reproducibility within the tracker instance
             seed = dam4sam_config["seed"]
@@ -224,7 +215,7 @@ try:
 
         @torch.inference_mode()
         def track(self, image, init=False):
-            torch.cuda.empty_cache()
+            # FIX: Removed torch.cuda.empty_cache() to improve performance.
             prepared_img = self._prepare_image(image).unsqueeze(0)
             if not init:
                 self.frame_index += 1
@@ -390,16 +381,13 @@ class Config:
     UI_DEFAULTS = {
         "method": "keyframes", "interval": 5.0, "max_resolution": "maximum available",
         "fast_scene": False, "resume": True, "use_png": True, "disable_parallel": False,
-        "use_gpu": True, "enable_face_filter": False, "face_model_name": "buffalo_l",
+        "enable_face_filter": False, "face_model_name": "buffalo_l",
         "min_face_confidence": 0.9, "min_face_area": 5.0, "pre_filter_quality_enabled": False,
         "pre_filter_mode": "Overall Quality", "pre_quality_thresh": 12.0, "pre_filter_face_present": False,
         "quality_thresh": 12.0, "face_thresh": 0.5, "sharpness_thresh": 0.0,
         "edge_strength_thresh": 0.0, "contrast_thresh": 0.0, "brightness_thresh": 0.0, "entropy_thresh": 0.0,
-        "enable_subject_mask": False, "masking_model": "dam4sam", "scene_detect": True,
-        "masking_device": "cuda", "dam4sam_model_name": "sam2.1",
-        # Kept for config compatibility but hidden in UI for dam4sam
-        "sam2_model_variant": "hiera_large", "sam2_weights_path": "",
-        "sam2_precision": "fp16", "iou_threshold": 0.5,
+        "enable_subject_mask": False, "scene_detect": True,
+        "dam4sam_model_name": "sam2.1",
     }
 
     @staticmethod
@@ -522,6 +510,7 @@ class AnalysisStats:
 
 @dataclass
 class AnalysisParameters:
+    # FIX: Removed obsolete parameters for SAM2 path and GPU toggles
     source_path: str = ""
     output_folder: str = ""
     method: str = config.UI_DEFAULTS["method"]
@@ -530,7 +519,6 @@ class AnalysisParameters:
     fast_scene: bool = config.UI_DEFAULTS["fast_scene"]
     use_png: bool = config.UI_DEFAULTS["use_png"]
     disable_parallel: bool = config.UI_DEFAULTS["disable_parallel"]
-    use_gpu: bool = config.UI_DEFAULTS["use_gpu"]
     resume: bool = config.UI_DEFAULTS["resume"]
     enable_face_filter: bool = config.UI_DEFAULTS["enable_face_filter"]
     face_ref_img_path: str = ""
@@ -544,14 +532,8 @@ class AnalysisParameters:
     quality_weights: dict = None
     thresholds: dict = None
     enable_subject_mask: bool = field(default=config.UI_DEFAULTS["enable_subject_mask"])
-    masking_model: str = field(default=config.UI_DEFAULTS["masking_model"])
     dam4sam_model_name: str = field(default=config.UI_DEFAULTS["dam4sam_model_name"])
     scene_detect: bool = field(default=config.UI_DEFAULTS["scene_detect"])
-    masking_device: str = field(default=config.UI_DEFAULTS["masking_device"])
-    sam2_model_variant: str = field(default=config.UI_DEFAULTS["sam2_model_variant"])
-    sam2_weights_path: str = field(default=config.UI_DEFAULTS["sam2_weights_path"])
-    sam2_precision: str = field(default=config.UI_DEFAULTS["sam2_precision"])
-    iou_threshold: float = field(default=config.UI_DEFAULTS["iou_threshold"])
 
 # --- Subject Masking Logic ---
 @dataclass
@@ -575,7 +557,6 @@ class SubjectMasker:
         self.face_analyzer = face_analyzer
         self.reference_embedding = reference_embedding
         self.tracker = None
-        self.model_type = self.params.masking_model
 
     def _initialize_dam4sam_tracker(self):
         """Initializes the DAM4SAM tracker for a single shot."""
@@ -603,6 +584,7 @@ class SubjectMasker:
             return False
 
     def run(self, video_path: str, frames_dir: str) -> dict[str, dict]:
+        # FIX: Streamlined logic to only handle DAM4SAM path
         try:
             self.mask_dir = Path(frames_dir) / "masks"
             self.mask_dir.mkdir(exist_ok=True)
@@ -626,11 +608,10 @@ class SubjectMasker:
                 self.progress_queue.put({"log": f"[INFO] Masking shot {shot_id+1}/{len(self.shots)} (Frames {start_frame}-{end_frame})"})
 
                 # Initialize tracker for each shot
-                if self.model_type == 'dam4sam':
-                    if not self._initialize_dam4sam_tracker():
-                        self.progress_queue.put({"log": f"[ERROR] Could not initialize tracker for shot {shot_id+1}. Skipping."})
-                        self.progress_queue.put({"progress": end_frame - start_frame})
-                        continue
+                if not self._initialize_dam4sam_tracker():
+                    self.progress_queue.put({"log": f"[ERROR] Could not initialize tracker for shot {shot_id+1}. Skipping."})
+                    self.progress_queue.put({"progress": end_frame - start_frame})
+                    continue
                 
                 shot_frames_with_nums = self._load_shot_frames(frames_dir, start_frame, end_frame)
                 if not shot_frames_with_nums:
@@ -639,9 +620,9 @@ class SubjectMasker:
                     continue
 
                 shot_frames_data = [f[1] for f in shot_frames_with_nums]
-                seed_frame_local_idx, bbox, seed_details = self._seed_identity(shot_frames_data)
+                seed_frame_local_idx, bbox_xywh, seed_details = self._seed_identity(shot_frames_data)
 
-                if bbox is None:
+                if bbox_xywh is None:
                     self.progress_queue.put({"log": f"[WARNING] Could not identify subject in shot {shot_id+1}. Skipping mask generation."})
                     for original_frame_num, _ in shot_frames_with_nums:
                         frame_filename = self.frame_map.get(original_frame_num)
@@ -650,11 +631,8 @@ class SubjectMasker:
                     self.progress_queue.put({"progress": end_frame - start_frame})
                     continue
 
-                propagate_func = getattr(self, f"_propagate_masks_{self.model_type}", None)
-                if not propagate_func:
-                    raise NotImplementedError(f"Mask propagation for model '{self.model_type}' is not implemented.")
-                
-                masks, mask_area_pcts, mask_empty_flags, mask_errors = propagate_func(shot_frames_data, seed_frame_local_idx, bbox)
+                # Directly call the only available propagation method
+                masks, mask_area_pcts, mask_empty_flags, mask_errors = self._propagate_masks_dam4sam(shot_frames_data, seed_frame_local_idx, bbox_xywh)
 
                 if len(masks) != len(shot_frames_with_nums):
                     self.progress_queue.put({"log": f"[ERROR] Mask propagation returned {len(masks)} masks for {len(shot_frames_with_nums)} frames in shot {shot_id+1}. This indicates an internal error."})
@@ -762,13 +740,19 @@ class SubjectMasker:
         for fn in shot_frame_numbers:
             p = Path(frames_dir) / self.frame_map[fn]
             if p.exists():
-                frames.append((fn, cv2.imread(str(p))))
+                # FIX: Harden frame loading by checking if cv2.imread was successful
+                frame_data = cv2.imread(str(p))
+                if frame_data is not None:
+                    frames.append((fn, frame_data))
+                else:
+                    self.progress_queue.put({"log": f"[WARNING] Failed to load frame data from {p.name}. It may be corrupt. Skipping."})
             else:
                 self.progress_queue.put({"log": f"[WARNING] Frame file missing for frame {fn}: {p}"})
                 
         return frames
 
     def _seed_identity(self, shot_frames):
+        # FIX: Improve seeding robustness and correctness
         if not shot_frames:
             return None, None, None
 
@@ -777,6 +761,7 @@ class SubjectMasker:
         if self.face_analyzer and self.reference_embedding is not None:
             self.progress_queue.put({"log": "[INFO] Searching for reference face in first 5 frames..."})
             for i, frame_img in enumerate(shot_frames[:5]):
+                if frame_img is None: continue
                 faces = self.face_analyzer.get(frame_img)
                 if not faces: continue
 
@@ -789,18 +774,29 @@ class SubjectMasker:
                 # If a qualifying face is found, use it immediately to ensure max forward coverage
                 if best_match and min_dist < 0.6:
                     self.progress_queue.put({"log": f"[INFO] Found reference face in frame {i} with distance {min_dist:.2f}. Seeding from here."})
-                    bbox = best_match.bbox.astype(int).tolist()
+                    
+                    h, w, _ = frame_img.shape
+                    x1, y1, x2, y2 = best_match.bbox.astype(int)
+                    x1, y1 = max(0, x1), max(0, y1)
+                    x2, y2 = min(w - 1, x2), min(h - 1, y2)
+                    bbox_xywh = [x1, y1, x2 - x1, y2 - y1]
+                    
                     seed_details = {'type': 'face_match', 'seed_face_sim': 1 - min_dist}
-                    return i, bbox, seed_details
+                    return i, bbox_xywh, seed_details
 
         # Fallback: Seed with the most prominent face in the first frame
         self.progress_queue.put({"log": "[INFO] No reference match found. Seeding with the most prominent face in the first frame."})
         first_frame = shot_frames[0]
+        if first_frame is None:
+             self.progress_queue.put({"log": "[WARNING] First frame of shot is invalid. Cannot seed."})
+             return None, None, None
+
+        h, w, _ = first_frame.shape
         if not self.face_analyzer:
              self.progress_queue.put({"log": "[WARNING] Face analyzer not available. Using fallback rectangle on first frame."})
-             h, w, _ = first_frame.shape
+             bbox_xywh = [w // 4, h // 4, w // 2, h // 2]
              seed_details = {'type': 'fallback_rect'}
-             return 0, [w//4, h//4, w*3//4, h*3//4], seed_details
+             return 0, bbox_xywh, seed_details
 
         faces = self.face_analyzer.get(first_frame)
         if not faces:
@@ -808,11 +804,16 @@ class SubjectMasker:
             return None, None, None
 
         largest_face = max(faces, key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]))
-        bbox = largest_face.bbox.astype(int).tolist()
-        self.progress_queue.put({"log": f"[INFO] Seeding with largest face found at {bbox} in the first frame."})
+        
+        x1, y1, x2, y2 = largest_face.bbox.astype(int)
+        x1, y1 = max(0, x1), max(0, y1)
+        x2, y2 = min(w - 1, x2), min(h - 1, y2)
+        bbox_xywh = [x1, y1, x2 - x1, y2 - y1]
+        
+        self.progress_queue.put({"log": f"[INFO] Seeding with largest face found at {bbox_xywh} in the first frame."})
         
         seed_details = {'type': 'face_largest', 'seed_face_sim': None}
-        return 0, bbox, seed_details 
+        return 0, bbox_xywh, seed_details 
     
     def _calculate_mask_metrics(self, mask_np, original_image_shape):
         """Calculates mask_area_pct and mask_empty."""
@@ -837,7 +838,7 @@ class SubjectMasker:
         
         return mask_area_pct, mask_empty, error_message
 
-    def _propagate_masks_dam4sam(self, shot_frames, seed_idx, bbox):
+    def _propagate_masks_dam4sam(self, shot_frames, seed_idx, bbox_xywh):
         if not self.tracker:
             self.progress_queue.put({"log": "[ERROR] DAM4SAM tracker is not initialized. Cannot propagate masks."})
             h, w, _ = shot_frames[0].shape
@@ -863,9 +864,8 @@ class SubjectMasker:
                 frame_pil = Image.fromarray(cv2.cvtColor(frame_np, cv2.COLOR_BGR2RGB))
                 
                 if i == seed_idx:
-                    # The DAM4SAM tracker expects a bounding box in [x1, y1, x2, y2] format for initialization.
-                    # The seed_identity function provides this format directly.
-                    outputs = self.tracker.initialize(frame_pil, None, bbox=bbox)
+                    # The DAM4SAM tracker expects a bounding box in [x, y, w, h] format for initialization.
+                    outputs = self.tracker.initialize(frame_pil, None, bbox=bbox_xywh)
                 else:
                     outputs = self.tracker.track(frame_pil)
                 
@@ -1080,13 +1080,14 @@ class ExtractionPipeline:
             total_frames = self.video_info.get('frame_count', 1)
             self.progress_queue.put({"total": total_frames, "stage": "Extraction"})
 
-            process.wait(timeout=3600)
+            # FIX: Removed hardcoded one-hour timeout to support long videos
+            process.wait()
 
-        except subprocess.TimeoutExpired:
+        except Exception as e:
             if process:
                 process.terminate()
-            logger.error("FFmpeg process timed out after 1 hour.")
-            raise RuntimeError("FFmpeg process timed out. The video file may be corrupted or too complex.")
+            logger.error(f"FFmpeg process encountered an unhandled exception: {e}")
+            raise RuntimeError(f"FFmpeg process failed unexpectedly. Details: {e}")
         finally:
             if process and self.cancel_event.is_set() and process.poll() is None:
                 process.terminate()
@@ -1150,7 +1151,6 @@ class AnalysisPipeline:
             if self.params.enable_face_filter or self.params.pre_filter_face_present or self.params.enable_subject_mask: 
                 self._initialize_face_analyzer()
             
-            # FIX: Process reference face if masking is enabled with a ref image, not just for face filtering
             if self.params.enable_face_filter or (self.params.enable_subject_mask and self.params.face_ref_img_path):
                 self._process_reference_face()
             
@@ -1167,6 +1167,8 @@ class AnalysisPipeline:
                 )
                 self.mask_metadata = masker.run(self.video_path, str(self.output_dir))
 
+            # FIX: Apply custom quality weights from UI before processing frames.
+            config.QUALITY_WEIGHTS = self.params.quality_weights
             self._run_frame_processing()
 
             if self.cancel_event.is_set():
@@ -1184,21 +1186,25 @@ class AnalysisPipeline:
         frame_map_path = self.output_dir / "frame_map.json"
         frame_map = {}
 
+        # FIX: Robustly handle missing or corrupt frame_map.json
         if not frame_map_path.exists():
-            self.progress_queue.put({"log": "[WARNING] frame_map.json not found. Assuming frame filenames correspond to frame numbers."})
+            self.progress_queue.put({"log": "[WARNING] frame_map.json not found. Creating map from filenames. This may be inaccurate if 'all' frames weren't extracted."})
             image_files = sorted(list(self.output_dir.glob("frame_*.png")) + list(self.output_dir.glob("frame_*.jpg")))
-            for f in image_files:
-                match = re.search(r'frame_(\d+)', f.name)
-                if match:
-                    frame_map[int(match.group(1)) - 1] = f.name
+            for i, f in enumerate(image_files):
+                # Fallback to sequential numbering, assuming files are named sequentially
+                frame_map[i] = f.name
             return frame_map
         
         try:
             with open(frame_map_path, 'r') as f:
                 frame_map_list = json.load(f)
         except json.JSONDecodeError as e:
-            self.progress_queue.put({"log": f"[ERROR] Failed to parse frame_map.json: {e}. Cannot proceed with analysis."})
-            raise ValueError(f"Corrupted frame map file: {frame_map_path}")
+            self.progress_queue.put({"log": f"[ERROR] Failed to parse frame_map.json: {e}. Reverting to filename-based mapping."})
+            # Fallback logic if JSON is corrupt
+            image_files = sorted(list(self.output_dir.glob("frame_*.png")) + list(self.output_dir.glob("frame_*.jpg")))
+            for i, f in enumerate(image_files):
+                frame_map[i] = f.name
+            return frame_map
 
         ext = 'png' if self.params.use_png else 'jpg'
         for i, original_frame_num in enumerate(frame_map_list):
@@ -1209,8 +1215,13 @@ class AnalysisPipeline:
         return frame_map
 
     def _get_config_hash(self):
+        # FIX: Expand hash to include all parameters that alter output, improving cache correctness
         d = asdict(self.params)
-        relevant_params = {k: d.get(k) for k in ['enable_subject_mask', 'masking_model', 'scene_detect', 'enable_face_filter', 'face_model_name', 'quality_weights']}
+        relevant_params = {k: d.get(k) for k in [
+            'enable_subject_mask', 'scene_detect', 'enable_face_filter', 'face_model_name',
+            'quality_weights', 'dam4sam_model_name', 'pre_filter_quality_enabled',
+            'pre_quality_thresh', 'min_face_confidence'
+        ]}
         return hashlib.sha1(json.dumps(relevant_params, sort_keys=True).encode()).hexdigest()
 
     def _check_resume_compatibility(self, current_hash):
@@ -1230,20 +1241,12 @@ class AnalysisPipeline:
             raise ImportError("insightface library is not installed. Please install it for face analysis.")
         self.progress_queue.put({"log": f"[INFO] Loading face model: {self.params.face_model_name}"})
 
-        preferred = ['CUDAExecutionProvider', 'CPUExecutionProvider'] if self.params.use_gpu else ['CPUExecutionProvider']
-        try:
-            self.face_analyzer = FaceAnalysis(
-                name=self.params.face_model_name,
-                root=str(config.BASE_DIR / 'models'),
-                providers=preferred
-            )
-        except Exception:
-            self.progress_queue.put({"log": "[WARNING] CUDA provider failed to initialize. Falling back to CPU."})
-            self.face_analyzer = FaceAnalysis(
-                name=self.params.face_model_name,
-                root=str(config.BASE_DIR / 'models'),
-                providers=['CPUExecutionProvider']
-            )
+        # FIX: Simplify to enforce GPU-only execution
+        self.face_analyzer = FaceAnalysis(
+            name=self.params.face_model_name,
+            root=str(config.BASE_DIR / 'models'),
+            providers=['CUDAExecutionProvider']
+        )
         self.face_analyzer.prepare(ctx_id=0, det_size=(640, 640))
         self.progress_queue.put({"log": "[SUCCESS] Face model loaded."})
 
@@ -1285,7 +1288,6 @@ class AnalysisPipeline:
             frame.calculate_quality_metrics(mask=mask)
 
             video_area = frame.image_data.shape[0] * frame.image_data.shape[1]
-            # FIX: Pass mask_meta to the filtering function
             keep, status, max_conf = check_frame_passes_filters(frame, self.params, video_area, self.face_analyzer, self.gpu_lock, mask_meta=mask_meta)
             frame.max_face_confidence = max_conf
             
@@ -1364,23 +1366,19 @@ class AppUI:
 
     def _create_param_map(self):
         """Maps AnalysisParameter fields to Gradio component IDs for config saving/loading."""
+        # FIX: Removed obsolete parameters
         return {
             "source_path": "source_input", "method": "method_input", "interval": "interval_input",
             "max_resolution": "max_resolution", "fast_scene": "fast_scene_input", "use_png": "use_png_input",
-            "disable_parallel": "disable_parallel_input", "use_gpu": "use_gpu_input", "resume": "resume_input",
+            "disable_parallel": "disable_parallel_input", "resume": "resume_input",
             "enable_face_filter": "enable_face_filter_input", "face_ref_img_path": "face_ref_img_path_input",
             "face_model_name": "face_model_name_input", "min_face_confidence": "min_face_confidence_input",
             "min_face_area": "min_face_area_input", "pre_filter_quality_enabled": "pre_filter_quality_enabled_input",
             "pre_filter_mode": "pre_filter_mode_toggle", "pre_quality_thresh": "pre_quality_thresh_input",
             "pre_filter_face_present": "pre_filter_face_present_input",
-            "enable_subject_mask": "enable_subject_mask_input", "masking_model": "masking_model_input",
+            "enable_subject_mask": "enable_subject_mask_input",
             "dam4sam_model_name": "dam4sam_model_name_input",
             "scene_detect": "scene_detect_input",
-            "masking_device": "masking_device_input",
-            "sam2_model_variant": "sam2_model_variant_input",
-            "sam2_weights_path": "sam2_weights_path_input",
-            "sam2_precision": "sam2_precision_input",
-            "iou_threshold": "iou_threshold_input",
         }
 
     def _create_setup_tab(self):
@@ -1444,18 +1442,10 @@ class AppUI:
                             interactive=self.feature_status['masking']
                         )
                         with gr.Group(visible=False) as self.components['masking_options_group']:
-                            self.components['masking_model_input'] = gr.Dropdown(['dam4sam', 'sam2'], label="Masking Model", value=config.UI_DEFAULTS["masking_model"], elem_id="masking_model_input")
-                            
+                            # FIX: Simplified to only show DAM4SAM options permanently
                             with gr.Group(visible=True) as self.components['dam4sam_options_group']:
                                 self.components['dam4sam_model_name_input'] = gr.Dropdown(['sam2.1', 'sam21pp-L'], value=config.UI_DEFAULTS["dam4sam_model_name"], label="DAM4SAM Model", elem_id="dam4sam_model_name_input", info="fp16 is used where available.")
                             
-                            with gr.Group(visible=False) as self.components['sam2_options_group']:
-                                self.components['sam2_model_variant_input'] = gr.Dropdown(["hiera_large", "hiera_base"], value=config.UI_DEFAULTS["sam2_model_variant"], label="SAM2 Model Variant", elem_id="sam2_model_variant_input")
-                                self.components['sam2_weights_path_input'] = gr.Textbox(label="SAM2 Weights Path", placeholder="e.g., C:\\models\\sam2_hiera_large.pt", value=config.UI_DEFAULTS["sam2_weights_path"], elem_id="sam2_weights_path_input", info="A valid .pt weights file path is required for SAM2 masking.")
-                                self.components['sam2_precision_input'] = gr.Dropdown(['fp16', 'bf16'], value=config.UI_DEFAULTS["sam2_precision"], label="SAM2 Precision", info="fp16 is faster, bf16 may be more stable if supported.", elem_id="sam2_precision_input")
-                                self.components['iou_threshold_input'] = gr.Slider(minimum=0.1, maximum=1.0, value=config.UI_DEFAULTS["iou_threshold"], step=0.05, label="IoU Fallback Threshold", info="Minimum overlap to keep tracking an object if its ID is lost.", elem_id="iou_threshold_input")
-
-                            self.components['masking_device_input'] = gr.Dropdown(['cuda'], label="Masking Device", value=config.UI_DEFAULTS["masking_device"], elem_id="masking_device_input", info="Masking requires CUDA.", interactive=False)
                             self.components['scene_detect_input'] = gr.Checkbox(
                                 label="Scene Detection for Masking",
                                 value=config.UI_DEFAULTS["scene_detect"],
@@ -1469,7 +1459,6 @@ class AppUI:
                             self.components['resume_input'] = gr.Checkbox(label="Resume/Use Cache", value=config.UI_DEFAULTS["resume"], elem_id="resume_input")
                             self.components['use_png_input'] = gr.Checkbox(label="Save as PNG (slower, higher quality)", value=config.UI_DEFAULTS["use_png"], elem_id="use_png_input")
                             self.components['disable_parallel_input'] = gr.Checkbox(label="Disable Parallelism (for low memory)", value=config.UI_DEFAULTS["disable_parallel"], elem_id="disable_parallel_input")
-                            self.components['use_gpu_input'] = gr.Checkbox(label="Use GPU (for Faces/Masks)", value=config.UI_DEFAULTS["use_gpu"], elem_id="use_gpu_input")
                         self._create_config_presets_ui()
 
             # --- BOTTOM ROW: CONTROLS AND LOGS ---
@@ -1544,12 +1533,6 @@ class AppUI:
         self.components['pre_filter_quality_enabled_input'].change(lambda x: gr.update(visible=x), self.components['pre_filter_quality_enabled_input'], self.components['pre_quality_filter_group'])
         self.components['pre_filter_face_present_input'].change(lambda x: gr.update(visible=x), self.components['pre_filter_face_present_input'], self.components['pre_face_filter_group'])
         
-        self.components['masking_model_input'].change(
-            lambda m: (gr.update(visible=m=='dam4sam'), gr.update(visible=m=='sam2')),
-            self.components['masking_model_input'],
-            [self.components['dam4sam_options_group'], self.components['sam2_options_group']]
-        )
-
         self.components['pre_filter_mode_toggle'].change(
             lambda m: (gr.update(visible=m == config.FILTER_MODES["OVERALL"]), gr.update(visible=m != config.FILTER_MODES["OVERALL"])),
             self.components['pre_filter_mode_toggle'],
@@ -1650,16 +1633,11 @@ class AppUI:
             yield {self.components['process_output_log']: f"[ERROR] Local file path not found: {params.source_path}", self.components['start_button']: gr.update(interactive=True), self.components['stop_button']: gr.update(interactive=False)}
             return
 
-        # FIX: Clarified logic for requiring a reference image.
         ref_image_required = params.enable_face_filter
         if ref_image_required and (not params.face_ref_img_path or not Path(params.face_ref_img_path).is_file()):
             yield {self.components['process_output_log']: f"[ERROR] Reference face image is required for the selected options, but the path is invalid or not found: {params.face_ref_img_path}", self.components['start_button']: gr.update(interactive=True), self.components['stop_button']: gr.update(interactive=False)}
             return
         
-        if params.enable_subject_mask and params.masking_model == 'sam2' and not Path(params.sam2_weights_path).is_file():
-            yield {self.components['process_output_log']: f"[ERROR] SAM2 weights file not found at '{params.sam2_weights_path}'.", self.components['start_button']: gr.update(interactive=True), self.components['stop_button']: gr.update(interactive=False)}
-            return
-
         progress_queue = Queue()
         extraction_pipeline = ExtractionPipeline(params, progress_queue, self.cancel_event)
         yield from self._run_task(extraction_pipeline.run, self.components['process_output_log'], status_box=self.components['process_status'])
@@ -1877,6 +1855,10 @@ class AppUI:
         return f"Config '{name}' deleted.", gr.update(choices=[f.stem for f in config.CONFIGS_DIR.glob("*.json")], value=None)
 
 if __name__ == "__main__":
+    # FIX: Add a startup check to enforce GPU-only execution
+    if torch is not None and not torch.cuda.is_available():
+        raise RuntimeError("This application requires a CUDA-enabled GPU but CUDA is not available.")
+    
     check_dependencies()
     app_ui = AppUI()
     demo = app_ui.build_ui()
