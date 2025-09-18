@@ -7,4 +7,3 @@ numba
 yt-dlp
 torch
 scenedetect
-sam-2 @ git+https://github.com/jovanavidenovic/DAM4SAM.git
