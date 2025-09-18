@@ -40,12 +40,309 @@ try:
 except ImportError:
     torch = None
 
-# DAM4SAM tracker
+# --- Integrated DAM4SAM Tracker and Dependencies ---
+DAM4SAMTracker = None
 try:
-    from dam4sam_tracker import DAM4SAMTracker
+    # Check for core DAM4SAM dependencies first
+    import yaml
+    import random
+    from collections import OrderedDict
+    import torchvision.transforms.functional as F
+    from vot.region.raster import calculate_overlaps
+    from vot.region.shapes import Mask
+    from vot.region import RegionType
+    from sam2.build_sam import build_sam2_video_predictor
+
+    # --- Utility functions required by DAM4SAMTracker (integrated) ---
+
+    def keep_largest_component(mask):
+        """Keeps only the largest connected component in a binary mask."""
+        # Finds all connected components and returns a mask with only the largest one.
+        num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(mask, 4, cv2.CV_32S)
+        if num_labels > 1:
+            # The 0-th label is the background.
+            largest_label = 1 + np.argmax(stats[1:, cv2.CC_STAT_AREA])
+            return (labels == largest_label).astype(np.uint8)
+        return mask
+
+    def determine_tracker(tracker_name="sam2.1"):
+        """
+        Maps a tracker name to its checkpoint and config file paths.
+        This is a replication of external utility logic.
+        NOTE: This assumes model files are placed in a 'models' subdirectory.
+        """
+        base_path = Path(__file__).parent / "models"
+        base_path.mkdir(exist_ok=True) # Ensure models directory exists
+
+        # Mappings from tracker name to filenames. This assumes user places files here.
+        checkpoints = {
+            "sam2.1": "sam2_hiera_l.pt",
+            "sam21pp-L": "sam2_hiera_l.pt",
+            "sam21pp-B": "sam2_hiera_b_plus.pt",
+            "sam21pp-S": "sam2_hiera_s.pt",
+            "sam21pp-T": "sam2_hiera_t.pt",
+            "sam2pp-L": "sam2_hiera_l_2.pt",
+            "sam2pp-B": "sam2_hiera_b_plus_2.pt",
+            "sam2pp-S": "sam2_hiera_s_2.pt",
+            "sam2pp-T": "sam2_hiera_t_2.pt",
+        }
+        model_configs = {
+            # In the original code, the model config path was passed but often the same.
+            # We'll assume a default config file name can be used for these models.
+            "default": "sam2_hiera_video.yaml"
+        }
+        
+        checkpoint_file = checkpoints.get(tracker_name, "sam2_hiera_l.pt")
+        config_file = model_configs["default"]
+
+        return str(base_path / checkpoint_file), str(base_path / config_file)
+
+    # --- Embedded DAM4SAM Configuration ---
+    dam4sam_config = {"seed": 1234}
+
+    # --- DAM4SAMTracker Class Definition (from dam4sam_tracker.py) ---
+
+    class DAM4SAMTracker():
+        def __init__(self, tracker_name="sam21pp-L"):
+            """
+            Constructor for the DAM4SAM (2 or 2.1) tracking wrapper.
+
+            Args:
+            - tracker_name (str): Name of the tracker to use. Options are:
+                - "sam2.1" / "sam21pp-L": DAM4SAM (2.1) Hiera Large
+                - "sam21pp-B": DAM4SAM (2.1) Hiera Base+
+                - "sam21pp-S": DAM4SAM (2.1) Hiera Small
+                # ... and others as defined in determine_tracker
+            """
+            # Set seed for reproducibility within the tracker instance
+            seed = dam4sam_config["seed"]
+            random.seed(seed)
+            os.environ['PYTHONHASHSEED'] = str(seed)
+            np.random.seed(seed)
+            torch.manual_seed(seed)
+            torch.cuda.manual_seed(seed)
+
+            self.checkpoint, self.model_cfg = determine_tracker(tracker_name)
+
+            # Image preprocessing parameters
+            self.input_image_size = 1024
+            self.img_mean = torch.tensor([0.485, 0.456, 0.406], dtype=torch.float32)[:, None, None]
+            self.img_std = torch.tensor([0.229, 0.224, 0.225], dtype=torch.float32)[:, None, None]
+
+            self.predictor = build_sam2_video_predictor(self.model_cfg, self.checkpoint, device="cuda:0")
+            self.tracking_times = []
+
+        def _prepare_image(self, img_pil):
+            # _load_img_as_tensor from SAM2
+            img = torch.from_numpy(np.array(img_pil)).to(self.inference_state["device"])
+            img = img.permute(2, 0, 1).float() / 255.0
+            img = F.resize(img, (self.input_image_size, self.input_image_size))
+            img = (img - self.img_mean) / self.img_std
+            return img
+
+        @torch.inference_mode()
+        def init_state_tw(
+            self,
+        ):
+            """Initialize an inference state."""
+            compute_device = torch.device("cuda")
+            inference_state = {}
+            inference_state["images"] = None # later add, step by step
+            inference_state["num_frames"] = 0 # later add, step by step
+            inference_state["offload_video_to_cpu"] = False
+            inference_state["offload_state_to_cpu"] = False
+            inference_state["video_height"] = None # later add, step by step
+            inference_state["video_width"] =  None # later add, step by step
+            inference_state["device"] = compute_device
+            inference_state["storage_device"] = compute_device
+            inference_state["point_inputs_per_obj"] = {}
+            inference_state["mask_inputs_per_obj"] = {}
+            inference_state["adds_in_drm_per_obj"] = {}
+            inference_state["cached_features"] = {}
+            inference_state["constants"] = {}
+            inference_state["obj_id_to_idx"] = OrderedDict()
+            inference_state["obj_idx_to_id"] = OrderedDict()
+            inference_state["obj_ids"] = []
+            inference_state["output_dict"] = {
+                "cond_frame_outputs": {},
+                "non_cond_frame_outputs": {},
+            }
+            inference_state["output_dict_per_obj"] = {}
+            inference_state["temp_output_dict_per_obj"] = {}
+            inference_state["consolidated_frame_inds"] = {
+                "cond_frame_outputs": set(),
+                "non_cond_frame_outputs": set(),
+            }
+            inference_state["tracking_has_started"] = False
+            inference_state["frames_already_tracked"] = {}
+            inference_state["frames_tracked_per_obj"] = {}
+
+            self.img_mean = self.img_mean.to(compute_device)
+            self.img_std = self.img_std.to(compute_device)
+
+            return inference_state
+
+        @torch.inference_mode()
+        def initialize(self, image, init_mask, bbox=None):
+            if type(init_mask) is list:
+                init_mask = init_mask[0]
+            self.frame_index = 0
+            self.object_sizes = []
+            self.last_added = -1
+
+            self.img_width = image.width
+            self.img_height = image.height
+            self.inference_state = self.init_state_tw()
+            self.inference_state["images"] = image
+            video_width, video_height = image.size
+            self.inference_state["video_height"] = video_height
+            self.inference_state["video_width"] =  video_width
+            prepared_img = self._prepare_image(image)
+            self.inference_state["images"] = {0 : prepared_img}
+            self.inference_state["num_frames"] = 1
+            self.predictor.reset_state(self.inference_state)
+
+            self.predictor._get_image_feature(self.inference_state, frame_idx=0, batch_size=1)
+
+            if init_mask is None:
+                if bbox is None:
+                    raise ValueError("Initialization state (bbox or mask) is required.")
+                init_mask = self.estimate_mask_from_box(bbox)
+
+            _, _, out_mask_logits = self.predictor.add_new_mask(
+                inference_state=self.inference_state,
+                frame_idx=0,
+                obj_id=0,
+                mask=init_mask,
+            )
+
+            m = (out_mask_logits[0, 0] > 0).float().cpu().numpy().astype(np.uint8)
+            self.inference_state["images"].pop(self.frame_index)
+
+            out_dict = {'pred_mask': m}
+            return out_dict
+
+        @torch.inference_mode()
+        def track(self, image, init=False):
+            torch.cuda.empty_cache()
+            prepared_img = self._prepare_image(image).unsqueeze(0)
+            if not init:
+                self.frame_index += 1
+                self.inference_state["num_frames"] += 1
+            self.inference_state["images"][self.frame_index] = prepared_img
+
+            for out in self.predictor.propagate_in_video(self.inference_state, start_frame_idx=self.frame_index, max_frame_num_to_track=0, return_all_masks=True):
+                if len(out) == 3:
+                    out_frame_idx, _, out_mask_logits = out
+                    m = (out_mask_logits[0][0] > 0.0).float().cpu().numpy().astype(np.uint8)
+                else:
+                    out_frame_idx, _, out_mask_logits, alternative_masks_ious = out
+                    m = (out_mask_logits[0][0] > 0.0).float().cpu().numpy().astype(np.uint8)
+
+                    alternative_masks, out_all_ious = alternative_masks_ious
+                    m_idx = np.argmax(out_all_ious)
+                    m_iou = out_all_ious[m_idx]
+                    alternative_masks = [mask for i, mask in enumerate(alternative_masks) if i != m_idx]
+
+                    n_pixels = (m == 1).sum()
+                    self.object_sizes.append(n_pixels)
+                    if len(self.object_sizes) > 1 and n_pixels >= 1:
+                        obj_sizes_ratio = n_pixels / np.median([
+                            size for size in self.object_sizes[-300:] if size >= 1
+                        ][-10:])
+                    else:
+                        obj_sizes_ratio = -1
+
+                    if m_iou > 0.8 and obj_sizes_ratio >= 0.8 and obj_sizes_ratio <= 1.2 and n_pixels >= 1 and (self.frame_index - self.last_added > 5 or self.last_added == -1):
+                        alternative_masks = [Mask((m_[0][0] > 0.0).cpu().numpy()).rasterize((0, 0, self.img_width - 1, self.img_height - 1)).astype(np.uint8)
+                                         for m_ in alternative_masks]
+
+                        chosen_mask_np = m.copy()
+                        chosen_bbox = Mask(chosen_mask_np).convert(RegionType.RECTANGLE)
+
+                        alternative_masks = [np.logical_and(m_, np.logical_not(chosen_mask_np)).astype(np.uint8) for m_ in alternative_masks]
+                        alternative_masks = [keep_largest_component(m_) for m_ in alternative_masks if np.sum(m_) >= 1]
+                        if len(alternative_masks) > 0:
+                            alternative_masks = [np.logical_or(m_, chosen_mask_np).astype(np.uint8) for m_ in alternative_masks]
+                            alternative_bboxes = [Mask(m_).convert(RegionType.RECTANGLE) for m_ in alternative_masks]
+                            ious = [calculate_overlaps([chosen_bbox], [bbox])[0] for bbox in alternative_bboxes]
+
+                            if np.min(np.array(ious)) <= 0.7:
+                                self.last_added = self.frame_index
+                                self.predictor.add_to_drm(
+                                    inference_state=self.inference_state,
+                                    frame_idx=out_frame_idx,
+                                    obj_id=0,
+                                )
+
+                out_dict = {'pred_mask': m}
+                self.inference_state["images"].pop(self.frame_index)
+                return out_dict
+
+        def estimate_mask_from_box(self, bbox):
+            (
+                _,
+                _,
+                current_vision_feats,
+                current_vision_pos_embeds,
+                feat_sizes,
+            ) = self.predictor._get_image_feature(self.inference_state, 0, 1)
+
+            box = np.array([bbox[0], bbox[1], bbox[0] + bbox[2], bbox[1] + bbox[3]])[None, :]
+            box = torch.as_tensor(box, dtype=torch.float, device=current_vision_feats[0].device)
+
+            from sam2.utils.transforms import SAM2Transforms
+            _transforms = SAM2Transforms(
+                resolution=self.predictor.image_size,
+                mask_threshold=0.0,
+                max_hole_area=0.0,
+                max_sprinkle_area=0.0,
+            )
+            unnorm_box = _transforms.transform_boxes(
+                box, normalize=True, orig_hw=(self.img_height, self.img_width)
+            )
+
+            box_coords = unnorm_box.reshape(-1, 2, 2)
+            box_labels = torch.tensor([[2, 3]], dtype=torch.int, device=unnorm_box.device)
+            box_labels = box_labels.repeat(unnorm_box.size(0), 1)
+            concat_points = (box_coords, box_labels)
+
+            sparse_embeddings, dense_embeddings = self.predictor.sam_prompt_encoder(
+                points=concat_points,
+                boxes=None,
+                masks=None
+            )
+
+            high_res_features = []
+            for i in range(2):
+                _, b_, c_ = current_vision_feats[i].shape
+                high_res_features.append(current_vision_feats[i].permute(1, 2, 0).view(b_, c_, feat_sizes[i][0], feat_sizes[i][1]))
+            if self.predictor.directly_add_no_mem_embed:
+                img_embed = current_vision_feats[2] + self.predictor.no_mem_embed
+            else:
+                img_embed = current_vision_feats[2]
+            _, b_, c_ = current_vision_feats[2].shape
+            img_embed = img_embed.permute(1, 2, 0).view(b_, c_, feat_sizes[2][0], feat_sizes[2][1])
+            low_res_masks, iou_predictions, _, _ = self.predictor.sam_mask_decoder(
+                image_embeddings=img_embed,
+                image_pe=self.predictor.sam_prompt_encoder.get_dense_pe(),
+                sparse_prompt_embeddings=sparse_embeddings,
+                dense_prompt_embeddings=dense_embeddings,
+                multimask_output=False,
+                repeat_image=(concat_points is not None and concat_points[0].shape[0] > 1),
+                high_res_features=high_res_features,
+            )
+
+            masks = _transforms.postprocess_masks(
+                low_res_masks, (self.img_height, self.img_width)
+            )
+            masks = masks > 0
+
+            return masks.squeeze(0).float().detach().cpu().numpy()[0]
+
 except ImportError as e:
-    DAM4SAMTracker = None
-    logging.getLogger(__name__).warning("dam4sam tracker import failed: %s", e)
+    logging.getLogger(__name__).warning("DAM4SAM dependencies missing, tracker disabled: %s", e)
+    DAM4SAMTracker = None # Explicitly set to None on failure
 
 try:
     # FIX: Use the correct import path for insightface.app.FaceAnalysis
@@ -283,7 +580,7 @@ class SubjectMasker:
     def _initialize_dam4sam_tracker(self):
         """Initializes the DAM4SAM tracker for a single shot."""
         if not DAM4SAMTracker:
-            msg = "[ERROR] DAM4SAM dependencies (torch, dam4sam_tracker) are not installed."
+            msg = "[ERROR] DAM4SAM dependencies (torch, sam2, vot etc.) are not installed."
             self.progress_queue.put({"log": msg})
             raise ImportError(msg)
 
@@ -566,6 +863,8 @@ class SubjectMasker:
                 frame_pil = Image.fromarray(cv2.cvtColor(frame_np, cv2.COLOR_BGR2RGB))
                 
                 if i == seed_idx:
+                    # The DAM4SAM tracker expects a bounding box in [x1, y1, x2, y2] format for initialization.
+                    # The seed_identity function provides this format directly.
                     outputs = self.tracker.initialize(frame_pil, None, bbox=bbox)
                 else:
                     outputs = self.tracker.track(frame_pil)
@@ -1134,7 +1433,7 @@ class AppUI:
                     with gr.Accordion("Subject Masking", open=False):
                         masking_status = "Available"
                         if not self.feature_status['masking_libs_installed']:
-                            masking_status = "'torch', 'Pillow', or 'dam4sam_tracker' not installed"
+                            masking_status = "'torch', 'Pillow', or SAM2 dependencies not installed"
                         elif not self.feature_status['cuda_available']:
                             masking_status = "CUDA not available"
 
@@ -1582,3 +1881,4 @@ if __name__ == "__main__":
     app_ui = AppUI()
     demo = app_ui.build_ui()
     demo.launch()
+
