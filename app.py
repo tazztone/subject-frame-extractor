@@ -68,28 +68,38 @@ try:
     def determine_tracker(tracker_name="sam2.1"):
         """
         Maps a tracker name to its checkpoint and config file paths.
-        This is a replication of external utility logic.
-        NOTE: This assumes model files are placed in a 'models' subdirectory.
+        FIX: Add explicit existence checks for model files to fail early.
         """
         base_path = Path(__file__).parent / "models"
-        base_path.mkdir(exist_ok=True) # Ensure models directory exists
+        base_path.mkdir(exist_ok=True)
 
-        # Mappings from tracker name to filenames. This assumes user places files here.
-        # FIX: Pruned to only include models available in the UI dropdown.
         checkpoints = {
             "sam2.1": "sam2_hiera_l.pt",
             "sam21pp-L": "sam2_hiera_l.pt",
         }
         model_configs = {
-            # In the original code, the model config path was passed but often the same.
-            # We'll assume a default config file name can be used for these models.
             "default": "sam2_hiera_video.yaml"
         }
         
-        checkpoint_file = checkpoints.get(tracker_name, "sam2_hiera_l.pt")
-        config_file = model_configs["default"]
+        checkpoint_filename = checkpoints.get(tracker_name, "sam2_hiera_l.pt")
+        config_filename = model_configs["default"]
 
-        return str(base_path / checkpoint_file), str(base_path / config_file)
+        checkpoint_path = base_path / checkpoint_filename
+        config_path = base_path / config_filename
+
+        # FIX: Verify that the model checkpoint and config files exist before proceeding.
+        if not checkpoint_path.is_file():
+            raise FileNotFoundError(
+                f"Model checkpoint file not found: '{checkpoint_filename}'. "
+                f"Please ensure it exists in the '{base_path.resolve()}' directory."
+            )
+        if not config_path.is_file():
+            raise FileNotFoundError(
+                f"Model config file not found: '{config_filename}'. "
+                f"Please ensure it exists in the '{base_path.resolve()}' directory."
+            )
+
+        return str(checkpoint_path), str(config_path)
 
     # --- Embedded DAM4SAM Configuration ---
     dam4sam_config = {"seed": 1234}
@@ -100,12 +110,7 @@ try:
         def __init__(self, tracker_name="sam21pp-L"):
             """
             Constructor for the DAM4SAM (2 or 2.1) tracking wrapper.
-
-            Args:
-            - tracker_name (str): Name of the tracker to use. Options are:
-                - "sam2.1" / "sam21pp-L": DAM4SAM (2.1) Hiera Large
             """
-            # Set seed for reproducibility within the tracker instance
             seed = dam4sam_config["seed"]
             random.seed(seed)
             os.environ['PYTHONHASHSEED'] = str(seed)
@@ -115,7 +120,6 @@ try:
 
             self.checkpoint, self.model_cfg = determine_tracker(tracker_name)
 
-            # Image preprocessing parameters
             self.input_image_size = 1024
             self.img_mean = torch.tensor([0.485, 0.456, 0.406], dtype=torch.float32)[:, None, None]
             self.img_std = torch.tensor([0.229, 0.224, 0.225], dtype=torch.float32)[:, None, None]
@@ -124,7 +128,6 @@ try:
             self.tracking_times = []
 
         def _prepare_image(self, img_pil):
-            # _load_img_as_tensor from SAM2
             img = torch.from_numpy(np.array(img_pil)).to(self.inference_state["device"])
             img = img.permute(2, 0, 1).float() / 255.0
             img = F.resize(img, (self.input_image_size, self.input_image_size))
@@ -132,18 +135,16 @@ try:
             return img
 
         @torch.inference_mode()
-        def init_state_tw(
-            self,
-        ):
+        def init_state_tw(self):
             """Initialize an inference state."""
             compute_device = torch.device("cuda")
             inference_state = {}
-            inference_state["images"] = None # later add, step by step
-            inference_state["num_frames"] = 0 # later add, step by step
+            inference_state["images"] = None
+            inference_state["num_frames"] = 0
             inference_state["offload_video_to_cpu"] = False
             inference_state["offload_state_to_cpu"] = False
-            inference_state["video_height"] = None # later add, step by step
-            inference_state["video_width"] =  None # later add, step by step
+            inference_state["video_height"] = None
+            inference_state["video_width"] =  None
             inference_state["device"] = compute_device
             inference_state["storage_device"] = compute_device
             inference_state["point_inputs_per_obj"] = {}
@@ -215,7 +216,6 @@ try:
 
         @torch.inference_mode()
         def track(self, image, init=False):
-            # FIX: Removed torch.cuda.empty_cache() to improve performance.
             prepared_img = self._prepare_image(image).unsqueeze(0)
             if not init:
                 self.frame_index += 1
@@ -333,17 +333,18 @@ try:
 
 except ImportError as e:
     logging.getLogger(__name__).warning("DAM4SAM dependencies missing, tracker disabled: %s", e)
-    DAM4SAMTracker = None # Explicitly set to None on failure
+    DAM4SAMTracker = None
 
 try:
-    # FIX: Use the correct import path for insightface.app.FaceAnalysis
     from insightface.app import FaceAnalysis
 except ImportError:
     FaceAnalysis = None
 
 try:
     from numba import njit, prange
+    NUMBA_AVAILABLE = True
 except ImportError:
+    NUMBA_AVAILABLE = False
     # Provide dummy decorators if numba is not installed
     def njit(func=None, **kwargs):
         if func: return func
@@ -353,7 +354,6 @@ except ImportError:
 # --- Central Configuration & Setup ---
 def get_feature_status():
     """Checks for optional dependencies and returns their status."""
-    # Updated to check for DAM4SAMTracker
     masking_libs_installed = torch is not None and DAM4SAMTracker is not None and Image is not None
     cuda_available = torch is not None and torch.cuda.is_available()
     return {
@@ -363,7 +363,7 @@ def get_feature_status():
         'masking': masking_libs_installed and cuda_available,
         'masking_libs_installed': masking_libs_installed,
         'cuda_available': cuda_available,
-        'numba_acceleration': hasattr(njit, 'py_func'), # The dummy fallback won't have this attr
+        'numba_acceleration': NUMBA_AVAILABLE,
     }
 
 class Config:
@@ -377,7 +377,10 @@ class Config:
     QUALITY_WEIGHTS = {"sharpness": 30, "edge_strength": 20, "contrast": 20, "brightness": 10, "entropy": 20}
     NORMALIZATION_CONSTANTS = {"sharpness": 1000, "edge_strength": 100}
     FILTER_MODES = {"OVERALL": "Overall Quality", "INDIVIDUAL": "Individual Metrics"}
-    MIN_MASK_AREA_PCT = 0.5 # Minimum mask area percentage for a mask to be considered valid
+    # FIX: Clarify mask area threshold default to 1.0%
+    MIN_MASK_AREA_PCT = 1.0
+    # FIX: Add configurable downscale factor for quality metrics
+    QUALITY_DOWNSCALE_FACTOR = 0.25
     UI_DEFAULTS = {
         "method": "keyframes", "interval": 5.0, "max_resolution": "maximum available",
         "fast_scene": False, "resume": True, "use_png": True, "disable_parallel": False,
@@ -418,25 +421,39 @@ def sanitize_filename(name, max_length=50):
     """Sanitizes a string to be a valid filename."""
     return re.sub(r'[^\w\-_.]', '_', name)[:max_length]
 
-# --- Numba Optimized Image Processing ---
-@njit(parallel=True)
-def compute_edge_strength(sobelx, sobely):
-    height, width = sobelx.shape
-    total_mag = 0.0
-    for i in prange(height):
-        for j in range(width):
-            total_mag += np.sqrt(sobelx[i, j]**2 + sobely[i, j]**2)
-    return total_mag / (height * width) if (height*width) > 0 else 0
+# --- Numba Optimized / NumPy Fallback Image Processing ---
+if NUMBA_AVAILABLE:
+    @njit(parallel=True)
+    def compute_edge_strength(sobelx, sobely):
+        height, width = sobelx.shape
+        total_mag = 0.0
+        for i in prange(height):
+            for j in range(width):
+                total_mag += np.sqrt(sobelx[i, j]**2 + sobely[i, j]**2)
+        return total_mag / (height * width) if (height * width) > 0 else 0
 
-@njit
-def compute_entropy(hist):
-    total = np.sum(hist) + 1e-7
-    entropy = 0.0
-    prob = hist / total
-    for p in prob:
-        if p > 0:
-            entropy -= p * np.log2(p)
-    return min(max(entropy / 8.0, 0), 1.0)
+    @njit
+    def compute_entropy(hist):
+        total = np.sum(hist) + 1e-7
+        entropy = 0.0
+        prob = hist / total
+        for p in prob:
+            if p > 0:
+                entropy -= p * np.log2(p)
+        return min(max(entropy / 8.0, 0), 1.0)
+else:
+    # FIX: Add pure NumPy vectorized fallbacks for better performance without Numba.
+    def compute_edge_strength(sobelx, sobely):
+        magnitude = np.sqrt(sobelx.astype(np.float64)**2 + sobely.astype(np.float64)**2)
+        return np.mean(magnitude)
+
+    def compute_entropy(hist):
+        total = np.sum(hist) + 1e-7
+        prob = hist / total
+        # Use boolean indexing to avoid log(0)
+        nz = prob > 0
+        entropy = -np.sum(prob[nz] * np.log2(prob[nz]))
+        return min(max(entropy / 8.0, 0), 1.0)
 
 # --- Core Data Classes ---
 @dataclass
@@ -453,7 +470,7 @@ class Frame:
     image_data: np.ndarray
     frame_number: int
     metrics: FrameMetrics | None = None
-    face_similarity_score: float | None = None # FIX: Changed from distance to similarity score
+    face_similarity_score: float | None = None
     max_face_confidence: float | None = None
     error: str | None = None
 
@@ -467,7 +484,9 @@ class Frame:
                     raise ValueError("Subject mask is too small for metric calculation.")
             
             gray_for_metrics = cv2.bitwise_and(gray, gray, mask=active_mask) if active_mask is not None else gray
-            preview = cv2.resize(gray_for_metrics, (0, 0), fx=0.25, fy=0.25, interpolation=cv2.INTER_AREA)
+            # Use configurable downscale factor
+            dsf = config.QUALITY_DOWNSCALE_FACTOR
+            preview = cv2.resize(gray_for_metrics, (0, 0), fx=dsf, fy=dsf, interpolation=cv2.INTER_AREA)
             preview_mask = cv2.resize(active_mask, preview.shape[::-1], interpolation=cv2.INTER_NEAREST) if active_mask is not None else None
 
             lap = cv2.Laplacian(preview, cv2.CV_64F)
@@ -510,7 +529,6 @@ class AnalysisStats:
 
 @dataclass
 class AnalysisParameters:
-    # FIX: Removed obsolete parameters for SAM2 path and GPU toggles
     source_path: str = ""
     output_folder: str = ""
     method: str = config.UI_DEFAULTS["method"]
@@ -541,9 +559,9 @@ class MaskingResult:
     mask_path: str | None = None
     shot_id: int | None = None
     seed_type: str | None = None
-    seed_face_sim: float | None = None # Renamed from face_sim
-    mask_area_pct: float | None = None # New field
-    mask_empty: bool = True # New field, default to True
+    seed_face_sim: float | None = None
+    mask_area_pct: float | None = None
+    mask_empty: bool = True
     error: str | None = None
 
 class SubjectMasker:
@@ -584,7 +602,8 @@ class SubjectMasker:
             return False
 
     def run(self, video_path: str, frames_dir: str) -> dict[str, dict]:
-        # FIX: Streamlined logic to only handle DAM4SAM path
+        # NOTE: Re-initializing the tracker per shot is safer for state but adds overhead.
+        # This is a deliberate trade-off for stability.
         try:
             self.mask_dir = Path(frames_dir) / "masks"
             self.mask_dir.mkdir(exist_ok=True)
@@ -607,7 +626,6 @@ class SubjectMasker:
                 if self.cancel_event.is_set(): break
                 self.progress_queue.put({"log": f"[INFO] Masking shot {shot_id+1}/{len(self.shots)} (Frames {start_frame}-{end_frame})"})
 
-                # Initialize tracker for each shot
                 if not self._initialize_dam4sam_tracker():
                     self.progress_queue.put({"log": f"[ERROR] Could not initialize tracker for shot {shot_id+1}. Skipping."})
                     self.progress_queue.put({"progress": end_frame - start_frame})
@@ -631,7 +649,6 @@ class SubjectMasker:
                     self.progress_queue.put({"progress": end_frame - start_frame})
                     continue
 
-                # Directly call the only available propagation method
                 masks, mask_area_pcts, mask_empty_flags, mask_errors = self._propagate_masks_dam4sam(shot_frames_data, seed_frame_local_idx, bbox_xywh)
 
                 if len(masks) != len(shot_frames_with_nums):
@@ -683,23 +700,16 @@ class SubjectMasker:
             return mask_metadata
         finally:
             if hasattr(self, 'tracker') and self.tracker is not None:
-                try:
-                    del self.tracker
-                    self.tracker = None
-                    gc.collect()
-                except Exception as e:
-                    self.progress_queue.put({"log": f"[WARNING] Error during tracker cleanup: {e}"})
+                del self.tracker
+                self.tracker = None
+                gc.collect()
 
             if torch and torch.cuda.is_available():
-                try:
-                    torch.cuda.empty_cache()
-                    self.progress_queue.put({"log": "[INFO] GPU memory released."})
-                except Exception as e:
-                    self.progress_queue.put({"log": f"[WARNING] Error emptying CUDA cache: {e}"})
+                torch.cuda.empty_cache()
+                self.progress_queue.put({"log": "[INFO] GPU memory released."})
 
     def _detect_scenes(self, video_path: str, frames_dir: str):
         if not detect:
-            # FIX: Raise an error if scenedetect is missing but was requested.
             self.progress_queue.put({"log": "[ERROR] PySceneDetect is not installed, but scene detection was enabled for masking. Cannot proceed."})
             raise ImportError("PySceneDetect is required for this operation but is not installed.")
 
@@ -712,16 +722,7 @@ class SubjectMasker:
                 cap.release()
                 self.shots = [(0, frame_count)]
             else:
-                shots = []
-                for s, e in scene_list:
-                    try:
-                        s_frame = s.frame_num
-                        e_frame = e.frame_num
-                    except AttributeError:
-                        s_frame = s.get_frames() if hasattr(s, "get_frames") else int(s)
-                        e_frame = e.get_frames() if hasattr(e, "get_frames") else int(e)
-                    shots.append((int(s_frame), int(e_frame)))
-                self.shots = shots
+                self.shots = [(s.frame_num, e.frame_num) for s, e in scene_list]
 
             self.progress_queue.put({"log": f"[INFO] Found {len(self.shots)} shots."})
         except Exception as e:
@@ -729,7 +730,6 @@ class SubjectMasker:
             self.progress_queue.put({"log": f"[ERROR] Scene detection failed: {e}"})
 
     def _load_shot_frames(self, frames_dir, start, end):
-        """Loads frames for a shot using the frame_map to find correct files."""
         frames = []
         if not self.frame_map:
             self.progress_queue.put({"log": "[ERROR] No frame map available for SubjectMasker. Cannot process shot."})
@@ -740,7 +740,6 @@ class SubjectMasker:
         for fn in shot_frame_numbers:
             p = Path(frames_dir) / self.frame_map[fn]
             if p.exists():
-                # FIX: Harden frame loading by checking if cv2.imread was successful
                 frame_data = cv2.imread(str(p))
                 if frame_data is not None:
                     frames.append((fn, frame_data))
@@ -752,12 +751,10 @@ class SubjectMasker:
         return frames
 
     def _seed_identity(self, shot_frames):
-        # FIX: Improve seeding robustness and correctness
         if not shot_frames:
             return None, None, None
 
         seed_details = {}
-        # Try to find a seed using the reference face, prioritizing the earliest frame possible.
         if self.face_analyzer and self.reference_embedding is not None:
             self.progress_queue.put({"log": "[INFO] Searching for reference face in first 5 frames..."})
             for i, frame_img in enumerate(shot_frames[:5]):
@@ -771,7 +768,6 @@ class SubjectMasker:
                     if dist < min_dist:
                         min_dist, best_match = dist, face
                 
-                # If a qualifying face is found, use it immediately to ensure max forward coverage
                 if best_match and min_dist < 0.6:
                     self.progress_queue.put({"log": f"[INFO] Found reference face in frame {i} with distance {min_dist:.2f}. Seeding from here."})
                     
@@ -784,7 +780,6 @@ class SubjectMasker:
                     seed_details = {'type': 'face_match', 'seed_face_sim': 1 - min_dist}
                     return i, bbox_xywh, seed_details
 
-        # Fallback: Seed with the most prominent face in the first frame
         self.progress_queue.put({"log": "[INFO] No reference match found. Seeding with the most prominent face in the first frame."})
         first_frame = shot_frames[0]
         if first_frame is None:
@@ -816,7 +811,6 @@ class SubjectMasker:
         return 0, bbox_xywh, seed_details 
     
     def _calculate_mask_metrics(self, mask_np, original_image_shape):
-        """Calculates mask_area_pct and mask_empty."""
         height, width = original_image_shape[:2]
         image_area = height * width
 
@@ -830,7 +824,7 @@ class SubjectMasker:
 
             if mask_area_pct < config.MIN_MASK_AREA_PCT:
                 mask_empty = True
-                error_message = f"Mask area ({mask_area_pct:.2f}%) below minimum threshold ({config.MIN_MASK_AREA_PCT:.2f}%)"
+                error_message = f"Mask area ({mask_area_pct:.2f}%) below min threshold ({config.MIN_MASK_AREA_PCT:.2f}%)"
             else:
                 mask_empty = False
         else:
@@ -860,11 +854,9 @@ class SubjectMasker:
                     self.progress_queue.put({"log": "[INFO] Mask propagation cancelled during shot."})
                     break
                 
-                # Convert cv2 (BGR) to PIL (RGB)
                 frame_pil = Image.fromarray(cv2.cvtColor(frame_np, cv2.COLOR_BGR2RGB))
                 
                 if i == seed_idx:
-                    # The DAM4SAM tracker expects a bounding box in [x, y, w, h] format for initialization.
                     outputs = self.tracker.initialize(frame_pil, None, bbox=bbox_xywh)
                 else:
                     outputs = self.tracker.track(frame_pil)
@@ -879,7 +871,6 @@ class SubjectMasker:
                 all_mask_empty_flags.append(mask_empty)
                 all_mask_errors.append(mask_err)
             
-            # Fill remaining frames if cancelled
             remaining = len(shot_frames) - len(all_masks)
             if remaining > 0:
                 h, w, _ = shot_frames[0].shape
@@ -909,7 +900,6 @@ def check_frame_passes_filters(frame, params, video_area, face_analyzer, gpu_loc
     if not frame.metrics:
         return False, "Discarded - Metric Error", max_confidence
 
-    # FIX: Use mask validity in pre-filtering logic
     if params.enable_subject_mask and mask_meta:
         if mask_meta.get('mask_empty', False):
             return False, "Discarded - Invalid Mask", max_confidence
@@ -928,7 +918,6 @@ def check_frame_passes_filters(frame, params, video_area, face_analyzer, gpu_loc
     if params.pre_filter_face_present:
         if not face_analyzer:
             logger.warning("Face pre-filter enabled but insightface is not installed.")
-            # FIX: Discard the frame if the face library is missing, instead of keeping it.
             return False, "Discarded (face lib missing)", None
 
         try:
@@ -1044,7 +1033,6 @@ class ExtractionPipeline:
     
     def _run_frame_extraction(self):
         """Uses FFmpeg to extract frames, parses progress, and creates a frame map."""
-        # FIX: Set loglevel to 'info' when showinfo is used, otherwise 'error'.
         use_showinfo = self.params.method != 'all'
         loglevel = 'info' if use_showinfo else 'error'
         ffmpeg_cmd = ['ffmpeg', '-y', '-i', str(self.video_path), '-hide_banner', '-loglevel', loglevel, '-progress', 'pipe:1']
@@ -1080,19 +1068,24 @@ class ExtractionPipeline:
             total_frames = self.video_info.get('frame_count', 1)
             self.progress_queue.put({"total": total_frames, "stage": "Extraction"})
 
-            # FIX: Removed hardcoded one-hour timeout to support long videos
             process.wait()
 
         except Exception as e:
-            if process:
-                process.terminate()
+            if process: process.terminate()
             logger.error(f"FFmpeg process encountered an unhandled exception: {e}")
             raise RuntimeError(f"FFmpeg process failed unexpectedly. Details: {e}")
         finally:
+            # FIX: Implement more robust process termination on cancellation.
             if process and self.cancel_event.is_set() and process.poll() is None:
-                process.terminate()
+                self.progress_queue.put({"log": "[INFO] Terminating FFmpeg process..."})
+                try:
+                    process.terminate()
+                    process.wait(timeout=2) # Grace period
+                except subprocess.TimeoutExpired:
+                    self.progress_queue.put({"log": "[WARNING] FFmpeg did not terminate gracefully, killing."})
+                    process.kill()
                 logger.warning("FFmpeg process terminated due to cancellation.")
-                self.progress_queue.put({"log": "[INFO] FFmpeg process terminated due to cancellation."})
+                
             if progress_thread and progress_thread.is_alive():
                 progress_thread.join(timeout=1)
             if stderr_handle and stderr_handle != subprocess.DEVNULL:
@@ -1126,7 +1119,7 @@ class AnalysisPipeline:
         self.progress_queue = progress_queue
         self.cancel_event = cancel_event
         self.video_path = video_path
-        self.output_dir = Path(params.output_folder) # Use output_folder directly
+        self.output_dir = Path(params.output_folder)
         self.metadata_path = self.output_dir / "metadata.jsonl"
         self.reference_embedding = None
         self.write_lock = threading.Lock()
@@ -1135,6 +1128,7 @@ class AnalysisPipeline:
         self.stats = AnalysisStats()
         self.last_stats_ts = 0.0
         self.mask_metadata = {}
+        self.is_cpu_only = not get_feature_status()['cuda_available']
 
     def run(self):
         try:
@@ -1148,26 +1142,25 @@ class AnalysisPipeline:
                 header = {"config_hash": config_hash, "params": {k:v for k,v in asdict(self.params).items() if k not in ['source_path', 'output_folder']}}
                 f.write(json.dumps(header) + '\n')
 
-            if self.params.enable_face_filter or self.params.pre_filter_face_present or self.params.enable_subject_mask: 
+            if self.params.enable_face_filter or self.params.pre_filter_face_present or self.params.enable_subject_mask:
                 self._initialize_face_analyzer()
             
             if self.params.enable_face_filter or (self.params.enable_subject_mask and self.params.face_ref_img_path):
                 self._process_reference_face()
             
             if self.params.enable_subject_mask:
-                if not self.video_path: raise ValueError("A video file path is required for subject masking but was not provided.")
-                frame_map = self._create_frame_map()
-                masker = SubjectMasker(
-                    self.params, 
-                    self.progress_queue, 
-                    self.cancel_event, 
-                    frame_map, 
-                    face_analyzer=self.face_analyzer, 
-                    reference_embedding=self.reference_embedding
-                )
-                self.mask_metadata = masker.run(self.video_path, str(self.output_dir))
+                if self.is_cpu_only:
+                    self.progress_queue.put({"log": "[WARNING] Subject masking is disabled in CPU-only mode."})
+                elif not self.video_path:
+                    raise ValueError("A video file path is required for subject masking but was not provided.")
+                else:
+                    frame_map = self._create_frame_map()
+                    masker = SubjectMasker(
+                        self.params, self.progress_queue, self.cancel_event, 
+                        frame_map, face_analyzer=self.face_analyzer, reference_embedding=self.reference_embedding
+                    )
+                    self.mask_metadata = masker.run(self.video_path, str(self.output_dir))
 
-            # FIX: Apply custom quality weights from UI before processing frames.
             config.QUALITY_WEIGHTS = self.params.quality_weights
             self._run_frame_processing()
 
@@ -1186,12 +1179,10 @@ class AnalysisPipeline:
         frame_map_path = self.output_dir / "frame_map.json"
         frame_map = {}
 
-        # FIX: Robustly handle missing or corrupt frame_map.json
         if not frame_map_path.exists():
             self.progress_queue.put({"log": "[WARNING] frame_map.json not found. Creating map from filenames. This may be inaccurate if 'all' frames weren't extracted."})
             image_files = sorted(list(self.output_dir.glob("frame_*.png")) + list(self.output_dir.glob("frame_*.jpg")))
             for i, f in enumerate(image_files):
-                # Fallback to sequential numbering, assuming files are named sequentially
                 frame_map[i] = f.name
             return frame_map
         
@@ -1200,7 +1191,6 @@ class AnalysisPipeline:
                 frame_map_list = json.load(f)
         except json.JSONDecodeError as e:
             self.progress_queue.put({"log": f"[ERROR] Failed to parse frame_map.json: {e}. Reverting to filename-based mapping."})
-            # Fallback logic if JSON is corrupt
             image_files = sorted(list(self.output_dir.glob("frame_*.png")) + list(self.output_dir.glob("frame_*.jpg")))
             for i, f in enumerate(image_files):
                 frame_map[i] = f.name
@@ -1215,7 +1205,6 @@ class AnalysisPipeline:
         return frame_map
 
     def _get_config_hash(self):
-        # FIX: Expand hash to include all parameters that alter output, improving cache correctness
         d = asdict(self.params)
         relevant_params = {k: d.get(k) for k in [
             'enable_subject_mask', 'scene_detect', 'enable_face_filter', 'face_model_name',
@@ -1239,21 +1228,32 @@ class AnalysisPipeline:
     def _initialize_face_analyzer(self):
         if not FaceAnalysis:
             raise ImportError("insightface library is not installed. Please install it for face analysis.")
-        self.progress_queue.put({"log": f"[INFO] Loading face model: {self.params.face_model_name}"})
+        
+        if self.is_cpu_only:
+            self.progress_queue.put({"log": "[WARNING] Face analysis is disabled in CPU-only mode."})
+            return
 
-        # FIX: Simplify to enforce GPU-only execution
-        self.face_analyzer = FaceAnalysis(
-            name=self.params.face_model_name,
-            root=str(config.BASE_DIR / 'models'),
-            providers=['CUDAExecutionProvider']
-        )
-        self.face_analyzer.prepare(ctx_id=0, det_size=(640, 640))
-        self.progress_queue.put({"log": "[SUCCESS] Face model loaded."})
+        self.progress_queue.put({"log": f"[INFO] Loading face model: {self.params.face_model_name}"})
+        try:
+            self.face_analyzer = FaceAnalysis(
+                name=self.params.face_model_name,
+                root=str(config.BASE_DIR / 'models'),
+                providers=['CUDAExecutionProvider']
+            )
+            self.face_analyzer.prepare(ctx_id=0, det_size=(640, 640))
+            self.progress_queue.put({"log": "[SUCCESS] Face model loaded."})
+        except Exception as e:
+            logger.error(f"Failed to initialize FaceAnalysis: {e}", exc_info=True)
+            raise RuntimeError(f"Could not initialize face analysis model. Check if models are downloaded and CUDA is correctly configured. Error: {e}")
 
     def _process_reference_face(self):
         if not self.params.face_ref_img_path:
             self.progress_queue.put({"log": "[WARNING] Reference face processing skipped: no image path provided."})
             return
+        if not self.face_analyzer:
+            self.progress_queue.put({"log": "[WARNING] Reference face processing skipped: Face analyzer not available."})
+            return
+            
         ref_path = Path(self.params.face_ref_img_path)
         if not ref_path.exists(): raise FileNotFoundError(f"Reference face image not found: {ref_path}")
         self.progress_queue.put({"log": "[INFO] Processing reference face image..."})
@@ -1313,7 +1313,7 @@ class AnalysisPipeline:
                     f.write(json.dumps(meta) + '\n')
                 return
 
-            if self.params.enable_face_filter and self.reference_embedding is not None:
+            if self.params.enable_face_filter and self.reference_embedding is not None and self.face_analyzer:
                 self._analyze_face_similarity(frame)
             
             meta = {"filename": image_path.name, "face_sim": frame.face_similarity_score, "face_conf": frame.max_face_confidence,
@@ -1358,6 +1358,9 @@ class AppUI:
         css = """.gradio-container { max-width: 1280px !important; margin: auto !important; }"""
         with gr.Blocks(theme=gr.themes.Default(primary_hue="blue"), css=css) as demo:
             gr.Markdown("# Advanced Frame Extractor & Filter")
+            if not self.feature_status['cuda_available']:
+                gr.Warning("No CUDA-enabled GPU detected. Running in CPU-only mode. "
+                           "Face Analysis and Subject Masking features will be disabled.")
             with gr.Tabs():
                 self._create_setup_tab()
                 self._create_filtering_tab()
@@ -1365,8 +1368,6 @@ class AppUI:
         return demo
 
     def _create_param_map(self):
-        """Maps AnalysisParameter fields to Gradio component IDs for config saving/loading."""
-        # FIX: Removed obsolete parameters
         return {
             "source_path": "source_input", "method": "method_input", "interval": "interval_input",
             "max_resolution": "max_resolution", "fast_scene": "fast_scene_input", "use_png": "use_png_input",
@@ -1382,10 +1383,8 @@ class AppUI:
         }
 
     def _create_setup_tab(self):
-        """Creates the main tab for configuration and running the pipeline."""
         with gr.Tab("1. Setup & Run"):
             with gr.Row():
-                # --- LEFT COLUMN: INPUT AND PRIMARY SETTINGS ---
                 with gr.Column(scale=3):
                     gr.Markdown("### 1. Video Source")
                     self.components['source_input'] = gr.Textbox(
@@ -1414,14 +1413,16 @@ class AppUI:
                     with gr.Accordion("3. Analysis & Pre-Filtering Settings", open=False):
                         self._create_pre_filtering_ui()
 
-                # --- RIGHT COLUMN: ADVANCED ANALYSIS AND CONFIG ---
                 with gr.Column(scale=2):
                     with gr.Accordion("Face Similarity", open=False):
+                        is_face_gpu_ready = self.feature_status['face_analysis'] and self.feature_status['cuda_available']
+                        face_info = "Available" if is_face_gpu_ready else ("'insightface' not installed" if not self.feature_status['face_analysis'] else "CUDA not available")
+                        
                         self.components['enable_face_filter_input'] = gr.Checkbox(
                             label="Enable Face Similarity",
-                            info="Compares faces to a reference image. Status: " + ("Available" if self.feature_status['face_analysis'] else "'insightface' not installed"),
+                            info=f"Compares faces to a reference image. Status: {face_info}",
                             elem_id="enable_face_filter_input",
-                            interactive=self.feature_status['face_analysis']
+                            interactive=is_face_gpu_ready
                         )
                         with gr.Group(visible=False) as self.components['face_options_group']:
                             self.components['face_model_name_input'] = gr.Dropdown(["buffalo_l", "buffalo_s", "buffalo_m", "antelopev2"], value=config.UI_DEFAULTS["face_model_name"], label="Model", elem_id="face_model_name_input")
@@ -1442,9 +1443,8 @@ class AppUI:
                             interactive=self.feature_status['masking']
                         )
                         with gr.Group(visible=False) as self.components['masking_options_group']:
-                            # FIX: Simplified to only show DAM4SAM options permanently
                             with gr.Group(visible=True) as self.components['dam4sam_options_group']:
-                                self.components['dam4sam_model_name_input'] = gr.Dropdown(['sam2.1', 'sam21pp-L'], value=config.UI_DEFAULTS["dam4sam_model_name"], label="DAM4SAM Model", elem_id="dam4sam_model_name_input", info="fp16 is used where available.")
+                                self.components['dam4sam_model_name_input'] = gr.Dropdown(['sam2.1', 'sam21pp-L'], value=config.UI_DEFAULTS["dam4sam_model_name"], label="DAM4SAM Model", elem_id="dam4sam_model_name_input")
                             
                             self.components['scene_detect_input'] = gr.Checkbox(
                                 label="Scene Detection for Masking",
@@ -1461,7 +1461,6 @@ class AppUI:
                             self.components['disable_parallel_input'] = gr.Checkbox(label="Disable Parallelism (for low memory)", value=config.UI_DEFAULTS["disable_parallel"], elem_id="disable_parallel_input")
                         self._create_config_presets_ui()
 
-            # --- BOTTOM ROW: CONTROLS AND LOGS ---
             with gr.Row():
                 self.components['start_button'] = gr.Button("Start Processing", variant="primary")
                 self.components['stop_button'] = gr.Button("Stop", variant="stop", interactive=False)
@@ -1471,7 +1470,6 @@ class AppUI:
 
 
     def _create_filtering_tab(self):
-        """Creates the secondary tab for interactive filtering and exporting results."""
         with gr.Tab("2. Filter & Export", interactive=False) as self.components['filtering_tab']:
             self.components['analysis_required_message'] = gr.Markdown("**Run a processing job in the 'Setup & Run' tab to enable filtering.**", visible=True)
             with gr.Row():
@@ -1490,12 +1488,10 @@ class AppUI:
                         self.components['export_button'] = gr.Button("Export Kept Frames", variant="primary")
                     self.components['results_gallery'] = gr.Gallery(label="Kept Frames Preview (Max 100)", columns=8, allow_preview=True)
             
-            # State components for holding data between interactions
             self.components['frame_metadata_path_state'] = gr.State("")
             self.components['analysis_path_state'] = gr.State("")
             
     def _create_pre_filtering_ui(self):
-        """Creates the UI components for the pre-filtering section."""
         with gr.Row():
             with gr.Column():
                 self.components['pre_filter_quality_enabled_input'] = gr.Checkbox(label="Quality Pre-Filter", elem_id="pre_filter_quality_enabled_input")
@@ -1503,17 +1499,23 @@ class AppUI:
                     self.components['pre_filter_mode_toggle'] = gr.Radio(list(config.FILTER_MODES.values()), value=config.UI_DEFAULTS["pre_filter_mode"], label="Mode", elem_id="pre_filter_mode_toggle")
                     self.components['pre_quality_thresh_input'] = gr.Slider(0, 100, config.UI_DEFAULTS["pre_quality_thresh"], label="Min Overall Quality", elem_id="pre_quality_thresh_input")
                     with gr.Accordion("Customize Quality Weights", open=False):
-                        self.components['weight_sliders'] = {k: gr.Slider(0, 100, v, step=1, label=k.capitalize(), elem_id=f"weight_{k}") for k, v in config.QUALITY_WEIGHTS.items()}
+                        # FIX: Create sliders in a fixed order based on config.QUALITY_METRICS
+                        self.components['weight_sliders'] = [gr.Slider(0, 100, config.QUALITY_WEIGHTS[k], step=1, label=k.capitalize(), elem_id=f"weight_{k}") for k in config.QUALITY_METRICS]
                     with gr.Group(visible=False) as self.components['pre_individual_metrics_group']:
-                        self.components['pre_metric_sliders'] = {k: gr.Slider(0, 100, step=0.5, label=f"Min {k.capitalize()}", elem_id=f"pre_{k}_thresh_input") for k in config.QUALITY_METRICS}
+                        self.components['pre_metric_sliders'] = [gr.Slider(0, 100, step=0.5, label=f"Min {k.capitalize()}", elem_id=f"pre_{k}_thresh_input") for k in config.QUALITY_METRICS]
             with gr.Column():
-                self.components['pre_filter_face_present_input'] = gr.Checkbox(label="Face Presence Pre-Filter", info="Requires insightface", elem_id="pre_filter_face_present_input")
+                is_face_gpu_ready = self.feature_status['face_analysis'] and self.feature_status['cuda_available']
+                self.components['pre_filter_face_present_input'] = gr.Checkbox(
+                    label="Face Presence Pre-Filter",
+                    info="Requires insightface and CUDA.",
+                    elem_id="pre_filter_face_present_input",
+                    interactive=is_face_gpu_ready
+                )
                 with gr.Group(visible=False) as self.components['pre_face_filter_group']:
                     self.components['min_face_confidence_input'] = gr.Slider(0.0, 1.0, config.UI_DEFAULTS["min_face_confidence"], step=0.01, label="Min Face Confidence", elem_id="min_face_confidence_input")
                     self.components['min_face_area_input'] = gr.Slider(0.1, 50.0, config.UI_DEFAULTS["min_face_area"], step=0.1, label="Min Face Area (%)", elem_id="min_face_area_input")
     
     def _create_config_presets_ui(self):
-        """Creates the UI for saving, loading, and deleting configuration presets."""
         with gr.Group():
             self.components['config_status'] = gr.Textbox(label="Status", interactive=False, lines=1)
             with gr.Row():
@@ -1525,8 +1527,6 @@ class AppUI:
                 self.components['save_button'] = gr.Button("Save")
 
     def _create_event_handlers(self):
-        """Wires up all the Gradio event handlers."""
-        # --- Visibility Toggles ---
         self.components['method_input'].change(lambda m: (gr.update(visible=m=='interval'), gr.update(visible=m=='scene')), self.components['method_input'], [self.components['interval_input'], self.components['fast_scene_input']])
         self.components['enable_face_filter_input'].change(lambda e: gr.update(visible=e), self.components['enable_face_filter_input'], self.components['face_options_group'])
         self.components['enable_subject_mask_input'].change(lambda e: gr.update(visible=e), self.components['enable_subject_mask_input'], self.components['masking_options_group'])
@@ -1544,27 +1544,20 @@ class AppUI:
             [self.components['overall_quality_group'], self.components['individual_metrics_group']]
         )
         
-        # --- Main Pipeline Handler ---
         self._setup_pipeline_handler()
-        
-        # --- Filtering Handlers ---
         self._setup_filtering_handlers()
-
-        # --- Config Handlers ---
         self._setup_config_handlers()
 
     def _get_all_param_components(self):
-        """Helper to get an ordered list of all parameter components for config handling."""
         components = []
         for elem_id in self.param_to_elem_id_map.values():
             if elem_id in self.components:
                 components.append(self.components[elem_id])
-        components.extend(self.components['weight_sliders'].values())
-        components.extend(self.components['pre_metric_sliders'].values())
+        components.extend(self.components['weight_sliders'])
+        components.extend(self.components['pre_metric_sliders'])
         return components
 
     def _setup_pipeline_handler(self):
-        """Sets up the handler for the main 'Start Processing' button."""
         inputs = self._get_all_param_components()
         inputs.insert(0, self.components['face_ref_img_upload_input'])
         inputs.insert(0, self.components['upload_video_input'])
@@ -1578,7 +1571,6 @@ class AppUI:
         self.components['stop_button'].click(lambda: self.cancel_event.set(), [], []).then(lambda: gr.update(interactive=False), None, self.components['stop_button'])
 
     def _setup_filtering_handlers(self):
-        """Sets up handlers for live filtering and exporting."""
         filter_inputs = [self.components['frame_metadata_path_state'], self.components['analysis_path_state'], 
                          self.components['quality_filter_slider'], self.components['face_filter_slider'], 
                          self.components['filter_mode_toggle']] + self.components['filter_metric_sliders']
@@ -1588,7 +1580,6 @@ class AppUI:
         self.components['export_button'].click(self.export_kept_frames, filter_inputs, self.components['filter_stats'])
     
     def _setup_config_handlers(self):
-        """Sets up handlers for config preset management."""
         all_param_controls = self._get_all_param_components()
         
         save_inputs = [self.components['config_name_input']] + all_param_controls
@@ -1600,7 +1591,6 @@ class AppUI:
         self.components['delete_button'].click(self.delete_config, self.components['config_dropdown'], [self.components['config_status'], self.components['config_dropdown']])
 
     def run_full_pipeline_wrapper(self, upload_video, face_ref_upload, *args):
-        """Wrapper to start the unified extraction and analysis pipeline."""
         yield {
             self.components['start_button']: gr.update(interactive=False), 
             self.components['stop_button']: gr.update(interactive=True), 
@@ -1609,6 +1599,7 @@ class AppUI:
         }
         self.cancel_event.clear()
 
+        # FIX: Rebuild parameter mapping robustly using config.QUALITY_METRICS order
         params_dict, arg_idx = {}, 0
         
         for key in self.param_to_elem_id_map.keys():
@@ -1624,6 +1615,7 @@ class AppUI:
         
         params = AnalysisParameters(**params_dict)
 
+        # --- Pre-flight checks ---
         if not params.source_path:
             yield {self.components['process_output_log']: "[ERROR] Video source is required.", self.components['start_button']: gr.update(interactive=True), self.components['stop_button']: gr.update(interactive=False)}
             return
@@ -1633,11 +1625,15 @@ class AppUI:
             yield {self.components['process_output_log']: f"[ERROR] Local file path not found: {params.source_path}", self.components['start_button']: gr.update(interactive=True), self.components['stop_button']: gr.update(interactive=False)}
             return
 
-        ref_image_required = params.enable_face_filter
-        if ref_image_required and (not params.face_ref_img_path or not Path(params.face_ref_img_path).is_file()):
-            yield {self.components['process_output_log']: f"[ERROR] Reference face image is required for the selected options, but the path is invalid or not found: {params.face_ref_img_path}", self.components['start_button']: gr.update(interactive=True), self.components['stop_button']: gr.update(interactive=False)}
+        if params.enable_face_filter and (not params.face_ref_img_path or not Path(params.face_ref_img_path).is_file()):
+            yield {self.components['process_output_log']: f"[ERROR] Reference face image is required, but the path is invalid: {params.face_ref_img_path}", self.components['start_button']: gr.update(interactive=True), self.components['stop_button']: gr.update(interactive=False)}
             return
-        
+            
+        if params.scene_detect and not self.feature_status['scene_detection']:
+            yield {self.components['process_output_log']: f"[ERROR] Scene detection was enabled for masking, but PySceneDetect is not installed.", self.components['start_button']: gr.update(interactive=True), self.components['stop_button']: gr.update(interactive=False)}
+            return
+
+        # --- Pipeline Execution ---
         progress_queue = Queue()
         extraction_pipeline = ExtractionPipeline(params, progress_queue, self.cancel_event)
         yield from self._run_task(extraction_pipeline.run, self.components['process_output_log'], status_box=self.components['process_status'])
@@ -1657,7 +1653,9 @@ class AppUI:
         analysis_result = self.last_task_result
         if analysis_result.get("done") and not self.cancel_event.is_set():
             metadata_path = analysis_result["metadata_path"]
-            gallery, stats = self.apply_gallery_filters(metadata_path, output_dir, config.UI_DEFAULTS['quality_thresh'], 0.5, config.FILTER_MODES['OVERALL'], *([0]*5))
+            # FIX: Replace magic number '5' with dynamic length of quality metrics
+            num_metrics = len(config.QUALITY_METRICS)
+            gallery, stats = self.apply_gallery_filters(metadata_path, output_dir, config.UI_DEFAULTS['quality_thresh'], 0.5, config.FILTER_MODES['OVERALL'], *([0]*num_metrics))
             yield {
                 self.components['filtering_tab']: gr.update(interactive=True), 
                 self.components['analysis_required_message']: gr.update(visible=False),
@@ -1671,7 +1669,6 @@ class AppUI:
 
 
     def _run_task(self, task_func, log_box, status_box=None):
-        """A generic generator to run a backend task and stream progress to the UI."""
         progress_queue = task_func.__self__.progress_queue
         log_buffer, processed_count, total_frames = [], 0, 1
         start_ts, last_yield_ts, last_stats, current_stage = time.time(), 0.0, {}, "Initializing"
@@ -1741,7 +1738,8 @@ class AppUI:
             kept_frames, total_kept, _, total_frames = AppUI._load_and_filter_metadata(metadata_path, quality_thresh, face_thresh, filter_mode, ind_thresh)
             
             copied_count = 0
-            for frame in kept_frames:
+            # FIX: Ensure deterministic export order by sorting
+            for frame in sorted(kept_frames, key=lambda x: x['filename']):
                 src = Path(output_dir) / frame['filename']
                 if src.exists():
                     shutil.copy2(src, export_dir)
@@ -1767,7 +1765,12 @@ class AppUI:
                 return [], 0, reasons, 0
             for line in f:
                 total += 1
-                data = json.loads(line)
+                try:
+                    data = json.loads(line)
+                except json.JSONDecodeError:
+                    reasons['error'] += 1
+                    continue
+                    
                 fail_reason = None
 
                 if "processing_failed" in data.get("error", ""):
@@ -1805,11 +1808,14 @@ class AppUI:
                 settings[param] = values[value_idx]
                 value_idx += 1
         
-        for key, slider in self.components['weight_sliders'].items():
+        # FIX: Save slider values based on the ordered list
+        for i, k in enumerate(config.QUALITY_METRICS):
+            slider = self.components['weight_sliders'][i]
             settings[slider.elem_id] = values[value_idx]
             value_idx += 1
             
-        for key, slider in self.components['pre_metric_sliders'].items():
+        for i, k in enumerate(config.QUALITY_METRICS):
+            slider = self.components['pre_metric_sliders'][i]
             settings[slider.elem_id] = values[value_idx]
             value_idx += 1
             
@@ -1824,10 +1830,9 @@ class AppUI:
         
         updates = {comp: gr.update() for comp in output_components}
         
-        if not name: 
-            updates[self.components['config_status']] = gr.update(value="Error: No config selected.")
-        elif not (config_path := config.CONFIGS_DIR / f"{name}.json").exists(): 
-            updates[self.components['config_status']] = gr.update(value=f"Error: Config '{name}' not found.")
+        if not name or not (config_path := config.CONFIGS_DIR / f"{name}.json").exists():
+            status = "Error: No config selected." if not name else f"Error: Config '{name}' not found."
+            updates[self.components['config_status']] = gr.update(value=status)
         else:
             with config_path.open('r') as f:
                 settings = json.load(f)
@@ -1836,18 +1841,13 @@ class AppUI:
                 if param in settings and elem_id in self.components: 
                     updates[self.components[elem_id]] = gr.update(value=settings[param])
             
-            for key, slider in self.components['weight_sliders'].items():
-                if slider.elem_id in settings:
-                    updates[slider] = gr.update(value=settings[slider.elem_id])
-            
-            for key, slider in self.components['pre_metric_sliders'].items():
+            for slider in self.components['weight_sliders'] + self.components['pre_metric_sliders']:
                 if slider.elem_id in settings:
                     updates[slider] = gr.update(value=settings[slider.elem_id])
 
             updates[self.components['config_status']] = gr.update(value=f"Loaded config '{name}'.")
 
-        return [updates[comp] for comp in output_components]
-
+        return [updates.get(comp) for comp in output_components]
 
     def delete_config(self, name):
         if not name: return "Error: No config selected.", gr.update()
@@ -1855,9 +1855,10 @@ class AppUI:
         return f"Config '{name}' deleted.", gr.update(choices=[f.stem for f in config.CONFIGS_DIR.glob("*.json")], value=None)
 
 if __name__ == "__main__":
-    # FIX: Add a startup check to enforce GPU-only execution
-    if torch is not None and not torch.cuda.is_available():
-        raise RuntimeError("This application requires a CUDA-enabled GPU but CUDA is not available.")
+    # FIX: Change hard fail to a warning for CPU-only mode.
+    if torch is None or not torch.cuda.is_available():
+        print("WARNING: PyTorch or CUDA is not available. Running in CPU-only mode. "
+              "GPU-dependent features (Face Analysis, Subject Masking) will be disabled.")
     
     check_dependencies()
     app_ui = AppUI()
