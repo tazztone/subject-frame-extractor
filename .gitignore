@@ -324,3 +324,5 @@ models/models/buffalo_l/2d106det.onnx
 models/models/buffalo_l/det_10g.onnx
 models/models/buffalo_l/genderage.onnx
 models/models/buffalo_l/w600k_r50.onnx
+models/yolov13l.pt
+metadata.jsonl

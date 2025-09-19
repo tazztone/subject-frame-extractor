@@ -117,8 +117,8 @@ try:
 
         if not config_path.is_file():
             raise FileNotFoundError(
-                f"Model config file not found: '{config_filename}'. "
-                f"Please ensure it exists in the '{config_base.resolve()}' directory (or subdirectories like 'DAM4SAM/sam2/')."
+                f"Model config file not found: '{config_path}'. This file is required for DAM4SAM. "
+                f"Please ensure it exists relative to the application directory (e.g., in 'DAM4SAM/sam2/')."
             )
 
         return str(checkpoint_path), str(config_path)
@@ -376,7 +376,7 @@ except ImportError:
 # --- Central Configuration & Setup ---
 def get_feature_status():
     """Checks for optional dependencies and returns their status."""
-    masking_libs_installed = torch is not None and DAM4SAMTracker is not None and Image is not None
+    masking_libs_installed = all([torch, DAM4SAMTracker, Image, yaml])
     cuda_available = torch is not None and torch.cuda.is_available()
     return {
         'face_analysis': FaceAnalysis is not None,
@@ -447,17 +447,15 @@ def get_person_detector_model_path(model_filename="yolov13l.pt"):
     base_path = Path(__file__).parent / "models"
     base_path.mkdir(exist_ok=True)
     model_path = base_path / model_filename
+    model_url = f"https://huggingface.co/atalaydenknalbant/Yolov13/resolve/main/{model_filename}"
 
     if not model_path.is_file():
         logger.warning(f"Person detector model not found: '{model_filename}'. Attempting to download...")
         try:
             import urllib.request
-            model_url = f"https://huggingface.co/atalaydenknalbant/Yolov13/resolve/main/{model_filename}"
             logger.info(f"Downloading person detector model from {model_url} to {model_path}")
-            
             urllib.request.urlretrieve(model_url, model_path)
             logger.info("Person detector model downloaded successfully.")
-
         except Exception as e:
             error_msg = (
                 f"Failed to download person detector model: '{model_filename}'. "
@@ -641,16 +639,16 @@ class SubjectMasker:
         self.tracker = None
 
     def _initialize_dam4sam_tracker(self):
-        """Initializes the DAM4SAM tracker for a single shot."""
+        """Initializes the DAM4SAM tracker, failing softly by returning False."""
         if not DAM4SAMTracker:
             msg = "[ERROR] DAM4SAM dependencies (torch, sam2, vot etc.) are not installed."
             self.progress_queue.put({"log": msg})
-            raise ImportError(msg)
+            return False
 
         if not torch.cuda.is_available():
             msg = "[ERROR] DAM4SAM masking requires a CUDA-enabled GPU, but CUDA is not available."
             self.progress_queue.put({"log": msg})
-            raise RuntimeError(msg)
+            return False
 
         try:
             model_name = self.params.dam4sam_model_name
@@ -659,7 +657,7 @@ class SubjectMasker:
             self.progress_queue.put({"log": "[SUCCESS] DAM4SAM tracker initialized."})
             return True
         except Exception as e:
-            error_msg = f"Failed to initialize DAM4SAM tracker with model '{model_name}': {e}"
+            error_msg = f"Failed to initialize DAM4SAM tracker with model '{self.params.dam4sam_model_name}': {e}"
             logger.error(error_msg, exc_info=True)
             self.progress_queue.put({"log": f"[ERROR] {error_msg}"})
             self.tracker = None
@@ -690,13 +688,14 @@ class SubjectMasker:
 
                 if not self._initialize_dam4sam_tracker():
                     self.progress_queue.put({"log": f"[ERROR] Could not initialize tracker for shot {shot_id+1}. Skipping."})
-                    self.progress_queue.put({"progress": end_frame - start_frame})
+                    # Advance progress bar for skipped frames to avoid stalling
+                    frames_in_shot = len([fn for fn in (self.frame_map or {}).keys() if start_frame <= fn < end_frame])
+                    self.progress_queue.put({"progress": frames_in_shot})
                     continue
                 
                 shot_frames_with_nums = self._load_shot_frames(frames_dir, start_frame, end_frame)
                 if not shot_frames_with_nums:
                     self.progress_queue.put({"log": f"[INFO] No extracted frames found for shot {shot_id+1}. Skipping."})
-                    self.progress_queue.put({"progress": end_frame - start_frame})
                     continue
 
                 shot_frames_data = [f[1] for f in shot_frames_with_nums]
@@ -708,14 +707,14 @@ class SubjectMasker:
                         frame_filename = self.frame_map.get(original_frame_num)
                         if frame_filename:
                             mask_metadata[frame_filename] = asdict(MaskingResult(error="Subject not found in shot", shot_id=shot_id))
-                    self.progress_queue.put({"progress": end_frame - start_frame})
+                    self.progress_queue.put({"progress": len(shot_frames_with_nums)})
                     continue
 
                 masks, mask_area_pcts, mask_empty_flags, mask_errors = self._propagate_masks_dam4sam(shot_frames_data, seed_frame_local_idx, bbox_xywh)
 
                 if len(masks) != len(shot_frames_with_nums):
                     self.progress_queue.put({"log": f"[ERROR] Mask propagation returned {len(masks)} masks for {len(shot_frames_with_nums)} frames in shot {shot_id+1}. This indicates an internal error."})
-                    self.progress_queue.put({"progress": end_frame - start_frame})
+                    self.progress_queue.put({"progress": len(shot_frames_with_nums)})
                     continue
 
                 for i, mask in enumerate(masks):
@@ -755,11 +754,14 @@ class SubjectMasker:
                         )
                     mask_metadata[frame_path.name] = asdict(result)
 
-                newly_processed = end_frame - start_frame
-                self.progress_queue.put({"progress": newly_processed})
+                self.progress_queue.put({"progress": len(shot_frames_with_nums)})
 
             self.progress_queue.put({"log": "[SUCCESS] Subject masking complete."})
             return mask_metadata
+        except Exception as e:
+            logger.error("Critical error in SubjectMasker run method", exc_info=True)
+            self.progress_queue.put({"log": f"[CRITICAL] SubjectMasker failed: {e}"})
+            return {}
         finally:
             if hasattr(self, 'tracker') and self.tracker is not None:
                 del self.tracker
@@ -788,8 +790,13 @@ class SubjectMasker:
 
             self.progress_queue.put({"log": f"[INFO] Found {len(self.shots)} shots."})
         except Exception as e:
-            logger.error(f"Scene detection failed: {e}")
+            logger.error(f"Scene detection failed: {e}", exc_info=True)
             self.progress_queue.put({"log": f"[ERROR] Scene detection failed: {e}"})
+            # Fallback to single shot to prevent crashing
+            image_files = list(Path(frames_dir).glob("frame_*.*"))
+            self.shots = [(0, len(image_files))]
+            self.progress_queue.put({"log": f"[WARNING] Falling back to a single shot for masking."})
+
 
     def _load_shot_frames(self, frames_dir, start, end):
         frames = []
@@ -1104,6 +1111,7 @@ class ExtractionPipeline:
             return {"done": True, "output_dir": str(self.output_dir), "video_path": str(self.video_path)}
         except Exception as e:
             logger.exception("Error in extraction pipeline.")
+            self.progress_queue.put({"log": f"[ERROR] Extraction failed: {e}"})
             return {"error": str(e)}
 
     def _monitor_ffmpeg_progress(self, process):
@@ -1216,7 +1224,8 @@ class AnalysisPipeline:
         self.stats = AnalysisStats()
         self.last_stats_ts = 0.0
         self.mask_metadata = {}
-        self.is_cpu_only = not get_feature_status()['cuda_available']
+        self.features = get_feature_status()
+        self.is_cpu_only = not self.features['cuda_available']
 
     def run(self):
         try:
@@ -1236,36 +1245,43 @@ class AnalysisPipeline:
                 header = {"config_hash": config_hash, "params": {k:v for k,v in asdict(self.params).items() if k not in ['source_path', 'output_folder', 'video_path']}}
                 f.write(json.dumps(header) + '\n')
 
-            if self.params.enable_face_filter or self.params.enable_subject_mask:
+            if self.params.enable_face_filter or (self.params.enable_subject_mask and self.features['masking']):
                 self._initialize_face_analyzer()
             
             if self.params.enable_face_filter:
                 self._process_reference_face()
             
             person_detector = None
-            if self.params.enable_subject_mask and not self.is_cpu_only:
-                try:
-                    person_detector = PersonDetector(model="yolov13l.pt", imgsz=640, conf=0.3)
-                    self.progress_queue.put({"log": "[INFO] Person detector (YOLO) initialized."})
-                except Exception as e:
-                    self.progress_queue.put({"log": f"[WARNING] Person detector unavailable: {e}. Falling back to heuristic box expansion."})
+            if self.params.enable_subject_mask and self.features['masking']:
+                if self.features['person_detection']:
+                    try:
+                        person_detector = PersonDetector(model="yolov13l.pt", imgsz=640, conf=0.3)
+                        self.progress_queue.put({"log": "[INFO] Person detector (YOLO) initialized."})
+                    except Exception as e:
+                        self.progress_queue.put({"log": f"[WARNING] Person detector unavailable: {e}. Falling back to heuristic box expansion."})
+                else:
+                    self.progress_queue.put({"log": "[INFO] Person detector library not installed. Falling back to heuristic box expansion."})
 
+            # --- Subject Masking Guard ---
             if self.params.enable_subject_mask:
-                if self.is_cpu_only:
-                    self.progress_queue.put({"log": "[WARNING] Subject masking is disabled in CPU-only mode."})
-                elif not self.params.video_path or not Path(self.params.video_path).exists():
-                     self.progress_queue.put({"log": "[WARNING] A valid video file path is required for subject masking with scene detection but was not provided. Masking will run on all frames as a single shot."})
-                
-                frame_map = self._create_frame_map()
-                masker = SubjectMasker(
-                    self.params, self.progress_queue, self.cancel_event, 
-                    frame_map, face_analyzer=self.face_analyzer, 
-                    reference_embedding=self.reference_embedding,
-                    person_detector=person_detector
-                )
-                video_path_for_masking = self.params.video_path if Path(self.params.video_path).exists() else ""
-                self.mask_metadata = masker.run(video_path_for_masking, str(self.output_dir))
+                if not self.features['masking']:
+                    self.progress_queue.put({"log": "[WARNING] Subject masking unavailable; skipping (missing dependencies or no CUDA)."})
+                else:
+                    is_video_path_valid = self.params.video_path and Path(self.params.video_path).exists()
+                    if self.params.scene_detect and not is_video_path_valid:
+                        self.progress_queue.put({"log": "[WARNING] Valid video path not provided; scene detection for masking is disabled. Masking will run as a single shot over all frames."})
 
+                    frame_map = self._create_frame_map()
+                    masker = SubjectMasker(
+                        self.params, self.progress_queue, self.cancel_event, 
+                        frame_map, face_analyzer=self.face_analyzer, 
+                        reference_embedding=self.reference_embedding,
+                        person_detector=person_detector
+                    )
+                    video_path_for_masking = self.params.video_path if is_video_path_valid else ""
+                    self.mask_metadata = masker.run(video_path_for_masking, str(self.output_dir))
+            else:
+                 self.progress_queue.put({"log": "[INFO] Subject masking disabled."})
 
             config.QUALITY_WEIGHTS = self.params.quality_weights
             self._run_frame_processing()
@@ -1278,6 +1294,7 @@ class AnalysisPipeline:
             return {"done": True, "metadata_path": str(self.metadata_path), "output_dir": str(self.output_dir)}
         except Exception as e:
             logger.exception("Error in analysis pipeline.")
+            self.progress_queue.put({"log": f"[ERROR] Analysis failed: {e}"})
             return {"error": str(e)}
             
     def _create_frame_map(self):
@@ -1285,27 +1302,33 @@ class AnalysisPipeline:
         frame_map_path = self.output_dir / "frame_map.json"
         frame_map = {}
 
+        # Default to filename-based mapping if no map exists
+        image_files = sorted(list(self.output_dir.glob("frame_*.png")) + list(self.output_dir.glob("frame_*.jpg")))
+        
         if not frame_map_path.exists():
             self.progress_queue.put({"log": "[WARNING] frame_map.json not found. Creating map from filenames. This may be inaccurate if 'all' frames weren't extracted."})
-            image_files = sorted(list(self.output_dir.glob("frame_*.png")) + list(self.output_dir.glob("frame_*.jpg")))
             for i, f in enumerate(image_files):
-                frame_map[i] = f.name
+                frame_map[i] = f.name # Simple 1:1 map for 'all' mode
             return frame_map
         
         try:
             with open(frame_map_path, 'r') as f:
+                # This is a list of original frame numbers from the video
                 frame_map_list = json.load(f)
         except json.JSONDecodeError as e:
             self.progress_queue.put({"log": f"[ERROR] Failed to parse frame_map.json: {e}. Reverting to filename-based mapping."})
-            image_files = sorted(list(self.output_dir.glob("frame_*.png")) + list(self.output_dir.glob("frame_*.jpg")))
             for i, f in enumerate(image_files):
                 frame_map[i] = f.name
             return frame_map
 
-        ext = 'png' if self.params.use_png else 'jpg'
+        # The extracted frames are numbered sequentially from 1.
+        # We map the original video frame number (from frame_map_list)
+        # to the sequentially numbered filename.
         for i, original_frame_num in enumerate(frame_map_list):
-            filename = f"frame_{i+1:06d}.{ext}"
-            frame_map[original_frame_num] = filename
+            # Check if the expected file exists before adding to map
+            filename = image_files[i].name if i < len(image_files) else None
+            if filename:
+                frame_map[original_frame_num] = filename
             
         self.progress_queue.put({"log": "[SUCCESS] Frame map loaded."})
         return frame_map
@@ -1336,6 +1359,7 @@ class AnalysisPipeline:
         
         if self.is_cpu_only:
             self.progress_queue.put({"log": "[WARNING] Face analysis is disabled in CPU-only mode."})
+            self.face_analyzer = None
             return
 
         self.progress_queue.put({"log": f"[INFO] Loading face model: {self.params.face_model_name}"})
@@ -1349,6 +1373,7 @@ class AnalysisPipeline:
             self.progress_queue.put({"log": "[SUCCESS] Face model loaded."})
         except Exception as e:
             logger.error(f"Failed to initialize FaceAnalysis: {e}", exc_info=True)
+            self.face_analyzer = None
             raise RuntimeError(f"Could not initialize face analysis model. Check if models are downloaded to '{config.MODELS_DIR.resolve()}' and CUDA is correctly configured. Error: {e}")
 
     def _process_reference_face(self):
@@ -1515,8 +1540,8 @@ class AppUI:
                         is_face_gpu_ready = self.feature_status['face_analysis'] and self.feature_status['cuda_available']
                         face_info = "Available" if is_face_gpu_ready else ("'insightface' not installed" if not self.feature_status['face_analysis'] else "CUDA not available")
                         
-                        self.components['enable_face_filter_input'] = gr.Checkbox(label="Enable Face Similarity", info=f"Compares faces to a reference image. Status: {face_info}", interactive=is_face_gpu_ready)
-                        with gr.Group(visible=False) as self.components['face_options_group']:
+                        self.components['enable_face_filter_input'] = gr.Checkbox(label="Enable Face Similarity", value=is_face_gpu_ready, info=f"Compares faces to a reference image. Status: {face_info}", interactive=is_face_gpu_ready)
+                        with gr.Group(visible=is_face_gpu_ready) as self.components['face_options_group']:
                             self.components['face_model_name_input'] = gr.Dropdown(["buffalo_l", "buffalo_s", "buffalo_m", "antelopev2"], value=config.UI_DEFAULTS["face_model_name"], label="Model")
                             self.components['face_ref_img_path_input'] = gr.Textbox(label="Reference Image Path")
                             self.components['face_ref_img_upload_input'] = gr.File(label="Or Upload Reference", file_types=["image"], type="filepath")
@@ -1524,11 +1549,15 @@ class AppUI:
                     with gr.Accordion("Subject Masking", open=False):
                         masking_status = "Available" if self.feature_status['masking'] else ("Dependencies missing" if not self.feature_status['masking_libs_installed'] else "CUDA not available")
                         person_det_status = "Available" if self.feature_status['person_detection'] else "'ultralytics' not installed"
-
-                        self.components['enable_subject_mask_input'] = gr.Checkbox(label="Enable Subject-Only Metrics", info=f"Masking Status: {masking_status} | Person Detector: {person_det_status}", interactive=self.feature_status['masking'])
-                        with gr.Group(visible=False) as self.components['masking_options_group']:
+                        
+                        default_mask_enable = self.feature_status['masking']
+                        self.components['enable_subject_mask_input'] = gr.Checkbox(label="Enable Subject-Only Metrics", value=default_mask_enable, info=f"Masking Status: {masking_status} | Person Detector: {person_det_status}", interactive=self.feature_status['masking'])
+                        
+                        with gr.Group(visible=default_mask_enable) as self.components['masking_options_group']:
                             self.components['dam4sam_model_name_input'] = gr.Dropdown(['sam2.1'], value=config.UI_DEFAULTS["dam4sam_model_name"], label="DAM4SAM Model")
-                            self.components['scene_detect_input'] = gr.Checkbox(label="Use Scene Detection for Masking", value=config.UI_DEFAULTS["scene_detect"], interactive=self.feature_status['scene_detection'], info="Status: " + ("Available" if self.feature_status['scene_detection'] else "'scenedetect' not installed"))
+                            
+                            default_scene_detect = self.feature_status['scene_detection']
+                            self.components['scene_detect_input'] = gr.Checkbox(label="Use Scene Detection for Masking", value=default_scene_detect, interactive=self.feature_status['scene_detection'], info="Status: " + ("Available" if self.feature_status['scene_detection'] else "'scenedetect' not installed"))
 
                     with gr.Accordion("Advanced & Config", open=False):
                         self.components['resume_input'] = gr.Checkbox(label="Resume/Use Cache", value=config.UI_DEFAULTS["resume"])
@@ -1727,11 +1756,16 @@ class AppUI:
         if enable_face and (not face_ref or not Path(face_ref).is_file()):
              yield {self.components['analysis_log']: f"[ERROR] Reference face image is required, but the path is invalid: {face_ref}", self.components['start_analysis_button']: gr.update(interactive=True), self.components['stop_analysis_button']: gr.update(interactive=False)}
              return
-        
+
+        features = get_feature_status()
+        is_video_path_valid = bool(video_path) and Path(video_path).exists()
+        # Coerce scene_detect to False if its dependencies are missing or video path is invalid
+        safe_scene_detect = scene_detect and features['scene_detection'] and is_video_path_valid
+
         params = AnalysisParameters(
             output_folder=frames_folder, video_path=video_path, disable_parallel=disable_parallel, resume=resume,
             enable_face_filter=enable_face, face_ref_img_path=face_ref, face_model_name=face_model,
-            enable_subject_mask=enable_mask, dam4sam_model_name=dam4sam_model, scene_detect=scene_detect,
+            enable_subject_mask=enable_mask, dam4sam_model_name=dam4sam_model, scene_detect=safe_scene_detect,
             quality_weights={k: weights[i] for i, k in enumerate(config.QUALITY_METRICS)}
         )
 
@@ -1978,7 +2012,7 @@ class AppUI:
         with (config.CONFIGS_DIR / f"{name}.json").open('w') as f:
             json.dump(settings, f, indent=2)
             
-        return f"Config '{name}' saved.", gr.update(choices=[f.stem for f in config.CONFIGS_DIR.glob("*.json")])
+        return f"Config '{name}' saved.", gr.update(choices=[f.stem for f in config.CONFIGS_dir.glob("*.json")])
 
     def load_config(self, name):
         ordered_comp_ids = [

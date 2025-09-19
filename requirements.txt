@@ -9,3 +9,4 @@ PyYAML==6.0.2
 scenedetect
 vot-toolkit==0.7.1
 yt-dlp
+ultralytics
