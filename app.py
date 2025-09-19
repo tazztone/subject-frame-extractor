@@ -79,7 +79,8 @@ try:
         }
         model_configs = {
             "sam2.1": "DAM4SAM/sam2/sam21pp_hiera_l.yaml",
-            "default": "sam2_hiera_video.yaml"
+            "sam21pp-L": "DAM4SAM/sam2/sam21pp_hiera_l.yaml",
+            "default": "DAM4SAM/sam2/sam21pp_hiera_l.yaml"
         }
         
         checkpoint_filename = checkpoints.get(tracker_name, "sam2.1_hiera_large.pt")
@@ -112,7 +113,7 @@ try:
         if not config_path.is_file():
             raise FileNotFoundError(
                 f"Model config file not found: '{config_filename}'. "
-                f"Please ensure it exists in the '{base_path.resolve()}' directory."
+                f"Please ensure it exists in the '{config_base.resolve()}' directory (or subdirectories like 'DAM4SAM/sam2/')."
             )
 
         return str(checkpoint_path), str(config_path)
@@ -398,11 +399,11 @@ class Config:
     QUALITY_DOWNSCALE_FACTOR = 0.25
     UI_DEFAULTS = {
         "method": "all", "interval": 5.0, "max_resolution": "maximum available",
-        "fast_scene": False, "resume": True, "use_png": True, "disable_parallel": False,
-        "enable_face_filter": False, "face_model_name": "buffalo_l",
+        "fast_scene": False, "resume": False, "use_png": True, "disable_parallel": False,
+        "enable_face_filter": True, "face_model_name": "buffalo_l",
         "quality_thresh": 12.0, "face_thresh": 0.5, "sharpness_thresh": 0.0,
         "edge_strength_thresh": 0.0, "contrast_thresh": 0.0, "brightness_thresh": 0.0, "entropy_thresh": 0.0,
-        "enable_subject_mask": False, "scene_detect": True,
+        "enable_subject_mask": True, "scene_detect": True,
         "dam4sam_model_name": "sam2.1",
     }
 
@@ -1262,9 +1263,15 @@ class AnalysisPipeline:
             if self.params.enable_face_filter and self.reference_embedding is not None and self.face_analyzer:
                 self._analyze_face_similarity(frame)
             
-            meta = {"filename": image_path.name, "face_sim": frame.face_similarity_score, "face_conf": frame.max_face_confidence,
-                    "metrics": asdict(frame.metrics) if frame.metrics else {}, "error": frame.error}
+            meta = {
+                "filename": image_path.name,
+                "face_sim": frame.face_similarity_score,
+                "face_conf": frame.max_face_confidence,
+                "metrics": asdict(frame.metrics) if frame.metrics else {}
+            }
             meta.update(mask_meta)
+            if frame.error:
+                meta["error"] = frame.error
             
             with self.write_lock, self.metadata_path.open('a') as f:
                 f.write(json.dumps(meta) + '\n')
@@ -1285,6 +1292,7 @@ class AnalysisPipeline:
                 best_face = max(faces, key=lambda x: x.det_score)
                 distance = 1 - np.dot(best_face.normed_embedding, self.reference_embedding)
                 frame.face_similarity_score = 1.0 - float(distance)
+                frame.max_face_confidence = float(best_face.det_score)
         except Exception as e:
             frame.error = f"Face similarity failed: {e}"
             logger.warning(f"Frame {frame.frame_number}: {frame.error}")
@@ -1711,7 +1719,7 @@ class AppUI:
                 fail_reason = None
                 metrics = data.get("metrics", {})
 
-                if "processing_failed" in data.get("error", ""):
+                if "processing_failed" in str(data.get("error", "")):
                     reasons['error'] += 1
                     continue
                 
