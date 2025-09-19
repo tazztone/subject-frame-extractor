@@ -18,6 +18,12 @@ from dataclasses import dataclass, asdict, field
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
 
+# --- Logger Setup (Fix a) ---
+# Basic logger setup moved here to be available globally.
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+
 # --- Optional Dependency Imports ---
 # These are guarded to allow the app to function without all features installed.
 try:
@@ -115,11 +121,21 @@ try:
                 logger.error(error_msg)
                 raise FileNotFoundError(error_msg) from e
 
+        # --- Fix d: DAM4SAM Initialization Fails Silently on Missing Config ---
         if not config_path.is_file():
-            raise FileNotFoundError(
-                f"Model config file not found: '{config_path}'. This file is required for DAM4SAM. "
-                f"Please ensure it exists relative to the application directory (e.g., in 'DAM4SAM/sam2/')."
-            )
+            logger.warning(f"Model config file not found: '{config_filename}'. Attempting to download...")
+            try:
+                import urllib.request
+                # Assuming the config is from the official repo, adjust URL if needed
+                config_url = f"https://raw.githubusercontent.com/facebookresearch/segment-anything-2/main/sam2/configs/sam2.1_hiera_l.yaml"
+                logger.info(f"Downloading config from {config_url} to {config_path}")
+                config_path.parent.mkdir(parents=True, exist_ok=True)
+                urllib.request.urlretrieve(config_url, config_path)
+                logger.info("Config downloaded successfully.")
+            except Exception as e:
+                error_msg = f"Failed to download config: '{config_filename}'. Please manually download from the SAM2 repo and place in '{config_path.parent.resolve()}'. Error: {e}"
+                logger.error(error_msg)
+                raise FileNotFoundError(error_msg) from e
 
         return str(checkpoint_path), str(config_path)
 
@@ -422,14 +438,14 @@ class Config:
 
 # --- Global Instance & Setup ---
 config = Config()
+# Directory setup is now the first action
 config.setup_directories()
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[logging.FileHandler(config.LOG_DIR / config.LOG_FILE)],
-)
-logger = logging.getLogger(__name__)
+# --- Fix a: Logger Not Defined Before Use (Part 2) ---
+# Add file handler after directories are confirmed to exist.
+file_handler = logging.FileHandler(config.LOG_DIR / config.LOG_FILE)
+file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+logger.addHandler(file_handler)
 
 # --- Utility & Helper Functions ---
 def check_dependencies():
@@ -610,9 +626,9 @@ class AnalysisParameters:
     enable_subject_mask: bool = field(default=config.UI_DEFAULTS["enable_subject_mask"])
     dam4sam_model_name: str = field(default=config.UI_DEFAULTS["dam4sam_model_name"])
     scene_detect: bool = field(default=config.UI_DEFAULTS["scene_detect"])
-    # Filtering
-    quality_weights: dict = None
-    thresholds: dict = None
+    # --- Fix f: Quality Weights Not Persisted Correctly ---
+    quality_weights: dict = field(default_factory=lambda: {k: config.QUALITY_WEIGHTS[k] for k in config.QUALITY_METRICS})
+    thresholds: dict = field(default_factory=lambda: {k: config.UI_DEFAULTS[f"{k}_thresh"] for k in config.QUALITY_METRICS})
 
 # --- Subject Masking Logic ---
 @dataclass
@@ -1297,40 +1313,39 @@ class AnalysisPipeline:
             self.progress_queue.put({"log": f"[ERROR] Analysis failed: {e}"})
             return {"error": str(e)}
             
+    # --- Fix c: Incomplete Frame Map Handling in AnalysisPipeline ---
     def _create_frame_map(self):
         self.progress_queue.put({"log": "[INFO] Loading frame map..."})
         frame_map_path = self.output_dir / "frame_map.json"
-        frame_map = {}
+        frame_map = {}  # original_frame_num -> filename
 
-        # Default to filename-based mapping if no map exists
-        image_files = sorted(list(self.output_dir.glob("frame_*.png")) + list(self.output_dir.glob("frame_*.jpg")))
-        
+        image_files = sorted(list(self.output_dir.glob("frame_*.png")) + list(self.output_dir.glob("frame_*.jpg")), 
+                             key=lambda p: int(re.search(r'frame_(\d+)', p.name).group(1)) if re.search(r'frame_(\d+)', p.name) else 0)
+
         if not frame_map_path.exists():
-            self.progress_queue.put({"log": "[WARNING] frame_map.json not found. Creating map from filenames. This may be inaccurate if 'all' frames weren't extracted."})
+            self.progress_queue.put({"log": "[WARNING] frame_map.json not found. Assuming sequential mapping from filenames."})
             for i, f in enumerate(image_files):
-                frame_map[i] = f.name # Simple 1:1 map for 'all' mode
+                # Extract frame num from filename (e.g., frame_000123.png -> 123)
+                match = re.search(r'frame_(\d+)', f.name)
+                if match:
+                    frame_map[int(match.group(1))] = f.name
             return frame_map
         
         try:
             with open(frame_map_path, 'r') as f:
-                # This is a list of original frame numbers from the video
-                frame_map_list = json.load(f)
-        except json.JSONDecodeError as e:
-            self.progress_queue.put({"log": f"[ERROR] Failed to parse frame_map.json: {e}. Reverting to filename-based mapping."})
-            for i, f in enumerate(image_files):
-                frame_map[i] = f.name
-            return frame_map
-
-        # The extracted frames are numbered sequentially from 1.
-        # We map the original video frame number (from frame_map_list)
-        # to the sequentially numbered filename.
-        for i, original_frame_num in enumerate(frame_map_list):
-            # Check if the expected file exists before adding to map
-            filename = image_files[i].name if i < len(image_files) else None
-            if filename:
-                frame_map[original_frame_num] = filename
-            
-        self.progress_queue.put({"log": "[SUCCESS] Frame map loaded."})
+                frame_map_list = json.load(f)  # List of original frame nums
+            # Map original frame num to sequential filename index
+            for i, orig_num in enumerate(sorted(frame_map_list)):  # Sort to ensure order
+                if i < len(image_files):
+                    frame_map[orig_num] = image_files[i].name
+        except (json.JSONDecodeError, ValueError) as e:
+            self.progress_queue.put({"log": f"[ERROR] Failed to parse frame_map.json: {e}. Using filename-based mapping."})
+            for f in image_files:
+                match = re.search(r'frame_(\d+)', f.name)
+                if match:
+                    frame_map[int(match.group(1))] = f.name
+        
+        self.progress_queue.put({"log": f"[SUCCESS] Frame map loaded with {len(frame_map)} entries."})
         return frame_map
 
     def _get_config_hash(self):
@@ -1398,7 +1413,8 @@ class AnalysisPipeline:
         image_files = sorted(list(self.output_dir.glob("frame_*.png")) + list(self.output_dir.glob("frame_*.jpg")))
         self.progress_queue.put({"total": len(image_files), "stage": "Analysis"})
 
-        num_workers = 1 if self.params.disable_parallel else (os.cpu_count() or 4)
+        # --- Fix e: GPU Lock Not Always Honored in Parallel Processing ---
+        num_workers = 1 if self.params.disable_parallel or self.params.enable_face_filter else (os.cpu_count() or 4)
         with ThreadPoolExecutor(max_workers=num_workers) as executor:
             futures = [executor.submit(self._process_single_frame, path, i) for i, path in enumerate(image_files)]
             for f in futures: f.result()
@@ -1849,9 +1865,11 @@ class AppUI:
         preview = [str(Path(output_dir) / f['filename']) for f in kept_frames[:100] if (Path(output_dir) / f['filename']).exists()]
         return preview, f"Kept: {total_kept} / {total_frames} frames (previewing {len(preview)})"
 
+    # --- Fix g: Export Crop Function Ignores Mask Errors ---
     @staticmethod
     def _crop_frame_to_aspect_ratio(img, mask, target_ars_str, padding_pct):
-        if mask is None or np.sum(mask) == 0:
+        if mask is None or np.sum(mask > 0) == 0:
+            logger.warning("Skipping crop: Invalid or empty mask.")
             return img
 
         rows, cols = np.any(mask, axis=1), np.any(mask, axis=0)
@@ -1871,9 +1889,12 @@ class AppUI:
 
         try:
             target_ars = [float(w)/float(h) for w, h in (ar.split(':') for ar in target_ars_str.replace(" ","").split(',') if ':' in ar)]
-            if not target_ars: raise ValueError("No valid aspect ratios.")
-        except (ValueError, ZeroDivisionError):
-            target_ars = [padded_w / padded_h]
+            if not target_ars:
+                logger.warning("No valid ARs; using image AR.")
+                target_ars = [img.shape[1] / img.shape[0]]
+        except (ValueError, ZeroDivisionError) as e:
+            logger.error(f"AR parsing failed: {e}. Using image AR.")
+            target_ars = [img.shape[1] / img.shape[0]]
 
         best_ar = min(target_ars, key=lambda ar: abs(ar - box_ar))
 
@@ -2012,7 +2033,8 @@ class AppUI:
         with (config.CONFIGS_DIR / f"{name}.json").open('w') as f:
             json.dump(settings, f, indent=2)
             
-        return f"Config '{name}' saved.", gr.update(choices=[f.stem for f in config.CONFIGS_dir.glob("*.json")])
+        # --- Fix b: Typo in Config Directory References ---
+        return f"Config '{name}' saved.", gr.update(choices=[f.stem for f in config.CONFIGS_DIR.glob("*.json")])
 
     def load_config(self, name):
         ordered_comp_ids = [
@@ -2042,6 +2064,7 @@ class AppUI:
     def delete_config(self, name):
         if not name: return "Error: No config selected.", gr.update()
         (config.CONFIGS_DIR / f"{name}.json").unlink(missing_ok=True)
+        # --- Fix b: Typo in Config Directory References ---
         return f"Config '{name}' deleted.", gr.update(choices=[f.stem for f in config.CONFIGS_DIR.glob("*.json")], value=None)
 
 if __name__ == "__main__":
@@ -2053,3 +2076,4 @@ if __name__ == "__main__":
     app_ui = AppUI()
     demo = app_ui.build_ui()
     demo.launch()
+
