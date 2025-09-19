@@ -1,9 +1,11 @@
 gradio
-opencv-python-headless
-numpy
 insightface
-onnxruntime
 numba
-yt-dlp
-torch
+numpy
+onnxruntime-gpu
+opencv-python==4.10.0.84
+Pillow==11.0.0
+PyYAML==6.0.2
 scenedetect
+vot-toolkit==0.7.1
+yt-dlp

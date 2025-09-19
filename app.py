@@ -74,24 +74,41 @@ try:
         base_path.mkdir(exist_ok=True)
 
         checkpoints = {
-            "sam2.1": "sam2_hiera_l.pt",
-            "sam21pp-L": "sam2_hiera_l.pt",
+            "sam2.1": "sam2.1_hiera_large.pt",
+            "sam21pp-L": "sam2.1_hiera_large.pt",
         }
         model_configs = {
+            "sam2.1": "DAM4SAM/sam2/sam21pp_hiera_l.yaml",
             "default": "sam2_hiera_video.yaml"
         }
         
-        checkpoint_filename = checkpoints.get(tracker_name, "sam2_hiera_l.pt")
-        config_filename = model_configs["default"]
+        checkpoint_filename = checkpoints.get(tracker_name, "sam2.1_hiera_large.pt")
+        config_filename = model_configs.get(tracker_name, model_configs["default"])
 
         checkpoint_path = base_path / checkpoint_filename
-        config_path = base_path / config_filename
+        config_base = Path(__file__).parent
+        config_path = config_base / config_filename
 
         if not checkpoint_path.is_file():
-            raise FileNotFoundError(
-                f"Model checkpoint file not found: '{checkpoint_filename}'. "
-                f"Please ensure it exists in the '{base_path.resolve()}' directory."
-            )
+            logger.warning(f"Model checkpoint file not found: '{checkpoint_filename}'. Attempting to download...")
+            try:
+                import urllib.request
+                model_url = f"https://huggingface.co/facebook/sam2.1-hiera-large/resolve/main/{checkpoint_filename}"
+                logger.info(f"Downloading model from {model_url} to {checkpoint_path}")
+                
+                urllib.request.urlretrieve(model_url, checkpoint_path)
+
+                logger.info("Model downloaded successfully.")
+
+            except Exception as e:
+                error_msg = (
+                    f"Failed to download model checkpoint: '{checkpoint_filename}'. "
+                    f"Please manually download it from 'https://huggingface.co/facebook/sam2.1-hiera-large/resolve/main/{checkpoint_filename}' "
+                    f"and place it in the '{base_path.resolve()}' directory. Error: {e}"
+                )
+                logger.error(error_msg)
+                raise FileNotFoundError(error_msg) from e
+
         if not config_path.is_file():
             raise FileNotFoundError(
                 f"Model config file not found: '{config_filename}'. "
@@ -380,7 +397,7 @@ class Config:
     MIN_MASK_AREA_PCT = 1.0
     QUALITY_DOWNSCALE_FACTOR = 0.25
     UI_DEFAULTS = {
-        "method": "keyframes", "interval": 5.0, "max_resolution": "maximum available",
+        "method": "all", "interval": 5.0, "max_resolution": "maximum available",
         "fast_scene": False, "resume": True, "use_png": True, "disable_parallel": False,
         "enable_face_filter": False, "face_model_name": "buffalo_l",
         "quality_thresh": 12.0, "face_thresh": 0.5, "sharpness_thresh": 0.0,
@@ -1361,7 +1378,7 @@ class AppUI:
 
                         self.components['enable_subject_mask_input'] = gr.Checkbox(label="Enable Subject-Only Metrics", info=f"Requires a CUDA GPU. Status: {masking_status}", interactive=self.feature_status['masking'])
                         with gr.Group(visible=False) as self.components['masking_options_group']:
-                            self.components['dam4sam_model_name_input'] = gr.Dropdown(['sam2.1', 'sam21pp-L'], value=config.UI_DEFAULTS["dam4sam_model_name"], label="DAM4SAM Model")
+                            self.components['dam4sam_model_name_input'] = gr.Dropdown(['sam2.1'], value=config.UI_DEFAULTS["dam4sam_model_name"], label="DAM4SAM Model")
                             self.components['scene_detect_input'] = gr.Checkbox(label="Use Scene Detection for Masking", value=config.UI_DEFAULTS["scene_detect"], interactive=self.feature_status['scene_detection'], info="Status: " + ("Available" if self.feature_status['scene_detection'] else "'scenedetect' not installed"))
 
                     with gr.Accordion("Advanced & Config", open=False):
