@@ -318,3 +318,9 @@ models/sam2.1_hiera_large.pt
 models/sam2.1_hiera_large-fp16.safetensors
 samurai_demo.py
 dam4sam_run_bbox_example.py
+models/models/buffalo_l/1k3d68.onnx
+models/models/buffalo_l.zip
+models/models/buffalo_l/2d106det.onnx
+models/models/buffalo_l/det_10g.onnx
+models/models/buffalo_l/genderage.onnx
+models/models/buffalo_l/w600k_r50.onnx
