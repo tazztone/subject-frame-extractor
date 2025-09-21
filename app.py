@@ -18,6 +18,7 @@ from dataclasses import dataclass, asdict, field
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
 from contextlib import contextmanager
+import urllib.request
 
 # --- Unified Logging System ---
 class UnifiedLogger:
@@ -256,6 +257,15 @@ def sanitize_filename(name, max_length=50):
     """Sanitizes a string to be a valid filename."""
     return re.sub(r'[^\w\-_.]', '_', name)[:max_length]
 
+def safe_path_join(base_dir: Path | str, user_name: str, allowed_extensions: set[str] | None = None) -> str:
+    """Safely join a base directory with a user-provided filename, preventing path traversal."""
+    base = Path(base_dir).resolve()
+    target = (base / user_name).resolve()
+    if not str(target).startswith(str(base)):
+        raise RuntimeError("Path traversal detected")
+    if allowed_extensions and target.suffix.lower() not in allowed_extensions:
+        raise ValueError(f"Extension not allowed: {target.suffix}")
+    return str(target)
 
 @contextmanager
 def safe_resource_cleanup():
@@ -403,17 +413,21 @@ def validate_file(file_path, file_type="generic", allowed_extensions=None, max_s
 
 
 def get_person_detector_model_path(model_filename="yolo11x.pt"):
-    """Checks for the YOLO model file and downloads it if not found."""
-    base_path = Path(__file__).parent / "models"
+    """Checks for the YOLO model file and downloads it if not found, with timeout and verification."""
+    base_path = config.get_dir('models')
     base_path.mkdir(exist_ok=True)
     model_path = base_path / model_filename
     model_url = f"https://huggingface.co/Ultralytics/YOLO11/resolve/main/{model_filename}"
 
-    if not model_path.is_file():
+    if not model_path.is_file() or model_path.stat().st_size < 1_000_000:
         try:
-            import urllib.request
             logger.info(f"Downloading person detector model from {model_url} to {model_path}")
-            urllib.request.urlretrieve(model_url, model_path)
+            req = urllib.request.Request(model_url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=30) as resp, open(model_path, "wb") as out:
+                shutil.copyfileobj(resp, out)
+            
+            if not model_path.exists() or model_path.stat().st_size < 1_000_000:
+                 raise RuntimeError("Downloaded YOLO model seems incomplete")
             logger.info("Person detector model downloaded successfully.")
         except Exception as e:
             log_download_error(f"download person detector model '{model_filename}'", e)
@@ -1295,33 +1309,17 @@ class AnalysisPipeline:
         return frame_map
 
     def _download_with_progress(self, url, destination, description=""):
-        """Download a file with progress indication."""
+        """Download a file with progress indication and timeout."""
         try:
-            import urllib.request
-
-            # Create a request with headers to mimic a browser
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
             }
             req = urllib.request.Request(url, headers=headers)
 
-            with urllib.request.urlopen(req) as response:
+            with urllib.request.urlopen(req, timeout=30) as response:
                 total_size = int(response.headers.get('Content-Length', 0))
-
                 with open(destination, 'wb') as f:
-                    downloaded = 0
-                    chunk_size = 8192
-
-                    while True:
-                        chunk = response.read(chunk_size)
-                        if not chunk:
-                            break
-                        f.write(chunk)
-                        downloaded += len(chunk)
-
-                        if total_size > 0:
-                            progress = (downloaded / total_size) * 100
-                            self.progress_queue.put({"log": f"[INFO] Downloading {description}: {progress:.1f}% ({downloaded}/{total_size} bytes)"})
+                    shutil.copyfileobj(response, f)
 
         except Exception as e:
             raise RuntimeError(f"Download failed: {e}") from e
@@ -1373,7 +1371,7 @@ class AnalysisPipeline:
             raise RuntimeError(f"Could not initialize face analysis model. Error: {e}")
 
     def _ensure_face_model_downloaded(self, model_name):
-        """Ensures the specified face analysis model is downloaded."""
+        """Ensures the specified face analysis model is downloaded with timeout and verification."""
         model_urls = {
             "buffalo_l": "https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip",
             "buffalo_s": "https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_s.zip",
@@ -1393,14 +1391,13 @@ class AnalysisPipeline:
 
         self.progress_queue.put({"log": f"[INFO] Downloading face model '{model_name}'..."})
         try:
-            import urllib.request
             import zipfile
 
             model_url = model_urls[model_name]
             zip_path = config.get_dir('models') / f"{model_name}.zip"
 
-            # Download the zip file
-            urllib.request.urlretrieve(model_url, zip_path)
+            # Download the zip file with timeout
+            self._download_with_progress(model_url, zip_path, f"face model {model_name}")
             self.progress_queue.put({"log": f"[INFO] Downloaded {model_name}.zip, extracting..."})
 
             # Extract the zip file
@@ -1437,8 +1434,9 @@ class AnalysisPipeline:
         image_files = sorted(list(self.output_dir.glob("frame_*.png")) + list(self.output_dir.glob("frame_*.jpg")))
         self.progress_queue.put({"total": len(image_files), "stage": "Analysis"})
 
-        # --- Fix e: GPU Lock Not Always Honored in Parallel Processing ---
-        num_workers = 1 if self.params.disable_parallel or self.params.enable_face_filter else (os.cpu_count() or 4)
+        max_cpu = min((os.cpu_count() or 4), 8)
+        num_workers = 1 if self.params.disable_parallel or self.params.enable_face_filter else max_cpu
+
         with ThreadPoolExecutor(max_workers=num_workers) as executor:
             futures = [executor.submit(self._process_single_frame, path, i) for i, path in enumerate(image_files)]
             for f in futures: f.result()
@@ -1730,71 +1728,57 @@ class AppUI:
         """Create a condensed header section with essential information."""
         gr.Markdown("# 🎬 Frame Extractor & Analyzer")
         gr.Markdown("**AI-Powered Video Frame Analysis** - Extract, analyze, and filter video frames with advanced quality assessment.")
+        
+        # Show GPU warning only if needed
+        if not self.feature_status['cuda_available']:
+            gr.Markdown("⚠️ **CPU Mode** — GPU-dependent features (Face Analysis, Subject Masking) are disabled.")
 
         # Check if any dependencies are missing
         has_missing_deps = not all([
             self.feature_status['face_analysis'],
-            self.feature_status['masking'],
-            self.feature_status['scene_detection'],
-            self.feature_status['cuda_available']
+            self.feature_status['masking_libs_installed'],
+            self.feature_status['scene_detection']
         ])
 
-        # Only show accordion if there are missing dependencies
+        # Only show accordion if there are missing dependencies or for status checks
         if has_missing_deps:
             with gr.Accordion("⚠️ System Status & Setup", open=True):
-                with gr.Row():
-                    with gr.Column(scale=1):
-                        gr.Markdown("### 🔧 System Status")
-                        status_items = []
-
-                        # GPU status
-                        if self.feature_status['cuda_available']:
-                            status_items.append("🟢 GPU Available")
-                        else:
-                            status_items.append("🟡 CPU Mode")
-
-                        # Core features status
-                        if self.feature_status['face_analysis']:
-                            status_items.append("🟢 Face Analysis")
-                        else:
-                            status_items.append("🔴 Face Analysis")
-
-                        if self.feature_status['masking']:
-                            status_items.append("🟢 Subject Masking")
-                        else:
-                            status_items.append("🔴 Subject Masking")
-
-                        if self.feature_status['scene_detection']:
-                            status_items.append("🟢 Scene Detection")
-                        else:
-                            status_items.append("🔴 Scene Detection")
-
-                        for item in status_items:
-                            gr.Markdown(f"• {item}")
-
-                    with gr.Column(scale=2):
-                        gr.Markdown("### 📋 Quick Start")
-                        gr.Markdown("""
-                        1. **📹 Extract** frames from video
-                        2. **🔍 Analyze** quality & subjects
-                        3. **🎯 Filter** & export results
-                        """)
-
-                # Model status - more compact
-                self._create_component('model_download_status', 'textbox', {
-                    'label': "📥 Models",
-                    'value': "✅ Ready",
-                    'interactive': False,
-                    'lines': 1
-                })
-
-                # Show GPU warning only if needed
-                if not self.feature_status['cuda_available']:
-                    gr.Warning("⚠️ **CPU Mode** - GPU features disabled")
+                self._render_status_details()
         else:
-            # All systems go - show minimal status
-            with gr.Row():
-                gr.Markdown("🟢 **All Systems Operational** - Ready to process videos!")
+            with gr.Accordion("✅ System Status", open=False):
+                self._render_status_details()
+
+
+    def _render_status_details(self):
+        """Renders the detailed status block inside an Accordion."""
+        with gr.Row():
+            with gr.Column(scale=1):
+                gr.Markdown("### 🔧 System Status")
+                status_items = [
+                    f"🟢 GPU Available" if self.feature_status['cuda_available'] else "🟡 CPU Mode",
+                    f"🟢 Face Analysis" if self.feature_status['face_analysis'] else "🔴 Face Analysis",
+                    f"🟢 Subject Masking" if self.feature_status['masking_libs_installed'] else "🔴 Subject Masking Libs",
+                    f"🟢 Scene Detection" if self.feature_status['scene_detection'] else "🔴 Scene Detection"
+                ]
+                for item in status_items:
+                    gr.Markdown(f"• {item}")
+
+            with gr.Column(scale=2):
+                gr.Markdown("### 📋 Quick Start")
+                gr.Markdown("""
+                1. **📹 Extract** frames from video
+                2. **🔍 Analyze** quality & subjects
+                3. **🎯 Filter** & export results
+                """)
+
+        # Model status - more compact
+        self._create_component('model_download_status', 'textbox', {
+            'label': "📥 Models",
+            'value': "✅ Ready",
+            'interactive': False,
+            'lines': 1
+        })
+
 
     def _create_global_components(self):
         """Create global state components."""
@@ -2342,45 +2326,48 @@ class AppUI:
             return f"⚠️ Error checking model status: {e}"
 
     def run_extraction_wrapper(self, source_path, upload_video, method, interval, max_res, fast_scene, use_png):
-        # Use state manager for consistent UI state handling
         yield self.state_manager.set_loading_state(
             self.components['start_extraction_button'],
             self.components['stop_extraction_button'],
-            self.components['unified_log']
+            self.components['unified_log'],
+            self.components['unified_status'],
+            "Starting extraction..."
         )
         self.cancel_event.clear()
 
         source = upload_video if upload_video else source_path
         if not source:
-            yield self.state_manager.set_error_state(
-                self.components['start_extraction_button'],
-                self.components['stop_extraction_button'],
-                self.components['unified_log'],
-                "Video source is required."
+            error_msg = "Video source is required."
+            final_state = self.state_manager.set_error_state(
+                self.components['start_extraction_button'], self.components['stop_extraction_button'],
+                self.components['unified_log'], self.components['unified_status'], error_msg
             )
+            yield {comp: val for comp, val in zip(outputs, final_state)}
             return
-
-        # Validate input to prevent path traversal
+            
         try:
             if upload_video:
-                # For uploaded files, validate the path
-                source = safe_path_join(config.get_dir('downloads'), Path(source).name, {'.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.webm', '.m4v'})
+                source = safe_path_join(config.get_dir('downloads'), Path(source).name,
+                                        {'.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.webm', '.m4v'})
             else:
-                # For source paths, validate it's a proper video file or URL
                 is_url = re.match(r'https?://|youtu\.be', str(source))
                 if not is_url:
-                    source = str(validate_video_file_path(source))
+                    source = ValidationUtils.validate_video_path(source)
         except (ValueError, RuntimeError) as e:
-            yield self.state_manager.set_error_state(
-                self.components['start_extraction_button'],
-                self.components['stop_extraction_button'],
-                self.components['unified_log'],
-                f"Invalid video source: {e}"
+            error_msg = f"Invalid video source: {e}"
+            final_state = self.state_manager.set_error_state(
+                self.components['start_extraction_button'], self.components['stop_extraction_button'],
+                self.components['unified_log'], self.components['unified_status'], error_msg
             )
+            # Create a dictionary to yield all updates at once
+            outputs = [self.components['start_extraction_button'], self.components['stop_extraction_button'],
+                       self.components['unified_log'], self.components['unified_status']]
+            yield {comp: val for comp, val in zip(outputs, final_state)}
             return
 
+
         params = AnalysisParameters(
-            source_path=source, method=method, interval=interval, max_resolution=max_res,
+            source_path=source, method=method, interval=float(interval), max_resolution=max_res,
             fast_scene=fast_scene, use_png=use_png
         )
 
@@ -2392,64 +2379,75 @@ class AppUI:
         if result.get("done") and not self.cancel_event.is_set():
             output_dir = result["output_dir"]
             video_path = result.get("video_path", "")
-            yield self.state_manager.set_success_state(
-                self.components['start_extraction_button'],
-                self.components['stop_extraction_button'],
-                self.components['unified_log'],
-                "Extraction completed successfully."
+            
+            success_state = self.state_manager.set_success_state(
+                self.components['start_extraction_button'], self.components['stop_extraction_button'],
+                self.components['unified_log'], self.components['unified_status'], "Extraction completed successfully."
             )
+            start_btn_up, stop_btn_up, log_up, status_up = success_state
+
             yield {
+                self.components['start_extraction_button']: start_btn_up,
+                self.components['stop_extraction_button']: stop_btn_up,
+                self.components['unified_log']: log_up,
+                self.components['unified_status']: status_up,
                 self.components['extracted_video_path_state']: video_path,
                 self.components['extracted_frames_dir_state']: output_dir,
                 self.components['frames_folder_input']: output_dir,
                 self.components['analysis_video_path_input']: video_path
             }
         else:
-            yield self.state_manager.set_ready_state(
-                self.components['start_extraction_button'],
-                self.components['stop_extraction_button']
+            ready_state = self.button_manager.set_ready_state(
+                self.components['start_extraction_button'], self.components['stop_extraction_button']
             )
+            yield {
+                self.components['start_extraction_button']: ready_state[0],
+                self.components['stop_extraction_button']: ready_state[1],
+            }
 
     def run_analysis_wrapper(self, frames_folder, video_path, disable_parallel, resume, enable_face, face_ref_path, face_ref_upload, face_model, enable_mask, dam4sam_model, scene_detect, *weights):
-        # Use state manager for consistent UI state handling
+        outputs = [
+            self.components['start_analysis_button'], self.components['stop_analysis_button'],
+            self.components['unified_log'], self.components['unified_status']
+        ]
+        
         yield self.state_manager.set_loading_state(
             self.components['start_analysis_button'],
             self.components['stop_analysis_button'],
-            self.components['unified_log']
+            self.components['unified_log'],
+            self.components['unified_status'],
+            "Starting analysis..."
         )
         self.cancel_event.clear()
 
-        # Validate frames folder path to prevent path traversal
         try:
-            frames_folder = safe_path_join(config.BASE_DIR, frames_folder)
-            frames_path = Path(frames_folder)
-            if not frames_path.exists() or not frames_path.is_dir():
-                yield self.state_manager.set_error_state(
-                    self.components['start_analysis_button'],
-                    self.components['stop_analysis_button'],
-                    self.components['unified_log'],
-                    "A valid folder of extracted frames is required."
-                )
-                return
-        except (ValueError, RuntimeError) as e:
-            yield self.state_manager.set_error_state(
-                self.components['start_analysis_button'],
-                self.components['stop_analysis_button'],
-                self.components['unified_log'],
-                f"Invalid frames folder path: {e}"
+            if not frames_folder or not Path(frames_folder).is_dir():
+                 raise ValueError("A valid folder of extracted frames is required.")
+        except (ValueError, TypeError) as e:
+            error_msg = f"Invalid frames folder: {e}"
+            final_state = self.state_manager.set_error_state(
+                self.components['start_analysis_button'], self.components['stop_analysis_button'],
+                self.components['unified_log'], self.components['unified_status'], error_msg
             )
+            yield {comp: val for comp, val in zip(outputs, final_state)}
             return
 
         face_ref = face_ref_upload if face_ref_upload else face_ref_path
         if enable_face and face_ref:
             try:
-                # Validate face reference image path
                 if face_ref_upload:
-                    face_ref = safe_path_join(config.get_dir('downloads'), Path(face_ref).name, {'.jpg', '.jpeg', '.png', '.bmp', '.tiff'})
+                    face_ref = safe_path_join(config.get_dir('downloads'),
+                                              Path(face_ref).name,
+                                              {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif', '.webp'})
                 else:
-                    face_ref = str(validate_video_file_path(face_ref))  # Reusing video validation for images
+                    face_ref = ValidationUtils.validate_image_path(face_ref)
             except (ValueError, RuntimeError) as e:
-                yield {self.components['unified_log']: f"[ERROR] Invalid reference face image: {e}", self.components['start_analysis_button']: gr.update(interactive=True), self.components['stop_analysis_button']: gr.update(interactive=False)}
+                error_msg = f"Invalid reference face image: {e}"
+                final_state = self.state_manager.set_error_state(
+                    self.components['start_analysis_button'], self.components['stop_analysis_button'],
+                    self.components['unified_log'], self.components['unified_status'], error_msg
+                )
+                yield {comp: val for comp, val in zip(outputs, final_state)}
                 return
 
         features = get_feature_status()
@@ -2470,86 +2468,95 @@ class AppUI:
 
         result = self.last_task_result
         if result.get("done") and not self.cancel_event.is_set():
-            yield self.state_manager.set_success_state(
-                self.components['start_analysis_button'],
-                self.components['stop_analysis_button'],
-                self.components['unified_log'],
-                "Analysis completed successfully."
+            success_state = self.state_manager.set_success_state(
+                 self.components['start_analysis_button'], self.components['stop_analysis_button'],
+                 self.components['unified_log'], self.components['unified_status'], "Analysis completed successfully."
             )
+            start_btn_up, stop_btn_up, log_up, status_up = success_state
+            
             yield {
+                self.components['start_analysis_button']: start_btn_up,
+                self.components['stop_analysis_button']: stop_btn_up,
+                self.components['unified_log']: log_up,
+                self.components['unified_status']: status_up,
                 self.components['analysis_output_dir_state']: result["output_dir"],
                 self.components['analysis_metadata_path_state']: result["metadata_path"],
                 self.components['filtering_tab']: gr.update(interactive=True)
             }
 
         else:
-            yield self.state_manager.set_ready_state(
-                self.components['start_analysis_button'],
-                self.components['stop_analysis_button']
+            ready_state = self.button_manager.set_ready_state(
+                self.components['start_analysis_button'], self.components['stop_analysis_button']
             )
+            yield {
+                 self.components['start_analysis_button']: ready_state[0],
+                 self.components['stop_analysis_button']: ready_state[1],
+            }
 
     def _run_task(self, task_func, log_box=None, status_box=None):
-        # Set progress queue for unified logger
+        global logger
         original_logger = logger
         progress_queue = task_func.__self__.progress_queue
-        if progress_queue:
-            logger = UnifiedLogger(progress_queue=progress_queue, log_file_path=config.get_log_path())
-
-        log_buffer, processed_count, total_frames = [], 0, 1
-        start_ts, last_yield_ts, last_stats, current_stage = time.time(), 0.0, {}, "Initializing"
         
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(task_func)
-            while future.running():
-                if self.cancel_event.is_set():
-                    if hasattr(task_func.__self__, 'cancel_event'):
-                         task_func.__self__.cancel_event.set()
-                    break
+        try:
+            if progress_queue:
+                logger = UnifiedLogger(progress_queue=progress_queue, log_file_path=config.get_log_path())
 
-                try:
-                    msg = progress_queue.get(timeout=0.1)
-                    if "log" in msg: log_buffer.append(msg["log"])
-                    if "error" in msg: log_buffer.append(f"[ERROR] {msg['error']}")
-                    if "stage" in msg: 
-                        current_stage, processed_count, start_ts = msg["stage"], 0, time.time()
-                    if "total" in msg: total_frames = msg["total"] or 1
-                    if "progress" in msg: processed_count += msg["progress"]
-                    if "progress_abs" in msg: processed_count = msg["progress_abs"]
-                    if "stats" in msg: last_stats = msg["stats"]
-                    
-                    now = time.time()
-                    if now - last_yield_ts > 0.25:
-                        ratio = processed_count / max(total_frames, 1)
-                        elapsed = max(now - start_ts, 1e-6)
-                        fps = processed_count / elapsed if elapsed > 0 else 0
-                        eta_s = (total_frames - processed_count) / fps if fps > 0 else 0
-                        mm, ss = divmod(int(eta_s), 60)
+            log_buffer, processed_count, total_frames = [], 0, 1
+            start_ts, last_yield_ts, last_stats, current_stage = time.time(), 0.0, {}, "Initializing"
+            
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(task_func)
+                while future.running():
+                    if self.cancel_event.is_set():
+                        if hasattr(task_func.__self__, 'cancel_event'):
+                             task_func.__self__.cancel_event.set()
+                        break
+
+                    try:
+                        msg = progress_queue.get(timeout=0.1)
+                        if "log" in msg: log_buffer.append(msg["log"])
+                        if "error" in msg: log_buffer.append(f"[ERROR] {msg['error']}")
+                        if "stage" in msg: 
+                            current_stage, processed_count, start_ts = msg["stage"], 0, time.time()
+                        if "total" in msg: total_frames = msg["total"] or 1
+                        if "progress" in msg: processed_count += msg["progress"]
+                        if "progress_abs" in msg: processed_count = msg["progress_abs"]
+                        if "stats" in msg: last_stats = msg["stats"]
                         
-                        errors = last_stats.get("errors", 0)
-                        
-                        status_line = f"**{current_stage}:** {processed_count}/{total_frames} ({ratio:.1%}) &nbsp; | &nbsp; Errors: {errors} &nbsp; | &nbsp; {fps:.1f} items/s &nbsp; | &nbsp; ETA: {mm:02d}:{ss:02d}"
-                        if log_box:
-                            updates = {log_box: "\n".join(log_buffer)}
-                            if status_box: updates[status_box] = status_line
-                            yield updates
-                        last_yield_ts = now
+                        now = time.time()
+                        if now - last_yield_ts > 0.25:
+                            ratio = processed_count / max(total_frames, 1)
+                            elapsed = max(now - start_ts, 1e-6)
+                            fps = processed_count / elapsed if elapsed > 0 else 0
+                            eta_s = (total_frames - processed_count) / fps if fps > 0 else 0
+                            mm, ss = divmod(int(eta_s), 60)
+                            
+                            errors = last_stats.get("errors", 0)
+                            
+                            status_line = f"**{current_stage}:** {processed_count}/{total_frames} ({ratio:.1%}) &nbsp; | &nbsp; Errors: {errors} &nbsp; | &nbsp; {fps:.1f} items/s &nbsp; | &nbsp; ETA: {mm:02d}:{ss:02d}"
+                            if log_box:
+                                updates = {log_box: "\n".join(log_buffer)}
+                                if status_box: updates[status_box] = status_line
+                                yield updates
+                            last_yield_ts = now
 
-                except Empty:
-                    pass
+                    except Empty:
+                        pass
 
-        self.last_task_result = future.result() or {}
-        if "log" in self.last_task_result: log_buffer.append(self.last_task_result["log"])
-        if "error" in self.last_task_result: log_buffer.append(f"[ERROR] {self.last_task_result['error']}")
+            self.last_task_result = future.result() or {}
+            if "log" in self.last_task_result: log_buffer.append(self.last_task_result["log"])
+            if "error" in self.last_task_result: log_buffer.append(f"[ERROR] {self.last_task_result['error']}")
 
-        # Restore original logger
-        logger = original_logger
+            if log_box:
+                final_updates = {log_box: "\n".join(log_buffer)}
+                if status_box:
+                    status_text = "⏹️ Operation cancelled." if self.cancel_event.is_set() else (f"❌ Error: {self.last_task_result.get('error')}" if self.last_task_result.get('error') else "✅ Operation complete.")
+                    final_updates[status_box] = status_text
+                yield final_updates
+        finally:
+            logger = original_logger
 
-        if log_box:
-            final_updates = {log_box: "\n".join(log_buffer)}
-            if status_box:
-                status_text = "⏹️ Operation cancelled." if self.cancel_event.is_set() else (f"❌ Error: {self.last_task_result.get('error')}" if self.last_task_result.get('error') else "✅ Operation complete.")
-                final_updates[status_box] = status_text
-            yield final_updates
 
     @staticmethod
     def apply_gallery_filters(metadata_path, output_dir, quality_thresh, face_thresh, filter_mode, *thresholds):
@@ -2643,7 +2650,8 @@ class AppUI:
 
                 if enable_crop:
                     mask_path_str = frame_meta.get('mask_path')
-                    if mask_path_str and Path(mask_path_str).exists():
+                    mask_is_empty = frame_meta.get('mask_empty', True)
+                    if not mask_is_empty and mask_path_str and Path(mask_path_str).exists():
                         mask = cv2.imread(mask_path_str, cv2.IMREAD_GRAYSCALE)
                         img = AppUI._crop_frame_to_aspect_ratio(img, mask, crop_ars, crop_padding)
                 
