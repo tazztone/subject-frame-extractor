@@ -1545,7 +1545,8 @@ class AppUI:
             'button': gr.Button,
             'radio': gr.Radio,
             'markdown': gr.Markdown,
-            'file': gr.File
+            'file': gr.File,
+            'gallery': gr.Gallery
         }
         component = comp_map[comp_type](**kwargs)
         self.components[name] = component
