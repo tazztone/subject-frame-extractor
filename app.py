@@ -1744,16 +1744,6 @@ class AppUI:
                 'interactive': False
             })
 
-    def _create_log_section(self, log_name, status_name, log_label="Logs", log_lines=10):
-        """Helper to create log and status sections."""
-        gr.Markdown(f"### {status_name.replace('_', ' ').title()}")
-        self._create_component(status_name, 'markdown', {'value': ""})
-        self._create_component(log_name, 'textbox', {
-            'label': log_label,
-            'lines': log_lines,
-            'interactive': False,
-            'autoscroll': True
-        })
 
     def _create_extraction_tab(self):
         with gr.Row():
@@ -1803,7 +1793,8 @@ class AppUI:
                     })
 
                     with gr.Column(scale=3):
-                        self._create_log_section('extraction_log', 'extraction_status', "Logs", 10)
+                        # Individual log section removed - using unified Activity Log at bottom
+                        pass
 
             self._create_button_pair('start_extraction_button', 'stop_extraction_button', "🚀 Start Extraction", "⏹️ Stop")
 
@@ -1811,8 +1802,6 @@ class AppUI:
         with gr.Row():
             with gr.Column(scale=2):
                 self._create_analysis_settings()
-            with gr.Column(scale=3):
-                self._create_analysis_log_section()
 
         self._create_button_pair('start_analysis_button', 'stop_analysis_button', "🔬 Start Analysis", "⏹️ Stop")
 
@@ -1896,22 +1885,6 @@ class AppUI:
 
 
 
-    def _create_analysis_log_section(self):
-        """Create the analysis log section."""
-        # Removed redundant "### Analysis Log" title
-        self._create_component('analysis_status', 'markdown', {'value': ""})
-        self._create_component('analysis_log', 'textbox', {
-            'label': "Logs",
-            'lines': 15,
-            'interactive': False,
-            'autoscroll': True
-        })
-        self._create_component('model_download_status_analysis', 'textbox', {
-            'label': "Model Download Status",
-            'value': "⏳ Checking model availability...",
-            'interactive': False,
-            'lines': 2
-        })
 
     def _create_filtering_tab(self):
         with gr.Row():
@@ -2018,12 +1991,7 @@ class AppUI:
     def _create_filtering_results(self):
         """Create filtering results section."""
         with gr.Row():
-            self._create_component('filter_stats', 'textbox', {
-                'label': "Filter Results",
-                'lines': 4,
-                'interactive': False,
-                'value': "Run analysis to see results."
-            })
+            # Individual filter stats removed - using unified Activity Log at bottom
             self._create_component('export_button', 'button', {
                 'value': "📤 Export Kept Frames",
                 'variant': "primary"
@@ -2093,8 +2061,8 @@ class AppUI:
             self.components['use_png_input']
         ]
         outputs = [
-            self.components['start_extraction_button'], self.components['stop_extraction_button'], 
-            self.components['extraction_log'], self.components['extraction_status'],
+            self.components['start_extraction_button'], self.components['stop_extraction_button'],
+            self.components['unified_log'], self.components['unified_status'],
             self.components['extracted_video_path_state'], self.components['extracted_frames_dir_state'],
             self.components['frames_folder_input'], self.components['analysis_video_path_input']
         ]
@@ -2105,7 +2073,7 @@ class AppUI:
         inputs = self._get_analysis_params_components()
         outputs = [
             self.components['start_analysis_button'], self.components['stop_analysis_button'],
-            self.components['analysis_log'], self.components['analysis_status'],
+            self.components['unified_log'], self.components['unified_status'],
             self.components['analysis_output_dir_state'], self.components['analysis_metadata_path_state'],
             self.components['filtering_tab']
         ]
@@ -2114,9 +2082,9 @@ class AppUI:
         
     def _setup_filtering_handlers(self):
         filter_inputs = [self.components['analysis_metadata_path_state'], self.components['analysis_output_dir_state'],
-                         self.components['quality_filter_slider'], self.components['face_filter_slider'], 
+                         self.components['quality_filter_slider'], self.components['face_filter_slider'],
                          self.components['filter_mode_toggle']] + self.components['filter_metric_sliders'] + self.components['weight_sliders']
-        filter_outputs = [self.components['results_gallery'], self.components['filter_stats']]
+        filter_outputs = [self.components['results_gallery'], self.components['unified_log']]
         
         filter_controls = [self.components['quality_filter_slider'], self.components['face_filter_slider'], self.components['filter_mode_toggle']] + self.components['filter_metric_sliders'] + self.components['weight_sliders']
         for c in filter_controls:
@@ -2125,11 +2093,11 @@ class AppUI:
         self.components['filtering_tab'].select(self.apply_gallery_filters, filter_inputs, filter_outputs)
 
         export_inputs = filter_inputs + [
-            self.components['enable_crop_input'], 
+            self.components['enable_crop_input'],
             self.components['crop_ar_input'],
             self.components['crop_padding_input']
         ]
-        self.components['export_button'].click(self.export_kept_frames, export_inputs, self.components['filter_stats'])
+        self.components['export_button'].click(self.export_kept_frames, export_inputs, self.components['unified_log'])
     
     def _setup_config_handlers(self):
         config_controls = [
@@ -2147,7 +2115,7 @@ class AppUI:
     def _setup_model_status_handlers(self):
         """Setup handlers for model download status updates."""
         # Update model status when analysis tab is selected
-        self.components['analysis_tab'].select(self.update_model_status, [], [self.components['model_download_status_analysis']])
+        self.components['analysis_tab'].select(self.update_model_status, [], [self.components['unified_log']])
 
     def update_model_status(self):
         """Update the model download status indicator."""
@@ -2203,14 +2171,14 @@ class AppUI:
         yield {
             self.components['start_extraction_button']: gr.update(interactive=False),
             self.components['stop_extraction_button']: gr.update(interactive=True),
-            self.components['extraction_log']: "",
-            self.components['extraction_status']: "Starting..."
+            self.components['unified_log']: "",
+            self.components['unified_status']: "Starting..."
         }
         self.cancel_event.clear()
 
         source = upload_video if upload_video else source_path
         if not source:
-            yield {self.components['extraction_log']: "[ERROR] Video source is required.", self.components['start_extraction_button']: gr.update(interactive=True), self.components['stop_extraction_button']: gr.update(interactive=False)}
+            yield {self.components['unified_log']: "[ERROR] Video source is required.", self.components['start_extraction_button']: gr.update(interactive=True), self.components['stop_extraction_button']: gr.update(interactive=False)}
             return
 
         # Validate input to prevent path traversal
@@ -2224,7 +2192,7 @@ class AppUI:
                 if not is_url:
                     source = str(validate_video_file_path(source))
         except (ValueError, RuntimeError) as e:
-            yield {self.components['extraction_log']: f"[ERROR] Invalid video source: {e}", self.components['start_extraction_button']: gr.update(interactive=True), self.components['stop_extraction_button']: gr.update(interactive=False)}
+            yield {self.components['unified_log']: f"[ERROR] Invalid video source: {e}", self.components['start_extraction_button']: gr.update(interactive=True), self.components['stop_extraction_button']: gr.update(interactive=False)}
             return
 
         params = AnalysisParameters(
@@ -2234,7 +2202,7 @@ class AppUI:
 
         progress_queue = Queue()
         pipeline = ExtractionPipeline(params, progress_queue, self.cancel_event)
-        yield from self._run_task(pipeline.run, self.components['extraction_log'], self.components['extraction_status'])
+        yield from self._run_task(pipeline.run, self.components['unified_log'], self.components['unified_status'])
         
         result = self.last_task_result
         if result.get("done") and not self.cancel_event.is_set():
@@ -2253,10 +2221,10 @@ class AppUI:
 
     def run_analysis_wrapper(self, frames_folder, video_path, disable_parallel, resume, enable_face, face_ref_path, face_ref_upload, face_model, enable_mask, dam4sam_model, scene_detect, *weights):
         yield {
-            self.components['start_analysis_button']: gr.update(interactive=False), 
-            self.components['stop_analysis_button']: gr.update(interactive=True), 
-            self.components['analysis_log']: "",
-            self.components['analysis_status']: "Starting..."
+            self.components['start_analysis_button']: gr.update(interactive=False),
+            self.components['stop_analysis_button']: gr.update(interactive=True),
+            self.components['unified_log']: "",
+            self.components['unified_status']: "Starting..."
         }
         self.cancel_event.clear()
         
@@ -2265,10 +2233,10 @@ class AppUI:
             frames_folder = safe_path_join(config.BASE_DIR, frames_folder)
             frames_path = Path(frames_folder)
             if not frames_path.exists() or not frames_path.is_dir():
-                yield {self.components['analysis_log']: "[ERROR] A valid folder of extracted frames is required.", self.components['start_analysis_button']: gr.update(interactive=True), self.components['stop_analysis_button']: gr.update(interactive=False)}
+                yield {self.components['unified_log']: "[ERROR] A valid folder of extracted frames is required.", self.components['start_analysis_button']: gr.update(interactive=True), self.components['stop_analysis_button']: gr.update(interactive=False)}
                 return
         except (ValueError, RuntimeError) as e:
-            yield {self.components['analysis_log']: f"[ERROR] Invalid frames folder path: {e}", self.components['start_analysis_button']: gr.update(interactive=True), self.components['stop_analysis_button']: gr.update(interactive=False)}
+            yield {self.components['unified_log']: f"[ERROR] Invalid frames folder path: {e}", self.components['start_analysis_button']: gr.update(interactive=True), self.components['stop_analysis_button']: gr.update(interactive=False)}
             return
 
         face_ref = face_ref_upload if face_ref_upload else face_ref_path
@@ -2280,7 +2248,7 @@ class AppUI:
                 else:
                     face_ref = str(validate_video_file_path(face_ref))  # Reusing video validation for images
             except (ValueError, RuntimeError) as e:
-                yield {self.components['analysis_log']: f"[ERROR] Invalid reference face image: {e}", self.components['start_analysis_button']: gr.update(interactive=True), self.components['stop_analysis_button']: gr.update(interactive=False)}
+                yield {self.components['unified_log']: f"[ERROR] Invalid reference face image: {e}", self.components['start_analysis_button']: gr.update(interactive=True), self.components['stop_analysis_button']: gr.update(interactive=False)}
                 return
 
         features = get_feature_status()
@@ -2297,7 +2265,7 @@ class AppUI:
 
         progress_queue = Queue()
         pipeline = AnalysisPipeline(params, progress_queue, self.cancel_event)
-        yield from self._run_task(pipeline.run, self.components['analysis_log'], self.components['analysis_status'])
+        yield from self._run_task(pipeline.run, self.components['unified_log'], self.components['unified_status'])
 
         result = self.last_task_result
         if result.get("done") and not self.cancel_event.is_set():
@@ -2309,7 +2277,7 @@ class AppUI:
         
         yield {self.components['start_analysis_button']: gr.update(interactive=True), self.components['stop_analysis_button']: gr.update(interactive=False)}
 
-    def _run_task(self, task_func, log_box, status_box=None):
+    def _run_task(self, task_func, log_box=None, status_box=None):
         # Set progress queue for unified logger
         original_logger = logger
         progress_queue = task_func.__self__.progress_queue
@@ -2349,9 +2317,10 @@ class AppUI:
                         errors = last_stats.get("errors", 0)
                         
                         status_line = f"**{current_stage}:** {processed_count}/{total_frames} ({ratio:.1%}) &nbsp; | &nbsp; Errors: {errors} &nbsp; | &nbsp; {fps:.1f} items/s &nbsp; | &nbsp; ETA: {mm:02d}:{ss:02d}"
-                        updates = {log_box: "\n".join(log_buffer)}
-                        if status_box: updates[status_box] = status_line
-                        yield updates
+                        if log_box:
+                            updates = {log_box: "\n".join(log_buffer)}
+                            if status_box: updates[status_box] = status_line
+                            yield updates
                         last_yield_ts = now
 
                 except Empty:
@@ -2364,11 +2333,12 @@ class AppUI:
         # Restore original logger
         logger = original_logger
 
-        final_updates = {log_box: "\n".join(log_buffer)}
-        if status_box:
-            status_text = "⏹️ Operation cancelled." if self.cancel_event.is_set() else (f"❌ Error: {self.last_task_result.get('error')}" if self.last_task_result.get('error') else "✅ Operation complete.")
-            final_updates[status_box] = status_text
-        yield final_updates
+        if log_box:
+            final_updates = {log_box: "\n".join(log_buffer)}
+            if status_box:
+                status_text = "⏹️ Operation cancelled." if self.cancel_event.is_set() else (f"❌ Error: {self.last_task_result.get('error')}" if self.last_task_result.get('error') else "✅ Operation complete.")
+                final_updates[status_box] = status_text
+            yield final_updates
 
     @staticmethod
     def apply_gallery_filters(metadata_path, output_dir, quality_thresh, face_thresh, filter_mode, *thresholds):
