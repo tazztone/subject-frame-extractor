@@ -52,426 +52,11 @@ try:
 except ImportError:
     YOLO = None
 
-# --- Integrated DAM4SAM Tracker and Dependencies ---
-DAM4SAMTracker = None
+# --- DAM4SAM Tracker Import ---
 try:
-    # Check for core DAM4SAM dependencies first
-    import yaml
-    import random
-    from collections import OrderedDict
-    import torchvision.transforms.functional as F
-    from vot.region.raster import calculate_overlaps
-    from vot.region.shapes import Mask
-    from vot.region import RegionType
-    from sam2.build_sam import build_sam2_video_predictor
-
-    # --- Utility functions required by DAM4SAMTracker (integrated) ---
-
-    def keep_largest_component(mask):
-        """Keeps only the largest connected component in a binary mask."""
-        # Finds all connected components and returns a mask with only the largest one.
-        num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(mask, 4, cv2.CV_32S)
-        if num_labels > 1:
-            # The 0-th label is the background.
-            largest_label = 1 + np.argmax(stats[1:, cv2.CC_STAT_AREA])
-            return (labels == largest_label).astype(np.uint8)
-        return mask
-
-    def determine_tracker(tracker_name="sam2.1"):
-        """
-        Maps a tracker name to its checkpoint and config file paths.
-        Checks for model files and raises an error if they are not found.
-        """
-        base_path = Path(__file__).parent / "models"
-        base_path.mkdir(exist_ok=True)
-
-        checkpoints = {
-            "sam2.1": "sam2.1_hiera_large.pt",
-            "sam21pp-L": "sam2.1_hiera_large.pt",
-        }
-        model_configs = {
-            "sam2.1": "DAM4SAM/sam2/sam21pp_hiera_l.yaml",
-            "sam21pp-L": "DAM4SAM/sam2/sam21pp_hiera_l.yaml",
-            "default": "DAM4SAM/sam2/sam21pp_hiera_l.yaml"
-        }
-        
-        checkpoint_filename = checkpoints.get(tracker_name, "sam2.1_hiera_large.pt")
-        config_filename = model_configs.get(tracker_name, model_configs["default"])
-
-        checkpoint_path = base_path / checkpoint_filename
-        config_base = Path(__file__).parent
-        config_path = config_base / config_filename
-
-        if not checkpoint_path.is_file():
-            logger.warning(f"Model checkpoint file not found: '{checkpoint_filename}'. Attempting to download...")
-            try:
-                import urllib.request
-                model_url = f"https://huggingface.co/facebook/sam2.1-hiera-large/resolve/main/{checkpoint_filename}"
-                logger.info(f"Downloading model from {model_url} to {checkpoint_path}")
-
-                # Use a more robust download with progress indication
-                self._download_with_progress(model_url, checkpoint_path, f"SAM model {checkpoint_filename}")
-
-                logger.info("Model downloaded successfully.")
-
-            except Exception as e:
-                error_msg = (
-                    f"Failed to download model checkpoint: '{checkpoint_filename}'. "
-                    f"Error: {e}"
-                )
-                logger.error(error_msg)
-                raise FileNotFoundError(error_msg) from e
-
-        # --- Fix d: DAM4SAM Initialization Fails Silently on Missing Config ---
-        if not config_path.is_file():
-            logger.warning(f"Model config file not found: '{config_filename}'. Attempting to download...")
-            try:
-                import urllib.request
-                # Assuming the config is from the official repo, adjust URL if needed
-                config_url = f"https://raw.githubusercontent.com/facebookresearch/segment-anything-2/main/sam2/configs/sam2.1_hiera_l.yaml"
-                logger.info(f"Downloading config from {config_url} to {config_path}")
-                config_path.parent.mkdir(parents=True, exist_ok=True)
-                urllib.request.urlretrieve(config_url, config_path)
-                logger.info("Config downloaded successfully.")
-            except Exception as e:
-                error_msg = f"Failed to download config: '{config_filename}'. Error: {e}"
-                logger.error(error_msg)
-                raise FileNotFoundError(error_msg) from e
-
-        return str(checkpoint_path), str(config_path)
-
-    # --- Embedded DAM4SAM Configuration ---
-    dam4sam_config = {"seed": 1234}
-
-    # --- DAM4SAMTracker Class Definition (from dam4sam_tracker.py) ---
-
-    class DAM4SAMTracker():
-        def __init__(self, tracker_name="sam21pp-L"):
-            """
-            Constructor for the DAM4SAM (2 or 2.1) tracking wrapper.
-            """
-            seed = dam4sam_config["seed"]
-            random.seed(seed)
-            os.environ['PYTHONHASHSEED'] = str(seed)
-            np.random.seed(seed)
-            torch.manual_seed(seed)
-            torch.cuda.manual_seed(seed)
-
-            self.checkpoint, self.model_cfg = determine_tracker(tracker_name)
-
-            self.input_image_size = 1024
-            self.img_mean = torch.tensor([0.485, 0.456, 0.406], dtype=torch.float32)[:, None, None]
-            self.img_std = torch.tensor([0.229, 0.224, 0.225], dtype=torch.float32)[:, None, None]
-
-            self.predictor = build_sam2_video_predictor(self.model_cfg, self.checkpoint, device="cuda:0")
-            self.tracking_times = []
-            self.max_stored_frames = 10  # Limit stored frames to prevent memory leaks
-
-        def cleanup_inference_state(self):
-            """Clean up inference state to prevent memory leaks"""
-            if hasattr(self, 'inference_state') and self.inference_state:
-                # Clear stored images
-                if "images" in self.inference_state:
-                    self.inference_state["images"].clear()
-
-                # Clear cached features
-                if "cached_features" in self.inference_state:
-                    self.inference_state["cached_features"].clear()
-
-                # Clear output dictionaries
-                if "output_dict" in self.inference_state:
-                    self.inference_state["output_dict"].clear()
-
-                if "output_dict_per_obj" in self.inference_state:
-                    self.inference_state["output_dict_per_obj"].clear()
-
-                if "temp_output_dict_per_obj" in self.inference_state:
-                    self.inference_state["temp_output_dict_per_obj"].clear()
-
-                # Clear consolidated frame indices
-                if "consolidated_frame_inds" in self.inference_state:
-                    self.inference_state["consolidated_frame_inds"].clear()
-
-                # Clear frame tracking data
-                if "frames_already_tracked" in self.inference_state:
-                    self.inference_state["frames_already_tracked"].clear()
-
-                if "frames_tracked_per_obj" in self.inference_state:
-                    self.inference_state["frames_tracked_per_obj"].clear()
-
-                # Reset object tracking data
-                if "obj_id_to_idx" in self.inference_state:
-                    self.inference_state["obj_id_to_idx"].clear()
-
-                if "obj_idx_to_id" in self.inference_state:
-                    self.inference_state["obj_idx_to_id"].clear()
-
-                if "obj_ids" in self.inference_state:
-                    self.inference_state["obj_ids"].clear()
-
-                # Clear point and mask inputs
-                if "point_inputs_per_obj" in self.inference_state:
-                    self.inference_state["point_inputs_per_obj"].clear()
-
-                if "mask_inputs_per_obj" in self.inference_state:
-                    self.inference_state["mask_inputs_per_obj"].clear()
-
-                if "adds_in_drm_per_obj" in self.inference_state:
-                    self.inference_state["adds_in_drm_per_obj"].clear()
-
-            # Force garbage collection
-            gc.collect()
-
-            # Clear GPU cache if available
-            if torch and torch.cuda.is_available():
-                torch.cuda.empty_cache()
-
-        def _prepare_image(self, img_pil):
-            # Safely access inference_state with proper error handling
-            if not hasattr(self, 'inference_state') or not self.inference_state:
-                raise RuntimeError("Inference state not initialized")
-
-            device = self.inference_state.get("device")
-            if device is None:
-                raise RuntimeError("Device not found in inference state")
-
-            try:
-                img = torch.from_numpy(np.array(img_pil)).to(device)
-                img = img.permute(2, 0, 1).float() / 255.0
-                img = F.resize(img, (self.input_image_size, self.input_image_size))
-                img = (img - self.img_mean) / self.img_std
-                return img
-            except Exception as e:
-                logger.error(f"Error preparing image: {e}")
-                raise RuntimeError(f"Failed to prepare image: {e}") from e
-
-        @torch.inference_mode()
-        def init_state_tw(self):
-            """Initialize an inference state."""
-            compute_device = torch.device("cuda")
-            inference_state = {}
-            inference_state["images"] = None
-            inference_state["num_frames"] = 0
-            inference_state["offload_video_to_cpu"] = False
-            inference_state["offload_state_to_cpu"] = False
-            inference_state["video_height"] = None
-            inference_state["video_width"] =  None
-            inference_state["device"] = compute_device
-            inference_state["storage_device"] = compute_device
-            inference_state["point_inputs_per_obj"] = {}
-            inference_state["mask_inputs_per_obj"] = {}
-            inference_state["adds_in_drm_per_obj"] = {}
-            inference_state["cached_features"] = {}
-            inference_state["constants"] = {}
-            inference_state["obj_id_to_idx"] = OrderedDict()
-            inference_state["obj_idx_to_id"] = OrderedDict()
-            inference_state["obj_ids"] = []
-            inference_state["output_dict"] = {
-                "cond_frame_outputs": {},
-                "non_cond_frame_outputs": {},
-            }
-            inference_state["output_dict_per_obj"] = {}
-            inference_state["temp_output_dict_per_obj"] = {}
-            inference_state["consolidated_frame_inds"] = {
-                "cond_frame_outputs": set(),
-                "non_cond_frame_outputs": set(),
-            }
-            inference_state["tracking_has_started"] = False
-            inference_state["frames_already_tracked"] = {}
-            inference_state["frames_tracked_per_obj"] = {}
-
-            self.img_mean = self.img_mean.to(compute_device)
-            self.img_std = self.img_std.to(compute_device)
-
-            return inference_state
-
-        @torch.inference_mode()
-        def initialize(self, image, init_mask, bbox=None):
-            if type(init_mask) is list:
-                init_mask = init_mask[0]
-            self.frame_index = 0
-            self.object_sizes = []
-            self.last_added = -1
-
-            self.img_width = image.width
-            self.img_height = image.height
-            self.inference_state = self.init_state_tw()
-
-            # Safely set inference state properties
-            if "images" not in self.inference_state:
-                self.inference_state["images"] = {}
-
-            self.inference_state["images"] = image
-            video_width, video_height = image.size
-            self.inference_state["video_height"] = video_height
-            self.inference_state["video_width"] =  video_width
-            prepared_img = self._prepare_image(image)
-            self.inference_state["images"] = {0 : prepared_img}
-            self.inference_state["num_frames"] = 1
-            self.predictor.reset_state(self.inference_state)
-
-            self.predictor._get_image_feature(self.inference_state, frame_idx=0, batch_size=1)
-
-            if init_mask is None:
-                if bbox is None:
-                    raise ValueError("Initialization state (bbox or mask) is required.")
-                init_mask = self.estimate_mask_from_box(bbox)
-
-            _, _, out_mask_logits = self.predictor.add_new_mask(
-                inference_state=self.inference_state,
-                frame_idx=0,
-                obj_id=0,
-                mask=init_mask,
-            )
-
-            m = (out_mask_logits[0, 0] > 0).float().cpu().numpy().astype(np.uint8)
-            # Safely remove frame from inference_state
-            if self.frame_index in self.inference_state.get("images", {}):
-                self.inference_state["images"].pop(self.frame_index)
-
-            out_dict = {'pred_mask': m}
-            return out_dict
-
-        @torch.inference_mode()
-        def track(self, image, init=False):
-            prepared_img = self._prepare_image(image).unsqueeze(0)
-            if not init:
-                self.frame_index += 1
-                self.inference_state["num_frames"] += 1
-
-            # Limit stored frames to prevent memory leaks
-            if "images" not in self.inference_state:
-                self.inference_state["images"] = {}
-
-            # Clean up old frames if we exceed the limit
-            if len(self.inference_state["images"]) >= self.max_stored_frames:
-                # Remove oldest frames, keeping only the most recent ones
-                sorted_frames = sorted(self.inference_state["images"].keys())
-                frames_to_remove = sorted_frames[:-self.max_stored_frames]
-                for old_frame in frames_to_remove:
-                    del self.inference_state["images"][old_frame]
-
-            # Safely set the current frame
-            if self.frame_index in self.inference_state["images"]:
-                logger.warning(f"Frame {self.frame_index} already exists in inference_state, overwriting")
-            self.inference_state["images"][self.frame_index] = prepared_img
-
-            for out in self.predictor.propagate_in_video(self.inference_state, start_frame_idx=self.frame_index, max_frame_num_to_track=0, return_all_masks=True):
-                if len(out) == 3:
-                    out_frame_idx, _, out_mask_logits = out
-                    m = (out_mask_logits[0][0] > 0.0).float().cpu().numpy().astype(np.uint8)
-                else:
-                    out_frame_idx, _, out_mask_logits, alternative_masks_ious = out
-                    m = (out_mask_logits[0][0] > 0.0).float().cpu().numpy().astype(np.uint8)
-
-                    alternative_masks, out_all_ious = alternative_masks_ious
-                    m_idx = np.argmax(out_all_ious)
-                    m_iou = out_all_ious[m_idx]
-                    alternative_masks = [mask for i, mask in enumerate(alternative_masks) if i != m_idx]
-
-                    n_pixels = (m == 1).sum()
-                    # Limit object_sizes list to prevent memory leaks
-                    if len(self.object_sizes) >= 300:
-                        self.object_sizes = self.object_sizes[-200:]  # Keep last 200, remove older ones
-                    self.object_sizes.append(n_pixels)
-                    if len(self.object_sizes) > 1 and n_pixels >= 1:
-                        obj_sizes_ratio = n_pixels / np.median([
-                            size for size in self.object_sizes[-300:] if size >= 1
-                        ][-10:])
-                    else:
-                        obj_sizes_ratio = -1
-
-                    if m_iou > 0.8 and obj_sizes_ratio >= 0.8 and obj_sizes_ratio <= 1.2 and n_pixels >= 1 and (self.frame_index - self.last_added > 5 or self.last_added == -1):
-                        alternative_masks = [Mask((m_[0][0] > 0.0).cpu().numpy()).rasterize((0, 0, self.img_width - 1, self.img_height - 1)).astype(np.uint8)
-                                         for m_ in alternative_masks]
-
-                        chosen_mask_np = m.copy()
-                        chosen_bbox = Mask(chosen_mask_np).convert(RegionType.RECTANGLE)
-
-                        alternative_masks = [np.logical_and(m_, np.logical_not(chosen_mask_np)).astype(np.uint8) for m_ in alternative_masks]
-                        alternative_masks = [keep_largest_component(m_) for m_ in alternative_masks if np.sum(m_) >= 1]
-                        if len(alternative_masks) > 0:
-                            alternative_masks = [np.logical_or(m_, chosen_mask_np).astype(np.uint8) for m_ in alternative_masks]
-                            alternative_bboxes = [Mask(m_).convert(RegionType.RECTANGLE) for m_ in alternative_masks]
-                            ious = [calculate_overlaps([chosen_bbox], [bbox])[0] for bbox in alternative_bboxes]
-
-                            if np.min(np.array(ious)) <= 0.7:
-                                self.last_added = self.frame_index
-                                self.predictor.add_to_drm(
-                                    inference_state=self.inference_state,
-                                    frame_idx=out_frame_idx,
-                                    obj_id=0,
-                                )
-
-                out_dict = {'pred_mask': m}
-                # Safely remove frame from inference_state
-                if self.frame_index in self.inference_state.get("images", {}):
-                    self.inference_state["images"].pop(self.frame_index)
-                return out_dict
-
-        def estimate_mask_from_box(self, bbox):
-            (
-                _,
-                _,
-                current_vision_feats,
-                current_vision_pos_embeds,
-                feat_sizes,
-            ) = self.predictor._get_image_feature(self.inference_state, 0, 1)
-
-            box = np.array([bbox[0], bbox[1], bbox[0] + bbox[2], bbox[1] + bbox[3]])[None, :]
-            box = torch.as_tensor(box, dtype=torch.float, device=current_vision_feats[0].device)
-
-            from sam2.utils.transforms import SAM2Transforms
-            _transforms = SAM2Transforms(
-                resolution=self.predictor.image_size,
-                mask_threshold=0.0,
-                max_hole_area=0.0,
-                max_sprinkle_area=0.0,
-            )
-            unnorm_box = _transforms.transform_boxes(
-                box, normalize=True, orig_hw=(self.img_height, self.img_width)
-            )
-
-            box_coords = unnorm_box.reshape(-1, 2, 2)
-            box_labels = torch.tensor([[2, 3]], dtype=torch.int, device=unnorm_box.device)
-            box_labels = box_labels.repeat(unnorm_box.size(0), 1)
-            concat_points = (box_coords, box_labels)
-
-            sparse_embeddings, dense_embeddings = self.predictor.sam_prompt_encoder(
-                points=concat_points,
-                boxes=None,
-                masks=None
-            )
-
-            high_res_features = []
-            for i in range(2):
-                _, b_, c_ = current_vision_feats[i].shape
-                high_res_features.append(current_vision_feats[i].permute(1, 2, 0).view(b_, c_, feat_sizes[i][0], feat_sizes[i][1]))
-            if self.predictor.directly_add_no_mem_embed:
-                img_embed = current_vision_feats[2] + self.predictor.no_mem_embed
-            else:
-                img_embed = current_vision_feats[2]
-            _, b_, c_ = current_vision_feats[2].shape
-            img_embed = img_embed.permute(1, 2, 0).view(b_, c_, feat_sizes[2][0], feat_sizes[2][1])
-            low_res_masks, iou_predictions, _, _ = self.predictor.sam_mask_decoder(
-                image_embeddings=img_embed,
-                image_pe=self.predictor.sam_prompt_encoder.get_dense_pe(),
-                sparse_prompt_embeddings=sparse_embeddings,
-                dense_prompt_embeddings=dense_embeddings,
-                multimask_output=False,
-                repeat_image=(concat_points is not None and concat_points[0].shape[0] > 1),
-                high_res_features=high_res_features,
-            )
-
-            masks = _transforms.postprocess_masks(
-                low_res_masks, (self.img_height, self.img_width)
-            )
-            masks = masks > 0
-
-            return masks.squeeze(0).float().detach().cpu().numpy()[0]
-
+    from DAM4SAM.dam4sam_tracker import DAM4SAMTracker
 except ImportError as e:
-    logging.getLogger(__name__).warning("DAM4SAM dependencies missing, tracker disabled: %s", e)
+    logging.getLogger(__name__).warning("DAM4SAM tracker not available: %s", e)
     DAM4SAMTracker = None
 
 try:
@@ -493,6 +78,11 @@ except ImportError:
 # --- Central Configuration & Setup ---
 def get_feature_status():
     """Checks for optional dependencies and returns their status."""
+    try:
+        import yaml
+    except ImportError:
+        yaml = None
+
     masking_libs_installed = all([torch, DAM4SAMTracker, Image, yaml])
     cuda_available = torch is not None and torch.cuda.is_available()
     return {
@@ -508,35 +98,54 @@ def get_feature_status():
 
 class Config:
     """Centralized configuration management."""
+
+    # Core directories
     BASE_DIR = Path(__file__).parent
-    LOG_DIR = BASE_DIR / "logs"
-    CONFIGS_DIR = BASE_DIR / "configs"
-    MODELS_DIR = BASE_DIR / "models"
-    DOWNLOADS_DIR = BASE_DIR / "downloads"
+    DIRS = {
+        'logs': BASE_DIR / "logs",
+        'configs': BASE_DIR / "configs",
+        'models': BASE_DIR / "models",
+        'downloads': BASE_DIR / "downloads"
+    }
+
+    # File settings
     LOG_FILE = "frame_extractor.log"
+
+    # Quality analysis settings
     QUALITY_METRICS = ["sharpness", "edge_strength", "contrast", "brightness", "entropy"]
     QUALITY_WEIGHTS = {"sharpness": 30, "edge_strength": 20, "contrast": 20, "brightness": 10, "entropy": 20}
     NORMALIZATION_CONSTANTS = {"sharpness": 1000, "edge_strength": 100}
-    FILTER_MODES = {"OVERALL": "Overall Quality", "INDIVIDUAL": "Individual Metrics"}
-    MIN_MASK_AREA_PCT = 1.0
     QUALITY_DOWNSCALE_FACTOR = 0.25
+
+    # UI settings
+    FILTER_MODES = {"OVERALL": "Overall Quality", "INDIVIDUAL": "Individual Metrics"}
     UI_DEFAULTS = {
         "method": "all", "interval": 5.0, "max_resolution": "maximum available",
         "fast_scene": False, "resume": False, "use_png": True, "disable_parallel": False,
         "enable_face_filter": True, "face_model_name": "buffalo_l",
-        "quality_thresh": 12.0, "face_thresh": 0.5, "sharpness_thresh": 0.0,
-        "edge_strength_thresh": 0.0, "contrast_thresh": 0.0, "brightness_thresh": 0.0, "entropy_thresh": 0.0,
+        "quality_thresh": 12.0, "face_thresh": 0.5,
         "enable_subject_mask": True, "scene_detect": True,
-        "dam4sam_model_name": "sam2.1",
-        "person_detector_model": "yolo11x.pt",
+        "dam4sam_model_name": "sam2.1", "person_detector_model": "yolo11x.pt",
     }
 
-    @staticmethod
-    def setup_directories():
-        Config.LOG_DIR.mkdir(exist_ok=True)
-        Config.CONFIGS_DIR.mkdir(exist_ok=True)
-        Config.DOWNLOADS_DIR.mkdir(exist_ok=True)
-        Config.MODELS_DIR.mkdir(exist_ok=True)
+    # Processing settings
+    MIN_MASK_AREA_PCT = 1.0
+
+    @classmethod
+    def setup_directories(cls):
+        """Create all necessary directories."""
+        for dir_path in cls.DIRS.values():
+            dir_path.mkdir(exist_ok=True)
+
+    @classmethod
+    def get_dir(cls, name):
+        """Get a directory path by name."""
+        return cls.DIRS[name]
+
+    @classmethod
+    def get_log_path(cls):
+        """Get the full path to the log file."""
+        return cls.DIRS['logs'] / cls.LOG_FILE
 
 # --- Global Instance & Setup ---
 config = Config()
@@ -545,7 +154,7 @@ config.setup_directories()
 
 # --- Fix a: Logger Not Defined Before Use (Part 2) ---
 # Add file handler after directories are confirmed to exist.
-file_handler = logging.FileHandler(config.LOG_DIR / config.LOG_FILE)
+file_handler = logging.FileHandler(config.get_log_path())
 file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
 logger.addHandler(file_handler)
 
@@ -661,84 +270,39 @@ def safe_execute_with_retry(func, max_retries=3, delay=1.0, backoff=2.0):
 
     raise last_exception
 
-def validate_video_file_path(file_path):
+def log_pipeline_error(operation_name, e, progress_queue=None):
+    """Log pipeline errors consistently."""
+    logger.exception(f"Error in {operation_name} pipeline.")
+    error_msg = f"[ERROR] {operation_name} failed: {e}"
+    if progress_queue:
+        progress_queue.put({"log": error_msg})
+    return {"error": str(e)}
+
+def log_critical_error(operation_name, e, progress_queue=None):
+    """Log critical errors with full traceback."""
+    logger.error(f"Critical error in {operation_name}: {e}", exc_info=True)
+    error_msg = f"[CRITICAL] {operation_name} failed: {e}"
+    if progress_queue:
+        progress_queue.put({"log": error_msg})
+
+def log_download_error(operation_name, e, progress_queue=None):
+    """Log download errors consistently."""
+    error_msg = f"Failed to {operation_name}: {e}"
+    logger.error(error_msg, exc_info=True)
+    if progress_queue:
+        progress_queue.put({"log": f"[ERROR] {error_msg}"})
+    raise RuntimeError(error_msg) from e
+
+def validate_file(file_path, file_type="generic", allowed_extensions=None, max_size_mb=100, check_symlink=True):
     """
-    Validate that a file path points to a valid video file.
+    Unified file validation function for different file types.
 
     Args:
-        file_path: Path to the video file
-
-    Returns:
-        Path object if valid
-
-    Raises:
-        ValueError: If file is not a valid video file
-    """
-    from pathlib import Path
-
-    path = Path(file_path)
-
-    if not path.exists():
-        raise ValueError(f"File not found: {file_path}")
-
-    if not path.is_file():
-        raise ValueError(f"Path is not a file: {file_path}")
-
-    # Check for common video extensions
-    video_extensions = {'.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.webm', '.m4v'}
-    if path.suffix.lower() not in video_extensions:
-        raise ValueError(f"File extension '{path.suffix}' not supported. Supported: {video_extensions}")
-
-    # Check file size (prevent processing extremely large files)
-    max_size = 10 * 1024 * 1024 * 1024  # 10GB limit
-    if path.stat().st_size > max_size:
-        raise ValueError(f"File too large: {path.stat().st_size} bytes (max: {max_size} bytes)")
-
-    return path
-
-def validate_image_file_path(file_path):
-    """
-    Validate that a file path points to a valid image file.
-
-    Args:
-        file_path: Path to the image file
-
-    Returns:
-        Path object if valid
-
-    Raises:
-        ValueError: If file is not a valid image file
-    """
-    from pathlib import Path
-
-    path = Path(file_path)
-
-    if not path.exists():
-        raise ValueError(f"File not found: {file_path}")
-
-    if not path.is_file():
-        raise ValueError(f"Path is not a file: {file_path}")
-
-    # Check for common image extensions
-    image_extensions = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif', '.webp'}
-    if path.suffix.lower() not in image_extensions:
-        raise ValueError(f"File extension '{path.suffix}' not supported. Supported: {image_extensions}")
-
-    # Check file size (prevent processing extremely large files)
-    max_size = 100 * 1024 * 1024  # 100MB limit for images
-    if path.stat().st_size > max_size:
-        raise ValueError(f"File too large: {path.stat().st_size} bytes (max: {max_size} bytes)")
-
-    return path
-
-def validate_uploaded_file(file_path, allowed_types, max_size_mb=100):
-    """
-    Validate uploaded file for security and size constraints.
-
-    Args:
-        file_path: Path to the uploaded file
-        allowed_types: Set of allowed file extensions
+        file_path: Path to the file
+        file_type: Type of file ("video", "image", "generic")
+        allowed_extensions: Set of allowed file extensions (auto-detected if None)
         max_size_mb: Maximum file size in MB
+        check_symlink: Whether to check for symlinks (security check)
 
     Returns:
         Path object if valid
@@ -751,32 +315,56 @@ def validate_uploaded_file(file_path, allowed_types, max_size_mb=100):
     path = Path(file_path)
 
     if not path.exists():
-        raise ValueError("Uploaded file not found")
+        raise ValueError(f"File not found: {file_path}")
 
     if not path.is_file():
-        raise ValueError("Uploaded path is not a file")
+        raise ValueError(f"Path is not a file: {file_path}")
+
+    # Auto-detect extensions based on file type
+    if allowed_extensions is None:
+        if file_type == "video":
+            allowed_extensions = {'.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.webm', '.m4v'}
+            max_size_mb = min(max_size_mb, 10000)  # 10GB limit for videos
+        elif file_type == "image":
+            allowed_extensions = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif', '.webp'}
+            max_size_mb = min(max_size_mb, 100)  # 100MB limit for images
+        else:
+            allowed_extensions = set()  # No extension check for generic files
+
+    # Check file extension
+    if allowed_extensions and path.suffix.lower() not in allowed_extensions:
+        raise ValueError(f"File extension '{path.suffix}' not supported. Supported: {allowed_extensions}")
 
     # Check file size
     max_size_bytes = max_size_mb * 1024 * 1024
     if path.stat().st_size > max_size_bytes:
         raise ValueError(f"File too large: {path.stat().st_size} bytes (max: {max_size_bytes} bytes)")
 
-    # Check file extension
-    if path.suffix.lower() not in allowed_types:
-        raise ValueError(f"File type '{path.suffix}' not allowed. Allowed types: {allowed_types}")
-
-    # Additional security check: ensure file is not a symlink or special file
-    if path.is_symlink():
+    # Security check: ensure file is not a symlink or special file
+    if check_symlink and path.is_symlink():
         raise ValueError("Symlinks are not allowed")
 
+    # Try to read the file to ensure it's not corrupted
     try:
-        # Try to read the file to ensure it's not corrupted
         with open(path, 'rb') as f:
             f.read(1024)  # Read first 1KB to check if file is readable
     except (IOError, OSError) as e:
         raise ValueError(f"Cannot read file: {e}")
 
     return path
+
+# Backward compatibility functions
+def validate_video_file_path(file_path):
+    """Validate video file path (backward compatibility)."""
+    return validate_file(file_path, file_type="video")
+
+def validate_image_file_path(file_path):
+    """Validate image file path (backward compatibility)."""
+    return validate_file(file_path, file_type="image")
+
+def validate_uploaded_file(file_path, allowed_types, max_size_mb=100):
+    """Validate uploaded file (backward compatibility)."""
+    return validate_file(file_path, allowed_extensions=allowed_types, max_size_mb=max_size_mb)
 
 def get_person_detector_model_path(model_filename="yolo11x.pt"):
     """Checks for the YOLO model file and downloads it if not found."""
@@ -799,12 +387,7 @@ def get_person_detector_model_path(model_filename="yolo11x.pt"):
             urllib.request.urlretrieve(model_url, model_path)
             logger.info("Person detector model downloaded successfully.")
         except Exception as e:
-            error_msg = (
-                f"Failed to download person detector model: '{model_filename}'. "
-                f"Error: {e}"
-            )
-            logger.error(error_msg)
-            raise FileNotFoundError(error_msg) from e
+            log_download_error(f"download person detector model '{model_filename}'", e)
     
     return str(model_path)
 
@@ -1100,8 +683,7 @@ class SubjectMasker:
             self.progress_queue.put({"log": "[SUCCESS] Subject masking complete."})
             return mask_metadata
         except Exception as e:
-            logger.error("Critical error in SubjectMasker run method", exc_info=True)
-            self.progress_queue.put({"log": f"[CRITICAL] SubjectMasker failed: {e}"})
+            log_critical_error("SubjectMasker run method", e, self.progress_queue)
             return {}
         finally:
             if hasattr(self, 'tracker') and self.tracker is not None:
@@ -1133,8 +715,7 @@ class SubjectMasker:
 
             self.progress_queue.put({"log": f"[INFO] Found {len(self.shots)} shots."})
         except Exception as e:
-            logger.error(f"Scene detection failed: {e}", exc_info=True)
-            self.progress_queue.put({"log": f"[ERROR] Scene detection failed: {e}"})
+            log_critical_error("Scene detection", e, self.progress_queue)
             # Fallback to single shot to prevent crashing
             image_files = list(Path(frames_dir).glob("frame_*.*"))
             self.shots = [(0, len(image_files))]
@@ -1370,8 +951,7 @@ class SubjectMasker:
             return all_masks, all_mask_area_pcts, all_mask_empty_flags, all_mask_errors
 
         except Exception as e:
-            logger.error(f"DAM4SAM mask propagation failed: {e}", exc_info=True)
-            self.progress_queue.put({"log": f"[ERROR] DAM4SAM mask propagation failed: {e}"})
+            log_critical_error("DAM4SAM mask propagation", e, self.progress_queue)
             h, w, _ = shot_frames[0].shape
             error_msg = f"DAM4SAM propagation failed: {e}"
             return ([np.zeros((h, w), dtype=np.uint8) for _ in shot_frames],
@@ -1401,7 +981,7 @@ class VideoManager:
 
     def _download_video(self):
         res_filter = f"[height<={self.max_resolution}]" if self.max_resolution != "maximum available" else ""
-        ydl_opts = {'outtmpl': str(config.DOWNLOADS_DIR / f"%(id)s_%(title).40s_%(height)sp.%(ext)s"),
+        ydl_opts = {'outtmpl': str(config.get_dir('downloads') / f"%(id)s_%(title).40s_%(height)sp.%(ext)s"),
                     'format': f'bestvideo{res_filter}[ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]/best{res_filter}[ext=mp4]/best',
                     'merge_output_format': 'mp4', 'noprogress': True, 'quiet': True, 'logger': logger}
         try:
@@ -1440,7 +1020,7 @@ class ExtractionPipeline:
             self.progress_queue.put({"log": f"[INFO] Video ready: {self.video_path.name}"})
 
             self.video_info = vid_manager.get_video_info()
-            self.output_dir = config.DOWNLOADS_DIR / self.video_path.stem
+            self.output_dir = config.get_dir('downloads') / self.video_path.stem
             self.output_dir.mkdir(exist_ok=True)
             
             self.progress_queue.put({"log": "[INFO] Starting frame extraction..."})
@@ -1453,9 +1033,7 @@ class ExtractionPipeline:
             self.progress_queue.put({"log": "[SUCCESS] Extraction complete."})
             return {"done": True, "output_dir": str(self.output_dir), "video_path": str(self.video_path)}
         except Exception as e:
-            logger.exception("Error in extraction pipeline.")
-            self.progress_queue.put({"log": f"[ERROR] Extraction failed: {e}"})
-            return {"error": str(e)}
+            return log_pipeline_error("extraction", e, self.progress_queue)
 
     def _monitor_ffmpeg_progress(self, process):
         """Reads FFmpeg's stdout line-by-line to parse real-time progress."""
@@ -1656,9 +1234,7 @@ class AnalysisPipeline:
             self.progress_queue.put({"log": "[SUCCESS] Analysis complete. Go to the 'Filtering & Export' tab."})
             return {"done": True, "metadata_path": str(self.metadata_path), "output_dir": str(self.output_dir)}
         except Exception as e:
-            logger.exception("Error in analysis pipeline.")
-            self.progress_queue.put({"log": f"[ERROR] Analysis failed: {e}"})
-            return {"error": str(e)}
+            return log_pipeline_error("analysis", e, self.progress_queue)
             
     # --- Fix c: Incomplete Frame Map Handling in AnalysisPipeline ---
     def _create_frame_map(self):
@@ -1769,13 +1345,13 @@ class AnalysisPipeline:
 
             self.face_analyzer = FaceAnalysis(
                 name=self.params.face_model_name,
-                root=str(config.MODELS_DIR),
+                root=str(config.get_dir('models')),
                 providers=['CUDAExecutionProvider']
             )
             self.face_analyzer.prepare(ctx_id=0, det_size=(640, 640))
             self.progress_queue.put({"log": "[SUCCESS] Face model loaded."})
         except Exception as e:
-            logger.error(f"Failed to initialize FaceAnalysis: {e}", exc_info=True)
+            log_critical_error("FaceAnalysis initialization", e)
             self.face_analyzer = None
             raise RuntimeError(f"Could not initialize face analysis model. Error: {e}")
 
@@ -1791,7 +1367,7 @@ class AnalysisPipeline:
         if model_name not in model_urls:
             raise ValueError(f"Unknown face model: {model_name}")
 
-        model_dir = config.MODELS_DIR / model_name
+        model_dir = config.get_dir('models') / model_name
         if model_dir.exists():
             # Check if model files exist
             required_files = ["det_10g.onnx", "w600k_r50.onnx", "2d106det.onnx"]
@@ -1804,7 +1380,7 @@ class AnalysisPipeline:
             import zipfile
 
             model_url = model_urls[model_name]
-            zip_path = config.MODELS_DIR / f"{model_name}.zip"
+            zip_path = config.get_dir('models') / f"{model_name}.zip"
 
             # Download the zip file
             urllib.request.urlretrieve(model_url, zip_path)
@@ -1812,7 +1388,7 @@ class AnalysisPipeline:
 
             # Extract the zip file
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                zip_ref.extractall(config.MODELS_DIR)
+                zip_ref.extractall(config.get_dir('models'))
 
             # Clean up zip file
             zip_path.unlink()
@@ -1820,9 +1396,7 @@ class AnalysisPipeline:
             self.progress_queue.put({"log": f"[SUCCESS] Face model '{model_name}' downloaded and extracted."})
 
         except Exception as e:
-            error_msg = f"Failed to download face model '{model_name}': {e}"
-            self.progress_queue.put({"log": f"[ERROR] {error_msg}"})
-            raise RuntimeError(error_msg) from e
+            log_download_error(f"download face model '{model_name}'", e, self.progress_queue)
 
     def _process_reference_face(self):
         if not self.params.face_ref_img_path:
@@ -1893,7 +1467,7 @@ class AnalysisPipeline:
             self.progress_queue.put({"progress": 1})
 
         except Exception as e:
-            logger.error(f"Critical error processing frame {image_path.name}: {e}", exc_info=True)
+            log_critical_error(f"processing frame {image_path.name}", e)
             self.stats.errors += 1
             meta = {"filename": image_path.name, "error": f"processing_failed: {str(e)}"}
             with self.write_lock, self.metadata_path.open('a') as f:
@@ -1925,153 +1499,374 @@ class AppUI:
         self.feature_status = get_feature_status()
         css = """.gradio-container { max-width: 1280px !important; margin: auto !important; }"""
         with gr.Blocks(theme=gr.themes.Default(primary_hue="blue"), css=css) as demo:
-            gr.Markdown("# Advanced Frame Extractor & Filter")
-            gr.Markdown("**🤖 Automatic Model Downloads:** All required models (face analysis, SAM, YOLO) will be downloaded automatically when needed.")
-            self.components['model_download_status'] = gr.Textbox(
-                label="Model Download Status",
-                value="✅ All models ready - no downloads needed",
-                interactive=False,
-                lines=2
-            )
-            if not self.feature_status['cuda_available']:
-                gr.Warning("No CUDA-enabled GPU detected. Running in CPU-only mode. "
-                           "Face Analysis and Subject Masking features will be disabled.")
-            
-            self.components['extracted_video_path_state'] = gr.State("")
-            self.components['extracted_frames_dir_state'] = gr.State("")
-            self.components['analysis_output_dir_state'] = gr.State("")
-            self.components['analysis_metadata_path_state'] = gr.State("")
-
-            with gr.Tabs():
-                self._create_extraction_tab()
-                self._create_analysis_tab()
-                self._create_filtering_tab()
-
+            self._create_header()
+            self._create_global_components()
+            self._create_tabs()
             self._create_event_handlers()
         return demo
+
+    def _create_header(self):
+        """Create the header section with title and warnings."""
+        gr.Markdown("# Advanced Frame Extractor & Filter")
+        gr.Markdown("**🤖 Automatic Model Downloads:** All required models (face analysis, SAM, YOLO) will be downloaded automatically when needed.")
+        self._create_component('model_download_status', 'textbox', {
+            'label': "Model Download Status",
+            'value': "✅ All models ready - no downloads needed",
+            'interactive': False,
+            'lines': 2
+        })
+        if not self.feature_status['cuda_available']:
+            gr.Warning("No CUDA-enabled GPU detected. Running in CPU-only mode. "
+                       "Face Analysis and Subject Masking features will be disabled.")
+
+    def _create_global_components(self):
+        """Create global state components."""
+        self.components.update({
+            'extracted_video_path_state': gr.State(""),
+            'extracted_frames_dir_state': gr.State(""),
+            'analysis_output_dir_state': gr.State(""),
+            'analysis_metadata_path_state': gr.State("")
+        })
+
+    def _create_tabs(self):
+        """Create all tabs."""
+        with gr.Tabs():
+            self._create_extraction_tab()
+            self._create_analysis_tab()
+            self._create_filtering_tab()
+
+    def _create_component(self, name, comp_type, kwargs):
+        """Helper to create and store UI components."""
+        comp_map = {
+            'textbox': gr.Textbox,
+            'dropdown': gr.Dropdown,
+            'slider': gr.Slider,
+            'checkbox': gr.Checkbox,
+            'button': gr.Button,
+            'radio': gr.Radio,
+            'markdown': gr.Markdown,
+            'file': gr.File
+        }
+        component = comp_map[comp_type](**kwargs)
+        self.components[name] = component
+        return component
+
+    def _create_button_pair(self, start_name, stop_name, start_text="Start", stop_text="Stop"):
+        """Helper to create start/stop button pairs."""
+        with gr.Row():
+            self._create_component(start_name, 'button', {
+                'value': start_text,
+                'variant': "primary"
+            })
+            self._create_component(stop_name, 'button', {
+                'value': stop_text,
+                'variant': "stop",
+                'interactive': False
+            })
+
+    def _create_log_section(self, log_name, status_name, log_label="Logs", log_lines=10):
+        """Helper to create log and status sections."""
+        gr.Markdown(f"### {status_name.replace('_', ' ').title()}")
+        self._create_component(status_name, 'markdown', {'value': ""})
+        self._create_component(log_name, 'textbox', {
+            'label': log_label,
+            'lines': log_lines,
+            'interactive': False,
+            'autoscroll': True
+        })
 
     def _create_extraction_tab(self):
         with gr.Tab("1. Frame Extraction") as self.components['extraction_tab']:
             with gr.Row():
                 with gr.Column(scale=2):
                     gr.Markdown("### Video Source")
-                    self.components['source_input'] = gr.Textbox(
-                        label="Video URL or Local Path", lines=1,
-                        placeholder="Enter YouTube URL or local video file path",
-                        info="YouTube downloads require 'yt-dlp'. Status: " + ("Available" if self.feature_status['youtube_dl'] else "Not Installed")
-                    )
-                    self.components['upload_video_input'] = gr.File(label="Or Upload Video", file_types=["video"], type="filepath")
-                    
+                    self._create_component('source_input', 'textbox', {
+                        'label': "Video URL or Local Path",
+                        'lines': 1,
+                        'placeholder': "Enter YouTube URL or local video file path",
+                        'info': "YouTube downloads require 'yt-dlp'. Status: " + ("Available" if self.feature_status['youtube_dl'] else "Not Installed")
+                    })
+                    self._create_component('upload_video_input', 'file', {
+                        'label': "Or Upload Video",
+                        'file_types': ["video"],
+                        'type': "filepath"
+                    })
+
                     gr.Markdown("### Extraction Settings")
                     with gr.Row():
                         method_choices = ["keyframes", "interval", "all"]
                         if self.feature_status['scene_detection']: method_choices.insert(2, "scene")
-                        
-                        self.components['method_input'] = gr.Dropdown(method_choices, value=config.UI_DEFAULTS["method"], label="Extraction Method")
-                        self.components['interval_input'] = gr.Number(label="Interval (s)", value=config.UI_DEFAULTS["interval"], visible=False)
-                        self.components['fast_scene_input'] = gr.Checkbox(label="Fast Scene Detect", value=config.UI_DEFAULTS["fast_scene"], visible=False)
-                    
-                    self.components['max_resolution'] = gr.Dropdown(["maximum available", "2160", "1080", "720", "480", "360"], value=config.UI_DEFAULTS["max_resolution"], label="DL Res (URL)")
-                    self.components['use_png_input'] = gr.Checkbox(label="Save as PNG (slower, higher quality)", value=config.UI_DEFAULTS["use_png"])
+
+                        self._create_component('method_input', 'dropdown', {
+                            'choices': method_choices,
+                            'value': config.UI_DEFAULTS["method"],
+                            'label': "Extraction Method"
+                        })
+                        self._create_component('interval_input', 'textbox', {
+                            'label': "Interval (s)",
+                            'value': config.UI_DEFAULTS["interval"],
+                            'visible': False
+                        })
+                        self._create_component('fast_scene_input', 'checkbox', {
+                            'label': "Fast Scene Detect",
+                            'value': config.UI_DEFAULTS["fast_scene"],
+                            'visible': False
+                        })
+
+                    self._create_component('max_resolution', 'dropdown', {
+                        'choices': ["maximum available", "2160", "1080", "720", "480", "360"],
+                        'value': config.UI_DEFAULTS["max_resolution"],
+                        'label': "DL Res (URL)"
+                    })
+                    self._create_component('use_png_input', 'checkbox', {
+                        'label': "Save as PNG (slower, higher quality)",
+                        'value': config.UI_DEFAULTS["use_png"]
+                    })
 
                 with gr.Column(scale=3):
-                    gr.Markdown("### Extraction Log")
-                    self.components['extraction_status'] = gr.Markdown("")
-                    self.components['extraction_log'] = gr.Textbox(label="Logs", lines=10, interactive=False, autoscroll=True)
-            
-            with gr.Row():
-                self.components['start_extraction_button'] = gr.Button("Start Extraction", variant="primary")
-                self.components['stop_extraction_button'] = gr.Button("Stop", variant="stop", interactive=False)
+                    self._create_log_section('extraction_log', 'extraction_status', "Logs", 10)
+
+            self._create_button_pair('start_extraction_button', 'stop_extraction_button', "Start Extraction", "Stop")
 
     def _create_analysis_tab(self):
-         with gr.Tab("2. Frame Analysis") as self.components['analysis_tab']:
+        with gr.Tab("2. Frame Analysis") as self.components['analysis_tab']:
             with gr.Row():
                 with gr.Column(scale=2):
-                    gr.Markdown("### Source Frames & Settings")
-                    self.components['frames_folder_input'] = gr.Textbox(label="Extracted Frames Folder Path", info="This is filled automatically from Step 1, or you can enter a path manually.")
-                    self.components['analysis_video_path_input'] = gr.Textbox(label="Original Video Path (Optional)", info="Needed for scene-detection in masking. Filled from Step 1 if available.")
-                    
-                    with gr.Accordion("Face Similarity", open=False):
-                        is_face_gpu_ready = self.feature_status['face_analysis'] and self.feature_status['cuda_available']
-                        face_info = "Available" if is_face_gpu_ready else ("'insightface' not installed" if not self.feature_status['face_analysis'] else "CUDA not available")
-                        
-                        self.components['enable_face_filter_input'] = gr.Checkbox(label="Enable Face Similarity", value=is_face_gpu_ready, info=f"Compares faces to a reference image. Status: {face_info}", interactive=is_face_gpu_ready)
-                        with gr.Group(visible=is_face_gpu_ready) as self.components['face_options_group']:
-                            self.components['face_model_name_input'] = gr.Dropdown(["buffalo_l", "buffalo_s", "buffalo_m", "antelopev2"], value=config.UI_DEFAULTS["face_model_name"], label="Model")
-                            self.components['face_ref_img_path_input'] = gr.Textbox(label="Reference Image Path")
-                            self.components['face_ref_img_upload_input'] = gr.File(label="Or Upload Reference", file_types=["image"], type="filepath")
-                    
-                    with gr.Accordion("Subject Masking", open=False):
-                        masking_status = "Available" if self.feature_status['masking'] else ("Dependencies missing" if not self.feature_status['masking_libs_installed'] else "CUDA not available")
-                        person_det_status = "Available (YOLO11x)" if self.feature_status['person_detection'] else "'ultralytics' not installed"
-                        
-                        default_mask_enable = self.feature_status['masking']
-                        self.components['enable_subject_mask_input'] = gr.Checkbox(label="Enable Subject-Only Metrics", value=default_mask_enable, info=f"Masking Status: {masking_status} | Person Detector: {person_det_status}", interactive=self.feature_status['masking'])
-                        
-                        with gr.Group(visible=default_mask_enable) as self.components['masking_options_group']:
-                            self.components['dam4sam_model_name_input'] = gr.Dropdown(['sam2.1'], value=config.UI_DEFAULTS["dam4sam_model_name"], label="DAM4SAM Model")
-                            
-                            default_scene_detect = self.feature_status['scene_detection']
-                            self.components['scene_detect_input'] = gr.Checkbox(label="Use Scene Detection for Masking", value=default_scene_detect, interactive=self.feature_status['scene_detection'], info="Status: " + ("Available" if self.feature_status['scene_detection'] else "'scenedetect' not installed"))
-
-                    with gr.Accordion("Advanced & Config", open=False):
-                        self.components['resume_input'] = gr.Checkbox(label="Resume/Use Cache", value=config.UI_DEFAULTS["resume"])
-                        self.components['disable_parallel_input'] = gr.Checkbox(label="Disable Parallelism (for low memory)", value=config.UI_DEFAULTS["disable_parallel"])
-                        self._create_config_presets_ui()
-
+                    self._create_analysis_settings()
                 with gr.Column(scale=3):
-                    gr.Markdown("### Analysis Log")
-                    self.components['analysis_status'] = gr.Markdown("")
-                    self.components['analysis_log'] = gr.Textbox(label="Logs", lines=15, interactive=False, autoscroll=True)
-                    self.components['model_download_status_analysis'] = gr.Textbox(
-                        label="Model Download Status",
-                        value="⏳ Checking model availability...",
-                        interactive=False,
-                        lines=2
-                    )
-            
-            with gr.Row():
-                self.components['start_analysis_button'] = gr.Button("Start Analysis", variant="primary")
-                self.components['stop_analysis_button'] = gr.Button("Stop", variant="stop", interactive=False)
+                    self._create_analysis_log_section()
+
+            self._create_button_pair('start_analysis_button', 'stop_analysis_button', "Start Analysis", "Stop")
+
+    def _create_analysis_settings(self):
+        """Create the analysis settings section."""
+        gr.Markdown("### Source Frames & Settings")
+        self._create_component('frames_folder_input', 'textbox', {
+            'label': "Extracted Frames Folder Path",
+            'info': "This is filled automatically from Step 1, or you can enter a path manually."
+        })
+        self._create_component('analysis_video_path_input', 'textbox', {
+            'label': "Original Video Path (Optional)",
+            'info': "Needed for scene-detection in masking. Filled from Step 1 if available."
+        })
+
+        self._create_face_similarity_section()
+        self._create_subject_masking_section()
+        self._create_advanced_config_section()
+
+    def _create_face_similarity_section(self):
+        """Create face similarity configuration section."""
+        with gr.Accordion("Face Similarity", open=False):
+            is_face_gpu_ready = self.feature_status['face_analysis'] and self.feature_status['cuda_available']
+            face_info = "Available" if is_face_gpu_ready else ("'insightface' not installed" if not self.feature_status['face_analysis'] else "CUDA not available")
+
+            self._create_component('enable_face_filter_input', 'checkbox', {
+                'label': "Enable Face Similarity",
+                'value': is_face_gpu_ready,
+                'info': f"Compares faces to a reference image. Status: {face_info}",
+                'interactive': is_face_gpu_ready
+            })
+            with gr.Group(visible=is_face_gpu_ready) as self.components['face_options_group']:
+                self._create_component('face_model_name_input', 'dropdown', {
+                    'choices': ["buffalo_l", "buffalo_s", "buffalo_m", "antelopev2"],
+                    'value': config.UI_DEFAULTS["face_model_name"],
+                    'label': "Model"
+                })
+                self._create_component('face_ref_img_path_input', 'textbox', {
+                    'label': "Reference Image Path"
+                })
+                self._create_component('face_ref_img_upload_input', 'file', {
+                    'label': "Or Upload Reference",
+                    'file_types': ["image"],
+                    'type': "filepath"
+                })
+
+    def _create_subject_masking_section(self):
+        """Create subject masking configuration section."""
+        with gr.Accordion("Subject Masking", open=False):
+            masking_status = "Available" if self.feature_status['masking'] else ("Dependencies missing" if not self.feature_status['masking_libs_installed'] else "CUDA not available")
+            person_det_status = "Available (YOLO11x)" if self.feature_status['person_detection'] else "'ultralytics' not installed"
+
+            default_mask_enable = self.feature_status['masking']
+            self._create_component('enable_subject_mask_input', 'checkbox', {
+                'label': "Enable Subject-Only Metrics",
+                'value': default_mask_enable,
+                'info': f"Masking Status: {masking_status} | Person Detector: {person_det_status}",
+                'interactive': self.feature_status['masking']
+            })
+
+            with gr.Group(visible=default_mask_enable) as self.components['masking_options_group']:
+                self._create_component('dam4sam_model_name_input', 'dropdown', {
+                    'choices': ['sam2.1'],
+                    'value': config.UI_DEFAULTS["dam4sam_model_name"],
+                    'label': "DAM4SAM Model"
+                })
+
+                default_scene_detect = self.feature_status['scene_detection']
+                self._create_component('scene_detect_input', 'checkbox', {
+                    'label': "Use Scene Detection for Masking",
+                    'value': default_scene_detect,
+                    'interactive': self.feature_status['scene_detection'],
+                    'info': "Status: " + ("Available" if self.feature_status['scene_detection'] else "'scenedetect' not installed")
+                })
+
+    def _create_advanced_config_section(self):
+        """Create advanced configuration section."""
+        with gr.Accordion("Advanced & Config", open=False):
+            self._create_component('resume_input', 'checkbox', {
+                'label': "Resume/Use Cache",
+                'value': config.UI_DEFAULTS["resume"]
+            })
+            self._create_component('disable_parallel_input', 'checkbox', {
+                'label': "Disable Parallelism (for low memory)",
+                'value': config.UI_DEFAULTS["disable_parallel"]
+            })
+            self._create_config_presets_ui()
+
+    def _create_analysis_log_section(self):
+        """Create the analysis log section."""
+        gr.Markdown("### Analysis Log")
+        self._create_component('analysis_status', 'markdown', {'value': ""})
+        self._create_component('analysis_log', 'textbox', {
+            'label': "Logs",
+            'lines': 15,
+            'interactive': False,
+            'autoscroll': True
+        })
+        self._create_component('model_download_status_analysis', 'textbox', {
+            'label': "Model Download Status",
+            'value': "⏳ Checking model availability...",
+            'interactive': False,
+            'lines': 2
+        })
 
     def _create_filtering_tab(self):
         with gr.Tab("3. Filtering & Export") as self.components['filtering_tab']:
             with gr.Row():
                 with gr.Column(scale=1):
-                    gr.Markdown("## Live Filtering")
-                    self.components['filter_mode_toggle'] = gr.Radio(list(config.FILTER_MODES.values()), value=config.FILTER_MODES["OVERALL"], label="Filter By")
-                    with gr.Accordion("Customize Quality Weights", open=False):
-                        self.components['weight_sliders'] = [gr.Slider(0, 100, config.QUALITY_WEIGHTS[k], step=1, label=k.capitalize()) for k in config.QUALITY_METRICS]
-                    
-                    with gr.Group() as self.components['overall_quality_group']:
-                        self.components['quality_filter_slider'] = gr.Slider(0, 100, config.UI_DEFAULTS["quality_thresh"], label="Min Quality")
-                    with gr.Group(visible=False) as self.components['individual_metrics_group']:
-                        self.components['filter_metric_sliders'] = [gr.Slider(0, 100, label=f"Min {k.replace('_',' ').capitalize()}") for k in config.QUALITY_METRICS]
-                    self.components['face_filter_slider'] = gr.Slider(0, 1.0, 0.5, label="Min Face Similarity", step=0.01, interactive=False)
-
+                    self._create_filtering_controls()
                 with gr.Column(scale=3):
-                    with gr.Row():
-                        self.components['filter_stats'] = gr.Textbox(label="Filter Results", lines=4, interactive=False, value="Run analysis to see results.")
-                        self.components['export_button'] = gr.Button("Export Kept Frames", variant="primary")
-                    
-                    with gr.Accordion("Export Settings", open=True):
-                        self.components['enable_crop_input'] = gr.Checkbox(label="Crop to Subject", value=False)
-                        with gr.Group(visible=False) as self.components['crop_options_group']:
-                            self.components['crop_ar_input'] = gr.Textbox(label="Target Aspect Ratios (comma-separated)", value="16:9, 1:1, 4:5", info="e.g., '16:9, 4:5'. Will pick the best fit.")
-                            self.components['crop_padding_input'] = gr.Slider(label="Padding (%)", minimum=0, maximum=100, value=15, step=1, info="Padding added around the subject's bounding box.")
+                    self._create_filtering_results()
 
-                    self.components['results_gallery'] = gr.Gallery(label="Kept Frames Preview (Max 100)", columns=8, allow_preview=True)
+    def _create_filtering_controls(self):
+        """Create filtering control section."""
+        gr.Markdown("## Live Filtering")
+        self._create_component('filter_mode_toggle', 'radio', {
+            'choices': list(config.FILTER_MODES.values()),
+            'value': config.FILTER_MODES["OVERALL"],
+            'label': "Filter By"
+        })
+
+        self._create_quality_weights_section()
+        self._create_filter_sliders()
+        self._create_export_settings()
+
+    def _create_quality_weights_section(self):
+        """Create quality weights customization section."""
+        with gr.Accordion("Customize Quality Weights", open=False):
+            self.components['weight_sliders'] = [
+                self._create_component(f'weight_slider_{k}', 'slider', {
+                    'minimum': 0,
+                    'maximum': 100,
+                    'value': config.QUALITY_WEIGHTS[k],
+                    'step': 1,
+                    'label': k.capitalize()
+                }) for k in config.QUALITY_METRICS
+            ]
+
+    def _create_filter_sliders(self):
+        """Create filter slider controls."""
+        with gr.Group() as self.components['overall_quality_group']:
+            self._create_component('quality_filter_slider', 'slider', {
+                'minimum': 0,
+                'maximum': 100,
+                'value': config.UI_DEFAULTS["quality_thresh"],
+                'label': "Min Quality"
+            })
+
+        with gr.Group(visible=False) as self.components['individual_metrics_group']:
+            self.components['filter_metric_sliders'] = [
+                self._create_component(f'filter_slider_{k}', 'slider', {
+                    'minimum': 0,
+                    'maximum': 100,
+                    'label': f"Min {k.replace('_',' ').capitalize()}"
+                }) for k in config.QUALITY_METRICS
+            ]
+
+        self._create_component('face_filter_slider', 'slider', {
+            'minimum': 0,
+            'maximum': 1.0,
+            'value': 0.5,
+            'label': "Min Face Similarity",
+            'step': 0.01,
+            'interactive': False
+        })
+
+    def _create_export_settings(self):
+        """Create export settings section."""
+        with gr.Accordion("Export Settings", open=True):
+            self._create_component('enable_crop_input', 'checkbox', {
+                'label': "Crop to Subject",
+                'value': False
+            })
+            with gr.Group(visible=False) as self.components['crop_options_group']:
+                self._create_component('crop_ar_input', 'textbox', {
+                    'label': "Target Aspect Ratios (comma-separated)",
+                    'value': "16:9, 1:1, 4:5",
+                    'info': "e.g., '16:9, 4:5'. Will pick the best fit."
+                })
+                self._create_component('crop_padding_input', 'slider', {
+                    'label': "Padding (%)",
+                    'minimum': 0,
+                    'maximum': 100,
+                    'value': 15,
+                    'step': 1,
+                    'info': "Padding added around the subject's bounding box."
+                })
+
+    def _create_filtering_results(self):
+        """Create filtering results section."""
+        with gr.Row():
+            self._create_component('filter_stats', 'textbox', {
+                'label': "Filter Results",
+                'lines': 4,
+                'interactive': False,
+                'value': "Run analysis to see results."
+            })
+            self._create_component('export_button', 'button', {
+                'value': "Export Kept Frames",
+                'variant': "primary"
+            })
+
+        self._create_component('results_gallery', 'gallery', {
+            'label': "Kept Frames Preview (Max 100)",
+            'columns': 8,
+            'allow_preview': True
+        })
             
     def _create_config_presets_ui(self):
+        """Create configuration presets UI section."""
         with gr.Group():
-            self.components['config_status'] = gr.Textbox(label="Status", interactive=False, lines=1)
+            self._create_component('config_status', 'textbox', {
+                'label': "Status",
+                'interactive': False,
+                'lines': 1
+            })
             with gr.Row():
-                self.components['config_dropdown'] = gr.Dropdown(label="Select Config", choices=[f.stem for f in config.CONFIGS_DIR.glob("*.json")])
-                self.components['load_button'] = gr.Button("Load")
-                self.components['delete_button'] = gr.Button("Delete", variant="stop")
+                self._create_component('config_dropdown', 'dropdown', {
+                    'label': "Select Config",
+                    'choices': [f.stem for f in config.get_dir('configs').glob("*.json")]
+                })
+                self._create_component('load_button', 'button', {'value': "Load"})
+                self._create_component('delete_button', 'button', {
+                    'value': "Delete",
+                    'variant': "stop"
+                })
             with gr.Row():
-                self.components['config_name_input'] = gr.Textbox(label="New Config Name")
-                self.components['save_button'] = gr.Button("Save")
+                self._create_component('config_name_input', 'textbox', {
+                    'label': "New Config Name"
+                })
+                self._create_component('save_button', 'button', {'value': "Save"})
 
     def _create_event_handlers(self):
         self.components['method_input'].change(lambda m: (gr.update(visible=m=='interval'), gr.update(visible=m=='scene')), self.components['method_input'], [self.components['interval_input'], self.components['fast_scene_input']])
@@ -2171,10 +1966,10 @@ class AppUI:
 
             # Check face analysis models
             if features['face_analysis'] and features['cuda_available']:
-                face_models_dir = config.MODELS_DIR
-                if face_models_dir.exists():
+                models_dir = config.get_dir('models')
+                if models_dir.exists():
                     # Check if any face models are available
-                    model_found = any((face_models_dir / model_name).exists()
+                    model_found = any((models_dir / model_name).exists()
                                     for model_name in ["buffalo_l", "buffalo_s", "buffalo_m", "antelopev2"])
                     if model_found:
                         status_parts.append("✅ Face analysis models ready")
@@ -2184,9 +1979,9 @@ class AppUI:
                     status_parts.append("📥 Face analysis models will be downloaded automatically")
 
             # Check SAM models
-            sam_models_dir = config.MODELS_DIR
-            if sam_models_dir.exists():
-                sam_model_found = (sam_models_dir / "sam2.1_hiera_large.pt").exists()
+            models_dir = config.get_dir('models')
+            if models_dir.exists():
+                sam_model_found = (models_dir / "sam2.1_hiera_large.pt").exists()
                 if sam_model_found:
                     status_parts.append("✅ SAM models ready")
                 else:
@@ -2195,9 +1990,9 @@ class AppUI:
                 status_parts.append("📥 SAM models will be downloaded automatically")
 
             # Check YOLO models
-            yolo_models_dir = config.MODELS_DIR
-            if yolo_models_dir.exists():
-                yolo_model_found = (yolo_models_dir / "yolo11x.pt").exists()
+            models_dir = config.get_dir('models')
+            if models_dir.exists():
+                yolo_model_found = (models_dir / "yolo11x.pt").exists()
                 if yolo_model_found:
                     status_parts.append("✅ YOLO models ready")
                 else:
@@ -2231,7 +2026,7 @@ class AppUI:
         try:
             if upload_video:
                 # For uploaded files, validate the path
-                source = safe_path_join(config.DOWNLOADS_DIR, Path(source).name, {'.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.webm', '.m4v'})
+                source = safe_path_join(config.get_dir('downloads'), Path(source).name, {'.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.webm', '.m4v'})
             else:
                 # For source paths, validate it's a proper video file or URL
                 is_url = re.match(r'https?://|youtu\.be', str(source))
@@ -2290,7 +2085,7 @@ class AppUI:
             try:
                 # Validate face reference image path
                 if face_ref_upload:
-                    face_ref = safe_path_join(config.DOWNLOADS_DIR, Path(face_ref).name, {'.jpg', '.jpeg', '.png', '.bmp', '.tiff'})
+                    face_ref = safe_path_join(config.get_dir('downloads'), Path(face_ref).name, {'.jpg', '.jpeg', '.png', '.bmp', '.tiff'})
                 else:
                     face_ref = str(validate_video_file_path(face_ref))  # Reusing video validation for images
             except (ValueError, RuntimeError) as e:
@@ -2554,11 +2349,11 @@ class AppUI:
         for i, k in enumerate(config.QUALITY_METRICS):
             settings[f"weight_{k}"] = values[12 + i]
 
-        with (config.CONFIGS_DIR / f"{name}.json").open('w') as f:
+        with (config.get_dir('configs') / f"{name}.json").open('w') as f:
             json.dump(settings, f, indent=2)
-            
+
         # --- Fix b: Typo in Config Directory References ---
-        return f"Config '{name}' saved.", gr.update(choices=[f.stem for f in config.CONFIGS_DIR.glob("*.json")])
+        return f"Config '{name}' saved.", gr.update(choices=[f.stem for f in config.get_dir('configs').glob("*.json")])
 
     def load_config(self, name):
         ordered_comp_ids = [
@@ -2567,7 +2362,7 @@ class AppUI:
             'enable_subject_mask_input', 'dam4sam_model_name_input', 'scene_detect_input'
         ]
         
-        if not name or not (config_path := config.CONFIGS_DIR / f"{name}.json").exists():
+        if not name or not (config_path := config.get_dir('configs') / f"{name}.json").exists():
             status = "Error: No config selected." if not name else f"Error: Config '{name}' not found."
             num_outputs = len(ordered_comp_ids) + len(config.QUALITY_METRICS)
             return [gr.update()] * num_outputs + [status]
@@ -2587,9 +2382,9 @@ class AppUI:
 
     def delete_config(self, name):
         if not name: return "Error: No config selected.", gr.update()
-        (config.CONFIGS_DIR / f"{name}.json").unlink(missing_ok=True)
+        (config.get_dir('configs') / f"{name}.json").unlink(missing_ok=True)
         # --- Fix b: Typo in Config Directory References ---
-        return f"Config '{name}' deleted.", gr.update(choices=[f.stem for f in config.CONFIGS_DIR.glob("*.json")], value=None)
+        return f"Config '{name}' deleted.", gr.update(choices=[f.stem for f in config.get_dir('configs').glob("*.json")], value=None)
 
 if __name__ == "__main__":
     if torch is None or not torch.cuda.is_available():
