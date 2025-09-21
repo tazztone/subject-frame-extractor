@@ -326,3 +326,4 @@ models/models/buffalo_l/genderage.onnx
 models/models/buffalo_l/w600k_r50.onnx
 models/yolov13l.pt
 metadata.jsonl
+ui_improvements_plan.md
