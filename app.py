@@ -1507,17 +1507,54 @@ class AppUI:
 
     def _create_header(self):
         """Create the header section with title and warnings."""
-        gr.Markdown("# Advanced Frame Extractor & Filter")
-        gr.Markdown("**🤖 Automatic Model Downloads:** All required models (face analysis, SAM, YOLO) will be downloaded automatically when needed.")
+        gr.Markdown("# 🎬 Advanced Frame Extractor & Filter")
+        gr.Markdown("**🚀 Professional Video Analysis Suite** - Extract, analyze, and filter video frames with AI-powered quality assessment and subject detection.")
+
+        with gr.Row():
+            with gr.Column(scale=3):
+                gr.Markdown("### 📋 Workflow Overview")
+                gr.Markdown("""
+                1. **📹 Frame Extraction** - Extract frames from videos using various methods
+                2. **🔍 Frame Analysis** - Analyze quality metrics and detect subjects/faces
+                3. **🎯 Filtering & Export** - Filter frames by quality and export results
+                """)
+
+            with gr.Column(scale=2):
+                gr.Markdown("### 🤖 AI Features")
+                features = []
+                if self.feature_status['face_analysis']:
+                    features.append("✅ Face Analysis")
+                else:
+                    features.append("❌ Face Analysis (insightface not installed)")
+
+                if self.feature_status['masking']:
+                    features.append("✅ Subject Masking")
+                else:
+                    features.append("❌ Subject Masking (missing dependencies)")
+
+                if self.feature_status['scene_detection']:
+                    features.append("✅ Scene Detection")
+                else:
+                    features.append("❌ Scene Detection (PySceneDetect not installed)")
+
+                if self.feature_status['person_detection']:
+                    features.append("✅ Person Detection")
+                else:
+                    features.append("❌ Person Detection (ultralytics not installed)")
+
+                for feature in features:
+                    gr.Markdown(f"• {feature}")
+
         self._create_component('model_download_status', 'textbox', {
-            'label': "Model Download Status",
+            'label': "📥 Model Download Status",
             'value': "✅ All models ready - no downloads needed",
             'interactive': False,
             'lines': 2
         })
+
         if not self.feature_status['cuda_available']:
-            gr.Warning("No CUDA-enabled GPU detected. Running in CPU-only mode. "
-                       "Face Analysis and Subject Masking features will be disabled.")
+            gr.Warning("⚠️ **GPU Not Detected** - No CUDA-enabled GPU detected. Running in CPU-only mode. "
+                       "Face Analysis and Subject Masking features will be disabled for optimal performance.")
 
     def _create_global_components(self):
         """Create global state components."""
@@ -1531,9 +1568,12 @@ class AppUI:
     def _create_tabs(self):
         """Create all tabs."""
         with gr.Tabs():
-            self._create_extraction_tab()
-            self._create_analysis_tab()
-            self._create_filtering_tab()
+            with gr.Tab("📹 1. Frame Extraction") as self.components['extraction_tab']:
+                self._create_extraction_tab()
+            with gr.Tab("🔍 2. Frame Analysis") as self.components['analysis_tab']:
+                self._create_analysis_tab()
+            with gr.Tab("🎯 3. Filtering & Export") as self.components['filtering_tab']:
+                self._create_filtering_tab()
 
     def _create_component(self, name, comp_type, kwargs):
         """Helper to create and store UI components."""
@@ -1627,7 +1667,7 @@ class AppUI:
                 with gr.Column(scale=3):
                     self._create_log_section('extraction_log', 'extraction_status', "Logs", 10)
 
-            self._create_button_pair('start_extraction_button', 'stop_extraction_button', "Start Extraction", "Stop")
+            self._create_button_pair('start_extraction_button', 'stop_extraction_button', "🚀 Start Extraction", "⏹️ Stop")
 
     def _create_analysis_tab(self):
         with gr.Tab("2. Frame Analysis") as self.components['analysis_tab']:
@@ -1637,92 +1677,102 @@ class AppUI:
                 with gr.Column(scale=3):
                     self._create_analysis_log_section()
 
-            self._create_button_pair('start_analysis_button', 'stop_analysis_button', "Start Analysis", "Stop")
+            self._create_button_pair('start_analysis_button', 'stop_analysis_button', "🔬 Start Analysis", "⏹️ Stop")
 
     def _create_analysis_settings(self):
         """Create the analysis settings section."""
-        gr.Markdown("### Source Frames & Settings")
+        gr.Markdown("## 📁 Input Configuration")
+        gr.Markdown("Configure the source frames and video path for analysis.")
+
         self._create_component('frames_folder_input', 'textbox', {
-            'label': "Extracted Frames Folder Path",
+            'label': "📂 Extracted Frames Folder Path",
             'info': "This is filled automatically from Step 1, or you can enter a path manually."
         })
         self._create_component('analysis_video_path_input', 'textbox', {
-            'label': "Original Video Path (Optional)",
+            'label': "🎥 Original Video Path (Optional)",
             'info': "Needed for scene-detection in masking. Filled from Step 1 if available."
         })
 
-        self._create_face_similarity_section()
-        self._create_subject_masking_section()
-        self._create_advanced_config_section()
+        gr.Markdown("---")
 
-    def _create_face_similarity_section(self):
-        """Create face similarity configuration section."""
-        with gr.Accordion("Face Similarity", open=False):
-            is_face_gpu_ready = self.feature_status['face_analysis'] and self.feature_status['cuda_available']
-            face_info = "Available" if is_face_gpu_ready else ("'insightface' not installed" if not self.feature_status['face_analysis'] else "CUDA not available")
+        # Face Similarity Settings
+        gr.Markdown("## 👤 Face Similarity Analysis")
+        gr.Markdown("Compare extracted frames against a reference face image.")
+        is_face_gpu_ready = self.feature_status['face_analysis'] and self.feature_status['cuda_available']
+        face_info = "Available" if is_face_gpu_ready else ("'insightface' not installed" if not self.feature_status['face_analysis'] else "CUDA not available")
 
-            self._create_component('enable_face_filter_input', 'checkbox', {
-                'label': "Enable Face Similarity",
-                'value': is_face_gpu_ready,
-                'info': f"Compares faces to a reference image. Status: {face_info}",
-                'interactive': is_face_gpu_ready
-            })
-            with gr.Group(visible=is_face_gpu_ready) as self.components['face_options_group']:
+        self._create_component('enable_face_filter_input', 'checkbox', {
+            'label': "Enable Face Similarity Analysis",
+            'value': is_face_gpu_ready,
+            'info': f"🔍 Compares faces to a reference image. Status: {face_info}",
+            'interactive': is_face_gpu_ready
+        })
+        with gr.Group(visible=is_face_gpu_ready) as self.components['face_options_group']:
+            with gr.Row():
                 self._create_component('face_model_name_input', 'dropdown', {
                     'choices': ["buffalo_l", "buffalo_s", "buffalo_m", "antelopev2"],
                     'value': config.UI_DEFAULTS["face_model_name"],
-                    'label': "Model"
+                    'label': "🤖 Face Model"
                 })
-                self._create_component('face_ref_img_path_input', 'textbox', {
-                    'label': "Reference Image Path"
-                })
-                self._create_component('face_ref_img_upload_input', 'file', {
-                    'label': "Or Upload Reference",
-                    'file_types': ["image"],
-                    'type': "filepath"
-                })
-
-    def _create_subject_masking_section(self):
-        """Create subject masking configuration section."""
-        with gr.Accordion("Subject Masking", open=False):
-            masking_status = "Available" if self.feature_status['masking'] else ("Dependencies missing" if not self.feature_status['masking_libs_installed'] else "CUDA not available")
-            person_det_status = "Available (YOLO11x)" if self.feature_status['person_detection'] else "'ultralytics' not installed"
-
-            default_mask_enable = self.feature_status['masking']
-            self._create_component('enable_subject_mask_input', 'checkbox', {
-                'label': "Enable Subject-Only Metrics",
-                'value': default_mask_enable,
-                'info': f"Masking Status: {masking_status} | Person Detector: {person_det_status}",
-                'interactive': self.feature_status['masking']
+            self._create_component('face_ref_img_path_input', 'textbox', {
+                'label': "📸 Reference Image Path"
+            })
+            self._create_component('face_ref_img_upload_input', 'file', {
+                'label': "📤 Or Upload Reference",
+                'file_types': ["image"],
+                'type': "filepath"
             })
 
-            with gr.Group(visible=default_mask_enable) as self.components['masking_options_group']:
+        gr.Markdown("---")
+
+        # Subject Masking Settings
+        gr.Markdown("## 🎭 Subject Masking")
+        gr.Markdown("Generate subject-specific masks for more accurate quality analysis.")
+        masking_status = "Available" if self.feature_status['masking'] else ("Dependencies missing" if not self.feature_status['masking_libs_installed'] else "CUDA not available")
+        person_det_status = "Available (YOLO11x)" if self.feature_status['person_detection'] else "'ultralytics' not installed"
+
+        default_mask_enable = self.feature_status['masking']
+        self._create_component('enable_subject_mask_input', 'checkbox', {
+            'label': "Enable Subject-Only Metrics",
+            'value': default_mask_enable,
+            'info': f"🎯 Masking Status: {masking_status} | Person Detector: {person_det_status}",
+            'interactive': self.feature_status['masking']
+        })
+
+        with gr.Group(visible=default_mask_enable) as self.components['masking_options_group']:
+            with gr.Row():
                 self._create_component('dam4sam_model_name_input', 'dropdown', {
                     'choices': ['sam2.1'],
                     'value': config.UI_DEFAULTS["dam4sam_model_name"],
-                    'label': "DAM4SAM Model"
+                    'label': "🧠 DAM4SAM Model"
                 })
-
-                default_scene_detect = self.feature_status['scene_detection']
-                self._create_component('scene_detect_input', 'checkbox', {
-                    'label': "Use Scene Detection for Masking",
-                    'value': default_scene_detect,
-                    'interactive': self.feature_status['scene_detection'],
-                    'info': "Status: " + ("Available" if self.feature_status['scene_detection'] else "'scenedetect' not installed")
-                })
-
-    def _create_advanced_config_section(self):
-        """Create advanced configuration section."""
-        with gr.Accordion("Advanced & Config", open=False):
-            self._create_component('resume_input', 'checkbox', {
-                'label': "Resume/Use Cache",
-                'value': config.UI_DEFAULTS["resume"]
+            default_scene_detect = self.feature_status['scene_detection']
+            self._create_component('scene_detect_input', 'checkbox', {
+                'label': "🔍 Use Scene Detection for Masking",
+                'value': default_scene_detect,
+                'interactive': self.feature_status['scene_detection'],
+                'info': "Status: " + ("Available" if self.feature_status['scene_detection'] else "'scenedetect' not installed")
             })
-            self._create_component('disable_parallel_input', 'checkbox', {
-                'label': "Disable Parallelism (for low memory)",
-                'value': config.UI_DEFAULTS["disable_parallel"]
-            })
-            self._create_config_presets_ui()
+
+        gr.Markdown("---")
+
+        # Advanced Configuration
+        gr.Markdown("## ⚙️ Advanced Configuration")
+        gr.Markdown("Performance and caching options for the analysis pipeline.")
+        self._create_component('resume_input', 'checkbox', {
+            'label': "💾 Resume/Use Cache",
+            'value': config.UI_DEFAULTS["resume"],
+            'info': "Continue from previous analysis if available"
+        })
+        self._create_component('disable_parallel_input', 'checkbox', {
+            'label': "🐌 Disable Parallelism (for low memory)",
+            'value': config.UI_DEFAULTS["disable_parallel"],
+            'info': "Process frames sequentially to reduce memory usage"
+        })
+        self._create_config_presets_ui()
+
+
+
 
     def _create_analysis_log_section(self):
         """Create the analysis log section."""
@@ -1751,46 +1801,85 @@ class AppUI:
 
     def _create_filtering_controls(self):
         """Create filtering control section."""
-        gr.Markdown("## Live Filtering")
+        gr.Markdown("## 🔍 Live Filtering & Export")
+        gr.Markdown("Filter frames by quality metrics and configure export options.")
+
+        # Filter Mode Selection
+        gr.Markdown("### Filter Mode")
         self._create_component('filter_mode_toggle', 'radio', {
             'choices': list(config.FILTER_MODES.values()),
             'value': config.FILTER_MODES["OVERALL"],
-            'label': "Filter By"
+            'label': "🎛️ Filter By"
         })
 
-        self._create_quality_weights_section()
-        self._create_filter_sliders()
-        self._create_export_settings()
+        gr.Markdown("---")
 
-    def _create_quality_weights_section(self):
-        """Create quality weights customization section."""
-        with gr.Accordion("Customize Quality Weights", open=False):
+        # Quality Weights Customization
+        gr.Markdown("### ⚖️ Quality Weights")
+        gr.Markdown("Adjust the importance of different quality metrics for frame scoring.")
+        with gr.Row():
             self.components['weight_sliders'] = [
                 self._create_component(f'weight_slider_{k}', 'slider', {
                     'minimum': 0,
                     'maximum': 100,
                     'value': config.QUALITY_WEIGHTS[k],
                     'step': 1,
-                    'label': k.capitalize()
+                    'label': k.replace('_', ' ').title()
                 }) for k in config.QUALITY_METRICS
             ]
 
+        gr.Markdown("---")
+
+        self._create_filter_sliders()
+
+        gr.Markdown("---")
+
+        # Export Settings
+        gr.Markdown("### 📤 Export Configuration")
+        gr.Markdown("Configure how filtered frames are exported and processed.")
+        self._create_component('enable_crop_input', 'checkbox', {
+            'label': "✂️ Crop to Subject",
+            'value': False,
+            'info': "Automatically crop exported frames to focus on the main subject"
+        })
+        with gr.Group(visible=False) as self.components['crop_options_group']:
+            with gr.Row():
+                self._create_component('crop_ar_input', 'textbox', {
+                    'label': "📐 Target Aspect Ratios (comma-separated)",
+                    'value': "16:9, 1:1, 4:5",
+                    'info': "e.g., '16:9, 4:5'. Will pick the best fit."
+                })
+                self._create_component('crop_padding_input', 'slider', {
+                    'label': "📏 Padding (%)",
+                    'minimum': 0,
+                    'maximum': 100,
+                    'value': 15,
+                    'step': 1,
+                    'info': "Padding added around the subject's bounding box."
+                })
+
+
     def _create_filter_sliders(self):
         """Create filter slider controls."""
+        gr.Markdown("### 🎚️ Quality Thresholds")
+        gr.Markdown("Set minimum thresholds for frame filtering.")
+
         with gr.Group() as self.components['overall_quality_group']:
             self._create_component('quality_filter_slider', 'slider', {
                 'minimum': 0,
                 'maximum': 100,
                 'value': config.UI_DEFAULTS["quality_thresh"],
-                'label': "Min Quality"
+                'label': "⭐ Minimum Quality Score",
+                'info': "Frames below this quality score will be filtered out"
             })
 
         with gr.Group(visible=False) as self.components['individual_metrics_group']:
+            gr.Markdown("**Individual Metric Thresholds:**")
             self.components['filter_metric_sliders'] = [
                 self._create_component(f'filter_slider_{k}', 'slider', {
                     'minimum': 0,
                     'maximum': 100,
-                    'label': f"Min {k.replace('_',' ').capitalize()}"
+                    'label': f"📊 Min {k.replace('_',' ').capitalize()}"
                 }) for k in config.QUALITY_METRICS
             ]
 
@@ -1798,32 +1887,12 @@ class AppUI:
             'minimum': 0,
             'maximum': 1.0,
             'value': 0.5,
-            'label': "Min Face Similarity",
+            'label': "👤 Minimum Face Similarity",
             'step': 0.01,
-            'interactive': False
+            'interactive': False,
+            'info': "Only applies when face analysis is enabled"
         })
 
-    def _create_export_settings(self):
-        """Create export settings section."""
-        with gr.Accordion("Export Settings", open=True):
-            self._create_component('enable_crop_input', 'checkbox', {
-                'label': "Crop to Subject",
-                'value': False
-            })
-            with gr.Group(visible=False) as self.components['crop_options_group']:
-                self._create_component('crop_ar_input', 'textbox', {
-                    'label': "Target Aspect Ratios (comma-separated)",
-                    'value': "16:9, 1:1, 4:5",
-                    'info': "e.g., '16:9, 4:5'. Will pick the best fit."
-                })
-                self._create_component('crop_padding_input', 'slider', {
-                    'label': "Padding (%)",
-                    'minimum': 0,
-                    'maximum': 100,
-                    'value': 15,
-                    'step': 1,
-                    'info': "Padding added around the subject's bounding box."
-                })
 
     def _create_filtering_results(self):
         """Create filtering results section."""
@@ -1835,7 +1904,7 @@ class AppUI:
                 'value': "Run analysis to see results."
             })
             self._create_component('export_button', 'button', {
-                'value': "Export Kept Frames",
+                'value': "📤 Export Kept Frames",
                 'variant': "primary"
             })
 
