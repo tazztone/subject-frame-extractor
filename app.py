@@ -19,10 +19,99 @@ from concurrent.futures import ThreadPoolExecutor
 import hashlib
 from contextlib import contextmanager
 
-# --- Logger Setup (Fix a) ---
-# Basic logger setup moved here to be available globally.
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+# --- Unified Logging System ---
+class UnifiedLogger:
+    """
+    Unified logging system that handles both file/console logging and UI progress updates.
+    Consolidates multiple logging mechanisms into a single, consistent interface.
+    """
+
+    def __init__(self, progress_queue=None, log_file_path=None):
+        self.progress_queue = progress_queue
+        self.log_file_path = log_file_path
+
+        # Setup file logging if path provided
+        self.file_handler = None
+        if log_file_path:
+            self.file_handler = logging.FileHandler(log_file_path)
+            self.file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+
+        # Setup console logging
+        self.console_handler = logging.StreamHandler()
+        self.console_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+
+        # Create logger
+        self.logger = logging.getLogger('unified_logger')
+        self.logger.setLevel(logging.INFO)
+        self.logger.propagate = False  # Prevent duplicate logs
+
+        # Clear existing handlers and add our handlers
+        self.logger.handlers.clear()
+        if self.file_handler:
+            self.logger.addHandler(self.file_handler)
+        self.logger.addHandler(self.console_handler)
+
+    def _format_message(self, level, message):
+        """Format message with consistent prefix."""
+        level_prefix = {
+            'INFO': '[INFO]',
+            'WARNING': '[WARNING]',
+            'ERROR': '[ERROR]',
+            'CRITICAL': '[CRITICAL]',
+            'SUCCESS': '[SUCCESS]'
+        }.get(level, '[INFO]')
+
+        return f"{level_prefix} {message}"
+
+    def _log_to_ui(self, level, message):
+        """Send log message to UI if progress queue is available."""
+        if self.progress_queue:
+            self.progress_queue.put({"log": message})
+
+    def info(self, message, ui_only=False):
+        """Log info message."""
+        if not ui_only:
+            self.logger.info(message)
+        self._log_to_ui('INFO', self._format_message('INFO', message))
+
+    def warning(self, message, ui_only=False):
+        """Log warning message."""
+        if not ui_only:
+            self.logger.warning(message)
+        self._log_to_ui('WARNING', self._format_message('WARNING', message))
+
+    def error(self, message, ui_only=False, exc_info=False):
+        """Log error message."""
+        if not ui_only:
+            if exc_info:
+                self.logger.error(message, exc_info=True)
+            else:
+                self.logger.error(message)
+        self._log_to_ui('ERROR', self._format_message('ERROR', message))
+
+    def critical(self, message, ui_only=False, exc_info=False):
+        """Log critical message."""
+        if not ui_only:
+            if exc_info:
+                self.logger.critical(message, exc_info=True)
+            else:
+                self.logger.critical(message)
+        self._log_to_ui('CRITICAL', self._format_message('CRITICAL', message))
+
+    def success(self, message, ui_only=False):
+        """Log success message."""
+        if not ui_only:
+            self.logger.info(message)
+        self._log_to_ui('SUCCESS', self._format_message('SUCCESS', message))
+
+    def debug(self, message, ui_only=False):
+        """Log debug message."""
+        if not ui_only:
+            self.logger.debug(message)
+        # Don't send debug messages to UI by default to avoid clutter
+
+# Global logger instance
+logger = None
 
 
 # --- Optional Dependency Imports ---
@@ -152,11 +241,9 @@ config = Config()
 # Directory setup is now the first action
 config.setup_directories()
 
-# --- Fix a: Logger Not Defined Before Use (Part 2) ---
-# Add file handler after directories are confirmed to exist.
-file_handler = logging.FileHandler(config.get_log_path())
-file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-logger.addHandler(file_handler)
+# --- Initialize Unified Logger ---
+# Initialize the unified logger with file and UI support
+logger = UnifiedLogger(log_file_path=config.get_log_path())
 
 # --- Utility & Helper Functions ---
 def check_dependencies():
@@ -271,26 +358,20 @@ def safe_execute_with_retry(func, max_retries=3, delay=1.0, backoff=2.0):
     raise last_exception
 
 def log_pipeline_error(operation_name, e, progress_queue=None):
-    """Log pipeline errors consistently."""
-    logger.exception(f"Error in {operation_name} pipeline.")
-    error_msg = f"[ERROR] {operation_name} failed: {e}"
-    if progress_queue:
-        progress_queue.put({"log": error_msg})
+    """Log pipeline errors consistently using unified logger."""
+    error_msg = f"{operation_name} failed: {e}"
+    logger.error(error_msg, exc_info=True)
     return {"error": str(e)}
 
 def log_critical_error(operation_name, e, progress_queue=None):
-    """Log critical errors with full traceback."""
-    logger.error(f"Critical error in {operation_name}: {e}", exc_info=True)
-    error_msg = f"[CRITICAL] {operation_name} failed: {e}"
-    if progress_queue:
-        progress_queue.put({"log": error_msg})
+    """Log critical errors with full traceback using unified logger."""
+    error_msg = f"{operation_name} failed: {e}"
+    logger.critical(error_msg, exc_info=True)
 
 def log_download_error(operation_name, e, progress_queue=None):
-    """Log download errors consistently."""
+    """Log download errors consistently using unified logger."""
     error_msg = f"Failed to {operation_name}: {e}"
     logger.error(error_msg, exc_info=True)
-    if progress_queue:
-        progress_queue.put({"log": f"[ERROR] {error_msg}"})
     raise RuntimeError(error_msg) from e
 
 def validate_file(file_path, file_type="generic", allowed_extensions=None, max_size_mb=100, check_symlink=True):
@@ -565,25 +646,22 @@ class SubjectMasker:
     def _initialize_dam4sam_tracker(self):
         """Initializes the DAM4SAM tracker, failing softly by returning False."""
         if not DAM4SAMTracker:
-            msg = "[ERROR] DAM4SAM dependencies (torch, sam2, vot etc.) are not installed."
-            self.progress_queue.put({"log": msg})
+            logger.error("DAM4SAM dependencies (torch, sam2, vot etc.) are not installed.")
             return False
 
         if not torch.cuda.is_available():
-            msg = "[ERROR] DAM4SAM masking requires a CUDA-enabled GPU, but CUDA is not available."
-            self.progress_queue.put({"log": msg})
+            logger.error("DAM4SAM masking requires a CUDA-enabled GPU, but CUDA is not available.")
             return False
 
         try:
             model_name = self.params.dam4sam_model_name
-            self.progress_queue.put({"log": f"[INFO] Initializing DAM4SAM tracker with model '{model_name}'..."})
+            logger.info(f"Initializing DAM4SAM tracker with model '{model_name}'...")
             self.tracker = DAM4SAMTracker(model_name)
-            self.progress_queue.put({"log": "[SUCCESS] DAM4SAM tracker initialized."})
+            logger.success("DAM4SAM tracker initialized.")
             return True
         except Exception as e:
             error_msg = f"Failed to initialize DAM4SAM tracker with model '{self.params.dam4sam_model_name}': {e}"
             logger.error(error_msg, exc_info=True)
-            self.progress_queue.put({"log": f"[ERROR] {error_msg}"})
             self.tracker = None
             return False
 
@@ -591,7 +669,7 @@ class SubjectMasker:
         try:
             self.mask_dir = Path(frames_dir) / "masks"
             self.mask_dir.mkdir(exist_ok=True)
-            self.progress_queue.put({"log": "[INFO] Starting subject masking..."})
+            logger.info("Starting subject masking...")
 
             if self.params.scene_detect:
                 self._detect_scenes(video_path, frames_dir)
@@ -604,17 +682,17 @@ class SubjectMasker:
 
             mask_metadata = {}
             total_frames_in_shots = sum(end - start for start, end in self.shots)
-            self.progress_queue.put({"total": total_frames_in_shots, "stage": "Masking"})
+            # Progress will be handled by the UI system
 
             for shot_id, (start_frame, end_frame) in enumerate(self.shots):
                 if self.cancel_event.is_set(): break
-                self.progress_queue.put({"log": f"[INFO] Masking shot {shot_id+1}/{len(self.shots)} (Frames {start_frame}-{end_frame})"})
+                logger.info(f"Masking shot {shot_id+1}/{len(self.shots)} (Frames {start_frame}-{end_frame})")
 
                 if not self._initialize_dam4sam_tracker():
-                    self.progress_queue.put({"log": f"[ERROR] Could not initialize tracker for shot {shot_id+1}. Skipping."})
+                    logger.error(f"Could not initialize tracker for shot {shot_id+1}. Skipping.")
                     # Advance progress bar for skipped frames to avoid stalling
                     frames_in_shot = len([fn for fn in (self.frame_map or {}).keys() if start_frame <= fn < end_frame])
-                    self.progress_queue.put({"progress": frames_in_shot})
+                    # Progress will be handled by the UI system
                     continue
                 
                 shot_frames_with_nums = self._load_shot_frames(frames_dir, start_frame, end_frame)
@@ -678,9 +756,9 @@ class SubjectMasker:
                         )
                     mask_metadata[frame_path.name] = asdict(result)
 
-                self.progress_queue.put({"progress": len(shot_frames_with_nums)})
+                # Progress will be handled by the UI system
 
-            self.progress_queue.put({"log": "[SUCCESS] Subject masking complete."})
+            logger.success("Subject masking complete.")
             return mask_metadata
         except Exception as e:
             log_critical_error("SubjectMasker run method", e, self.progress_queue)
@@ -695,7 +773,7 @@ class SubjectMasker:
 
             if torch and torch.cuda.is_available():
                 torch.cuda.empty_cache()
-                self.progress_queue.put({"log": "[INFO] GPU memory released."})
+                logger.info("GPU memory released.")
 
     def _detect_scenes(self, video_path: str, frames_dir: str):
         if not detect:
@@ -1014,23 +1092,23 @@ class ExtractionPipeline:
 
     def run(self):
         try:
-            self.progress_queue.put({"log": "[INFO] Preparing video source..."})
+            logger.info("Preparing video source...")
             vid_manager = VideoManager(self.params.source_path, self.params.max_resolution)
             self.video_path = Path(vid_manager.prepare_video())
-            self.progress_queue.put({"log": f"[INFO] Video ready: {self.video_path.name}"})
+            logger.info(f"Video ready: {self.video_path.name}")
 
             self.video_info = vid_manager.get_video_info()
             self.output_dir = config.get_dir('downloads') / self.video_path.stem
             self.output_dir.mkdir(exist_ok=True)
-            
-            self.progress_queue.put({"log": "[INFO] Starting frame extraction..."})
+
+            logger.info("Starting frame extraction...")
             self._run_frame_extraction()
 
             if self.cancel_event.is_set():
-                self.progress_queue.put({"log": "[INFO] Extraction cancelled."})
+                logger.info("Extraction cancelled.")
                 return {"log": "[INFO] Extraction cancelled."}
-            
-            self.progress_queue.put({"log": "[SUCCESS] Extraction complete."})
+
+            logger.success("Extraction complete.")
             return {"done": True, "output_dir": str(self.output_dir), "video_path": str(self.video_path)}
         except Exception as e:
             return log_pipeline_error("extraction", e, self.progress_queue)
@@ -1188,50 +1266,50 @@ class AnalysisPipeline:
 
             if self.params.enable_face_filter or (self.params.enable_subject_mask and self.features['masking']):
                 self._initialize_face_analyzer()
-            
+
             if self.params.enable_face_filter:
                 self._process_reference_face()
-            
+
             person_detector = None
             if self.params.enable_subject_mask and self.features['masking']:
                 if self.features['person_detection']:
                     try:
                         person_detector = PersonDetector(model="yolo11x.pt", imgsz=640, conf=0.3)
-                        self.progress_queue.put({"log": "[INFO] Person detector (YOLO11x) initialized."})
+                        logger.info("Person detector (YOLO11x) initialized.")
                     except Exception as e:
-                        self.progress_queue.put({"log": f"[WARNING] Person detector unavailable: {e}. Falling back to heuristic box expansion."})
+                        logger.warning(f"Person detector unavailable: {e}. Falling back to heuristic box expansion.")
                 else:
-                    self.progress_queue.put({"log": "[INFO] Person detector library not installed. Falling back to heuristic box expansion."})
+                    logger.info("Person detector library not installed. Falling back to heuristic box expansion.")
 
             # --- Subject Masking Guard ---
             if self.params.enable_subject_mask:
                 if not self.features['masking']:
-                    self.progress_queue.put({"log": "[WARNING] Subject masking unavailable; skipping (missing dependencies or no CUDA)."})
+                    logger.warning("Subject masking unavailable; skipping (missing dependencies or no CUDA).")
                 else:
                     is_video_path_valid = self.params.video_path and Path(self.params.video_path).exists()
                     if self.params.scene_detect and not is_video_path_valid:
-                        self.progress_queue.put({"log": "[WARNING] Valid video path not provided; scene detection for masking is disabled. Masking will run as a single shot over all frames."})
+                        logger.warning("Valid video path not provided; scene detection for masking is disabled. Masking will run as a single shot over all frames.")
 
                     frame_map = self._create_frame_map()
                     masker = SubjectMasker(
-                        self.params, self.progress_queue, self.cancel_event, 
-                        frame_map, face_analyzer=self.face_analyzer, 
+                        self.params, self.progress_queue, self.cancel_event,
+                        frame_map, face_analyzer=self.face_analyzer,
                         reference_embedding=self.reference_embedding,
                         person_detector=person_detector
                     )
                     video_path_for_masking = self.params.video_path if is_video_path_valid else ""
                     self.mask_metadata = masker.run(video_path_for_masking, str(self.output_dir))
             else:
-                 self.progress_queue.put({"log": "[INFO] Subject masking disabled."})
+                 logger.info("Subject masking disabled.")
 
             config.QUALITY_WEIGHTS = self.params.quality_weights
             self._run_frame_processing()
 
             if self.cancel_event.is_set():
-                self.progress_queue.put({"log": "[INFO] Analysis cancelled."})
+                logger.info("Analysis cancelled.")
                 return {"log": "[INFO] Analysis cancelled."}
-            
-            self.progress_queue.put({"log": "[SUCCESS] Analysis complete. Go to the 'Filtering & Export' tab."})
+
+            logger.success("Analysis complete. Go to the 'Filtering & Export' tab.")
             return {"done": True, "metadata_path": str(self.metadata_path), "output_dir": str(self.output_dir)}
         except Exception as e:
             return log_pipeline_error("analysis", e, self.progress_queue)
@@ -1506,55 +1584,74 @@ class AppUI:
         return demo
 
     def _create_header(self):
-        """Create the header section with title and warnings."""
-        gr.Markdown("# 🎬 Advanced Frame Extractor & Filter")
-        gr.Markdown("**🚀 Professional Video Analysis Suite** - Extract, analyze, and filter video frames with AI-powered quality assessment and subject detection.")
+        """Create a condensed header section with essential information."""
+        gr.Markdown("# 🎬 Frame Extractor & Analyzer")
+        gr.Markdown("**AI-Powered Video Frame Analysis** - Extract, analyze, and filter video frames with advanced quality assessment.")
 
-        with gr.Row():
-            with gr.Column(scale=3):
-                gr.Markdown("### 📋 Workflow Overview")
-                gr.Markdown("""
-                1. **📹 Frame Extraction** - Extract frames from videos using various methods
-                2. **🔍 Frame Analysis** - Analyze quality metrics and detect subjects/faces
-                3. **🎯 Filtering & Export** - Filter frames by quality and export results
-                """)
+        # Check if any dependencies are missing
+        has_missing_deps = not all([
+            self.feature_status['face_analysis'],
+            self.feature_status['masking'],
+            self.feature_status['scene_detection'],
+            self.feature_status['cuda_available']
+        ])
 
-            with gr.Column(scale=2):
-                gr.Markdown("### 🤖 AI Features")
-                features = []
-                if self.feature_status['face_analysis']:
-                    features.append("✅ Face Analysis")
-                else:
-                    features.append("❌ Face Analysis (insightface not installed)")
+        # Only show accordion if there are missing dependencies
+        if has_missing_deps:
+            with gr.Accordion("⚠️ System Status & Setup", open=True):
+                with gr.Row():
+                    with gr.Column(scale=1):
+                        gr.Markdown("### 🔧 System Status")
+                        status_items = []
 
-                if self.feature_status['masking']:
-                    features.append("✅ Subject Masking")
-                else:
-                    features.append("❌ Subject Masking (missing dependencies)")
+                        # GPU status
+                        if self.feature_status['cuda_available']:
+                            status_items.append("🟢 GPU Available")
+                        else:
+                            status_items.append("🟡 CPU Mode")
 
-                if self.feature_status['scene_detection']:
-                    features.append("✅ Scene Detection")
-                else:
-                    features.append("❌ Scene Detection (PySceneDetect not installed)")
+                        # Core features status
+                        if self.feature_status['face_analysis']:
+                            status_items.append("🟢 Face Analysis")
+                        else:
+                            status_items.append("🔴 Face Analysis")
 
-                if self.feature_status['person_detection']:
-                    features.append("✅ Person Detection")
-                else:
-                    features.append("❌ Person Detection (ultralytics not installed)")
+                        if self.feature_status['masking']:
+                            status_items.append("🟢 Subject Masking")
+                        else:
+                            status_items.append("🔴 Subject Masking")
 
-                for feature in features:
-                    gr.Markdown(f"• {feature}")
+                        if self.feature_status['scene_detection']:
+                            status_items.append("🟢 Scene Detection")
+                        else:
+                            status_items.append("🔴 Scene Detection")
 
-        self._create_component('model_download_status', 'textbox', {
-            'label': "📥 Model Download Status",
-            'value': "✅ All models ready - no downloads needed",
-            'interactive': False,
-            'lines': 2
-        })
+                        for item in status_items:
+                            gr.Markdown(f"• {item}")
 
-        if not self.feature_status['cuda_available']:
-            gr.Warning("⚠️ **GPU Not Detected** - No CUDA-enabled GPU detected. Running in CPU-only mode. "
-                       "Face Analysis and Subject Masking features will be disabled for optimal performance.")
+                    with gr.Column(scale=2):
+                        gr.Markdown("### 📋 Quick Start")
+                        gr.Markdown("""
+                        1. **📹 Extract** frames from video
+                        2. **🔍 Analyze** quality & subjects
+                        3. **🎯 Filter** & export results
+                        """)
+
+                # Model status - more compact
+                self._create_component('model_download_status', 'textbox', {
+                    'label': "📥 Models",
+                    'value': "✅ Ready",
+                    'interactive': False,
+                    'lines': 1
+                })
+
+                # Show GPU warning only if needed
+                if not self.feature_status['cuda_available']:
+                    gr.Warning("⚠️ **CPU Mode** - GPU features disabled")
+        else:
+            # All systems go - show minimal status
+            with gr.Row():
+                gr.Markdown("🟢 **All Systems Operational** - Ready to process videos!")
 
     def _create_global_components(self):
         """Create global state components."""
@@ -1574,6 +1671,48 @@ class AppUI:
                 self._create_analysis_tab()
             with gr.Tab("🎯 3. Filtering & Export") as self.components['filtering_tab']:
                 self._create_filtering_tab()
+
+        # Advanced Configuration - moved outside tabs for app-wide access
+        gr.Markdown("---")
+        with gr.Accordion("⚙️ Advanced Configuration", open=False):
+            gr.Markdown("Performance and caching options for the analysis pipeline.")
+            with gr.Row():
+                with gr.Column():
+                    self._create_component('resume_input', 'checkbox', {
+                        'label': "💾 Resume/Use Cache",
+                        'value': config.UI_DEFAULTS["resume"],
+                        'info': "Continue from previous analysis if available"
+                    })
+                    self._create_component('disable_parallel_input', 'checkbox', {
+                        'label': "🐌 Disable Parallelism (for low memory)",
+                        'value': config.UI_DEFAULTS["disable_parallel"],
+                        'info': "Process frames sequentially to reduce memory usage"
+                    })
+                with gr.Column():
+                    self._create_config_presets_ui()
+
+        # Unified Log Area - moved to bottom of page
+        gr.Markdown("---")
+        gr.Markdown("## 📋 Activity Log")
+        gr.Markdown("Real-time processing logs and status updates from all operations.")
+
+        # Create a unified log display area
+        self._create_component('unified_log', 'textbox', {
+            'label': "📋 Processing Log",
+            'lines': 20,
+            'interactive': False,
+            'autoscroll': True,
+            'value': "🤖 Frame Extractor & Analyzer ready. Select a video to begin processing.",
+            'show_copy_button': True
+        })
+
+        # Status summary
+        self._create_component('unified_status', 'textbox', {
+            'label': "📊 Status Summary",
+            'lines': 3,
+            'interactive': False,
+            'value': "✅ Ready to process videos"
+        })
 
     def _create_component(self, name, comp_type, kwargs):
         """Helper to create and store UI components."""
@@ -1617,10 +1756,9 @@ class AppUI:
         })
 
     def _create_extraction_tab(self):
-        with gr.Tab("1. Frame Extraction") as self.components['extraction_tab']:
-            with gr.Row():
-                with gr.Column(scale=2):
-                    gr.Markdown("### Video Source")
+        with gr.Row():
+            with gr.Column(scale=2):
+                # Removed redundant "### Video Source" title
                     self._create_component('source_input', 'textbox', {
                         'label': "Video URL or Local Path",
                         'lines': 1,
@@ -1633,7 +1771,7 @@ class AppUI:
                         'type': "filepath"
                     })
 
-                    gr.Markdown("### Extraction Settings")
+                    # Removed redundant "### Extraction Settings" title
                     with gr.Row():
                         method_choices = ["keyframes", "interval", "all"]
                         if self.feature_status['scene_detection']: method_choices.insert(2, "scene")
@@ -1664,20 +1802,19 @@ class AppUI:
                         'value': config.UI_DEFAULTS["use_png"]
                     })
 
-                with gr.Column(scale=3):
-                    self._create_log_section('extraction_log', 'extraction_status', "Logs", 10)
+                    with gr.Column(scale=3):
+                        self._create_log_section('extraction_log', 'extraction_status', "Logs", 10)
 
             self._create_button_pair('start_extraction_button', 'stop_extraction_button', "🚀 Start Extraction", "⏹️ Stop")
 
     def _create_analysis_tab(self):
-        with gr.Tab("2. Frame Analysis") as self.components['analysis_tab']:
-            with gr.Row():
-                with gr.Column(scale=2):
-                    self._create_analysis_settings()
-                with gr.Column(scale=3):
-                    self._create_analysis_log_section()
+        with gr.Row():
+            with gr.Column(scale=2):
+                self._create_analysis_settings()
+            with gr.Column(scale=3):
+                self._create_analysis_log_section()
 
-            self._create_button_pair('start_analysis_button', 'stop_analysis_button', "🔬 Start Analysis", "⏹️ Stop")
+        self._create_button_pair('start_analysis_button', 'stop_analysis_button', "🔬 Start Analysis", "⏹️ Stop")
 
     def _create_analysis_settings(self):
         """Create the analysis settings section."""
@@ -1756,27 +1893,12 @@ class AppUI:
 
         gr.Markdown("---")
 
-        # Advanced Configuration
-        gr.Markdown("## ⚙️ Advanced Configuration")
-        gr.Markdown("Performance and caching options for the analysis pipeline.")
-        self._create_component('resume_input', 'checkbox', {
-            'label': "💾 Resume/Use Cache",
-            'value': config.UI_DEFAULTS["resume"],
-            'info': "Continue from previous analysis if available"
-        })
-        self._create_component('disable_parallel_input', 'checkbox', {
-            'label': "🐌 Disable Parallelism (for low memory)",
-            'value': config.UI_DEFAULTS["disable_parallel"],
-            'info': "Process frames sequentially to reduce memory usage"
-        })
-        self._create_config_presets_ui()
-
 
 
 
     def _create_analysis_log_section(self):
         """Create the analysis log section."""
-        gr.Markdown("### Analysis Log")
+        # Removed redundant "### Analysis Log" title
         self._create_component('analysis_status', 'markdown', {'value': ""})
         self._create_component('analysis_log', 'textbox', {
             'label': "Logs",
@@ -1792,20 +1914,19 @@ class AppUI:
         })
 
     def _create_filtering_tab(self):
-        with gr.Tab("3. Filtering & Export") as self.components['filtering_tab']:
-            with gr.Row():
-                with gr.Column(scale=1):
-                    self._create_filtering_controls()
-                with gr.Column(scale=3):
-                    self._create_filtering_results()
+        with gr.Row():
+            with gr.Column(scale=1):
+                self._create_filtering_controls()
+            with gr.Column(scale=3):
+                self._create_filtering_results()
 
     def _create_filtering_controls(self):
         """Create filtering control section."""
-        gr.Markdown("## 🔍 Live Filtering & Export")
+        # Removed redundant "## 🔍 Live Filtering & Export" title
         gr.Markdown("Filter frames by quality metrics and configure export options.")
 
         # Filter Mode Selection
-        gr.Markdown("### Filter Mode")
+        # Removed redundant "### Filter Mode" title
         self._create_component('filter_mode_toggle', 'radio', {
             'choices': list(config.FILTER_MODES.values()),
             'value': config.FILTER_MODES["OVERALL"],
@@ -1815,7 +1936,7 @@ class AppUI:
         gr.Markdown("---")
 
         # Quality Weights Customization
-        gr.Markdown("### ⚖️ Quality Weights")
+        # Removed redundant "### ⚖️ Quality Weights" title
         gr.Markdown("Adjust the importance of different quality metrics for frame scoring.")
         with gr.Row():
             self.components['weight_sliders'] = [
@@ -1835,7 +1956,7 @@ class AppUI:
         gr.Markdown("---")
 
         # Export Settings
-        gr.Markdown("### 📤 Export Configuration")
+        # Removed redundant "### 📤 Export Configuration" title
         gr.Markdown("Configure how filtered frames are exported and processed.")
         self._create_component('enable_crop_input', 'checkbox', {
             'label': "✂️ Crop to Subject",
@@ -1861,7 +1982,7 @@ class AppUI:
 
     def _create_filter_sliders(self):
         """Create filter slider controls."""
-        gr.Markdown("### 🎚️ Quality Thresholds")
+        # Removed redundant "### 🎚️ Quality Thresholds" title
         gr.Markdown("Set minimum thresholds for frame filtering.")
 
         with gr.Group() as self.components['overall_quality_group']:
@@ -1908,8 +2029,8 @@ class AppUI:
                 'variant': "primary"
             })
 
+        # Removed redundant gallery label - using default
         self._create_component('results_gallery', 'gallery', {
-            'label': "Kept Frames Preview (Max 100)",
             'columns': 8,
             'allow_preview': True
         })
@@ -2189,7 +2310,12 @@ class AppUI:
         yield {self.components['start_analysis_button']: gr.update(interactive=True), self.components['stop_analysis_button']: gr.update(interactive=False)}
 
     def _run_task(self, task_func, log_box, status_box=None):
+        # Set progress queue for unified logger
+        original_logger = logger
         progress_queue = task_func.__self__.progress_queue
+        if progress_queue:
+            logger = UnifiedLogger(progress_queue=progress_queue, log_file_path=config.get_log_path())
+
         log_buffer, processed_count, total_frames = [], 0, 1
         start_ts, last_yield_ts, last_stats, current_stage = time.time(), 0.0, {}, "Initializing"
         
@@ -2234,7 +2360,10 @@ class AppUI:
         self.last_task_result = future.result() or {}
         if "log" in self.last_task_result: log_buffer.append(self.last_task_result["log"])
         if "error" in self.last_task_result: log_buffer.append(f"[ERROR] {self.last_task_result['error']}")
-        
+
+        # Restore original logger
+        logger = original_logger
+
         final_updates = {log_box: "\n".join(log_buffer)}
         if status_box:
             status_text = "⏹️ Operation cancelled." if self.cancel_event.is_set() else (f"❌ Error: {self.last_task_result.get('error')}" if self.last_task_result.get('error') else "✅ Operation complete.")
