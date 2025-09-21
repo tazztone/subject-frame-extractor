@@ -1572,11 +1572,14 @@ class UIComponentFactory:
     def create_button(name: str, text: str, variant: str = "primary", **kwargs) -> gr.Button:
         """Create a standardized button with consistent styling."""
         defaults = {
+            'value': text,
             'variant': variant,
             'scale': kwargs.get('scale', 1)
         }
-        defaults.update(kwargs)
-        return gr.Button(value=text, **defaults)
+        # Remove the factory-specific parameters before passing to gr.Button
+        button_kwargs = {k: v for k, v in defaults.items() if k not in ['text']}
+        button_kwargs.update({k: v for k, v in kwargs.items() if k not in ['text']})
+        return gr.Button(**button_kwargs)
 
     @staticmethod
     def create_input_field(name: str, label: str, input_type: str = "text", **kwargs) -> gr.Textbox:
@@ -1587,8 +1590,10 @@ class UIComponentFactory:
             'placeholder': kwargs.get('placeholder', f"Enter {label.lower()}"),
             'interactive': kwargs.get('interactive', True)
         }
-        defaults.update(kwargs)
-        return gr.Textbox(**defaults)
+        # Remove the factory-specific parameters before passing to gr.Textbox
+        textbox_kwargs = {k: v for k, v in defaults.items() if k not in ['input_type']}
+        textbox_kwargs.update({k: v for k, v in kwargs.items() if k not in ['input_type']})
+        return gr.Textbox(**textbox_kwargs)
 
     @staticmethod
     def create_status_display(name: str, label: str, **kwargs) -> gr.Textbox:
@@ -1599,8 +1604,10 @@ class UIComponentFactory:
             'lines': kwargs.get('lines', 1),
             'show_copy_button': kwargs.get('show_copy_button', True)
         }
-        defaults.update(kwargs)
-        return gr.Textbox(**defaults)
+        # Remove the factory-specific parameters before passing to gr.Textbox
+        textbox_kwargs = {k: v for k, v in defaults.items()}
+        textbox_kwargs.update(kwargs)
+        return gr.Textbox(**textbox_kwargs)
 
     @staticmethod
     def create_dropdown(name: str, label: str, choices: list, **kwargs) -> gr.Dropdown:
@@ -1610,8 +1617,10 @@ class UIComponentFactory:
             'choices': choices,
             'interactive': kwargs.get('interactive', True)
         }
-        defaults.update(kwargs)
-        return gr.Dropdown(**defaults)
+        # Remove the factory-specific parameters before passing to gr.Dropdown
+        dropdown_kwargs = {k: v for k, v in defaults.items()}
+        dropdown_kwargs.update(kwargs)
+        return gr.Dropdown(**dropdown_kwargs)
 
     @staticmethod
     def create_slider(name: str, label: str, min_val: float, max_val: float, **kwargs) -> gr.Slider:
@@ -1623,8 +1632,10 @@ class UIComponentFactory:
             'step': kwargs.get('step', 1),
             'interactive': kwargs.get('interactive', True)
         }
-        defaults.update(kwargs)
-        return gr.Slider(**defaults)
+        # Remove the factory-specific parameters before passing to gr.Slider
+        slider_kwargs = {k: v for k, v in defaults.items() if k not in ['min_val', 'max_val']}
+        slider_kwargs.update({k: v for k, v in kwargs.items() if k not in ['min_val', 'max_val']})
+        return gr.Slider(**slider_kwargs)
 
     @staticmethod
     def create_checkbox(name: str, label: str, **kwargs) -> gr.Checkbox:
@@ -1633,8 +1644,10 @@ class UIComponentFactory:
             'label': label,
             'interactive': kwargs.get('interactive', True)
         }
-        defaults.update(kwargs)
-        return gr.Checkbox(**defaults)
+        # Remove the factory-specific parameters before passing to gr.Checkbox
+        checkbox_kwargs = {k: v for k, v in defaults.items()}
+        checkbox_kwargs.update(kwargs)
+        return gr.Checkbox(**checkbox_kwargs)
 
     @staticmethod
     def create_file_input(name: str, label: str, file_types: list = None, **kwargs) -> gr.File:
@@ -1644,8 +1657,10 @@ class UIComponentFactory:
             'file_types': file_types or ["file"],
             'type': "filepath"
         }
-        defaults.update(kwargs)
-        return gr.File(**defaults)
+        # Remove the factory-specific parameters before passing to gr.File
+        file_kwargs = {k: v for k, v in defaults.items()}
+        file_kwargs.update(kwargs)
+        return gr.File(**file_kwargs)
 
 
 class ButtonStateManager:
@@ -1765,7 +1780,7 @@ class UIStateManager:
             total = progress_data.get("total", 1)
             current = progress_data["progress"]
             ratio = current / max(total, 1)
-            status = f"**{progress_data['stage']}:** {current}/{total} ({ratio".1%"})"
+            status = f"**{progress_data['stage']}:** {current}/{total} ({ratio:.1%})"
             updates[status_component] = status
 
         return updates
@@ -2213,11 +2228,11 @@ class AppUI:
         with gr.Row():
             self.components['weight_sliders'] = [
                 self._create_component(f'weight_slider_{k}', 'slider', {
-                    'minimum': 0,
-                    'maximum': 100,
+                    'label': k.replace('_', ' ').title(),
+                    'min_val': 0,
+                    'max_val': 100,
                     'value': config.QUALITY_WEIGHTS[k],
-                    'step': 1,
-                    'label': k.replace('_', ' ').title()
+                    'step': 1
                 }) for k in config.QUALITY_METRICS
             ]
 
@@ -2244,8 +2259,8 @@ class AppUI:
                 })
                 self._create_component('crop_padding_input', 'slider', {
                     'label': "📏 Padding (%)",
-                    'minimum': 0,
-                    'maximum': 100,
+                    'min_val': 0,
+                    'max_val': 100,
                     'value': 15,
                     'step': 1,
                     'info': "Padding added around the subject's bounding box."
@@ -2259,10 +2274,10 @@ class AppUI:
 
         with gr.Group() as self.components['overall_quality_group']:
             self._create_component('quality_filter_slider', 'slider', {
-                'minimum': 0,
-                'maximum': 100,
-                'value': config.UI_DEFAULTS["quality_thresh"],
                 'label': "⭐ Minimum Quality Score",
+                'min_val': 0,
+                'max_val': 100,
+                'value': config.UI_DEFAULTS["quality_thresh"],
                 'info': "Frames below this quality score will be filtered out"
             })
 
@@ -2270,17 +2285,17 @@ class AppUI:
             gr.Markdown("**Individual Metric Thresholds:**")
             self.components['filter_metric_sliders'] = [
                 self._create_component(f'filter_slider_{k}', 'slider', {
-                    'minimum': 0,
-                    'maximum': 100,
-                    'label': f"📊 Min {k.replace('_',' ').capitalize()}"
+                    'label': f"📊 Min {k.replace('_',' ').capitalize()}",
+                    'min_val': 0,
+                    'max_val': 100
                 }) for k in config.QUALITY_METRICS
             ]
 
         self._create_component('face_filter_slider', 'slider', {
-            'minimum': 0,
-            'maximum': 1.0,
-            'value': 0.5,
             'label': "👤 Minimum Face Similarity",
+            'min_val': 0,
+            'max_val': 1.0,
+            'value': 0.5,
             'step': 0.01,
             'interactive': False,
             'info': "Only applies when face analysis is enabled"
@@ -2292,6 +2307,7 @@ class AppUI:
         with gr.Row():
             # Individual filter stats removed - using unified Activity Log at bottom
             self._create_component('export_button', 'button', {
+                'text': "📤 Export Kept Frames",
                 'value': "📤 Export Kept Frames",
                 'variant': "primary"
             })
@@ -2315,8 +2331,9 @@ class AppUI:
                     'label': "Select Config",
                     'choices': self.config_manager.list_configs()
                 })
-                self._create_component('load_button', 'button', {'value': "Load"})
+                self._create_component('load_button', 'button', {'text': "Load", 'value': "Load"})
                 self._create_component('delete_button', 'button', {
+                    'text': "Delete",
                     'value': "Delete",
                     'variant': "stop"
                 })
@@ -2324,7 +2341,7 @@ class AppUI:
                 self._create_component('config_name_input', 'textbox', {
                     'label': "New Config Name"
                 })
-                self._create_component('save_button', 'button', {'value': "Save"})
+                self._create_component('save_button', 'button', {'text': "Save", 'value': "Save"})
 
     def _create_event_handlers(self):
         self.components['method_input'].change(lambda m: (gr.update(visible=m=='interval'), gr.update(visible=m=='scene')), self.components['method_input'], [self.components['interval_input'], self.components['fast_scene_input']])
