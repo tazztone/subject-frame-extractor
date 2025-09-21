@@ -1564,6 +1564,297 @@ class AnalysisPipeline:
             frame.error = f"Face similarity failed: {e}"
             logger.warning(f"Frame {frame.frame_number}: {frame.error}")
 
+# --- UI Utility Classes ---
+class UIComponentFactory:
+    """Factory for creating standardized UI components with consistent styling and behavior."""
+
+    @staticmethod
+    def create_button(name: str, text: str, variant: str = "primary", **kwargs) -> gr.Button:
+        """Create a standardized button with consistent styling."""
+        defaults = {
+            'variant': variant,
+            'scale': kwargs.get('scale', 1)
+        }
+        defaults.update(kwargs)
+        return gr.Button(value=text, **defaults)
+
+    @staticmethod
+    def create_input_field(name: str, label: str, input_type: str = "text", **kwargs) -> gr.Textbox:
+        """Create standardized input fields with validation."""
+        defaults = {
+            'label': label,
+            'lines': 1 if input_type == "text" else 3,
+            'placeholder': kwargs.get('placeholder', f"Enter {label.lower()}"),
+            'interactive': kwargs.get('interactive', True)
+        }
+        defaults.update(kwargs)
+        return gr.Textbox(**defaults)
+
+    @staticmethod
+    def create_status_display(name: str, label: str, **kwargs) -> gr.Textbox:
+        """Create read-only status display components."""
+        defaults = {
+            'label': label,
+            'interactive': False,
+            'lines': kwargs.get('lines', 1),
+            'show_copy_button': kwargs.get('show_copy_button', True)
+        }
+        defaults.update(kwargs)
+        return gr.Textbox(**defaults)
+
+    @staticmethod
+    def create_dropdown(name: str, label: str, choices: list, **kwargs) -> gr.Dropdown:
+        """Create standardized dropdown components."""
+        defaults = {
+            'label': label,
+            'choices': choices,
+            'interactive': kwargs.get('interactive', True)
+        }
+        defaults.update(kwargs)
+        return gr.Dropdown(**defaults)
+
+    @staticmethod
+    def create_slider(name: str, label: str, min_val: float, max_val: float, **kwargs) -> gr.Slider:
+        """Create standardized slider components."""
+        defaults = {
+            'label': label,
+            'minimum': min_val,
+            'maximum': max_val,
+            'step': kwargs.get('step', 1),
+            'interactive': kwargs.get('interactive', True)
+        }
+        defaults.update(kwargs)
+        return gr.Slider(**defaults)
+
+    @staticmethod
+    def create_checkbox(name: str, label: str, **kwargs) -> gr.Checkbox:
+        """Create standardized checkbox components."""
+        defaults = {
+            'label': label,
+            'interactive': kwargs.get('interactive', True)
+        }
+        defaults.update(kwargs)
+        return gr.Checkbox(**defaults)
+
+    @staticmethod
+    def create_file_input(name: str, label: str, file_types: list = None, **kwargs) -> gr.File:
+        """Create standardized file input components."""
+        defaults = {
+            'label': label,
+            'file_types': file_types or ["file"],
+            'type': "filepath"
+        }
+        defaults.update(kwargs)
+        return gr.File(**defaults)
+
+
+class ButtonStateManager:
+    """Manages button states (start/stop pairs) with consistent behavior."""
+
+    def __init__(self, app_ui):
+        self.app_ui = app_ui
+
+    def create_button_pair(self, start_name: str, stop_name: str, start_text: str, stop_text: str):
+        """Create and manage start/stop button pairs."""
+        with gr.Row():
+            start_btn = UIComponentFactory.create_button(
+                start_name, start_text, variant="primary"
+            )
+            stop_btn = UIComponentFactory.create_button(
+                stop_name, stop_text, variant="stop", interactive=False
+            )
+        return start_btn, stop_btn
+
+    def set_loading_state(self, start_btn: gr.Button, stop_btn: gr.Button):
+        """Set buttons to loading state."""
+        return {
+            start_btn: gr.update(interactive=False),
+            stop_btn: gr.update(interactive=True)
+        }
+
+    def set_ready_state(self, start_btn: gr.Button, stop_btn: gr.Button):
+        """Set buttons to ready state."""
+        return {
+            start_btn: gr.update(interactive=True),
+            stop_btn: gr.update(interactive=False)
+        }
+
+    def set_error_state(self, start_btn: gr.Button, stop_btn: gr.Button):
+        """Set buttons to error state."""
+        return {
+            start_btn: gr.update(interactive=True),
+            stop_btn: gr.update(interactive=False)
+        }
+
+
+class ValidationUtils:
+    """Centralized validation logic for different input types."""
+
+    @staticmethod
+    def validate_required(value: str, field_name: str) -> str:
+        """Validate that a required field is not empty."""
+        if not value or not value.strip():
+            raise ValueError(f"{field_name} is required")
+        return value.strip()
+
+    @staticmethod
+    def validate_video_path(path: str) -> str:
+        """Validate video file paths with security checks."""
+        return validate_file(path, file_type="video")
+
+    @staticmethod
+    def validate_image_path(path: str) -> str:
+        """Validate image file paths with security checks."""
+        return validate_file(path, file_type="image")
+
+    @staticmethod
+    def validate_directory_path(path: str) -> str:
+        """Validate directory paths with security checks."""
+        path_obj = Path(path)
+        if not path_obj.exists():
+            raise ValueError(f"Directory not found: {path}")
+        if not path_obj.is_dir():
+            raise ValueError(f"Path is not a directory: {path}")
+        return str(path_obj)
+
+    @staticmethod
+    def sanitize_filename(filename: str, max_length: int = 50) -> str:
+        """Sanitize filenames to prevent security issues."""
+        return sanitize_filename(filename, max_length)
+
+
+class UIStateManager:
+    """Manages UI state transitions and updates."""
+
+    def __init__(self, app_ui):
+        self.app_ui = app_ui
+
+    def set_loading_state(self, start_btn, stop_btn, log_component, status_msg="Starting..."):
+        """Set UI to loading state."""
+        return {
+            start_btn: gr.update(interactive=False),
+            stop_btn: gr.update(interactive=True),
+            log_component: "",
+            'unified_status': status_msg
+        }
+
+    def set_error_state(self, start_btn, stop_btn, log_component, error_msg: str):
+        """Set UI to error state."""
+        return {
+            start_btn: gr.update(interactive=True),
+            stop_btn: gr.update(interactive=False),
+            log_component: f"[ERROR] {error_msg}"
+        }
+
+    def set_success_state(self, start_btn, stop_btn, log_component, success_msg: str):
+        """Set UI to success state."""
+        return {
+            start_btn: gr.update(interactive=True),
+            stop_btn: gr.update(interactive=False),
+            log_component: f"[SUCCESS] {success_msg}"
+        }
+
+    def update_progress(self, log_component, status_component, progress_data: dict):
+        """Update progress indicators consistently."""
+        updates = {}
+
+        if "log" in progress_data:
+            updates[log_component] = progress_data["log"]
+
+        if "stage" in progress_data and "progress" in progress_data:
+            total = progress_data.get("total", 1)
+            current = progress_data["progress"]
+            ratio = current / max(total, 1)
+            status = f"**{progress_data['stage']}:** {current}/{total} ({ratio".1%"})"
+            updates[status_component] = status
+
+        return updates
+
+
+class ConfigurationManager:
+    """Centralized configuration loading, saving, and validation."""
+
+    def __init__(self, config_dir: Path):
+        self.config_dir = config_dir
+        self.config_dir.mkdir(exist_ok=True)
+
+    def load_config(self, name: str) -> dict:
+        """Load configuration with validation."""
+        if not name:
+            raise ValueError("Config name is required")
+
+        config_path = self.config_dir / f"{sanitize_filename(name)}.json"
+        if not config_path.exists():
+            raise FileNotFoundError(f"Config '{name}' not found")
+
+        try:
+            with open(config_path, 'r') as f:
+                return json.load(f)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid config file format: {e}")
+
+    def save_config(self, name: str, settings: dict) -> bool:
+        """Save configuration with backup and validation."""
+        if not name:
+            raise ValueError("Config name is required")
+
+        name = sanitize_filename(name)
+        config_path = self.config_dir / f"{name}.json"
+
+        # Create backup if file exists
+        if config_path.exists():
+            backup_path = config_path.with_suffix('.json.bak')
+            shutil.copy2(config_path, backup_path)
+
+        try:
+            with open(config_path, 'w') as f:
+                json.dump(settings, f, indent=2)
+            return True
+        except Exception as e:
+            # Restore backup on failure
+            if config_path.exists():
+                config_path.unlink()
+            if backup_path.exists():
+                shutil.move(backup_path, config_path)
+            raise RuntimeError(f"Failed to save config: {e}")
+
+    def delete_config(self, name: str) -> bool:
+        """Delete configuration with confirmation."""
+        if not name:
+            raise ValueError("Config name is required")
+
+        config_path = self.config_dir / f"{sanitize_filename(name)}.json"
+        if config_path.exists():
+            config_path.unlink()
+            return True
+        return False
+
+    def list_configs(self) -> list[str]:
+        """List available configurations."""
+        return [f.stem for f in self.config_dir.glob("*.json") if not f.stem.endswith('.bak')]
+
+    def validate_config(self, config: dict) -> tuple[bool, list[str]]:
+        """Validate configuration structure and values."""
+        errors = []
+
+        # Check required sections
+        required_keys = ['method_input', 'interval_input', 'max_resolution']
+        for key in required_keys:
+            if key not in config:
+                errors.append(f"Missing required setting: {key}")
+
+        # Validate quality weights if present
+        if 'weight_sharpness' in config:
+            try:
+                weights = [config.get(f'weight_{k}', 0) for k in config.QUALITY_METRICS]
+                if any(w < 0 or w > 100 for w in weights):
+                    errors.append("Quality weights must be between 0 and 100")
+            except (KeyError, AttributeError):
+                errors.append("Invalid quality weights configuration")
+
+        return len(errors) == 0, errors
+
+
 # --- Gradio UI & Event Handlers ---
 class AppUI:
     def __init__(self):
@@ -1571,6 +1862,11 @@ class AppUI:
         self.cancel_event = threading.Event()
         self.last_task_result = {}
         self.feature_status = {}
+
+        # Initialize utility managers
+        self.button_manager = ButtonStateManager(self)
+        self.state_manager = UIStateManager(self)
+        self.config_manager = ConfigurationManager(config.get_dir('configs'))
 
     def build_ui(self):
         """Builds the Gradio UI with a new three-tab workflow."""
@@ -1715,34 +2011,37 @@ class AppUI:
         })
 
     def _create_component(self, name, comp_type, kwargs):
-        """Helper to create and store UI components."""
-        comp_map = {
-            'textbox': gr.Textbox,
-            'dropdown': gr.Dropdown,
-            'slider': gr.Slider,
-            'checkbox': gr.Checkbox,
-            'button': gr.Button,
-            'radio': gr.Radio,
-            'markdown': gr.Markdown,
-            'file': gr.File,
-            'gallery': gr.Gallery
-        }
-        component = comp_map[comp_type](**kwargs)
+        """Helper to create and store UI components using factory classes."""
+        # Use factory classes for standardized components
+        if comp_type == 'button':
+            component = UIComponentFactory.create_button(name, **kwargs)
+        elif comp_type == 'textbox':
+            component = UIComponentFactory.create_input_field(name, **kwargs)
+        elif comp_type == 'status':
+            component = UIComponentFactory.create_status_display(name, **kwargs)
+        elif comp_type == 'dropdown':
+            component = UIComponentFactory.create_dropdown(name, **kwargs)
+        elif comp_type == 'slider':
+            component = UIComponentFactory.create_slider(name, **kwargs)
+        elif comp_type == 'checkbox':
+            component = UIComponentFactory.create_checkbox(name, **kwargs)
+        elif comp_type == 'file':
+            component = UIComponentFactory.create_file_input(name, **kwargs)
+        else:
+            # Fallback for components not handled by factory
+            comp_map = {
+                'radio': gr.Radio,
+                'markdown': gr.Markdown,
+                'gallery': gr.Gallery
+            }
+            component = comp_map[comp_type](**kwargs)
+
         self.components[name] = component
         return component
 
     def _create_button_pair(self, start_name, stop_name, start_text="Start", stop_text="Stop"):
-        """Helper to create start/stop button pairs."""
-        with gr.Row():
-            self._create_component(start_name, 'button', {
-                'value': start_text,
-                'variant': "primary"
-            })
-            self._create_component(stop_name, 'button', {
-                'value': stop_text,
-                'variant': "stop",
-                'interactive': False
-            })
+        """Helper to create start/stop button pairs using the button manager."""
+        return self.button_manager.create_button_pair(start_name, stop_name, start_text, stop_text)
 
 
     def _create_extraction_tab(self):
@@ -2014,7 +2313,7 @@ class AppUI:
             with gr.Row():
                 self._create_component('config_dropdown', 'dropdown', {
                     'label': "Select Config",
-                    'choices': [f.stem for f in config.get_dir('configs').glob("*.json")]
+                    'choices': self.config_manager.list_configs()
                 })
                 self._create_component('load_button', 'button', {'value': "Load"})
                 self._create_component('delete_button', 'button', {
@@ -2067,7 +2366,16 @@ class AppUI:
             self.components['frames_folder_input'], self.components['analysis_video_path_input']
         ]
         self.components['start_extraction_button'].click(self.run_extraction_wrapper, inputs, outputs)
-        self.components['stop_extraction_button'].click(lambda: self.cancel_event.set(), [], []).then(lambda: gr.update(interactive=False), None, self.components['stop_extraction_button'])
+        self.components['stop_extraction_button'].click(
+            lambda: self.cancel_event.set(), [], []
+        ).then(
+            lambda: self.button_manager.set_loading_state(
+                self.components['start_extraction_button'],
+                self.components['stop_extraction_button']
+            ),
+            None,
+            self.components['stop_extraction_button']
+        )
 
     def _setup_analysis_handler(self):
         inputs = self._get_analysis_params_components()
@@ -2078,7 +2386,16 @@ class AppUI:
             self.components['filtering_tab']
         ]
         self.components['start_analysis_button'].click(self.run_analysis_wrapper, inputs, outputs)
-        self.components['stop_analysis_button'].click(lambda: self.cancel_event.set(), [], []).then(lambda: gr.update(interactive=False), None, self.components['stop_analysis_button'])
+        self.components['stop_analysis_button'].click(
+            lambda: self.cancel_event.set(), [], []
+        ).then(
+            lambda: self.button_manager.set_loading_state(
+                self.components['start_analysis_button'],
+                self.components['stop_extraction_button']
+            ),
+            None,
+            self.components['stop_analysis_button']
+        )
         
     def _setup_filtering_handlers(self):
         filter_inputs = [self.components['analysis_metadata_path_state'], self.components['analysis_output_dir_state'],
@@ -2168,17 +2485,22 @@ class AppUI:
             return f"⚠️ Error checking model status: {e}"
 
     def run_extraction_wrapper(self, source_path, upload_video, method, interval, max_res, fast_scene, use_png):
-        yield {
-            self.components['start_extraction_button']: gr.update(interactive=False),
-            self.components['stop_extraction_button']: gr.update(interactive=True),
-            self.components['unified_log']: "",
-            self.components['unified_status']: "Starting..."
-        }
+        # Use state manager for consistent UI state handling
+        yield self.state_manager.set_loading_state(
+            self.components['start_extraction_button'],
+            self.components['stop_extraction_button'],
+            self.components['unified_log']
+        )
         self.cancel_event.clear()
 
         source = upload_video if upload_video else source_path
         if not source:
-            yield {self.components['unified_log']: "[ERROR] Video source is required.", self.components['start_extraction_button']: gr.update(interactive=True), self.components['stop_extraction_button']: gr.update(interactive=False)}
+            yield self.state_manager.set_error_state(
+                self.components['start_extraction_button'],
+                self.components['stop_extraction_button'],
+                self.components['unified_log'],
+                "Video source is required."
+            )
             return
 
         # Validate input to prevent path traversal
@@ -2192,7 +2514,12 @@ class AppUI:
                 if not is_url:
                     source = str(validate_video_file_path(source))
         except (ValueError, RuntimeError) as e:
-            yield {self.components['unified_log']: f"[ERROR] Invalid video source: {e}", self.components['start_extraction_button']: gr.update(interactive=True), self.components['stop_extraction_button']: gr.update(interactive=False)}
+            yield self.state_manager.set_error_state(
+                self.components['start_extraction_button'],
+                self.components['stop_extraction_button'],
+                self.components['unified_log'],
+                f"Invalid video source: {e}"
+            )
             return
 
         params = AnalysisParameters(
@@ -2208,35 +2535,52 @@ class AppUI:
         if result.get("done") and not self.cancel_event.is_set():
             output_dir = result["output_dir"]
             video_path = result.get("video_path", "")
+            yield self.state_manager.set_success_state(
+                self.components['start_extraction_button'],
+                self.components['stop_extraction_button'],
+                self.components['unified_log'],
+                "Extraction completed successfully."
+            )
             yield {
-                self.components['start_extraction_button']: gr.update(interactive=True), 
-                self.components['stop_extraction_button']: gr.update(interactive=False),
                 self.components['extracted_video_path_state']: video_path,
                 self.components['extracted_frames_dir_state']: output_dir,
                 self.components['frames_folder_input']: output_dir,
                 self.components['analysis_video_path_input']: video_path
             }
         else:
-             yield {self.components['start_extraction_button']: gr.update(interactive=True), self.components['stop_extraction_button']: gr.update(interactive=False)}
+            yield self.state_manager.set_ready_state(
+                self.components['start_extraction_button'],
+                self.components['stop_extraction_button']
+            )
 
     def run_analysis_wrapper(self, frames_folder, video_path, disable_parallel, resume, enable_face, face_ref_path, face_ref_upload, face_model, enable_mask, dam4sam_model, scene_detect, *weights):
-        yield {
-            self.components['start_analysis_button']: gr.update(interactive=False),
-            self.components['stop_analysis_button']: gr.update(interactive=True),
-            self.components['unified_log']: "",
-            self.components['unified_status']: "Starting..."
-        }
+        # Use state manager for consistent UI state handling
+        yield self.state_manager.set_loading_state(
+            self.components['start_analysis_button'],
+            self.components['stop_analysis_button'],
+            self.components['unified_log']
+        )
         self.cancel_event.clear()
-        
+
         # Validate frames folder path to prevent path traversal
         try:
             frames_folder = safe_path_join(config.BASE_DIR, frames_folder)
             frames_path = Path(frames_folder)
             if not frames_path.exists() or not frames_path.is_dir():
-                yield {self.components['unified_log']: "[ERROR] A valid folder of extracted frames is required.", self.components['start_analysis_button']: gr.update(interactive=True), self.components['stop_analysis_button']: gr.update(interactive=False)}
+                yield self.state_manager.set_error_state(
+                    self.components['start_analysis_button'],
+                    self.components['stop_analysis_button'],
+                    self.components['unified_log'],
+                    "A valid folder of extracted frames is required."
+                )
                 return
         except (ValueError, RuntimeError) as e:
-            yield {self.components['unified_log']: f"[ERROR] Invalid frames folder path: {e}", self.components['start_analysis_button']: gr.update(interactive=True), self.components['stop_analysis_button']: gr.update(interactive=False)}
+            yield self.state_manager.set_error_state(
+                self.components['start_analysis_button'],
+                self.components['stop_analysis_button'],
+                self.components['unified_log'],
+                f"Invalid frames folder path: {e}"
+            )
             return
 
         face_ref = face_ref_upload if face_ref_upload else face_ref_path
@@ -2269,13 +2613,23 @@ class AppUI:
 
         result = self.last_task_result
         if result.get("done") and not self.cancel_event.is_set():
+            yield self.state_manager.set_success_state(
+                self.components['start_analysis_button'],
+                self.components['stop_analysis_button'],
+                self.components['unified_log'],
+                "Analysis completed successfully."
+            )
             yield {
-                self.components['analysis_output_dir_state']: result["output_dir"], 
+                self.components['analysis_output_dir_state']: result["output_dir"],
                 self.components['analysis_metadata_path_state']: result["metadata_path"],
                 self.components['filtering_tab']: gr.update(interactive=True)
             }
-        
-        yield {self.components['start_analysis_button']: gr.update(interactive=True), self.components['stop_analysis_button']: gr.update(interactive=False)}
+
+        else:
+            yield self.state_manager.set_ready_state(
+                self.components['start_analysis_button'],
+                self.components['stop_analysis_button']
+            )
 
     def _run_task(self, task_func, log_box=None, status_box=None):
         # Set progress queue for unified logger
@@ -2506,54 +2860,70 @@ class AppUI:
         return kept, len(kept), reasons, total
 
     def save_config(self, name, *values):
-        if not name: return "Error: Config name required.", gr.update()
-        name = sanitize_filename(name)
-        
-        settings = {
-            'method_input': values[0], 'interval_input': values[1], 'max_resolution': values[2], 
-            'fast_scene_input': values[3], 'use_png_input': values[4], 'disable_parallel_input': values[5],
-            'resume_input': values[6], 'enable_face_filter_input': values[7], 'face_model_name_input': values[8],
-            'enable_subject_mask_input': values[9], 'dam4sam_model_name_input': values[10], 'scene_detect_input': values[11],
-        }
-        for i, k in enumerate(config.QUALITY_METRICS):
-            settings[f"weight_{k}"] = values[12 + i]
+        """Save configuration using the configuration manager."""
+        try:
+            name = ValidationUtils.validate_required(name, "Config name")
+            name = ValidationUtils.sanitize_filename(name)
 
-        with (config.get_dir('configs') / f"{name}.json").open('w') as f:
-            json.dump(settings, f, indent=2)
+            settings = {
+                'method_input': values[0], 'interval_input': values[1], 'max_resolution': values[2],
+                'fast_scene_input': values[3], 'use_png_input': values[4], 'disable_parallel_input': values[5],
+                'resume_input': values[6], 'enable_face_filter_input': values[7], 'face_model_name_input': values[8],
+                'enable_subject_mask_input': values[9], 'dam4sam_model_name_input': values[10], 'scene_detect_input': values[11],
+            }
+            for i, k in enumerate(config.QUALITY_METRICS):
+                settings[f"weight_{k}"] = values[12 + i]
 
-        # --- Fix b: Typo in Config Directory References ---
-        return f"Config '{name}' saved.", gr.update(choices=[f.stem for f in config.get_dir('configs').glob("*.json")])
+            self.config_manager.save_config(name, settings)
+            return f"Config '{name}' saved.", gr.update(choices=self.config_manager.list_configs())
+
+        except Exception as e:
+            return f"Error saving config: {e}", gr.update()
 
     def load_config(self, name):
+        """Load configuration using the configuration manager."""
         ordered_comp_ids = [
-            'method_input', 'interval_input', 'max_resolution', 'fast_scene_input', 'use_png_input', 
+            'method_input', 'interval_input', 'max_resolution', 'fast_scene_input', 'use_png_input',
             'disable_parallel_input', 'resume_input', 'enable_face_filter_input', 'face_model_name_input',
             'enable_subject_mask_input', 'dam4sam_model_name_input', 'scene_detect_input'
         ]
-        
-        if not name or not (config_path := config.get_dir('configs') / f"{name}.json").exists():
-            status = "Error: No config selected." if not name else f"Error: Config '{name}' not found."
+
+        try:
+            if not name:
+                status = "Error: No config selected."
+                num_outputs = len(ordered_comp_ids) + len(config.QUALITY_METRICS)
+                return [gr.update()] * num_outputs + [status]
+
+            settings = self.config_manager.load_config(name)
+
+            updates = []
+            for comp_id in ordered_comp_ids:
+                updates.append(gr.update(value=settings.get(comp_id)))
+
+            for k in config.QUALITY_METRICS:
+                updates.append(gr.update(value=settings.get(f"weight_{k}")))
+
+            updates.append(f"Loaded config '{name}'.")
+            return updates
+
+        except Exception as e:
+            status = f"Error loading config: {e}"
             num_outputs = len(ordered_comp_ids) + len(config.QUALITY_METRICS)
             return [gr.update()] * num_outputs + [status]
-            
-        with config_path.open('r') as f:
-            settings = json.load(f)
-        
-        updates = []
-        for comp_id in ordered_comp_ids:
-            updates.append(gr.update(value=settings.get(comp_id)))
-
-        for k in config.QUALITY_METRICS:
-            updates.append(gr.update(value=settings.get(f"weight_{k}")))
-            
-        updates.append(f"Loaded config '{name}'.")
-        return updates
 
     def delete_config(self, name):
-        if not name: return "Error: No config selected.", gr.update()
-        (config.get_dir('configs') / f"{name}.json").unlink(missing_ok=True)
-        # --- Fix b: Typo in Config Directory References ---
-        return f"Config '{name}' deleted.", gr.update(choices=[f.stem for f in config.get_dir('configs').glob("*.json")], value=None)
+        """Delete configuration using the configuration manager."""
+        try:
+            if not name:
+                return "Error: No config selected.", gr.update()
+
+            if self.config_manager.delete_config(name):
+                return f"Config '{name}' deleted.", gr.update(choices=self.config_manager.list_configs(), value=None)
+            else:
+                return f"Config '{name}' not found.", gr.update()
+
+        except Exception as e:
+            return f"Error deleting config: {e}", gr.update()
 
 if __name__ == "__main__":
     if torch is None or not torch.cuda.is_available():
