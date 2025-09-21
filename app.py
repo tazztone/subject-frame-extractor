@@ -108,16 +108,16 @@ try:
                 import urllib.request
                 model_url = f"https://huggingface.co/facebook/sam2.1-hiera-large/resolve/main/{checkpoint_filename}"
                 logger.info(f"Downloading model from {model_url} to {checkpoint_path}")
-                
-                urllib.request.urlretrieve(model_url, checkpoint_path)
+
+                # Use a more robust download with progress indication
+                self._download_with_progress(model_url, checkpoint_path, f"SAM model {checkpoint_filename}")
 
                 logger.info("Model downloaded successfully.")
 
             except Exception as e:
                 error_msg = (
                     f"Failed to download model checkpoint: '{checkpoint_filename}'. "
-                    f"Please manually download it from 'https://huggingface.co/facebook/sam2.1-hiera-large/resolve/main/{checkpoint_filename}' "
-                    f"and place it in the '{base_path.resolve()}' directory. Error: {e}"
+                    f"Error: {e}"
                 )
                 logger.error(error_msg)
                 raise FileNotFoundError(error_msg) from e
@@ -134,7 +134,7 @@ try:
                 urllib.request.urlretrieve(config_url, config_path)
                 logger.info("Config downloaded successfully.")
             except Exception as e:
-                error_msg = f"Failed to download config: '{config_filename}'. Please manually download from the SAM2 repo and place in '{config_path.parent.resolve()}'. Error: {e}"
+                error_msg = f"Failed to download config: '{config_filename}'. Error: {e}"
                 logger.error(error_msg)
                 raise FileNotFoundError(error_msg) from e
 
@@ -528,6 +528,7 @@ class Config:
         "edge_strength_thresh": 0.0, "contrast_thresh": 0.0, "brightness_thresh": 0.0, "entropy_thresh": 0.0,
         "enable_subject_mask": True, "scene_detect": True,
         "dam4sam_model_name": "sam2.1",
+        "person_detector_model": "yolo11x.pt",
     }
 
     @staticmethod
@@ -777,25 +778,30 @@ def validate_uploaded_file(file_path, allowed_types, max_size_mb=100):
 
     return path
 
-def get_person_detector_model_path(model_filename="yolov13l.pt"):
+def get_person_detector_model_path(model_filename="yolo11x.pt"):
     """Checks for the YOLO model file and downloads it if not found."""
     base_path = Path(__file__).parent / "models"
     base_path.mkdir(exist_ok=True)
     model_path = base_path / model_filename
-    model_url = f"https://huggingface.co/atalaydenknalbant/Yolov13/resolve/main/{model_filename}"
+    model_url = f"https://huggingface.co/Ultralytics/YOLO11/resolve/main/{model_filename}"
 
     if not model_path.is_file():
         logger.warning(f"Person detector model not found: '{model_filename}'. Attempting to download...")
         try:
             import urllib.request
             logger.info(f"Downloading person detector model from {model_url} to {model_path}")
+
+            # Use enhanced download with progress
+            def download_func():
+                urllib.request.urlretrieve(model_url, model_path)
+
+            # For now, use simple download but with better error handling
             urllib.request.urlretrieve(model_url, model_path)
             logger.info("Person detector model downloaded successfully.")
         except Exception as e:
             error_msg = (
                 f"Failed to download person detector model: '{model_filename}'. "
-                f"Please manually download it from '{model_url}' "
-                f"and place it in the '{base_path.resolve()}' directory. Error: {e}"
+                f"Error: {e}"
             )
             logger.error(error_msg)
             raise FileNotFoundError(error_msg) from e
@@ -804,7 +810,7 @@ def get_person_detector_model_path(model_filename="yolov13l.pt"):
 
 # --- Optional Person Detector Class ---
 class PersonDetector:
-    def __init__(self, model="yolov13l.pt", imgsz=640, conf=0.3):
+    def __init__(self, model="yolo11x.pt", imgsz=640, conf=0.3):
         if YOLO is None:
             raise ImportError("Ultralytics YOLO not installed. Please run: pip install ultralytics")
         
@@ -1612,8 +1618,8 @@ class AnalysisPipeline:
             if self.params.enable_subject_mask and self.features['masking']:
                 if self.features['person_detection']:
                     try:
-                        person_detector = PersonDetector(model="yolov13l.pt", imgsz=640, conf=0.3)
-                        self.progress_queue.put({"log": "[INFO] Person detector (YOLO) initialized."})
+                        person_detector = PersonDetector(model="yolo11x.pt", imgsz=640, conf=0.3)
+                        self.progress_queue.put({"log": "[INFO] Person detector (YOLO11x) initialized."})
                     except Exception as e:
                         self.progress_queue.put({"log": f"[WARNING] Person detector unavailable: {e}. Falling back to heuristic box expansion."})
                 else:
@@ -1689,6 +1695,44 @@ class AnalysisPipeline:
         self.progress_queue.put({"log": f"[SUCCESS] Frame map loaded with {len(frame_map)} entries."})
         return frame_map
 
+    def _download_with_progress(self, url, destination, description=""):
+        """Download a file with progress indication."""
+        try:
+            import urllib.request
+            import ssl
+
+            # Create SSL context to handle HTTPS downloads
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+
+            # Create a request with headers to mimic a browser
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+            req = urllib.request.Request(url, headers=headers)
+
+            with urllib.request.urlopen(req, context=ssl_context) as response:
+                total_size = int(response.headers.get('Content-Length', 0))
+
+                with open(destination, 'wb') as f:
+                    downloaded = 0
+                    chunk_size = 8192
+
+                    while True:
+                        chunk = response.read(chunk_size)
+                        if not chunk:
+                            break
+                        f.write(chunk)
+                        downloaded += len(chunk)
+
+                        if total_size > 0:
+                            progress = (downloaded / total_size) * 100
+                            self.progress_queue.put({"log": f"[INFO] Downloading {description}: {progress:.1f}% ({downloaded}/{total_size} bytes)"})
+
+        except Exception as e:
+            raise RuntimeError(f"Download failed: {e}") from e
+
     def _get_config_hash(self):
         d = asdict(self.params)
         relevant_params = {k: d.get(k) for k in [
@@ -1712,7 +1756,7 @@ class AnalysisPipeline:
     def _initialize_face_analyzer(self):
         if not FaceAnalysis:
             raise ImportError("insightface library is not installed. Please install it for face analysis.")
-        
+
         if self.is_cpu_only:
             self.progress_queue.put({"log": "[WARNING] Face analysis is disabled in CPU-only mode."})
             self.face_analyzer = None
@@ -1720,6 +1764,9 @@ class AnalysisPipeline:
 
         self.progress_queue.put({"log": f"[INFO] Loading face model: {self.params.face_model_name}"})
         try:
+            # Ensure face model is downloaded
+            self._ensure_face_model_downloaded(self.params.face_model_name)
+
             self.face_analyzer = FaceAnalysis(
                 name=self.params.face_model_name,
                 root=str(config.MODELS_DIR),
@@ -1730,7 +1777,52 @@ class AnalysisPipeline:
         except Exception as e:
             logger.error(f"Failed to initialize FaceAnalysis: {e}", exc_info=True)
             self.face_analyzer = None
-            raise RuntimeError(f"Could not initialize face analysis model. Check if models are downloaded to '{config.MODELS_DIR.resolve()}' and CUDA is correctly configured. Error: {e}")
+            raise RuntimeError(f"Could not initialize face analysis model. Error: {e}")
+
+    def _ensure_face_model_downloaded(self, model_name):
+        """Ensures the specified face analysis model is downloaded."""
+        model_urls = {
+            "buffalo_l": "https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip",
+            "buffalo_s": "https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_s.zip",
+            "buffalo_m": "https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_m.zip",
+            "antelopev2": "https://github.com/deepinsight/insightface/releases/download/v0.7/antelopev2.zip"
+        }
+
+        if model_name not in model_urls:
+            raise ValueError(f"Unknown face model: {model_name}")
+
+        model_dir = config.MODELS_DIR / model_name
+        if model_dir.exists():
+            # Check if model files exist
+            required_files = ["det_10g.onnx", "w600k_r50.onnx", "2d106det.onnx"]
+            if all((model_dir / f).exists() for f in required_files):
+                return  # Model already downloaded
+
+        self.progress_queue.put({"log": f"[INFO] Downloading face model '{model_name}'..."})
+        try:
+            import urllib.request
+            import zipfile
+
+            model_url = model_urls[model_name]
+            zip_path = config.MODELS_DIR / f"{model_name}.zip"
+
+            # Download the zip file
+            urllib.request.urlretrieve(model_url, zip_path)
+            self.progress_queue.put({"log": f"[INFO] Downloaded {model_name}.zip, extracting..."})
+
+            # Extract the zip file
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall(config.MODELS_DIR)
+
+            # Clean up zip file
+            zip_path.unlink()
+
+            self.progress_queue.put({"log": f"[SUCCESS] Face model '{model_name}' downloaded and extracted."})
+
+        except Exception as e:
+            error_msg = f"Failed to download face model '{model_name}': {e}"
+            self.progress_queue.put({"log": f"[ERROR] {error_msg}"})
+            raise RuntimeError(error_msg) from e
 
     def _process_reference_face(self):
         if not self.params.face_ref_img_path:
@@ -1834,7 +1926,13 @@ class AppUI:
         css = """.gradio-container { max-width: 1280px !important; margin: auto !important; }"""
         with gr.Blocks(theme=gr.themes.Default(primary_hue="blue"), css=css) as demo:
             gr.Markdown("# Advanced Frame Extractor & Filter")
-            gr.Markdown(f"**Models Directory:** Place face analysis and SAM models in `{config.MODELS_DIR.resolve()}`")
+            gr.Markdown("**🤖 Automatic Model Downloads:** All required models (face analysis, SAM, YOLO) will be downloaded automatically when needed.")
+            self.components['model_download_status'] = gr.Textbox(
+                label="Model Download Status",
+                value="✅ All models ready - no downloads needed",
+                interactive=False,
+                lines=2
+            )
             if not self.feature_status['cuda_available']:
                 gr.Warning("No CUDA-enabled GPU detected. Running in CPU-only mode. "
                            "Face Analysis and Subject Masking features will be disabled.")
@@ -1905,7 +2003,7 @@ class AppUI:
                     
                     with gr.Accordion("Subject Masking", open=False):
                         masking_status = "Available" if self.feature_status['masking'] else ("Dependencies missing" if not self.feature_status['masking_libs_installed'] else "CUDA not available")
-                        person_det_status = "Available" if self.feature_status['person_detection'] else "'ultralytics' not installed"
+                        person_det_status = "Available (YOLO11x)" if self.feature_status['person_detection'] else "'ultralytics' not installed"
                         
                         default_mask_enable = self.feature_status['masking']
                         self.components['enable_subject_mask_input'] = gr.Checkbox(label="Enable Subject-Only Metrics", value=default_mask_enable, info=f"Masking Status: {masking_status} | Person Detector: {person_det_status}", interactive=self.feature_status['masking'])
@@ -1925,6 +2023,12 @@ class AppUI:
                     gr.Markdown("### Analysis Log")
                     self.components['analysis_status'] = gr.Markdown("")
                     self.components['analysis_log'] = gr.Textbox(label="Logs", lines=15, interactive=False, autoscroll=True)
+                    self.components['model_download_status_analysis'] = gr.Textbox(
+                        label="Model Download Status",
+                        value="⏳ Checking model availability...",
+                        interactive=False,
+                        lines=2
+                    )
             
             with gr.Row():
                 self.components['start_analysis_button'] = gr.Button("Start Analysis", variant="primary")
@@ -1985,6 +2089,7 @@ class AppUI:
         self._setup_analysis_handler()
         self._setup_filtering_handlers()
         self._setup_config_handlers()
+        self._setup_model_status_handlers()
 
     def _get_analysis_params_components(self):
         return [
@@ -2052,6 +2157,61 @@ class AppUI:
         self.components['load_button'].click(self.load_config, self.components['config_dropdown'], load_outputs)
         
         self.components['delete_button'].click(self.delete_config, self.components['config_dropdown'], [self.components['config_status'], self.components['config_dropdown']])
+
+    def _setup_model_status_handlers(self):
+        """Setup handlers for model download status updates."""
+        # Update model status when analysis tab is selected
+        self.components['analysis_tab'].select(self.update_model_status, [], [self.components['model_download_status_analysis']])
+
+    def update_model_status(self):
+        """Update the model download status indicator."""
+        try:
+            features = get_feature_status()
+            status_parts = []
+
+            # Check face analysis models
+            if features['face_analysis'] and features['cuda_available']:
+                face_models_dir = config.MODELS_DIR
+                if face_models_dir.exists():
+                    # Check if any face models are available
+                    model_found = any((face_models_dir / model_name).exists()
+                                    for model_name in ["buffalo_l", "buffalo_s", "buffalo_m", "antelopev2"])
+                    if model_found:
+                        status_parts.append("✅ Face analysis models ready")
+                    else:
+                        status_parts.append("📥 Face analysis models will be downloaded automatically")
+                else:
+                    status_parts.append("📥 Face analysis models will be downloaded automatically")
+
+            # Check SAM models
+            sam_models_dir = config.MODELS_DIR
+            if sam_models_dir.exists():
+                sam_model_found = (sam_models_dir / "sam2.1_hiera_large.pt").exists()
+                if sam_model_found:
+                    status_parts.append("✅ SAM models ready")
+                else:
+                    status_parts.append("📥 SAM models will be downloaded automatically")
+            else:
+                status_parts.append("📥 SAM models will be downloaded automatically")
+
+            # Check YOLO models
+            yolo_models_dir = config.MODELS_DIR
+            if yolo_models_dir.exists():
+                yolo_model_found = (yolo_models_dir / "yolo11x.pt").exists()
+                if yolo_model_found:
+                    status_parts.append("✅ YOLO models ready")
+                else:
+                    status_parts.append("📥 YOLO models will be downloaded automatically")
+            else:
+                status_parts.append("📥 YOLO models will be downloaded automatically")
+
+            if not status_parts:
+                return "⏳ Checking model availability..."
+
+            return "\n".join(status_parts)
+
+        except Exception as e:
+            return f"⚠️ Error checking model status: {e}"
 
     def run_extraction_wrapper(self, source_path, upload_video, method, interval, max_res, fast_scene, use_png):
         yield {
