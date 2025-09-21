@@ -1817,7 +1817,7 @@ class AppUI:
 
         # Advanced Configuration - moved outside tabs for app-wide access
         gr.Markdown("---")
-        with gr.Accordion("⚙️ Advanced Configuration", open=False):
+        with gr.Accordion("⚙️ Config", open=False):
             gr.Markdown("Performance and caching options for the analysis pipeline.")
             with gr.Row():
                 with gr.Column():
@@ -1877,7 +1877,10 @@ class AppUI:
 
     def _create_button_pair(self, start_name, stop_name, start_text="Start", stop_text="Stop"):
         """Helper to create start/stop button pairs using the button manager."""
-        return self.button_manager.create_button_pair(start_name, stop_name, start_text, stop_text)
+        start_btn, stop_btn = self.button_manager.create_button_pair(start_name, stop_name, start_text, stop_text)
+        self.components[start_name] = start_btn
+        self.components[stop_name] = stop_btn
+        return start_btn, stop_btn
 
 
     def _create_extraction_tab(self):
@@ -2041,25 +2044,69 @@ class AppUI:
             'label': "🎛️ Filter By"
         })
 
-        gr.Markdown("---")
+        # Consolidated Quality Settings Section
+        with gr.Group() as self.components['quality_settings_group']:
+            gr.Markdown("## ⭐ Quality Analysis & Filtering")
+            gr.Markdown("Configure quality metrics, weights, and filtering thresholds in one place.")
 
-        # Quality Weights Customization
-        # Removed redundant "### ⚖️ Quality Weights" title
-        gr.Markdown("Adjust the importance of different quality metrics for frame scoring.")
-        with gr.Row():
-            self.components['weight_sliders'] = [
-                self._create_component(f'weight_slider_{k}', 'slider', {
-                    'label': k.replace('_', ' ').title(),
-                    'min_val': 0,
-                    'max_val': 100,
-                    'value': config.QUALITY_WEIGHTS[k],
-                    'step': 1
-                }) for k in config.QUALITY_METRICS
-            ]
+            # Filter Mode Selection
+            self._create_component('filter_mode_toggle', 'radio', {
+                'choices': list(config.FILTER_MODES.values()),
+                'value': config.FILTER_MODES["OVERALL"],
+                'label': "🎛️ Filter By"
+            })
 
-        gr.Markdown("---")
+            # Overall Quality Threshold
+            with gr.Group(visible=True) as self.components['overall_quality_group']:
+                self._create_component('quality_filter_slider', 'slider', {
+                    'label': "⭐ Minimum Quality Score",
+                    'minimum': 0,
+                    'maximum': 100,
+                    'value': config.UI_DEFAULTS["quality_thresh"],
+                    'info': "Frames below this quality score will be filtered out"
+                })
 
-        self._create_filter_sliders()
+            # Individual Metric Thresholds
+            with gr.Group(visible=False) as self.components['individual_metrics_group']:
+                gr.Markdown("**Individual Metric Thresholds:**")
+                self.components['filter_metric_sliders'] = [
+                    self._create_component(f'filter_slider_{k}', 'slider', {
+                        'label': f"📊 Min {k.replace('_',' ').capitalize()}",
+                        'minimum': 0,
+                        'maximum': 100
+                    }) for k in config.QUALITY_METRICS
+                ]
+
+            # Quality Weights Customization
+            self._create_component('show_weight_adjustment', 'checkbox', {
+                'label': "⚖️ Show Weight Adjustment (Advanced)",
+                'value': False,
+                'info': "Enable to adjust the importance of different quality metrics for frame scoring"
+            })
+
+            with gr.Group(visible=False) as self.components['weight_adjustment_group']:
+                gr.Markdown("Adjust the importance of different quality metrics for frame scoring.")
+                with gr.Row():
+                    self.components['weight_sliders'] = [
+                        self._create_component(f'weight_slider_{k}', 'slider', {
+                            'label': k.replace('_', ' ').title(),
+                            'minimum': 0,
+                            'maximum': 100,
+                            'value': config.QUALITY_WEIGHTS[k],
+                            'step': 1
+                        }) for k in config.QUALITY_METRICS
+                    ]
+
+            # Face Similarity Filter
+            self._create_component('face_filter_slider', 'slider', {
+                'label': "👤 Minimum Face Similarity",
+                'minimum': 0,
+                'maximum': 1.0,
+                'value': 0.5,
+                'step': 0.01,
+                'interactive': False,
+                'info': "Only applies when face analysis is enabled"
+            })
 
         gr.Markdown("---")
 
@@ -2068,7 +2115,7 @@ class AppUI:
         gr.Markdown("Configure how filtered frames are exported and processed.")
         self._create_component('enable_crop_input', 'checkbox', {
             'label': "✂️ Crop to Subject",
-            'value': False,
+            'value': True,
             'info': "Automatically crop exported frames to focus on the main subject"
         })
         with gr.Group(visible=False) as self.components['crop_options_group']:
@@ -2080,47 +2127,14 @@ class AppUI:
                 })
                 self._create_component('crop_padding_input', 'slider', {
                     'label': "📏 Padding (%)",
-                    'min_val': 0,
-                    'max_val': 100,
+                    'minimum': 0,
+                    'maximum': 100,
                     'value': 15,
                     'step': 1,
                     'info': "Padding added around the subject's bounding box."
                 })
 
 
-    def _create_filter_sliders(self):
-        """Create filter slider controls."""
-        # Removed redundant "### 🎚️ Quality Thresholds" title
-        gr.Markdown("Set minimum thresholds for frame filtering.")
-
-        with gr.Group() as self.components['overall_quality_group']:
-            self._create_component('quality_filter_slider', 'slider', {
-                'label': "⭐ Minimum Quality Score",
-                'min_val': 0,
-                'max_val': 100,
-                'value': config.UI_DEFAULTS["quality_thresh"],
-                'info': "Frames below this quality score will be filtered out"
-            })
-
-        with gr.Group(visible=False) as self.components['individual_metrics_group']:
-            gr.Markdown("**Individual Metric Thresholds:**")
-            self.components['filter_metric_sliders'] = [
-                self._create_component(f'filter_slider_{k}', 'slider', {
-                    'label': f"📊 Min {k.replace('_',' ').capitalize()}",
-                    'min_val': 0,
-                    'max_val': 100
-                }) for k in config.QUALITY_METRICS
-            ]
-
-        self._create_component('face_filter_slider', 'slider', {
-            'label': "👤 Minimum Face Similarity",
-            'min_val': 0,
-            'max_val': 1.0,
-            'value': 0.5,
-            'step': 0.01,
-            'interactive': False,
-            'info': "Only applies when face analysis is enabled"
-        })
 
 
     def _create_filtering_results(self):
@@ -2128,7 +2142,6 @@ class AppUI:
         with gr.Row():
             # Individual filter stats removed - using unified Activity Log at bottom
             self._create_component('export_button', 'button', {
-                'text': "📤 Export Kept Frames",
                 'value': "📤 Export Kept Frames",
                 'variant': "primary"
             })
@@ -2152,9 +2165,8 @@ class AppUI:
                     'label': "Select Config",
                     'choices': self.config_manager.list_configs()
                 })
-                self._create_component('load_button', 'button', {'text': "Load", 'value': "Load"})
+                self._create_component('load_button', 'button', {'value': "Load"})
                 self._create_component('delete_button', 'button', {
-                    'text': "Delete",
                     'value': "Delete",
                     'variant': "stop"
                 })
@@ -2162,7 +2174,7 @@ class AppUI:
                 self._create_component('config_name_input', 'textbox', {
                     'label': "New Config Name"
                 })
-                self._create_component('save_button', 'button', {'text': "Save", 'value': "Save"})
+                self._create_component('save_button', 'button', {'value': "Save"})
 
     def _create_event_handlers(self):
         self.components['method_input'].change(lambda m: (gr.update(visible=m=='interval'), gr.update(visible=m=='scene')), self.components['method_input'], [self.components['interval_input'], self.components['fast_scene_input']])
@@ -2170,10 +2182,17 @@ class AppUI:
         self.components['enable_subject_mask_input'].change(lambda e: gr.update(visible=e), self.components['enable_subject_mask_input'], self.components['masking_options_group'])
         self.components['enable_crop_input'].change(lambda x: gr.update(visible=x), self.components['enable_crop_input'], self.components['crop_options_group'])
         
+        # Event handlers for the consolidated quality section
         self.components['filter_mode_toggle'].change(
             lambda m: (gr.update(visible=m == config.FILTER_MODES["OVERALL"]), gr.update(visible=m != config.FILTER_MODES["OVERALL"])),
             self.components['filter_mode_toggle'],
             [self.components['overall_quality_group'], self.components['individual_metrics_group']]
+        )
+
+        self.components['show_weight_adjustment'].change(
+            lambda x: gr.update(visible=x),
+            self.components['show_weight_adjustment'],
+            self.components['weight_adjustment_group']
         )
         
         self._setup_extraction_handler()
