@@ -256,39 +256,6 @@ def sanitize_filename(name, max_length=50):
     """Sanitizes a string to be a valid filename."""
     return re.sub(r'[^\w\-_.]', '_', name)[:max_length]
 
-def safe_path_join(base_path, user_input, allowed_extensions=None):
-    """
-    Safely join base path with user input to prevent path traversal attacks.
-
-    Args:
-        base_path: The base directory path
-        user_input: User-provided path or filename
-        allowed_extensions: List of allowed file extensions (optional)
-
-    Returns:
-        Safe path string
-
-    Raises:
-        ValueError: If path is invalid or outside base directory
-    """
-    import os
-    from pathlib import Path
-
-    # Convert to Path objects
-    base = Path(base_path).resolve()
-    user_path = Path(user_input).resolve()
-
-    # Check if user path is within base path
-    try:
-        user_path.relative_to(base)
-    except ValueError:
-        raise ValueError(f"Path '{user_input}' is outside allowed directory '{base}'")
-
-    # Check file extension if specified
-    if allowed_extensions and user_path.suffix.lower() not in allowed_extensions:
-        raise ValueError(f"File extension '{user_path.suffix}' not allowed. Allowed: {allowed_extensions}")
-
-    return str(user_path)
 
 @contextmanager
 def safe_resource_cleanup():
@@ -434,18 +401,6 @@ def validate_file(file_path, file_type="generic", allowed_extensions=None, max_s
 
     return path
 
-# Backward compatibility functions
-def validate_video_file_path(file_path):
-    """Validate video file path (backward compatibility)."""
-    return validate_file(file_path, file_type="video")
-
-def validate_image_file_path(file_path):
-    """Validate image file path (backward compatibility)."""
-    return validate_file(file_path, file_type="image")
-
-def validate_uploaded_file(file_path, allowed_types, max_size_mb=100):
-    """Validate uploaded file (backward compatibility)."""
-    return validate_file(file_path, allowed_extensions=allowed_types, max_size_mb=max_size_mb)
 
 def get_person_detector_model_path(model_filename="yolo11x.pt"):
     """Checks for the YOLO model file and downloads it if not found."""
@@ -455,16 +410,9 @@ def get_person_detector_model_path(model_filename="yolo11x.pt"):
     model_url = f"https://huggingface.co/Ultralytics/YOLO11/resolve/main/{model_filename}"
 
     if not model_path.is_file():
-        logger.warning(f"Person detector model not found: '{model_filename}'. Attempting to download...")
         try:
             import urllib.request
             logger.info(f"Downloading person detector model from {model_url} to {model_path}")
-
-            # Use enhanced download with progress
-            def download_func():
-                urllib.request.urlretrieve(model_url, model_path)
-
-            # For now, use simple download but with better error handling
             urllib.request.urlretrieve(model_url, model_path)
             logger.info("Person detector model downloaded successfully.")
         except Exception as e:
@@ -673,12 +621,17 @@ class SubjectMasker:
 
             if self.params.scene_detect:
                 self._detect_scenes(video_path, frames_dir)
+
+            tracker_ok = self._initialize_dam4sam_tracker()  # once per run
+            if not tracker_ok:
+                logger.error("Could not initialize DAM4SAM; skipping masking.")
+                return {}  # or prefill mask_metadata with errors if desired
+
+            if self.frame_map:
+                last_frame = max(self.frame_map.keys()) if self.frame_map else 0
+                self.shots = [(0, last_frame + 1)]
             else:
-                if self.frame_map:
-                    last_frame = max(self.frame_map.keys()) if self.frame_map else 0
-                    self.shots = [(0, last_frame + 1)]
-                else:
-                    self.shots = [(0, len(list(Path(frames_dir).glob('frame_*.*'))))]
+                self.shots = [(0, len(list(Path(frames_dir).glob('frame_*.*'))))]
 
             mask_metadata = {}
             total_frames_in_shots = sum(end - start for start, end in self.shots)
@@ -687,13 +640,6 @@ class SubjectMasker:
             for shot_id, (start_frame, end_frame) in enumerate(self.shots):
                 if self.cancel_event.is_set(): break
                 logger.info(f"Masking shot {shot_id+1}/{len(self.shots)} (Frames {start_frame}-{end_frame})")
-
-                if not self._initialize_dam4sam_tracker():
-                    logger.error(f"Could not initialize tracker for shot {shot_id+1}. Skipping.")
-                    # Advance progress bar for skipped frames to avoid stalling
-                    frames_in_shot = len([fn for fn in (self.frame_map or {}).keys() if start_frame <= fn < end_frame])
-                    # Progress will be handled by the UI system
-                    continue
                 
                 shot_frames_with_nums = self._load_shot_frames(frames_dir, start_frame, end_frame)
                 if not shot_frames_with_nums:
@@ -1302,7 +1248,6 @@ class AnalysisPipeline:
             else:
                  logger.info("Subject masking disabled.")
 
-            config.QUALITY_WEIGHTS = self.params.quality_weights
             self._run_frame_processing()
 
             if self.cancel_event.is_set():
@@ -1353,12 +1298,6 @@ class AnalysisPipeline:
         """Download a file with progress indication."""
         try:
             import urllib.request
-            import ssl
-
-            # Create SSL context to handle HTTPS downloads
-            ssl_context = ssl.create_default_context()
-            ssl_context.check_hostname = False
-            ssl_context.verify_mode = ssl.CERT_NONE
 
             # Create a request with headers to mimic a browser
             headers = {
@@ -1366,7 +1305,7 @@ class AnalysisPipeline:
             }
             req = urllib.request.Request(url, headers=headers)
 
-            with urllib.request.urlopen(req, context=ssl_context) as response:
+            with urllib.request.urlopen(req) as response:
                 total_size = int(response.headers.get('Content-Length', 0))
 
                 with open(destination, 'wb') as f:
@@ -1565,102 +1504,6 @@ class AnalysisPipeline:
             logger.warning(f"Frame {frame.frame_number}: {frame.error}")
 
 # --- UI Utility Classes ---
-class UIComponentFactory:
-    """Factory for creating standardized UI components with consistent styling and behavior."""
-
-    @staticmethod
-    def create_button(name: str, text: str, variant: str = "primary", **kwargs) -> gr.Button:
-        """Create a standardized button with consistent styling."""
-        defaults = {
-            'value': text,
-            'variant': variant,
-            'scale': kwargs.get('scale', 1)
-        }
-        # Remove the factory-specific parameters before passing to gr.Button
-        button_kwargs = {k: v for k, v in defaults.items() if k not in ['text']}
-        button_kwargs.update({k: v for k, v in kwargs.items() if k not in ['text']})
-        return gr.Button(**button_kwargs)
-
-    @staticmethod
-    def create_input_field(name: str, label: str, input_type: str = "text", **kwargs) -> gr.Textbox:
-        """Create standardized input fields with validation."""
-        defaults = {
-            'label': label,
-            'lines': 1 if input_type == "text" else 3,
-            'placeholder': kwargs.get('placeholder', f"Enter {label.lower()}"),
-            'interactive': kwargs.get('interactive', True)
-        }
-        # Remove the factory-specific parameters before passing to gr.Textbox
-        textbox_kwargs = {k: v for k, v in defaults.items() if k not in ['input_type']}
-        textbox_kwargs.update({k: v for k, v in kwargs.items() if k not in ['input_type']})
-        return gr.Textbox(**textbox_kwargs)
-
-    @staticmethod
-    def create_status_display(name: str, label: str, **kwargs) -> gr.Textbox:
-        """Create read-only status display components."""
-        defaults = {
-            'label': label,
-            'interactive': False,
-            'lines': kwargs.get('lines', 1),
-            'show_copy_button': kwargs.get('show_copy_button', True)
-        }
-        # Remove the factory-specific parameters before passing to gr.Textbox
-        textbox_kwargs = {k: v for k, v in defaults.items()}
-        textbox_kwargs.update(kwargs)
-        return gr.Textbox(**textbox_kwargs)
-
-    @staticmethod
-    def create_dropdown(name: str, label: str, choices: list, **kwargs) -> gr.Dropdown:
-        """Create standardized dropdown components."""
-        defaults = {
-            'label': label,
-            'choices': choices,
-            'interactive': kwargs.get('interactive', True)
-        }
-        # Remove the factory-specific parameters before passing to gr.Dropdown
-        dropdown_kwargs = {k: v for k, v in defaults.items()}
-        dropdown_kwargs.update(kwargs)
-        return gr.Dropdown(**dropdown_kwargs)
-
-    @staticmethod
-    def create_slider(name: str, label: str, min_val: float, max_val: float, **kwargs) -> gr.Slider:
-        """Create standardized slider components."""
-        defaults = {
-            'label': label,
-            'minimum': min_val,
-            'maximum': max_val,
-            'step': kwargs.get('step', 1),
-            'interactive': kwargs.get('interactive', True)
-        }
-        # Remove the factory-specific parameters before passing to gr.Slider
-        slider_kwargs = {k: v for k, v in defaults.items() if k not in ['min_val', 'max_val']}
-        slider_kwargs.update({k: v for k, v in kwargs.items() if k not in ['min_val', 'max_val']})
-        return gr.Slider(**slider_kwargs)
-
-    @staticmethod
-    def create_checkbox(name: str, label: str, **kwargs) -> gr.Checkbox:
-        """Create standardized checkbox components."""
-        defaults = {
-            'label': label,
-            'interactive': kwargs.get('interactive', True)
-        }
-        # Remove the factory-specific parameters before passing to gr.Checkbox
-        checkbox_kwargs = {k: v for k, v in defaults.items()}
-        checkbox_kwargs.update(kwargs)
-        return gr.Checkbox(**checkbox_kwargs)
-
-    @staticmethod
-    def create_file_input(name: str, label: str, file_types: list = None, **kwargs) -> gr.File:
-        """Create standardized file input components."""
-        defaults = {
-            'label': label,
-            'file_types': file_types or ["file"],
-            'type': "filepath"
-        }
-        # Remove the factory-specific parameters before passing to gr.File
-        file_kwargs = {k: v for k, v in defaults.items()}
-        file_kwargs.update(kwargs)
-        return gr.File(**file_kwargs)
 
 
 class ButtonStateManager:
@@ -1672,34 +1515,21 @@ class ButtonStateManager:
     def create_button_pair(self, start_name: str, stop_name: str, start_text: str, stop_text: str):
         """Create and manage start/stop button pairs."""
         with gr.Row():
-            start_btn = UIComponentFactory.create_button(
-                start_name, start_text, variant="primary"
-            )
-            stop_btn = UIComponentFactory.create_button(
-                stop_name, stop_text, variant="stop", interactive=False
-            )
+            start_btn = gr.Button(value=start_text, variant="primary")
+            stop_btn = gr.Button(value=stop_text, variant="stop", interactive=False)
         return start_btn, stop_btn
 
-    def set_loading_state(self, start_btn: gr.Button, stop_btn: gr.Button):
+    def set_loading_state(self, start_btn, stop_btn):
         """Set buttons to loading state."""
-        return {
-            start_btn: gr.update(interactive=False),
-            stop_btn: gr.update(interactive=True)
-        }
+        return (gr.update(interactive=False), gr.update(interactive=True))  # matches [start_btn, stop_btn]
 
-    def set_ready_state(self, start_btn: gr.Button, stop_btn: gr.Button):
+    def set_ready_state(self, start_btn, stop_btn):
         """Set buttons to ready state."""
-        return {
-            start_btn: gr.update(interactive=True),
-            stop_btn: gr.update(interactive=False)
-        }
+        return (gr.update(interactive=True), gr.update(interactive=False))
 
-    def set_error_state(self, start_btn: gr.Button, stop_btn: gr.Button):
+    def set_error_state(self, start_btn, stop_btn):
         """Set buttons to error state."""
-        return {
-            start_btn: gr.update(interactive=True),
-            stop_btn: gr.update(interactive=False)
-        }
+        return (gr.update(interactive=True), gr.update(interactive=False))
 
 
 class ValidationUtils:
@@ -1715,12 +1545,12 @@ class ValidationUtils:
     @staticmethod
     def validate_video_path(path: str) -> str:
         """Validate video file paths with security checks."""
-        return validate_file(path, file_type="video")
+        return str(validate_file(path, file_type="video"))
 
     @staticmethod
     def validate_image_path(path: str) -> str:
         """Validate image file paths with security checks."""
-        return validate_file(path, file_type="image")
+        return str(validate_file(path, file_type="image"))
 
     @staticmethod
     def validate_directory_path(path: str) -> str:
@@ -1744,30 +1574,32 @@ class UIStateManager:
     def __init__(self, app_ui):
         self.app_ui = app_ui
 
-    def set_loading_state(self, start_btn, stop_btn, log_component, status_msg="Starting..."):
+    def set_loading_state(self, start_btn, stop_btn, log_component, status_component, status_msg="Starting..."):
         """Set UI to loading state."""
-        return {
-            start_btn: gr.update(interactive=False),
-            stop_btn: gr.update(interactive=True),
-            log_component: "",
-            'unified_status': status_msg
-        }
+        return (
+            gr.update(interactive=False),   # start_btn
+            gr.update(interactive=True),    # stop_btn
+            "",                             # log_component
+            status_msg                      # status_component
+        )
 
-    def set_error_state(self, start_btn, stop_btn, log_component, error_msg: str):
+    def set_error_state(self, start_btn, stop_btn, log_component, status_component, error_msg: str):
         """Set UI to error state."""
-        return {
-            start_btn: gr.update(interactive=True),
-            stop_btn: gr.update(interactive=False),
-            log_component: f"[ERROR] {error_msg}"
-        }
+        return (
+            gr.update(interactive=True),    # start_btn
+            gr.update(interactive=False),   # stop_btn
+            f"[ERROR] {error_msg}",          # log_component
+            f"[ERROR] {error_msg}"          # status_component
+        )
 
-    def set_success_state(self, start_btn, stop_btn, log_component, success_msg: str):
+    def set_success_state(self, start_btn, stop_btn, log_component, status_component, success_msg: str):
         """Set UI to success state."""
-        return {
-            start_btn: gr.update(interactive=True),
-            stop_btn: gr.update(interactive=False),
-            log_component: f"[SUCCESS] {success_msg}"
-        }
+        return (
+            gr.update(interactive=True),    # start_btn
+            gr.update(interactive=False),   # stop_btn
+            f"[SUCCESS] {success_msg}",      # log_component
+            f"[SUCCESS] {success_msg}"      # status_component
+        )
 
     def update_progress(self, log_component, status_component, progress_data: dict):
         """Update progress indicators consistently."""
@@ -1848,20 +1680,20 @@ class ConfigurationManager:
         """List available configurations."""
         return [f.stem for f in self.config_dir.glob("*.json") if not f.stem.endswith('.bak')]
 
-    def validate_config(self, config: dict) -> tuple[bool, list[str]]:
+    def validate_config(self, settings: dict) -> tuple[bool, list[str]]:
         """Validate configuration structure and values."""
         errors = []
 
         # Check required sections
         required_keys = ['method_input', 'interval_input', 'max_resolution']
         for key in required_keys:
-            if key not in config:
+            if key not in settings:
                 errors.append(f"Missing required setting: {key}")
 
         # Validate quality weights if present
-        if 'weight_sharpness' in config:
+        if 'weight_sharpness' in settings:
             try:
-                weights = [config.get(f'weight_{k}', 0) for k in config.QUALITY_METRICS]
+                weights = [settings.get(f'weight_{k}', 0) for k in config.QUALITY_METRICS]
                 if any(w < 0 or w > 100 for w in weights):
                     errors.append("Quality weights must be between 0 and 100")
             except (KeyError, AttributeError):
@@ -2026,31 +1858,20 @@ class AppUI:
         })
 
     def _create_component(self, name, comp_type, kwargs):
-        """Helper to create and store UI components using factory classes."""
-        # Use factory classes for standardized components
-        if comp_type == 'button':
-            component = UIComponentFactory.create_button(name, **kwargs)
-        elif comp_type == 'textbox':
-            component = UIComponentFactory.create_input_field(name, **kwargs)
-        elif comp_type == 'status':
-            component = UIComponentFactory.create_status_display(name, **kwargs)
-        elif comp_type == 'dropdown':
-            component = UIComponentFactory.create_dropdown(name, **kwargs)
-        elif comp_type == 'slider':
-            component = UIComponentFactory.create_slider(name, **kwargs)
-        elif comp_type == 'checkbox':
-            component = UIComponentFactory.create_checkbox(name, **kwargs)
-        elif comp_type == 'file':
-            component = UIComponentFactory.create_file_input(name, **kwargs)
-        else:
-            # Fallback for components not handled by factory
-            comp_map = {
-                'radio': gr.Radio,
-                'markdown': gr.Markdown,
-                'gallery': gr.Gallery
-            }
-            component = comp_map[comp_type](**kwargs)
-
+        """Helper to create and store UI components directly."""
+        comp_map = {
+            'button': gr.Button,
+            'textbox': gr.Textbox,
+            'status': gr.Textbox,
+            'dropdown': gr.Dropdown,
+            'slider': gr.Slider,
+            'checkbox': gr.Checkbox,
+            'file': gr.File,
+            'radio': gr.Radio,
+            'markdown': gr.Markdown,
+            'gallery': gr.Gallery
+        }
+        component = comp_map[comp_type](**kwargs)
         self.components[name] = component
         return component
 
@@ -2391,7 +2212,7 @@ class AppUI:
                 self.components['stop_extraction_button']
             ),
             None,
-            self.components['stop_extraction_button']
+            [self.components['start_extraction_button'], self.components['stop_extraction_button']]
         )
 
     def _setup_analysis_handler(self):
@@ -2408,10 +2229,10 @@ class AppUI:
         ).then(
             lambda: self.button_manager.set_loading_state(
                 self.components['start_analysis_button'],
-                self.components['stop_extraction_button']
+                self.components['stop_analysis_button']
             ),
             None,
-            self.components['stop_analysis_button']
+            [self.components['start_analysis_button'], self.components['stop_analysis_button']]
         )
         
     def _setup_filtering_handlers(self):
