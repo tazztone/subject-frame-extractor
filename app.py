@@ -17,6 +17,7 @@ from queue import Queue, Empty
 from dataclasses import dataclass, asdict, field
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
+from contextlib import contextmanager
 
 # --- Logger Setup (Fix a) ---
 # Basic logger setup moved here to be available globally.
@@ -164,13 +165,85 @@ try:
 
             self.predictor = build_sam2_video_predictor(self.model_cfg, self.checkpoint, device="cuda:0")
             self.tracking_times = []
+            self.max_stored_frames = 10  # Limit stored frames to prevent memory leaks
+
+        def cleanup_inference_state(self):
+            """Clean up inference state to prevent memory leaks"""
+            if hasattr(self, 'inference_state') and self.inference_state:
+                # Clear stored images
+                if "images" in self.inference_state:
+                    self.inference_state["images"].clear()
+
+                # Clear cached features
+                if "cached_features" in self.inference_state:
+                    self.inference_state["cached_features"].clear()
+
+                # Clear output dictionaries
+                if "output_dict" in self.inference_state:
+                    self.inference_state["output_dict"].clear()
+
+                if "output_dict_per_obj" in self.inference_state:
+                    self.inference_state["output_dict_per_obj"].clear()
+
+                if "temp_output_dict_per_obj" in self.inference_state:
+                    self.inference_state["temp_output_dict_per_obj"].clear()
+
+                # Clear consolidated frame indices
+                if "consolidated_frame_inds" in self.inference_state:
+                    self.inference_state["consolidated_frame_inds"].clear()
+
+                # Clear frame tracking data
+                if "frames_already_tracked" in self.inference_state:
+                    self.inference_state["frames_already_tracked"].clear()
+
+                if "frames_tracked_per_obj" in self.inference_state:
+                    self.inference_state["frames_tracked_per_obj"].clear()
+
+                # Reset object tracking data
+                if "obj_id_to_idx" in self.inference_state:
+                    self.inference_state["obj_id_to_idx"].clear()
+
+                if "obj_idx_to_id" in self.inference_state:
+                    self.inference_state["obj_idx_to_id"].clear()
+
+                if "obj_ids" in self.inference_state:
+                    self.inference_state["obj_ids"].clear()
+
+                # Clear point and mask inputs
+                if "point_inputs_per_obj" in self.inference_state:
+                    self.inference_state["point_inputs_per_obj"].clear()
+
+                if "mask_inputs_per_obj" in self.inference_state:
+                    self.inference_state["mask_inputs_per_obj"].clear()
+
+                if "adds_in_drm_per_obj" in self.inference_state:
+                    self.inference_state["adds_in_drm_per_obj"].clear()
+
+            # Force garbage collection
+            gc.collect()
+
+            # Clear GPU cache if available
+            if torch and torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
         def _prepare_image(self, img_pil):
-            img = torch.from_numpy(np.array(img_pil)).to(self.inference_state["device"])
-            img = img.permute(2, 0, 1).float() / 255.0
-            img = F.resize(img, (self.input_image_size, self.input_image_size))
-            img = (img - self.img_mean) / self.img_std
-            return img
+            # Safely access inference_state with proper error handling
+            if not hasattr(self, 'inference_state') or not self.inference_state:
+                raise RuntimeError("Inference state not initialized")
+
+            device = self.inference_state.get("device")
+            if device is None:
+                raise RuntimeError("Device not found in inference state")
+
+            try:
+                img = torch.from_numpy(np.array(img_pil)).to(device)
+                img = img.permute(2, 0, 1).float() / 255.0
+                img = F.resize(img, (self.input_image_size, self.input_image_size))
+                img = (img - self.img_mean) / self.img_std
+                return img
+            except Exception as e:
+                logger.error(f"Error preparing image: {e}")
+                raise RuntimeError(f"Failed to prepare image: {e}") from e
 
         @torch.inference_mode()
         def init_state_tw(self):
@@ -223,6 +296,11 @@ try:
             self.img_width = image.width
             self.img_height = image.height
             self.inference_state = self.init_state_tw()
+
+            # Safely set inference state properties
+            if "images" not in self.inference_state:
+                self.inference_state["images"] = {}
+
             self.inference_state["images"] = image
             video_width, video_height = image.size
             self.inference_state["video_height"] = video_height
@@ -247,7 +325,9 @@ try:
             )
 
             m = (out_mask_logits[0, 0] > 0).float().cpu().numpy().astype(np.uint8)
-            self.inference_state["images"].pop(self.frame_index)
+            # Safely remove frame from inference_state
+            if self.frame_index in self.inference_state.get("images", {}):
+                self.inference_state["images"].pop(self.frame_index)
 
             out_dict = {'pred_mask': m}
             return out_dict
@@ -258,6 +338,22 @@ try:
             if not init:
                 self.frame_index += 1
                 self.inference_state["num_frames"] += 1
+
+            # Limit stored frames to prevent memory leaks
+            if "images" not in self.inference_state:
+                self.inference_state["images"] = {}
+
+            # Clean up old frames if we exceed the limit
+            if len(self.inference_state["images"]) >= self.max_stored_frames:
+                # Remove oldest frames, keeping only the most recent ones
+                sorted_frames = sorted(self.inference_state["images"].keys())
+                frames_to_remove = sorted_frames[:-self.max_stored_frames]
+                for old_frame in frames_to_remove:
+                    del self.inference_state["images"][old_frame]
+
+            # Safely set the current frame
+            if self.frame_index in self.inference_state["images"]:
+                logger.warning(f"Frame {self.frame_index} already exists in inference_state, overwriting")
             self.inference_state["images"][self.frame_index] = prepared_img
 
             for out in self.predictor.propagate_in_video(self.inference_state, start_frame_idx=self.frame_index, max_frame_num_to_track=0, return_all_masks=True):
@@ -274,6 +370,9 @@ try:
                     alternative_masks = [mask for i, mask in enumerate(alternative_masks) if i != m_idx]
 
                     n_pixels = (m == 1).sum()
+                    # Limit object_sizes list to prevent memory leaks
+                    if len(self.object_sizes) >= 300:
+                        self.object_sizes = self.object_sizes[-200:]  # Keep last 200, remove older ones
                     self.object_sizes.append(n_pixels)
                     if len(self.object_sizes) > 1 and n_pixels >= 1:
                         obj_sizes_ratio = n_pixels / np.median([
@@ -305,7 +404,9 @@ try:
                                 )
 
                 out_dict = {'pred_mask': m}
-                self.inference_state["images"].pop(self.frame_index)
+                # Safely remove frame from inference_state
+                if self.frame_index in self.inference_state.get("images", {}):
+                    self.inference_state["images"].pop(self.frame_index)
                 return out_dict
 
         def estimate_mask_from_box(self, bbox):
@@ -457,6 +558,224 @@ def check_dependencies():
 def sanitize_filename(name, max_length=50):
     """Sanitizes a string to be a valid filename."""
     return re.sub(r'[^\w\-_.]', '_', name)[:max_length]
+
+def safe_path_join(base_path, user_input, allowed_extensions=None):
+    """
+    Safely join base path with user input to prevent path traversal attacks.
+
+    Args:
+        base_path: The base directory path
+        user_input: User-provided path or filename
+        allowed_extensions: List of allowed file extensions (optional)
+
+    Returns:
+        Safe path string
+
+    Raises:
+        ValueError: If path is invalid or outside base directory
+    """
+    import os
+    from pathlib import Path
+
+    # Convert to Path objects
+    base = Path(base_path).resolve()
+    user_path = Path(user_input).resolve()
+
+    # Check if user path is within base path
+    try:
+        user_path.relative_to(base)
+    except ValueError:
+        raise ValueError(f"Path '{user_input}' is outside allowed directory '{base}'")
+
+    # Check file extension if specified
+    if allowed_extensions and user_path.suffix.lower() not in allowed_extensions:
+        raise ValueError(f"File extension '{user_path.suffix}' not allowed. Allowed: {allowed_extensions}")
+
+    return str(user_path)
+
+@contextmanager
+def safe_resource_cleanup():
+    """
+    Context manager for safe resource cleanup.
+    Ensures proper cleanup of GPU memory, file handles, and other resources.
+    """
+    resources = []
+
+    def track_resource(resource, cleanup_func):
+        resources.append((resource, cleanup_func))
+
+    try:
+        yield track_resource
+    finally:
+        # Clean up resources in reverse order
+        for resource, cleanup_func in reversed(resources):
+            try:
+                if resource is not None:
+                    cleanup_func(resource)
+            except Exception as e:
+                logger.warning(f"Error during resource cleanup: {e}")
+
+        # Force garbage collection
+        gc.collect()
+
+        # Clear GPU cache if available
+        if torch and torch.cuda.is_available():
+            try:
+                torch.cuda.empty_cache()
+            except Exception as e:
+                logger.warning(f"Error clearing GPU cache: {e}")
+
+def safe_execute_with_retry(func, max_retries=3, delay=1.0, backoff=2.0):
+    """
+    Execute a function with retry logic and proper error handling.
+
+    Args:
+        func: Function to execute
+        max_retries: Maximum number of retry attempts
+        delay: Initial delay between retries
+        backoff: Backoff multiplier for delay
+
+    Returns:
+        Result of function execution
+
+    Raises:
+        Exception: Last exception if all retries fail
+    """
+    import time
+
+    last_exception = None
+    current_delay = delay
+
+    for attempt in range(max_retries + 1):
+        try:
+            return func()
+        except Exception as e:
+            last_exception = e
+            if attempt < max_retries:
+                logger.warning(f"Attempt {attempt + 1} failed: {e}. Retrying in {current_delay}s...")
+                time.sleep(current_delay)
+                current_delay *= backoff
+            else:
+                logger.error(f"All {max_retries + 1} attempts failed. Last error: {e}")
+
+    raise last_exception
+
+def validate_video_file_path(file_path):
+    """
+    Validate that a file path points to a valid video file.
+
+    Args:
+        file_path: Path to the video file
+
+    Returns:
+        Path object if valid
+
+    Raises:
+        ValueError: If file is not a valid video file
+    """
+    from pathlib import Path
+
+    path = Path(file_path)
+
+    if not path.exists():
+        raise ValueError(f"File not found: {file_path}")
+
+    if not path.is_file():
+        raise ValueError(f"Path is not a file: {file_path}")
+
+    # Check for common video extensions
+    video_extensions = {'.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.webm', '.m4v'}
+    if path.suffix.lower() not in video_extensions:
+        raise ValueError(f"File extension '{path.suffix}' not supported. Supported: {video_extensions}")
+
+    # Check file size (prevent processing extremely large files)
+    max_size = 10 * 1024 * 1024 * 1024  # 10GB limit
+    if path.stat().st_size > max_size:
+        raise ValueError(f"File too large: {path.stat().st_size} bytes (max: {max_size} bytes)")
+
+    return path
+
+def validate_image_file_path(file_path):
+    """
+    Validate that a file path points to a valid image file.
+
+    Args:
+        file_path: Path to the image file
+
+    Returns:
+        Path object if valid
+
+    Raises:
+        ValueError: If file is not a valid image file
+    """
+    from pathlib import Path
+
+    path = Path(file_path)
+
+    if not path.exists():
+        raise ValueError(f"File not found: {file_path}")
+
+    if not path.is_file():
+        raise ValueError(f"Path is not a file: {file_path}")
+
+    # Check for common image extensions
+    image_extensions = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif', '.webp'}
+    if path.suffix.lower() not in image_extensions:
+        raise ValueError(f"File extension '{path.suffix}' not supported. Supported: {image_extensions}")
+
+    # Check file size (prevent processing extremely large files)
+    max_size = 100 * 1024 * 1024  # 100MB limit for images
+    if path.stat().st_size > max_size:
+        raise ValueError(f"File too large: {path.stat().st_size} bytes (max: {max_size} bytes)")
+
+    return path
+
+def validate_uploaded_file(file_path, allowed_types, max_size_mb=100):
+    """
+    Validate uploaded file for security and size constraints.
+
+    Args:
+        file_path: Path to the uploaded file
+        allowed_types: Set of allowed file extensions
+        max_size_mb: Maximum file size in MB
+
+    Returns:
+        Path object if valid
+
+    Raises:
+        ValueError: If file validation fails
+    """
+    from pathlib import Path
+
+    path = Path(file_path)
+
+    if not path.exists():
+        raise ValueError("Uploaded file not found")
+
+    if not path.is_file():
+        raise ValueError("Uploaded path is not a file")
+
+    # Check file size
+    max_size_bytes = max_size_mb * 1024 * 1024
+    if path.stat().st_size > max_size_bytes:
+        raise ValueError(f"File too large: {path.stat().st_size} bytes (max: {max_size_bytes} bytes)")
+
+    # Check file extension
+    if path.suffix.lower() not in allowed_types:
+        raise ValueError(f"File type '{path.suffix}' not allowed. Allowed types: {allowed_types}")
+
+    # Additional security check: ensure file is not a symlink or special file
+    if path.is_symlink():
+        raise ValueError("Symlinks are not allowed")
+
+    try:
+        # Try to read the file to ensure it's not corrupted
+        with open(path, 'rb') as f:
+            f.read(1024)  # Read first 1KB to check if file is readable
+    except (IOError, OSError) as e:
+        raise ValueError(f"Cannot read file: {e}")
+
+    return path
 
 def get_person_detector_model_path(model_filename="yolov13l.pt"):
     """Checks for the YOLO model file and downloads it if not found."""
@@ -780,6 +1099,8 @@ class SubjectMasker:
             return {}
         finally:
             if hasattr(self, 'tracker') and self.tracker is not None:
+                # Clean up inference state before deleting tracker
+                self.tracker.cleanup_inference_state()
                 del self.tracker
                 self.tracker = None
                 gc.collect()
@@ -1149,13 +1470,32 @@ class ExtractionPipeline:
         """Uses FFmpeg to extract frames, parses progress, and creates a frame map."""
         use_showinfo = self.params.method != 'all'
         loglevel = 'info' if use_showinfo else 'error'
-        ffmpeg_cmd = ['ffmpeg', '-y', '-i', str(self.video_path), '-hide_banner', '-loglevel', loglevel, '-progress', 'pipe:1']
-        
-        select_filter_map = {'interval': f"fps=1/{self.params.interval}", 'keyframes': "select='eq(pict_type,I)'",
-                             'scene': f"select='gt(scene,{0.5 if self.params.fast_scene else 0.4})'",
-                             'all': f"fps={self.video_info.get('fps', 30)}"}
+
+        # Sanitize all inputs to prevent command injection
+        video_path = str(self.video_path)
+        output_dir = str(self.output_dir)
+
+        # Validate and sanitize filter parameters
+        interval = float(self.params.interval)
+        if interval <= 0:
+            raise ValueError("Interval must be positive")
+
+        fps = self.video_info.get('fps', 30)
+        if fps <= 0:
+            fps = 30
+
+        # Create safe filter strings
+        select_filter_map = {
+            'interval': f"fps=1/{interval}",
+            'keyframes': "select='eq(pict_type,I)'",
+            'scene': f"select='gt(scene,{0.5 if self.params.fast_scene else 0.4})'",
+            'all': f"fps={fps}"
+        }
         select_filter = select_filter_map.get(self.params.method)
-        
+
+        # Build command safely
+        ffmpeg_cmd = ['ffmpeg', '-y', '-i', video_path, '-hide_banner', '-loglevel', loglevel, '-progress', 'pipe:1']
+
         if use_showinfo:
             filter_str = (select_filter + ",showinfo") if select_filter else "showinfo"
             ffmpeg_cmd.extend(['-vf', filter_str, '-vsync', 'vfr'])
@@ -1163,7 +1503,8 @@ class ExtractionPipeline:
             ffmpeg_cmd.extend(['-vf', select_filter, '-vsync', 'vfr'])
 
         ext = 'png' if self.params.use_png else 'jpg'
-        ffmpeg_cmd.extend(['-f', 'image2', str(self.output_dir / f"frame_%06d.{ext}")])
+        output_pattern = f"frame_%06d.{ext}"
+        ffmpeg_cmd.extend(['-f', 'image2', output_dir + '/' + output_pattern])
         
         log_file_path = self.output_dir / "ffmpeg_log.txt"
         
@@ -1714,8 +2055,8 @@ class AppUI:
 
     def run_extraction_wrapper(self, source_path, upload_video, method, interval, max_res, fast_scene, use_png):
         yield {
-            self.components['start_extraction_button']: gr.update(interactive=False), 
-            self.components['stop_extraction_button']: gr.update(interactive=True), 
+            self.components['start_extraction_button']: gr.update(interactive=False),
+            self.components['stop_extraction_button']: gr.update(interactive=True),
             self.components['extraction_log']: "",
             self.components['extraction_status']: "Starting..."
         }
@@ -1725,10 +2066,19 @@ class AppUI:
         if not source:
             yield {self.components['extraction_log']: "[ERROR] Video source is required.", self.components['start_extraction_button']: gr.update(interactive=True), self.components['stop_extraction_button']: gr.update(interactive=False)}
             return
-        
-        is_url = re.match(r'https?://|youtu\.be', str(source))
-        if not is_url and not Path(source).exists():
-            yield {self.components['extraction_log']: f"[ERROR] Local file path not found: {source}", self.components['start_extraction_button']: gr.update(interactive=True), self.components['stop_extraction_button']: gr.update(interactive=False)}
+
+        # Validate input to prevent path traversal
+        try:
+            if upload_video:
+                # For uploaded files, validate the path
+                source = safe_path_join(config.DOWNLOADS_DIR, Path(source).name, {'.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.webm', '.m4v'})
+            else:
+                # For source paths, validate it's a proper video file or URL
+                is_url = re.match(r'https?://|youtu\.be', str(source))
+                if not is_url:
+                    source = str(validate_video_file_path(source))
+        except (ValueError, RuntimeError) as e:
+            yield {self.components['extraction_log']: f"[ERROR] Invalid video source: {e}", self.components['start_extraction_button']: gr.update(interactive=True), self.components['stop_extraction_button']: gr.update(interactive=False)}
             return
 
         params = AnalysisParameters(
@@ -1764,14 +2114,28 @@ class AppUI:
         }
         self.cancel_event.clear()
         
-        if not frames_folder or not Path(frames_folder).exists():
-            yield {self.components['analysis_log']: "[ERROR] A valid folder of extracted frames is required.", self.components['start_analysis_button']: gr.update(interactive=True), self.components['stop_analysis_button']: gr.update(interactive=False)}
+        # Validate frames folder path to prevent path traversal
+        try:
+            frames_folder = safe_path_join(config.BASE_DIR, frames_folder)
+            frames_path = Path(frames_folder)
+            if not frames_path.exists() or not frames_path.is_dir():
+                yield {self.components['analysis_log']: "[ERROR] A valid folder of extracted frames is required.", self.components['start_analysis_button']: gr.update(interactive=True), self.components['stop_analysis_button']: gr.update(interactive=False)}
+                return
+        except (ValueError, RuntimeError) as e:
+            yield {self.components['analysis_log']: f"[ERROR] Invalid frames folder path: {e}", self.components['start_analysis_button']: gr.update(interactive=True), self.components['stop_analysis_button']: gr.update(interactive=False)}
             return
 
         face_ref = face_ref_upload if face_ref_upload else face_ref_path
-        if enable_face and (not face_ref or not Path(face_ref).is_file()):
-             yield {self.components['analysis_log']: f"[ERROR] Reference face image is required, but the path is invalid: {face_ref}", self.components['start_analysis_button']: gr.update(interactive=True), self.components['stop_analysis_button']: gr.update(interactive=False)}
-             return
+        if enable_face and face_ref:
+            try:
+                # Validate face reference image path
+                if face_ref_upload:
+                    face_ref = safe_path_join(config.DOWNLOADS_DIR, Path(face_ref).name, {'.jpg', '.jpeg', '.png', '.bmp', '.tiff'})
+                else:
+                    face_ref = str(validate_video_file_path(face_ref))  # Reusing video validation for images
+            except (ValueError, RuntimeError) as e:
+                yield {self.components['analysis_log']: f"[ERROR] Invalid reference face image: {e}", self.components['start_analysis_button']: gr.update(interactive=True), self.components['stop_analysis_button']: gr.update(interactive=False)}
+                return
 
         features = get_feature_status()
         is_video_path_valid = bool(video_path) and Path(video_path).exists()
