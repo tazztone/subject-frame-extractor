@@ -420,18 +420,21 @@ def get_person_detector_model_path(model_filename="yolo11x.pt"):
     model_url = f"https://huggingface.co/Ultralytics/YOLO11/resolve/main/{model_filename}"
 
     if not model_path.is_file() or model_path.stat().st_size < 1_000_000:
-        try:
+        def download_func():
             logger.info(f"Downloading person detector model from {model_url} to {model_path}")
             req = urllib.request.Request(model_url, headers={"User-Agent": "Mozilla/5.0"})
             with urllib.request.urlopen(req, timeout=30) as resp, open(model_path, "wb") as out:
                 shutil.copyfileobj(resp, out)
-            
+
             if not model_path.exists() or model_path.stat().st_size < 1_000_000:
-                 raise RuntimeError("Downloaded YOLO model seems incomplete")
+                  raise RuntimeError("Downloaded YOLO model seems incomplete")
             logger.info("Person detector model downloaded successfully.")
+
+        try:
+            safe_execute_with_retry(download_func, max_retries=3, delay=2.0, backoff=1.5)
         except Exception as e:
             log_download_error(f"download person detector model '{model_filename}'", e)
-    
+
     return str(model_path)
 
 # --- Optional Person Detector Class ---
@@ -1389,26 +1392,36 @@ class AnalysisPipeline:
             if all((model_dir / f).exists() for f in required_files):
                 return  # Model already downloaded
 
-        self.progress_queue.put({"log": f"[INFO] Downloading face model '{model_name}'..."})
+        def download_func():
+            self.progress_queue.put({"log": f"[INFO] Downloading face model '{model_name}'..."})
+            try:
+                import zipfile
+
+                model_url = model_urls[model_name]
+                zip_path = config.get_dir('models') / f"{model_name}.zip"
+
+                # Download the zip file with timeout
+                self._download_with_progress(model_url, zip_path, f"face model {model_name}")
+                self.progress_queue.put({"log": f"[INFO] Downloaded {model_name}.zip, extracting..."})
+
+                # Extract the zip file
+                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                    zip_ref.extractall(config.get_dir('models'))
+
+                # Clean up zip file
+                zip_path.unlink()
+
+                # Verify extraction
+                if not all((model_dir / f).exists() for f in required_files):
+                    raise RuntimeError(f"Face model extraction incomplete for {model_name}")
+
+                self.progress_queue.put({"log": f"[SUCCESS] Face model '{model_name}' downloaded and extracted."})
+
+            except Exception as e:
+                log_download_error(f"download face model '{model_name}'", e, self.progress_queue)
+
         try:
-            import zipfile
-
-            model_url = model_urls[model_name]
-            zip_path = config.get_dir('models') / f"{model_name}.zip"
-
-            # Download the zip file with timeout
-            self._download_with_progress(model_url, zip_path, f"face model {model_name}")
-            self.progress_queue.put({"log": f"[INFO] Downloaded {model_name}.zip, extracting..."})
-
-            # Extract the zip file
-            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                zip_ref.extractall(config.get_dir('models'))
-
-            # Clean up zip file
-            zip_path.unlink()
-
-            self.progress_queue.put({"log": f"[SUCCESS] Face model '{model_name}' downloaded and extracted."})
-
+            safe_execute_with_retry(download_func, max_retries=3, delay=2.0, backoff=1.5)
         except Exception as e:
             log_download_error(f"download face model '{model_name}'", e, self.progress_queue)
 
@@ -2020,14 +2033,6 @@ class AppUI:
         # Removed redundant "## 🔍 Live Filtering & Export" title
         gr.Markdown("Filter frames by quality metrics and configure export options.")
 
-        # Filter Mode Selection
-        # Removed redundant "### Filter Mode" title
-        self._create_component('filter_mode_toggle', 'radio', {
-            'choices': list(config.FILTER_MODES.values()),
-            'value': config.FILTER_MODES["OVERALL"],
-            'label': "🎛️ Filter By"
-        })
-
         # Consolidated Quality Settings Section
         with gr.Group() as self.components['quality_settings_group']:
             gr.Markdown("## ⭐ Quality Analysis & Filtering")
@@ -2273,7 +2278,9 @@ class AppUI:
     def _setup_model_status_handlers(self):
         """Setup handlers for model download status updates."""
         # Update model status when analysis tab is selected
-        self.components['analysis_tab'].select(self.update_model_status, [], [self.components['unified_log']])
+        self.components['analysis_tab'].select(
+            self.update_model_status, [], [self.components['model_download_status']]
+        )
 
     def update_model_status(self):
         """Update the model download status indicator."""
@@ -2326,93 +2333,86 @@ class AppUI:
             return f"⚠️ Error checking model status: {e}"
 
     def run_extraction_wrapper(self, source_path, upload_video, method, interval, max_res, fast_scene, use_png):
-        # Initial loading state - need all 8 outputs
-        start_btn, stop_btn, log_comp, status_comp = self.state_manager.set_loading_state(
+        outputs = [
             self.components['start_extraction_button'],
             self.components['stop_extraction_button'],
             self.components['unified_log'],
             self.components['unified_status'],
-            "Starting extraction..."
+        ]  # define once and reuse
+
+        yield self.state_manager.set_loading_state(
+            self.components['start_extraction_button'],
+            self.components['stop_extraction_button'],
+            self.components['unified_log'],
+            self.components['unified_status'],
+            "Starting extraction...",
         )
-        yield {
-            self.components['start_extraction_button']: start_btn,
-            self.components['stop_extraction_button']: stop_btn,
-            self.components['unified_log']: log_comp,
-            self.components['unified_status']: status_comp,
-            self.components['extracted_video_path_state']: "",
-            self.components['extracted_frames_dir_state']: "",
-            self.components['frames_folder_input']: "",
-            self.components['analysis_video_path_input']: ""
-        }
         self.cancel_event.clear()
 
         source = upload_video if upload_video else source_path
         if not source:
-            error_msg = "Video source is required."
             final_state = self.state_manager.set_error_state(
-                self.components['start_extraction_button'], self.components['stop_extraction_button'],
-                self.components['unified_log'], self.components['unified_status'], error_msg
+                self.components['start_extraction_button'],
+                self.components['stop_extraction_button'],
+                self.components['unified_log'],
+                self.components['unified_status'],
+                "Video source is required.",
             )
-            # Create a dictionary to yield all updates at once - need all 8 outputs
-            start_btn_up, stop_btn_up, log_up, status_up = final_state
-            yield {
-                self.components['start_extraction_button']: start_btn_up,
-                self.components['stop_extraction_button']: stop_btn_up,
-                self.components['unified_log']: log_up,
-                self.components['unified_status']: status_up,
-                self.components['extracted_video_path_state']: "",
-                self.components['extracted_frames_dir_state']: "",
-                self.components['frames_folder_input']: "",
-                self.components['analysis_video_path_input']: ""
-            }
+            yield {comp: val for comp, val in zip(outputs, final_state)}
             return
-            
+
         try:
             if upload_video:
-                source = safe_path_join(config.get_dir('downloads'), Path(source).name,
-                                        {'.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.webm', '.m4v'})
+                src_path = Path(source)
+                dest_path = Path(safe_path_join(
+                    config.get_dir('downloads'),
+                    src_path.name,
+                    {'.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.webm', '.m4v'}
+                ))
+                if src_path.resolve() != dest_path.resolve():
+                    dest_path.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(src_path, dest_path)
+                source = str(dest_path)  # ensure pipeline reads from downloads/
             else:
                 is_url = re.match(r'https?://|youtu\.be', str(source))
                 if not is_url:
                     source = ValidationUtils.validate_video_path(source)
         except (ValueError, RuntimeError) as e:
-            error_msg = f"Invalid video source: {e}"
             final_state = self.state_manager.set_error_state(
-                self.components['start_extraction_button'], self.components['stop_extraction_button'],
-                self.components['unified_log'], self.components['unified_status'], error_msg
+                self.components['start_extraction_button'],
+                self.components['stop_extraction_button'],
+                self.components['unified_log'],
+                self.components['unified_status'],
+                f"Invalid video source: {e}",
             )
-            # Create a dictionary to yield all updates at once - need all 8 outputs
-            start_btn_up, stop_btn_up, log_up, status_up = final_state
-            yield {
-                self.components['start_extraction_button']: start_btn_up,
-                self.components['stop_extraction_button']: stop_btn_up,
-                self.components['unified_log']: log_up,
-                self.components['unified_status']: status_up,
-                self.components['extracted_video_path_state']: "",
-                self.components['extracted_frames_dir_state']: "",
-                self.components['frames_folder_input']: "",
-                self.components['analysis_video_path_input']: ""
-            }
+            yield {comp: val for comp, val in zip(outputs, final_state)}
             return
 
 
         params = AnalysisParameters(
-            source_path=source, method=method, interval=float(interval), max_resolution=max_res,
-            fast_scene=fast_scene, use_png=use_png
+            source_path=source,
+            method=method,
+            interval=float(interval),
+            max_resolution=max_res,
+            fast_scene=fast_scene,
+            use_png=use_png,
         )
 
         progress_queue = Queue()
         pipeline = ExtractionPipeline(params, progress_queue, self.cancel_event)
         yield from self._run_task(pipeline.run, self.components['unified_log'], self.components['unified_status'])
-        
+
         result = self.last_task_result
         if result.get("done") and not self.cancel_event.is_set():
             output_dir = result["output_dir"]
             video_path = result.get("video_path", "")
-            
+
             success_state = self.state_manager.set_success_state(
-                self.components['start_extraction_button'], self.components['stop_extraction_button'],
-                self.components['unified_log'], self.components['unified_status'], "Extraction completed successfully."
+                self.components['start_extraction_button'],
+                self.components['stop_extraction_button'],
+                self.components['unified_log'],
+                self.components['unified_status'],
+                f"Extraction completed successfully. 📁 Output folder: {output_dir}"
             )
             start_btn_up, stop_btn_up, log_up, status_up = success_state
 
@@ -2428,7 +2428,8 @@ class AppUI:
             }
         else:
             ready_state = self.button_manager.set_ready_state(
-                self.components['start_extraction_button'], self.components['stop_extraction_button']
+                self.components['start_extraction_button'],
+                self.components['stop_extraction_button']
             )
             yield {
                 self.components['start_extraction_button']: ready_state[0],
@@ -2500,7 +2501,7 @@ class AppUI:
         if result.get("done") and not self.cancel_event.is_set():
             success_state = self.state_manager.set_success_state(
                  self.components['start_analysis_button'], self.components['stop_analysis_button'],
-                 self.components['unified_log'], self.components['unified_status'], "Analysis completed successfully."
+                 self.components['unified_log'], self.components['unified_status'], f"Analysis completed successfully. 📁 Output folder: {result['output_dir']}"
             )
             start_btn_up, stop_btn_up, log_up, status_up = success_state
             
@@ -2690,9 +2691,9 @@ class AppUI:
                 copied_count += 1
             
             if copied_count != total_kept:
-                 return f"Exported {copied_count}/{total_kept} frames to '{export_dir.name}'. Some source files may have been missing."
-            
-            return f"Exported {total_kept}/{total_frames} frames to '{export_dir.name}'"
+                  return f"Exported {copied_count}/{total_kept} frames to '{export_dir.name}'. Some source files may have been missing. 📁 Folder: {export_dir}"
+
+            return f"Exported {total_kept}/{total_frames} frames to '{export_dir.name}'. 📁 Folder: {export_dir}"
         except (IOError, OSError, IndexError) as e:
             logger.error(f"Failed to export frames: {e}", exc_info=True)
             return f"Error during export: {e}"
