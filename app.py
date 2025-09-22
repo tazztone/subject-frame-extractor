@@ -1055,7 +1055,7 @@ class ExtractionPipeline:
             logger.info("Preparing video source...")
             vid_manager = VideoManager(self.params.source_path, self.params.max_resolution)
             self.video_path = Path(vid_manager.prepare_video())
-            logger.info(f"Video ready: {self.video_path.name}")
+            logger.info(f"Video ready: {sanitize_filename(self.video_path.name)}")
 
             self.video_info = vid_manager.get_video_info()
             self.output_dir = config.get_dir('downloads') / self.video_path.stem
@@ -2564,7 +2564,7 @@ class AppUI:
                             
                             errors = last_stats.get("errors", 0)
                             
-                            status_line = f"**{current_stage}:** {processed_count}/{total_frames} ({ratio:.1%}) &nbsp; | &nbsp; Errors: {errors} &nbsp; | &nbsp; {fps:.1f} items/s &nbsp; | &nbsp; ETA: {mm:02d}:{ss:02d}"
+                            status_line = f"**{current_stage}:** {processed_count}/{total_frames} ({ratio:.1%}) | Errors: {errors} | {fps:.1f} items/s | ETA: {mm:02d}:{ss:02d}"
                             if log_box:
                                 updates = {log_box: "\n".join(log_buffer)}
                                 if status_box: updates[status_box] = status_line
