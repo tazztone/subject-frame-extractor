@@ -2454,13 +2454,22 @@ class AppUI:
         # Apply the same style in run_analysis_wrapper: replace all tuple/list returns with dicts keyed by components
 
         # First "loading" yield
-        yield self.state_manager.set_loading_state(
+        start_up, stop_up, log_up, status_up = self.state_manager.set_loading_state(
             self.components['start_analysis_button'],
             self.components['stop_analysis_button'],
             self.components['unified_log'],
             self.components['unified_status'],
             "Starting analysis..."
         )
+        yield {
+            self.components['start_analysis_button']: start_up,
+            self.components['stop_analysis_button']: stop_up,
+            self.components['unified_log']: log_up,
+            self.components['unified_status']: status_up,
+            self.components['analysis_output_dir_state']: gr.update(),
+            self.components['analysis_metadata_path_state']: gr.update(),
+            self.components['filtering_tab']: gr.update()
+        }
         self.cancel_event.clear()
 
         try:
@@ -2469,11 +2478,19 @@ class AppUI:
         except (ValueError, TypeError) as e:
             error_msg = f"Invalid frames folder: {e}"
             # Invalid input error path
-            final_state = self.state_manager.set_error_state(
+            e_start, e_stop, e_log, e_status = self.state_manager.set_error_state(
                 self.components['start_analysis_button'], self.components['stop_analysis_button'],
                 self.components['unified_log'], self.components['unified_status'], error_msg
             )
-            yield final_state
+            yield {
+                self.components['start_analysis_button']: e_start,
+                self.components['stop_analysis_button']: e_stop,
+                self.components['unified_log']: e_log,
+                self.components['unified_status']: e_status,
+                self.components['analysis_output_dir_state']: gr.update(),
+                self.components['analysis_metadata_path_state']: gr.update(),
+                self.components['filtering_tab']: gr.update()
+            }
             return
 
         face_ref = face_ref_upload if face_ref_upload else face_ref_path
@@ -2487,11 +2504,19 @@ class AppUI:
                     face_ref = ValidationUtils.validate_image_path(face_ref)
             except (ValueError, RuntimeError) as e:
                 error_msg = f"Invalid reference face image: {e}"
-                final_state = self.state_manager.set_error_state(
+                e_start, e_stop, e_log, e_status = self.state_manager.set_error_state(
                     self.components['start_analysis_button'], self.components['stop_analysis_button'],
                     self.components['unified_log'], self.components['unified_status'], error_msg
                 )
-                yield final_state
+                yield {
+                    self.components['start_analysis_button']: e_start,
+                    self.components['stop_analysis_button']: e_stop,
+                    self.components['unified_log']: e_log,
+                    self.components['unified_status']: e_status,
+                    self.components['analysis_output_dir_state']: gr.update(),
+                    self.components['analysis_metadata_path_state']: gr.update(),
+                    self.components['filtering_tab']: gr.update()
+                }
                 return
 
         features = get_feature_status()
@@ -2531,12 +2556,17 @@ class AppUI:
 
         else:
             # Ready-state fallback
-            ready_state = self.button_manager.set_ready_state(
+            r0, r1 = self.button_manager.set_ready_state(
                 self.components['start_analysis_button'], self.components['stop_analysis_button']
             )
             yield {
-                  self.components['start_analysis_button']: ready_state[0],
-                  self.components['stop_analysis_button']: ready_state[1],
+                self.components['start_analysis_button']: r0,
+                self.components['stop_analysis_button']: r1,
+                self.components['unified_log']: gr.update(),
+                self.components['unified_status']: gr.update(),
+                self.components['analysis_output_dir_state']: gr.update(),
+                self.components['analysis_metadata_path_state']: gr.update(),
+                self.components['filtering_tab']: gr.update()
             }
 
     def _run_task(self, task_func, log_box=None, status_box=None):
