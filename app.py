@@ -1359,73 +1359,46 @@ class AnalysisPipeline:
 
         self.progress_queue.put({"log": f"[INFO] Loading face model: {self.params.face_model_name}"})
         try:
-            # Ensure face model is downloaded
-            self._ensure_face_model_downloaded(self.params.face_model_name)
-
+            # Use FaceAnalysis with robust provider configuration
             self.face_analyzer = FaceAnalysis(
-                name=self.params.face_model_name,
-                root=str(config.get_dir('models')),
-                providers=['CUDAExecutionProvider']
+                name=self.params.face_model_name,                      # e.g., 'buffalo_l'
+                root=str(config.get_dir('models')),                    # keep local cache under ./models
+                providers=['CUDAExecutionProvider', 'CPUExecutionProvider']  # robust default ordering
             )
-            self.face_analyzer.prepare(ctx_id=0, det_size=(640, 640))
-            self.progress_queue.put({"log": "[SUCCESS] Face model loaded."})
+
+            # Try GPU first, fallback to CPU if needed
+            try:
+                # Prefer GPU if available (ctx_id=0); InsightFace will download if missing
+                self.face_analyzer.prepare(ctx_id=0, det_size=(640, 640))   # standard det size
+                self.progress_queue.put({"log": "[SUCCESS] Face model loaded with CUDA."})
+            except Exception as cuda_error:
+                self.progress_queue.put({"log": f"[WARNING] CUDA initialization failed: {cuda_error}. Falling back to CPU..."})
+                # Fallback to CPU if CUDA init fails
+                self.face_analyzer.prepare(ctx_id=-1, det_size=(640, 640))  # CPU mode
+                self.progress_queue.put({"log": "[SUCCESS] Face model loaded with CPU."})
+
         except Exception as e:
             log_critical_error("FaceAnalysis initialization", e)
             self.face_analyzer = None
             raise RuntimeError(f"Could not initialize face analysis model. Error: {e}")
 
     def _ensure_face_model_downloaded(self, model_name):
-        """Ensures the specified face analysis model is downloaded with timeout and verification."""
-        model_urls = {
-            "buffalo_l": "https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip",
-            "buffalo_s": "https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_s.zip",
-            "buffalo_m": "https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_m.zip",
-            "antelopev2": "https://github.com/deepinsight/insightface/releases/download/v0.7/antelopev2.zip"
-        }
+        """
+        DEPRECATED: This method is no longer used as InsightFace now handles model downloading automatically.
 
-        if model_name not in model_urls:
-            raise ValueError(f"Unknown face model: {model_name}")
+        Previously ensured the specified face analysis model was downloaded with timeout and verification.
+        Now replaced by the built-in downloader in FaceAnalysis.prepare() which is more robust and handles
+        both CUDA and CPU providers automatically.
 
-        model_dir = config.get_dir('models') / model_name
-        if model_dir.exists():
-            # Check if model files exist
-            required_files = ["det_10g.onnx", "w600k_r50.onnx", "2d106det.onnx"]
-            if all((model_dir / f).exists() for f in required_files):
-                return  # Model already downloaded
-
-        def download_func():
-            self.progress_queue.put({"log": f"[INFO] Downloading face model '{model_name}'..."})
-            try:
-                import zipfile
-
-                model_url = model_urls[model_name]
-                zip_path = config.get_dir('models') / f"{model_name}.zip"
-
-                # Download the zip file with timeout
-                self._download_with_progress(model_url, zip_path, f"face model {model_name}")
-                self.progress_queue.put({"log": f"[INFO] Downloaded {model_name}.zip, extracting..."})
-
-                # Extract the zip file
-                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                    zip_ref.extractall(config.get_dir('models'))
-
-                # Clean up zip file
-                zip_path.unlink()
-
-                # Verify extraction - define required_files in the correct scope
-                required_files = ["det_10g.onnx", "w600k_r50.onnx", "2d106det.onnx"]
-                if not all((model_dir / f).exists() for f in required_files):
-                    raise RuntimeError(f"Face model extraction incomplete for {model_name}")
-
-                self.progress_queue.put({"log": f"[SUCCESS] Face model '{model_name}' downloaded and extracted."})
-
-            except Exception as e:
-                log_download_error(f"download face model '{model_name}'", e, self.progress_queue)
-
-        try:
-            safe_execute_with_retry(download_func, max_retries=3, delay=2.0, backoff=1.5)
-        except Exception as e:
-            log_download_error(f"download face model '{model_name}'", e, self.progress_queue)
+        Model URLs (for reference):
+        - buffalo_l: https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip
+        - buffalo_s: https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_s.zip
+        - buffalo_m: https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_m.zip
+        - antelopev2: https://github.com/deepinsight/insightface/releases/download/v0.7/antelopev2.zip
+        """
+        # This method is deprecated and no longer called
+        # The built-in FaceAnalysis.prepare() handles model downloading automatically
+        pass
 
     def _process_reference_face(self):
         if not self.params.face_ref_img_path:
