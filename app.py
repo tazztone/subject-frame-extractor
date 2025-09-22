@@ -1412,7 +1412,8 @@ class AnalysisPipeline:
                 # Clean up zip file
                 zip_path.unlink()
 
-                # Verify extraction
+                # Verify extraction - define required_files in the correct scope
+                required_files = ["det_10g.onnx", "w600k_r50.onnx", "2d106det.onnx"]
                 if not all((model_dir / f).exists() for f in required_files):
                     raise RuntimeError(f"Face model extraction incomplete for {model_name}")
 
