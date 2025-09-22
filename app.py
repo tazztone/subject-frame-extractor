@@ -579,6 +579,7 @@ class AnalysisParameters:
     face_model_name: str = config.UI_DEFAULTS["face_model_name"]
     enable_subject_mask: bool = field(default=config.UI_DEFAULTS["enable_subject_mask"])
     dam4sam_model_name: str = field(default=config.UI_DEFAULTS["dam4sam_model_name"])
+    person_detector_model: str = field(default=config.UI_DEFAULTS["person_detector_model"])
     scene_detect: bool = field(default=config.UI_DEFAULTS["scene_detect"])
     # --- Fix f: Quality Weights Not Persisted Correctly ---
     quality_weights: dict = field(default_factory=lambda: {k: config.QUALITY_WEIGHTS[k] for k in config.QUALITY_METRICS})
@@ -1237,8 +1238,8 @@ class AnalysisPipeline:
             if self.params.enable_subject_mask and self.features['masking']:
                 if self.features['person_detection']:
                     try:
-                        person_detector = PersonDetector(model="yolo11x.pt", imgsz=640, conf=0.3)
-                        logger.info("Person detector (YOLO11x) initialized.")
+                        person_detector = PersonDetector(model=self.params.person_detector_model, imgsz=640, conf=0.3)
+                        logger.info(f"Person detector ({self.params.person_detector_model}) initialized.")
                     except Exception as e:
                         logger.warning(f"Person detector unavailable: {e}. Falling back to heuristic box expansion.")
                 else:
@@ -2007,6 +2008,13 @@ class AppUI:
                     'value': config.UI_DEFAULTS["dam4sam_model_name"],
                     'label': "🧠 DAM4SAM Model"
                 })
+            with gr.Row():
+                self._create_component('person_detector_model_input', 'dropdown', {
+                    'choices': ['yolo11x.pt', 'yolo11n.pt', 'yolo11s.pt', 'yolo11m.pt', 'yolo11l.pt'],
+                    'value': config.UI_DEFAULTS["person_detector_model"],
+                    'label': "👤 Person Detector Model",
+                    'info': "YOLO model for person detection. Larger models are more accurate but slower."
+                })
             default_scene_detect = self.feature_status['scene_detection']
             self._create_component('scene_detect_input', 'checkbox', {
                 'label': "🔍 Use Scene Detection for Masking",
@@ -2196,7 +2204,7 @@ class AppUI:
             self.components['resume_input'], self.components['enable_face_filter_input'],
             self.components['face_ref_img_path_input'], self.components['face_ref_img_upload_input'], self.components['face_model_name_input'],
             self.components['enable_subject_mask_input'], self.components['dam4sam_model_name_input'],
-            self.components['scene_detect_input']
+            self.components['person_detector_model_input'], self.components['scene_detect_input']
         ] + self.components['weight_sliders']
 
     def _setup_extraction_handler(self):
@@ -2264,7 +2272,7 @@ class AppUI:
     
     def _setup_config_handlers(self):
         config_controls = [
-            self.components[comp_id] for comp_id in ['method_input', 'interval_input', 'max_resolution', 'fast_scene_input', 'use_png_input', 'disable_parallel_input', 'resume_input', 'enable_face_filter_input', 'face_model_name_input', 'enable_subject_mask_input', 'dam4sam_model_name_input', 'scene_detect_input']
+            self.components[comp_id] for comp_id in ['method_input', 'interval_input', 'max_resolution', 'fast_scene_input', 'use_png_input', 'disable_parallel_input', 'resume_input', 'enable_face_filter_input', 'face_model_name_input', 'enable_subject_mask_input', 'dam4sam_model_name_input', 'person_detector_model_input', 'scene_detect_input']
         ] + self.components['weight_sliders']
 
         save_inputs = [self.components['config_name_input']] + config_controls
@@ -2450,7 +2458,7 @@ class AppUI:
                 self.components['stop_extraction_button']: r1,
             }
 
-    def run_analysis_wrapper(self, frames_folder, video_path, disable_parallel, resume, enable_face, face_ref_path, face_ref_upload, face_model, enable_mask, dam4sam_model, scene_detect, *weights):
+    def run_analysis_wrapper(self, frames_folder, video_path, disable_parallel, resume, enable_face, face_ref_path, face_ref_upload, face_model, enable_mask, dam4sam_model, person_detector_model, scene_detect, *weights):
         # Apply the same style in run_analysis_wrapper: replace all tuple/list returns with dicts keyed by components
 
         # First "loading" yield
@@ -2527,7 +2535,7 @@ class AppUI:
         params = AnalysisParameters(
             output_folder=frames_folder, video_path=video_path, disable_parallel=disable_parallel, resume=resume,
             enable_face_filter=enable_face, face_ref_img_path=face_ref, face_model_name=face_model,
-            enable_subject_mask=enable_mask, dam4sam_model_name=dam4sam_model, scene_detect=safe_scene_detect,
+            enable_subject_mask=enable_mask, dam4sam_model_name=dam4sam_model, person_detector_model=person_detector_model, scene_detect=safe_scene_detect,
             quality_weights={k: weights[i] for i, k in enumerate(config.QUALITY_METRICS)}
         )
 
@@ -2810,7 +2818,7 @@ class AppUI:
                 'method_input': values[0], 'interval_input': values[1], 'max_resolution': values[2],
                 'fast_scene_input': values[3], 'use_png_input': values[4], 'disable_parallel_input': values[5],
                 'resume_input': values[6], 'enable_face_filter_input': values[7], 'face_model_name_input': values[8],
-                'enable_subject_mask_input': values[9], 'dam4sam_model_name_input': values[10], 'scene_detect_input': values[11],
+                'enable_subject_mask_input': values[9], 'dam4sam_model_name_input': values[10], 'person_detector_model_input': values[11], 'scene_detect_input': values[12],
             }
             for i, k in enumerate(config.QUALITY_METRICS):
                 settings[f"weight_{k}"] = values[12 + i]
@@ -2826,7 +2834,7 @@ class AppUI:
         ordered_comp_ids = [
             'method_input', 'interval_input', 'max_resolution', 'fast_scene_input', 'use_png_input',
             'disable_parallel_input', 'resume_input', 'enable_face_filter_input', 'face_model_name_input',
-            'enable_subject_mask_input', 'dam4sam_model_name_input', 'scene_detect_input'
+            'enable_subject_mask_input', 'dam4sam_model_name_input', 'person_detector_model_input', 'scene_detect_input'
         ]
 
         try:
