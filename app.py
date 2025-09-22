@@ -579,7 +579,7 @@ class AnalysisParameters:
     scene_detect: bool = field(default=config.UI_DEFAULTS["scene_detect"])
     # --- Fix f: Quality Weights Not Persisted Correctly ---
     quality_weights: dict = field(default_factory=lambda: {k: config.QUALITY_WEIGHTS[k] for k in config.QUALITY_METRICS})
-    thresholds: dict = field(default_factory=lambda: {k: config.UI_DEFAULTS[f"{k}_thresh"] for k in config.QUALITY_METRICS})
+    thresholds: dict = field(default_factory=lambda: {k: config.UI_DEFAULTS.get(f"{k}_thresh", 50.0) for k in config.QUALITY_METRICS})
 
 # --- Subject Masking Logic ---
 @dataclass
@@ -2326,13 +2326,24 @@ class AppUI:
             return f"⚠️ Error checking model status: {e}"
 
     def run_extraction_wrapper(self, source_path, upload_video, method, interval, max_res, fast_scene, use_png):
-        yield self.state_manager.set_loading_state(
+        # Initial loading state - need all 8 outputs
+        start_btn, stop_btn, log_comp, status_comp = self.state_manager.set_loading_state(
             self.components['start_extraction_button'],
             self.components['stop_extraction_button'],
             self.components['unified_log'],
             self.components['unified_status'],
             "Starting extraction..."
         )
+        yield {
+            self.components['start_extraction_button']: start_btn,
+            self.components['stop_extraction_button']: stop_btn,
+            self.components['unified_log']: log_comp,
+            self.components['unified_status']: status_comp,
+            self.components['extracted_video_path_state']: "",
+            self.components['extracted_frames_dir_state']: "",
+            self.components['frames_folder_input']: "",
+            self.components['analysis_video_path_input']: ""
+        }
         self.cancel_event.clear()
 
         source = upload_video if upload_video else source_path
@@ -2342,7 +2353,18 @@ class AppUI:
                 self.components['start_extraction_button'], self.components['stop_extraction_button'],
                 self.components['unified_log'], self.components['unified_status'], error_msg
             )
-            yield {comp: val for comp, val in zip(outputs, final_state)}
+            # Create a dictionary to yield all updates at once - need all 8 outputs
+            start_btn_up, stop_btn_up, log_up, status_up = final_state
+            yield {
+                self.components['start_extraction_button']: start_btn_up,
+                self.components['stop_extraction_button']: stop_btn_up,
+                self.components['unified_log']: log_up,
+                self.components['unified_status']: status_up,
+                self.components['extracted_video_path_state']: "",
+                self.components['extracted_frames_dir_state']: "",
+                self.components['frames_folder_input']: "",
+                self.components['analysis_video_path_input']: ""
+            }
             return
             
         try:
@@ -2359,10 +2381,18 @@ class AppUI:
                 self.components['start_extraction_button'], self.components['stop_extraction_button'],
                 self.components['unified_log'], self.components['unified_status'], error_msg
             )
-            # Create a dictionary to yield all updates at once
-            outputs = [self.components['start_extraction_button'], self.components['stop_extraction_button'],
-                       self.components['unified_log'], self.components['unified_status']]
-            yield {comp: val for comp, val in zip(outputs, final_state)}
+            # Create a dictionary to yield all updates at once - need all 8 outputs
+            start_btn_up, stop_btn_up, log_up, status_up = final_state
+            yield {
+                self.components['start_extraction_button']: start_btn_up,
+                self.components['stop_extraction_button']: stop_btn_up,
+                self.components['unified_log']: log_up,
+                self.components['unified_status']: status_up,
+                self.components['extracted_video_path_state']: "",
+                self.components['extracted_frames_dir_state']: "",
+                self.components['frames_folder_input']: "",
+                self.components['analysis_video_path_input']: ""
+            }
             return
 
 
