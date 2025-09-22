@@ -2333,32 +2333,40 @@ class AppUI:
             return f"⚠️ Error checking model status: {e}"
 
     def run_extraction_wrapper(self, source_path, upload_video, method, interval, max_res, fast_scene, use_png):
-        outputs = [
-            self.components['start_extraction_button'],
-            self.components['stop_extraction_button'],
-            self.components['unified_log'],
-            self.components['unified_status'],
-        ]  # define once and reuse
+        # Remove the local outputs list; we will always return dicts
 
-        yield self.state_manager.set_loading_state(
+        # 1) Loading state (dict instead of 4-tuple)
+        start_up, stop_up, log_up, status_up = self.state_manager.set_loading_state(
             self.components['start_extraction_button'],
             self.components['stop_extraction_button'],
             self.components['unified_log'],
             self.components['unified_status'],
             "Starting extraction...",
         )
+        yield {
+            self.components['start_extraction_button']: start_up,
+            self.components['stop_extraction_button']: stop_up,
+            self.components['unified_log']: log_up,
+            self.components['unified_status']: status_up,
+        }
         self.cancel_event.clear()
 
         source = upload_video if upload_video else source_path
         if not source:
-            final_state = self.state_manager.set_error_state(
+            # 2) Error state as dict
+            e_start, e_stop, e_log, e_status = self.state_manager.set_error_state(
                 self.components['start_extraction_button'],
                 self.components['stop_extraction_button'],
                 self.components['unified_log'],
                 self.components['unified_status'],
                 "Video source is required.",
             )
-            yield {comp: val for comp, val in zip(outputs, final_state)}
+            yield {
+                self.components['start_extraction_button']: e_start,
+                self.components['stop_extraction_button']: e_stop,
+                self.components['unified_log']: e_log,
+                self.components['unified_status']: e_status,
+            }
             return
 
         try:
@@ -2378,14 +2386,20 @@ class AppUI:
                 if not is_url:
                     source = ValidationUtils.validate_video_path(source)
         except (ValueError, RuntimeError) as e:
-            final_state = self.state_manager.set_error_state(
+            err = f"Invalid video source: {e}"
+            e_start, e_stop, e_log, e_status = self.state_manager.set_error_state(
                 self.components['start_extraction_button'],
                 self.components['stop_extraction_button'],
                 self.components['unified_log'],
                 self.components['unified_status'],
-                f"Invalid video source: {e}",
+                err,
             )
-            yield {comp: val for comp, val in zip(outputs, final_state)}
+            yield {
+                self.components['start_extraction_button']: e_start,
+                self.components['stop_extraction_button']: e_stop,
+                self.components['unified_log']: e_log,
+                self.components['unified_status']: e_status,
+            }
             return
 
 
@@ -2427,21 +2441,19 @@ class AppUI:
                 self.components['analysis_video_path_input']: video_path
             }
         else:
-            ready_state = self.button_manager.set_ready_state(
+            r0, r1 = self.button_manager.set_ready_state(
                 self.components['start_extraction_button'],
-                self.components['stop_extraction_button']
+                self.components['stop_extraction_button'],
             )
             yield {
-                self.components['start_extraction_button']: ready_state[0],
-                self.components['stop_extraction_button']: ready_state[1],
+                self.components['start_extraction_button']: r0,
+                self.components['stop_extraction_button']: r1,
             }
 
     def run_analysis_wrapper(self, frames_folder, video_path, disable_parallel, resume, enable_face, face_ref_path, face_ref_upload, face_model, enable_mask, dam4sam_model, scene_detect, *weights):
-        outputs = [
-            self.components['start_analysis_button'], self.components['stop_analysis_button'],
-            self.components['unified_log'], self.components['unified_status']
-        ]
-        
+        # Apply the same style in run_analysis_wrapper: replace all tuple/list returns with dicts keyed by components
+
+        # First "loading" yield
         yield self.state_manager.set_loading_state(
             self.components['start_analysis_button'],
             self.components['stop_analysis_button'],
@@ -2453,14 +2465,15 @@ class AppUI:
 
         try:
             if not frames_folder or not Path(frames_folder).is_dir():
-                 raise ValueError("A valid folder of extracted frames is required.")
+                  raise ValueError("A valid folder of extracted frames is required.")
         except (ValueError, TypeError) as e:
             error_msg = f"Invalid frames folder: {e}"
+            # Invalid input error path
             final_state = self.state_manager.set_error_state(
                 self.components['start_analysis_button'], self.components['stop_analysis_button'],
                 self.components['unified_log'], self.components['unified_status'], error_msg
             )
-            yield {comp: val for comp, val in zip(outputs, final_state)}
+            yield final_state
             return
 
         face_ref = face_ref_upload if face_ref_upload else face_ref_path
@@ -2478,7 +2491,7 @@ class AppUI:
                     self.components['start_analysis_button'], self.components['stop_analysis_button'],
                     self.components['unified_log'], self.components['unified_status'], error_msg
                 )
-                yield {comp: val for comp, val in zip(outputs, final_state)}
+                yield final_state
                 return
 
         features = get_feature_status()
@@ -2499,12 +2512,13 @@ class AppUI:
 
         result = self.last_task_result
         if result.get("done") and not self.cancel_event.is_set():
+            # Success yield
             success_state = self.state_manager.set_success_state(
-                 self.components['start_analysis_button'], self.components['stop_analysis_button'],
-                 self.components['unified_log'], self.components['unified_status'], f"Analysis completed successfully. 📁 Output folder: {result['output_dir']}"
+                  self.components['start_analysis_button'], self.components['stop_analysis_button'],
+                  self.components['unified_log'], self.components['unified_status'], f"Analysis completed successfully. 📁 Output folder: {result['output_dir']}"
             )
             start_btn_up, stop_btn_up, log_up, status_up = success_state
-            
+
             yield {
                 self.components['start_analysis_button']: start_btn_up,
                 self.components['stop_analysis_button']: stop_btn_up,
@@ -2516,12 +2530,13 @@ class AppUI:
             }
 
         else:
+            # Ready-state fallback
             ready_state = self.button_manager.set_ready_state(
                 self.components['start_analysis_button'], self.components['stop_analysis_button']
             )
             yield {
-                 self.components['start_analysis_button']: ready_state[0],
-                 self.components['stop_analysis_button']: ready_state[1],
+                  self.components['start_analysis_button']: ready_state[0],
+                  self.components['stop_analysis_button']: ready_state[1],
             }
 
     def _run_task(self, task_func, log_box=None, status_box=None):
