@@ -1780,7 +1780,6 @@ class AppUI:
     def build_ui(self):
         """Builds the Gradio UI with a new three-tab workflow."""
         self.feature_status = get_feature_status()
-        css = """.gradio-container { max-width: 1280px !important; margin: auto !important; }"""
         with gr.Blocks(theme=gr.themes.Default) as demo:
             self._create_header()
             self._create_global_components()
@@ -2142,11 +2141,11 @@ class AppUI:
             self._create_component('show_weight_adjustment', 'checkbox', {
                 'label': "⚖️ Show Weight Adjustment (Advanced)",
                 'value': False,
-                'info': "Enable to adjust the importance of different quality metrics for frame scoring"
+                'info': "Adjust the importance of different quality metrics for Overall Quality scoring"
             })
 
             with gr.Group(visible=False) as self.components['weight_adjustment_group']:
-                gr.Markdown("Adjust the importance of different quality metrics for frame scoring.")
+                gr.Markdown("**⚖️ Overall Quality Weights Distribution** - Adjust the importance of different quality metrics for Overall Quality scoring.")
                 with gr.Row():
                     self.components['weight_sliders'] = [
                         self._create_component(f'weight_slider_{k}', 'slider', {
@@ -2248,9 +2247,13 @@ class AppUI:
         
         # Event handlers for the consolidated quality section
         self.components['filter_mode_toggle'].change(
-            lambda m: (gr.update(visible=m == config.FILTER_MODES["OVERALL"]), gr.update(visible=m != config.FILTER_MODES["OVERALL"])),
+            lambda m: (
+                gr.update(visible=m == config.FILTER_MODES["OVERALL"]),
+                gr.update(visible=m != config.FILTER_MODES["OVERALL"]),
+                gr.update(visible=m == config.FILTER_MODES["OVERALL"], value=m == config.FILTER_MODES["OVERALL"])
+            ),
             self.components['filter_mode_toggle'],
-            [self.components['overall_quality_group'], self.components['individual_metrics_group']]
+            [self.components['overall_quality_group'], self.components['individual_metrics_group'], self.components['weight_adjustment_group'], self.components['show_weight_adjustment']]
         )
 
         self.components['show_weight_adjustment'].change(
