@@ -215,7 +215,7 @@ class Config:
         "enable_face_filter": True, "face_model_name": "buffalo_l",
         "quality_thresh": 12.0, "face_thresh": 0.5,
         "enable_subject_mask": True, "scene_detect": True,
-        "dam4sam_model_name": "sam2.1", "person_detector_model": "yolo11x.pt",
+        "dam4sam_model_name": "sam21pp-L", "person_detector_model": "yolo11x.pt",
     }
 
     # Processing settings
@@ -1978,7 +1978,7 @@ class AppUI:
         with gr.Group(visible=default_mask_enable) as self.components['masking_options_group']:
             with gr.Row():
                 self._create_component('dam4sam_model_name_input', 'dropdown', {
-                    'choices': ['sam2.1'],
+                    'choices': ['sam21pp-L', 'sam21pp-B', 'sam21pp-S', 'sam21pp-T', 'sam2pp-L', 'sam2pp-B', 'sam2pp-S', 'sam2pp-T'],
                     'value': config.UI_DEFAULTS["dam4sam_model_name"],
                     'label': "🧠 DAM4SAM Model"
                 })
