@@ -630,13 +630,6 @@ class SubjectMasker:
             # Define model URLs based on model name
             model_urls = {
                 "sam21pp-L": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt",
-                "sam21pp-B": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_base_plus.pt",
-                "sam21pp-S": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_small.pt",
-                "sam21pp-T": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt",
-                "sam2pp-L": "https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_large.pt",
-                "sam2pp-B": "https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_base_plus.pt",
-                "sam2pp-S": "https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_small.pt",
-                "sam2pp-T": "https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_tiny.pt"
             }
             
             if model_name not in model_urls:
@@ -814,8 +807,6 @@ class SubjectMasker:
             return {}
         finally:
             if hasattr(self, 'tracker') and self.tracker is not None:
-                # Clean up inference state before deleting tracker
-                self.tracker.cleanup_inference_state()
                 del self.tracker
                 self.tracker = None
                 gc.collect()
@@ -2063,7 +2054,7 @@ class AppUI:
         with gr.Group(visible=default_mask_enable) as self.components['masking_options_group']:
             with gr.Row():
                 self._create_component('dam4sam_model_name_input', 'dropdown', {
-                    'choices': ['sam21pp-L', 'sam21pp-B', 'sam21pp-S', 'sam21pp-T', 'sam2pp-L', 'sam2pp-B', 'sam2pp-S', 'sam2pp-T'],
+                    'choices': ['sam21pp-L'],
                     'value': config.UI_DEFAULTS["dam4sam_model_name"],
                     'label': "🧠 DAM4SAM Model"
                 })
