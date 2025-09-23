@@ -609,6 +609,85 @@ class SubjectMasker:
         self.person_detector = person_detector
         self.tracker = None
 
+    def _ensure_dam4sam_model_exists(self, model_name):
+        """Ensure the required DAM4SAM model file exists, downloading it if necessary."""
+        try:
+            # Import here to avoid circular imports
+            from DAM4SAM.utils.utils import determine_tracker
+            
+            # Get the expected checkpoint path
+            checkpoint_path, _ = determine_tracker(model_name)
+            checkpoint_file = Path(checkpoint_path)
+            
+            # If file exists and is large enough, consider it valid
+            if checkpoint_file.exists() and checkpoint_file.stat().st_size > 100_000_000:  # 100MB minimum
+                logger.info(f"Model file found: {checkpoint_file.name}")
+                return True
+            
+            # File doesn't exist or is too small, need to download
+            logger.info(f"Model file missing or incomplete: {checkpoint_file.name}. Downloading...")
+            
+            # Define model URLs based on model name
+            model_urls = {
+                "sam21pp-L": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt",
+                "sam21pp-B": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_base_plus.pt",
+                "sam21pp-S": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_small.pt",
+                "sam21pp-T": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt",
+                "sam2pp-L": "https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_large.pt",
+                "sam2pp-B": "https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_base_plus.pt",
+                "sam2pp-S": "https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_small.pt",
+                "sam2pp-T": "https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_tiny.pt"
+            }
+            
+            if model_name not in model_urls:
+                logger.error(f"Unknown model name: {model_name}")
+                return False
+                
+            model_url = model_urls[model_name]
+            
+            # Create checkpoints directory if it doesn't exist
+            checkpoint_file.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Download the model with progress
+            def download_with_progress():
+                headers = {"User-Agent": "Mozilla/5.0"}
+                req = urllib.request.Request(model_url, headers=headers)
+                
+                with urllib.request.urlopen(req, timeout=60) as response:
+                    total_size = int(response.headers.get('Content-Length', 0))
+                    downloaded = 0
+                    
+                    with open(checkpoint_file, 'wb') as f:
+                        while True:
+                            chunk = response.read(8192)
+                            if not chunk:
+                                break
+                            f.write(chunk)
+                            downloaded += len(chunk)
+                            
+                            if total_size > 0:
+                                progress_pct = (downloaded / total_size) * 100
+                                logger.info(f"Downloading {model_name}: {progress_pct:.1f}% ({downloaded / 1024 / 1024:.1f} MB / {total_size / 1024 / 1024:.1f} MB)")
+            
+            try:
+                download_with_progress()
+                
+                # Verify download
+                if checkpoint_file.exists() and checkpoint_file.stat().st_size > 100_000_000:
+                    logger.success(f"Successfully downloaded {model_name} model ({checkpoint_file.stat().st_size / 1024 / 1024:.1f} MB)")
+                    return True
+                else:
+                    logger.error(f"Download verification failed for {model_name}")
+                    return False
+                    
+            except Exception as download_error:
+                logger.error(f"Failed to download {model_name}: {download_error}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error ensuring model exists: {e}")
+            return False
+
     def _initialize_dam4sam_tracker(self):
         """Initializes the DAM4SAM tracker, failing softly by returning False."""
         if not DAM4SAMTracker:
@@ -622,6 +701,12 @@ class SubjectMasker:
         try:
             model_name = self.params.dam4sam_model_name
             logger.info(f"Initializing DAM4SAM tracker with model '{model_name}'...")
+            
+            # Check if model file exists and download if missing
+            if not self._ensure_dam4sam_model_exists(model_name):
+                logger.error(f"Failed to obtain required model file for '{model_name}'")
+                return False
+            
             self.tracker = DAM4SAMTracker(model_name)
             logger.success("DAM4SAM tracker initialized.")
             return True
