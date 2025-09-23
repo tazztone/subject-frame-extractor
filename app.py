@@ -1781,7 +1781,7 @@ class AppUI:
         """Builds the Gradio UI with a new three-tab workflow."""
         self.feature_status = get_feature_status()
         css = """.gradio-container { max-width: 1280px !important; margin: auto !important; }"""
-        with gr.Blocks(theme=gr.themes.Default(primary_hue="blue"), css=css) as demo:
+        with gr.Blocks(theme=gr.themes.Default) as demo:
             self._create_header()
             self._create_global_components()
             self._create_tabs()
@@ -1857,10 +1857,25 @@ class AppUI:
         """Create all tabs."""
         with gr.Tabs():
             with gr.Tab("📹 1. Frame Extraction") as self.components['extraction_tab']:
+                with gr.Row():
+                    with gr.Column(scale=1):
+                        gr.Markdown("### 📹 Video Source")
+                    with gr.Column(scale=2):
+                        gr.Markdown("### ⚙️ Extraction Settings")
                 self._create_extraction_tab()
             with gr.Tab("🔍 2. Frame Analysis") as self.components['analysis_tab']:
+                with gr.Row():
+                    with gr.Column(scale=1):
+                        gr.Markdown("### 📁 Input Configuration")
+                    with gr.Column(scale=2):
+                        gr.Markdown("### ⚙️ Analysis Settings")
                 self._create_analysis_tab()
             with gr.Tab("🎯 3. Filtering & Export") as self.components['filtering_tab']:
+                with gr.Row():
+                    with gr.Column(scale=1):
+                        gr.Markdown("### 🎛️ Filter Controls")
+                    with gr.Column(scale=2):
+                        gr.Markdown("### 🖼️ Results Gallery")
                 self._create_filtering_tab()
 
         # Advanced Configuration - moved outside tabs for app-wide access
@@ -1933,41 +1948,43 @@ class AppUI:
 
     def _create_extraction_tab(self):
         with gr.Row():
+            with gr.Column(scale=1):
+                gr.Markdown("### 📹 Video Source")
+                self._create_component('source_input', 'textbox', {
+                    'label': "Video URL or Local Path",
+                    'lines': 1,
+                    'placeholder': "Enter YouTube URL or local video file path",
+                    'info': "YouTube downloads require 'yt-dlp'. Status: " + ("Available" if self.feature_status['youtube_dl'] else "Not Installed")
+                })
+                self._create_component('upload_video_input', 'file', {
+                    'label': "Or Upload Video",
+                    'file_types': ["video"],
+                    'type': "filepath"
+                })
+
             with gr.Column(scale=2):
-                # Removed redundant "### Video Source" title
-                    self._create_component('source_input', 'textbox', {
-                        'label': "Video URL or Local Path",
-                        'lines': 1,
-                        'placeholder': "Enter YouTube URL or local video file path",
-                        'info': "YouTube downloads require 'yt-dlp'. Status: " + ("Available" if self.feature_status['youtube_dl'] else "Not Installed")
+                gr.Markdown("### ⚙️ Extraction Settings")
+                with gr.Row():
+                    method_choices = ["keyframes", "interval", "all"]
+                    if self.feature_status['scene_detection']: method_choices.insert(2, "scene")
+
+                    self._create_component('method_input', 'dropdown', {
+                        'choices': method_choices,
+                        'value': config.UI_DEFAULTS["method"],
+                        'label': "Extraction Method"
                     })
-                    self._create_component('upload_video_input', 'file', {
-                        'label': "Or Upload Video",
-                        'file_types': ["video"],
-                        'type': "filepath"
+                    self._create_component('interval_input', 'textbox', {
+                        'label': "Interval (s)",
+                        'value': config.UI_DEFAULTS["interval"],
+                        'visible': False
+                    })
+                    self._create_component('fast_scene_input', 'checkbox', {
+                        'label': "Fast Scene Detect",
+                        'value': config.UI_DEFAULTS["fast_scene"],
+                        'visible': False
                     })
 
-                    # Removed redundant "### Extraction Settings" title
-                    with gr.Row():
-                        method_choices = ["keyframes", "interval", "all"]
-                        if self.feature_status['scene_detection']: method_choices.insert(2, "scene")
-
-                        self._create_component('method_input', 'dropdown', {
-                            'choices': method_choices,
-                            'value': config.UI_DEFAULTS["method"],
-                            'label': "Extraction Method"
-                        })
-                        self._create_component('interval_input', 'textbox', {
-                            'label': "Interval (s)",
-                            'value': config.UI_DEFAULTS["interval"],
-                            'visible': False
-                        })
-                        self._create_component('fast_scene_input', 'checkbox', {
-                            'label': "Fast Scene Detect",
-                            'value': config.UI_DEFAULTS["fast_scene"],
-                            'visible': False
-                        })
-
+                with gr.Row():
                     self._create_component('max_resolution', 'dropdown', {
                         'choices': ["maximum available", "2160", "1080", "720", "480", "360"],
                         'value': config.UI_DEFAULTS["max_resolution"],
@@ -1978,33 +1995,30 @@ class AppUI:
                         'value': config.UI_DEFAULTS["use_png"]
                     })
 
-                    with gr.Column(scale=3):
-                        # Individual log section removed - using unified Activity Log at bottom
-                        pass
-
-            self._create_button_pair('start_extraction_button', 'stop_extraction_button', "🚀 Start Extraction", "⏹️ Stop")
+                # Action buttons
+                self._create_button_pair('start_extraction_button', 'stop_extraction_button', "🚀 Start Extraction", "⏹️ Stop")
 
     def _create_analysis_tab(self):
         with gr.Row():
+            with gr.Column(scale=1):
+                gr.Markdown("### 📁 Input Configuration")
+                self._create_component('frames_folder_input', 'textbox', {
+                    'label': "📂 Extracted Frames Folder Path",
+                    'info': "This is filled automatically from Step 1, or you can enter a path manually."
+                })
+                self._create_component('analysis_video_path_input', 'textbox', {
+                    'label': "🎥 Original Video Path (Optional)",
+                    'info': "Needed for scene-detection in masking. Filled from Step 1 if available."
+                })
+
             with gr.Column(scale=2):
                 self._create_analysis_settings()
 
-        self._create_button_pair('start_analysis_button', 'stop_analysis_button', "🔬 Start Analysis", "⏹️ Stop")
+                # Action buttons
+                self._create_button_pair('start_analysis_button', 'stop_analysis_button', "🔬 Start Analysis", "⏹️ Stop")
 
     def _create_analysis_settings(self):
         """Create the analysis settings section."""
-        gr.Markdown("## 📁 Input Configuration")
-        gr.Markdown("Configure the source frames and video path for analysis.")
-
-        self._create_component('frames_folder_input', 'textbox', {
-            'label': "📂 Extracted Frames Folder Path",
-            'info': "This is filled automatically from Step 1, or you can enter a path manually."
-        })
-        self._create_component('analysis_video_path_input', 'textbox', {
-            'label': "🎥 Original Video Path (Optional)",
-            'info': "Needed for scene-detection in masking. Filled from Step 1 if available."
-        })
-
         gr.Markdown("---")
 
         # Face Similarity Settings
@@ -2083,7 +2097,7 @@ class AppUI:
         with gr.Row():
             with gr.Column(scale=1):
                 self._create_filtering_controls()
-            with gr.Column(scale=3):
+            with gr.Column(scale=2):
                 self._create_filtering_results()
 
     def _create_filtering_controls(self):
@@ -2193,10 +2207,13 @@ class AppUI:
                 'variant': "primary"
             })
 
-        # Removed redundant gallery label - using default
+        # Gallery with responsive columns and stable layout
         self._create_component('results_gallery', 'gallery', {
-            'columns': 8,
-            'allow_preview': True
+            'columns': [4, 6, 8],  # Responsive columns based on screen size
+            'rows': [2, 3],  # Limit rows to prevent excessive height
+            'allow_preview': True,
+            'height': 'auto',  # Prevent jumping by using auto height
+            'preview': True
         })
             
     def _create_config_presets_ui(self):
