@@ -19,14 +19,23 @@ from concurrent.futures import ThreadPoolExecutor
 import hashlib
 from contextlib import contextmanager
 import urllib.request
-import yt_dlp as ytdlp
-from scenedetect import detect, ContentDetector
-from PIL import Image
-import torch
-from ultralytics import YOLO
-from DAM4SAM.dam4sam_tracker import DAM4SAMTracker
-from insightface.app import FaceAnalysis
-from numba import njit, prange
+
+# --- Optional Dependency Imports ---
+try:
+    import yt_dlp as ytdlp
+    from scenedetect import detect, ContentDetector
+    from PIL import Image
+    import torch
+    from ultralytics import YOLO
+    from DAM4SAM.dam4sam_tracker import DAM4SAMTracker
+    from insightface.app import FaceAnalysis
+    from numba import njit, prange
+    NUMBA_AVAILABLE = True
+except ImportError:
+    ytdlp, detect, ContentDetector, Image, torch, YOLO, DAM4SAMTracker, FaceAnalysis = (None,) * 8
+    njit = lambda func=None, **kwargs: func if func else lambda f: f
+    prange = range
+    NUMBA_AVAILABLE = False
 
 # --- Unified Logging & Configuration ---
 class Config:
@@ -40,7 +49,7 @@ class Config:
     FILTER_MODES = {"OVERALL": "Overall Quality", "INDIVIDUAL": "Individual Metrics"}
     UI_DEFAULTS = {
         "method": "all", "interval": 5.0, "max_resolution": "maximum available", "fast_scene": False,
-        "resume": False, "use_png": True, "disable_parallel": False, "enable_face_filter": True,
+        "resume": False, "use_png": True, "disable_parallel": False, "enable_face_filter": False,
         "face_model_name": "buffalo_l", "quality_thresh": 12.0, "face_thresh": 0.5,
         "enable_subject_mask": True, "scene_detect": True, "dam4sam_model_name": "sam21pp-L",
         "person_detector_model": "yolo11x.pt",
@@ -502,7 +511,7 @@ class ExtractionPipeline(Pipeline):
     def _run_ffmpeg(self, video_path, output_dir, video_info):
         use_showinfo = self.params.method != 'all'
         select_filter = {
-            'interval': f"fps=1/{max(0.1, self.params.interval)}", 'keyframes': "select='eq(pict_type,I)'",
+            'interval': f"fps=1/{max(0.1, float(self.params.interval))}", 'keyframes': "select='eq(pict_type,I)'",
             'scene': f"select='gt(scene,{0.5 if self.params.fast_scene else 0.4})'", 'all': f"fps={video_info.get('fps', 30)}"
         }.get(self.params.method)
         
