@@ -684,20 +684,17 @@ class AnalysisPipeline(Pipeline):
         try:
             # Use FaceAnalysis with robust provider configuration (like app.py)
             self.face_analyzer = FaceAnalysis(
-                name=self.params.face_model_name,                      # e.g., 'buffalo_l'
-                root=str(config.DIRS['models']),                      # keep local cache under ./models
-                providers=['CUDAExecutionProvider', 'CPUExecutionProvider']  # robust default ordering
+                name=self.params.face_model_name,
+                root=str(config.DIRS['models']),
+                providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
             )
-
             # Try GPU first, fallback to CPU if needed
             try:
-                # Prefer GPU if available (ctx_id=0); InsightFace will download if missing
-                self.face_analyzer.prepare(ctx_id=0, det_size=(640, 640))   # standard det size
+                self.face_analyzer.prepare(ctx_id=0, det_size=(640, 640))
                 logger.success("Face model loaded with CUDA.")
             except Exception as e_cuda:
                 logger.warning(f"CUDA init failed: {e_cuda}. Falling back to CPU...")
-                # Fallback to CPU if CUDA init fails
-                self.face_analyzer.prepare(ctx_id=-1, det_size=(640, 640))  # CPU mode
+                self.face_analyzer.prepare(ctx_id=-1, det_size=(640, 640))
                 logger.success("Face model loaded with CPU.")
         except Exception as e_cpu:
             raise RuntimeError(f"Could not initialize face analysis model. Error: {e_cpu}") from e_cpu
@@ -721,6 +718,15 @@ class AnalysisPipeline(Pipeline):
         with ThreadPoolExecutor(max_workers=num_workers) as executor:
             list(executor.map(self._process_single_frame, image_files))
 
+    def _round_floats(self, obj):
+        if isinstance(obj, dict):
+            return {k: self._round_floats(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self._round_floats(elem) for elem in obj]
+        elif isinstance(obj, float):
+            return round(obj, 4)
+        return obj
+
     def _process_single_frame(self, image_path):
         if self.cancel_event.is_set(): return
         try:
@@ -742,6 +748,9 @@ class AnalysisPipeline(Pipeline):
                     "metrics": asdict(frame.metrics)}
             meta.update(mask_meta)
             if frame.error: meta["error"] = frame.error
+            if meta.get("mask_path"): meta["mask_path"] = Path(meta["mask_path"]).name
+
+            meta = self._round_floats(meta)
             
             with self.write_lock, self.metadata_path.open('a') as f:
                 f.write(json.dumps(meta) + '\n')
@@ -1030,7 +1039,7 @@ class AppUI:
             face_model_name=face_model_name, enable_subject_mask=enable_subject_mask,
             dam4sam_model_name=dam4sam_model_name, person_detector_model=person_detector_model,
             scene_detect=scene_detect,
-            quality_weights={k: weights[i] for i, k in enumerate(config.QUALITY_METRICS)}
+            quality_weights={k: weights[i] for i, k in enumerate(config.QUALITY_METRICS) if weights}
         )
         yield from self._run_task(AnalysisPipeline(params, Queue(), self.cancel_event).run)
 
@@ -1089,11 +1098,11 @@ class AppUI:
             frames = [json.loads(line) for line in f]
         
         def is_kept(data):
-            if "processing_failed" in data.get("error", ""): return False
+            if "processing_failed" in str(data.get("error", "")): return False
             if mode == config.FILTER_MODES["OVERALL"]:
                 metrics = data.get("metrics", {})
                 scores = [metrics.get(f"{k}_score", 0)/100.0 for k in config.QUALITY_METRICS]
-                weights = [quality_weights[k]/100.0 for k in config.QUALITY_METRICS]
+                weights = [quality_weights.get(k, config.QUALITY_WEIGHTS[k])/100.0 for k in config.QUALITY_METRICS]
                 if sum(s * w for s, w in zip(scores, weights)) * 100 < q_thresh: return False
             else:
                 for i, k in enumerate(config.QUALITY_METRICS):
@@ -1108,56 +1117,129 @@ class AppUI:
     def apply_gallery_filters(self, metadata_path, output_dir, q_thresh, f_thresh, mode, *thresholds):
         if not metadata_path: return [], "Run analysis to see results."
         ind_thresh = thresholds[:len(config.QUALITY_METRICS)]
-        weights = {k: thresholds[len(config.QUALITY_METRICS)+i] for i,k in enumerate(config.QUALITY_METRICS)}
+        weights = {k: thresholds[len(config.QUALITY_METRICS)+i] for i,k in enumerate(config.QUALITY_METRICS) if len(thresholds) > len(config.QUALITY_METRICS)}
         kept, total_kept, total = self._load_and_filter_metadata(metadata_path, q_thresh, f_thresh, mode, ind_thresh, weights)
         preview = [str(Path(output_dir) / f['filename']) for f in kept[:100] if (Path(output_dir) / f['filename']).exists()]
         return preview, f"Kept: {total_kept}/{total} frames (previewing {len(preview)})"
 
     def export_kept_frames(self, metadata_path, output_dir, q_thresh, f_thresh, mode, *args):
-        if not metadata_path: return "No metadata to export."
+        if not metadata_path:
+            return "No metadata to export."
         try:
-            num_metrics = len(config.QUALITY_METRICS)
-            ind_thresh = args[:num_metrics]
-            weights = {k: args[num_metrics+i] for i, k in enumerate(config.QUALITY_METRICS)}
-            enable_crop, crop_ars, crop_padding = args[num_metrics*2:]
+            n_metrics = len(config.QUALITY_METRICS)
+            num_weight_sliders = len(self.components.get('weight_sliders', []))
+
+            def normalize_args(a):
+                if len(a) >= n_metrics + num_weight_sliders + 3:
+                    ind_thresh = list(a[:n_metrics])
+                    weight_values = list(a[n_metrics:n_metrics + num_weight_sliders])
+                    crop_args = list(a[n_metrics + num_weight_sliders:])
+                    return ind_thresh, weight_values, crop_args
+                if len(a) == 3:
+                    return [0] * n_metrics, [], list(a)
+                if len(a) == 0:
+                    return [0] * n_metrics, [], [False, "1:1", 0]
+                if len(a) > 3:
+                    crop_args = list(a[-3:])
+                    provided_thresh = list(a[:-3])
+                    ind_thresh = [0] * n_metrics
+                    ind_thresh[:min(len(provided_thresh), n_metrics)] = provided_thresh[:n_metrics]
+                    return ind_thresh, [], crop_args
+                return [0] * n_metrics, [], [False, "1:1", 0]
+
+            ind_thresh, weight_values, crop_args = normalize_args(args)
+
+            if len(crop_args) >= 3:
+                enable_crop, crop_ars, crop_padding = crop_args[:3]
+            else:
+                enable_crop, crop_ars, crop_padding = False, "1:1", 0
             
-            kept, total_kept, total = self._load_and_filter_metadata(metadata_path, q_thresh, f_thresh, mode, ind_thresh, weights)
-            export_dir = Path(output_dir).parent / f"{Path(output_dir).name}_exported_{datetime.now():%Y%m%d_%H%M%S}"
-            export_dir.mkdir(exist_ok=True)
+            weights = {k: weight_values[i] for i, k in enumerate(config.QUALITY_METRICS)} if weight_values else config.QUALITY_WEIGHTS
             
-            for frame_meta in sorted(kept, key=lambda x: x['filename']):
-                src_path = Path(output_dir) / frame_meta['filename']
-                if src_path.exists() and (img := cv2.imread(str(src_path))) is not None:
-                    if enable_crop and (mask_path := frame_meta.get('mask_path')) and Path(mask_path).exists():
-                        img = self._crop_frame(img, cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE), crop_ars, crop_padding)
-                    cv2.imwrite(str(export_dir / frame_meta['filename']), img)
-            return f"Exported {total_kept}/{total} frames to '{export_dir.name}'."
+            kept, n_kept, total = self._load_and_filter_metadata(
+                metadata_path, q_thresh, f_thresh, mode, ind_thresh, weights
+            )
+
+            if total == 0:
+                return "Exported 0/0 frames: no metadata."
+
+            out_root = Path(output_dir)
+            export_dir = out_root.parent / f"{out_root.name}_exported_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            export_dir.mkdir(exist_ok=True, parents=True)
+            
+            ok = 0
+            for frame_meta in sorted(kept, key=lambda x: x["filename"]):
+                try:
+                    src_path = out_root / frame_meta["filename"]
+                    if not src_path.exists():
+                        logger.warning(f"Source file not found, skipping: {src_path}")
+                        continue
+                    
+                    dst_path = export_dir / frame_meta["filename"]
+                    
+                    if enable_crop and not frame_meta.get("mask_empty", True) and (mask_name := frame_meta.get("mask_path")):
+                        mask_path = out_root / "masks" / mask_name
+                        img = cv2.imread(str(src_path))
+                        mask = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE) if mask_path.exists() else None
+                        if img is not None and mask is not None:
+                            cropped = self._crop_frame(img, mask, crop_ars, crop_padding)
+                            cv2.imwrite(str(dst_path), cropped)
+                        else:
+                            shutil.copy2(src_path, dst_path)
+                    else:
+                        shutil.copy2(src_path, dst_path)
+                    ok += 1
+                except Exception as e:
+                    logger.warning(f"Export failed for {frame_meta.get('filename', 'unknown')}: {e}")
+                    continue
+            return f"Exported {ok}/{total} frames to {export_dir.name}. Total frames in metadata: {total}"
         except Exception as e:
+            logger.error(f"Error during export process: {e}", exc_info=True)
             return f"Error during export: {e}"
 
-    def _crop_frame(self, img, mask, ar_str, padding_pct):
-        if mask is None or np.sum(mask) == 0: return img
-        rows, cols = np.where(mask > 0)
-        rmin, rmax, cmin, cmax = np.min(rows), np.max(rows), np.min(cols), np.max(cols)
-        box_w, box_h = cmax - cmin, rmax - rmin
-        if box_w <= 0 or box_h <= 0: return img
-        
-        pad_w, pad_h = box_w * (padding_pct/100), box_h * (padding_pct/100)
-        padded_w, padded_h = box_w + 2*pad_w, box_h + 2*pad_h
-        
+    def _parse_ar(self, s: str) -> tuple[int, int]:
         try:
-            target_ars = [w/h for w,h in (map(float,ar.split(':')) for ar in ar_str.split(','))]
-        except Exception: target_ars = [img.shape[1] / img.shape[0]]
+            if isinstance(s, str) and ":" in s:
+                w_str, h_str = s.split(":", 1)
+                w = max(int(w_str), 1)
+                h = max(int(h_str), 1)
+                return w, h
+        except Exception:
+            pass
+        return 1, 1
 
-        best_ar = min(target_ars, key=lambda ar: abs(ar - (padded_w/padded_h)))
-        final_w, final_h = (best_ar * padded_h, padded_h) if best_ar > (padded_w/padded_h) else (padded_w, padded_w/best_ar)
+    def _crop_frame(self, img: np.ndarray, mask: np.ndarray, crop_ars: str, padding: int) -> np.ndarray:
+        h, w = img.shape[:2]
+        coords = np.column_stack(np.where(mask > 0))
+        if coords.size == 0:
+            return img
         
-        cx, cy = cmin + box_w/2, rmin + box_h/2
-        x1 = max(0, int(cx - final_w/2))
-        y1 = max(0, int(cy - final_h/2))
-        x2 = min(img.shape[1], int(x1 + final_w))
-        y2 = min(img.shape[0], int(y1 + final_h))
-        return img[y1:y2, x1:x2]
+        (y1, x1) = coords.min(axis=0)
+        (y2, x2) = coords.max(axis=0) + 1
+        
+        pad = int(max(h, w) * (max(padding, 0) / 100.0))
+        y1 = max(0, y1 - pad)
+        x1 = max(0, x1 - pad)
+        y2 = min(h, y2 + pad)
+        x2 = min(w, x2 + pad)
+        
+        crop = img[y1:y2, x1:x2]
+        if crop.size == 0:
+            return img
+        
+        ar_w, ar_h = self._parse_ar(crop_ars)
+        H, W = crop.shape[:2]
+        target = ar_w / ar_h
+        cur = W / H
+        
+        if cur > target:
+            newW = max(1, int(H * target))
+            x = (W - newW) // 2
+            return crop[:, x:x + newW]
+        else:
+            newH = max(1, int(W / target))
+            y = (H - newH) // 2
+            return crop[y:y + newH, :]
 
 if __name__ == "__main__":
     check_dependencies()
