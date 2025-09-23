@@ -30,9 +30,10 @@ try:
     from DAM4SAM.dam4sam_tracker import DAM4SAMTracker
     from insightface.app import FaceAnalysis
     from numba import njit, prange
+    import yaml
     NUMBA_AVAILABLE = True
 except ImportError:
-    ytdlp, detect, ContentDetector, Image, torch, YOLO, DAM4SAMTracker, FaceAnalysis = (None,) * 8
+    ytdlp, detect, ContentDetector, Image, torch, YOLO, DAM4SAMTracker, FaceAnalysis, yaml = (None,) * 9
     njit = lambda func=None, **kwargs: func if func else lambda f: f
     prange = range
     NUMBA_AVAILABLE = False
@@ -99,7 +100,7 @@ logger = config.setup_directories_and_logger()
 
 # --- Utility Functions ---
 def get_feature_status():
-    masking_libs = all([torch, DAM4SAMTracker, Image])
+    masking_libs = all([torch, DAM4SAMTracker, Image, yaml])
     cuda_available = torch is not None and torch.cuda.is_available()
     return {
         'face_analysis': FaceAnalysis is not None, 'youtube_dl': ytdlp is not None,
@@ -155,6 +156,31 @@ def safe_resource_cleanup():
         if torch and torch.cuda.is_available():
             torch.cuda.empty_cache()
 
+# --- Person Detector Wrapper ---
+class PersonDetector:
+    def __init__(self, model="yolo11x.pt", imgsz=640, conf=0.3):
+        if YOLO is None:
+            raise ImportError("Ultralytics YOLO not installed.")
+        
+        model_path = config.DIRS['models'] / model
+        model_path.parent.mkdir(exist_ok=True)
+        download_model(f"https://huggingface.co/Ultralytics/YOLO11/resolve/main/{model}", model_path, "YOLO person detector")
+        
+        self.model = YOLO(str(model_path))
+        self.imgsz = imgsz
+        self.conf = conf
+
+    def detect_boxes(self, img_bgr):
+        res = self.model.predict(img_bgr[..., ::-1], imgsz=self.imgsz, conf=self.conf, classes=[0], verbose=False)
+        boxes = []
+        for r in res:
+            if getattr(r, "boxes", None) is None: continue
+            for b in r.boxes:
+                x1, y1, x2, y2 = map(int, b.xyxy[0].tolist())
+                score = float(b.conf[0])
+                boxes.append((x1, y1, x2, y2, score))
+        return boxes
+
 # --- Numba Optimized Image Processing ---
 if NUMBA_AVAILABLE:
     @njit(parallel=True)
@@ -175,7 +201,7 @@ else:
     def compute_entropy(hist):
         prob = hist / (np.sum(hist) + 1e-7)
         nz = prob > 0
-        return -np.sum(prob[nz] * np.log2(prob[nz])) / 8.0
+        return min(max(-np.sum(prob[nz] * np.log2(prob[nz])) / 8.0, 0), 1.0)
 
 # --- Core Data Classes ---
 @dataclass
@@ -241,6 +267,7 @@ class AnalysisParameters:
     person_detector_model: str = config.UI_DEFAULTS["person_detector_model"]
     scene_detect: bool = config.UI_DEFAULTS["scene_detect"]
     quality_weights: dict = field(default_factory=lambda: config.QUALITY_WEIGHTS.copy())
+    thresholds: dict = field(default_factory=lambda: {k: config.UI_DEFAULTS.get(f"{k}_thresh", 50.0) for k in config.QUALITY_METRICS})
 
 # --- Subject Masking Logic ---
 @dataclass
@@ -262,13 +289,19 @@ class SubjectMasker:
             self.mask_dir.mkdir(exist_ok=True)
             logger.info("Starting subject masking...")
 
-            if self.params.scene_detect: self._detect_scenes(video_path)
+            if self.params.scene_detect: self._detect_scenes(video_path, frames_dir)
             
             if not self._initialize_tracker():
                 logger.error("Could not initialize tracker; skipping masking.")
                 return {}
             
-            self.shots = self.shots or [(0, max(self.frame_map.keys(), default=-1) + 1)]
+            if not self.shots: # Fallback if scene detection failed or was disabled
+                if self.frame_map:
+                    self.shots = [(0, max(self.frame_map.keys()) + 1 if self.frame_map else 0)]
+                else: # Fallback if frame_map is also missing
+                    image_files = list(Path(frames_dir).glob("frame_*.*"))
+                    self.shots = [(0, len(image_files))]
+
             mask_metadata = {}
             for shot_id, (start_frame, end_frame) in enumerate(self.shots):
                 if self.cancel_event.is_set(): break
@@ -316,6 +349,7 @@ class SubjectMasker:
             from DAM4SAM.utils.utils import determine_tracker
             actual_path, _ = determine_tracker(model_name)
             if not Path(actual_path).exists():
+                Path(actual_path).parent.mkdir(exist_ok=True, parents=True)
                 shutil.copy(checkpoint_path, actual_path)
 
             self.tracker = DAM4SAMTracker(model_name)
@@ -325,7 +359,7 @@ class SubjectMasker:
             logger.error(f"Failed to initialize DAM4SAM tracker: {e}", exc_info=True)
             return False
 
-    def _detect_scenes(self, video_path: str):
+    def _detect_scenes(self, video_path: str, frames_dir: str):
         if not detect:
             raise ImportError("PySceneDetect is required.")
         try:
@@ -335,7 +369,7 @@ class SubjectMasker:
             logger.info(f"Found {len(self.shots)} shots.")
         except Exception as e:
             logger.critical(f"Scene detection failed: {e}", exc_info=True)
-            self.shots = []
+            self.shots = [] # Let the main run method handle the fallback
 
     def _load_shot_frames(self, frames_dir, start, end):
         frames = []
@@ -393,7 +427,11 @@ class SubjectMasker:
         if not self.person_detector: return None
         px1, py1, pw, ph = face_bbox
         fx, fy = px1 + pw / 2.0, py1 + ph / 2.0
-        candidates = self.person_detector.detect_boxes(frame_img)
+        try:
+            candidates = self.person_detector.detect_boxes(frame_img)
+        except Exception as e:
+            logger.warning(f"Person detector failed on frame: {e}")
+            return None
         if not candidates: return None
         
         def iou(b):
@@ -584,11 +622,7 @@ class AnalysisPipeline(Pipeline):
             person_detector = None
             if self.params.enable_subject_mask and self.features['person_detection']:
                 try:
-                    model_path = config.DIRS['models'] / self.params.person_detector_model
-                    model_path.parent.mkdir(exist_ok=True)
-                    download_model(f"https://huggingface.co/Ultralytics/YOLO11/resolve/main/{self.params.person_detector_model}",
-                                   model_path, "YOLO person detector")
-                    person_detector = YOLO(str(model_path))
+                    person_detector = PersonDetector(model=self.params.person_detector_model)
                     logger.info(f"Person detector ({self.params.person_detector_model}) initialized.")
                 except Exception as e:
                     logger.warning(f"Person detector unavailable: {e}")
@@ -646,22 +680,19 @@ class AnalysisPipeline(Pipeline):
 
     def _initialize_face_analyzer(self):
         if not FaceAnalysis: raise ImportError("insightface library not installed.")
-        if not self.features['cuda_available']:
-            logger.warning("Face analysis disabled in CPU-only mode.")
-            return
         logger.info(f"Loading face model: {self.params.face_model_name}")
         try:
             self.face_analyzer = FaceAnalysis(name=self.params.face_model_name, root=str(config.DIRS['models']),
                                               providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
-            self.face_analyzer.prepare(ctx_id=0, det_size=(640, 640))
-            logger.success("Face model loaded with CUDA.")
-        except Exception as e:
             try:
-                logger.warning(f"CUDA init failed: {e}. Falling back to CPU...")
+                self.face_analyzer.prepare(ctx_id=0, det_size=(640, 640))
+                logger.success("Face model loaded with CUDA.")
+            except Exception as e_cuda:
+                logger.warning(f"CUDA init failed: {e_cuda}. Falling back to CPU...")
                 self.face_analyzer.prepare(ctx_id=-1, det_size=(640, 640))
                 logger.success("Face model loaded with CPU.")
-            except Exception as e_cpu:
-                raise RuntimeError(f"Could not initialize face analysis model. Error: {e_cpu}") from e_cpu
+        except Exception as e_cpu:
+            raise RuntimeError(f"Could not initialize face analysis model. Error: {e_cpu}") from e_cpu
 
     def _process_reference_face(self):
         if not self.face_analyzer: return
@@ -804,8 +835,8 @@ class AppUI:
                 self._create_component('analysis_video_path_input', 'textbox', {'label': "🎥 Original Video Path (Optional)"})
             with gr.Column(scale=2):
                 gr.Markdown("### ⚙️ Analysis Settings")
-                is_gpu = self.feature_status['cuda_available']
-                self._create_component('enable_face_filter_input', 'checkbox', {'label': "Enable Face Similarity", 'value': is_gpu, 'interactive': is_gpu})
+                is_face_analysis_available = self.feature_status['face_analysis']
+                self._create_component('enable_face_filter_input', 'checkbox', {'label': "Enable Face Similarity", 'value': config.UI_DEFAULTS['enable_face_filter'], 'interactive': is_face_analysis_available})
                 with gr.Group() as self.components['face_options_group']:
                     self._create_component('face_model_name_input', 'dropdown', {'choices': ["buffalo_l", "buffalo_s"], 'value': "buffalo_l", 'label': "Face Model"})
                     self._create_component('face_ref_img_path_input', 'textbox', {'label': "📸 Reference Image Path"})
