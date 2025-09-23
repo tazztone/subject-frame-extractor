@@ -1460,23 +1460,6 @@ class AnalysisPipeline:
             self.face_analyzer = None
             raise RuntimeError(f"Could not initialize face analysis model. Error: {e}")
 
-    def _ensure_face_model_downloaded(self, model_name):
-        """
-        DEPRECATED: This method is no longer used as InsightFace now handles model downloading automatically.
-
-        Previously ensured the specified face analysis model was downloaded with timeout and verification.
-        Now replaced by the built-in downloader in FaceAnalysis.prepare() which is more robust and handles
-        both CUDA and CPU providers automatically.
-
-        Model URLs (for reference):
-        - buffalo_l: https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip
-        - buffalo_s: https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_s.zip
-        - buffalo_m: https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_m.zip
-        - antelopev2: https://github.com/deepinsight/insightface/releases/download/v0.7/antelopev2.zip
-        """
-        # This method is deprecated and no longer called
-        # The built-in FaceAnalysis.prepare() handles model downloading automatically
-        pass
 
     def _process_reference_face(self):
         if not self.params.face_ref_img_path:
