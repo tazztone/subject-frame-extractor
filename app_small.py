@@ -50,7 +50,7 @@ class Config:
     FILTER_MODES = {"OVERALL": "Overall Quality", "INDIVIDUAL": "Individual Metrics"}
     UI_DEFAULTS = {
         "method": "all", "interval": 5.0, "max_resolution": "maximum available", "fast_scene": False,
-        "resume": False, "use_png": True, "disable_parallel": False, "enable_face_filter": False,
+        "resume": False, "use_png": True, "disable_parallel": False, "enable_face_filter": True,
         "face_model_name": "buffalo_l", "quality_thresh": 12.0, "face_thresh": 0.5,
         "enable_subject_mask": True, "scene_detect": True, "dam4sam_model_name": "sam21pp-L",
         "person_detector_model": "yolo11x.pt",
@@ -248,8 +248,8 @@ class Frame:
                 "edge_strength": min(edge_strength / config.NORMALIZATION_CONSTANTS["edge_strength"], 1.0),
                 "contrast": min(contrast, 2.0) / 2.0, "brightness": brightness, "entropy": entropy
             }
-            self.metrics = FrameMetrics(**{f"{k}_score": v * 100 for k, v in scores_norm.items()})
-            self.metrics.quality_score = sum(scores_norm[k] * (config.QUALITY_WEIGHTS[k] / 100.0) for k in config.QUALITY_METRICS) * 100
+            self.metrics = FrameMetrics(**{f"{k}_score": float(v * 100) for k, v in scores_norm.items()})
+            self.metrics.quality_score = float(sum(scores_norm[k] * (config.QUALITY_WEIGHTS[k] / 100.0) for k in config.QUALITY_METRICS) * 100)
         except Exception as e:
             self.error = f"Quality calc failed: {e}"
             logger.error(f"Frame {self.frame_number}: {self.error}")
@@ -476,8 +476,8 @@ class SubjectMasker:
             final_results = []
             img_area = h * w
             for mask in results:
-                area_pct = (np.sum(mask > 0) / img_area) * 100 if img_area > 0 else 0
-                is_empty = area_pct < config.MIN_MASK_AREA_PCT
+                area_pct = float((np.sum(mask > 0) / img_area) * 100 if img_area > 0 else 0.0)
+                is_empty = bool(area_pct < config.MIN_MASK_AREA_PCT)
                 error = "Empty mask" if is_empty else None
                 final_results.append((mask, area_pct, is_empty, error))
             return zip(*final_results)
@@ -682,14 +682,22 @@ class AnalysisPipeline(Pipeline):
         if not FaceAnalysis: raise ImportError("insightface library not installed.")
         logger.info(f"Loading face model: {self.params.face_model_name}")
         try:
-            self.face_analyzer = FaceAnalysis(name=self.params.face_model_name, root=str(config.DIRS['models']),
-                                              providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
+            # Use FaceAnalysis with robust provider configuration (like app.py)
+            self.face_analyzer = FaceAnalysis(
+                name=self.params.face_model_name,                      # e.g., 'buffalo_l'
+                root=str(config.DIRS['models']),                      # keep local cache under ./models
+                providers=['CUDAExecutionProvider', 'CPUExecutionProvider']  # robust default ordering
+            )
+
+            # Try GPU first, fallback to CPU if needed
             try:
-                self.face_analyzer.prepare(ctx_id=0, det_size=(640, 640))
+                # Prefer GPU if available (ctx_id=0); InsightFace will download if missing
+                self.face_analyzer.prepare(ctx_id=0, det_size=(640, 640))   # standard det size
                 logger.success("Face model loaded with CUDA.")
             except Exception as e_cuda:
                 logger.warning(f"CUDA init failed: {e_cuda}. Falling back to CPU...")
-                self.face_analyzer.prepare(ctx_id=-1, det_size=(640, 640))
+                # Fallback to CPU if CUDA init fails
+                self.face_analyzer.prepare(ctx_id=-1, det_size=(640, 640))  # CPU mode
                 logger.success("Face model loaded with CPU.")
         except Exception as e_cpu:
             raise RuntimeError(f"Could not initialize face analysis model. Error: {e_cpu}") from e_cpu
@@ -907,7 +915,15 @@ class AppUI:
         self.components['start_extraction_button'].click(self.run_extraction_wrapper, ext_inputs, ext_outputs)
         self.components['stop_extraction_button'].click(lambda: self.cancel_event.set())
 
-        ana_inputs = [c for name, c in self.components.items() if name in ['frames_folder_input', 'analysis_video_path_input', 'disable_parallel_input', 'resume_input', 'enable_face_filter_input', 'face_ref_img_path_input', 'face_ref_img_upload_input', 'face_model_name_input', 'enable_subject_mask_input', 'dam4sam_model_name_input', 'person_detector_model_input', 'scene_detect_input']] + self.components.get('weight_sliders', [])
+        ana_inputs = [
+            self.components['frames_folder_input'], self.components['analysis_video_path_input'],
+            self.components['disable_parallel_input'], self.components['resume_input'],
+            self.components['enable_face_filter_input'], self.components['face_ref_img_path_input'],
+            self.components['face_ref_img_upload_input'], self.components['face_model_name_input'],
+            self.components['enable_subject_mask_input'], self.components['dam4sam_model_name_input'],
+            self.components['person_detector_model_input'], self.components['scene_detect_input']
+        ] + self.components.get('weight_sliders', [])
+        
         ana_outputs = [c for name, c in self.components.items() if name in ['start_analysis_button', 'stop_analysis_button', 'unified_log', 'unified_status', 'analysis_output_dir_state', 'analysis_metadata_path_state', 'filtering_tab']]
         self.components['start_analysis_button'].click(self.run_analysis_wrapper, ana_inputs, ana_outputs)
         self.components['stop_analysis_button'].click(lambda: self.cancel_event.set())
@@ -982,7 +998,12 @@ class AppUI:
         else:
             yield self._set_ui_state(buttons, "ready")
 
-    def run_analysis_wrapper(self, frames_folder, video_path, *args):
+    def run_analysis_wrapper(self, frames_folder, video_path,
+                             disable_parallel, resume, enable_face_filter,
+                             face_ref_img_path, face_ref_img_upload, face_model_name,
+                             enable_subject_mask, dam4sam_model_name,
+                             person_detector_model, scene_detect,
+                             *weights):
         buttons = (self.components['start_analysis_button'], self.components['stop_analysis_button'])
         yield self._set_ui_state(buttons, "loading", "Starting analysis...") | {
             self.components['analysis_output_dir_state']: gr.update(),
@@ -993,21 +1014,24 @@ class AppUI:
 
         try:
             if not frames_folder or not Path(frames_folder).is_dir(): raise ValueError("Valid frames folder required.")
-            face_ref_path = args[4] or args[3]
-            if face_ref_path and args[3]:
-                dest = config.DIRS['downloads'] / Path(args[3]).name
-                shutil.copy2(args[3], dest)
-                face_ref_path = str(dest)
+            face_ref_full_path = face_ref_img_upload or face_ref_img_path
+            if face_ref_full_path and face_ref_img_upload:
+                dest = config.DIRS['downloads'] / Path(face_ref_img_upload).name
+                shutil.copy2(face_ref_img_upload, dest)
+                face_ref_full_path = str(dest)
         except Exception as e:
             yield self._set_ui_state(buttons, "error", f"Invalid input: {e}")
             return
         
-        param_keys = ['disable_parallel', 'resume', 'enable_face_filter', 'face_ref_img_path_upload', 'face_ref_img_path', 'face_model_name', 'enable_subject_mask', 'dam4sam_model_name', 'person_detector_model', 'scene_detect']
-        params_dict = dict(zip(param_keys, args))
-        params_dict['face_ref_img_path'] = face_ref_path
-        params_dict['quality_weights'] = {k: args[len(param_keys)+i] for i, k in enumerate(config.QUALITY_METRICS)}
-
-        params = AnalysisParameters(output_folder=frames_folder, video_path=video_path, **params_dict)
+        params = AnalysisParameters(
+            output_folder=frames_folder, video_path=video_path,
+            disable_parallel=disable_parallel, resume=resume,
+            enable_face_filter=enable_face_filter, face_ref_img_path=face_ref_full_path,
+            face_model_name=face_model_name, enable_subject_mask=enable_subject_mask,
+            dam4sam_model_name=dam4sam_model_name, person_detector_model=person_detector_model,
+            scene_detect=scene_detect,
+            quality_weights={k: weights[i] for i, k in enumerate(config.QUALITY_METRICS)}
+        )
         yield from self._run_task(AnalysisPipeline(params, Queue(), self.cancel_event).run)
 
         result = self.last_task_result
@@ -1138,4 +1162,5 @@ class AppUI:
 if __name__ == "__main__":
     check_dependencies()
     AppUI().build_ui().launch()
+
 
