@@ -10,3 +10,4 @@ scenedetect
 vot-toolkit==0.7.1
 yt-dlp
 ultralytics
+huggingface_hub

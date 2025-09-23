@@ -315,9 +315,10 @@ cython_debug/
 .clinerules
 models/*
 metadata.jsonl
-.md
 example-code/*
 masks/*
 logs/*
 downloads/*
-DAM4SAM/*
+configs/*
+.kilocode/rules/*
+.kilocode/rules/rule.md
