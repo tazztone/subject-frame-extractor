@@ -1122,10 +1122,11 @@ class VideoManager:
         return info
 
 class ExtractionPipeline:
-    def __init__(self, params: AnalysisParameters, progress_queue: Queue, cancel_event: threading.Event):
+    def __init__(self, params: AnalysisParameters, progress_queue: Queue, cancel_event: threading.Event, logger: UnifiedLogger):
         self.params = params
         self.progress_queue = progress_queue
         self.cancel_event = cancel_event
+        self.logger = logger
         self.video_path = None
         self.output_dir = None
         self.video_info = {}
@@ -1270,10 +1271,11 @@ class ExtractionPipeline:
             raise RuntimeError("FFmpeg failed. Check logs for details.")
 
 class AnalysisPipeline:
-    def __init__(self, params: AnalysisParameters, progress_queue: Queue, cancel_event: threading.Event):
+    def __init__(self, params: AnalysisParameters, progress_queue: Queue, cancel_event: threading.Event, logger: UnifiedLogger):
         self.params = params
         self.progress_queue = progress_queue
         self.cancel_event = cancel_event
+        self.logger = logger
         self.output_dir = Path(params.output_folder)
         self.metadata_path = self.output_dir / "metadata.jsonl"
         self.reference_embedding = None
@@ -2491,7 +2493,7 @@ class AppUI:
         )
 
         progress_queue = Queue()
-        pipeline = ExtractionPipeline(params, progress_queue, self.cancel_event)
+        pipeline = ExtractionPipeline(params, progress_queue, self.cancel_event, logger)
         yield from self._run_task(pipeline.run, self.components['unified_log'], self.components['unified_status'])
 
         result = self.last_task_result
@@ -2610,7 +2612,7 @@ class AppUI:
         )
 
         progress_queue = Queue()
-        pipeline = AnalysisPipeline(params, progress_queue, self.cancel_event)
+        pipeline = AnalysisPipeline(params, progress_queue, self.cancel_event, logger)
         yield from self._run_task(pipeline.run, self.components['unified_log'], self.components['unified_status'])
 
         result = self.last_task_result
@@ -2648,80 +2650,90 @@ class AppUI:
             }
 
     def _run_task(self, task_func, log_box=None, status_box=None):
-        global logger
-        original_logger = logger
+        # Each pipeline now has its own logger instance, no global reassignment needed
         progress_queue = task_func.__self__.progress_queue
-        
-        try:
-            if progress_queue:
-                logger = UnifiedLogger(progress_queue=progress_queue, log_file_path=config.get_log_path())
 
-            log_buffer, processed_count, total_frames = [], 0, 1
-            start_ts, last_yield_ts, last_stats, current_stage = time.time(), 0.0, {}, "Initializing"
-            
-            with ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(task_func)
-                while future.running():
-                    if self.cancel_event.is_set():
-                        if hasattr(task_func.__self__, 'cancel_event'):
-                             task_func.__self__.cancel_event.set()
-                        break
+        log_buffer, processed_count, total_frames = [], 0, 1
+        start_ts, last_yield_ts, last_stats, current_stage = time.time(), 0.0, {}, "Initializing"
 
-                    try:
-                        msg = progress_queue.get(timeout=0.1)
-                        if "log" in msg: log_buffer.append(msg["log"])
-                        if "error" in msg: log_buffer.append(f"[ERROR] {msg['error']}")
-                        if "stage" in msg: 
-                            current_stage, processed_count, start_ts = msg["stage"], 0, time.time()
-                        if "total" in msg: total_frames = msg["total"] or 1
-                        if "progress" in msg: processed_count += msg["progress"]
-                        if "progress_abs" in msg: processed_count = msg["progress_abs"]
-                        if "stats" in msg: last_stats = msg["stats"]
-                        
-                        now = time.time()
-                        if now - last_yield_ts > 0.25:
-                            ratio = processed_count / max(total_frames, 1)
-                            elapsed = max(now - start_ts, 1e-6)
-                            fps = processed_count / elapsed if elapsed > 0 else 0
-                            eta_s = (total_frames - processed_count) / fps if fps > 0 else 0
-                            mm, ss = divmod(int(eta_s), 60)
-                            
-                            errors = last_stats.get("errors", 0)
-                            
-                            status_line = f"**{current_stage}:** {processed_count}/{total_frames} ({ratio:.1%}) | Errors: {errors} | {fps:.1f} items/s | ETA: {mm:02d}:{ss:02d}"
-                            if log_box:
-                                updates = {log_box: "\n".join(log_buffer)}
-                                if status_box: updates[status_box] = status_line
-                                yield updates
-                            last_yield_ts = now
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(task_func)
+            while future.running():
+                if self.cancel_event.is_set():
+                    if hasattr(task_func.__self__, 'cancel_event'):
+                         task_func.__self__.cancel_event.set()
+                    break
 
-                    except Empty:
-                        pass
+                try:
+                    msg = progress_queue.get(timeout=0.1)
+                    if "log" in msg: log_buffer.append(msg["log"])
+                    if "error" in msg: log_buffer.append(f"[ERROR] {msg['error']}")
+                    if "stage" in msg:
+                        current_stage, processed_count, start_ts = msg["stage"], 0, time.time()
+                    if "total" in msg: total_frames = msg["total"] or 1
+                    if "progress" in msg: processed_count += msg["progress"]
+                    if "progress_abs" in msg: processed_count = msg["progress_abs"]
+                    if "stats" in msg: last_stats = msg["stats"]
 
-            self.last_task_result = future.result() or {}
-            if "log" in self.last_task_result: log_buffer.append(self.last_task_result["log"])
-            if "error" in self.last_task_result: log_buffer.append(f"[ERROR] {self.last_task_result['error']}")
+                    now = time.time()
+                    if now - last_yield_ts > 0.25:
+                        ratio = processed_count / max(total_frames, 1)
+                        elapsed = max(now - start_ts, 1e-6)
+                        fps = processed_count / elapsed if elapsed > 0 else 0
+                        eta_s = (total_frames - processed_count) / fps if fps > 0 else 0
+                        mm, ss = divmod(int(eta_s), 60)
 
-            if log_box:
-                final_updates = {log_box: "\n".join(log_buffer)}
-                if status_box:
-                    status_text = "⏹️ Operation cancelled." if self.cancel_event.is_set() else (f"❌ Error: {self.last_task_result.get('error')}" if self.last_task_result.get('error') else "✅ Operation complete.")
-                    final_updates[status_box] = status_text
-                yield final_updates
-        finally:
-            logger = original_logger
+                        errors = last_stats.get("errors", 0)
 
+                        status_line = f"**{current_stage}:** {processed_count}/{total_frames} ({ratio:.1%}) | Errors: {errors} | {fps:.1f} items/s | ETA: {mm:02d}:{ss:02d}"
+                        if log_box:
+                            updates = {log_box: "\n".join(log_buffer)}
+                            if status_box: updates[status_box] = status_line
+                            yield updates
+                        last_yield_ts = now
+
+                except Empty:
+                    pass
+
+        self.last_task_result = future.result() or {}
+        if "log" in self.last_task_result: log_buffer.append(self.last_task_result["log"])
+        if "error" in self.last_task_result: log_buffer.append(f"[ERROR] {self.last_task_result['error']}")
+
+        if log_box:
+            final_updates = {log_box: "\n".join(log_buffer)}
+            if status_box:
+                status_text = "⏹️ Operation cancelled." if self.cancel_event.is_set() else (f"❌ Error: {self.last_task_result.get('error')}" if self.last_task_result.get('error') else "✅ Operation complete.")
+                final_updates[status_box] = status_text
+            yield final_updates
+
+
+    @staticmethod
+    def _compute_kept_frames(metadata_path, quality_thresh, face_thresh, filter_mode, ind_thresh, quality_weights):
+        """Extract shared filtering logic that returns kept frames and counts.
+
+        Args:
+            metadata_path: Path to metadata file
+            quality_thresh: Quality threshold for overall mode
+            face_thresh: Face similarity threshold
+            filter_mode: Filter mode ("Overall Quality" or "Individual Metrics")
+            ind_thresh: Individual metric thresholds
+            quality_weights: Quality weights dictionary
+
+        Returns:
+            tuple: (kept_frames, total_kept, reasons, total_frames)
+        """
+        return AppUI._load_and_filter_metadata(metadata_path, quality_thresh, face_thresh, filter_mode, ind_thresh, quality_weights)
 
     @staticmethod
     def apply_gallery_filters(metadata_path, output_dir, quality_thresh, face_thresh, filter_mode, *thresholds):
         if not metadata_path: return [], "Run analysis to see results."
-        
+
         ind_thresh = thresholds[:len(config.QUALITY_METRICS)]
         weights = thresholds[len(config.QUALITY_METRICS):]
-        
+
         quality_weights = {k: weights[i] for i, k in enumerate(config.QUALITY_METRICS)}
 
-        kept_frames, total_kept, _, total_frames = AppUI._load_and_filter_metadata(metadata_path, quality_thresh, face_thresh, filter_mode, ind_thresh, quality_weights)
+        kept_frames, total_kept, _, total_frames = AppUI._compute_kept_frames(metadata_path, quality_thresh, face_thresh, filter_mode, ind_thresh, quality_weights)
         preview = [str(Path(output_dir) / f['filename']) for f in kept_frames[:100] if (Path(output_dir) / f['filename']).exists()]
         return preview, f"Kept: {total_kept} / {total_frames} frames (previewing {len(preview)})"
 
@@ -2783,7 +2795,7 @@ class AppUI:
             num_weights = len(config.QUALITY_METRICS)
             ind_thresh = thresholds_and_crop_args[:num_metrics]
             weights = thresholds_and_crop_args[num_metrics : num_metrics + num_weights]
-            
+
             crop_args = thresholds_and_crop_args[num_metrics + num_weights:]
             enable_crop, crop_ars, crop_padding = crop_args[0], crop_args[1], crop_args[2]
 
@@ -2791,8 +2803,8 @@ class AppUI:
             export_dir.mkdir(exist_ok=True)
 
             quality_weights = {k: weights[i] for i, k in enumerate(config.QUALITY_METRICS)}
-            
-            kept_frames, total_kept, _, total_frames = AppUI._load_and_filter_metadata(metadata_path, quality_thresh, face_thresh, filter_mode, ind_thresh, quality_weights)
+
+            kept_frames, total_kept, _, total_frames = AppUI._compute_kept_frames(metadata_path, quality_thresh, face_thresh, filter_mode, ind_thresh, quality_weights)
             
             copied_count = 0
             for frame_meta in sorted(kept_frames, key=lambda x: x['filename']):
