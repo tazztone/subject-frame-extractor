@@ -837,7 +837,7 @@ class AppUI:
                 self._create_component('method_input', 'dropdown', {'choices': method_choices, 'value': "all", 'label': "Method"})
                 self._create_component('interval_input', 'textbox', {'label': "Interval (s)", 'value': 5.0, 'visible': False})
                 self._create_component('fast_scene_input', 'checkbox', {'label': "Fast Scene Detect", 'visible': False})
-                self._create_component('max_resolution', 'dropdown', {'choices': ["max", "2160", "1080", "720"], 'value': "max", 'label': "DL Res"})
+                self._create_component('max_resolution', 'dropdown', {'choices': ["maximum available", "2160", "1080", "720"], 'value': "maximum available", 'label': "DL Res"})
                 self._create_component('use_png_input', 'checkbox', {'label': "Save as PNG", 'value': True})
         
         start_btn = gr.Button("🚀 Start Extraction", variant="primary")
@@ -919,7 +919,7 @@ class AppUI:
         c['show_weight_adjustment'].change(lambda x: gr.update(visible=x), c['show_weight_adjustment'], c['weight_adjustment_group'])
 
     def _setup_pipeline_handlers(self):
-        ext_inputs = [c for name, c in self.components.items() if name in ['source_input', 'upload_video_input', 'method_input', 'interval_input', 'max_resolution', 'fast_scene_input', 'use_png_input']]
+        ext_inputs = [c for name, c in self.components.items() if name in ['source_input', 'upload_video_input', 'method_input', 'interval_input', 'fast_scene_input', 'max_resolution', 'use_png_input']]
         ext_outputs = [c for name, c in self.components.items() if name in ['start_extraction_button', 'stop_extraction_button', 'unified_log', 'unified_status', 'extracted_video_path_state', 'extracted_frames_dir_state', 'frames_folder_input', 'analysis_video_path_input']]
         self.components['start_extraction_button'].click(self.run_extraction_wrapper, ext_inputs, ext_outputs)
         self.components['stop_extraction_button'].click(lambda: self.cancel_event.set())
@@ -991,7 +991,7 @@ class AppUI:
             yield self._set_ui_state(buttons, "error", f"Invalid video source: {e}")
             return
 
-        params = AnalysisParameters(source_path=source, **dict(zip(['method', 'interval', 'max_resolution', 'fast_scene', 'use_png'], args)))
+        params = AnalysisParameters(source_path=source, **dict(zip(['method', 'interval', 'fast_scene', 'max_resolution', 'use_png'], args)))
         yield from self._run_task(ExtractionPipeline(params, Queue(), self.cancel_event).run)
         
         result = self.last_task_result
@@ -1244,5 +1244,3 @@ class AppUI:
 if __name__ == "__main__":
     check_dependencies()
     AppUI().build_ui().launch()
-
-
