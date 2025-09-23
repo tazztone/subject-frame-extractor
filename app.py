@@ -1946,6 +1946,14 @@ class AppUI:
         self.components[stop_name] = stop_btn
         return start_btn, stop_btn
 
+    def bind_change(self, control, fn, inputs, outputs):
+        """Helper to bind change events with consistent pattern."""
+        control.change(fn, inputs, outputs)
+
+    def bind_click(self, button, fn, inputs, outputs):
+        """Helper to bind click events with consistent pattern."""
+        button.click(fn, inputs, outputs)
+
 
     def _create_extraction_tab(self):
         with gr.Row():
@@ -2241,13 +2249,30 @@ class AppUI:
                 })
                 self._create_component('save_button', 'button', {'value': "Save"})
 
-    def _create_event_handlers(self):
-        self.components['method_input'].change(lambda m: (gr.update(visible=m=='interval'), gr.update(visible=m=='scene')), self.components['method_input'], [self.components['interval_input'], self.components['fast_scene_input']])
-        self.components['enable_face_filter_input'].change(lambda e: (gr.update(visible=e), gr.update(interactive=e)), self.components['enable_face_filter_input'], [self.components['face_options_group'], self.components['face_filter_slider']])
-        self.components['enable_subject_mask_input'].change(lambda e: gr.update(visible=e), self.components['enable_subject_mask_input'], self.components['masking_options_group'])
-        self.components['enable_crop_input'].change(lambda x: gr.update(visible=x), self.components['enable_crop_input'], self.components['crop_options_group'])
-        
-        # Event handlers for the consolidated quality section
+    def _register_visibility_toggles(self):
+        """Register simple visibility toggle handlers using a registry pattern."""
+        visibility_registry = [
+            # (control, condition_lambda, targets)
+            (self.components['method_input'],
+             lambda m: (gr.update(visible=m=='interval'), gr.update(visible=m=='scene')),
+             [self.components['interval_input'], self.components['fast_scene_input']]),
+            (self.components['enable_face_filter_input'],
+             lambda e: (gr.update(visible=e), gr.update(interactive=e)),
+             [self.components['face_options_group'], self.components['face_filter_slider']]),
+            (self.components['enable_subject_mask_input'],
+             lambda e: gr.update(visible=e),
+             [self.components['masking_options_group']]),
+            (self.components['enable_crop_input'],
+             lambda x: gr.update(visible=x),
+             [self.components['crop_options_group']])
+        ]
+
+        for control, update_func, targets in visibility_registry:
+            control.change(update_func, control, targets)
+
+    def _register_complex_handlers(self):
+        """Register complex multi-update handlers."""
+        # Filter mode toggle with multiple visibility updates
         self.components['filter_mode_toggle'].change(
             lambda m: (
                 gr.update(visible=m == config.FILTER_MODES["OVERALL"]),
@@ -2255,15 +2280,30 @@ class AppUI:
                 gr.update(visible=m == config.FILTER_MODES["OVERALL"], value=m == config.FILTER_MODES["OVERALL"])
             ),
             self.components['filter_mode_toggle'],
-            [self.components['overall_quality_group'], self.components['individual_metrics_group'], self.components['weight_adjustment_group'], self.components['show_weight_adjustment']]
+            [self.components['overall_quality_group'], self.components['individual_metrics_group'],
+             self.components['weight_adjustment_group'], self.components['show_weight_adjustment']]
         )
 
+    def _register_simple_handlers(self):
+        """Register simple single-update handlers."""
+        # Weight adjustment visibility toggle
         self.components['show_weight_adjustment'].change(
             lambda x: gr.update(visible=x),
             self.components['show_weight_adjustment'],
             self.components['weight_adjustment_group']
         )
-        
+
+    def _create_event_handlers(self):
+        # Register visibility toggle handlers
+        self._register_visibility_toggles()
+
+        # Register complex multi-update handlers
+        self._register_complex_handlers()
+
+        # Register simple single-update handlers
+        self._register_simple_handlers()
+
+        # Setup other handler groups
         self._setup_extraction_handler()
         self._setup_analysis_handler()
         self._setup_filtering_handlers()
@@ -2291,10 +2331,13 @@ class AppUI:
             self.components['extracted_video_path_state'], self.components['extracted_frames_dir_state'],
             self.components['frames_folder_input'], self.components['analysis_video_path_input']
         ]
-        self.components['start_extraction_button'].click(self.run_extraction_wrapper, inputs, outputs)
+
+        # Use bind helper for cleaner syntax
+        self.bind_click(self.components['start_extraction_button'], self.run_extraction_wrapper, inputs, outputs)
+
+        # Stop button with cancellation and state reset
+        self.bind_click(self.components['stop_extraction_button'], lambda: self.cancel_event.set(), [], [])
         self.components['stop_extraction_button'].click(
-            lambda: self.cancel_event.set(), [], []
-        ).then(
             lambda: self.button_manager.set_loading_state(
                 self.components['start_extraction_button'],
                 self.components['stop_extraction_button']
@@ -2311,10 +2354,13 @@ class AppUI:
             self.components['analysis_output_dir_state'], self.components['analysis_metadata_path_state'],
             self.components['filtering_tab']
         ]
-        self.components['start_analysis_button'].click(self.run_analysis_wrapper, inputs, outputs)
+
+        # Use bind helper for cleaner syntax
+        self.bind_click(self.components['start_analysis_button'], self.run_analysis_wrapper, inputs, outputs)
+
+        # Stop button with cancellation and state reset
+        self.bind_click(self.components['stop_analysis_button'], lambda: self.cancel_event.set(), [], [])
         self.components['stop_analysis_button'].click(
-            lambda: self.cancel_event.set(), [], []
-        ).then(
             lambda: self.button_manager.set_loading_state(
                 self.components['start_analysis_button'],
                 self.components['stop_analysis_button']
@@ -2325,22 +2371,28 @@ class AppUI:
         
     def _setup_filtering_handlers(self):
         filter_inputs = [self.components['analysis_metadata_path_state'], self.components['analysis_output_dir_state'],
-                         self.components['quality_filter_slider'], self.components['face_filter_slider'],
-                         self.components['filter_mode_toggle']] + self.components['filter_metric_sliders'] + self.components['weight_sliders']
+                          self.components['quality_filter_slider'], self.components['face_filter_slider'],
+                          self.components['filter_mode_toggle']] + self.components['filter_metric_sliders'] + self.components['weight_sliders']
         filter_outputs = [self.components['results_gallery'], self.components['unified_log']]
-        
-        filter_controls = [self.components['quality_filter_slider'], self.components['face_filter_slider'], self.components['filter_mode_toggle']] + self.components['filter_metric_sliders'] + self.components['weight_sliders']
-        for c in filter_controls:
-            c.change(self.apply_gallery_filters, filter_inputs, filter_outputs)
-        
+
+        # Use registry pattern for filter controls
+        filter_controls = [self.components['quality_filter_slider'], self.components['face_filter_slider'],
+                          self.components['filter_mode_toggle']] + self.components['filter_metric_sliders'] + self.components['weight_sliders']
+
+        # Bind all filter controls to the same handler using registry loop
+        for control in filter_controls:
+            self.bind_change(control, self.apply_gallery_filters, filter_inputs, filter_outputs)
+
+        # Tab selection handler
         self.components['filtering_tab'].select(self.apply_gallery_filters, filter_inputs, filter_outputs)
 
+        # Export button
         export_inputs = filter_inputs + [
             self.components['enable_crop_input'],
             self.components['crop_ar_input'],
             self.components['crop_padding_input']
         ]
-        self.components['export_button'].click(self.export_kept_frames, export_inputs, self.components['unified_log'])
+        self.bind_click(self.components['export_button'], self.export_kept_frames, export_inputs, self.components['unified_log'])
     
     def _setup_config_handlers(self):
         config_controls = [
@@ -2348,12 +2400,12 @@ class AppUI:
         ] + self.components['weight_sliders']
 
         save_inputs = [self.components['config_name_input']] + config_controls
-        self.components['save_button'].click(self.save_config, save_inputs, [self.components['config_status'], self.components['config_dropdown']])
-        
+        self.bind_click(self.components['save_button'], self.save_config, save_inputs, [self.components['config_status'], self.components['config_dropdown']])
+
         load_outputs = config_controls + [self.components['config_status']]
-        self.components['load_button'].click(self.load_config, self.components['config_dropdown'], load_outputs)
-        
-        self.components['delete_button'].click(self.delete_config, self.components['config_dropdown'], [self.components['config_status'], self.components['config_dropdown']])
+        self.bind_click(self.components['load_button'], self.load_config, self.components['config_dropdown'], load_outputs)
+
+        self.bind_click(self.components['delete_button'], self.delete_config, self.components['config_dropdown'], [self.components['config_status'], self.components['config_dropdown']])
 
     def _setup_model_status_handlers(self):
         """Setup handlers for model download status updates."""
