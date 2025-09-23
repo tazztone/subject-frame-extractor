@@ -885,8 +885,8 @@ class AppUI:
                 self._create_component('export_button', 'button', {'value': "📤 Export Kept Frames", 'variant': "primary"})
                 with gr.Row():
                     self._create_component('enable_crop_input', 'checkbox', {'label': "✂️ Crop to Subject", 'value': True})
-                    self._create_component('crop_ar_input', 'textbox', {'label': "ARs", 'value': "16:9,1:1,4:5"})
-                    self._create_component('crop_padding_input', 'slider', {'label': "Padding %", 'value': 15})
+                    self._create_component('crop_ar_input', 'textbox', {'label': "ARs", 'value': "16:9,1:1,9:16"})
+                    self._create_component('crop_padding_input', 'slider', {'label': "Padding %", 'value': 1})
             with gr.Column(scale=2):
                 gr.Markdown("### 🖼️ Results Gallery")
                 self._create_component('results_gallery', 'gallery', {'columns': [4, 6, 8], 'rows': 2, 'height': 'auto', 'preview': True})
@@ -1210,37 +1210,69 @@ class AppUI:
 
     def _crop_frame(self, img: np.ndarray, mask: np.ndarray, crop_ars: str, padding: int) -> np.ndarray:
         h, w = img.shape[:2]
-        coords = np.column_stack(np.where(mask > 0))
-        if coords.size == 0:
+        if mask is None:
             return img
-        
-        (y1, x1) = coords.min(axis=0)
-        (y2, x2) = coords.max(axis=0) + 1
-        
-        pad = int(max(h, w) * (max(padding, 0) / 100.0))
-        y1 = max(0, y1 - pad)
-        x1 = max(0, x1 - pad)
-        y2 = min(h, y2 + pad)
-        x2 = min(w, x2 + pad)
-        
-        crop = img[y1:y2, x1:x2]
-        if crop.size == 0:
-            return img
-        
-        ar_w, ar_h = self._parse_ar(crop_ars)
-        H, W = crop.shape[:2]
-        target = ar_w / ar_h
-        cur = W / H
-        
-        if cur > target:
-            newW = max(1, int(H * target))
-            x = (W - newW) // 2
-            return crop[:, x:x + newW]
+        # 1) Robust 2D mask
+        if mask.ndim == 3:
+            mask2 = (mask > 0).any(axis=-1).astype(np.uint8)
         else:
-            newH = max(1, int(W / target))
-            y = (H - newH) // 2
-            return crop[y:y + newH, :]
+            mask2 = (mask > 0).astype(np.uint8)
+        ys, xs = np.where(mask2 > 0)
+        if ys.size == 0:
+            return img
+        x1, x2 = xs.min(), xs.max() + 1
+        y1, y2 = ys.min(), ys.max() + 1
+        # 2) Padding relative to bbox (not full frame)
+        bw, bh = x2 - x1, y2 - y1
+        padp = max(padding, 0) / 100.0
+        pad_x = int(round(bw * padp))
+        pad_y = int(round(bh * padp))
+        x1 = max(0, x1 - pad_x); y1 = max(0, y1 - pad_y)
+        x2 = min(w, x2 + pad_x); y2 = min(h, y2 + pad_y)
+        # Base box that must remain entirely visible
+        bw, bh = x2 - x1, y2 - y1
+        cx, cy = (x1 + x2) / 2.0, (y1 + y2) / 2.0
+        # 3) Parse requested ARs
+        ars = [self._parse_ar(s.strip()) for s in str(crop_ars).split(',') if s.strip()]
+        ars = [(aw, ah) for aw, ah in ars if ah > 0]
+        if not ars:
+            return img[y1:y2, x1:x2]
+        def expand_to_ar(r):
+            # Expansion-only box that contains the base bbox
+            if bw / (bh + 1e-9) < r:
+                new_w, new_h = int(np.ceil(bh * r)), bh
+            else:
+                new_w, new_h = bw, int(np.ceil(bw / r))
+            if new_w > w or new_h > h:
+                return None  # cannot fit inside frame
+            # Center on the subject; shift to fit without shrinking
+            x1n = int(round(cx - new_w / 2)); x2n = x1n + new_w
+            y1n = int(round(cy - new_h / 2)); y2n = y1n + new_h
+            if x1n < 0: x2n -= x1n; x1n = 0
+            if x2n > w: x1n -= (x2n - w); x2n = w
+            if y1n < 0: y2n -= y1n; y1n = 0
+            if y2n > h: y1n -= (y2n - h); y2n = h
+            # Ensure the padded bbox is fully inside; if not, this AR is infeasible
+            if x1n > x1 or y1n > y1 or x2n < x2 or y2n < y2:
+                return None
+            scale = (new_w * new_h) / max(1, bw * bh)
+            return (x1n, y1n, x2n, y2n, scale)
+        # 4) Choose feasible AR requiring the least expansion
+        candidates = []
+        for aw, ah in ars:
+            r = aw / ah
+            res = expand_to_ar(r)
+            if res is not None:
+                candidates.append(res)
+        if candidates:
+            x1n, y1n, x2n, y2n, _ = sorted(candidates, key=lambda t: t[4])[0]
+            return img[y1n:y2n, x1n:x2n]
+        # 5) Fallback: return padded bbox if no AR can contain it inside the frame
+        return img[y1:y2, x1:x2]
+
 
 if __name__ == "__main__":
     check_dependencies()
     AppUI().build_ui().launch()
+
+
