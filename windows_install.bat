@@ -34,5 +34,5 @@ popd
 REM Add DAM4SAM to Python path
 echo %cd%\DAM4SAM > venv\Lib\site-packages\dam4sam.pth
 
-echo All requirements installed (app + DAM4SAM).
+echo check for errors. 
 pause

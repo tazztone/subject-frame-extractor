@@ -753,7 +753,7 @@ class AnalysisPipeline(Pipeline):
             meta = self._round_floats(meta)
             
             with self.write_lock, self.metadata_path.open('a') as f:
-                f.write(json.dumps(meta) + '\n')
+                f.write(json.dumps(meta, default=lambda o: float(o) if hasattr(o, 'item') else (o.tolist() if hasattr(o, 'tolist') else str(o))) + '\n')
             self.progress_queue.put({"progress": 1})
         except Exception as e:
             logger.critical(f"Error processing frame {image_path.name}: {e}", exc_info=True)
