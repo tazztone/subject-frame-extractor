@@ -1819,10 +1819,10 @@ class AppUI:
             with gr.Column(scale=1):
                 gr.Markdown("### 🔧 System Status")
                 status_items = [
-                    f"🟢 GPU Available" if self.feature_status['cuda_available'] else "🟡 CPU Mode",
-                    f"🟢 Face Analysis" if self.feature_status['face_analysis'] else "🔴 Face Analysis",
-                    f"🟢 Subject Masking" if self.feature_status['masking_libs_installed'] else "🔴 Subject Masking Libs",
-                    f"🟢 Scene Detection" if self.feature_status['scene_detection'] else "🔴 Scene Detection"
+                    f"✅ GPU Available" if self.feature_status['cuda_available'] else "🟡 CPU Mode",
+                    f"✅ Face Analysis" if self.feature_status['face_analysis'] else "❌❌❌❌❌ Face Analysis",
+                    f"✅ Subject Masking" if self.feature_status['masking_libs_installed'] else "❌❌❌❌❌ Subject Masking Libs",
+                    f"✅ Scene Detection" if self.feature_status['scene_detection'] else "❌❌❌❌❌ Scene Detection"
                 ]
                 for item in status_items:
                     gr.Markdown(f"• {item}")
