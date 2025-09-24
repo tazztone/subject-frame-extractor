@@ -12,3 +12,4 @@ yt-dlp
 ultralytics
 huggingface_hub
 pytest
+plotly
