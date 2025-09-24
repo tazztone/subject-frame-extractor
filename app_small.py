@@ -785,8 +785,11 @@ class AnalysisPipeline(Pipeline):
             if self.params.enable_face_filter and self.reference_embedding is not None and self.face_analyzer:
                 self._analyze_face_similarity(frame)
             
-            meta = {"filename": image_path.name, "face_sim": frame.face_similarity_score, "face_conf": frame.max_face_confidence,
-                    "metrics": asdict(frame.metrics)}
+            meta = {"filename": image_path.name, "metrics": asdict(frame.metrics)}
+            if frame.face_similarity_score is not None:
+                meta["face_sim"] = frame.face_similarity_score
+            if frame.max_face_confidence is not None:
+                meta["face_conf"] = frame.max_face_confidence
             meta.update(mask_meta)
             if frame.error: meta["error"] = frame.error
             if meta.get("mask_path"): meta["mask_path"] = Path(meta["mask_path"]).name
@@ -946,19 +949,23 @@ class AppUI:
                             if is_metric:
                                 self.components['metric_sliders'][f"{k}_max"] = self._create_component(f'slider_{k}_max', 'slider', {'label': "Max", 'minimum': 0.0, 'maximum': 100.0, 'value': 100.0, 'step': 0.5, 'interactive': True, 'visible': False})
 
-                gr.Markdown("### 🖼️ Preview Options")
-                self._create_component('gallery_view_toggle', 'radio', {'choices': ["Kept Frames", "Rejected Frames"], 'value': "Kept Frames", 'label': "Show in Gallery"})
-                self._create_component('show_mask_overlay_input', 'checkbox', {'label': "Show Mask Overlay", 'value': True})
-                self._create_component('overlay_alpha_slider', 'slider', {'label': "Overlay Alpha", 'minimum': 0.0, 'maximum': 1.0, 'value': 0.4, 'step': 0.05})
+            with gr.Column(scale=2):
+                gr.Markdown("### 🖼️ Results Gallery")
+                
+                # Preview Options moved here
+                with gr.Row():
+                    self._create_component('gallery_view_toggle', 'radio', {'choices': ["Kept Frames", "Rejected Frames"], 'value': "Kept Frames", 'label': "Show in Gallery"})
+                    self._create_component('show_mask_overlay_input', 'checkbox', {'label': "Show Mask Overlay", 'value': True})
+                    self._create_component('overlay_alpha_slider', 'slider', {'label': "Overlay Alpha", 'minimum': 0.0, 'maximum': 1.0, 'value': 0.6, 'step': 0.1})
+                
+                self._create_component('results_gallery', 'gallery', {'columns': [4, 6, 8], 'rows': 2, 'height': 'auto', 'preview': True})
 
+                # Export and crop controls moved here
                 self._create_component('export_button', 'button', {'value': "📤 Export Kept Frames", 'variant': "primary"})
                 with gr.Row():
                     self._create_component('enable_crop_input', 'checkbox', {'label': "✂️ Crop to Subject", 'value': True})
                     self._create_component('crop_ar_input', 'textbox', {'label': "ARs", 'value': "16:9,1:1,9:16"})
                     self._create_component('crop_padding_input', 'slider', {'label': "Padding %", 'value': 1})
-            with gr.Column(scale=2):
-                gr.Markdown("### 🖼️ Results Gallery")
-                self._create_component('results_gallery', 'gallery', {'columns': [4, 6, 8], 'rows': 2, 'height': 'auto', 'preview': True})
 
     def _create_config_presets_ui(self):
         with gr.Group():
@@ -1297,8 +1304,8 @@ class AppUI:
         metric_values = {}
         for k in config.QUALITY_METRICS:
             metric_values[k] = [f.get("metrics", {}).get(f"{k}_score") for f in all_frames]
-        if any("face_sim" in f for f in all_frames):
-             metric_values["face_sim"] = [f.get("face_sim") for f in all_frames]
+        if any("face_sim" in f and f.get("face_sim") is not None for f in all_frames):
+             metric_values["face_sim"] = [f.get("face_sim") for f in all_frames if f.get("face_sim") is not None]
         if any("mask_area_pct" in f for f in all_frames):
              metric_values["mask_area_pct"] = [f.get("mask_area_pct") for f in all_frames]
         return all_frames, metric_values
