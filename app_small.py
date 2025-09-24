@@ -54,6 +54,7 @@ class Config:
         "face_model_name": "buffalo_l", "quality_thresh": 12.0, "face_thresh": 0.5,
         "enable_subject_mask": True, "scene_detect": True, "dam4sam_model_name": "sam21pp-L",
         "person_detector_model": "yolo11x.pt",
+        "nth_frame": 10,
     }
     MIN_MASK_AREA_PCT = 1.0
 
@@ -266,6 +267,7 @@ class AnalysisParameters:
     dam4sam_model_name: str = config.UI_DEFAULTS["dam4sam_model_name"]
     person_detector_model: str = config.UI_DEFAULTS["person_detector_model"]
     scene_detect: bool = config.UI_DEFAULTS["scene_detect"]
+    nth_frame: int = config.UI_DEFAULTS["nth_frame"]
     quality_weights: dict = field(default_factory=lambda: config.QUALITY_WEIGHTS.copy())
     thresholds: dict = field(default_factory=lambda: {k: config.UI_DEFAULTS.get(f"{k}_thresh", 50.0) for k in config.QUALITY_METRICS})
 
@@ -571,7 +573,8 @@ class ExtractionPipeline(Pipeline):
         use_showinfo = self.params.method != 'all'
         select_filter = {
             'interval': f"fps=1/{max(0.1, float(self.params.interval))}", 'keyframes': "select='eq(pict_type,I)'",
-            'scene': f"select='gt(scene,{0.5 if self.params.fast_scene else 0.4})'", 'all': f"fps={video_info.get('fps', 30)}"
+            'scene': f"select='gt(scene,{0.5 if self.params.fast_scene else 0.4})'", 'all': f"fps={video_info.get('fps', 30)}",
+            'every_nth_frame': f"select='not(mod(n,{max(1, int(self.params.nth_frame))}))'"
         }.get(self.params.method)
         
         cmd = ['ffmpeg', '-y', '-i', str(video_path), '-hide_banner', '-loglevel', 'info' if use_showinfo else 'error', '-progress', 'pipe:1']
@@ -859,9 +862,10 @@ class AppUI:
                 self._create_component('upload_video_input', 'file', {'label': "Or Upload Video", 'file_types': ["video"], 'type': "filepath"})
             with gr.Column():
                 gr.Markdown("### ⚙️ Extraction Settings")
-                method_choices = ["keyframes", "interval", "all"] + (["scene"] if self.feature_status['scene_detection'] else [])
+                method_choices = ["keyframes", "interval", "every_nth_frame", "all"] + (["scene"] if self.feature_status['scene_detection'] else [])
                 self._create_component('method_input', 'dropdown', {'choices': method_choices, 'value': "all", 'label': "Method"})
                 self._create_component('interval_input', 'textbox', {'label': "Interval (s)", 'value': 5.0, 'visible': False})
+                self._create_component('nth_frame_input', 'textbox', {'label': "N-th Frame Value", 'value': config.UI_DEFAULTS["nth_frame"], 'visible': False})
                 self._create_component('fast_scene_input', 'checkbox', {'label': "Fast Scene Detect", 'visible': False})
                 self._create_component('max_resolution', 'dropdown', {'choices': ["maximum available", "2160", "1080", "720"], 'value': "maximum available", 'label': "DL Res"})
                 self._create_component('use_png_input', 'checkbox', {'label': "Save as PNG", 'value': True})
@@ -938,14 +942,22 @@ class AppUI:
 
     def _setup_visibility_toggles(self):
         c = self.components
-        c['method_input'].change(lambda m: (gr.update(visible=m=='interval'), gr.update(visible=m=='scene')), c['method_input'], [c['interval_input'], c['fast_scene_input']])
+        c['method_input'].change(
+            lambda m: (gr.update(visible=m=='interval'), gr.update(visible=m=='scene'), gr.update(visible=m=='every_nth_frame')),
+            c['method_input'],
+            [c['interval_input'], c['fast_scene_input'], c['nth_frame_input']]
+        )
         c['enable_face_filter_input'].change(lambda e: (gr.update(visible=e), gr.update(interactive=e)), c['enable_face_filter_input'], [c['face_options_group'], c['face_filter_slider']])
         c['enable_subject_mask_input'].change(lambda e: gr.update(visible=e), c['enable_subject_mask_input'], c['masking_options_group'])
         c['filter_mode_toggle'].change(lambda m: (gr.update(visible=m==config.FILTER_MODES["OVERALL"]), gr.update(visible=m!=config.FILTER_MODES["OVERALL"])), c['filter_mode_toggle'], [c['overall_quality_group'], c['individual_metrics_group']])
         c['show_weight_adjustment'].change(lambda x: gr.update(visible=x), c['show_weight_adjustment'], c['weight_adjustment_group'])
 
     def _setup_pipeline_handlers(self):
-        ext_inputs = [c for name, c in self.components.items() if name in ['source_input', 'upload_video_input', 'method_input', 'interval_input', 'fast_scene_input', 'max_resolution', 'use_png_input']]
+        ext_inputs = [
+            self.components['source_input'], self.components['upload_video_input'], self.components['method_input'],
+            self.components['interval_input'], self.components['nth_frame_input'], self.components['fast_scene_input'],
+            self.components['max_resolution'], self.components['use_png_input']
+        ]
         ext_outputs = [c for name, c in self.components.items() if name in ['start_extraction_button', 'stop_extraction_button', 'unified_log', 'unified_status', 'extracted_video_path_state', 'extracted_frames_dir_state', 'frames_folder_input', 'analysis_video_path_input']]
         self.components['start_extraction_button'].click(self.run_extraction_wrapper, ext_inputs, ext_outputs)
         self.components['stop_extraction_button'].click(lambda: self.cancel_event.set())
@@ -997,7 +1009,7 @@ class AppUI:
             return {start_btn: gr.update(interactive=True), stop_btn: gr.update(interactive=False), log_comp: f"[SUCCESS] {status_msg}", status_comp: f"[SUCCESS] {status_msg}"}
         return {}
 
-    def run_extraction_wrapper(self, source_path, upload_video, *args):
+    def run_extraction_wrapper(self, source_path, upload_video, method, interval, nth_frame, fast_scene, max_resolution, use_png):
         buttons = (self.components['start_extraction_button'], self.components['stop_extraction_button'])
         yield self._set_ui_state(buttons, "loading", "Starting extraction...")
         self.cancel_event.clear()
@@ -1017,7 +1029,15 @@ class AppUI:
             yield self._set_ui_state(buttons, "error", f"Invalid video source: {e}")
             return
 
-        params = AnalysisParameters(source_path=source, **dict(zip(['method', 'interval', 'fast_scene', 'max_resolution', 'use_png'], args)))
+        try:
+            params = AnalysisParameters(
+                source_path=source, method=method, interval=float(interval), nth_frame=int(nth_frame),
+                fast_scene=fast_scene, max_resolution=max_resolution, use_png=use_png
+            )
+        except ValueError as e:
+            yield self._set_ui_state(buttons, "error", f"Invalid numeric input for interval or N-th frame: {e}")
+            return
+
         yield from self._run_task(ExtractionPipeline(params, Queue(), self.cancel_event).run)
         
         result = self.last_task_result
@@ -1300,3 +1320,4 @@ class AppUI:
 if __name__ == "__main__":
     check_dependencies()
     AppUI().build_ui().launch()
+
