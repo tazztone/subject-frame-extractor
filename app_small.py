@@ -326,42 +326,44 @@ class SubjectMasker:
         self.tracker = None; self.mask_dir = None; self.shots = []
 
     def run(self, video_path: str, frames_dir: str) -> dict[str, dict]:
-        with safe_resource_cleanup():
-            self.mask_dir = Path(frames_dir) / "masks"
-            self.mask_dir.mkdir(exist_ok=True)
-            logger.info("Starting subject masking...")
+        self.mask_dir = Path(frames_dir) / "masks"
+        self.mask_dir.mkdir(exist_ok=True)
+        logger.info("Starting subject masking...")
 
-            if self.params.scene_detect: self._detect_scenes(video_path, frames_dir)
-            
-            if not self._initialize_tracker():
-                logger.error("Could not initialize tracker; skipping masking.")
-                return {}
-            
-            if not self.shots: # Fallback if scene detection failed or was disabled
-                if self.frame_map:
-                    self.shots = [(0, max(self.frame_map.keys()) + 1 if self.frame_map else 0)]
-                else: # Fallback if frame_map is also missing
-                    image_files = list(Path(frames_dir).glob("frame_*.*"))
-                    self.shots = [(0, len(image_files))]
+        if self.params.scene_detect: self._detect_scenes(video_path, frames_dir)
+        
+        if not self._initialize_tracker():
+            logger.error("Could not initialize tracker; skipping masking.")
+            return {}
+        
+        if not self.shots: # Fallback if scene detection failed or was disabled
+            if self.frame_map:
+                self.shots = [(0, max(self.frame_map.keys()) + 1 if self.frame_map else 0)]
+            else: # Fallback if frame_map is also missing
+                image_files = list(Path(frames_dir).glob("frame_*.*"))
+                self.shots = [(0, len(image_files))]
 
-            mask_metadata = {}
-            for shot_id, (start_frame, end_frame) in enumerate(self.shots):
+        mask_metadata = {}
+        for shot_id, (start_frame, end_frame) in enumerate(self.shots):
+            with safe_resource_cleanup():
                 if self.cancel_event.is_set(): break
                 self.progress_queue.put({"stage": f"Masking Shot {shot_id+1}/{len(self.shots)}"})
                 logger.info(f"Masking shot {shot_id+1}/{len(self.shots)} (Frames {start_frame}-{end_frame})")
-                shot_frames_with_nums = self._load_shot_frames(frames_dir, start_frame, end_frame)
-                if not shot_frames_with_nums: continue
+                shot_frames_data = self._load_shot_frames(frames_dir, start_frame, end_frame)
+                if not shot_frames_data: continue
 
-                seed_idx, bbox, seed_details = self._seed_identity([f[1] for f in shot_frames_with_nums])
+                small_images = [f[1] for f in shot_frames_data]
+                seed_idx, bbox, seed_details = self._seed_identity(small_images)
+                
                 if bbox is None:
-                    for fn, _ in shot_frames_with_nums:
+                    for fn, _, _ in shot_frames_data:
                         if (fname := self.frame_map.get(fn)):
                             mask_metadata[fname] = asdict(MaskingResult(error="Subject not found", shot_id=shot_id))
                     continue
                 
-                masks, areas, empties, errors = self._propagate_masks([f[1] for f in shot_frames_with_nums], seed_idx, bbox)
+                masks, areas, empties, errors = self._propagate_masks(small_images, seed_idx, bbox)
 
-                for i, (original_fn, _) in enumerate(shot_frames_with_nums):
+                for i, (original_fn, _, (h, w)) in enumerate(shot_frames_data):
                     if not (frame_fname := self.frame_map.get(original_fn)): continue
                     mask_path = self.mask_dir / f"{Path(frame_fname).stem}.png"
                     result_args = {
@@ -370,12 +372,14 @@ class SubjectMasker:
                         "mask_empty": empties[i], "error": errors[i]
                     }
                     if masks[i] is not None and np.any(masks[i]):
-                        cv2.imwrite(str(mask_path), masks[i])
+                        # Upsample mask to original resolution before saving
+                        mask_full_res = cv2.resize(masks[i], (w, h), interpolation=cv2.INTER_NEAREST)
+                        cv2.imwrite(str(mask_path), mask_full_res)
                         mask_metadata[frame_fname] = asdict(MaskingResult(mask_path=str(mask_path), **result_args))
                     else:
                         mask_metadata[frame_fname] = asdict(MaskingResult(mask_path=None, **result_args))
-            logger.success("Subject masking complete.")
-            return mask_metadata
+        logger.success("Subject masking complete.")
+        return mask_metadata
 
     def _initialize_tracker(self):
         if not all([DAM4SAMTracker, torch, torch.cuda.is_available()]):
@@ -414,13 +418,23 @@ class SubjectMasker:
             logger.critical(f"Scene detection failed: {e}", exc_info=True)
             self.shots = [] # Let the main run method handle the fallback
 
-    def _load_shot_frames(self, frames_dir, start, end):
+    def _load_shot_frames(self, frames_dir, start, end, max_side=640):
         frames = []
         if not self.frame_map: return []
         for fn in sorted(fn for fn in self.frame_map if start <= fn < end):
             p = Path(frames_dir) / self.frame_map[fn]
-            if p.exists() and (frame_data := cv2.imread(str(p))) is not None:
-                frames.append((fn, frame_data))
+            img = cv2.imread(str(p))
+            if img is None: continue
+            
+            h, w = img.shape[:2]
+            scale = min(1.0, max_side / max(h, w))
+            
+            if scale < 1.0:
+                img_small = cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
+            else:
+                img_small = img
+                
+            frames.append((fn, img_small, (h, w)))
         return frames
 
     def _seed_identity(self, shot_frames):
@@ -997,9 +1011,13 @@ class AppUI:
         with gr.Row():
             with gr.Column(scale=1):
                 gr.Markdown("### 🎛️ Filter Controls")
+                self._create_component('auto_pctl_input', 'slider', {
+                    'label': 'Auto-Threshold Percentile', 'minimum': 50, 'maximum': 99, 'value': 75, 'step': 1
+                })
                 with gr.Row():
-                    self._create_component('auto_threshold_button', 'button', {'value': "Auto-Threshold (P75)"})
+                    self._create_component('apply_auto_button', 'button', {'value': 'Apply Percentile to Mins'})
                     self._create_component('reset_filters_button', 'button', {'value': "Reset Filters"})
+                
                 self._create_component('filter_status_text', 'markdown', {'value': "Load an analysis to begin."})
 
                 self.components['metric_plots'] = {}
@@ -1172,7 +1190,11 @@ class AppUI:
         reset_outputs = list(c['metric_sliders'].values()) + [c['require_face_match_input'], c['dedup_thresh_input'], c['filter_status_text'], c['results_gallery']]
         c['reset_filters_button'].click(self.reset_filters, [c['all_frames_data_state'], c['per_metric_values_state'], c['analysis_output_dir_state']], reset_outputs)
         
-        c['auto_threshold_button'].click(self.auto_set_thresholds, c['per_metric_values_state'], list(c['metric_sliders'].values()))
+        c['apply_auto_button'].click(
+            self.auto_set_thresholds,
+            [c['per_metric_values_state'], c['auto_pctl_input']],
+            list(c['metric_sliders'].values())
+        )
 
     def _setup_config_handlers(self):
         c, cm = self.components, self.config_manager
@@ -1325,13 +1347,15 @@ class AppUI:
     def histogram_with_thresholds(self, hist_data, vmin, vmax, title=""):
         if hist_data is None: return None
         counts, bins = hist_data
-        
         fig = go.Figure()
-        fig.add_trace(go.Bar(x=bins[:-1], y=counts, marker_color="#7aa2ff", opacity=0.8, name="All Frames"))
-        fig.add_vrect(x0=vmin, x1=vmax, fillcolor="#00cc66", opacity=0.15, line_width=0)
-        fig.add_vline(x=vmin, line_color="#00cc66", line_width=2, name="Min")
-        fig.add_vline(x=vmax, line_color="#00cc66", line_width=2, name="Max")
-        fig.update_layout(title_text=title, title_x=0.5, bargap=0.02, margin=dict(l=10,r=10,t=30,b=10), showlegend=False)
+        fig.add_trace(go.Bar(x=bins[:-1], y=counts, marker_color="#7aa2ff", opacity=0.85, name="All"))
+        fig.add_vrect(x0=vmin, x1=vmax, fillcolor="#00cc66", opacity=0.18, line_width=0)
+        fig.update_layout(
+            title_text=title, title_x=0.5, height=240,
+            margin=dict(l=6, r=6, t=18, b=6),
+            bargap=0.02, showlegend=False, uirevision="keep",
+            modebar_remove=['zoom','select','lasso2d','autoScale2d','zoomIn2d','zoomOut2d','resetScale2d','toImage']
+        )
         return fig
 
     @staticmethod
@@ -1460,12 +1484,14 @@ class AppUI:
                 active_filters.append(f"{k}<={(filters.get(f'{k}_max', 100)):.1f}")
 
         if (filters or {}).get("face_sim_enabled", False):
+            active_filters.append("face:on")
             if (filters or {}).get("face_sim_min", 0.5) > 0:
-                active_filters.append(f"face_sim>={(filters.get('face_sim_min', 0.5)):.2f}")
+                active_filters.append(f"sim>={(filters.get('face_sim_min', 0.5)):.2f}")
             if (filters or {}).get("require_face_match", False):
                 active_filters.append("req_face")
 
         if (filters or {}).get("mask_area_enabled", False):
+            active_filters.append("mask:on")
             if (filters or {}).get("mask_area_pct_min", config.MIN_MASK_AREA_PCT) > 0:
                 active_filters.append(f"mask>={(filters.get('mask_area_pct_min', config.MIN_MASK_AREA_PCT)):.1f}%")
 
@@ -1502,7 +1528,11 @@ class AppUI:
                 else:
                     preview_images.append((str(thumb_path), caption))
         
-        return status_text, preview_images
+        gallery_update = gr.update(
+            value=preview_images, 
+            rows=(1 if gallery_view == "Rejected Frames" else 2)
+        )
+        return status_text, gallery_update
 
     def on_filters_changed_fast(self, all_frames_data, per_metric_values, output_dir, gallery_view, show_overlay, overlay_alpha, require_face_match, dedup_thresh, *slider_values):
         if not all_frames_data: return "Run analysis to see results.", []
@@ -1512,8 +1542,8 @@ class AppUI:
                         "face_sim_enabled": bool(per_metric_values.get("face_sim")),
                         "mask_area_enabled": bool(per_metric_values.get("mask_area_pct")),
                         "enable_dedup": any('phash' in f for f in all_frames_data) if all_frames_data else False})
-        status_text, gallery_images = self._update_gallery(all_frames_data, filters, output_dir, gallery_view, show_overlay, overlay_alpha)
-        return status_text, gallery_images
+        status_text, gallery_update = self._update_gallery(all_frames_data, filters, output_dir, gallery_view, show_overlay, overlay_alpha)
+        return status_text, gallery_update
 
     def on_filters_changed(self, all_frames_data, per_metric_values, output_dir, gallery_view, show_overlay, overlay_alpha, require_face_match, dedup_thresh, *slider_values):
         if not all_frames_data:
@@ -1526,7 +1556,7 @@ class AppUI:
                         "mask_area_enabled": bool(per_metric_values.get("mask_area_pct")),
                         "enable_dedup": any('phash' in f for f in all_frames_data) if all_frames_data else False})
         
-        status_text, gallery_images = self._update_gallery(all_frames_data, filters, output_dir, gallery_view, show_overlay, overlay_alpha)
+        status_text, gallery_update = self._update_gallery(all_frames_data, filters, output_dir, gallery_view, show_overlay, overlay_alpha)
 
         plot_updates = []
         for k in config.QUALITY_METRICS + ["face_sim", "mask_area_pct"]:
@@ -1536,7 +1566,7 @@ class AppUI:
                 per_metric_values.get(f"{k}_hist"), vmin, vmax, title=""
             ))
         
-        return tuple(plot_updates) + (status_text, gallery_images)
+        return tuple(plot_updates) + (status_text, gallery_update)
 
     def export_kept_frames(self, all_frames_data, output_dir, enable_crop, crop_ars, crop_padding, require_face_match, dedup_thresh, *slider_values):
         if not all_frames_data: return "No metadata to export."
@@ -1610,7 +1640,7 @@ class AppUI:
                 elif k == 'mask_area_pct_min': slider_defaults.append(config.MIN_MASK_AREA_PCT)
                 else: slider_defaults.append(0.0)
 
-            status_text, gallery_images = self.on_filters_changed_fast(
+            status_text, gallery_update = self.on_filters_changed_fast(
                 all_frames_data,
                 per_metric_values,
                 output_dir,
@@ -1622,7 +1652,7 @@ class AppUI:
                 *slider_defaults
             )
             updates[self.components['filter_status_text']] = status_text
-            updates[self.components['results_gallery']] = gallery_images
+            updates[self.components['results_gallery']] = gallery_update
         else:
             updates[self.components['filter_status_text']] = "Load an analysis to begin."
             updates[self.components['results_gallery']] = []
@@ -1630,30 +1660,27 @@ class AppUI:
         # Unpack the dict into a list of tuples for Gradio
         return list(updates.values())
     
-    def auto_set_thresholds(self, per_metric_values):
-        # Build outputs exactly in the order used when wiring the button
-        slider_items = list(self.components['metric_sliders'].items())
+    def auto_set_thresholds(self, per_metric_values, p=75):
+        items = list(self.components['metric_sliders'].items())
         updates = []
         if not per_metric_values:
-            return [gr.update() for _name, _comp in slider_items]
+            return [gr.update() for _ in items]
         
-        # Compute per-metric 75th percentile from JSON-safe lists
-        p75_map = {}
+        pmap = {}
         for k in config.QUALITY_METRICS:
             vals = per_metric_values.get(k) or []
             if len(vals) > 0:
-                p75_map[k] = float(np.percentile(np.asarray(vals, dtype=np.float32), 75))
+                pmap[k] = float(np.percentile(np.asarray(vals, dtype=np.float32), p))
         
-        # Fill outputs for every slider
-        for key, comp in slider_items:
+        for key, comp in items:
             if key.endswith('_min'):
-                metric = key[:-4]  # strip "_min"
-                if metric in p75_map:
-                    updates.append(gr.update(value=round(p75_map[metric], 2)))
+                metric = key[:-4]
+                if metric in pmap:
+                    updates.append(gr.update(value=round(pmap[metric], 2)))
                 else:
                     updates.append(gr.update())
             else:
-                updates.append(gr.update())  # leave max sliders unchanged
+                updates.append(gr.update())
         return updates
 
     def _parse_ar(self, s: str) -> tuple[int, int]:
@@ -1712,4 +1739,3 @@ class AppUI:
 if __name__ == "__main__":
     check_dependencies()
     AppUI().build_ui().launch()
-
