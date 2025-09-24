@@ -148,6 +148,38 @@ def download_model(url, dest_path, description, min_size=1_000_000):
         logger.error(f"Failed to download {description}: {e}", exc_info=True)
         raise RuntimeError(f"Failed to download required model: {description}") from e
 
+def render_mask_overlay(frame_bgr: np.ndarray, mask_gray: np.ndarray, alpha: float = 0.5) -> np.ndarray:
+    """Applies a red overlay to a frame based on a mask."""
+    if mask_gray is None:
+        return frame_bgr
+    h, w = frame_bgr.shape[:2]
+    if mask_gray.shape[:2] != (h, w):
+        mask_gray = cv2.resize(mask_gray, (w, h), interpolation=cv2.INTER_NEAREST)
+
+    # Create a binary mask where the mask is active
+    m = (mask_gray > 128)
+
+    # Create a solid red layer
+    red_layer = np.zeros_like(frame_bgr, dtype=np.uint8)
+    red_layer[..., 2] = 255  # BGR format for red
+
+    # Blend the original frame and the red layer
+    blended = cv2.addWeighted(frame_bgr, 1.0 - alpha, red_layer, alpha, 0.0)
+    
+    # Prepare the boolean mask for broadcasting with a 3-channel image.
+    # It needs to be of shape (h, w, 1).
+    if m.ndim == 2:  # If mask is 2D (h, w)
+        mask_3d = m[..., np.newaxis]
+    elif m.ndim == 3 and m.shape[2] == 1: # If mask is 3D (h, w, 1)
+        mask_3d = m
+    else: # Handle unexpected mask shapes gracefully
+        logger.warning(f"Unexpected mask shape: {m.shape}. Skipping overlay.")
+        return frame_bgr
+
+    out = np.where(mask_3d, blended, frame_bgr)
+    
+    return out
+
 @contextmanager
 def safe_resource_cleanup():
     try:
@@ -912,6 +944,11 @@ class AppUI:
                 with gr.Group(visible=False) as self.components['individual_metrics_group']:
                     self.components['filter_metric_sliders'] = [self._create_component(f'filter_slider_{k}', 'slider', {'label': f"Min {k.replace('_',' ').title()}", 'maximum': 100}) for k in config.QUALITY_METRICS]
                 self._create_component('face_filter_slider', 'slider', {'label': "👤 Min Face Sim", 'maximum': 1.0, 'value': 0.5, 'interactive': False})
+                
+                gr.Markdown("### 🖼️ Preview Options")
+                self._create_component('show_mask_overlay_input', 'checkbox', {'label': "Show Mask Overlay", 'value': True})
+                self._create_component('overlay_alpha_slider', 'slider', {'label': "Overlay Alpha", 'minimum': 0.0, 'maximum': 1.0, 'value': 0.4, 'step': 0.05})
+
                 self._create_component('export_button', 'button', {'value': "📤 Export Kept Frames", 'variant': "primary"})
                 with gr.Row():
                     self._create_component('enable_crop_input', 'checkbox', {'label': "✂️ Crop to Subject", 'value': True})
@@ -977,10 +1014,17 @@ class AppUI:
 
     def _setup_filtering_handlers(self):
         c = self.components
-        filter_inputs = [c['analysis_metadata_path_state'], c['analysis_output_dir_state'], c['quality_filter_slider'], c['face_filter_slider'], c['filter_mode_toggle']] + c.get('filter_metric_sliders', []) + c.get('weight_sliders', [])
+        filter_inputs = [
+            c['analysis_metadata_path_state'], c['analysis_output_dir_state'],
+            c['quality_filter_slider'], c['face_filter_slider'], c['filter_mode_toggle'],
+            c['show_mask_overlay_input'], c['overlay_alpha_slider']
+        ] + c.get('filter_metric_sliders', []) + c.get('weight_sliders', [])
         filter_outputs = [c['results_gallery'], c['unified_log']]
         
-        for control in [c['quality_filter_slider'], c['face_filter_slider'], c['filter_mode_toggle']] + c.get('filter_metric_sliders', []) + c.get('weight_sliders', []):
+        for control in [
+            c['quality_filter_slider'], c['face_filter_slider'], c['filter_mode_toggle'],
+            c['show_mask_overlay_input'], c['overlay_alpha_slider']
+        ] + c.get('filter_metric_sliders', []) + c.get('weight_sliders', []):
             control.change(self.apply_gallery_filters, filter_inputs, filter_outputs)
         c['filtering_tab'].select(self.apply_gallery_filters, filter_inputs, filter_outputs)
 
@@ -1160,13 +1204,31 @@ class AppUI:
         kept = [f for f in frames if is_kept(f)]
         return kept, len(kept), len(frames)
 
-    def apply_gallery_filters(self, metadata_path, output_dir, q_thresh, f_thresh, mode, *thresholds):
+    def apply_gallery_filters(self, metadata_path, output_dir, q_thresh, f_thresh, mode, show_overlay, overlay_alpha, *thresholds):
         if not metadata_path: return [], "Run analysis to see results."
         ind_thresh = thresholds[:len(config.QUALITY_METRICS)]
         weights = {k: thresholds[len(config.QUALITY_METRICS)+i] for i,k in enumerate(config.QUALITY_METRICS) if len(thresholds) > len(config.QUALITY_METRICS)}
-        kept, total_kept, total = self._load_and_filter_metadata(metadata_path, q_thresh, f_thresh, mode, ind_thresh, weights)
-        preview = [str(Path(output_dir) / f['filename']) for f in kept[:100] if (Path(output_dir) / f['filename']).exists()]
-        return preview, f"Kept: {total_kept}/{total} frames (previewing {len(preview)})"
+        kept, total_kept, total = self._load_and_filter_metadata(metadata_path, q_thresh, f_thresh, mode, ind_thresh, weights or config.QUALITY_WEIGHTS)
+        
+        preview_images = []
+        output_path = Path(output_dir)
+        for f_meta in kept[:100]:
+            frame_path = output_path / f_meta['filename']
+            if not frame_path.exists(): continue
+            
+            img_bgr = cv2.imread(str(frame_path))
+            if img_bgr is None: continue
+
+            if show_overlay and not f_meta.get("mask_empty", True) and (mask_name := f_meta.get("mask_path")):
+                mask_path = output_path / "masks" / mask_name
+                if mask_path.exists():
+                    mask_gray = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
+                    img_bgr = render_mask_overlay(img_bgr, mask_gray, float(overlay_alpha))
+
+            img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+            preview_images.append(Image.fromarray(img_rgb))
+
+        return preview_images, f"Kept: {total_kept}/{total} frames (previewing {len(preview_images)})"
 
     def export_kept_frames(self, metadata_path, output_dir, q_thresh, f_thresh, mode, *args):
         if not metadata_path:
@@ -1320,4 +1382,3 @@ class AppUI:
 if __name__ == "__main__":
     check_dependencies()
     AppUI().build_ui().launch()
-
