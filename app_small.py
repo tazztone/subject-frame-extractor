@@ -459,28 +459,49 @@ class SubjectMasker:
             shape = shot_frames[0].shape[:2] if shot_frames else (100, 100)
             return ([np.zeros(shape, np.uint8)]*len(shot_frames), [0.0]*len(shot_frames), [True]*len(shot_frames), [err_msg]*len(shot_frames))
         
-        logger.info(f"Propagating masks for {len(shot_frames)} frames...")
-        results = []
+        logger.info(f"Propagating masks for {len(shot_frames)} frames from seed {seed_idx}...")
+        masks = [None] * len(shot_frames)
+        
         try:
-            for i, frame_np in enumerate(shot_frames):
-                if self.cancel_event.is_set(): break
-                frame_pil = Image.fromarray(cv2.cvtColor(frame_np, cv2.COLOR_BGR2RGB))
-                outputs = self.tracker.initialize(frame_pil, None, bbox=bbox_xywh) if i == seed_idx else self.tracker.track(frame_pil)
-                mask = (outputs.get('pred_mask') * 255).astype(np.uint8) if outputs.get('pred_mask') is not None else np.zeros_like(frame_np, dtype=np.uint8)[:,:,0]
-                results.append(mask)
+            # Initialize on the seed frame for the forward pass
+            seed_frame_pil = Image.fromarray(cv2.cvtColor(shot_frames[seed_idx], cv2.COLOR_BGR2RGB))
+            outputs = self.tracker.initialize(seed_frame_pil, None, bbox=bbox_xywh)
+            mask = (outputs.get('pred_mask') * 255).astype(np.uint8) if outputs.get('pred_mask') is not None else np.zeros_like(shot_frames[seed_idx], dtype=np.uint8)[:,:,0]
+            masks[seed_idx] = mask
 
-            h,w = shot_frames[0].shape[:2]
-            while len(results) < len(shot_frames):
-                results.append(np.zeros((h,w), dtype=np.uint8))
+            # Forward pass
+            for i in range(seed_idx + 1, len(shot_frames)):
+                if self.cancel_event.is_set(): break
+                frame_pil = Image.fromarray(cv2.cvtColor(shot_frames[i], cv2.COLOR_BGR2RGB))
+                outputs = self.tracker.track(frame_pil)
+                masks[i] = (outputs.get('pred_mask') * 255).astype(np.uint8) if outputs.get('pred_mask') is not None else np.zeros_like(shot_frames[i], dtype=np.uint8)[:,:,0]
+
+            # Re-initialize on the seed frame for the backward pass
+            # This is critical as the tracker's internal state has moved to the end of the shot.
+            self.tracker.initialize(seed_frame_pil, None, bbox=bbox_xywh)
+
+            # Backward pass
+            for i in range(seed_idx - 1, -1, -1):
+                if self.cancel_event.is_set(): break
+                frame_pil = Image.fromarray(cv2.cvtColor(shot_frames[i], cv2.COLOR_BGR2RGB))
+                outputs = self.tracker.track(frame_pil)
+                masks[i] = (outputs.get('pred_mask') * 255).astype(np.uint8) if outputs.get('pred_mask') is not None else np.zeros_like(shot_frames[i], dtype=np.uint8)[:,:,0]
+
+            h, w = shot_frames[0].shape[:2]
+            # Fill in any gaps (e.g., from cancellation) with empty masks
+            for i in range(len(masks)):
+                if masks[i] is None:
+                    masks[i] = np.zeros((h, w), dtype=np.uint8)
             
             final_results = []
             img_area = h * w
-            for mask in results:
+            for mask in masks:
                 area_pct = float((np.sum(mask > 0) / img_area) * 100 if img_area > 0 else 0.0)
                 is_empty = bool(area_pct < config.MIN_MASK_AREA_PCT)
                 error = "Empty mask" if is_empty else None
                 final_results.append((mask, area_pct, is_empty, error))
             return zip(*final_results)
+
         except Exception as e:
             logger.critical(f"DAM4SAM propagation failed: {e}", exc_info=True)
             h, w = shot_frames[0].shape[:2]
