@@ -874,7 +874,6 @@ class AppUI:
                 with gr.Row():
                     with gr.Column(): self._create_config_presets_ui()
                     with gr.Column():
-                        self._create_component('resume_input', 'checkbox', {'label': "💾 Resume/Use Cache", 'value': config.UI_DEFAULTS["resume"]})
                         self._create_component('disable_parallel_input', 'checkbox', {'label': "🐌 Disable Parallelism", 'value': config.UI_DEFAULTS["disable_parallel"]})
             
             self._create_event_handlers()
@@ -912,6 +911,7 @@ class AppUI:
                 gr.Markdown("### 📁 Input")
                 self._create_component('frames_folder_input', 'textbox', {'label': "📂 Extracted Frames Folder"})
                 self._create_component('analysis_video_path_input', 'textbox', {'label': "🎥 Original Video Path (Optional)"})
+                self._create_component('resume_input', 'checkbox', {'label': "💾 Skip re-analysis (uses metadata.jsonl from previous analysis)", 'value': config.UI_DEFAULTS["resume"]})
             with gr.Column(scale=2):
                 gr.Markdown("### ⚙️ Analysis Settings")
                 is_face_analysis_available = self.feature_status['face_analysis']
@@ -943,7 +943,7 @@ class AppUI:
                         self.components['weight_sliders'] = [self._create_component(f'weight_slider_{k}', 'slider', {'label': k.replace('_', ' ').title(), 'maximum': 100, 'value': config.QUALITY_WEIGHTS[k]}) for k in config.QUALITY_METRICS]
                 with gr.Group(visible=False) as self.components['individual_metrics_group']:
                     self.components['filter_metric_sliders'] = [self._create_component(f'filter_slider_{k}', 'slider', {'label': f"Min {k.replace('_',' ').title()}", 'maximum': 100}) for k in config.QUALITY_METRICS]
-                self._create_component('face_filter_slider', 'slider', {'label': "👤 Min Face Sim", 'maximum': 1.0, 'value': 0.5, 'interactive': False})
+                self._create_component('face_filter_slider', 'slider', {'label': "👤 Min. Face Similarity", 'maximum': 1.0, 'value': 0.5, 'interactive': True})
                 
                 gr.Markdown("### 🖼️ Preview Options")
                 self._create_component('show_mask_overlay_input', 'checkbox', {'label': "Show Mask Overlay", 'value': True})
