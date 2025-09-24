@@ -1406,21 +1406,30 @@ class AppUI:
             all_frames = [json.loads(line) for line in f if line.strip()]
 
         metric_values = {}
+        # Quality metrics
         for k in config.QUALITY_METRICS:
-            values = np.asarray([f.get("metrics", {}).get(f"{k}_score") for f in all_frames if f.get("metrics", {}).get(f"{k}_score") is not None])
+            values = np.asarray([f.get("metrics", {}).get(f"{k}_score") for f in all_frames if f.get("metrics", {}).get(f"{k}_score") is not None], dtype=float)
             if values.size > 0:
-                metric_values[k] = values
-                metric_values[f"{k}_hist"] = np.histogram(values, bins=50, range=(0,100))
+                counts, bins = np.histogram(values, bins=50, range=(0, 100))
+                metric_values[k] = values.tolist()
+                metric_values[f"{k}_hist"] = (counts.tolist(), bins.tolist())
+        
+        # Face similarity
         if any("face_sim" in f and f.get("face_sim") is not None for f in all_frames):
-             values = np.asarray([f.get("face_sim") for f in all_frames if f.get("face_sim") is not None])
-             if values.size > 0:
-                 metric_values["face_sim"] = values
-                 metric_values["face_sim_hist"] = np.histogram(values, bins=50, range=(0,1))
+            values = np.asarray([f.get("face_sim") for f in all_frames if f.get("face_sim") is not None], dtype=float)
+            if values.size > 0:
+                counts, bins = np.histogram(values, bins=50, range=(0, 1))
+                metric_values["face_sim"] = values.tolist()
+                metric_values["face_sim_hist"] = (counts.tolist(), bins.tolist())
+
+        # Mask area
         if any("mask_area_pct" in f for f in all_frames):
-             values = np.asarray([f.get("mask_area_pct") for f in all_frames if f.get("mask_area_pct") is not None])
-             if values.size > 0:
-                 metric_values["mask_area_pct"] = values
-                 metric_values["mask_area_pct_hist"] = np.histogram(values, bins=50, range=(0,100))
+            values = np.asarray([f.get("mask_area_pct") for f in all_frames if f.get("mask_area_pct") is not None], dtype=float)
+            if values.size > 0:
+                counts, bins = np.histogram(values, bins=50, range=(0, 100))
+                metric_values["mask_area_pct"] = values.tolist()
+                metric_values["mask_area_pct_hist"] = (counts.tolist(), bins.tolist())
+        
         return all_frames, metric_values
 
     def _update_gallery(self, all_frames_data, filters, output_dir, gallery_view, show_overlay, overlay_alpha):
@@ -1566,13 +1575,29 @@ class AppUI:
         return updates
     
     def auto_set_thresholds(self, per_metric_values):
-        updates = {}
-        if not per_metric_values: return updates
+        # Build outputs exactly in the order used when wiring the button
+        slider_items = list(self.components['metric_sliders'].items())
+        updates = []
+        if not per_metric_values:
+            return [gr.update() for _name, _comp in slider_items]
+        
+        # Compute per-metric 75th percentile from JSON-safe lists
+        p75_map = {}
         for k in config.QUALITY_METRICS:
-            if k in per_metric_values and len(per_metric_values[k]) > 0:
-                p75 = np.percentile(per_metric_values[k], 75)
-                if f"slider_{k}_min" in self.components['metric_sliders']:
-                    updates[self.components['metric_sliders'][f"slider_{k}_min"]] = gr.update(value=round(p75, 2))
+            vals = per_metric_values.get(k) or []
+            if len(vals) > 0:
+                p75_map[k] = float(np.percentile(np.asarray(vals, dtype=np.float32), 75))
+        
+        # Fill outputs for every slider
+        for key, comp in slider_items:
+            if key.endswith('_min'):
+                metric = key[:-4]  # strip "_min"
+                if metric in p75_map:
+                    updates.append(gr.update(value=round(p75_map[metric], 2)))
+                else:
+                    updates.append(gr.update())
+            else:
+                updates.append(gr.update())  # leave max sliders unchanged
         return updates
 
     def _parse_ar(self, s: str) -> tuple[int, int]:
@@ -1631,4 +1656,3 @@ class AppUI:
 if __name__ == "__main__":
     check_dependencies()
     AppUI().build_ui().launch()
-
