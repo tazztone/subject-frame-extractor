@@ -1,4 +1,4 @@
-# Monolithic app.py, refactored for conciseness
+# keep this app Monolithic.
 import gradio as gr
 import cv2
 import numpy as np
@@ -807,14 +807,19 @@ class AppUI:
                 with gr.Tab("🔍 2. Frame Analysis") as self.components['analysis_tab']: self._create_analysis_tab()
                 with gr.Tab("🎯 3. Filtering & Export") as self.components['filtering_tab']: self._create_filtering_tab()
 
-            with gr.Accordion("⚙️ Config & Logs", open=False):
+            # Processing Log and Status - moved outside accordion
+            with gr.Row():
+                with gr.Column(scale=2):
+                    self._create_component('unified_log', 'textbox', {'label': "📋 Processing Log", 'lines': 10, 'interactive': False, 'autoscroll': True})
+                with gr.Column(scale=1):
+                    self._create_component('unified_status', 'textbox', {'label': "📊 Status Summary", 'lines': 2, 'interactive': False})
+
+            with gr.Accordion("⚙️ Config", open=False):
                 with gr.Row():
                     with gr.Column(): self._create_config_presets_ui()
                     with gr.Column():
                         self._create_component('resume_input', 'checkbox', {'label': "💾 Resume/Use Cache", 'value': config.UI_DEFAULTS["resume"]})
                         self._create_component('disable_parallel_input', 'checkbox', {'label': "🐌 Disable Parallelism", 'value': config.UI_DEFAULTS["disable_parallel"]})
-                self._create_component('unified_log', 'textbox', {'label': "📋 Processing Log", 'lines': 10, 'interactive': False, 'autoscroll': True})
-                self._create_component('unified_status', 'textbox', {'label': "📊 Status Summary", 'lines': 2, 'interactive': False})
             
             self._create_event_handlers()
         return demo
@@ -1274,5 +1279,3 @@ class AppUI:
 if __name__ == "__main__":
     check_dependencies()
     AppUI().build_ui().launch()
-
-

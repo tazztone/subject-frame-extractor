@@ -1,112 +1,160 @@
-# Advanced Frame Extractor & Filter
+# 🎬 Frame Extractor & Analyzer
 
-### Overview
-Extract and score high-quality still frames from YouTube links or local videos, with an interactive Gradio UI for one-click analysis, live filtering, and export of the best shots. The pipeline streams frames from **FFmpeg**, computes multi-metric quality scores, optionally applies face presence and face similarity filters via **insightface**, and now includes advanced **Subject Masking with SAM2** for subject-focused analysis. It writes frames plus JSONL metadata for reproducible workflows.
+This is a comprehensive, user-friendly tool built with Gradio for intelligently extracting, analyzing, and filtering frames from video files or YouTube links. It leverages powerful AI models to go beyond simple frame grabs, allowing you to find the highest-quality shots of a specific person or subject.
 
-### Highlights
-- Download from YouTube via yt-dlp or open local files; resumes and caches analysis when metadata is present.
-- Four extraction modes: keyframes (I-frames), interval, scene-change, or all frames, selected through FFmpeg filters.
-- Quality metrics per frame: sharpness, edge strength, contrast, brightness, entropy, with configurable weights and pre-filters during extraction.
-- Optional face tools: face presence pre-filter and face similarity distance to a reference image using **insightface** embeddings, CPU or CUDA providers via ONNX Runtime.
-- **Advanced Subject Masking:** Utilize SAM2 (Segment Anything Model v2) to automatically detect and track a primary subject across video shots, enabling subject-focused quality analysis and filtering. Requires CUDA-enabled GPU.
-- Multithreaded producer-consumer pipeline with optional Numba acceleration for metric computation, and a live table and gallery preview in the UI.
-- Export of kept frames to a timestamped folder alongside the run directory for downstream use.
+Whether you're creating a dataset, searching for the perfect thumbnail, or analyzing video content, this tool provides a streamlined workflow from raw video to a curated set of high-quality images.
 
-### Requirements
-- System: **FFmpeg** on PATH is mandatory; the app aborts at startup if missing.
-- Python: this app uses type unions like FrameMetrics | None and requires Python 3.10+ semantics in practice.
-- Packages: gradio, opencv-python-headless, numpy, insightface, onnxruntime, numba, yt-dlp, **torch**, **sam2**; `insightface`, `yt-dlp`, `torch`, and `sam2` are optional but enable face features, URL downloads, and subject masking respectively. `numba` improves performance when available.
+-----
+
+## ✨ Key Features
+
+  * **Flexible Frame Extraction**:
+      * Supports both local video files and YouTube URLs.
+      * Multiple extraction methods: every frame, fixed intervals, keyframes only, or automatic scene change detection.
+  * **Advanced Frame Analysis**:
+      * **Quality Scoring**: Each frame is scored on multiple metrics (sharpness, contrast, brightness, edge strength, entropy) which are combined into a weighted "Overall Quality" score.
+      * **Face Similarity Filtering**: Provide a reference image of a person, and the tool will use the `insightface` model to find frames containing that specific person, scoring each by similarity.
+      * **AI-Powered Subject Masking**: Utilizes the **DAM4SAM** tracking model (powered by SAM 2.1) to automatically generate a segmentation mask for the main subject in each scene. This allows for subject-focused quality analysis.
+  * **Intuitive Filtering & Export**:
+      * An interactive gallery allows you to filter frames in real-time using sliders for quality, face similarity, and individual metrics.
+      * Export the curated set of frames with a single click.
+      * **Smart Cropping**: Automatically crop the exported frames to the subject's mask with padding and target aspect ratios (e.g., 16:9, 1:1, 9:16).
+  * **Efficient & Resumable**:
+      * The analysis pipeline is resumable. If you adjust filtering parameters, you don't need to re-process the frames.
+      * Uses parallel processing and Numba-optimized functions for faster analysis.
+      * Automatically downloads required AI models on first run.
+
+-----
+
+## ⚙️ Core Technologies
+
+This application integrates several state-of-the-art libraries and models:
+
+  * **Backend & UI**: Python, Gradio
+  * **Video Processing**: FFmpeg, OpenCV
+  * **AI Models**:
+      * **Subject Tracking**: `DAM4SAM` with a `SAM 2.1` backend for zero-shot tracking and segmentation.
+      * **Face Recognition**: `insightface` (`buffalo_l` model) for high-accuracy face detection and embedding comparison.
+      * **Person Detection**: `YOLOv11` for quickly identifying people to help seed the subject tracker.
+  * **Performance**: PyTorch (CUDA-accelerated), ONNX Runtime, Numba
+
+-----
+
+## 🚀 Getting Started
+
+### Prerequisites
+
+Before you begin, ensure you have the following installed on your system:
+
+1.  **Python**: Version 3.10 or newer.
+2.  **Git**: Required for cloning repositories during setup.
+3.  **NVIDIA GPU (Highly Recommended)**: For full functionality (Subject Masking, Face Analysis), a modern NVIDIA GPU with **CUDA** is required. The tool will run in a limited, CPU-only mode without it.
+4.  **FFmpeg**: Must be installed and accessible from your system's PATH. The application will check for it on startup. You can download it from [ffmpeg.org](https://ffmpeg.org/download.html).
 
 ### Installation
-- Create and activate a virtual environment, then install the packages noted at the top of the script.
-- Example:
-  - `pip install gradio opencv-python-headless numpy insightface onnxruntime numba yt-dlp torch sam2`
-- Ensure **FFmpeg** is installed and discoverable on PATH before launching.
 
-### Quick start
-- Launch the UI:
-  - `python app.py`
-- In the app:
-  - Paste a YouTube URL or choose a local file or upload a video in “Video Source,” choose a method, adjust pre-filters, and click “Extract & Analyze Frames”.
-  - Watch logs, progress, and the live frame-status table during processing; when done, switch to “Interactive Filtering & Export” to refine kept frames and export.
+This repository includes a `windows_install.bat` script to automate the setup process on Windows.
 
-### Extraction methods
-- Keyframes: `select='eq(pict_type,I)'` to grab I-frames only; efficient for edited content.
-- Interval: `fps=1/N` to sample frames every N seconds; good for long, steady footage.
-- Scene: `select='gt(scene,T)'` with T=0.5 if Fast Scene Detect is on, else 0.4; picks cuts or large content changes.
-- All: no select filter; processes every decoded frame, which can be heavy for high-FPS sources.
+1.  **Clone the Repository**:
 
-### Quality metrics and weights
-- Metrics computed per frame: sharpness (variance of Laplacian), edge strength (Sobel magnitude), brightness (mean), contrast (std/mean), entropy (histogram-based).
-- Weights default to sharpness 30, edge 20, contrast 20, brightness 10, entropy 20, with normalization constants for sharpness and edge strength, and a combined quality score.
-- Adjust weights under “Customize Quality Weights,” and optionally enable overall or per-metric pre-filters to discard poor frames during extraction.
+    ```bash
+    git clone <repository_url>
+    cd <repository_name>
+    ```
 
-### Face analysis and similarity
-- Face pre-filter: requires `insightface`; a frame passes if it contains a face above Min Face Confidence and above Min Face Area (% of frame), both user-configurable.
-- Similarity: if enabled and a reference face is provided, the app computes a cosine distance between L2-normalized embeddings; lower distance is more similar, and the filtering tab provides a Max Face Distance slider (default 0.5).
-- Models: `buffalo_l`, `buffalo_s`, `buffalo_m`, `antelopev2`; providers default to CPU, with optional CUDA provider when “Use GPU (Faces/Masks)” is enabled and a compatible ONNX Runtime is installed.
+2.  **Run the Installation Script**:
+    Simply double-click the `windows_install.bat` file.
 
-### Subject Masking
-- **Enable Subject-Only Metrics:** When enabled, the application uses SAM2 to identify and track a primary subject throughout the video. Quality metrics are then calculated *only* within the masked region of the subject, providing more focused analysis.
-- **Requirements:** Requires `torch`, `sam2` libraries, and a **CUDA-enabled GPU**.
-- **Masking Model:** Currently supports `sam2`.
-- **SAM2 Model Variant:** Choose between `hiera_large` and `hiera_base`.
-- **SAM2 Weights Path:** Specify the path to your downloaded SAM2 model weights (e.g., `C:\models\sam2_hiera_large.pt`).
-- **Scene Detection:** Leverages `scenedetect` to break the video into shots, improving masking accuracy and robustness across scene changes.
-- **ReID Fallback:** If the primary subject's identity is lost during tracking, the system attempts to re-identify it using face embeddings (if face analysis is enabled) or IoU (Intersection over Union) with previous masks.
-- **IoU Fallback Threshold:** Configurable threshold for IoU fallback, determining the minimum overlap to keep tracking an object if its ID is lost.
+    This script will perform the following steps:
 
-### Outputs
-- Run folder: `downloads/<video_stem>/` contains frames (JPG by default, PNG if toggled) and a `metadata.jsonl` file with one JSON record per processed frame.
-- Metadata includes: `frame_number`, `filename`, per-metric scores, overall quality score, face similarity distance if computed, max face confidence if detected, plus any error string per frame. Masking metadata (mask path, shot ID, ReID similarity, mask area percentage, etc.) is also included if subject masking is enabled.
-- Logs: `logs/frame_extractor.log` captures run-time diagnostics and errors for troubleshooting.
+      * Clone the required `DAM4SAM` repository.
+      * Create a Python virtual environment (`venv`) to keep dependencies isolated.
+      * Install all necessary Python packages, including PyTorch with CUDA 12.9 support.
 
-### Interactive filtering and export
-- Open “3. Interactive Filtering & Export” to filter by overall quality or per-metric thresholds, and optionally by face distance threshold for similarity, and by identity similarity from the masking stage.
-- The gallery previews up to 100 kept frames; the stats box shows kept/total counts and primary discard reasons from the filter pass (quality, face, identity, or first failing metric).
-- Click “Export Kept Frames” to copy all filtered frames to `<run>_exported_<timestamp>` beside the analysis folder.
+    > **Note:** The first time you run the script, it may take several minutes to download all the packages.
 
-### Performance tips
-- Prefer keyframes or scene modes for edited/cinematic content and interval for surveillance/time-lapse; “all” may be expensive for high-FPS videos.
-- Enable quality and/or face pre-filters during extraction to avoid writing low-value frames to disk and reduce downstream I/O.
-- Use GPU only if a CUDA-capable system with a compatible ONNX Runtime build is present; otherwise keep the default CPU providers.
-- **Subject Masking:** This feature is computationally intensive and requires a powerful CUDA-enabled GPU for reasonable performance.
+-----
 
-### YouTube downloads and resolution
-- If a URL is provided, the app uses `yt-dlp` and merges AVC video with M4A audio into MP4 by default; a max height can be selected for downloads to reduce size.
-- Already-downloaded videos are reused from the downloads directory using the video ID pattern when present, enabling faster resumes.
+### Custom Installation (CPU-only or different CUDA version)
 
-### What changed vs the old README
-- Face library: switched from “DeepFace + TensorFlow CUDA” to **insightface + ONNX Runtime** (CPU or CUDA providers) for detection and embeddings.
-- **Subject Masking:** Added advanced subject masking capabilities using SAM2 for subject-focused analysis.
-- App form: this code is a single-file Gradio app (`app.py`) without a separate CLI package or python -m entry points; launch via `python app.py`.
-- Exports: frame export is supported; montage/thumbnail sheet export is not implemented in this build of the app.
-- Presets and resume: UI includes Config Presets (save/load/delete/reset) and “Resume/Use Cache” defaults enabled to reuse `metadata.jsonl` when present.
+If you don't have an NVIDIA GPU or have a different CUDA version, you must modify the `windows_install.bat` script **before** running it.
 
-### Mapping old CLI flags to the UI
-- `--method {interval,all,keyframes,scene}` → Method dropdown.
-- `--interval N` → Interval (s) input (visible when Method=interval).
-- `--quality-weights S E C B ENT` → “Customize Quality Weights” sliders.
-- `--png` → “Save as PNG” toggle.
-- `--enable-face-filter --face-ref-img IMG` → “Enable Face Similarity Analysis” plus reference image path or upload.
-- `--resume` → “Resume/Use Cache” toggle.
-- **New:** `--enable-subject-mask` → “Enable Subject-Only Metrics” checkbox.
-- **New:** `--masking-model sam2` → “Masking Model” dropdown.
-- **New:** `--sam2-model-variant {hiera_large, hiera_base}` → “SAM2 Model Variant” dropdown.
-- **New:** `--sam2-weights-path PATH` → “SAM2 Weights Path” textbox.
-- **New:** `--scene-detect` (for masking) → “Scene Detection” checkbox within Subject Masking options.
-- **New:** `--reid-fallback` → “Enable ReID Fallback” checkbox.
-- **New:** `--iou-threshold N` → “IoU Fallback Threshold” slider.
+1.  Open `windows_install.bat` in a text editor.
+2.  Find this line:
+    ```bat
+    uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+    ```
+3.  **For CPU-only installation**, replace it with:
+    ```bat
+    uv pip install torch torchvision
+    ```
+4.  **For a different CUDA version**, visit the [PyTorch website](https://pytorch.org/get-started/locally/) to find the correct command for your setup and replace the line accordingly.
 
-### Troubleshooting
-- “FFMPEG is not installed or not in PATH”: install FFmpeg and ensure the shell can find it, then relaunch.
-- “yt-dlp not found”: YouTube URL downloads will be disabled; install yt-dlp to enable URL-based sources.
-- “insightface not found” or face errors: face features will be disabled; install insightface and ONNX Runtime, and toggle GPU only if CUDA is available.
-- **“SAM2 dependencies (torch, sam2) are not installed” or “CUDA not available”**: Subject masking will be disabled; install `torch` and `sam2`, and ensure you have a CUDA-enabled GPU with appropriate drivers.
-- Stuck or long runs: reduce resolution for downloads, prefer keyframes/scene instead of all, and enable pre-filters to cut low-value frames.
+-----
 
-### Contributing
-- The current repository structure is a single-file `app.py`; contributions can focus on bug fixes, UI/UX improvements, new filters, or optional montage export, with PRs that keep the `app.py` monolithic per the header comment.
+## 🖥️ How to Use
 
-### License
-- MIT
+1.  **Activate the Virtual Environment**:
+
+      * On **Windows**: Open a command prompt in the project folder and run `venv\Scripts\activate.bat`
+      * On **Linux/macOS**: Open a terminal and run `source venv/bin/activate`
+
+2.  **Launch the Application**:
+
+    ```bash
+    python app_small.py
+    ```
+
+3.  Open your web browser and navigate to the local URL provided (usually `http://127.0.0.1:7860`).
+
+### The 3-Step Workflow
+
+The UI is organized into three tabs that guide you through the process.
+
+#### 탭 1: 📹 Frame Extraction
+
+This is where you provide your video source.
+
+1.  **Video Source**: Paste a YouTube URL or a local file path (e.g., `C:\videos\my_video.mp4`). You can also use the upload button.
+2.  **Extraction Settings**:
+      * **Method**: Choose how to select frames. `interval` is good for general use, while `scene` is excellent for finding unique shots.
+      * **DL Res**: If using a YouTube URL, you can limit the download resolution to save time and space.
+      * **Save as PNG**: PNG is lossless but creates larger files. JPG is smaller but has compression artifacts.
+3.  **Start Extraction**: Click the button to begin. `ffmpeg` will run in the background. The output frames will be saved to a new folder inside the `downloads` directory.
+
+#### Tab 2: 🔍 Frame Analysis
+
+Once extraction is complete, the output folder is automatically passed to this tab. Here, you configure the AI-powered analysis.
+
+1.  **Input**: The frames folder and original video path should be pre-filled.
+2.  **Analysis Settings**:
+      * **Enable Face Similarity**: Check this to activate filtering by person. You must provide a clear **Reference Image** of the person you want to find.
+      * **Enable Subject-Only Metrics**: Check this to use the DAM4SAM model. This ensures quality metrics (like sharpness) are calculated only on the main subject, ignoring blurry backgrounds.
+3.  **Start Analysis**: This is the most computationally intensive step. The application will process each frame to calculate quality scores, find faces, and generate subject masks. The results are saved to a `metadata.jsonl` file in the frames folder.
+
+#### Tab 3: 🎯 Filtering & Export
+
+After analysis, this tab becomes active. It's your workspace for finding the best frames.
+
+1.  **Filter Controls**:
+      * Use the **Min Quality** and **Min Face Sim** sliders to narrow down the results. The gallery will update automatically.
+      * You can switch to "Individual Metrics" mode to filter by specific criteria like sharpness or contrast.
+      * You can also adjust the weights that contribute to the overall quality score.
+2.  **Results Gallery**: Shows a preview of the frames that match your current filter settings.
+3.  **Export Kept Frames**: Once you are satisfied, click this button.
+      * A new folder named `..._exported_...` will be created.
+      * If **Crop to Subject** is enabled, each exported image will be intelligently cropped around the detected subject mask, perfect for creating portraits or consistently framed datasets.
+
+-----
+
+## 🛠️ Technical Details
+
+  * **Project Structure**: The application will create several directories in its root folder upon first run:
+      * `DAM4SAM/`: A clone of the DAM4SAM repository.
+      * `venv/`: The isolated Python virtual environment.
+      * `downloads/`: Where YouTube videos and extracted frames are stored.
+      * `models/`: Caches for the downloaded AI models (YOLO, InsightFace, SAM).
+      * `logs/`: Contains the main application log file.
+      * `configs/`: Stores saved UI setting presets.
+  * **Metadata**: The `AnalysisPipeline` generates a `metadata.jsonl` file. This is a text file where each line is a JSON object containing all the calculated data for a single frame (metrics, face similarity, mask path, etc.). The Filtering tab reads this file directly, making the filtering process fast and efficient without reloading images or models.
+  * **Caching and Resuming**: The application is designed to be stateful. The `config_hash` in the metadata header allows the app to verify if the existing analysis results are compatible with the current settings, enabling you to safely resume your work.
