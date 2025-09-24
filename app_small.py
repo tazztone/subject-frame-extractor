@@ -47,6 +47,7 @@ class Config:
         "face_model_name": "buffalo_l", "quality_thresh": 12.0, "face_thresh": 0.5,
         "enable_subject_mask": True, "scene_detect": True, "dam4sam_model_name": "sam21pp-L",
         "person_detector_model": "yolo11x.pt",
+        "seed_strategy": "Reference Face / Largest",
         "nth_frame": 10,
     }
     MIN_MASK_AREA_PCT = 1.0
@@ -283,6 +284,7 @@ class AnalysisParameters:
     enable_subject_mask: bool = config.UI_DEFAULTS["enable_subject_mask"]
     dam4sam_model_name: str = config.UI_DEFAULTS["dam4sam_model_name"]
     person_detector_model: str = config.UI_DEFAULTS["person_detector_model"]
+    seed_strategy: str = config.UI_DEFAULTS["seed_strategy"]
     scene_detect: bool = config.UI_DEFAULTS["scene_detect"]
     nth_frame: int = config.UI_DEFAULTS["nth_frame"]
     quality_weights: dict = field(default_factory=lambda: config.QUALITY_WEIGHTS.copy())
@@ -324,6 +326,7 @@ class SubjectMasker:
             mask_metadata = {}
             for shot_id, (start_frame, end_frame) in enumerate(self.shots):
                 if self.cancel_event.is_set(): break
+                self.progress_queue.put({"stage": f"Masking Shot {shot_id+1}/{len(self.shots)}"})
                 logger.info(f"Masking shot {shot_id+1}/{len(self.shots)} (Frames {start_frame}-{end_frame})")
                 shot_frames_with_nums = self._load_shot_frames(frames_dir, start_frame, end_frame)
                 if not shot_frames_with_nums: continue
@@ -401,9 +404,27 @@ class SubjectMasker:
 
     def _seed_identity(self, shot_frames):
         if not shot_frames: return None, None, None
-        seed_details, matched_face, seed_idx = {}, None, -1
         
-        if self.face_analyzer and self.reference_embedding is not None:
+        # If face filter is disabled, prefer YOLO people
+        if not self.params.enable_face_filter and self.person_detector:
+            logger.info("Face filter off. Seeding with largest/central person box.")
+            boxes = self.person_detector.detect_boxes(shot_frames[0])
+            if boxes:
+                h, w = shot_frames[0].shape[:2]
+                cx, cy = w/2, h/2
+                
+                strategy_map = {
+                    "Largest Person": lambda b: (b[2]-b[0])*(b[3]-b[1]),
+                    "Center-most Person": lambda b: -math.hypot( (b[0]+b[2])/2 - cx, (b[1]+b[3])/2 - cy )
+                }
+                score_func = strategy_map.get(self.params.seed_strategy, strategy_map["Largest Person"])
+                
+                x1,y1,x2,y2,_ = sorted(boxes, key=score_func, reverse=True)[0]
+                return 0, [x1, y1, x2-x1, y2-y1], {'type': 'person_auto'}
+
+        # Existing reference-face path (only if enabled and embedding present)
+        seed_details, matched_face, seed_idx = {}, None, -1
+        if self.face_analyzer and self.reference_embedding is not None and self.params.enable_face_filter:
             logger.info("Searching for reference face...")
             min_dist = float('inf')
             for i, frame in enumerate(shot_frames[:5]):
@@ -419,7 +440,7 @@ class SubjectMasker:
                 matched_face = None
 
         if not matched_face:
-            logger.info("No match. Seeding with largest face in first frame.")
+            logger.info("No face match. Seeding with largest face in first frame.")
             seed_idx = 0
             faces = self.face_analyzer.get(shot_frames[0]) if self.face_analyzer else []
             if not faces:
@@ -479,6 +500,7 @@ class SubjectMasker:
             return ([np.zeros(shape, np.uint8)]*len(shot_frames), [0.0]*len(shot_frames), [True]*len(shot_frames), [err_msg]*len(shot_frames))
         
         logger.info(f"Propagating masks for {len(shot_frames)} frames from seed {seed_idx}...")
+        self.progress_queue.put({"stage": "Masking", "total": len(shot_frames)})
         masks = [None] * len(shot_frames)
         
         try:
@@ -494,9 +516,9 @@ class SubjectMasker:
                 frame_pil = Image.fromarray(cv2.cvtColor(shot_frames[i], cv2.COLOR_BGR2RGB))
                 outputs = self.tracker.track(frame_pil)
                 masks[i] = (outputs.get('pred_mask') * 255).astype(np.uint8) if outputs.get('pred_mask') is not None else np.zeros_like(shot_frames[i], dtype=np.uint8)[:,:,0]
+                self.progress_queue.put({"progress": 1})
 
             # Re-initialize on the seed frame for the backward pass
-            # This is critical as the tracker's internal state has moved to the end of the shot.
             self.tracker.initialize(seed_frame_pil, None, bbox=bbox_xywh)
 
             # Backward pass
@@ -505,13 +527,36 @@ class SubjectMasker:
                 frame_pil = Image.fromarray(cv2.cvtColor(shot_frames[i], cv2.COLOR_BGR2RGB))
                 outputs = self.tracker.track(frame_pil)
                 masks[i] = (outputs.get('pred_mask') * 255).astype(np.uint8) if outputs.get('pred_mask') is not None else np.zeros_like(shot_frames[i], dtype=np.uint8)[:,:,0]
+                self.progress_queue.put({"progress": 1})
 
             h, w = shot_frames[0].shape[:2]
-            # Fill in any gaps (e.g., from cancellation) with empty masks
+            # Post-process and fill in any gaps
             for i in range(len(masks)):
+                if self.cancel_event.is_set():
+                    masks[i] = None
                 if masks[i] is None:
                     masks[i] = np.zeros((h, w), dtype=np.uint8)
-            
+                
+                # Enforce single-person via person box
+                if self.person_detector and np.any(masks[i]):
+                    boxes = self.person_detector.detect_boxes(shot_frames[i])
+                    if boxes:
+                        ys, xs = np.where(masks[i] > 0)
+                        if ys.size > 0:
+                            x1m, x2m = xs.min(), xs.max()+1
+                            y1m, y2m = ys.min(), ys.max()+1
+                            def iou(b):
+                                ix1, iy1 = max(b[0], x1m), max(b[1], y1m)
+                                ix2, iy2 = min(b[2], x2m), min(b[3], y2m)
+                                inter = max(0, ix2-ix1)*max(0, iy2-iy1)
+                                union = (b[2]-b[0])*(b[3]-b[1]) + (x2m-x1m)*(y2m-y1m) - inter + 1e-6
+                                return inter/union
+                            
+                            bx1, by1, bx2, by2, _ = max(boxes, key=iou)
+                            clip = np.zeros_like(masks[i], np.uint8)
+                            clip[by1:by2, bx1:bx2] = 255
+                            masks[i] = cv2.bitwise_and(masks[i], clip)
+
             final_results = []
             img_area = h * w
             for mask in masks:
@@ -655,7 +700,10 @@ class AnalysisPipeline(Pipeline):
                 header = {"config_hash": config_hash, "params": {k:v for k,v in asdict(self.params).items() if k not in ['source_path', 'output_folder', 'video_path']}}
                 f.write(json.dumps(header) + '\n')
 
-            if self.params.enable_face_filter or self.params.enable_subject_mask:
+            # Initialize face analyzer only when needed
+            needs_face_analyzer = self.params.enable_face_filter or \
+                                  (self.params.enable_subject_mask and "Reference Face" in self.params.seed_strategy)
+            if needs_face_analyzer:
                 self._initialize_face_analyzer()
             if self.params.enable_face_filter and self.params.face_ref_img_path:
                 self._process_reference_face()
@@ -721,15 +769,14 @@ class AnalysisPipeline(Pipeline):
 
     def _initialize_face_analyzer(self):
         if not FaceAnalysis: raise ImportError("insightface library not installed.")
+        if self.face_analyzer: return
         logger.info(f"Loading face model: {self.params.face_model_name}")
         try:
-            # Use FaceAnalysis with robust provider configuration (like app.py)
             self.face_analyzer = FaceAnalysis(
                 name=self.params.face_model_name,
                 root=str(config.DIRS['models']),
                 providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
             )
-            # Try GPU first, fallback to CPU if needed
             try:
                 self.face_analyzer.prepare(ctx_id=0, det_size=(640, 640))
                 logger.success("Face model loaded with CUDA.")
@@ -754,6 +801,23 @@ class AnalysisPipeline(Pipeline):
 
     def _run_frame_processing(self):
         image_files = sorted(list(self.output_dir.glob("frame_*.png")) + list(self.output_dir.glob("frame_*.jpg")))
+        
+        # Create thumbnails for faster gallery loading
+        thumb_dir = self.output_dir / "thumbs"
+        thumb_dir.mkdir(exist_ok=True)
+        for img_path in image_files:
+            thumb_path = thumb_dir / f"{img_path.stem}.jpg"
+            if not thumb_path.exists():
+                img = cv2.imread(str(img_path))
+                if img is not None:
+                    h, w = img.shape[:2]
+                    scale = math.sqrt(500_000 / (h * w)) if (h*w) > 500_000 else 1.0
+                    if scale < 1.0:
+                        thumb = cv2.resize(img, (int(w*scale), int(h*scale)), interpolation=cv2.INTER_AREA)
+                        cv2.imwrite(str(thumb_path), thumb, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                    else:
+                        shutil.copy2(img_path, thumb_path)
+
         self.progress_queue.put({"total": len(image_files), "stage": "Analysis"})
         num_workers = 1 if self.params.disable_parallel or self.params.enable_face_filter else min(os.cpu_count() or 4, 8)
         with ThreadPoolExecutor(max_workers=num_workers) as executor:
@@ -914,6 +978,7 @@ class AppUI:
                 with gr.Group() as self.components['masking_options_group']:
                     self._create_component('dam4sam_model_name_input', 'dropdown', {'choices': ['sam21pp-L'], 'value': 'sam21pp-L', 'label': "DAM4SAM Model"})
                     self._create_component('person_detector_model_input', 'dropdown', {'choices': ['yolo11x.pt', 'yolo11s.pt'], 'value': 'yolo11x.pt', 'label': "Person Detector"})
+                    self._create_component('seed_strategy_input', 'dropdown', {'choices': ["Reference Face / Largest", "Largest Person", "Center-most Person"], 'value': config.UI_DEFAULTS['seed_strategy'], 'label': "Seed Strategy"})
                     self._create_component('scene_detect_input', 'checkbox', {'label': "Use Scene Detection", 'value': self.feature_status['scene_detection'], 'interactive': self.feature_status['scene_detection']})
 
         start_btn = gr.Button("🔬 Start Analysis", variant="primary")
@@ -958,7 +1023,7 @@ class AppUI:
                     self._create_component('show_mask_overlay_input', 'checkbox', {'label': "Show Mask Overlay", 'value': True})
                     self._create_component('overlay_alpha_slider', 'slider', {'label': "Overlay Alpha", 'minimum': 0.0, 'maximum': 1.0, 'value': 0.6, 'step': 0.1})
                 
-                self._create_component('results_gallery', 'gallery', {'columns': [4, 6, 8], 'rows': 2, 'height': 'auto', 'preview': True})
+                self._create_component('results_gallery', 'gallery', {'columns': [4, 6, 8], 'rows': 2, 'height': 'auto', 'preview': True, 'allow_preview': True, 'object_fit': 'contain'})
 
                 # Export and crop controls moved here
                 self._create_component('export_button', 'button', {'value': "📤 Export Kept Frames", 'variant': "primary"})
@@ -1016,7 +1081,8 @@ class AppUI:
             self.components['enable_face_filter_input'], self.components['face_ref_img_path_input'],
             self.components['face_ref_img_upload_input'], self.components['face_model_name_input'],
             self.components['enable_subject_mask_input'], self.components['dam4sam_model_name_input'],
-            self.components['person_detector_model_input'], self.components['scene_detect_input']
+            self.components['person_detector_model_input'], self.components['seed_strategy_input'], 
+            self.components['scene_detect_input']
         ]
         
         ana_outputs = [c for name, c in self.components.items() if name in ['start_analysis_button', 'stop_analysis_button', 'unified_log', 'unified_status', 'analysis_output_dir_state', 'analysis_metadata_path_state', 'filtering_tab']]
@@ -1026,7 +1092,6 @@ class AppUI:
     def _setup_filtering_handlers(self):
         c = self.components
         
-        # Define inputs for the main filter handler in a consistent order
         slider_keys = sorted(c['metric_sliders'].keys())
         slider_comps = [c['metric_sliders'][k] for k in slider_keys]
         filter_inputs = [
@@ -1034,20 +1099,21 @@ class AppUI:
             c['gallery_view_toggle'], c['show_mask_overlay_input'], c['overlay_alpha_slider']
         ] + slider_comps
 
-        # Define outputs
+        fast_filter_outputs = [c['filter_status_text'], c['results_gallery']]
+        
+        for control in slider_comps:
+            control.release(self.on_filters_changed_fast, filter_inputs, fast_filter_outputs)
+        
+        # Slower updates for other controls that should re-render plots
         plot_keys = config.QUALITY_METRICS + ["face_sim", "mask_area_pct"]
         plot_comps = [c['metric_plots'][k] for k in plot_keys]
-        filter_outputs = plot_comps + [c['filter_status_text'], c['results_gallery']]
+        full_filter_outputs = plot_comps + fast_filter_outputs
+        
+        for control in [c['gallery_view_toggle'], c['show_mask_overlay_input'], c['overlay_alpha_slider']]:
+            control.input(self.on_filters_changed, filter_inputs, full_filter_outputs)
 
-        # Connect all controls to the main handler
-        for control in [c['gallery_view_toggle'], c['show_mask_overlay_input'], c['overlay_alpha_slider']] + slider_comps:
-            control.input(self.on_filters_changed, filter_inputs, filter_outputs)
-
-        # Function to load data and trigger the first filter run
-        def load_and_trigger_update(metadata_path):
+        def load_and_trigger_update(metadata_path, *current_slider_values):
             all_frames, metric_values = self.load_and_prep_filter_data(metadata_path)
-            
-            # Create a dictionary of updates to enable/disable sliders and plots based on data
             visibility_updates = {}
             for k in plot_keys:
                 has_data = k in metric_values and any(v is not None for v in metric_values[k])
@@ -1057,33 +1123,20 @@ class AppUI:
                 if f"{k}_max" in c['metric_sliders']:
                     visibility_updates[c['metric_sliders'][f"{k}_max"]] = gr.update(visible=has_data)
             
-            # Manually get default slider values to run the first filter
-            slider_values = [s.value for s in slider_comps]
-            filter_updates = self.on_filters_changed(all_frames, metric_values, c['analysis_output_dir_state'].value, "Kept Frames", True, 0.4, *slider_values)
+            filter_updates = self.on_filters_changed(all_frames, metric_values, c['analysis_output_dir_state'].value, "Kept Frames", True, 0.6, *current_slider_values)
             
-            # Combine state updates with UI component updates
-            plot_updates_dict = {plot: val for plot, val in zip(plot_comps, filter_updates[:-2])}
-            status_update = filter_updates[-2]
-            gallery_update = filter_updates[-1]
-
             final_updates = {
-                c['all_frames_data_state']: all_frames,
-                c['per_metric_values_state']: metric_values,
-                c['filter_status_text']: status_update,
-                c['results_gallery']: gallery_update
+                c['all_frames_data_state']: all_frames, c['per_metric_values_state']: metric_values
             }
-            final_updates.update(plot_updates_dict)
+            final_updates.update({comp: val for comp, val in zip(full_filter_outputs, filter_updates)})
             final_updates.update(visibility_updates)
             return final_updates
 
-        # Build list of all components that load_and_trigger_update will modify
         load_outputs = [
-            c['all_frames_data_state'], c['per_metric_values_state'],
-            c['filter_status_text'], c['results_gallery']
-        ] + plot_comps + [c['metric_sliders'][k] for k in sorted(c['metric_sliders'].keys())]
+            c['all_frames_data_state'], c['per_metric_values_state']
+        ] + full_filter_outputs + [c['metric_sliders'][k] for k in slider_keys]
         
-        c['filtering_tab'].select(load_and_trigger_update, c['analysis_metadata_path_state'], load_outputs)
-        c['analysis_metadata_path_state'].change(load_and_trigger_update, c['analysis_metadata_path_state'], load_outputs)
+        c['filtering_tab'].select(load_and_trigger_update, [c['analysis_metadata_path_state']] + slider_comps, load_outputs)
         
         export_inputs = [
             c['all_frames_data_state'], c['analysis_output_dir_state'],
@@ -1093,7 +1146,7 @@ class AppUI:
 
     def _setup_config_handlers(self):
         c, cm = self.components, self.config_manager
-        ordered_comp_ids = ['method_input', 'interval_input', 'max_resolution', 'fast_scene_input', 'use_png_input', 'disable_parallel_input', 'resume_input', 'enable_face_filter_input', 'face_model_name_input', 'enable_subject_mask_input', 'dam4sam_model_name_input', 'person_detector_model_input', 'scene_detect_input']
+        ordered_comp_ids = ['method_input', 'interval_input', 'max_resolution', 'fast_scene_input', 'use_png_input', 'disable_parallel_input', 'resume_input', 'enable_face_filter_input', 'face_model_name_input', 'enable_subject_mask_input', 'dam4sam_model_name_input', 'person_detector_model_input', 'scene_detect_input', 'seed_strategy_input']
         config_controls = [c[comp_id] for comp_id in ordered_comp_ids]
         
         c['save_button'].click(lambda name, *v: cm.save_config(name, {ordered_comp_ids[i]:val for i,val in enumerate(v)}) or (f"Saved '{name}'", gr.update(choices=cm.list_configs())), [c['config_name_input']] + config_controls, [c['config_status'], c['config_dropdown']])
@@ -1161,7 +1214,7 @@ class AppUI:
                              disable_parallel, resume, enable_face_filter,
                              face_ref_img_path, face_ref_img_upload, face_model_name,
                              enable_subject_mask, dam4sam_model_name,
-                             person_detector_model, scene_detect):
+                             person_detector_model, seed_strategy, scene_detect):
         buttons = (self.components['start_analysis_button'], self.components['stop_analysis_button'])
         yield self._set_ui_state(buttons, "loading", "Starting analysis...") | {
             self.components['analysis_output_dir_state']: gr.update(),
@@ -1187,7 +1240,7 @@ class AppUI:
             enable_face_filter=enable_face_filter, face_ref_img_path=face_ref_full_path,
             face_model_name=face_model_name, enable_subject_mask=enable_subject_mask,
             dam4sam_model_name=dam4sam_model_name, person_detector_model=person_detector_model,
-            scene_detect=scene_detect
+            seed_strategy=seed_strategy, scene_detect=scene_detect
         )
         yield from self._run_task(AnalysisPipeline(params, Queue(), self.cancel_event).run)
 
@@ -1237,14 +1290,12 @@ class AppUI:
         status_text = "⏹️ Cancelled." if self.cancel_event.is_set() else f"❌ Error: {self.last_task_result.get('error')}" if 'error' in self.last_task_result else "✅ Complete."
         yield {self.components['unified_log']: "\n".join(log_buffer), self.components['unified_status']: status_text}
 
-    def histogram_with_thresholds(self, values, vmin, vmax, bins=50, title=""):
-        if values is None:
-            return None
-        values = np.asarray([v for v in values if v is not None])
-        if values.size == 0: return None
+    def histogram_with_thresholds(self, hist_data, vmin, vmax, title=""):
+        if hist_data is None: return None
+        counts, bins = hist_data
         
         fig = go.Figure()
-        fig.add_trace(go.Histogram(x=values, nbinsx=bins, marker_color="#7aa2ff", opacity=0.8, name="All Frames"))
+        fig.add_trace(go.Bar(x=bins[:-1], y=counts, marker_color="#7aa2ff", opacity=0.8, name="All Frames"))
         fig.add_vrect(x0=vmin, x1=vmax, fillcolor="#00cc66", opacity=0.15, line_width=0)
         fig.add_vline(x=vmin, line_color="#00cc66", line_width=2, name="Min")
         fig.add_vline(x=vmax, line_color="#00cc66", line_width=2, name="Max")
@@ -1303,24 +1354,25 @@ class AppUI:
 
         metric_values = {}
         for k in config.QUALITY_METRICS:
-            metric_values[k] = [f.get("metrics", {}).get(f"{k}_score") for f in all_frames]
+            values = np.asarray([f.get("metrics", {}).get(f"{k}_score") for f in all_frames if f.get("metrics", {}).get(f"{k}_score") is not None])
+            if values.size > 0:
+                metric_values[k] = values
+                metric_values[f"{k}_hist"] = np.histogram(values, bins=50, range=(0,100))
         if any("face_sim" in f and f.get("face_sim") is not None for f in all_frames):
-             metric_values["face_sim"] = [f.get("face_sim") for f in all_frames if f.get("face_sim") is not None]
+             values = np.asarray([f.get("face_sim") for f in all_frames if f.get("face_sim") is not None])
+             if values.size > 0:
+                 metric_values["face_sim"] = values
+                 metric_values["face_sim_hist"] = np.histogram(values, bins=50, range=(0,1))
         if any("mask_area_pct" in f for f in all_frames):
-             metric_values["mask_area_pct"] = [f.get("mask_area_pct") for f in all_frames]
+             values = np.asarray([f.get("mask_area_pct") for f in all_frames if f.get("mask_area_pct") is not None])
+             if values.size > 0:
+                 metric_values["mask_area_pct"] = values
+                 metric_values["mask_area_pct_hist"] = np.histogram(values, bins=50, range=(0,100))
         return all_frames, metric_values
 
-    def on_filters_changed(self, all_frames_data, per_metric_values, output_dir, gallery_view, show_overlay, overlay_alpha, *slider_values):
-        if not all_frames_data:
-            return (None,) * len(self.components['metric_plots']) + ("Run analysis to see results.", [])
-
-        slider_keys = sorted(self.components['metric_sliders'].keys())
-        filters = {key: val for key, val in zip(slider_keys, slider_values)}
-        filters["face_sim_enabled"] = "face_sim" in per_metric_values
-        filters["mask_area_enabled"] = "mask_area_pct" in per_metric_values
-        
+    def _update_gallery(self, all_frames_data, filters, output_dir, gallery_view, show_overlay, overlay_alpha):
         kept, rejected, counts, per_frame_reasons = self._apply_all_filters(all_frames_data, filters)
-
+        
         total_frames = len(all_frames_data)
         status_parts = [f"**Kept:** {len(kept)}/{total_frames}"]
         if counts:
@@ -1332,31 +1384,61 @@ class AppUI:
         preview_images = []
         if output_dir:
             output_path = Path(output_dir)
+            thumb_dir = output_path / "thumbs"
             for f_meta in frames_to_show[:100]:
-                frame_path = output_path / f_meta['filename']
-                if not frame_path.exists(): continue
-                img_bgr = cv2.imread(str(frame_path))
-                if img_bgr is None: continue
+                thumb_path = thumb_dir / f"{Path(f_meta['filename']).stem}.jpg"
+                if not thumb_path.exists(): continue
+                
+                caption = f"Reasons: {', '.join(per_frame_reasons.get(f_meta['filename'], []))}" if gallery_view == "Rejected Frames" else ""
 
                 if show_overlay and not f_meta.get("mask_empty", True) and (mask_name := f_meta.get("mask_path")):
+                    # For overlays, we need the full res image, not the thumb
+                    frame_path = output_path / f_meta['filename']
                     mask_path = output_path / "masks" / mask_name
-                    if mask_path.exists():
+                    if frame_path.exists() and mask_path.exists():
+                        img_bgr = cv2.imread(str(frame_path))
                         mask_gray = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
-                        img_bgr = render_mask_overlay(img_bgr, mask_gray, float(overlay_alpha))
+                        if img_bgr is not None and mask_gray is not None:
+                            img_bgr = render_mask_overlay(img_bgr, mask_gray, float(overlay_alpha))
+                            preview_images.append((cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB), caption))
+                        else:
+                             preview_images.append((str(thumb_path), caption))
+                    else:
+                        preview_images.append((str(thumb_path), caption))
+                else:
+                    preview_images.append((str(thumb_path), caption))
+        
+        return status_text, preview_images
 
-                img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
-                caption = f"Reasons: {', '.join(per_frame_reasons.get(f_meta['filename'], []))}" if gallery_view == "Rejected Frames" else ""
-                preview_images.append((Image.fromarray(img_rgb), caption))
+    def on_filters_changed_fast(self, all_frames_data, per_metric_values, output_dir, gallery_view, show_overlay, overlay_alpha, *slider_values):
+        if not all_frames_data: return "Run analysis to see results.", []
+        slider_keys = sorted(self.components['metric_sliders'].keys())
+        filters = {key: val for key, val in zip(slider_keys, slider_values)}
+        filters["face_sim_enabled"] = "face_sim" in per_metric_values
+        filters["mask_area_enabled"] = "mask_area_pct" in per_metric_values
+        status_text, gallery_images = self._update_gallery(all_frames_data, filters, output_dir, gallery_view, show_overlay, overlay_alpha)
+        return status_text, gallery_images
+
+    def on_filters_changed(self, all_frames_data, per_metric_values, output_dir, gallery_view, show_overlay, overlay_alpha, *slider_values):
+        if not all_frames_data:
+            return (gr.update(),) * len(self.components['metric_plots']) + ("Run analysis to see results.", [])
+
+        slider_keys = sorted(self.components['metric_sliders'].keys())
+        filters = {key: val for key, val in zip(slider_keys, slider_values)}
+        filters["face_sim_enabled"] = "face_sim" in per_metric_values
+        filters["mask_area_enabled"] = "mask_area_pct" in per_metric_values
+        
+        status_text, gallery_images = self._update_gallery(all_frames_data, filters, output_dir, gallery_view, show_overlay, overlay_alpha)
 
         plot_updates = []
         for k in config.QUALITY_METRICS + ["face_sim", "mask_area_pct"]:
             vmin = filters.get(f"{k}_min", 0)
             vmax = filters.get(f"{k}_max", 100) if k in config.QUALITY_METRICS else (1.0 if k == "face_sim" else 100)
             plot_updates.append(self.histogram_with_thresholds(
-                per_metric_values.get(k, []), vmin, vmax, title=""
+                per_metric_values.get(f"{k}_hist"), vmin, vmax, title=""
             ))
         
-        return tuple(plot_updates) + (status_text, preview_images)
+        return tuple(plot_updates) + (status_text, gallery_images)
 
     def export_kept_frames(self, all_frames_data, output_dir, enable_crop, crop_ars, crop_padding, *slider_values):
         if not all_frames_data: return "No metadata to export."
@@ -1480,4 +1562,3 @@ class AppUI:
 if __name__ == "__main__":
     check_dependencies()
     AppUI().build_ui().launch()
-
