@@ -526,7 +526,7 @@ class SubjectMasker:
 
         pool = sorted(candidates, key=lambda b: ((b[0]<=fx<=b[2] and b[1]<=fy<=b[3]), iou(b), b[4]), reverse=True)
         best_box = pool[0]
-        if not (best_box[0]<=fx<=b[2] and best_box[1]<=fy<=b[3]) and iou(best_box) < 0.1:
+        if not (best_box[0] <= fx <= best_box[2] and best_box[1] <= fy <= best_box[3]) and iou(best_box) < 0.1:
             return None
         return [best_box[0], best_box[1], best_box[2] - best_box[0], best_box[3] - best_box[1]]
 
@@ -1139,9 +1139,12 @@ class AppUI:
         
         # Fast updates on slider release and some other controls
         for control in slider_comps + [c['dedup_thresh_input'], c['gallery_view_toggle'], c['show_mask_overlay_input'], c['overlay_alpha_slider'], c['require_face_match_input']]:
-             control.release(self.on_filters_changed, fast_filter_inputs, fast_filter_outputs)
-             if hasattr(control, 'input'):
+            if hasattr(control, 'release'):
+                control.release(self.on_filters_changed, fast_filter_inputs, fast_filter_outputs)
+            if hasattr(control, 'input'):
                 control.input(self.on_filters_changed, fast_filter_inputs, fast_filter_outputs)
+            elif hasattr(control, 'change'):
+                control.change(self.on_filters_changed, fast_filter_inputs, fast_filter_outputs)
 
         def load_and_trigger_update(metadata_path, *current_slider_values):
             all_frames, metric_values = self.load_and_prep_filter_data(metadata_path)
