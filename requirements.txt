@@ -12,4 +12,6 @@ yt-dlp
 ultralytics
 huggingface_hub
 pytest
-plotly
+pyiqa
+matplotlib
+imagehash
