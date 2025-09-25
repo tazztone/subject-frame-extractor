@@ -388,7 +388,12 @@ class SubjectMasker:
         try:
             model_name = self.params.dam4sam_model_name
             logger.info(f"Initializing DAM4SAM tracker with model '{model_name}'...")
-            model_urls = {"sam21pp-L": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt"}
+            model_urls = {
+                "sam21pp-tiny": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt",
+                "sam21pp-small": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_small.pt",
+                "sam21pp-base+": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_base_plus.pt",
+                "sam21pp-large": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt"
+            }
             checkpoint_path = config.DIRS['models'] / Path(model_urls[model_name]).name
             checkpoint_path.parent.mkdir(exist_ok=True)
             download_model(model_urls[model_name], checkpoint_path, f"{model_name} model", 100_000_000)
@@ -996,7 +1001,7 @@ class AppUI:
                     self._create_component('face_ref_img_upload_input', 'file', {'label': "📤 Or Upload", 'type': "filepath"})
                 with gr.Group():
                     self._create_component('enable_subject_mask_input', 'checkbox', {'label': "Enable Subject-Only Metrics", 'value': self.feature_status['masking'], 'interactive': self.feature_status['masking']})
-                    self._create_component('dam4sam_model_name_input', 'dropdown', {'choices': ['sam21pp-L'], 'value': 'sam21pp-L', 'label': "DAM4SAM Model"})
+                    self._create_component('dam4sam_model_name_input', 'dropdown', {'choices': ['sam21pp-tiny', 'sam21pp-small', 'sam21pp-base+', 'sam21pp-large'], 'value': 'sam21pp-large', 'label': "DAM4SAM Model"})
                     self._create_component('person_detector_model_input', 'dropdown', {'choices': ['yolo11x.pt', 'yolo11s.pt'], 'value': 'yolo11x.pt', 'label': "Person Detector"})
                     self._create_component('seed_strategy_input', 'dropdown', {'choices': ["Reference Face / Largest", "Largest Person", "Center-most Person"], 'value': config.UI_DEFAULTS['seed_strategy'], 'label': "Seed Strategy"})
                     self._create_component('scene_detect_input', 'checkbox', {'label': "Use Scene Detection", 'value': self.feature_status['scene_detection'], 'interactive': self.feature_status['scene_detection']})
