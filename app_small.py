@@ -34,14 +34,8 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import io
-try:
-    import imagehash
-except ImportError:
-    imagehash = None
-try:
-    import pyiqa
-except ImportError:
-    pyiqa = None
+import imagehash
+import pyiqa
 
 # --- Unified Logging & Configuration ---
 class Config:
@@ -55,11 +49,11 @@ class Config:
     UI_DEFAULTS = {
         "method": "all", "interval": 5.0, "max_resolution": "maximum available", "fast_scene": False,
         "resume": False, "use_png": True, "disable_parallel": False, "enable_face_filter": True,
-        "face_model_name": "buffalo_l", "quality_thresh": 12.0, "face_thresh": 0.5,
+        "face_model_name": "buffalo_l", "quality_thresh": 12.0, "face_thresh": 0,
         "enable_subject_mask": True, "scene_detect": True, "dam4sam_model_name": "sam21pp-L",
         "person_detector_model": "yolo11x.pt",
         "seed_strategy": "Reference Face / Largest",
-        "nth_frame": 10,
+        "nth_frame": 5,
         "require_face_match": False, "enable_dedup": True, "dedup_thresh": 5,
     }
     MIN_MASK_AREA_PCT = 1.0
@@ -114,8 +108,8 @@ def get_feature_status():
         'scene_detection': True, 'masking': masking_libs_ok and cuda_available,
         'masking_libs_installed': masking_libs_ok, 'cuda_available': cuda_available,
         'numba_acceleration': True, 'person_detection': True,
-        'perceptual_hashing': imagehash is not None,
-        'pyiqa_available': pyiqa is not None,
+        'perceptual_hashing': True,
+        'pyiqa_available': True,
     }
 
 def check_dependencies():
@@ -760,7 +754,7 @@ class AnalysisPipeline(Pipeline):
 
     def _initialize_niqe_metric(self):
         """Initialize NIQE metric for quality assessment"""
-        if self.niqe_metric is None and self.features['pyiqa_available']:
+        if self.niqe_metric is None:
             try:
                 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
                 self.niqe_metric = pyiqa.create_metric('niqe', device=device)
@@ -930,8 +924,8 @@ class AnalysisPipeline(Pipeline):
             if frame.max_face_confidence is not None:
                 meta["face_conf"] = frame.max_face_confidence
             meta.update(mask_meta)
-            
-            if imagehash and self.params.enable_dedup:
+
+            if self.params.enable_dedup:
                 pil_img = Image.fromarray(cv2.cvtColor(image_data, cv2.COLOR_BGR2RGB))
                 meta['phash'] = str(imagehash.phash(pil_img))
 
@@ -1526,7 +1520,7 @@ class AppUI:
             kept_mask &= ~combined_mask
 
         # Deduplication on the remaining kept frames
-        if filters.get("enable_dedup") and imagehash:
+        if filters.get("enable_dedup"):
             kept_indices = np.where(kept_mask)[0]
             if len(kept_indices) > 1:
                 sorted_kept = sorted([(filenames[i], i) for i in kept_indices])
