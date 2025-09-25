@@ -207,13 +207,20 @@ def test_apply_filters_and_export(tmp_path):
         f.write(json.dumps(entry2) + "\n")
 
     ui = app.AppUI()
+    # Stub components for headless test
+    ui.components = {}
+    ui.components['metric_sliders'] = {}
+    for k in app.config.QUALITY_METRICS:
+        ui.components['metric_sliders'][f"{k}_min"] = None
+        ui.components['metric_sliders'][f"{k}_max"] = None
+
     all_frames, _ = ui.load_and_prep_filter_data(str(md))
 
     # Export with sliders set to keep scores >= 10 for all metrics
-    # Order: (min,max) for each metric in config.QUALITY_METRICS
+    # Order: max,min for each metric in alphabetical order (as sorted keys)
     slider_values = []
     for _ in app.config.QUALITY_METRICS:
-        slider_values.extend([10, 100])
+        slider_values.extend([100, 10])  # max, min
 
     msg = ui.export_kept_frames(
         all_frames,

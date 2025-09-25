@@ -1034,7 +1034,7 @@ class AppUI:
                 all_metrics = config.QUALITY_METRICS + ["face_sim", "mask_area_pct"]
                 for k in all_metrics:
                     with gr.Accordion(k.replace('_', ' ').title(), open=k in config.QUALITY_METRICS):
-                        self.components['metric_plots'][k] = self._create_component(f'plot_{k}', 'plot', {'label': f"{k} Distribution", 'visible': False, 'config': {'staticPlot': True}})
+                        self.components['metric_plots'][k] = self._create_component(f'plot_{k}', 'plot', {'label': f"{k} Distribution", 'visible': False,})
                         with gr.Row():
                             if k == "face_sim":
                                 self.components['metric_sliders'][f"{k}_min"] = self._create_component(f'slider_{k}_min', 'slider', {'label': "Min", 'minimum': 0.0, 'maximum': 1.0, 'value': 0.5, 'step': 0.01, 'interactive': True, 'visible': False})
