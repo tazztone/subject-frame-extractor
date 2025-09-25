@@ -38,14 +38,18 @@ try:
     import imagehash
 except ImportError:
     imagehash = None
+try:
+    import pyiqa
+except ImportError:
+    pyiqa = None
 
 # --- Unified Logging & Configuration ---
 class Config:
     BASE_DIR = Path(__file__).parent
     DIRS = {'logs': BASE_DIR / "logs", 'configs': BASE_DIR / "configs", 'models': BASE_DIR / "models", 'downloads': BASE_DIR / "downloads"}
     LOG_FILE = DIRS['logs'] / "frame_extractor.log"
-    QUALITY_METRICS = ["sharpness", "edge_strength", "contrast", "brightness", "entropy"]
-    QUALITY_WEIGHTS = {"sharpness": 30, "edge_strength": 20, "contrast": 20, "brightness": 10, "entropy": 20}
+    QUALITY_METRICS = ["sharpness", "edge_strength", "contrast", "brightness", "entropy", "niqe"]
+    QUALITY_WEIGHTS = {"sharpness": 25, "edge_strength": 15, "contrast": 15, "brightness": 10, "entropy": 15, "niqe": 20}
     NORMALIZATION_CONSTANTS = {"sharpness": 1000, "edge_strength": 100}
     QUALITY_DOWNSCALE_FACTOR = 0.25
     UI_DEFAULTS = {
@@ -111,6 +115,7 @@ def get_feature_status():
         'masking_libs_installed': masking_libs_ok, 'cuda_available': cuda_available,
         'numba_acceleration': True, 'person_detection': True,
         'perceptual_hashing': imagehash is not None,
+        'pyiqa_available': pyiqa is not None,
     }
 
 def check_dependencies():
@@ -248,6 +253,7 @@ def compute_entropy(hist):
 class FrameMetrics:
     quality_score: float = 0.0; sharpness_score: float = 0.0; edge_strength_score: float = 0.0;
     contrast_score: float = 0.0; brightness_score: float = 0.0; entropy_score: float = 0.0
+    niqe_score: float = 0.0
 
 @dataclass
 class Frame:
@@ -256,7 +262,7 @@ class Frame:
     face_similarity_score: float | None = None; max_face_confidence: float | None = None
     error: str | None = None
 
-    def calculate_quality_metrics(self, mask: np.ndarray | None = None):
+    def calculate_quality_metrics(self, mask: np.ndarray | None = None, niqe_metric=None):
         try:
             gray = cv2.cvtColor(self.image_data, cv2.COLOR_BGR2GRAY)
             active_mask = (mask > 128).astype(np.uint8) if mask is not None and mask.ndim == 2 else None
@@ -283,10 +289,38 @@ class Frame:
             hist = cv2.calcHist([gray], [0], active_mask, [256], [0, 256]).flatten()
             entropy = compute_entropy(hist)
             
+            # NIQE calculation
+            niqe_score = 0.0
+            if niqe_metric is not None:
+                try:
+                    # NIQE expects RGB image in range [0, 1]
+                    rgb_image = cv2.cvtColor(self.image_data, cv2.COLOR_BGR2RGB)
+                    
+                    # Apply mask if available
+                    if active_mask is not None:
+                        # Create 3-channel mask
+                        mask_3ch = np.stack([active_mask] * 3, axis=-1) > 0
+                        rgb_image = np.where(mask_3ch, rgb_image, 0)
+                    
+                    # Convert to tensor format expected by PyIQA
+                    import torch
+                    img_tensor = torch.from_numpy(rgb_image).float() / 255.0
+                    img_tensor = img_tensor.permute(2, 0, 1).unsqueeze(0)  # Add batch dimension
+                    
+                    with torch.no_grad():
+                        niqe_raw = float(niqe_metric(img_tensor))
+                        # NIQE: lower is better, typically ranges from 0-20+
+                        # Normalize to 0-100 scale (higher is better for consistency)
+                        niqe_score = max(0, min(100, (10 - niqe_raw) * 10))  # Invert and scale
+                
+                except Exception as e:
+                    logger.warning(f"NIQE calculation failed for frame {self.frame_number}: {e}")
+
             scores_norm = {
                 "sharpness": min(sharpness / config.NORMALIZATION_CONSTANTS["sharpness"], 1.0),
                 "edge_strength": min(edge_strength / config.NORMALIZATION_CONSTANTS["edge_strength"], 1.0),
-                "contrast": min(contrast, 2.0) / 2.0, "brightness": brightness, "entropy": entropy
+                "contrast": min(contrast, 2.0) / 2.0, "brightness": brightness, "entropy": entropy,
+                "niqe": niqe_score / 100.0  # Normalize to 0-1 range
             }
             self.metrics = FrameMetrics(**{f"{k}_score": float(v * 100) for k, v in scores_norm.items()})
             self.metrics.quality_score = float(sum(scores_norm[k] * (config.QUALITY_WEIGHTS[k] / 100.0) for k in config.QUALITY_METRICS) * 100)
@@ -722,6 +756,18 @@ class AnalysisPipeline(Pipeline):
         self.write_lock = threading.Lock(); self.gpu_lock = threading.Lock()
         self.face_analyzer = None; self.reference_embedding = None; self.mask_metadata = {}
         self.features = get_feature_status()
+        self.niqe_metric = None
+
+    def _initialize_niqe_metric(self):
+        """Initialize NIQE metric for quality assessment"""
+        if self.niqe_metric is None and self.features['pyiqa_available']:
+            try:
+                device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+                self.niqe_metric = pyiqa.create_metric('niqe', device=device)
+                logger.info("NIQE metric initialized successfully")
+            except Exception as e:
+                logger.warning(f"Failed to initialize NIQE metric: {e}")
+                self.niqe_metric = None
 
     def run(self):
         try:
@@ -860,6 +906,10 @@ class AnalysisPipeline(Pipeline):
     def _process_single_frame(self, image_path):
         if self.cancel_event.is_set(): return
         try:
+            # Initialize NIQE if not already done
+            if not hasattr(self, 'niqe_metric') or self.niqe_metric is None:
+                self._initialize_niqe_metric()
+
             image_data = cv2.imread(str(image_path))
             if image_data is None: raise ValueError("Could not read image.")
             
@@ -869,7 +919,7 @@ class AnalysisPipeline(Pipeline):
             frame = Frame(image_data, frame_num)
             mask_meta = self.mask_metadata.get(image_path.name, {})
             mask = cv2.imread(mask_meta["mask_path"], cv2.IMREAD_GRAYSCALE) if mask_meta.get("mask_path") else None
-            frame.calculate_quality_metrics(mask=mask)
+            frame.calculate_quality_metrics(mask=mask, niqe_metric=self.niqe_metric)
 
             if self.params.enable_face_filter and self.reference_embedding is not None and self.face_analyzer:
                 self._analyze_face_similarity(frame)
@@ -1022,7 +1072,7 @@ class AppUI:
             with gr.Column(scale=1):
                 gr.Markdown("### 🎛️ Filter Controls")
                 self._create_component('auto_pctl_input', 'slider', {
-                    'label': 'Auto-Threshold Percentile', 'minimum': 50, 'maximum': 99, 'value': 75, 'step': 1
+                    'label': 'Auto-Threshold Percentile', 'minimum': 1, 'maximum': 99, 'value': 75, 'step': 1
                 })
                 with gr.Row():
                     self._create_component('apply_auto_button', 'button', {'value': 'Apply Percentile to Mins'})
