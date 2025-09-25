@@ -1,9 +1,13 @@
 @echo off
 setlocal
 
-REM Clone DAM4SAM if not present
+REM Add DAM4SAM as submodule if not present
 if not exist DAM4SAM (
-  git clone https://github.com/tazztone/DAM4SAM.git
+    git submodule add https://github.com/tazztone/DAM4SAM.git DAM4SAM
+    git submodule update --init --recursive
+) else (
+    REM Update existing submodule
+    git submodule update --remote DAM4SAM
 )
 
 REM Create and activate venv

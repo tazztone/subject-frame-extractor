@@ -1,0 +1,3 @@
+[submodule "DAM4SAM"]
+    path = DAM4SAM
+    url = https://github.com/tazztone/DAM4SAM.git
