@@ -25,9 +25,9 @@ start http://localhost:7860
 
 REM Run the app_small.py application
 echo.
-echo Starting Frame Extractor and Analyzer (Small Version)...
+echo Starting Subject Frame Extractor...
 echo The browser window should open automatically.
-echo If the app loads successfully, you'll see the interface in your browser.
+echo If the app loads successfully, you'll see the interface in your browser (you may have to reload the page).
 echo.
 python app_small.py
 
