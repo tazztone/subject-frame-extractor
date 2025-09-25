@@ -30,7 +30,10 @@ from DAM4SAM.dam4sam_tracker import DAM4SAMTracker
 from insightface.app import FaceAnalysis
 from numba import njit, prange
 import yaml
-import plotly.graph_objects as go
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import io
 try:
     import imagehash
 except ImportError:
@@ -523,7 +526,7 @@ class SubjectMasker:
 
         pool = sorted(candidates, key=lambda b: ((b[0]<=fx<=b[2] and b[1]<=fy<=b[3]), iou(b), b[4]), reverse=True)
         best_box = pool[0]
-        if not (best_box[0]<=fx<=best_box[2] and best_box[1]<=fy<=best_box[3]) and iou(best_box) < 0.1:
+        if not (best_box[0]<=fx<=b[2] and best_box[1]<=fy<=b[3]) and iou(best_box) < 0.1:
             return None
         return [best_box[0], best_box[1], best_box[2] - best_box[0], best_box[3] - best_box[1]]
 
@@ -959,9 +962,11 @@ class AppUI:
         return demo
 
     def _create_component(self, name, comp_type, kwargs):
-        comp_map = {'button': gr.Button, 'textbox': gr.Textbox, 'dropdown': gr.Dropdown, 'slider': gr.Slider,
-                    'checkbox': gr.Checkbox, 'file': gr.File, 'radio': gr.Radio, 'gallery': gr.Gallery,
-                    'plot': gr.Plot, 'markdown': gr.Markdown}
+        comp_map = {
+            'button': gr.Button, 'textbox': gr.Textbox, 'dropdown': gr.Dropdown, 'slider': gr.Slider,
+            'checkbox': gr.Checkbox, 'file': gr.File, 'radio': gr.Radio, 'gallery': gr.Gallery,
+            'plot': gr.Plot, 'markdown': gr.Markdown, 'html': gr.HTML
+        }
         self.components[name] = comp_map[comp_type](**kwargs)
         return self.components[name]
 
@@ -1034,7 +1039,7 @@ class AppUI:
                 all_metrics = config.QUALITY_METRICS + ["face_sim", "mask_area_pct"]
                 for k in all_metrics:
                     with gr.Accordion(k.replace('_', ' ').title(), open=k in config.QUALITY_METRICS):
-                        self.components['metric_plots'][k] = self._create_component(f'plot_{k}', 'plot', {'label': f"{k} Distribution", 'visible': False,})
+                        self.components['metric_plots'][k] = self._create_component(f'plot_{k}', 'html', {'visible': False})
                         with gr.Row():
                             if k == "face_sim":
                                 self.components['metric_sliders'][f"{k}_min"] = self._create_component(f'slider_{k}_min', 'slider', {'label': "Min", 'minimum': 0.0, 'maximum': 1.0, 'value': 0.5, 'step': 0.01, 'interactive': True, 'visible': False})
@@ -1072,9 +1077,13 @@ class AppUI:
 
     def _create_event_handlers(self):
         self.components.update({
-            'extracted_video_path_state': gr.State(""), 'extracted_frames_dir_state': gr.State(""),
-            'analysis_output_dir_state': gr.State(""), 'analysis_metadata_path_state': gr.State(""),
-            'all_frames_data_state': gr.State([]), 'per_metric_values_state': gr.State({})
+            'extracted_video_path_state': gr.State(""),
+            'extracted_frames_dir_state': gr.State(""),
+            'analysis_output_dir_state': gr.State(""),
+            'analysis_metadata_path_state': gr.State(""),
+            'all_frames_data_state': gr.State([]),
+            'per_metric_values_state': gr.State({}),
+            'metric_svgs_state': gr.State({})
         })
         self._setup_visibility_toggles()
         self._setup_pipeline_handlers()
@@ -1119,8 +1128,8 @@ class AppUI:
         slider_keys = sorted(c['metric_sliders'].keys())
         slider_comps = [c['metric_sliders'][k] for k in slider_keys]
         
-        # Consolidate all filter inputs
-        filter_inputs = [
+        # Consolidate all filter inputs for fast path
+        fast_filter_inputs = [
             c['all_frames_data_state'], c['per_metric_values_state'], c['analysis_output_dir_state'],
             c['gallery_view_toggle'], c['show_mask_overlay_input'], c['overlay_alpha_slider'],
             c['require_face_match_input'], c['dedup_thresh_input']
@@ -1128,63 +1137,93 @@ class AppUI:
 
         fast_filter_outputs = [c['filter_status_text'], c['results_gallery']]
         
-        # Fast updates on slider release
-        for control in slider_comps + [c['dedup_thresh_input']]:
-            control.release(self.on_filters_changed_fast, filter_inputs, fast_filter_outputs)
-        
-        plot_keys = config.QUALITY_METRICS + ["face_sim", "mask_area_pct"]
-        plot_comps = [c['metric_plots'][k] for k in plot_keys]
-        full_filter_outputs = plot_comps + fast_filter_outputs
-        
-        # Slower updates for other controls
-        for control in [c['gallery_view_toggle'], c['show_mask_overlay_input'], c['overlay_alpha_slider'], c['require_face_match_input']]:
-            control.input(self.on_filters_changed, filter_inputs, full_filter_outputs)
+        # Fast updates on slider release and some other controls
+        for control in slider_comps + [c['dedup_thresh_input'], c['gallery_view_toggle'], c['show_mask_overlay_input'], c['overlay_alpha_slider'], c['require_face_match_input']]:
+             control.release(self.on_filters_changed, fast_filter_inputs, fast_filter_outputs)
+             if hasattr(control, 'input'):
+                control.input(self.on_filters_changed, fast_filter_inputs, fast_filter_outputs)
 
-        # Tab selection logic
         def load_and_trigger_update(metadata_path, *current_slider_values):
             all_frames, metric_values = self.load_and_prep_filter_data(metadata_path)
-            
-            # Create a dict of all default filter values for the initial run
-            # Note: The *current_slider_values passed here might not be defaults if user fiddled before loading
-            # It's better to construct the filter dict manually from defaults.
-            default_filters = { f"slider_{k}_min": s.value for k,s in c['metric_sliders'].items() if k.endswith('_min')}
-            default_filters.update({ f"slider_{k}_max": s.value for k,s in c['metric_sliders'].items() if k.endswith('_max')})
-            default_filters['require_face_match_input'] = c['require_face_match_input'].value
-            default_filters['dedup_thresh_input'] = c['dedup_thresh_input'].value
+            svgs = self.build_all_metric_svgs(metric_values)
 
-            # This is complex because Gradio's state management is tricky. We'll simplify.
-            # We will pass all filter components to the load function.
-            
+            # Visibility + initial values for each metric plot
+            plot_keys = config.QUALITY_METRICS + ["face_sim", "mask_area_pct"]
             visibility_updates = {}
             for k in plot_keys:
                 has_data = k in metric_values and len(metric_values.get(k, [])) > 0
-                visibility_updates[c['metric_plots'][k]] = gr.update(visible=has_data)
+                comp = self.components['metric_plots'][k]
+                visibility_updates[comp] = gr.update(visible=has_data, value=svgs.get(k, ""))
+                
+                # Also manage slider visibility
                 if f"{k}_min" in c['metric_sliders']:
                     visibility_updates[c['metric_sliders'][f"{k}_min"]] = gr.update(visible=has_data)
-                if k == "face_sim" and 'require_face_match_input' in c:
-                     visibility_updates[c['require_face_match_input']] = gr.update(visible=has_data)
                 if f"{k}_max" in c['metric_sliders']:
                     visibility_updates[c['metric_sliders'][f"{k}_max"]] = gr.update(visible=has_data)
+                if k == "face_sim" and 'require_face_match_input' in c:
+                     visibility_updates[c['require_face_match_input']] = gr.update(visible=has_data)
 
-            # Manually get all current filter values to run the first filter
-            all_filter_vals = [s.value for s in slider_comps]
-            all_filter_vals.insert(0, c['dedup_thresh_input'].value)
-            all_filter_vals.insert(0, c['require_face_match_input'].value)
+            # Get default values for all filter inputs to run the initial filter
+            all_filter_vals = [
+                c['require_face_match_input'].value, 
+                c['dedup_thresh_input'].value
+            ] + [s.value for s in slider_comps]
 
-            filter_updates = self.on_filters_changed(all_frames, metric_values, c['analysis_output_dir_state'].value, "Kept Frames", True, 0.6, *all_filter_vals)
+            # Prepare gallery/status once on load
+            filter_updates = self.on_filters_changed(
+                all_frames, metric_values, c['analysis_output_dir_state'].value,
+                "Kept Frames", True, 0.6,  # gallery view, overlay, alpha
+                *all_filter_vals
+            )
 
-            final_updates = { c['all_frames_data_state']: all_frames, c['per_metric_values_state']: metric_values }
-            final_updates.update({comp: val for comp, val in zip(full_filter_outputs, filter_updates)})
+            final_updates = {
+                self.components['all_frames_data_state']: all_frames,
+                self.components['per_metric_values_state']: metric_values,
+                self.components['metric_svgs_state']: svgs,
+                self.components['filter_status_text']: filter_updates[0],
+                self.components['results_gallery']: filter_updates[1]
+            }
             final_updates.update(visibility_updates)
-            return final_updates
+            
+            # This must return a list in the order of the `load_outputs`
+            load_outputs_keys = ['all_frames_data_state', 'per_metric_values_state', 'metric_svgs_state', 'filter_status_text', 'results_gallery']
+            for k in plot_keys: load_outputs_keys.append(f'plot_{k}')
+            for k in slider_keys: load_outputs_keys.append(f'slider_{k}')
+            if 'require_face_match_input' in c: load_outputs_keys.append('require_face_match_input')
+            
+            # Map the final_updates dictionary to the output components
+            # This is complex because Gradio needs a flat list of return values
+            # Build the return list based on the order of load_outputs
+            output_values = []
+            
+            # State components
+            output_values.append(final_updates[c['all_frames_data_state']])
+            output_values.append(final_updates[c['per_metric_values_state']])
+            output_values.append(final_updates[c['metric_svgs_state']])
+            
+            # Status and Gallery
+            output_values.append(final_updates[c['filter_status_text']])
+            output_values.append(final_updates[c['results_gallery']])
 
+            # Plots and Sliders
+            for k in plot_keys: output_values.append(final_updates[c['metric_plots'][k]])
+            for sk in slider_keys: output_values.append(final_updates.get(c['metric_sliders'][sk], gr.update()))
+            if 'require_face_match_input' in c: output_values.append(final_updates.get(c['require_face_match_input'], gr.update()))
+
+            return output_values
+        
         load_inputs = [c['analysis_metadata_path_state']] + [c['require_face_match_input'], c['dedup_thresh_input']] + slider_comps
-        load_outputs = [c['all_frames_data_state'], c['per_metric_values_state']] + full_filter_outputs + list(c['metric_sliders'].values()) + [c.get('require_face_match_input')]
+        
+        load_outputs = [
+            c['all_frames_data_state'], c['per_metric_values_state'], c['metric_svgs_state'],
+            c['filter_status_text'], c['results_gallery']
+        ] + [c['metric_plots'][k] for k in config.QUALITY_METRICS + ["face_sim", "mask_area_pct"]] + list(c['metric_sliders'].values())
+        if 'require_face_match_input' in c:
+            load_outputs.append(c['require_face_match_input'])
+        
         c['filtering_tab'].select(load_and_trigger_update, load_inputs, [item for item in load_outputs if item is not None])
-
-        # Also run when analysis metadata becomes available
         c['analysis_metadata_path_state'].change(load_and_trigger_update, load_inputs, [item for item in load_outputs if item is not None])
-
+        
         # Export and other buttons
         export_inputs = [
             c['all_frames_data_state'], c['analysis_output_dir_state'], c['enable_crop_input'], 
@@ -1200,8 +1239,8 @@ class AppUI:
             [c['per_metric_values_state'], c['auto_pctl_input']],
             list(c['metric_sliders'].values())
         ).then(
-            self.on_filters_changed_fast,
-            filter_inputs,
+            self.on_filters_changed,
+            fast_filter_inputs,
             fast_filter_outputs
         )
 
@@ -1353,19 +1392,37 @@ class AppUI:
         status_text = "⏹️ Cancelled." if self.cancel_event.is_set() else f"❌ Error: {self.last_task_result.get('error')}" if 'error' in self.last_task_result else "✅ Complete."
         yield {self.components['unified_log']: "\n".join(log_buffer), self.components['unified_status']: status_text}
 
-    def histogram_with_thresholds(self, hist_data, vmin, vmax, title=""):
-        if hist_data is None: return None
+    def histogram_svg(self, hist_data, title=""):
+        if hist_data is None:
+            return ""
         counts, bins = hist_data
-        fig = go.Figure()
-        fig.add_trace(go.Bar(x=bins[:-1], y=counts, marker_color="#7aa2ff", opacity=0.85, name="All"))
-        fig.add_vrect(x0=vmin, x1=vmax, fillcolor="#00cc66", opacity=0.18, line_width=0)
-        fig.update_layout(
-            title_text=title, title_x=0.5, height=240,
-            margin=dict(l=6, r=6, t=18, b=6),
-            bargap=0.02, showlegend=False, uirevision="keep",
-            modebar_remove=['zoom','select','lasso2d','autoScale2d','zoomIn2d','zoomOut2d','resetScale2d','toImage']
-        )
-        return fig
+        fig, ax = plt.subplots(figsize=(4.6, 2.2), dpi=120)
+        ax.bar(bins[:-1], counts, width=np.diff(bins), color="#7aa2ff", alpha=0.85, align="edge")
+        ax.grid(axis="y", alpha=0.2)
+        ax.margins(x=0)
+        for side in ("top", "right"):
+            ax.spines[side].set_visible(False)
+        ax.tick_params(labelsize=8)
+        ax.set_title(title)
+        buf = io.StringIO()
+        fig.savefig(buf, format="svg", bbox_inches="tight")
+        plt.close(fig)
+        return buf.getvalue()
+
+    def build_all_metric_svgs(self, per_metric_values):
+        svgs = {}
+        # 0–100 metrics
+        for k in config.QUALITY_METRICS:
+            h = per_metric_values.get(f"{k}_hist")
+            if h:
+                svgs[k] = self.histogram_svg(h, title="")
+        # 0–1 face similarity
+        if per_metric_values.get("face_sim_hist"):
+            svgs["face_sim"] = self.histogram_svg(per_metric_values["face_sim_hist"], title="")
+        # 0–100 mask area
+        if per_metric_values.get("mask_area_pct_hist"):
+            svgs["mask_area_pct"] = self.histogram_svg(per_metric_values["mask_area_pct_hist"], title="")
+        return svgs
 
     @staticmethod
     def _apply_all_filters_vectorized(all_frames_data, filters):
@@ -1543,21 +1600,11 @@ class AppUI:
         )
         return status_text, gallery_update
 
-    def on_filters_changed_fast(self, all_frames_data, per_metric_values, output_dir, gallery_view, show_overlay, overlay_alpha, require_face_match, dedup_thresh, *slider_values):
-        if not all_frames_data: return "Run analysis to see results.", []
-        slider_keys = sorted(self.components['metric_sliders'].keys())
-        filters = {key: val for key, val in zip(slider_keys, slider_values)}
-        filters.update({"require_face_match": require_face_match, "dedup_thresh": dedup_thresh,
-                        "face_sim_enabled": bool(per_metric_values.get("face_sim")),
-                        "mask_area_enabled": bool(per_metric_values.get("mask_area_pct")),
-                        "enable_dedup": any('phash' in f for f in all_frames_data) if all_frames_data else False})
-        status_text, gallery_update = self._update_gallery(all_frames_data, filters, output_dir, gallery_view, show_overlay, overlay_alpha)
-        return status_text, gallery_update
-
     def on_filters_changed(self, all_frames_data, per_metric_values, output_dir, gallery_view, show_overlay, overlay_alpha, require_face_match, dedup_thresh, *slider_values):
         if not all_frames_data:
-            return (gr.update(),) * len(self.components['metric_plots']) + ("Run analysis to see results.", [])
-
+            # Same output arity: status, gallery
+            return "Run analysis to see results.", []
+        
         slider_keys = sorted(self.components['metric_sliders'].keys())
         filters = {key: val for key, val in zip(slider_keys, slider_values)}
         filters.update({"require_face_match": require_face_match, "dedup_thresh": dedup_thresh,
@@ -1566,16 +1613,9 @@ class AppUI:
                         "enable_dedup": any('phash' in f for f in all_frames_data) if all_frames_data else False})
         
         status_text, gallery_update = self._update_gallery(all_frames_data, filters, output_dir, gallery_view, show_overlay, overlay_alpha)
-
-        plot_updates = []
-        for k in config.QUALITY_METRICS + ["face_sim", "mask_area_pct"]:
-            vmin = filters.get(f"{k}_min", 0)
-            vmax = filters.get(f"{k}_max", 100) if k in config.QUALITY_METRICS else (1.0 if k == "face_sim" else 100)
-            plot_updates.append(self.histogram_with_thresholds(
-                per_metric_values.get(f"{k}_hist"), vmin, vmax, title=""
-            ))
         
-        return tuple(plot_updates) + (status_text, gallery_update)
+        # Plots are no longer updated here
+        return status_text, gallery_update
 
     def export_kept_frames(self, all_frames_data, output_dir, enable_crop, crop_ars, crop_padding, require_face_match, dedup_thresh, *slider_values):
         if not all_frames_data: return "No metadata to export."
@@ -1649,7 +1689,7 @@ class AppUI:
                 elif k == 'mask_area_pct_min': slider_defaults.append(config.MIN_MASK_AREA_PCT)
                 else: slider_defaults.append(0.0)
 
-            status_text, gallery_update = self.on_filters_changed_fast(
+            status_text, gallery_update = self.on_filters_changed(
                 all_frames_data,
                 per_metric_values,
                 output_dir,
