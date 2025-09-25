@@ -50,6 +50,11 @@ if exist requirements.txt (
   uv pip install -r requirements.txt
 )
 pip install -e .
+
+REM Build SAM2 C++ extensions
+echo Building SAM2 C++ extensions...
+python setup.py build_ext --inplace
+
 popd
 
 REM 5. Add DAM4SAM to the Python path for the venv
