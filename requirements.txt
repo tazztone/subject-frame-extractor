@@ -15,4 +15,9 @@ pytest
 pyiqa
 matplotlib
 imagehash
+
+# for groundingdino below
 wheel
+defusedxml==0.7.1                                                                                                                                     
+pycocotools==2.0.10
+supervision==0.26.1

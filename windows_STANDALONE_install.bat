@@ -62,9 +62,8 @@ goto :end
 
 :heavy
 rem Heavy installs last
-set "TORCH_INDEX_URL=https://download.pytorch.org/whl/cu128"
-echo Installing PyTorch from %TORCH_INDEX_URL% ...
-uv pip install torch torchvision --index-url %TORCH_INDEX_URL% || goto :end
+echo Installing PyTorch 
+uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128 || goto :end
 
 rem Optional CUDA_HOME detection
 if exist "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8" (
