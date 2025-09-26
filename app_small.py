@@ -25,6 +25,8 @@ import yt_dlp as ytdlp
 from scenedetect import detect, ContentDetector
 from PIL import Image
 import torch
+from torchvision.ops import box_convert  # add import
+import tempfile
 from ultralytics import YOLO
 from DAM4SAM.dam4sam_tracker import DAM4SAMTracker
 from insightface.app import FaceAnalysis
@@ -36,6 +38,21 @@ import matplotlib.pyplot as plt
 import io
 import imagehash
 import pyiqa
+
+# --- Grounded-SAM-2 Imports (will resolve via .pth) ---
+try:
+    from grounding_dino.groundingdino.util.inference import (
+        load_model as gdino_load_model,
+        load_image as gdino_load_image,
+        predict as gdino_predict,
+    )
+    from sam2.build_sam import build_sam2
+    from sam2.sam2_image_predictor import SAM2ImagePredictor
+    GROUNDED_SAM_AVAILABLE = True
+except ImportError as e:
+    GROUNDED_SAM_AVAILABLE = False
+    print(f"Warning: Grounded-SAM-2 components not found. Text prompting will be disabled. Error: {e}")
+
 
 # --- Unified Logging & Configuration ---
 class Config:
@@ -55,8 +72,17 @@ class Config:
         "seed_strategy": "Reference Face / Largest",
         "nth_frame": 5,
         "require_face_match": False, "enable_dedup": True, "dedup_thresh": 5,
+        "text_prompt": "", "prompt_type_for_video": "box",
     }
     MIN_MASK_AREA_PCT = 1.0
+
+    # Grounding DINO defaults (paths relative to submodule; change if desired)
+    GROUNDING_DINO_CONFIG = (BASE_DIR / "Grounded-SAM-2" / "grounding_dino" /
+                             "groundingdino" / "config" / "GroundingDINO_SwinT_OGC.py")
+    GROUNDING_DINO_CKPT = DIRS['models'] / "groundingdino_swint_ogc.pth"
+    GROUNDING_BOX_THRESHOLD = 0.35
+    GROUNDING_TEXT_THRESHOLD = 0.25
+
 
     @classmethod
     def setup_directories_and_logger(cls):
@@ -110,6 +136,7 @@ def get_feature_status():
         'numba_acceleration': True, 'person_detection': True,
         'perceptual_hashing': True,
         'pyiqa_available': True,
+        'grounded_sam_available': GROUNDED_SAM_AVAILABLE and cuda_available,
     }
 
 def check_dependencies():
@@ -341,6 +368,13 @@ class AnalysisParameters:
     require_face_match: bool = config.UI_DEFAULTS["require_face_match"]
     enable_dedup: bool = config.UI_DEFAULTS["enable_dedup"]
     dedup_thresh: int = config.UI_DEFAULTS["dedup_thresh"]
+    # Grounding options
+    text_prompt: str = ""                    # empty -> disabled
+    prompt_type_for_video: str = "box"       # "box" | "mask" (mask optional)
+    gdino_config_path: str = str(Config.GROUNDING_DINO_CONFIG)
+    gdino_checkpoint_path: str = str(Config.GROUNDING_DINO_CKPT)
+    box_threshold: float = Config.GROUNDING_BOX_THRESHOLD
+    text_threshold: float = Config.GROUNDING_TEXT_THRESHOLD
 
 # --- Subject Masking Logic ---
 @dataclass
@@ -355,6 +389,105 @@ class SubjectMasker:
         self.frame_map = frame_map; self.face_analyzer = face_analyzer
         self.reference_embedding = reference_embedding; self.person_detector = person_detector
         self.tracker = None; self.mask_dir = None; self.shots = []
+        self._gdino = None
+        self._sam2_img = None
+        self._grounder_device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    def _init_grounder(self):
+        if self._gdino is not None:
+            return True
+        if not GROUNDED_SAM_AVAILABLE:
+            logger.warning("Grounding DINO unavailable because Grounded-SAM-2 components could not be imported.")
+            return False
+        try:
+            download_model(
+                "https://github.com/IDEA-Research/GroundingDINO/releases/download/v0.1.0-alpha/groundingdino_swint_ogc.pth",
+                Config.GROUNDING_DINO_CKPT, "GroundingDINO Swin-T model", min_size=500_000_000
+            )
+            self._gdino = gdino_load_model(
+                model_config_path=self.params.gdino_config_path,
+                model_checkpoint_path=self.params.gdino_checkpoint_path,
+                device=self._grounder_device,
+            )
+            logger.info("Grounding DINO model loaded.")
+            return True
+        except Exception as e:
+            logger.warning(f"Grounding DINO unavailable: {e}")
+            self._gdino = None
+            return False
+
+    def _sam2_image_predictor(self):
+        if getattr(self, "_sam2_img", None) is not None:
+            return self._sam2_img
+        if not GROUNDED_SAM_AVAILABLE:
+            logger.warning("SAM2 Image Predictor unavailable because sam2 components could not be imported.")
+            return None
+        # Reuse the same large checkpoint; yaml lives in the submodule configs
+        sam_ckpt = str(Config.DIRS['models'] / "sam2.1_hiera_large.pt")
+        sam_cfg = str(Config.BASE_DIR / "Grounded-SAM-2" / "configs" / "sam2.1" / "sam2.1_hiera_l.yaml")
+        model = build_sam2(sam_cfg, sam_ckpt)
+        self._sam2_img = SAM2ImagePredictor(model, device=self._grounder_device)
+        logger.info("SAM2 Image Predictor loaded.")
+        return self._sam2_img
+
+    def _ground_first_frame_xywh(self, frame_bgr_small: np.ndarray, text: str):
+        if not self._init_grounder():
+            return None, {}
+        # Grounded-SAM-2 demo uses load_image(img_path), so write a temp file for consistency
+        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=True) as tf:
+            cv2.imwrite(tf.name, frame_bgr_small)
+            image_source, image = gdino_load_image(tf.name)
+        h, w = image_source.shape[:2]
+        # Predict boxes in normalized cxcywh; thresholds mirror the demo
+        boxes, confidences, labels = gdino_predict(
+            model=self._gdino,
+            image=image.to(self._grounder_device),
+            caption=text,
+            box_threshold=float(self.params.box_threshold),
+            text_threshold=float(self.params.text_threshold),
+        )
+        if boxes is None or len(boxes) == 0:
+            return None, {"type": "text_prompt", "error": "no_boxes"}
+        # Scale to absolute and convert to xyxy then to xywh
+        boxes_abs = (boxes * torch.tensor([w, h, w, h], device=self._grounder_device)).cpu()
+        xyxy = box_convert(boxes=boxes_abs, in_fmt="cxcywh", out_fmt="xyxy").numpy()
+        conf = confidences.cpu().numpy().tolist()
+        labels_out = list(labels)
+        # Pick highest-confidence box
+        idx = int(np.argmax(conf))
+        x1, y1, x2, y2 = map(float, xyxy[idx])
+        xywh = [int(max(0, x1)), int(max(0, y1)), int(max(1, x2 - x1)), int(max(1, y2 - y1))]
+        details = {"type": "text_prompt", "label": labels_out[idx] if labels_out else "", "conf": float(conf[idx])}
+        return xywh, details
+
+    def _ground_first_frame_mask_xywh(self, frame_bgr_small: np.ndarray, text: str):
+        xywh, details = self._ground_first_frame_xywh(frame_bgr_small, text)
+        if xywh is None:
+            return None, details
+        
+        predictor = self._sam2_image_predictor()
+        if predictor is None:
+            logger.warning("SAM2 Image Predictor not available. Falling back to box prompt.")
+            return xywh, details
+
+        x, y, w, h = xywh
+        img_rgb = cv2.cvtColor(frame_bgr_small, cv2.COLOR_BGR2RGB)
+        
+        predictor.set_image(img_rgb)
+        masks, scores, _ = predictor.predict(
+            point_coords=None, point_labels=None,
+            box=np.array([[x, y, x + w, y + h]], dtype=np.float32),
+            multimask_output=False,
+        )
+        if masks is None or masks.size == 0:
+            return xywh, details # fallback to box if empty
+            
+        m = masks.squeeze()
+        ys, xs = np.where(m > 0)
+        if ys.size == 0:
+            return xywh, details  # fallback to box if empty
+        x1, x2, y1, y2 = xs.min(), xs.max()+1, ys.min(), ys.max()+1
+        return [int(x1), int(y1), int(x2 - x1), int(y2 - y1)], {**details, "type": "text_prompt_mask"}
 
     def run(self, video_path: str, frames_dir: str) -> dict[str, dict]:
         self.mask_dir = Path(frames_dir) / "masks"
@@ -474,8 +607,22 @@ class SubjectMasker:
         return frames
 
     def _seed_identity(self, shot_frames):
-        if not shot_frames: return None, None, None
-        
+        if not shot_frames:
+            return None, None, None
+
+        # NEW: Text-prompt grounding overrides other seed strategies when provided
+        if getattr(self.params, "text_prompt", ""):
+            if getattr(self.params, "prompt_type_for_video", "box") == "mask":
+                xywh, details = self._ground_first_frame_mask_xywh(shot_frames[0], self.params.text_prompt)
+            else:
+                xywh, details = self._ground_first_frame_xywh(shot_frames[0], self.params.text_prompt)
+
+            if xywh is not None:
+                logger.info(f"Text-prompt seed ({details.get('type')} '{details.get('label', '')}' conf={details.get('conf', 0):.2f}): {xywh}")
+                return 0, xywh, details
+            else:
+                logger.warning("Text-prompt grounding returned no boxes; falling back to existing strategy.")
+
         # If face filter is disabled, prefer YOLO people
         if not self.params.enable_face_filter and self.person_detector:
             logger.info("Face filter off. Seeding with largest/central person box.")
@@ -777,7 +924,7 @@ class AnalysisPipeline(Pipeline):
                 f.write(json.dumps(header) + '\n')
 
             needs_face_analyzer = self.params.enable_face_filter or \
-                                  (self.params.enable_subject_mask and "Reference Face" in self.params.seed_strategy)
+                                  (self.params.enable_subject_mask and "Reference Face" in self.params.seed_strategy and not self.params.text_prompt)
             if needs_face_analyzer:
                 self._initialize_face_analyzer()
             if self.params.enable_face_filter and self.params.face_ref_img_path:
@@ -982,8 +1129,13 @@ class AppUI:
     def build_ui(self):
         with gr.Blocks(theme=gr.themes.Default()) as demo:
             gr.Markdown("# 🎬 Frame Extractor & Analyzer")
+            status_messages = []
             if not self.feature_status['cuda_available']:
-                gr.Markdown("⚠️ **CPU Mode** — GPU-dependent features (Face Analysis, Subject Masking) are disabled.")
+                status_messages.append("⚠️ **CPU Mode** — GPU-dependent features (Face Analysis, Subject Masking) are disabled.")
+            if not self.feature_status['grounded_sam_available']:
+                status_messages.append("⚠️ **Grounded-SAM-2 components not found** — Text prompt seeding is disabled.")
+            if status_messages:
+                gr.Markdown("\n".join(status_messages))
             
             with gr.Tabs():
                 with gr.Tab("📹 1. Frame Extraction"): self._create_extraction_tab()
@@ -1052,8 +1204,12 @@ class AppUI:
                     self._create_component('enable_subject_mask_input', 'checkbox', {'label': "Enable Subject-Only Metrics", 'value': self.feature_status['masking'], 'interactive': self.feature_status['masking']})
                     self._create_component('dam4sam_model_name_input', 'dropdown', {'choices': ['sam21pp-T', 'sam21pp-S', 'sam21pp-B+', 'sam21pp-L'], 'value': 'sam21pp-L', 'label': "DAM4SAM Model"})
                     self._create_component('person_detector_model_input', 'dropdown', {'choices': ['yolo11x.pt', 'yolo11s.pt'], 'value': 'yolo11x.pt', 'label': "Person Detector"})
-                    self._create_component('seed_strategy_input', 'dropdown', {'choices': ["Reference Face / Largest", "Largest Person", "Center-most Person"], 'value': config.UI_DEFAULTS['seed_strategy'], 'label': "Seed Strategy"})
                     self._create_component('scene_detect_input', 'checkbox', {'label': "Use Scene Detection", 'value': self.feature_status['scene_detection'], 'interactive': self.feature_status['scene_detection']})
+                    with gr.Accordion("Subject Seeding Strategy", open=True):
+                        self._create_component('text_prompt_input', 'textbox', {'label': "Ground with text (optional)", 'placeholder': "e.g., 'a woman in a red dress'", 'value': config.UI_DEFAULTS['text_prompt'], 'interactive': self.feature_status['grounded_sam_available']})
+                        self._create_component('prompt_type_for_video_input', 'dropdown', {'choices': ['box', 'mask'], 'value': config.UI_DEFAULTS['prompt_type_for_video'], 'label': 'Prompt Type', 'interactive': self.feature_status['grounded_sam_available']})
+                        self._create_component('seed_strategy_input', 'dropdown', {'choices': ["Reference Face / Largest", "Largest Person", "Center-most Person"], 'value': config.UI_DEFAULTS['seed_strategy'], 'label': "Fallback Seed Strategy"})
+
                 with gr.Group():
                     self._create_component('enable_dedup_input', 'checkbox', {'label': "Enable Near-Duplicate Filtering", 'value': config.UI_DEFAULTS['enable_dedup'], 'interactive': self.feature_status['perceptual_hashing']})
                     
@@ -1159,7 +1315,8 @@ class AppUI:
             self.components['face_ref_img_upload_input'], self.components['face_model_name_input'],
             self.components['enable_subject_mask_input'], self.components['dam4sam_model_name_input'],
             self.components['person_detector_model_input'], self.components['seed_strategy_input'], 
-            self.components['scene_detect_input'], self.components['enable_dedup_input']
+            self.components['scene_detect_input'], self.components['enable_dedup_input'],
+            self.components['text_prompt_input'], self.components['prompt_type_for_video_input']
         ]
         
         ana_outputs = [c for name, c in self.components.items() if name in ['start_analysis_button', 'stop_analysis_button', 'unified_log', 'unified_status', 'analysis_output_dir_state', 'analysis_metadata_path_state', 'filtering_tab']]
@@ -1296,7 +1453,8 @@ class AppUI:
         ordered_comp_ids = ['method_input', 'interval_input', 'max_resolution', 'fast_scene_input', 'use_png_input', 
                             'disable_parallel_input', 'resume_input', 'enable_face_filter_input', 
                             'face_model_name_input', 'enable_subject_mask_input', 'dam4sam_model_name_input', 
-                            'person_detector_model_input', 'scene_detect_input', 'seed_strategy_input', 'enable_dedup_input']
+                            'person_detector_model_input', 'scene_detect_input', 'seed_strategy_input', 'enable_dedup_input',
+                            'text_prompt_input', 'prompt_type_for_video_input']
         config_controls = [c[comp_id] for comp_id in ordered_comp_ids]
         
         c['save_button'].click(lambda name, *v: cm.save_config(name, {ordered_comp_ids[i]:val for i,val in enumerate(v)}) or (f"Saved '{name}'", gr.update(choices=cm.list_configs())), [c['config_name_input']] + config_controls, [c['config_status'], c['config_dropdown']])
@@ -1364,7 +1522,8 @@ class AppUI:
                              disable_parallel, resume, enable_face_filter,
                              face_ref_img_path, face_ref_img_upload, face_model_name,
                              enable_subject_mask, dam4sam_model_name,
-                             person_detector_model, seed_strategy, scene_detect, enable_dedup):
+                             person_detector_model, seed_strategy, scene_detect, enable_dedup,
+                             text_prompt, prompt_type_for_video):
         buttons = (self.components['start_analysis_button'], self.components['stop_analysis_button'])
         yield self._set_ui_state(buttons, "loading", "Starting analysis...") | {
             self.components['analysis_output_dir_state']: gr.update(),
@@ -1389,7 +1548,8 @@ class AppUI:
             resume=resume, enable_face_filter=enable_face_filter, face_ref_img_path=face_ref_full_path,
             face_model_name=face_model_name, enable_subject_mask=enable_subject_mask,
             dam4sam_model_name=dam4sam_model_name, person_detector_model=person_detector_model,
-            seed_strategy=seed_strategy, scene_detect=scene_detect, enable_dedup=enable_dedup
+            seed_strategy=seed_strategy, scene_detect=scene_detect, enable_dedup=enable_dedup,
+            text_prompt=text_prompt, prompt_type_for_video=prompt_type_for_video
         )
         yield from self._run_task(AnalysisPipeline(params, Queue(), self.cancel_event).run)
 
@@ -1581,7 +1741,7 @@ class AppUI:
             if values.size > 0:
                 counts, bins = np.histogram(values, bins=50, range=(0, 100))
                 metric_values["mask_area_pct"] = values.tolist()
-                metric_values["mask_area_pct_hist"] = (counts.tolist(), bins.tolist())
+                metric_values[f"mask_area_pct_hist"] = (counts.tolist(), bins.tolist())
         
         return all_frames, metric_values
 
