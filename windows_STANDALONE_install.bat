@@ -1,81 +1,84 @@
 @echo off
-setlocal
-
-REM ##################################################################
-REM ##                  STANDALONE PROJECT SETUP                  ##
-REM ##################################################################
+setlocal enableextensions
 
 echo --- Starting Project Setup ---
 
-REM 1. Clone the main repository from GitHub
-echo [1/5] Cloning the main repository...
-git clone https://github.com/tazztone/subject-frame-extractor.git
+rem 1) Clone main repo
+echo [1/8] Cloning the main repository...
+git clone https://github.com/tazztone/subject-frame-extractor.git || goto :fail
 
-REM Check if cloning was successful
 if not exist subject-frame-extractor (
-    echo ERROR: Failed to clone the repository.
-    goto end
+  echo ERROR: Failed to clone the repository.
+  goto :fail
 )
 
-REM Change directory into the newly cloned repository
-pushd subject-frame-extractor
+rem 2) Enter repo and init submodules
+pushd subject-frame-extractor || goto :fail
+echo [2/8] Initializing submodules...
+git submodule update --init --recursive || goto :fail
 
-REM 2. Initialize and download the DAM4SAM submodule
-echo [2/5] Setting up the DAM4SAM submodule...
-REM This single command correctly initializes and clones the code for any submodules
-REM listed in the main project's .gitmodules file. This is the key fix.
-git submodule update --init --recursive
+rem 3) Create and activate venv
+echo [3/8] Creating Python virtual environment...
+python -m venv venv || goto :fail
+call venv\Scripts\activate.bat || goto :fail
 
-REM 3. Create and activate the Python virtual environment
-echo [3/5] Creating Python virtual environment...
-python -m venv venv
-call venv\Scripts\activate.bat
+rem 4) Install/upgrade pip and uv
+echo [4/8] Installing Python tooling...
+python -m pip install -U pip || goto :fail
+pip install -U uv || goto :fail
 
-REM 4. Install/Upgrade Python packages
-echo [4/5] Installing Python dependencies...
-python -m pip install -U pip
-pip install -U uv
-
-REM Install PyTorch (This may show a network error, but should be installed by requirements.txt)
-uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu129
-
-REM Install the main app's requirements
+rem 6) Install main app requirements (light/fast deps)
 if exist requirements.txt (
-  uv pip install -r requirements.txt
+  echo [6/8] Installing app requirements...
+  uv pip install -r requirements.txt || goto :fail
 )
 
-REM Install DAM4SAM dependencies and the SAM2 package itself
-pushd DAM4SAM
-if exist requirements.txt (
-  uv pip install -r requirements.txt
+rem 7) Submodules (light parts only)
+echo [7/8] Installing submodule dependencies (light)...
+if exist DAM4SAM\requirements.txt (
+  uv pip install -r DAM4SAM\requirements.txt || goto :fail
+  pushd DAM4SAM || goto :fail
+  pip install -e . || goto :fail
+  popd
 )
-pip install -e .
-
-REM Build SAM2 C++ extensions
-echo Building SAM2 C++ extensions...
-python setup.py build_ext --inplace
-
-popd
-
-REM Install Grounded-SAM-2 dependencies
-pushd Grounded-SAM-2
-if exist requirements.txt (
-  uv pip install -r requirements.txt
+if exist Grounded-SAM-2\requirements.txt (
+  uv pip install -r Grounded-SAM-2\requirements.txt || goto :fail
+  pushd Grounded-SAM-2 || goto :fail
+  pip install -e . || goto :fail
+  popd
 )
-pip install -e .
-popd
 
-REM 5. Add DAM4SAM to the Python path for the venv
-echo [5/5] Configuring Python path...
-echo %cd%\DAM4SAM > venv\Lib\site-packages\dam4sam.pth
-echo %cd%\Grounded-SAM-2 > venv\Lib\site-packages\grounded_sam2.pth
+rem 8) Configure Python path
+echo [8/8] Configuring Python path...
+> venv\Lib\site-packages\dam4sam.pth echo %cd%\DAM4SAM
+> venv\Lib\site-packages\groundedsam2.pth echo %cd%\Grounded-SAM-2
 
-echo.
-echo --- Installation Complete! ---
-echo Please check the output above for any errors.
-echo The project is set up in the 'subject-frame-extractor' folder.
+rem Only reach heavy section if all prior steps succeeded
+goto :heavy
+
+:fail
+echo Installation failed before heavy dependencies; skipping heavyweight installs.
+goto :end
+
+:heavy
+rem Heavy installs last
+set "TORCH_INDEX_URL=https://download.pytorch.org/whl/cu128"
+echo Installing PyTorch from %TORCH_INDEX_URL% ...
+uv pip install torch torchvision --index-url %TORCH_INDEX_URL% || goto :end
+
+rem Optional CUDA_HOME detection
+if exist "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8" (
+  set "CUDA_HOME=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8"
+  set "PATH=%CUDA_HOME%\bin;%CUDA_HOME%\libnvvp;%PATH%"
+  echo Detected CUDA at %CUDA_HOME%
+) else (
+  echo WARNING: CUDA not found at default path. Set CUDA_HOME before installing GroundingDINO if building with GPU.
+)
+
+rem Build and install GroundingDINO last
+uv pip install --no-build-isolation -e Grounded-SAM-2\grounding_dino
 
 :end
 popd
-echo Press any key to exit.
+echo Done.
 pause > nul
