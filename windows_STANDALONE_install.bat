@@ -57,9 +57,18 @@ python setup.py build_ext --inplace
 
 popd
 
+REM Install Grounded-SAM-2 dependencies
+pushd Grounded-SAM-2
+if exist requirements.txt (
+  uv pip install -r requirements.txt
+)
+pip install -e .
+popd
+
 REM 5. Add DAM4SAM to the Python path for the venv
 echo [5/5] Configuring Python path...
 echo %cd%\DAM4SAM > venv\Lib\site-packages\dam4sam.pth
+echo %cd%\Grounded-SAM-2 > venv\Lib\site-packages\grounded_sam2.pth
 
 echo.
 echo --- Installation Complete! ---
