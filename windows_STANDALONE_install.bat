@@ -36,7 +36,7 @@ if exist requirements.txt (
 rem 7) Submodules (light parts only)
 echo [7/8] Installing submodule dependencies (light)...
 if exist DAM4SAM\requirements.txt (
-  uv pip install -r DAM4SAM\requirements.txt || goto :fail
+  uv pip install -r DAM4SAM\requirements.txt
   pushd DAM4SAM || goto :fail
   pip install -e . || goto :fail
   popd
