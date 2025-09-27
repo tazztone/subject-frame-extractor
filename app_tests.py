@@ -6,7 +6,7 @@ import cv2
 import numpy as np
 import pytest
 
-import app_small as app
+import app
 
 
 def test_sanitize_filename():
