@@ -1560,7 +1560,8 @@ class AppUI:
             for i in np.where(combined_mask)[0]: reasons[filenames[i]].append("mask_too_small")
             kept_mask &= ~combined_mask
 
-        if filters.get("enable_dedup"):
+        dedup_thresh_val = filters.get("dedup_thresh", 5)
+        if filters.get("enable_dedup") and dedup_thresh_val != -1:
             kept_indices = np.where(kept_mask)[0]
             if len(kept_indices) > 1:
                 sorted_kept_indices = sorted(kept_indices, key=lambda i: filenames[i])
@@ -1570,7 +1571,7 @@ class AppUI:
                 for i in range(1, len(sorted_kept_indices)):
                     current_idx = sorted_kept_indices[i]
                     if last_hash_idx in hashes and current_idx in hashes:
-                        if (hashes[last_hash_idx] - hashes[current_idx]) <= filters.get("dedup_thresh", 5):
+                        if (hashes[last_hash_idx] - hashes[current_idx]) <= dedup_thresh_val:
                             kept_mask[current_idx] = False
                             reasons[filenames[current_idx]].append("duplicate")
                         else:
