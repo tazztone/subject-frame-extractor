@@ -52,6 +52,7 @@ quality_weights:
 # Base scaling constant for sharpness, adjusted by image resolution.
 # A higher value makes the score less sensitive.
 sharpness_base_scale: 2500
+edge_strength_base_scale: 100
 
 # Minimum percentage of the frame area that a subject mask must occupy to be considered valid.
 min_mask_area_pct: 1.0

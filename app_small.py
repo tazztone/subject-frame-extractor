@@ -1677,31 +1677,40 @@ class AppUI:
             return f"Error during export: {e}"
 
     def reset_filters(self, all_frames_data, per_metric_values, output_dir):
-        updates = {}
+        # This function must return updates in the *exact* same order as reset_outputs is defined in _setup_filtering_handlers
+        output_values = []
+        slider_default_values = []
+
+        # 1. Get slider updates in the correct sorted order
         slider_keys = sorted(self.components['metric_sliders'].keys())
-        slider_defaults = []
-        for key, comp in self.components['metric_sliders'].items():
+        for key in slider_keys:
             metric_key = re.sub(r'_(min|max)$', '', key)
             default_key = 'default_max' if key.endswith('_max') else 'default_min'
             default_val = config.filter_defaults[metric_key][default_key]
-            updates[comp] = gr.update(value=default_val)
-            slider_defaults.append(default_val)
+            
+            output_values.append(gr.update(value=default_val))
+            slider_default_values.append(default_val)
 
-        dedup_default = config.filter_defaults['dedup_thresh']['default']
-        updates[self.components['dedup_thresh_input']] = gr.update(value=dedup_default)
+        # 2. Get other filter control updates
         face_match_default = config.ui_defaults['require_face_match']
-        updates[self.components['require_face_match_input']] = gr.update(value=face_match_default)
+        dedup_default = config.filter_defaults['dedup_thresh']['default']
+
+        output_values.append(gr.update(value=face_match_default))
+        output_values.append(gr.update(value=dedup_default))
         
+        # 3. Get gallery and status updates
         if all_frames_data:
-            status_text, gallery_update = self.on_filters_changed(all_frames_data, per_metric_values, output_dir, "Kept Frames", True, 0.6,
-                                                                  face_match_default, dedup_default, *slider_defaults)
-            updates[self.components['filter_status_text']] = status_text
-            updates[self.components['results_gallery']] = gallery_update
+            status_text, gallery_update = self.on_filters_changed(
+                all_frames_data, per_metric_values, output_dir, "Kept Frames", True, 0.6,
+                face_match_default, dedup_default, *slider_default_values
+            )
+            output_values.append(status_text)
+            output_values.append(gallery_update)
         else:
-            updates[self.components['filter_status_text']] = "Load an analysis to begin."
-            updates[self.components['results_gallery']] = []
+            output_values.append("Load an analysis to begin.")
+            output_values.append([])
         
-        return list(updates.values())
+        return output_values
     
     def auto_set_thresholds(self, per_metric_values, p=75):
         slider_keys = sorted(self.components['metric_sliders'].keys())
@@ -1771,6 +1780,8 @@ class AppUI:
 if __name__ == "__main__":
     check_dependencies()
     AppUI().build_ui().launch()
+
+
 
 
 
