@@ -592,6 +592,18 @@ class SubjectMasker:
             logger.error(f"Failed to initialize DAM4SAM tracker: {e}", exc_info=True)
             return False
 
+    def _detect_scenes(self, video_path: str, frames_dir: str):
+        if not detect:
+            raise ImportError("PySceneDetect is required.")
+        try:
+            logger.info("Detecting scene cuts...")
+            scene_list = detect(video_path, ContentDetector())
+            self.shots = [(s.frame_num, e.frame_num) for s, e in scene_list] if scene_list else []
+            logger.info(f"Found {len(self.shots)} shots.")
+        except Exception as e:
+            logger.critical(f"Scene detection failed: {e}", exc_info=True)
+            self.shots = []
+
     def _load_shot_frames(self, frames_dir, start, end):
         frames = []
         if not self.frame_map: return []
@@ -1799,10 +1811,3 @@ class AppUI:
 if __name__ == "__main__":
     check_dependencies()
     AppUI().build_ui().launch()
-
-
-
-
-
-
-
