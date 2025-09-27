@@ -322,3 +322,4 @@ downloads/*
 .kilocode/rules/*
 .kilocode/rules/rule.md
 subject-frame-extractor
+.aiexclude
