@@ -433,32 +433,45 @@ class SubjectMasker:
     def _ground_first_frame_xywh(self, frame_bgr_small: np.ndarray, text: str):
         if not self._init_grounder():
             return None, {}
-        # Grounded-SAM-2 demo uses load_image(img_path), so write a temp file for consistency
-        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=True) as tf:
-            cv2.imwrite(tf.name, frame_bgr_small)
-            image_source, image = gdino_load_image(tf.name)
-        h, w = image_source.shape[:2]
-        # Predict boxes in normalized cxcywh; thresholds mirror the demo
-        boxes, confidences, labels = gdino_predict(
-            model=self._gdino,
-            image=image.to(self._grounder_device),
-            caption=text,
-            box_threshold=float(self.params.box_threshold),
-            text_threshold=float(self.params.text_threshold),
-        )
-        if boxes is None or len(boxes) == 0:
-            return None, {"type": "text_prompt", "error": "no_boxes"}
-        # Scale to absolute and convert to xyxy then to xywh
-        boxes_abs = (boxes * torch.tensor([w, h, w, h], device=self._grounder_device)).cpu()
-        xyxy = box_convert(boxes=boxes_abs, in_fmt="cxcywh", out_fmt="xyxy").numpy()
-        conf = confidences.cpu().numpy().tolist()
-        labels_out = list(labels)
-        # Pick highest-confidence box
-        idx = int(np.argmax(conf))
-        x1, y1, x2, y2 = map(float, xyxy[idx])
-        xywh = [int(max(0, x1)), int(max(0, y1)), int(max(1, x2 - x1)), int(max(1, y2 - y1))]
-        details = {"type": "text_prompt", "label": labels_out[idx] if labels_out else "", "conf": float(conf[idx])}
-        return xywh, details
+        
+        fd, tmp_path = tempfile.mkstemp(suffix=".jpg")
+        os.close(fd)
+        try:
+            ok = cv2.imwrite(tmp_path, frame_bgr_small)
+            if not ok:
+                return None, {"type": "text_prompt", "error": "temp write failed"}
+            
+            image_source, image = gdino_load_image(tmp_path)
+            h, w = image_source.shape[:2]
+            
+            boxes, confidences, labels = gdino_predict(
+                model=self._gdino,
+                image=image.to(self._grounder_device),
+                caption=text,
+                box_threshold=float(self.params.box_threshold),
+                text_threshold=float(self.params.text_threshold),
+            )
+            
+            if boxes is None or len(boxes) == 0:
+                return None, {"type": "text_prompt", "error": "no_boxes"}
+                
+            scale = torch.tensor([w, h, w, h], device=boxes.device, dtype=boxes.dtype)
+            boxes_abs = (boxes * scale).cpu()
+            xyxy = box_convert(boxes=boxes_abs, in_fmt="cxcywh", out_fmt="xyxy").numpy()
+            conf = confidences.cpu().numpy().tolist()
+            labels_out = list(labels)
+            
+            idx = int(np.argmax(conf))
+            x1, y1, x2, y2 = map(float, xyxy[idx])
+            xywh = [int(max(0, x1)), int(max(0, y1)), int(max(1, x2 - x1)), int(max(1, y2 - y1))]
+            details = {"type": "text_prompt", "label": labels_out[idx] if labels_out else "", "conf": float(conf[idx])}
+            
+            return xywh, details
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
     def _ground_first_frame_mask_xywh(self, frame_bgr_small: np.ndarray, text: str):
         xywh, details = self._ground_first_frame_xywh(frame_bgr_small, text)
