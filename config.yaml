@@ -1,0 +1,68 @@
+# External configuration for UI defaults, model paths, and quality metric parameters.
+# This file allows for easy tuning without modifying the application code.
+
+# --- UI & Filter Defaults ---
+# Default values for the Gradio user interface components.
+ui_defaults:
+  method: "all"
+  interval: 5.0
+  max_resolution: "maximum available"
+  fast_scene: False
+  resume: False
+  use_png: True
+  disable_parallel: False
+  enable_face_filter: True
+  face_model_name: "buffalo_l"
+  enable_subject_mask: True
+  scene_detect: True
+  dam4sam_model_name: "sam21pp-L"
+  person_detector_model: "yolo11x.pt"
+  seed_strategy: "Reference Face / Largest"
+  nth_frame: 5
+  require_face_match: False
+  enable_dedup: True
+  dedup_thresh: 5
+  text_prompt: ""
+  prompt_type_for_video: "box"
+
+# Central registry for all filter sliders and checkboxes.
+# Used for component creation and reset behavior.
+filter_defaults:
+  quality_score: { min: 0.0, max: 100.0, step: 0.5, default_min: 0.0, default_max: 100.0 }
+  sharpness: { min: 0.0, max: 100.0, step: 0.5, default_min: 0.0, default_max: 100.0 }
+  edge_strength: { min: 0.0, max: 100.0, step: 0.5, default_min: 0.0, default_max: 100.0 }
+  contrast: { min: 0.0, max: 100.0, step: 0.5, default_min: 0.0, default_max: 100.0 }
+  brightness: { min: 0.0, max: 100.0, step: 0.5, default_min: 0.0, default_max: 100.0 }
+  entropy: { min: 0.0, max: 100.0, step: 0.5, default_min: 0.0, default_max: 100.0 }
+  niqe: { min: 0.0, max: 100.0, step: 0.5, default_min: 0.0, default_max: 100.0 }
+  face_sim: { min: 0.0, max: 1.0, step: 0.01, default_min: 0.5 }
+  mask_area_pct: { min: 0.0, max: 100.0, step: 0.1, default_min: 1.0 }
+  dedup_thresh: { min: 0, max: 32, step: 1, default: 5 }
+
+# --- Quality Metrics Configuration ---
+# Weights for combining individual quality scores into a single quality score.
+quality_weights:
+  sharpness: 25
+  edge_strength: 15
+  contrast: 15
+  brightness: 10
+  entropy: 15
+  niqe: 20
+
+# Base scaling constant for sharpness, adjusted by image resolution.
+# A higher value makes the score less sensitive.
+sharpness_base_scale: 2500
+
+# Minimum percentage of the frame area that a subject mask must occupy to be considered valid.
+min_mask_area_pct: 1.0
+
+# --- Model & Path Configuration ---
+# Paths for models and other external dependencies.
+model_paths:
+  grounding_dino_config: "Grounded-SAM-2/grounding_dino/groundingdino/config/GroundingDINO_SwinT_OGC.py"
+  grounding_dino_checkpoint: "models/groundingdino_swint_ogc.pth"
+
+# --- Grounded DINO/SAM2 Inference Parameters ---
+grounding_dino_params:
+  box_threshold: 0.35
+  text_threshold: 0.25

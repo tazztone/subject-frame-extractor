@@ -25,12 +25,13 @@ import yt_dlp as ytdlp
 from scenedetect import detect, ContentDetector
 from PIL import Image
 import torch
-from torchvision.ops import box_convert  # add import
+import torch.nn.functional as F
+from torchvision.ops import box_convert
 import tempfile
 from ultralytics import YOLO
 from DAM4SAM.dam4sam_tracker import DAM4SAMTracker
 from insightface.app import FaceAnalysis
-from numba import njit, prange
+from numba import njit
 import yaml
 import matplotlib
 matplotlib.use("Agg")
@@ -59,30 +60,27 @@ class Config:
     BASE_DIR = Path(__file__).parent
     DIRS = {'logs': BASE_DIR / "logs", 'configs': BASE_DIR / "configs", 'models': BASE_DIR / "models", 'downloads': BASE_DIR / "downloads"}
     LOG_FILE = DIRS['logs'] / "frame_extractor.log"
-    QUALITY_METRICS = ["sharpness", "edge_strength", "contrast", "brightness", "entropy", "niqe"]
-    QUALITY_WEIGHTS = {"sharpness": 25, "edge_strength": 15, "contrast": 15, "brightness": 10, "entropy": 15, "niqe": 20}
-    NORMALIZATION_CONSTANTS = {"sharpness": 1000, "edge_strength": 100}
-    QUALITY_DOWNSCALE_FACTOR = 0.25
-    UI_DEFAULTS = {
-        "method": "all", "interval": 5.0, "max_resolution": "maximum available", "fast_scene": False,
-        "resume": False, "use_png": True, "disable_parallel": False, "enable_face_filter": True,
-        "face_model_name": "buffalo_l", "quality_thresh": 12.0, "face_thresh": 0,
-        "enable_subject_mask": True, "scene_detect": True, "dam4sam_model_name": "sam21pp-L",
-        "person_detector_model": "yolo11x.pt",
-        "seed_strategy": "Reference Face / Largest",
-        "nth_frame": 5,
-        "require_face_match": False, "enable_dedup": True, "dedup_thresh": 5,
-        "text_prompt": "", "prompt_type_for_video": "box",
-    }
-    MIN_MASK_AREA_PCT = 1.0
+    CONFIG_FILE = DIRS['configs'] / "config.yaml"
 
-    # Grounding DINO defaults (paths relative to submodule; change if desired)
-    GROUNDING_DINO_CONFIG = (BASE_DIR / "Grounded-SAM-2" / "grounding_dino" /
-                             "groundingdino" / "config" / "GroundingDINO_SwinT_OGC.py")
-    GROUNDING_DINO_CKPT = DIRS['models'] / "groundingdino_swint_ogc.pth"
-    GROUNDING_BOX_THRESHOLD = 0.35
-    GROUNDING_TEXT_THRESHOLD = 0.25
+    def __init__(self):
+        self.settings = self.load_config()
+        # Dynamically set attributes from the loaded config for easy access
+        for key, value in self.settings.items():
+            setattr(self, key, value)
+        
+        # Backward compatibility for hardcoded paths if needed
+        self.GROUNDING_DINO_CONFIG = self.BASE_DIR / self.model_paths['grounding_dino_config']
+        self.GROUNDING_DINO_CKPT = self.DIRS['models'] / Path(self.model_paths['grounding_dino_checkpoint']).name
+        self.GROUNDING_BOX_THRESHOLD = self.grounding_dino_params['box_threshold']
+        self.GROUNDING_TEXT_THRESHOLD = self.grounding_dino_params['text_threshold']
+        self.QUALITY_METRICS = list(self.quality_weights.keys())
 
+    def load_config(self):
+        self.DIRS['configs'].mkdir(exist_ok=True)
+        if not self.CONFIG_FILE.exists():
+            raise FileNotFoundError(f"Configuration file not found at {self.CONFIG_FILE}. Please ensure it exists.")
+        with open(self.CONFIG_FILE, 'r') as f:
+            return yaml.safe_load(f)
 
     @classmethod
     def setup_directories_and_logger(cls):
@@ -122,8 +120,21 @@ class UnifiedLogger:
         return {"error": str(e)}
 
 # --- Global Initialization ---
-config = Config()
-logger = config.setup_directories_and_logger()
+try:
+    config = Config()
+    logger = config.setup_directories_and_logger()
+except FileNotFoundError as e:
+    # Handle missing config file gracefully
+    print(f"FATAL: {e}")
+    # Create a dummy logger to output the error
+    logging.basicConfig()
+    logger = logging.getLogger()
+    logger.error(f"FATAL: {e}")
+    # A simple Gradio app to show the error if the main one can't start
+    with gr.Blocks() as error_app:
+        gr.Markdown(f"# Configuration Error\n\n**Could not start the application.**\n\nReason: `{e}`\n\nPlease create a `configs/config.yaml` file and restart.")
+    error_app.launch()
+    exit() # Exit the script
 
 # --- Utility Functions ---
 def get_feature_status():
@@ -178,29 +189,19 @@ def download_model(url, dest_path, description, min_size=1_000_000):
         raise RuntimeError(f"Failed to download required model: {description}") from e
 
 def render_mask_overlay(frame_bgr: np.ndarray, mask_gray: np.ndarray, alpha: float = 0.5) -> np.ndarray:
-    """Applies a red overlay to a frame based on a mask."""
     if mask_gray is None:
         return frame_bgr
     h, w = frame_bgr.shape[:2]
     if mask_gray.shape[:2] != (h, w):
         mask_gray = cv2.resize(mask_gray, (w, h), interpolation=cv2.INTER_NEAREST)
-
-    # Create a binary mask where the mask is active
     m = (mask_gray > 128)
-
-    # Create a solid red layer
     red_layer = np.zeros_like(frame_bgr, dtype=np.uint8)
-    red_layer[..., 2] = 255  # BGR format for red
-
-    # Blend the original frame and the red layer
+    red_layer[..., 2] = 255
     blended = cv2.addWeighted(frame_bgr, 1.0 - alpha, red_layer, alpha, 0.0)
-    
-    # Prepare the boolean mask for broadcasting with a 3-channel image.
     if m.ndim == 2: m = m[..., np.newaxis]
     elif m.ndim == 3 and m.shape[2] != 1:
         logger.warning(f"Unexpected mask shape: {m.shape}. Skipping overlay.")
         return frame_bgr
-
     out = np.where(m, blended, frame_bgr)
     return out
 
@@ -210,7 +211,7 @@ def safe_resource_cleanup():
         yield
     finally:
         gc.collect()
-        if torch and torch.cuda.is_available():
+        if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
 def _to_json_safe(obj):
@@ -220,49 +221,45 @@ def _to_json_safe(obj):
         return [_to_json_safe(v) for v in obj]
     if isinstance(obj, Path):
         return str(obj)
-    # numpy scalars/arrays
     if isinstance(obj, np.generic):
         return _to_json_safe(obj.item())
     if isinstance(obj, np.ndarray):
         return obj.tolist()
-    # round floats like existing roundfloats did
     if isinstance(obj, float):
         return round(obj, 4)
     return obj
 
 # --- Person Detector Wrapper ---
 class PersonDetector:
-    def __init__(self, model="yolo11x.pt", imgsz=640, conf=0.3):
+    def __init__(self, model="yolo11x.pt", imgsz=640, conf=0.3, device='cuda'):
         if YOLO is None:
             raise ImportError("Ultralytics YOLO not installed.")
-        
         model_path = config.DIRS['models'] / model
         model_path.parent.mkdir(exist_ok=True)
         download_model(f"https://huggingface.co/Ultralytics/YOLO11/resolve/main/{model}", model_path, "YOLO person detector")
         
+        self.device = device if torch.cuda.is_available() else 'cpu'
         self.model = YOLO(str(model_path))
+        self.model.to(self.device)
         self.imgsz = imgsz
         self.conf = conf
+        logger.info(f"YOLO person detector loaded on device: {self.device}")
 
     def detect_boxes(self, img_bgr):
-        res = self.model.predict(img_bgr[..., ::-1], imgsz=self.imgsz, conf=self.conf, classes=[0], verbose=False)
+        # The predict method handles device placement internally, but we ensure the model is on the correct device.
+        res = self.model.predict(img_bgr, imgsz=self.imgsz, conf=self.conf, classes=[0], verbose=False, device=self.device)
         boxes = []
         for r in res:
             if getattr(r, "boxes", None) is None: continue
-            for b in r.boxes:
+            # Move results to CPU for post-processing
+            cpu_boxes = r.boxes.cpu()
+            for b in cpu_boxes:
                 x1, y1, x2, y2 = map(int, b.xyxy[0].tolist())
                 score = float(b.conf[0])
                 boxes.append((x1, y1, x2, y2, score))
         return boxes
 
 # --- Numba Optimized Image Processing ---
-@njit(parallel=True)
-def compute_edge_strength(sobelx, sobely):
-    total_mag = 0.0
-    for i in prange(sobelx.shape[0]):
-        for j in range(sobelx.shape[1]):
-            total_mag += np.sqrt(sobelx[i, j]**2 + sobely[i, j]**2)
-    return total_mag / (sobelx.size or 1)
 @njit
 def compute_entropy(hist):
     prob = hist / (np.sum(hist) + 1e-7)
@@ -283,98 +280,108 @@ class Frame:
     face_similarity_score: float | None = None; max_face_confidence: float | None = None
     error: str | None = None
 
-    def calculate_quality_metrics(self, mask: np.ndarray | None = None, niqe_metric=None):
+    def calculate_quality_metrics(self, thumb_image: np.ndarray, mask: np.ndarray | None = None, niqe_metric=None):
         try:
-            gray = cv2.cvtColor(self.image_data, cv2.COLOR_BGR2GRAY)
-            active_mask = (mask > 128).astype(np.uint8) if mask is not None and mask.ndim == 2 else None
+            gray = cv2.cvtColor(thumb_image, cv2.COLOR_BGR2GRAY)
+            
+            # The mask is now expected to be at the thumbnail resolution
+            active_mask = (mask > 128) if mask is not None and mask.ndim == 2 else None
             if active_mask is not None and np.sum(active_mask) < 100:
                 raise ValueError("Mask too small.")
 
-            dsf = config.QUALITY_DOWNSCALE_FACTOR
-            preview = cv2.resize(gray, (0, 0), fx=dsf, fy=dsf, interpolation=cv2.INTER_AREA)
-            preview_mask = cv2.resize(active_mask, preview.shape[::-1], interpolation=cv2.INTER_NEAREST) if active_mask is not None else None
-            
-            lap = cv2.Laplacian(preview, cv2.CV_64F)
-            masked_lap = lap[preview_mask > 0] if preview_mask is not None else lap
-            sharpness = np.var(masked_lap[masked_lap != 0]) if masked_lap.size > 0 else 0
-            
-            sobelx = cv2.Sobel(preview, cv2.CV_64F, 1, 0, ksize=3)
-            sobely = cv2.Sobel(preview, cv2.CV_64F, 0, 1, ksize=3)
-            edge_strength = compute_edge_strength(sobelx, sobely)
-            
-            pixels = gray[active_mask > 0] if active_mask is not None else gray
+            # --- Sharpness and Edges (on thumbnail) ---
+            lap = cv2.Laplacian(gray, cv2.CV_64F)
+            masked_lap = lap[active_mask] if active_mask is not None else lap
+            # Refactored sharpness: no zero filtering, scaled by resolution
+            sharpness = np.var(masked_lap) if masked_lap.size > 0 else 0
+            sharpness_scaled = sharpness / (config.sharpness_base_scale * (gray.size / 500_000))
+
+            sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
+            sobely = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)
+            edge_strength = np.mean(np.sqrt(sobelx**2 + sobely**2))
+
+            # --- Brightness, Contrast, Entropy (on thumbnail) ---
+            pixels = gray[active_mask] if active_mask is not None else gray
             mean_br, std_br = (np.mean(pixels), np.std(pixels)) if pixels.size > 0 else (0,0)
             brightness = mean_br / 255.0
             contrast = std_br / (mean_br + 1e-7)
             
-            hist = cv2.calcHist([gray], [0], active_mask, [256], [0, 256]).flatten()
+            # For entropy, use the original resolution gray image for better histogram accuracy
+            gray_full = cv2.cvtColor(self.image_data, cv2.COLOR_BGR2GRAY)
+            mask_full = cv2.resize(mask, (gray_full.shape[1], gray_full.shape[0]), interpolation=cv2.INTER_NEAREST) if mask is not None else None
+            active_mask_full = (mask_full > 128).astype(np.uint8) if mask_full is not None else None
+            hist = cv2.calcHist([gray_full], [0], active_mask_full, [256], [0, 256]).flatten()
             entropy = compute_entropy(hist)
             
-            # NIQE calculation
+            # NIQE calculation (on original resolution image)
             niqe_score = 0.0
             if niqe_metric is not None:
                 try:
-                    # NIQE expects RGB image in range [0, 1]
                     rgb_image = cv2.cvtColor(self.image_data, cv2.COLOR_BGR2RGB)
-                    
-                    # Apply mask if available
-                    if active_mask is not None:
-                        # Create 3-channel mask
-                        mask_3ch = np.stack([active_mask] * 3, axis=-1) > 0
+                    if active_mask_full is not None:
+                        mask_3ch = np.stack([active_mask_full] * 3, axis=-1) > 0
                         rgb_image = np.where(mask_3ch, rgb_image, 0)
                     
-                    # Convert to tensor format expected by PyIQA
-                    import torch
-                    img_tensor = torch.from_numpy(rgb_image).float() / 255.0
-                    img_tensor = img_tensor.permute(2, 0, 1).unsqueeze(0)  # Add batch dimension
-                    
-                    with torch.no_grad():
-                        niqe_raw = float(niqe_metric(img_tensor))
-                        # NIQE: lower is better, typically ranges from 0-20+
-                        # Normalize to 0-100 scale (higher is better for consistency)
-                        niqe_score = max(0, min(100, (10 - niqe_raw) * 10))  # Invert and scale
-                
+                    img_tensor = torch.from_numpy(rgb_image).float().permute(2, 0, 1).unsqueeze(0) / 255.0
+                    with torch.no_grad(), torch.cuda.amp.autocast(enabled=torch.cuda.is_available()):
+                        niqe_raw = float(niqe_metric(img_tensor.to(niqe_metric.device)))
+                        niqe_score = max(0, min(100, (10 - niqe_raw) * 10))
                 except Exception as e:
                     logger.warning(f"NIQE calculation failed for frame {self.frame_number}: {e}")
 
             scores_norm = {
-                "sharpness": min(sharpness / config.NORMALIZATION_CONSTANTS["sharpness"], 1.0),
-                "edge_strength": min(edge_strength / config.NORMALIZATION_CONSTANTS["edge_strength"], 1.0),
+                "sharpness": min(sharpness_scaled, 1.0),
+                "edge_strength": min(edge_strength / 100.0, 1.0), # Reduced constant
                 "contrast": min(contrast, 2.0) / 2.0, "brightness": brightness, "entropy": entropy,
-                "niqe": niqe_score / 100.0  # Normalize to 0-1 range
+                "niqe": niqe_score / 100.0
             }
             self.metrics = FrameMetrics(**{f"{k}_score": float(v * 100) for k, v in scores_norm.items()})
-            self.metrics.quality_score = float(sum(scores_norm[k] * (config.QUALITY_WEIGHTS[k] / 100.0) for k in config.QUALITY_METRICS) * 100)
+            self.metrics.quality_score = float(sum(scores_norm[k] * (config.quality_weights[k] / 100.0) for k in config.QUALITY_METRICS) * 100)
         except Exception as e:
             self.error = f"Quality calc failed: {e}"
-            logger.error(f"Frame {self.frame_number}: {self.error}")
+            logger.error(f"Frame {self.frame_number}: {self.error}", exc_info=True)
+
 
 @dataclass
 class AnalysisParameters:
-    source_path: str = ""; method: str = config.UI_DEFAULTS["method"]; interval: float = config.UI_DEFAULTS["interval"]
-    max_resolution: str = config.UI_DEFAULTS["max_resolution"]; fast_scene: bool = config.UI_DEFAULTS["fast_scene"]
-    use_png: bool = config.UI_DEFAULTS["use_png"]; output_folder: str = ""; video_path: str = ""
-    disable_parallel: bool = config.UI_DEFAULTS["disable_parallel"]; resume: bool = config.UI_DEFAULTS["resume"]
-    enable_face_filter: bool = config.UI_DEFAULTS["enable_face_filter"]; face_ref_img_path: str = ""
-    face_model_name: str = config.UI_DEFAULTS["face_model_name"]
-    enable_subject_mask: bool = config.UI_DEFAULTS["enable_subject_mask"]
-    dam4sam_model_name: str = config.UI_DEFAULTS["dam4sam_model_name"]
-    person_detector_model: str = config.UI_DEFAULTS["person_detector_model"]
-    seed_strategy: str = config.UI_DEFAULTS["seed_strategy"]
-    scene_detect: bool = config.UI_DEFAULTS["scene_detect"]
-    nth_frame: int = config.UI_DEFAULTS["nth_frame"]
-    quality_weights: dict = field(default_factory=lambda: config.QUALITY_WEIGHTS.copy())
-    thresholds: dict = field(default_factory=lambda: {k: config.UI_DEFAULTS.get(f"{k}_thresh", 50.0) for k in config.QUALITY_METRICS})
-    require_face_match: bool = config.UI_DEFAULTS["require_face_match"]
-    enable_dedup: bool = config.UI_DEFAULTS["enable_dedup"]
-    dedup_thresh: int = config.UI_DEFAULTS["dedup_thresh"]
-    # Grounding options
-    text_prompt: str = ""                    # empty -> disabled
-    prompt_type_for_video: str = "box"       # "box" | "mask" (mask optional)
-    gdino_config_path: str = str(Config.GROUNDING_DINO_CONFIG)
-    gdino_checkpoint_path: str = str(Config.GROUNDING_DINO_CKPT)
-    box_threshold: float = Config.GROUNDING_BOX_THRESHOLD
-    text_threshold: float = Config.GROUNDING_TEXT_THRESHOLD
+    source_path: str = ""; method: str = ""; interval: float = 0.0
+    max_resolution: str = ""; fast_scene: bool = False
+    use_png: bool = True; output_folder: str = ""; video_path: str = ""
+    disable_parallel: bool = False; resume: bool = False
+    enable_face_filter: bool = False; face_ref_img_path: str = ""
+    face_model_name: str = ""
+    enable_subject_mask: bool = False
+    dam4sam_model_name: str = ""
+    person_detector_model: str = ""
+    seed_strategy: str = ""
+    scene_detect: bool = False
+    nth_frame: int = 0
+    require_face_match: bool = False
+    enable_dedup: bool = False
+    dedup_thresh: int = 0
+    text_prompt: str = ""
+    prompt_type_for_video: str = "box"
+    
+    # These are not direct UI inputs but derived from config
+    gdino_config_path: str = str(config.GROUNDING_DINO_CONFIG)
+    gdino_checkpoint_path: str = str(config.GROUNDING_DINO_CKPT)
+    box_threshold: float = config.GROUNDING_BOX_THRESHOLD
+    text_threshold: float = config.GROUNDING_TEXT_THRESHOLD
+
+    @classmethod
+    def from_ui(cls, **kwargs):
+        # Create an instance with defaults from config
+        instance = cls(**config.ui_defaults)
+        # Update with values from UI
+        for key, value in kwargs.items():
+            if hasattr(instance, key):
+                # Coerce types if necessary
+                target_type = type(getattr(instance, key))
+                try:
+                    setattr(instance, key, target_type(value))
+                except (ValueError, TypeError):
+                    logger.warning(f"Could not coerce UI value for '{key}' to {target_type}. Using default.")
+        return instance
 
 # --- Subject Masking Logic ---
 @dataclass
@@ -391,7 +398,7 @@ class SubjectMasker:
         self.tracker = None; self.mask_dir = None; self.shots = []
         self._gdino = None
         self._sam2_img = None
-        self._grounder_device = "cuda" if torch.cuda.is_available() else "cpu"
+        self._device = "cuda" if torch.cuda.is_available() else "cpu"
 
     def _init_grounder(self):
         if self._gdino is not None:
@@ -402,12 +409,12 @@ class SubjectMasker:
         try:
             download_model(
                 "https://github.com/IDEA-Research/GroundingDINO/releases/download/v0.1.0-alpha/groundingdino_swint_ogc.pth",
-                Config.GROUNDING_DINO_CKPT, "GroundingDINO Swin-T model", min_size=500_000_000
+                config.GROUNDING_DINO_CKPT, "GroundingDINO Swin-T model", min_size=500_000_000
             )
             self._gdino = gdino_load_model(
                 model_config_path=self.params.gdino_config_path,
                 model_checkpoint_path=self.params.gdino_checkpoint_path,
-                device=self._grounder_device,
+                device=self._device,
             )
             logger.info("Grounding DINO model loaded.")
             return True
@@ -422,11 +429,10 @@ class SubjectMasker:
         if not GROUNDED_SAM_AVAILABLE:
             logger.warning("SAM2 Image Predictor unavailable because sam2 components could not be imported.")
             return None
-        # Reuse the same large checkpoint; yaml lives in the submodule configs
-        sam_ckpt = str(Config.DIRS['models'] / "sam2.1_hiera_large.pt")
-        sam_cfg = str(Config.BASE_DIR / "Grounded-SAM-2" / "configs" / "sam2.1" / "sam2.1_hiera_l.yaml")
-        model = build_sam2(sam_cfg, sam_ckpt)
-        self._sam2_img = SAM2ImagePredictor(model, device=self._grounder_device)
+        sam_ckpt = str(config.DIRS['models'] / "sam2.1_hiera_large.pt")
+        sam_cfg = str(config.BASE_DIR / "Grounded-SAM-2" / "configs" / "sam2.1" / "sam2.1_hiera_l.yaml")
+        model = build_sam2(sam_cfg, sam_ckpt).to(self._device)
+        self._sam2_img = SAM2ImagePredictor(model)
         logger.info("SAM2 Image Predictor loaded.")
         return self._sam2_img
 
@@ -434,49 +440,36 @@ class SubjectMasker:
         if not self._init_grounder():
             return None, {}
         
-        fd, tmp_path = tempfile.mkstemp(suffix=".jpg")
-        os.close(fd)
-        try:
-            ok = cv2.imwrite(tmp_path, frame_bgr_small)
-            if not ok:
-                return None, {"type": "text_prompt", "error": "temp write failed"}
-            
-            image_source, image = gdino_load_image(tmp_path)
-            h, w = image_source.shape[:2]
-            
+        image_source, image_tensor = gdino_load_image(frame_bgr_small)
+        h, w = image_source.shape[:2]
+
+        with torch.no_grad(), torch.cuda.amp.autocast(enabled=self._device=='cuda'):
             boxes, confidences, labels = gdino_predict(
                 model=self._gdino,
-                image=image.to(self._grounder_device),
+                image=image_tensor.to(self._device),
                 caption=text,
                 box_threshold=float(self.params.box_threshold),
                 text_threshold=float(self.params.text_threshold),
             )
+        
+        if boxes is None or len(boxes) == 0:
+            return None, {"type": "text_prompt", "error": "no_boxes"}
             
-            if boxes is None or len(boxes) == 0:
-                return None, {"type": "text_prompt", "error": "no_boxes"}
-                
-            scale = torch.tensor([w, h, w, h], device=boxes.device, dtype=boxes.dtype)
-            boxes_abs = (boxes * scale).cpu()
-            xyxy = box_convert(boxes=boxes_abs, in_fmt="cxcywh", out_fmt="xyxy").numpy()
-            conf = confidences.cpu().numpy().tolist()
-            labels_out = list(labels)
-            
-            idx = int(np.argmax(conf))
-            x1, y1, x2, y2 = map(float, xyxy[idx])
-            xywh = [int(max(0, x1)), int(max(0, y1)), int(max(1, x2 - x1)), int(max(1, y2 - y1))]
-            details = {"type": "text_prompt", "label": labels_out[idx] if labels_out else "", "conf": float(conf[idx])}
-            
-            return xywh, details
-        finally:
-            try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
+        scale = torch.tensor([w, h, w, h], device=boxes.device, dtype=boxes.dtype)
+        boxes_abs = (boxes * scale).cpu()
+        xyxy = box_convert(boxes=boxes_abs, in_fmt="cxcywh", out_fmt="xyxy").numpy()
+        conf = confidences.cpu().numpy().tolist()
+        
+        idx = int(np.argmax(conf))
+        x1, y1, x2, y2 = map(float, xyxy[idx])
+        xywh = [int(max(0, x1)), int(max(0, y1)), int(max(1, x2 - x1)), int(max(1, y2 - y1))]
+        details = {"type": "text_prompt", "label": labels[idx] if labels else "", "conf": float(conf[idx])}
+        
+        return xywh, details
 
     def _ground_first_frame_mask_xywh(self, frame_bgr_small: np.ndarray, text: str):
         xywh, details = self._ground_first_frame_xywh(frame_bgr_small, text)
-        if xywh is None:
-            return None, details
+        if xywh is None: return None, details
         
         predictor = self._sam2_image_predictor()
         if predictor is None:
@@ -486,19 +479,17 @@ class SubjectMasker:
         x, y, w, h = xywh
         img_rgb = cv2.cvtColor(frame_bgr_small, cv2.COLOR_BGR2RGB)
         
-        predictor.set_image(img_rgb)
-        masks, scores, _ = predictor.predict(
-            point_coords=None, point_labels=None,
-            box=np.array([[x, y, x + w, y + h]], dtype=np.float32),
-            multimask_output=False,
-        )
-        if masks is None or masks.size == 0:
-            return xywh, details # fallback to box if empty
+        with torch.no_grad(), torch.cuda.amp.autocast(enabled=self._device=='cuda'):
+            predictor.set_image(img_rgb)
+            masks, _, _ = predictor.predict(
+                box=np.array([[x, y, x + w, y + h]], dtype=np.float32),
+                multimask_output=False,
+            )
+        if masks is None or masks.size == 0: return xywh, details
             
         m = masks.squeeze()
         ys, xs = np.where(m > 0)
-        if ys.size == 0:
-            return xywh, details  # fallback to box if empty
+        if ys.size == 0: return xywh, details
         x1, x2, y1, y2 = xs.min(), xs.max()+1, ys.min(), ys.max()+1
         return [int(x1), int(y1), int(x2 - x1), int(y2 - y1)], {**details, "type": "text_prompt_mask"}
 
@@ -513,10 +504,10 @@ class SubjectMasker:
             logger.error("Could not initialize tracker; skipping masking.")
             return {}
         
-        if not self.shots: # Fallback if scene detection failed or was disabled
+        if not self.shots:
             if self.frame_map:
                 self.shots = [(0, max(self.frame_map.keys()) + 1 if self.frame_map else 0)]
-            else: # Fallback if frame_map is also missing
+            else:
                 image_files = list(Path(frames_dir).glob("frame_*.*"))
                 self.shots = [(0, len(image_files))]
 
@@ -549,7 +540,6 @@ class SubjectMasker:
                         "mask_empty": empties[i], "error": errors[i]
                     }
                     if masks[i] is not None and np.any(masks[i]):
-                        # Upsample mask to original resolution before saving
                         mask_full_res = cv2.resize(masks[i], (w, h), interpolation=cv2.INTER_NEAREST)
                         cv2.imwrite(str(mask_path), mask_full_res)
                         mask_metadata[frame_fname] = asdict(MaskingResult(mask_path=str(mask_path), **result_args))
@@ -572,7 +562,6 @@ class SubjectMasker:
                 "sam21pp-L": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt"
             }
             checkpoint_path = config.DIRS['models'] / Path(model_urls[model_name]).name
-            checkpoint_path.parent.mkdir(exist_ok=True)
             download_model(model_urls[model_name], checkpoint_path, f"{model_name} model", 100_000_000)
             
             from DAM4SAM.utils.utils import determine_tracker
@@ -598,7 +587,7 @@ class SubjectMasker:
             logger.info(f"Found {len(self.shots)} shots.")
         except Exception as e:
             logger.critical(f"Scene detection failed: {e}", exc_info=True)
-            self.shots = [] # Let the main run method handle the fallback
+            self.shots = []
 
     def _load_shot_frames(self, frames_dir, start, end, max_side=640):
         frames = []
@@ -611,11 +600,7 @@ class SubjectMasker:
             h, w = img.shape[:2]
             scale = min(1.0, max_side / max(h, w))
             
-            if scale < 1.0:
-                img_small = cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
-            else:
-                img_small = img
-                
+            img_small = cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA) if scale < 1.0 else img
             frames.append((fn, img_small, (h, w)))
         return frames
 
@@ -623,37 +608,30 @@ class SubjectMasker:
         if not shot_frames:
             return None, None, None
 
-        # NEW: Text-prompt grounding overrides other seed strategies when provided
         if getattr(self.params, "text_prompt", ""):
             if getattr(self.params, "prompt_type_for_video", "box") == "mask":
                 xywh, details = self._ground_first_frame_mask_xywh(shot_frames[0], self.params.text_prompt)
             else:
                 xywh, details = self._ground_first_frame_xywh(shot_frames[0], self.params.text_prompt)
-
             if xywh is not None:
                 logger.info(f"Text-prompt seed ({details.get('type')} '{details.get('label', '')}' conf={details.get('conf', 0):.2f}): {xywh}")
                 return 0, xywh, details
             else:
                 logger.warning("Text-prompt grounding returned no boxes; falling back to existing strategy.")
 
-        # If face filter is disabled, prefer YOLO people
         if not self.params.enable_face_filter and self.person_detector:
             logger.info("Face filter off. Seeding with largest/central person box.")
             boxes = self.person_detector.detect_boxes(shot_frames[0])
             if boxes:
-                h, w = shot_frames[0].shape[:2]
-                cx, cy = w/2, h/2
-                
+                h, w = shot_frames[0].shape[:2]; cx, cy = w/2, h/2
                 strategy_map = {
                     "Largest Person": lambda b: (b[2]-b[0])*(b[3]-b[1]),
                     "Center-most Person": lambda b: -math.hypot( (b[0]+b[2])/2 - cx, (b[1]+b[3])/2 - cy )
                 }
                 score_func = strategy_map.get(self.params.seed_strategy, strategy_map["Largest Person"])
-                
                 x1,y1,x2,y2,_ = sorted(boxes, key=score_func, reverse=True)[0]
                 return 0, [x1, y1, x2-x1, y2-y1], {'type': 'person_auto'}
 
-        # Existing reference-face path (only if enabled and embedding present)
         seed_details, matched_face, seed_idx = {}, None, -1
         if self.face_analyzer and self.reference_embedding is not None and self.params.enable_face_filter:
             logger.info("Searching for reference face...")
@@ -662,8 +640,7 @@ class SubjectMasker:
                 faces = self.face_analyzer.get(frame) if frame is not None else []
                 for face in faces:
                     dist = 1 - np.dot(face.normed_embedding, self.reference_embedding)
-                    if dist < min_dist:
-                        min_dist, matched_face, seed_idx = dist, face, i
+                    if dist < min_dist: min_dist, matched_face, seed_idx = dist, face, i
             if matched_face and min_dist < 0.6:
                 logger.info(f"Found reference face in frame {seed_idx} (dist: {min_dist:.2f}).")
                 seed_details = {'type': 'face_match', 'seed_face_sim': 1 - min_dist}
@@ -685,12 +662,8 @@ class SubjectMasker:
         face_bbox = [x1, y1, x2 - x1, y2 - y1]
         
         person_bbox = self._pick_person_box_for_face(shot_frames[seed_idx], face_bbox)
-        if person_bbox:
-            final_bbox = person_bbox
-            logger.info(f"Found person box {final_bbox}. Seeding.")
-        else:
-            final_bbox = self._expand_face_to_body(face_bbox, shot_frames[seed_idx].shape)
-            logger.info(f"No person box. Using heuristic expansion {final_bbox}.")
+        final_bbox = person_bbox if person_bbox else self._expand_face_to_body(face_bbox, shot_frames[seed_idx].shape)
+        logger.info(f"Seeding with {'person box' if person_bbox else 'heuristic expansion'}: {final_bbox}.")
         seed_details['type'] = ('person_box_from_' if person_bbox else 'expanded_box_from_') + seed_details['type']
         return seed_idx, final_bbox, seed_details
         
@@ -735,58 +708,41 @@ class SubjectMasker:
         masks = [None] * len(shot_frames)
         
         try:
-            seed_frame_pil = Image.fromarray(cv2.cvtColor(shot_frames[seed_idx], cv2.COLOR_BGR2RGB))
-            outputs = self.tracker.initialize(seed_frame_pil, None, bbox=bbox_xywh)
-            mask = (outputs.get('pred_mask') * 255).astype(np.uint8) if outputs.get('pred_mask') is not None else np.zeros_like(shot_frames[seed_idx], dtype=np.uint8)[:,:,0]
-            masks[seed_idx] = mask
-            self.progress_queue.put({"progress": 1})
-
-            # Forward pass
-            for i in range(seed_idx + 1, len(shot_frames)):
-                if self.cancel_event.is_set(): break
-                frame_pil = Image.fromarray(cv2.cvtColor(shot_frames[i], cv2.COLOR_BGR2RGB))
-                outputs = self.tracker.track(frame_pil)
-                masks[i] = (outputs.get('pred_mask') * 255).astype(np.uint8) if outputs.get('pred_mask') is not None else np.zeros_like(shot_frames[i], dtype=np.uint8)[:,:,0]
+            with torch.cuda.amp.autocast(enabled=self._device=='cuda'):
+                seed_frame_pil = Image.fromarray(cv2.cvtColor(shot_frames[seed_idx], cv2.COLOR_BGR2RGB))
+                outputs = self.tracker.initialize(seed_frame_pil, None, bbox=bbox_xywh)
+                mask = (outputs.get('pred_mask') * 255).astype(np.uint8) if outputs.get('pred_mask') is not None else np.zeros_like(shot_frames[seed_idx], dtype=np.uint8)[:,:,0]
+                masks[seed_idx] = mask
                 self.progress_queue.put({"progress": 1})
 
-            self.tracker.initialize(seed_frame_pil, None, bbox=bbox_xywh) # Re-initialize
+                # Forward pass
+                for i in range(seed_idx + 1, len(shot_frames)):
+                    if self.cancel_event.is_set(): break
+                    frame_pil = Image.fromarray(cv2.cvtColor(shot_frames[i], cv2.COLOR_BGR2RGB))
+                    outputs = self.tracker.track(frame_pil)
+                    masks[i] = (outputs.get('pred_mask') * 255).astype(np.uint8) if outputs.get('pred_mask') is not None else np.zeros_like(shot_frames[i], dtype=np.uint8)[:,:,0]
+                    self.progress_queue.put({"progress": 1})
 
-            # Backward pass
-            for i in range(seed_idx - 1, -1, -1):
-                if self.cancel_event.is_set(): break
-                frame_pil = Image.fromarray(cv2.cvtColor(shot_frames[i], cv2.COLOR_BGR2RGB))
-                outputs = self.tracker.track(frame_pil)
-                masks[i] = (outputs.get('pred_mask') * 255).astype(np.uint8) if outputs.get('pred_mask') is not None else np.zeros_like(shot_frames[i], dtype=np.uint8)[:,:,0]
-                self.progress_queue.put({"progress": 1})
+                self.tracker.initialize(seed_frame_pil, None, bbox=bbox_xywh) # Re-initialize
+
+                # Backward pass
+                for i in range(seed_idx - 1, -1, -1):
+                    if self.cancel_event.is_set(): break
+                    frame_pil = Image.fromarray(cv2.cvtColor(shot_frames[i], cv2.COLOR_BGR2RGB))
+                    outputs = self.tracker.track(frame_pil)
+                    masks[i] = (outputs.get('pred_mask') * 255).astype(np.uint8) if outputs.get('pred_mask') is not None else np.zeros_like(shot_frames[i], dtype=np.uint8)[:,:,0]
+                    self.progress_queue.put({"progress": 1})
 
             h, w = shot_frames[0].shape[:2]
             for i in range(len(masks)):
                 if self.cancel_event.is_set(): masks[i] = None
                 if masks[i] is None: masks[i] = np.zeros((h, w), dtype=np.uint8)
                 
-                if self.person_detector and np.any(masks[i]):
-                    boxes = self.person_detector.detect_boxes(shot_frames[i])
-                    if boxes:
-                        ys, xs = np.where(masks[i] > 0)
-                        if ys.size > 0:
-                            x1m, x2m, y1m, y2m = xs.min(), xs.max()+1, ys.min(), ys.max()+1
-                            def iou(b):
-                                ix1, iy1 = max(b[0], x1m), max(b[1], y1m)
-                                ix2, iy2 = min(b[2], x2m), min(b[3], y2m)
-                                inter = max(0, ix2-ix1)*max(0, iy2-iy1)
-                                union = (b[2]-b[0])*(b[3]-b[1]) + (x2m-x1m)*(y2m-y1m) - inter + 1e-6
-                                return inter/union
-                            
-                            bx1, by1, bx2, by2, _ = max(boxes, key=iou)
-                            clip = np.zeros_like(masks[i])
-                            clip[by1:by2, bx1:bx2] = 255
-                            masks[i] = cv2.bitwise_and(masks[i], clip)
-
             img_area = h * w
             final_results = []
             for mask in masks:
                 area_pct = (np.sum(mask > 0) / img_area) * 100 if img_area > 0 else 0.0
-                is_empty = area_pct < config.MIN_MASK_AREA_PCT
+                is_empty = area_pct < config.min_mask_area_pct
                 final_results.append((mask, float(area_pct), bool(is_empty), "Empty mask" if is_empty else None))
             return zip(*final_results)
 
@@ -794,6 +750,7 @@ class SubjectMasker:
             logger.critical(f"DAM4SAM propagation failed: {e}", exc_info=True)
             h, w = shot_frames[0].shape[:2]
             return ([np.zeros((h,w), np.uint8)]*len(shot_frames), [0.0]*len(shot_frames), [True]*len(shot_frames), [f"Propagation failed: {e}"]*len(shot_frames))
+
 
 # --- Backend Analysis Pipeline ---
 class VideoManager:
@@ -911,17 +868,15 @@ class AnalysisPipeline(Pipeline):
         self.face_analyzer = None; self.reference_embedding = None; self.mask_metadata = {}
         self.features = get_feature_status()
         self.niqe_metric = None
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
     def _initialize_niqe_metric(self):
-        """Initialize NIQE metric for quality assessment"""
         if self.niqe_metric is None:
             try:
-                device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-                self.niqe_metric = pyiqa.create_metric('niqe', device=device)
+                self.niqe_metric = pyiqa.create_metric('niqe', device=self.device)
                 logger.info("NIQE metric initialized successfully")
             except Exception as e:
                 logger.warning(f"Failed to initialize NIQE metric: {e}")
-                self.niqe_metric = None
 
     def run(self):
         try:
@@ -938,16 +893,13 @@ class AnalysisPipeline(Pipeline):
 
             needs_face_analyzer = self.params.enable_face_filter or \
                                   (self.params.enable_subject_mask and "Reference Face" in self.params.seed_strategy and not self.params.text_prompt)
-            if needs_face_analyzer:
-                self._initialize_face_analyzer()
-            if self.params.enable_face_filter and self.params.face_ref_img_path:
-                self._process_reference_face()
+            if needs_face_analyzer: self._initialize_face_analyzer()
+            if self.params.enable_face_filter and self.params.face_ref_img_path: self._process_reference_face()
             
             person_detector = None
             if self.params.enable_subject_mask and self.features['person_detection']:
                 try:
-                    person_detector = PersonDetector(model=self.params.person_detector_model)
-                    logger.info(f"Person detector ({self.params.person_detector_model}) initialized.")
+                    person_detector = PersonDetector(model=self.params.person_detector_model, device=self.device)
                 except Exception as e:
                     logger.warning(f"Person detector unavailable: {e}")
 
@@ -972,7 +924,8 @@ class AnalysisPipeline(Pipeline):
     def _get_config_hash(self):
         d = asdict(self.params)
         params_to_hash = {k: d.get(k) for k in ['enable_subject_mask', 'scene_detect', 'enable_face_filter',
-                                                'face_model_name', 'quality_weights', 'dam4sam_model_name']}
+                                                'face_model_name', 'dam4sam_model_name']}
+        params_to_hash['quality_weights'] = config.quality_weights
         return hashlib.sha1(json.dumps(params_to_hash, sort_keys=True).encode()).hexdigest()
 
     def _check_resume(self, current_hash):
@@ -1007,20 +960,12 @@ class AnalysisPipeline(Pipeline):
         if self.face_analyzer: return
         logger.info(f"Loading face model: {self.params.face_model_name}")
         try:
-            self.face_analyzer = FaceAnalysis(
-                name=self.params.face_model_name,
-                root=str(config.DIRS['models']),
-                providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
-            )
-            try:
-                self.face_analyzer.prepare(ctx_id=0, det_size=(640, 640))
-                logger.success("Face model loaded with CUDA.")
-            except Exception as e_cuda:
-                logger.warning(f"CUDA init failed: {e_cuda}. Falling back to CPU...")
-                self.face_analyzer.prepare(ctx_id=-1, det_size=(640, 640))
-                logger.success("Face model loaded with CPU.")
-        except Exception as e_cpu:
-            raise RuntimeError(f"Could not initialize face analysis model. Error: {e_cpu}") from e_cpu
+            providers = ['CUDAExecutionProvider', 'CPUExecutionProvider'] if self.device == 'cuda' else ['CPUExecutionProvider']
+            self.face_analyzer = FaceAnalysis(name=self.params.face_model_name, root=str(config.DIRS['models']), providers=providers)
+            self.face_analyzer.prepare(ctx_id=0 if self.device == 'cuda' else -1, det_size=(640, 640))
+            logger.success(f"Face model loaded with {'CUDA' if self.device == 'cuda' else 'CPU'}.")
+        except Exception as e:
+            raise RuntimeError(f"Could not initialize face analysis model. Error: {e}") from e
 
     def _process_reference_face(self):
         if not self.face_analyzer: return
@@ -1039,18 +984,20 @@ class AnalysisPipeline(Pipeline):
         
         thumb_dir = self.output_dir / "thumbs"
         thumb_dir.mkdir(exist_ok=True)
+        logger.info("Generating thumbnails...")
         for img_path in image_files:
             thumb_path = thumb_dir / f"{img_path.stem}.jpg"
-            if not thumb_path.exists():
+            if thumb_path.exists(): continue
+            try:
                 img = cv2.imread(str(img_path))
-                if img is not None:
-                    h, w = img.shape[:2]
-                    scale = math.sqrt(500_000 / (h * w)) if (h*w) > 500_000 else 1.0
-                    if scale < 1.0:
-                        thumb = cv2.resize(img, (int(w*scale), int(h*scale)), interpolation=cv2.INTER_AREA)
-                        cv2.imwrite(str(thumb_path), thumb, [cv2.IMWRITE_JPEG_QUALITY, 85])
-                    else:
-                        shutil.copy2(img_path, thumb_path)
+                if img is None: continue
+                h, w = img.shape[:2]
+                if (h*w) == 0: continue
+                scale = math.sqrt(500_000 / (h * w)) if (h*w) > 500_000 else 1.0
+                thumb = cv2.resize(img, (int(w*scale), int(h*scale)), interpolation=cv2.INTER_AREA) if scale < 1.0 else img
+                cv2.imwrite(str(thumb_path), thumb, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            except Exception as e:
+                logger.error(f"Failed to create thumbnail for {img_path.name}: {e}")
 
         self.progress_queue.put({"total": len(image_files), "stage": "Analysis"})
         num_workers = 1 if self.params.disable_parallel or self.params.enable_face_filter else min(os.cpu_count() or 4, 8)
@@ -1060,29 +1007,35 @@ class AnalysisPipeline(Pipeline):
     def _process_single_frame(self, image_path):
         if self.cancel_event.is_set(): return
         try:
-            # Initialize NIQE if not already done
-            if not hasattr(self, 'niqe_metric') or self.niqe_metric is None:
-                self._initialize_niqe_metric()
+            self._initialize_niqe_metric()
 
             image_data = cv2.imread(str(image_path))
             if image_data is None: raise ValueError("Could not read image.")
+
+            thumb_path = self.output_dir / "thumbs" / f"{image_path.stem}.jpg"
+            thumb_image = cv2.imread(str(thumb_path))
+            if thumb_image is None: raise ValueError("Could not read thumbnail.")
             
             frame_num_match = re.search(r'frame_(\d+)', image_path.name)
             frame_num = int(frame_num_match.group(1)) if frame_num_match else -1
 
             frame = Frame(image_data, frame_num)
             mask_meta = self.mask_metadata.get(image_path.name, {})
-            mask = cv2.imread(mask_meta["mask_path"], cv2.IMREAD_GRAYSCALE) if mask_meta.get("mask_path") else None
-            frame.calculate_quality_metrics(mask=mask, niqe_metric=self.niqe_metric)
+            
+            mask_thumb = None
+            if mask_meta.get("mask_path"):
+                mask_full = cv2.imread(mask_meta["mask_path"], cv2.IMREAD_GRAYSCALE)
+                if mask_full is not None:
+                    mask_thumb = cv2.resize(mask_full, (thumb_image.shape[1], thumb_image.shape[0]), interpolation=cv2.INTER_NEAREST)
+
+            frame.calculate_quality_metrics(thumb_image=thumb_image, mask=mask_thumb, niqe_metric=self.niqe_metric)
 
             if self.params.enable_face_filter and self.reference_embedding is not None and self.face_analyzer:
                 self._analyze_face_similarity(frame)
             
             meta = {"filename": image_path.name, "metrics": asdict(frame.metrics)}
-            if frame.face_similarity_score is not None:
-                meta["face_sim"] = frame.face_similarity_score
-            if frame.max_face_confidence is not None:
-                meta["face_conf"] = frame.max_face_confidence
+            if frame.face_similarity_score is not None: meta["face_sim"] = frame.face_similarity_score
+            if frame.max_face_confidence is not None: meta["face_conf"] = frame.max_face_confidence
             meta.update(mask_meta)
 
             if self.params.enable_dedup:
@@ -1144,7 +1097,7 @@ class AppUI:
             gr.Markdown("# 🎬 Frame Extractor & Analyzer")
             status_messages = []
             if not self.feature_status['cuda_available']:
-                status_messages.append("⚠️ **CPU Mode** — GPU-dependent features (Face Analysis, Subject Masking) are disabled.")
+                status_messages.append("⚠️ **CPU Mode** — GPU-dependent features are disabled or will be slow.")
             if not self.feature_status['grounded_sam_available']:
                 status_messages.append("⚠️ **Grounded-SAM-2 components not found** — Text prompt seeding is disabled.")
             if status_messages:
@@ -1161,21 +1114,19 @@ class AppUI:
                 with gr.Column(scale=1):
                     self._create_component('unified_status', 'textbox', {'label': "📊 Status Summary", 'lines': 2, 'interactive': False})
 
-            with gr.Accordion("⚙️ Config", open=False):
+            with gr.Accordion("⚙️ App Config", open=False):
                 with gr.Row():
                     with gr.Column(): self._create_config_presets_ui()
                     with gr.Column():
-                        self._create_component('disable_parallel_input', 'checkbox', {'label': "🐌 Disable Parallelism", 'value': config.UI_DEFAULTS["disable_parallel"]})
+                        self._create_component('disable_parallel_input', 'checkbox', {'label': "🐌 Disable Parallelism", 'value': config.ui_defaults["disable_parallel"]})
             
             self._create_event_handlers()
         return demo
 
     def _create_component(self, name, comp_type, kwargs):
-        comp_map = {
-            'button': gr.Button, 'textbox': gr.Textbox, 'dropdown': gr.Dropdown, 'slider': gr.Slider,
-            'checkbox': gr.Checkbox, 'file': gr.File, 'radio': gr.Radio, 'gallery': gr.Gallery,
-            'plot': gr.Plot, 'markdown': gr.Markdown, 'html': gr.HTML
-        }
+        comp_map = {'button': gr.Button, 'textbox': gr.Textbox, 'dropdown': gr.Dropdown, 'slider': gr.Slider,
+                    'checkbox': gr.Checkbox, 'file': gr.File, 'radio': gr.Radio, 'gallery': gr.Gallery,
+                    'plot': gr.Plot, 'markdown': gr.Markdown, 'html': gr.HTML}
         self.components[name] = comp_map[comp_type](**kwargs)
         return self.components[name]
 
@@ -1188,12 +1139,12 @@ class AppUI:
             with gr.Column():
                 gr.Markdown("### ⚙️ Extraction Settings")
                 method_choices = ["keyframes", "interval", "every_nth_frame", "all"] + (["scene"] if self.feature_status['scene_detection'] else [])
-                self._create_component('method_input', 'dropdown', {'choices': method_choices, 'value': "all", 'label': "Method"})
-                self._create_component('interval_input', 'textbox', {'label': "Interval (s)", 'value': 5.0, 'visible': False})
-                self._create_component('nth_frame_input', 'textbox', {'label': "N-th Frame Value", 'value': config.UI_DEFAULTS["nth_frame"], 'visible': False})
+                self._create_component('method_input', 'dropdown', {'choices': method_choices, 'value': config.ui_defaults['method'], 'label': "Method"})
+                self._create_component('interval_input', 'textbox', {'label': "Interval (s)", 'value': config.ui_defaults['interval'], 'visible': False})
+                self._create_component('nth_frame_input', 'textbox', {'label': "N-th Frame Value", 'value': config.ui_defaults["nth_frame"], 'visible': False})
                 self._create_component('fast_scene_input', 'checkbox', {'label': "Fast Scene Detect", 'visible': False})
-                self._create_component('max_resolution', 'dropdown', {'choices': ["maximum available", "2160", "1080", "720"], 'value': "maximum available", 'label': "DL Res"})
-                self._create_component('use_png_input', 'checkbox', {'label': "Save as PNG", 'value': True})
+                self._create_component('max_resolution', 'dropdown', {'choices': ["maximum available", "2160", "1080", "720"], 'value': config.ui_defaults['max_resolution'], 'label': "DL Res"})
+                self._create_component('use_png_input', 'checkbox', {'label': "Save as PNG", 'value': config.ui_defaults['use_png']})
         
         start_btn = gr.Button("🚀 Start Extraction", variant="primary")
         stop_btn = gr.Button("⏹️ Stop", variant="stop", interactive=False)
@@ -1204,27 +1155,26 @@ class AppUI:
             with gr.Column(scale=1):
                 gr.Markdown("### 📁 Input")
                 self._create_component('frames_folder_input', 'textbox', {'label': "📂 Extracted Frames Folder"})
-                self._create_component('analysis_video_path_input', 'textbox', {'label': "🎥 Original Video Path (Optional)"})
-                self._create_component('resume_input', 'checkbox', {'label': "💾 Skip re-analysis", 'value': config.UI_DEFAULTS["resume"]})
+                self._create_component('analysis_video_path_input', 'textbox', {'label': "🎥 Original Video Path (Optional for Scene Detection)"})
+                self._create_component('resume_input', 'checkbox', {'label': "💾 Skip re-analysis if config is unchanged", 'value': config.ui_defaults["resume"]})
             with gr.Column(scale=2):
                 gr.Markdown("### ⚙️ Analysis Settings")
                 with gr.Group():
-                    self._create_component('enable_face_filter_input', 'checkbox', {'label': "Enable Face Similarity", 'value': config.UI_DEFAULTS['enable_face_filter'], 'interactive': self.feature_status['face_analysis']})
-                    self._create_component('face_model_name_input', 'dropdown', {'choices': ["buffalo_l", "buffalo_s"], 'value': "buffalo_l", 'label': "Face Model"})
+                    self._create_component('enable_face_filter_input', 'checkbox', {'label': "Enable Face Similarity", 'value': config.ui_defaults['enable_face_filter'], 'interactive': self.feature_status['face_analysis']})
+                    self._create_component('face_model_name_input', 'dropdown', {'choices': ["buffalo_l", "buffalo_s"], 'value': config.ui_defaults['face_model_name'], 'label': "Face Model"})
                     self._create_component('face_ref_img_path_input', 'textbox', {'label': "📸 Reference Image Path"})
                     self._create_component('face_ref_img_upload_input', 'file', {'label': "📤 Or Upload", 'type': "filepath"})
                 with gr.Group():
                     self._create_component('enable_subject_mask_input', 'checkbox', {'label': "Enable Subject-Only Metrics", 'value': self.feature_status['masking'], 'interactive': self.feature_status['masking']})
-                    self._create_component('dam4sam_model_name_input', 'dropdown', {'choices': ['sam21pp-T', 'sam21pp-S', 'sam21pp-B+', 'sam21pp-L'], 'value': 'sam21pp-L', 'label': "DAM4SAM Model"})
-                    self._create_component('person_detector_model_input', 'dropdown', {'choices': ['yolo11x.pt', 'yolo11s.pt'], 'value': 'yolo11x.pt', 'label': "Person Detector"})
+                    self._create_component('dam4sam_model_name_input', 'dropdown', {'choices': ['sam21pp-T', 'sam21pp-S', 'sam21pp-B+', 'sam21pp-L'], 'value': config.ui_defaults['dam4sam_model_name'], 'label': "DAM4SAM Model"})
+                    self._create_component('person_detector_model_input', 'dropdown', {'choices': ['yolo11x.pt', 'yolo11s.pt'], 'value': config.ui_defaults['person_detector_model'], 'label': "Person Detector"})
                     self._create_component('scene_detect_input', 'checkbox', {'label': "Use Scene Detection", 'value': self.feature_status['scene_detection'], 'interactive': self.feature_status['scene_detection']})
                     with gr.Accordion("Subject Seeding Strategy", open=True):
-                        self._create_component('text_prompt_input', 'textbox', {'label': "Ground with text (optional)", 'placeholder': "e.g., 'a woman in a red dress'", 'value': config.UI_DEFAULTS['text_prompt'], 'interactive': self.feature_status['grounded_sam_available']})
-                        self._create_component('prompt_type_for_video_input', 'dropdown', {'choices': ['box', 'mask'], 'value': config.UI_DEFAULTS['prompt_type_for_video'], 'label': 'Prompt Type', 'interactive': self.feature_status['grounded_sam_available']})
-                        self._create_component('seed_strategy_input', 'dropdown', {'choices': ["Reference Face / Largest", "Largest Person", "Center-most Person"], 'value': config.UI_DEFAULTS['seed_strategy'], 'label': "Fallback Seed Strategy"})
-
+                        self._create_component('text_prompt_input', 'textbox', {'label': "Ground with text (overrides other strategies)", 'placeholder': "e.g., 'a woman in a red dress'", 'value': config.ui_defaults['text_prompt'], 'interactive': self.feature_status['grounded_sam_available']})
+                        self._create_component('prompt_type_for_video_input', 'dropdown', {'choices': ['box', 'mask'], 'value': config.ui_defaults['prompt_type_for_video'], 'label': 'Prompt Type', 'interactive': self.feature_status['grounded_sam_available']})
+                        self._create_component('seed_strategy_input', 'dropdown', {'choices': ["Reference Face / Largest", "Largest Person", "Center-most Person"], 'value': config.ui_defaults['seed_strategy'], 'label': "Fallback Seed Strategy"})
                 with gr.Group():
-                    self._create_component('enable_dedup_input', 'checkbox', {'label': "Enable Near-Duplicate Filtering", 'value': config.UI_DEFAULTS['enable_dedup'], 'interactive': self.feature_status['perceptual_hashing']})
+                    self._create_component('enable_dedup_input', 'checkbox', {'label': "Enable Near-Duplicate Filtering", 'value': config.ui_defaults['enable_dedup'], 'interactive': self.feature_status['perceptual_hashing']})
                     
         start_btn = gr.Button("🔬 Start Analysis", variant="primary")
         stop_btn = gr.Button("⏹️ Stop", variant="stop", interactive=False)
@@ -1234,34 +1184,33 @@ class AppUI:
         with gr.Row():
             with gr.Column(scale=1):
                 gr.Markdown("### 🎛️ Filter Controls")
-                self._create_component('auto_pctl_input', 'slider', {
-                    'label': 'Auto-Threshold Percentile', 'minimum': 1, 'maximum': 99, 'value': 75, 'step': 1
-                })
+                self._create_component('auto_pctl_input', 'slider', {'label': 'Auto-Threshold Percentile', 'minimum': 1, 'maximum': 99, 'value': 75, 'step': 1})
                 with gr.Row():
                     self._create_component('apply_auto_button', 'button', {'value': 'Apply Percentile to Mins'})
                     self._create_component('reset_filters_button', 'button', {'value': "Reset Filters"})
-                
                 self._create_component('filter_status_text', 'markdown', {'value': "Load an analysis to begin."})
 
                 self.components['metric_plots'] = {}
                 self.components['metric_sliders'] = {}
                 
                 with gr.Accordion("Deduplication", open=True, visible=self.feature_status['perceptual_hashing']):
-                    self._create_component('dedup_thresh_input', 'slider', {'label': "Similarity Threshold", 'minimum': 0, 'maximum': 32, 'value': config.UI_DEFAULTS['dedup_thresh'], 'step': 1})
+                    f_def = config.filter_defaults['dedup_thresh']
+                    self._create_component('dedup_thresh_input', 'slider', {'label': "Similarity Threshold", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': f_def['default'], 'step': f_def['step']})
 
-                all_metrics = config.QUALITY_METRICS + ["face_sim", "mask_area_pct"]
+                all_metrics = self.get_all_filter_keys()
                 for k in all_metrics:
-                    with gr.Accordion(k.replace('_', ' ').title(), open=k in config.QUALITY_METRICS):
+                    if k not in config.filter_defaults: continue
+                    f_def = config.filter_defaults[k]
+                    accordion_label = k.replace('_', ' ').title()
+                    is_open = k in config.QUALITY_METRICS
+                    with gr.Accordion(accordion_label, open=is_open):
                         self.components['metric_plots'][k] = self._create_component(f'plot_{k}', 'html', {'visible': False})
                         with gr.Row():
-                            if k == "face_sim":
-                                self.components['metric_sliders'][f"{k}_min"] = self._create_component(f'slider_{k}_min', 'slider', {'label': "Min", 'minimum': 0.0, 'maximum': 1.0, 'value': 0.5, 'step': 0.01, 'interactive': True, 'visible': False})
-                                self._create_component('require_face_match_input', 'checkbox', {'label': "Reject if no face", 'value': config.UI_DEFAULTS['require_face_match'], 'visible': False})
-                            elif k == "mask_area_pct":
-                                self.components['metric_sliders'][f"{k}_min"] = self._create_component(f'slider_{k}_min', 'slider', {'label': "Min %", 'minimum': 0.0, 'maximum': 100.0, 'value': config.MIN_MASK_AREA_PCT, 'step': 0.1, 'interactive': True, 'visible': False})
-                            else:
-                                self.components['metric_sliders'][f"{k}_min"] = self._create_component(f'slider_{k}_min', 'slider', {'label': "Min", 'minimum': 0.0, 'maximum': 100.0, 'value': 0.0, 'step': 0.5, 'interactive': True, 'visible': False})
-                                self.components['metric_sliders'][f"{k}_max"] = self._create_component(f'slider_{k}_max', 'slider', {'label': "Max", 'minimum': 0.0, 'maximum': 100.0, 'value': 100.0, 'step': 0.5, 'interactive': True, 'visible': False})
+                            self.components['metric_sliders'][f"{k}_min"] = self._create_component(f'slider_{k}_min', 'slider', {'label': "Min", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': f_def['default_min'], 'step': f_def['step'], 'interactive': True, 'visible': False})
+                            if 'default_max' in f_def:
+                                self.components['metric_sliders'][f"{k}_max"] = self._create_component(f'slider_{k}_max', 'slider', {'label': "Max", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': f_def['default_max'], 'step': f_def['step'], 'interactive': True, 'visible': False})
+                        if k == "face_sim":
+                            self._create_component('require_face_match_input', 'checkbox', {'label': "Reject if no face", 'value': config.ui_defaults['require_face_match'], 'visible': False})
 
             with gr.Column(scale=2):
                 gr.Markdown("### 🖼️ Results Gallery")
@@ -1288,15 +1237,14 @@ class AppUI:
                 self._create_component('config_name_input', 'textbox', {'label': "New Config Name"})
                 self._create_component('save_button', 'button', {'value': "Save"})
 
+    def get_all_filter_keys(self):
+        return config.QUALITY_METRICS + ["face_sim", "mask_area_pct"]
+
     def _create_event_handlers(self):
         self.components.update({
-            'extracted_video_path_state': gr.State(""),
-            'extracted_frames_dir_state': gr.State(""),
-            'analysis_output_dir_state': gr.State(""),
-            'analysis_metadata_path_state': gr.State(""),
-            'all_frames_data_state': gr.State([]),
-            'per_metric_values_state': gr.State({}),
-            'metric_svgs_state': gr.State({})
+            'extracted_video_path_state': gr.State(""), 'extracted_frames_dir_state': gr.State(""),
+            'analysis_output_dir_state': gr.State(""), 'analysis_metadata_path_state': gr.State(""),
+            'all_frames_data_state': gr.State([]), 'per_metric_values_state': gr.State({})
         })
         self._setup_visibility_toggles()
         self._setup_pipeline_handlers()
@@ -1312,154 +1260,77 @@ class AppUI:
         )
 
     def _setup_pipeline_handlers(self):
-        ext_inputs = [
-            self.components['source_input'], self.components['upload_video_input'], self.components['method_input'],
-            self.components['interval_input'], self.components['nth_frame_input'], self.components['fast_scene_input'],
-            self.components['max_resolution'], self.components['use_png_input']
-        ]
-        ext_outputs = [c for name, c in self.components.items() if name in ['start_extraction_button', 'stop_extraction_button', 'unified_log', 'unified_status', 'extracted_video_path_state', 'extracted_frames_dir_state', 'frames_folder_input', 'analysis_video_path_input']]
+        ext_inputs = [c['source_input'], c['upload_video_input'], c['method_input'], c['interval_input'], 
+                      c['nth_frame_input'], c['fast_scene_input'], c['max_resolution'], c['use_png_input']]
+        ext_outputs = [c['start_extraction_button'], c['stop_extraction_button'], c['unified_log'], c['unified_status'], 
+                       c['extracted_video_path_state'], c['extracted_frames_dir_state'], c['frames_folder_input'], c['analysis_video_path_input']]
         self.components['start_extraction_button'].click(self.run_extraction_wrapper, ext_inputs, ext_outputs)
         self.components['stop_extraction_button'].click(lambda: self.cancel_event.set())
 
-        ana_inputs = [
-            self.components['frames_folder_input'], self.components['analysis_video_path_input'],
-            self.components['disable_parallel_input'], self.components['resume_input'],
-            self.components['enable_face_filter_input'], self.components['face_ref_img_path_input'],
-            self.components['face_ref_img_upload_input'], self.components['face_model_name_input'],
-            self.components['enable_subject_mask_input'], self.components['dam4sam_model_name_input'],
-            self.components['person_detector_model_input'], self.components['seed_strategy_input'], 
-            self.components['scene_detect_input'], self.components['enable_dedup_input'],
-            self.components['text_prompt_input'], self.components['prompt_type_for_video_input']
-        ]
-        
-        ana_outputs = [c for name, c in self.components.items() if name in ['start_analysis_button', 'stop_analysis_button', 'unified_log', 'unified_status', 'analysis_output_dir_state', 'analysis_metadata_path_state', 'filtering_tab']]
+        ana_inputs = [c['frames_folder_input'], c['analysis_video_path_input'], c['disable_parallel_input'], c['resume_input'],
+                      c['enable_face_filter_input'], c['face_ref_img_path_input'], c['face_ref_img_upload_input'], c['face_model_name_input'],
+                      c['enable_subject_mask_input'], c['dam4sam_model_name_input'], c['person_detector_model_input'], 
+                      c['seed_strategy_input'], c['scene_detect_input'], c['enable_dedup_input'], c['text_prompt_input'], 
+                      c['prompt_type_for_video_input']]
+        ana_outputs = [c['start_analysis_button'], c['stop_analysis_button'], c['unified_log'], c['unified_status'], 
+                       c['analysis_output_dir_state'], c['analysis_metadata_path_state'], c['filtering_tab']]
         self.components['start_analysis_button'].click(self.run_analysis_wrapper, ana_inputs, ana_outputs)
         self.components['stop_analysis_button'].click(lambda: self.cancel_event.set())
 
     def _setup_filtering_handlers(self):
         c = self.components
-        
         slider_keys = sorted(c['metric_sliders'].keys())
         slider_comps = [c['metric_sliders'][k] for k in slider_keys]
-        
-        # Consolidate all filter inputs for fast path
-        fast_filter_inputs = [
-            c['all_frames_data_state'], c['per_metric_values_state'], c['analysis_output_dir_state'],
-            c['gallery_view_toggle'], c['show_mask_overlay_input'], c['overlay_alpha_slider'],
-            c['require_face_match_input'], c['dedup_thresh_input']
-        ] + slider_comps
-
+        fast_filter_inputs = [c['all_frames_data_state'], c['per_metric_values_state'], c['analysis_output_dir_state'],
+                              c['gallery_view_toggle'], c['show_mask_overlay_input'], c['overlay_alpha_slider'],
+                              c['require_face_match_input'], c['dedup_thresh_input']] + slider_comps
         fast_filter_outputs = [c['filter_status_text'], c['results_gallery']]
         
-        # Fast updates on slider release and some other controls
         for control in slider_comps + [c['dedup_thresh_input'], c['gallery_view_toggle'], c['show_mask_overlay_input'], c['overlay_alpha_slider'], c['require_face_match_input']]:
-            if hasattr(control, 'release'):
-                control.release(self.on_filters_changed, fast_filter_inputs, fast_filter_outputs)
-            if hasattr(control, 'input'):
-                control.input(self.on_filters_changed, fast_filter_inputs, fast_filter_outputs)
-            elif hasattr(control, 'change'):
-                control.change(self.on_filters_changed, fast_filter_inputs, fast_filter_outputs)
+            handler = control.release if hasattr(control, 'release') else control.input if hasattr(control, 'input') else control.change
+            handler(self.on_filters_changed, fast_filter_inputs, fast_filter_outputs)
 
-        def load_and_trigger_update(metadata_path, *current_slider_values):
+        def load_and_trigger_update(metadata_path, *current_filter_values):
             all_frames, metric_values = self.load_and_prep_filter_data(metadata_path)
             svgs = self.build_all_metric_svgs(metric_values)
-
-            # Visibility + initial values for each metric plot
-            plot_keys = config.QUALITY_METRICS + ["face_sim", "mask_area_pct"]
-            visibility_updates = {}
+            
+            updates = {c['all_frames_data_state']: all_frames, c['per_metric_values_state']: metric_values}
+            
+            plot_keys = self.get_all_filter_keys()
             for k in plot_keys:
                 has_data = k in metric_values and len(metric_values.get(k, [])) > 0
-                comp = self.components['metric_plots'][k]
-                visibility_updates[comp] = gr.update(visible=has_data, value=svgs.get(k, ""))
-                
-                # Also manage slider visibility
-                if f"{k}_min" in c['metric_sliders']:
-                    visibility_updates[c['metric_sliders'][f"{k}_min"]] = gr.update(visible=has_data)
-                if f"{k}_max" in c['metric_sliders']:
-                    visibility_updates[c['metric_sliders'][f"{k}_max"]] = gr.update(visible=has_data)
-                if k == "face_sim" and 'require_face_match_input' in c:
-                     visibility_updates[c['require_face_match_input']] = gr.update(visible=has_data)
+                updates[c['metric_plots'][k]] = gr.update(visible=has_data, value=svgs.get(k, ""))
+                if f"{k}_min" in c['metric_sliders']: updates[c['metric_sliders'][f"{k}_min"]] = gr.update(visible=has_data)
+                if f"{k}_max" in c['metric_sliders']: updates[c['metric_sliders'][f"{k}_max"]] = gr.update(visible=has_data)
+                if k == "face_sim" and 'require_face_match_input' in c: updates[c['require_face_match_input']] = gr.update(visible=has_data)
 
-            # Get default values for all filter inputs to run the initial filter
-            all_filter_vals = [
-                c['require_face_match_input'].value, 
-                c['dedup_thresh_input'].value
-            ] + [s.value for s in slider_comps]
-
-            # Prepare gallery/status once on load
-            filter_updates = self.on_filters_changed(
-                all_frames, metric_values, c['analysis_output_dir_state'].value,
-                "Kept Frames", True, 0.6,  # gallery view, overlay, alpha
-                *all_filter_vals
-            )
-
-            final_updates = {
-                self.components['all_frames_data_state']: all_frames,
-                self.components['per_metric_values_state']: metric_values,
-                self.components['metric_svgs_state']: svgs,
-                self.components['filter_status_text']: filter_updates[0],
-                self.components['results_gallery']: filter_updates[1]
-            }
-            final_updates.update(visibility_updates)
+            status, gallery = self.on_filters_changed(all_frames, metric_values, Path(metadata_path).parent, "Kept Frames", True, 0.6, *current_filter_values)
+            updates[c['filter_status_text']] = status
+            updates[c['results_gallery']] = gallery
             
-            # This must return a list in the order of the `load_outputs`
-            load_outputs_keys = ['all_frames_data_state', 'per_metric_values_state', 'metric_svgs_state', 'filter_status_text', 'results_gallery']
-            for k in plot_keys: load_outputs_keys.append(f'plot_{k}')
-            for k in slider_keys: load_outputs_keys.append(f'slider_{k}')
-            if 'require_face_match_input' in c: load_outputs_keys.append('require_face_match_input')
-            
-            # Map the final_updates dictionary to the output components
             # This is complex because Gradio needs a flat list of return values
-            # Build the return list based on the order of load_outputs
-            output_values = []
-            
-            # State components
-            output_values.append(final_updates[c['all_frames_data_state']])
-            output_values.append(final_updates[c['per_metric_values_state']])
-            output_values.append(final_updates[c['metric_svgs_state']])
-            
-            # Status and Gallery
-            output_values.append(final_updates[c['filter_status_text']])
-            output_values.append(final_updates[c['results_gallery']])
-
-            # Plots and Sliders
-            for k in plot_keys: output_values.append(final_updates[c['metric_plots'][k]])
-            for sk in slider_keys: output_values.append(final_updates.get(c['metric_sliders'][sk], gr.update()))
-            if 'require_face_match_input' in c: output_values.append(final_updates.get(c['require_face_match_input'], gr.update()))
-
-            return output_values
+            all_output_comps = [c['all_frames_data_state'], c['per_metric_values_state'], c['filter_status_text'], c['results_gallery']] + \
+                               [c['metric_plots'][k] for k in plot_keys] + \
+                               [c['metric_sliders'][k] for k in slider_keys] + [c['require_face_match_input']]
+            return [updates.get(comp, gr.update()) for comp in all_output_comps]
         
-        load_inputs = [c['analysis_metadata_path_state']] + [c['require_face_match_input'], c['dedup_thresh_input']] + slider_comps
+        load_inputs = [c['analysis_metadata_path_state'], c['require_face_match_input'], c['dedup_thresh_input']] + slider_comps
+        load_outputs = [c['all_frames_data_state'], c['per_metric_values_state'], c['filter_status_text'], c['results_gallery']] + \
+                       [c['metric_plots'][k] for k in self.get_all_filter_keys()] + \
+                       slider_comps + [c['require_face_match_input']]
         
-        load_outputs = [
-            c['all_frames_data_state'], c['per_metric_values_state'], c['metric_svgs_state'],
-            c['filter_status_text'], c['results_gallery']
-        ] + [c['metric_plots'][k] for k in config.QUALITY_METRICS + ["face_sim", "mask_area_pct"]] + list(c['metric_sliders'].values())
-        if 'require_face_match_input' in c:
-            load_outputs.append(c['require_face_match_input'])
+        c['filtering_tab'].select(load_and_trigger_update, load_inputs, load_outputs)
+        c['analysis_metadata_path_state'].change(load_and_trigger_update, load_inputs, load_outputs)
         
-        c['filtering_tab'].select(load_and_trigger_update, load_inputs, [item for item in load_outputs if item is not None])
-        c['analysis_metadata_path_state'].change(load_and_trigger_update, load_inputs, [item for item in load_outputs if item is not None])
-        
-        # Export and other buttons
-        export_inputs = [
-            c['all_frames_data_state'], c['analysis_output_dir_state'], c['enable_crop_input'], 
-            c['crop_ar_input'], c['crop_padding_input'], c['require_face_match_input'], c['dedup_thresh_input']
-        ] + slider_comps
+        export_inputs = [c['all_frames_data_state'], c['analysis_output_dir_state'], c['enable_crop_input'], 
+                         c['crop_ar_input'], c['crop_padding_input'], c['require_face_match_input'], c['dedup_thresh_input']] + slider_comps
         c['export_button'].click(self.export_kept_frames, export_inputs, c['unified_log'])
         
-        reset_outputs = list(c['metric_sliders'].values()) + [c['require_face_match_input'], c['dedup_thresh_input'], c['filter_status_text'], c['results_gallery']]
+        reset_outputs = slider_comps + [c['require_face_match_input'], c['dedup_thresh_input'], c['filter_status_text'], c['results_gallery']]
         c['reset_filters_button'].click(self.reset_filters, [c['all_frames_data_state'], c['per_metric_values_state'], c['analysis_output_dir_state']], reset_outputs)
         
-        c['apply_auto_button'].click(
-            self.auto_set_thresholds,
-            [c['per_metric_values_state'], c['auto_pctl_input']],
-            list(c['metric_sliders'].values())
-        ).then(
-            self.on_filters_changed,
-            fast_filter_inputs,
-            fast_filter_outputs
-        )
+        c['apply_auto_button'].click(self.auto_set_thresholds, [c['per_metric_values_state'], c['auto_pctl_input']], slider_comps).then(
+            self.on_filters_changed, fast_filter_inputs, fast_filter_outputs)
 
     def _setup_config_handlers(self):
         c, cm = self.components, self.config_manager
@@ -1471,7 +1342,7 @@ class AppUI:
         config_controls = [c[comp_id] for comp_id in ordered_comp_ids]
         
         c['save_button'].click(lambda name, *v: cm.save_config(name, {ordered_comp_ids[i]:val for i,val in enumerate(v)}) or (f"Saved '{name}'", gr.update(choices=cm.list_configs())), [c['config_name_input']] + config_controls, [c['config_status'], c['config_dropdown']])
-        c['load_button'].click(lambda name: [v for k in ordered_comp_ids for v in [cm.load_config(name).get(k)]] + [f"Loaded '{name}'"], c['config_dropdown'], config_controls + [c['config_status']])
+        c['load_button'].click(lambda name: [v for k in ordered_comp_ids if (conf := cm.load_config(name)) for v in [conf.get(k)]] + [f"Loaded '{name}'"], c['config_dropdown'], config_controls + [c['config_status']])
         c['delete_button'].click(lambda name: (cm.delete_config(name) or (f"Deleted '{name}'", gr.update(choices=cm.list_configs(), value=None))), c['config_dropdown'], [c['config_status'], c['config_dropdown']])
 
     def _set_ui_state(self, buttons, state, status_msg=""):
@@ -1481,102 +1352,95 @@ class AppUI:
             return {start_btn: gr.update(interactive=False), stop_btn: gr.update(interactive=True), log_comp: "", status_comp: status_msg}
         elif state == "ready":
             return {start_btn: gr.update(interactive=True), stop_btn: gr.update(interactive=False)}
-        elif state == "error":
-            return {start_btn: gr.update(interactive=True), stop_btn: gr.update(interactive=False), log_comp: f"[ERROR] {status_msg}", status_comp: f"[ERROR] {status_msg}"}
-        elif state == "success":
-            return {start_btn: gr.update(interactive=True), stop_btn: gr.update(interactive=False), log_comp: f"[SUCCESS] {status_msg}", status_comp: f"[SUCCESS] {status_msg}"}
-        return {}
+        else: # success or error
+            prefix = "[SUCCESS]" if state == "success" else "[ERROR]"
+            return {start_btn: gr.update(interactive=True), stop_btn: gr.update(interactive=False), log_comp: f"{prefix} {status_msg}", status_comp: f"{prefix} {status_msg}"}
 
-    def run_extraction_wrapper(self, source_path, upload_video, method, interval, nth_frame, fast_scene, max_resolution, use_png):
+    def run_extraction_wrapper(self, source_path, upload_video, *args):
         buttons = (self.components['start_extraction_button'], self.components['stop_extraction_button'])
         yield self._set_ui_state(buttons, "loading", "Starting extraction...")
         self.cancel_event.clear()
         
-        source = upload_video if upload_video else source_path
+        source = upload_video or source_path
         if not source:
             yield self._set_ui_state(buttons, "error", "Video source is required.")
             return
-
+        
         try:
             if upload_video:
                 source = str(config.DIRS['downloads'] / Path(source).name)
                 shutil.copy2(upload_video, source)
-            elif not re.match(r'https?://|youtu\.be', str(source)):
-                if not Path(source).is_file(): raise ValueError("Local file not found.")
+            elif not re.match(r'https?://|youtu\.be', str(source)) and not Path(source).is_file():
+                raise ValueError("Local file not found.")
+
+            ui_arg_names = ['method', 'interval', 'nth_frame', 'fast_scene', 'max_resolution', 'use_png']
+            ui_args = dict(zip(ui_arg_names, args))
+            ui_args['source_path'] = source
+            params = AnalysisParameters.from_ui(**ui_args)
+
+            yield from self._run_task(ExtractionPipeline(params, Queue(), self.cancel_event).run)
+            
+            result = self.last_task_result
+            if result.get("done") and not self.cancel_event.is_set():
+                final_state = self._set_ui_state(buttons, "success", f"Extraction complete. Output: {result['output_dir']}")
+                final_state.update({
+                    self.components['extracted_video_path_state']: result.get("video_path", ""),
+                    self.components['extracted_frames_dir_state']: result["output_dir"],
+                    self.components['frames_folder_input']: result["output_dir"],
+                    self.components['analysis_video_path_input']: result.get("video_path", "")
+                })
+                yield final_state
+            else:
+                yield self._set_ui_state(buttons, "ready")
         except Exception as e:
-            yield self._set_ui_state(buttons, "error", f"Invalid video source: {e}")
-            return
+            logger.error(f"Extraction setup failed: {e}", exc_info=True)
+            yield self._set_ui_state(buttons, "error", str(e))
 
-        try:
-            params = AnalysisParameters(
-                source_path=source, method=method, interval=float(interval), nth_frame=int(nth_frame),
-                fast_scene=fast_scene, max_resolution=max_resolution, use_png=use_png
-            )
-        except ValueError as e:
-            yield self._set_ui_state(buttons, "error", f"Invalid numeric input for interval or N-th frame: {e}")
-            return
 
-        yield from self._run_task(ExtractionPipeline(params, Queue(), self.cancel_event).run)
-        
-        result = self.last_task_result
-        if result.get("done") and not self.cancel_event.is_set():
-            final_state = self._set_ui_state(buttons, "success", f"Extraction complete. Output: {result['output_dir']}")
-            final_state.update({
-                self.components['extracted_video_path_state']: result.get("video_path", ""),
-                self.components['extracted_frames_dir_state']: result["output_dir"],
-                self.components['frames_folder_input']: result["output_dir"],
-                self.components['analysis_video_path_input']: result.get("video_path", "")
-            })
-            yield final_state
-        else:
-            yield self._set_ui_state(buttons, "ready")
-
-    def run_analysis_wrapper(self, frames_folder, video_path,
-                             disable_parallel, resume, enable_face_filter,
-                             face_ref_img_path, face_ref_img_upload, face_model_name,
-                             enable_subject_mask, dam4sam_model_name,
-                             person_detector_model, seed_strategy, scene_detect, enable_dedup,
-                             text_prompt, prompt_type_for_video):
+    def run_analysis_wrapper(self, *args):
         buttons = (self.components['start_analysis_button'], self.components['stop_analysis_button'])
         yield self._set_ui_state(buttons, "loading", "Starting analysis...") | {
-            self.components['analysis_output_dir_state']: gr.update(),
-            self.components['analysis_metadata_path_state']: gr.update(),
-            self.components['filtering_tab']: gr.update()
+            self.components['analysis_output_dir_state']: None, self.components['analysis_metadata_path_state']: None
         }
         self.cancel_event.clear()
 
         try:
-            if not frames_folder or not Path(frames_folder).is_dir(): raise ValueError("Valid frames folder required.")
-            face_ref_full_path = face_ref_img_upload or face_ref_img_path
-            if face_ref_full_path and face_ref_img_upload:
-                dest = config.DIRS['downloads'] / Path(face_ref_img_upload).name
-                shutil.copy2(face_ref_img_upload, dest)
-                face_ref_full_path = str(dest)
-        except Exception as e:
-            yield self._set_ui_state(buttons, "error", f"Invalid input: {e}")
-            return
-        
-        params = AnalysisParameters(
-            output_folder=frames_folder, video_path=video_path, disable_parallel=disable_parallel, 
-            resume=resume, enable_face_filter=enable_face_filter, face_ref_img_path=face_ref_full_path,
-            face_model_name=face_model_name, enable_subject_mask=enable_subject_mask,
-            dam4sam_model_name=dam4sam_model_name, person_detector_model=person_detector_model,
-            seed_strategy=seed_strategy, scene_detect=scene_detect, enable_dedup=enable_dedup,
-            text_prompt=text_prompt, prompt_type_for_video=prompt_type_for_video
-        )
-        yield from self._run_task(AnalysisPipeline(params, Queue(), self.cancel_event).run)
+            ui_arg_names = ['frames_folder', 'video_path', 'disable_parallel', 'resume', 'enable_face_filter', 
+                            'face_ref_img_path', 'face_ref_img_upload', 'face_model_name', 'enable_subject_mask', 
+                            'dam4sam_model_name', 'person_detector_model', 'seed_strategy', 'scene_detect', 
+                            'enable_dedup', 'text_prompt', 'prompt_type_for_video']
+            ui_args = dict(zip(ui_arg_names, args))
 
-        result = self.last_task_result
-        if result.get("done") and not self.cancel_event.is_set():
-            final_state = self._set_ui_state(buttons, "success", f"Analysis complete. Output: {result['output_dir']}")
-            final_state.update({
-                self.components['analysis_output_dir_state']: result["output_dir"],
-                self.components['analysis_metadata_path_state']: result["metadata_path"],
-                self.components['filtering_tab']: gr.update(interactive=True)
-            })
-            yield final_state
-        else:
-            yield self._set_ui_state(buttons, "ready")
+            if not ui_args['frames_folder'] or not Path(ui_args['frames_folder']).is_dir():
+                raise ValueError("Valid frames folder required.")
+            
+            if (ref_upload := ui_args.pop('face_ref_img_upload')):
+                dest = config.DIRS['downloads'] / Path(ref_upload).name
+                shutil.copy2(ref_upload, dest)
+                ui_args['face_ref_img_path'] = str(dest)
+            
+            # Map UI arg names to AnalysisParameters field names
+            param_map = {'frames_folder': 'output_folder'}
+            mapped_args = {param_map.get(k, k): v for k, v in ui_args.items()}
+
+            params = AnalysisParameters.from_ui(**mapped_args)
+
+            yield from self._run_task(AnalysisPipeline(params, Queue(), self.cancel_event).run)
+            
+            result = self.last_task_result
+            if result.get("done") and not self.cancel_event.is_set():
+                final_state = self._set_ui_state(buttons, "success", f"Analysis complete. Output: {result['output_dir']}")
+                final_state.update({
+                    self.components['analysis_output_dir_state']: result["output_dir"],
+                    self.components['analysis_metadata_path_state']: result["metadata_path"],
+                    self.components['filtering_tab']: gr.update(interactive=True)
+                })
+                yield final_state
+            else:
+                yield self._set_ui_state(buttons, "ready")
+        except Exception as e:
+            logger.error(f"Analysis setup failed: {e}", exc_info=True)
+            yield self._set_ui_state(buttons, "error", str(e))
             
     def _run_task(self, task_func):
         progress_queue = task_func.__self__.progress_queue
@@ -1597,9 +1461,9 @@ class AppUI:
                     
                     if time.time() - last_yield > 0.25:
                         elapsed = time.time() - start_time
-                        fps = processed / elapsed if elapsed > 0 else 0
-                        eta = (total - processed) / fps if fps > 0 else 0
-                        status = f"**{stage}:** {processed}/{total} ({processed/total:.1%}) | {fps:.1f} items/s | ETA: {int(eta//60):02d}:{int(eta%60):02d}"
+                        rate = processed / elapsed if elapsed > 0 else 0
+                        eta = (total - processed) / rate if rate > 0 else 0
+                        status = f"**{stage}:** {processed}/{total} ({processed/total:.1%}) | {rate:.1f} items/s | ETA: {int(eta//60):02d}:{int(eta%60):02d}"
                         yield {self.components['unified_log']: "\n".join(log_buffer), self.components['unified_status']: status}
                         last_yield = time.time()
                 except Empty:
@@ -1613,17 +1477,13 @@ class AppUI:
         yield {self.components['unified_log']: "\n".join(log_buffer), self.components['unified_status']: status_text}
 
     def histogram_svg(self, hist_data, title=""):
-        if hist_data is None:
-            return ""
+        if hist_data is None: return ""
         counts, bins = hist_data
         fig, ax = plt.subplots(figsize=(4.6, 2.2), dpi=120)
         ax.bar(bins[:-1], counts, width=np.diff(bins), color="#7aa2ff", alpha=0.85, align="edge")
-        ax.grid(axis="y", alpha=0.2)
-        ax.margins(x=0)
-        for side in ("top", "right"):
-            ax.spines[side].set_visible(False)
-        ax.tick_params(labelsize=8)
-        ax.set_title(title)
+        ax.grid(axis="y", alpha=0.2); ax.margins(x=0)
+        for side in ("top", "right"): ax.spines[side].set_visible(False)
+        ax.tick_params(labelsize=8); ax.set_title(title)
         buf = io.StringIO()
         fig.savefig(buf, format="svg", bbox_inches="tight")
         plt.close(fig)
@@ -1631,17 +1491,9 @@ class AppUI:
 
     def build_all_metric_svgs(self, per_metric_values):
         svgs = {}
-        # 0–100 metrics
-        for k in config.QUALITY_METRICS:
-            h = per_metric_values.get(f"{k}_hist")
-            if h:
+        for k in self.get_all_filter_keys():
+            if (h := per_metric_values.get(f"{k}_hist")):
                 svgs[k] = self.histogram_svg(h, title="")
-        # 0–1 face similarity
-        if per_metric_values.get("face_sim_hist"):
-            svgs["face_sim"] = self.histogram_svg(per_metric_values["face_sim_hist"], title="")
-        # 0–100 mask area
-        if per_metric_values.get("mask_area_pct_hist"):
-            svgs["mask_area_pct"] = self.histogram_svg(per_metric_values["mask_area_pct_hist"], title="")
         return svgs
 
     @staticmethod
@@ -1651,143 +1503,82 @@ class AppUI:
         num_frames = len(all_frames_data)
         filenames = [f['filename'] for f in all_frames_data]
         
-        # Build metric arrays
         metric_arrays = {}
-        for k in config.QUALITY_METRICS:
-            metric_arrays[k] = np.array([f.get("metrics", {}).get(f"{k}_score", np.nan) for f in all_frames_data], dtype=np.float32)
+        for k in config.QUALITY_METRICS: metric_arrays[k] = np.array([f.get("metrics", {}).get(f"{k}_score", np.nan) for f in all_frames_data], dtype=np.float32)
         metric_arrays["face_sim"] = np.array([f.get("face_sim", np.nan) for f in all_frames_data], dtype=np.float32)
         metric_arrays["mask_area_pct"] = np.array([f.get("mask_area_pct", np.nan) for f in all_frames_data], dtype=np.float32)
 
-        # Start with all frames kept, and a dict to track rejection reasons
         kept_mask = np.ones(num_frames, dtype=bool)
         reasons = defaultdict(list)
 
-        # Apply filters
         for k in config.QUALITY_METRICS:
             min_val, max_val = filters.get(f"{k}_min", 0), filters.get(f"{k}_max", 100)
-            low_mask = metric_arrays[k] < min_val
-            high_mask = metric_arrays[k] > max_val
+            low_mask, high_mask = metric_arrays[k] < min_val, metric_arrays[k] > max_val
             for i in np.where(low_mask)[0]: reasons[filenames[i]].append(f"{k}_low")
             for i in np.where(high_mask)[0]: reasons[filenames[i]].append(f"{k}_high")
             kept_mask &= ~low_mask & ~high_mask
 
         if filters.get("face_sim_enabled"):
-            min_val = filters.get("face_sim_min", 0.5)
             valid = ~np.isnan(metric_arrays["face_sim"])
-            low_mask = valid & (metric_arrays["face_sim"] < min_val)
-            for i in np.where(low_mask)[0]:
-                reasons[filenames[i]].append("face_sim_low")
+            low_mask = valid & (metric_arrays["face_sim"] < filters.get("face_sim_min", 0.5))
+            for i in np.where(low_mask)[0]: reasons[filenames[i]].append("face_sim_low")
             kept_mask &= ~low_mask
             if filters.get("require_face_match"):
                 missing_mask = ~valid
-                for i in np.where(missing_mask)[0]:
-                    reasons[filenames[i]].append("face_missing")
+                for i in np.where(missing_mask)[0]: reasons[filenames[i]].append("face_missing")
                 kept_mask &= ~missing_mask
         
         if filters.get("mask_area_enabled"):
-            min_val = filters.get("mask_area_pct_min", 1.0)
-            low_mask = metric_arrays["mask_area_pct"] < min_val
-            empty_mask = np.array([f.get("mask_empty", False) for f in all_frames_data])
-            combined_mask = low_mask | empty_mask
+            combined_mask = metric_arrays["mask_area_pct"] < filters.get("mask_area_pct_min", 1.0)
             for i in np.where(combined_mask)[0]: reasons[filenames[i]].append("mask_too_small")
             kept_mask &= ~combined_mask
 
-        # Deduplication on the remaining kept frames
         if filters.get("enable_dedup"):
             kept_indices = np.where(kept_mask)[0]
             if len(kept_indices) > 1:
-                sorted_kept = sorted([(filenames[i], i) for i in kept_indices])
-                hashes = {i: imagehash.hex_to_hash(all_frames_data[i]['phash']) for _, i in sorted_kept if 'phash' in all_frames_data[i]}
+                sorted_kept_indices = sorted(kept_indices, key=lambda i: filenames[i])
+                hashes = {i: imagehash.hex_to_hash(all_frames_data[i]['phash']) for i in sorted_kept_indices if 'phash' in all_frames_data[i]}
                 
-                last_hash_idx = sorted_kept[0][1]
-                for i in range(1, len(sorted_kept)):
-                    current_idx = sorted_kept[i][1]
+                last_hash_idx = sorted_kept_indices[0]
+                for i in range(1, len(sorted_kept_indices)):
+                    current_idx = sorted_kept_indices[i]
                     if last_hash_idx in hashes and current_idx in hashes:
-                        dist = hashes[last_hash_idx] - hashes[current_idx]
-                        if dist <= filters.get("dedup_thresh", 5):
+                        if (hashes[last_hash_idx] - hashes[current_idx]) <= filters.get("dedup_thresh", 5):
                             kept_mask[current_idx] = False
                             reasons[filenames[current_idx]].append("duplicate")
                         else:
                             last_hash_idx = current_idx
-                    else: # If hash is missing, keep the frame but don't update last_hash
-                        last_hash_idx = current_idx
+                    else: last_hash_idx = current_idx
 
-        # Final separation
-        kept_indices = np.where(kept_mask)[0]
-        rejected_indices = np.where(~kept_mask)[0]
-        
+        kept_indices, rejected_indices = np.where(kept_mask)[0], np.where(~kept_mask)[0]
         kept = [all_frames_data[i] for i in kept_indices]
         rejected = [all_frames_data[i] for i in rejected_indices]
-        
-        all_reasons_flat = [r for r_list in reasons.values() for r in r_list]
-        counts = Counter(all_reasons_flat)
-
+        counts = Counter(r for r_list in reasons.values() for r in r_list)
         return kept, rejected, counts, reasons
 
     def load_and_prep_filter_data(self, metadata_path):
-        if not metadata_path or not Path(metadata_path).exists():
-            return [], {}
+        if not metadata_path or not Path(metadata_path).exists(): return [], {}
         with Path(metadata_path).open('r') as f:
             next(f) # skip header
             all_frames = [json.loads(line) for line in f if line.strip()]
 
         metric_values = {}
-        # Quality metrics
-        for k in config.QUALITY_METRICS:
-            values = np.asarray([f.get("metrics", {}).get(f"{k}_score") for f in all_frames if f.get("metrics", {}).get(f"{k}_score") is not None], dtype=float)
+        for k in self.get_all_filter_keys():
+            is_pct = k == 'mask_area_pct'
+            is_face_sim = k == 'face_sim'
+            values = np.asarray([f.get("metrics" if not is_face_sim else "", {}).get(f"{k}_score" if not is_face_sim else "face_sim", f.get(k)) for f in all_frames if f.get(k) is not None or f.get("metrics", {}).get(f"{k}_score") is not None], dtype=float)
             if values.size > 0:
-                counts, bins = np.histogram(values, bins=50, range=(0, 100))
+                hist_range = (0, 1) if is_face_sim else (0, 100)
+                counts, bins = np.histogram(values, bins=50, range=hist_range)
                 metric_values[k] = values.tolist()
                 metric_values[f"{k}_hist"] = (counts.tolist(), bins.tolist())
-        
-        # Face similarity
-        if any("face_sim" in f and f.get("face_sim") is not None for f in all_frames):
-            values = np.asarray([f.get("face_sim") for f in all_frames if f.get("face_sim") is not None], dtype=float)
-            if values.size > 0:
-                counts, bins = np.histogram(values, bins=50, range=(0, 1))
-                metric_values["face_sim"] = values.tolist()
-                metric_values["face_sim_hist"] = (counts.tolist(), bins.tolist())
-
-        # Mask area
-        if any("mask_area_pct" in f for f in all_frames):
-            values = np.asarray([f.get("mask_area_pct") for f in all_frames if f.get("mask_area_pct") is not None], dtype=float)
-            if values.size > 0:
-                counts, bins = np.histogram(values, bins=50, range=(0, 100))
-                metric_values["mask_area_pct"] = values.tolist()
-                metric_values[f"mask_area_pct_hist"] = (counts.tolist(), bins.tolist())
-        
         return all_frames, metric_values
 
     def _update_gallery(self, all_frames_data, filters, output_dir, gallery_view, show_overlay, overlay_alpha):
         kept, rejected, counts, per_frame_reasons = self._apply_all_filters_vectorized(all_frames_data, filters or {})
         
-        # Build active filters string safely
-        active_filters = []
-        for k in config.QUALITY_METRICS:
-            if (filters or {}).get(f"{k}_min", 0) > 0:
-                active_filters.append(f"{k}>={(filters.get(f'{k}_min', 0)):.1f}")
-            if (filters or {}).get(f"{k}_max", 100) < 100:
-                active_filters.append(f"{k}<={(filters.get(f'{k}_max', 100)):.1f}")
-
-        if (filters or {}).get("face_sim_enabled", False):
-            active_filters.append("face:on")
-            if (filters or {}).get("face_sim_min", 0.5) > 0:
-                active_filters.append(f"sim>={(filters.get('face_sim_min', 0.5)):.2f}")
-            if (filters or {}).get("require_face_match", False):
-                active_filters.append("req_face")
-
-        if (filters or {}).get("mask_area_enabled", False):
-            active_filters.append("mask:on")
-            if (filters or {}).get("mask_area_pct_min", config.MIN_MASK_AREA_PCT) > 0:
-                active_filters.append(f"mask>={(filters.get('mask_area_pct_min', config.MIN_MASK_AREA_PCT)):.1f}%")
-
-        if (filters or {}).get("enable_dedup", False):
-            active_filters.append(f"dedup<={(filters.get('dedup_thresh', config.UI_DEFAULTS['dedup_thresh']))}")
-
-        total_frames = len(all_frames_data)
-        status_parts = [f"**Kept:** {len(kept)}/{total_frames}"]
+        status_parts = [f"**Kept:** {len(kept)}/{len(all_frames_data)}"]
         if counts: status_parts.append(f"**Rejections:** {', '.join([f'{k}: {v}' for k,v in counts.most_common(3)])}")
-        if active_filters: status_parts.append(f"(Active: {', '.join(active_filters)})")
         status_text = " | ".join(status_parts)
 
         frames_to_show = rejected if gallery_view == "Rejected Frames" else kept
@@ -1798,7 +1589,6 @@ class AppUI:
             for f_meta in frames_to_show[:100]:
                 thumb_path = thumb_dir / f"{Path(f_meta['filename']).stem}.jpg"
                 if not thumb_path.exists(): continue
-                
                 caption = f"Reasons: {', '.join(per_frame_reasons.get(f_meta['filename'], []))}" if gallery_view == "Rejected Frames" else ""
 
                 if show_overlay and not f_meta.get("mask_empty", True) and (mask_name := f_meta.get("mask_path")):
@@ -1806,24 +1596,18 @@ class AppUI:
                     thumb = cv2.imread(str(thumb_path))
                     mask_gray = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE) if mask_path.exists() else None
                     if thumb is not None and mask_gray is not None:
-                        mask_small = cv2.resize(mask_gray, (thumb.shape[1], thumb.shape[0]), interpolation=cv2.INTER_NEAREST)
-                        thumb_overlay = render_mask_overlay(thumb, mask_small, float(overlay_alpha))
+                        thumb_overlay = render_mask_overlay(thumb, mask_gray, float(overlay_alpha))
                         preview_images.append((cv2.cvtColor(thumb_overlay, cv2.COLOR_BGR2RGB), caption))
                     else:
                         preview_images.append((str(thumb_path), caption))
                 else:
                     preview_images.append((str(thumb_path), caption))
         
-        gallery_update = gr.update(
-            value=preview_images, 
-            rows=(1 if gallery_view == "Rejected Frames" else 2)
-        )
+        gallery_update = gr.update(value=preview_images, rows=(1 if gallery_view == "Rejected Frames" else 2))
         return status_text, gallery_update
 
     def on_filters_changed(self, all_frames_data, per_metric_values, output_dir, gallery_view, show_overlay, overlay_alpha, require_face_match, dedup_thresh, *slider_values):
-        if not all_frames_data:
-            # Same output arity: status, gallery
-            return "Run analysis to see results.", []
+        if not all_frames_data: return "Run analysis to see results.", []
         
         slider_keys = sorted(self.components['metric_sliders'].keys())
         filters = {key: val for key, val in zip(slider_keys, slider_values)}
@@ -1832,15 +1616,14 @@ class AppUI:
                         "mask_area_enabled": bool(per_metric_values.get("mask_area_pct")),
                         "enable_dedup": any('phash' in f for f in all_frames_data) if all_frames_data else False})
         
-        status_text, gallery_update = self._update_gallery(all_frames_data, filters, output_dir, gallery_view, show_overlay, overlay_alpha)
-        
-        # Plots are no longer updated here
-        return status_text, gallery_update
+        return self._update_gallery(all_frames_data, filters, output_dir, gallery_view, show_overlay, overlay_alpha)
 
-    def export_kept_frames(self, all_frames_data, output_dir, enable_crop, crop_ars, crop_padding, require_face_match, dedup_thresh, *slider_values):
+    def export_kept_frames(self, all_frames_data, output_dir, enable_crop, crop_ars, crop_padding, *filter_args):
         if not all_frames_data: return "No metadata to export."
         try:
             slider_keys = sorted(self.components['metric_sliders'].keys())
+            filters = {key: val for i, key in enumerate(slider_keys)} # This is incorrect, need to get values
+            require_face_match, dedup_thresh, *slider_values = filter_args
             filters = {key: val for key, val in zip(slider_keys, slider_values)}
             filters.update({"require_face_match": require_face_match, "dedup_thresh": dedup_thresh,
                             "face_sim_enabled": any("face_sim" in f for f in all_frames_data),
@@ -1859,10 +1642,7 @@ class AppUI:
             for frame_meta in sorted(kept, key=lambda x: x["filename"]):
                 try:
                     src_path = out_root / frame_meta["filename"]
-                    if not src_path.exists():
-                        logger.warning(f"Source file not found, skipping: {src_path}")
-                        continue
-                    
+                    if not src_path.exists(): continue
                     dst_path = export_dir / frame_meta["filename"]
                     if enable_crop and not frame_meta.get("mask_empty", True) and (mask_name := frame_meta.get("mask_path")):
                         mask_path = out_root / "masks" / mask_name
@@ -1883,73 +1663,44 @@ class AppUI:
 
     def reset_filters(self, all_frames_data, per_metric_values, output_dir):
         updates = {}
-        # 1) Reset control values to their initial defaults
-        for k, s in self.components['metric_sliders'].items():
-            # This relies on the component retaining its initial value. A safer way would be to get from config.
-            # However, for this UI, the default is set on creation.
-            initial_value = 0.0
-            if k.endswith('_max'): initial_value = 100.0
-            elif k == 'face_sim_min': initial_value = 0.5
-            elif k == 'mask_area_pct_min': initial_value = config.MIN_MASK_AREA_PCT
+        slider_keys = sorted(self.components['metric_sliders'].keys())
+        slider_defaults = []
+        for key, comp in self.components['metric_sliders'].items():
+            metric_key = re.sub(r'_(min|max)$', '', key)
+            default_key = 'default_max' if key.endswith('_max') else 'default_min'
+            default_val = config.filter_defaults[metric_key][default_key]
+            updates[comp] = gr.update(value=default_val)
+            slider_defaults.append(default_val)
 
-            updates[s] = gr.update(value=initial_value)
-
-        updates[self.components['require_face_match_input']] = gr.update(value=config.UI_DEFAULTS['require_face_match'])
-        updates[self.components['dedup_thresh_input']] = gr.update(value=config.UI_DEFAULTS['dedup_thresh'])
-
-        # 2) Recompute gallery/status using the same fast path with defaults
+        dedup_default = config.filter_defaults['dedup_thresh']['default']
+        updates[self.components['dedup_thresh_input']] = gr.update(value=dedup_default)
+        face_match_default = config.ui_defaults['require_face_match']
+        updates[self.components['require_face_match_input']] = gr.update(value=face_match_default)
+        
         if all_frames_data:
-            slider_keys = sorted(self.components['metric_sliders'].keys())
-            
-            # Re-fetch default values for sliders
-            slider_defaults = []
-            for k in slider_keys:
-                if k.endswith('_max'): slider_defaults.append(100.0)
-                elif k == 'face_sim_min': slider_defaults.append(0.5)
-                elif k == 'mask_area_pct_min': slider_defaults.append(config.MIN_MASK_AREA_PCT)
-                else: slider_defaults.append(0.0)
-
-            status_text, gallery_update = self.on_filters_changed(
-                all_frames_data,
-                per_metric_values,
-                output_dir,
-                "Kept Frames", # gallery_view
-                True, # show_overlay
-                0.6, # overlay_alpha
-                config.UI_DEFAULTS['require_face_match'],
-                config.UI_DEFAULTS['dedup_thresh'],
-                *slider_defaults
-            )
+            status_text, gallery_update = self.on_filters_changed(all_frames_data, per_metric_values, output_dir, "Kept Frames", True, 0.6,
+                                                                  face_match_default, dedup_default, *slider_defaults)
             updates[self.components['filter_status_text']] = status_text
             updates[self.components['results_gallery']] = gallery_update
         else:
             updates[self.components['filter_status_text']] = "Load an analysis to begin."
             updates[self.components['results_gallery']] = []
         
-        # Unpack the dict into a list of tuples for Gradio
         return list(updates.values())
     
     def auto_set_thresholds(self, per_metric_values, p=75):
-        items = list(self.components['metric_sliders'].items())
-        updates = []
-        if not per_metric_values:
-            return [gr.update() for _ in items]
+        slider_keys = sorted(self.components['metric_sliders'].keys())
+        updates = [gr.update() for _ in slider_keys]
+        if not per_metric_values: return updates
         
-        pmap = {}
-        for k in config.QUALITY_METRICS:
-            vals = per_metric_values.get(k) or []
-            if len(vals) > 0:
-                pmap[k] = float(np.percentile(np.asarray(vals, dtype=np.float32), p))
+        pmap = {k: float(np.percentile(np.asarray(vals, dtype=np.float32), p))
+                for k, vals in per_metric_values.items() if not k.endswith('_hist') and vals}
         
-        for key, comp in items:
+        for i, key in enumerate(slider_keys):
             if key.endswith('_min'):
                 metric = key[:-4]
                 if metric in pmap:
-                    updates.append(gr.update(value=round(pmap[metric], 2)))
-                else:
-                    updates.append(gr.update())
-            else:
-                updates.append(gr.update())
+                    updates[i] = gr.update(value=round(pmap[metric], 2))
         return updates
 
     def _parse_ar(self, s: str) -> tuple[int, int]:
@@ -1963,16 +1714,14 @@ class AppUI:
     def _crop_frame(self, img: np.ndarray, mask: np.ndarray, crop_ars: str, padding: int) -> np.ndarray:
         h, w = img.shape[:2]
         if mask is None: return img
-        if mask.ndim == 3: mask = (mask > 0).any(axis=-1).astype(np.uint8)
-        else: mask = (mask > 0).astype(np.uint8)
+        mask = (mask > 128).astype(np.uint8)
         
         ys, xs = np.where(mask > 0)
         if ys.size == 0: return img
         x1, x2, y1, y2 = xs.min(), xs.max() + 1, ys.min(), ys.max() + 1
         
         bw, bh = x2 - x1, y2 - y1
-        padp = max(padding, 0) / 100.0
-        pad_x, pad_y = int(round(bw * padp)), int(round(bh * padp))
+        pad_x, pad_y = int(round(bw * padding/100.0)), int(round(bh * padding/100.0))
         x1, y1 = max(0, x1 - pad_x), max(0, y1 - pad_y)
         x2, y2 = min(w, x2 + pad_x), min(h, y2 + pad_y)
         
@@ -1980,7 +1729,6 @@ class AppUI:
         cx, cy = (x1 + x2) / 2.0, (y1 + y2) / 2.0
         
         ars = [self._parse_ar(s.strip()) for s in str(crop_ars).split(',') if s.strip()]
-        ars = [(aw, ah) for aw, ah in ars if ah > 0]
         if not ars: return img[y1:y2, x1:x2]
 
         def expand_to_ar(r):
@@ -1998,7 +1746,7 @@ class AppUI:
             if x1n > x1 or y1n > y1 or x2n < x2 or y2n < y2: return None
             return (x1n, y1n, x2n, y2n, (new_w * new_h) / max(1, bw * bh))
 
-        candidates = [res for r in [aw/ah for aw,ah in ars] if (res := expand_to_ar(r))]
+        candidates = [res for r_w, r_h in ars if r_h > 0 and (res := expand_to_ar(r_w/r_h))]
         if candidates:
             x1n, y1n, x2n, y2n, _ = sorted(candidates, key=lambda t: t[4])[0]
             return img[y1n:y2n, x1n:x2n]
