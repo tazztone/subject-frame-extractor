@@ -592,31 +592,31 @@ class SubjectMasker:
             logger.error(f"Failed to initialize DAM4SAM tracker: {e}", exc_info=True)
             return False
 
-    def _detect_scenes(self, video_path: str, frames_dir: str):
-        if not detect:
-            raise ImportError("PySceneDetect is required.")
-        try:
-            logger.info("Detecting scene cuts...")
-            scene_list = detect(video_path, ContentDetector())
-            self.shots = [(s.frame_num, e.frame_num) for s, e in scene_list] if scene_list else []
-            logger.info(f"Found {len(self.shots)} shots.")
-        except Exception as e:
-            logger.critical(f"Scene detection failed: {e}", exc_info=True)
-            self.shots = []
-
-    def _load_shot_frames(self, frames_dir, start, end, max_side=640):
+    def _load_shot_frames(self, frames_dir, start, end):
         frames = []
         if not self.frame_map: return []
+        thumb_dir = Path(frames_dir) / "thumbs"
+
         for fn in sorted(fn for fn in self.frame_map if start <= fn < end):
-            p = Path(frames_dir) / self.frame_map[fn]
-            img = cv2.imread(str(p))
-            if img is None: continue
+            original_p = Path(frames_dir) / self.frame_map[fn]
+            thumb_p = thumb_dir / f"{original_p.stem}.jpg"
             
-            h, w = img.shape[:2]
-            scale = min(1.0, max_side / max(h, w))
+            if not thumb_p.exists():
+                continue
             
-            img_small = cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA) if scale < 1.0 else img
-            frames.append((fn, img_small, (h, w)))
+            thumb_img = cv2.imread(str(thumb_p))
+            if thumb_img is None:
+                continue
+
+            # Get original dimensions efficiently without loading the full image
+            try:
+                with Image.open(original_p) as img_pil:
+                    w, h = img_pil.size
+            except Exception as e:
+                logger.warning(f"Could not read dimensions for {original_p.name}, skipping: {e}")
+                continue
+                
+            frames.append((fn, thumb_img, (h, w)))
         return frames
 
     def _seed_identity(self, shot_frames):
@@ -906,6 +906,9 @@ class AnalysisPipeline(Pipeline):
                 header = {"config_hash": config_hash, "params": {k:v for k,v in asdict(self.params).items() if k not in ['source_path', 'output_folder', 'video_path']}}
                 f.write(json.dumps(header) + '\n')
 
+            # Prepare thumbnails first to be used by all subsequent steps
+            self._prepare_thumbnails()
+
             needs_face_analyzer = self.params.enable_face_filter or \
                                   (self.params.enable_subject_mask and "Reference Face" in self.params.seed_strategy and not self.params.text_prompt)
             if needs_face_analyzer: self._initialize_face_analyzer()
@@ -929,7 +932,7 @@ class AnalysisPipeline(Pipeline):
                                            self.face_analyzer, self.reference_embedding, person_detector)
                     self.mask_metadata = masker.run(self.params.video_path if is_video_path_valid else "", str(self.output_dir))
             
-            self._run_frame_processing()
+            self._run_analysis_loop()
             if self.cancel_event.is_set(): return {"log": "Analysis cancelled."}
             logger.success("Analysis complete. Go to 'Filtering & Export' tab.")
             return {"done": True, "metadata_path": str(self.metadata_path), "output_dir": str(self.output_dir)}
@@ -994,15 +997,19 @@ class AnalysisPipeline(Pipeline):
         self.reference_embedding = max(ref_faces, key=lambda x: x.det_score).normed_embedding
         logger.success("Reference face processed.")
 
-    def _run_frame_processing(self):
+    def _prepare_thumbnails(self):
         image_files = sorted(list(self.output_dir.glob("frame_*.png")) + list(self.output_dir.glob("frame_*.jpg")))
-        
         thumb_dir = self.output_dir / "thumbs"
         thumb_dir.mkdir(exist_ok=True)
         logger.info("Generating thumbnails...")
+        self.progress_queue.put({"total": len(image_files), "stage": "Thumbnails"})
+        
         for img_path in image_files:
+            if self.cancel_event.is_set(): break
             thumb_path = thumb_dir / f"{img_path.stem}.jpg"
-            if thumb_path.exists(): continue
+            if thumb_path.exists():
+                self.progress_queue.put({"progress": 1})
+                continue
             try:
                 img = cv2.imread(str(img_path))
                 if img is None: continue
@@ -1011,9 +1018,13 @@ class AnalysisPipeline(Pipeline):
                 scale = math.sqrt(500_000 / (h * w)) if (h*w) > 500_000 else 1.0
                 thumb = cv2.resize(img, (int(w*scale), int(h*scale)), interpolation=cv2.INTER_AREA) if scale < 1.0 else img
                 cv2.imwrite(str(thumb_path), thumb, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                self.progress_queue.put({"progress": 1})
             except Exception as e:
                 logger.error(f"Failed to create thumbnail for {img_path.name}: {e}")
 
+    def _run_analysis_loop(self):
+        image_files = sorted(list(self.output_dir.glob("frame_*.png")) + list(self.output_dir.glob("frame_*.jpg")))
+        
         self.progress_queue.put({"total": len(image_files), "stage": "Analysis"})
         num_workers = 1 if self.params.disable_parallel or self.params.enable_face_filter else min(os.cpu_count() or 4, 8)
         with ThreadPoolExecutor(max_workers=num_workers) as executor:
@@ -1780,6 +1791,7 @@ class AppUI:
 if __name__ == "__main__":
     check_dependencies()
     AppUI().build_ui().launch()
+
 
 
 
