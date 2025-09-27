@@ -1317,7 +1317,7 @@ class AppUI:
             handler = control.release if hasattr(control, 'release') else control.input if hasattr(control, 'input') else control.change
             handler(self.on_filters_changed, fast_filter_inputs, fast_filter_outputs)
 
-        def load_and_trigger_update(metadata_path, *current_filter_values):
+        def load_and_trigger_update(metadata_path, output_dir, *current_filter_values):
             all_frames, metric_values = self.load_and_prep_filter_data(metadata_path)
             svgs = self.build_all_metric_svgs(metric_values)
             
@@ -1331,7 +1331,7 @@ class AppUI:
                 if f"{k}_max" in c['metric_sliders']: updates[c['metric_sliders'][f"{k}_max"]] = gr.update(visible=has_data)
                 if k == "face_sim" and 'require_face_match_input' in c: updates[c['require_face_match_input']] = gr.update(visible=has_data)
 
-            status, gallery = self.on_filters_changed(all_frames, metric_values, Path(metadata_path).parent, "Kept Frames", True, 0.6, *current_filter_values)
+            status, gallery = self.on_filters_changed(all_frames, metric_values, output_dir, "Kept Frames", True, 0.6, *current_filter_values)
             updates[c['filter_status_text']] = status
             updates[c['results_gallery']] = gallery
             
@@ -1341,7 +1341,7 @@ class AppUI:
                                [c['metric_sliders'][k] for k in slider_keys] + [c['require_face_match_input']]
             return [updates.get(comp, gr.update()) for comp in all_output_comps]
         
-        load_inputs = [c['analysis_metadata_path_state'], c['require_face_match_input'], c['dedup_thresh_input']] + slider_comps
+        load_inputs = [c['analysis_metadata_path_state'], c['analysis_output_dir_state'], c['require_face_match_input'], c['dedup_thresh_input']] + slider_comps
         load_outputs = [c['all_frames_data_state'], c['per_metric_values_state'], c['filter_status_text'], c['results_gallery']] + \
                        [c['metric_plots'][k] for k in self.get_all_filter_keys()] + \
                        slider_comps + [c['require_face_match_input']]
