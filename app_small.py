@@ -299,6 +299,8 @@ class Frame:
             sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
             sobely = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)
             edge_strength = np.mean(np.sqrt(sobelx**2 + sobely**2))
+            # NEW: Size-aware scaling for edge strength
+            edge_strength_scaled = edge_strength / (config.edge_strength_base_scale * (gray.size / 500_000))
 
             # --- Brightness, Contrast, Entropy (on thumbnail) ---
             pixels = gray[active_mask] if active_mask is not None else gray
@@ -331,7 +333,7 @@ class Frame:
 
             scores_norm = {
                 "sharpness": min(sharpness_scaled, 1.0),
-                "edge_strength": min(edge_strength / 100.0, 1.0), # Reduced constant
+                "edge_strength": min(edge_strength_scaled, 1.0),
                 "contrast": min(contrast, 2.0) / 2.0, "brightness": brightness, "entropy": entropy,
                 "niqe": niqe_score / 100.0
             }
@@ -440,32 +442,45 @@ class SubjectMasker:
         if not self._init_grounder():
             return None, {}
         
-        image_source, image_tensor = gdino_load_image(frame_bgr_small)
-        h, w = image_source.shape[:2]
+        # Create a temporary file to save the numpy array
+        fd, tmp_path = tempfile.mkstemp(suffix=".jpg")
+        os.close(fd)
+        
+        try:
+            # Write the frame to the temp file and then load it
+            cv2.imwrite(tmp_path, frame_bgr_small)
+            image_source, image_tensor = gdino_load_image(tmp_path)
+            h, w = image_source.shape[:2]
 
-        with torch.no_grad(), torch.cuda.amp.autocast(enabled=self._device=='cuda'):
-            boxes, confidences, labels = gdino_predict(
-                model=self._gdino,
-                image=image_tensor.to(self._device),
-                caption=text,
-                box_threshold=float(self.params.box_threshold),
-                text_threshold=float(self.params.text_threshold),
-            )
-        
-        if boxes is None or len(boxes) == 0:
-            return None, {"type": "text_prompt", "error": "no_boxes"}
+            with torch.no_grad(), torch.cuda.amp.autocast(enabled=self._device=='cuda'):
+                boxes, confidences, labels = gdino_predict(
+                    model=self._gdino,
+                    image=image_tensor.to(self._device),
+                    caption=text,
+                    box_threshold=float(self.params.box_threshold),
+                    text_threshold=float(self.params.text_threshold),
+                )
             
-        scale = torch.tensor([w, h, w, h], device=boxes.device, dtype=boxes.dtype)
-        boxes_abs = (boxes * scale).cpu()
-        xyxy = box_convert(boxes=boxes_abs, in_fmt="cxcywh", out_fmt="xyxy").numpy()
-        conf = confidences.cpu().numpy().tolist()
-        
-        idx = int(np.argmax(conf))
-        x1, y1, x2, y2 = map(float, xyxy[idx])
-        xywh = [int(max(0, x1)), int(max(0, y1)), int(max(1, x2 - x1)), int(max(1, y2 - y1))]
-        details = {"type": "text_prompt", "label": labels[idx] if labels else "", "conf": float(conf[idx])}
-        
-        return xywh, details
+            if boxes is None or len(boxes) == 0:
+                return None, {"type": "text_prompt", "error": "no_boxes"}
+                
+            scale = torch.tensor([w, h, w, h], device=boxes.device, dtype=boxes.dtype)
+            boxes_abs = (boxes * scale).cpu()
+            xyxy = box_convert(boxes=boxes_abs, in_fmt="cxcywh", out_fmt="xyxy").numpy()
+            conf = confidences.cpu().numpy().tolist()
+            
+            idx = int(np.argmax(conf))
+            x1, y1, x2, y2 = map(float, xyxy[idx])
+            xywh = [int(max(0, x1)), int(max(0, y1)), int(max(1, x2 - x1)), int(max(1, y2 - y1))]
+            details = {"type": "text_prompt", "label": labels[idx] if labels else "", "conf": float(conf[idx])}
+            
+            return xywh, details
+        finally:
+            # Ensure the temporary file is deleted
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
     def _ground_first_frame_mask_xywh(self, frame_bgr_small: np.ndarray, text: str):
         xywh, details = self._ground_first_frame_xywh(frame_bgr_small, text)
@@ -1260,6 +1275,7 @@ class AppUI:
         )
 
     def _setup_pipeline_handlers(self):
+        c = self.components
         ext_inputs = [c['source_input'], c['upload_video_input'], c['method_input'], c['interval_input'], 
                       c['nth_frame_input'], c['fast_scene_input'], c['max_resolution'], c['use_png_input']]
         ext_outputs = [c['start_extraction_button'], c['stop_extraction_button'], c['unified_log'], c['unified_status'], 
@@ -1622,13 +1638,12 @@ class AppUI:
         if not all_frames_data: return "No metadata to export."
         try:
             slider_keys = sorted(self.components['metric_sliders'].keys())
-            filters = {key: val for i, key in enumerate(slider_keys)} # This is incorrect, need to get values
             require_face_match, dedup_thresh, *slider_values = filter_args
             filters = {key: val for key, val in zip(slider_keys, slider_values)}
             filters.update({"require_face_match": require_face_match, "dedup_thresh": dedup_thresh,
                             "face_sim_enabled": any("face_sim" in f for f in all_frames_data),
                             "mask_area_enabled": any("mask_area_pct" in f for f in all_frames_data),
-                            "enable_dedup": "phash" in all_frames_data[0]})
+                            "enable_dedup": any('phash' in f for f in all_frames_data) if all_frames_data else False})
             
             kept, _, _, _ = self._apply_all_filters_vectorized(all_frames_data, filters)
             n_kept, total = len(kept), len(all_frames_data)
@@ -1756,3 +1771,7 @@ class AppUI:
 if __name__ == "__main__":
     check_dependencies()
     AppUI().build_ui().launch()
+
+
+
+

@@ -37,7 +37,7 @@ python -m pip install -U pip
 pip install -U uv
 
 REM Install PyTorch (This may show a network error, but should be installed by requirements.txt)
-uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu129
+uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
 
 REM Install the main app's requirements
 if exist requirements.txt (

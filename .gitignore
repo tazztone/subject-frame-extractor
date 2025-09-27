@@ -319,7 +319,6 @@ example-code/*
 masks/*
 logs/*
 downloads/*
-configs/*
 .kilocode/rules/*
 .kilocode/rules/rule.md
 subject-frame-extractor
