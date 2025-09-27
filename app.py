@@ -1781,7 +1781,14 @@ class AppUI:
             if x1n > x1 or y1n > y1 or x2n < x2 or y2n < y2: return None
             return (x1n, y1n, x2n, y2n, (new_w * new_h) / max(1, bw * bh))
 
-        candidates = [res for r_w, r_h in ars if r_h > 0 and (res := expand_to_ar(r_w/r_h))]
+        candidates = []
+        for ar in ars:
+            r_w, r_h = (ar if isinstance(ar, (tuple, list)) and len(ar) == 2 else (1, 1))
+            if r_h > 0:
+                res = expand_to_ar(r_w / r_h)
+                if res:
+                    candidates.append(res)
+                    
         if candidates:
             x1n, y1n, x2n, y2n, _ = sorted(candidates, key=lambda t: t[4])[0]
             return img[y1n:y2n, x1n:x2n]
