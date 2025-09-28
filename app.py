@@ -1,4 +1,4 @@
-# keep this app Monolithic.
+# keep this app Monolithic. 
 import gradio as gr
 import cv2
 import numpy as np
@@ -26,7 +26,7 @@ from scenedetect import detect, ContentDetector
 from PIL import Image
 import torch
 from torchvision.ops import box_convert
-import tempfile
+from torchvision import transforms
 from ultralytics import YOLO
 from DAM4SAM.dam4sam_tracker import DAM4SAMTracker
 from insightface.app import FaceAnalysis
@@ -38,8 +38,6 @@ import matplotlib.pyplot as plt
 import io
 import imagehash
 import pyiqa
-
-# --- Grounded-SAM-2 Imports ---
 from grounding_dino.groundingdino.util.inference import (
     load_model as gdino_load_model,
     load_image as gdino_load_image,
@@ -47,7 +45,6 @@ from grounding_dino.groundingdino.util.inference import (
 )
 from sam2.build_sam import build_sam2
 from sam2.sam2_image_predictor import SAM2ImagePredictor
-
 
 # --- Unified Logging & Configuration ---
 class Config:
@@ -393,6 +390,21 @@ class SubjectMasker:
         self._sam2_img = None
         self._device = "cuda" if torch.cuda.is_available() else "cpu"
 
+    def _load_image_from_array(self, image_bgr: np.ndarray):
+        """Load image from numpy array instead of file path"""
+        # Convert BGR to RGB (GroundingDINO expects RGB)
+        image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
+        
+        # Mirror the preprocessing from gdino_load_image
+        transform = transforms.Compose([
+            transforms.ToPILImage(),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        ])
+        
+        image_tensor = transform(image_rgb).unsqueeze(0)
+        return image_rgb, image_tensor
+
     def _init_grounder(self):
         if self._gdino is not None:
             return True
@@ -432,46 +444,33 @@ class SubjectMasker:
         if not self._init_grounder():
             return None, {}
 
-        # Create a temporary file to save the numpy array. This is necessary because
-        # the grounding_dino.util.inference.load_image function expects a file path.
-        fd, tmp_path = tempfile.mkstemp(suffix=".jpg")
-        os.close(fd)
-        
-        try:
-            cv2.imwrite(tmp_path, frame_bgr_small)
-            # load_image returns a numpy array (image_source) and a tensor
-            image_source, image_tensor = gdino_load_image(tmp_path)
-            # Use .shape for numpy array, which is (height, width, channels)
-            h, w = image_source.shape[:2]
+        # Load image directly from numpy array, bypassing temp files
+        image_source, image_tensor = self._load_image_from_array(frame_bgr_small)
+        h, w = image_source.shape[:2]
 
-            with torch.no_grad(), torch.cuda.amp.autocast(enabled=self._device=='cuda'):
-                boxes, confidences, labels = gdino_predict(
-                    model=self._gdino,
-                    image=image_tensor.to(self._device),
-                    caption=text,
-                    box_threshold=float(self.params.box_threshold),
-                    text_threshold=float(self.params.text_threshold),
-                )
+        with torch.no_grad(), torch.cuda.amp.autocast(enabled=self._device=='cuda'):
+            boxes, confidences, labels = gdino_predict(
+                model=self._gdino,
+                image=image_tensor.to(self._device),
+                caption=text,
+                box_threshold=float(self.params.box_threshold),
+                text_threshold=float(self.params.text_threshold),
+            )
+        
+        if boxes is None or len(boxes) == 0:
+            return None, {"type": "text_prompt", "error": "no_boxes"}
             
-            if boxes is None or len(boxes) == 0:
-                return None, {"type": "text_prompt", "error": "no_boxes"}
-                
-            scale = torch.tensor([w, h, w, h], device=boxes.device, dtype=boxes.dtype)
-            boxes_abs = (boxes * scale).cpu()
-            xyxy = box_convert(boxes=boxes_abs, in_fmt="cxcywh", out_fmt="xyxy").numpy()
-            conf = confidences.cpu().numpy().tolist()
-            
-            idx = int(np.argmax(conf))
-            x1, y1, x2, y2 = map(float, xyxy[idx])
-            xywh = [int(max(0, x1)), int(max(0, y1)), int(max(1, x2 - x1)), int(max(1, y2 - y1))]
-            details = {"type": "text_prompt", "label": labels[idx] if labels else "", "conf": float(conf[idx])}
-            
-            return xywh, details
-        finally:
-            try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
+        scale = torch.tensor([w, h, w, h], device=boxes.device, dtype=boxes.dtype)
+        boxes_abs = (boxes * scale).cpu()
+        xyxy = box_convert(boxes=boxes_abs, in_fmt="cxcywh", out_fmt="xyxy").numpy()
+        conf = confidences.cpu().numpy().tolist()
+        
+        idx = int(np.argmax(conf))
+        x1, y1, x2, y2 = map(float, xyxy[idx])
+        xywh = [int(max(0, x1)), int(max(0, y1)), int(max(1, x2 - x1)), int(max(1, y2 - y1))]
+        details = {"type": "text_prompt", "label": labels[idx] if labels else "", "conf": float(conf[idx])}
+        
+        return xywh, details
 
     def _ground_first_frame_mask_xywh(self, frame_bgr_small: np.ndarray, text: str):
         xywh, details = self._ground_first_frame_xywh(frame_bgr_small, text)
