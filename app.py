@@ -1186,7 +1186,6 @@ class AppUI:
         self.cancel_event = threading.Event()
         self.last_task_result = {}
         self.cuda_available = torch.cuda.is_available()
-        self.config_manager = self.ConfigurationManager(config.DIRS['configs'])
         # Centralized place for heavy, reusable models
         self.shared_analyzers = {}
         self.ext_ui_map_keys = [
@@ -1194,27 +1193,13 @@ class AppUI:
             'fast_scene', 'max_resolution', 'use_png'
         ]
         self.ana_ui_map_keys = [
-            'output_folder', 'video_path', 'disable_parallel', 'resume', 'enable_face_filter',
+            'output_folder', 'video_path', 'resume', 'enable_face_filter',
             'face_ref_img_path', 'face_ref_img_upload', 'face_model_name', 'enable_subject_mask',
             'dam4sam_model_name', 'person_detector_model', 'seed_strategy', 'scene_detect',
             'enable_dedup', 'text_prompt', 'prompt_type_for_video', 'box_threshold',
             'text_threshold', 'min_mask_area_pct', 'sharpness_base_scale',
             'edge_strength_base_scale', 'gdino_config_path', 'gdino_checkpoint_path'
         ]
-
-    class ConfigurationManager:
-        def __init__(self, config_dir: Path): self.config_dir = config_dir
-        def list_configs(self): return [f.stem for f in self.config_dir.glob("*.json")]
-        def save_config(self, name, settings):
-            if not name: raise ValueError("Config name required.")
-            config_path = self.config_dir / f"{sanitize_filename(name)}.json"
-            if config_path.exists(): shutil.copy2(config_path, config_path.with_suffix('.json.bak'))
-            with open(config_path, 'w') as f: json.dump(settings, f, indent=2)
-        def load_config(self, name):
-            if not name: raise ValueError("Config name required.")
-            with open(self.config_dir / f"{sanitize_filename(name)}.json", 'r') as f: return json.load(f)
-        def delete_config(self, name):
-            if name: (self.config_dir / f"{sanitize_filename(name)}.json").unlink(missing_ok=True)
 
     def build_ui(self):
         with gr.Blocks(theme=gr.themes.Default()) as demo:
@@ -1232,12 +1217,6 @@ class AppUI:
                     self._create_component('unified_log', 'textbox', {'label': "📋 Processing Log", 'lines': 10, 'interactive': False, 'autoscroll': True})
                 with gr.Column(scale=1):
                     self._create_component('unified_status', 'textbox', {'label': "📊 Status Summary", 'lines': 2, 'interactive': False})
-
-            with gr.Accordion("⚙️ App Config", open=False):
-                with gr.Row():
-                    with gr.Column(): self._create_config_presets_ui()
-                    with gr.Column():
-                        self._create_component('disable_parallel_input', 'checkbox', {'label': "🐌 Disable Parallelism", 'value': config.ui_defaults["disable_parallel"]})
             
             self._create_event_handlers()
         return demo
@@ -1389,14 +1368,12 @@ class AppUI:
 
     def _create_event_handlers(self):
         self.components.update({
-            'extracted_video_path_state': gr.State(""), 'extracted_frames_dir_state': gr.State(""),
             'analysis_output_dir_state': gr.State(""), 'analysis_metadata_path_state': gr.State(""),
             'all_frames_data_state': gr.State([]), 'per_metric_values_state': gr.State({})
         })
         self._setup_visibility_toggles()
         self._setup_pipeline_handlers()
         self._setup_filtering_handlers()
-        self._setup_config_handlers()
 
     def run_extraction_wrapper(self, *args):
         ui_args = dict(zip(self.ext_ui_map_keys, args))
@@ -1433,7 +1410,7 @@ class AppUI:
 
         ana_comp_map = {
             'output_folder': 'frames_folder_input', 'video_path': 'analysis_video_path_input', 
-            'disable_parallel': 'disable_parallel_input', 'resume': 'resume_input',
+            'resume': 'resume_input',
             'enable_face_filter': 'enable_face_filter_input', 'face_ref_img_path': 'face_ref_img_path_input', 
             'face_ref_img_upload': 'face_ref_img_upload_input', 'face_model_name': 'face_model_name_input',
             'enable_subject_mask': 'enable_subject_mask_input', 'dam4sam_model_name': 'dam4sam_model_name_input', 
@@ -2070,3 +2047,7 @@ class AppUI:
 if __name__ == "__main__":
     check_dependencies()
     AppUI().build_ui().launch()
+
+
+
+
