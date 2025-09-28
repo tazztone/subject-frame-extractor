@@ -1,4 +1,4 @@
-# keep this app Monolithic. https://github.com/tazztone/subject-frame-extractor/
+# keep this app Monolithic.
 import gradio as gr
 import cv2
 import numpy as np
@@ -39,6 +39,8 @@ import matplotlib.pyplot as plt
 import io
 import imagehash
 import pyiqa
+
+# --- Grounded-SAM-2 Imports ---
 from grounding_dino.groundingdino.util.inference import (
     load_model as gdino_load_model,
     load_image as gdino_load_image,
@@ -46,6 +48,7 @@ from grounding_dino.groundingdino.util.inference import (
 )
 from sam2.build_sam import build_sam2
 from sam2.sam2_image_predictor import SAM2ImagePredictor
+
 
 # --- Unified Logging & Configuration ---
 class Config:
@@ -1356,6 +1359,20 @@ class AppUI:
             # Gate: need scenes and a valid video
             if not scene_detect or not video_path or not Path(video_path).exists():
                 return gr.update(value=[], visible=True), "[INFO] Enable scene detection and provide a valid video path to preview."
+            
+            # --- Trigger thumbnail generation ---
+            self.cancel_event.clear()
+            q = Queue()
+            temp_params = AnalysisParameters.from_ui(output_folder=frames_folder)
+            temp_pipeline = AnalysisPipeline(temp_params, q, self.cancel_event)
+            logger.info("Generating thumbnails for preview...")
+            temp_pipeline._prepare_thumbnails()
+            # Drain queue to avoid mixing logs if needed, though it's minimal here.
+            while not q.empty():
+                try: q.get_nowait()
+                except Empty: break
+            logger.info("Thumbnails ready for preview.")
+            
             # Resolve reference image upload
             if face_ref_img_upload:
                 dest = config.DIRS['downloads'] / Path(face_ref_img_upload).name
@@ -1913,3 +1930,5 @@ class AppUI:
 if __name__ == "__main__":
     check_dependencies()
     AppUI().build_ui().launch()
+
+
