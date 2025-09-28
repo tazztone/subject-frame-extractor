@@ -1273,7 +1273,10 @@ class AppUI:
                     self._create_component('dedup_thresh_input', 'slider', {'label': "Similarity Threshold", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': f_def['default'], 'step': f_def['step']})
 
                 all_metrics = self.get_all_filter_keys()
-                for k in all_metrics:
+                # Reorder to prioritize NIQE
+                ordered_metrics = sorted(all_metrics, key=lambda m: m == 'niqe', reverse=True)
+                
+                for k in ordered_metrics:
                     if k not in config.filter_defaults: continue
                     f_def = config.filter_defaults[k]
                     accordion_label = k.replace('_', ' ').title()
@@ -1628,14 +1631,15 @@ class AppUI:
     def histogram_svg(self, hist_data, title=""):
         if hist_data is None: return ""
         counts, bins = hist_data
-        fig, ax = plt.subplots(figsize=(4.6, 2.2), dpi=120)
-        ax.bar(bins[:-1], counts, width=np.diff(bins), color="#7aa2ff", alpha=0.85, align="edge")
-        ax.grid(axis="y", alpha=0.2); ax.margins(x=0)
-        for side in ("top", "right"): ax.spines[side].set_visible(False)
-        ax.tick_params(labelsize=8); ax.set_title(title)
-        buf = io.StringIO()
-        fig.savefig(buf, format="svg", bbox_inches="tight")
-        plt.close(fig)
+        with plt.style.context("dark_background"):
+            fig, ax = plt.subplots(figsize=(4.6, 2.2), dpi=120)
+            ax.bar(bins[:-1], counts, width=np.diff(bins), color="#7aa2ff", alpha=0.85, align="edge")
+            ax.grid(axis="y", alpha=0.2); ax.margins(x=0)
+            for side in ("top", "right"): ax.spines[side].set_visible(False)
+            ax.tick_params(labelsize=8); ax.set_title(title)
+            buf = io.StringIO()
+            fig.savefig(buf, format="svg", bbox_inches="tight")
+            plt.close(fig)
         return buf.getvalue()
 
     def build_all_metric_svgs(self, per_metric_values):
@@ -1930,5 +1934,6 @@ class AppUI:
 if __name__ == "__main__":
     check_dependencies()
     AppUI().build_ui().launch()
+
 
 
