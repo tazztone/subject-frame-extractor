@@ -402,7 +402,8 @@ class SubjectMasker:
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         ])
         
-        image_tensor = transform(image_rgb).unsqueeze(0)
+        # The gdino_predict function adds the batch dimension, so we should not add one here.
+        image_tensor = transform(image_rgb)
         return image_rgb, image_tensor
 
     def _init_grounder(self):
@@ -429,16 +430,6 @@ class SubjectMasker:
             logger.warning(f"Grounding DINO unavailable: {e}")
             self._gdino = None
             return False
-
-    def _sam2_image_predictor(self):
-        if getattr(self, "_sam2_img", None) is not None:
-            return self._sam2_img
-        sam_ckpt = str(config.DIRS['models'] / "sam2.1_hiera_large.pt")
-        sam_cfg = str(config.BASE_DIR / "Grounded-SAM-2" / "configs" / "sam2.1" / "sam2.1_hiera_l.yaml")
-        model = build_sam2(sam_cfg, sam_ckpt).to(self._device)
-        self._sam2_img = SAM2ImagePredictor(model)
-        logger.info("SAM2 Image Predictor loaded.")
-        return self._sam2_img
 
     def _ground_first_frame_xywh(self, frame_bgr_small: np.ndarray, text: str):
         if not self._init_grounder():
@@ -474,27 +465,19 @@ class SubjectMasker:
 
     def _ground_first_frame_mask_xywh(self, frame_bgr_small: np.ndarray, text: str):
         xywh, details = self._ground_first_frame_xywh(frame_bgr_small, text)
-        if xywh is None: return None, details
-        
-        predictor = self._sam2_image_predictor()
-        if predictor is None:
-            logger.warning("SAM2 Image Predictor not available. Falling back to box prompt.")
+        if xywh is None:
+            return None, details
+
+        # Use DAM4SAM directly instead of separate SAM2 predictor
+        mask = self._sam2_mask_for_bbox(frame_bgr_small, xywh)
+        if mask is None:
+            logger.warning("SAM2 mask generation failed. Falling back to box prompt.")
             return xywh, details
 
-        x, y, w, h = xywh
-        img_rgb = cv2.cvtColor(frame_bgr_small, cv2.COLOR_BGR2RGB)
-        
-        with torch.no_grad(), torch.cuda.amp.autocast(enabled=self._device=='cuda'):
-            predictor.set_image(img_rgb)
-            masks, _, _ = predictor.predict(
-                box=np.array([[x, y, x + w, y + h]], dtype=np.float32),
-                multimask_output=False,
-            )
-        if masks is None or masks.size == 0: return xywh, details
-            
-        m = masks.squeeze()
-        ys, xs = np.where(m > 0)
-        if ys.size == 0: return xywh, details
+        # Find tight bounding box around the mask
+        ys, xs = np.where(mask > 128)
+        if ys.size == 0:
+            return xywh, details
         x1, x2, y1, y2 = xs.min(), xs.max()+1, ys.min(), ys.max()+1
         return [int(x1), int(y1), int(x2 - x1), int(y2 - y1)], {**details, "type": "text_prompt_mask"}
 
@@ -803,22 +786,24 @@ class SubjectMasker:
         return img_out
 
     def _sam2_mask_for_bbox(self, frame_bgr_small, bbox_xywh):
-        predictor = self._sam2_image_predictor()
-        if predictor is None or bbox_xywh is None:
+        """Generate mask using DAM4SAM's tracker directly"""
+        if not self.tracker or bbox_xywh is None:
             return None
-        x, y, w, h = map(int, bbox_xywh)
-        img_rgb = cv2.cvtColor(frame_bgr_small, cv2.COLOR_BGR2RGB)
-        with torch.no_grad(), torch.cuda.amp.autocast(enabled=self._device == 'cuda'):
-            predictor.set_image(img_rgb)
-            masks, _, _ = predictor.predict(
-                box=np.array([[x, y, x + w, y + h]], dtype=np.float32),
-                multimask_output=False,
-            )
-        if masks is None or masks.size == 0:
+        
+        # Use DAM4SAM's initialize method which handles SAM2 internally
+        try:
+            outputs = self.tracker.initialize(bgr_to_pil(frame_bgr_small), None, bbox=bbox_xywh)
+            mask = outputs.get('pred_mask')
+            return (mask * 255).astype(np.uint8) if mask is not None else None
+        except Exception as e:
+            logger.warning(f"DAM4SAM mask generation failed: {e}")
             return None
-        return (masks.squeeze() > 0).astype(np.uint8) * 255
 
     def preview_seeds(self, video_path: str, frames_dir: str, max_scenes: int = 100):
+        # Initialize tracker if needed for mask previews
+        if not self.tracker:
+            self._initialize_tracker()
+            
         previews = []
         if not video_path or not Path(video_path).exists():
             self.progress_queue.put({"log": "[WARNING] Video path missing for seeding preview; enable scene detection with a valid video file."})
