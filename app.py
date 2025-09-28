@@ -7,6 +7,7 @@ import json
 import re
 import shutil
 import logging
+from logging.handlers import RotatingFileHandler
 import threading
 import time
 import subprocess
@@ -47,6 +48,80 @@ from sam2.build_sam import build_sam2
 from sam2.sam2_image_predictor import SAM2ImagePredictor
 
 # --- Unified Logging & Configuration ---
+
+# Add custom SUCCESS log level for more semantic logging
+SUCCESS_LEVEL = 25
+logging.addLevelName(SUCCESS_LEVEL, "SUCCESS")
+
+def success_log_method(self, message, *args, **kwargs):
+    if self.isEnabledFor(SUCCESS_LEVEL):
+        self._log(SUCCESS_LEVEL, message, args, **kwargs)
+logging.Logger.success = success_log_method
+
+
+class StructuredFormatter(logging.Formatter):
+    """Custom formatter to include extra context in log messages."""
+    def format(self, record):
+        # Find all keys in the record that are not standard LogRecord attributes
+        extra_items = {k: v for k, v in record.__dict__.items() if k not in logging.LogRecord.__dict__ and k != 'args'}
+        if extra_items:
+            # Append the key-value pairs to the original message
+            record.msg = f"{record.msg} [{', '.join(f'{k}={v}' for k, v in extra_items.items())}]"
+        return super().format(record)
+
+
+class UnifiedLogger:
+    def __init__(self, log_file_path=None):
+        self.progress_queue = None
+        self.logger = logging.getLogger('unified_logger')
+        if not self.logger.handlers:  # Prevent adding handlers multiple times on hot-reload
+            self.logger.setLevel(logging.INFO)
+            self.logger.propagate = False
+            formatter = StructuredFormatter('%(asctime)s - %(levelname)s - %(message)s')
+            
+            if log_file_path:
+                # Use a rotating file handler for the main application log to prevent it from growing too large
+                fh = RotatingFileHandler(log_file_path, maxBytes=5*1024*1024, backupCount=3, encoding='utf-8')
+                fh.setFormatter(formatter)
+                self.logger.addHandler(fh)
+
+            ch = logging.StreamHandler()
+            ch.setFormatter(formatter)
+            self.logger.addHandler(ch)
+
+    def set_progress_queue(self, queue):
+        """Dynamically set the queue for UI log updates."""
+        self.progress_queue = queue
+
+    def add_handler(self, handler):
+        """Add a new handler, e.g., for a per-run log file."""
+        self.logger.addHandler(handler)
+        return handler
+
+    def remove_handler(self, handler):
+        """Remove a handler and ensure it's closed properly."""
+        if handler:
+            self.logger.removeHandler(handler)
+            handler.close()
+
+    def _log(self, level_name, message, exc_info=False, extra=None):
+        level = logging.getLevelName(level_name.upper())
+        self.logger.log(level, message, exc_info=exc_info, extra=extra)
+        if self.progress_queue:
+            extra_str = f" [{', '.join(f'{k}={v}' for k, v in extra.items())}]" if extra else ""
+            self.progress_queue.put({"log": f"[{level_name.upper()}] {message}{extra_str}"})
+
+    def info(self, message, extra=None, **kwargs): self._log('INFO', message, extra=extra or kwargs)
+    def warning(self, message, extra=None, **kwargs): self._log('WARNING', message, extra=extra or kwargs)
+    def error(self, message, exc_info=False, extra=None, **kwargs): self._log('ERROR', message, exc_info=exc_info, extra=extra or kwargs)
+    def critical(self, message, exc_info=False, extra=None, **kwargs): self._log('CRITICAL', message, exc_info=exc_info, extra=extra or kwargs)
+    def success(self, message, extra=None, **kwargs): self._log('SUCCESS', message, extra=extra or kwargs)
+    
+    def pipeline_error(self, operation, e, extra=None, **kwargs):
+        full_context = {'error': str(e), **(extra or kwargs)}
+        self.error(f"{operation} failed", exc_info=True, extra=full_context)
+        return {"error": str(e)}
+
 class Config:
     BASE_DIR = Path(__file__).parent
     DIRS = {'logs': BASE_DIR / "logs", 'configs': BASE_DIR / "configs", 'models': BASE_DIR / "models", 'downloads': BASE_DIR / "downloads"}
@@ -77,38 +152,9 @@ class Config:
     def setup_directories_and_logger(cls):
         for dir_path in cls.DIRS.values():
             dir_path.mkdir(exist_ok=True)
+        # Pass the main log file path to the logger
         return UnifiedLogger(log_file_path=cls.LOG_FILE)
 
-class UnifiedLogger:
-    def __init__(self, progress_queue=None, log_file_path=None):
-        self.progress_queue = progress_queue
-        self.logger = logging.getLogger('unified_logger')
-        self.logger.setLevel(logging.INFO)
-        self.logger.propagate = False
-        self.logger.handlers.clear()
-        if log_file_path:
-            fh = logging.FileHandler(log_file_path)
-            fh.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-            self.logger.addHandler(fh)
-        ch = logging.StreamHandler()
-        ch.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-        self.logger.addHandler(ch)
-
-    def _log(self, level, message, ui_only=False, exc_info=False):
-        log_func = getattr(self.logger, level.lower(), self.logger.info)
-        if not ui_only:
-            log_func(message, exc_info=exc_info)
-        if self.progress_queue:
-            self.progress_queue.put({"log": f"[{level.upper()}] {message}"})
-
-    def info(self, message, **kwargs): self._log('INFO', message, **kwargs)
-    def warning(self, message, **kwargs): self._log('WARNING', message, **kwargs)
-    def error(self, message, **kwargs): self._log('ERROR', message, **kwargs)
-    def critical(self, message, **kwargs): self._log('CRITICAL', message, **kwargs)
-    def success(self, message, **kwargs): self._log('SUCCESS', message, **kwargs)
-    def pipeline_error(self, operation, e):
-        self.error(f"{operation} failed: {e}", exc_info=True)
-        return {"error": str(e)}
 
 # --- Global Initialization ---
 try:
@@ -144,7 +190,7 @@ def safe_execute_with_retry(func, max_retries=3, delay=1.0, backoff=2.0):
         except Exception as e:
             last_exception = e
             if attempt < max_retries:
-                logger.warning(f"Attempt {attempt + 1} failed: {e}. Retrying in {delay}s...")
+                logger.warning(f"Attempt {attempt + 1} failed. Retrying in {delay}s...", extra={'error': e})
                 time.sleep(delay)
                 delay *= backoff
     raise last_exception if last_exception else RuntimeError("Function failed after retries.")
@@ -153,7 +199,7 @@ def download_model(url, dest_path, description, min_size=1_000_000):
     if dest_path.is_file() and dest_path.stat().st_size >= min_size:
         return
     def download_func():
-        logger.info(f"Downloading {description} from {url} to {dest_path}")
+        logger.info(f"Downloading {description}", extra={'url': url, 'dest': dest_path})
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=60) as resp, open(dest_path, "wb") as out:
             shutil.copyfileobj(resp, out)
@@ -163,7 +209,7 @@ def download_model(url, dest_path, description, min_size=1_000_000):
     try:
         safe_execute_with_retry(download_func)
     except Exception as e:
-        logger.error(f"Failed to download {description}: {e}", exc_info=True)
+        logger.error(f"Failed to download {description}", exc_info=True, extra={'url': url})
         raise RuntimeError(f"Failed to download required model: {description}") from e
 
 def render_mask_overlay(frame_bgr: np.ndarray, mask_gray: np.ndarray, alpha: float = 0.5) -> np.ndarray:
@@ -178,7 +224,7 @@ def render_mask_overlay(frame_bgr: np.ndarray, mask_gray: np.ndarray, alpha: flo
     blended = cv2.addWeighted(frame_bgr, 1.0 - alpha, red_layer, alpha, 0.0)
     if m.ndim == 2: m = m[..., np.newaxis]
     elif m.ndim == 3 and m.shape[2] != 1:
-        logger.warning(f"Unexpected mask shape: {m.shape}. Skipping overlay.")
+        logger.warning(f"Unexpected mask shape. Skipping overlay.", extra={'shape': m.shape})
         return frame_bgr
     out = np.where(m, blended, frame_bgr)
     return out
@@ -227,7 +273,7 @@ class PersonDetector:
         self.model.to(self.device)
         self.imgsz = imgsz
         self.conf = conf
-        logger.info(f"YOLO person detector loaded on device: {self.device}")
+        logger.info(f"YOLO person detector loaded", extra={'device': self.device, 'model': model})
 
     def detect_boxes(self, img_bgr):
         # The predict method handles device placement internally, but we ensure the model is on the correct device.
@@ -313,7 +359,7 @@ class Frame:
                         niqe_raw = float(niqe_metric(img_tensor.to(niqe_metric.device)))
                         niqe_score = max(0, min(100, (10 - niqe_raw) * 10))
                 except Exception as e:
-                    logger.warning(f"NIQE calculation failed for frame {self.frame_number}: {e}")
+                    logger.warning(f"NIQE calculation failed", extra={'frame': self.frame_number, 'error': e})
 
             scores_norm = {
                 "sharpness": min(sharpness_scaled, 1.0),
@@ -325,7 +371,7 @@ class Frame:
             self.metrics.quality_score = float(sum(scores_norm[k] * (config.quality_weights[k] / 100.0) for k in config.QUALITY_METRICS) * 100)
         except Exception as e:
             self.error = f"Quality calc failed: {e}"
-            logger.error(f"Frame {self.frame_number}: {self.error}", exc_info=True)
+            logger.error(f"Frame quality calculation failed", exc_info=True, extra={'frame': self.frame_number})
 
 
 @dataclass
@@ -370,7 +416,7 @@ class AnalysisParameters:
                     if value is not None and value != '':
                         setattr(instance, key, target_type(value))
                 except (ValueError, TypeError):
-                    logger.warning(f"Could not coerce UI value for '{key}' to {target_type}. Using default.")
+                    logger.warning(f"Could not coerce UI value for '{key}' to {target_type}. Using default.", extra={'key': key, 'value': value})
         return instance
 
 # --- Subject Masking Logic ---
@@ -424,10 +470,10 @@ class SubjectMasker:
                 model_checkpoint_path=str(ckpt_path),
                 device=self._device,
             )
-            logger.info("Grounding DINO model loaded.")
+            logger.info("Grounding DINO model loaded.", extra={'model_path': str(ckpt_path)})
             return True
         except Exception as e:
-            logger.warning(f"Grounding DINO unavailable: {e}")
+            logger.warning(f"Grounding DINO unavailable.", exc_info=True)
             self._gdino = None
             return False
 
@@ -504,7 +550,8 @@ class SubjectMasker:
             with safe_resource_cleanup():
                 if self.cancel_event.is_set(): break
                 self.progress_queue.put({"stage": f"Masking Shot {shot_id+1}/{len(self.shots)}"})
-                logger.info(f"Masking shot {shot_id+1}/{len(self.shots)} (Frames {start_frame}-{end_frame})")
+                shot_context = {'shot_id': shot_id, 'start_frame': start_frame, 'end_frame': end_frame}
+                logger.info(f"Masking shot", extra=shot_context)
                 shot_frames_data = self._load_shot_frames(frames_dir, start_frame, end_frame)
                 if not shot_frames_data: continue
 
@@ -544,7 +591,7 @@ class SubjectMasker:
             return False
         try:
             model_name = self.params.dam4sam_model_name
-            logger.info(f"Initializing DAM4SAM tracker with model '{model_name}'...")
+            logger.info(f"Initializing DAM4SAM tracker", extra={'model': model_name})
             model_urls = {
                 "sam21pp-T": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt",
                 "sam21pp-S": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_small.pt",
@@ -564,7 +611,7 @@ class SubjectMasker:
             logger.success("DAM4SAM tracker initialized.")
             return True
         except Exception as e:
-            logger.error(f"Failed to initialize DAM4SAM tracker: {e}", exc_info=True)
+            logger.error(f"Failed to initialize DAM4SAM tracker", exc_info=True)
             return False
 
     def _detect_scenes(self, video_path: str, frames_dir: str):
@@ -576,7 +623,7 @@ class SubjectMasker:
             self.shots = [(s.frame_num, e.frame_num) for s, e in scene_list] if scene_list else []
             logger.info(f"Found {len(self.shots)} shots.")
         except Exception as e:
-            logger.critical(f"Scene detection failed: {e}", exc_info=True)
+            logger.critical(f"Scene detection failed", exc_info=True)
             self.shots = []
 
     def _load_shot_frames(self, frames_dir, start, end):
@@ -605,7 +652,7 @@ class SubjectMasker:
                 with Image.open(original_p) as img_pil:
                     w, h = img_pil.size
             except Exception as e:
-                logger.warning(f"Could not read dimensions for {original_p.name}, skipping: {e}")
+                logger.warning(f"Could not read dimensions for {original_p.name}, skipping.", extra={'error': e})
                 continue
                 
             frames.append((fn, thumb_img, (h, w)))
@@ -621,7 +668,7 @@ class SubjectMasker:
             else:
                 xywh, details = self._ground_first_frame_xywh(shot_frames[0], self.params.text_prompt)
             if xywh is not None:
-                logger.info(f"Text-prompt seed ({details.get('type')} '{details.get('label', '')}' conf={details.get('conf', 0):.2f}): {xywh}")
+                logger.info(f"Text-prompt seed found", extra=details)
                 return 0, xywh, details
             else:
                 logger.warning("Text-prompt grounding returned no boxes; falling back to existing strategy.")
@@ -642,14 +689,14 @@ class SubjectMasker:
                         best_dist, best_face, seed_idx = dist, face, i
             
             if best_face and best_dist < 0.6:
-                logger.info(f"Found reference face in frame {seed_idx} (dist: {best_dist:.2f}).")
+                logger.info(f"Found reference face", extra={'frame_index': seed_idx, 'distance': f"{best_dist:.2f}"})
                 details = {'type': 'face_match', 'seed_face_sim': 1 - best_dist}
                 face_bbox = best_face.bbox.astype(int)
                 final_bbox = self._get_body_box_for_face(shot_frames[seed_idx], face_bbox, details)
                 return seed_idx, final_bbox, details
 
         # Fallback strategies if no reference face match
-        logger.info("No matching reference face found. Applying fallback seeding strategy.")
+        logger.info("No matching reference face found. Applying fallback seeding strategy.", extra={'strategy': self.params.seed_strategy})
         seed_idx = 0
         first_frame = shot_frames[0]
         
@@ -684,12 +731,12 @@ class SubjectMasker:
         x1, y1, x2, y2 = face_bbox
         person_bbox = self._pick_person_box_for_face(frame_img, [x1, y1, x2-x1, y2-y1])
         if person_bbox:
-            logger.info(f"Seeding with person box for face: {person_bbox}.")
+            logger.info(f"Seeding with person box for face.", extra={'box': person_bbox})
             details_dict['type'] = f'person_box_from_{details_dict["type"]}'
             return person_bbox
         else:
             expanded_box = self._expand_face_to_body([x1, y1, x2-x1, y2-y1], frame_img.shape)
-            logger.info(f"Seeding with heuristic expansion for face: {expanded_box}.")
+            logger.info(f"Seeding with heuristic expansion for face.", extra={'box': expanded_box})
             details_dict['type'] = f'expanded_box_from_{details_dict["type"]}'
             return expanded_box
         
@@ -700,7 +747,7 @@ class SubjectMasker:
         try:
             candidates = self.person_detector.detect_boxes(frame_img)
         except Exception as e:
-            logger.warning(f"Person detector failed on frame: {e}")
+            logger.warning(f"Person detector failed on frame.", extra={'error': e})
             return None
         if not candidates: return None
         
@@ -729,7 +776,7 @@ class SubjectMasker:
             shape = shot_frames[0].shape[:2] if shot_frames else (100, 100)
             return ([np.zeros(shape, np.uint8)] * len(shot_frames), [0.0] * len(shot_frames), [True] * len(shot_frames), [err_msg] * len(shot_frames))
 
-        logger.info(f"Propagating masks for {len(shot_frames)} frames from seed {seed_idx}...")
+        logger.info(f"Propagating masks", extra={'num_frames': len(shot_frames), 'seed_index': seed_idx})
         self.progress_queue.put({"stage": "Masking", "total": len(shot_frames)})
         masks = [None] * len(shot_frames)
 
@@ -774,7 +821,7 @@ class SubjectMasker:
             return tuple(zip(*final_results)) if final_results else ([], [], [], [])
 
         except Exception as e:
-            logger.critical(f"DAM4SAM propagation failed: {e}", exc_info=True)
+            logger.critical(f"DAM4SAM propagation failed", exc_info=True)
             h, w = shot_frames[0].shape[:2]
             error_msg = f"Propagation failed: {e}"
             return ([np.zeros((h, w), np.uint8)] * len(shot_frames), [0.0] * len(shot_frames), [True] * len(shot_frames), [error_msg] * len(shot_frames))
@@ -796,7 +843,7 @@ class SubjectMasker:
             mask = outputs.get('pred_mask')
             return (mask * 255).astype(np.uint8) if mask is not None else None
         except Exception as e:
-            logger.warning(f"DAM4SAM mask generation failed: {e}")
+            logger.warning(f"DAM4SAM mask generation failed.", extra={'error': e})
             return None
 
     def preview_seeds(self, video_path: str, frames_dir: str, max_scenes: int = 100):
@@ -845,7 +892,7 @@ class VideoManager:
     def prepare_video(self):
         if self.is_youtube:
             if not ytdlp: raise ImportError("yt-dlp not installed.")
-            logger.info(f"Downloading video: {self.source_path}")
+            logger.info(f"Downloading video", extra={'source': self.source_path})
             res_filter = f"[height<={self.max_resolution}]" if self.max_resolution != "maximum available" else ""
             ydl_opts = {
                 'outtmpl': str(config.DIRS['downloads'] / '%(id)s_%(title).40s_%(height)sp.%(ext)s'),
@@ -883,7 +930,7 @@ class ExtractionPipeline(Pipeline):
             logger.info("Preparing video source...")
             vid_manager = VideoManager(self.params.source_path, self.params.max_resolution)
             video_path = Path(vid_manager.prepare_video())
-            logger.info(f"Video ready: {sanitize_filename(video_path.name)}")
+            logger.info(f"Video ready", extra={'path': sanitize_filename(video_path.name)})
 
             video_info = VideoManager.get_video_info(video_path)
             output_dir = config.DIRS['downloads'] / video_path.stem
@@ -966,20 +1013,28 @@ class AnalysisPipeline(Pipeline):
                 self.niqe_metric = pyiqa.create_metric('niqe', device=self.device)
                 logger.info("NIQE metric initialized successfully")
             except Exception as e:
-                logger.warning(f"Failed to initialize NIQE metric: {e}")
+                logger.warning(f"Failed to initialize NIQE metric", extra={'error': e})
 
     def run(self):
+        run_log_handler = None
         try:
             if not self.output_dir.is_dir(): raise ValueError("Output folder is required.")
+            
+            # Create and add a log handler for this specific run
+            run_log_path = self.output_dir / "analysis_run.log"
+            run_log_handler = logging.FileHandler(run_log_path, mode='w', encoding='utf-8')
+            run_log_handler.setFormatter(StructuredFormatter('%(asctime)s - %(levelname)s - %(message)s'))
+            self.logger.add_handler(run_log_handler)
+
             config_hash = self._get_config_hash()
             if self.params.resume and self._check_resume(config_hash):
+                logger.success("Resuming previous analysis.", extra={'output_dir': self.output_dir})
                 return {"done": True, "metadata_path": str(self.metadata_path), "output_dir": str(self.output_dir)}
             
             if (self.output_dir / "masks").exists(): shutil.rmtree(self.output_dir / "masks")
             self.metadata_path.unlink(missing_ok=True)
             with self.metadata_path.open('w') as f:
                 header_params = {k:v for k,v in asdict(self.params).items() if k not in ['source_path', 'output_folder', 'video_path']}
-                # Add base scales to header for reproducibility
                 header_params['sharpness_base_scale'] = self.params.sharpness_base_scale
                 header_params['edge_strength_base_scale'] = self.params.edge_strength_base_scale
                 header = {"config_hash": config_hash, "params": header_params}
@@ -1010,10 +1065,12 @@ class AnalysisPipeline(Pipeline):
             
             self._run_analysis_loop()
             if self.cancel_event.is_set(): return {"log": "Analysis cancelled."}
-            logger.success("Analysis complete. Go to 'Filtering & Export' tab.")
+            logger.success("Analysis complete.", extra={'output_dir': self.output_dir})
             return {"done": True, "metadata_path": str(self.metadata_path), "output_dir": str(self.output_dir)}
         except Exception as e:
             return logger.pipeline_error("analysis", e)
+        finally:
+            self.logger.remove_handler(run_log_handler)
 
     def _get_config_hash(self):
         d = asdict(self.params)
@@ -1047,7 +1104,7 @@ class AnalysisPipeline(Pipeline):
             with open(frame_map_path, 'r') as f: frame_map_list = json.load(f)
             return {orig_num: image_files[i].name for i, orig_num in enumerate(sorted(frame_map_list)) if i < len(image_files)}
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse frame_map.json: {e}. Using filename-based mapping.")
+            logger.error(f"Failed to parse frame_map.json. Using filename-based mapping.", exc_info=True)
             return {int(re.search(r'frame_(\d+)', f.name).group(1)): f.name for f in image_files}
 
     def _initialize_face_analyzer(self):
@@ -1058,12 +1115,12 @@ class AnalysisPipeline(Pipeline):
         )
     
     def _create_face_analysis_instance(self):
-        logger.info(f"Loading face model: {self.params.face_model_name}")
+        logger.info(f"Loading face model", extra={'model': self.params.face_model_name})
         try:
             providers = ['CUDAExecutionProvider', 'CPUExecutionProvider'] if self.device == 'cuda' else ['CPUExecutionProvider']
             analyzer = FaceAnalysis(name=self.params.face_model_name, root=str(config.DIRS['models']), providers=providers)
             analyzer.prepare(ctx_id=0 if self.device == 'cuda' else -1, det_size=(640, 640))
-            logger.success(f"Face model loaded with {'CUDA' if self.device == 'cuda' else 'CPU'}.")
+            logger.success(f"Face model loaded", extra={'device': 'CUDA' if self.device == 'cuda' else 'CPU'})
             return analyzer
         except Exception as e:
             raise RuntimeError(f"Could not initialize face analysis model. Error: {e}") from e
@@ -1104,7 +1161,7 @@ class AnalysisPipeline(Pipeline):
                 cv2.imwrite(str(thumb_path), thumb, [cv2.IMWRITE_JPEG_QUALITY, 85])
                 self.progress_queue.put({"progress": 1})
             except Exception as e:
-                logger.error(f"Failed to create thumbnail for {img_path.name}: {e}")
+                logger.error(f"Failed to create thumbnail", extra={'file': img_path.name, 'error': e})
 
     def _run_analysis_loop(self):
         image_files = sorted(list(self.output_dir.glob("frame_*.png")) + list(self.output_dir.glob("frame_*.jpg")))
@@ -1116,6 +1173,11 @@ class AnalysisPipeline(Pipeline):
 
     def _process_single_frame(self, image_path):
         if self.cancel_event.is_set(): return
+        
+        frame_num_match = re.search(r'frame_(\d+)', image_path.name)
+        frame_num = int(frame_num_match.group(1)) if frame_num_match else -1
+        log_context = {'file': image_path.name, 'frame_num': frame_num}
+
         try:
             self._initialize_niqe_metric()
 
@@ -1126,9 +1188,6 @@ class AnalysisPipeline(Pipeline):
             thumb_image = cv2.imread(str(thumb_path))
             if thumb_image is None: raise ValueError("Could not read thumbnail.")
             
-            frame_num_match = re.search(r'frame_(\d+)', image_path.name)
-            frame_num = int(frame_num_match.group(1)) if frame_num_match else -1
-
             frame = Frame(image_data, frame_num)
             mask_meta = self.mask_metadata.get(image_path.name, {})
             
@@ -1161,7 +1220,7 @@ class AnalysisPipeline(Pipeline):
                 f.write('\n')
             self.progress_queue.put({"progress": 1})
         except Exception as e:
-            logger.critical(f"Error processing frame {image_path.name}: {e}", exc_info=True)
+            logger.critical(f"Error processing frame", exc_info=True, extra={**log_context, 'error': e})
             meta = {"filename": image_path.name, "error": f"processing_failed: {e}"}
             with self.write_lock, self.metadata_path.open('a') as f:
                 json.dump(meta, f)
@@ -1202,7 +1261,13 @@ class AppUI:
         ]
 
     def build_ui(self):
-        with gr.Blocks(theme=gr.themes.Default()) as demo:
+        css = """
+        .plot-and-slider-column {
+            max-width: 560px !important;
+            margin: auto;
+        }
+        """
+        with gr.Blocks(theme=gr.themes.Default(), css=css) as demo:
             gr.Markdown("# 🎬 Frame Extractor & Analyzer")
             if not self.cuda_available:
                 gr.Markdown("⚠️ **CPU Mode** — GPU-dependent features are disabled or will be slow.")
@@ -1330,13 +1395,14 @@ class AppUI:
                     accordion_label = k.replace('_', ' ').title()
                     is_open = k in config.QUALITY_METRICS
                     with gr.Accordion(accordion_label, open=is_open):
-                        self.components['metric_plots'][k] = self._create_component(f'plot_{k}', 'html', {'visible': False})
-                        # Removed the gr.Row wrapper to stack the sliders vertically.
-                        self.components['metric_sliders'][f"{k}_min"] = self._create_component(f'slider_{k}_min', 'slider', {'label': "Min", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': f_def['default_min'], 'step': f_def['step'], 'interactive': True, 'visible': False})
-                        if 'default_max' in f_def:
-                            self.components['metric_sliders'][f"{k}_max"] = self._create_component(f'slider_{k}_max', 'slider', {'label': "Max", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': f_def['default_max'], 'step': f_def['step'], 'interactive': True, 'visible': False})
-                        if k == "face_sim":
-                            self._create_component('require_face_match_input', 'checkbox', {'label': "Reject if no face", 'value': config.ui_defaults['require_face_match'], 'visible': False})
+                        with gr.Column(elem_classes="plot-and-slider-column"):
+                            self.components['metric_plots'][k] = self._create_component(f'plot_{k}', 'html', {'visible': False})
+                            # Removed the gr.Row wrapper to stack the sliders vertically.
+                            self.components['metric_sliders'][f"{k}_min"] = self._create_component(f'slider_{k}_min', 'slider', {'label': "Min", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': f_def['default_min'], 'step': f_def['step'], 'interactive': True, 'visible': False})
+                            if 'default_max' in f_def:
+                                self.components['metric_sliders'][f"{k}_max"] = self._create_component(f'slider_{k}_max', 'slider', {'label': "Max", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': f_def['default_max'], 'step': f_def['step'], 'interactive': True, 'visible': False})
+                            if k == "face_sim":
+                                self._create_component('require_face_match_input', 'checkbox', {'label': "Reject if no face", 'value': config.ui_defaults['require_face_match'], 'visible': False})
 
             with gr.Column(scale=2):
                 gr.Markdown("### 🖼️ Results Gallery")
@@ -1352,22 +1418,12 @@ class AppUI:
                     self._create_component('crop_ar_input', 'textbox', {'label': "ARs", 'value': "16:9,1:1,9:16"})
                     self._create_component('crop_padding_input', 'slider', {'label': "Padding %", 'value': 1})
 
-    def _create_config_presets_ui(self):
-        with gr.Group():
-            self._create_component('config_status', 'textbox', {'label': "Status", 'interactive': False, 'lines': 1})
-            with gr.Row():
-                self._create_component('config_dropdown', 'dropdown', {'label': "Select Config", 'choices': self.config_manager.list_configs()})
-                self._create_component('load_button', 'button', {'value': "Load"})
-                self._create_component('delete_button', 'button', {'value': "Delete", 'variant': "stop"})
-            with gr.Row():
-                self._create_component('config_name_input', 'textbox', {'label': "New Config Name"})
-                self._create_component('save_button', 'button', {'value': "Save"})
-
     def get_all_filter_keys(self):
         return config.QUALITY_METRICS + ["face_sim", "mask_area_pct"]
 
     def _create_event_handlers(self):
         self.components.update({
+            'extracted_video_path_state': gr.State(""), 'extracted_frames_dir_state': gr.State(""),
             'analysis_output_dir_state': gr.State(""), 'analysis_metadata_path_state': gr.State(""),
             'all_frames_data_state': gr.State([]), 'per_metric_values_state': gr.State({})
         })
@@ -1471,6 +1527,7 @@ class AppUI:
 
         self.cancel_event.clear()
         q = Queue()
+        logger.set_progress_queue(q)
         
         # Reuse thumbnail prep logic from AnalysisPipeline
         temp_params = AnalysisParameters.from_ui(output_folder=frames_folder)
@@ -1603,23 +1660,6 @@ class AppUI:
         c['apply_auto_button'].click(self.auto_set_thresholds, [c['per_metric_values_state'], c['auto_pctl_input']], slider_comps).then(
             self.on_filters_changed, fast_filter_inputs, fast_filter_outputs)
 
-    def _setup_config_handlers(self):
-        c, cm = self.components, self.config_manager
-        ordered_comp_ids = [
-            'method_input', 'interval_input', 'max_resolution', 'fast_scene_input', 'use_png_input', 
-            'disable_parallel_input', 'resume_input', 'enable_face_filter_input', 
-            'face_model_name_input', 'enable_subject_mask_input', 'dam4sam_model_name_input', 
-            'person_detector_model_input', 'scene_detect_input', 'seed_strategy_input', 'enable_dedup_input',
-            'text_prompt_input', 'prompt_type_for_video_input',
-            'gdino_box_thresh_input', 'gdino_text_thresh_input', 'min_mask_area_pct_input',
-            'sharpness_base_scale_input', 'edge_strength_base_scale_input'
-        ]
-        config_controls = [c[comp_id] for comp_id in ordered_comp_ids if comp_id in c]
-        
-        c['save_button'].click(lambda name, *v: cm.save_config(name, {ordered_comp_ids[i]:val for i,val in enumerate(v)}) or (f"Saved '{name}'", gr.update(choices=cm.list_configs())), [c['config_name_input']] + config_controls, [c['config_status'], c['config_dropdown']])
-        c['load_button'].click(lambda name: [v for k in ordered_comp_ids if (conf := cm.load_config(name)) for v in [conf.get(k)]] + [f"Loaded '{name}'"], c['config_dropdown'], config_controls + [c['config_status']])
-        c['delete_button'].click(lambda name: (cm.delete_config(name) or (f"Deleted '{name}'", gr.update(choices=cm.list_configs(), value=None))), c['config_dropdown'], [c['config_status'], c['config_dropdown']])
-
     def _set_ui_state(self, buttons, state, status_msg=""):
         start_btn, stop_btn = buttons
         log_comp, status_comp = self.components['unified_log'], self.components['unified_status']
@@ -1680,7 +1720,9 @@ class AppUI:
 
             params = AnalysisParameters.from_ui(**ui_args)
             
-            yield from self._run_task(pipeline_class(params, Queue(), self.cancel_event).run)
+            q = Queue()
+            logger.set_progress_queue(q)
+            yield from self._run_task(pipeline_class(params, q, self.cancel_event).run)
             
             result = self.last_task_result
             if result.get("done") and not self.cancel_event.is_set():
@@ -1690,7 +1732,7 @@ class AppUI:
             else:
                 yield self._set_ui_state(buttons, "ready")
         except Exception as e:
-            logger.error(f"{pipeline_type.capitalize()} setup failed: {e}", exc_info=True)
+            logger.error(f"{pipeline_type.capitalize()} setup failed", exc_info=True)
             yield self._set_ui_state(buttons, "error", str(e))
             
     def _run_task(self, task_func):
@@ -1732,6 +1774,7 @@ class AppUI:
         try:
             # Lazy import to reduce initial load time
             import matplotlib.pyplot as plt
+            import matplotlib.ticker as mticker
             import io
             
             counts, bins = hist_data
@@ -1742,6 +1785,7 @@ class AppUI:
                 fig, ax = plt.subplots(figsize=(4.6, 2.2), dpi=120)
                 ax.bar(bins[:-1], counts, width=np.diff(bins), color="#7aa2ff", alpha=0.85, align="edge")
                 ax.grid(axis="y", alpha=0.2); ax.margins(x=0)
+                ax.yaxis.set_major_locator(mticker.MaxNLocator(integer=True))
                 for side in ("top", "right"): ax.spines[side].set_visible(False)
                 ax.tick_params(labelsize=8); ax.set_title(title)
                 buf = io.StringIO()
@@ -1752,7 +1796,7 @@ class AppUI:
             logger.warning("Matplotlib not found, cannot generate histogram SVGs.")
             return "<p style='color:red;'>Matplotlib not installed. Cannot render plot.</p>"
         except Exception as e:
-            logger.error(f"Failed to generate histogram SVG: {e}")
+            logger.error(f"Failed to generate histogram SVG.", exc_info=True)
             return ""
 
     def build_all_metric_svgs(self, per_metric_values):
@@ -1924,7 +1968,7 @@ class AppUI:
                     logger.warning(f"Export failed for {frame_meta.get('filename', 'unknown')}: {e}")
             return f"Exported {ok}/{n_kept} kept frames to {export_dir.name}. Total frames in metadata: {total}"
         except Exception as e:
-            logger.error(f"Error during export process: {e}", exc_info=True)
+            logger.error(f"Error during export process", exc_info=True)
             return f"Error during export: {e}"
 
     def reset_filters(self, all_frames_data, per_metric_values, output_dir):
@@ -2047,7 +2091,4 @@ class AppUI:
 if __name__ == "__main__":
     check_dependencies()
     AppUI().build_ui().launch()
-
-
-
 
