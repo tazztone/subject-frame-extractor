@@ -1,4 +1,4 @@
-# keep this app Monolithic.
+# keep this app Monolithic. https://github.com/tazztone/subject-frame-extractor/
 import gradio as gr
 import cv2
 import numpy as np
@@ -39,21 +39,13 @@ import matplotlib.pyplot as plt
 import io
 import imagehash
 import pyiqa
-
-# --- Grounded-SAM-2 Imports (will resolve via .pth) ---
-try:
-    from grounding_dino.groundingdino.util.inference import (
-        load_model as gdino_load_model,
-        load_image as gdino_load_image,
-        predict as gdino_predict,
-    )
-    from sam2.build_sam import build_sam2
-    from sam2.sam2_image_predictor import SAM2ImagePredictor
-    GROUNDED_SAM_AVAILABLE = True
-except ImportError as e:
-    GROUNDED_SAM_AVAILABLE = False
-    print(f"Warning: Grounded-SAM-2 components not found. Text prompting will be disabled. Error: {e}")
-
+from grounding_dino.groundingdino.util.inference import (
+    load_model as gdino_load_model,
+    load_image as gdino_load_image,
+    predict as gdino_predict,
+)
+from sam2.build_sam import build_sam2
+from sam2.sam2_image_predictor import SAM2ImagePredictor
 
 # --- Unified Logging & Configuration ---
 class Config:
@@ -137,19 +129,6 @@ except FileNotFoundError as e:
     exit() # Exit the script
 
 # --- Utility Functions ---
-def get_feature_status():
-    cuda_available = torch.cuda.is_available()
-    masking_libs_ok = all([torch, DAM4SAMTracker, Image, yaml])
-    return {
-        'face_analysis': True, 'youtube_dl': True,
-        'scene_detection': True, 'masking': masking_libs_ok and cuda_available,
-        'masking_libs_installed': masking_libs_ok, 'cuda_available': cuda_available,
-        'numba_acceleration': True, 'person_detection': True,
-        'perceptual_hashing': True,
-        'pyiqa_available': True,
-        'grounded_sam_available': GROUNDED_SAM_AVAILABLE and cuda_available,
-    }
-
 def check_dependencies():
     if not shutil.which("ffmpeg"):
         logger.error("FFMPEG is not installed or not in PATH.")
@@ -405,9 +384,6 @@ class SubjectMasker:
     def _init_grounder(self):
         if self._gdino is not None:
             return True
-        if not GROUNDED_SAM_AVAILABLE:
-            logger.warning("Grounding DINO unavailable because Grounded-SAM-2 components could not be imported.")
-            return False
         try:
             download_model(
                 "https://github.com/IDEA-Research/GroundingDINO/releases/download/v0.1.0-alpha/groundingdino_swint_ogc.pth",
@@ -428,9 +404,6 @@ class SubjectMasker:
     def _sam2_image_predictor(self):
         if getattr(self, "_sam2_img", None) is not None:
             return self._sam2_img
-        if not GROUNDED_SAM_AVAILABLE:
-            logger.warning("SAM2 Image Predictor unavailable because sam2 components could not be imported.")
-            return None
         sam_ckpt = str(config.DIRS['models'] / "sam2.1_hiera_large.pt")
         sam_cfg = str(config.BASE_DIR / "Grounded-SAM-2" / "configs" / "sam2.1" / "sam2.1_hiera_l.yaml")
         model = build_sam2(sam_cfg, sam_ckpt).to(self._device)
@@ -954,7 +927,6 @@ class AnalysisPipeline(Pipeline):
         self.metadata_path = self.output_dir / "metadata.jsonl"
         self.write_lock = threading.Lock(); self.gpu_lock = threading.Lock()
         self.face_analyzer = None; self.reference_embedding = None; self.mask_metadata = {}
-        self.features = get_feature_status()
         self.niqe_metric = None
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -988,22 +960,19 @@ class AnalysisPipeline(Pipeline):
             if self.params.enable_face_filter and self.params.face_ref_img_path: self._process_reference_face()
             
             person_detector = None
-            if self.params.enable_subject_mask and self.features['person_detection']:
+            if self.params.enable_subject_mask:
                 try:
                     person_detector = PersonDetector(model=self.params.person_detector_model, device=self.device)
                 except Exception as e:
                     logger.warning(f"Person detector unavailable: {e}")
 
             if self.params.enable_subject_mask:
-                if not self.features['masking']:
-                    logger.warning("Subject masking unavailable (missing dependencies or no CUDA).")
-                else:
-                    is_video_path_valid = self.params.video_path and Path(self.params.video_path).exists()
-                    if self.params.scene_detect and not is_video_path_valid:
-                        logger.warning("Valid video path not provided; scene detection for masking disabled.")
-                    masker = SubjectMasker(self.params, self.progress_queue, self.cancel_event, self._create_frame_map(),
-                                           self.face_analyzer, self.reference_embedding, person_detector)
-                    self.mask_metadata = masker.run(self.params.video_path if is_video_path_valid else "", str(self.output_dir))
+                is_video_path_valid = self.params.video_path and Path(self.params.video_path).exists()
+                if self.params.scene_detect and not is_video_path_valid:
+                    logger.warning("Valid video path not provided; scene detection for masking disabled.")
+                masker = SubjectMasker(self.params, self.progress_queue, self.cancel_event, self._create_frame_map(),
+                                       self.face_analyzer, self.reference_embedding, person_detector)
+                self.mask_metadata = masker.run(self.params.video_path if is_video_path_valid else "", str(self.output_dir))
             
             self._run_analysis_loop()
             if self.cancel_event.is_set(): return {"log": "Analysis cancelled."}
@@ -1174,7 +1143,7 @@ class AppUI:
         self.components = {}
         self.cancel_event = threading.Event()
         self.last_task_result = {}
-        self.feature_status = get_feature_status()
+        self.cuda_available = torch.cuda.is_available()
         self.config_manager = self.ConfigurationManager(config.DIRS['configs'])
 
     class ConfigurationManager:
@@ -1194,13 +1163,8 @@ class AppUI:
     def build_ui(self):
         with gr.Blocks(theme=gr.themes.Default()) as demo:
             gr.Markdown("# 🎬 Frame Extractor & Analyzer")
-            status_messages = []
-            if not self.feature_status['cuda_available']:
-                status_messages.append("⚠️ **CPU Mode** — GPU-dependent features are disabled or will be slow.")
-            if not self.feature_status['grounded_sam_available']:
-                status_messages.append("⚠️ **Grounded-SAM-2 components not found** — Text prompt seeding is disabled.")
-            if status_messages:
-                gr.Markdown("\n".join(status_messages))
+            if not self.cuda_available:
+                gr.Markdown("⚠️ **CPU Mode** — GPU-dependent features are disabled or will be slow.")
             
             with gr.Tabs():
                 with gr.Tab("📹 1. Frame Extraction"): self._create_extraction_tab()
@@ -1237,7 +1201,7 @@ class AppUI:
                 self._create_component('upload_video_input', 'file', {'label': "Or Upload Video", 'file_types': ["video"], 'type': "filepath"})
             with gr.Column():
                 gr.Markdown("### ⚙️ Extraction Settings")
-                method_choices = ["keyframes", "interval", "every_nth_frame", "all"] + (["scene"] if self.feature_status['scene_detection'] else [])
+                method_choices = ["keyframes", "interval", "every_nth_frame", "all", "scene"]
                 self._create_component('method_input', 'dropdown', {'choices': method_choices, 'value': config.ui_defaults['method'], 'label': "Method"})
                 self._create_component('interval_input', 'textbox', {'label': "Interval (s)", 'value': config.ui_defaults['interval'], 'visible': False})
                 self._create_component('nth_frame_input', 'textbox', {'label': "N-th Frame Value", 'value': config.ui_defaults["nth_frame"], 'visible': False})
@@ -1260,13 +1224,13 @@ class AppUI:
             with gr.Column(scale=1):
                 gr.Markdown("### 🌱 Seeding")
                 with gr.Group():
-                    self._create_component('enable_face_filter_input', 'checkbox', {'label': "Enable Face Similarity", 'value': config.ui_defaults['enable_face_filter'], 'interactive': self.feature_status['face_analysis']})
+                    self._create_component('enable_face_filter_input', 'checkbox', {'label': "Enable Face Similarity", 'value': config.ui_defaults['enable_face_filter'], 'interactive': True})
                     self._create_component('face_model_name_input', 'dropdown', {'choices': ["buffalo_l", "buffalo_s"], 'value': config.ui_defaults['face_model_name'], 'label': "Face Model"})
                     self._create_component('face_ref_img_path_input', 'textbox', {'label': "📸 Reference Image Path"})
                     self._create_component('face_ref_img_upload_input', 'file', {'label': "📤 Or Upload", 'type': "filepath"})
                 with gr.Group():
-                    self._create_component('text_prompt_input', 'textbox', {'label': "Ground with text (overrides other strategies)", 'placeholder': "e.g., 'a woman in a red dress'", 'value': config.ui_defaults['text_prompt'], 'interactive': self.feature_status['grounded_sam_available']})
-                    self._create_component('prompt_type_for_video_input', 'dropdown', {'choices': ['box', 'mask'], 'value': config.ui_defaults['prompt_type_for_video'], 'label': 'Prompt Type', 'interactive': self.feature_status['grounded_sam_available']})
+                    self._create_component('text_prompt_input', 'textbox', {'label': "Ground with text (overrides other strategies)", 'placeholder': "e.g., 'a woman in a red dress'", 'value': config.ui_defaults['text_prompt'], 'interactive': True})
+                    self._create_component('prompt_type_for_video_input', 'dropdown', {'choices': ['box', 'mask'], 'value': config.ui_defaults['prompt_type_for_video'], 'label': 'Prompt Type', 'interactive': True})
                     self._create_component('seed_strategy_input', 'dropdown', {'choices': ["Reference Face / Largest", "Largest Person", "Center-most Person"], 'value': config.ui_defaults['seed_strategy'], 'label': "Fallback Seed Strategy"})
                     self._create_component('person_detector_model_input', 'dropdown', {'choices': ['yolo11x.pt', 'yolo11s.pt'], 'value': config.ui_defaults['person_detector_model'], 'label': "Person Detector"})
                 
@@ -1278,11 +1242,11 @@ class AppUI:
 
             with gr.Column(scale=1):
                 gr.Markdown("### 🧠 SAM2")
-                self._create_component('enable_subject_mask_input', 'checkbox', {'label': "Enable Subject-Only Metrics", 'value': self.feature_status['masking'], 'interactive': self.feature_status['masking']})
+                self._create_component('enable_subject_mask_input', 'checkbox', {'label': "Enable Subject-Only Metrics", 'value': config.ui_defaults['enable_subject_mask'], 'interactive': True})
                 self._create_component('dam4sam_model_name_input', 'dropdown', {'choices': ['sam21pp-T', 'sam21pp-S', 'sam21pp-B+', 'sam21pp-L'], 'value': config.ui_defaults['dam4sam_model_name'], 'label': "DAM4SAM Model"})
-                self._create_component('scene_detect_input', 'checkbox', {'label': "Use Scene Detection", 'value': self.feature_status['scene_detection'], 'interactive': self.feature_status['scene_detection']})
+                self._create_component('scene_detect_input', 'checkbox', {'label': "Use Scene Detection", 'value': config.ui_defaults['scene_detect'], 'interactive': True})
                 with gr.Group():
-                    self._create_component('enable_dedup_input', 'checkbox', {'label': "Enable Near-Duplicate Filtering", 'value': config.ui_defaults['enable_dedup'], 'interactive': self.feature_status['perceptual_hashing']})
+                    self._create_component('enable_dedup_input', 'checkbox', {'label': "Enable Near-Duplicate Filtering", 'value': config.ui_defaults['enable_dedup'], 'interactive': True})
         
         start_btn = gr.Button("🔬 Start Analysis", variant="primary")
         stop_btn = gr.Button("⏹️ Stop", variant="stop", interactive=False)
@@ -1301,7 +1265,7 @@ class AppUI:
                 self.components['metric_plots'] = {}
                 self.components['metric_sliders'] = {}
                 
-                with gr.Accordion("Deduplication", open=True, visible=self.feature_status['perceptual_hashing']):
+                with gr.Accordion("Deduplication", open=True, visible=True):
                     f_def = config.filter_defaults['dedup_thresh']
                     self._create_component('dedup_thresh_input', 'slider', {'label': "Similarity Threshold", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': f_def['default'], 'step': f_def['step']})
 
