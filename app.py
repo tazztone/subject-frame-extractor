@@ -608,7 +608,12 @@ class SubjectMasker:
 
     def _load_shot_frames(self, frames_dir, start, end):
         frames = []
-        if not self.frame_map: return []
+        if not self.frame_map: 
+            # Fallback for preview mode where frame_map might not be initialized
+            image_files = sorted(list(Path(frames_dir).glob("frame_*.png")) + list(Path(frames_dir).glob("frame_*.jpg")),
+                                key=lambda p: int(re.search(r'frame_(\d+)', p.name).group(1)))
+            self.frame_map = {int(re.search(r'frame_(\d+)', f.name).group(1)): f.name for f in image_files}
+
         thumb_dir = Path(frames_dir) / "thumbs"
 
         for fn in sorted(fn for fn in self.frame_map if start <= fn < end):
@@ -635,7 +640,7 @@ class SubjectMasker:
 
     def _seed_identity(self, shot_frames):
         if not shot_frames:
-            return None, None, None
+            return None, None, {}
 
         if getattr(self.params, "text_prompt", ""):
             if getattr(self.params, "prompt_type_for_video", "box") == "mask":
@@ -779,6 +784,60 @@ class SubjectMasker:
             logger.critical(f"DAM4SAM propagation failed: {e}", exc_info=True)
             h, w = shot_frames[0].shape[:2]
             return ([np.zeros((h,w), np.uint8)]*len(shot_frames), [0.0]*len(shot_frames), [True]*len(shot_frames), [f"Propagation failed: {e}"]*len(shot_frames))
+
+    def _draw_bbox(self, img_bgr, xywh, color=(0, 0, 255), thickness=2):
+        x, y, w, h = map(int, xywh or [0, 0, 0, 0])
+        img_out = img_bgr.copy()
+        cv2.rectangle(img_out, (x, y), (x + w, y + h), color, thickness)
+        return img_out
+
+    def _sam2_mask_for_bbox(self, frame_bgr_small, bbox_xywh):
+        predictor = self._sam2_image_predictor()
+        if predictor is None or bbox_xywh is None:
+            return None
+        x, y, w, h = map(int, bbox_xywh)
+        img_rgb = cv2.cvtColor(frame_bgr_small, cv2.COLOR_BGR2RGB)
+        with torch.no_grad(), torch.cuda.amp.autocast(enabled=self._device == 'cuda'):
+            predictor.set_image(img_rgb)
+            masks, _, _ = predictor.predict(
+                box=np.array([[x, y, x + w, y + h]], dtype=np.float32),
+                multimask_output=False,
+            )
+        if masks is None or masks.size == 0:
+            return None
+        return (masks.squeeze() > 0).astype(np.uint8) * 255
+
+    def preview_seeds(self, video_path: str, frames_dir: str, max_scenes: int = 100):
+        previews = []
+        if not video_path or not Path(video_path).exists():
+            self.progress_queue.put({"log": "[WARNING] Video path missing for seeding preview; enable scene detection with a valid video file."})
+            return previews
+        self._detect_scenes(video_path, frames_dir)
+        if not self.shots:
+            self.progress_queue.put({"log": "[WARNING] No scenes found; cannot preview seeding."})
+            return previews
+        shots = self.shots[:max_scenes]
+        for shot_id, (start_frame, end_frame) in enumerate(shots):
+            data = self._load_shot_frames(frames_dir, start_frame, end_frame)
+            if not data:
+                continue
+            # first entry: (orig_fn, thumb_img, (h,w))
+            _, thumb_bgr, _ = data[0]
+            seed_idx, bbox, details = self._seed_identity([thumb_bgr])
+            caption = f"Shot {shot_id+1}: {details.get('type','?')}"
+            if 'conf' in details:
+                caption += f" conf={details['conf']:.2f}"
+            # choose preview mode
+            mask = None
+            if self.params.prompt_type_for_video == 'mask' and bbox is not None:
+                mask = self._sam2_mask_for_bbox(thumb_bgr, bbox)
+            if mask is not None:
+                overlay = render_mask_overlay(thumb_bgr, mask, alpha=0.5)
+                previews.append((cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB), caption))
+            else:
+                with_box = self._draw_bbox(thumb_bgr, bbox) if bbox is not None else thumb_bgr
+                previews.append((cv2.cvtColor(with_box, cv2.COLOR_BGR2RGB), caption))
+        return previews
 
 
 # --- Backend Analysis Pipeline ---
@@ -1195,27 +1254,36 @@ class AppUI:
             with gr.Column(scale=1):
                 gr.Markdown("### 📁 Input")
                 self._create_component('frames_folder_input', 'textbox', {'label': "📂 Extracted Frames Folder"})
-                self._create_component('analysis_video_path_input', 'textbox', {'label': "🎥 Original Video Path (Optional for Scene Detection)"})
+                self._create_component('analysis_video_path_input', 'textbox', {'label': "🎥 Original Video Path (for Scene Detection)"})
                 self._create_component('resume_input', 'checkbox', {'label': "💾 Skip re-analysis if config is unchanged", 'value': config.ui_defaults["resume"]})
-            with gr.Column(scale=2):
-                gr.Markdown("### ⚙️ Analysis Settings")
+            
+            with gr.Column(scale=1):
+                gr.Markdown("### 🌱 Seeding")
                 with gr.Group():
                     self._create_component('enable_face_filter_input', 'checkbox', {'label': "Enable Face Similarity", 'value': config.ui_defaults['enable_face_filter'], 'interactive': self.feature_status['face_analysis']})
                     self._create_component('face_model_name_input', 'dropdown', {'choices': ["buffalo_l", "buffalo_s"], 'value': config.ui_defaults['face_model_name'], 'label': "Face Model"})
                     self._create_component('face_ref_img_path_input', 'textbox', {'label': "📸 Reference Image Path"})
                     self._create_component('face_ref_img_upload_input', 'file', {'label': "📤 Or Upload", 'type': "filepath"})
                 with gr.Group():
-                    self._create_component('enable_subject_mask_input', 'checkbox', {'label': "Enable Subject-Only Metrics", 'value': self.feature_status['masking'], 'interactive': self.feature_status['masking']})
-                    self._create_component('dam4sam_model_name_input', 'dropdown', {'choices': ['sam21pp-T', 'sam21pp-S', 'sam21pp-B+', 'sam21pp-L'], 'value': config.ui_defaults['dam4sam_model_name'], 'label': "DAM4SAM Model"})
+                    self._create_component('text_prompt_input', 'textbox', {'label': "Ground with text (overrides other strategies)", 'placeholder': "e.g., 'a woman in a red dress'", 'value': config.ui_defaults['text_prompt'], 'interactive': self.feature_status['grounded_sam_available']})
+                    self._create_component('prompt_type_for_video_input', 'dropdown', {'choices': ['box', 'mask'], 'value': config.ui_defaults['prompt_type_for_video'], 'label': 'Prompt Type', 'interactive': self.feature_status['grounded_sam_available']})
+                    self._create_component('seed_strategy_input', 'dropdown', {'choices': ["Reference Face / Largest", "Largest Person", "Center-most Person"], 'value': config.ui_defaults['seed_strategy'], 'label': "Fallback Seed Strategy"})
                     self._create_component('person_detector_model_input', 'dropdown', {'choices': ['yolo11x.pt', 'yolo11s.pt'], 'value': config.ui_defaults['person_detector_model'], 'label': "Person Detector"})
-                    self._create_component('scene_detect_input', 'checkbox', {'label': "Use Scene Detection", 'value': self.feature_status['scene_detection'], 'interactive': self.feature_status['scene_detection']})
-                    with gr.Accordion("Subject Seeding Strategy", open=True):
-                        self._create_component('text_prompt_input', 'textbox', {'label': "Ground with text (overrides other strategies)", 'placeholder': "e.g., 'a woman in a red dress'", 'value': config.ui_defaults['text_prompt'], 'interactive': self.feature_status['grounded_sam_available']})
-                        self._create_component('prompt_type_for_video_input', 'dropdown', {'choices': ['box', 'mask'], 'value': config.ui_defaults['prompt_type_for_video'], 'label': 'Prompt Type', 'interactive': self.feature_status['grounded_sam_available']})
-                        self._create_component('seed_strategy_input', 'dropdown', {'choices': ["Reference Face / Largest", "Largest Person", "Center-most Person"], 'value': config.ui_defaults['seed_strategy'], 'label': "Fallback Seed Strategy"})
+                
+                self._create_component('preview_seeds_button', 'button', {'value': '👀 Preview Seeding on Scenes'})
+                self._create_component('seeding_preview_gallery', 'gallery', {
+                    'columns': [4, 6, 8], 'rows': 2, 'height': 'auto',
+                    'preview': True, 'allow_preview': True, 'object_fit': 'contain', 'visible': True
+                })
+
+            with gr.Column(scale=1):
+                gr.Markdown("### 🧠 SAM2")
+                self._create_component('enable_subject_mask_input', 'checkbox', {'label': "Enable Subject-Only Metrics", 'value': self.feature_status['masking'], 'interactive': self.feature_status['masking']})
+                self._create_component('dam4sam_model_name_input', 'dropdown', {'choices': ['sam21pp-T', 'sam21pp-S', 'sam21pp-B+', 'sam21pp-L'], 'value': config.ui_defaults['dam4sam_model_name'], 'label': "DAM4SAM Model"})
+                self._create_component('scene_detect_input', 'checkbox', {'label': "Use Scene Detection", 'value': self.feature_status['scene_detection'], 'interactive': self.feature_status['scene_detection']})
                 with gr.Group():
                     self._create_component('enable_dedup_input', 'checkbox', {'label': "Enable Near-Duplicate Filtering", 'value': config.ui_defaults['enable_dedup'], 'interactive': self.feature_status['perceptual_hashing']})
-                    
+        
         start_btn = gr.Button("🔬 Start Analysis", variant="primary")
         stop_btn = gr.Button("⏹️ Stop", variant="stop", interactive=False)
         self.components.update({'start_analysis_button': start_btn, 'stop_analysis_button': stop_btn})
@@ -1317,6 +1385,65 @@ class AppUI:
                        c['analysis_output_dir_state'], c['analysis_metadata_path_state'], c['filtering_tab']]
         self.components['start_analysis_button'].click(self.run_analysis_wrapper, ana_inputs, ana_outputs)
         self.components['stop_analysis_button'].click(lambda: self.cancel_event.set())
+
+        def preview_seeds_wrapper(frames_folder, video_path, enable_face_filter, face_ref_img_path, face_ref_img_upload,
+                                  face_model_name, enable_subject_mask, dam4sam_model_name, person_detector_model,
+                                  seed_strategy, scene_detect, text_prompt, prompt_type_for_video):
+            # Gate: need scenes and a valid video
+            if not scene_detect or not video_path or not Path(video_path).exists():
+                return gr.update(value=[], visible=True), "[INFO] Enable scene detection and provide a valid video path to preview."
+            # Resolve reference image upload
+            if face_ref_img_upload:
+                dest = config.DIRS['downloads'] / Path(face_ref_img_upload).name
+                shutil.copy2(face_ref_img_upload, dest)
+                face_ref_img_path = str(dest)
+            # Build params and dependencies
+            params = AnalysisParameters.from_ui(
+                output_folder=frames_folder,
+                video_path=video_path,
+                enable_face_filter=enable_face_filter,
+                face_ref_img_path=face_ref_img_path,
+                face_model_name=face_model_name,
+                enable_subject_mask=enable_subject_mask,
+                dam4sam_model_name=dam4sam_model_name,
+                person_detector_model=person_detector_model,
+                seed_strategy=seed_strategy,
+                scene_detect=scene_detect,
+                text_prompt=text_prompt,
+                prompt_type_for_video=prompt_type_for_video,
+            )
+            q = Queue()
+            cancel_ev = threading.Event()
+            # Optional: reuse cached analyzers/detectors as in AnalysisPipeline
+            person_detector = None
+            if enable_subject_mask:
+                try:
+                    person_detector = PersonDetector(model=person_detector_model, device="cuda" if torch.cuda.is_available() else "cpu")
+                except Exception:
+                    pass
+            face_analyzer = None
+            ref_emb = None
+            if enable_face_filter and face_ref_img_path:
+                face_analyzer = FaceAnalysis(name=face_model_name, root=str(config.DIRS['models']),
+                                             providers=['CUDAExecutionProvider', 'CPUExecutionProvider'] if torch.cuda.is_available() else ['CPUExecutionProvider'])
+                face_analyzer.prepare(ctx_id=0 if torch.cuda.is_available() else -1, det_size=(640, 640))
+                ref_img = cv2.imread(face_ref_img_path)
+                faces = face_analyzer.get(ref_img) if ref_img is not None else []
+                if faces:
+                    ref_emb = max(faces, key=lambda x: x.det_score).normed_embedding
+            masker = SubjectMasker(params, q, cancel_ev, frame_map=None, face_analyzer=face_analyzer,
+                                   reference_embedding=ref_emb, person_detector=person_detector)
+            previews = masker.preview_seeds(video_path, frames_folder)
+            return gr.update(value=previews, visible=True), f"[INFO] Generated {len(previews)} previews."
+
+        # Wire the button
+        self.components['preview_seeds_button'].click(
+            preview_seeds_wrapper,
+            [c['frames_folder_input'], c['analysis_video_path_input'], c['enable_face_filter_input'],
+             c['face_ref_img_path_input'], c['face_ref_img_upload_input'], c['face_model_name_input'],
+             c['enable_subject_mask_input'], c['dam4sam_model_name_input'], c['person_detector_model_input'],
+             c['seed_strategy_input'], c['scene_detect_input'], c['text_prompt_input'], c['prompt_type_for_video_input']],
+            [c['seeding_preview_gallery'], c['unified_log']])
 
     def _setup_filtering_handlers(self):
         c = self.components
