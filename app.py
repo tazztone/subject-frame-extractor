@@ -38,6 +38,8 @@ import matplotlib.pyplot as plt
 import io
 import imagehash
 import pyiqa
+
+# --- Grounded-SAM-2 Imports ---
 from grounding_dino.groundingdino.util.inference import (
     load_model as gdino_load_model,
     load_image as gdino_load_image,
@@ -45,6 +47,7 @@ from grounding_dino.groundingdino.util.inference import (
 )
 from sam2.build_sam import build_sam2
 from sam2.sam2_image_predictor import SAM2ImagePredictor
+
 
 # --- Unified Logging & Configuration ---
 class Config:
@@ -429,33 +432,46 @@ class SubjectMasker:
         if not self._init_grounder():
             return None, {}
 
-        # Pass in-memory array to loader
-        image_source, image_tensor = gdino_load_image(bgr_to_pil(frame_bgr_small))
-        h, w = image_source.shape[:2]
+        # Create a temporary file to save the numpy array. This is necessary because
+        # the grounding_dino.util.inference.load_image function expects a file path.
+        fd, tmp_path = tempfile.mkstemp(suffix=".jpg")
+        os.close(fd)
+        
+        try:
+            cv2.imwrite(tmp_path, frame_bgr_small)
+            # load_image returns a numpy array (image_source) and a tensor
+            image_source, image_tensor = gdino_load_image(tmp_path)
+            # Use .shape for numpy array, which is (height, width, channels)
+            h, w = image_source.shape[:2]
 
-        with torch.no_grad(), torch.cuda.amp.autocast(enabled=self._device=='cuda'):
-            boxes, confidences, labels = gdino_predict(
-                model=self._gdino,
-                image=image_tensor.to(self._device),
-                caption=text,
-                box_threshold=float(self.params.box_threshold),
-                text_threshold=float(self.params.text_threshold),
-            )
-        
-        if boxes is None or len(boxes) == 0:
-            return None, {"type": "text_prompt", "error": "no_boxes"}
+            with torch.no_grad(), torch.cuda.amp.autocast(enabled=self._device=='cuda'):
+                boxes, confidences, labels = gdino_predict(
+                    model=self._gdino,
+                    image=image_tensor.to(self._device),
+                    caption=text,
+                    box_threshold=float(self.params.box_threshold),
+                    text_threshold=float(self.params.text_threshold),
+                )
             
-        scale = torch.tensor([w, h, w, h], device=boxes.device, dtype=boxes.dtype)
-        boxes_abs = (boxes * scale).cpu()
-        xyxy = box_convert(boxes=boxes_abs, in_fmt="cxcywh", out_fmt="xyxy").numpy()
-        conf = confidences.cpu().numpy().tolist()
-        
-        idx = int(np.argmax(conf))
-        x1, y1, x2, y2 = map(float, xyxy[idx])
-        xywh = [int(max(0, x1)), int(max(0, y1)), int(max(1, x2 - x1)), int(max(1, y2 - y1))]
-        details = {"type": "text_prompt", "label": labels[idx] if labels else "", "conf": float(conf[idx])}
-        
-        return xywh, details
+            if boxes is None or len(boxes) == 0:
+                return None, {"type": "text_prompt", "error": "no_boxes"}
+                
+            scale = torch.tensor([w, h, w, h], device=boxes.device, dtype=boxes.dtype)
+            boxes_abs = (boxes * scale).cpu()
+            xyxy = box_convert(boxes=boxes_abs, in_fmt="cxcywh", out_fmt="xyxy").numpy()
+            conf = confidences.cpu().numpy().tolist()
+            
+            idx = int(np.argmax(conf))
+            x1, y1, x2, y2 = map(float, xyxy[idx])
+            xywh = [int(max(0, x1)), int(max(0, y1)), int(max(1, x2 - x1)), int(max(1, y2 - y1))]
+            details = {"type": "text_prompt", "label": labels[idx] if labels else "", "conf": float(conf[idx])}
+            
+            return xywh, details
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
     def _ground_first_frame_mask_xywh(self, frame_bgr_small: np.ndarray, text: str):
         xywh, details = self._ground_first_frame_xywh(frame_bgr_small, text)
@@ -1352,10 +1368,10 @@ class AppUI:
                     is_open = k in config.QUALITY_METRICS
                     with gr.Accordion(accordion_label, open=is_open):
                         self.components['metric_plots'][k] = self._create_component(f'plot_{k}', 'html', {'visible': False})
-                        with gr.Row():
-                            self.components['metric_sliders'][f"{k}_min"] = self._create_component(f'slider_{k}_min', 'slider', {'label': "Min", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': f_def['default_min'], 'step': f_def['step'], 'interactive': True, 'visible': False})
-                            if 'default_max' in f_def:
-                                self.components['metric_sliders'][f"{k}_max"] = self._create_component(f'slider_{k}_max', 'slider', {'label': "Max", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': f_def['default_max'], 'step': f_def['step'], 'interactive': True, 'visible': False})
+                        # Removed the gr.Row wrapper to stack the sliders vertically.
+                        self.components['metric_sliders'][f"{k}_min"] = self._create_component(f'slider_{k}_min', 'slider', {'label': "Min", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': f_def['default_min'], 'step': f_def['step'], 'interactive': True, 'visible': False})
+                        if 'default_max' in f_def:
+                            self.components['metric_sliders'][f"{k}_max"] = self._create_component(f'slider_{k}_max', 'slider', {'label': "Max", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': f_def['default_max'], 'step': f_def['step'], 'interactive': True, 'visible': False})
                         if k == "face_sim":
                             self._create_component('require_face_match_input', 'checkbox', {'label': "Reject if no face", 'value': config.ui_defaults['require_face_match'], 'visible': False})
 
@@ -1456,11 +1472,13 @@ class AppUI:
         )
         c['stop_analysis_button'].click(lambda: self.cancel_event.set())
         
-        preview_inputs = [c['frames_folder_input'], c['analysis_video_path_input']] + [ana_comp_map[k] for k in [
+        preview_input_keys = [
             'enable_face_filter', 'face_ref_img_path', 'face_ref_img_upload', 'face_model_name',
             'enable_subject_mask', 'dam4sam_model_name', 'person_detector_model', 'seed_strategy',
             'scene_detect', 'text_prompt', 'prompt_type_for_video', 'box_threshold', 'text_threshold'
-        ]]
+        ]
+        preview_inputs = [c['frames_folder_input'], c['analysis_video_path_input']] + [c[ana_comp_map[k]] for k in preview_input_keys]
+        
         c['preview_seeds_button'].click(
             self.preview_seeds_wrapper,
             preview_inputs,
