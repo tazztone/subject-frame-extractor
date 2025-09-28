@@ -62,31 +62,27 @@ logging.Logger.success = success_log_method
 class StructuredFormatter(logging.Formatter):
     """Custom formatter to include extra context in log messages."""
     def format(self, record):
-        # Find all keys in the record that are not standard LogRecord attributes
+        # Start with the default formatted message
+        s = super().format(record)
+        # Find and append extra context
         extra_items = {k: v for k, v in record.__dict__.items() if k not in logging.LogRecord.__dict__ and k != 'args'}
         if extra_items:
-            # Append the key-value pairs to the original message
-            record.msg = f"{record.msg} [{', '.join(f'{k}={v}' for k, v in extra_items.items())}]"
-        return super().format(record)
+            s += f" [{', '.join(f'{k}={v}' for k, v in extra_items.items())}]"
+        return s
 
 
 class UnifiedLogger:
-    def __init__(self, log_file_path=None):
+    def __init__(self):
         self.progress_queue = None
         self.logger = logging.getLogger('unified_logger')
         if not self.logger.handlers:  # Prevent adding handlers multiple times on hot-reload
             self.logger.setLevel(logging.INFO)
             self.logger.propagate = False
-            formatter = StructuredFormatter('%(asctime)s - %(levelname)s - %(message)s')
             
-            if log_file_path:
-                # Use a rotating file handler for the main application log to prevent it from growing too large
-                fh = RotatingFileHandler(log_file_path, maxBytes=5*1024*1024, backupCount=3, encoding='utf-8')
-                fh.setFormatter(formatter)
-                self.logger.addHandler(fh)
-
+            # Use a simple formatter for the console to keep it clean
+            console_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
             ch = logging.StreamHandler()
-            ch.setFormatter(formatter)
+            ch.setFormatter(console_formatter)
             self.logger.addHandler(ch)
 
     def set_progress_queue(self, queue):
@@ -125,7 +121,7 @@ class UnifiedLogger:
 class Config:
     BASE_DIR = Path(__file__).parent
     DIRS = {'logs': BASE_DIR / "logs", 'configs': BASE_DIR / "configs", 'models': BASE_DIR / "models", 'downloads': BASE_DIR / "downloads"}
-    LOG_FILE = DIRS['logs'] / "frame_extractor.log"
+    # LOG_FILE has been removed, as we now only use per-run logs.
     CONFIG_FILE = DIRS['configs'] / "config.yaml"
 
     def __init__(self):
@@ -152,8 +148,8 @@ class Config:
     def setup_directories_and_logger(cls):
         for dir_path in cls.DIRS.values():
             dir_path.mkdir(exist_ok=True)
-        # Pass the main log file path to the logger
-        return UnifiedLogger(log_file_path=cls.LOG_FILE)
+        # The logger is now initialized without a default file path.
+        return UnifiedLogger()
 
 
 # --- Global Initialization ---
@@ -926,15 +922,24 @@ class Pipeline:
 
 class ExtractionPipeline(Pipeline):
     def run(self):
+        run_log_handler = None
         try:
             logger.info("Preparing video source...")
             vid_manager = VideoManager(self.params.source_path, self.params.max_resolution)
             video_path = Path(vid_manager.prepare_video())
+
+            # Define output_dir and set up the run-specific log file
+            output_dir = config.DIRS['downloads'] / video_path.stem
+            output_dir.mkdir(exist_ok=True)
+            
+            run_log_path = output_dir / "extraction_run.log"
+            run_log_handler = logging.FileHandler(run_log_path, mode='w', encoding='utf-8')
+            run_log_handler.setFormatter(StructuredFormatter('%(asctime)s - %(levelname)s - %(message)s'))
+            self.logger.add_handler(run_log_handler)
+
             logger.info(f"Video ready", extra={'path': sanitize_filename(video_path.name)})
 
             video_info = VideoManager.get_video_info(video_path)
-            output_dir = config.DIRS['downloads'] / video_path.stem
-            output_dir.mkdir(exist_ok=True)
             self._run_ffmpeg(video_path, output_dir, video_info)
 
             if self.cancel_event.is_set(): return {"log": "Extraction cancelled."}
@@ -942,6 +947,9 @@ class ExtractionPipeline(Pipeline):
             return {"done": True, "output_dir": str(output_dir), "video_path": str(video_path)}
         except Exception as e:
             return logger.pipeline_error("extraction", e)
+        finally:
+            # Ensure the per-run log handler is removed and closed
+            self.logger.remove_handler(run_log_handler)
 
     def _run_ffmpeg(self, video_path, output_dir, video_info):
         use_showinfo = self.params.method != 'all'
@@ -2091,4 +2099,5 @@ class AppUI:
 if __name__ == "__main__":
     check_dependencies()
     AppUI().build_ui().launch()
+
 
