@@ -556,6 +556,8 @@ class SubjectMasker:
                     }
                     if masks[i] is not None and np.any(masks[i]):
                         mask_full_res = cv2.resize(masks[i], (w, h), interpolation=cv2.INTER_NEAREST)
+                        if mask_full_res.ndim == 3:
+                            mask_full_res = mask_full_res[:, :, 0]
                         cv2.imwrite(str(mask_path), mask_full_res)
                         mask_metadata[frame_fname] = asdict(MaskingResult(mask_path=str(mask_path), **result_args))
                     else:
@@ -771,7 +773,7 @@ class SubjectMasker:
                 area_pct = (np.sum(mask > 0) / img_area) * 100 if img_area > 0 else 0.0
                 is_empty = area_pct < config.min_mask_area_pct
                 final_results.append((mask, float(area_pct), bool(is_empty), "Empty mask" if is_empty else None))
-            return zip(*final_results)
+            return tuple(zip(*final_results)) if final_results else ([], [], [], [])
 
         except Exception as e:
             logger.critical(f"DAM4SAM propagation failed: {e}", exc_info=True)
@@ -1761,7 +1763,16 @@ class AppUI:
 
     def _crop_frame(self, img: np.ndarray, mask: np.ndarray, crop_ars: str, padding: int) -> np.ndarray:
         h, w = img.shape[:2]
-        if mask is None: return img
+        if mask is None:
+            return img
+        
+        # Robustly reduce to 2D
+        if mask.ndim == 3:
+            if mask.shape[2] == 1:
+                mask = mask[:, :, 0]
+            else:
+                mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
+
         mask = (mask > 128).astype(np.uint8)
         
         ys, xs = np.where(mask > 0)
