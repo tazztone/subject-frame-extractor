@@ -1259,6 +1259,12 @@ class AppUI:
         with gr.Row():
             with gr.Column(scale=1):
                 gr.Markdown("### 🎛️ Filter Controls")
+                with gr.Row():
+                    self._create_component('existing_analysis_dir_input', 'textbox', {
+                        'label': "📁 Existing Analysis Folder",
+                        'placeholder': "Path to folder containing metadata.jsonl"
+                    })
+                    self._create_component('load_existing_button', 'button', {'value': "Load Analysis"})
                 self._create_component('auto_pctl_input', 'slider', {'label': 'Auto-Threshold Percentile', 'minimum': 1, 'maximum': 99, 'value': 75, 'step': 1})
                 with gr.Row():
                     self._create_component('apply_auto_button', 'button', {'value': 'Apply Percentile to Mins'})
@@ -1474,6 +1480,36 @@ class AppUI:
         c['filtering_tab'].select(load_and_trigger_update, load_inputs, load_outputs)
         c['analysis_metadata_path_state'].change(load_and_trigger_update, load_inputs, load_outputs)
         
+        def load_existing_analysis(dir_path):
+            try:
+                p = Path(dir_path or "")
+                if not p.is_dir():
+                    raise ValueError("Folder does not exist")
+                md = p / "metadata.jsonl"
+                if not md.exists():
+                    raise ValueError("metadata.jsonl not found in folder")
+                # Optional sanity: check first line header exists
+                try:
+                    with md.open("r") as f:
+                        first = f.readline()
+                        json.loads(first)
+                except Exception:
+                    logger.warning("metadata.jsonl header missing or unreadable; continuing")
+                # Optional: check thumbs, but not strictly required for filtering
+                return str(p), str(md), f"[SUCCESS] Loaded analysis from: {p}"
+            except Exception as e:
+                return None, None, f"[ERROR] {e}"
+
+        self.components['load_existing_button'].click(
+            load_existing_analysis,
+            [c['existing_analysis_dir_input']],
+            [c['analysis_output_dir_state'], c['analysis_metadata_path_state'], c['unified_log']]
+        ).then(
+            load_and_trigger_update,
+            [c['analysis_metadata_path_state'], c['analysis_output_dir_state'], c['require_face_match_input'], c['dedup_thresh_input']] + [c['metric_sliders'][k] for k in sorted(c['metric_sliders'].keys())],
+            [c['all_frames_data_state'], c['per_metric_values_state'], c['filter_status_text'], c['results_gallery']] + [c['metric_plots'][k] for k in self.get_all_filter_keys()] + [c['metric_sliders'][k] for k in sorted(c['metric_sliders'].keys())] + [c['require_face_match_input']]
+        )
+
         export_inputs = [c['all_frames_data_state'], c['analysis_output_dir_state'], c['enable_crop_input'], 
                          c['crop_ar_input'], c['crop_padding_input'], c['require_face_match_input'], c['dedup_thresh_input']] + slider_comps
         c['export_button'].click(self.export_kept_frames, export_inputs, c['unified_log'])
@@ -1934,6 +1970,7 @@ class AppUI:
 if __name__ == "__main__":
     check_dependencies()
     AppUI().build_ui().launch()
+
 
 
 
