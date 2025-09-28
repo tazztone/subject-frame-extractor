@@ -38,8 +38,6 @@ import matplotlib.pyplot as plt
 import io
 import imagehash
 import pyiqa
-
-# --- Grounded-SAM-2 Imports ---
 from grounding_dino.groundingdino.util.inference import (
     load_model as gdino_load_model,
     load_image as gdino_load_image,
@@ -47,7 +45,6 @@ from grounding_dino.groundingdino.util.inference import (
 )
 from sam2.build_sam import build_sam2
 from sam2.sam2_image_predictor import SAM2ImagePredictor
-
 
 # --- Unified Logging & Configuration ---
 class Config:
@@ -1192,6 +1189,18 @@ class AppUI:
         self.config_manager = self.ConfigurationManager(config.DIRS['configs'])
         # Centralized place for heavy, reusable models
         self.shared_analyzers = {}
+        self.ext_ui_map_keys = [
+            'source_path', 'upload_video', 'method', 'interval', 'nth_frame',
+            'fast_scene', 'max_resolution', 'use_png'
+        ]
+        self.ana_ui_map_keys = [
+            'output_folder', 'video_path', 'disable_parallel', 'resume', 'enable_face_filter',
+            'face_ref_img_path', 'face_ref_img_upload', 'face_model_name', 'enable_subject_mask',
+            'dam4sam_model_name', 'person_detector_model', 'seed_strategy', 'scene_detect',
+            'enable_dedup', 'text_prompt', 'prompt_type_for_video', 'box_threshold',
+            'text_threshold', 'min_mask_area_pct', 'sharpness_base_scale',
+            'edge_strength_base_scale', 'gdino_config_path', 'gdino_checkpoint_path'
+        ]
 
     class ConfigurationManager:
         def __init__(self, config_dir: Path): self.config_dir = config_dir
@@ -1389,6 +1398,14 @@ class AppUI:
         self._setup_filtering_handlers()
         self._setup_config_handlers()
 
+    def run_extraction_wrapper(self, *args):
+        ui_args = dict(zip(self.ext_ui_map_keys, args))
+        yield from self._run_pipeline("extraction", ui_args)
+
+    def run_analysis_wrapper(self, *args):
+        ui_args = dict(zip(self.ana_ui_map_keys, args))
+        yield from self._run_pipeline("analysis", ui_args)
+
     def _setup_visibility_toggles(self):
         c = self.components
         c['method_input'].change(
@@ -1399,45 +1416,47 @@ class AppUI:
 
     def _setup_pipeline_handlers(self):
         c = self.components
-        ext_ui_map = {
-            'source_path': c['source_input'], 'upload_video': c['upload_video_input'], 'method': c['method_input'],
-            'interval': c['interval_input'], 'nth_frame': c['nth_frame_input'], 'fast_scene': c['fast_scene_input'],
-            'max_resolution': c['max_resolution'], 'use_png': c['use_png_input']
+        ext_comp_map = {
+            'source_path': 'source_input', 'upload_video': 'upload_video_input', 'method': 'method_input',
+            'interval': 'interval_input', 'nth_frame': 'nth_frame_input', 'fast_scene': 'fast_scene_input',
+            'max_resolution': 'max_resolution', 'use_png': 'use_png_input'
         }
+        ext_inputs = [c[ext_comp_map[k]] for k in self.ext_ui_map_keys]
         ext_outputs = [c['start_extraction_button'], c['stop_extraction_button'], c['unified_log'], c['unified_status'], 
                        c['extracted_video_path_state'], c['extracted_frames_dir_state'], c['frames_folder_input'], c['analysis_video_path_input']]
         c['start_extraction_button'].click(
-            lambda *args: self._run_pipeline("extraction", dict(zip(ext_ui_map.keys(), args))), 
-            list(ext_ui_map.values()), 
+            self.run_extraction_wrapper, 
+            ext_inputs, 
             ext_outputs
         )
         c['stop_extraction_button'].click(lambda: self.cancel_event.set())
 
-        ana_ui_map = {
-            'output_folder': c['frames_folder_input'], 'video_path': c['analysis_video_path_input'], 
-            'disable_parallel': c['disable_parallel_input'], 'resume': c['resume_input'],
-            'enable_face_filter': c['enable_face_filter_input'], 'face_ref_img_path': c['face_ref_img_path_input'], 
-            'face_ref_img_upload': c['face_ref_img_upload_input'], 'face_model_name': c['face_model_name_input'],
-            'enable_subject_mask': c['enable_subject_mask_input'], 'dam4sam_model_name': c['dam4sam_model_name_input'], 
-            'person_detector_model': c['person_detector_model_input'], 'seed_strategy': c['seed_strategy_input'], 
-            'scene_detect': c['scene_detect_input'], 'enable_dedup': c['enable_dedup_input'], 'text_prompt': c['text_prompt_input'], 
-            'prompt_type_for_video': c['prompt_type_for_video_input'],
+        ana_comp_map = {
+            'output_folder': 'frames_folder_input', 'video_path': 'analysis_video_path_input', 
+            'disable_parallel': 'disable_parallel_input', 'resume': 'resume_input',
+            'enable_face_filter': 'enable_face_filter_input', 'face_ref_img_path': 'face_ref_img_path_input', 
+            'face_ref_img_upload': 'face_ref_img_upload_input', 'face_model_name': 'face_model_name_input',
+            'enable_subject_mask': 'enable_subject_mask_input', 'dam4sam_model_name': 'dam4sam_model_name_input', 
+            'person_detector_model': 'person_detector_model_input', 'seed_strategy': 'seed_strategy_input', 
+            'scene_detect': 'scene_detect_input', 'enable_dedup': 'enable_dedup_input', 'text_prompt': 'text_prompt_input', 
+            'prompt_type_for_video': 'prompt_type_for_video_input',
             # New UI controls
-            'box_threshold': c['gdino_box_thresh_input'], 'text_threshold': c['gdino_text_thresh_input'],
-            'min_mask_area_pct': c['min_mask_area_pct_input'], 'sharpness_base_scale': c['sharpness_base_scale_input'],
-            'edge_strength_base_scale': c['edge_strength_base_scale_input'], 'gdino_config_path': c['gdino_config_path_input'],
-            'gdino_checkpoint_path': c['gdino_checkpoint_path_input']
+            'box_threshold': 'gdino_box_thresh_input', 'text_threshold': 'gdino_text_thresh_input',
+            'min_mask_area_pct': 'min_mask_area_pct_input', 'sharpness_base_scale': 'sharpness_base_scale_input',
+            'edge_strength_base_scale': 'edge_strength_base_scale_input', 'gdino_config_path': 'gdino_config_path_input',
+            'gdino_checkpoint_path': 'gdino_checkpoint_path_input'
         }
+        ana_inputs = [c[ana_comp_map[k]] for k in self.ana_ui_map_keys]
         ana_outputs = [c['start_analysis_button'], c['stop_analysis_button'], c['unified_log'], c['unified_status'], 
                        c['analysis_output_dir_state'], c['analysis_metadata_path_state'], c['filtering_tab']]
         c['start_analysis_button'].click(
-            lambda *args: self._run_pipeline("analysis", dict(zip(ana_ui_map.keys(), args))), 
-            list(ana_ui_map.values()), 
+            self.run_analysis_wrapper, 
+            ana_inputs, 
             ana_outputs
         )
         c['stop_analysis_button'].click(lambda: self.cancel_event.set())
         
-        preview_inputs = [c['frames_folder_input'], c['analysis_video_path_input']] + [ana_ui_map[k] for k in [
+        preview_inputs = [c['frames_folder_input'], c['analysis_video_path_input']] + [ana_comp_map[k] for k in [
             'enable_face_filter', 'face_ref_img_path', 'face_ref_img_upload', 'face_model_name',
             'enable_subject_mask', 'dam4sam_model_name', 'person_detector_model', 'seed_strategy',
             'scene_detect', 'text_prompt', 'prompt_type_for_video', 'box_threshold', 'text_threshold'
