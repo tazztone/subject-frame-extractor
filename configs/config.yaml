@@ -4,29 +4,41 @@
 # --- UI & Filter Defaults ---
 # Default values for the Gradio user interface components.
 ui_defaults:
+  # --- Extraction Settings (New Workflow) ---
+  thumbnails_only: True              # Recommended: Extract only thumbnails first. Full-res frames are extracted on-demand during export.
+  thumb_megapixels: 0.5              # Target resolution for thumbnails (e.g., 0.5 = ~960x540 for a 16:9 video).
+  scene_detect: True                 # Enable scene detection during extraction. Crucial for the new scene-based workflow.
+  max_resolution: "maximum available" # Max resolution for video downloads (e.g., from YouTube).
+
+  # --- Pre-Analysis & Seeding Settings ---
+  pre_analysis_enabled: True         # Automatically analyze scene thumbnails to find the best frame for seeding.
+  pre_sample_nth: 1                  # When pre-analyzing, check every Nth frame in a scene. 1 = all frames. Higher values are faster for long scenes.
+  enable_face_filter: True           # Enable face similarity scoring (requires reference image).
+  face_model_name: "buffalo_l"       # InsightFace model for face analysis.
+  enable_subject_mask: True          # Enable subject masking and propagation.
+  dam4sam_model_name: "sam21pp-L"    # DAM4SAM model for mask propagation.
+  person_detector_model: "yolo11x.pt" # YOLO model for detecting persons.
+  seed_strategy: "Reference Face / Largest" # Fallback strategy if text prompt or face match fails.
+  text_prompt: ""                    # Global text prompt for seeding (can be overridden per-scene).
+  prompt_type_for_video: "box"       # Default seeding prompt type (box or mask).
+
+  # --- Final Analysis & Filtering ---
+  resume: False                      # Attempt to resume a previous analysis run (less relevant in new workflow).
+  require_face_match: False          # In final filtering, reject frames that have no face detected.
+  enable_dedup: True                 # Enable perceptual hash-based near-duplicate removal during analysis.
+  dedup_thresh: 5                    # pHash distance threshold for deduplication (lower is stricter).
+
+  # --- Legacy Full-Frame Extraction Settings (used if 'thumbnails_only' is false) ---
   method: "all"
   interval: 5.0
-  max_resolution: "maximum available"
   fast_scene: False
-  resume: False
   use_png: True
-  disable_parallel: False
-  enable_face_filter: True
-  face_model_name: "buffalo_l"
-  enable_subject_mask: True
-  scene_detect: True
-  dam4sam_model_name: "sam21pp-L"
-  person_detector_model: "yolo11x.pt"
-  seed_strategy: "Reference Face / Largest"
   nth_frame: 5
-  require_face_match: False
-  enable_dedup: True
-  dedup_thresh: 5
-  text_prompt: ""
-  prompt_type_for_video: "box"
+  disable_parallel: False
+
 
 # Central registry for all filter sliders and checkboxes.
-# Used for component creation and reset behavior.
+# Used for component creation and reset behavior in the Filtering & Export tab.
 filter_defaults:
   quality_score: { min: 0.0, max: 100.0, step: 0.5, default_min: 0.0, default_max: 100.0 }
   sharpness: { min: 0.0, max: 100.0, step: 0.5, default_min: 0.0, default_max: 100.0 }
@@ -37,7 +49,7 @@ filter_defaults:
   niqe: { min: 0.0, max: 100.0, step: 0.5, default_min: 0.0, default_max: 100.0 }
   face_sim: { min: 0.0, max: 1.0, step: 0.01, default_min: 0.5 }
   mask_area_pct: { min: 0.0, max: 100.0, step: 0.1, default_min: 1.0 }
-  dedup_thresh: { min: -1, max: 32, step: 1, default: -1 }
+  dedup_thresh: { min: -1, max: 32, step: 1, default: -1 } # -1 disables dedup in the filter tab UI by default
 
 # --- Quality Metrics Configuration ---
 # Weights for combining individual quality scores into a single quality score.
