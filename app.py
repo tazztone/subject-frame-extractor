@@ -635,7 +635,7 @@ class SubjectMasker:
 
         for fn in sorted(fn for fn in self.frame_map if start <= fn < end):
             original_p = Path(frames_dir) / self.frame_map[fn]
-            thumb_p = thumb_dir / f"{original_p.stem}.jpg"
+            thumb_p = thumb_dir / f"{original_p.stem}.webp"
             
             if not thumb_p.exists():
                 continue
@@ -643,9 +643,11 @@ class SubjectMasker:
             # Check cache first, then read from disk
             thumb_img = self.thumbnail_cache.get(thumb_p)
             if thumb_img is None:
-                thumb_img = cv2.imread(str(thumb_p))
-                if thumb_img is not None:
-                    self.thumbnail_cache[thumb_p] = thumb_img # Add to cache on first read
+                if thumb_p.exists():
+                    with Image.open(thumb_p) as pil_thumb:
+                        thumb_img = pil_to_bgr(pil_thumb.convert("RGB"))
+                    if thumb_img is not None:
+                        self.thumbnail_cache[thumb_p] = thumb_img # Add to cache on first read
             
             if thumb_img is None:
                 continue
@@ -1031,6 +1033,29 @@ class AnalysisPipeline(Pipeline):
             except Exception as e:
                 logger.warning(f"Failed to initialize NIQE metric", extra={'error': e})
 
+    def _generate_single_thumbnail(self, img_path, thumb_dir, cache_lock):
+        """Worker function to generate a single thumbnail using Pillow and WebP."""
+        try:
+            thumb_path = thumb_dir / f"{img_path.stem}.webp"
+
+            # Generate thumbnail using Pillow
+            with Image.open(img_path) as img:
+                img.thumbnail((720, 720), Image.Resampling.LANCZOS)
+                img_rgb = img.convert("RGB")
+                
+                # Save to disk as WebP for smaller file size
+                img_rgb.save(str(thumb_path), format="WEBP", quality=85)
+                
+                # Add to cache as a numpy array (format used by cv2)
+                thumb_np = pil_to_bgr(img_rgb)
+                with cache_lock:
+                    self.thumbnail_cache[thumb_path] = thumb_np
+        except Exception as e:
+            logger.error(f"Failed to create thumbnail", extra={'file': img_path.name, 'error': e})
+        finally:
+            # Ensure progress is always reported
+            self.progress_queue.put({"progress": 1})
+
     def run(self):
         run_log_handler = None
         try:
@@ -1161,38 +1186,24 @@ class AnalysisPipeline(Pipeline):
         logger.info("Generating thumbnails...")
         self.progress_queue.put({"total": len(image_files), "stage": "Thumbnails"})
         
+        tasks_to_run = []
         for img_path in image_files:
-            if self.cancel_event.is_set(): break
-            thumb_path = thumb_dir / f"{img_path.stem}.jpg"
-            
-            # If thumbnail is already in cache, skip generation
-            if thumb_path in self.thumbnail_cache:
-                self.progress_queue.put({"progress": 1})
-                continue
-            
-            # If on disk but not in cache, load and cache it
-            if thumb_path.exists():
-                thumb_img = cv2.imread(str(thumb_path))
-                if thumb_img is not None:
-                    self.thumbnail_cache[thumb_path] = thumb_img
-                self.progress_queue.put({"progress": 1})
-                continue
+            thumb_path = thumb_dir / f"{img_path.stem}.webp"
+            if thumb_path not in self.thumbnail_cache and not thumb_path.exists():
+                tasks_to_run.append(img_path)
+            else:
+                self.progress_queue.put({"progress": 1}) # Already exists, count it.
+        
+        if not tasks_to_run:
+            logger.info("All thumbnails are already generated or cached.")
+            return
 
-            try:
-                img = cv2.imread(str(img_path))
-                if img is None: continue
-                h, w = img.shape[:2]
-                if (h*w) == 0: continue
-                scale = math.sqrt(500_000 / (h * w)) if (h*w) > 500_000 else 1.0
-                thumb = cv2.resize(img, (int(w*scale), int(h*scale)), interpolation=cv2.INTER_AREA) if scale < 1.0 else img
-                
-                # Write to disk and add to cache
-                cv2.imwrite(str(thumb_path), thumb, [cv2.IMWRITE_JPEG_QUALITY, 85])
-                self.thumbnail_cache[thumb_path] = thumb
-                
-                self.progress_queue.put({"progress": 1})
-            except Exception as e:
-                logger.error(f"Failed to create thumbnail", extra={'file': img_path.name, 'error': e})
+        # Use a thread pool to accelerate thumbnail generation
+        cache_lock = threading.Lock()
+        num_workers = min(os.cpu_count() or 4, 12)
+        with ThreadPoolExecutor(max_workers=num_workers) as executor:
+            # Map the worker function to the list of image paths that need processing
+            list(executor.map(lambda p: self._generate_single_thumbnail(p, thumb_dir, cache_lock), tasks_to_run))
 
     def _run_analysis_loop(self):
         image_files = sorted(list(self.output_dir.glob("frame_*.png")) + list(self.output_dir.glob("frame_*.jpg")))
@@ -1215,14 +1226,16 @@ class AnalysisPipeline(Pipeline):
             image_data = cv2.imread(str(image_path))
             if image_data is None: raise ValueError("Could not read image.")
 
-            thumb_path = self.output_dir / "thumbs" / f"{image_path.stem}.jpg"
+            thumb_path = self.output_dir / "thumbs" / f"{image_path.stem}.webp"
             
             # Check cache first, then fall back to reading from disk
             thumb_image = self.thumbnail_cache.get(thumb_path)
             if thumb_image is None:
-                thumb_image = cv2.imread(str(thumb_path))
-                if thumb_image is not None:
-                    self.thumbnail_cache[thumb_path] = thumb_image # Add to cache on first read
+                if thumb_path.exists():
+                    with Image.open(thumb_path) as pil_thumb:
+                        thumb_image = pil_to_bgr(pil_thumb.convert("RGB"))
+                    if thumb_image is not None:
+                        self.thumbnail_cache[thumb_path] = thumb_image # Add to cache on first read
             
             if thumb_image is None: raise ValueError("Could not read thumbnail.")
             
@@ -1598,7 +1611,7 @@ class AppUI:
             )
 
         face_analyzer, ref_emb = None, None
-        if ui_args['enable_filter'] and ui_args['face_ref_img_path']:
+        if ui_args['enable_face_filter'] and ui_args['face_ref_img_path']:
             face_analyzer = self._get_shared_analyzer(
                 ui_args['face_model_name'],
                 lambda: self._create_face_analysis_instance(ui_args['face_model_name'])
@@ -1937,21 +1950,31 @@ class AppUI:
             output_path = Path(output_dir)
             thumb_dir = output_path / "thumbs"
             for f_meta in frames_to_show[:100]:
-                thumb_path = thumb_dir / f"{Path(f_meta['filename']).stem}.jpg"
+                thumb_path = thumb_dir / f"{Path(f_meta['filename']).stem}.webp"
                 if not thumb_path.exists(): continue
                 caption = f"Reasons: {', '.join(per_frame_reasons.get(f_meta['filename'], []))}" if gallery_view == "Rejected Frames" else ""
 
-                if show_overlay and not f_meta.get("mask_empty", True) and (mask_name := f_meta.get("mask_path")):
-                    mask_path = output_path / "masks" / mask_name
-                    thumb = cv2.imread(str(thumb_path))
-                    mask_gray = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE) if mask_path.exists() else None
-                    if thumb is not None and mask_gray is not None:
-                        thumb_overlay = render_mask_overlay(thumb, mask_gray, float(overlay_alpha))
-                        preview_images.append((cv2.cvtColor(thumb_overlay, cv2.COLOR_BGR2RGB), caption))
+                try:
+                    with Image.open(thumb_path) as thumb_pil:
+                        thumb_rgb_np = np.array(thumb_pil.convert("RGB"))
+                    
+                    if show_overlay and not f_meta.get("mask_empty", True) and (mask_name := f_meta.get("mask_path")):
+                        mask_path = output_path / "masks" / mask_name
+                        mask_gray = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE) if mask_path.exists() else None
+                        
+                        if mask_gray is not None:
+                            thumb_bgr_np = cv2.cvtColor(thumb_rgb_np, cv2.COLOR_RGB2BGR)
+                            thumb_overlay_bgr = render_mask_overlay(thumb_bgr_np, mask_gray, float(overlay_alpha))
+                            thumb_overlay_rgb = cv2.cvtColor(thumb_overlay_bgr, cv2.COLOR_BGR2RGB)
+                            preview_images.append((thumb_overlay_rgb, caption))
+                        else:
+                            # Mask not found, show original thumbnail
+                            preview_images.append((thumb_rgb_np, caption))
                     else:
-                        preview_images.append((str(thumb_path), caption))
-                else:
-                    preview_images.append((str(thumb_path), caption))
+                        # No overlay requested, show original thumbnail
+                        preview_images.append((thumb_rgb_np, caption))
+                except Exception as e:
+                    logger.warning(f"Could not load thumbnail for gallery", extra={'path': thumb_path, 'error': e})
         
         gallery_update = gr.update(value=preview_images, rows=(1 if gallery_view == "Rejected Frames" else 2))
         return status_text, gallery_update
@@ -2130,6 +2153,8 @@ class AppUI:
 if __name__ == "__main__":
     check_dependencies()
     AppUI().build_ui().launch()
+
+
 
 
 
