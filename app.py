@@ -423,7 +423,7 @@ class MaskingResult:
     mask_empty: bool = True; error: str | None = None
 
 class SubjectMasker:
-    def __init__(self, params, progress_queue, cancel_event, frame_map=None, face_analyzer=None, reference_embedding=None, person_detector=None):
+    def __init__(self, params, progress_queue, cancel_event, frame_map=None, face_analyzer=None, reference_embedding=None, person_detector=None, thumbnail_cache=None):
         self.params = params; self.progress_queue = progress_queue; self.cancel_event = cancel_event
         self.frame_map = frame_map; self.face_analyzer = face_analyzer
         self.reference_embedding = reference_embedding; self.person_detector = person_detector
@@ -431,6 +431,7 @@ class SubjectMasker:
         self._gdino = None
         self._sam2_img = None
         self._device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.thumbnail_cache = thumbnail_cache if thumbnail_cache is not None else {}
 
     def _load_image_from_array(self, image_bgr: np.ndarray):
         """Load image from numpy array instead of file path"""
@@ -638,8 +639,14 @@ class SubjectMasker:
             
             if not thumb_p.exists():
                 continue
+
+            # Check cache first, then read from disk
+            thumb_img = self.thumbnail_cache.get(thumb_p)
+            if thumb_img is None:
+                thumb_img = cv2.imread(str(thumb_p))
+                if thumb_img is not None:
+                    self.thumbnail_cache[thumb_p] = thumb_img # Add to cache on first read
             
-            thumb_img = cv2.imread(str(thumb_p))
             if thumb_img is None:
                 continue
 
@@ -999,8 +1006,8 @@ class ExtractionPipeline(Pipeline):
             raise RuntimeError(f"FFmpeg failed with code {process.returncode}.")
 
 class AnalysisPipeline(Pipeline):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, params: AnalysisParameters, progress_queue: Queue, cancel_event: threading.Event, shared_thumbnail_cache=None):
+        super().__init__(params, progress_queue, cancel_event)
         self.output_dir = Path(self.params.output_folder)
         self.metadata_path = self.output_dir / "metadata.jsonl"
         self.write_lock = threading.Lock(); self.gpu_lock = threading.Lock()
@@ -1009,6 +1016,7 @@ class AnalysisPipeline(Pipeline):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         # Shared resources
         self.shared_analyzers = {}
+        self.thumbnail_cache = shared_thumbnail_cache if shared_thumbnail_cache is not None else {}
 
     def _get_shared_analyzer(self, key, factory):
         if key not in self.shared_analyzers:
@@ -1068,7 +1076,7 @@ class AnalysisPipeline(Pipeline):
                 if self.params.scene_detect and not is_video_path_valid:
                     logger.warning("Valid video path not provided; scene detection for masking disabled.")
                 masker = SubjectMasker(self.params, self.progress_queue, self.cancel_event, self._create_frame_map(),
-                                       self.face_analyzer, self.reference_embedding, person_detector)
+                                       self.face_analyzer, self.reference_embedding, person_detector, thumbnail_cache=self.thumbnail_cache)
                 self.mask_metadata = masker.run(self.params.video_path if is_video_path_valid else "", str(self.output_dir))
             
             self._run_analysis_loop()
@@ -1156,9 +1164,20 @@ class AnalysisPipeline(Pipeline):
         for img_path in image_files:
             if self.cancel_event.is_set(): break
             thumb_path = thumb_dir / f"{img_path.stem}.jpg"
-            if thumb_path.exists():
+            
+            # If thumbnail is already in cache, skip generation
+            if thumb_path in self.thumbnail_cache:
                 self.progress_queue.put({"progress": 1})
                 continue
+            
+            # If on disk but not in cache, load and cache it
+            if thumb_path.exists():
+                thumb_img = cv2.imread(str(thumb_path))
+                if thumb_img is not None:
+                    self.thumbnail_cache[thumb_path] = thumb_img
+                self.progress_queue.put({"progress": 1})
+                continue
+
             try:
                 img = cv2.imread(str(img_path))
                 if img is None: continue
@@ -1166,7 +1185,11 @@ class AnalysisPipeline(Pipeline):
                 if (h*w) == 0: continue
                 scale = math.sqrt(500_000 / (h * w)) if (h*w) > 500_000 else 1.0
                 thumb = cv2.resize(img, (int(w*scale), int(h*scale)), interpolation=cv2.INTER_AREA) if scale < 1.0 else img
+                
+                # Write to disk and add to cache
                 cv2.imwrite(str(thumb_path), thumb, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                self.thumbnail_cache[thumb_path] = thumb
+                
                 self.progress_queue.put({"progress": 1})
             except Exception as e:
                 logger.error(f"Failed to create thumbnail", extra={'file': img_path.name, 'error': e})
@@ -1193,7 +1216,14 @@ class AnalysisPipeline(Pipeline):
             if image_data is None: raise ValueError("Could not read image.")
 
             thumb_path = self.output_dir / "thumbs" / f"{image_path.stem}.jpg"
-            thumb_image = cv2.imread(str(thumb_path))
+            
+            # Check cache first, then fall back to reading from disk
+            thumb_image = self.thumbnail_cache.get(thumb_path)
+            if thumb_image is None:
+                thumb_image = cv2.imread(str(thumb_path))
+                if thumb_image is not None:
+                    self.thumbnail_cache[thumb_path] = thumb_image # Add to cache on first read
+            
             if thumb_image is None: raise ValueError("Could not read thumbnail.")
             
             frame = Frame(image_data, frame_num)
@@ -1253,8 +1283,9 @@ class AppUI:
         self.cancel_event = threading.Event()
         self.last_task_result = {}
         self.cuda_available = torch.cuda.is_available()
-        # Centralized place for heavy, reusable models
+        # Centralized place for heavy, reusable models and cached data
         self.shared_analyzers = {}
+        self.thumbnail_cache = {}
         self.ext_ui_map_keys = [
             'source_path', 'upload_video', 'method', 'interval', 'nth_frame',
             'fast_scene', 'max_resolution', 'use_png'
@@ -1537,9 +1568,9 @@ class AppUI:
         q = Queue()
         logger.set_progress_queue(q)
         
-        # Reuse thumbnail prep logic from AnalysisPipeline
+        # Reuse thumbnail prep logic from AnalysisPipeline, sharing the UI's cache
         temp_params = AnalysisParameters.from_ui(output_folder=frames_folder)
-        temp_pipeline = AnalysisPipeline(temp_params, q, self.cancel_event)
+        temp_pipeline = AnalysisPipeline(temp_params, q, self.cancel_event, shared_thumbnail_cache=self.thumbnail_cache)
         logger.info("Generating thumbnails for preview...")
         temp_pipeline._prepare_thumbnails()
         logger.info("Thumbnails ready for preview.")
@@ -1567,7 +1598,7 @@ class AppUI:
             )
 
         face_analyzer, ref_emb = None, None
-        if ui_args['enable_face_filter'] and ui_args['face_ref_img_path']:
+        if ui_args['enable_filter'] and ui_args['face_ref_img_path']:
             face_analyzer = self._get_shared_analyzer(
                 ui_args['face_model_name'],
                 lambda: self._create_face_analysis_instance(ui_args['face_model_name'])
@@ -1579,7 +1610,7 @@ class AppUI:
                     ref_emb = max(faces, key=lambda x: x.det_score).normed_embedding
 
         masker = SubjectMasker(params, q, threading.Event(), frame_map=None, face_analyzer=face_analyzer,
-                               reference_embedding=ref_emb, person_detector=person_detector)
+                               reference_embedding=ref_emb, person_detector=person_detector, thumbnail_cache=self.thumbnail_cache)
         previews = masker.preview_seeds(video_path, frames_folder)
         return gr.update(value=previews, visible=True), f"[INFO] Generated {len(previews)} previews."
 
@@ -2099,5 +2130,6 @@ class AppUI:
 if __name__ == "__main__":
     check_dependencies()
     AppUI().build_ui().launch()
+
 
 
