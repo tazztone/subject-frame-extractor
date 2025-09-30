@@ -405,6 +405,16 @@ class AnalysisParameters:
                     logger.warning(f"Could not coerce UI value for '{key}' to {target_type}. Using default.", extra={'key': key, 'value': value})
         return instance
 
+    def _get_config_hash(self, output_dir: Path) -> str:
+        """
+        Creates a hash of parameters and scene seeds to detect changes for resume logic.
+        """
+        data_to_hash = json.dumps(asdict(self), sort_keys=True)
+        scene_seeds_path = output_dir / "scene_seeds.json"
+        if scene_seeds_path.exists():
+            data_to_hash += scene_seeds_path.read_text()
+        return hashlib.sha256(data_to_hash.encode()).hexdigest()
+
 # --- Subject Masking Logic ---
 @dataclass
 class MaskingResult:
@@ -453,7 +463,7 @@ class SubjectMasker:
             self._gdino = None
             return False
 
-    def _ground_first_frame_xywh(self, frame_bgr_small: np.ndarray, text: str):
+    def _ground_first_frame_xywh(self, frame_bgr_small: np.ndarray, text: str, box_th: float, text_th: float):
         if not self._init_grounder(): return None, {}
         image_source, image_tensor = self._load_image_from_array(frame_bgr_small)
         h, w = image_source.shape[:2]
@@ -461,7 +471,7 @@ class SubjectMasker:
         with torch.no_grad(), torch.cuda.amp.autocast(enabled=self._device=='cuda'):
             boxes, confidences, labels = gdino_predict(
                 model=self._gdino, image=image_tensor.to(self._device), caption=text,
-                box_threshold=float(self.params.box_threshold), text_threshold=float(self.params.text_threshold),
+                box_threshold=float(box_th), text_threshold=float(text_th),
             )
         
         if boxes is None or len(boxes) == 0:
@@ -478,8 +488,8 @@ class SubjectMasker:
         details = {"type": "text_prompt", "label": labels[idx] if labels else "", "conf": float(conf[idx])}
         return xywh, details
 
-    def _ground_first_frame_mask_xywh(self, frame_bgr_small: np.ndarray, text: str):
-        xywh, details = self._ground_first_frame_xywh(frame_bgr_small, text)
+    def _ground_first_frame_mask_xywh(self, frame_bgr_small: np.ndarray, text: str, box_th: float, text_th: float):
+        xywh, details = self._ground_first_frame_xywh(frame_bgr_small, text, box_th, text_th)
         if xywh is None: return None, details
         mask = self._sam2_mask_for_bbox(frame_bgr_small, xywh)
         if mask is None:
@@ -498,6 +508,9 @@ class SubjectMasker:
         if not self._initialize_tracker():
             logger.error("Could not initialize tracker; skipping masking.")
             return {}
+        
+        # Ensure framemap is loaded for seed frame lookup
+        self.frame_map = self.frame_map or self._create_frame_map(frames_dir)
 
         mask_metadata = {}
         total_scenes = len(scenes_to_process)
@@ -508,17 +521,28 @@ class SubjectMasker:
                 shot_context = {'shot_id': scene.shot_id, 'start_frame': scene.start_frame, 'end_frame': scene.end_frame}
                 logger.info(f"Masking shot", extra=shot_context)
                 
+                # Load seed frame first to get dimensions for propagation
+                seed_frame_num = scene.best_seed_frame
+                seed_fname = self.frame_map.get(seed_frame_num)
+                if not seed_fname:
+                    logger.warning(f"Seed frame {seed_frame_num} not in framemap for shot {scene.shot_id}, skipping.")
+                    continue
+
+                thumb_dir = Path(frames_dir) / "thumbs"
+                seed_thumb_path = thumb_dir / f"{Path(seed_fname).stem}.webp"
+                if not seed_thumb_path.exists():
+                     logger.warning(f"Seed thumbnail {seed_thumb_path} not found for shot {scene.shot_id}, skipping.")
+                     continue
+                
                 shot_frames_data = self._load_shot_frames(frames_dir, scene.start_frame, scene.end_frame)
                 if not shot_frames_data: continue
 
                 frame_numbers, small_images, dims = zip(*shot_frames_data)
                 
-                # Use the pre-determined seed info from the scene object
-                seed_frame_num = scene.best_seed_frame
                 try:
                     seed_idx_in_shot = frame_numbers.index(seed_frame_num)
                 except ValueError:
-                    logger.warning(f"Seed frame {seed_frame_num} not found in shot {scene.shot_id}, skipping.")
+                    logger.warning(f"Seed frame {seed_frame_num} not found in loaded shot frames for {scene.shot_id}, skipping.")
                     continue
                 
                 bbox = scene.seed_result.get('bbox')
@@ -580,12 +604,24 @@ class SubjectMasker:
             logger.error(f"Failed to initialize DAM4SAM tracker", exc_info=True)
             return False
 
+    def _create_frame_map(self, frames_dir):
+        logger.info("Loading frame map...")
+        output_dir = Path(frames_dir)
+        frame_map_path = output_dir / "frame_map.json"
+        if not frame_map_path.exists():
+            thumb_files = sorted(list((output_dir / "thumbs").glob("frame_*.webp")),
+                                 key=lambda p: int(re.search(r'frame_(\d+)', p.name).group(1)))
+            return {int(re.search(r'frame_(\d+)', f.name).group(1)): f.name.replace('.webp', '.png') for f in thumb_files}
+        try:
+            with open(frame_map_path, 'r') as f: frame_map_list = json.load(f)
+            return {orig_num: f"frame_{i+1:06d}.png" for i, orig_num in enumerate(sorted(frame_map_list))}
+        except Exception as e:
+            logger.error(f"Failed to parse frame_map.json. Using fallback.", exc_info=True)
+            return {}
+
     def _load_shot_frames(self, frames_dir, start, end):
         frames = []
-        if not self.frame_map: 
-            image_files = sorted(list(Path(frames_dir).glob("thumbs/frame_*.webp")),
-                                key=lambda p: int(re.search(r'frame_(\d+)', p.name).group(1)))
-            self.frame_map = {int(re.search(r'frame_(\d+)', f.name).group(1)): f.name.replace('.webp', '.png') for f in image_files}
+        if not self.frame_map: self.frame_map = self._create_frame_map(frames_dir)
 
         thumb_dir = Path(frames_dir) / "thumbs"
         for fn in sorted(fn for fn in self.frame_map if start <= fn < end):
@@ -607,12 +643,23 @@ class SubjectMasker:
     def _seed_identity(self, frame, current_params=None):
         p = self.params if current_params is None else current_params
         
-        if getattr(p, "text_prompt", ""):
+        prompt_text = getattr(p, "text_prompt", "")
+        if isinstance(current_params, dict): # Handle overrides from scene_config
+            prompt_text = current_params.get('text_prompt', prompt_text)
+
+        if prompt_text:
             prompt_type = getattr(p, "prompt_type_for_video", "box")
+            box_th = getattr(p, "box_threshold", self.params.box_threshold)
+            text_th = getattr(p, "text_threshold", self.params.text_threshold)
+            if isinstance(current_params, dict):
+                prompt_type = current_params.get('prompt_type_for_video', prompt_type)
+                box_th = current_params.get('box_threshold', box_th)
+                text_th = current_params.get('text_threshold', text_th)
+
             if prompt_type == "mask":
-                xywh, details = self._ground_first_frame_mask_xywh(frame, p.text_prompt)
+                xywh, details = self._ground_first_frame_mask_xywh(frame, prompt_text, box_th, text_th)
             else:
-                xywh, details = self._ground_first_frame_xywh(frame, p.text_prompt)
+                xywh, details = self._ground_first_frame_xywh(frame, prompt_text, box_th, text_th)
             if xywh is not None:
                 logger.info(f"Text-prompt seed found", extra=details)
                 return xywh, details
@@ -802,7 +849,11 @@ class SubjectMasker:
         best_local_idx = int(np.argmax(scores)) if scores else 0
         best_frame_num, _, _ = candidates[best_local_idx]
         scene.best_seed_frame = best_frame_num
-        scene.seed_metrics = {'reason': 'pre-analysis complete', 'score': max(scores) if scores else 0}
+        scene.seed_metrics = {'reason': 'pre-analysis complete', 'score': max(scores) if scores else 0, 'best_niqe': niqe_score, 'best_face_sim': face_sim}
+
+    def reseed_frame(self, frame_bgr: np.ndarray, seed_config: dict):
+        """Reruns the seeding process with specific override configurations."""
+        return self._seed_identity(frame_bgr, current_params=seed_config)
 
 # --- Backend Analysis Pipeline ---
 class VideoManager:
@@ -903,7 +954,8 @@ class ExtractionPipeline(Pipeline):
             scale_factor = math.sqrt(target_area / (w * h))
             vf_scale = f"scale=w=trunc(iw*{scale_factor}/2)*2:h=trunc(ih*{scale_factor}/2)*2"
             
-            vf_filter = vf_scale + ",showinfo"
+            fps = video_info.get('fps', 30)
+            vf_filter = f"fps={fps}," + vf_scale + ",showinfo"
             cmd = cmd_base + ['-vf', vf_filter, '-vsync', 'vfr', '-f', 'image2', str(thumb_dir / "frame_%06d.webp")]
         else: # Legacy full-res extraction
             select_filter = {
@@ -1090,9 +1142,14 @@ class AnalysisPipeline(Pipeline):
             
             mask_thumb = None
             if mask_meta.get("mask_path"):
-                mask_full = cv2.imread(self.output_dir / "masks" / mask_meta["mask_path"], cv2.IMREAD_GRAYSCALE)
-                if mask_full is not None:
-                    mask_thumb = cv2.resize(mask_full, (thumb_image.shape[1], thumb_image.shape[0]), interpolation=cv2.INTER_NEAREST)
+                mask_full_path = Path(mask_meta["mask_path"])
+                # Ensure the path is absolute for reading
+                if not mask_full_path.is_absolute():
+                     mask_full_path = self.output_dir / "masks" / mask_full_path.name
+                if mask_full_path.exists():
+                    mask_full = cv2.imread(str(mask_full_path), cv2.IMREAD_GRAYSCALE)
+                    if mask_full is not None:
+                        mask_thumb = cv2.resize(mask_full, (thumb_image.shape[1], thumb_image.shape[0]), interpolation=cv2.INTER_NEAREST)
 
             frame.calculate_quality_metrics(thumb_image=thumb_image, mask=mask_thumb, niqe_metric=self.niqe_metric)
 
@@ -1223,6 +1280,7 @@ class AppUI:
                     self._create_component('text_prompt_input', 'textbox', {'label': "Ground with text", 'placeholder': "e.g., 'a woman in a red dress'", 'value': config.ui_defaults['text_prompt']})
                     self._create_component('seed_strategy_input', 'dropdown', {'choices': ["Reference Face / Largest", "Largest Person", "Center-most Person"], 'value': config.ui_defaults['seed_strategy'], 'label': "Fallback Seed Strategy"})
                     self._create_component('person_detector_model_input', 'dropdown', {'choices': ['yolo11x.pt', 'yolo11s.pt'], 'value': config.ui_defaults['person_detector_model'], 'label': "Person Detector"})
+                    self._create_component('dam4sam_model_name_input', 'dropdown', {'choices': ["sam21pp-T", "sam21pp-S", "sam21pp-B+", "sam21pp-L"], 'value': config.ui_defaults['dam4sam_model_name'], 'label': "SAM Tracker Model"})
                 self._create_component('start_pre_analysis_button', 'button', {'value': '🌱 Start Pre-Analysis & Seeding Preview', 'variant': 'primary'})
                 self._create_component('propagate_masks_button', 'button', {'value': '🔬 Propagate Masks on Kept Scenes', 'variant': 'primary', 'interactive': False})
             
@@ -1230,7 +1288,7 @@ class AppUI:
                 gr.Markdown("### 🎭 Seeding Preview & Scene Filtering")
                 self._create_component('seeding_preview_gallery', 'gallery', {'label': 'Scene Seed Previews', 'columns': [4, 6, 8], 'rows': 2, 'height': 'auto', 'preview': True, 'allow_preview': True, 'object_fit': 'contain'})
                 with gr.Accordion("Scene Editor", open=False, elem_classes="scene-editor") as self.components['scene_editor_accordion']:
-                    self._create_component('scene_editor_status', 'markdown')
+                    self._create_component('scene_editor_status_md', 'markdown', {'value': "Select a scene to edit."})
                     with gr.Row():
                         self._create_component('scene_editor_prompt_input', 'textbox', {'label': 'Per-Scene Text Prompt'})
                         self._create_component('scene_editor_prompt_type_input', 'dropdown', {'choices': ['box', 'mask'], 'value': 'box', 'label': 'Prompt Type'})
@@ -1243,6 +1301,9 @@ class AppUI:
                         self._create_component('scene_exclude_button', 'button', {'value': '👎 Exclude'})
                 with gr.Accordion("Bulk Scene Actions & Filters", open=True):
                     self._create_component('scene_filter_status', 'markdown', {'value': 'No scenes loaded.'})
+                    self._create_component('scene_mask_area_min_input', 'slider', {'label': "Min Mask Area % (for filtering)", 'minimum': 0.0, 'maximum': 100.0, 'value': config.min_mask_area_pct, 'step': 0.1})
+                    self._create_component('scene_face_sim_min_input', 'slider', {'label': "Min Face Sim (for filtering)", 'minimum': 0.0, 'maximum': 1.0, 'value': 0.5, 'step': 0.05})
+                    self._create_component('apply_bulk_filters_button', 'button', {'value': 'Apply Bulk Filters'})
                     with gr.Row():
                         self._create_component('bulk_include_all_button', 'button', {'value': 'Include All'})
                         self._create_component('bulk_exclude_all_button', 'button', {'value': 'Exclude All'})
@@ -1301,13 +1362,13 @@ class AppUI:
         self._setup_pipeline_handlers()
         self._setup_filtering_handlers()
         self._setup_scene_editor_handlers()
+        self._setup_bulk_scene_handlers()
 
     def run_extraction_wrapper(self, *args):
         ui_args = dict(zip(self.ext_ui_map_keys, args))
         yield from self._run_pipeline("extraction", ui_args)
 
     def run_pre_analysis_wrapper(self, *args):
-        # This will now kick off the interactive seeding process
         ui_args = dict(zip(self.ana_ui_map_keys, args))
         yield from self._run_pipeline("pre_analysis", ui_args)
         
@@ -1355,13 +1416,13 @@ class AppUI:
             'gdino_checkpoint_path': gr.State(str(config.GROUNDING_DINO_CKPT)),
             'pre_analysis_enabled': 'pre_analysis_enabled_input', 'pre_sample_nth': 'pre_sample_nth_input'
         }
-        ana_inputs = [c.get(ana_comp_map[k], ana_comp_map[k]) for k in self.ana_ui_map_keys]
+        self.ana_input_components = [c.get(ana_comp_map[k], ana_comp_map[k]) for k in self.ana_ui_map_keys]
         
         pre_ana_outputs = [c['unified_log'], c['unified_status'], c['seeding_preview_gallery'], c['scenes_state'],
                            c['propagate_masks_button'], c['scene_filter_status']]
-        c['start_pre_analysis_button'].click(self.run_pre_analysis_wrapper, ana_inputs, pre_ana_outputs)
+        c['start_pre_analysis_button'].click(self.run_pre_analysis_wrapper, self.ana_input_components, pre_ana_outputs)
         
-        prop_inputs = [c['frames_folder_input'], c['analysis_video_path_input'], c['scenes_state']] + ana_inputs
+        prop_inputs = [c['frames_folder_input'], c['analysis_video_path_input'], c['scenes_state']] + self.ana_input_components
         prop_outputs = [c['unified_log'], c['unified_status'], c['analysis_output_dir_state'],
                         c['analysis_metadata_path_state'], c['filtering_tab']]
         c['propagate_masks_button'].click(self.run_propagation_wrapper, prop_inputs, prop_outputs)
@@ -1387,12 +1448,15 @@ class AppUI:
         c = self.components
         
         def on_select_scene(scenes, evt: gr.SelectData):
-            if not scenes or evt.index is None: return gr.update(open=False), None
-            scene = Scene(**scenes[evt.index])
-            cfg = scene.seed_config or {}
-            status_md = f"**Editing Scene {scene.shot_id}** (Frames {scene.start_frame}-{scene.end_frame})"
-            return (gr.update(open=True, value=status_md), scene.shot_id,
-                    cfg.get('text_prompt', ''), cfg.get('prompt_type_for_video', 'box'),
+            if not scenes or evt.index is None: 
+                return gr.update(open=False), None, "", "box", config.GROUNDING_BOX_THRESHOLD, config.GROUNDING_TEXT_THRESHOLD, gr.update()
+            scene = scenes[evt.index]
+            cfg = scene.get('seed_config', {})
+            status_md = f"**Editing Scene {scene['shot_id']}** (Frames {scene['start_frame']}-{scene['end_frame']})"
+            prompt = cfg.get('text_prompt', '') if cfg else ''
+            
+            return (gr.update(open=True, value=status_md), scene['shot_id'],
+                    prompt, cfg.get('prompt_type_for_video', 'box'),
                     cfg.get('box_threshold', config.GROUNDING_BOX_THRESHOLD),
                     cfg.get('text_threshold', config.GROUNDING_TEXT_THRESHOLD))
 
@@ -1402,11 +1466,49 @@ class AppUI:
              c['scene_editor_prompt_input'], c['scene_editor_prompt_type_input'],
              c['scene_editor_box_thresh_input'], c['scene_editor_text_thresh_input']]
         )
-        # TODO: Add handlers for recompute, include, exclude buttons
         
+        recompute_inputs = [c['scenes_state'], c['selected_scene_id_state'],
+                            c['scene_editor_prompt_input'], c['scene_editor_prompt_type_input'],
+                            c['scene_editor_box_thresh_input'], c['scene_editor_text_thresh_input'],
+                            c['frames_folder_input']] + self.ana_input_components
+        c['scene_recompute_button'].click(
+            self.apply_scene_overrides, 
+            inputs=recompute_inputs,
+            outputs=[c['seeding_preview_gallery'], c['scenes_state'], c['unified_status']]
+        )
+        
+        include_exclude_inputs = [c['scenes_state'], c['selected_scene_id_state']]
+        include_exclude_outputs = [c['scenes_state'], c['scene_filter_status'], c['unified_status']]
+        c['scene_include_button'].click(
+            lambda s, sid: self._toggle_scene_status(s, sid, 'included'), 
+            include_exclude_inputs, include_exclude_outputs
+        )
+        c['scene_exclude_button'].click(
+            lambda s, sid: self._toggle_scene_status(s, sid, 'excluded'), 
+            include_exclude_inputs, include_exclude_outputs
+        )
+
+    def _setup_bulk_scene_handlers(self):
+        c = self.components
+        
+        def bulk_toggle(scenes, new_status):
+            if not scenes: return [], "No scenes to update."
+            for s in scenes: s['status'] = new_status
+            status_text = self._get_scene_status_text(scenes)
+            return scenes, status_text
+
+        c['bulk_include_all_button'].click(
+            lambda s: bulk_toggle(s, 'included'),
+            [c['scenes_state']], [c['scenes_state'], c['scene_filter_status']]
+        )
+        c['bulk_exclude_all_button'].click(
+            lambda s: bulk_toggle(s, 'excluded'),
+            [c['scenes_state']], [c['scenes_state'], c['scene_filter_status']]
+        )
+        # Placeholder for bulk filter button logic
+        # c['apply_bulk_filters_button'].click(...)
+
     def _setup_filtering_handlers(self):
-        # This function remains largely the same as the original, as the filtering
-        # logic operates on the final metadata.jsonl file, which is still produced.
         c = self.components
         slider_keys = sorted(c['metric_sliders'].keys())
         slider_comps = [c['metric_sliders'][k] for k in slider_keys]
@@ -1432,7 +1534,6 @@ class AppUI:
                 if f"{k}_max" in c['metric_sliders']: updates[c['metric_sliders'][f"{k}_max"]] = gr.update(visible=has_data)
                 if k == "face_sim": updates[c['require_face_match_input']] = gr.update(visible=has_data)
 
-            # Use default filter values for the initial load
             default_filters = [c['metric_sliders'][k].value for k in slider_keys]
             status, gallery = self.on_filters_changed(all_frames, metric_values, output_dir, "Kept Frames", True, 0.6,
                                                       c['require_face_match_input'].value, c['dedup_thresh_input'].value,
@@ -1461,7 +1562,6 @@ class AppUI:
         logger.set_progress_queue(q)
         
         try:
-            # Handle file uploads
             if 'upload_video' in ui_args and ui_args['upload_video']:
                 source = ui_args.pop('upload_video')
                 dest = str(config.DIRS['downloads'] / Path(source).name)
@@ -1499,70 +1599,108 @@ class AppUI:
                 self.components['analysis_video_path_input']: result.get("video_path", "")
             }
 
+    def _save_scene_seeds(self, scenes_list, output_dir_str):
+        if not scenes_list or not output_dir_str: return
+        output_dir = Path(output_dir_str)
+        scene_seeds = {
+            str(s['shot_id']): {
+                'seed_frame_idx': s.get('best_seed_frame'),
+                'seed_type': s.get('seed_result', {}).get('details', {}).get('type'),
+                'seed_config': s.get('seed_config', {}),
+                'status': s.get('status', 'pending'),
+                'seed_metrics': s.get('seed_metrics', {})
+            }
+            for s in scenes_list
+        }
+        try:
+            (output_dir / "scene_seeds.json").write_text(json.dumps(_to_json_safe(scene_seeds), indent=2))
+            logger.info("Saved scene_seeds.json")
+        except Exception as e:
+            logger.error("Failed to save scene_seeds.json", exc_info=True)
+
     def execute_pre_analysis(self, params, q):
         yield {self.components['unified_log']: "", self.components['unified_status']: "Starting Pre-Analysis..."}
         
-        # This part runs in the main thread to set up the interactive elements
         output_dir = Path(params.output_folder)
         scenes_path = output_dir / "scenes.json"
         if not scenes_path.exists():
-            yield {self.components['unified_log']: "[ERROR] scenes.json not found. Please run extraction with scene detection enabled."}
+            yield {self.components['unified_log']: "[ERROR] scenes.json not found. Run extraction with scene detection."}
             return
         
-        with scenes_path.open('r') as f:
-            shots = json.load(f)
+        with scenes_path.open('r') as f: shots = json.load(f)
         scenes = [Scene(shot_id=i, start_frame=s, end_frame=e) for i, (s, e) in enumerate(shots)]
         
-        # Initialize models needed for pre-analysis and seeding
+        # Load existing scene seeds to resume/merge
+        scene_seeds_path = output_dir / "scene_seeds.json"
+        if scene_seeds_path.exists() and params.resume:
+            logger.info("Loading existing scene_seeds.json")
+            with scene_seeds_path.open('r') as f: loaded_seeds = json.load(f)
+            for scene in scenes:
+                seed_data = loaded_seeds.get(str(scene.shot_id))
+                if seed_data:
+                    scene.best_seed_frame = seed_data.get('seed_frame_idx')
+                    scene.seed_config = seed_data.get('seed_config', {})
+                    scene.status = seed_data.get('status', 'pending')
+                    scene.seed_metrics = seed_data.get('seed_metrics', {})
+
         niqe_metric, face_analyzer, ref_emb, person_detector = None, None, None, None
         if params.pre_analysis_enabled:
             niqe_metric = self._get_shared_analyzer('niqe', lambda: pyiqa.create_metric('niqe', device="cuda" if self.cuda_available else "cpu"))
         if params.enable_face_filter:
             face_analyzer = self._get_shared_analyzer(params.face_model_name, lambda: self._create_face_analysis_instance(params.face_model_name))
             if params.face_ref_img_path:
-                ref_img = cv2.imread(params.face_ref_img_path)
-                faces = face_analyzer.get(ref_img)
+                ref_img = cv2.imread(params.face_ref_img_path); faces = face_analyzer.get(ref_img)
                 if faces: ref_emb = max(faces, key=lambda x: x.det_score).normed_embedding
         person_detector = self._get_shared_analyzer(f"person_{params.person_detector_model}", lambda: PersonDetector(model=params.person_detector_model))
 
         masker = SubjectMasker(params, q, self.cancel_event, face_analyzer=face_analyzer,
                                reference_embedding=ref_emb, person_detector=person_detector,
                                niqe_metric=niqe_metric, thumbnail_cache=self.thumbnail_cache)
+        masker.frame_map = masker._create_frame_map(str(output_dir))
         masker._initialize_tracker()
         
         previews = []
         for i, scene in enumerate(scenes):
             q.put({"stage": "Pre-analyzing scenes", "total": len(scenes), "progress": i+1})
             
-            masker._select_best_seed_frame_in_scene(scene, str(output_dir))
+            if not scene.best_seed_frame: # Only run pre-analysis if not loaded from file
+                masker._select_best_seed_frame_in_scene(scene, str(output_dir))
             
-            thumb_bgr = masker.thumbnail_cache.get(output_dir / "thumbs" / f"frame_{scene.best_seed_frame:06d}.webp") # This is not quite right, need frame_map
-            # Simplified for now, this needs a proper frame_map lookup
-            frame_map = masker._create_frame_map()
-            fname = frame_map.get(scene.best_seed_frame)
-            if not fname: continue
+            # **FIXED FRAMEMAP LOOKUP**
+            fname = masker.frame_map.get(scene.best_seed_frame)
+            if not fname:
+                logger.warning(f"Could not find best_seed_frame {scene.best_seed_frame} in frame_map for scene {scene.shot_id}")
+                continue
             
             thumb_path = output_dir / "thumbs" / f"{Path(fname).stem}.webp"
-            with Image.open(thumb_path) as pil_img: thumb_bgr = pil_to_bgr(pil_img)
+            thumb_bgr = None
+            if thumb_path.exists():
+                with Image.open(thumb_path) as pil_img:
+                    thumb_bgr = pil_to_bgr(pil_img.convert("RGB"))
+            if thumb_bgr is None:
+                logger.warning(f"Could not load thumbnail for best_seed_frame {scene.best_seed_frame} at path {thumb_path}")
+                continue
 
-            bbox, details = masker._seed_identity(thumb_bgr)
+            bbox, details = masker._seed_identity(thumb_bgr, current_params=scene.seed_config or params)
             scene.seed_result = {'bbox': bbox, 'details': details}
             
             mask = masker._sam2_mask_for_bbox(thumb_bgr, bbox) if bbox else None
             overlay = render_mask_overlay(thumb_bgr, mask) if mask is not None else masker._draw_bbox(thumb_bgr, bbox)
             
             caption = f"Scene {scene.shot_id} (Seed: {scene.best_seed_frame}) | {details.get('type', 'N/A')}"
-            previews.append((cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB), caption))
-            scene.preview_path = "dummy" # In a real scenario, we'd save this preview
-            scene.status = 'included' # Default to included
+            previews.append((cv2.cvtColor(overlay, cv2.COLOR_BGR_RGB), caption))
+            scene.preview_path = "dummy" 
+            if scene.status == 'pending': scene.status = 'included'
 
-        num_included = len([s for s in scenes if s.status == 'included'])
+        scenes_as_dict = [asdict(s) for s in scenes]
+        self._save_scene_seeds(scenes_as_dict, str(output_dir))
+
         yield {
             self.components['unified_log']: "Pre-analysis complete.", self.components['unified_status']: f"{len(scenes)} scenes found.",
             self.components['seeding_preview_gallery']: gr.update(value=previews),
-            self.components['scenes_state']: [asdict(s) for s in scenes],
+            self.components['scenes_state']: scenes_as_dict,
             self.components['propagate_masks_button']: gr.update(interactive=True),
-            self.components['scene_filter_status']: f"{num_included}/{len(scenes)} scenes included for propagation."
+            self.components['scene_filter_status']: self._get_scene_status_text(scenes_as_dict)
         }
         
     def execute_propagation(self, params, q, scenes_dict):
@@ -1573,7 +1711,6 @@ class AppUI:
         
         yield {self.components['unified_log']: "", self.components['unified_status']: f"Starting propagation on {len(scenes_to_process)} scenes..."}
         
-        # We need a new AnalysisPipeline instance to run the propagation and full analysis
         pipeline = AnalysisPipeline(params, q, self.cancel_event, shared_thumbnail_cache=self.thumbnail_cache)
         yield from self._run_task(lambda: pipeline.run_full_analysis(scenes_to_process))
         
@@ -1772,10 +1909,7 @@ class AppUI:
             if not frame_map_path.exists(): return "[ERROR] frame_map.json not found. Cannot export."
             with frame_map_path.open('r') as f: frame_map_list = json.load(f)
             
-            # Create a reverse map from ffmpeg sequence number to original frame number
-            seq_to_orig_map = {i: orig_num for i, orig_num in enumerate(sorted(frame_map_list))}
-            # Create a map from filename to original frame number
-            fn_to_orig_map = {f"frame_{i+1:06d}.png": orig for i, orig in seq_to_orig_map.items()}
+            fn_to_orig_map = {f"frame_{i+1:06d}.png": orig for i, orig in enumerate(sorted(frame_map_list))}
 
             frames_to_extract = sorted([fn_to_orig_map[f['filename']] for f in kept if f['filename'] in fn_to_orig_map])
             if not frames_to_extract: return "No valid frames found to extract."
@@ -1783,23 +1917,12 @@ class AppUI:
             export_dir = out_root.parent / f"{out_root.name}_exported_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             export_dir.mkdir(exist_ok=True, parents=True)
             
-            # Build ffmpeg command
             select_filter = f"select='in(n,{','.join(map(str, frames_to_extract))})'"
             cmd = ['ffmpeg', '-y', '-i', str(video_path), '-vf', select_filter, '-vsync', 'vfr', str(export_dir / "frame_%06d.png")]
             
             logger.info("Starting final export extraction...", extra={'command': ' '.join(cmd)})
             subprocess.run(cmd, check=True, capture_output=True, text=True)
             
-            # Post-process for cropping if enabled
-            if enable_crop:
-                logger.info("Cropping exported frames...")
-                for frame_meta in kept:
-                    if frame_meta.get("mask_empty", True) or not (mask_name := frame_meta.get("mask_path")): continue
-                    # This requires mapping exported frame name to original metadata
-                    # This part is complex and simplified here
-                    # A more robust solution would map original frame number to exported filename
-                    # Assuming exported frames are sequentially numbered from 1
-                    
             return f"Exported {len(frames_to_extract)} frames to {export_dir.name}."
         except subprocess.CalledProcessError as e:
             logger.error(f"FFmpeg export failed", exc_info=True, extra={'stderr': e.stderr})
@@ -1838,6 +1961,109 @@ class AppUI:
                 metric = key[:-4]
                 if metric in pmap: updates[i] = gr.update(value=round(pmap[metric], 2))
         return updates
+
+    def _get_scene_status_text(self, scenes_list):
+        if not scenes_list: return "No scenes loaded."
+        num_included = sum(1 for s in scenes_list if s['status'] == 'included')
+        return f"{num_included}/{len(scenes_list)} scenes included for propagation."
+
+    def _toggle_scene_status(self, scenes_list, selected_shot_id, new_status):
+        if selected_shot_id is None or not scenes_list:
+            return scenes_list, self._get_scene_status_text(scenes_list), "No scene selected."
+        
+        scene_found = False
+        for s in scenes_list:
+            if s['shot_id'] == selected_shot_id:
+                s['status'] = new_status
+                scene_found = True
+                break
+        
+        if scene_found:
+            return scenes_list, self._get_scene_status_text(scenes_list), f"Scene {selected_shot_id} status set to {new_status}."
+        else:
+            return scenes_list, self._get_scene_status_text(scenes_list), f"Could not find scene {selected_shot_id}."
+
+    def apply_scene_overrides(self, scenes_list, selected_shot_id, prompt, prompt_type, box_th, text_th, output_folder, *ana_args):
+        if selected_shot_id is None or not scenes_list:
+            return gr.update(), scenes_list, "No scene selected to apply overrides."
+        
+        scene_idx, scene_dict = next(((i, s) for i, s in enumerate(scenes_list) if s['shot_id'] == selected_shot_id), (None, None))
+        if scene_dict is None:
+            return gr.update(), scenes_list, "Error: Selected scene not found in state."
+
+        try:
+            # 1. Store overrides in the scene's seed_config
+            scene_dict['seed_config'] = {
+                'text_prompt': prompt, 'prompt_type_for_video': prompt_type,
+                'box_threshold': box_th, 'text_threshold': text_th,
+            }
+
+            # 2. Re-run seeding using a temporary masker instance
+            ui_args = dict(zip(self.ana_ui_map_keys, ana_args))
+            ui_args['output_folder'] = output_folder
+            params = AnalysisParameters.from_ui(**ui_args)
+            
+            face_analyzer, ref_emb, person_detector = None, None, None
+            if params.enable_face_filter:
+                face_analyzer = self._get_shared_analyzer(params.face_model_name, lambda: self._create_face_analysis_instance(params.face_model_name))
+                if params.face_ref_img_path:
+                    ref_img = cv2.imread(params.face_ref_img_path); faces = face_analyzer.get(ref_img)
+                    if faces: ref_emb = max(faces, key=lambda x: x.det_score).normed_embedding
+            person_detector = self._get_shared_analyzer(f"person_{params.person_detector_model}", lambda: PersonDetector(model=params.person_detector_model))
+
+            masker = SubjectMasker(params, Queue(), threading.Event(), face_analyzer=face_analyzer,
+                                   reference_embedding=ref_emb, person_detector=person_detector,
+                                   thumbnail_cache=self.thumbnail_cache)
+            masker.frame_map = masker._create_frame_map(output_folder)
+            masker._initialize_tracker()
+            
+            # Load the correct thumbnail for the seed frame
+            fname = masker.frame_map.get(scene_dict['best_seed_frame'])
+            if not fname: raise ValueError("Framemap lookup failed for re-seeding.")
+            
+            thumb_path = Path(output_folder) / "thumbs" / f"{Path(fname).stem}.webp"
+            with Image.open(thumb_path) as pil_img:
+                thumb_bgr = pil_to_bgr(pil_img.convert("RGB"))
+            
+            # Re-seed and update the scene object
+            bbox, details = masker.reseed_frame(thumb_bgr, scene_dict['seed_config'])
+            scene_dict['seed_result'] = {'bbox': bbox, 'details': details}
+
+            # 3. Persist all scene changes to disk
+            self._save_scene_seeds(scenes_list, output_folder)
+            
+            # 4. Regenerate the entire preview gallery to reflect the change
+            updated_gallery_previews = self._regenerate_all_previews(scenes_list, output_folder, masker)
+            
+            return updated_gallery_previews, scenes_list, f"Scene {selected_shot_id} updated and saved."
+            
+        except Exception as e:
+            logger.error("Failed to apply scene overrides", exc_info=True)
+            return gr.update(), scenes_list, f"[ERROR] {e}"
+
+    def _regenerate_all_previews(self, scenes_list, output_folder, masker):
+        """Helper to regenerate the full gallery preview list."""
+        previews = []
+        output_dir = Path(output_folder)
+        for scene_dict in scenes_list:
+            fname = masker.frame_map.get(scene_dict['best_seed_frame'])
+            if not fname: continue
+            
+            thumb_path = output_dir / "thumbs" / f"{Path(fname).stem}.webp"
+            if not thumb_path.exists(): continue
+
+            with Image.open(thumb_path) as pil_img:
+                thumb_bgr = pil_to_bgr(pil_img.convert("RGB"))
+
+            bbox = scene_dict.get('seed_result', {}).get('bbox')
+            details = scene_dict.get('seed_result', {}).get('details', {})
+            
+            mask = masker._sam2_mask_for_bbox(thumb_bgr, bbox) if bbox else None
+            overlay = render_mask_overlay(thumb_bgr, mask) if mask is not None else masker._draw_bbox(thumb_bgr, bbox)
+            
+            caption = f"Scene {scene_dict['shot_id']} (Seed: {scene_dict['best_seed_frame']}) | {details.get('type', 'N/A')}"
+            previews.append((cv2.cvtColor(overlay, cv2.COLOR_BGR_RGB), caption))
+        return previews
 
     def _parse_ar(self, s: str) -> tuple[int, int]:
         try:
@@ -1890,3 +2116,4 @@ class AppUI:
 if __name__ == "__main__":
     check_dependencies()
     AppUI().build_ui().launch()
+
