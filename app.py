@@ -17,7 +17,7 @@ from collections import Counter, defaultdict, OrderedDict
 from pathlib import Path
 from datetime import datetime
 from queue import Queue, Empty
-from dataclasses import dataclass, asdict, field
+from dataclasses import dataclass, asdict, field, fields
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
 from contextlib import contextmanager
@@ -482,7 +482,9 @@ class AnalysisParameters:
 
     @classmethod
     def from_ui(cls, **kwargs):
-        instance = cls(**config.ui_defaults)
+        valid_keys = {f.name for f in fields(cls)}
+        filtered_defaults = {k: v for k, v in config.ui_defaults.items() if k in valid_keys}
+        instance = cls(**filtered_defaults)
         for key, value in kwargs.items():
             if hasattr(instance, key):
                 target_type = type(getattr(instance, key))
@@ -862,8 +864,11 @@ class SubjectMasker:
                 masks, areas, empties, errors = self.mask_propagator.propagate(small_images, seed_idx_in_shot, bbox)
 
                 for i, (original_fn, _, (h, w)) in enumerate(shot_frames_data):
-                    if not (frame_fname := self.frame_map.get(original_fn)): continue
-                    mask_path = self.mask_dir / f"{Path(frame_fname).stem}.png"
+                    if not (frame_fname_webp := self.frame_map.get(original_fn)): continue
+                    
+                    frame_fname_png = f"{Path(frame_fname_webp).stem}.png"
+                    mask_path = self.mask_dir / frame_fname_png
+
                     result_args = {
                         "shot_id": scene.shot_id, "seed_type": seed_details.get('type'),
                         "seed_face_sim": seed_details.get('seed_face_sim'), "mask_area_pct": areas[i],
@@ -873,9 +878,9 @@ class SubjectMasker:
                         mask_full_res = cv2.resize(masks[i], (w, h), interpolation=cv2.INTER_NEAREST)
                         if mask_full_res.ndim == 3: mask_full_res = mask_full_res[:, :, 0]
                         cv2.imwrite(str(mask_path), mask_full_res)
-                        mask_metadata[frame_fname] = asdict(MaskingResult(mask_path=str(mask_path), **result_args))
+                        mask_metadata[frame_fname_png] = asdict(MaskingResult(mask_path=str(mask_path), **result_args))
                     else:
-                        mask_metadata[frame_fname] = asdict(MaskingResult(mask_path=None, **result_args))
+                        mask_metadata[frame_fname_png] = asdict(MaskingResult(mask_path=None, **result_args))
         logger.success("Subject masking complete.")
         return mask_metadata
 
@@ -2225,3 +2230,5 @@ if __name__ == "__main__":
     if not shutil.which("ffmpeg"):
         raise RuntimeError("FFMPEG is not installed or not in the system's PATH.")
     AppUI().build_ui().launch()
+
+
