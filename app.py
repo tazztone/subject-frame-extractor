@@ -198,6 +198,30 @@ def download_model(url, dest_path, description, min_size=1_000_000):
         logger.error(f"Failed to download {description}", exc_info=True, extra={'url': url})
         raise RuntimeError(f"Failed to download required model: {description}") from e
 
+def postprocess_mask(mask: np.ndarray, fill_holes: bool = True,
+                     keep_largest_only: bool = True) -> np.ndarray:
+    """Post-process SAM2 masks."""
+    if mask is None or mask.size == 0:
+        return mask
+    
+    binary_mask = (mask > 128).astype(np.uint8)
+    
+    # Fill holes with morphological closing
+    if fill_holes:
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        binary_mask = cv2.morphologyEx(binary_mask, cv2.MORPH_CLOSE, kernel)
+        
+    # Keep only largest connected component
+    if keep_largest_only:
+        num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(
+            binary_mask, connectivity=8
+        )
+        if num_labels > 1:
+            largest_label = 1 + np.argmax(stats[1:, cv2.CC_STAT_AREA])
+            binary_mask = (labels == largest_label).astype(np.uint8)
+            
+    return (binary_mask * 255).astype(np.uint8)
+
 def render_mask_overlay(frame_rgb: np.ndarray, mask_gray: np.ndarray, alpha: float = 0.5) -> np.ndarray:
     if mask_gray is None:
         return frame_rgb
@@ -442,7 +466,6 @@ class AnalysisParameters:
     enable_dedup: bool = False
     dedup_thresh: int = 0
     text_prompt: str = ""
-    prompt_type_for_video: str = "box"
     
     thumbnails_only: bool = True
     thumb_megapixels: float = 0.5
@@ -537,7 +560,10 @@ class SeedSelector:
         try:
             outputs = self.tracker.initialize(rgb_to_pil(frame_rgb_small), None, bbox=bbox_xywh)
             mask = outputs.get('pred_mask')
-            return (mask * 255).astype(np.uint8) if mask is not None else None
+            if mask is not None:
+                mask = (mask * 255).astype(np.uint8)
+                mask = postprocess_mask(mask, fill_holes=True, keep_largest_only=True)
+            return mask
         except Exception as e:
             logger.warning(f"DAM4SAM mask generation failed.", extra={'error': e})
             return None
@@ -562,18 +588,13 @@ class SeedSelector:
             prompt_text = current_params.get('text_prompt', prompt_text)
 
         if prompt_text:
-            prompt_type = getattr(p, "prompt_type_for_video", "box")
             box_th = getattr(p, "box_threshold", self.params.box_threshold)
             text_th = getattr(p, "text_threshold", self.params.text_threshold)
             if isinstance(current_params, dict):
-                prompt_type = current_params.get('prompt_type_for_video', prompt_type)
                 box_th = current_params.get('box_threshold', box_th)
                 text_th = current_params.get('text_threshold', text_th)
 
-            if prompt_type == "mask":
-                xywh, details = self._ground_first_frame_mask_xywh(frame_rgb, prompt_text, box_th, text_th)
-            else:
-                xywh, details = self._ground_first_frame_xywh(frame_rgb, prompt_text, box_th, text_th)
+            xywh, details = self._ground_first_frame_mask_xywh(frame_rgb, prompt_text, box_th, text_th)
             if xywh is not None:
                 logger.info(f"Text-prompt seed found", extra=details)
                 return xywh, details
@@ -691,14 +712,20 @@ class MaskPropagator:
                 if self.cancel_event.is_set(): break
                 outputs = self.tracker.track(rgb_to_pil(shot_frames_rgb[i]))
                 mask = outputs.get('pred_mask')
-                masks[i] = (mask * 255).astype(np.uint8) if mask is not None else np.zeros_like(shot_frames_rgb[i], dtype=np.uint8)[:, :, 0]
+                if mask is not None:
+                    mask = (mask * 255).astype(np.uint8)
+                    mask = postprocess_mask(mask, fill_holes=True, keep_largest_only=True)
+                masks[i] = mask if mask is not None else np.zeros_like(shot_frames_rgb[i], dtype=np.uint8)[:, :, 0]
                 self.progress_queue.put({"progress": 1})
 
         try:
             with torch.cuda.amp.autocast(enabled=self._device == 'cuda'):
                 outputs = self.tracker.initialize(rgb_to_pil(shot_frames_rgb[seed_idx]), None, bbox=bbox_xywh)
                 mask = outputs.get('pred_mask')
-                masks[seed_idx] = (mask * 255).astype(np.uint8) if mask is not None else np.zeros_like(shot_frames_rgb[seed_idx], dtype=np.uint8)[:, :, 0]
+                if mask is not None:
+                    mask = (mask * 255).astype(np.uint8)
+                    mask = postprocess_mask(mask, fill_holes=True, keep_largest_only=True)
+                masks[seed_idx] = mask if mask is not None else np.zeros_like(shot_frames_rgb[seed_idx], dtype=np.uint8)[:, :, 0]
                 self.progress_queue.put({"progress": 1})
                 _propagate_direction(seed_idx + 1, len(shot_frames_rgb), 1)
                 self.tracker.initialize(rgb_to_pil(shot_frames_rgb[seed_idx]), None, bbox=bbox_xywh)
@@ -1234,7 +1261,7 @@ class AppUI:
             'output_folder', 'video_path', 'resume', 'enable_face_filter',
             'face_ref_img_path', 'face_ref_img_upload', 'face_model_name', 'enable_subject_mask',
             'dam4sam_model_name', 'person_detector_model', 'seed_strategy', 'scene_detect',
-            'enable_dedup', 'text_prompt', 'prompt_type_for_video', 'box_threshold',
+            'enable_dedup', 'text_prompt', 'box_threshold',
             'text_threshold', 'min_mask_area_pct', 'sharpness_base_scale',
             'edge_strength_base_scale', 'gdino_config_path', 'gdino_checkpoint_path',
             'pre_analysis_enabled', 'pre_sample_nth'
@@ -1270,6 +1297,7 @@ class AppUI:
                 gr.Markdown("### 📹 Video Source")
                 self._create_component('source_input', 'textbox', {'label': "Video URL or Local Path", 'placeholder': "Enter YouTube URL or local video file path"})
                 self._create_component('upload_video_input', 'file', {'label': "Or Upload Video", 'file_types': ["video"], 'type': "filepath"})
+                self._create_component('max_resolution', 'dropdown', {'choices': ["maximum available", "2160", "1080", "720"], 'value': config.ui_defaults['max_resolution'], 'label': "DL Res"})
             with gr.Column():
                 gr.Markdown("### ⚙️ Extraction Settings")
                 with gr.Accordion("Thumbnail Extraction (Recommended)", open=True):
@@ -1283,7 +1311,6 @@ class AppUI:
                     self._create_component('nth_frame_input', 'textbox', {'label': "N-th Frame Value", 'value': config.ui_defaults["nth_frame"], 'visible': False})
                     self._create_component('fast_scene_input', 'checkbox', {'label': "Fast Scene Detect", 'visible': False})
                     self._create_component('use_png_input', 'checkbox', {'label': "Save as PNG", 'value': config.ui_defaults['use_png']})
-                self._create_component('max_resolution', 'dropdown', {'choices': ["maximum available", "2160", "1080", "720"], 'value': config.ui_defaults['max_resolution'], 'label': "DL Res"})
         
         start_btn = gr.Button("🚀 Start Extraction", variant="primary")
         self.components.update({'start_extraction_button': start_btn})
@@ -1319,7 +1346,6 @@ class AppUI:
                     self._create_component('scene_editor_status_md', 'markdown', {'value': "Select a scene to edit."})
                     with gr.Row():
                         self._create_component('scene_editor_prompt_input', 'textbox', {'label': 'Per-Scene Text Prompt'})
-                        self._create_component('scene_editor_prompt_type_input', 'dropdown', {'choices': ['box', 'mask'], 'value': 'box', 'label': 'Prompt Type'})
                     with gr.Row():
                         self._create_component('scene_editor_box_thresh_input', 'slider', {'label': "Box Thresh", 'minimum': 0.0, 'maximum': 1.0, 'step': 0.05, 'value': config.grounding_dino_params['box_threshold']})
                         self._create_component('scene_editor_text_thresh_input', 'slider', {'label': "Text Thresh", 'minimum': 0.0, 'maximum': 1.0, 'step': 0.05, 'value': config.grounding_dino_params['text_threshold']})
@@ -1331,7 +1357,6 @@ class AppUI:
                     self._create_component('scene_filter_status', 'markdown', {'value': 'No scenes loaded.'})
                     self._create_component('scene_mask_area_min_input', 'slider', {'label': "Min Seed Mask Area %", 'minimum': 0.0, 'maximum': 100.0, 'value': config.min_mask_area_pct, 'step': 0.1})
                     self._create_component('scene_face_sim_min_input', 'slider', {'label': "Min Seed Face Sim", 'minimum': 0.0, 'maximum': 1.0, 'value': 0.5, 'step': 0.05})
-                    self._create_component('apply_bulk_filters_button', 'button', {'value': 'Apply Bulk Filters'})
                     with gr.Row():
                         self._create_component('bulk_include_all_button', 'button', {'value': 'Include All'})
                         self._create_component('bulk_exclude_all_button', 'button', {'value': 'Exclude All'})
@@ -1351,17 +1376,23 @@ class AppUI:
                 with gr.Accordion("Deduplication", open=True, visible=True):
                     f_def = config.filter_defaults['dedup_thresh']
                     self._create_component('dedup_thresh_input', 'slider', {'label': "Similarity Threshold", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': f_def['default'], 'step': f_def['step']})
-                all_metrics = self.get_all_filter_keys()
-                ordered_metrics = sorted(all_metrics, key=lambda m: m == 'niqe', reverse=True)
-                for k in ordered_metrics:
-                    if k not in config.filter_defaults: continue
-                    f_def = config.filter_defaults[k]
-                    with gr.Accordion(k.replace('_', ' ').title(), open=k in config.QUALITY_METRICS):
+                
+                filter_display_order = [
+                    ('niqe', True), ('sharpness', True), ('edge_strength', True),
+                    ('contrast', True), ('brightness', False), ('entropy', False),
+                    ('face_sim', False), ('mask_area_pct', False)
+                ]
+
+                for metric_name, open_default in filter_display_order:
+                    if metric_name not in config.filter_defaults:
+                        continue
+                    f_def = config.filter_defaults[metric_name]
+                    with gr.Accordion(metric_name.replace('_', ' ').title(), open=open_default):
                         with gr.Column(elem_classes="plot-and-slider-column"):
-                            self.components['metric_plots'][k] = self._create_component(f'plot_{k}', 'html', {'visible': False})
-                            self.components['metric_sliders'][f"{k}_min"] = self._create_component(f'slider_{k}_min', 'slider', {'label': "Min", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': f_def['default_min'], 'step': f_def['step'], 'interactive': True, 'visible': False})
-                            if 'default_max' in f_def: self.components['metric_sliders'][f"{k}_max"] = self._create_component(f'slider_{k}_max', 'slider', {'label': "Max", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': f_def['default_max'], 'step': f_def['step'], 'interactive': True, 'visible': False})
-                            if k == "face_sim": self._create_component('require_face_match_input', 'checkbox', {'label': "Reject if no face", 'value': config.ui_defaults['require_face_match'], 'visible': False})
+                            self.components['metric_plots'][metric_name] = self._create_component(f'plot_{metric_name}', 'html', {'visible': False})
+                            self.components['metric_sliders'][f"{metric_name}_min"] = self._create_component(f'slider_{metric_name}_min', 'slider', {'label': "Min", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': f_def['default_min'], 'step': f_def['step'], 'interactive': True, 'visible': False})
+                            if 'default_max' in f_def: self.components['metric_sliders'][f"{metric_name}_max"] = self._create_component(f'slider_{metric_name}_max', 'slider', {'label': "Max", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': f_def['default_max'], 'step': f_def['step'], 'interactive': True, 'visible': False})
+                            if metric_name == "face_sim": self._create_component('require_face_match_input', 'checkbox', {'label': "Reject if no face", 'value': config.ui_defaults['require_face_match'], 'visible': False})
 
             with gr.Column(scale=2):
                 gr.Markdown("### 🖼️ Results Gallery")
@@ -1435,7 +1466,6 @@ class AppUI:
             'enable_subject_mask': gr.State(True), 'dam4sam_model_name': 'dam4sam_model_name_input', 
             'person_detector_model': 'person_detector_model_input', 'seed_strategy': 'seed_strategy_input', 
             'scene_detect': 'ext_scene_detect_input', 'enable_dedup': 'enable_dedup_input', 'text_prompt': 'text_prompt_input', 
-            'prompt_type_for_video': gr.State('box'),
             'box_threshold': 'scene_editor_box_thresh_input', 'text_threshold': 'scene_editor_text_thresh_input',
             'min_mask_area_pct': gr.State(config.min_mask_area_pct),
             'sharpness_base_scale': gr.State(config.sharpness_base_scale),
@@ -1460,26 +1490,26 @@ class AppUI:
         
         def on_select_scene(scenes, evt: gr.SelectData):
             if not scenes or evt.index is None: 
-                return gr.update(open=False), None, "", "box", config.GROUNDING_BOX_THRESHOLD, config.GROUNDING_TEXT_THRESHOLD, gr.update()
+                return gr.update(open=False), None, "", config.GROUNDING_BOX_THRESHOLD, config.GROUNDING_TEXT_THRESHOLD
             scene = scenes[evt.index]
             cfg = scene.get('seed_config', {})
             status_md = f"**Editing Scene {scene['shot_id']}** (Frames {scene['start_frame']}-{scene['end_frame']})"
             prompt = cfg.get('text_prompt', '') if cfg else ''
             
             return (gr.update(open=True, value=status_md), scene['shot_id'],
-                    prompt, cfg.get('prompt_type_for_video', 'box'),
+                    prompt, 
                     cfg.get('box_threshold', config.GROUNDING_BOX_THRESHOLD),
                     cfg.get('text_threshold', config.GROUNDING_TEXT_THRESHOLD))
 
         c['seeding_preview_gallery'].select(
             on_select_scene, [c['scenes_state']],
             [c['scene_editor_accordion'], c['selected_scene_id_state'],
-             c['scene_editor_prompt_input'], c['scene_editor_prompt_type_input'],
+             c['scene_editor_prompt_input'],
              c['scene_editor_box_thresh_input'], c['scene_editor_text_thresh_input']]
         )
         
         recompute_inputs = [c['scenes_state'], c['selected_scene_id_state'],
-                            c['scene_editor_prompt_input'], c['scene_editor_prompt_type_input'],
+                            c['scene_editor_prompt_input'],
                             c['scene_editor_box_thresh_input'], c['scene_editor_text_thresh_input'],
                             c['frames_folder_input']] + self.ana_input_components
         c['scene_recompute_button'].click(
@@ -1519,11 +1549,21 @@ class AppUI:
             lambda s, folder: bulk_toggle(s, 'excluded', folder),
             [c['scenes_state'], c['frames_folder_input']], [c['scenes_state'], c['scene_filter_status']]
         )
-        c['apply_bulk_filters_button'].click(
+        
+        bulk_filter_inputs = [c['scenes_state'], c['scene_mask_area_min_input'], c['scene_face_sim_min_input'], c['enable_face_filter_input'], c['frames_folder_input']]
+        bulk_filter_outputs = [c['scenes_state'], c['scene_filter_status']]
+
+        c['scene_mask_area_min_input'].release(
             self.apply_bulk_scene_filters,
-            [c['scenes_state'], c['scene_mask_area_min_input'], c['scene_face_sim_min_input'], c['enable_face_filter_input'], c['frames_folder_input']],
-            [c['scenes_state'], c['scene_filter_status']]
+            bulk_filter_inputs,
+            bulk_filter_outputs
         )
+        c['scene_face_sim_min_input'].release(
+            self.apply_bulk_scene_filters,
+            bulk_filter_inputs,
+            bulk_filter_outputs
+        )
+
 
     def _setup_filtering_handlers(self):
         c = self.components
@@ -1956,12 +1996,16 @@ class AppUI:
             fn_to_orig_map = {f"frame_{i+1:06d}.png": orig for i, orig in enumerate(sorted(frame_map_list))}
 
             frames_to_extract = sorted([fn_to_orig_map[f['filename']] for f in kept if f['filename'] in fn_to_orig_map])
-            if not frames_to_extract: return "No valid frames found to extract."
+            
+            if not frames_to_extract:
+                return "No frames to extract."
+            
+            select_exprs = [f"eq(n,{fn})" for fn in frames_to_extract]
+            select_filter = f"select='{'+'.join(select_exprs)}'"
             
             export_dir = out_root.parent / f"{out_root.name}_exported_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             export_dir.mkdir(exist_ok=True, parents=True)
             
-            select_filter = f"select='in(n,{','.join(map(str, frames_to_extract))})'"
             cmd = ['ffmpeg', '-y', '-i', str(video_path), '-vf', select_filter, '-vsync', 'vfr', str(export_dir / "frame_%06d.png")]
             
             logger.info("Starting final export extraction...", extra={'command': ' '.join(cmd)})
@@ -2055,7 +2099,7 @@ class AppUI:
         self._save_scene_seeds(scenes, output_folder)
         return scenes, self._get_scene_status_text(scenes)
 
-    def apply_scene_overrides(self, scenes_list, selected_shot_id, prompt, prompt_type, box_th, text_th, output_folder, *ana_args):
+    def apply_scene_overrides(self, scenes_list, selected_shot_id, prompt, box_th, text_th, output_folder, *ana_args):
         if selected_shot_id is None or not scenes_list:
             return gr.update(), scenes_list, "No scene selected to apply overrides."
         
@@ -2065,7 +2109,7 @@ class AppUI:
 
         try:
             scene_dict['seed_config'] = {
-                'text_prompt': prompt, 'prompt_type_for_video': prompt_type,
+                'text_prompt': prompt,
                 'box_threshold': box_th, 'text_threshold': text_th,
             }
 
@@ -2181,4 +2225,3 @@ if __name__ == "__main__":
     if not shutil.which("ffmpeg"):
         raise RuntimeError("FFMPEG is not installed or not in the system's PATH.")
     AppUI().build_ui().launch()
-
