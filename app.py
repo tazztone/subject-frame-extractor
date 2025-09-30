@@ -581,10 +581,12 @@ class SeedSelector:
         return self._choose_seed_bbox(frame_rgb, p)
     
     def _choose_seed_bbox(self, frame_rgb, current_params):
+        frame_bgr_for_face = None
+        if self.face_analyzer:
+            frame_bgr_for_face = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
+            
         if self.face_analyzer and self.reference_embedding is not None and current_params.enable_face_filter:
-            # insightface expects BGR
-            frame_bgr = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
-            faces = self.face_analyzer.get(frame_bgr) if frame_bgr is not None else []
+            faces = self.face_analyzer.get(frame_bgr_for_face) if frame_bgr_for_face is not None else []
             if faces:
                 best_face, best_dist = None, float('inf')
                 for face in faces:
@@ -612,8 +614,7 @@ class SeedSelector:
                 return [x1, y1, x2 - x1, y2 - y1], {'type': f'person_{current_params.seed_strategy.lower().replace(" ", "_")}'}
 
         if self.face_analyzer:
-            frame_bgr = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
-            faces = self.face_analyzer.get(frame_bgr)
+            faces = self.face_analyzer.get(frame_bgr_for_face)
             if faces:
                 largest_face = max(faces, key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]))
                 details = {'type': 'face_largest'}
@@ -1810,42 +1811,65 @@ class AppUI:
         metric_arrays["face_sim"] = np.array([f.get("face_sim", np.nan) for f in all_frames_data], dtype=np.float32)
         metric_arrays["mask_area_pct"] = np.array([f.get("mask_area_pct", np.nan) for f in all_frames_data], dtype=np.float32)
         kept_mask = np.ones(num_frames, dtype=bool); reasons = defaultdict(list)
-
-        for k in config.QUALITY_METRICS:
-            min_val, max_val = filters.get(f"{k}_min", 0), filters.get(f"{k}_max", 100)
-            low_mask, high_mask = metric_arrays[k] < min_val, metric_arrays[k] > max_val
-            for i in np.where(low_mask)[0]: reasons[filenames[i]].append(f"{k}_low")
-            for i in np.where(high_mask)[0]: reasons[filenames[i]].append(f"{k}_high")
-            kept_mask &= ~low_mask & ~high_mask
-
-        if filters.get("face_sim_enabled"):
-            valid = ~np.isnan(metric_arrays["face_sim"])
-            low_mask = valid & (metric_arrays["face_sim"] < filters.get("face_sim_min", 0.5))
-            for i in np.where(low_mask)[0]: reasons[filenames[i]].append("face_sim_low")
-            kept_mask &= ~low_mask
-            if filters.get("require_face_match"):
-                missing_mask = ~valid
-                for i in np.where(missing_mask)[0]: reasons[filenames[i]].append("face_missing")
-                kept_mask &= ~missing_mask
-        if filters.get("mask_area_enabled"):
-            combined_mask = metric_arrays["mask_area_pct"] < filters.get("mask_area_pct_min", 1.0)
-            for i in np.where(combined_mask)[0]: reasons[filenames[i]].append("mask_too_small")
-            kept_mask &= ~combined_mask
-
+        
+        # --- 1. Deduplication (run first on all frames) ---
         dedup_thresh_val = filters.get("dedup_thresh", 5)
         if filters.get("enable_dedup") and dedup_thresh_val != -1:
-            kept_indices = np.where(kept_mask)[0]
-            if len(kept_indices) > 1:
-                sorted_kept_indices = sorted(kept_indices, key=lambda i: filenames[i])
-                hashes = {i: imagehash.hex_to_hash(all_frames_data[i]['phash']) for i in sorted_kept_indices if 'phash' in all_frames_data[i]}
-                last_hash_idx = sorted_kept_indices[0]
-                for i in range(1, len(sorted_kept_indices)):
-                    current_idx = sorted_kept_indices[i]
-                    if last_hash_idx in hashes and current_idx in hashes:
-                        if (hashes[last_hash_idx] - hashes[current_idx]) <= dedup_thresh_val:
-                            kept_mask[current_idx] = False; reasons[filenames[current_idx]].append("duplicate")
-                        else: last_hash_idx = current_idx
-                    else: last_hash_idx = current_idx
+            all_indices = list(range(num_frames))
+            sorted_indices = sorted(all_indices, key=lambda i: filenames[i])
+            hashes = {i: imagehash.hex_to_hash(all_frames_data[i]['phash']) for i in sorted_indices if 'phash' in all_frames_data[i]}
+            
+            for i in range(1, len(sorted_indices)):
+                current_idx = sorted_indices[i]
+                prev_idx = sorted_indices[i-1]
+                if prev_idx in hashes and current_idx in hashes:
+                    if (hashes[prev_idx] - hashes[current_idx]) <= dedup_thresh_val:
+                        kept_mask[current_idx] = False
+                        reasons[filenames[current_idx]].append('duplicate')
+
+        # --- 2. Quality & Metric Filters (run on remaining frames) ---
+        for k in config.QUALITY_METRICS:
+            min_val, max_val = filters.get(f"{k}_min", 0), filters.get(f"{k}_max", 100)
+            # Only apply filter to frames that are still candidates
+            current_kept_indices = np.where(kept_mask)[0]
+            values_to_check = metric_arrays[k][current_kept_indices]
+            
+            low_mask_rel = values_to_check < min_val
+            high_mask_rel = values_to_check > max_val
+            
+            low_indices_abs = current_kept_indices[low_mask_rel]
+            high_indices_abs = current_kept_indices[high_mask_rel]
+            
+            for i in low_indices_abs: reasons[filenames[i]].append(f"{k}_low")
+            for i in high_indices_abs: reasons[filenames[i]].append(f"{k}_high")
+            
+            kept_mask[low_indices_abs] = False
+            kept_mask[high_indices_abs] = False
+
+        if filters.get("face_sim_enabled"):
+            current_kept_indices = np.where(kept_mask)[0]
+            face_sim_values = metric_arrays["face_sim"][current_kept_indices]
+            
+            valid = ~np.isnan(face_sim_values)
+            low_mask_rel = valid & (face_sim_values < filters.get("face_sim_min", 0.5))
+            low_indices_abs = current_kept_indices[low_mask_rel]
+            for i in low_indices_abs: reasons[filenames[i]].append("face_sim_low")
+            kept_mask[low_indices_abs] = False
+
+            if filters.get("require_face_match"):
+                missing_mask_rel = ~valid
+                missing_indices_abs = current_kept_indices[missing_mask_rel]
+                for i in missing_indices_abs: reasons[filenames[i]].append("face_missing")
+                kept_mask[missing_indices_abs] = False
+
+        if filters.get("mask_area_enabled"):
+            current_kept_indices = np.where(kept_mask)[0]
+            mask_area_values = metric_arrays["mask_area_pct"][current_kept_indices]
+
+            small_mask_rel = mask_area_values < filters.get("mask_area_pct_min", 1.0)
+            small_indices_abs = current_kept_indices[small_mask_rel]
+            for i in small_indices_abs: reasons[filenames[i]].append("mask_too_small")
+            kept_mask[small_indices_abs] = False
 
         kept = [all_frames_data[i] for i in np.where(kept_mask)[0]]
         rejected = [all_frames_data[i] for i in np.where(~kept_mask)[0]]
