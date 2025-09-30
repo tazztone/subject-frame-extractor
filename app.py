@@ -956,7 +956,14 @@ class ExtractionPipeline(Pipeline):
             
             fps = video_info.get('fps', 30)
             vf_filter = f"fps={fps}," + vf_scale + ",showinfo"
-            cmd = cmd_base + ['-vf', vf_filter, '-vsync', 'vfr', '-f', 'image2', str(thumb_dir / "frame_%06d.webp")]
+            cmd = cmd_base + [
+                '-vf', vf_filter,
+                '-c:v', 'libwebp',  # Explicitly use the libwebp codec
+                '-lossless', '0',    # Use lossy compression for smaller files
+                '-quality', '80',    # Set quality level (0-100)
+                '-vsync', 'vfr',
+                str(thumb_dir / "frame_%06d.webp")
+            ]
         else: # Legacy full-res extraction
             select_filter = {
                 'interval': f"fps=1/{max(0.1, float(self.params.interval))}", 'keyframes': "select='eq(pict_type,I)'",
@@ -2116,4 +2123,5 @@ class AppUI:
 if __name__ == "__main__":
     check_dependencies()
     AppUI().build_ui().launch()
+
 
