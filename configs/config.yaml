@@ -20,7 +20,6 @@ ui_defaults:
   person_detector_model: "yolo11x.pt" # YOLO model for detecting persons.
   seed_strategy: "Reference Face / Largest" # Fallback strategy if text prompt or face match fails.
   text_prompt: ""                    # Global text prompt for seeding (can be overridden per-scene).
-  prompt_type_for_video: "box"       # Default seeding prompt type (box or mask).
 
   # --- Final Analysis & Filtering ---
   resume: False                      # Attempt to resume a previous analysis run (less relevant in new workflow).

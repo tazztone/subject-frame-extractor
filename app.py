@@ -1296,8 +1296,8 @@ class AppUI:
             with gr.Column():
                 gr.Markdown("### 📹 Video Source")
                 self._create_component('source_input', 'textbox', {'label': "Video URL or Local Path", 'placeholder': "Enter YouTube URL or local video file path"})
-                self._create_component('upload_video_input', 'file', {'label': "Or Upload Video", 'file_types': ["video"], 'type': "filepath"})
                 self._create_component('max_resolution', 'dropdown', {'choices': ["maximum available", "2160", "1080", "720"], 'value': config.ui_defaults['max_resolution'], 'label': "DL Res"})
+                self._create_component('upload_video_input', 'file', {'label': "Or Upload Video", 'file_types': ["video"], 'type': "filepath"})
             with gr.Column():
                 gr.Markdown("### ⚙️ Extraction Settings")
                 with gr.Accordion("Thumbnail Extraction (Recommended)", open=True):
