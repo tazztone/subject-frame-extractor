@@ -245,11 +245,8 @@ def _to_json_safe(obj):
         return asdict(obj)
     return obj
     
-def bgr_to_pil(image_bgr: np.ndarray) -> Image.Image:
-    return Image.fromarray(cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB))
-
-def pil_to_bgr(image_pil: Image.Image) -> np.ndarray:
-    return cv2.cvtColor(np.array(image_pil), cv2.COLOR_RGB2BGR)
+def rgb_to_pil(image_rgb: np.ndarray) -> Image.Image:
+    return Image.fromarray(image_rgb)
 
 def create_frame_map(output_dir: Path):
     """Loads or creates a map from original frame number to sequential filename."""
@@ -277,7 +274,7 @@ class ThumbnailManager:
         logger.info(f"ThumbnailManager initialized with cache size {max_size}")
 
     def get(self, thumb_path: Path):
-        """Retrieves a thumbnail from cache or loads it from disk."""
+        """Retrieves a thumbnail from cache or loads it from disk as an RGB numpy array."""
         if not isinstance(thumb_path, Path):
             thumb_path = Path(thumb_path)
             
@@ -290,7 +287,8 @@ class ThumbnailManager:
 
         try:
             with Image.open(thumb_path) as pil_thumb:
-                thumb_img = pil_to_bgr(pil_thumb.convert("RGB"))
+                thumb_rgb_pil = pil_thumb.convert("RGB")
+                thumb_img = np.array(thumb_rgb_pil)
             
             self.cache[thumb_path] = thumb_img
             if len(self.cache) > self.max_size:
@@ -317,8 +315,8 @@ class PersonDetector:
         self.conf = conf
         logger.info(f"YOLO person detector loaded", extra={'device': self.device, 'model': model})
 
-    def detect_boxes(self, img_bgr):
-        res = self.model.predict(img_bgr, imgsz=self.imgsz, conf=self.conf, classes=[0], verbose=False, device=self.device)
+    def detect_boxes(self, img_rgb):
+        res = self.model.predict(img_rgb, imgsz=self.imgsz, conf=self.conf, classes=[0], verbose=False, device=self.device)
         boxes = []
         for r in res:
             if getattr(r, "boxes", None) is None: continue
@@ -350,9 +348,9 @@ class Frame:
     face_similarity_score: float | None = None; max_face_confidence: float | None = None
     error: str | None = None
 
-    def calculate_quality_metrics(self, thumb_image: np.ndarray, mask: np.ndarray | None = None, niqe_metric=None):
+    def calculate_quality_metrics(self, thumb_image_rgb: np.ndarray, mask: np.ndarray | None = None, niqe_metric=None):
         try:
-            gray = cv2.cvtColor(thumb_image, cv2.COLOR_BGR2GRAY)
+            gray = cv2.cvtColor(thumb_image_rgb, cv2.COLOR_RGB2GRAY)
             active_mask = (mask > 128) if mask is not None and mask.ndim == 2 else None
             if active_mask is not None and np.sum(active_mask) < 100:
                 raise ValueError("Mask too small.")
@@ -368,7 +366,7 @@ class Frame:
             mean_br, std_br = (np.mean(pixels), np.std(pixels)) if pixels.size > 0 else (0,0)
             brightness = mean_br / 255.0; contrast = std_br / (mean_br + 1e-7)
             
-            gray_full = cv2.cvtColor(self.image_data, cv2.COLOR_BGR2GRAY)
+            gray_full = cv2.cvtColor(self.image_data, cv2.COLOR_RGB2GRAY)
             mask_full = cv2.resize(mask, (gray_full.shape[1], gray_full.shape[0]), interpolation=cv2.INTER_NEAREST) if mask is not None else None
             active_mask_full = (mask_full > 128).astype(np.uint8) if mask_full is not None else None
             hist = cv2.calcHist([gray_full], [0], active_mask_full, [256], [0, 256]).flatten()
@@ -377,7 +375,7 @@ class Frame:
             niqe_score = 0.0
             if niqe_metric is not None:
                 try:
-                    rgb_image = cv2.cvtColor(self.image_data, cv2.COLOR_BGR2RGB)
+                    rgb_image = self.image_data
                     if active_mask_full is not None:
                         mask_3ch = np.stack([active_mask_full] * 3, axis=-1) > 0
                         rgb_image = np.where(mask_3ch, rgb_image, 0)
@@ -486,8 +484,7 @@ class SeedSelector:
         self._gdino = gdino_model
         self._device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    def _load_image_from_array(self, image_bgr: np.ndarray):
-        image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
+    def _load_image_from_array(self, image_rgb: np.ndarray):
         transform = transforms.Compose([
             transforms.ToPILImage(), transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
@@ -495,9 +492,9 @@ class SeedSelector:
         image_tensor = transform(image_rgb)
         return image_rgb, image_tensor
 
-    def _ground_first_frame_xywh(self, frame_bgr_small: np.ndarray, text: str, box_th: float, text_th: float):
+    def _ground_first_frame_xywh(self, frame_rgb_small: np.ndarray, text: str, box_th: float, text_th: float):
         if not self._gdino: return None, {}
-        image_source, image_tensor = self._load_image_from_array(frame_bgr_small)
+        image_source, image_tensor = self._load_image_from_array(frame_rgb_small)
         h, w = image_source.shape[:2]
 
         with torch.no_grad(), torch.cuda.amp.autocast(enabled=self._device=='cuda'):
@@ -520,20 +517,20 @@ class SeedSelector:
         details = {"type": "text_prompt", "label": labels[idx] if labels else "", "conf": float(conf[idx])}
         return xywh, details
 
-    def _sam2_mask_for_bbox(self, frame_bgr_small, bbox_xywh):
+    def _sam2_mask_for_bbox(self, frame_rgb_small, bbox_xywh):
         if not self.tracker or bbox_xywh is None: return None
         try:
-            outputs = self.tracker.initialize(bgr_to_pil(frame_bgr_small), None, bbox=bbox_xywh)
+            outputs = self.tracker.initialize(rgb_to_pil(frame_rgb_small), None, bbox=bbox_xywh)
             mask = outputs.get('pred_mask')
             return (mask * 255).astype(np.uint8) if mask is not None else None
         except Exception as e:
             logger.warning(f"DAM4SAM mask generation failed.", extra={'error': e})
             return None
 
-    def _ground_first_frame_mask_xywh(self, frame_bgr_small: np.ndarray, text: str, box_th: float, text_th: float):
-        xywh, details = self._ground_first_frame_xywh(frame_bgr_small, text, box_th, text_th)
+    def _ground_first_frame_mask_xywh(self, frame_rgb_small: np.ndarray, text: str, box_th: float, text_th: float):
+        xywh, details = self._ground_first_frame_xywh(frame_rgb_small, text, box_th, text_th)
         if xywh is None: return None, details
-        mask = self._sam2_mask_for_bbox(frame_bgr_small, xywh)
+        mask = self._sam2_mask_for_bbox(frame_rgb_small, xywh)
         if mask is None:
             logger.warning("SAM2 mask generation failed. Falling back to box prompt.")
             return xywh, details
@@ -542,7 +539,7 @@ class SeedSelector:
         x1, x2, y1, y2 = xs.min(), xs.max()+1, ys.min(), ys.max()+1
         return [int(x1), int(y1), int(x2 - x1), int(y2 - y1)], {**details, "type": "text_prompt_mask"}
 
-    def _seed_identity(self, frame, current_params=None):
+    def _seed_identity(self, frame_rgb, current_params=None):
         p = self.params if current_params is None else current_params
         
         prompt_text = getattr(p, "text_prompt", "")
@@ -559,20 +556,22 @@ class SeedSelector:
                 text_th = current_params.get('text_threshold', text_th)
 
             if prompt_type == "mask":
-                xywh, details = self._ground_first_frame_mask_xywh(frame, prompt_text, box_th, text_th)
+                xywh, details = self._ground_first_frame_mask_xywh(frame_rgb, prompt_text, box_th, text_th)
             else:
-                xywh, details = self._ground_first_frame_xywh(frame, prompt_text, box_th, text_th)
+                xywh, details = self._ground_first_frame_xywh(frame_rgb, prompt_text, box_th, text_th)
             if xywh is not None:
                 logger.info(f"Text-prompt seed found", extra=details)
                 return xywh, details
             else:
                 logger.warning("Text-prompt grounding returned no boxes; falling back.")
         
-        return self._choose_seed_bbox(frame, p)
+        return self._choose_seed_bbox(frame_rgb, p)
     
-    def _choose_seed_bbox(self, frame, current_params):
+    def _choose_seed_bbox(self, frame_rgb, current_params):
         if self.face_analyzer and self.reference_embedding is not None and current_params.enable_face_filter:
-            faces = self.face_analyzer.get(frame) if frame is not None else []
+            # insightface expects BGR
+            frame_bgr = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
+            faces = self.face_analyzer.get(frame_bgr) if frame_bgr is not None else []
             if faces:
                 best_face, best_dist = None, float('inf')
                 for face in faces:
@@ -582,15 +581,15 @@ class SeedSelector:
                 if best_face and best_dist < 0.6:
                     details = {'type': 'face_match', 'seed_face_sim': 1 - best_dist}
                     face_bbox = best_face.bbox.astype(int)
-                    final_bbox = self._get_body_box_for_face(frame, face_bbox, details)
+                    final_bbox = self._get_body_box_for_face(frame_rgb, face_bbox, details)
                     return final_bbox, details
 
         logger.info("No matching face. Applying fallback seeding.", extra={'strategy': current_params.seed_strategy})
         
         if current_params.seed_strategy in ["Largest Person", "Center-most Person"] and self.person_detector:
-            boxes = self.person_detector.detect_boxes(frame)
+            boxes = self.person_detector.detect_boxes(frame_rgb)
             if boxes:
-                h, w = frame.shape[:2]; cx, cy = w / 2, h / 2
+                h, w = frame_rgb.shape[:2]; cx, cy = w / 2, h / 2
                 strategy_map = {
                     "Largest Person": lambda b: (b[2] - b[0]) * (b[3] - b[1]),
                     "Center-most Person": lambda b: -math.hypot((b[0] + b[2]) / 2 - cx, (b[1] + b[3]) / 2 - cy)
@@ -600,34 +599,35 @@ class SeedSelector:
                 return [x1, y1, x2 - x1, y2 - y1], {'type': f'person_{current_params.seed_strategy.lower().replace(" ", "_")}'}
 
         if self.face_analyzer:
-            faces = self.face_analyzer.get(frame)
+            frame_bgr = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
+            faces = self.face_analyzer.get(frame_bgr)
             if faces:
                 largest_face = max(faces, key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]))
                 details = {'type': 'face_largest'}
                 face_bbox = largest_face.bbox.astype(int)
-                final_bbox = self._get_body_box_for_face(frame, face_bbox, details)
+                final_bbox = self._get_body_box_for_face(frame_rgb, face_bbox, details)
                 return final_bbox, details
 
         logger.warning("No faces or persons found to seed shot. Using fallback rectangle.")
-        h, w, _ = frame.shape
+        h, w, _ = frame_rgb.shape
         return [w // 4, h // 4, w // 2, h // 2], {'type': 'fallback_rect'}
 
-    def _get_body_box_for_face(self, frame_img, face_bbox, details_dict):
+    def _get_body_box_for_face(self, frame_rgb, face_bbox, details_dict):
         x1, y1, x2, y2 = face_bbox
-        person_bbox = self._pick_person_box_for_face(frame_img, [x1, y1, x2-x1, y2-y1])
+        person_bbox = self._pick_person_box_for_face(frame_rgb, [x1, y1, x2-x1, y2-y1])
         if person_bbox:
             details_dict['type'] = f'person_box_from_{details_dict["type"]}'
             return person_bbox
         else:
-            expanded_box = self._expand_face_to_body([x1, y1, x2-x1, y2-y1], frame_img.shape)
+            expanded_box = self._expand_face_to_body([x1, y1, x2-x1, y2-y1], frame_rgb.shape)
             details_dict['type'] = f'expanded_box_from_{details_dict["type"]}'
             return expanded_box
         
-    def _pick_person_box_for_face(self, frame_img, face_bbox):
+    def _pick_person_box_for_face(self, frame_rgb, face_bbox):
         if not self.person_detector: return None
         px1, py1, pw, ph = face_bbox; fx, fy = px1 + pw / 2.0, py1 + ph / 2.0
         try:
-            candidates = self.person_detector.detect_boxes(frame_img)
+            candidates = self.person_detector.detect_boxes(frame_rgb)
         except Exception as e:
             logger.warning(f"Person detector failed on frame.", extra={'error': e})
             return None
@@ -660,34 +660,34 @@ class MaskPropagator:
         self.progress_queue = progress_queue
         self._device = "cuda" if torch.cuda.is_available() else "cpu"
         
-    def propagate(self, shot_frames, seed_idx, bbox_xywh):
-        if not self.tracker or not shot_frames:
+    def propagate(self, shot_frames_rgb, seed_idx, bbox_xywh):
+        if not self.tracker or not shot_frames_rgb:
             err_msg = "Tracker not initialized" if not self.tracker else "No frames"
-            shape = shot_frames[0].shape[:2] if shot_frames else (100, 100)
-            return ([np.zeros(shape, np.uint8)] * len(shot_frames), [0.0] * len(shot_frames), [True] * len(shot_frames), [err_msg] * len(shot_frames))
+            shape = shot_frames_rgb[0].shape[:2] if shot_frames_rgb else (100, 100)
+            return ([np.zeros(shape, np.uint8)] * len(shot_frames_rgb), [0.0] * len(shot_frames_rgb), [True] * len(shot_frames_rgb), [err_msg] * len(shot_frames_rgb))
 
-        logger.info(f"Propagating masks", extra={'num_frames': len(shot_frames), 'seed_index': seed_idx})
-        self.progress_queue.put({"stage": "Masking", "total": len(shot_frames)})
-        masks = [None] * len(shot_frames)
+        logger.info(f"Propagating masks", extra={'num_frames': len(shot_frames_rgb), 'seed_index': seed_idx})
+        self.progress_queue.put({"stage": "Masking", "total": len(shot_frames_rgb)})
+        masks = [None] * len(shot_frames_rgb)
 
         def _propagate_direction(start_idx, end_idx, step):
             for i in range(start_idx, end_idx, step):
                 if self.cancel_event.is_set(): break
-                outputs = self.tracker.track(bgr_to_pil(shot_frames[i]))
+                outputs = self.tracker.track(rgb_to_pil(shot_frames_rgb[i]))
                 mask = outputs.get('pred_mask')
-                masks[i] = (mask * 255).astype(np.uint8) if mask is not None else np.zeros_like(shot_frames[i], dtype=np.uint8)[:, :, 0]
+                masks[i] = (mask * 255).astype(np.uint8) if mask is not None else np.zeros_like(shot_frames_rgb[i], dtype=np.uint8)[:, :, 0]
                 self.progress_queue.put({"progress": 1})
 
         try:
             with torch.cuda.amp.autocast(enabled=self._device == 'cuda'):
-                outputs = self.tracker.initialize(bgr_to_pil(shot_frames[seed_idx]), None, bbox=bbox_xywh)
+                outputs = self.tracker.initialize(rgb_to_pil(shot_frames_rgb[seed_idx]), None, bbox=bbox_xywh)
                 mask = outputs.get('pred_mask')
-                masks[seed_idx] = (mask * 255).astype(np.uint8) if mask is not None else np.zeros_like(shot_frames[seed_idx], dtype=np.uint8)[:, :, 0]
+                masks[seed_idx] = (mask * 255).astype(np.uint8) if mask is not None else np.zeros_like(shot_frames_rgb[seed_idx], dtype=np.uint8)[:, :, 0]
                 self.progress_queue.put({"progress": 1})
-                _propagate_direction(seed_idx + 1, len(shot_frames), 1)
-                self.tracker.initialize(bgr_to_pil(shot_frames[seed_idx]), None, bbox=bbox_xywh)
+                _propagate_direction(seed_idx + 1, len(shot_frames_rgb), 1)
+                self.tracker.initialize(rgb_to_pil(shot_frames_rgb[seed_idx]), None, bbox=bbox_xywh)
                 _propagate_direction(seed_idx - 1, -1, -1)
-            h, w = shot_frames[0].shape[:2]
+            h, w = shot_frames_rgb[0].shape[:2]
             final_results = []
             for i, mask in enumerate(masks):
                 if self.cancel_event.is_set() or mask is None: mask = np.zeros((h, w), dtype=np.uint8)
@@ -699,9 +699,9 @@ class MaskPropagator:
             return tuple(zip(*final_results)) if final_results else ([], [], [], [])
         except Exception as e:
             logger.critical(f"DAM4SAM propagation failed", exc_info=True)
-            h, w = shot_frames[0].shape[:2]
+            h, w = shot_frames_rgb[0].shape[:2]
             error_msg = f"Propagation failed: {e}"
-            return ([np.zeros((h, w), np.uint8)] * len(shot_frames), [0.0] * len(shot_frames), [True] * len(shot_frames), [error_msg] * len(shot_frames))
+            return ([np.zeros((h, w), np.uint8)] * len(shot_frames_rgb), [0.0] * len(shot_frames_rgb), [True] * len(shot_frames_rgb), [error_msg] * len(shot_frames_rgb))
 
 class SubjectMasker:
     """Orchestrates subject seeding and mask propagation for video analysis."""
@@ -869,16 +869,16 @@ class SubjectMasker:
         candidates = shot_frames[::step]
         scores = []
         
-        for frame_num, thumb_bgr, _ in candidates:
+        for frame_num, thumb_rgb, _ in candidates:
             niqe_score = 10.0
             if self.niqe_metric:
-                rgb_image = cv2.cvtColor(thumb_bgr, cv2.COLOR_BGR2RGB)
-                img_tensor = torch.from_numpy(rgb_image).float().permute(2, 0, 1).unsqueeze(0) / 255.0
+                img_tensor = torch.from_numpy(thumb_rgb).float().permute(2, 0, 1).unsqueeze(0) / 255.0
                 with torch.no_grad(), torch.cuda.amp.autocast(enabled=self._device=='cuda'):
                     niqe_score = float(self.niqe_metric(img_tensor.to(self.niqe_metric.device)))
             
             face_sim = 0.0
             if self.face_analyzer and self.reference_embedding is not None:
+                thumb_bgr = cv2.cvtColor(thumb_rgb, cv2.COLOR_RGB2BGR)
                 faces = self.face_analyzer.get(thumb_bgr)
                 if faces:
                     best_face = max(faces, key=lambda x: x.det_score)
@@ -892,18 +892,20 @@ class SubjectMasker:
         scene.best_seed_frame = best_frame_num
         scene.seed_metrics = {'reason': 'pre-analysis complete', 'score': max(scores) if scores else 0, 'best_niqe': niqe_score, 'best_face_sim': face_sim}
 
-    def get_seed_for_frame(self, frame_bgr: np.ndarray, seed_config: dict):
+    def get_seed_for_frame(self, frame_rgb: np.ndarray, seed_config: dict):
         """Public method to get a seed for a given frame with optional overrides."""
-        return self.seed_selector._seed_identity(frame_bgr, current_params=seed_config)
+        return self.seed_selector._seed_identity(frame_rgb, current_params=seed_config)
 
-    def get_mask_for_bbox(self, frame_bgr_small, bbox_xywh):
+    def get_mask_for_bbox(self, frame_rgb_small, bbox_xywh):
         """Public method to get a SAM mask for a bounding box."""
-        return self.seed_selector._sam2_mask_for_bbox(frame_bgr_small, bbox_xywh)
+        return self.seed_selector._sam2_mask_for_bbox(frame_rgb_small, bbox_xywh)
         
-    def draw_bbox(self, img_bgr, xywh, color=(0, 0, 255), thickness=2):
+    def draw_bbox(self, img_rgb, xywh, color=(0, 0, 255), thickness=2):
         x, y, w, h = map(int, xywh or [0, 0, 0, 0])
-        img_out = img_bgr.copy()
-        cv2.rectangle(img_out, (x, y), (x + w, y + h), color, thickness)
+        img_out = img_rgb.copy()
+        # Convert color for OpenCV
+        bgr_color = (color[2], color[1], color[0])
+        cv2.rectangle(img_out, (x, y), (x + w, y + h), bgr_color, thickness)
         return img_out
 
 # --- Backend Analysis Pipeline ---
@@ -1134,7 +1136,7 @@ class AnalysisPipeline(Pipeline):
         ref_path = Path(self.params.face_ref_img_path)
         if not ref_path.is_file(): raise FileNotFoundError(f"Reference face image not found: {ref_path}")
         logger.info("Processing reference face...")
-        ref_img = cv2.imread(str(ref_path))
+        ref_img = cv2.imread(str(ref_path)) # Reads as BGR
         if ref_img is None: raise ValueError("Could not read reference image.")
         ref_faces = self.face_analyzer.get(ref_img)
         if not ref_faces: raise ValueError("No face found in reference image.")
@@ -1166,10 +1168,10 @@ class AnalysisPipeline(Pipeline):
         try:
             self._initialize_niqe_metric()
             
-            thumb_image = self.thumbnail_manager.get(thumb_path)
-            if thumb_image is None: raise ValueError("Could not read thumbnail.")
+            thumb_image_rgb = self.thumbnail_manager.get(thumb_path)
+            if thumb_image_rgb is None: raise ValueError("Could not read thumbnail.")
             
-            frame = Frame(thumb_image, -1)
+            frame = Frame(thumb_image_rgb, -1)
             
             base_filename = thumb_path.name.replace('.webp', '.png')
             mask_meta = self.mask_metadata.get(base_filename, {})
@@ -1182,12 +1184,12 @@ class AnalysisPipeline(Pipeline):
                 if mask_full_path.exists():
                     mask_full = cv2.imread(str(mask_full_path), cv2.IMREAD_GRAYSCALE)
                     if mask_full is not None:
-                        mask_thumb = cv2.resize(mask_full, (thumb_image.shape[1], thumb_image.shape[0]), interpolation=cv2.INTER_NEAREST)
+                        mask_thumb = cv2.resize(mask_full, (thumb_image_rgb.shape[1], thumb_image_rgb.shape[0]), interpolation=cv2.INTER_NEAREST)
 
-            frame.calculate_quality_metrics(thumb_image=thumb_image, mask=mask_thumb, niqe_metric=self.niqe_metric)
+            frame.calculate_quality_metrics(thumb_image_rgb=thumb_image_rgb, mask=mask_thumb, niqe_metric=self.niqe_metric)
 
             if self.params.enable_face_filter and self.reference_embedding is not None and self.face_analyzer:
-                self._analyze_face_similarity(frame, thumb_image)
+                self._analyze_face_similarity(frame, thumb_image_rgb)
             
             meta = {"filename": base_filename, "metrics": asdict(frame.metrics)}
             if frame.face_similarity_score is not None: meta["face_sim"] = frame.face_similarity_score
@@ -1195,7 +1197,7 @@ class AnalysisPipeline(Pipeline):
             meta.update(mask_meta)
 
             if self.params.enable_dedup:
-                pil_thumb = bgr_to_pil(thumb_image)
+                pil_thumb = rgb_to_pil(thumb_image_rgb)
                 meta['phash'] = str(imagehash.phash(pil_thumb))
 
             if frame.error: meta["error"] = frame.error
@@ -1213,9 +1215,11 @@ class AnalysisPipeline(Pipeline):
                 json.dump(meta, f); f.write('\n')
             self.progress_queue.put({"progress": 1})
 
-    def _analyze_face_similarity(self, frame, image_data):
+    def _analyze_face_similarity(self, frame, image_rgb):
         try:
-            with self.gpu_lock: faces = self.face_analyzer.get(image_data)
+            # insightface expects BGR
+            image_bgr = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR)
+            with self.gpu_lock: faces = self.face_analyzer.get(image_bgr)
             if faces:
                 best_face = max(faces, key=lambda x: x.det_score)
                 distance = 1 - np.dot(best_face.normed_embedding, self.reference_embedding)
@@ -1680,8 +1684,10 @@ class AppUI:
         if params.enable_face_filter:
             face_analyzer = self._get_shared_analyzer(params.face_model_name, lambda: self._create_face_analysis_instance(params.face_model_name))
             if params.face_ref_img_path:
-                ref_img = cv2.imread(params.face_ref_img_path); faces = face_analyzer.get(ref_img)
-                if faces: ref_emb = max(faces, key=lambda x: x.det_score).normed_embedding
+                ref_img = cv2.imread(params.face_ref_img_path)
+                if ref_img is not None:
+                    faces = face_analyzer.get(ref_img)
+                    if faces: ref_emb = max(faces, key=lambda x: x.det_score).normed_embedding
         person_detector = self._get_shared_analyzer(f"person_{params.person_detector_model}", lambda: PersonDetector(model=params.person_detector_model))
 
         masker = SubjectMasker(params, q, self.cancel_event, face_analyzer=face_analyzer,
@@ -1702,20 +1708,20 @@ class AppUI:
                 continue
             
             thumb_path = output_dir / "thumbs" / f"{Path(fname).stem}.webp"
-            thumb_bgr = self.thumbnail_manager.get(thumb_path)
+            thumb_rgb = self.thumbnail_manager.get(thumb_path)
             
-            if thumb_bgr is None:
+            if thumb_rgb is None:
                 logger.warning(f"Could not load thumbnail for best_seed_frame {scene.best_seed_frame} at path {thumb_path}")
                 continue
 
-            bbox, details = masker.get_seed_for_frame(thumb_bgr, seed_config=scene.seed_config or params)
+            bbox, details = masker.get_seed_for_frame(thumb_rgb, seed_config=scene.seed_config or params)
             scene.seed_result = {'bbox': bbox, 'details': details}
             
-            mask = masker.get_mask_for_bbox(thumb_bgr, bbox) if bbox else None
-            overlay = render_mask_overlay(thumb_bgr, mask) if mask is not None else masker.draw_bbox(thumb_bgr, bbox)
+            mask = masker.get_mask_for_bbox(thumb_rgb, bbox) if bbox else None
+            overlay_bgr = render_mask_overlay(cv2.cvtColor(thumb_rgb, cv2.COLOR_RGB2BGR), mask) if mask is not None else cv2.cvtColor(masker.draw_bbox(thumb_rgb, bbox), cv2.COLOR_RGB2BGR)
             
             caption = f"Scene {scene.shot_id} (Seed: {scene.best_seed_frame}) | {details.get('type', 'N/A')}"
-            previews.append((cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB), caption))
+            previews.append((cv2.cvtColor(overlay_bgr, cv2.COLOR_BGR2RGB), caption))
             scene.preview_path = "dummy" 
             if scene.status == 'pending': scene.status = 'included'
 
@@ -1892,16 +1898,15 @@ class AppUI:
                 thumb_path = thumb_dir / f"{Path(f_meta['filename']).stem}.webp"
                 caption = f"Reasons: {', '.join(per_frame_reasons.get(f_meta['filename'], []))}" if gallery_view == "Rejected Frames" else ""
                 
-                thumb_bgr = self.thumbnail_manager.get(thumb_path)
-                if thumb_bgr is None: continue
-                
-                thumb_rgb_np = cv2.cvtColor(thumb_bgr, cv2.COLOR_BGR2RGB)
+                thumb_rgb_np = self.thumbnail_manager.get(thumb_path)
+                if thumb_rgb_np is None: continue
 
                 if show_overlay and not f_meta.get("mask_empty", True) and (mask_name := f_meta.get("mask_path")):
                     mask_path = masks_dir / mask_name
                     if mask_path.exists():
                         mask_gray = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
-                        thumb_overlay_bgr = render_mask_overlay(thumb_bgr, mask_gray, float(overlay_alpha))
+                        thumb_bgr_np = cv2.cvtColor(thumb_rgb_np, cv2.COLOR_RGB2BGR)
+                        thumb_overlay_bgr = render_mask_overlay(thumb_bgr_np, mask_gray, float(overlay_alpha))
                         preview_images.append((cv2.cvtColor(thumb_overlay_bgr, cv2.COLOR_BGR2RGB), caption))
                     else: preview_images.append((thumb_rgb_np, caption))
                 else: preview_images.append((thumb_rgb_np, caption))
@@ -2035,8 +2040,10 @@ class AppUI:
             if params.enable_face_filter:
                 face_analyzer = self._get_shared_analyzer(params.face_model_name, lambda: self._create_face_analysis_instance(params.face_model_name))
                 if params.face_ref_img_path:
-                    ref_img = cv2.imread(params.face_ref_img_path); faces = face_analyzer.get(ref_img)
-                    if faces: ref_emb = max(faces, key=lambda x: x.det_score).normed_embedding
+                    ref_img = cv2.imread(params.face_ref_img_path)
+                    if ref_img is not None:
+                        faces = face_analyzer.get(ref_img)
+                        if faces: ref_emb = max(faces, key=lambda x: x.det_score).normed_embedding
             person_detector = self._get_shared_analyzer(f"person_{params.person_detector_model}", lambda: PersonDetector(model=params.person_detector_model))
 
             masker = SubjectMasker(params, Queue(), threading.Event(), face_analyzer=face_analyzer,
@@ -2048,9 +2055,9 @@ class AppUI:
             if not fname: raise ValueError("Framemap lookup failed for re-seeding.")
             
             thumb_path = Path(output_folder) / "thumbs" / f"{Path(fname).stem}.webp"
-            thumb_bgr = self.thumbnail_manager.get(thumb_path)
+            thumb_rgb = self.thumbnail_manager.get(thumb_path)
             
-            bbox, details = masker.get_seed_for_frame(thumb_bgr, scene_dict['seed_config'])
+            bbox, details = masker.get_seed_for_frame(thumb_rgb, scene_dict['seed_config'])
             scene_dict['seed_result'] = {'bbox': bbox, 'details': details}
 
             self._save_scene_seeds(scenes_list, output_folder)
@@ -2071,17 +2078,17 @@ class AppUI:
             if not fname: continue
             
             thumb_path = output_dir / "thumbs" / f"{Path(fname).stem}.webp"
-            thumb_bgr = self.thumbnail_manager.get(thumb_path)
-            if thumb_bgr is None: continue
+            thumb_rgb = self.thumbnail_manager.get(thumb_path)
+            if thumb_rgb is None: continue
 
             bbox = scene_dict.get('seed_result', {}).get('bbox')
             details = scene_dict.get('seed_result', {}).get('details', {})
             
-            mask = masker.get_mask_for_bbox(thumb_bgr, bbox) if bbox else None
-            overlay = render_mask_overlay(thumb_bgr, mask) if mask is not None else masker.draw_bbox(thumb_bgr, bbox)
+            mask = masker.get_mask_for_bbox(thumb_rgb, bbox) if bbox else None
+            overlay_bgr = render_mask_overlay(cv2.cvtColor(thumb_rgb, cv2.COLOR_RGB2BGR), mask) if mask is not None else cv2.cvtColor(masker.draw_bbox(thumb_rgb, bbox), cv2.COLOR_RGB2BGR)
             
             caption = f"Scene {scene_dict['shot_id']} (Seed: {scene_dict['best_seed_frame']}) | {details.get('type', 'N/A')}"
-            previews.append((cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB), caption))
+            previews.append((cv2.cvtColor(overlay_bgr, cv2.COLOR_BGR2RGB), caption))
         return previews
 
     def _parse_ar(self, s: str) -> tuple[int, int]:
