@@ -46,6 +46,7 @@ from grounding_dino.groundingdino.util.inference import (
 )
 from sam2.build_sam import build_sam2
 from sam2.sam2_image_predictor import SAM2ImagePredictor
+from functools import lru_cache
 
 # --- Unified Logging & Configuration ---
 
@@ -163,12 +164,7 @@ except FileNotFoundError as e:
     error_app.launch()
     exit()
 
-# --- Utility Functions ---
-def check_dependencies():
-    if not shutil.which("ffmpeg"):
-        logger.error("FFMPEG is not installed or not in PATH.")
-        raise RuntimeError("FFMPEG is not installed. Please install it to continue.")
-
+# --- Utility & Model Loading Functions ---
 def sanitize_filename(name, max_length=50):
     return re.sub(r'[^\w\-_.]', '_', name)[:max_length]
 
@@ -255,16 +251,32 @@ def create_frame_map(output_dir: Path):
     if not frame_map_path.exists():
         thumb_files = sorted(list((output_dir / "thumbs").glob("frame_*.webp")),
                              key=lambda p: int(re.search(r'frame_(\d+)', p.name).group(1)))
-        # Fallback cannot know original frame numbers if map is missing, but this assumes sequential.
         return {int(re.search(r'frame_(\d+)', f.name).group(1)): f.name for f in thumb_files}
     try:
         with open(frame_map_path, 'r') as f:
             frame_map_list = json.load(f)
-        # The filenames are based on ffmpeg's sequential output, not original frame numbers
         return {orig_num: f"frame_{i+1:06d}.webp" for i, orig_num in enumerate(sorted(frame_map_list))}
     except Exception as e:
         logger.error(f"Failed to parse frame_map.json. Using fallback.", exc_info=True)
         return {}
+
+@lru_cache(maxsize=None)
+def get_face_analyzer(model_name):
+    logger.info(f"Loading or getting cached face model: {model_name}")
+    try:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        providers = ['CUDAExecutionProvider', 'CPUExecutionProvider'] if device == 'cuda' else ['CPUExecutionProvider']
+        analyzer = FaceAnalysis(name=model_name, root=str(config.DIRS['models']), providers=providers)
+        analyzer.prepare(ctx_id=0 if device == 'cuda' else -1, det_size=(640, 640))
+        logger.success(f"Face model loaded with {'CUDA' if device == 'cuda' else 'CPU'}.")
+        return analyzer
+    except Exception as e:
+        raise RuntimeError(f"Could not initialize face analysis model. Error: {e}") from e
+
+@lru_cache(maxsize=None)
+def get_person_detector(model_name, device):
+    logger.info(f"Loading or getting cached person detector: {model_name}")
+    return PersonDetector(model=model_name, device=device)
 
 class ThumbnailManager:
     """Manages loading and caching of thumbnails with an LRU policy."""
@@ -408,6 +420,7 @@ class Scene:
     seed_config: dict = field(default_factory=dict) # User overrides for this scene
     seed_result: dict = field(default_factory=dict) # Result of seeding (bbox, type, etc)
     preview_path: str | None = None # Path to the preview image for the UI gallery
+    manual_status_change: bool = False
 
 @dataclass
 class AnalysisParameters:
@@ -1059,12 +1072,7 @@ class AnalysisPipeline(Pipeline):
         self.face_analyzer = None; self.reference_embedding = None; self.mask_metadata = {}
         self.niqe_metric = None
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.shared_analyzers = {}
         self.thumbnail_manager = thumbnail_manager if thumbnail_manager is not None else ThumbnailManager()
-
-    def _get_shared_analyzer(self, key, factory):
-        if key not in self.shared_analyzers: self.shared_analyzers[key] = factory()
-        return self.shared_analyzers[key]
         
     def _initialize_niqe_metric(self):
         if self.niqe_metric is None:
@@ -1088,13 +1096,10 @@ class AnalysisPipeline(Pipeline):
                 f.write(json.dumps(_to_json_safe(header)) + '\n')
 
             if self.params.enable_face_filter:
-                self._initialize_face_analyzer()
+                self.face_analyzer = get_face_analyzer(self.params.face_model_name)
                 if self.params.face_ref_img_path: self._process_reference_face()
             
-            person_detector = self._get_shared_analyzer(
-                f"person_{self.params.person_detector_model}",
-                lambda: PersonDetector(model=self.params.person_detector_model, device=self.device)
-            )
+            person_detector = get_person_detector(self.params.person_detector_model, self.device)
 
             masker = SubjectMasker(self.params, self.progress_queue, self.cancel_event, self._create_frame_map(),
                                    self.face_analyzer, self.reference_embedding, person_detector,
@@ -1113,23 +1118,6 @@ class AnalysisPipeline(Pipeline):
     
     def _create_frame_map(self):
         return create_frame_map(self.output_dir)
-
-    def _initialize_face_analyzer(self):
-        if not FaceAnalysis: raise ImportError("insightface library not installed.")
-        self.face_analyzer = self._get_shared_analyzer(
-            self.params.face_model_name, lambda: self._create_face_analysis_instance()
-        )
-    
-    def _create_face_analysis_instance(self):
-        logger.info(f"Loading face model", extra={'model': self.params.face_model_name})
-        try:
-            providers = ['CUDAExecutionProvider', 'CPUExecutionProvider'] if self.device == 'cuda' else ['CPUExecutionProvider']
-            analyzer = FaceAnalysis(name=self.params.face_model_name, root=str(config.DIRS['models']), providers=providers)
-            analyzer.prepare(ctx_id=0 if self.device == 'cuda' else -1, det_size=(640, 640))
-            logger.success(f"Face model loaded", extra={'device': 'CUDA' if self.device == 'cuda' else 'CPU'})
-            return analyzer
-        except Exception as e:
-            raise RuntimeError(f"Could not initialize face analysis model. Error: {e}") from e
 
     def _process_reference_face(self):
         if not self.face_analyzer: return
@@ -1235,7 +1223,6 @@ class AppUI:
         self.cancel_event = threading.Event()
         self.last_task_result = {}
         self.cuda_available = torch.cuda.is_available()
-        self.shared_analyzers = {}
         self.thumbnail_manager = ThumbnailManager(max_size=config.thumbnail_cache_size)
         self.ext_ui_map_keys = [
             'source_path', 'upload_video', 'method', 'interval', 'nth_frame',
@@ -1318,6 +1305,9 @@ class AppUI:
                     self._create_component('seed_strategy_input', 'dropdown', {'choices': ["Reference Face / Largest", "Largest Person", "Center-most Person"], 'value': config.ui_defaults['seed_strategy'], 'label': "Fallback Seed Strategy"})
                     self._create_component('person_detector_model_input', 'dropdown', {'choices': ['yolo11x.pt', 'yolo11s.pt'], 'value': config.ui_defaults['person_detector_model'], 'label': "Person Detector"})
                     self._create_component('dam4sam_model_name_input', 'dropdown', {'choices': ["sam21pp-T", "sam21pp-S", "sam21pp-B+", "sam21pp-L"], 'value': config.ui_defaults['dam4sam_model_name'], 'label': "SAM Tracker Model"})
+                with gr.Accordion("Advanced Analysis Settings", open=True):
+                    self._create_component('enable_dedup_input', 'checkbox', {'label': "Enable Deduplication (pHash)", 'value': config.ui_defaults.get('enable_dedup', False)})
+
                 self._create_component('start_pre_analysis_button', 'button', {'value': '🌱 Start Pre-Analysis & Seeding Preview', 'variant': 'primary'})
                 self._create_component('propagate_masks_button', 'button', {'value': '🔬 Propagate Masks on Kept Scenes', 'variant': 'primary', 'interactive': False})
             
@@ -1338,8 +1328,8 @@ class AppUI:
                         self._create_component('scene_exclude_button', 'button', {'value': '👎 Exclude'})
                 with gr.Accordion("Bulk Scene Actions & Filters", open=True):
                     self._create_component('scene_filter_status', 'markdown', {'value': 'No scenes loaded.'})
-                    self._create_component('scene_mask_area_min_input', 'slider', {'label': "Min Mask Area % (for filtering)", 'minimum': 0.0, 'maximum': 100.0, 'value': config.min_mask_area_pct, 'step': 0.1})
-                    self._create_component('scene_face_sim_min_input', 'slider', {'label': "Min Face Sim (for filtering)", 'minimum': 0.0, 'maximum': 1.0, 'value': 0.5, 'step': 0.05})
+                    self._create_component('scene_mask_area_min_input', 'slider', {'label': "Min Seed Mask Area %", 'minimum': 0.0, 'maximum': 100.0, 'value': config.min_mask_area_pct, 'step': 0.1})
+                    self._create_component('scene_face_sim_min_input', 'slider', {'label': "Min Seed Face Sim", 'minimum': 0.0, 'maximum': 1.0, 'value': 0.5, 'step': 0.05})
                     self._create_component('apply_bulk_filters_button', 'button', {'value': 'Apply Bulk Filters'})
                     with gr.Row():
                         self._create_component('bulk_include_all_button', 'button', {'value': 'Include All'})
@@ -1443,7 +1433,7 @@ class AppUI:
             'face_ref_img_upload': 'face_ref_img_upload_input', 'face_model_name': 'face_model_name_input',
             'enable_subject_mask': gr.State(True), 'dam4sam_model_name': 'dam4sam_model_name_input', 
             'person_detector_model': 'person_detector_model_input', 'seed_strategy': 'seed_strategy_input', 
-            'scene_detect': 'ext_scene_detect_input', 'enable_dedup': gr.State(False), 'text_prompt': 'text_prompt_input', 
+            'scene_detect': 'ext_scene_detect_input', 'enable_dedup': 'enable_dedup_input', 'text_prompt': 'text_prompt_input', 
             'prompt_type_for_video': gr.State('box'),
             'box_threshold': 'scene_editor_box_thresh_input', 'text_threshold': 'scene_editor_text_thresh_input',
             'min_mask_area_pct': gr.State(config.min_mask_area_pct),
@@ -1463,23 +1453,6 @@ class AppUI:
         prop_outputs = [c['unified_log'], c['unified_status'], c['analysis_output_dir_state'],
                         c['analysis_metadata_path_state'], c['filtering_tab']]
         c['propagate_masks_button'].click(self.run_propagation_wrapper, prop_inputs, prop_outputs)
-
-    def _get_shared_analyzer(self, key, factory):
-        with threading.Lock():
-            if key not in self.shared_analyzers: self.shared_analyzers[key] = factory()
-            return self.shared_analyzers[key]
-
-    def _create_face_analysis_instance(self, model_name):
-        logger.info(f"Loading face model: {model_name}")
-        try:
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-            providers = ['CUDAExecutionProvider', 'CPUExecutionProvider'] if device == 'cuda' else ['CPUExecutionProvider']
-            analyzer = FaceAnalysis(name=model_name, root=str(config.DIRS['models']), providers=providers)
-            analyzer.prepare(ctx_id=0 if device == 'cuda' else -1, det_size=(640, 640))
-            logger.success(f"Face model loaded with {'CUDA' if device == 'cuda' else 'CPU'}.")
-            return analyzer
-        except Exception as e:
-            raise RuntimeError(f"Could not initialize face analysis model. Error: {e}") from e
     
     def _setup_scene_editor_handlers(self):
         c = self.components
@@ -1530,7 +1503,9 @@ class AppUI:
         
         def bulk_toggle(scenes, new_status, output_folder):
             if not scenes: return [], "No scenes to update."
-            for s in scenes: s['status'] = new_status
+            for s in scenes: 
+                s['status'] = new_status
+                s['manual_status_change'] = True
             self._save_scene_seeds(scenes, output_folder)
             status_text = self._get_scene_status_text(scenes)
             return scenes, status_text
@@ -1542,6 +1517,11 @@ class AppUI:
         c['bulk_exclude_all_button'].click(
             lambda s, folder: bulk_toggle(s, 'excluded', folder),
             [c['scenes_state'], c['frames_folder_input']], [c['scenes_state'], c['scene_filter_status']]
+        )
+        c['apply_bulk_filters_button'].click(
+            self.apply_bulk_scene_filters,
+            [c['scenes_state'], c['scene_mask_area_min_input'], c['scene_face_sim_min_input'], c['enable_face_filter_input'], c['frames_folder_input']],
+            [c['scenes_state'], c['scene_filter_status']]
         )
 
     def _setup_filtering_handlers(self):
@@ -1679,16 +1659,17 @@ class AppUI:
                     scene.seed_metrics = seed_data.get('seed_metrics', {})
 
         niqe_metric, face_analyzer, ref_emb, person_detector = None, None, None, None
+        device = "cuda" if self.cuda_available else "cpu"
         if params.pre_analysis_enabled:
-            niqe_metric = self._get_shared_analyzer('niqe', lambda: pyiqa.create_metric('niqe', device="cuda" if self.cuda_available else "cpu"))
+            niqe_metric = pyiqa.create_metric('niqe', device=device)
         if params.enable_face_filter:
-            face_analyzer = self._get_shared_analyzer(params.face_model_name, lambda: self._create_face_analysis_instance(params.face_model_name))
+            face_analyzer = get_face_analyzer(params.face_model_name)
             if params.face_ref_img_path:
                 ref_img = cv2.imread(params.face_ref_img_path)
                 if ref_img is not None:
                     faces = face_analyzer.get(ref_img)
                     if faces: ref_emb = max(faces, key=lambda x: x.det_score).normed_embedding
-        person_detector = self._get_shared_analyzer(f"person_{params.person_detector_model}", lambda: PersonDetector(model=params.person_detector_model))
+        person_detector = get_person_detector(params.person_detector_model, device)
 
         masker = SubjectMasker(params, q, self.cancel_event, face_analyzer=face_analyzer,
                                reference_embedding=ref_emb, person_detector=person_detector,
@@ -1697,7 +1678,7 @@ class AppUI:
         
         previews = []
         for i, scene in enumerate(scenes):
-            q.put({"stage": "Pre-analyzing scenes", "total": len(scenes), "progress": i+1})
+            q.put({"stage": f"Pre-analyzing scene {i+1}/{len(scenes)}", "total": len(scenes), "progress": i})
             
             if not scene.best_seed_frame:
                 masker._select_best_seed_frame_in_scene(scene, str(output_dir))
@@ -1718,6 +1699,11 @@ class AppUI:
             scene.seed_result = {'bbox': bbox, 'details': details}
             
             mask = masker.get_mask_for_bbox(thumb_rgb, bbox) if bbox else None
+            if mask is not None:
+                h, w = mask.shape[:2]
+                area_pct = (np.sum(mask > 0) / (h * w)) * 100 if (h*w) > 0 else 0.0
+                scene.seed_result['details']['mask_area_pct'] = area_pct
+
             overlay_bgr = render_mask_overlay(cv2.cvtColor(thumb_rgb, cv2.COLOR_RGB2BGR), mask) if mask is not None else cv2.cvtColor(masker.draw_bbox(thumb_rgb, bbox), cv2.COLOR_RGB2BGR)
             
             caption = f"Scene {scene.shot_id} (Seed: {scene.best_seed_frame}) | {details.get('type', 'N/A')}"
@@ -1727,6 +1713,7 @@ class AppUI:
 
         scenes_as_dict = [asdict(s) for s in scenes]
         self._save_scene_seeds(scenes_as_dict, str(output_dir))
+        q.put({"stage": "Pre-analysis complete", "progress": len(scenes)})
 
         yield {
             self.components['unified_log']: "Pre-analysis complete.", self.components['unified_status']: f"{len(scenes)} scenes found.",
@@ -2009,6 +1996,7 @@ class AppUI:
         for s in scenes_list:
             if s['shot_id'] == selected_shot_id:
                 s['status'] = new_status
+                s['manual_status_change'] = True
                 scene_found = True
                 break
         
@@ -2017,6 +2005,32 @@ class AppUI:
             return scenes_list, self._get_scene_status_text(scenes_list), f"Scene {selected_shot_id} status set to {new_status}."
         else:
             return scenes_list, self._get_scene_status_text(scenes_list), f"Could not find scene {selected_shot_id}."
+
+    def apply_bulk_scene_filters(self, scenes, min_mask_area, min_face_sim, enable_face_filter, output_folder):
+        if not scenes:
+            return [], "No scenes to filter."
+
+        for scene in scenes:
+            if scene.get('manual_status_change'):
+                continue
+            
+            is_excluded = False
+            seed_result = scene.get('seed_result', {})
+            details = seed_result.get('details', {})
+            
+            mask_area = details.get('mask_area_pct', 101)
+            if mask_area < min_mask_area:
+                is_excluded = True
+
+            if enable_face_filter and not is_excluded:
+                face_sim = details.get('seed_face_sim', 1.01)
+                if face_sim < min_face_sim:
+                    is_excluded = True
+            
+            scene['status'] = 'excluded' if is_excluded else 'included'
+
+        self._save_scene_seeds(scenes, output_folder)
+        return scenes, self._get_scene_status_text(scenes)
 
     def apply_scene_overrides(self, scenes_list, selected_shot_id, prompt, prompt_type, box_th, text_th, output_folder, *ana_args):
         if selected_shot_id is None or not scenes_list:
@@ -2037,14 +2051,15 @@ class AppUI:
             params = AnalysisParameters.from_ui(**ui_args)
             
             face_analyzer, ref_emb, person_detector = None, None, None
+            device = "cuda" if self.cuda_available else "cpu"
             if params.enable_face_filter:
-                face_analyzer = self._get_shared_analyzer(params.face_model_name, lambda: self._create_face_analysis_instance(params.face_model_name))
+                face_analyzer = get_face_analyzer(params.face_model_name)
                 if params.face_ref_img_path:
                     ref_img = cv2.imread(params.face_ref_img_path)
                     if ref_img is not None:
                         faces = face_analyzer.get(ref_img)
                         if faces: ref_emb = max(faces, key=lambda x: x.det_score).normed_embedding
-            person_detector = self._get_shared_analyzer(f"person_{params.person_detector_model}", lambda: PersonDetector(model=params.person_detector_model))
+            person_detector = get_person_detector(params.person_detector_model, device)
 
             masker = SubjectMasker(params, Queue(), threading.Event(), face_analyzer=face_analyzer,
                                    reference_embedding=ref_emb, person_detector=person_detector,
@@ -2140,6 +2155,7 @@ class AppUI:
         return img[y1:y2, x1:x2]
 
 if __name__ == "__main__":
-    check_dependencies()
+    if not shutil.which("ffmpeg"):
+        raise RuntimeError("FFMPEG is not installed or not in the system's PATH.")
     AppUI().build_ui().launch()
 
