@@ -611,10 +611,11 @@ class SubjectMasker:
         if not frame_map_path.exists():
             thumb_files = sorted(list((output_dir / "thumbs").glob("frame_*.webp")),
                                  key=lambda p: int(re.search(r'frame_(\d+)', p.name).group(1)))
-            return {int(re.search(r'frame_(\d+)', f.name).group(1)): f.name.replace('.webp', '.png') for f in thumb_files}
+            # This fallback is limited; it assumes sequential numbers match original frame numbers if map is missing.
+            return {int(re.search(r'frame_(\d+)', f.name).group(1)): f.name for f in thumb_files}
         try:
             with open(frame_map_path, 'r') as f: frame_map_list = json.load(f)
-            return {orig_num: f"frame_{i+1:06d}.png" for i, orig_num in enumerate(sorted(frame_map_list))}
+            return {orig_num: f"frame_{i+1:06d}.webp" for i, orig_num in enumerate(sorted(frame_map_list))}
         except Exception as e:
             logger.error(f"Failed to parse frame_map.json. Using fallback.", exc_info=True)
             return {}
@@ -1067,11 +1068,12 @@ class AnalysisPipeline(Pipeline):
         if not frame_map_path.exists():
             thumb_files = sorted(list((self.output_dir / "thumbs").glob("frame_*.webp")),
                                  key=lambda p: int(re.search(r'frame_(\d+)', p.name).group(1)))
-            return {int(re.search(r'frame_(\d+)', f.name).group(1)): f.name.replace('.webp', '.png') for f in thumb_files}
+            # Fallback cannot know original frame numbers. This is a limitation.
+            return {int(re.search(r'frame_(\d+)', f.name).group(1)): f.name for f in thumb_files}
         try:
             with open(frame_map_path, 'r') as f: frame_map_list = json.load(f)
             # The filenames are based on ffmpeg's sequential output, not original frame numbers
-            return {orig_num: f"frame_{i+1:06d}.png" for i, orig_num in enumerate(sorted(frame_map_list))}
+            return {orig_num: f"frame_{i+1:06d}.webp" for i, orig_num in enumerate(sorted(frame_map_list))}
         except Exception as e:
             logger.error(f"Failed to parse frame_map.json. Using fallback.", exc_info=True)
             return {}
@@ -1484,33 +1486,34 @@ class AppUI:
             outputs=[c['seeding_preview_gallery'], c['scenes_state'], c['unified_status']]
         )
         
-        include_exclude_inputs = [c['scenes_state'], c['selected_scene_id_state']]
+        include_exclude_inputs = [c['scenes_state'], c['selected_scene_id_state'], c['frames_folder_input']]
         include_exclude_outputs = [c['scenes_state'], c['scene_filter_status'], c['unified_status']]
         c['scene_include_button'].click(
-            lambda s, sid: self._toggle_scene_status(s, sid, 'included'), 
+            lambda s, sid, folder: self._toggle_scene_status(s, sid, 'included', folder), 
             include_exclude_inputs, include_exclude_outputs
         )
         c['scene_exclude_button'].click(
-            lambda s, sid: self._toggle_scene_status(s, sid, 'excluded'), 
+            lambda s, sid, folder: self._toggle_scene_status(s, sid, 'excluded', folder), 
             include_exclude_inputs, include_exclude_outputs
         )
 
     def _setup_bulk_scene_handlers(self):
         c = self.components
         
-        def bulk_toggle(scenes, new_status):
+        def bulk_toggle(scenes, new_status, output_folder):
             if not scenes: return [], "No scenes to update."
             for s in scenes: s['status'] = new_status
+            self._save_scene_seeds(scenes, output_folder)
             status_text = self._get_scene_status_text(scenes)
             return scenes, status_text
 
         c['bulk_include_all_button'].click(
-            lambda s: bulk_toggle(s, 'included'),
-            [c['scenes_state']], [c['scenes_state'], c['scene_filter_status']]
+            lambda s, folder: bulk_toggle(s, 'included', folder),
+            [c['scenes_state'], c['frames_folder_input']], [c['scenes_state'], c['scene_filter_status']]
         )
         c['bulk_exclude_all_button'].click(
-            lambda s: bulk_toggle(s, 'excluded'),
-            [c['scenes_state']], [c['scenes_state'], c['scene_filter_status']]
+            lambda s, folder: bulk_toggle(s, 'excluded', folder),
+            [c['scenes_state'], c['frames_folder_input']], [c['scenes_state'], c['scene_filter_status']]
         )
         # Placeholder for bulk filter button logic
         # c['apply_bulk_filters_button'].click(...)
@@ -1680,10 +1683,13 @@ class AppUI:
                 continue
             
             thumb_path = output_dir / "thumbs" / f"{Path(fname).stem}.webp"
-            thumb_bgr = None
-            if thumb_path.exists():
+            thumb_bgr = self.thumbnail_cache.get(thumb_path)
+            if thumb_bgr is None and thumb_path.exists():
                 with Image.open(thumb_path) as pil_img:
                     thumb_bgr = pil_to_bgr(pil_img.convert("RGB"))
+                    if thumb_bgr is not None:
+                        self.thumbnail_cache[thumb_path] = thumb_bgr
+            
             if thumb_bgr is None:
                 logger.warning(f"Could not load thumbnail for best_seed_frame {scene.best_seed_frame} at path {thumb_path}")
                 continue
@@ -1974,7 +1980,7 @@ class AppUI:
         num_included = sum(1 for s in scenes_list if s['status'] == 'included')
         return f"{num_included}/{len(scenes_list)} scenes included for propagation."
 
-    def _toggle_scene_status(self, scenes_list, selected_shot_id, new_status):
+    def _toggle_scene_status(self, scenes_list, selected_shot_id, new_status, output_folder):
         if selected_shot_id is None or not scenes_list:
             return scenes_list, self._get_scene_status_text(scenes_list), "No scene selected."
         
@@ -1986,6 +1992,7 @@ class AppUI:
                 break
         
         if scene_found:
+            self._save_scene_seeds(scenes_list, output_folder)
             return scenes_list, self._get_scene_status_text(scenes_list), f"Scene {selected_shot_id} status set to {new_status}."
         else:
             return scenes_list, self._get_scene_status_text(scenes_list), f"Could not find scene {selected_shot_id}."
@@ -2123,5 +2130,6 @@ class AppUI:
 if __name__ == "__main__":
     check_dependencies()
     AppUI().build_ui().launch()
+
 
 
