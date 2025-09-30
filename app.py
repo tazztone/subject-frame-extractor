@@ -251,6 +251,24 @@ def bgr_to_pil(image_bgr: np.ndarray) -> Image.Image:
 def pil_to_bgr(image_pil: Image.Image) -> np.ndarray:
     return cv2.cvtColor(np.array(image_pil), cv2.COLOR_RGB2BGR)
 
+def create_frame_map(output_dir: Path):
+    """Loads or creates a map from original frame number to sequential filename."""
+    logger.info("Loading frame map...")
+    frame_map_path = output_dir / "frame_map.json"
+    if not frame_map_path.exists():
+        thumb_files = sorted(list((output_dir / "thumbs").glob("frame_*.webp")),
+                             key=lambda p: int(re.search(r'frame_(\d+)', p.name).group(1)))
+        # Fallback cannot know original frame numbers if map is missing, but this assumes sequential.
+        return {int(re.search(r'frame_(\d+)', f.name).group(1)): f.name for f in thumb_files}
+    try:
+        with open(frame_map_path, 'r') as f:
+            frame_map_list = json.load(f)
+        # The filenames are based on ffmpeg's sequential output, not original frame numbers
+        return {orig_num: f"frame_{i+1:06d}.webp" for i, orig_num in enumerate(sorted(frame_map_list))}
+    except Exception as e:
+        logger.error(f"Failed to parse frame_map.json. Using fallback.", exc_info=True)
+        return {}
+
 class ThumbnailManager:
     """Manages loading and caching of thumbnails with an LRU policy."""
     def __init__(self, max_size=200):
@@ -819,19 +837,7 @@ class SubjectMasker:
         return mask_metadata
 
     def _create_frame_map(self, frames_dir):
-        logger.info("Loading frame map...")
-        output_dir = Path(frames_dir)
-        frame_map_path = output_dir / "frame_map.json"
-        if not frame_map_path.exists():
-            thumb_files = sorted(list((output_dir / "thumbs").glob("frame_*.webp")),
-                                 key=lambda p: int(re.search(r'frame_(\d+)', p.name).group(1)))
-            return {int(re.search(r'frame_(\d+)', f.name).group(1)): f.name for f in thumb_files}
-        try:
-            with open(frame_map_path, 'r') as f: frame_map_list = json.load(f)
-            return {orig_num: f"frame_{i+1:06d}.webp" for i, orig_num in enumerate(sorted(frame_map_list))}
-        except Exception as e:
-            logger.error(f"Failed to parse frame_map.json. Using fallback.", exc_info=True)
-            return {}
+        return create_frame_map(Path(frames_dir))
 
     def _load_shot_frames(self, frames_dir, start, end):
         frames = []
@@ -1043,6 +1049,9 @@ class AnalysisPipeline(Pipeline):
     def __init__(self, params: AnalysisParameters, progress_queue: Queue, cancel_event: threading.Event, thumbnail_manager=None):
         super().__init__(params, progress_queue, cancel_event)
         self.output_dir = Path(self.params.output_folder)
+        self.thumb_dir = self.output_dir / "thumbs"
+        self.masks_dir = self.output_dir / "masks"
+        self.frame_map_path = self.output_dir / "frame_map.json"
         self.metadata_path = self.output_dir / "metadata.jsonl"
         self.write_lock = threading.Lock(); self.gpu_lock = threading.Lock()
         self.face_analyzer = None; self.reference_embedding = None; self.mask_metadata = {}
@@ -1101,18 +1110,7 @@ class AnalysisPipeline(Pipeline):
             self.logger.remove_handler(run_log_handler)
     
     def _create_frame_map(self):
-        logger.info("Loading frame map...")
-        frame_map_path = self.output_dir / "frame_map.json"
-        if not frame_map_path.exists():
-            thumb_files = sorted(list((self.output_dir / "thumbs").glob("frame_*.webp")),
-                                 key=lambda p: int(re.search(r'frame_(\d+)', p.name).group(1)))
-            return {int(re.search(r'frame_(\d+)', f.name).group(1)): f.name for f in thumb_files}
-        try:
-            with open(frame_map_path, 'r') as f: frame_map_list = json.load(f)
-            return {orig_num: f"frame_{i+1:06d}.webp" for i, orig_num in enumerate(sorted(frame_map_list))}
-        except Exception as e:
-            logger.error(f"Failed to parse frame_map.json. Using fallback.", exc_info=True)
-            return {}
+        return create_frame_map(self.output_dir)
 
     def _initialize_face_analyzer(self):
         if not FaceAnalysis: raise ImportError("insightface library not installed.")
@@ -1150,7 +1148,7 @@ class AnalysisPipeline(Pipeline):
         }
         
         image_files_to_process = [
-            self.output_dir / "thumbs" / f"{Path(frame_map[fn]).stem}.webp" for fn in sorted(list(all_frame_nums_to_process))
+            self.thumb_dir / f"{Path(frame_map[fn]).stem}.webp" for fn in sorted(list(all_frame_nums_to_process))
         ]
         
         self.progress_queue.put({"total": len(image_files_to_process), "stage": "Analysis"})
@@ -1180,7 +1178,7 @@ class AnalysisPipeline(Pipeline):
             if mask_meta.get("mask_path"):
                 mask_full_path = Path(mask_meta["mask_path"])
                 if not mask_full_path.is_absolute():
-                     mask_full_path = self.output_dir / "masks" / mask_full_path.name
+                     mask_full_path = self.masks_dir / mask_full_path.name
                 if mask_full_path.exists():
                     mask_full = cv2.imread(str(mask_full_path), cv2.IMREAD_GRAYSCALE)
                     if mask_full is not None:
@@ -1622,7 +1620,7 @@ class AppUI:
     def execute_extraction(self, params, q):
         yield {self.components['unified_log']: "", self.components['unified_status']: "Starting extraction..."}
         pipeline = ExtractionPipeline(params, q, self.cancel_event)
-        yield from self._run_task(pipeline.run)
+        yield from self._run_task(pipeline.run, q)
         result = self.last_task_result
         if result.get("done"):
             yield {
@@ -1741,7 +1739,7 @@ class AppUI:
         yield {self.components['unified_log']: "", self.components['unified_status']: f"Starting propagation on {len(scenes_to_process)} scenes..."}
         
         pipeline = AnalysisPipeline(params, q, self.cancel_event, thumbnail_manager=self.thumbnail_manager)
-        yield from self._run_task(lambda: pipeline.run_full_analysis(scenes_to_process))
+        yield from self._run_task(lambda: pipeline.run_full_analysis(scenes_to_process), q)
         
         result = self.last_task_result
         if result.get("done"):
@@ -1753,8 +1751,7 @@ class AppUI:
                 self.components['filtering_tab']: gr.update(interactive=True)
             }
 
-    def _run_task(self, task_func):
-        progress_queue = task_func.__self__.progress_queue
+    def _run_task(self, task_func, progress_queue):
         log_buffer, processed, total, stage = [], 0, 1, "Initializing"
         start_time, last_yield = time.time(), 0.0
 
@@ -1888,7 +1885,9 @@ class AppUI:
         frames_to_show = rejected if gallery_view == "Rejected Frames" else kept
         preview_images = []
         if output_dir:
-            thumb_dir = Path(output_dir) / "thumbs"
+            output_path = Path(output_dir)
+            thumb_dir = output_path / "thumbs"
+            masks_dir = output_path / "masks"
             for f_meta in frames_to_show[:100]:
                 thumb_path = thumb_dir / f"{Path(f_meta['filename']).stem}.webp"
                 caption = f"Reasons: {', '.join(per_frame_reasons.get(f_meta['filename'], []))}" if gallery_view == "Rejected Frames" else ""
@@ -1899,7 +1898,7 @@ class AppUI:
                 thumb_rgb_np = cv2.cvtColor(thumb_bgr, cv2.COLOR_BGR2RGB)
 
                 if show_overlay and not f_meta.get("mask_empty", True) and (mask_name := f_meta.get("mask_path")):
-                    mask_path = Path(output_dir) / "masks" / mask_name
+                    mask_path = masks_dir / mask_name
                     if mask_path.exists():
                         mask_gray = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
                         thumb_overlay_bgr = render_mask_overlay(thumb_bgr, mask_gray, float(overlay_alpha))
@@ -2136,3 +2135,4 @@ class AppUI:
 if __name__ == "__main__":
     check_dependencies()
     AppUI().build_ui().launch()
+
