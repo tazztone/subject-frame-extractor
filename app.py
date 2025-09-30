@@ -198,21 +198,23 @@ def download_model(url, dest_path, description, min_size=1_000_000):
         logger.error(f"Failed to download {description}", exc_info=True, extra={'url': url})
         raise RuntimeError(f"Failed to download required model: {description}") from e
 
-def render_mask_overlay(frame_bgr: np.ndarray, mask_gray: np.ndarray, alpha: float = 0.5) -> np.ndarray:
+def render_mask_overlay(frame_rgb: np.ndarray, mask_gray: np.ndarray, alpha: float = 0.5) -> np.ndarray:
     if mask_gray is None:
-        return frame_bgr
-    h, w = frame_bgr.shape[:2]
+        return frame_rgb
+    h, w = frame_rgb.shape[:2]
     if mask_gray.shape[:2] != (h, w):
         mask_gray = cv2.resize(mask_gray, (w, h), interpolation=cv2.INTER_NEAREST)
     m = (mask_gray > 128)
-    red_layer = np.zeros_like(frame_bgr, dtype=np.uint8)
-    red_layer[..., 2] = 255
-    blended = cv2.addWeighted(frame_bgr, 1.0 - alpha, red_layer, alpha, 0.0)
+    
+    red_layer = np.zeros_like(frame_rgb, dtype=np.uint8)
+    red_layer[..., 0] = 255  # Red channel for RGB
+    
+    blended = cv2.addWeighted(frame_rgb, 1.0 - alpha, red_layer, alpha, 0.0)
     if m.ndim == 2: m = m[..., np.newaxis]
     elif m.ndim == 3 and m.shape[2] != 1:
         logger.warning(f"Unexpected mask shape. Skipping overlay.", extra={'shape': m.shape})
-        return frame_bgr
-    out = np.where(m, blended, frame_bgr)
+        return frame_rgb
+    out = np.where(m, blended, frame_rgb)
     return out
 
 @contextmanager
@@ -914,12 +916,10 @@ class SubjectMasker:
         """Public method to get a SAM mask for a bounding box."""
         return self.seed_selector._sam2_mask_for_bbox(frame_rgb_small, bbox_xywh)
         
-    def draw_bbox(self, img_rgb, xywh, color=(0, 0, 255), thickness=2):
+    def draw_bbox(self, img_rgb, xywh, color=(255, 0, 0), thickness=2):
         x, y, w, h = map(int, xywh or [0, 0, 0, 0])
         img_out = img_rgb.copy()
-        # Convert color for OpenCV
-        bgr_color = (color[2], color[1], color[0])
-        cv2.rectangle(img_out, (x, y), (x + w, y + h), bgr_color, thickness)
+        cv2.rectangle(img_out, (x, y), (x + w, y + h), color, thickness)
         return img_out
 
 # --- Backend Analysis Pipeline ---
@@ -1705,10 +1705,10 @@ class AppUI:
                 area_pct = (np.sum(mask > 0) / (h * w)) * 100 if (h*w) > 0 else 0.0
                 scene.seed_result['details']['mask_area_pct'] = area_pct
 
-            overlay_bgr = render_mask_overlay(cv2.cvtColor(thumb_rgb, cv2.COLOR_RGB2BGR), mask) if mask is not None else cv2.cvtColor(masker.draw_bbox(thumb_rgb, bbox), cv2.COLOR_RGB2BGR)
+            overlay_rgb = render_mask_overlay(thumb_rgb, mask) if mask is not None else masker.draw_bbox(thumb_rgb, bbox)
             
             caption = f"Scene {scene.shot_id} (Seed: {scene.best_seed_frame}) | {details.get('type', 'N/A')}"
-            previews.append((cv2.cvtColor(overlay_bgr, cv2.COLOR_BGR2RGB), caption))
+            previews.append((overlay_rgb, caption))
             scene.preview_path = "dummy" 
             if scene.status == 'pending': scene.status = 'included'
 
@@ -1916,9 +1916,8 @@ class AppUI:
                     mask_path = masks_dir / mask_name
                     if mask_path.exists():
                         mask_gray = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
-                        thumb_bgr_np = cv2.cvtColor(thumb_rgb_np, cv2.COLOR_RGB2BGR)
-                        thumb_overlay_bgr = render_mask_overlay(thumb_bgr_np, mask_gray, float(overlay_alpha))
-                        preview_images.append((cv2.cvtColor(thumb_overlay_bgr, cv2.COLOR_BGR2RGB), caption))
+                        thumb_overlay_rgb = render_mask_overlay(thumb_rgb_np, mask_gray, float(overlay_alpha))
+                        preview_images.append((thumb_overlay_rgb, caption))
                     else: preview_images.append((thumb_rgb_np, caption))
                 else: preview_images.append((thumb_rgb_np, caption))
 
@@ -2124,10 +2123,10 @@ class AppUI:
             details = scene_dict.get('seed_result', {}).get('details', {})
             
             mask = masker.get_mask_for_bbox(thumb_rgb, bbox) if bbox else None
-            overlay_bgr = render_mask_overlay(cv2.cvtColor(thumb_rgb, cv2.COLOR_RGB2BGR), mask) if mask is not None else cv2.cvtColor(masker.draw_bbox(thumb_rgb, bbox), cv2.COLOR_RGB2BGR)
+            overlay_rgb = render_mask_overlay(thumb_rgb, mask) if mask is not None else masker.draw_bbox(thumb_rgb, bbox)
             
             caption = f"Scene {scene_dict['shot_id']} (Seed: {scene_dict['best_seed_frame']}) | {details.get('type', 'N/A')}"
-            previews.append((cv2.cvtColor(overlay_bgr, cv2.COLOR_BGR2RGB), caption))
+            previews.append((overlay_rgb, caption))
         return previews
 
     def _parse_ar(self, s: str) -> tuple[int, int]:
