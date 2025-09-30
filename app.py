@@ -1701,7 +1701,7 @@ class AppUI:
             overlay = render_mask_overlay(thumb_bgr, mask) if mask is not None else masker._draw_bbox(thumb_bgr, bbox)
             
             caption = f"Scene {scene.shot_id} (Seed: {scene.best_seed_frame}) | {details.get('type', 'N/A')}"
-            previews.append((cv2.cvtColor(overlay, cv2.COLOR_BGR_RGB), caption))
+            previews.append((cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB), caption))
             scene.preview_path = "dummy" 
             if scene.status == 'pending': scene.status = 'included'
 
@@ -2076,7 +2076,7 @@ class AppUI:
             overlay = render_mask_overlay(thumb_bgr, mask) if mask is not None else masker._draw_bbox(thumb_bgr, bbox)
             
             caption = f"Scene {scene_dict['shot_id']} (Seed: {scene_dict['best_seed_frame']}) | {details.get('type', 'N/A')}"
-            previews.append((cv2.cvtColor(overlay, cv2.COLOR_BGR_RGB), caption))
+            previews.append((cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB), caption))
         return previews
 
     def _parse_ar(self, s: str) -> tuple[int, int]:
