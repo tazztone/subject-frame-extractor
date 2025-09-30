@@ -13,7 +13,7 @@ import time
 import subprocess
 import gc
 import math
-from collections import Counter, defaultdict
+from collections import Counter, defaultdict, OrderedDict
 from pathlib import Path
 from datetime import datetime
 from queue import Queue, Empty
@@ -127,6 +127,8 @@ class Config:
         self.settings = self.load_config()
         for key, value in self.settings.items():
             setattr(self, key, value)
+        
+        self.thumbnail_cache_size = self.settings.get('thumbnail_cache_size', 200)
         
         self.GROUNDING_DINO_CONFIG = self.BASE_DIR / self.model_paths['grounding_dino_config']
         self.GROUNDING_DINO_CKPT = self.DIRS['models'] / Path(self.model_paths['grounding_dino_checkpoint']).name
@@ -248,6 +250,38 @@ def bgr_to_pil(image_bgr: np.ndarray) -> Image.Image:
 
 def pil_to_bgr(image_pil: Image.Image) -> np.ndarray:
     return cv2.cvtColor(np.array(image_pil), cv2.COLOR_RGB2BGR)
+
+class ThumbnailManager:
+    """Manages loading and caching of thumbnails with an LRU policy."""
+    def __init__(self, max_size=200):
+        self.cache = OrderedDict()
+        self.max_size = max_size
+        logger.info(f"ThumbnailManager initialized with cache size {max_size}")
+
+    def get(self, thumb_path: Path):
+        """Retrieves a thumbnail from cache or loads it from disk."""
+        if not isinstance(thumb_path, Path):
+            thumb_path = Path(thumb_path)
+            
+        if thumb_path in self.cache:
+            self.cache.move_to_end(thumb_path)
+            return self.cache[thumb_path]
+        
+        if not thumb_path.exists():
+            return None
+
+        try:
+            with Image.open(thumb_path) as pil_thumb:
+                thumb_img = pil_to_bgr(pil_thumb.convert("RGB"))
+            
+            self.cache[thumb_path] = thumb_img
+            if len(self.cache) > self.max_size:
+                self.cache.popitem(last=False)
+            
+            return thumb_img
+        except Exception as e:
+            logger.warning(f"Failed to load thumbnail", extra={'path': str(thumb_path), 'error': e})
+            return None
 
 # --- Person Detector Wrapper ---
 class PersonDetector:
@@ -409,7 +443,7 @@ class AnalysisParameters:
         """
         Creates a hash of parameters and scene seeds to detect changes for resume logic.
         """
-        data_to_hash = json.dumps(asdict(self), sort_keys=True)
+        data_to_hash = json.dumps(_to_json_safe(asdict(self)), sort_keys=True)
         scene_seeds_path = output_dir / "scene_seeds.json"
         if scene_seeds_path.exists():
             data_to_hash += scene_seeds_path.read_text()
@@ -422,17 +456,17 @@ class MaskingResult:
     seed_face_sim: float | None = None; mask_area_pct: float | None = None
     mask_empty: bool = True; error: str | None = None
 
-class SubjectMasker:
-    def __init__(self, params, progress_queue, cancel_event, frame_map=None, face_analyzer=None, reference_embedding=None, person_detector=None, thumbnail_cache=None, niqe_metric=None):
-        self.params = params; self.progress_queue = progress_queue; self.cancel_event = cancel_event
-        self.frame_map = frame_map; self.face_analyzer = face_analyzer
-        self.reference_embedding = reference_embedding; self.person_detector = person_detector
-        self.tracker = None; self.mask_dir = None; self.shots = []
-        self._gdino = None
-        self._sam2_img = None
+
+class SeedSelector:
+    """Handles the logic for selecting the initial seed (bounding box) for a scene."""
+    def __init__(self, params, face_analyzer, reference_embedding, person_detector, tracker, gdino_model):
+        self.params = params
+        self.face_analyzer = face_analyzer
+        self.reference_embedding = reference_embedding
+        self.person_detector = person_detector
+        self.tracker = tracker
+        self._gdino = gdino_model
         self._device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.thumbnail_cache = thumbnail_cache if thumbnail_cache is not None else {}
-        self.niqe_metric = niqe_metric
 
     def _load_image_from_array(self, image_bgr: np.ndarray):
         image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
@@ -443,28 +477,8 @@ class SubjectMasker:
         image_tensor = transform(image_rgb)
         return image_rgb, image_tensor
 
-    def _init_grounder(self):
-        if self._gdino is not None: return True
-        try:
-            ckpt_path = Path(self.params.gdino_checkpoint_path)
-            if not ckpt_path.is_absolute():
-                ckpt_path = config.DIRS['models'] / ckpt_path.name
-            download_model(
-                "https://github.com/IDEA-Research/GroundingDINO/releases/download/v0.1.0-alpha/groundingdino_swint_ogc.pth",
-                ckpt_path, "GroundingDINO Swin-T model", min_size=500_000_000
-            )
-            self._gdino = gdino_load_model(
-                model_config_path=self.params.gdino_config_path, model_checkpoint_path=str(ckpt_path), device=self._device,
-            )
-            logger.info("Grounding DINO model loaded.", extra={'model_path': str(ckpt_path)})
-            return True
-        except Exception as e:
-            logger.warning(f"Grounding DINO unavailable.", exc_info=True)
-            self._gdino = None
-            return False
-
     def _ground_first_frame_xywh(self, frame_bgr_small: np.ndarray, text: str, box_th: float, text_th: float):
-        if not self._init_grounder(): return None, {}
+        if not self._gdino: return None, {}
         image_source, image_tensor = self._load_image_from_array(frame_bgr_small)
         h, w = image_source.shape[:2]
 
@@ -488,6 +502,16 @@ class SubjectMasker:
         details = {"type": "text_prompt", "label": labels[idx] if labels else "", "conf": float(conf[idx])}
         return xywh, details
 
+    def _sam2_mask_for_bbox(self, frame_bgr_small, bbox_xywh):
+        if not self.tracker or bbox_xywh is None: return None
+        try:
+            outputs = self.tracker.initialize(bgr_to_pil(frame_bgr_small), None, bbox=bbox_xywh)
+            mask = outputs.get('pred_mask')
+            return (mask * 255).astype(np.uint8) if mask is not None else None
+        except Exception as e:
+            logger.warning(f"DAM4SAM mask generation failed.", extra={'error': e})
+            return None
+
     def _ground_first_frame_mask_xywh(self, frame_bgr_small: np.ndarray, text: str, box_th: float, text_th: float):
         xywh, details = self._ground_first_frame_xywh(frame_bgr_small, text, box_th, text_th)
         if xywh is None: return None, details
@@ -500,152 +524,11 @@ class SubjectMasker:
         x1, x2, y1, y2 = xs.min(), xs.max()+1, ys.min(), ys.max()+1
         return [int(x1), int(y1), int(x2 - x1), int(y2 - y1)], {**details, "type": "text_prompt_mask"}
 
-    def run_propagation(self, frames_dir: str, scenes_to_process: list[Scene]) -> dict[str, dict]:
-        self.mask_dir = Path(frames_dir) / "masks"
-        self.mask_dir.mkdir(exist_ok=True)
-        logger.info("Starting subject mask propagation...")
-        
-        if not self._initialize_tracker():
-            logger.error("Could not initialize tracker; skipping masking.")
-            return {}
-        
-        # Ensure framemap is loaded for seed frame lookup
-        self.frame_map = self.frame_map or self._create_frame_map(frames_dir)
-
-        mask_metadata = {}
-        total_scenes = len(scenes_to_process)
-        for i, scene in enumerate(scenes_to_process):
-            with safe_resource_cleanup():
-                if self.cancel_event.is_set(): break
-                self.progress_queue.put({"stage": f"Masking Scene {i+1}/{total_scenes}"})
-                shot_context = {'shot_id': scene.shot_id, 'start_frame': scene.start_frame, 'end_frame': scene.end_frame}
-                logger.info(f"Masking shot", extra=shot_context)
-                
-                # Load seed frame first to get dimensions for propagation
-                seed_frame_num = scene.best_seed_frame
-                seed_fname = self.frame_map.get(seed_frame_num)
-                if not seed_fname:
-                    logger.warning(f"Seed frame {seed_frame_num} not in framemap for shot {scene.shot_id}, skipping.")
-                    continue
-
-                thumb_dir = Path(frames_dir) / "thumbs"
-                seed_thumb_path = thumb_dir / f"{Path(seed_fname).stem}.webp"
-                if not seed_thumb_path.exists():
-                     logger.warning(f"Seed thumbnail {seed_thumb_path} not found for shot {scene.shot_id}, skipping.")
-                     continue
-                
-                shot_frames_data = self._load_shot_frames(frames_dir, scene.start_frame, scene.end_frame)
-                if not shot_frames_data: continue
-
-                frame_numbers, small_images, dims = zip(*shot_frames_data)
-                
-                try:
-                    seed_idx_in_shot = frame_numbers.index(seed_frame_num)
-                except ValueError:
-                    logger.warning(f"Seed frame {seed_frame_num} not found in loaded shot frames for {scene.shot_id}, skipping.")
-                    continue
-                
-                bbox = scene.seed_result.get('bbox')
-                seed_details = scene.seed_result.get('details', {})
-
-                if bbox is None:
-                    for fn in frame_numbers:
-                        if (fname := self.frame_map.get(fn)):
-                            mask_metadata[fname] = asdict(MaskingResult(error="Subject not found", shot_id=scene.shot_id))
-                    continue
-                
-                masks, areas, empties, errors = self._propagate_masks(small_images, seed_idx_in_shot, bbox)
-
-                for i, (original_fn, _, (h, w)) in enumerate(shot_frames_data):
-                    if not (frame_fname := self.frame_map.get(original_fn)): continue
-                    mask_path = self.mask_dir / f"{Path(frame_fname).stem}.png"
-                    result_args = {
-                        "shot_id": scene.shot_id, "seed_type": seed_details.get('type'),
-                        "seed_face_sim": seed_details.get('seed_face_sim'), "mask_area_pct": areas[i],
-                        "mask_empty": empties[i], "error": errors[i]
-                    }
-                    if masks[i] is not None and np.any(masks[i]):
-                        mask_full_res = cv2.resize(masks[i], (w, h), interpolation=cv2.INTER_NEAREST)
-                        if mask_full_res.ndim == 3: mask_full_res = mask_full_res[:, :, 0]
-                        cv2.imwrite(str(mask_path), mask_full_res)
-                        mask_metadata[frame_fname] = asdict(MaskingResult(mask_path=str(mask_path), **result_args))
-                    else:
-                        mask_metadata[frame_fname] = asdict(MaskingResult(mask_path=None, **result_args))
-        logger.success("Subject masking complete.")
-        return mask_metadata
-
-    def _initialize_tracker(self):
-        if not all([DAM4SAMTracker, torch, torch.cuda.is_available()]):
-            logger.error("DAM4SAM dependencies or CUDA not available.")
-            return False
-        if self.tracker: return True
-        try:
-            model_name = self.params.dam4sam_model_name
-            logger.info(f"Initializing DAM4SAM tracker", extra={'model': model_name})
-            model_urls = {
-                "sam21pp-T": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt",
-                "sam21pp-S": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_small.pt",
-                "sam21pp-B+": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_base_plus.pt",
-                "sam21pp-L": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt"
-            }
-            checkpoint_path = config.DIRS['models'] / Path(model_urls[model_name]).name
-            download_model(model_urls[model_name], checkpoint_path, f"{model_name} model", 100_000_000)
-            
-            from DAM4SAM.utils.utils import determine_tracker
-            actual_path, _ = determine_tracker(model_name)
-            if not Path(actual_path).exists():
-                Path(actual_path).parent.mkdir(exist_ok=True, parents=True)
-                shutil.copy(checkpoint_path, actual_path)
-
-            self.tracker = DAM4SAMTracker(model_name)
-            logger.success("DAM4SAM tracker initialized.")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to initialize DAM4SAM tracker", exc_info=True)
-            return False
-
-    def _create_frame_map(self, frames_dir):
-        logger.info("Loading frame map...")
-        output_dir = Path(frames_dir)
-        frame_map_path = output_dir / "frame_map.json"
-        if not frame_map_path.exists():
-            thumb_files = sorted(list((output_dir / "thumbs").glob("frame_*.webp")),
-                                 key=lambda p: int(re.search(r'frame_(\d+)', p.name).group(1)))
-            # This fallback is limited; it assumes sequential numbers match original frame numbers if map is missing.
-            return {int(re.search(r'frame_(\d+)', f.name).group(1)): f.name for f in thumb_files}
-        try:
-            with open(frame_map_path, 'r') as f: frame_map_list = json.load(f)
-            return {orig_num: f"frame_{i+1:06d}.webp" for i, orig_num in enumerate(sorted(frame_map_list))}
-        except Exception as e:
-            logger.error(f"Failed to parse frame_map.json. Using fallback.", exc_info=True)
-            return {}
-
-    def _load_shot_frames(self, frames_dir, start, end):
-        frames = []
-        if not self.frame_map: self.frame_map = self._create_frame_map(frames_dir)
-
-        thumb_dir = Path(frames_dir) / "thumbs"
-        for fn in sorted(fn for fn in self.frame_map if start <= fn < end):
-            thumb_p = thumb_dir / f"{Path(self.frame_map[fn]).stem}.webp"
-            if not thumb_p.exists(): continue
-            
-            thumb_img = self.thumbnail_cache.get(thumb_p)
-            if thumb_img is None:
-                if thumb_p.exists():
-                    with Image.open(thumb_p) as pil_thumb:
-                        thumb_img = pil_to_bgr(pil_thumb.convert("RGB"))
-                    if thumb_img is not None: self.thumbnail_cache[thumb_p] = thumb_img
-            if thumb_img is None: continue
-            
-            h, w = thumb_img.shape[:2] # Note: this is thumb dimension, which is fine for propagation.
-            frames.append((fn, thumb_img, (h, w)))
-        return frames
-
     def _seed_identity(self, frame, current_params=None):
         p = self.params if current_params is None else current_params
         
         prompt_text = getattr(p, "text_prompt", "")
-        if isinstance(current_params, dict): # Handle overrides from scene_config
+        if isinstance(current_params, dict):
             prompt_text = current_params.get('text_prompt', prompt_text)
 
         if prompt_text:
@@ -749,8 +632,17 @@ class SubjectMasker:
         new_w = min(W, w * 4.0); new_h = min(H, h * 7.0)
         new_x = max(0, cx - new_w / 2); new_y = max(0, y - h * 0.75)
         return [int(v) for v in [new_x, new_y, min(new_w, W-new_x), min(new_h, H-new_y)]]
-    
-    def _propagate_masks(self, shot_frames, seed_idx, bbox_xywh):
+
+class MaskPropagator:
+    """Handles propagating a mask from a seed frame throughout a scene."""
+    def __init__(self, params, tracker, cancel_event, progress_queue):
+        self.params = params
+        self.tracker = tracker
+        self.cancel_event = cancel_event
+        self.progress_queue = progress_queue
+        self._device = "cuda" if torch.cuda.is_available() else "cpu"
+        
+    def propagate(self, shot_frames, seed_idx, bbox_xywh):
         if not self.tracker or not shot_frames:
             err_msg = "Tracker not initialized" if not self.tracker else "No frames"
             shape = shot_frames[0].shape[:2] if shot_frames else (100, 100)
@@ -793,21 +685,167 @@ class SubjectMasker:
             error_msg = f"Propagation failed: {e}"
             return ([np.zeros((h, w), np.uint8)] * len(shot_frames), [0.0] * len(shot_frames), [True] * len(shot_frames), [error_msg] * len(shot_frames))
 
-    def _draw_bbox(self, img_bgr, xywh, color=(0, 0, 255), thickness=2):
-        x, y, w, h = map(int, xywh or [0, 0, 0, 0])
-        img_out = img_bgr.copy()
-        cv2.rectangle(img_out, (x, y), (x + w, y + h), color, thickness)
-        return img_out
+class SubjectMasker:
+    """Orchestrates subject seeding and mask propagation for video analysis."""
+    def __init__(self, params, progress_queue, cancel_event, frame_map=None, face_analyzer=None, reference_embedding=None, person_detector=None, thumbnail_manager=None, niqe_metric=None):
+        self.params = params; self.progress_queue = progress_queue; self.cancel_event = cancel_event
+        self.frame_map = frame_map; self.face_analyzer = face_analyzer
+        self.reference_embedding = reference_embedding; self.person_detector = person_detector
+        self.tracker = None; self.mask_dir = None; self.shots = []
+        self._gdino = None
+        self._sam2_img = None
+        self._device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.thumbnail_manager = thumbnail_manager if thumbnail_manager is not None else ThumbnailManager()
+        self.niqe_metric = niqe_metric
+        
+        # Initialize sub-components
+        self._initialize_models()
+        self.seed_selector = SeedSelector(params, face_analyzer, reference_embedding, person_detector, self.tracker, self._gdino)
+        self.mask_propagator = MaskPropagator(params, self.tracker, cancel_event, progress_queue)
 
-    def _sam2_mask_for_bbox(self, frame_bgr_small, bbox_xywh):
-        if not self.tracker or bbox_xywh is None: return None
+    def _initialize_models(self):
+        self._init_grounder()
+        self._initialize_tracker()
+
+    def _init_grounder(self):
+        if self._gdino is not None: return True
         try:
-            outputs = self.tracker.initialize(bgr_to_pil(frame_bgr_small), None, bbox=bbox_xywh)
-            mask = outputs.get('pred_mask')
-            return (mask * 255).astype(np.uint8) if mask is not None else None
+            ckpt_path = Path(self.params.gdino_checkpoint_path)
+            if not ckpt_path.is_absolute():
+                ckpt_path = config.DIRS['models'] / ckpt_path.name
+            download_model(
+                "https://github.com/IDEA-Research/GroundingDINO/releases/download/v0.1.0-alpha/groundingdino_swint_ogc.pth",
+                ckpt_path, "GroundingDINO Swin-T model", min_size=500_000_000
+            )
+            self._gdino = gdino_load_model(
+                model_config_path=self.params.gdino_config_path, model_checkpoint_path=str(ckpt_path), device=self._device,
+            )
+            logger.info("Grounding DINO model loaded.", extra={'model_path': str(ckpt_path)})
+            return True
         except Exception as e:
-            logger.warning(f"DAM4SAM mask generation failed.", extra={'error': e})
-            return None
+            logger.warning(f"Grounding DINO unavailable.", exc_info=True)
+            self._gdino = None
+            return False
+
+    def _initialize_tracker(self):
+        if not all([DAM4SAMTracker, torch, torch.cuda.is_available()]):
+            logger.error("DAM4SAM dependencies or CUDA not available.")
+            return False
+        if self.tracker: return True
+        try:
+            model_name = self.params.dam4sam_model_name
+            logger.info(f"Initializing DAM4SAM tracker", extra={'model': model_name})
+            model_urls = {
+                "sam21pp-T": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt",
+                "sam21pp-S": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_small.pt",
+                "sam21pp-B+": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_base_plus.pt",
+                "sam21pp-L": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt"
+            }
+            checkpoint_path = config.DIRS['models'] / Path(model_urls[model_name]).name
+            download_model(model_urls[model_name], checkpoint_path, f"{model_name} model", 100_000_000)
+            
+            from DAM4SAM.utils.utils import determine_tracker
+            actual_path, _ = determine_tracker(model_name)
+            if not Path(actual_path).exists():
+                Path(actual_path).parent.mkdir(exist_ok=True, parents=True)
+                shutil.copy(checkpoint_path, actual_path)
+
+            self.tracker = DAM4SAMTracker(model_name)
+            logger.success("DAM4SAM tracker initialized.")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to initialize DAM4SAM tracker", exc_info=True)
+            return False
+
+    def run_propagation(self, frames_dir: str, scenes_to_process: list[Scene]) -> dict[str, dict]:
+        self.mask_dir = Path(frames_dir) / "masks"
+        self.mask_dir.mkdir(exist_ok=True)
+        logger.info("Starting subject mask propagation...")
+        
+        if not self.tracker:
+            logger.error("Tracker not initialized; skipping masking.")
+            return {}
+        
+        self.frame_map = self.frame_map or self._create_frame_map(frames_dir)
+
+        mask_metadata = {}
+        total_scenes = len(scenes_to_process)
+        for i, scene in enumerate(scenes_to_process):
+            with safe_resource_cleanup():
+                if self.cancel_event.is_set(): break
+                self.progress_queue.put({"stage": f"Masking Scene {i+1}/{total_scenes}"})
+                shot_context = {'shot_id': scene.shot_id, 'start_frame': scene.start_frame, 'end_frame': scene.end_frame}
+                logger.info(f"Masking shot", extra=shot_context)
+                
+                seed_frame_num = scene.best_seed_frame
+                shot_frames_data = self._load_shot_frames(frames_dir, scene.start_frame, scene.end_frame)
+                if not shot_frames_data: continue
+
+                frame_numbers, small_images, dims = zip(*shot_frames_data)
+                
+                try:
+                    seed_idx_in_shot = frame_numbers.index(seed_frame_num)
+                except ValueError:
+                    logger.warning(f"Seed frame {seed_frame_num} not found in loaded shot frames for {scene.shot_id}, skipping.")
+                    continue
+                
+                bbox = scene.seed_result.get('bbox')
+                seed_details = scene.seed_result.get('details', {})
+
+                if bbox is None:
+                    for fn in frame_numbers:
+                        if (fname := self.frame_map.get(fn)):
+                            mask_metadata[fname] = asdict(MaskingResult(error="Subject not found", shot_id=scene.shot_id))
+                    continue
+                
+                masks, areas, empties, errors = self.mask_propagator.propagate(small_images, seed_idx_in_shot, bbox)
+
+                for i, (original_fn, _, (h, w)) in enumerate(shot_frames_data):
+                    if not (frame_fname := self.frame_map.get(original_fn)): continue
+                    mask_path = self.mask_dir / f"{Path(frame_fname).stem}.png"
+                    result_args = {
+                        "shot_id": scene.shot_id, "seed_type": seed_details.get('type'),
+                        "seed_face_sim": seed_details.get('seed_face_sim'), "mask_area_pct": areas[i],
+                        "mask_empty": empties[i], "error": errors[i]
+                    }
+                    if masks[i] is not None and np.any(masks[i]):
+                        mask_full_res = cv2.resize(masks[i], (w, h), interpolation=cv2.INTER_NEAREST)
+                        if mask_full_res.ndim == 3: mask_full_res = mask_full_res[:, :, 0]
+                        cv2.imwrite(str(mask_path), mask_full_res)
+                        mask_metadata[frame_fname] = asdict(MaskingResult(mask_path=str(mask_path), **result_args))
+                    else:
+                        mask_metadata[frame_fname] = asdict(MaskingResult(mask_path=None, **result_args))
+        logger.success("Subject masking complete.")
+        return mask_metadata
+
+    def _create_frame_map(self, frames_dir):
+        logger.info("Loading frame map...")
+        output_dir = Path(frames_dir)
+        frame_map_path = output_dir / "frame_map.json"
+        if not frame_map_path.exists():
+            thumb_files = sorted(list((output_dir / "thumbs").glob("frame_*.webp")),
+                                 key=lambda p: int(re.search(r'frame_(\d+)', p.name).group(1)))
+            return {int(re.search(r'frame_(\d+)', f.name).group(1)): f.name for f in thumb_files}
+        try:
+            with open(frame_map_path, 'r') as f: frame_map_list = json.load(f)
+            return {orig_num: f"frame_{i+1:06d}.webp" for i, orig_num in enumerate(sorted(frame_map_list))}
+        except Exception as e:
+            logger.error(f"Failed to parse frame_map.json. Using fallback.", exc_info=True)
+            return {}
+
+    def _load_shot_frames(self, frames_dir, start, end):
+        frames = []
+        if not self.frame_map: self.frame_map = self._create_frame_map(frames_dir)
+
+        thumb_dir = Path(frames_dir) / "thumbs"
+        for fn in sorted(fn for fn in self.frame_map if start <= fn < end):
+            thumb_p = thumb_dir / f"{Path(self.frame_map[fn]).stem}.webp"
+            thumb_img = self.thumbnail_manager.get(thumb_p)
+            if thumb_img is None: continue
+            
+            h, w = thumb_img.shape[:2]
+            frames.append((fn, thumb_img, (h, w)))
+        return frames
 
     def _select_best_seed_frame_in_scene(self, scene: Scene, frames_dir: str):
         if not self.params.pre_analysis_enabled:
@@ -826,7 +864,6 @@ class SubjectMasker:
         scores = []
         
         for frame_num, thumb_bgr, _ in candidates:
-            # Simple NIQE score (lower is better)
             niqe_score = 10.0
             if self.niqe_metric:
                 rgb_image = cv2.cvtColor(thumb_bgr, cv2.COLOR_BGR2RGB)
@@ -834,7 +871,6 @@ class SubjectMasker:
                 with torch.no_grad(), torch.cuda.amp.autocast(enabled=self._device=='cuda'):
                     niqe_score = float(self.niqe_metric(img_tensor.to(self.niqe_metric.device)))
             
-            # Face similarity score (higher is better)
             face_sim = 0.0
             if self.face_analyzer and self.reference_embedding is not None:
                 faces = self.face_analyzer.get(thumb_bgr)
@@ -842,9 +878,7 @@ class SubjectMasker:
                     best_face = max(faces, key=lambda x: x.det_score)
                     face_sim = 1.0 - (1 - np.dot(best_face.normed_embedding, self.reference_embedding))
             
-            # Combine scores (example: prioritize low NIQE and high face sim)
-            # We want to maximize this combined score
-            combined_score = (10 - niqe_score) + (face_sim * 10) # Simple weighting
+            combined_score = (10 - niqe_score) + (face_sim * 10)
             scores.append(combined_score)
         
         best_local_idx = int(np.argmax(scores)) if scores else 0
@@ -852,9 +886,19 @@ class SubjectMasker:
         scene.best_seed_frame = best_frame_num
         scene.seed_metrics = {'reason': 'pre-analysis complete', 'score': max(scores) if scores else 0, 'best_niqe': niqe_score, 'best_face_sim': face_sim}
 
-    def reseed_frame(self, frame_bgr: np.ndarray, seed_config: dict):
-        """Reruns the seeding process with specific override configurations."""
-        return self._seed_identity(frame_bgr, current_params=seed_config)
+    def get_seed_for_frame(self, frame_bgr: np.ndarray, seed_config: dict):
+        """Public method to get a seed for a given frame with optional overrides."""
+        return self.seed_selector._seed_identity(frame_bgr, current_params=seed_config)
+
+    def get_mask_for_bbox(self, frame_bgr_small, bbox_xywh):
+        """Public method to get a SAM mask for a bounding box."""
+        return self.seed_selector._sam2_mask_for_bbox(frame_bgr_small, bbox_xywh)
+        
+    def draw_bbox(self, img_bgr, xywh, color=(0, 0, 255), thickness=2):
+        x, y, w, h = map(int, xywh or [0, 0, 0, 0])
+        img_out = img_bgr.copy()
+        cv2.rectangle(img_out, (x, y), (x + w, y + h), color, thickness)
+        return img_out
 
 # --- Backend Analysis Pipeline ---
 class VideoManager:
@@ -959,9 +1003,9 @@ class ExtractionPipeline(Pipeline):
             vf_filter = f"fps={fps}," + vf_scale + ",showinfo"
             cmd = cmd_base + [
                 '-vf', vf_filter,
-                '-c:v', 'libwebp',  # Explicitly use the libwebp codec
-                '-lossless', '0',    # Use lossy compression for smaller files
-                '-quality', '80',    # Set quality level (0-100)
+                '-c:v', 'libwebp',
+                '-lossless', '0',
+                '-quality', '80',
                 '-vsync', 'vfr',
                 str(thumb_dir / "frame_%06d.webp")
             ]
@@ -981,7 +1025,6 @@ class ExtractionPipeline(Pipeline):
             while process.poll() is None:
                 if self.cancel_event.is_set(): process.terminate(); break
                 time.sleep(0.1)
-                # Live progress from log file is too slow, rely on ETA from total frames.
             process.wait()
         
         try:
@@ -997,7 +1040,7 @@ class ExtractionPipeline(Pipeline):
             raise RuntimeError(f"FFmpeg failed with code {process.returncode}.")
 
 class AnalysisPipeline(Pipeline):
-    def __init__(self, params: AnalysisParameters, progress_queue: Queue, cancel_event: threading.Event, shared_thumbnail_cache=None):
+    def __init__(self, params: AnalysisParameters, progress_queue: Queue, cancel_event: threading.Event, thumbnail_manager=None):
         super().__init__(params, progress_queue, cancel_event)
         self.output_dir = Path(self.params.output_folder)
         self.metadata_path = self.output_dir / "metadata.jsonl"
@@ -1006,7 +1049,7 @@ class AnalysisPipeline(Pipeline):
         self.niqe_metric = None
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.shared_analyzers = {}
-        self.thumbnail_cache = shared_thumbnail_cache if shared_thumbnail_cache is not None else {}
+        self.thumbnail_manager = thumbnail_manager if thumbnail_manager is not None else ThumbnailManager()
 
     def _get_shared_analyzer(self, key, factory):
         if key not in self.shared_analyzers: self.shared_analyzers[key] = factory()
@@ -1028,15 +1071,12 @@ class AnalysisPipeline(Pipeline):
             run_log_handler.setFormatter(StructuredFormatter('%(asctime)s - %(levelname)s - %(message)s'))
             self.logger.add_handler(run_log_handler)
             
-            # Reset metadata file for the new run
             self.metadata_path.unlink(missing_ok=True)
             with self.metadata_path.open('w') as f:
                 header = {"params": asdict(self.params)}
                 f.write(json.dumps(_to_json_safe(header)) + '\n')
 
-            # Initialize models
-            needs_face_analyzer = self.params.enable_face_filter
-            if needs_face_analyzer:
+            if self.params.enable_face_filter:
                 self._initialize_face_analyzer()
                 if self.params.face_ref_img_path: self._process_reference_face()
             
@@ -1045,13 +1085,11 @@ class AnalysisPipeline(Pipeline):
                 lambda: PersonDetector(model=self.params.person_detector_model, device=self.device)
             )
 
-            # 1. Propagate masks for selected scenes
             masker = SubjectMasker(self.params, self.progress_queue, self.cancel_event, self._create_frame_map(),
                                    self.face_analyzer, self.reference_embedding, person_detector,
-                                   thumbnail_cache=self.thumbnail_cache, niqe_metric=self.niqe_metric)
+                                   thumbnail_manager=self.thumbnail_manager, niqe_metric=self.niqe_metric)
             self.mask_metadata = masker.run_propagation(str(self.output_dir), scenes_to_process)
             
-            # 2. Run quality analysis loop on frames from processed scenes
             self._run_analysis_loop(scenes_to_process)
             
             if self.cancel_event.is_set(): return {"log": "Analysis cancelled."}
@@ -1068,11 +1106,9 @@ class AnalysisPipeline(Pipeline):
         if not frame_map_path.exists():
             thumb_files = sorted(list((self.output_dir / "thumbs").glob("frame_*.webp")),
                                  key=lambda p: int(re.search(r'frame_(\d+)', p.name).group(1)))
-            # Fallback cannot know original frame numbers. This is a limitation.
             return {int(re.search(r'frame_(\d+)', f.name).group(1)): f.name for f in thumb_files}
         try:
             with open(frame_map_path, 'r') as f: frame_map_list = json.load(f)
-            # The filenames are based on ffmpeg's sequential output, not original frame numbers
             return {orig_num: f"frame_{i+1:06d}.webp" for i, orig_num in enumerate(sorted(frame_map_list))}
         except Exception as e:
             logger.error(f"Failed to parse frame_map.json. Using fallback.", exc_info=True)
@@ -1132,27 +1168,17 @@ class AnalysisPipeline(Pipeline):
         try:
             self._initialize_niqe_metric()
             
-            thumb_image = self.thumbnail_cache.get(thumb_path)
-            if thumb_image is None:
-                if thumb_path.exists():
-                    with Image.open(thumb_path) as pil_thumb:
-                        thumb_image = pil_to_bgr(pil_thumb.convert("RGB"))
-                    if thumb_image is not None: self.thumbnail_cache[thumb_path] = thumb_image
+            thumb_image = self.thumbnail_manager.get(thumb_path)
             if thumb_image is None: raise ValueError("Could not read thumbnail.")
             
-            # Here, frame.image_data is the thumbnail. We don't have full-res yet.
-            # Metrics will be calculated on thumbnails, which is acceptable for relative ranking.
-            # NIQE is the most affected, but still useful for comparison.
             frame = Frame(thumb_image, -1)
             
-            # Base filename for looking up mask, etc.
             base_filename = thumb_path.name.replace('.webp', '.png')
             mask_meta = self.mask_metadata.get(base_filename, {})
             
             mask_thumb = None
             if mask_meta.get("mask_path"):
                 mask_full_path = Path(mask_meta["mask_path"])
-                # Ensure the path is absolute for reading
                 if not mask_full_path.is_absolute():
                      mask_full_path = self.output_dir / "masks" / mask_full_path.name
                 if mask_full_path.exists():
@@ -1208,7 +1234,7 @@ class AppUI:
         self.last_task_result = {}
         self.cuda_available = torch.cuda.is_available()
         self.shared_analyzers = {}
-        self.thumbnail_cache = {}
+        self.thumbnail_manager = ThumbnailManager(max_size=config.thumbnail_cache_size)
         self.ext_ui_map_keys = [
             'source_path', 'upload_video', 'method', 'interval', 'nth_frame',
             'fast_scene', 'max_resolution', 'use_png', 'thumbnails_only',
@@ -1515,8 +1541,6 @@ class AppUI:
             lambda s, folder: bulk_toggle(s, 'excluded', folder),
             [c['scenes_state'], c['frames_folder_input']], [c['scenes_state'], c['scene_filter_status']]
         )
-        # Placeholder for bulk filter button logic
-        # c['apply_bulk_filters_button'].click(...)
 
     def _setup_filtering_handlers(self):
         c = self.components
@@ -1640,7 +1664,6 @@ class AppUI:
         with scenes_path.open('r') as f: shots = json.load(f)
         scenes = [Scene(shot_id=i, start_frame=s, end_frame=e) for i, (s, e) in enumerate(shots)]
         
-        # Load existing scene seeds to resume/merge
         scene_seeds_path = output_dir / "scene_seeds.json"
         if scene_seeds_path.exists() and params.resume:
             logger.info("Loading existing scene_seeds.json")
@@ -1665,40 +1688,33 @@ class AppUI:
 
         masker = SubjectMasker(params, q, self.cancel_event, face_analyzer=face_analyzer,
                                reference_embedding=ref_emb, person_detector=person_detector,
-                               niqe_metric=niqe_metric, thumbnail_cache=self.thumbnail_cache)
+                               niqe_metric=niqe_metric, thumbnail_manager=self.thumbnail_manager)
         masker.frame_map = masker._create_frame_map(str(output_dir))
-        masker._initialize_tracker()
         
         previews = []
         for i, scene in enumerate(scenes):
             q.put({"stage": "Pre-analyzing scenes", "total": len(scenes), "progress": i+1})
             
-            if not scene.best_seed_frame: # Only run pre-analysis if not loaded from file
+            if not scene.best_seed_frame:
                 masker._select_best_seed_frame_in_scene(scene, str(output_dir))
             
-            # **FIXED FRAMEMAP LOOKUP**
             fname = masker.frame_map.get(scene.best_seed_frame)
             if not fname:
                 logger.warning(f"Could not find best_seed_frame {scene.best_seed_frame} in frame_map for scene {scene.shot_id}")
                 continue
             
             thumb_path = output_dir / "thumbs" / f"{Path(fname).stem}.webp"
-            thumb_bgr = self.thumbnail_cache.get(thumb_path)
-            if thumb_bgr is None and thumb_path.exists():
-                with Image.open(thumb_path) as pil_img:
-                    thumb_bgr = pil_to_bgr(pil_img.convert("RGB"))
-                    if thumb_bgr is not None:
-                        self.thumbnail_cache[thumb_path] = thumb_bgr
+            thumb_bgr = self.thumbnail_manager.get(thumb_path)
             
             if thumb_bgr is None:
                 logger.warning(f"Could not load thumbnail for best_seed_frame {scene.best_seed_frame} at path {thumb_path}")
                 continue
 
-            bbox, details = masker._seed_identity(thumb_bgr, current_params=scene.seed_config or params)
+            bbox, details = masker.get_seed_for_frame(thumb_bgr, seed_config=scene.seed_config or params)
             scene.seed_result = {'bbox': bbox, 'details': details}
             
-            mask = masker._sam2_mask_for_bbox(thumb_bgr, bbox) if bbox else None
-            overlay = render_mask_overlay(thumb_bgr, mask) if mask is not None else masker._draw_bbox(thumb_bgr, bbox)
+            mask = masker.get_mask_for_bbox(thumb_bgr, bbox) if bbox else None
+            overlay = render_mask_overlay(thumb_bgr, mask) if mask is not None else masker.draw_bbox(thumb_bgr, bbox)
             
             caption = f"Scene {scene.shot_id} (Seed: {scene.best_seed_frame}) | {details.get('type', 'N/A')}"
             previews.append((cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB), caption))
@@ -1724,7 +1740,7 @@ class AppUI:
         
         yield {self.components['unified_log']: "", self.components['unified_status']: f"Starting propagation on {len(scenes_to_process)} scenes..."}
         
-        pipeline = AnalysisPipeline(params, q, self.cancel_event, shared_thumbnail_cache=self.thumbnail_cache)
+        pipeline = AnalysisPipeline(params, q, self.cancel_event, thumbnail_manager=self.thumbnail_manager)
         yield from self._run_task(lambda: pipeline.run_full_analysis(scenes_to_process))
         
         result = self.last_task_result
@@ -1875,21 +1891,22 @@ class AppUI:
             thumb_dir = Path(output_dir) / "thumbs"
             for f_meta in frames_to_show[:100]:
                 thumb_path = thumb_dir / f"{Path(f_meta['filename']).stem}.webp"
-                if not thumb_path.exists(): continue
                 caption = f"Reasons: {', '.join(per_frame_reasons.get(f_meta['filename'], []))}" if gallery_view == "Rejected Frames" else ""
-                try:
-                    with Image.open(thumb_path) as thumb_pil: thumb_rgb_np = np.array(thumb_pil.convert("RGB"))
-                    if show_overlay and not f_meta.get("mask_empty", True) and (mask_name := f_meta.get("mask_path")):
-                        mask_path = Path(output_dir) / "masks" / mask_name
-                        if mask_path.exists():
-                            mask_gray = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
-                            thumb_bgr_np = cv2.cvtColor(thumb_rgb_np, cv2.COLOR_RGB2BGR)
-                            thumb_overlay_bgr = render_mask_overlay(thumb_bgr_np, mask_gray, float(overlay_alpha))
-                            preview_images.append((cv2.cvtColor(thumb_overlay_bgr, cv2.COLOR_BGR2RGB), caption))
-                        else: preview_images.append((thumb_rgb_np, caption))
+                
+                thumb_bgr = self.thumbnail_manager.get(thumb_path)
+                if thumb_bgr is None: continue
+                
+                thumb_rgb_np = cv2.cvtColor(thumb_bgr, cv2.COLOR_BGR2RGB)
+
+                if show_overlay and not f_meta.get("mask_empty", True) and (mask_name := f_meta.get("mask_path")):
+                    mask_path = Path(output_dir) / "masks" / mask_name
+                    if mask_path.exists():
+                        mask_gray = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
+                        thumb_overlay_bgr = render_mask_overlay(thumb_bgr, mask_gray, float(overlay_alpha))
+                        preview_images.append((cv2.cvtColor(thumb_overlay_bgr, cv2.COLOR_BGR2RGB), caption))
                     else: preview_images.append((thumb_rgb_np, caption))
-                except Exception as e:
-                    logger.warning(f"Could not load thumbnail for gallery", extra={'path': thumb_path, 'error': e})
+                else: preview_images.append((thumb_rgb_np, caption))
+
         return status_text, gr.update(value=preview_images, rows=(1 if gallery_view == "Rejected Frames" else 2))
 
     def on_filters_changed(self, all_frames_data, per_metric_values, output_dir, gallery_view, show_overlay, overlay_alpha, require_face_match, dedup_thresh, *slider_values):
@@ -2006,13 +2023,11 @@ class AppUI:
             return gr.update(), scenes_list, "Error: Selected scene not found in state."
 
         try:
-            # 1. Store overrides in the scene's seed_config
             scene_dict['seed_config'] = {
                 'text_prompt': prompt, 'prompt_type_for_video': prompt_type,
                 'box_threshold': box_th, 'text_threshold': text_th,
             }
 
-            # 2. Re-run seeding using a temporary masker instance
             ui_args = dict(zip(self.ana_ui_map_keys, ana_args))
             ui_args['output_folder'] = output_folder
             params = AnalysisParameters.from_ui(**ui_args)
@@ -2027,26 +2042,20 @@ class AppUI:
 
             masker = SubjectMasker(params, Queue(), threading.Event(), face_analyzer=face_analyzer,
                                    reference_embedding=ref_emb, person_detector=person_detector,
-                                   thumbnail_cache=self.thumbnail_cache)
+                                   thumbnail_manager=self.thumbnail_manager)
             masker.frame_map = masker._create_frame_map(output_folder)
-            masker._initialize_tracker()
             
-            # Load the correct thumbnail for the seed frame
             fname = masker.frame_map.get(scene_dict['best_seed_frame'])
             if not fname: raise ValueError("Framemap lookup failed for re-seeding.")
             
             thumb_path = Path(output_folder) / "thumbs" / f"{Path(fname).stem}.webp"
-            with Image.open(thumb_path) as pil_img:
-                thumb_bgr = pil_to_bgr(pil_img.convert("RGB"))
+            thumb_bgr = self.thumbnail_manager.get(thumb_path)
             
-            # Re-seed and update the scene object
-            bbox, details = masker.reseed_frame(thumb_bgr, scene_dict['seed_config'])
+            bbox, details = masker.get_seed_for_frame(thumb_bgr, scene_dict['seed_config'])
             scene_dict['seed_result'] = {'bbox': bbox, 'details': details}
 
-            # 3. Persist all scene changes to disk
             self._save_scene_seeds(scenes_list, output_folder)
             
-            # 4. Regenerate the entire preview gallery to reflect the change
             updated_gallery_previews = self._regenerate_all_previews(scenes_list, output_folder, masker)
             
             return updated_gallery_previews, scenes_list, f"Scene {selected_shot_id} updated and saved."
@@ -2056,7 +2065,6 @@ class AppUI:
             return gr.update(), scenes_list, f"[ERROR] {e}"
 
     def _regenerate_all_previews(self, scenes_list, output_folder, masker):
-        """Helper to regenerate the full gallery preview list."""
         previews = []
         output_dir = Path(output_folder)
         for scene_dict in scenes_list:
@@ -2064,16 +2072,14 @@ class AppUI:
             if not fname: continue
             
             thumb_path = output_dir / "thumbs" / f"{Path(fname).stem}.webp"
-            if not thumb_path.exists(): continue
-
-            with Image.open(thumb_path) as pil_img:
-                thumb_bgr = pil_to_bgr(pil_img.convert("RGB"))
+            thumb_bgr = self.thumbnail_manager.get(thumb_path)
+            if thumb_bgr is None: continue
 
             bbox = scene_dict.get('seed_result', {}).get('bbox')
             details = scene_dict.get('seed_result', {}).get('details', {})
             
-            mask = masker._sam2_mask_for_bbox(thumb_bgr, bbox) if bbox else None
-            overlay = render_mask_overlay(thumb_bgr, mask) if mask is not None else masker._draw_bbox(thumb_bgr, bbox)
+            mask = masker.get_mask_for_bbox(thumb_bgr, bbox) if bbox else None
+            overlay = render_mask_overlay(thumb_bgr, mask) if mask is not None else masker.draw_bbox(thumb_bgr, bbox)
             
             caption = f"Scene {scene_dict['shot_id']} (Seed: {scene_dict['best_seed_frame']}) | {details.get('type', 'N/A')}"
             previews.append((cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB), caption))
@@ -2130,6 +2136,3 @@ class AppUI:
 if __name__ == "__main__":
     check_dependencies()
     AppUI().build_ui().launch()
-
-
-
