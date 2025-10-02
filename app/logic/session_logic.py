@@ -69,6 +69,10 @@ def load_session_logic(event: SessionLoadEvent, logger):
             updates['filtering_tab'] = gr.update(interactive=True)
             logger.info(f"Found analysis metadata at {metadata_path}. Filtering tab will be enabled.")
 
+        # Hide manual input elements since we are loading a session
+        updates['manual_input_group'] = gr.update(visible=False)
+        updates['load_analysis_for_filtering_button'] = gr.update(visible=False)
+
         updates['unified_log'] = f"Successfully loaded session from: {session_path}"
         updates['unified_status'] = "Session loaded. You can now proceed from where you left off."
 
