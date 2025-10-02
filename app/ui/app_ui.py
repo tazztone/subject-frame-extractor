@@ -67,7 +67,8 @@ class AppUI:
             'analysis_output_dir_state', 'analysis_metadata_path_state',
             'scenes_state',
             # Other UI elements
-            'propagate_masks_button', 'filtering_tab'
+            'propagate_masks_button', 'filtering_tab',
+            'manual_input_group', 'load_analysis_for_filtering_button'
         ]
 
     def build_ui(self):
@@ -196,13 +197,15 @@ class AppUI:
         """Create the analysis and seeding tab."""
         with gr.Row():
             with gr.Column(scale=1):
-                gr.Markdown("### 📁 Input & Pre-Analysis")
-                self._create_component('frames_folder_input', 'textbox', {
-                    'label': "📂 Extracted Frames Folder"
-                })
-                self._create_component('analysis_video_path_input', 'textbox', {
-                    'label': "🎥 Original Video Path (for Export)"
-                })
+                with gr.Group() as manual_input_group:
+                    self.components['manual_input_group'] = manual_input_group
+                    gr.Markdown("### 📁 Input & Pre-Analysis")
+                    self._create_component('frames_folder_input', 'textbox', {
+                        'label': "📂 Extracted Frames Folder"
+                    })
+                    self._create_component('analysis_video_path_input', 'textbox', {
+                        'label': "🎥 Original Video Path (for Export)"
+                    })
                 
                 with gr.Group():
                     self._create_component('pre_analysis_enabled_input', 
@@ -548,7 +551,7 @@ class AppUI:
 
         logic_gen = run_pipeline_logic(event, self.progress_queue, self.cancel_event,
                                        self.logger, self.config,
-                                       self.thumbnail_manager)
+                                       self.thumbnail_manager, self.cuda_available)
         yield from self._yield_gradio_updates(logic_gen, output_keys)
 
     def run_session_load_wrapper(self, session_path):
