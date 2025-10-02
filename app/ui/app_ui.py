@@ -56,7 +56,6 @@ class AppUI:
             'thumb_megapixels_input', 'ext_scene_detect_input', 'method_input',
             'use_png_input',
             # Analysis Tab
-            'frames_folder_input', 'analysis_video_path_input',
             'pre_analysis_enabled_input', 'pre_sample_nth_input',
             'enable_face_filter_input', 'face_model_name_input',
             'face_ref_img_path_input', 'text_prompt_input',
@@ -68,7 +67,7 @@ class AppUI:
             'scenes_state',
             # Other UI elements
             'propagate_masks_button', 'filtering_tab',
-            'manual_input_group', 'load_analysis_for_filtering_button'
+            'scene_face_sim_min_input'
         ]
 
     def build_ui(self):
@@ -197,17 +196,8 @@ class AppUI:
         """Create the analysis and seeding tab."""
         with gr.Row():
             with gr.Column(scale=1):
-                with gr.Group() as manual_input_group:
-                    self.components['manual_input_group'] = manual_input_group
-                    gr.Markdown("### 📁 Input & Pre-Analysis")
-                    self._create_component('frames_folder_input', 'textbox', {
-                        'label': "📂 Extracted Frames Folder"
-                    })
-                    self._create_component('analysis_video_path_input', 'textbox', {
-                        'label': "🎥 Original Video Path (for Export)"
-                    })
-                
                 with gr.Group():
+                    gr.Markdown("### ⚙️ Pre-Analysis Settings")
                     self._create_component('pre_analysis_enabled_input', 
                                          'checkbox', {
                         'label': 'Enable Pre-Analysis to find best seed frame',
@@ -334,7 +324,12 @@ class AppUI:
                     })
                     self._create_component('scene_face_sim_min_input', 'slider', {
                         'label': "Min Seed Face Sim", 'minimum': 0.0,
-                        'maximum': 1.0, 'value': 0.5, 'step': 0.05
+                        'maximum': 1.0, 'value': 0.5, 'step': 0.05,
+                        'visible': False
+                    })
+                    self._create_component('scene_confidence_min_input', 'slider', {
+                        'label': "Min Seed Confidence", 'minimum': 0.0,
+                        'maximum': 1.0, 'value': 0.0, 'step': 0.05
                     })
                     with gr.Row():
                         self._create_component('bulk_include_all_button', 'button', {
@@ -349,10 +344,6 @@ class AppUI:
         with gr.Row():
             with gr.Column(scale=1):
                 gr.Markdown("### 🎛️ Filter Controls")
-                self._create_component('load_analysis_for_filtering_button', 
-                                     'button', {
-                    'value': "🔄 Load/Refresh Analysis Results"
-                })
                 self._create_component('auto_pctl_input', 'slider', {
                     'label': 'Auto-Threshold Percentile', 'minimum': 1,
                     'maximum': 99, 'value': 75, 'step': 1
@@ -502,8 +493,7 @@ class AppUI:
 
         output_keys = [
             'unified_log', 'unified_status', 'extracted_video_path_state',
-            'extracted_frames_dir_state', 'frames_folder_input',
-            'analysis_video_path_input'
+            'extracted_frames_dir_state'
         ]
 
         logic_gen = run_pipeline_logic(event, self.progress_queue, self.cancel_event,
@@ -518,7 +508,8 @@ class AppUI:
 
         output_keys = [
             'unified_log', 'unified_status', 'seeding_preview_gallery',
-            'scenes_state', 'propagate_masks_button', 'scene_filter_status'
+            'scenes_state', 'propagate_masks_button', 'scene_filter_status',
+            'scene_face_sim_min_input'
         ]
 
         logic_gen = run_pipeline_logic(event, self.progress_queue, self.cancel_event,
@@ -530,6 +521,12 @@ class AppUI:
                 scenes = result_dict['scenes_state']
                 save_scene_seeds(scenes, event.output_folder, self.logger)
                 result_dict['scene_filter_status'] = get_scene_status_text(scenes)
+
+                has_face_sim = any(
+                    s.get('seed_metrics', {}).get('best_face_sim') is not None
+                    for s in scenes
+                )
+                result_dict['scene_face_sim_min_input'] = gr.update(visible=has_face_sim)
 
             yield tuple(result_dict.get(k, gr.update()) for k in output_keys)
 
@@ -607,15 +604,14 @@ class AppUI:
         ext_inputs = [c[ext_comp_map[k]] for k in self.ext_ui_map_keys]
         ext_outputs = [
             c['unified_log'], c['unified_status'],
-            c['extracted_video_path_state'], c['extracted_frames_dir_state'],
-            c['frames_folder_input'], c['analysis_video_path_input']
+            c['extracted_video_path_state'], c['extracted_frames_dir_state']
         ]
         c['start_extraction_button'].click(self.run_extraction_wrapper,
                                           ext_inputs, ext_outputs)
 
         ana_comp_map = {
-            'output_folder': 'frames_folder_input',
-            'video_path': 'analysis_video_path_input',
+            'output_folder': 'extracted_frames_dir_state',
+            'video_path': 'extracted_video_path_state',
             'resume': gr.State(False),
             'enable_face_filter': 'enable_face_filter_input',
             'face_ref_img_path': 'face_ref_img_path_input',
@@ -644,7 +640,8 @@ class AppUI:
 
         pre_ana_outputs = [
             c['unified_log'], c['unified_status'], c['seeding_preview_gallery'],
-            c['scenes_state'], c['propagate_masks_button'], c['scene_filter_status']
+            c['scenes_state'], c['propagate_masks_button'], c['scene_filter_status'],
+            c['scene_face_sim_min_input']
         ]
         c['start_pre_analysis_button'].click(self.run_pre_analysis_wrapper,
                                            self.ana_input_components,
@@ -741,8 +738,8 @@ class AppUI:
 
         bulk_filter_inputs = [
             c['scenes_state'], c['scene_mask_area_min_input'],
-            c['scene_face_sim_min_input'], c['enable_face_filter_input'],
-            c['frames_folder_input']
+            c['scene_face_sim_min_input'], c['scene_confidence_min_input'],
+            c['enable_face_filter_input'], c['frames_folder_input']
         ]
         bulk_filter_outputs = [c['scenes_state'], c['scene_filter_status']]
 
@@ -751,11 +748,12 @@ class AppUI:
             bulk_filter_inputs,
             bulk_filter_outputs
         )
-        c['scene_face_sim_min_input'].release(
-            self.on_apply_bulk_scene_filters,
-            bulk_filter_inputs,
-            bulk_filter_outputs
-        )
+        for comp in [c['scene_face_sim_min_input'], c['scene_confidence_min_input']]:
+            comp.release(
+                self.on_apply_bulk_scene_filters,
+                bulk_filter_inputs,
+                bulk_filter_outputs
+            )
 
     def _setup_filtering_handlers(self):
         """Set up filtering and export handlers."""
@@ -838,12 +836,6 @@ class AppUI:
         c['filtering_tab'].select(load_and_trigger_update,
                                 [c['analysis_metadata_path_state'],
                                  c['analysis_output_dir_state']], load_outputs)
-        c['load_analysis_for_filtering_button'].click(
-            load_and_trigger_update,
-            [c['analysis_metadata_path_state'], c['analysis_output_dir_state']],
-            load_outputs
-        )
-
         export_inputs = [
             c['all_frames_data_state'], c['analysis_output_dir_state'],
             c['extracted_video_path_state'], c['enable_crop_input'],
@@ -947,11 +939,12 @@ class AppUI:
         return scenes, status_text, unified_status
 
     def on_apply_bulk_scene_filters(self, scenes, min_mask_area, min_face_sim,
-                                    enable_face_filter, output_folder):
+                                    min_confidence, enable_face_filter,
+                                    output_folder):
         """Wrapper for apply_bulk_scene_filters logic."""
         scenes, status_text = apply_bulk_scene_filters(
-            scenes, min_mask_area, min_face_sim, enable_face_filter,
-            output_folder, self.logger
+            scenes, min_mask_area, min_face_sim, min_confidence,
+            enable_face_filter, output_folder, self.logger
         )
         return scenes, status_text
 
@@ -999,6 +992,8 @@ class AppUI:
         from datetime import datetime
         from pathlib import Path
         import json
+        import cv2
+        import numpy as np
 
         if not event.all_frames_data:
             return "No metadata to export."
@@ -1052,6 +1047,81 @@ class AppUI:
             self.logger.info("Starting final export extraction...",
                            extra={'command': ' '.join(cmd)})
             subprocess.run(cmd, check=True, capture_output=True, text=True)
+
+            if event.enable_crop:
+                self.logger.info("Starting crop export...")
+                crop_dir = export_dir / "cropped"
+                crop_dir.mkdir(exist_ok=True)
+
+                try:
+                    aspect_ratios = [
+                        tuple(map(int, ar.strip().split(':')))
+                        for ar in event.crop_ars.split(',') if ar.strip()
+                    ]
+                except Exception:
+                    return "Invalid aspect ratio format. Use 'width:height,width:height' e.g. '16:9,1:1'."
+
+                masks_root = out_root / "masks"
+                num_cropped = 0
+
+                for frame_meta in kept:
+                    if self.cancel_event.is_set(): break
+
+                    try:
+                        full_frame_path = export_dir / frame_meta['filename']
+                        if not full_frame_path.exists(): continue
+
+                        mask_path = masks_root / frame_meta.get('mask_path', '')
+                        if not mask_path.exists(): continue
+
+                        frame_img = cv2.imread(str(full_frame_path))
+                        mask_img = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
+
+                        if frame_img is None or mask_img is None: continue
+
+                        contours, _ = cv2.findContours(mask_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                        if not contours: continue
+
+                        x, y, w, h = cv2.boundingRect(np.concatenate(contours))
+
+                        padding_px = int((w + h) / 2 * (event.crop_padding / 100.0))
+                        x_pad, y_pad = max(0, x - padding_px), max(0, y - padding_px)
+                        w_pad, h_pad = w + 2 * padding_px, h + 2 * padding_px
+
+                        center_x, center_y = x_pad + w_pad // 2, y_pad + h_pad // 2
+
+                        for ar_w, ar_h in aspect_ratios:
+                            target_ar = ar_w / ar_h
+                            if w_pad / h_pad > target_ar:
+                                new_h = w_pad / target_ar
+                                new_w = w_pad
+                            else:
+                                new_w = h_pad * target_ar
+                                new_h = h_pad
+
+                            new_x = center_x - new_w / 2
+                            new_y = center_y - new_h / 2
+
+                            new_x, new_y = int(max(0, new_x)), int(max(0, new_y))
+                            new_w, new_h = int(new_w), int(new_h)
+
+                            if new_x + new_w > frame_img.shape[1]:
+                                new_w = frame_img.shape[1] - new_x
+                            if new_y + new_h > frame_img.shape[0]:
+                                new_h = frame_img.shape[0] - new_y
+
+                            cropped_img = frame_img[new_y:new_y+new_h, new_x:new_x+new_w]
+
+                            if cropped_img.size > 0:
+                                base_name = Path(frame_meta['filename']).stem
+                                crop_filename = f"{base_name}_crop_{ar_w}x{ar_h}.png"
+                                cv2.imwrite(str(crop_dir / crop_filename), cropped_img)
+                                num_cropped += 1
+
+                    except Exception as e:
+                        self.logger.error(f"Failed to crop frame {frame_meta['filename']}", exc_info=True)
+
+                self.logger.info(f"Cropping complete. Saved {num_cropped} cropped images.")
 
             return f"Exported {len(frames_to_extract)} frames to {export_dir.name}."
             
