@@ -85,3 +85,9 @@ class ExportEvent(UIEvent):
     crop_ars: str
     crop_padding: int
     filter_args: dict[str, Any]
+
+
+@dataclass
+class SessionLoadEvent(UIEvent):
+    """Event for loading a previous session."""
+    session_path: str
