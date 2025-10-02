@@ -240,8 +240,8 @@ class SubjectMasker:
 
     def get_seed_for_frame(self, frame_rgb: np.ndarray, seed_config: dict):
         """Public method to get a seed for a given frame with overrides."""
-        return self.seed_selector._seed_identity(frame_rgb, 
-                                               current_params=seed_config)
+        return self.seed_selector.select_seed(frame_rgb, 
+                                             current_params=seed_config)
 
     def get_mask_for_bbox(self, frame_rgb_small, bbox_xywh):
         """Public method to get a SAM mask for a bounding box."""

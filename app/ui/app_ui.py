@@ -224,10 +224,9 @@ class AppUI:
                         'value': self.config.ui_defaults['text_prompt']
                     })
                     self._create_component('seed_strategy_input', 'dropdown', {
-                        'choices': ["Reference Face / Largest", "Largest Person",
-                                  "Center-most Person"],
-                        'value': self.config.ui_defaults['seed_strategy'],
-                        'label': "Fallback Seed Strategy"
+                        'choices': ["Largest Person", "Center-most Person"],
+                        'value': "Largest Person",
+                        'label': "Fallback Seed Strategy (if no face/prompt)"
                     })
                     self._create_component('person_detector_model_input', 
                                          'dropdown', {
