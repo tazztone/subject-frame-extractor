@@ -1,33 +1,20 @@
-"""Gradio UI for the frame extractor application."""
-
-import json
-import re
-import shutil
-import subprocess
-import threading
-import time
-from collections import Counter, defaultdict
-from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
-from pathlib import Path
-from queue import Queue, Empty
-from dataclasses import asdict
-
-import cv2
 import gradio as gr
-import numpy as np
 import torch
+import threading
+from queue import Queue
 
 from app.core.config import Config
 from app.core.logging import UnifiedLogger
 from app.core.thumb_cache import ThumbnailManager
-from app.core.utils import _to_json_safe
-from app.domain.models import Scene, AnalysisParameters
-from app.io.frames import rgb_to_pil, render_mask_overlay
-# ML imports are lazy-loaded to avoid dependency issues
-from app.masking.subject_masker import SubjectMasker
-from app.pipelines.extract import ExtractionPipeline
-from app.pipelines.analyze import AnalysisPipeline
+from app.logic.events import (ExtractionEvent, PreAnalysisEvent, PropagationEvent,
+                              FilterEvent, ExportEvent)
+from app.logic.pipeline_logic import run_pipeline_logic
+from app.logic.filter_logic import (load_and_prep_filter_data, build_all_metric_svgs,
+                                    on_filters_changed, reset_filters,
+                                    auto_set_thresholds, apply_all_filters_vectorized)
+from app.logic.scene_logic import (toggle_scene_status, apply_bulk_scene_filters,
+                                   apply_scene_overrides, get_scene_status_text,
+                                   save_scene_seeds)
 
 
 class AppUI:
@@ -35,14 +22,12 @@ class AppUI:
     
     def __init__(self, config=None, logger=None, progress_queue=None, 
                  cancel_event=None):
-        # Accept injected dependencies or create defaults
         self.config = config or Config()
         self.logger = logger or UnifiedLogger()
-        self.progress_queue = progress_queue
+        self.progress_queue = progress_queue or Queue()
         self.cancel_event = cancel_event or threading.Event()
         
         self.components = {}
-        self.last_task_result = {}
         self.cuda_available = torch.cuda.is_available()
         self.thumbnail_manager = ThumbnailManager(
             max_size=self.config.thumbnail_cache_size
@@ -474,19 +459,38 @@ class AppUI:
     def run_extraction_wrapper(self, *args):
         """Wrapper for extraction pipeline."""
         ui_args = dict(zip(self.ext_ui_map_keys, args))
-        yield from self._run_pipeline("extraction", ui_args)
+        event = ExtractionEvent(**ui_args)
+        yield from run_pipeline_logic(event, self.progress_queue, self.cancel_event,
+                                      self.logger, self.config,
+                                      self.thumbnail_manager, self.cuda_available)
 
     def run_pre_analysis_wrapper(self, *args):
         """Wrapper for pre-analysis pipeline."""
         ui_args = dict(zip(self.ana_ui_map_keys, args))
-        yield from self._run_pipeline("pre_analysis", ui_args)
+        event = PreAnalysisEvent(**ui_args)
+
+        for result in run_pipeline_logic(event, self.progress_queue, self.cancel_event,
+                                         self.logger, self.config,
+                                         self.thumbnail_manager, self.cuda_available):
+            if 'scenes_state' in result:
+                scenes = result['scenes_state']
+                save_scene_seeds(scenes, event.output_folder, self.logger)
+                result['scene_filter_status'] = get_scene_status_text(scenes)
+            yield result
 
     def run_propagation_wrapper(self, output_folder, video_path, scenes, *args):
         """Wrapper for propagation pipeline."""
         ui_args = dict(zip(self.ana_ui_map_keys, args))
-        ui_args['output_folder'] = output_folder
-        ui_args['video_path'] = video_path
-        yield from self._run_pipeline("propagation", ui_args, scenes=scenes)
+        analysis_params = PreAnalysisEvent(**ui_args)
+        event = PropagationEvent(
+            output_folder=output_folder,
+            video_path=video_path,
+            scenes=scenes,
+            analysis_params=analysis_params
+        )
+        yield from run_pipeline_logic(event, self.progress_queue, self.cancel_event,
+                                      self.logger, self.config,
+                                      self.thumbnail_manager)
 
     def _setup_visibility_toggles(self):
         """Set up UI visibility toggles."""
@@ -510,7 +514,6 @@ class AppUI:
         """Set up pipeline execution handlers."""
         c = self.components
         
-        # Extraction pipeline
         ext_comp_map = {k: f"{k}_input" for k in self.ext_ui_map_keys}
         ext_comp_map.update({
             'source_path': 'source_input',
@@ -527,7 +530,6 @@ class AppUI:
         c['start_extraction_button'].click(self.run_extraction_wrapper,
                                           ext_inputs, ext_outputs)
 
-        # Analysis pipeline
         ana_comp_map = {
             'output_folder': 'frames_folder_input',
             'video_path': 'analysis_video_path_input',
@@ -581,8 +583,8 @@ class AppUI:
         def on_select_scene(scenes, evt: gr.SelectData):
             if not scenes or evt.index is None:
                 return (gr.update(open=False), None, "",
-                       self.config.GROUNDING_BOX_THRESHOLD,
-                       self.config.GROUNDING_TEXT_THRESHOLD)
+                       self.config.grounding_dino_params['box_threshold'],
+                       self.config.grounding_dino_params['text_threshold'])
             scene = scenes[evt.index]
             cfg = scene.get('seed_config', {})
             status_md = (f"**Editing Scene {scene['shot_id']}** "
@@ -591,8 +593,8 @@ class AppUI:
 
             return (gr.update(open=True, value=status_md), scene['shot_id'],
                    prompt,
-                   cfg.get('box_threshold', self.config.GROUNDING_BOX_THRESHOLD),
-                   cfg.get('text_threshold', self.config.GROUNDING_TEXT_THRESHOLD))
+                   cfg.get('box_threshold', self.config.grounding_dino_params['box_threshold']),
+                   cfg.get('text_threshold', self.config.grounding_dino_params['text_threshold']))
 
         c['seeding_preview_gallery'].select(
             on_select_scene, [c['scenes_state']],
@@ -611,7 +613,7 @@ class AppUI:
         ] + self.ana_input_components
         
         c['scene_recompute_button'].click(
-            self.apply_scene_overrides,
+            self.on_apply_scene_overrides,
             inputs=recompute_inputs,
             outputs=[c['seeding_preview_gallery'], c['scenes_state'], 
                     c['unified_status']]
@@ -622,14 +624,12 @@ class AppUI:
         include_exclude_outputs = [c['scenes_state'], c['scene_filter_status'],
                                  c['unified_status']]
         c['scene_include_button'].click(
-            lambda s, sid, folder: self._toggle_scene_status(s, sid, 'included', 
-                                                           folder),
-            include_exclude_inputs, include_exclude_outputs
+            self.on_toggle_scene_status,
+            include_exclude_inputs + [gr.State('included')], include_exclude_outputs
         )
         c['scene_exclude_button'].click(
-            lambda s, sid, folder: self._toggle_scene_status(s, sid, 'excluded',
-                                                           folder),
-            include_exclude_inputs, include_exclude_outputs
+            self.on_toggle_scene_status,
+            include_exclude_inputs + [gr.State('excluded')], include_exclude_outputs
         )
 
     def _setup_bulk_scene_handlers(self):
@@ -642,8 +642,8 @@ class AppUI:
             for s in scenes:
                 s['status'] = new_status
                 s['manual_status_change'] = True
-            self._save_scene_seeds(scenes, output_folder)
-            status_text = self._get_scene_status_text(scenes)
+            save_scene_seeds(scenes, output_folder, self.logger)
+            status_text = get_scene_status_text(scenes)
             return scenes, status_text
 
         c['bulk_include_all_button'].click(
@@ -665,12 +665,12 @@ class AppUI:
         bulk_filter_outputs = [c['scenes_state'], c['scene_filter_status']]
 
         c['scene_mask_area_min_input'].release(
-            self.apply_bulk_scene_filters,
+            self.on_apply_bulk_scene_filters,
             bulk_filter_inputs,
             bulk_filter_outputs
         )
         c['scene_face_sim_min_input'].release(
-            self.apply_bulk_scene_filters,
+            self.on_apply_bulk_scene_filters,
             bulk_filter_inputs,
             bulk_filter_outputs
         )
@@ -697,15 +697,17 @@ class AppUI:
             handler = (control.release if hasattr(control, 'release') 
                       else control.input if hasattr(control, 'input') 
                       else control.change)
-            handler(self.on_filters_changed, fast_filter_inputs, 
+            handler(self.on_filters_changed_wrapper, fast_filter_inputs,
                    fast_filter_outputs)
 
         def load_and_trigger_update(metadata_path, output_dir):
             if not metadata_path or not output_dir:
                 return [gr.update()] * len(load_outputs)
-            all_frames, metric_values = self.load_and_prep_filter_data(
-                metadata_path)
-            svgs = self.build_all_metric_svgs(metric_values)
+
+            all_frames, metric_values = load_and_prep_filter_data(
+                metadata_path, self.get_all_filter_keys)
+            svgs = build_all_metric_svgs(metric_values, self.get_all_filter_keys, self.logger)
+
             updates = {
                 c['all_frames_data_state']: all_frames,
                 c['per_metric_values_state']: metric_values
@@ -725,15 +727,25 @@ class AppUI:
                     updates[c['require_face_match_input']] = gr.update(
                         visible=has_data)
 
-            default_filters = [c['metric_sliders'][k].value for k in slider_keys]
-            status, gallery = self.on_filters_changed(
-                all_frames, metric_values, output_dir, "Kept Frames", True, 0.6,
-                c['require_face_match_input'].value, 
-                c['dedup_thresh_input'].value,
-                *default_filters
+            slider_values = {key: c['metric_sliders'][key].value for key in slider_keys}
+            filter_event = FilterEvent(
+                all_frames_data=all_frames,
+                per_metric_values=metric_values,
+                output_dir=output_dir,
+                gallery_view="Kept Frames",
+                show_overlay=True,
+                overlay_alpha=0.6,
+                require_face_match=c['require_face_match_input'].value,
+                dedup_thresh=c['dedup_thresh_input'].value,
+                slider_values=slider_values
             )
-            updates[c['filter_status_text']] = status
-            updates[c['results_gallery']] = gallery
+
+            filter_updates = on_filters_changed(filter_event, self.thumbnail_manager)
+            updates.update({
+                c['filter_status_text']: filter_updates['filter_status_text'],
+                c['results_gallery']: filter_updates['results_gallery']
+            })
+
             return [updates.get(comp, gr.update()) for comp in load_outputs]
 
         load_outputs = ([c['all_frames_data_state'], c['per_metric_values_state'],
@@ -756,583 +768,174 @@ class AppUI:
             c['crop_ar_input'], c['crop_padding_input'],
             c['require_face_match_input'], c['dedup_thresh_input']
         ] + slider_comps
-        c['export_button'].click(self.export_kept_frames, export_inputs,
+        c['export_button'].click(self.export_kept_frames_wrapper, export_inputs,
                                c['unified_log'])
 
-        reset_outputs = (slider_comps + [c['require_face_match_input'],
-                                        c['dedup_thresh_input'],
-                                        c['filter_status_text'],
-                                        c['results_gallery']])
+        reset_outputs = {
+            c[k]: v for k, v in
+            reset_filters(None, None, None, self.config, slider_keys, self.thumbnail_manager).items()
+        }
+
         c['reset_filters_button'].click(
-            self.reset_filters,
+            self.on_reset_filters,
             [c['all_frames_data_state'], c['per_metric_values_state'],
              c['analysis_output_dir_state']],
-            reset_outputs
+            list(reset_outputs.keys())
         )
+
+        auto_set_outputs = [c['metric_sliders'][k] for k in slider_keys]
         c['apply_auto_button'].click(
-            self.auto_set_thresholds,
+            self.on_auto_set_thresholds,
             [c['per_metric_values_state'], c['auto_pctl_input']],
-            slider_comps
+            auto_set_outputs
         ).then(
-            self.on_filters_changed, fast_filter_inputs, fast_filter_outputs
+            self.on_filters_changed_wrapper, fast_filter_inputs, fast_filter_outputs
         )
 
-    def _run_pipeline(self, pipeline_type, ui_args, scenes=None):
-        """Execute a pipeline with progress tracking."""
-        self.cancel_event.clear()
-        q = Queue()
-        if self.progress_queue:
-            q = self.progress_queue
-        else:
-            self.logger.set_progress_queue(q)
-
-        try:
-            if 'upload_video' in ui_args and ui_args['upload_video']:
-                source = ui_args.pop('upload_video')
-                dest = str(self.config.DIRS['downloads'] / Path(source).name)
-                shutil.copy2(source, dest)
-                ui_args['source_path'] = dest
-            if 'face_ref_img_upload' in ui_args and ui_args['face_ref_img_upload']:
-                ref_upload = ui_args.pop('face_ref_img_upload')
-                dest = self.config.DIRS['downloads'] / Path(ref_upload).name
-                shutil.copy2(ref_upload, dest)
-                ui_args['face_ref_img_path'] = str(dest)
-
-            params = AnalysisParameters.from_ui(**ui_args)
-
-            if pipeline_type == "extraction":
-                yield from self.execute_extraction(params, q)
-            elif pipeline_type == "pre_analysis":
-                yield from self.execute_pre_analysis(params, q)
-            elif pipeline_type == "propagation":
-                yield from self.execute_propagation(params, q, scenes)
-        except Exception as e:
-            self.logger.error(f"{pipeline_type} setup failed", exc_info=True)
-            yield {
-                self.components['unified_log']: str(e),
-                self.components['unified_status']: f"[ERROR] {e}"
-            }
-
-    def execute_extraction(self, params, q):
-        """Execute extraction pipeline."""
-        yield {
-            self.components['unified_log']: "",
-            self.components['unified_status']: "Starting extraction..."
-        }
-        pipeline = ExtractionPipeline(params, q, self.cancel_event)
-        yield from self._run_task(pipeline.run, q)
-        result = self.last_task_result
-        if result.get("done"):
-            yield {
-                self.components['unified_log']: "Extraction complete.",
-                self.components['unified_status']: f"Output: {result['output_dir']}",
-                self.components['extracted_video_path_state']: result.get("video_path", ""),
-                self.components['extracted_frames_dir_state']: result["output_dir"],
-                self.components['frames_folder_input']: result["output_dir"],
-                self.components['analysis_video_path_input']: result.get("video_path", "")
-            }
-
-    def _save_scene_seeds(self, scenes_list, output_dir_str):
-        """Save scene seeds to JSON file."""
-        if not scenes_list or not output_dir_str:
-            return
-        output_dir = Path(output_dir_str)
-        scene_seeds = {
-            str(s['shot_id']): {
-                'seed_frame_idx': s.get('best_seed_frame'),
-                'seed_type': s.get('seed_result', {}).get('details', {}).get('type'),
-                'seed_config': s.get('seed_config', {}),
-                'status': s.get('status', 'pending'),
-                'seed_metrics': s.get('seed_metrics', {})
-            }
-            for s in scenes_list
-        }
-        try:
-            (output_dir / "scene_seeds.json").write_text(
-                json.dumps(_to_json_safe(scene_seeds), indent=2),
-                encoding='utf-8'
-            )
-            self.logger.info("Saved scene_seeds.json")
-        except Exception as e:
-            self.logger.error("Failed to save scene_seeds.json", exc_info=True)
-
-    def execute_pre_analysis(self, params, q):
-        """Execute pre-analysis pipeline."""
-        import pyiqa
-        
-        yield {
-            self.components['unified_log']: "",
-            self.components['unified_status']: "Starting Pre-Analysis..."
-        }
-
-        output_dir = Path(params.output_folder)
-        scenes_path = output_dir / "scenes.json"
-        if not scenes_path.exists():
-            yield {
-                self.components['unified_log']: "[ERROR] scenes.json not found. "
-                                              "Run extraction with scene detection."
-            }
-            return
-
-        with scenes_path.open('r', encoding='utf-8') as f:
-            shots = json.load(f)
-        scenes = [Scene(shot_id=i, start_frame=s, end_frame=e)
-                 for i, (s, e) in enumerate(shots)]
-
-        scene_seeds_path = output_dir / "scene_seeds.json"
-        if scene_seeds_path.exists() and params.resume:
-            self.logger.info("Loading existing scene_seeds.json")
-            with scene_seeds_path.open('r', encoding='utf-8') as f:
-                loaded_seeds = json.load(f)
-            for scene in scenes:
-                seed_data = loaded_seeds.get(str(scene.shot_id))
-                if seed_data:
-                    scene.best_seed_frame = seed_data.get('seed_frame_idx')
-                    scene.seed_config = seed_data.get('seed_config', {})
-                    scene.status = seed_data.get('status', 'pending')
-                    scene.seed_metrics = seed_data.get('seed_metrics', {})
-
-        niqe_metric, face_analyzer, ref_emb, person_detector = None, None, None, None
-        device = "cuda" if self.cuda_available else "cpu"
-        
-        if params.pre_analysis_enabled:
-            niqe_metric = pyiqa.create_metric('niqe', device=device)
-        if params.enable_face_filter:
-            from app.ml.face import get_face_analyzer
-            face_analyzer = get_face_analyzer(params.face_model_name)
-            if params.face_ref_img_path:
-                ref_img = cv2.imread(params.face_ref_img_path)
-                if ref_img is not None:
-                    faces = face_analyzer.get(ref_img)
-                    if faces:
-                        ref_emb = max(faces, key=lambda x: x.det_score).normed_embedding
-        from app.ml.person import get_person_detector
-        person_detector = get_person_detector(params.person_detector_model, device)
-
-        masker = SubjectMasker(params, q, self.cancel_event,
-                             face_analyzer=face_analyzer,
-                             reference_embedding=ref_emb,
-                             person_detector=person_detector,
-                             niqe_metric=niqe_metric,
-                             thumbnail_manager=self.thumbnail_manager)
-        masker.frame_map = masker._create_frame_map(str(output_dir))
-
-        previews = []
-        for i, scene in enumerate(scenes):
-            q.put({
-                "stage": f"Pre-analyzing scene {i+1}/{len(scenes)}",
-                "total": len(scenes),
-                "progress": i
-            })
-
-            if not scene.best_seed_frame:
-                masker._select_best_seed_frame_in_scene(scene, str(output_dir))
-
-            fname = masker.frame_map.get(scene.best_seed_frame)
-            if not fname:
-                self.logger.warning(
-                    f"Could not find best_seed_frame {scene.best_seed_frame} "
-                    f"in frame_map for scene {scene.shot_id}"
-                )
-                continue
-
-            thumb_path = output_dir / "thumbs" / f"{Path(fname).stem}.webp"
-            thumb_rgb = self.thumbnail_manager.get(thumb_path)
-
-            if thumb_rgb is None:
-                self.logger.warning(
-                    f"Could not load thumbnail for best_seed_frame "
-                    f"{scene.best_seed_frame} at path {thumb_path}"
-                )
-                continue
-
-            bbox, details = masker.get_seed_for_frame(
-                thumb_rgb, seed_config=scene.seed_config or params
-            )
-            scene.seed_result = {'bbox': bbox, 'details': details}
-
-            mask = masker.get_mask_for_bbox(thumb_rgb, bbox) if bbox else None
-            if mask is not None:
-                h, w = mask.shape[:2]
-                area_pct = ((np.sum(mask > 0) / (h * w)) * 100 
-                           if (h * w) > 0 else 0.0)
-                scene.seed_result['details']['mask_area_pct'] = area_pct
-
-            overlay_rgb = (render_mask_overlay(thumb_rgb, mask) 
-                          if mask is not None 
-                          else masker.draw_bbox(thumb_rgb, bbox))
-
-            caption = (f"Scene {scene.shot_id} (Seed: {scene.best_seed_frame}) "
-                      f"| {details.get('type', 'N/A')}")
-            previews.append((overlay_rgb, caption))
-            scene.preview_path = "dummy"
-            if scene.status == 'pending':
-                scene.status = 'included'
-
-        scenes_as_dict = [asdict(s) for s in scenes]
-        self._save_scene_seeds(scenes_as_dict, str(output_dir))
-        q.put({"stage": "Pre-analysis complete", "progress": len(scenes)})
-
-        yield {
-            self.components['unified_log']: "Pre-analysis complete.",
-            self.components['unified_status']: f"{len(scenes)} scenes found.",
-            self.components['seeding_preview_gallery']: gr.update(value=previews),
-            self.components['scenes_state']: scenes_as_dict,
-            self.components['propagate_masks_button']: gr.update(interactive=True),
-            self.components['scene_filter_status']: self._get_scene_status_text(scenes_as_dict)
-        }
-
-    def execute_propagation(self, params, q, scenes_dict):
-        """Execute propagation pipeline."""
-        scenes_to_process = [Scene(**s) for s in scenes_dict 
-                           if s['status'] == 'included']
-        if not scenes_to_process:
-            yield {
-                self.components['unified_log']: "No scenes were included for propagation.",
-                self.components['unified_status']: "Propagation skipped."
-            }
-            return
-
-        yield {
-            self.components['unified_log']: "",
-            self.components['unified_status']: f"Starting propagation on {len(scenes_to_process)} scenes..."
-        }
-
-        pipeline = AnalysisPipeline(params, q, self.cancel_event,
-                                  thumbnail_manager=self.thumbnail_manager)
-        yield from self._run_task(
-            lambda: pipeline.run_full_analysis(scenes_to_process), q
-        )
-
-        result = self.last_task_result
-        if result.get("done"):
-            yield {
-                self.components['unified_log']: "Propagation and analysis complete.",
-                self.components['unified_status']: f"Metadata saved to {result['metadata_path']}",
-                self.components['analysis_output_dir_state']: result['output_dir'],
-                self.components['analysis_metadata_path_state']: result['metadata_path'],
-                self.components['filtering_tab']: gr.update(interactive=True)
-            }
-
-    def _run_task(self, task_func, progress_queue):
-        """Run a task with progress tracking."""
-        log_buffer, processed, total, stage = [], 0, 1, "Initializing"
-        start_time, last_yield = time.time(), 0.0
-
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(task_func)
-            while future.running():
-                if self.cancel_event.is_set():
-                    break
-                try:
-                    msg = progress_queue.get(timeout=0.1)
-                    if "log" in msg:
-                        log_buffer.append(msg["log"])
-                    if "stage" in msg:
-                        stage, processed, start_time = msg["stage"], 0, time.time()
-                    if "total" in msg:
-                        total = msg["total"] or 1
-                    if "progress" in msg:
-                        processed += msg["progress"]
-
-                    if time.time() - last_yield > 0.25:
-                        elapsed = time.time() - start_time
-                        rate = processed / elapsed if elapsed > 0 else 0
-                        eta = (total - processed) / rate if rate > 0 else 0
-                        status = (f"**{stage}:** {processed}/{total} "
-                                f"({processed/total:.1%}) | {rate:.1f} items/s | "
-                                f"ETA: {int(eta//60):02d}:{int(eta%60):02d}")
-                        yield {
-                            self.components['unified_log']: "\n".join(log_buffer),
-                            self.components['unified_status']: status
-                        }
-                        last_yield = time.time()
-                except Empty:
-                    pass
-
-        self.last_task_result = future.result() or {}
-        if "log" in self.last_task_result:
-            log_buffer.append(self.last_task_result["log"])
-        if "error" in self.last_task_result:
-            log_buffer.append(f"[ERROR] {self.last_task_result['error']}")
-            
-        if self.cancel_event.is_set():
-            status_text = "⏹️ Cancelled."
-        elif 'error' in self.last_task_result:
-            status_text = f"❌ Error: {self.last_task_result.get('error')}"
-        else:
-            status_text = "✅ Complete."
-            
-        yield {
-            self.components['unified_log']: "\n".join(log_buffer),
-            self.components['unified_status']: status_text
-        }
-
-    def histogram_svg(self, hist_data, title=""):
-        """Generate SVG histogram for metrics."""
-        if not hist_data:
-            return ""
-        try:
-            import matplotlib.pyplot as plt
-            import matplotlib.ticker as mticker
-            import io
-            
-            counts, bins = hist_data
-            if (not isinstance(counts, list) or not isinstance(bins, list) or
-                len(bins) != len(counts) + 1):
-                return ""
-                
-            with plt.style.context("dark_background"):
-                fig, ax = plt.subplots(figsize=(4.6, 2.2), dpi=120)
-                ax.bar(bins[:-1], counts, width=np.diff(bins), 
-                      color="#7aa2ff", alpha=0.85, align="edge")
-                ax.grid(axis="y", alpha=0.2)
-                ax.margins(x=0)
-                ax.yaxis.set_major_locator(mticker.MaxNLocator(integer=True))
-                for side in ("top", "right"):
-                    ax.spines[side].set_visible(False)
-                ax.tick_params(labelsize=8)
-                ax.set_title(title)
-                buf = io.StringIO()
-                fig.savefig(buf, format="svg", bbox_inches="tight")
-                plt.close(fig)
-            return buf.getvalue()
-        except Exception as e:
-            self.logger.error("Failed to generate histogram SVG.", exc_info=True)
-            return ""
-
-    def build_all_metric_svgs(self, per_metric_values):
-        """Build SVG histograms for all metrics."""
-        svgs = {}
-        for k in self.get_all_filter_keys():
-            if (h := per_metric_values.get(f"{k}_hist")):
-                svgs[k] = self.histogram_svg(h, title="")
-        return svgs
-
-    @staticmethod
-    def _apply_all_filters_vectorized(all_frames_data, filters):
-        """Apply all filters to frame data using vectorized operations."""
-        from app.core.config import Config
-        import imagehash
-        
-        config = Config()
-        
-        if not all_frames_data:
-            return [], [], Counter(), {}
-            
-        num_frames = len(all_frames_data)
-        filenames = [f['filename'] for f in all_frames_data]
-        metric_arrays = {}
-        
-        for k in config.QUALITY_METRICS:
-            metric_arrays[k] = np.array([
-                f.get("metrics", {}).get(f"{k}_score", np.nan)
-                for f in all_frames_data
-            ], dtype=np.float32)
-            
-        metric_arrays["face_sim"] = np.array([
-            f.get("face_sim", np.nan) for f in all_frames_data
-        ], dtype=np.float32)
-        metric_arrays["mask_area_pct"] = np.array([
-            f.get("mask_area_pct", np.nan) for f in all_frames_data
-        ], dtype=np.float32)
-        
-        kept_mask = np.ones(num_frames, dtype=bool)
-        reasons = defaultdict(list)
-
-        # --- 1. Deduplication (run first on all frames) ---
-        dedup_thresh_val = filters.get("dedup_thresh", 5)
-        if filters.get("enable_dedup") and dedup_thresh_val != -1:
-            all_indices = list(range(num_frames))
-            sorted_indices = sorted(all_indices, key=lambda i: filenames[i])
-            hashes = {
-                i: imagehash.hex_to_hash(all_frames_data[i]['phash'])
-                for i in sorted_indices if 'phash' in all_frames_data[i]
-            }
-
-            for i in range(1, len(sorted_indices)):
-                current_idx = sorted_indices[i]
-                prev_idx = sorted_indices[i-1]
-                if prev_idx in hashes and current_idx in hashes:
-                    if (hashes[prev_idx] - hashes[current_idx]) <= dedup_thresh_val:
-                        kept_mask[current_idx] = False
-                        reasons[filenames[current_idx]].append('duplicate')
-
-        # --- 2. Quality & Metric Filters (run on remaining frames) ---
-        for k in config.QUALITY_METRICS:
-            min_val, max_val = filters.get(f"{k}_min", 0), filters.get(f"{k}_max", 100)
-            current_kept_indices = np.where(kept_mask)[0]
-            values_to_check = metric_arrays[k][current_kept_indices]
-
-            low_mask_rel = values_to_check < min_val
-            high_mask_rel = values_to_check > max_val
-
-            low_indices_abs = current_kept_indices[low_mask_rel]
-            high_indices_abs = current_kept_indices[high_mask_rel]
-
-            for i in low_indices_abs:
-                reasons[filenames[i]].append(f"{k}_low")
-            for i in high_indices_abs:
-                reasons[filenames[i]].append(f"{k}_high")
-
-            kept_mask[low_indices_abs] = False
-            kept_mask[high_indices_abs] = False
-
-        if filters.get("face_sim_enabled"):
-            current_kept_indices = np.where(kept_mask)[0]
-            face_sim_values = metric_arrays["face_sim"][current_kept_indices]
-
-            valid = ~np.isnan(face_sim_values)
-            low_mask_rel = valid & (face_sim_values < filters.get("face_sim_min", 0.5))
-            low_indices_abs = current_kept_indices[low_mask_rel]
-            for i in low_indices_abs:
-                reasons[filenames[i]].append("face_sim_low")
-            kept_mask[low_indices_abs] = False
-
-            if filters.get("require_face_match"):
-                missing_mask_rel = ~valid
-                missing_indices_abs = current_kept_indices[missing_mask_rel]
-                for i in missing_indices_abs:
-                    reasons[filenames[i]].append("face_missing")
-                kept_mask[missing_indices_abs] = False
-
-        if filters.get("mask_area_enabled"):
-            current_kept_indices = np.where(kept_mask)[0]
-            mask_area_values = metric_arrays["mask_area_pct"][current_kept_indices]
-
-            small_mask_rel = mask_area_values < filters.get("mask_area_pct_min", 1.0)
-            small_indices_abs = current_kept_indices[small_mask_rel]
-            for i in small_indices_abs:
-                reasons[filenames[i]].append("mask_too_small")
-            kept_mask[small_indices_abs] = False
-
-        kept = [all_frames_data[i] for i in np.where(kept_mask)[0]]
-        rejected = [all_frames_data[i] for i in np.where(~kept_mask)[0]]
-        counts = Counter(r for r_list in reasons.values() for r in r_list)
-        return kept, rejected, counts, reasons
-
-    def load_and_prep_filter_data(self, metadata_path):
-        """Load and prepare frame data for filtering."""
-        if not metadata_path or not Path(metadata_path).exists():
-            return [], {}
-            
-        with Path(metadata_path).open('r', encoding='utf-8') as f:
-            try:
-                next(f)  # skip header
-            except StopIteration:
-                return [], {}
-            all_frames = [json.loads(line) for line in f if line.strip()]
-
-        metric_values = {}
-        for k in self.get_all_filter_keys():
-            is_face_sim = k == 'face_sim'
-            values = np.asarray([
-                f.get(k, f.get("metrics", {}).get(f"{k}_score"))
-                for f in all_frames
-                if (f.get(k) is not None or 
-                    f.get("metrics", {}).get(f"{k}_score") is not None)
-            ], dtype=float)
-            
-            if values.size > 0:
-                hist_range = (0, 1) if is_face_sim else (0, 100)
-                counts, bins = np.histogram(values, bins=50, range=hist_range)
-                metric_values[k] = values.tolist()
-                metric_values[f"{k}_hist"] = (counts.tolist(), bins.tolist())
-        return all_frames, metric_values
-
-    def _update_gallery(self, all_frames_data, filters, output_dir,
-                       gallery_view, show_overlay, overlay_alpha):
-        """Update the results gallery based on current filters."""
-        kept, rejected, counts, per_frame_reasons = self._apply_all_filters_vectorized(
-            all_frames_data, filters or {}
-        )
-        status_parts = [f"**Kept:** {len(kept)}/{len(all_frames_data)}"]
-        if counts:
-            rejections = ', '.join([f'{k}: {v}' for k, v in counts.most_common(3)])
-            status_parts.append(f"**Rejections:** {rejections}")
-        status_text = " | ".join(status_parts)
-        
-        frames_to_show = rejected if gallery_view == "Rejected Frames" else kept
-        preview_images = []
-        
-        if output_dir:
-            output_path = Path(output_dir)
-            thumb_dir = output_path / "thumbs"
-            masks_dir = output_path / "masks"
-            
-            for f_meta in frames_to_show[:100]:
-                thumb_path = thumb_dir / f"{Path(f_meta['filename']).stem}.webp"
-                caption = ""
-                if gallery_view == "Rejected Frames":
-                    reasons_list = per_frame_reasons.get(f_meta['filename'], [])
-                    caption = f"Reasons: {', '.join(reasons_list)}"
-
-                thumb_rgb_np = self.thumbnail_manager.get(thumb_path)
-                if thumb_rgb_np is None:
-                    continue
-
-                if (show_overlay and not f_meta.get("mask_empty", True) and
-                    (mask_name := f_meta.get("mask_path"))):
-                    mask_path = masks_dir / mask_name
-                    if mask_path.exists():
-                        mask_gray = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
-                        thumb_overlay_rgb = render_mask_overlay(
-                            thumb_rgb_np, mask_gray, float(overlay_alpha)
-                        )
-                        preview_images.append((thumb_overlay_rgb, caption))
-                    else:
-                        preview_images.append((thumb_rgb_np, caption))
-                else:
-                    preview_images.append((thumb_rgb_np, caption))
-
-        gallery_rows = 1 if gallery_view == "Rejected Frames" else 2
-        return status_text, gr.update(value=preview_images, rows=gallery_rows)
-
-    def on_filters_changed(self, all_frames_data, per_metric_values, output_dir,
-                          gallery_view, show_overlay, overlay_alpha,
-                          require_face_match, dedup_thresh, *slider_values):
-        """Handle filter changes and update gallery."""
-        if not all_frames_data:
-            return "Run analysis to see results.", []
-            
+    def on_filters_changed_wrapper(self, all_frames_data, per_metric_values, output_dir,
+                                 gallery_view, show_overlay, overlay_alpha,
+                                 require_face_match, dedup_thresh, *slider_values):
+        """Wrapper for on_filters_changed logic."""
         slider_keys = sorted(self.components['metric_sliders'].keys())
-        filters = {key: val for key, val in zip(slider_keys, slider_values)}
-        filters.update({
-            "require_face_match": require_face_match,
-            "dedup_thresh": dedup_thresh,
-            "face_sim_enabled": bool(per_metric_values.get("face_sim")),
-            "mask_area_enabled": bool(per_metric_values.get("mask_area_pct")),
-            "enable_dedup": (any('phash' in f for f in all_frames_data)
-                           if all_frames_data else False)
-        })
-        return self._update_gallery(all_frames_data, filters, output_dir,
-                                  gallery_view, show_overlay, overlay_alpha)
+        slider_values_dict = {key: val for key, val in zip(slider_keys, slider_values)}
+        
+        event = FilterEvent(
+            all_frames_data=all_frames_data,
+            per_metric_values=per_metric_values,
+            output_dir=output_dir,
+            gallery_view=gallery_view,
+            show_overlay=show_overlay,
+            overlay_alpha=overlay_alpha,
+            require_face_match=require_face_match,
+            dedup_thresh=dedup_thresh,
+            slider_values=slider_values_dict
+        )
+        
+        result = on_filters_changed(event, self.thumbnail_manager)
+        return result['filter_status_text'], result['results_gallery']
 
-    def export_kept_frames(self, all_frames_data, output_dir, video_path,
-                          enable_crop, crop_ars, crop_padding, *filter_args):
+    def on_reset_filters(self, all_frames_data, per_metric_values, output_dir):
+        """Wrapper for reset_filters logic."""
+        slider_keys = sorted(self.components['metric_sliders'].keys())
+        result = reset_filters(all_frames_data, per_metric_values, output_dir,
+                               self.config, slider_keys, self.thumbnail_manager)
+        
+        # The logic function returns a dict of updates. We need to return a list
+        # of values in the correct order for the Gradio `outputs`.
+        # The order is determined by the `reset_outputs` dict in _setup_filtering_handlers
+        c = self.components
+        reset_outputs_order = (
+            [c['metric_sliders'][k] for k in slider_keys] +
+            [c['require_face_match_input'], c['dedup_thresh_input'],
+             c['filter_status_text'], c['results_gallery']]
+        )
+        
+        # Map component objects to their names to look up results
+        comp_to_name_map = {v: k for k, v in c.items()}
+        
+        final_result = []
+        for comp in reset_outputs_order:
+            comp_name = comp_to_name_map.get(comp)
+            if comp_name:
+                # Logic function returns keys like 'slider_niqe_min', but component name is 'slider_niqe_min'
+                # So we need to match them.
+                update_key = next((k for k in result.keys() if k.endswith(comp_name)), None)
+                if update_key:
+                     final_result.append(result[update_key])
+                else: # for filter_status_text and results_gallery
+                     final_result.append(result.get(comp_name, gr.update()))
+            else:
+                final_result.append(gr.update())
+
+        return final_result
+
+    def on_auto_set_thresholds(self, per_metric_values, p):
+        """Wrapper for auto_set_thresholds logic."""
+        slider_keys = sorted(self.components['metric_sliders'].keys())
+        updates = auto_set_thresholds(per_metric_values, p, slider_keys)
+        
+        # The logic function returns a dict of updates. We need to return a list
+        # of values in the correct order for the Gradio `outputs`.
+        return [updates.get(f'slider_{key}', gr.update()) for key in slider_keys]
+
+    def on_toggle_scene_status(self, scenes_list, selected_shot_id, output_folder, new_status):
+        """Wrapper for toggle_scene_status logic."""
+        scenes, status_text, unified_status = toggle_scene_status(
+            scenes_list, selected_shot_id, new_status, output_folder, self.logger)
+        return scenes, status_text, unified_status
+
+    def on_apply_bulk_scene_filters(self, scenes, min_mask_area, min_face_sim,
+                                    enable_face_filter, output_folder):
+        """Wrapper for apply_bulk_scene_filters logic."""
+        scenes, status_text = apply_bulk_scene_filters(
+            scenes, min_mask_area, min_face_sim, enable_face_filter,
+            output_folder, self.logger
+        )
+        return scenes, status_text
+
+    def on_apply_scene_overrides(self, scenes_list, selected_shot_id, prompt,
+                                box_th, text_th, output_folder, *ana_args):
+        """Wrapper for apply_scene_overrides logic."""
+        gallery, scenes, status = apply_scene_overrides(
+            scenes_list, selected_shot_id, prompt, box_th, text_th,
+            output_folder, self.ana_ui_map_keys, ana_args,
+            self.cuda_available, self.thumbnail_manager, self.logger
+        )
+        return gallery, scenes, status
+
+    def export_kept_frames_wrapper(self, all_frames_data, output_dir, video_path,
+                                 enable_crop, crop_ars, crop_padding,
+                                 require_face_match, dedup_thresh, *slider_values):
+        """Wrapper for exporting frames."""
+        slider_keys = sorted(self.components['metric_sliders'].keys())
+        slider_values_dict = {key: val for key, val in zip(slider_keys, slider_values)}
+
+        filter_args = slider_values_dict
+        filter_args.update({
+            "require_face_match": require_face_match,
+            "dedup_thresh": dedup_thresh
+        })
+
+        event = ExportEvent(
+            all_frames_data=all_frames_data,
+            output_dir=output_dir,
+            video_path=video_path,
+            enable_crop=enable_crop,
+            crop_ars=crop_ars,
+            crop_padding=crop_padding,
+            filter_args=filter_args
+        )
+
+        # This logic remains here as it's tightly coupled to ffmpeg execution
+        # and file system operations based on UI state.
+        # It could be moved, but it's a smaller piece of logic.
+        return self.export_kept_frames(event)
+
+    def export_kept_frames(self, event: ExportEvent):
         """Export filtered frames to a new directory."""
-        if not all_frames_data:
+        import subprocess
+        from datetime import datetime
+        from pathlib import Path
+        import json
+
+        if not event.all_frames_data:
             return "No metadata to export."
-        if not video_path or not Path(video_path).exists():
+        if not event.video_path or not Path(event.video_path).exists():
             return "[ERROR] Original video path is required for export."
             
         try:
-            slider_keys = sorted(self.components['metric_sliders'].keys())
-            require_face_match, dedup_thresh, *slider_values = filter_args
-            filters = {key: val for key, val in zip(slider_keys, slider_values)}
+            filters = event.filter_args.copy()
             filters.update({
-                "require_face_match": require_face_match,
-                "dedup_thresh": dedup_thresh,
-                "face_sim_enabled": any("face_sim" in f for f in all_frames_data),
-                "mask_area_enabled": any("mask_area_pct" in f for f in all_frames_data),
-                "enable_dedup": any('phash' in f for f in all_frames_data)
+                "face_sim_enabled": any("face_sim" in f for f in event.all_frames_data),
+                "mask_area_enabled": any("mask_area_pct" in f for f in event.all_frames_data),
+                "enable_dedup": any('phash' in f for f in event.all_frames_data)
             })
 
-            kept, _, _, _ = self._apply_all_filters_vectorized(all_frames_data, filters)
+            kept, _, _, _ = apply_all_filters_vectorized(event.all_frames_data, filters)
             if not kept:
                 return "No frames kept after filtering. Nothing to export."
 
-            out_root = Path(output_dir)
+            out_root = Path(event.output_dir)
             frame_map_path = out_root / "frame_map.json"
             if not frame_map_path.exists():
                 return "[ERROR] frame_map.json not found. Cannot export."
@@ -1361,7 +964,7 @@ class AppUI:
                          f"{datetime.now().strftime('%Y%m%d_%H%M%S')}")
             export_dir.mkdir(exist_ok=True, parents=True)
 
-            cmd = ['ffmpeg', '-y', '-i', str(video_path), '-vf', select_filter,
+            cmd = ['ffmpeg', '-y', '-i', str(event.video_path), '-vf', select_filter,
                   '-vsync', 'vfr', str(export_dir / "frame_%06d.png")]
 
             self.logger.info("Starting final export extraction...",
@@ -1377,281 +980,3 @@ class AppUI:
         except Exception as e:
             self.logger.error("Error during export process", exc_info=True)
             return f"Error during export: {e}"
-
-    def reset_filters(self, all_frames_data, per_metric_values, output_dir):
-        """Reset all filters to default values."""
-        output_values = []
-        slider_default_values = []
-        slider_keys = sorted(self.components['metric_sliders'].keys())
-        
-        for key in slider_keys:
-            metric_key = re.sub(r'_(min|max)$', '', key)
-            default_key = 'default_max' if key.endswith('_max') else 'default_min'
-            default_val = self.config.filter_defaults[metric_key][default_key]
-            output_values.append(gr.update(value=default_val))
-            slider_default_values.append(default_val)
-
-        face_match_default = self.config.ui_defaults['require_face_match']
-        dedup_default = self.config.filter_defaults['dedup_thresh']['default']
-        output_values.append(gr.update(value=face_match_default))
-        output_values.append(gr.update(value=dedup_default))
-
-        if all_frames_data:
-            status_text, gallery_update = self.on_filters_changed(
-                all_frames_data, per_metric_values, output_dir, "Kept Frames",
-                True, 0.6, face_match_default, dedup_default,
-                *slider_default_values
-            )
-            output_values.extend([status_text, gallery_update])
-        else:
-            output_values.extend(["Load an analysis to begin.", []])
-        return output_values
-
-    def auto_set_thresholds(self, per_metric_values, p=75):
-        """Auto-set filter thresholds based on percentiles."""
-        slider_keys = sorted(self.components['metric_sliders'].keys())
-        updates = [gr.update() for _ in slider_keys]
-        if not per_metric_values:
-            return updates
-            
-        pmap = {
-            k: float(np.percentile(np.asarray(vals, dtype=np.float32), p))
-            for k, vals in per_metric_values.items()
-            if not k.endswith('_hist') and vals
-        }
-        
-        for i, key in enumerate(slider_keys):
-            if key.endswith('_min'):
-                metric = key[:-4]
-                if metric in pmap:
-                    updates[i] = gr.update(value=round(pmap[metric], 2))
-        return updates
-
-    def _get_scene_status_text(self, scenes_list):
-        """Get status text for scenes."""
-        if not scenes_list:
-            return "No scenes loaded."
-        num_included = sum(1 for s in scenes_list if s['status'] == 'included')
-        return f"{num_included}/{len(scenes_list)} scenes included for propagation."
-
-    def _toggle_scene_status(self, scenes_list, selected_shot_id, new_status,
-                           output_folder):
-        """Toggle the status of a specific scene."""
-        if selected_shot_id is None or not scenes_list:
-            return (scenes_list, self._get_scene_status_text(scenes_list),
-                   "No scene selected.")
-
-        scene_found = False
-        for s in scenes_list:
-            if s['shot_id'] == selected_shot_id:
-                s['status'] = new_status
-                s['manual_status_change'] = True
-                scene_found = True
-                break
-
-        if scene_found:
-            self._save_scene_seeds(scenes_list, output_folder)
-            return (scenes_list, self._get_scene_status_text(scenes_list),
-                   f"Scene {selected_shot_id} status set to {new_status}.")
-        else:
-            return (scenes_list, self._get_scene_status_text(scenes_list),
-                   f"Could not find scene {selected_shot_id}.")
-
-    def apply_bulk_scene_filters(self, scenes, min_mask_area, min_face_sim,
-                                enable_face_filter, output_folder):
-        """Apply bulk filters to scenes."""
-        if not scenes:
-            return [], "No scenes to filter."
-
-        for scene in scenes:
-            if scene.get('manual_status_change'):
-                continue
-
-            is_excluded = False
-            seed_result = scene.get('seed_result', {})
-            details = seed_result.get('details', {})
-
-            mask_area = details.get('mask_area_pct', 101)
-            if mask_area < min_mask_area:
-                is_excluded = True
-
-            if enable_face_filter and not is_excluded:
-                face_sim = details.get('seed_face_sim', 1.01)
-                if face_sim < min_face_sim:
-                    is_excluded = True
-
-            scene['status'] = 'excluded' if is_excluded else 'included'
-
-        self._save_scene_seeds(scenes, output_folder)
-        return scenes, self._get_scene_status_text(scenes)
-
-    def apply_scene_overrides(self, scenes_list, selected_shot_id, prompt,
-                            box_th, text_th, output_folder, *ana_args):
-        """Apply overrides to a specific scene."""
-        if selected_shot_id is None or not scenes_list:
-            return (gr.update(), scenes_list,
-                   "No scene selected to apply overrides.")
-
-        scene_idx, scene_dict = next(
-            ((i, s) for i, s in enumerate(scenes_list)
-             if s['shot_id'] == selected_shot_id), (None, None)
-        )
-        if scene_dict is None:
-            return (gr.update(), scenes_list,
-                   "Error: Selected scene not found in state.")
-
-        try:
-            scene_dict['seed_config'] = {
-                'text_prompt': prompt,
-                'box_threshold': box_th,
-                'text_threshold': text_th,
-            }
-
-            ui_args = dict(zip(self.ana_ui_map_keys, ana_args))
-            ui_args['output_folder'] = output_folder
-            params = AnalysisParameters.from_ui(**ui_args)
-
-            face_analyzer, ref_emb, person_detector = None, None, None
-            device = "cuda" if self.cuda_available else "cpu"
-            if params.enable_face_filter:
-                from app.ml.face import get_face_analyzer
-                face_analyzer = get_face_analyzer(params.face_model_name)
-                if params.face_ref_img_path:
-                    ref_img = cv2.imread(params.face_ref_img_path)
-                    if ref_img is not None:
-                        faces = face_analyzer.get(ref_img)
-                        if faces:
-                            ref_emb = max(faces, key=lambda x: x.det_score).normed_embedding
-            from app.ml.person import get_person_detector
-            person_detector = get_person_detector(params.person_detector_model, device)
-
-            masker = SubjectMasker(params, Queue(), threading.Event(),
-                                 face_analyzer=face_analyzer,
-                                 reference_embedding=ref_emb,
-                                 person_detector=person_detector,
-                                 thumbnail_manager=self.thumbnail_manager)
-            masker.frame_map = masker._create_frame_map(output_folder)
-
-            fname = masker.frame_map.get(scene_dict['best_seed_frame'])
-            if not fname:
-                raise ValueError("Framemap lookup failed for re-seeding.")
-
-            thumb_path = (Path(output_folder) / "thumbs" /
-                         f"{Path(fname).stem}.webp")
-            thumb_rgb = self.thumbnail_manager.get(thumb_path)
-
-            bbox, details = masker.get_seed_for_frame(thumb_rgb,
-                                                    scene_dict['seed_config'])
-            scene_dict['seed_result'] = {'bbox': bbox, 'details': details}
-
-            self._save_scene_seeds(scenes_list, output_folder)
-
-            updated_gallery_previews = self._regenerate_all_previews(
-                scenes_list, output_folder, masker
-            )
-
-            return (updated_gallery_previews, scenes_list,
-                   f"Scene {selected_shot_id} updated and saved.")
-
-        except Exception as e:
-            self.logger.error("Failed to apply scene overrides", exc_info=True)
-            return gr.update(), scenes_list, f"[ERROR] {e}"
-
-    def _regenerate_all_previews(self, scenes_list, output_folder, masker):
-        """Regenerate all scene previews."""
-        previews = []
-        output_dir = Path(output_folder)
-        
-        for scene_dict in scenes_list:
-            fname = masker.frame_map.get(scene_dict['best_seed_frame'])
-            if not fname:
-                continue
-
-            thumb_path = output_dir / "thumbs" / f"{Path(fname).stem}.webp"
-            thumb_rgb = self.thumbnail_manager.get(thumb_path)
-            if thumb_rgb is None:
-                continue
-
-            bbox = scene_dict.get('seed_result', {}).get('bbox')
-            details = scene_dict.get('seed_result', {}).get('details', {})
-
-            mask = masker.get_mask_for_bbox(thumb_rgb, bbox) if bbox else None
-            overlay_rgb = (render_mask_overlay(thumb_rgb, mask)
-                          if mask is not None
-                          else masker.draw_bbox(thumb_rgb, bbox))
-
-            caption = (f"Scene {scene_dict['shot_id']} "
-                      f"(Seed: {scene_dict['best_seed_frame']}) | "
-                      f"{details.get('type', 'N/A')}")
-            previews.append((overlay_rgb, caption))
-        return previews
-
-    def _parse_ar(self, s: str) -> tuple[int, int]:
-        """Parse aspect ratio string."""
-        try:
-            if isinstance(s, str) and ":" in s:
-                w_str, h_str = s.split(":", 1)
-                return max(int(w_str), 1), max(int(h_str), 1)
-        except Exception:
-            pass
-        return 1, 1
-
-    def _crop_frame(self, img: np.ndarray, mask: np.ndarray, crop_ars: str,
-                   padding: int) -> np.ndarray:
-        """Crop frame to subject with aspect ratio constraints."""
-        h, w = img.shape[:2]
-        if mask is None:
-            return img
-        if mask.ndim == 3:
-            mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
-        mask = (mask > 128).astype(np.uint8)
-        ys, xs = np.where(mask > 0)
-        if ys.size == 0:
-            return img
-            
-        x1, x2, y1, y2 = xs.min(), xs.max() + 1, ys.min(), ys.max() + 1
-        bw, bh = x2 - x1, y2 - y1
-        pad_x = int(round(bw * padding/100.0))
-        pad_y = int(round(bh * padding/100.0))
-        x1, y1 = max(0, x1 - pad_x), max(0, y1 - pad_y)
-        x2, y2 = min(w, x2 + pad_x), min(h, y2 + pad_y)
-        bw, bh = x2 - x1, y2 - y1
-        cx, cy = (x1 + x2) / 2.0, (y1 + y2) / 2.0
-        ars = [self._parse_ar(s.strip()) for s in str(crop_ars).split(',')
-               if s.strip()]
-        if not ars:
-            return img[y1:y2, x1:x2]
-
-        def expand_to_ar(r):
-            if bw / (bh + 1e-9) < r:
-                new_w, new_h = int(np.ceil(bh * r)), bh
-            else:
-                new_w, new_h = bw, int(np.ceil(bw / r))
-            if new_w > w or new_h > h:
-                return None
-            x1n, y1n = int(round(cx - new_w / 2)), int(round(cy - new_h / 2))
-            if x1n < 0:
-                x1n = 0
-            if y1n < 0:
-                y1n = 0
-            if x1n + new_w > w:
-                x1n = w - new_w
-            if y1n + new_h > h:
-                y1n = h - new_h
-            x2n, y2n = x1n + new_w, y1n + new_h
-            if x1n > x1 or y1n > y1 or x2n < x2 or y2n < y2:
-                return None
-            return (x1n, y1n, x2n, y2n, (new_w * new_h) / max(1, bw * bh))
-
-        candidates = []
-        for ar in ars:
-            r_w, r_h = (ar if isinstance(ar, (tuple, list)) and len(ar) == 2
-                       else (1, 1))
-            if r_h > 0:
-                res = expand_to_ar(r_w / r_h)
-                if res:
-                    candidates.append(res)
-        if candidates:
-            x1n, y1n, x2n, y2n, _ = sorted(candidates, key=lambda t: t[4])[0]
-            return img[y1n:y2n, x1n:x2n]
-        return img[y1:y2, x1:x2]

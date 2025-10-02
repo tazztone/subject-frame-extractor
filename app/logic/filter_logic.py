@@ -1,0 +1,324 @@
+import json
+from pathlib import Path
+import re
+from collections import Counter, defaultdict
+
+import gradio as gr
+import numpy as np
+
+from app.core.config import Config
+from app.core.logging import UnifiedLogger
+from app.logic.events import FilterEvent
+from app.io.frames import render_mask_overlay
+
+
+def load_and_prep_filter_data(metadata_path, get_all_filter_keys):
+    """Load and prepare frame data for filtering."""
+    if not metadata_path or not Path(metadata_path).exists():
+        return [], {}
+
+    with Path(metadata_path).open('r', encoding='utf-8') as f:
+        try:
+            next(f)  # skip header
+        except StopIteration:
+            return [], {}
+        all_frames = [json.loads(line) for line in f if line.strip()]
+
+    metric_values = {}
+    for k in get_all_filter_keys():
+        is_face_sim = k == 'face_sim'
+        values = np.asarray([
+            f.get(k, f.get("metrics", {}).get(f"{k}_score"))
+            for f in all_frames
+            if (f.get(k) is not None or
+                f.get("metrics", {}).get(f"{k}_score") is not None)
+        ], dtype=float)
+
+        if values.size > 0:
+            hist_range = (0, 1) if is_face_sim else (0, 100)
+            counts, bins = np.histogram(values, bins=50, range=hist_range)
+            metric_values[k] = values.tolist()
+            metric_values[f"{k}_hist"] = (counts.tolist(), bins.tolist())
+    return all_frames, metric_values
+
+
+def build_all_metric_svgs(per_metric_values, get_all_filter_keys, logger):
+    """Build SVG histograms for all metrics."""
+    svgs = {}
+    for k in get_all_filter_keys():
+        if (h := per_metric_values.get(f"{k}_hist")):
+            svgs[k] = histogram_svg(h, title="", logger=logger)
+    return svgs
+
+
+def histogram_svg(hist_data, title="", logger=None):
+    """Generate SVG histogram for metrics."""
+    if not hist_data:
+        return ""
+    try:
+        import matplotlib.pyplot as plt
+        import matplotlib.ticker as mticker
+        import io
+
+        counts, bins = hist_data
+        if (not isinstance(counts, list) or not isinstance(bins, list) or
+            len(bins) != len(counts) + 1):
+            return ""
+
+        with plt.style.context("dark_background"):
+            fig, ax = plt.subplots(figsize=(4.6, 2.2), dpi=120)
+            ax.bar(bins[:-1], counts, width=np.diff(bins),
+                  color="#7aa2ff", alpha=0.85, align="edge")
+            ax.grid(axis="y", alpha=0.2)
+            ax.margins(x=0)
+            ax.yaxis.set_major_locator(mticker.MaxNLocator(integer=True))
+            for side in ("top", "right"):
+                ax.spines[side].set_visible(False)
+            ax.tick_params(labelsize=8)
+            ax.set_title(title)
+            buf = io.StringIO()
+            fig.savefig(buf, format="svg", bbox_inches="tight")
+            plt.close(fig)
+        return buf.getvalue()
+    except Exception as e:
+        if logger:
+            logger.error("Failed to generate histogram SVG.", exc_info=True)
+        return ""
+
+
+def apply_all_filters_vectorized(all_frames_data, filters):
+    """Apply all filters to frame data using vectorized operations."""
+    from app.core.config import Config
+    import imagehash
+
+    config = Config()
+
+    if not all_frames_data:
+        return [], [], Counter(), {}
+
+    num_frames = len(all_frames_data)
+    filenames = [f['filename'] for f in all_frames_data]
+    metric_arrays = {}
+
+    for k in config.QUALITY_METRICS:
+        metric_arrays[k] = np.array([
+            f.get("metrics", {}).get(f"{k}_score", np.nan)
+            for f in all_frames_data
+        ], dtype=np.float32)
+
+    metric_arrays["face_sim"] = np.array([
+        f.get("face_sim", np.nan) for f in all_frames_data
+    ], dtype=np.float32)
+    metric_arrays["mask_area_pct"] = np.array([
+        f.get("mask_area_pct", np.nan) for f in all_frames_data
+    ], dtype=np.float32)
+
+    kept_mask = np.ones(num_frames, dtype=bool)
+    reasons = defaultdict(list)
+
+    # --- 1. Deduplication (run first on all frames) ---
+    dedup_thresh_val = filters.get("dedup_thresh", 5)
+    if filters.get("enable_dedup") and dedup_thresh_val != -1:
+        all_indices = list(range(num_frames))
+        sorted_indices = sorted(all_indices, key=lambda i: filenames[i])
+        hashes = {
+            i: imagehash.hex_to_hash(all_frames_data[i]['phash'])
+            for i in sorted_indices if 'phash' in all_frames_data[i]
+        }
+
+        for i in range(1, len(sorted_indices)):
+            current_idx = sorted_indices[i]
+            prev_idx = sorted_indices[i-1]
+            if prev_idx in hashes and current_idx in hashes:
+                if (hashes[prev_idx] - hashes[current_idx]) <= dedup_thresh_val:
+                    kept_mask[current_idx] = False
+                    reasons[filenames[current_idx]].append('duplicate')
+
+    # --- 2. Quality & Metric Filters (run on remaining frames) ---
+    for k in config.QUALITY_METRICS:
+        min_val, max_val = filters.get(f"{k}_min", 0), filters.get(f"{k}_max", 100)
+        current_kept_indices = np.where(kept_mask)[0]
+        values_to_check = metric_arrays[k][current_kept_indices]
+
+        low_mask_rel = values_to_check < min_val
+        high_mask_rel = values_to_check > max_val
+
+        low_indices_abs = current_kept_indices[low_mask_rel]
+        high_indices_abs = current_kept_indices[high_mask_rel]
+
+        for i in low_indices_abs:
+            reasons[filenames[i]].append(f"{k}_low")
+        for i in high_indices_abs:
+            reasons[filenames[i]].append(f"{k}_high")
+
+        kept_mask[low_indices_abs] = False
+        kept_mask[high_indices_abs] = False
+
+    if filters.get("face_sim_enabled"):
+        current_kept_indices = np.where(kept_mask)[0]
+        face_sim_values = metric_arrays["face_sim"][current_kept_indices]
+
+        valid = ~np.isnan(face_sim_values)
+        low_mask_rel = valid & (face_sim_values < filters.get("face_sim_min", 0.5))
+        low_indices_abs = current_kept_indices[low_mask_rel]
+        for i in low_indices_abs:
+            reasons[filenames[i]].append("face_sim_low")
+        kept_mask[low_indices_abs] = False
+
+        if filters.get("require_face_match"):
+            missing_mask_rel = ~valid
+            missing_indices_abs = current_kept_indices[missing_mask_rel]
+            for i in missing_indices_abs:
+                reasons[filenames[i]].append("face_missing")
+            kept_mask[missing_indices_abs] = False
+
+    if filters.get("mask_area_enabled"):
+        current_kept_indices = np.where(kept_mask)[0]
+        mask_area_values = metric_arrays["mask_area_pct"][current_kept_indices]
+
+        small_mask_rel = mask_area_values < filters.get("mask_area_pct_min", 1.0)
+        small_indices_abs = current_kept_indices[small_mask_rel]
+        for i in small_indices_abs:
+            reasons[filenames[i]].append("mask_too_small")
+        kept_mask[small_indices_abs] = False
+
+    kept = [all_frames_data[i] for i in np.where(kept_mask)[0]]
+    rejected = [all_frames_data[i] for i in np.where(~kept_mask)[0]]
+    counts = Counter(r for r_list in reasons.values() for r in r_list)
+    return kept, rejected, counts, reasons
+
+
+def on_filters_changed(event: FilterEvent, thumbnail_manager):
+    """Handle filter changes and update gallery."""
+    if not event.all_frames_data:
+        return {"filter_status_text": "Run analysis to see results.", "results_gallery": []}
+
+    filters = event.slider_values.copy()
+    filters.update({
+        "require_face_match": event.require_face_match,
+        "dedup_thresh": event.dedup_thresh,
+        "face_sim_enabled": bool(event.per_metric_values.get("face_sim")),
+        "mask_area_enabled": bool(event.per_metric_values.get("mask_area_pct")),
+        "enable_dedup": (any('phash' in f for f in event.all_frames_data)
+                       if event.all_frames_data else False)
+    })
+
+    status_text, gallery_update = _update_gallery(
+        event.all_frames_data, filters, event.output_dir,
+        event.gallery_view, event.show_overlay, event.overlay_alpha,
+        thumbnail_manager
+    )
+    return {"filter_status_text": status_text, "results_gallery": gallery_update}
+
+
+def _update_gallery(all_frames_data, filters, output_dir,
+                   gallery_view, show_overlay, overlay_alpha,
+                   thumbnail_manager):
+    """Update the results gallery based on current filters."""
+    kept, rejected, counts, per_frame_reasons = apply_all_filters_vectorized(
+        all_frames_data, filters or {}
+    )
+    status_parts = [f"**Kept:** {len(kept)}/{len(all_frames_data)}"]
+    if counts:
+        rejections = ', '.join([f'{k}: {v}' for k, v in counts.most_common(3)])
+        status_parts.append(f"**Rejections:** {rejections}")
+    status_text = " | ".join(status_parts)
+
+    frames_to_show = rejected if gallery_view == "Rejected Frames" else kept
+    preview_images = []
+
+    if output_dir:
+        output_path = Path(output_dir)
+        thumb_dir = output_path / "thumbs"
+        masks_dir = output_path / "masks"
+
+        for f_meta in frames_to_show[:100]:
+            thumb_path = thumb_dir / f"{Path(f_meta['filename']).stem}.webp"
+            caption = ""
+            if gallery_view == "Rejected Frames":
+                reasons_list = per_frame_reasons.get(f_meta['filename'], [])
+                caption = f"Reasons: {', '.join(reasons_list)}"
+
+            thumb_rgb_np = thumbnail_manager.get(thumb_path)
+            if thumb_rgb_np is None:
+                continue
+
+            if (show_overlay and not f_meta.get("mask_empty", True) and
+                (mask_name := f_meta.get("mask_path"))):
+                import cv2
+                mask_path = masks_dir / mask_name
+                if mask_path.exists():
+                    mask_gray = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
+                    thumb_overlay_rgb = render_mask_overlay(
+                        thumb_rgb_np, mask_gray, float(overlay_alpha)
+                    )
+                    preview_images.append((thumb_overlay_rgb, caption))
+                else:
+                    preview_images.append((thumb_rgb_np, caption))
+            else:
+                preview_images.append((thumb_rgb_np, caption))
+
+    gallery_rows = 1 if gallery_view == "Rejected Frames" else 2
+    return status_text, gr.update(value=preview_images, rows=gallery_rows)
+
+
+def reset_filters(all_frames_data, per_metric_values, output_dir, config,
+                  slider_keys, thumbnail_manager):
+    """Reset all filters to default values."""
+    output_values = {}
+    slider_default_values = []
+
+    for key in slider_keys:
+        metric_key = re.sub(r'_(min|max)$', '', key)
+        default_key = 'default_max' if key.endswith('_max') else 'default_min'
+        default_val = config.filter_defaults[metric_key][default_key]
+        output_values[f'slider_{key}'] = gr.update(value=default_val)
+        slider_default_values.append(default_val)
+
+    face_match_default = config.ui_defaults['require_face_match']
+    dedup_default = config.filter_defaults['dedup_thresh']['default']
+    output_values['require_face_match_input'] = gr.update(value=face_match_default)
+    output_values['dedup_thresh_input'] = gr.update(value=dedup_default)
+
+    if all_frames_data:
+        slider_defaults_dict = {key: val for key, val in zip(slider_keys, slider_default_values)}
+        filter_event = FilterEvent(
+            all_frames_data=all_frames_data,
+            per_metric_values=per_metric_values,
+            output_dir=output_dir,
+            gallery_view="Kept Frames",
+            show_overlay=True,
+            overlay_alpha=0.6,
+            require_face_match=face_match_default,
+            dedup_thresh=dedup_default,
+            slider_values=slider_defaults_dict
+        )
+        updates = on_filters_changed(filter_event, thumbnail_manager)
+        output_values['filter_status_text'] = updates['filter_status_text']
+        output_values['results_gallery'] = updates['results_gallery']
+    else:
+        output_values['filter_status_text'] = "Load an analysis to begin."
+        output_values['results_gallery'] = []
+
+    return output_values
+
+
+def auto_set_thresholds(per_metric_values, p, slider_keys):
+    """Auto-set filter thresholds based on percentiles."""
+    updates = {}
+    if not per_metric_values:
+        return {f'slider_{key}': gr.update() for key in slider_keys}
+
+    pmap = {
+        k: float(np.percentile(np.asarray(vals, dtype=np.float32), p))
+        for k, vals in per_metric_values.items()
+        if not k.endswith('_hist') and vals
+    }
+
+    for key in slider_keys:
+        updates[f'slider_{key}'] = gr.update()
+        if key.endswith('_min'):
+            metric = key[:-4]
+            if metric in pmap:
+                updates[f'slider_{key}'] = gr.update(value=round(pmap[metric], 2))
+    return updates
