@@ -456,41 +456,69 @@ class AppUI:
         self._setup_scene_editor_handlers()
         self._setup_bulk_scene_handlers()
 
+    def _yield_gradio_updates(self, logic_generator, output_keys):
+        """Helper to convert dicts from logic to tuples for Gradio."""
+        for result_dict in logic_generator:
+            yield tuple(result_dict.get(k, gr.update()) for k in output_keys)
+
     def run_extraction_wrapper(self, *args):
         """Wrapper for extraction pipeline."""
         ui_args = dict(zip(self.ext_ui_map_keys, args))
         event = ExtractionEvent(**ui_args)
-        yield from run_pipeline_logic(event, self.progress_queue, self.cancel_event,
-                                      self.logger, self.config,
-                                      self.thumbnail_manager, self.cuda_available)
+
+        output_keys = [
+            'unified_log', 'unified_status', 'extracted_video_path_state',
+            'extracted_frames_dir_state', 'frames_folder_input',
+            'analysis_video_path_input'
+        ]
+
+        logic_gen = run_pipeline_logic(event, self.progress_queue, self.cancel_event,
+                                       self.logger, self.config,
+                                       self.thumbnail_manager, self.cuda_available)
+        yield from self._yield_gradio_updates(logic_gen, output_keys)
 
     def run_pre_analysis_wrapper(self, *args):
         """Wrapper for pre-analysis pipeline."""
         ui_args = dict(zip(self.ana_ui_map_keys, args))
         event = PreAnalysisEvent(**ui_args)
 
-        for result in run_pipeline_logic(event, self.progress_queue, self.cancel_event,
-                                         self.logger, self.config,
-                                         self.thumbnail_manager, self.cuda_available):
-            if 'scenes_state' in result:
-                scenes = result['scenes_state']
-                save_scene_seeds(scenes, event.output_folder, self.logger)
-                result['scene_filter_status'] = get_scene_status_text(scenes)
-            yield result
+        output_keys = [
+            'unified_log', 'unified_status', 'seeding_preview_gallery',
+            'scenes_state', 'propagate_masks_button', 'scene_filter_status'
+        ]
 
-    def run_propagation_wrapper(self, output_folder, video_path, scenes, *args):
+        logic_gen = run_pipeline_logic(event, self.progress_queue, self.cancel_event,
+                                       self.logger, self.config,
+                                       self.thumbnail_manager, self.cuda_available)
+
+        for result_dict in logic_gen:
+            if 'scenes_state' in result_dict:
+                scenes = result_dict['scenes_state']
+                save_scene_seeds(scenes, event.output_folder, self.logger)
+                result_dict['scene_filter_status'] = get_scene_status_text(scenes)
+
+            yield tuple(result_dict.get(k, gr.update()) for k in output_keys)
+
+    def run_propagation_wrapper(self, scenes, *args):
         """Wrapper for propagation pipeline."""
         ui_args = dict(zip(self.ana_ui_map_keys, args))
         analysis_params = PreAnalysisEvent(**ui_args)
         event = PropagationEvent(
-            output_folder=output_folder,
-            video_path=video_path,
+            output_folder=ui_args['output_folder'],
+            video_path=ui_args['video_path'],
             scenes=scenes,
             analysis_params=analysis_params
         )
-        yield from run_pipeline_logic(event, self.progress_queue, self.cancel_event,
-                                      self.logger, self.config,
-                                      self.thumbnail_manager)
+
+        output_keys = [
+            'unified_log', 'unified_status', 'analysis_output_dir_state',
+            'analysis_metadata_path_state', 'filtering_tab'
+        ]
+
+        logic_gen = run_pipeline_logic(event, self.progress_queue, self.cancel_event,
+                                       self.logger, self.config,
+                                       self.thumbnail_manager)
+        yield from self._yield_gradio_updates(logic_gen, output_keys)
 
     def _setup_visibility_toggles(self):
         """Set up UI visibility toggles."""
@@ -567,8 +595,7 @@ class AppUI:
                                            self.ana_input_components,
                                            pre_ana_outputs)
 
-        prop_inputs = ([c['frames_folder_input'], c['analysis_video_path_input'],
-                       c['scenes_state']] + self.ana_input_components)
+        prop_inputs = [c['scenes_state']] + self.ana_input_components
         prop_outputs = [
             c['unified_log'], c['unified_status'], c['analysis_output_dir_state'],
             c['analysis_metadata_path_state'], c['filtering_tab']
