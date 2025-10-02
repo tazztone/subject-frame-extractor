@@ -16,11 +16,11 @@ from app.core.logging import UnifiedLogger
 from app.domain.models import Scene, AnalysisParameters
 from app.logic.events import (ExtractionEvent, PreAnalysisEvent, PropagationEvent,
                               SessionLoadEvent)
-from app.logic.session_logic import load_session_logic
+from app.logic.scene_logic import get_scene_status_text
 from app.masking.subject_masker import SubjectMasker
 from app.pipelines.extract import ExtractionPipeline
 from app.pipelines.analyze import AnalysisPipeline
-from app.io.frames import render_mask_overlay
+from app.io.frames import render_mask_overlay, get_frame_files
 
 
 def run_pipeline_logic(event, progress_queue, cancel_event, logger, config,
@@ -35,9 +35,10 @@ def run_pipeline_logic(event, progress_queue, cancel_event, logger, config,
                                         cuda_available)
     elif isinstance(event, PropagationEvent):
         yield from execute_propagation(event, progress_queue, cancel_event,
-                                       logger, config, thumbnail_manager)
+                                       logger, config, thumbnail_manager,
+                                       cuda_available)
     elif isinstance(event, SessionLoadEvent):
-        yield load_session_logic(event, logger)
+        yield from execute_session_load(event, logger, config, thumbnail_manager)
 
 
 def execute_extraction(event: ExtractionEvent, progress_queue: Queue,
@@ -64,9 +65,7 @@ def execute_extraction(event: ExtractionEvent, progress_queue: Queue,
             "unified_log": "Extraction complete.",
             "unified_status": f"Output: {result['output_dir']}",
             "extracted_video_path_state": result.get("video_path", ""),
-            "extracted_frames_dir_state": result["output_dir"],
-            "frames_folder_input": result["output_dir"],
-            "analysis_video_path_input": result.get("video_path", "")
+            "extracted_frames_dir_state": result["output_dir"]
         }
 
 
@@ -201,9 +200,114 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue,
     }
 
 
+def execute_session_load(event: SessionLoadEvent, logger: UnifiedLogger, config: Config, thumbnail_manager):
+    """Loads a session from a previous run and prepares the UI."""
+    session_path = Path(event.session_path)
+    config_path = session_path / "run_config.json"
+
+    if not config_path.exists():
+        logger.error(f"Session load failed: run_config.json not found in {session_path}")
+        yield {
+            "unified_log": f"[ERROR] Could not find 'run_config.json' in the specified directory: {session_path}",
+            "unified_status": "Session load failed."
+        }
+        return
+
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            run_config = json.load(f)
+        logger.info(f"Loaded run configuration from {config_path}")
+
+        updates = {
+            'source_input': gr.update(value=run_config.get('source_path', '')),
+            'max_resolution': gr.update(value=run_config.get('max_resolution', '1080')),
+            'thumbnails_only_input': gr.update(value=run_config.get('thumbnails_only', True)),
+            'thumb_megapixels_input': gr.update(value=run_config.get('thumb_megapixels', 0.5)),
+            'ext_scene_detect_input': gr.update(value=run_config.get('scene_detect', True)),
+            'method_input': gr.update(value=run_config.get('method', 'scene')),
+            'use_png_input': gr.update(value=run_config.get('use_png', False)),
+            'pre_analysis_enabled_input': gr.update(value=run_config.get('pre_analysis_enabled', True)),
+            'pre_sample_nth_input': gr.update(value=run_config.get('pre_sample_nth', 1)),
+            'enable_face_filter_input': gr.update(value=run_config.get('enable_face_filter', False)),
+            'face_model_name_input': gr.update(value=run_config.get('face_model_name', 'buffalo_l')),
+            'face_ref_img_path_input': gr.update(value=run_config.get('face_ref_img_path', '')),
+            'text_prompt_input': gr.update(value=run_config.get('text_prompt', '')),
+            'seed_strategy_input': gr.update(value=run_config.get('seed_strategy', 'Largest Person')),
+            'person_detector_model_input': gr.update(value=run_config.get('person_detector_model', 'yolo11x.pt')),
+            'dam4sam_model_name_input': gr.update(value=run_config.get('dam4sam_model_name', 'sam21pp-T')),
+            'enable_dedup_input': gr.update(value=run_config.get('enable_dedup', False)),
+            'extracted_video_path_state': run_config.get('video_path', ''),
+            'extracted_frames_dir_state': run_config.get('output_folder', ''),
+            'analysis_output_dir_state': run_config.get('output_folder', ''),
+        }
+
+        scene_seeds_path = session_path / "scene_seeds.json"
+        if scene_seeds_path.exists():
+            with open(scene_seeds_path, 'r', encoding='utf-8') as f:
+                scenes_from_file = json.load(f)
+
+            scenes_as_dict = []
+            for shot_id, scene_data in scenes_from_file.items():
+                scene_data['shot_id'] = int(shot_id)
+                scenes_as_dict.append(scene_data)
+
+            updates['scenes_state'] = scenes_as_dict
+            updates['propagate_masks_button'] = gr.update(interactive=True)
+            logger.info(f"Loaded {len(scenes_as_dict)} scenes from {scene_seeds_path}")
+
+            output_dir = Path(run_config.get('output_folder'))
+            frame_files = get_frame_files(str(output_dir))
+            frame_map = {i: f for i, f in enumerate(sorted(frame_files))}
+            previews = []
+            for scene in scenes_as_dict:
+                seed_frame_idx = scene.get('seed_frame_idx')
+                if seed_frame_idx is not None:
+                    fname = frame_map.get(seed_frame_idx)
+                    if not fname:
+                        logger.warning(f"Could not find seed_frame_idx {seed_frame_idx} in frame_map for scene {scene['shot_id']}")
+                        continue
+
+                    thumb_path = output_dir / "thumbs" / f"{Path(fname).stem}.webp"
+                    thumb_rgb = thumbnail_manager.get(thumb_path)
+
+                    if thumb_rgb is None:
+                        logger.warning(f"Could not load thumbnail for seed_frame_idx {seed_frame_idx} at path {thumb_path}")
+                        continue
+
+                    caption = f"Scene {scene['shot_id']} (Seed: {seed_frame_idx})"
+                    previews.append((thumb_rgb, caption))
+
+            updates['seeding_preview_gallery'] = gr.update(value=previews)
+            updates['scene_filter_status'] = get_scene_status_text(scenes_as_dict)
+
+            has_face_sim = any(
+                s.get('seed_metrics', {}).get('best_face_sim') is not None
+                for s in scenes_as_dict
+            )
+            updates['scene_face_sim_min_input'] = gr.update(visible=has_face_sim)
+
+        metadata_path = session_path / "metadata.json"
+        if metadata_path.exists():
+            updates['analysis_metadata_path_state'] = str(metadata_path)
+            updates['filtering_tab'] = gr.update(interactive=True)
+            logger.info(f"Found analysis metadata at {metadata_path}. Filtering tab will be enabled.")
+
+        updates['unified_log'] = f"Successfully loaded session from: {session_path}"
+        updates['unified_status'] = "Session loaded. You can now proceed from where you left off."
+
+        yield updates
+
+    except Exception as e:
+        logger.error(f"Error loading session from {session_path}: {e}", exc_info=True)
+        yield {
+            "unified_log": f"[ERROR] An unexpected error occurred while loading the session: {e}",
+            "unified_status": "Session load failed."
+        }
+
+
 def execute_propagation(event: PropagationEvent, progress_queue: Queue,
                         cancel_event: threading.Event, logger: UnifiedLogger,
-                        config: Config, thumbnail_manager):
+                        config: Config, thumbnail_manager, cuda_available):
     """Execute propagation pipeline."""
     scenes_to_process = [Scene(**s) for s in event.scenes if s['status'] == 'included']
     if not scenes_to_process:

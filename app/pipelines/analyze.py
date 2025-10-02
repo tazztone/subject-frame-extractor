@@ -34,6 +34,7 @@ class AnalysisPipeline(Pipeline):
         self.face_analyzer = None
         self.reference_embedding = None
         self.mask_metadata = {}
+        self.scene_map = {}
         self.niqe_metric = None
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.thumbnail_manager = (thumbnail_manager if thumbnail_manager 
@@ -74,6 +75,8 @@ class AnalysisPipeline(Pipeline):
             with self.metadata_path.open('w', encoding='utf-8') as f:
                 header = {"params": asdict(self.params)}
                 f.write(json.dumps(_to_json_safe(header)) + '\n')
+
+            self.scene_map = {s.shot_id: s for s in scenes_to_process}
 
             if self.params.enable_face_filter:
                 self.face_analyzer = get_face_analyzer(
@@ -229,6 +232,11 @@ class AnalysisPipeline(Pipeline):
             if frame.max_face_confidence is not None:
                 meta["face_conf"] = frame.max_face_confidence
             meta.update(mask_meta)
+
+            if meta.get("shot_id") is not None:
+                scene = self.scene_map.get(meta["shot_id"])
+                if scene and scene.seed_metrics:
+                    meta['seed_face_sim'] = scene.seed_metrics.get('best_face_sim')
 
             if self.params.enable_dedup:
                 import imagehash
