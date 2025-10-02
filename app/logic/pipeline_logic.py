@@ -14,7 +14,9 @@ import numpy as np
 from app.core.config import Config
 from app.core.logging import UnifiedLogger
 from app.domain.models import Scene, AnalysisParameters
-from app.logic.events import ExtractionEvent, PreAnalysisEvent, PropagationEvent
+from app.logic.events import (ExtractionEvent, PreAnalysisEvent, PropagationEvent,
+                              SessionLoadEvent)
+from app.logic.session_logic import load_session_logic
 from app.masking.subject_masker import SubjectMasker
 from app.pipelines.extract import ExtractionPipeline
 from app.pipelines.analyze import AnalysisPipeline
@@ -34,6 +36,8 @@ def run_pipeline_logic(event, progress_queue, cancel_event, logger, config,
     elif isinstance(event, PropagationEvent):
         yield from execute_propagation(event, progress_queue, cancel_event,
                                        logger, config, thumbnail_manager)
+    elif isinstance(event, SessionLoadEvent):
+        yield load_session_logic(event, logger)
 
 
 def execute_extraction(event: ExtractionEvent, progress_queue: Queue,
@@ -84,6 +88,22 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue,
     params = AnalysisParameters.from_ui(**params_dict)
 
     output_dir = Path(params.output_folder)
+
+    # Save the run configuration for resuming
+    run_config_path = output_dir / "run_config.json"
+    try:
+        # Create a serializable copy of the event parameters
+        config_to_save = params_dict.copy()
+        config_to_save.pop('face_ref_img_upload', None)  # Not needed for resume
+
+        with run_config_path.open('w', encoding='utf-8') as f:
+            json.dump(config_to_save, f, indent=4)
+        logger.info(f"Saved run configuration to {run_config_path}")
+    except TypeError as e:
+        logger.error(f"Could not serialize run configuration: {e}", exc_info=True)
+    except Exception as e:
+        logger.error(f"Failed to save run configuration: {e}", exc_info=True)
+
     scenes_path = output_dir / "scenes.json"
     if not scenes_path.exists():
         yield {"unified_log": "[ERROR] scenes.json not found. Run extraction with scene detection."}

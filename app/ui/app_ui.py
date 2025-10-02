@@ -7,7 +7,7 @@ from app.core.config import Config
 from app.core.logging import UnifiedLogger
 from app.core.thumb_cache import ThumbnailManager
 from app.logic.events import (ExtractionEvent, PreAnalysisEvent, PropagationEvent,
-                              FilterEvent, ExportEvent)
+                              FilterEvent, ExportEvent, SessionLoadEvent)
 from app.logic.pipeline_logic import run_pipeline_logic
 from app.logic.filter_logic import (load_and_prep_filter_data, build_all_metric_svgs,
                                     on_filters_changed, reset_filters,
@@ -40,13 +40,34 @@ class AppUI:
         ]
         self.ana_ui_map_keys = [
             'output_folder', 'video_path', 'resume', 'enable_face_filter',
-            'face_ref_img_path', 'face_ref_img_upload', 'face_model_name', 
-            'enable_subject_mask', 'dam4sam_model_name', 'person_detector_model', 
-            'seed_strategy', 'scene_detect', 'enable_dedup', 'text_prompt', 
-            'box_threshold', 'text_threshold', 'min_mask_area_pct', 
-            'sharpness_base_scale', 'edge_strength_base_scale', 
+            'face_ref_img_path', 'face_ref_img_upload', 'face_model_name',
+            'enable_subject_mask', 'dam4sam_model_name', 'person_detector_model',
+            'seed_strategy', 'scene_detect', 'enable_dedup', 'text_prompt',
+            'box_threshold', 'text_threshold', 'min_mask_area_pct',
+            'sharpness_base_scale', 'edge_strength_base_scale',
             'gdino_config_path', 'gdino_checkpoint_path',
             'pre_analysis_enabled', 'pre_sample_nth'
+        ]
+
+        self.session_load_keys = [
+            'unified_log', 'unified_status',
+            # Extraction Tab
+            'source_input', 'max_resolution', 'thumbnails_only_input',
+            'thumb_megapixels_input', 'ext_scene_detect_input', 'method_input',
+            'use_png_input',
+            # Analysis Tab
+            'frames_folder_input', 'analysis_video_path_input',
+            'pre_analysis_enabled_input', 'pre_sample_nth_input',
+            'enable_face_filter_input', 'face_model_name_input',
+            'face_ref_img_path_input', 'text_prompt_input',
+            'seed_strategy_input', 'person_detector_model_input',
+            'dam4sam_model_name_input', 'enable_dedup_input',
+            # States
+            'extracted_video_path_state', 'extracted_frames_dir_state',
+            'analysis_output_dir_state', 'analysis_metadata_path_state',
+            'scenes_state',
+            # Other UI elements
+            'propagate_masks_button', 'filtering_tab'
         ]
 
     def build_ui(self):
@@ -58,6 +79,16 @@ class AppUI:
             if not self.cuda_available:
                 gr.Markdown("⚠️ **CPU Mode** — GPU-dependent features are "
                           "disabled or will be slow.")
+
+            with gr.Accordion("🔄 Session Manager", open=True):
+                with gr.Row():
+                    self._create_component('session_path_input', 'textbox', {
+                        'label': "Load previous run",
+                        'placeholder': "Path to a previous run's output folder..."
+                    })
+                    self._create_component('load_session_button', 'button', {
+                        'value': "📂 Load Session"
+                    })
 
             with gr.Tabs():
                 with gr.Tab("📹 1. Frame Extraction"):
@@ -520,6 +551,17 @@ class AppUI:
                                        self.thumbnail_manager)
         yield from self._yield_gradio_updates(logic_gen, output_keys)
 
+    def run_session_load_wrapper(self, session_path):
+        """Wrapper for session loading."""
+        event = SessionLoadEvent(session_path=session_path)
+
+        logic_gen = run_pipeline_logic(event, self.progress_queue, self.cancel_event,
+                                       self.logger, self.config,
+                                       self.thumbnail_manager, self.cuda_available)
+
+        yield from self._yield_gradio_updates(logic_gen, self.session_load_keys)
+
+
     def _setup_visibility_toggles(self):
         """Set up UI visibility toggles."""
         c = self.components
@@ -541,6 +583,16 @@ class AppUI:
     def _setup_pipeline_handlers(self):
         """Set up pipeline execution handlers."""
         c = self.components
+
+        session_outputs = [
+            c.get(k, k) for k in self.session_load_keys
+        ]
+
+        c['load_session_button'].click(
+            self.run_session_load_wrapper,
+            [c['session_path_input']],
+            session_outputs
+        )
         
         ext_comp_map = {k: f"{k}_input" for k in self.ext_ui_map_keys}
         ext_comp_map.update({
