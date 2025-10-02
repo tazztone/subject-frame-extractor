@@ -319,6 +319,8 @@ example-code/*
 masks/*
 logs/*
 downloads/*
+Grounded-SAM-2/*
+DAM4SAM/*
 .kilocode/rules/*
 .kilocode/rules/rule.md
 subject-frame-extractor

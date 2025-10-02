@@ -4,6 +4,7 @@ import math
 import cv2
 import numpy as np
 import torch
+from app.ml.grounding import predict_grounding_dino
 from torchvision import transforms
 from torchvision.ops import box_convert
 
