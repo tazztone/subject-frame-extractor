@@ -79,19 +79,23 @@ def apply_bulk_scene_filters(scenes, min_mask_area, min_face_sim,
         return [], "No scenes to filter."
 
     for scene in scenes:
-        if scene.get('manual_status_change'):
-            continue
+        # Reset manual status on bulk filter application so sliders work
+        # after "Include/Exclude All" has been clicked.
+        scene['manual_status_change'] = False
 
         is_excluded = False
         seed_result = scene.get('seed_result', {})
         details = seed_result.get('details', {})
+        seed_metrics = scene.get('seed_metrics', {})
 
         mask_area = details.get('mask_area_pct', 101)
         if mask_area < min_mask_area:
             is_excluded = True
 
         if enable_face_filter and not is_excluded:
-            face_sim = details.get('seed_face_sim', 1.01)
+            # Get face_sim from seed_metrics, not details.
+            # Default to a high value so scenes without a score are not excluded.
+            face_sim = seed_metrics.get('face_sim', 1.01)
             if face_sim < min_face_sim:
                 is_excluded = True
 
