@@ -212,10 +212,10 @@ class AppUI:
                         'label': "Face Model"
                     })
                     self._create_component('face_ref_img_path_input', 'textbox', {
-                        'label': "📸 Reference Image Path"
+                        'label': "📸 Face Image Path"
                     })
                     self._create_component('face_ref_img_upload_input', 'file', {
-                        'label': "📤 Or Upload",
+                        'label': "📤 Or Upload Face",
                         'type': "filepath"
                     })
                     self._create_component('text_prompt_input', 'textbox', {
