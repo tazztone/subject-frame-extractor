@@ -688,7 +688,7 @@ class AppUI:
             c['scene_editor_prompt_input'],
             c['scene_editor_box_thresh_input'], 
             c['scene_editor_text_thresh_input'],
-            c['frames_folder_input']
+            c['extracted_frames_dir_state']
         ] + self.ana_input_components
         
         c['scene_recompute_button'].click(
@@ -699,7 +699,7 @@ class AppUI:
         )
 
         include_exclude_inputs = [c['scenes_state'], c['selected_scene_id_state'],
-                                c['frames_folder_input']]
+                                c['extracted_frames_dir_state']]
         include_exclude_outputs = [c['scenes_state'], c['scene_filter_status'],
                                  c['unified_status']]
         c['scene_include_button'].click(
@@ -727,19 +727,19 @@ class AppUI:
 
         c['bulk_include_all_button'].click(
             lambda s, folder: bulk_toggle(s, 'included', folder),
-            [c['scenes_state'], c['frames_folder_input']],
+            [c['scenes_state'], c['extracted_frames_dir_state']],
             [c['scenes_state'], c['scene_filter_status']]
         )
         c['bulk_exclude_all_button'].click(
             lambda s, folder: bulk_toggle(s, 'excluded', folder),
-            [c['scenes_state'], c['frames_folder_input']],
+            [c['scenes_state'], c['extracted_frames_dir_state']],
             [c['scenes_state'], c['scene_filter_status']]
         )
 
         bulk_filter_inputs = [
             c['scenes_state'], c['scene_mask_area_min_input'],
             c['scene_face_sim_min_input'], c['scene_confidence_min_input'],
-            c['enable_face_filter_input'], c['frames_folder_input']
+            c['enable_face_filter_input'], c['extracted_frames_dir_state']
         ]
         bulk_filter_outputs = [c['scenes_state'], c['scene_filter_status']]
 

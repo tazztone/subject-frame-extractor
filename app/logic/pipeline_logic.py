@@ -20,7 +20,7 @@ from app.logic.scene_logic import get_scene_status_text
 from app.masking.subject_masker import SubjectMasker
 from app.pipelines.extract import ExtractionPipeline
 from app.pipelines.analyze import AnalysisPipeline
-from app.io.frames import render_mask_overlay, get_frame_files
+from app.io.frames import render_mask_overlay, create_frame_map
 
 
 def run_pipeline_logic(event, progress_queue, cancel_event, logger, config,
@@ -256,8 +256,7 @@ def execute_session_load(event: SessionLoadEvent, logger: UnifiedLogger, config:
             logger.info(f"Loaded {len(scenes_as_dict)} scenes from {scene_seeds_path}")
 
             output_dir = Path(run_config.get('output_folder'))
-            frame_files = get_frame_files(str(output_dir))
-            frame_map = {i: f for i, f in enumerate(sorted(frame_files))}
+            frame_map = create_frame_map(output_dir)
             previews = []
             for scene in scenes_as_dict:
                 seed_frame_idx = scene.get('seed_frame_idx')
