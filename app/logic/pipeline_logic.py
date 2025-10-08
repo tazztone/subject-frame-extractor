@@ -74,7 +74,6 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue,
                          config: Config, thumbnail_manager, cuda_available):
     """Execute pre-analysis pipeline."""
     import pyiqa
-
     yield {"unified_log": "", "unified_status": "Starting Pre-Analysis..."}
 
     params_dict = asdict(event)
@@ -85,21 +84,14 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue,
         params_dict['face_ref_img_path'] = str(dest)
 
     params = AnalysisParameters.from_ui(**params_dict)
-
     output_dir = Path(params.output_folder)
 
-    # Save the run configuration for resuming
+    # Save the run configuration
     run_config_path = output_dir / "run_config.json"
     try:
-        # Create a serializable copy of the event parameters
-        config_to_save = params_dict.copy()
-        config_to_save.pop('face_ref_img_upload', None)  # Not needed for resume
-
+        config_to_save = {k: v for k, v in params_dict.items() if k != 'face_ref_img_upload'}
         with run_config_path.open('w', encoding='utf-8') as f:
             json.dump(config_to_save, f, indent=4)
-        logger.info(f"Saved run configuration to {run_config_path}")
-    except TypeError as e:
-        logger.error(f"Could not serialize run configuration: {e}", exc_info=True)
     except Exception as e:
         logger.error(f"Failed to save run configuration: {e}", exc_info=True)
 
@@ -114,90 +106,77 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue,
 
     scene_seeds_path = output_dir / "scene_seeds.json"
     if scene_seeds_path.exists() and params.resume:
-        logger.info("Loading existing scene_seeds.json")
         with scene_seeds_path.open('r', encoding='utf-8') as f:
             loaded_seeds = json.load(f)
         for scene in scenes:
-            seed_data = loaded_seeds.get(str(scene.shot_id))
-            if seed_data:
+            if str(scene.shot_id) in loaded_seeds:
+                seed_data = loaded_seeds[str(scene.shot_id)]
                 scene.best_seed_frame = seed_data.get('seed_frame_idx')
                 scene.seed_config = seed_data.get('seed_config', {})
                 scene.status = seed_data.get('status', 'pending')
                 scene.seed_metrics = seed_data.get('seed_metrics', {})
 
-    niqe_metric, face_analyzer, ref_emb, person_detector = None, None, None, None
     device = "cuda" if cuda_available else "cpu"
-
-    if params.pre_analysis_enabled:
-        niqe_metric = pyiqa.create_metric('niqe', device=device)
+    niqe_metric = pyiqa.create_metric('niqe', device=device) if params.pre_analysis_enabled else None
+    face_analyzer, ref_emb = None, None
     if params.enable_face_filter:
         from app.ml.face import get_face_analyzer
         face_analyzer = get_face_analyzer(params.face_model_name)
-        if params.face_ref_img_path:
+        if params.face_ref_img_path and Path(params.face_ref_img_path).exists():
             ref_img = cv2.imread(params.face_ref_img_path)
-            if ref_img is not None:
-                faces = face_analyzer.get(ref_img)
-                if faces:
-                    ref_emb = max(faces, key=lambda x: x.det_score).normed_embedding
+            faces = face_analyzer.get(ref_img)
+            if faces:
+                ref_emb = max(faces, key=lambda x: x.det_score).normed_embedding
+
     from app.ml.person import get_person_detector
     person_detector = get_person_detector(params.person_detector_model, device)
 
-    masker = SubjectMasker(params, progress_queue, cancel_event,
-                         face_analyzer=face_analyzer,
-                         reference_embedding=ref_emb,
-                         person_detector=person_detector,
-                         niqe_metric=niqe_metric,
-                         thumbnail_manager=thumbnail_manager)
+    masker = SubjectMasker(params, progress_queue, cancel_event, face_analyzer=face_analyzer,
+                         reference_embedding=ref_emb, person_detector=person_detector,
+                         niqe_metric=niqe_metric, thumbnail_manager=thumbnail_manager)
     masker.frame_map = masker._create_frame_map(str(output_dir))
 
-    previews = []
-    for i, scene in enumerate(scenes):
-        progress_queue.put({"stage": f"Pre-analyzing scene {i+1}/{len(scenes)}", "total": len(scenes), "progress": i})
+    def pre_analysis_task():
+        progress_queue.put({"stage": "Pre-analyzing scenes", "total": len(scenes)})
+        previews = []
+        for scene in scenes:
+            if cancel_event.is_set(): break
+            if not scene.best_seed_frame:
+                masker._select_best_seed_frame_in_scene(scene, str(output_dir))
 
-        if not scene.best_seed_frame:
-            masker._select_best_seed_frame_in_scene(scene, str(output_dir))
+            fname = masker.frame_map.get(scene.best_seed_frame)
+            if not fname: continue
 
-        fname = masker.frame_map.get(scene.best_seed_frame)
-        if not fname:
-            logger.warning(f"Could not find best_seed_frame {scene.best_seed_frame} in frame_map for scene {scene.shot_id}")
-            continue
+            thumb_path = output_dir / "thumbs" / f"{Path(fname).stem}.webp"
+            thumb_rgb = thumbnail_manager.get(thumb_path)
+            if thumb_rgb is None: continue
 
-        thumb_path = output_dir / "thumbs" / f"{Path(fname).stem}.webp"
-        thumb_rgb = thumbnail_manager.get(thumb_path)
+            bbox, details = masker.get_seed_for_frame(thumb_rgb, seed_config=scene.seed_config or params)
+            scene.seed_result = {'bbox': bbox, 'details': details}
+            mask = masker.get_mask_for_bbox(thumb_rgb, bbox) if bbox else None
+            if mask is not None:
+                h, w = mask.shape[:2]
+                area_pct = (np.sum(mask > 0) / (h * w)) * 100 if h * w > 0 else 0.0
+                scene.seed_result['details']['mask_area_pct'] = area_pct
 
-        if thumb_rgb is None:
-            logger.warning(f"Could not load thumbnail for best_seed_frame {scene.best_seed_frame} at path {thumb_path}")
-            continue
+            overlay_rgb = (render_mask_overlay(thumb_rgb, mask) if mask is not None else masker.draw_bbox(thumb_rgb, bbox))
+            caption = f"Scene {scene.shot_id} (Seed: {scene.best_seed_frame}) | {details.get('type', 'N/A')}"
+            previews.append((overlay_rgb, caption))
+            if scene.status == 'pending': scene.status = 'included'
+            progress_queue.put({"progress": 1})
 
-        bbox, details = masker.get_seed_for_frame(thumb_rgb, seed_config=scene.seed_config or params)
-        scene.seed_result = {'bbox': bbox, 'details': details}
+        return {"done": True, "previews": previews, "scenes": [asdict(s) for s in scenes]}
 
-        mask = masker.get_mask_for_bbox(thumb_rgb, bbox) if bbox else None
-        if mask is not None:
-            h, w = mask.shape[:2]
-            area_pct = ((np.sum(mask > 0) / (h * w)) * 100 if (h * w) > 0 else 0.0)
-            scene.seed_result['details']['mask_area_pct'] = area_pct
+    result = yield from _run_task(pre_analysis_task, progress_queue, cancel_event, logger)
 
-        overlay_rgb = (render_mask_overlay(thumb_rgb, mask) if mask is not None else masker.draw_bbox(thumb_rgb, bbox))
-
-        caption = f"Scene {scene.shot_id} (Seed: {scene.best_seed_frame}) | {details.get('type', 'N/A')}"
-        previews.append((overlay_rgb, caption))
-        scene.preview_path = "dummy"
-        if scene.status == 'pending':
-            scene.status = 'included'
-
-    scenes_as_dict = [asdict(s) for s in scenes]
-    # self._save_scene_seeds(scenes_as_dict, str(output_dir)) # This will be handled by scene_logic
-    progress_queue.put({"stage": "Pre-analysis complete", "progress": len(scenes)})
-
-    yield {
-        "unified_log": "Pre-analysis complete.",
-        "unified_status": f"{len(scenes)} scenes found.",
-        "seeding_preview_gallery": gr.update(value=previews),
-        "scenes_state": scenes_as_dict,
-        "propagate_masks_button": gr.update(interactive=True),
-        # "scene_filter_status": self._get_scene_status_text(scenes_as_dict) # This will be handled by scene_logic
-    }
+    if result.get("done"):
+        yield {
+            "unified_log": "Pre-analysis complete.",
+            "unified_status": f"{len(result['scenes'])} scenes found.",
+            "seeding_preview_gallery": gr.update(value=result['previews']),
+            "scenes_state": result['scenes'],
+            "propagate_masks_button": gr.update(interactive=True),
+        }
 
 
 def execute_session_load(event: SessionLoadEvent, logger: UnifiedLogger, config: Config, thumbnail_manager):
@@ -336,6 +315,8 @@ def _run_task(task_func, progress_queue, cancel_event, logger):
     start_time, last_yield = time.time(), 0.0
     last_task_result = {}
 
+    yield {"progress_bar": gr.update(visible=True, value=0)}
+
     with ThreadPoolExecutor(max_workers=1) as executor:
         future = executor.submit(task_func)
         while future.running():
@@ -359,7 +340,12 @@ def _run_task(task_func, progress_queue, cancel_event, logger):
                     status = (f"**{stage}:** {processed}/{total} "
                               f"({processed/total:.1%}) | {rate:.1f} items/s | "
                               f"ETA: {int(eta//60):02d}:{int(eta%60):02d}")
-                    yield {"unified_log": "\n".join(log_buffer), "unified_status": status}
+                    progress_value = processed / total if total > 0 else 0
+                    yield {
+                        "unified_log": "\n".join(log_buffer),
+                        "unified_status": status,
+                        "progress_bar": gr.update(value=progress_value)
+                    }
                     last_yield = time.time()
             except Empty:
                 pass
@@ -377,7 +363,11 @@ def _run_task(task_func, progress_queue, cancel_event, logger):
     else:
         status_text = "✅ Complete."
 
-    yield {"unified_log": "\n".join(log_buffer), "unified_status": status_text}
+    yield {
+        "unified_log": "\n".join(log_buffer),
+        "unified_status": status_text,
+        "progress_bar": gr.update(visible=False)
+    }
 
     # Return the final result so the caller can use it
     return last_task_result
