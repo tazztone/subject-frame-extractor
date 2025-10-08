@@ -46,7 +46,7 @@ class AppUI:
             'box_threshold', 'text_threshold', 'min_mask_area_pct',
             'sharpness_base_scale', 'edge_strength_base_scale',
             'gdino_config_path', 'gdino_checkpoint_path',
-            'pre_analysis_enabled', 'pre_sample_nth'
+            'pre_analysis_enabled', 'pre_sample_nth', 'primary_seed_strategy'
         ]
 
         self.session_load_keys = [
@@ -196,10 +196,54 @@ class AppUI:
         """Create the analysis and seeding tab."""
         with gr.Row():
             with gr.Column(scale=1):
-                with gr.Group():
-                    gr.Markdown("### ⚙️ Pre-Analysis Settings")
-                    self._create_component('pre_analysis_enabled_input', 
-                                         'checkbox', {
+                gr.Markdown("### 🎯 Step 1: Choose Your Seeding Strategy")
+                self._create_component('primary_seed_strategy_input', 'radio', {
+                    'choices': ["👤 By Face", "📝 By Text", "🤖 Automatic"],
+                    'value': "🤖 Automatic",
+                    'label': "Primary Seeding Strategy"
+                })
+
+                # --- Face Seeding Group ---
+                with gr.Group(visible=False) as face_seeding_group:
+                    self.components['face_seeding_group'] = face_seeding_group
+                    gr.Markdown("#### 👤 Configure Face Seeding")
+                    gr.Markdown("Upload a clear image of the person you want to find. The system will search for this person in the video.")
+                    self._create_component('face_ref_img_upload_input', 'file', {
+                        'label': "Upload Face Reference Image", 'type': "filepath"
+                    })
+                    self._create_component('face_ref_img_path_input', 'textbox', {
+                        'label': "Or provide a local file path"
+                    })
+                    self._create_component('enable_face_filter_input', 'checkbox', {
+                        'label': "Enable Face Similarity (must be checked for face seeding)",
+                        'value': False, 'interactive': False
+                    })
+
+                # --- Text Seeding Group ---
+                with gr.Group(visible=False) as text_seeding_group:
+                    self.components['text_seeding_group'] = text_seeding_group
+                    gr.Markdown("#### 📝 Configure Text Seeding")
+                    gr.Markdown("Describe the subject or object you want to find. Be as specific as possible for better results.")
+                    self._create_component('text_prompt_input', 'textbox', {
+                        'label': "Text Prompt",
+                        'placeholder': "e.g., 'a woman in a red dress'",
+                        'value': self.config.ui_defaults['text_prompt']
+                    })
+
+                # --- Automatic Seeding Group ---
+                with gr.Group(visible=True) as auto_seeding_group:
+                    self.components['auto_seeding_group'] = auto_seeding_group
+                    gr.Markdown("#### 🤖 Configure Automatic Seeding")
+                    gr.Markdown("The system will automatically identify the most prominent person in each scene. This is a good general-purpose starting point.")
+                    self._create_component('seed_strategy_input', 'dropdown', {
+                        'choices': ["Largest Person", "Center-most Person"],
+                        'value': "Largest Person",
+                        'label': "Automatic Seeding Method"
+                    })
+
+                with gr.Accordion("Advanced Settings", open=False):
+                    gr.Markdown("These settings control the underlying models and analysis parameters. Adjust them only if you understand their effect.")
+                    self._create_component('pre_analysis_enabled_input', 'checkbox', {
                         'label': 'Enable Pre-Analysis to find best seed frame',
                         'value': self.config.ui_defaults['pre_analysis_enabled']
                     })
@@ -208,66 +252,45 @@ class AppUI:
                         'value': self.config.ui_defaults['pre_sample_nth'],
                         'interactive': True
                     })
-                    
-                with gr.Accordion("Global Seeding Settings", open=True):
-                    self._create_component('enable_face_filter_input', 
-                                         'checkbox', {
-                        'label': "Enable Face Similarity",
-                        'value': self.config.ui_defaults['enable_face_filter']
+                    self._create_component('person_detector_model_input', 'dropdown', {
+                        'choices': ['yolo11x.pt', 'yolo11s.pt'],
+                        'value': self.config.ui_defaults['person_detector_model'],
+                        'label': "Person Detector (for Automatic)"
                     })
                     self._create_component('face_model_name_input', 'dropdown', {
                         'choices': ["buffalo_l", "buffalo_s"],
                         'value': self.config.ui_defaults['face_model_name'],
-                        'label': "Face Model"
-                    })
-                    self._create_component('face_ref_img_path_input', 'textbox', {
-                        'label': "📸 Face Image Path"
-                    })
-                    self._create_component('face_ref_img_upload_input', 'file', {
-                        'label': "📤 Or Upload Face",
-                        'type': "filepath"
-                    })
-                    self._create_component('text_prompt_input', 'textbox', {
-                        'label': "Ground with text",
-                        'placeholder': "e.g., 'a woman in a red dress'",
-                        'value': self.config.ui_defaults['text_prompt']
-                    })
-                    self._create_component('seed_strategy_input', 'dropdown', {
-                        'choices': ["Largest Person", "Center-most Person"],
-                        'value': "Largest Person",
-                        'label': "Fallback Seed Strategy (if no face/prompt)"
-                    })
-                    self._create_component('person_detector_model_input', 
-                                         'dropdown', {
-                        'choices': ['yolo11x.pt', 'yolo11s.pt'],
-                        'value': self.config.ui_defaults['person_detector_model'],
-                        'label': "Person Detector"
+                        'label': "Face Model (for Face Seeding)"
                     })
                     self._create_component('dam4sam_model_name_input', 'dropdown', {
-                        'choices': ["sam21pp-T", "sam21pp-S", "sam21pp-B+", 
-                                  "sam21pp-L"],
+                        'choices': ["sam21pp-T", "sam21pp-S", "sam21pp-B+", "sam21pp-L"],
                         'value': self.config.ui_defaults['dam4sam_model_name'],
                         'label': "SAM Tracker Model"
                     })
-                    
-                with gr.Accordion("Advanced Analysis Settings", open=True):
                     self._create_component('enable_dedup_input', 'checkbox', {
                         'label': "Enable Deduplication (pHash)",
                         'value': self.config.ui_defaults.get('enable_dedup', False)
                     })
 
                 self._create_component('start_pre_analysis_button', 'button', {
-                    'value': '🌱 Start Pre-Analysis & Seeding Preview',
-                    'variant': 'primary'
-                })
-                self._create_component('propagate_masks_button', 'button', {
-                    'value': '🔬 Propagate Masks on Kept Scenes',
-                    'variant': 'primary',
-                    'interactive': False
+                    'value': '🌱 Find & Preview Scene Seeds', 'variant': 'primary'
                 })
 
-            with gr.Column(scale=2):
-                gr.Markdown("### 🎭 Seeding Preview & Scene Filtering")
+                with gr.Group(visible=False) as propagation_group:
+                    self.components['propagation_group'] = propagation_group
+                    gr.Markdown("---")
+                    gr.Markdown("### 🔬 Step 3: Propagate Masks")
+                    gr.Markdown("Once you are satisfied with the seeds, propagate the masks to the rest of the frames in the selected scenes.")
+
+                    self._create_component('propagate_masks_button', 'button', {
+                        'value': '🔬 Propagate Masks on Kept Scenes',
+                        'variant': 'primary',
+                        'interactive': False
+                    })
+
+            with gr.Column(scale=2, visible=False) as seeding_results_column:
+                self.components['seeding_results_column'] = seeding_results_column
+                gr.Markdown("### 🎭 Step 2: Review & Refine Seeds")
                 self._create_component('seeding_preview_gallery', 'gallery', {
                     'label': 'Scene Seed Previews',
                     'columns': [4, 6, 8],
@@ -505,12 +528,28 @@ class AppUI:
     def run_pre_analysis_wrapper(self, *args):
         """Wrapper for pre-analysis pipeline."""
         ui_args = dict(zip(self.ana_ui_map_keys, args))
+
+        # Adapt ui_args based on the primary seeding strategy
+        strategy = ui_args.pop('primary_seed_strategy', '🤖 Automatic')
+        if strategy == "👤 By Face":
+            ui_args['enable_face_filter'] = True
+            ui_args['text_prompt'] = ""
+        elif strategy == "📝 By Text":
+            ui_args['enable_face_filter'] = False
+            ui_args['face_ref_img_path'] = ""
+            ui_args['face_ref_img_upload'] = None
+        elif strategy == "🤖 Automatic":
+            ui_args['enable_face_filter'] = False
+            ui_args['text_prompt'] = ""
+            ui_args['face_ref_img_path'] = ""
+            ui_args['face_ref_img_upload'] = None
+
         event = PreAnalysisEvent(**ui_args)
 
         output_keys = [
             'unified_log', 'unified_status', 'seeding_preview_gallery',
             'scenes_state', 'propagate_masks_button', 'scene_filter_status',
-            'scene_face_sim_min_input'
+            'scene_face_sim_min_input', 'seeding_results_column', 'propagation_group'
         ]
 
         logic_gen = run_pipeline_logic(event, self.progress_queue, self.cancel_event,
@@ -523,6 +562,9 @@ class AppUI:
                 save_scene_seeds(scenes, event.output_folder, self.logger)
                 result_dict['scene_filter_status'] = get_scene_status_text(scenes)
 
+                result_dict['seeding_results_column'] = gr.update(visible=True)
+                result_dict['propagation_group'] = gr.update(visible=True)
+
                 has_face_sim = any(
                     s.get('seed_metrics', {}).get('best_face_sim') is not None
                     for s in scenes
@@ -534,6 +576,22 @@ class AppUI:
     def run_propagation_wrapper(self, scenes, *args):
         """Wrapper for propagation pipeline."""
         ui_args = dict(zip(self.ana_ui_map_keys, args))
+
+        # Adapt ui_args based on the primary seeding strategy
+        strategy = ui_args.pop('primary_seed_strategy', '🤖 Automatic')
+        if strategy == "👤 By Face":
+            ui_args['enable_face_filter'] = True
+            ui_args['text_prompt'] = ""
+        elif strategy == "📝 By Text":
+            ui_args['enable_face_filter'] = False
+            ui_args['face_ref_img_path'] = ""
+            ui_args['face_ref_img_upload'] = None
+        elif strategy == "🤖 Automatic":
+            ui_args['enable_face_filter'] = False
+            ui_args['text_prompt'] = ""
+            ui_args['face_ref_img_path'] = ""
+            ui_args['face_ref_img_upload'] = None
+
         analysis_params = PreAnalysisEvent(**ui_args)
         event = PropagationEvent(
             output_folder=ui_args['output_folder'],
@@ -579,6 +637,24 @@ class AppUI:
             c['thumbnails_only_input'],
             [c['thumb_megapixels_input'], c['ext_scene_detect_input'],
              c['method_input']]
+        )
+
+        def on_strategy_change(strategy):
+            is_face = strategy == "👤 By Face"
+            is_text = strategy == "📝 By Text"
+            is_auto = strategy == "🤖 Automatic"
+            return {
+                c['face_seeding_group']: gr.update(visible=is_face),
+                c['text_seeding_group']: gr.update(visible=is_text),
+                c['auto_seeding_group']: gr.update(visible=is_auto),
+                c['enable_face_filter_input']: gr.update(value=is_face)
+            }
+
+        c['primary_seed_strategy_input'].change(
+            on_strategy_change,
+            [c['primary_seed_strategy_input']],
+            [c['face_seeding_group'], c['text_seeding_group'],
+             c['auto_seeding_group'], c['enable_face_filter_input']]
         )
 
     def _setup_pipeline_handlers(self):
@@ -633,7 +709,8 @@ class AppUI:
             'gdino_config_path': gr.State(str(self.config.GROUNDING_DINO_CONFIG)),
             'gdino_checkpoint_path': gr.State(str(self.config.GROUNDING_DINO_CKPT)),
             'pre_analysis_enabled': 'pre_analysis_enabled_input',
-            'pre_sample_nth': 'pre_sample_nth_input'
+            'pre_sample_nth': 'pre_sample_nth_input',
+            'primary_seed_strategy': 'primary_seed_strategy_input'
         }
         self.ana_input_components = [
             c.get(ana_comp_map[k], ana_comp_map[k]) for k in self.ana_ui_map_keys
@@ -642,7 +719,7 @@ class AppUI:
         pre_ana_outputs = [
             c['unified_log'], c['unified_status'], c['seeding_preview_gallery'],
             c['scenes_state'], c['propagate_masks_button'], c['scene_filter_status'],
-            c['scene_face_sim_min_input']
+            c['scene_face_sim_min_input'], c['seeding_results_column'], c['propagation_group']
         ]
         c['start_pre_analysis_button'].click(self.run_pre_analysis_wrapper,
                                            self.ana_input_components,
