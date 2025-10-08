@@ -128,67 +128,64 @@ class AppUI:
 
     def _create_extraction_tab(self):
         """Create the frame extraction tab."""
+        gr.Markdown("### Step 1: Provide a Video Source")
         with gr.Row():
-            with gr.Column():
-                gr.Markdown("### 📹 Video Source")
+            with gr.Column(scale=2):
                 self._create_component('source_input', 'textbox', {
                     'label': "Video URL or Local Path",
                     'placeholder': "Enter YouTube URL or local video file path"
                 })
+            with gr.Column(scale=1):
                 self._create_component('max_resolution', 'dropdown', {
                     'choices': ["maximum available", "2160", "1080", "720"],
                     'value': self.config.ui_defaults['max_resolution'],
-                    'label': "DL Res"
+                    'label': "Download Resolution"
                 })
-                self._create_component('upload_video_input', 'file', {
-                    'label': "Or Upload Video",
-                    'file_types': ["video"],
-                    'type': "filepath"
-                })
-            with gr.Column():
-                gr.Markdown("### ⚙️ Extraction Settings")
-                with gr.Accordion("Thumbnail Extraction (Recommended)", 
-                                open=True):
-                    self._create_component('thumbnails_only_input', 'checkbox', {
-                        'label': "Extract Thumbnails Only",
-                        'value': self.config.ui_defaults['thumbnails_only']
-                    })
-                    self._create_component('thumb_megapixels_input', 'slider', {
-                        'label': "Thumbnail Size (MP)", 'minimum': 0.1,
-                        'maximum': 2.0, 'step': 0.1,
-                        'value': self.config.ui_defaults['thumb_megapixels']
-                    })
-                    self._create_component('ext_scene_detect_input', 'checkbox', {
-                        'label': "Use Scene Detection",
-                        'value': self.config.ui_defaults['scene_detect']
-                    })
-                with gr.Accordion("Legacy Full-Frame Extraction", open=False):
-                    method_choices = ["keyframes", "interval", "every_nth_frame", 
-                                    "all", "scene"]
-                    self._create_component('method_input', 'dropdown', {
-                        'choices': method_choices,
-                        'value': self.config.ui_defaults['method'],
-                        'label': "Method"
-                    })
-                    self._create_component('interval_input', 'textbox', {
-                        'label': "Interval (s)",
-                        'value': self.config.ui_defaults['interval'],
-                        'visible': False
-                    })
-                    self._create_component('nth_frame_input', 'textbox', {
-                        'label': "N-th Frame Value",
-                        'value': self.config.ui_defaults["nth_frame"],
-                        'visible': False
-                    })
-                    self._create_component('fast_scene_input', 'checkbox', {
-                        'label': "Fast Scene Detect",
-                        'visible': False
-                    })
-                    self._create_component('use_png_input', 'checkbox', {
-                        'label': "Save as PNG",
-                        'value': self.config.ui_defaults['use_png']
-                    })
+        self._create_component('upload_video_input', 'file', {
+            'label': "Or Upload a Video File", 'file_types': ["video"], 'type': "filepath"
+        })
 
+        gr.Markdown("---")
+        gr.Markdown("### Step 2: Configure Extraction Method")
+        self._create_component('thumbnails_only_input', 'checkbox', {
+            'label': "Use Recommended Thumbnail Extraction (Faster, For Pre-Analysis)",
+            'value': self.config.ui_defaults['thumbnails_only']
+        })
+
+        with gr.Accordion("Thumbnail Settings", open=True) as recommended_accordion:
+            self.components['recommended_accordion'] = recommended_accordion
+            gr.Markdown("This is the fastest and most efficient method. It extracts lightweight thumbnails for scene analysis, allowing you to quickly find the best frames *before* extracting full-resolution images.")
+            self._create_component('thumb_megapixels_input', 'slider', {
+                'label': "Thumbnail Size (MP)", 'minimum': 0.1, 'maximum': 2.0, 'step': 0.1,
+                'value': self.config.ui_defaults['thumb_megapixels']
+            })
+            self._create_component('ext_scene_detect_input', 'checkbox', {
+                'label': "Use Scene Detection (Recommended)",
+                'value': self.config.ui_defaults['scene_detect']
+            })
+
+        with gr.Accordion("Advanced: Legacy Full-Frame Extraction", open=False) as legacy_accordion:
+            self.components['legacy_accordion'] = legacy_accordion
+            gr.Markdown("This method extracts full-resolution frames directly, which can be slow and generate a large number of files. Use this only if you have specific needs and understand the performance implications.")
+            method_choices = ["keyframes", "interval", "every_nth_frame", "all", "scene"]
+            self._create_component('method_input', 'dropdown', {
+                'choices': method_choices, 'value': self.config.ui_defaults['method'], 'label': "Extraction Method"
+            })
+            self._create_component('interval_input', 'textbox', {
+                'label': "Interval (seconds)", 'value': self.config.ui_defaults['interval'], 'visible': False
+            })
+            self._create_component('nth_frame_input', 'textbox', {
+                'label': "N-th Frame Value", 'value': self.config.ui_defaults["nth_frame"], 'visible': False
+            })
+            self._create_component('fast_scene_input', 'checkbox', {
+                'label': "Fast Scene Detect (for 'scene' method)", 'visible': False
+            })
+            self._create_component('use_png_input', 'checkbox', {
+                'label': "Save as PNG (slower, larger files)", 'value': self.config.ui_defaults['use_png']
+            })
+
+        gr.Markdown("---")
+        gr.Markdown("### Step 3: Start Extraction")
         start_btn = gr.Button("🚀 Start Extraction", variant="primary")
         self.components.update({'start_extraction_button': start_btn})
 
@@ -445,43 +442,50 @@ class AppUI:
                                 })
 
             with gr.Column(scale=2):
-                gr.Markdown("### 🖼️ Results Gallery")
-                with gr.Row():
-                    self._create_component('gallery_view_toggle', 'radio', {
-                        'choices': ["Kept Frames", "Rejected Frames"],
-                        'value': "Kept Frames",
-                        'label': "Show in Gallery"
+                with gr.Group(visible=False) as results_group:
+                    self.components['results_group'] = results_group
+                    gr.Markdown("### 🖼️ Step 2: Review Results")
+                    with gr.Row():
+                        self._create_component('gallery_view_toggle', 'radio', {
+                            'choices': ["Kept Frames", "Rejected Frames"],
+                            'value': "Kept Frames",
+                            'label': "Show in Gallery"
+                        })
+                        self._create_component('show_mask_overlay_input', 'checkbox', {
+                            'label': "Show Mask Overlay",
+                            'value': True
+                        })
+                        self._create_component('overlay_alpha_slider', 'slider', {
+                            'label': "Overlay Alpha", 'minimum': 0.0, 'maximum': 1.0,
+                            'value': 0.6, 'step': 0.1
+                        })
+                    self._create_component('results_gallery', 'gallery', {
+                        'columns': [4, 6, 8], 'rows': 2, 'height': 'auto',
+                        'preview': True, 'allow_preview': True, 'object_fit': 'contain'
                     })
-                    self._create_component('show_mask_overlay_input', 'checkbox', {
-                        'label': "Show Mask Overlay",
-                        'value': True
+
+                with gr.Group(visible=False) as export_group:
+                    self.components['export_group'] = export_group
+                    gr.Markdown("### 📤 Step 3: Export")
+                    self._create_component('export_button', 'button', {
+                        'value': "Export Kept Frames",
+                        'variant': "primary"
                     })
-                    self._create_component('overlay_alpha_slider', 'slider', {
-                        'label': "Overlay Alpha", 'minimum': 0.0, 'maximum': 1.0,
-                        'value': 0.6, 'step': 0.1
-                    })
-                self._create_component('results_gallery', 'gallery', {
-                    'columns': [4, 6, 8], 'rows': 2, 'height': 'auto',
-                    'preview': True, 'allow_preview': True, 'object_fit': 'contain'
-                })
-                self._create_component('export_button', 'button', {
-                    'value': "📤 Export Kept Frames",
-                    'variant': "primary"
-                })
-                with gr.Row():
-                    self._create_component('enable_crop_input', 'checkbox', {
-                        'label': "✂️ Crop to Subject",
-                        'value': True
-                    })
-                    self._create_component('crop_ar_input', 'textbox', {
-                        'label': "Crop ARs",
-                        'value': "16:9,1:1,9:16",
-                        'info': "Comma-separated list (e.g., 16:9, 1:1). The best-fitting AR for each subject's mask will be chosen automatically."
-                    })
-                    self._create_component('crop_padding_input', 'slider', {
-                        'label': "Padding %",
-                        'value': 1
-                    })
+                    with gr.Accordion("Export Options", open=True):
+                        with gr.Row():
+                            self._create_component('enable_crop_input', 'checkbox', {
+                                'label': "✂️ Crop to Subject",
+                                'value': True
+                            })
+                            self._create_component('crop_padding_input', 'slider', {
+                                'label': "Padding %",
+                                'value': 1
+                            })
+                        self._create_component('crop_ar_input', 'textbox', {
+                            'label': "Crop ARs",
+                            'value': "16:9,1:1,9:16",
+                            'info': "Comma-separated list (e.g., 16:9, 1:1). The best-fitting AR for each subject's mask will be chosen automatically."
+                        })
 
     def get_all_filter_keys(self):
         """Get all available filter keys."""
@@ -631,12 +635,16 @@ class AppUI:
             c['method_input'],
             [c['interval_input'], c['fast_scene_input'], c['nth_frame_input']]
         )
+        def toggle_extraction_accordions(is_recommended):
+            return {
+                c['recommended_accordion']: gr.update(visible=is_recommended),
+                c['legacy_accordion']: gr.update(visible=not is_recommended)
+            }
+
         c['thumbnails_only_input'].change(
-            lambda x: (gr.update(interactive=x), gr.update(interactive=x),
-                      gr.update(interactive=not x)),
-            c['thumbnails_only_input'],
-            [c['thumb_megapixels_input'], c['ext_scene_detect_input'],
-             c['method_input']]
+            toggle_extraction_accordions,
+            [c['thumbnails_only_input']],
+            [c['recommended_accordion'], c['legacy_accordion']]
         )
 
         def on_strategy_change(strategy):
@@ -868,7 +876,9 @@ class AppUI:
 
             updates = {
                 c['all_frames_data_state']: all_frames,
-                c['per_metric_values_state']: metric_values
+                c['per_metric_values_state']: metric_values,
+                c['results_group']: gr.update(visible=True),
+                c['export_group']: gr.update(visible=True)
             }
 
             for k in self.get_all_filter_keys():
@@ -907,7 +917,8 @@ class AppUI:
             return [updates.get(comp, gr.update()) for comp in load_outputs]
 
         load_outputs = ([c['all_frames_data_state'], c['per_metric_values_state'],
-                        c['filter_status_text'], c['results_gallery']] +
+                        c['filter_status_text'], c['results_gallery'],
+                        c['results_group'], c['export_group']] +
                        [c['metric_plots'][k] for k in self.get_all_filter_keys()] +
                        slider_comps + [c['require_face_match_input']])
         
