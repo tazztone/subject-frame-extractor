@@ -97,66 +97,46 @@ Before installation, ensure you have:
 
 ## 📖 How to Use
 
-The application provides a three-step workflow through an intuitive web interface:
+The application provides a guided, three-tab workflow. Each tab represents a clear step in the process, with options progressively revealed to keep the UI clean and intuitive.
 
-### Step 1: 📹 Frame Extraction
+### Tab 1: 📹 Frame Extraction
 
-1. **Input your video**:
-   - Paste a YouTube URL (e.g., `https://youtube.com/watch?v=...`)
-   - Provide local file path (e.g., `C:\videos\my_video.mp4`)
-   - Or upload directly through the interface
+This tab is for getting frames from your video source.
 
-2. **Configure extraction**:
-   - **Method**: Choose extraction strategy
-     - `keyframes`: Extract I-frames only (fast, good coverage)
-     - `interval`: Extract every N seconds (customizable)
-     - `scene`: Detect scene changes automatically
-     - `all`: Extract every frame (comprehensive but large)
-   - **Resolution**: Limit YouTube download quality if needed
-   - **Format**: PNG (lossless) or JPG (compressed)
+1.  **Provide a Video Source**: Paste a YouTube URL, enter a local file path, or upload a video file directly.
+2.  **Configure Extraction Method**:
+    -   **Recommended Method (Default)**: Use the "Thumbnail Extraction" for a fast and efficient pre-analysis workflow. This extracts lightweight thumbnails that are used in Tab 2 to find the best scenes *before* you commit to extracting full-resolution frames.
+    -   **Advanced Method**: If you have specific needs, you can uncheck the "Recommended" option to access legacy full-frame extraction methods like `keyframes`, `interval`, or `every_nth_frame`. This is slower and not recommended for most workflows.
+3.  **Start Extraction**: Click the "Start Extraction" button to begin. The results will be saved to the `downloads/` folder and will be automatically available for the next step.
 
-3. **Start extraction**: Frames are saved to `downloads/[video_name]/`
+### Tab 2: 🎯 Seeding & Scene Selection
 
-### Step 2: 🎯 Seeding & Scene Selection
+This tab is for identifying your subject within the extracted scenes.
 
-This tab transforms the complex task of subject identification into a simple, guided workflow. It's the crucial step between extracting frames (Tab 1) and filtering/exporting them (Tab 3).
-
-#### Guided Workflow
-
-The UI guides you through a logical sequence:
-
-1.  **Choose Your Seeding Strategy**: First, decide *how* you want the AI to find your subject. The UI will dynamically show only the relevant options.
+1.  **Choose Your Seeding Strategy**: First, decide *how* you want the AI to find your subject. The UI dynamically shows only the relevant options for your choice:
     -   **👤 By Face**: The most precise method. Upload a reference photo, and the system will find that specific person.
     -   **📝 By Text**: Describe your subject using a text prompt (e.g., "a man in a blue shirt").
-    -   **🤖 Automatic**: Let the AI find the most prominent person in each scene automatically. This is great for general use.
-
-2.  **Find & Preview Scene Seeds**: After configuring your strategy, click the **"Find & Preview Scene Seeds"** button. The application runs a pre-analysis on your video's scenes to identify the best "seed frame"—the single frame where your subject is clearest and most identifiable.
-
-3.  **Review & Refine Seeds**: A gallery of these seed frames will appear. You can now:
+    -   **🤖 Automatic**: Let the AI find the most prominent person in each scene automatically. This is a great general-purpose starting point.
+2.  **Find & Preview Scene Seeds**: Click the **"Find & Preview Scene Seeds"** button. The app runs a pre-analysis to find the best "seed frame" in each scene—the single frame where your subject is clearest.
+3.  **Review & Refine Seeds**: A gallery of these seed frames will appear, along with controls to:
     -   Quickly include or exclude entire scenes.
-    -   Use the **Scene Editor** to fine-tune the detection for a specific scene by adjusting its text prompt or confidence thresholds.
-    -   Apply **Bulk Filters** to quickly remove scenes that don't meet a minimum quality standard (e.g., mask size, confidence).
+    -   Use the **Scene Editor** to fine-tune the detection for a specific scene.
+    -   Apply **Bulk Filters** to remove scenes that don't meet a minimum quality standard.
+4.  **Propagate Masks**: Once you're happy with your seeds, click **"Propagate Masks on Kept Scenes"**. The AI uses the seed frame to track the subject through all other frames in each selected scene.
 
-4.  **Propagate Masks**: Once you're happy with your selected seeds, click **"Propagate Masks on Kept Scenes"**. The AI will use the high-quality seed from each kept scene to track the subject through the rest of the frames in that scene. This ensures consistent and accurate subject identification before you move on to the final filtering and export step.
+### Tab 3: 📊 Filtering & Export
 
-### Step 3: 🎯 Filtering & Export
+This tab becomes active after you complete mask propagation. It allows you to refine your selection and export the final frames.
 
-1. **Filter frames**:
-   - Use quality sliders to set minimum thresholds
-   - Adjust face similarity requirements
-   - View histogram distributions for each metric
-   - Toggle between kept and rejected frames
-
-2. **Preview results**:
-   - Interactive gallery with mask overlays
-   - Real-time filter updates
-   - Frame count and rejection statistics
-
-3. **Export selection**:
-   - **Cropping**: Automatic subject-centered cropping
-   - **Aspect Ratios**: 16:9, 1:1, 9:16, or custom (e.g., "4:3,2:3")
-   - **Padding**: Adjustable margin around subject
-   - **Batch Export**: All kept frames with consistent formatting
+1.  **Load Analysis & View Metrics**: When you select this tab, it automatically loads the results from the previous step. You can now use the **Filter Controls** to:
+    -   Adjust sliders for quality metrics like `sharpness`, `contrast`, and `NIQE`.
+    -   Set a `deduplication` threshold to remove visually similar frames.
+    -   View histograms to understand the distribution of each metric.
+2.  **Review Results**: As you adjust the filters, the **Results Gallery** updates in real-time. You can toggle between viewing "Kept" and "Rejected" frames to see the impact of your changes.
+3.  **Export**: Once you are satisfied with your filtered selection, you can configure the **Export Options**:
+    -   Enable **"Crop to Subject"** for automatic, intelligent cropping.
+    -   Define a list of desired **Aspect Ratios** (e.g., `16:9, 1:1`).
+    -   Click the **"Export Kept Frames"** button to save your final, curated dataset.
 
 ## ⚙️ Configuration
 
