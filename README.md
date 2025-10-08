@@ -97,7 +97,7 @@ Before installation, ensure you have:
 
 ## 📖 How to Use
 
-The application provides a guided, three-tab workflow. Each tab represents a clear step in the process, with options progressively revealed to keep the UI clean and intuitive.
+The application provides a guided, three-tab workflow. Each tab represents a clear step in the process, with options progressively revealed to keep the UI clean and intuitive. The application will also automatically switch you to the next tab after a major step (like extraction or mask propagation) is complete.
 
 ### Tab 1: 📹 Frame Extraction
 

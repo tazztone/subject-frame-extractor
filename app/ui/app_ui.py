@@ -90,13 +90,14 @@ class AppUI:
                         'value': "📂 Load Session"
                     })
 
-            with gr.Tabs():
+            with gr.Tabs() as main_tabs:
+                self.components['main_tabs'] = main_tabs
                 with gr.Tab("📹 1. Frame Extraction"):
                     self._create_extraction_tab()
-                with gr.Tab("🎯 2. Seeding & Scene Selection") as analysis_tab:
+                with gr.Tab("🎯 2. Seeding & Scene Selection", id=1) as analysis_tab:
                     self.components['analysis_tab'] = analysis_tab
                     self._create_analysis_tab()
-                with gr.Tab("📊 3. Filtering & Export") as filtering_tab:
+                with gr.Tab("📊 3. Filtering & Export", id=2) as filtering_tab:
                     self.components['filtering_tab'] = filtering_tab
                     self._create_filtering_tab()
 
@@ -521,13 +522,17 @@ class AppUI:
 
         output_keys = [
             'unified_log', 'unified_status', 'extracted_video_path_state',
-            'extracted_frames_dir_state'
+            'extracted_frames_dir_state', 'main_tabs'
         ]
 
         logic_gen = run_pipeline_logic(event, self.progress_queue, self.cancel_event,
                                        self.logger, self.config,
                                        self.thumbnail_manager, self.cuda_available)
-        yield from self._yield_gradio_updates(logic_gen, output_keys)
+
+        for result_dict in logic_gen:
+            if result_dict.get('unified_log') == "Extraction complete!":
+                result_dict['main_tabs'] = gr.update(selected=1)
+            yield tuple(result_dict.get(k, gr.update()) for k in output_keys)
 
     def run_pre_analysis_wrapper(self, *args):
         """Wrapper for pre-analysis pipeline."""
@@ -606,13 +611,17 @@ class AppUI:
 
         output_keys = [
             'unified_log', 'unified_status', 'analysis_output_dir_state',
-            'analysis_metadata_path_state', 'filtering_tab'
+            'analysis_metadata_path_state', 'filtering_tab', 'main_tabs'
         ]
 
         logic_gen = run_pipeline_logic(event, self.progress_queue, self.cancel_event,
                                        self.logger, self.config,
                                        self.thumbnail_manager, self.cuda_available)
-        yield from self._yield_gradio_updates(logic_gen, output_keys)
+
+        for result_dict in logic_gen:
+            if result_dict.get('analysis_metadata_path_state'):
+                result_dict['main_tabs'] = gr.update(selected=2)
+            yield tuple(result_dict.get(k, gr.update()) for k in output_keys)
 
     def run_session_load_wrapper(self, session_path):
         """Wrapper for session loading."""
@@ -689,7 +698,8 @@ class AppUI:
         ext_inputs = [c[ext_comp_map[k]] for k in self.ext_ui_map_keys]
         ext_outputs = [
             c['unified_log'], c['unified_status'],
-            c['extracted_video_path_state'], c['extracted_frames_dir_state']
+            c['extracted_video_path_state'], c['extracted_frames_dir_state'],
+            c['main_tabs']
         ]
         c['start_extraction_button'].click(self.run_extraction_wrapper,
                                           ext_inputs, ext_outputs)
@@ -736,7 +746,7 @@ class AppUI:
         prop_inputs = [c['scenes_state']] + self.ana_input_components
         prop_outputs = [
             c['unified_log'], c['unified_status'], c['analysis_output_dir_state'],
-            c['analysis_metadata_path_state'], c['filtering_tab']
+            c['analysis_metadata_path_state'], c['filtering_tab'], c['main_tabs']
         ]
         c['propagate_masks_button'].click(self.run_propagation_wrapper,
                                         prop_inputs, prop_outputs)
