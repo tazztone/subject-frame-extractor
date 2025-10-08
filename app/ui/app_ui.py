@@ -80,7 +80,7 @@ class AppUI:
                 gr.Markdown("⚠️ **CPU Mode** — GPU-dependent features are "
                           "disabled or will be slow.")
 
-            with gr.Accordion("🔄 Session Manager", open=True):
+            with gr.Accordion("🔄 resume previous Session", open=False):
                 with gr.Row():
                     self._create_component('session_path_input', 'textbox', {
                         'label': "Load previous run",
@@ -451,8 +451,9 @@ class AppUI:
                         'value': True
                     })
                     self._create_component('crop_ar_input', 'textbox', {
-                        'label': "ARs",
-                        'value': "16:9,1:1,9:16"
+                        'label': "Crop ARs",
+                        'value': "16:9,1:1,9:16",
+                        'info': "Comma-separated list (e.g., 16:9, 1:1). The best-fitting AR for each subject's mask will be chosen automatically."
                     })
                     self._create_component('crop_padding_input', 'slider', {
                         'label': "Padding %",
@@ -1090,33 +1091,52 @@ class AppUI:
 
                         center_x, center_y = x_pad + w_pad // 2, y_pad + h_pad // 2
 
+                        # Find best aspect ratio that fits the mask area
+                        if not aspect_ratios or h_pad == 0:
+                            continue
+
+                        padded_ar = w_pad / h_pad
+                        best_ar_dim = None
+                        min_ar_diff = float('inf')
+
                         for ar_w, ar_h in aspect_ratios:
                             target_ar = ar_w / ar_h
-                            if w_pad / h_pad > target_ar:
-                                new_h = w_pad / target_ar
-                                new_w = w_pad
-                            else:
-                                new_w = h_pad * target_ar
-                                new_h = h_pad
+                            diff = abs(target_ar - padded_ar)
+                            if diff < min_ar_diff:
+                                min_ar_diff = diff
+                                best_ar_dim = (ar_w, ar_h)
+                        
+                        if not best_ar_dim:
+                            continue
+                            
+                        ar_w, ar_h = best_ar_dim
+                        target_ar = ar_w / ar_h
 
-                            new_x = center_x - new_w / 2
-                            new_y = center_y - new_h / 2
+                        if w_pad / h_pad > target_ar:
+                            new_h = w_pad / target_ar
+                            new_w = w_pad
+                        else:
+                            new_w = h_pad * target_ar
+                            new_h = h_pad
 
-                            new_x, new_y = int(max(0, new_x)), int(max(0, new_y))
-                            new_w, new_h = int(new_w), int(new_h)
+                        new_x = center_x - new_w / 2
+                        new_y = center_y - new_h / 2
 
-                            if new_x + new_w > frame_img.shape[1]:
-                                new_w = frame_img.shape[1] - new_x
-                            if new_y + new_h > frame_img.shape[0]:
-                                new_h = frame_img.shape[0] - new_y
+                        new_x, new_y = int(max(0, new_x)), int(max(0, new_y))
+                        new_w, new_h = int(new_w), int(new_h)
 
-                            cropped_img = frame_img[new_y:new_y+new_h, new_x:new_x+new_w]
+                        if new_x + new_w > frame_img.shape[1]:
+                            new_w = frame_img.shape[1] - new_x
+                        if new_y + new_h > frame_img.shape[0]:
+                            new_h = frame_img.shape[0] - new_y
 
-                            if cropped_img.size > 0:
-                                base_name = Path(frame_meta['filename']).stem
-                                crop_filename = f"{base_name}_crop_{ar_w}x{ar_h}.png"
-                                cv2.imwrite(str(crop_dir / crop_filename), cropped_img)
-                                num_cropped += 1
+                        cropped_img = frame_img[new_y:new_y+new_h, new_x:new_x+new_w]
+
+                        if cropped_img.size > 0:
+                            base_name = Path(frame_meta['filename']).stem
+                            crop_filename = f"{base_name}_crop_{ar_w}x{ar_h}.png"
+                            cv2.imwrite(str(crop_dir / crop_filename), cropped_img)
+                            num_cropped += 1
 
                     except Exception as e:
                         self.logger.error(f"Failed to crop frame {frame_meta['filename']}", exc_info=True)

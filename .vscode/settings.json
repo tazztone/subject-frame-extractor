@@ -1,0 +1,8 @@
+{
+    "geminicodeassist.enableTelemetry": false,
+    "geminicodeassist.inlineSuggestions.enableAuto": false,
+    "geminicodeassist.localCodebaseAwareness": false,
+    "geminicodeassist.contextExclusionFile": "",
+    "geminicodeassist.rules": "",
+    "geminicodeassist.updateChannel": "Insiders"
+}
