@@ -79,13 +79,7 @@ Before installation, ensure you have:
 
 ### Windows (Automated Install)
 
-1. **Clone the repository**:
-   ```bash
-   git clone https://github.com/tazztone/subject-frame-extractor.git
-   cd subject-frame-extractor
-   ```
-
-2. **Run the installer**:
+ **download and Run the installer bat file**:
    ```bash
    windows_STANDALONE_install.bat
    ```
@@ -93,53 +87,13 @@ Before installation, ensure you have:
    This script will:
    - Initialize git submodules (DAM4SAM, Grounded-SAM-2)
    - Create a Python virtual environment
-   - Install PyTorch with CUDA 12.1 support
+   - Install PyTorch with CUDA 12.8 support
    - Install all required dependencies
 
-3. **Launch the application**:
+2. **Launch the application**:
    ```bash
    windows_run_app.bat
    ```
-
-### Manual Installation
-
-1. **Clone with submodules**:
-   ```bash
-   git clone --recursive https://github.com/tazztone/subject-frame-extractor.git
-   cd subject-frame-extractor
-   ```
-
-2. **Create virtual environment**:
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # Linux/Mac
-   # or
-   venv\Scripts\activate  # Windows
-   ```
-
-3. **Install PyTorch** (adjust for your CUDA version):
-   ```bash
-   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
-   ```
-
-4. **Install dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-5. **Run the application**:
-   ```bash
-   python main.py
-   ```
-
-### CPU-Only Installation
-
-If you don't have an NVIDIA GPU, modify the PyTorch installation:
-```bash
-pip install torch torchvision  # CPU-only version
-```
-
-⚠️ **Note**: Subject masking and face analysis will be significantly slower on CPU.
 
 ## 📖 How to Use
 
@@ -345,5 +299,5 @@ This project builds upon several excellent open-source projects:
 ---
 
 <p align="center">
-  <strong>Built with ❤️ for the computer vision community</strong>
+  <strong>Built with ❤️ for the computer vision community. (readme by gemini)</strong>
 </p>
