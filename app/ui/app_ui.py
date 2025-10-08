@@ -101,6 +101,9 @@ class AppUI:
                     self.components['filtering_tab'] = filtering_tab
                     self._create_filtering_tab()
 
+            self._create_component('progress_bar', 'progress', {
+                'label': "Task Progress", 'visible': False
+            })
             with gr.Row():
                 with gr.Column(scale=2):
                     self._create_component('unified_log', 'textbox', {
@@ -122,7 +125,7 @@ class AppUI:
             'dropdown': gr.Dropdown, 'slider': gr.Slider,
             'checkbox': gr.Checkbox, 'file': gr.File, 'radio': gr.Radio, 
             'gallery': gr.Gallery, 'plot': gr.Plot, 'markdown': gr.Markdown, 
-            'html': gr.HTML, 'number': gr.Number
+            'html': gr.HTML, 'number': gr.Number, 'progress': gr.Progress
         }
         self.components[name] = comp_map[comp_type](**kwargs)
         return self.components[name]
@@ -522,7 +525,7 @@ class AppUI:
 
         output_keys = [
             'unified_log', 'unified_status', 'extracted_video_path_state',
-            'extracted_frames_dir_state', 'main_tabs'
+            'extracted_frames_dir_state', 'main_tabs', 'progress_bar'
         ]
 
         logic_gen = run_pipeline_logic(event, self.progress_queue, self.cancel_event,
@@ -558,7 +561,8 @@ class AppUI:
         output_keys = [
             'unified_log', 'unified_status', 'seeding_preview_gallery',
             'scenes_state', 'propagate_masks_button', 'scene_filter_status',
-            'scene_face_sim_min_input', 'seeding_results_column', 'propagation_group'
+            'scene_face_sim_min_input', 'seeding_results_column', 'propagation_group',
+            'progress_bar'
         ]
 
         logic_gen = run_pipeline_logic(event, self.progress_queue, self.cancel_event,
@@ -611,7 +615,8 @@ class AppUI:
 
         output_keys = [
             'unified_log', 'unified_status', 'analysis_output_dir_state',
-            'analysis_metadata_path_state', 'filtering_tab', 'main_tabs'
+            'analysis_metadata_path_state', 'filtering_tab', 'main_tabs',
+            'progress_bar'
         ]
 
         logic_gen = run_pipeline_logic(event, self.progress_queue, self.cancel_event,
@@ -699,7 +704,7 @@ class AppUI:
         ext_outputs = [
             c['unified_log'], c['unified_status'],
             c['extracted_video_path_state'], c['extracted_frames_dir_state'],
-            c['main_tabs']
+            c['main_tabs'], c['progress_bar']
         ]
         c['start_extraction_button'].click(self.run_extraction_wrapper,
                                           ext_inputs, ext_outputs)
@@ -737,7 +742,8 @@ class AppUI:
         pre_ana_outputs = [
             c['unified_log'], c['unified_status'], c['seeding_preview_gallery'],
             c['scenes_state'], c['propagate_masks_button'], c['scene_filter_status'],
-            c['scene_face_sim_min_input'], c['seeding_results_column'], c['propagation_group']
+            c['scene_face_sim_min_input'], c['seeding_results_column'], c['propagation_group'],
+            c['progress_bar']
         ]
         c['start_pre_analysis_button'].click(self.run_pre_analysis_wrapper,
                                            self.ana_input_components,
@@ -746,7 +752,8 @@ class AppUI:
         prop_inputs = [c['scenes_state']] + self.ana_input_components
         prop_outputs = [
             c['unified_log'], c['unified_status'], c['analysis_output_dir_state'],
-            c['analysis_metadata_path_state'], c['filtering_tab'], c['main_tabs']
+            c['analysis_metadata_path_state'], c['filtering_tab'], c['main_tabs'],
+            c['progress_bar']
         ]
         c['propagate_masks_button'].click(self.run_propagation_wrapper,
                                         prop_inputs, prop_outputs)
