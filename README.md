@@ -117,22 +117,27 @@ The application provides a three-step workflow through an intuitive web interfac
 
 3. **Start extraction**: Frames are saved to `downloads/[video_name]/`
 
-### Step 2: 🔍 Seeding & Scene Selection
+### Step 2: 🎯 Seeding & Scene Selection
 
-1. **Configure AI analysis**:
-   - **Face Similarity**: Enable to filter by specific person
-     - Upload reference photo of the target person
-     - Choose face recognition model (buffalo_l recommended)
-   - **Subject Masking**: Enable for subject-focused quality metrics
-     - Select DAM4SAM model size (larger = more accurate)
-     - Choose seeding strategy (face-based or person detection)
+This tab transforms the complex task of subject identification into a simple, guided workflow. It's the crucial step between extracting frames (Tab 1) and filtering/exporting them (Tab 3).
 
-2. **Advanced options**:
-   - **Scene Detection**: Use video scene boundaries for better tracking
-   - **Text Prompts**: Ground subjects using natural language (e.g., "woman in red dress")
-   - **Deduplication**: Remove perceptually similar frames
+#### Guided Workflow
 
-3. **Start analysis**: Creates `metadata.jsonl` with all computed metrics
+The UI guides you through a logical sequence:
+
+1.  **Choose Your Seeding Strategy**: First, decide *how* you want the AI to find your subject. The UI will dynamically show only the relevant options.
+    -   **👤 By Face**: The most precise method. Upload a reference photo, and the system will find that specific person.
+    -   **📝 By Text**: Describe your subject using a text prompt (e.g., "a man in a blue shirt").
+    -   **🤖 Automatic**: Let the AI find the most prominent person in each scene automatically. This is great for general use.
+
+2.  **Find & Preview Scene Seeds**: After configuring your strategy, click the **"Find & Preview Scene Seeds"** button. The application runs a pre-analysis on your video's scenes to identify the best "seed frame"—the single frame where your subject is clearest and most identifiable.
+
+3.  **Review & Refine Seeds**: A gallery of these seed frames will appear. You can now:
+    -   Quickly include or exclude entire scenes.
+    -   Use the **Scene Editor** to fine-tune the detection for a specific scene by adjusting its text prompt or confidence thresholds.
+    -   Apply **Bulk Filters** to quickly remove scenes that don't meet a minimum quality standard (e.g., mask size, confidence).
+
+4.  **Propagate Masks**: Once you're happy with your selected seeds, click **"Propagate Masks on Kept Scenes"**. The AI will use the high-quality seed from each kept scene to track the subject through the rest of the frames in that scene. This ensures consistent and accurate subject identification before you move on to the final filtering and export step.
 
 ### Step 3: 🎯 Filtering & Export
 
