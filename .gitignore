@@ -327,3 +327,5 @@ subject-frame-extractor
 .aiexclude
 tab2_redesign_plan.md
 tab2_implementation_guide.md
+.vscode/*
+.vscode/settings.json
