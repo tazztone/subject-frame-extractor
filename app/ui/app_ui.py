@@ -627,7 +627,7 @@ class AppUI:
         """Wrapper for session loading."""
         event = SessionLoadEvent(session_path=session_path)
 
-        logic_gen = run_pipeline_logic(event, self.progress_queue, self.cancel_event,
+        logic_gen = run_pipeline_logic(event, None, self.progress_queue, self.cancel_event,
                                        self.logger, self.config,
                                        self.thumbnail_manager, self.cuda_available)
 
