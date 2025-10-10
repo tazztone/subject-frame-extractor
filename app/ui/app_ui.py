@@ -112,6 +112,9 @@ class AppUI:
                         'label': "📊 Status Summary", 'lines': 2, 
                         'interactive': False
                     })
+            self._create_component('progress_bar', 'progress', {
+                'label': "Progress", 'visible': False
+            })
             self._create_event_handlers()
         return demo
 
@@ -515,17 +518,17 @@ class AppUI:
         for result_dict in logic_generator:
             yield tuple(result_dict.get(k, gr.update()) for k in output_keys)
 
-    def run_extraction_wrapper(self, *args, progress=gr.Progress()):
+    def run_extraction_wrapper(self, *args):
         """Wrapper for extraction pipeline."""
         ui_args = dict(zip(self.ext_ui_map_keys, args))
         event = ExtractionEvent(**ui_args)
 
         output_keys = [
             'unified_log', 'unified_status', 'extracted_video_path_state',
-            'extracted_frames_dir_state', 'main_tabs'
+            'extracted_frames_dir_state', 'main_tabs', 'progress_bar'
         ]
 
-        logic_gen = run_pipeline_logic(event, progress, self.progress_queue, self.cancel_event,
+        logic_gen = run_pipeline_logic(event, self.progress_queue, self.cancel_event,
                                        self.logger, self.config,
                                        self.thumbnail_manager, self.cuda_available)
 
@@ -534,7 +537,7 @@ class AppUI:
                 result_dict['main_tabs'] = gr.update(selected=1)
             yield tuple(result_dict.get(k, gr.update()) for k in output_keys)
 
-    def run_pre_analysis_wrapper(self, *args, progress=gr.Progress()):
+    def run_pre_analysis_wrapper(self, *args):
         """Wrapper for pre-analysis pipeline."""
         ui_args = dict(zip(self.ana_ui_map_keys, args))
 
@@ -558,10 +561,11 @@ class AppUI:
         output_keys = [
             'unified_log', 'unified_status', 'seeding_preview_gallery',
             'scenes_state', 'propagate_masks_button', 'scene_filter_status',
-            'scene_face_sim_min_input', 'seeding_results_column', 'propagation_group'
+            'scene_face_sim_min_input', 'seeding_results_column', 'propagation_group',
+            'progress_bar'
         ]
 
-        logic_gen = run_pipeline_logic(event, progress, self.progress_queue, self.cancel_event,
+        logic_gen = run_pipeline_logic(event, self.progress_queue, self.cancel_event,
                                        self.logger, self.config,
                                        self.thumbnail_manager, self.cuda_available)
 
@@ -582,7 +586,7 @@ class AppUI:
 
             yield tuple(result_dict.get(k, gr.update()) for k in output_keys)
 
-    def run_propagation_wrapper(self, scenes, *args, progress=gr.Progress()):
+    def run_propagation_wrapper(self, scenes, *args):
         """Wrapper for propagation pipeline."""
         ui_args = dict(zip(self.ana_ui_map_keys, args))
 
@@ -611,10 +615,11 @@ class AppUI:
 
         output_keys = [
             'unified_log', 'unified_status', 'analysis_output_dir_state',
-            'analysis_metadata_path_state', 'filtering_tab', 'main_tabs'
+            'analysis_metadata_path_state', 'filtering_tab', 'main_tabs',
+            'progress_bar'
         ]
 
-        logic_gen = run_pipeline_logic(event, progress, self.progress_queue, self.cancel_event,
+        logic_gen = run_pipeline_logic(event, self.progress_queue, self.cancel_event,
                                        self.logger, self.config,
                                        self.thumbnail_manager, self.cuda_available)
 
@@ -699,7 +704,7 @@ class AppUI:
         ext_outputs = [
             c['unified_log'], c['unified_status'],
             c['extracted_video_path_state'], c['extracted_frames_dir_state'],
-            c['main_tabs']
+            c['main_tabs'], c['progress_bar']
         ]
         c['start_extraction_button'].click(self.run_extraction_wrapper,
                                           ext_inputs, ext_outputs)
@@ -737,7 +742,8 @@ class AppUI:
         pre_ana_outputs = [
             c['unified_log'], c['unified_status'], c['seeding_preview_gallery'],
             c['scenes_state'], c['propagate_masks_button'], c['scene_filter_status'],
-            c['scene_face_sim_min_input'], c['seeding_results_column'], c['propagation_group']
+            c['scene_face_sim_min_input'], c['seeding_results_column'], c['propagation_group'],
+            c['progress_bar']
         ]
         c['start_pre_analysis_button'].click(self.run_pre_analysis_wrapper,
                                            self.ana_input_components,
@@ -746,7 +752,8 @@ class AppUI:
         prop_inputs = [c['scenes_state']] + self.ana_input_components
         prop_outputs = [
             c['unified_log'], c['unified_status'], c['analysis_output_dir_state'],
-            c['analysis_metadata_path_state'], c['filtering_tab'], c['main_tabs']
+            c['analysis_metadata_path_state'], c['filtering_tab'], c['main_tabs'],
+            c['progress_bar']
         ]
         c['propagate_masks_button'].click(self.run_propagation_wrapper,
                                         prop_inputs, prop_outputs)
@@ -944,16 +951,19 @@ class AppUI:
         c['export_button'].click(self.export_kept_frames_wrapper, export_inputs,
                                c['unified_log'])
 
-        reset_outputs = {
-            c[k]: v for k, v in
-            reset_filters(None, None, None, self.config, slider_keys, self.thumbnail_manager).items()
-        }
-
+        # Setup for reset button
+        reset_outputs_comps = (
+            slider_comps +
+            [c['dedup_thresh_input'],
+             c['require_face_match_input'],
+             c['filter_status_text'],
+             c['results_gallery']]
+        )
         c['reset_filters_button'].click(
             self.on_reset_filters,
-            [c['all_frames_data_state'], c['per_metric_values_state'],
-             c['analysis_output_dir_state']],
-            list(reset_outputs.keys())
+            inputs=[c['all_frames_data_state'], c['per_metric_values_state'],
+                    c['analysis_output_dir_state']],
+            outputs=reset_outputs_comps
         )
 
         auto_set_outputs = [c['metric_sliders'][k] for k in slider_keys]
@@ -988,27 +998,33 @@ class AppUI:
         return result['filter_status_text'], result['results_gallery']
 
     def on_reset_filters(self, all_frames_data, per_metric_values, output_dir):
-        """Wrapper for reset_filters logic."""
+        """Wrapper for reset_filters logic that returns updates in a fixed order."""
         slider_keys = sorted(self.components['metric_sliders'].keys())
         result = reset_filters(all_frames_data, per_metric_values, output_dir,
                                self.config, slider_keys, self.thumbnail_manager)
         
-        # The logic function returns a dict of updates. We need to return a list
-        # of values in the correct order for the Gradio `outputs`.
+        # `result` is a dictionary: {'component_name': gr.update(...), ...}
+        # The order of returned updates must match the `outputs` of the click handler.
         
-        updates_list = []
-        # Sliders
+        updates = []
+        # 1. Metric sliders (in sorted key order)
         for key in slider_keys:
-            # Assumes the keys in the 'result' dict are the component names, e.g., 'slider_niqe_min'
-            updates_list.append(result.get(f'slider_{key}', gr.update()))
+            comp_name = f"slider_{key}"
+            updates.append(result.get(comp_name, gr.update()))
 
-        # Other components
-        updates_list.append(result.get('require_face_match_input', gr.update()))
-        updates_list.append(result.get('dedup_thresh_input', gr.update()))
-        updates_list.append(result.get('filter_status_text', gr.update()))
-        updates_list.append(result.get('results_gallery', gr.update()))
+        # 2. Dedup slider
+        updates.append(result.get('dedup_thresh_input', gr.update()))
 
-        return tuple(updates_list)
+        # 3. Require face match checkbox
+        updates.append(result.get('require_face_match_input', gr.update()))
+
+        # 4. Filter status text
+        updates.append(result.get('filter_status_text', gr.update()))
+
+        # 5. Results gallery
+        updates.append(result.get('results_gallery', gr.update()))
+
+        return tuple(updates)
 
     def on_auto_set_thresholds(self, per_metric_values, p):
         """Wrapper for auto_set_thresholds logic."""
@@ -1169,11 +1185,35 @@ class AppUI:
                         contours, _ = cv2.findContours(mask_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
                         if not contours: continue
 
-                        x, y, w, h = cv2.boundingRect(np.concatenate(contours))
+                        # Combine all contours to get the overall bounding box of the subject
+                        all_points = np.concatenate(contours)
+                        x, y, w, h = cv2.boundingRect(all_points)
 
-                        padding_px = int((w + h) / 2 * (event.crop_padding / 100.0))
-                        x_pad, y_pad = max(0, x - padding_px), max(0, y - padding_px)
-                        w_pad, h_pad = w + 2 * padding_px, h + 2 * padding_px
+                        # Get dimensions for scaling
+                        frame_h, frame_w = frame_img.shape[:2]
+                        mask_h, mask_w = mask_img.shape[:2]
+
+                        if mask_h != frame_h or mask_w != frame_w:
+                            self.logger.info(f"Scaling bounding box for {frame_meta['filename']} from {mask_w}x{mask_h} to {frame_w}x{frame_h}")
+                            scale_x = frame_w / mask_w
+                            scale_y = frame_h / mask_h
+                            x, y, w, h = int(x * scale_x), int(y * scale_y), int(w * scale_x), int(h * scale_y)
+
+                        # Calculate padding in pixels
+                        padding_px_w = int(w * (event.crop_padding / 100.0))
+                        padding_px_h = int(h * (event.crop_padding / 100.0))
+
+                        # Apply padding and clamp to frame boundaries
+                        x1 = max(0, x - padding_px_w)
+                        y1 = max(0, y - padding_px_h)
+                        x2 = min(frame_w, x + w + padding_px_w)
+                        y2 = min(frame_h, y + h + padding_px_h)
+
+                        # The padded bounding box
+                        x_pad, y_pad = x1, y1
+                        w_pad, h_pad = x2 - x1, y2 - y1
+
+                        if w_pad <= 0 or h_pad <= 0: continue
 
                         center_x, center_y = x_pad + w_pad // 2, y_pad + h_pad // 2
 
