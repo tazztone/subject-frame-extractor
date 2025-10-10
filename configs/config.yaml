@@ -12,7 +12,7 @@ ui_defaults:
 
   # --- Pre-Analysis & Seeding Settings ---
   pre_analysis_enabled: True         # Automatically analyze scene thumbnails to find the best frame for seeding.
-  pre_sample_nth: 5                  # When pre-analyzing, check every Nth frame in a scene. 1 = all frames. Higher values are faster for long scenes.
+  pre_sample_nth: 1                  # When pre-analyzing, check every Nth frame in a scene. 1 = all frames. Higher values are faster for long scenes.
   enable_face_filter: True           # Enable face similarity scoring (requires reference image).
   face_model_name: "buffalo_l"       # InsightFace model for face analysis.
   enable_subject_mask: True          # Enable subject masking and propagation.
@@ -76,5 +76,5 @@ model_paths:
 
 # --- Grounded DINO/SAM2 Inference Parameters ---
 grounding_dino_params:
-  box_threshold: 0.45
-  text_threshold: 0.35
+  box_threshold: 0.35
+  text_threshold: 0.25

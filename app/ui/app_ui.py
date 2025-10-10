@@ -101,9 +101,6 @@ class AppUI:
                     self.components['filtering_tab'] = filtering_tab
                     self._create_filtering_tab()
 
-            self._create_component('progress_bar', 'progress', {
-                'visible': False
-            })
             with gr.Row():
                 with gr.Column(scale=2):
                     self._create_component('unified_log', 'textbox', {
@@ -630,7 +627,7 @@ class AppUI:
         """Wrapper for session loading."""
         event = SessionLoadEvent(session_path=session_path)
 
-        logic_gen = run_pipeline_logic(event, None, self.progress_queue, self.cancel_event,
+        logic_gen = run_pipeline_logic(event, self.progress_queue, self.cancel_event,
                                        self.logger, self.config,
                                        self.thumbnail_manager, self.cuda_available)
 
@@ -702,7 +699,7 @@ class AppUI:
         ext_outputs = [
             c['unified_log'], c['unified_status'],
             c['extracted_video_path_state'], c['extracted_frames_dir_state'],
-            c['main_tabs'], c['progress_bar']
+            c['main_tabs']
         ]
         c['start_extraction_button'].click(self.run_extraction_wrapper,
                                           ext_inputs, ext_outputs)
@@ -740,8 +737,7 @@ class AppUI:
         pre_ana_outputs = [
             c['unified_log'], c['unified_status'], c['seeding_preview_gallery'],
             c['scenes_state'], c['propagate_masks_button'], c['scene_filter_status'],
-            c['scene_face_sim_min_input'], c['seeding_results_column'], c['propagation_group'],
-            c['progress_bar']
+            c['scene_face_sim_min_input'], c['seeding_results_column'], c['propagation_group']
         ]
         c['start_pre_analysis_button'].click(self.run_pre_analysis_wrapper,
                                            self.ana_input_components,
@@ -750,8 +746,7 @@ class AppUI:
         prop_inputs = [c['scenes_state']] + self.ana_input_components
         prop_outputs = [
             c['unified_log'], c['unified_status'], c['analysis_output_dir_state'],
-            c['analysis_metadata_path_state'], c['filtering_tab'], c['main_tabs'],
-            c['progress_bar']
+            c['analysis_metadata_path_state'], c['filtering_tab'], c['main_tabs']
         ]
         c['propagate_masks_button'].click(self.run_propagation_wrapper,
                                         prop_inputs, prop_outputs)
