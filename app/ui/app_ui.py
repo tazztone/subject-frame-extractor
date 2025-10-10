@@ -999,8 +999,10 @@ class AppUI:
         updates_list = []
         # Sliders
         for key in slider_keys:
-            # Assumes the keys in the 'result' dict are the component names, e.g., 'slider_niqe_min'
-            updates_list.append(result.get(f'slider_{key}', gr.update()))
+            # The keys in 'result' are the full component names, e.g., 'slider_niqe_min'.
+            # We need to construct the key name to look it up.
+            slider_name = f"slider_{key}"
+            updates_list.append(result.get(slider_name, gr.update()))
 
         # Other components
         updates_list.append(result.get('require_face_match_input', gr.update()))
@@ -1169,11 +1171,23 @@ class AppUI:
                         contours, _ = cv2.findContours(mask_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
                         if not contours: continue
 
-                        x, y, w, h = cv2.boundingRect(np.concatenate(contours))
+                        # Combine all contours to get the overall bounding box of the subject
+                        all_points = np.concatenate(contours)
+                        x, y, w, h = cv2.boundingRect(all_points)
+
+                        # Get dimensions for scaling
+                        frame_h, frame_w = frame_img.shape[:2]
+                        mask_h, mask_w = mask_img.shape[:2]
+
+                        if mask_h != frame_h or mask_w != frame_w:
+                            self.logger.info(f"Scaling bounding box for {frame_meta['filename']} from {mask_w}x{mask_h} to {frame_w}x{frame_h}")
+                            scale_x = frame_w / mask_w
+                            scale_y = frame_h / mask_h
+                            x, y, w, h = int(x * scale_x), int(y * scale_y), int(w * scale_x), int(h * scale_y)
 
                         padding_px = int((w + h) / 2 * (event.crop_padding / 100.0))
                         x_pad, y_pad = max(0, x - padding_px), max(0, y - padding_px)
-                        w_pad, h_pad = w + 2 * padding_px, h + 2 * padding_px
+                        w_pad, h_pad = min(frame_w - x_pad, w + 2 * padding_px), min(frame_h - y_pad, h + 2 * padding_px)
 
                         center_x, center_y = x_pad + w_pad // 2, y_pad + h_pad // 2
 
