@@ -23,25 +23,25 @@ from app.pipelines.analyze import AnalysisPipeline
 from app.io.frames import render_mask_overlay, create_frame_map
 
 
-def run_pipeline_logic(event, progress, progress_queue, cancel_event, logger, config,
+def run_pipeline_logic(event, progress_queue, cancel_event, logger, config,
                        thumbnail_manager, cuda_available):
     """Dispatcher for different pipeline logic events."""
     if isinstance(event, ExtractionEvent):
-        yield from execute_extraction(event, progress, progress_queue, cancel_event,
+        yield from execute_extraction(event, progress_queue, cancel_event,
                                      logger, config)
     elif isinstance(event, PreAnalysisEvent):
-        yield from execute_pre_analysis(event, progress, progress_queue, cancel_event,
+        yield from execute_pre_analysis(event, progress_queue, cancel_event,
                                         logger, config, thumbnail_manager,
                                         cuda_available)
     elif isinstance(event, PropagationEvent):
-        yield from execute_propagation(event, progress, progress_queue, cancel_event,
+        yield from execute_propagation(event, progress_queue, cancel_event,
                                        logger, config, thumbnail_manager,
                                        cuda_available)
     elif isinstance(event, SessionLoadEvent):
         yield from execute_session_load(event, logger, config, thumbnail_manager)
 
 
-def execute_extraction(event: ExtractionEvent, progress: gr.Progress, progress_queue: Queue,
+def execute_extraction(event: ExtractionEvent, progress_queue: Queue,
                        cancel_event: threading.Event, logger: UnifiedLogger,
                        config: Config):
     """Execute extraction pipeline."""
@@ -57,7 +57,7 @@ def execute_extraction(event: ExtractionEvent, progress: gr.Progress, progress_q
     params = AnalysisParameters.from_ui(**params_dict)
     pipeline = ExtractionPipeline(params, progress_queue, cancel_event)
 
-    result = yield from _run_task(pipeline.run, progress, progress_queue, cancel_event,
+    result = yield from _run_task(pipeline.run, progress_queue, cancel_event,
                                  logger)
 
     if result.get("done"):
@@ -69,7 +69,7 @@ def execute_extraction(event: ExtractionEvent, progress: gr.Progress, progress_q
         }
 
 
-def execute_pre_analysis(event: PreAnalysisEvent, progress: gr.Progress, progress_queue: Queue,
+def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue,
                          cancel_event: threading.Event, logger: UnifiedLogger,
                          config: Config, thumbnail_manager, cuda_available):
     """Execute pre-analysis pipeline."""
@@ -167,7 +167,7 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress: gr.Progress, progres
 
         return {"done": True, "previews": previews, "scenes": [asdict(s) for s in scenes]}
 
-    result = yield from _run_task(pre_analysis_task, progress, progress_queue, cancel_event, logger)
+    result = yield from _run_task(pre_analysis_task, progress_queue, cancel_event, logger)
 
     if result.get("done"):
         yield {
@@ -283,7 +283,7 @@ def execute_session_load(event: SessionLoadEvent, logger: UnifiedLogger, config:
         }
 
 
-def execute_propagation(event: PropagationEvent, progress: gr.Progress, progress_queue: Queue,
+def execute_propagation(event: PropagationEvent, progress_queue: Queue,
                         cancel_event: threading.Event, logger: UnifiedLogger,
                         config: Config, thumbnail_manager, cuda_available):
     """Execute propagation pipeline."""
@@ -297,7 +297,7 @@ def execute_propagation(event: PropagationEvent, progress: gr.Progress, progress
     params = AnalysisParameters.from_ui(**asdict(event.analysis_params))
     pipeline = AnalysisPipeline(params, progress_queue, cancel_event, thumbnail_manager=thumbnail_manager)
 
-    result = yield from _run_task(lambda: pipeline.run_full_analysis(scenes_to_process), progress, progress_queue, cancel_event, logger)
+    result = yield from _run_task(lambda: pipeline.run_full_analysis(scenes_to_process), progress_queue, cancel_event, logger)
 
     if result.get("done"):
         yield {
@@ -309,13 +309,13 @@ def execute_propagation(event: PropagationEvent, progress: gr.Progress, progress
         }
 
 
-def _run_task(task_func, progress, progress_queue, cancel_event, logger):
+def _run_task(task_func, progress_queue, cancel_event, logger):
     """Run a task with progress tracking."""
     log_buffer, processed, total, stage = [], 0, 1, "Initializing"
     start_time, last_yield = time.time(), 0.0
     last_task_result = {}
 
-    progress(0, desc="Initializing...")
+    yield {"progress_bar": gr.update(visible=True, value=0)}
 
     with ThreadPoolExecutor(max_workers=1) as executor:
         future = executor.submit(task_func)
@@ -341,10 +341,10 @@ def _run_task(task_func, progress, progress_queue, cancel_event, logger):
                               f"({processed/total:.1%}) | {rate:.1f} items/s | "
                               f"ETA: {int(eta//60):02d}:{int(eta%60):02d}")
                     progress_value = processed / total if total > 0 else 0
-                    progress(progress_value, desc=f"{stage} ({processed}/{total})")
                     yield {
                         "unified_log": "\n".join(log_buffer),
                         "unified_status": status,
+                        "progress_bar": gr.update(value=progress_value)
                     }
                     last_yield = time.time()
             except Empty:
@@ -366,6 +366,7 @@ def _run_task(task_func, progress, progress_queue, cancel_event, logger):
     yield {
         "unified_log": "\n".join(log_buffer),
         "unified_status": status_text,
+        "progress_bar": gr.update(visible=False)
     }
 
     # Return the final result so the caller can use it
