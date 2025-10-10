@@ -113,7 +113,7 @@ class AppUI:
                         'interactive': False
                     })
             self._create_component('progress_bar', 'progress', {
-                'label': "Progress", 'visible': False
+                'visible': False
             })
             self._create_event_handlers()
         return demo

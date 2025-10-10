@@ -83,6 +83,8 @@ def main():
         print("\nApplication stopped by user")
     except Exception as e:
         print(f"Error starting application: {e}")
+        print("\nTry installing missing dependencies:")
+        print("   pip install ultralytics insightface pyiqa imagehash")
         sys.exit(1)
     finally:
         # Cleanup resources
