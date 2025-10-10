@@ -101,6 +101,9 @@ class AppUI:
                     self.components['filtering_tab'] = filtering_tab
                     self._create_filtering_tab()
 
+            self._create_component('progress_bar', 'progress', {
+                'visible': False
+            })
             with gr.Row():
                 with gr.Column(scale=2):
                     self._create_component('unified_log', 'textbox', {
@@ -699,7 +702,7 @@ class AppUI:
         ext_outputs = [
             c['unified_log'], c['unified_status'],
             c['extracted_video_path_state'], c['extracted_frames_dir_state'],
-            c['main_tabs']
+            c['main_tabs'], c['progress_bar']
         ]
         c['start_extraction_button'].click(self.run_extraction_wrapper,
                                           ext_inputs, ext_outputs)
@@ -737,7 +740,8 @@ class AppUI:
         pre_ana_outputs = [
             c['unified_log'], c['unified_status'], c['seeding_preview_gallery'],
             c['scenes_state'], c['propagate_masks_button'], c['scene_filter_status'],
-            c['scene_face_sim_min_input'], c['seeding_results_column'], c['propagation_group']
+            c['scene_face_sim_min_input'], c['seeding_results_column'], c['propagation_group'],
+            c['progress_bar']
         ]
         c['start_pre_analysis_button'].click(self.run_pre_analysis_wrapper,
                                            self.ana_input_components,
@@ -746,7 +750,8 @@ class AppUI:
         prop_inputs = [c['scenes_state']] + self.ana_input_components
         prop_outputs = [
             c['unified_log'], c['unified_status'], c['analysis_output_dir_state'],
-            c['analysis_metadata_path_state'], c['filtering_tab'], c['main_tabs']
+            c['analysis_metadata_path_state'], c['filtering_tab'], c['main_tabs'],
+            c['progress_bar']
         ]
         c['propagate_masks_button'].click(self.run_propagation_wrapper,
                                         prop_inputs, prop_outputs)
@@ -995,32 +1000,20 @@ class AppUI:
         
         # The logic function returns a dict of updates. We need to return a list
         # of values in the correct order for the Gradio `outputs`.
-        # The order is determined by the `reset_outputs` dict in _setup_filtering_handlers
-        c = self.components
-        reset_outputs_order = (
-            [c['metric_sliders'][k] for k in slider_keys] +
-            [c['require_face_match_input'], c['dedup_thresh_input'],
-             c['filter_status_text'], c['results_gallery']]
-        )
         
-        # Map component objects to their names to look up results
-        comp_to_name_map = {v: k for k, v in c.items()}
-        
-        final_result = []
-        for comp in reset_outputs_order:
-            comp_name = comp_to_name_map.get(comp)
-            if comp_name:
-                # Logic function returns keys like 'slider_niqe_min', but component name is 'slider_niqe_min'
-                # So we need to match them.
-                update_key = next((k for k in result.keys() if k.endswith(comp_name)), None)
-                if update_key:
-                     final_result.append(result[update_key])
-                else: # for filter_status_text and results_gallery
-                     final_result.append(result.get(comp_name, gr.update()))
-            else:
-                final_result.append(gr.update())
+        updates_list = []
+        # Sliders
+        for key in slider_keys:
+            # Assumes the keys in the 'result' dict are the component names, e.g., 'slider_niqe_min'
+            updates_list.append(result.get(f'slider_{key}', gr.update()))
 
-        return final_result
+        # Other components
+        updates_list.append(result.get('require_face_match_input', gr.update()))
+        updates_list.append(result.get('dedup_thresh_input', gr.update()))
+        updates_list.append(result.get('filter_status_text', gr.update()))
+        updates_list.append(result.get('results_gallery', gr.update()))
+
+        return tuple(updates_list)
 
     def on_auto_set_thresholds(self, per_metric_values, p):
         """Wrapper for auto_set_thresholds logic."""
