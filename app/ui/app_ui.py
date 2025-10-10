@@ -102,7 +102,7 @@ class AppUI:
                     self._create_filtering_tab()
 
             self._create_component('progress_bar', 'progress', {
-                'label': "Task Progress", 'visible': False
+                'visible': False
             })
             with gr.Row():
                 with gr.Column(scale=2):
