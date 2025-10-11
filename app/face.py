@@ -8,8 +8,8 @@ from insightface.app import FaceAnalysis
 @lru_cache(maxsize=None)
 def get_face_analyzer(model_name):
     """Load and cache a face analysis model."""
-    from app.core.config import Config
-    from app.core.logging import UnifiedLogger
+    from app.config import Config
+    from app.logging import UnifiedLogger
 
     config = Config()
     logger = UnifiedLogger()

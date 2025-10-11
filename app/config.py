@@ -5,10 +5,10 @@ from pathlib import Path
 
 
 class Config:
-    BASE_DIR = Path(__file__).parent.parent.parent
+    BASE_DIR = Path(__file__).parent.parent
     DIRS = {
         'logs': BASE_DIR / "logs",
-        'configs': BASE_DIR / "configs",
+        'configs': Path(__file__).parent,
         'models': BASE_DIR / "models",
         'downloads': BASE_DIR / "downloads"
     }
@@ -50,7 +50,7 @@ class Config:
 
     @classmethod
     def setup_directories_and_logger(cls):
-        from app.core.logging import UnifiedLogger
+        from app.logging import UnifiedLogger
         for dir_path in cls.DIRS.values():
             dir_path.mkdir(exist_ok=True)
         return UnifiedLogger()

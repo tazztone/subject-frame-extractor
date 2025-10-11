@@ -3,7 +3,7 @@
 import logging
 from pathlib import Path
 
-from app.pipelines.base import Pipeline
+from app.base import Pipeline
 
 
 class ExtractionPipeline(Pipeline):
@@ -11,10 +11,10 @@ class ExtractionPipeline(Pipeline):
     
     def run(self):
         """Run the extraction pipeline."""
-        from app.core.config import Config
-        from app.core.logging import StructuredFormatter
-        from app.core.utils import sanitize_filename
-        from app.io.video import VideoManager, run_scene_detection, run_ffmpeg_extraction
+        from app.config import Config
+        from app.logging import StructuredFormatter
+        from app.utils import sanitize_filename
+        from app.video import VideoManager, run_scene_detection, run_ffmpeg_extraction
         
         config = Config()
         run_log_handler = None
@@ -63,12 +63,12 @@ class ExtractionPipeline(Pipeline):
 
     def _run_scene_detection(self, video_path, output_dir):
         """Run scene detection on the video."""
-        from app.io.video import run_scene_detection
+        from app.video import run_scene_detection
         return run_scene_detection(video_path, output_dir)
 
     def _run_ffmpeg(self, video_path, output_dir, video_info):
         """Run FFmpeg extraction."""
-        from app.io.video import run_ffmpeg_extraction
+        from app.video import run_ffmpeg_extraction
         return run_ffmpeg_extraction(video_path, output_dir, video_info,
                                     self.params, self.progress_queue,
                                     self.cancel_event)

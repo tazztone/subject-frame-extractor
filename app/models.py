@@ -34,8 +34,8 @@ class Frame:
                                   niqe_metric=None):
         """Calculate quality metrics for this frame."""
         # Import dependencies locally to avoid circular imports
-        from app.core.config import Config
-        from app.core.logging import UnifiedLogger
+        from app.config import Config
+        from app.logging import UnifiedLogger
         from numba import njit
 
         @njit
@@ -193,7 +193,7 @@ class AnalysisParameters:
 
     def __post_init__(self):
         """Set config-dependent defaults after initialization."""
-        from app.core.config import Config
+        from app.config import Config
         config = Config()
 
         if not self.gdino_config_path:
@@ -214,8 +214,8 @@ class AnalysisParameters:
     @classmethod
     def from_ui(cls, **kwargs):
         """Create instance from UI parameters."""
-        from app.core.config import Config
-        from app.core.logging import UnifiedLogger
+        from app.config import Config
+        from app.logging import UnifiedLogger
 
         config = Config()
         logger = UnifiedLogger()
@@ -242,7 +242,7 @@ class AnalysisParameters:
 
     def _get_config_hash(self, output_dir: Path) -> str:
         """Create hash of parameters and scene seeds for resume logic."""
-        from app.core.utils import _to_json_safe
+        from app.utils import _to_json_safe
 
         data_to_hash = json.dumps(_to_json_safe(asdict(self)), sort_keys=True)
         scene_seeds_path = output_dir / "scene_seeds.json"

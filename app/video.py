@@ -9,6 +9,9 @@ import cv2
 import yt_dlp as ytdlp
 from scenedetect import detect, ContentDetector
 
+from app.config import Config
+from app.logging import UnifiedLogger
+
 
 class VideoManager:
     def __init__(self, source_path, max_resolution="maximum available"):
@@ -19,9 +22,6 @@ class VideoManager:
 
     def prepare_video(self):
         """Prepare video for processing (download if YouTube, validate)."""
-        from app.core.config import Config
-        from app.core.logging import UnifiedLogger
-
         config = Config()
         logger = UnifiedLogger()
 
@@ -82,7 +82,6 @@ class VideoManager:
 
 def run_scene_detection(video_path, output_dir):
     """Run scene detection and save results."""
-    from app.core.logging import UnifiedLogger
     logger = UnifiedLogger()
     
     logger.info("Detecting scenes...")
@@ -103,7 +102,6 @@ def run_ffmpeg_extraction(video_path, output_dir, video_info, params,
                           progress_queue, cancel_event):
     """Run FFmpeg extraction with progress tracking."""
     import re
-    from app.core.logging import UnifiedLogger
 
     logger = UnifiedLogger()
     log_file_path = output_dir / "ffmpeg_log.txt"

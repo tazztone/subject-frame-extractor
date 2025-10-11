@@ -10,9 +10,9 @@ from grounding_dino.groundingdino.util.inference import (
 
 def load_grounding_dino_model(params, device="cuda"):
     """Load and initialize Grounding DINO model."""
-    from app.core.config import Config
-    from app.core.logging import UnifiedLogger
-    from app.ml.downloads import download_model
+    from app.config import Config
+    from app.logging import UnifiedLogger
+    from app.downloads import download_model
     
     config = Config()
     logger = UnifiedLogger()

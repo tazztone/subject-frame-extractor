@@ -3,16 +3,16 @@ import torch
 import threading
 from queue import Queue
 
-from app.core.config import Config
-from app.core.logging import UnifiedLogger
-from app.core.thumb_cache import ThumbnailManager
-from app.logic.events import (ExtractionEvent, PreAnalysisEvent, PropagationEvent,
+from app.config import Config
+from app.logging import UnifiedLogger
+from app.thumb_cache import ThumbnailManager
+from app.events import (ExtractionEvent, PreAnalysisEvent, PropagationEvent,
                               FilterEvent, ExportEvent, SessionLoadEvent)
-from app.logic.pipeline_logic import run_pipeline_logic
-from app.logic.filter_logic import (load_and_prep_filter_data, build_all_metric_svgs,
+from app.pipeline_logic import run_pipeline_logic
+from app.filter_logic import (load_and_prep_filter_data, build_all_metric_svgs,
                                     on_filters_changed, reset_filters,
                                     auto_set_thresholds, apply_all_filters_vectorized)
-from app.logic.scene_logic import (toggle_scene_status, apply_bulk_scene_filters,
+from app.scene_logic import (toggle_scene_status, apply_bulk_scene_filters,
                                    apply_scene_overrides, get_scene_status_text,
                                    save_scene_seeds)
 
@@ -112,9 +112,7 @@ class AppUI:
                         'label': "📊 Status Summary", 'lines': 2, 
                         'interactive': False
                     })
-            self._create_component('progress_bar', 'progress', {
-                'visible': False
-            })
+            # self._create_component('progress_bar', 'progress', {})
             self._create_event_handlers()
         return demo
 

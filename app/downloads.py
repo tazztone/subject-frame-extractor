@@ -3,12 +3,12 @@
 import urllib.request
 import shutil
 
+from app.logging import UnifiedLogger
+from app.utils import safe_execute_with_retry
+
 
 def download_model(url, dest_path, description, min_size=1_000_000):
     """Download a model file if it doesn't already exist."""
-    from app.core.logging import UnifiedLogger
-    from app.core.utils import safe_execute_with_retry
-
     logger = UnifiedLogger()
 
     if dest_path.is_file() and dest_path.stat().st_size >= min_size:
