@@ -119,7 +119,7 @@ class AppUI:
                         'interactive': False
                     })
             with gr.Row():
-                self._create_component('progress_bar', 'progress', {'visible': False})
+                self._create_component('progress_bar', 'progress', {})
             self._create_event_handlers()
         return demo
 
