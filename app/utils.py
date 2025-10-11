@@ -17,7 +17,7 @@ def sanitize_filename(name, max_length=50):
 def safe_execute_with_retry(func, max_retries=3, delay=1.0, backoff=2.0):
     """Execute a function with retry logic and exponential backoff."""
     # Import logger locally to avoid circular imports
-    from app.core.logging import UnifiedLogger
+    from app.logging import UnifiedLogger
     logger = UnifiedLogger()
 
     last_exception = None

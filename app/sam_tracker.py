@@ -5,12 +5,13 @@ from pathlib import Path
 import torch
 from DAM4SAM.dam4sam_tracker import DAM4SAMTracker
 
+from app.config import Config
+from app.logging import UnifiedLogger
+from app.downloads import download_model
+
 
 def initialize_dam4sam_tracker(params):
     """Initialize DAM4SAM tracker with model downloading."""
-    from app.core.config import Config
-    from app.core.logging import UnifiedLogger
-    from app.ml.downloads import download_model
     
     config = Config()
     logger = UnifiedLogger()
@@ -39,8 +40,8 @@ def initialize_dam4sam_tracker(params):
         download_model(model_urls[model_name], checkpoint_path,
                       f"{model_name} model", 100_000_000)
 
-        from DAM4SAM.utils.utils import determine_tracker
-        actual_path, _ = determine_tracker(model_name)
+        from DAM4SAM.utils import utils
+        actual_path, _ = utils.determine_tracker(model_name)
         if not Path(actual_path).exists():
             Path(actual_path).parent.mkdir(exist_ok=True, parents=True)
             shutil.copy(checkpoint_path, actual_path)

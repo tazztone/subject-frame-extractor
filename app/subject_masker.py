@@ -6,8 +6,15 @@ import torch
 from pathlib import Path
 from dataclasses import asdict
 
-from app.masking.seed_selector import SeedSelector
-from app.masking.propagate import MaskPropagator
+from app.seed_selector import SeedSelector
+from app.propagate import MaskPropagator
+from app.thumb_cache import ThumbnailManager
+from app.grounding import load_grounding_dino_model
+from app.sam_tracker import initialize_dam4sam_tracker
+from app.logging import UnifiedLogger
+from app.utils import safe_resource_cleanup
+from app.frames import create_frame_map
+from app.models import MaskingResult
 
 
 class SubjectMasker:
@@ -17,9 +24,6 @@ class SubjectMasker:
                  face_analyzer=None, reference_embedding=None, 
                  person_detector=None, thumbnail_manager=None, 
                  niqe_metric=None):
-        from app.core.thumb_cache import ThumbnailManager
-        from app.ml.grounding import load_grounding_dino_model
-        from app.ml.sam_tracker import initialize_dam4sam_tracker
         
         self.params = params
         self.progress_queue = progress_queue
@@ -53,7 +57,6 @@ class SubjectMasker:
 
     def _init_grounder(self):
         """Initialize Grounding DINO model."""
-        from app.ml.grounding import load_grounding_dino_model
         
         if self._gdino is not None:
             return True
@@ -62,7 +65,6 @@ class SubjectMasker:
 
     def _initialize_tracker(self):
         """Initialize DAM4SAM tracker."""
-        from app.ml.sam_tracker import initialize_dam4sam_tracker
         
         if self.tracker:
             return True
@@ -71,10 +73,6 @@ class SubjectMasker:
 
     def run_propagation(self, frames_dir: str, scenes_to_process) -> dict:
         """Run mask propagation for all scenes."""
-        from app.core.logging import UnifiedLogger
-        from app.core.utils import safe_resource_cleanup
-        from app.io.frames import create_frame_map
-        from app.domain.models import MaskingResult
         
         logger = UnifiedLogger()
         self.mask_dir = Path(frames_dir) / "masks"
@@ -167,7 +165,6 @@ class SubjectMasker:
 
     def _create_frame_map(self, frames_dir):
         """Create frame mapping."""
-        from app.io.frames import create_frame_map
         return create_frame_map(Path(frames_dir))
 
     def _load_shot_frames(self, frames_dir, start, end):

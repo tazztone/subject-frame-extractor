@@ -7,12 +7,12 @@ import threading
 import cv2
 import numpy as np
 
-from app.core.config import Config
-from app.core.logging import UnifiedLogger
-from app.core.utils import _to_json_safe
-from app.domain.models import AnalysisParameters
-from app.io.frames import render_mask_overlay
-from app.masking.subject_masker import SubjectMasker
+from app.config import Config
+from app.logging import UnifiedLogger
+from app.utils import _to_json_safe
+from app.models import AnalysisParameters
+from app.frames import render_mask_overlay
+from app.subject_masker import SubjectMasker
 
 
 def save_scene_seeds(scenes_list, output_dir_str, logger):
@@ -148,7 +148,7 @@ def apply_scene_overrides(scenes_list, selected_shot_id, prompt,
         face_analyzer, ref_emb, person_detector = None, None, None
         device = "cuda" if cuda_available else "cpu"
         if params.enable_face_filter:
-            from app.ml.face import get_face_analyzer
+            from app.face import get_face_analyzer
             face_analyzer = get_face_analyzer(params.face_model_name)
             if params.face_ref_img_path:
                 ref_img = cv2.imread(params.face_ref_img_path)
@@ -156,7 +156,7 @@ def apply_scene_overrides(scenes_list, selected_shot_id, prompt,
                     faces = face_analyzer.get(ref_img)
                     if faces:
                         ref_emb = max(faces, key=lambda x: x.det_score).normed_embedding
-        from app.ml.person import get_person_detector
+        from app.person import get_person_detector
         person_detector = get_person_detector(params.person_detector_model, device)
 
         masker = SubjectMasker(params, Queue(), threading.Event(),

@@ -11,16 +11,16 @@ import cv2
 import gradio as gr
 import numpy as np
 
-from app.core.config import Config
-from app.core.logging import UnifiedLogger
-from app.domain.models import Scene, AnalysisParameters
-from app.logic.events import (ExtractionEvent, PreAnalysisEvent, PropagationEvent,
+from app.config import Config
+from app.logging import UnifiedLogger
+from app.models import Scene, AnalysisParameters
+from app.events import (ExtractionEvent, PreAnalysisEvent, PropagationEvent,
                               SessionLoadEvent)
-from app.logic.scene_logic import get_scene_status_text
-from app.masking.subject_masker import SubjectMasker
-from app.pipelines.extract import ExtractionPipeline
-from app.pipelines.analyze import AnalysisPipeline
-from app.io.frames import render_mask_overlay, create_frame_map
+from app.scene_logic import get_scene_status_text
+from app.subject_masker import SubjectMasker
+from app.extract import ExtractionPipeline
+from app.analyze import AnalysisPipeline
+from app.frames import render_mask_overlay, create_frame_map
 
 
 def run_pipeline_logic(event, progress_queue, cancel_event, logger, config,
@@ -120,7 +120,7 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue,
     niqe_metric = pyiqa.create_metric('niqe', device=device) if params.pre_analysis_enabled else None
     face_analyzer, ref_emb = None, None
     if params.enable_face_filter:
-        from app.ml.face import get_face_analyzer
+        from app.face import get_face_analyzer
         face_analyzer = get_face_analyzer(params.face_model_name)
         if params.face_ref_img_path and Path(params.face_ref_img_path).exists():
             ref_img = cv2.imread(params.face_ref_img_path)
@@ -128,7 +128,7 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue,
             if faces:
                 ref_emb = max(faces, key=lambda x: x.det_score).normed_embedding
 
-    from app.ml.person import get_person_detector
+    from app.person import get_person_detector
     person_detector = get_person_detector(params.person_detector_model, device)
 
     masker = SubjectMasker(params, progress_queue, cancel_event, face_analyzer=face_analyzer,

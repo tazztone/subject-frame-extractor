@@ -4,7 +4,7 @@ import math
 import cv2
 import numpy as np
 import torch
-from app.ml.grounding import predict_grounding_dino
+from app.grounding import predict_grounding_dino
 from torchvision import transforms
 from torchvision.ops import box_convert
 
@@ -14,7 +14,7 @@ class SeedSelector:
 
     def __init__(self, params, face_analyzer, reference_embedding,
                  person_detector, tracker, gdino_model):
-        from app.core.logging import UnifiedLogger
+        from app.logging import UnifiedLogger
         self.params = params
         self.face_analyzer = face_analyzer
         self.reference_embedding = reference_embedding
@@ -373,7 +373,7 @@ class SeedSelector:
 
     def _sam2_mask_for_bbox(self, frame_rgb_small, bbox_xywh):
         """Generate SAM2 mask for bounding box."""
-        from app.io.frames import rgb_to_pil, postprocess_mask
+        from app.frames import rgb_to_pil, postprocess_mask
         if not self.tracker or bbox_xywh is None:
             return None
         try:

@@ -3,12 +3,13 @@
 import threading
 from queue import Queue
 
+from app.logging import UnifiedLogger
+
 
 class Pipeline:
     """Base class for all processing pipelines."""
     
     def __init__(self, params, progress_queue: Queue, cancel_event: threading.Event):
-        from app.core.logging import UnifiedLogger
         
         self.params = params
         self.progress_queue = progress_queue

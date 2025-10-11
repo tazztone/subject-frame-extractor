@@ -7,9 +7,9 @@ from ultralytics import YOLO
 
 class PersonDetector:
     def __init__(self, model="yolo11x.pt", imgsz=640, conf=0.3, device='cuda'):
-        from app.core.config import Config
-        from app.core.logging import UnifiedLogger
-        from app.ml.downloads import download_model
+        from app.config import Config
+        from app.logging import UnifiedLogger
+        from app.downloads import download_model
 
         config = Config()
         logger = UnifiedLogger()
@@ -52,7 +52,7 @@ class PersonDetector:
 @lru_cache(maxsize=None)
 def get_person_detector(model_name, device):
     """Load and cache a person detector model."""
-    from app.core.logging import UnifiedLogger
+    from app.logging import UnifiedLogger
     logger = UnifiedLogger()
 
     logger.info(f"Loading or getting cached person detector: {model_name}")

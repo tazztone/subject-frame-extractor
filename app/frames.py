@@ -7,6 +7,8 @@ import cv2
 import numpy as np
 from PIL import Image
 
+from app.logging import UnifiedLogger
+
 
 def postprocess_mask(mask: np.ndarray, fill_holes: bool = True,
                      keep_largest_only: bool = True) -> np.ndarray:
@@ -36,7 +38,6 @@ def postprocess_mask(mask: np.ndarray, fill_holes: bool = True,
 def render_mask_overlay(frame_rgb: np.ndarray, mask_gray: np.ndarray,
                         alpha: float = 0.5) -> np.ndarray:
     """Render a mask overlay on a frame."""
-    from app.core.logging import UnifiedLogger
     logger = UnifiedLogger()
 
     if mask_gray is None:
@@ -69,7 +70,6 @@ def rgb_to_pil(image_rgb: np.ndarray) -> Image.Image:
 
 def create_frame_map(output_dir: Path):
     """Load or create map from original frame number to sequential filename."""
-    from app.core.logging import UnifiedLogger
     logger = UnifiedLogger()
 
     logger.info("Loading frame map...")

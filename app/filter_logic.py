@@ -6,10 +6,10 @@ from collections import Counter, defaultdict
 import gradio as gr
 import numpy as np
 
-from app.core.config import Config
-from app.core.logging import UnifiedLogger
-from app.logic.events import FilterEvent
-from app.io.frames import render_mask_overlay
+from app.config import Config
+from app.logging import UnifiedLogger
+from app.events import FilterEvent
+from app.frames import render_mask_overlay
 
 
 def load_and_prep_filter_data(metadata_path, get_all_filter_keys):
@@ -88,7 +88,7 @@ def histogram_svg(hist_data, title="", logger=None):
 
 def apply_all_filters_vectorized(all_frames_data, filters):
     """Apply all filters to frame data using vectorized operations."""
-    from app.core.config import Config
+    from app.config import Config
     import imagehash
 
     config = Config()

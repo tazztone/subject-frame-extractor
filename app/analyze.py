@@ -13,7 +13,15 @@ import cv2
 import numpy as np
 import torch
 
-from app.pipelines.base import Pipeline
+from app.base import Pipeline
+from app.thumb_cache import ThumbnailManager
+from app.logging import StructuredFormatter
+from app.utils import _to_json_safe
+from app.face import get_face_analyzer
+from app.person import get_person_detector
+from app.subject_masker import SubjectMasker
+from app.frames import create_frame_map
+from app.models import Frame
 
 
 class AnalysisPipeline(Pipeline):
@@ -21,7 +29,6 @@ class AnalysisPipeline(Pipeline):
     
     def __init__(self, params, progress_queue, cancel_event, 
                  thumbnail_manager=None):
-        from app.core.thumb_cache import ThumbnailManager
         
         super().__init__(params, progress_queue, cancel_event)
         self.output_dir = Path(self.params.output_folder)
@@ -54,11 +61,6 @@ class AnalysisPipeline(Pipeline):
 
     def run_full_analysis(self, scenes_to_process):
         """Run complete analysis pipeline."""
-        from app.core.logging import StructuredFormatter
-        from app.core.utils import _to_json_safe
-        from app.ml.face import get_face_analyzer
-        from app.ml.person import get_person_detector
-        from app.masking.subject_masker import SubjectMasker
         
         run_log_handler = None
         try:
@@ -119,7 +121,6 @@ class AnalysisPipeline(Pipeline):
 
     def _create_frame_map(self):
         """Create frame mapping from output directory."""
-        from app.io.frames import create_frame_map
         return create_frame_map(self.output_dir)
 
     def _process_reference_face(self):
@@ -174,9 +175,6 @@ class AnalysisPipeline(Pipeline):
 
     def _process_single_frame(self, thumb_path):
         """Process a single frame for analysis."""
-        from app.domain.models import Frame
-        from app.core.utils import _to_json_safe
-        from app.io.frames import rgb_to_pil
         
         if self.cancel_event.is_set():
             return

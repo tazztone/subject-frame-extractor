@@ -10,7 +10,7 @@ class ThumbnailManager:
     """Manages loading and caching of thumbnails with an LRU policy."""
     def __init__(self, max_size=200):
         # Import logger locally to avoid circular imports
-        from app.core.logging import UnifiedLogger
+        from app.logging import UnifiedLogger
         logger = UnifiedLogger()
 
         self.cache = OrderedDict()
@@ -21,7 +21,7 @@ class ThumbnailManager:
     def get(self, thumb_path: Path):
         """Get thumbnail from cache or load from disk as RGB numpy array."""
         # Import logger locally to avoid circular imports
-        from app.core.logging import UnifiedLogger
+        from app.logging import UnifiedLogger
         logger = UnifiedLogger()
 
         if not isinstance(thumb_path, Path):

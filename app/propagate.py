@@ -3,6 +3,9 @@
 import numpy as np
 import torch
 
+from app.frames import rgb_to_pil, postprocess_mask
+from app.logging import UnifiedLogger
+
 
 class MaskPropagator:
     """Handles propagating a mask from a seed frame throughout a scene."""
@@ -16,8 +19,6 @@ class MaskPropagator:
 
     def propagate(self, shot_frames_rgb, seed_idx, bbox_xywh):
         """Propagate mask from seed frame through all frames in the shot."""
-        from app.io.frames import rgb_to_pil, postprocess_mask
-        from app.core.logging import UnifiedLogger
         logger = UnifiedLogger()
         
         if not self.tracker or not shot_frames_rgb:

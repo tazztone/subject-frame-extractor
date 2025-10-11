@@ -3,9 +3,9 @@
 import threading
 from queue import Queue
 
-from app.core.config import Config
-from app.core.logging import UnifiedLogger
-from app.core.thumb_cache import ThumbnailManager
+from app.config import Config
+from app.logging import UnifiedLogger
+from app.thumb_cache import ThumbnailManager
 
 
 class CompositionRoot:
@@ -33,7 +33,7 @@ class CompositionRoot:
     def get_app_ui(self):
         """Get the configured AppUI instance (lazy-loaded)."""
         if self._app_ui is None:
-            from app.ui.app_ui import AppUI
+            from app.app_ui import AppUI
             self._app_ui = AppUI(
                 config=self.config,
                 logger=self.logger,
