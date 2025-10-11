@@ -56,7 +56,7 @@ class AppUI:
         ]
 
         self.session_load_keys = [
-            'unified_log', 'unified_status',
+            'unified_log', 'unified_status', 'progress_bar',
             # Extraction Tab
             'source_input', 'max_resolution', 'thumbnails_only_input',
             'thumb_megapixels_input', 'ext_scene_detect_input', 'method_input',
@@ -118,7 +118,8 @@ class AppUI:
                         'label': "📊 Status Summary", 'lines': 2, 
                         'interactive': False
                     })
-            # self._create_component('progress_bar', 'progress', {})
+            with gr.Row():
+                self._create_component('progress_bar', 'progress', {'visible': False})
             self._create_event_handlers()
         return demo
 
