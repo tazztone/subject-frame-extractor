@@ -23,29 +23,14 @@ from app.analyze import AnalysisPipeline
 from app.frames import render_mask_overlay, create_frame_map
 
 
-def run_pipeline_logic(event, progress_queue, cancel_event, logger, config,
-                       thumbnail_manager, cuda_available):
-    """Dispatcher for different pipeline logic events."""
-    if isinstance(event, ExtractionEvent):
-        yield from execute_extraction(event, progress_queue, cancel_event,
-                                     logger, config)
-    elif isinstance(event, PreAnalysisEvent):
-        yield from execute_pre_analysis(event, progress_queue, cancel_event,
-                                        logger, config, thumbnail_manager,
-                                        cuda_available)
-    elif isinstance(event, PropagationEvent):
-        yield from execute_propagation(event, progress_queue, cancel_event,
-                                       logger, config, thumbnail_manager,
-                                       cuda_available)
-    elif isinstance(event, SessionLoadEvent):
-        yield from execute_session_load(event, logger, config, thumbnail_manager)
 
 
 def execute_extraction(event: ExtractionEvent, progress_queue: Queue,
                        cancel_event: threading.Event, logger: UnifiedLogger,
                        config: Config):
     """Execute extraction pipeline."""
-    yield {"unified_log": "", "unified_status": "Starting extraction...", "progress_bar": gr.update(visible=True, value=0)}
+    import tqdm
+    progress_queue.put({"stage": "Starting extraction...", "total": 1, "progress": 0})
 
     params_dict = asdict(event)
     if event.upload_video:
@@ -57,13 +42,12 @@ def execute_extraction(event: ExtractionEvent, progress_queue: Queue,
     params = AnalysisParameters.from_ui(**params_dict)
     pipeline = ExtractionPipeline(params, progress_queue, cancel_event)
 
-    result = yield from _run_task(pipeline.run, progress_queue, cancel_event,
-                                 logger)
+    result = pipeline.run()
 
     if result.get("done"):
-        yield {
-            "unified_log": "Extraction complete.",
-            "unified_status": f"Output: {result['output_dir']}",
+        return {
+            "log": "Extraction complete.",
+            "status": f"Output: {result['output_dir']}",
             "extracted_video_path_state": result.get("video_path", ""),
             "extracted_frames_dir_state": result["output_dir"]
         }
@@ -97,7 +81,7 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue,
 
     scenes_path = output_dir / "scenes.json"
     if not scenes_path.exists():
-        yield {"unified_log": "[ERROR] scenes.json not found. Run extraction with scene detection."}
+        yield {"log": "[ERROR] scenes.json not found. Run extraction with scene detection."}
         return
 
     with scenes_path.open('r', encoding='utf-8') as f:
@@ -167,15 +151,15 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue,
 
         return {"done": True, "previews": previews, "scenes": [asdict(s) for s in scenes]}
 
-    result = yield from _run_task(pre_analysis_task, progress_queue, cancel_event, logger)
+    result = pre_analysis_task()
 
     if result.get("done"):
-        yield {
-            "unified_log": "Pre-analysis complete.",
-            "unified_status": f"{len(result['scenes'])} scenes found.",
-            "seeding_preview_gallery": gr.update(value=result['previews']),
-            "scenes_state": result['scenes'],
-            "propagate_masks_button": gr.update(interactive=True),
+        return {
+            "log": "Pre-analysis complete.",
+            "status": f"{len(result['scenes'])} scenes found.",
+            "previews": result['previews'],
+            "scenes": result['scenes'],
+            "output_dir": str(output_dir)
         }
 
 
@@ -187,8 +171,8 @@ def execute_session_load(event: SessionLoadEvent, logger: UnifiedLogger, config:
     if not config_path.exists():
         logger.error(f"Session load failed: run_config.json not found in {session_path}")
         yield {
-            "unified_log": f"[ERROR] Could not find 'run_config.json' in the specified directory: {session_path}",
-            "unified_status": "Session load failed."
+            "log": f"[ERROR] Could not find 'run_config.json' in the specified directory: {session_path}",
+            "status": "Session load failed."
         }
         return
 
@@ -270,16 +254,16 @@ def execute_session_load(event: SessionLoadEvent, logger: UnifiedLogger, config:
             updates['filtering_tab'] = gr.update(interactive=True)
             logger.info(f"Found analysis metadata at {metadata_path}. Filtering tab will be enabled.")
 
-        updates['unified_log'] = f"Successfully loaded session from: {session_path}"
-        updates['unified_status'] = "Session loaded. You can now proceed from where you left off."
+        updates['log'] = f"Successfully loaded session from: {session_path}"
+        updates['status'] = "Session loaded. You can now proceed from where you left off."
 
         yield updates
 
     except Exception as e:
         logger.error(f"Error loading session from {session_path}: {e}", exc_info=True)
         yield {
-            "unified_log": f"[ERROR] An unexpected error occurred while loading the session: {e}",
-            "unified_status": "Session load failed."
+            "log": f"[ERROR] An unexpected error occurred while loading the session: {e}",
+            "status": "Session load failed."
         }
 
 
@@ -289,86 +273,20 @@ def execute_propagation(event: PropagationEvent, progress_queue: Queue,
     """Execute propagation pipeline."""
     scenes_to_process = [Scene(**s) for s in event.scenes if s['status'] == 'included']
     if not scenes_to_process:
-        yield {"unified_log": "No scenes were included for propagation.", "unified_status": "Propagation skipped."}
+        yield {"log": "No scenes were included for propagation.", "status": "Propagation skipped."}
         return
 
-    yield {"unified_log": "", "unified_status": f"Starting propagation on {len(scenes_to_process)} scenes...", "progress_bar": gr.update(visible=True, value=0)}
+    progress_queue.put({"stage": f"Starting propagation on {len(scenes_to_process)} scenes...", "total": 1, "progress": 0})
 
     params = AnalysisParameters.from_ui(**asdict(event.analysis_params))
     pipeline = AnalysisPipeline(params, progress_queue, cancel_event, thumbnail_manager=thumbnail_manager)
 
-    result = yield from _run_task(lambda: pipeline.run_full_analysis(scenes_to_process), progress_queue, cancel_event, logger)
+    result = pipeline.run_full_analysis(scenes_to_process)
 
     if result.get("done"):
-        yield {
-            "unified_log": "Propagation and analysis complete.",
-            "unified_status": f"Metadata saved to {result['metadata_path']}",
-            "analysis_output_dir_state": result['output_dir'],
-            "analysis_metadata_path_state": result['metadata_path'],
-            "filtering_tab": gr.update(interactive=True)
+        return {
+            "log": "Propagation and analysis complete.",
+            "status": f"Metadata saved to {result['metadata_path']}",
+            "output_dir": result['output_dir'],
+            "metadata_path": result['metadata_path'],
         }
-
-
-def _run_task(task_func, progress_queue, cancel_event, logger):
-    """Run a task with progress tracking."""
-    log_buffer, processed, total, stage = [], 0, 1, "Initializing"
-    start_time, last_yield = time.time(), 0.0
-    last_task_result = {}
-
-    yield {'progress_bar': gr.update(value=0, visible=True, label="Initializing...")}
-
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(task_func)
-        while future.running():
-            if cancel_event.is_set():
-                break
-            try:
-                msg = progress_queue.get(timeout=0.1)
-                if "log" in msg:
-                    log_buffer.append(msg["log"])
-                if "stage" in msg:
-                    stage, processed, start_time = msg["stage"], 0, time.time()
-                if "total" in msg:
-                    total = msg["total"] or 1
-                if "progress" in msg:
-                    processed += msg["progress"]
-
-                if time.time() - last_yield > 0.25:
-                    elapsed = time.time() - start_time
-                    rate = processed / elapsed if elapsed > 0 else 0
-                    eta = (total - processed) / rate if rate > 0 else 0
-                    status = (f"**{stage}:** {processed}/{total} "
-                              f"({processed/total:.1%}) | {rate:.1f} items/s | "
-                              f"ETA: {int(eta//60):02d}:{int(eta%60):02d}")
-                    progress_value = processed / total if total > 0 else 0
-
-                    yield {
-                        "unified_log": "\n".join(log_buffer),
-                        "unified_status": status,
-                        "progress_bar": gr.update(value=progress_value, label=f"{stage} ({processed}/{total})")
-                    }
-                    last_yield = time.time()
-            except Empty:
-                pass
-
-    last_task_result = future.result() or {}
-    if "log" in last_task_result:
-        log_buffer.append(last_task_result["log"])
-    if "error" in last_task_result:
-        log_buffer.append(f"[ERROR] {last_task_result['error']}")
-
-    if cancel_event.is_set():
-        status_text = "⏹️ Cancelled."
-    elif 'error' in last_task_result:
-        status_text = f"❌ Error: {last_task_result.get('error')}"
-    else:
-        status_text = "✅ Complete."
-
-    yield {
-        "unified_log": "\n".join(log_buffer),
-        "unified_status": status_text,
-        "progress_bar": gr.update(visible=False)
-    }
-
-    # Return the final result so the caller can use it
-    return last_task_result

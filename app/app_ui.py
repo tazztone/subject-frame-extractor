@@ -1,14 +1,20 @@
 import gradio as gr
 import torch
 import threading
-from queue import Queue
+import time
+from queue import Queue, Empty
+from concurrent.futures import ThreadPoolExecutor
 
 from app.config import Config
 from app.logging import UnifiedLogger
 from app.thumb_cache import ThumbnailManager
 from app.events import (ExtractionEvent, PreAnalysisEvent, PropagationEvent,
                               FilterEvent, ExportEvent, SessionLoadEvent)
-from app.pipeline_logic import run_pipeline_logic
+from app.pipeline_logic import (
+    execute_extraction,
+    execute_pre_analysis,
+    execute_propagation
+)
 from app.filter_logic import (load_and_prep_filter_data, build_all_metric_svgs,
                                     on_filters_changed, reset_filters,
                                     auto_set_thresholds, apply_all_filters_vectorized)
@@ -516,115 +522,230 @@ class AppUI:
         for result_dict in logic_generator:
             yield tuple(result_dict.get(k, gr.update()) for k in output_keys)
 
+    def _run_task(self, task_func, progress_queue, cancel_event, logger):
+        """Enhanced task runner with better progress integration."""
+        log_buffer = []
+        processed = 0
+        total = 1
+        stage = "Initializing"
+        start_time = time.time()
+        last_yield = 0.0
+
+        # Initial state
+        yield {
+            'unified_log': "Starting task...",
+            'progress_bar': gr.update(visible=True, value=0, label="Initializing...")
+        }
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            # Pass the progress_queue to the task function
+            future = executor.submit(task_func)
+
+            while future.running():
+                if cancel_event.is_set():
+                    break
+
+                try:
+                    msg = progress_queue.get(timeout=0.1)
+
+                    if "log" in msg:
+                        timestamp = time.strftime('%H:%M:%S')
+                        log_buffer.append(f"[{timestamp}] {msg['log']}")
+
+                    if "stage" in msg:
+                        stage = msg["stage"]
+                        processed = 0
+                        start_time = time.time()
+
+                    if "total" in msg:
+                        total = msg["total"] or 1
+
+                    if "progress" in msg:
+                        processed += msg["progress"]
+
+                    # Update UI periodically
+                    if time.time() - last_yield > 0.1:  # 10Hz updates
+                        elapsed = time.time() - start_time
+                        rate = processed / elapsed if elapsed > 0 else 0
+                        eta = (total - processed) / rate if rate > 0 else 0
+
+                        progress_pct = processed / total if total > 0 else 0
+
+                        status_label = f"{stage} ({processed}/{total}) - ETA: {int(eta//60):02d}:{int(eta%60):02d}"
+
+                        yield {
+                            'unified_log': "\n".join(log_buffer),
+                            'progress_bar': gr.update(
+                                value=progress_pct,
+                                label=status_label,
+                                visible=True
+                            )
+                        }
+                        last_yield = time.time()
+
+                except Empty:
+                    pass
+
+        # Get final result
+        try:
+            result = future.result()
+        except Exception as e:
+            result = {'error': str(e)}
+            log_buffer.append(f"[ERROR] Task failed: {e}")
+
+        # Final status
+        if cancel_event.is_set():
+            final_msg = "⏹️ Task cancelled by user"
+            final_label = "Cancelled"
+        elif result and result.get('error'):
+            final_msg = f"❌ Task failed: {result['error']}"
+            final_label = "Failed"
+        else:
+            final_msg = "✅ Task completed successfully"
+            final_label = "Complete"
+
+        log_buffer.append(final_msg)
+
+        yield {
+            'unified_log': "\n".join(log_buffer),
+            'progress_bar': gr.update(
+                value=1.0 if not result.get('error') else 0,
+                label=final_label,
+                visible=True
+            )
+        }
+
+        return result or {}
+
     def run_extraction_wrapper(self, *args):
         """Wrapper for extraction pipeline."""
-        ui_args = dict(zip(self.ext_ui_map_keys, args))
-        event = ExtractionEvent(**ui_args)
+        def extraction_task():
+            ui_args = dict(zip(self.ext_ui_map_keys, args))
+            event = ExtractionEvent(**ui_args)
 
-        output_keys = [
-            'unified_log', 'unified_status', 'extracted_video_path_state',
-            'extracted_frames_dir_state', 'main_tabs', 'progress_bar'
-        ]
+            # Use your existing pipeline logic
+            for result in execute_extraction(event, self.progress_queue,
+                                           self.cancel_event, self.logger, self.config):
+                # Don't yield here - just let execute_extraction handle progress_queue
+                pass
 
-        logic_gen = run_pipeline_logic(event, self.progress_queue, self.cancel_event,
-                                       self.logger, self.config,
-                                       self.thumbnail_manager, self.cuda_available)
+            # Return final result
+            return {
+                'done': True,
+                'video_path': result.get('extracted_video_path_state', ''),
+                'output_dir': result.get('extracted_frames_dir_state', '')
+            }
 
-        for result_dict in logic_gen:
-            if result_dict.get('unified_log') == "Extraction complete.":
-                result_dict['main_tabs'] = gr.update(selected=1)
-            yield tuple(result_dict.get(k, gr.update()) for k in output_keys)
+        # Use the fixed _run_task
+        final_result = yield from self._run_task(
+            extraction_task, self.progress_queue, self.cancel_event, self.logger
+        )
+
+        if final_result.get("done"):
+            yield {
+                'extracted_video_path_state': final_result.get("video_path", ""),
+                'extracted_frames_dir_state': final_result["output_dir"],
+                'main_tabs': gr.update(selected=1)
+            }
 
     def run_pre_analysis_wrapper(self, *args):
         """Wrapper for pre-analysis pipeline."""
-        ui_args = dict(zip(self.ana_ui_map_keys, args))
+        def pre_analysis_task():
+            ui_args = dict(zip(self.ana_ui_map_keys, args))
 
-        # Adapt ui_args based on the primary seeding strategy
-        strategy = ui_args.pop('primary_seed_strategy', '🤖 Automatic')
-        if strategy == "👤 By Face":
-            ui_args['enable_face_filter'] = True
-            ui_args['text_prompt'] = ""
-        elif strategy == "📝 By Text":
-            ui_args['enable_face_filter'] = False
-            ui_args['face_ref_img_path'] = ""
-            ui_args['face_ref_img_upload'] = None
-        elif strategy == "🤖 Automatic":
-            ui_args['enable_face_filter'] = False
-            ui_args['text_prompt'] = ""
-            ui_args['face_ref_img_path'] = ""
-            ui_args['face_ref_img_upload'] = None
+            # Adapt ui_args based on the primary seeding strategy
+            strategy = ui_args.pop('primary_seed_strategy', '🤖 Automatic')
+            if strategy == "👤 By Face":
+                ui_args['enable_face_filter'] = True
+                ui_args['text_prompt'] = ""
+            elif strategy == "📝 By Text":
+                ui_args['enable_face_filter'] = False
+                ui_args['face_ref_img_path'] = ""
+                ui_args['face_ref_img_upload'] = None
+            elif strategy == "🤖 Automatic":
+                ui_args['enable_face_filter'] = False
+                ui_args['text_prompt'] = ""
+                ui_args['face_ref_img_path'] = ""
+                ui_args['face_ref_img_upload'] = None
 
-        event = PreAnalysisEvent(**ui_args)
+            event = PreAnalysisEvent(**ui_args)
 
-        output_keys = [
-            'unified_log', 'unified_status', 'seeding_preview_gallery',
-            'scenes_state', 'propagate_masks_button', 'scene_filter_status',
-            'scene_face_sim_min_input', 'seeding_results_column', 'propagation_group',
-            'progress_bar'
-        ]
+            for result in execute_pre_analysis(event, self.progress_queue,
+                                               self.cancel_event, self.logger,
+                                               self.config, self.thumbnail_manager,
+                                               self.cuda_available):
+                pass
 
-        logic_gen = run_pipeline_logic(event, self.progress_queue, self.cancel_event,
-                                       self.logger, self.config,
-                                       self.thumbnail_manager, self.cuda_available)
+            return result
 
-        for result_dict in logic_gen:
-            if 'scenes_state' in result_dict:
-                scenes = result_dict['scenes_state']
-                save_scene_seeds(scenes, event.output_folder, self.logger)
-                result_dict['scene_filter_status'] = get_scene_status_text(scenes)
+        final_result = yield from self._run_task(
+            pre_analysis_task, self.progress_queue, self.cancel_event, self.logger
+        )
 
-                result_dict['seeding_results_column'] = gr.update(visible=True)
-                result_dict['propagation_group'] = gr.update(visible=True)
-
-                has_face_sim = any(
-                    s.get('seed_metrics', {}).get('best_face_sim') is not None
-                    for s in scenes
-                )
-                result_dict['scene_face_sim_min_input'] = gr.update(visible=has_face_sim)
-
-            yield tuple(result_dict.get(k, gr.update()) for k in output_keys)
+        if final_result.get("done"):
+            scenes = final_result['scenes']
+            save_scene_seeds(scenes, final_result['output_dir'], self.logger)
+            status_text = get_scene_status_text(scenes)
+            has_face_sim = any(
+                s.get('seed_metrics', {}).get('best_face_sim') is not None
+                for s in scenes
+            )
+            yield {
+                'seeding_preview_gallery': gr.update(value=final_result['previews']),
+                'scenes_state': scenes,
+                'propagate_masks_button': gr.update(interactive=True),
+                'scene_filter_status': status_text,
+                'scene_face_sim_min_input': gr.update(visible=has_face_sim),
+                'seeding_results_column': gr.update(visible=True),
+                'propagation_group': gr.update(visible=True)
+            }
 
     def run_propagation_wrapper(self, scenes, *args):
         """Wrapper for propagation pipeline."""
-        ui_args = dict(zip(self.ana_ui_map_keys, args))
+        def propagation_task():
+            ui_args = dict(zip(self.ana_ui_map_keys, args))
 
-        # Adapt ui_args based on the primary seeding strategy
-        strategy = ui_args.pop('primary_seed_strategy', '🤖 Automatic')
-        if strategy == "👤 By Face":
-            ui_args['enable_face_filter'] = True
-            ui_args['text_prompt'] = ""
-        elif strategy == "📝 By Text":
-            ui_args['enable_face_filter'] = False
-            ui_args['face_ref_img_path'] = ""
-            ui_args['face_ref_img_upload'] = None
-        elif strategy == "🤖 Automatic":
-            ui_args['enable_face_filter'] = False
-            ui_args['text_prompt'] = ""
-            ui_args['face_ref_img_path'] = ""
-            ui_args['face_ref_img_upload'] = None
+            # Adapt ui_args based on the primary seeding strategy
+            strategy = ui_args.pop('primary_seed_strategy', '🤖 Automatic')
+            if strategy == "👤 By Face":
+                ui_args['enable_face_filter'] = True
+                ui_args['text_prompt'] = ""
+            elif strategy == "📝 By Text":
+                ui_args['enable_face_filter'] = False
+                ui_args['face_ref_img_path'] = ""
+                ui_args['face_ref_img_upload'] = None
+            elif strategy == "🤖 Automatic":
+                ui_args['enable_face_filter'] = False
+                ui_args['text_prompt'] = ""
+                ui_args['face_ref_img_path'] = ""
+                ui_args['face_ref_img_upload'] = None
 
-        analysis_params = PreAnalysisEvent(**ui_args)
-        event = PropagationEvent(
-            output_folder=ui_args['output_folder'],
-            video_path=ui_args['video_path'],
-            scenes=scenes,
-            analysis_params=analysis_params
+            analysis_params = PreAnalysisEvent(**ui_args)
+            event = PropagationEvent(
+                output_folder=ui_args['output_folder'],
+                video_path=ui_args['video_path'],
+                scenes=scenes,
+                analysis_params=analysis_params
+            )
+
+            for result in execute_propagation(event, self.progress_queue,
+                                              self.cancel_event, self.logger,
+                                              self.config, self.thumbnail_manager,
+                                              self.cuda_available):
+                pass
+            return result
+
+        final_result = yield from self._run_task(
+            propagation_task, self.progress_queue, self.cancel_event, self.logger
         )
 
-        output_keys = [
-            'unified_log', 'unified_status', 'analysis_output_dir_state',
-            'analysis_metadata_path_state', 'filtering_tab', 'main_tabs',
-            'progress_bar'
-        ]
-
-        logic_gen = run_pipeline_logic(event, self.progress_queue, self.cancel_event,
-                                       self.logger, self.config,
-                                       self.thumbnail_manager, self.cuda_available)
-
-        for result_dict in logic_gen:
-            if result_dict.get('analysis_metadata_path_state'):
-                result_dict['main_tabs'] = gr.update(selected=2)
-            yield tuple(result_dict.get(k, gr.update()) for k in output_keys)
+        if final_result.get("done"):
+            yield {
+                'analysis_output_dir_state': final_result['output_dir'],
+                'analysis_metadata_path_state': final_result['metadata_path'],
+                'filtering_tab': gr.update(interactive=True),
+                'main_tabs': gr.update(selected=2)
+            }
 
     def run_session_load_wrapper(self, session_path):
         """Wrapper for session loading."""
@@ -700,12 +821,15 @@ class AppUI:
         })
         ext_inputs = [c[ext_comp_map[k]] for k in self.ext_ui_map_keys]
         ext_outputs = [
-            c['unified_log'], c['unified_status'],
-            c['extracted_video_path_state'], c['extracted_frames_dir_state'],
-            c['main_tabs'], c['progress_bar']
+            'unified_log', 'progress_bar',
+            'extracted_video_path_state', 'extracted_frames_dir_state',
+            'main_tabs'
         ]
-        c['start_extraction_button'].click(self.run_extraction_wrapper,
-                                          ext_inputs, ext_outputs)
+        c['start_extraction_button'].click(
+            self.run_extraction_wrapper,
+            ext_inputs,
+            [c[name] for name in ext_outputs]
+        )
 
         ana_comp_map = {
             'output_folder': 'extracted_frames_dir_state',
@@ -738,23 +862,26 @@ class AppUI:
         ]
 
         pre_ana_outputs = [
-            c['unified_log'], c['unified_status'], c['seeding_preview_gallery'],
-            c['scenes_state'], c['propagate_masks_button'], c['scene_filter_status'],
-            c['scene_face_sim_min_input'], c['seeding_results_column'], c['propagation_group'],
-            c['progress_bar']
+            'unified_log', 'progress_bar', 'seeding_preview_gallery',
+            'scenes_state', 'propagate_masks_button', 'scene_filter_status',
+            'scene_face_sim_min_input', 'seeding_results_column', 'propagation_group'
         ]
-        c['start_pre_analysis_button'].click(self.run_pre_analysis_wrapper,
-                                           self.ana_input_components,
-                                           pre_ana_outputs)
+        c['start_pre_analysis_button'].click(
+            self.run_pre_analysis_wrapper,
+            self.ana_input_components,
+            [c[name] for name in pre_ana_outputs]
+        )
 
         prop_inputs = [c['scenes_state']] + self.ana_input_components
         prop_outputs = [
-            c['unified_log'], c['unified_status'], c['analysis_output_dir_state'],
-            c['analysis_metadata_path_state'], c['filtering_tab'], c['main_tabs'],
-            c['progress_bar']
+            'unified_log', 'progress_bar', 'analysis_output_dir_state',
+            'analysis_metadata_path_state', 'filtering_tab', 'main_tabs'
         ]
-        c['propagate_masks_button'].click(self.run_propagation_wrapper,
-                                        prop_inputs, prop_outputs)
+        c['propagate_masks_button'].click(
+            self.run_propagation_wrapper,
+            prop_inputs,
+            [c[name] for name in prop_outputs]
+        )
 
     def _setup_scene_editor_handlers(self):
         """Set up scene editor event handlers."""
