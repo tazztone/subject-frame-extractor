@@ -118,8 +118,7 @@ class AppUI:
                         'label': "📊 Status Summary", 'lines': 2, 
                         'interactive': False
                     })
-            with gr.Row():
-                self._create_component('progress_bar', 'progress', {})
+                    self._create_component('progress_bar', 'progress', {})
             self._create_event_handlers()
         return demo
 
