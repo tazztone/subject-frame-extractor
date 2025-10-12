@@ -43,14 +43,14 @@ def sample_frames_data():
     return [
         # Kept frame
         {'filename': 'frame_01.png', 'phash': 'a'*16, 'metrics': {'sharpness_score': 50, 'contrast_score': 50}, 'face_sim': 0.8, 'mask_area_pct': 20},
-        # Rejected by sharpness
-        {'filename': 'frame_02.png', 'phash': 'b'*16, 'metrics': {'sharpness_score': 5, 'contrast_score': 50}, 'face_sim': 0.8, 'mask_area_pct': 20},
-        # Rejected by face similarity
-        {'filename': 'frame_03.png', 'phash': 'c'*16, 'metrics': {'sharpness_score': 50, 'contrast_score': 50}, 'face_sim': 0.2, 'mask_area_pct': 20},
-        # Rejected by mask area
-        {'filename': 'frame_04.png', 'phash': 'd'*16, 'metrics': {'sharpness_score': 50, 'contrast_score': 50}, 'face_sim': 0.8, 'mask_area_pct': 2},
         # Duplicate of frame_01
-        {'filename': 'frame_05.png', 'phash': 'a'*16, 'metrics': {'sharpness_score': 50, 'contrast_score': 50}, 'face_sim': 0.8, 'mask_area_pct': 20},
+        {'filename': 'frame_02.png', 'phash': 'a'*16, 'metrics': {'sharpness_score': 50, 'contrast_score': 50}, 'face_sim': 0.8, 'mask_area_pct': 20},
+        # Rejected by sharpness
+        {'filename': 'frame_03.png', 'phash': 'b'*16, 'metrics': {'sharpness_score': 5, 'contrast_score': 50}, 'face_sim': 0.8, 'mask_area_pct': 20},
+        # Rejected by face similarity
+        {'filename': 'frame_04.png', 'phash': 'c'*16, 'metrics': {'sharpness_score': 50, 'contrast_score': 50}, 'face_sim': 0.2, 'mask_area_pct': 20},
+        # Rejected by mask area
+        {'filename': 'frame_05.png', 'phash': 'd'*16, 'metrics': {'sharpness_score': 50, 'contrast_score': 50}, 'face_sim': 0.8, 'mask_area_pct': 2},
         # Frame with missing face sim data
         {'filename': 'frame_06.png', 'phash': 'e'*16, 'metrics': {'sharpness_score': 50, 'contrast_score': 50}, 'mask_area_pct': 20},
     ]
@@ -69,8 +69,8 @@ def test_apply_quality_filters(sample_frames_data, mock_config):
     kept, rejected, _, reasons = apply_all_filters_vectorized(sample_frames_data, filters)
     assert len(kept) == 5
     assert len(rejected) == 1
-    assert rejected[0]['filename'] == 'frame_02.png'
-    assert 'sharpness_low' in reasons['frame_02.png']
+    assert rejected[0]['filename'] == 'frame_03.png'
+    assert 'sharpness_low' in reasons['frame_03.png']
 
 def test_apply_face_similarity_filter(sample_frames_data, mock_config):
     """Test filtering based on face similarity score."""
@@ -78,14 +78,14 @@ def test_apply_face_similarity_filter(sample_frames_data, mock_config):
     kept, rejected, _, reasons = apply_all_filters_vectorized(sample_frames_data, filters)
     assert len(kept) == 5
     assert len(rejected) == 1
-    assert rejected[0]['filename'] == 'frame_03.png'
-    assert 'face_sim_low' in reasons['frame_03.png']
+    assert rejected[0]['filename'] == 'frame_04.png'
+    assert 'face_sim_low' in reasons['frame_04.png']
 
 def test_apply_face_filter_require_match(sample_frames_data, mock_config):
     """Test rejecting frames that are missing a face when required."""
     filters = {'face_sim_enabled': True, 'require_face_match': True, 'face_sim_min': 0.5}
     kept, rejected, _, reasons = apply_all_filters_vectorized(sample_frames_data, filters)
-    # Rejects frame_03 (low sim) and frame_06 (missing sim)
+    # Rejects frame_04 (low sim) and frame_06 (missing sim)
     assert len(kept) == 4
     assert len(rejected) == 2
     assert 'frame_06.png' in [r['filename'] for r in rejected]
@@ -97,37 +97,30 @@ def test_apply_mask_area_filter(sample_frames_data, mock_config):
     kept, rejected, _, reasons = apply_all_filters_vectorized(sample_frames_data, filters)
     assert len(kept) == 5
     assert len(rejected) == 1
-    assert rejected[0]['filename'] == 'frame_04.png'
-    assert 'mask_too_small' in reasons['frame_04.png']
+    assert rejected[0]['filename'] == 'frame_05.png'
+    assert 'mask_too_small' in reasons['frame_05.png']
 
 def test_apply_deduplication_filter(sample_frames_data, mock_config):
     """Test filtering of duplicate frames using phash."""
-    # This mock now correctly simulates the behavior of imagehash
-    mock_hash_a = MagicMock()
-    mock_hash_a.hash = 'a'*16
-    mock_hash_a.__sub__ = lambda s, other: 0 if s.hash == other.hash else 10
 
-    mock_hash_b = MagicMock()
-    mock_hash_b.hash = 'b'*16
-    mock_hash_b.__sub__ = lambda s, other: 0 if s.hash == other.hash else 10
+    class MockImageHash:
+        def __init__(self, hash_value):
+            self.hash = hash_value
 
-    mock_hashes = {
-        'a'*16: mock_hash_a,
-        'b'*16: mock_hash_b,
-        'c'*16: MagicMock(__sub__=lambda s, other: 10),
-        'd'*16: MagicMock(__sub__=lambda s, other: 10),
-        'e'*16: MagicMock(__sub__=lambda s, other: 10),
-    }
+        def __sub__(self, other):
+            return 0 if self.hash == other.hash else 10
 
-    mock_imagehash.hex_to_hash.side_effect = lambda h: mock_hashes[h]
+    hash_objects = {phash: MockImageHash(phash) for phash in set(f['phash'] for f in sample_frames_data)}
+
+    mock_imagehash.hex_to_hash.side_effect = lambda h: hash_objects.get(h)
 
     filters = {'enable_dedup': True, 'dedup_thresh': 5}
     kept, rejected, _, reasons = apply_all_filters_vectorized(sample_frames_data, filters)
 
     assert len(kept) == 5
     assert len(rejected) == 1
-    assert rejected[0]['filename'] == 'frame_05.png'
-    assert 'duplicate' in reasons['frame_05.png']
+    assert rejected[0]['filename'] == 'frame_02.png'
+    assert 'duplicate' in reasons['frame_02.png']
 
 # --- Tests for auto_set_thresholds ---
 
