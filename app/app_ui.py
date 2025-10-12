@@ -644,9 +644,17 @@ class AppUI:
 
         if final_result.get("done"):
             yield {
+                'unified_log': gr.update(),
                 'extracted_video_path_state': final_result.get("video_path", ""),
                 'extracted_frames_dir_state': final_result["output_dir"],
                 'main_tabs': gr.update(selected=1)
+            }
+        else:
+            yield {
+                'unified_log': gr.update(),
+                'extracted_video_path_state': gr.update(),
+                'extracted_frames_dir_state': gr.update(),
+                'main_tabs': gr.update()
             }
 
     def run_pre_analysis_wrapper(self, *args):
@@ -692,6 +700,7 @@ class AppUI:
                 for s in scenes
             )
             yield {
+                'unified_log': gr.update(),
                 'seeding_preview_gallery': gr.update(value=final_result['previews']),
                 'scenes_state': scenes,
                 'propagate_masks_button': gr.update(interactive=True),
@@ -700,6 +709,8 @@ class AppUI:
                 'seeding_results_column': gr.update(visible=True),
                 'propagation_group': gr.update(visible=True)
             }
+        else:
+            yield {k: gr.update() for k in ['unified_log', 'seeding_preview_gallery', 'scenes_state', 'propagate_masks_button', 'scene_filter_status', 'scene_face_sim_min_input', 'seeding_results_column', 'propagation_group']}
 
     def run_propagation_wrapper(self, scenes, *args):
         """Wrapper for propagation pipeline."""
@@ -742,11 +753,14 @@ class AppUI:
 
         if final_result.get("done"):
             yield {
+                'unified_log': gr.update(),
                 'analysis_output_dir_state': final_result['output_dir'],
                 'analysis_metadata_path_state': final_result['metadata_path'],
                 'filtering_tab': gr.update(interactive=True),
                 'main_tabs': gr.update(selected=2)
             }
+        else:
+            yield {k: gr.update() for k in ['unified_log', 'analysis_output_dir_state', 'analysis_metadata_path_state', 'filtering_tab', 'main_tabs']}
 
     def run_session_load_wrapper(self, session_path):
         """Wrapper for session loading."""
