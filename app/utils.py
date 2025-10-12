@@ -61,5 +61,5 @@ def _to_json_safe(obj):
     if isinstance(obj, float):
         return round(obj, 4)
     if hasattr(obj, '__dataclass_fields__'):  # Check if it's a dataclass
-        return asdict(obj)
+        return _to_json_safe(asdict(obj))
     return obj
