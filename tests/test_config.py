@@ -1,52 +1,75 @@
-import unittest
-from unittest.mock import patch, mock_open
-from pathlib import Path
-import os
-import shutil
+import pytest
 import yaml
-
-# Add app to the python path
 import sys
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from pathlib import Path
+from unittest.mock import patch, MagicMock
+
+# Mock heavy ML dependencies that might be imported indirectly
+modules_to_mock = {
+    'torch': MagicMock(),
+    'ultralytics': MagicMock(),
+}
+patch.dict(sys.modules, modules_to_mock).start()
 
 from app.config import Config
 
-class TestConfig(unittest.TestCase):
+@pytest.fixture
+def mock_config_file(tmp_path):
+    """Creates a temporary config.yaml file for testing."""
+    config_dir = tmp_path / "app"
+    config_dir.mkdir()
+    config_file = config_dir / "config.yaml"
 
-    def setUp(self):
-        """Set up a clean environment for each test."""
-        self.test_dir = Path(__file__).parent / "test_output"
-        self.test_dir.mkdir(exist_ok=True)
-        self.config_path = self.test_dir / "config.yaml"
+    config_data = {
+        'model_paths': {
+            'grounding_dino_config': 'GroundingDINO_SwinT_OGC.py',
+            'grounding_dino_checkpoint': 'groundingdino_swint_ogc.pth',
+        },
+        'grounding_dino_params': {
+            'box_threshold': 0.35,
+            'text_threshold': 0.25,
+        },
+        'quality_weights': {
+            'niqe': 0.2,
+            'sharpness': 0.3,
+            'contrast': 0.1,
+            'brightness': 0.1,
+            'entropy': 0.3,
+        },
+        'thumbnail_cache_size': 150,
+    }
 
-        # Mock Config's DIRS to use the test directory
-        self.patcher = patch.dict(Config.DIRS, {
-            'logs': self.test_dir / "logs",
-            'configs': self.test_dir,
-            'models': self.test_dir / "models",
-            'downloads': self.test_dir / "downloads"
-        })
-        self.patcher.start()
+    with open(config_file, 'w') as f:
+        yaml.dump(config_data, f)
 
-        # Update CONFIG_FILE to use the test directory
-        Config.CONFIG_FILE = self.config_path
+    return config_file
 
-    def tearDown(self):
-        """Clean up the test environment."""
-        self.patcher.stop()
-        if self.test_dir.exists():
-            shutil.rmtree(self.test_dir)
+def test_config_loading_success(mock_config_file):
+    """Tests that the Config class loads a valid YAML file correctly."""
+    with patch.object(Config, 'CONFIG_FILE', mock_config_file):
+        config = Config()
+        assert config.thumbnail_cache_size == 150
+        assert config.GROUNDING_BOX_THRESHOLD == 0.35
+        assert 'sharpness' in config.QUALITY_METRICS
 
-    def test_load_config_file_not_found(self):
-        """Test that FileNotFoundError is raised if config.yaml is missing."""
-        if self.config_path.exists():
-            self.config_path.unlink()
-        with self.assertRaises(FileNotFoundError):
-            Config().load_config()
+def test_config_loading_file_not_found():
+    """Tests that a FileNotFoundError is raised if the config file is missing."""
+    with patch.object(Config, 'CONFIG_FILE', Path("non_existent_config.yaml")):
+        with pytest.raises(FileNotFoundError):
+            Config()
 
-    def test_setup_directories_and_logger(self):
-        """Test that all required directories are created."""
-        Config.setup_directories_and_logger()
-        for dir_path in Config.DIRS.values():
-            self.assertTrue(dir_path.exists())
-            self.assertTrue(dir_path.is_dir())
+@patch('app.config.Path.mkdir')
+@patch('app.logging.UnifiedLogger')
+def test_setup_directories_and_logger(mock_logger, mock_mkdir):
+    """
+    Tests that the setup method attempts to create all necessary directories
+    and initializes the logger.
+    """
+    Config.setup_directories_and_logger()
+
+    # Check that mkdir was called for each directory
+    expected_dirs = list(Config.DIRS.values())
+    assert mock_mkdir.call_count == len(expected_dirs)
+
+    # Check that UnifiedLogger was instantiated
+    mock_logger.assert_called_once()

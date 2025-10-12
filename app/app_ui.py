@@ -56,7 +56,7 @@ class AppUI:
         ]
 
         self.session_load_keys = [
-            'unified_log', 'unified_status', 'progress_bar',
+            'unified_log', 'unified_status',
             # Extraction Tab
             'source_input', 'max_resolution', 'thumbnails_only_input',
             'thumb_megapixels_input', 'ext_scene_detect_input', 'method_input',
@@ -115,10 +115,11 @@ class AppUI:
                     })
                 with gr.Column(scale=1):
                     self._create_component('unified_status', 'textbox', {
-                        'label': "📊 Status Summary", 'lines': 2, 
+                        'label': "📊 Status Summary", 'lines': 2,
                         'interactive': False
                     })
-                    self._create_component('progress_bar', 'progress', {})
+                    with gr.Row():
+                        self._create_component('progress_bar', 'progress', {})
             self._create_event_handlers()
         return demo
 
@@ -821,7 +822,7 @@ class AppUI:
         })
         ext_inputs = [c[ext_comp_map[k]] for k in self.ext_ui_map_keys]
         ext_outputs = [
-            'unified_log', 'progress_bar',
+            'unified_log',
             'extracted_video_path_state', 'extracted_frames_dir_state',
             'main_tabs'
         ]
@@ -862,7 +863,7 @@ class AppUI:
         ]
 
         pre_ana_outputs = [
-            'unified_log', 'progress_bar', 'seeding_preview_gallery',
+            'unified_log', 'seeding_preview_gallery',
             'scenes_state', 'propagate_masks_button', 'scene_filter_status',
             'scene_face_sim_min_input', 'seeding_results_column', 'propagation_group'
         ]
@@ -874,7 +875,7 @@ class AppUI:
 
         prop_inputs = [c['scenes_state']] + self.ana_input_components
         prop_outputs = [
-            'unified_log', 'progress_bar', 'analysis_output_dir_state',
+            'unified_log', 'analysis_output_dir_state',
             'analysis_metadata_path_state', 'filtering_tab', 'main_tabs'
         ]
         c['propagate_masks_button'].click(
