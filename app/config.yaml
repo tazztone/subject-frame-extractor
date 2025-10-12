@@ -18,6 +18,7 @@ ui_defaults:
   enable_subject_mask: True          # Enable subject masking and propagation.
   dam4sam_model_name: "sam21pp-L"    # DAM4SAM model for mask propagation.
   person_detector_model: "yolo11x.pt" # YOLO model for detecting persons.
+  primary_seed_strategy: "🔄 Face + Text Fallback"
   seed_strategy: "Reference Face / Largest" # Fallback strategy if text prompt or face match fails.
   text_prompt: ""                    # Global text prompt for seeding (can be overridden per-scene).
 
