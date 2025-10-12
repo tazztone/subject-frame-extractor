@@ -45,11 +45,12 @@ def execute_extraction(event: ExtractionEvent, progress_queue: Queue,
     result = pipeline.run()
 
     if result.get("done"):
-        return {
+        yield {
             "log": "Extraction complete.",
             "status": f"Output: {result['output_dir']}",
             "extracted_video_path_state": result.get("video_path", ""),
-            "extracted_frames_dir_state": result["output_dir"]
+            "extracted_frames_dir_state": result["output_dir"],
+            "done": True
         }
 
 
@@ -154,12 +155,13 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue,
     result = pre_analysis_task()
 
     if result.get("done"):
-        return {
+        yield {
             "log": "Pre-analysis complete.",
             "status": f"{len(result['scenes'])} scenes found.",
             "previews": result['previews'],
             "scenes": result['scenes'],
-            "output_dir": str(output_dir)
+            "output_dir": str(output_dir),
+            "done": True
         }
 
 
@@ -284,9 +286,10 @@ def execute_propagation(event: PropagationEvent, progress_queue: Queue,
     result = pipeline.run_full_analysis(scenes_to_process)
 
     if result.get("done"):
-        return {
+        yield {
             "log": "Propagation and analysis complete.",
             "status": f"Metadata saved to {result['metadata_path']}",
             "output_dir": result['output_dir'],
             "metadata_path": result['metadata_path'],
+            "done": True
         }

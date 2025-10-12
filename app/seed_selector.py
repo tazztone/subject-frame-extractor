@@ -25,22 +25,114 @@ class SeedSelector:
         self.logger = UnifiedLogger()
 
     def select_seed(self, frame_rgb, current_params=None):
-        """
-        Main entry point for seed selection.
-        Chooses between 'Identity-First' or 'Object-First' mode.
-        """
+        """Main entry point for seed selection."""
         p = self.params if current_params is None else current_params
-        use_face_filter = getattr(p, "enable_face_filter", False)
         
+        # Get the primary seeding strategy
+        primary_strategy = getattr(p, "primary_seed_strategy", "🤖 Automatic")
+        if isinstance(current_params, dict):
+            primary_strategy = current_params.get('primary_seed_strategy', primary_strategy)
+        
+        use_face_filter = getattr(p, "enable_face_filter", False)
         if isinstance(current_params, dict):
             use_face_filter = current_params.get('enable_face_filter', use_face_filter)
 
-        if self.face_analyzer and self.reference_embedding is not None and use_face_filter:
-            self.logger.info("Starting 'Identity-First' seeding.")
-            return self._identity_first_seed(frame_rgb, p)
-        else:
+        if primary_strategy == "👤 By Face":
+            if self.face_analyzer and self.reference_embedding is not None and use_face_filter:
+                self.logger.info("Starting 'Identity-First' seeding.")
+                return self._identity_first_seed(frame_rgb, p)
+            else:
+                self.logger.warning("Face strategy selected but no reference face provided.")
+                return self._object_first_seed(frame_rgb, p)
+        
+        elif primary_strategy == "📝 By Text":
             self.logger.info("Starting 'Object-First' seeding.")
             return self._object_first_seed(frame_rgb, p)
+        
+        elif primary_strategy == "🔄 Face + Text Fallback":
+            self.logger.info("Starting 'Face-First with Text Fallback' seeding.")
+            return self._face_with_text_fallback_seed(frame_rgb, p)
+        
+        else:  # Automatic
+            self.logger.info("Starting 'Automatic' seeding.")
+            return self._object_first_seed(frame_rgb, p)
+
+    def _face_with_text_fallback_seed(self, frame_rgb, params):
+        """Mode 3: Face-First with Text Fallback Strategy"""
+        # Step 1: Try face-first approach
+        target_face, face_details = self._find_target_face(frame_rgb)
+        
+        if target_face and face_details.get('type') == 'face_match':
+            self.logger.info("Face match found, proceeding with identity-first strategy.")
+            # Continue with existing identity-first logic
+            yolo_boxes = self._get_yolo_boxes(frame_rgb)
+            dino_boxes, _ = self._get_dino_boxes(frame_rgb, params)
+            
+            best_box, best_details = self._score_and_select_candidate(
+                target_face, yolo_boxes, dino_boxes
+            )
+            
+            if best_box:
+                self.logger.success("Face-based seed selected.", extra=best_details)
+                return best_box, best_details
+            else:
+                # Expand face box if no good candidate
+                expanded_box = self._expand_face_to_body(target_face['bbox'], frame_rgb.shape)
+                fallback_details = {
+                    "type": "expanded_box_from_face",
+                    "seed_face_sim": face_details.get('seed_face_sim', 0)
+                }
+                return expanded_box, fallback_details
+        
+        # Step 2: Face detection failed, fallback to text prompt
+        self.logger.warning("Face detection failed, falling back to text prompt strategy.", extra=face_details)
+        
+        text_prompt = getattr(params, "text_prompt", "")
+        if isinstance(params, dict):
+            text_prompt = params.get('text_prompt', text_prompt)
+        
+        if not text_prompt:
+            self.logger.warning("No text prompt provided for fallback. Using automatic strategy.")
+            return self._choose_person_by_strategy(frame_rgb, params)
+        
+        # Use text-based approach
+        dino_boxes, dino_details = self._get_dino_boxes(frame_rgb, params)
+        
+        if dino_boxes:
+            # Validate with YOLO if available
+            yolo_boxes = self._get_yolo_boxes(frame_rgb)
+            if yolo_boxes:
+                best_iou = -1
+                best_match = None
+                for d_box in dino_boxes:
+                    for y_box in yolo_boxes:
+                        iou = self._calculate_iou(d_box['bbox'], y_box['bbox'])
+                        if iou > best_iou:
+                            best_iou = iou
+                            best_match = {
+                                'bbox': d_box['bbox'],
+                                'type': 'text_fallback_dino_yolo',
+                                'iou': iou,
+                                'dino_conf': d_box['conf'],
+                                'yolo_conf': y_box['conf'],
+                                'fallback_reason': face_details.get('error', 'face_detection_failed')
+                            }
+                if best_match and best_match['iou'] > 0.3:
+                    self.logger.info("Text fallback successful with DINO+YOLO intersection.", extra=best_match)
+                    return self._xyxy_to_xywh(best_match['bbox']), best_match
+            
+            # Return best DINO box
+            fallback_details = {
+                **dino_details,
+                'type': 'text_fallback_dino_only',
+                'fallback_reason': face_details.get('error', 'face_detection_failed')
+            }
+            self.logger.info("Text fallback using best DINO box.", extra=fallback_details)
+            return self._xyxy_to_xywh(dino_boxes[0]['bbox']), fallback_details
+        
+        # Final fallback to automatic strategy
+        self.logger.warning("Both face and text strategies failed, using automatic fallback.")
+        return self._choose_person_by_strategy(frame_rgb, params)
 
     def _identity_first_seed(self, frame_rgb, params):
         """Mode 1: Reference Face Provided (The 'Identity-First' Approach)"""

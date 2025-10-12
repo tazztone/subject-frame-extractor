@@ -204,8 +204,8 @@ class AppUI:
             with gr.Column(scale=1):
                 gr.Markdown("### 🎯 Step 1: Choose Your Seeding Strategy")
                 self._create_component('primary_seed_strategy_input', 'radio', {
-                    'choices': ["👤 By Face", "📝 By Text", "🤖 Automatic"],
-                    'value': "🤖 Automatic",
+                    'choices': ["👤 By Face", "📝 By Text", "🔄 Face + Text Fallback", "🤖 Automatic"],
+                    'value': "🔄 Face + Text Fallback",  # Make fallback the default
                     'label': "Primary Seeding Strategy"
                 })
 
@@ -619,148 +619,156 @@ class AppUI:
         return result or {}
 
     def run_extraction_wrapper(self, *args):
-        """Wrapper for extraction pipeline."""
-        def extraction_task():
-            ui_args = dict(zip(self.ext_ui_map_keys, args))
-            event = ExtractionEvent(**ui_args)
+        """Wrapper for extraction pipeline.""" 
+        ui_args = dict(zip(self.ext_ui_map_keys, args))
+        event = ExtractionEvent(**ui_args)
 
-            # Use your existing pipeline logic
-            for result in execute_extraction(event, self.progress_queue,
-                                           self.cancel_event, self.logger, self.config):
-                # Don't yield here - just let execute_extraction handle progress_queue
-                pass
+        # Execute the pipeline and collect results
+        final_result = {}
+        for result in execute_extraction(event, self.progress_queue,
+                                       self.cancel_event, self.logger, self.config):
+            # Only update final_result if result is a dictionary
+            if isinstance(result, dict):
+                final_result.update(result)  # Merge instead of overwrite
 
-            # Return final result
-            return {
-                'done': True,
-                'video_path': result.get('extracted_video_path_state', ''),
-                'output_dir': result.get('extracted_frames_dir_state', '')
-            }
-
-        # Use the fixed _run_task
-        final_result = yield from self._run_task(
-            extraction_task, self.progress_queue, self.cancel_event, self.logger
-        )
-
+        # Safe access with fallbacks
         if final_result.get("done"):
-            yield {
-                'unified_log': gr.update(),
-                'extracted_video_path_state': final_result.get("video_path", ""),
-                'extracted_frames_dir_state': final_result["output_dir"],
-                'main_tabs': gr.update(selected=1)
-            }
-        else:
-            yield {
-                'unified_log': gr.update(),
-                'extracted_video_path_state': gr.update(),
-                'extracted_frames_dir_state': gr.update(),
-                'main_tabs': gr.update()
-            }
+            video_path = final_result.get("extracted_video_path_state", "") or final_result.get("video_path", "")
+            frames_dir = final_result.get("extracted_frames_dir_state", "") or final_result.get("output_dir", "")
+            
+            return (
+                final_result.get("log", "✅ Extraction completed successfully."),
+                video_path,
+                frames_dir,
+                gr.update(selected=1)
+            )
+
+        return (
+            final_result.get("log", "❌ Extraction failed or was cancelled."),
+            "",
+            "", 
+            gr.update()
+        )
 
     def run_pre_analysis_wrapper(self, *args):
         """Wrapper for pre-analysis pipeline."""
-        def pre_analysis_task():
-            ui_args = dict(zip(self.ana_ui_map_keys, args))
+        ui_args = dict(zip(self.ana_ui_map_keys, args))
 
-            # Adapt ui_args based on the primary seeding strategy
-            strategy = ui_args.pop('primary_seed_strategy', '🤖 Automatic')
-            if strategy == "👤 By Face":
-                ui_args['enable_face_filter'] = True
-                ui_args['text_prompt'] = ""
-            elif strategy == "📝 By Text":
-                ui_args['enable_face_filter'] = False
-                ui_args['face_ref_img_path'] = ""
-                ui_args['face_ref_img_upload'] = None
-            elif strategy == "🤖 Automatic":
-                ui_args['enable_face_filter'] = False
-                ui_args['text_prompt'] = ""
-                ui_args['face_ref_img_path'] = ""
-                ui_args['face_ref_img_upload'] = None
+        # Adapt ui_args based on the primary seeding strategy
+        strategy = ui_args.pop('primary_seed_strategy', '🤖 Automatic')
+        if strategy == "👤 By Face":
+            ui_args['enable_face_filter'] = True
+            ui_args['text_prompt'] = ""
+        elif strategy == "📝 By Text":
+            ui_args['enable_face_filter'] = False
+            ui_args['face_ref_img_path'] = ""
+            ui_args['face_ref_img_upload'] = None
+        elif strategy == "🔄 Face + Text Fallback":
+            ui_args['enable_face_filter'] = True
+            # Keep both face reference and text prompt
+            # Don't clear either - both are needed for fallback
+        elif strategy == "🤖 Automatic":
+            ui_args['enable_face_filter'] = False
+            ui_args['text_prompt'] = ""
+            ui_args['face_ref_img_path'] = ""
+            ui_args['face_ref_img_upload'] = None
 
-            event = PreAnalysisEvent(**ui_args)
+        event = PreAnalysisEvent(**ui_args)
 
-            for result in execute_pre_analysis(event, self.progress_queue,
-                                               self.cancel_event, self.logger,
-                                               self.config, self.thumbnail_manager,
-                                               self.cuda_available):
-                pass
-
-            return result
-
-        final_result = yield from self._run_task(
-            pre_analysis_task, self.progress_queue, self.cancel_event, self.logger
-        )
+        final_result = {}
+        for result in execute_pre_analysis(event, self.progress_queue,
+                                           self.cancel_event, self.logger,
+                                           self.config, self.thumbnail_manager,
+                                           self.cuda_available):
+            if isinstance(result, dict):
+                final_result.update(result)
 
         if final_result.get("done"):
-            scenes = final_result['scenes']
-            save_scene_seeds(scenes, final_result['output_dir'], self.logger)
+            scenes = final_result.get('scenes', [])
+            if scenes:
+                 save_scene_seeds(scenes, final_result['output_dir'], self.logger)
             status_text = get_scene_status_text(scenes)
             has_face_sim = any(
                 s.get('seed_metrics', {}).get('best_face_sim') is not None
                 for s in scenes
             )
-            yield {
-                'unified_log': gr.update(),
-                'seeding_preview_gallery': gr.update(value=final_result['previews']),
-                'scenes_state': scenes,
-                'propagate_masks_button': gr.update(interactive=True),
-                'scene_filter_status': status_text,
-                'scene_face_sim_min_input': gr.update(visible=has_face_sim),
-                'seeding_results_column': gr.update(visible=True),
-                'propagation_group': gr.update(visible=True)
-            }
+            return (
+                final_result.get("log", "✅ Pre-analysis completed successfully."),
+                gr.update(value=final_result.get('previews')),
+                scenes,
+                gr.update(interactive=True),
+                status_text,
+                gr.update(visible=has_face_sim),
+                gr.update(visible=True),
+                gr.update(visible=True)
+            )
         else:
-            yield {k: gr.update() for k in ['unified_log', 'seeding_preview_gallery', 'scenes_state', 'propagate_masks_button', 'scene_filter_status', 'scene_face_sim_min_input', 'seeding_results_column', 'propagation_group']}
+            return (
+                final_result.get("log", "❌ Pre-analysis failed or was cancelled."),
+                gr.update(),
+                gr.update(),
+                gr.update(),
+                gr.update(),
+                gr.update(),
+                gr.update(),
+                gr.update()
+            )
 
     def run_propagation_wrapper(self, scenes, *args):
         """Wrapper for propagation pipeline."""
-        def propagation_task():
-            ui_args = dict(zip(self.ana_ui_map_keys, args))
+        ui_args = dict(zip(self.ana_ui_map_keys, args))
 
-            # Adapt ui_args based on the primary seeding strategy
-            strategy = ui_args.pop('primary_seed_strategy', '🤖 Automatic')
-            if strategy == "👤 By Face":
-                ui_args['enable_face_filter'] = True
-                ui_args['text_prompt'] = ""
-            elif strategy == "📝 By Text":
-                ui_args['enable_face_filter'] = False
-                ui_args['face_ref_img_path'] = ""
-                ui_args['face_ref_img_upload'] = None
-            elif strategy == "🤖 Automatic":
-                ui_args['enable_face_filter'] = False
-                ui_args['text_prompt'] = ""
-                ui_args['face_ref_img_path'] = ""
-                ui_args['face_ref_img_upload'] = None
+        # Adapt ui_args based on the primary seeding strategy
+        strategy = ui_args.pop('primary_seed_strategy', '🤖 Automatic')
+        if strategy == "👤 By Face":
+            ui_args['enable_face_filter'] = True
+            ui_args['text_prompt'] = ""
+        elif strategy == "📝 By Text":
+            ui_args['enable_face_filter'] = False
+            ui_args['face_ref_img_path'] = ""
+            ui_args['face_ref_img_upload'] = None
+        elif strategy == "🔄 Face + Text Fallback":
+            ui_args['enable_face_filter'] = True
+            # Keep both face reference and text prompt
+            # Don't clear either - both are needed for fallback
+        elif strategy == "🤖 Automatic":
+            ui_args['enable_face_filter'] = False
+            ui_args['text_prompt'] = ""
+            ui_args['face_ref_img_path'] = ""
+            ui_args['face_ref_img_upload'] = None
 
-            analysis_params = PreAnalysisEvent(**ui_args)
-            event = PropagationEvent(
-                output_folder=ui_args['output_folder'],
-                video_path=ui_args['video_path'],
-                scenes=scenes,
-                analysis_params=analysis_params
-            )
-
-            for result in execute_propagation(event, self.progress_queue,
-                                              self.cancel_event, self.logger,
-                                              self.config, self.thumbnail_manager,
-                                              self.cuda_available):
-                pass
-            return result
-
-        final_result = yield from self._run_task(
-            propagation_task, self.progress_queue, self.cancel_event, self.logger
+        analysis_params = PreAnalysisEvent(**ui_args)
+        event = PropagationEvent(
+            output_folder=ui_args['output_folder'],
+            video_path=ui_args['video_path'],
+            scenes=scenes,
+            analysis_params=analysis_params
         )
 
+        final_result = {}
+        for result in execute_propagation(event, self.progress_queue,
+                                          self.cancel_event, self.logger,
+                                          self.config, self.thumbnail_manager,
+                                          self.cuda_available):
+            if isinstance(result, dict):
+                final_result.update(result)
+                
         if final_result.get("done"):
-            yield {
-                'unified_log': gr.update(),
-                'analysis_output_dir_state': final_result['output_dir'],
-                'analysis_metadata_path_state': final_result['metadata_path'],
-                'filtering_tab': gr.update(interactive=True),
-                'main_tabs': gr.update(selected=2)
-            }
+            return (
+                final_result.get("log", "✅ Propagation completed successfully."),
+                final_result.get('output_dir', ""),
+                final_result.get('metadata_path', ""),
+                gr.update(interactive=True),
+                gr.update(selected=2)
+            )
         else:
-            yield {k: gr.update() for k in ['unified_log', 'analysis_output_dir_state', 'analysis_metadata_path_state', 'filtering_tab', 'main_tabs']}
+            return (
+                final_result.get("log", "❌ Propagation failed or was cancelled."),
+                gr.update(),
+                gr.update(),
+                gr.update(),
+                gr.update()
+            )
 
     def run_session_load_wrapper(self, session_path):
         """Wrapper for session loading."""
@@ -798,12 +806,14 @@ class AppUI:
         def on_strategy_change(strategy):
             is_face = strategy == "👤 By Face"
             is_text = strategy == "📝 By Text"
+            is_fallback = strategy == "🔄 Face + Text Fallback"
             is_auto = strategy == "🤖 Automatic"
+            
             return {
-                c['face_seeding_group']: gr.update(visible=is_face),
-                c['text_seeding_group']: gr.update(visible=is_text),
+                c['face_seeding_group']: gr.update(visible=is_face or is_fallback),
+                c['text_seeding_group']: gr.update(visible=is_text or is_fallback),
                 c['auto_seeding_group']: gr.update(visible=is_auto),
-                c['enable_face_filter_input']: gr.update(value=is_face)
+                c['enable_face_filter_input']: gr.update(value=is_face or is_fallback)
             }
 
         c['primary_seed_strategy_input'].change(
