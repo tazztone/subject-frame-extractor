@@ -233,52 +233,6 @@ class Backend:
 
         yield from self._yield_gradio_updates(logic_gen, self.session_load_keys)
 
-    def on_filters_changed_wrapper(self, all_frames_data, per_metric_values, output_dir,
-                                 gallery_view, show_overlay, overlay_alpha,
-                                 require_face_match, dedup_thresh, *slider_values):
-        """Wrapper for on_filters_changed logic."""
-        slider_keys = sorted(self.components['metric_sliders'].keys())
-        slider_values_dict = {key: val for key, val in zip(slider_keys, slider_values)}
-
-        event = FilterEvent(
-            all_frames_data=all_frames_data,
-            per_metric_values=per_metric_values,
-            output_dir=output_dir,
-            gallery_view=gallery_view,
-            show_overlay=show_overlay,
-            overlay_alpha=overlay_alpha,
-            require_face_match=require_face_match,
-            dedup_thresh=dedup_thresh,
-            slider_values=slider_values_dict
-        )
-
-        result = on_filters_changed(event, self.thumbnail_manager)
-        return result['filter_status_text'], result['results_gallery']
-
-    def on_reset_filters(self, all_frames_data, per_metric_values, output_dir):
-        """Wrapper for reset_filters logic that returns updates in a fixed order."""
-        slider_keys = sorted(self.components['metric_sliders'].keys())
-        result = reset_filters(all_frames_data, per_metric_values, output_dir,
-                               self.config, slider_keys, self.thumbnail_manager)
-
-        updates = []
-        for key in slider_keys:
-            comp_name = f"slider_{key}"
-            updates.append(result.get(comp_name, gr.update()))
-
-        updates.append(result.get('dedup_thresh_input', gr.update()))
-        updates.append(result.get('require_face_match_input', gr.update()))
-        updates.append(result.get('filter_status_text', gr.update()))
-        updates.append(result.get('results_gallery', gr.update()))
-
-        return tuple(updates)
-
-    def on_auto_set_thresholds(self, per_metric_values, p):
-        """Wrapper for auto_set_thresholds logic."""
-        slider_keys = sorted(self.components['metric_sliders'].keys())
-        updates = auto_set_thresholds(per_metric_values, p, slider_keys)
-
-        return [updates.get(f'slider_{key}', gr.update()) for key in slider_keys]
 
     def on_toggle_scene_status(self, scenes_list, selected_shot_id, output_folder, new_status):
         """Wrapper for toggle_scene_status logic."""

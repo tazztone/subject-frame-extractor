@@ -18,7 +18,7 @@ def execute_extraction(event: ExtractionEvent, progress_queue: Queue,
     params = AnalysisParameters.from_ui(**asdict(event))
     pipeline = ExtractionPipeline(params, progress_queue, cancel_event, logger,
                                   config, None)
-    yield from pipeline.run()
+    yield pipeline.run()
 
 
 def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue,
