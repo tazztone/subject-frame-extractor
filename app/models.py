@@ -155,7 +155,6 @@ class Scene:
 @dataclass
 class AnalysisParameters:
     source_path: str = ""
-    upload_video: str = ""
     method: str = ""
     interval: float = 0.0
     max_resolution: str = ""
