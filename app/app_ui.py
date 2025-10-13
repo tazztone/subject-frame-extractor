@@ -491,16 +491,100 @@ class AppUI:
         for result_dict in logic_generator:
             yield tuple(result_dict.get(k, gr.update()) for k in output_keys)
 
+    def _run_task(self, task_func, *args):
+        """Enhanced task runner with better progress integration."""
+        log_buffer = []
+        processed = 0
+        total = 1
+        stage = "Initializing"
+        start_time = time.time()
+        last_yield = 0.0
 
-    def run_session_load_wrapper(self, session_path):
-        """Wrapper for session loading."""
-        from app.pipeline_logic import execute_session_load
-        event = SessionLoadEvent(session_path=session_path)
+        # Initial state
+        yield {
+            'unified_log': "Starting task...",
+            'progress_bar': gr.update(visible=True, value=0, label="Initializing...")
+        }
 
-        logic_gen = execute_session_load(event, self.logger, self.config,
-                                         self.thumbnail_manager)
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            # Pass the progress_queue to the task function
+            future = executor.submit(task_func, *args)
 
-        yield from self._yield_gradio_updates(logic_gen, self.session_load_keys)
+            while future.running():
+                if self.cancel_event.is_set():
+                    break
+
+                try:
+                    msg = self.progress_queue.get(timeout=0.1)
+
+                    if "log" in msg:
+                        timestamp = time.strftime('%H:%M:%S')
+                        log_buffer.append(f"[{timestamp}] {msg['log']}")
+
+                    if "stage" in msg:
+                        stage = msg["stage"]
+                        processed = 0
+                        start_time = time.time()
+
+                    if "total" in msg:
+                        total = msg["total"] or 1
+
+                    if "progress" in msg:
+                        processed += msg["progress"]
+
+                    # Update UI periodically
+                    if time.time() - last_yield > 0.1:  # 10Hz updates
+                        elapsed = time.time() - start_time
+                        rate = processed / elapsed if elapsed > 0 else 0
+                        eta = (total - processed) / rate if rate > 0 else 0
+
+                        progress_pct = processed / total if total > 0 else 0
+
+                        status_label = f"{stage} ({processed}/{total}) - ETA: {int(eta//60):02d}:{int(eta%60):02d}"
+
+                        yield {
+                            'unified_log': "\n".join(log_buffer),
+                            'progress_bar': gr.update(
+                                value=progress_pct,
+                                label=status_label,
+                                visible=True
+                            )
+                        }
+                        last_yield = time.time()
+
+                except Empty:
+                    pass
+
+        # Get final result
+        try:
+            result = future.result()
+        except Exception as e:
+            result = {'error': str(e)}
+            log_buffer.append(f"[ERROR] Task failed: {e}")
+
+        # Final status
+        if self.cancel_event.is_set():
+            final_msg = "⏹️ Task cancelled by user"
+            final_label = "Cancelled"
+        elif result and result.get('error'):
+            final_msg = f"❌ Task failed: {result['error']}"
+            final_label = "Failed"
+        else:
+            final_msg = "✅ Task completed successfully"
+            final_label = "Complete"
+
+        log_buffer.append(final_msg)
+
+        yield {
+            'unified_log': "\n".join(log_buffer),
+            'progress_bar': gr.update(
+                value=1.0 if not result.get('error') else 0,
+                label=final_label,
+                visible=True
+            )
+        }
+
+        return result or {}
 
 
     def _setup_visibility_toggles(self):
@@ -570,8 +654,8 @@ class AppUI:
             'main_tabs'
         ]
         c['start_extraction_button'].click(
-            self.backend.run_extraction_wrapper,
-            ext_inputs,
+            lambda: self._run_task(self.backend.run_extraction_wrapper, *ext_inputs),
+            None,
             [c[name] for name in ext_outputs]
         )
 
@@ -611,8 +695,8 @@ class AppUI:
             'scene_face_sim_min_input', 'seeding_results_column', 'propagation_group'
         ]
         c['start_pre_analysis_button'].click(
-            self.backend.run_pre_analysis_wrapper,
-            self.ana_input_components,
+            lambda: self._run_task(self.backend.run_pre_analysis_wrapper, *self.ana_input_components),
+            None,
             [c[name] for name in pre_ana_outputs]
         )
 
@@ -622,8 +706,8 @@ class AppUI:
             'analysis_metadata_path_state', 'filtering_tab', 'main_tabs'
         ]
         c['propagate_masks_button'].click(
-            self.backend.run_propagation_wrapper,
-            prop_inputs,
+            lambda: self._run_task(self.backend.run_propagation_wrapper, *prop_inputs),
+            None,
             [c[name] for name in prop_outputs]
         )
 
@@ -749,7 +833,7 @@ class AppUI:
             handler = (control.release if hasattr(control, 'release') 
                       else control.input if hasattr(control, 'input') 
                       else control.change)
-            handler(self.backend.on_filters_changed_wrapper, fast_filter_inputs,
+            handler(self.on_filters_changed_wrapper, fast_filter_inputs,
                    fast_filter_outputs)
 
         def load_and_trigger_update(metadata_path, output_dir):
@@ -829,7 +913,7 @@ class AppUI:
              c['results_gallery']]
         )
         c['reset_filters_button'].click(
-            self.backend.on_reset_filters,
+            self.on_reset_filters,
             inputs=[c['all_frames_data_state'], c['per_metric_values_state'],
                     c['analysis_output_dir_state']],
             outputs=reset_outputs_comps
@@ -837,9 +921,56 @@ class AppUI:
 
         auto_set_outputs = [c['metric_sliders'][k] for k in slider_keys]
         c['apply_auto_button'].click(
-            self.backend.on_auto_set_thresholds,
+            self.on_auto_set_thresholds,
             [c['per_metric_values_state'], c['auto_pctl_input']],
             auto_set_outputs
         ).then(
-            self.backend.on_filters_changed_wrapper, fast_filter_inputs, fast_filter_outputs
+            self.on_filters_changed_wrapper, fast_filter_inputs, fast_filter_outputs
         )
+
+    def on_filters_changed_wrapper(self, all_frames_data, per_metric_values, output_dir,
+                                 gallery_view, show_overlay, overlay_alpha,
+                                 require_face_match, dedup_thresh, *slider_values):
+        """Wrapper for on_filters_changed logic."""
+        slider_keys = sorted(self.components['metric_sliders'].keys())
+        slider_values_dict = {key: val for key, val in zip(slider_keys, slider_values)}
+
+        event = FilterEvent(
+            all_frames_data=all_frames_data,
+            per_metric_values=per_metric_values,
+            output_dir=output_dir,
+            gallery_view=gallery_view,
+            show_overlay=show_overlay,
+            overlay_alpha=overlay_alpha,
+            require_face_match=require_face_match,
+            dedup_thresh=dedup_thresh,
+            slider_values=slider_values_dict
+        )
+
+        result = on_filters_changed(event, self.thumbnail_manager)
+        return result['filter_status_text'], result['results_gallery']
+
+    def on_reset_filters(self, all_frames_data, per_metric_values, output_dir):
+        """Wrapper for reset_filters logic that returns updates in a fixed order."""
+        slider_keys = sorted(self.components['metric_sliders'].keys())
+        result = reset_filters(all_frames_data, per_metric_values, output_dir,
+                               self.config, slider_keys, self.thumbnail_manager)
+
+        updates = []
+        for key in slider_keys:
+            comp_name = f"slider_{key}"
+            updates.append(result.get(comp_name, gr.update()))
+
+        updates.append(result.get('dedup_thresh_input', gr.update()))
+        updates.append(result.get('require_face_match_input', gr.update()))
+        updates.append(result.get('filter_status_text', gr.update()))
+        updates.append(result.get('results_gallery', gr.update()))
+
+        return tuple(updates)
+
+    def on_auto_set_thresholds(self, per_metric_values, p):
+        """Wrapper for auto_set_thresholds logic."""
+        slider_keys = sorted(self.components['metric_sliders'].keys())
+        updates = auto_set_thresholds(per_metric_values, p, slider_keys)
+
+        return [updates.get(f'slider_{key}', gr.update()) for key in slider_keys]

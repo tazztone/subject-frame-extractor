@@ -13,6 +13,7 @@ import numpy as np
 from app.config import Config
 from app.events import (ExtractionEvent, PreAnalysisEvent, PropagationEvent,
                               SessionLoadEvent)
+from app.extract import ExtractionPipeline as ExtractionTool
 from app.frames import create_frame_map, render_mask_overlay
 from app.logging import UnifiedLogger
 from app.models import AnalysisParameters, Scene
@@ -43,9 +44,7 @@ class ExtractionPipeline(Pipeline):
 
     def run(self):
         """Run the extraction pipeline."""
-        from app.extract import ExtractionPipeline as ExtractionTool
-
-        progress_queue.put({"stage": "Starting extraction...", "total": 1, "progress": 0})
+        self.progress_queue.put({"stage": "Starting extraction...", "total": 1, "progress": 0})
 
         if self.params.upload_video:
             source = self.params.upload_video
