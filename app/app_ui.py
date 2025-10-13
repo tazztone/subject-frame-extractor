@@ -1,14 +1,19 @@
 import gradio as gr
 import torch
 import threading
-from queue import Queue
+import time
+from queue import Queue, Empty
 from concurrent.futures import ThreadPoolExecutor
-
 from app.config import Config
 from app.logging import UnifiedLogger
 from app.thumb_cache import ThumbnailManager
-from app.events import (FilterEvent, ExportEvent)
-from app.backend import Backend
+from app.events import (ExtractionEvent, PreAnalysisEvent, PropagationEvent,
+                              FilterEvent, ExportEvent, SessionLoadEvent)
+from app.pipeline_logic import (
+    execute_extraction,
+    execute_pre_analysis,
+    execute_propagation
+)
 from app.filter_logic import (load_and_prep_filter_data, build_all_metric_svgs,
                                     on_filters_changed, reset_filters,
                                     auto_set_thresholds, apply_all_filters_vectorized)
@@ -33,16 +38,42 @@ class AppUI:
             max_size=self.config.thumbnail_cache_size
         )
         
-        self.backend = Backend(
-            config=self.config,
-            logger=self.logger,
-            progress_queue=self.progress_queue,
-            cancel_event=self.cancel_event,
-            thumbnail_manager=self.thumbnail_manager,
-            cuda_available=self.cuda_available
-        )
+        self.ext_ui_map_keys = [
+            'source_path', 'upload_video', 'method', 'interval', 'nth_frame',
+            'fast_scene', 'max_resolution', 'use_png', 'thumbnails_only',
+            'thumb_megapixels', 'scene_detect'
+        ]
+        self.ana_ui_map_keys = [
+            'output_folder', 'video_path', 'resume', 'enable_face_filter',
+            'face_ref_img_path', 'face_ref_img_upload', 'face_model_name',
+            'enable_subject_mask', 'dam4sam_model_name', 'person_detector_model',
+            'seed_strategy', 'scene_detect', 'enable_dedup', 'text_prompt',
+            'box_threshold', 'text_threshold', 'min_mask_area_pct',
+            'sharpness_base_scale', 'edge_strength_base_scale',
+            'gdino_config_path', 'gdino_checkpoint_path',
+            'pre_analysis_enabled', 'pre_sample_nth', 'primary_seed_strategy'
+        ]
 
-
+        self.session_load_keys = [
+            'unified_log', 'unified_status', 'progress_bar',
+            # Extraction Tab
+            'source_input', 'max_resolution', 'thumbnails_only_input',
+            'thumb_megapixels_input', 'ext_scene_detect_input', 'method_input',
+            'use_png_input',
+            # Analysis Tab
+            'pre_analysis_enabled_input', 'pre_sample_nth_input',
+            'enable_face_filter_input', 'face_model_name_input',
+            'face_ref_img_path_input', 'text_prompt_input',
+            'seed_strategy_input', 'person_detector_model_input',
+            'dam4sam_model_name_input', 'enable_dedup_input',
+            # States
+            'extracted_video_path_state', 'extracted_frames_dir_state',
+            'analysis_output_dir_state', 'analysis_metadata_path_state',
+            'scenes_state',
+            # Other UI elements
+            'propagate_masks_button', 'filtering_tab',
+            'scene_face_sim_min_input'
+        ]
 
     def build_ui(self):
         """Build the complete Gradio interface."""
@@ -87,7 +118,7 @@ class AppUI:
                         'interactive': False
                     })
                     with gr.Row():
-                        self._create_component('progress_bar', 'progress', {})
+                        self.components['progress_bar'] = gr.Progress()
             self._create_event_handlers()
         return demo
 
@@ -98,7 +129,7 @@ class AppUI:
             'dropdown': gr.Dropdown, 'slider': gr.Slider,
             'checkbox': gr.Checkbox, 'file': gr.File, 'radio': gr.Radio, 
             'gallery': gr.Gallery, 'plot': gr.Plot, 'markdown': gr.Markdown, 
-            'html': gr.HTML, 'number': gr.Number, 'progress': gr.Progress
+            'html': gr.HTML, 'number': gr.Number
         }
         self.components[name] = comp_map[comp_type](**kwargs)
         return self.components[name]
@@ -486,106 +517,179 @@ class AppUI:
         self._setup_scene_editor_handlers()
         self._setup_bulk_scene_handlers()
 
-    def _yield_gradio_updates(self, logic_generator, output_keys):
-        """Helper to convert dicts from logic to tuples for Gradio."""
-        for result_dict in logic_generator:
-            yield tuple(result_dict.get(k, gr.update()) for k in output_keys)
-
-    def _run_task(self, task_func, *args):
-        """Enhanced task runner with better progress integration."""
+    def _run_task_with_progress(self, task_func, output_keys, progress, *args):
+        """
+        Runs a long-running task in a background thread and updates the UI
+        with progress via the provided Gradio progress object.
+        """
+        self.cancel_event.clear()
         log_buffer = []
-        processed = 0
-        total = 1
-        stage = "Initializing"
+        processed, total, stage = 0, 1, "Initializing"
         start_time = time.time()
-        last_yield = 0.0
 
-        # Initial state
-        yield {
-            'unified_log': "Starting task...",
-            'progress_bar': gr.update(visible=True, value=0, label="Initializing...")
-        }
+        initial_updates = {'unified_log': "Starting task..."}
+        yield tuple(initial_updates.get(k, gr.update()) for k in output_keys)
+        progress(0, "Initializing...")
 
         with ThreadPoolExecutor(max_workers=1) as executor:
-            # Pass the progress_queue to the task function
             future = executor.submit(task_func, *args)
 
-            while future.running():
+            while not future.done():
                 if self.cancel_event.is_set():
+                    future.cancel()
                     break
 
                 try:
                     msg = self.progress_queue.get(timeout=0.1)
-
                     if "log" in msg:
-                        timestamp = time.strftime('%H:%M:%S')
-                        log_buffer.append(f"[{timestamp}] {msg['log']}")
-
+                        log_buffer.append(f"[{time.strftime('%H:%M:%S')}] {msg['log']}")
                     if "stage" in msg:
-                        stage = msg["stage"]
-                        processed = 0
+                        stage, processed = msg["stage"], 0
                         start_time = time.time()
-
-                    if "total" in msg:
-                        total = msg["total"] or 1
-
-                    if "progress" in msg:
-                        processed += msg["progress"]
-
-                    # Update UI periodically
-                    if time.time() - last_yield > 0.1:  # 10Hz updates
-                        elapsed = time.time() - start_time
-                        rate = processed / elapsed if elapsed > 0 else 0
-                        eta = (total - processed) / rate if rate > 0 else 0
-
-                        progress_pct = processed / total if total > 0 else 0
-
-                        status_label = f"{stage} ({processed}/{total}) - ETA: {int(eta//60):02d}:{int(eta%60):02d}"
-
-                        yield {
-                            'unified_log': "\n".join(log_buffer),
-                            'progress_bar': gr.update(
-                                value=progress_pct,
-                                label=status_label,
-                                visible=True
-                            )
-                        }
-                        last_yield = time.time()
-
+                    if "total" in msg: total = msg["total"] or 1
+                    if "progress" in msg: processed += msg["progress"]
                 except Empty:
                     pass
 
-        # Get final result
-        try:
-            result = future.result()
-        except Exception as e:
-            result = {'error': str(e)}
-            log_buffer.append(f"[ERROR] Task failed: {e}")
+                elapsed = time.time() - start_time
+                rate = processed / elapsed if elapsed > 0 else 0
+                eta = (total - processed) / rate if rate > 0 else float('inf')
+                eta_str = f"{int(eta//60):02d}:{int(eta%60):02d}" if eta != float('inf') else "∞"
+                progress_pct = processed / total if total > 0 else 0
 
-        # Final status
-        if self.cancel_event.is_set():
-            final_msg = "⏹️ Task cancelled by user"
-            final_label = "Cancelled"
-        elif result and result.get('error'):
-            final_msg = f"❌ Task failed: {result['error']}"
-            final_label = "Failed"
-        else:
-            final_msg = "✅ Task completed successfully"
-            final_label = "Complete"
+                progress(progress_pct, f"{stage} ({processed}/{total}) - ETA: {eta_str}")
+
+                # Yield other UI updates without throttling
+                progress_updates = {'unified_log': "\n".join(log_buffer)}
+                yield tuple(progress_updates.get(k, gr.update()) for k in output_keys)
+                time.sleep(0.1)
+
+        final_updates = {}
+        try:
+            result_dict = future.result()
+            if self.cancel_event.is_set():
+                final_msg, final_label = "⏹️ Task cancelled by user", "Cancelled"
+            else:
+                final_msg = result_dict.get("log", "✅ Task completed successfully")
+                final_label = "Complete"
+                final_updates = result_dict
+        except Exception as e:
+            self.logger.error("Task execution failed", exc_info=True)
+            final_msg, final_label = f"❌ Task failed: {e}", "Failed"
 
         log_buffer.append(final_msg)
+        final_updates['unified_log'] = "\n".join(log_buffer)
+        progress(1.0, final_label)
 
-        yield {
-            'unified_log': "\n".join(log_buffer),
-            'progress_bar': gr.update(
-                value=1.0 if not result.get('error') else 0,
-                label=final_label,
-                visible=True
-            )
-        }
+        yield tuple(final_updates.get(k, gr.update()) for k in output_keys)
 
-        return result or {}
+    def run_extraction_wrapper(self, *args):
+        """Wrapper for extraction pipeline. Returns a dict of final updates."""
+        ui_args = dict(zip(self.ext_ui_map_keys, args))
+        event = ExtractionEvent(**ui_args)
 
+        final_result = {}
+        for result in execute_extraction(event, self.progress_queue,
+                                         self.cancel_event, self.logger, self.config):
+            if isinstance(result, dict):
+                final_result.update(result)
+
+        if final_result.get("done"):
+            video_path = final_result.get("extracted_video_path_state", "") or final_result.get("video_path", "")
+            frames_dir = final_result.get("extracted_frames_dir_state", "") or final_result.get("output_dir", "")
+            return {
+                "log": final_result.get("log", "✅ Extraction completed successfully."),
+                "extracted_video_path_state": video_path,
+                "extracted_frames_dir_state": frames_dir,
+                "main_tabs": gr.update(selected=1)
+            }
+        return {"log": final_result.get("log", "❌ Extraction failed or was cancelled.")}
+
+    def run_pre_analysis_wrapper(self, *args):
+        """Wrapper for pre-analysis pipeline. Returns a dict of final updates."""
+        ui_args = dict(zip(self.ana_ui_map_keys, args))
+        strategy = ui_args.pop('primary_seed_strategy', '🤖 Automatic')
+
+        # Configure args based on strategy
+        if strategy == "👤 By Face": ui_args.update({'enable_face_filter': True, 'text_prompt': ""})
+        elif strategy == "📝 By Text": ui_args.update({'enable_face_filter': False, 'face_ref_img_path': "", 'face_ref_img_upload': None})
+        elif strategy == "🔄 Face + Text Fallback": ui_args['enable_face_filter'] = True
+        elif strategy == "🤖 Automatic": ui_args.update({'enable_face_filter': False, 'text_prompt': "", 'face_ref_img_path': "", 'face_ref_img_upload': None})
+
+        event = PreAnalysisEvent(**ui_args)
+        final_result = {}
+        for result in execute_pre_analysis(event, self.progress_queue,
+                                           self.cancel_event, self.logger,
+                                           self.config, self.thumbnail_manager,
+                                           self.cuda_available):
+            if isinstance(result, dict):
+                final_result.update(result)
+
+        if final_result.get("done"):
+            scenes = final_result.get('scenes', [])
+            if scenes:
+                save_scene_seeds(scenes, final_result['output_dir'], self.logger)
+            status_text = get_scene_status_text(scenes)
+            has_face_sim = any(s.get('seed_metrics', {}).get('best_face_sim') is not None for s in scenes)
+
+            return {
+                "log": final_result.get("log", "✅ Pre-analysis completed successfully."),
+                "seeding_preview_gallery": gr.update(value=final_result.get('previews')),
+                "scenes_state": scenes,
+                "propagate_masks_button": gr.update(interactive=True),
+                "scene_filter_status": status_text,
+                "scene_face_sim_min_input": gr.update(visible=has_face_sim),
+                "seeding_results_column": gr.update(visible=True),
+                "propagation_group": gr.update(visible=True)
+            }
+        return {"log": final_result.get("log", "❌ Pre-analysis failed or was cancelled.")}
+
+    def run_propagation_wrapper(self, scenes, *args):
+        """Wrapper for propagation pipeline. Returns a dict of final updates."""
+        ui_args = dict(zip(self.ana_ui_map_keys, args))
+        strategy = ui_args.pop('primary_seed_strategy', '🤖 Automatic')
+
+        # Configure args based on strategy
+        if strategy == "👤 By Face": ui_args.update({'enable_face_filter': True, 'text_prompt': ""})
+        elif strategy == "📝 By Text": ui_args.update({'enable_face_filter': False, 'face_ref_img_path': "", 'face_ref_img_upload': None})
+        elif strategy == "🔄 Face + Text Fallback": ui_args['enable_face_filter'] = True
+        elif strategy == "🤖 Automatic": ui_args.update({'enable_face_filter': False, 'text_prompt': "", 'face_ref_img_path': "", 'face_ref_img_upload': None})
+
+        analysis_params = PreAnalysisEvent(**ui_args)
+        event = PropagationEvent(
+            output_folder=ui_args['output_folder'], video_path=ui_args['video_path'],
+            scenes=scenes, analysis_params=analysis_params
+        )
+
+        final_result = {}
+        for result in execute_propagation(event, self.progress_queue,
+                                          self.cancel_event, self.logger,
+                                          self.config, self.thumbnail_manager,
+                                          self.cuda_available):
+            if isinstance(result, dict):
+                final_result.update(result)
+
+        if final_result.get("done"):
+            return {
+                "log": final_result.get("log", "✅ Propagation completed successfully."),
+                "analysis_output_dir_state": final_result.get('output_dir', ""),
+                "analysis_metadata_path_state": final_result.get('metadata_path', ""),
+                "filtering_tab": gr.update(interactive=True),
+                "main_tabs": gr.update(selected=2)
+            }
+        return {"log": final_result.get("log", "❌ Propagation failed or was cancelled.")}
+
+    def run_session_load_wrapper(self, session_path):
+        """Wrapper for session loading. Returns a dict of final updates."""
+        event = SessionLoadEvent(session_path=session_path)
+        final_result = {}
+        # Assuming run_pipeline_logic is a generator that yields updates
+        for result in run_pipeline_logic(event, self.progress_queue, self.cancel_event,
+                                         self.logger, self.config,
+                                         self.thumbnail_manager, self.cuda_available):
+            if isinstance(result, dict):
+                final_result.update(result)
+        return final_result
 
     def _setup_visibility_toggles(self):
         """Set up UI visibility toggles."""
@@ -630,97 +734,111 @@ class AppUI:
         )
 
     def _setup_pipeline_handlers(self):
-        """Set up pipeline execution handlers."""
+        """Set up pipeline execution handlers using the correct progress pattern."""
         c = self.components
 
+        # --- Handler Definitions ---
+        def session_load_handler(session_path, progress=gr.Progress()):
+            output_keys = [k for k in self.session_load_keys if k != 'progress_bar']
+            yield from self._run_task_with_progress(
+                self.run_session_load_wrapper, output_keys, progress, session_path
+            )
 
-        def session_load_handler(session_path):
-            yield from self._yield_gradio_updates(self.backend.run_session_load_wrapper(session_path), self.backend.session_load_keys)
+        def extraction_handler(*args, progress=gr.Progress()):
+            output_keys = [
+                'unified_log', 'extracted_video_path_state',
+                'extracted_frames_dir_state', 'main_tabs'
+            ]
+            yield from self._run_task_with_progress(
+                self.run_extraction_wrapper, output_keys, progress, *args
+            )
 
-        c['load_session_button'].click(
-            session_load_handler,
-            [c['session_path_input']],
-            [c.get(k, k) for k in self.backend.session_load_keys]
-        )
-        
-        ext_comp_map = {k: f"{k}_input" for k in self.backend.ext_ui_map_keys}
-        ext_comp_map.update({
-            'source_path': 'source_input',
-            'upload_video': 'upload_video_input',
-            'max_resolution': 'max_resolution',
-            'scene_detect': 'ext_scene_detect_input'
-        })
-        ext_inputs = [c[ext_comp_map[k]] for k in self.backend.ext_ui_map_keys]
-        ext_outputs = [
-            'unified_log',
-            'extracted_video_path_state', 'extracted_frames_dir_state',
-            'main_tabs'
-        ]
-        def extraction_handler(*args):
-            final_updates = yield from self._run_task(self.backend.run_extraction_wrapper, *args)
-            yield final_updates
-        c['start_extraction_button'].click(
-            extraction_handler,
-            ext_inputs,
-            [c[name] for name in ext_outputs]
-        )
+        def pre_analysis_handler(*args, progress=gr.Progress()):
+            output_keys = [
+                'unified_log', 'seeding_preview_gallery', 'scenes_state',
+                'propagate_masks_button', 'scene_filter_status',
+                'scene_face_sim_min_input', 'seeding_results_column',
+                'propagation_group'
+            ]
+            yield from self._run_task_with_progress(
+                self.run_pre_analysis_wrapper, output_keys, progress, *args
+            )
+
+        def propagation_handler(scenes, *args, progress=gr.Progress()):
+            output_keys = [
+                'unified_log', 'analysis_output_dir_state',
+                'analysis_metadata_path_state', 'filtering_tab', 'main_tabs'
+            ]
+            yield from self._run_task_with_progress(
+                self.run_propagation_wrapper, output_keys, progress, scenes, *args
+            )
+
+        # --- Component to Input Mapping ---
+        ext_comp_map = {
+            'source_path': 'source_input', 'upload_video': 'upload_video_input',
+            'max_resolution': 'max_resolution', 'scene_detect': 'ext_scene_detect_input',
+            **{k: f"{k}_input" for k in self.ext_ui_map_keys if k not in ['source_path', 'upload_video', 'max_resolution', 'scene_detect']}
+        }
+        ext_inputs = [c[ext_comp_map[k]] for k in self.ext_ui_map_keys]
 
         ana_comp_map = {
-            'output_folder': 'extracted_frames_dir_state',
-            'video_path': 'extracted_video_path_state',
-            'resume': gr.State(False),
-            'enable_face_filter': 'enable_face_filter_input',
-            'face_ref_img_path': 'face_ref_img_path_input',
-            'face_ref_img_upload': 'face_ref_img_upload_input',
-            'face_model_name': 'face_model_name_input',
-            'enable_subject_mask': gr.State(True),
-            'dam4sam_model_name': 'dam4sam_model_name_input',
-            'person_detector_model': 'person_detector_model_input',
-            'seed_strategy': 'seed_strategy_input',
-            'scene_detect': 'ext_scene_detect_input',
-            'enable_dedup': 'enable_dedup_input',
-            'text_prompt': 'text_prompt_input',
-            'box_threshold': 'scene_editor_box_thresh_input',
-            'text_threshold': 'scene_editor_text_thresh_input',
+            'output_folder': 'extracted_frames_dir_state', 'video_path': 'extracted_video_path_state',
+            'resume': gr.State(False), 'enable_face_filter': 'enable_face_filter_input',
+            'face_ref_img_path': 'face_ref_img_path_input', 'face_ref_img_upload': 'face_ref_img_upload_input',
+            'face_model_name': 'face_model_name_input', 'enable_subject_mask': gr.State(True),
+            'dam4sam_model_name': 'dam4sam_model_name_input', 'person_detector_model': 'person_detector_model_input',
+            'seed_strategy': 'seed_strategy_input', 'scene_detect': 'ext_scene_detect_input',
+            'enable_dedup': 'enable_dedup_input', 'text_prompt': 'text_prompt_input',
+            'box_threshold': 'scene_editor_box_thresh_input', 'text_threshold': 'scene_editor_text_thresh_input',
             'min_mask_area_pct': gr.State(self.config.min_mask_area_pct),
             'sharpness_base_scale': gr.State(self.config.sharpness_base_scale),
             'edge_strength_base_scale': gr.State(self.config.edge_strength_base_scale),
             'gdino_config_path': gr.State(str(self.config.GROUNDING_DINO_CONFIG)),
             'gdino_checkpoint_path': gr.State(str(self.config.GROUNDING_DINO_CKPT)),
-            'pre_analysis_enabled': 'pre_analysis_enabled_input',
-            'pre_sample_nth': 'pre_sample_nth_input',
+            'pre_analysis_enabled': 'pre_analysis_enabled_input', 'pre_sample_nth': 'pre_sample_nth_input',
             'primary_seed_strategy': 'primary_seed_strategy_input'
         }
-        self.ana_input_components = [
-            c.get(ana_comp_map[k], ana_comp_map[k]) for k in self.backend.ana_ui_map_keys
-        ]
+        self.ana_input_components = [c.get(ana_comp_map[k], ana_comp_map[k]) for k in self.ana_ui_map_keys]
+        prop_inputs = [c['scenes_state']] + self.ana_input_components
 
-        pre_ana_outputs = [
-            'unified_log', 'seeding_preview_gallery',
-            'scenes_state', 'propagate_masks_button', 'scene_filter_status',
-            'scene_face_sim_min_input', 'seeding_results_column', 'propagation_group'
-        ]
-        def pre_analysis_handler(*args):
-            final_updates = yield from self._run_task(self.backend.run_pre_analysis_wrapper, *args)
-            yield final_updates
-        c['start_pre_analysis_button'].click(
-            pre_analysis_handler,
-            self.ana_input_components,
-            [c[name] for name in pre_ana_outputs]
+        # --- Click Handler Assignments ---
+        session_output_keys = [k for k in self.session_load_keys if k != 'progress_bar']
+        c['load_session_button'].click(
+            session_load_handler,
+            inputs=[c['session_path_input']],
+            outputs=[c.get(k) for k in session_output_keys]
         )
 
-        prop_inputs = [c['scenes_state']] + self.ana_input_components
-        prop_outputs = [
+        extraction_output_keys = [
+            'unified_log', 'extracted_video_path_state',
+            'extracted_frames_dir_state', 'main_tabs'
+        ]
+        c['start_extraction_button'].click(
+            extraction_handler,
+            inputs=ext_inputs,
+            outputs=[c.get(k) for k in extraction_output_keys]
+        )
+
+        pre_analysis_output_keys = [
+            'unified_log', 'seeding_preview_gallery', 'scenes_state',
+            'propagate_masks_button', 'scene_filter_status',
+            'scene_face_sim_min_input', 'seeding_results_column',
+            'propagation_group'
+        ]
+        c['start_pre_analysis_button'].click(
+            pre_analysis_handler,
+            inputs=self.ana_input_components,
+            outputs=[c.get(k) for k in pre_analysis_output_keys]
+        )
+
+        propagation_output_keys = [
             'unified_log', 'analysis_output_dir_state',
             'analysis_metadata_path_state', 'filtering_tab', 'main_tabs'
         ]
-        def propagation_handler(*args):
-            final_updates = yield from self._run_task(self.backend.run_propagation_wrapper, *args)
-            yield final_updates
         c['propagate_masks_button'].click(
             propagation_handler,
-            prop_inputs,
-            [c[name] for name in prop_outputs]
+            inputs=prop_inputs,
+            outputs=[c.get(k) for k in propagation_output_keys]
         )
 
     def _setup_scene_editor_handlers(self):
@@ -760,7 +878,7 @@ class AppUI:
         ] + self.ana_input_components
         
         c['scene_recompute_button'].click(
-            self.backend.on_apply_scene_overrides,
+            self.on_apply_scene_overrides,
             inputs=recompute_inputs,
             outputs=[c['seeding_preview_gallery'], c['scenes_state'],
                     c['unified_status']]
@@ -771,11 +889,11 @@ class AppUI:
         include_exclude_outputs = [c['scenes_state'], c['scene_filter_status'],
                                  c['unified_status']]
         c['scene_include_button'].click(
-            self.backend.on_toggle_scene_status,
+            self.on_toggle_scene_status,
             include_exclude_inputs + [gr.State('included')], include_exclude_outputs
         )
         c['scene_exclude_button'].click(
-            self.backend.on_toggle_scene_status,
+            self.on_toggle_scene_status,
             include_exclude_inputs + [gr.State('excluded')], include_exclude_outputs
         )
 
@@ -812,13 +930,13 @@ class AppUI:
         bulk_filter_outputs = [c['scenes_state'], c['scene_filter_status']]
 
         c['scene_mask_area_min_input'].release(
-            self.backend.on_apply_bulk_scene_filters,
+            self.on_apply_bulk_scene_filters,
             bulk_filter_inputs,
             bulk_filter_outputs
         )
         for comp in [c['scene_face_sim_min_input'], c['scene_confidence_min_input']]:
             comp.release(
-                self.backend.on_apply_bulk_scene_filters,
+                self.on_apply_bulk_scene_filters,
                 bulk_filter_inputs,
                 bulk_filter_outputs
             )
@@ -968,14 +1086,25 @@ class AppUI:
         result = reset_filters(all_frames_data, per_metric_values, output_dir,
                                self.config, slider_keys, self.thumbnail_manager)
 
+        # `result` is a dictionary: {'component_name': gr.update(...), ...}
+        # The order of returned updates must match the `outputs` of the click handler.
+
         updates = []
+        # 1. Metric sliders (in sorted key order)
         for key in slider_keys:
             comp_name = f"slider_{key}"
             updates.append(result.get(comp_name, gr.update()))
 
+        # 2. Dedup slider
         updates.append(result.get('dedup_thresh_input', gr.update()))
+
+        # 3. Require face match checkbox
         updates.append(result.get('require_face_match_input', gr.update()))
+
+        # 4. Filter status text
         updates.append(result.get('filter_status_text', gr.update()))
+
+        # 5. Results gallery
         updates.append(result.get('results_gallery', gr.update()))
 
         return tuple(updates)
@@ -985,7 +1114,35 @@ class AppUI:
         slider_keys = sorted(self.components['metric_sliders'].keys())
         updates = auto_set_thresholds(per_metric_values, p, slider_keys)
 
+        # The logic function returns a dict of updates. We need to return a list
+        # of values in the correct order for the Gradio `outputs`.
         return [updates.get(f'slider_{key}', gr.update()) for key in slider_keys]
+
+    def on_toggle_scene_status(self, scenes_list, selected_shot_id, output_folder, new_status):
+        """Wrapper for toggle_scene_status logic."""
+        scenes, status_text, unified_status = toggle_scene_status(
+            scenes_list, selected_shot_id, new_status, output_folder, self.logger)
+        return scenes, status_text, unified_status
+
+    def on_apply_bulk_scene_filters(self, scenes, min_mask_area, min_face_sim,
+                                    min_confidence, enable_face_filter,
+                                    output_folder):
+        """Wrapper for apply_bulk_scene_filters logic."""
+        scenes, status_text = apply_bulk_scene_filters(
+            scenes, min_mask_area, min_face_sim, min_confidence,
+            enable_face_filter, output_folder, self.logger
+        )
+        return scenes, status_text
+
+    def on_apply_scene_overrides(self, scenes_list, selected_shot_id, prompt,
+                                box_th, text_th, output_folder, *ana_args):
+        """Wrapper for apply_scene_overrides logic."""
+        gallery, scenes, status = apply_scene_overrides(
+            scenes_list, selected_shot_id, prompt, box_th, text_th,
+            output_folder, self.ana_ui_map_keys, ana_args,
+            self.cuda_available, self.thumbnail_manager, self.logger
+        )
+        return gallery, scenes, status
 
     def export_kept_frames_wrapper(self, all_frames_data, output_dir, video_path,
                                  enable_crop, crop_ars, crop_padding,
@@ -1010,6 +1167,9 @@ class AppUI:
             filter_args=filter_args
         )
 
+        # This logic remains here as it's tightly coupled to ffmpeg execution
+        # and file system operations based on UI state.
+        # It could be moved, but it's a smaller piece of logic.
         return self.export_kept_frames(event)
 
     def export_kept_frames(self, event: ExportEvent):
@@ -1108,9 +1268,11 @@ class AppUI:
                         contours, _ = cv2.findContours(mask_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
                         if not contours: continue
 
+                        # Combine all contours to get the overall bounding box of the subject
                         all_points = np.concatenate(contours)
                         x, y, w, h = cv2.boundingRect(all_points)
 
+                        # Get dimensions for scaling
                         frame_h, frame_w = frame_img.shape[:2]
                         mask_h, mask_w = mask_img.shape[:2]
 
@@ -1120,14 +1282,17 @@ class AppUI:
                             scale_y = frame_h / mask_h
                             x, y, w, h = int(x * scale_x), int(y * scale_y), int(w * scale_x), int(h * scale_y)
 
+                        # Calculate padding in pixels
                         padding_px_w = int(w * (event.crop_padding / 100.0))
                         padding_px_h = int(h * (event.crop_padding / 100.0))
 
+                        # Apply padding and clamp to frame boundaries
                         x1 = max(0, x - padding_px_w)
                         y1 = max(0, y - padding_px_h)
                         x2 = min(frame_w, x + w + padding_px_w)
                         y2 = min(frame_h, y + h + padding_px_h)
 
+                        # The padded bounding box
                         x_pad, y_pad = x1, y1
                         w_pad, h_pad = x2 - x1, y2 - y1
 
@@ -1135,6 +1300,7 @@ class AppUI:
 
                         center_x, center_y = x_pad + w_pad // 2, y_pad + h_pad // 2
 
+                        # Find best aspect ratio that fits the mask area
                         if not aspect_ratios or h_pad == 0:
                             continue
 
