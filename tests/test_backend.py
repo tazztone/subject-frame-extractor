@@ -65,9 +65,9 @@ def test_run_extraction_wrapper(mock_execute_extraction, backend):
         True
     )
 
-    assert result[0] == "Extraction complete."
-    assert result[1] == "/path/to/video.mp4"
-    assert result[2] == "/path/to/frames"
+    assert result['unified_log'] == "Extraction complete."
+    assert result['extracted_video_path_state'] == "/path/to/video.mp4"
+    assert result['extracted_frames_dir_state'] == "/path/to/frames"
 
 
 @patch('app.backend.execute_extraction')
@@ -93,7 +93,7 @@ def test_run_extraction_wrapper_failure(mock_execute_extraction, backend):
         True
     )
 
-    assert result[0] == "Extraction failed."
+    assert result['unified_log'] == "Extraction failed."
 
 
 @patch('app.backend.save_scene_seeds')
@@ -116,8 +116,8 @@ def test_run_pre_analysis_wrapper(mock_execute_pre_analysis, mock_save_scene_see
         'gdino_config_path', 'gdino_checkpoint_path', True, 1, '🤖 Automatic'
     )
 
-    assert result[0] == "Pre-analysis complete."
-    assert result[2] == [{"shot_id": 0, "status": "included"}]
+    assert result['unified_log'] == "Pre-analysis complete."
+    assert result['scenes_state'] == [{"shot_id": 0, "status": "included"}]
 
 
 @patch('app.backend.execute_pre_analysis')
@@ -136,7 +136,7 @@ def test_run_pre_analysis_wrapper_failure(mock_execute_pre_analysis, backend):
         'gdino_config_path', 'gdino_checkpoint_path', True, 1, '🤖 Automatic'
     )
 
-    assert result[0] == "Pre-analysis failed."
+    assert result['unified_log'] == "Pre-analysis failed."
 
 
 @patch('app.backend.execute_propagation')
@@ -158,9 +158,9 @@ def test_run_propagation_wrapper(mock_execute_propagation, backend):
         'gdino_config_path', 'gdino_checkpoint_path', True, 1, '🤖 Automatic'
     )
 
-    assert result[0] == "Propagation complete."
-    assert result[1] == "/path/to/frames"
-    assert result[2] == "/path/to/frames/metadata.json"
+    assert result['unified_log'] == "Propagation complete."
+    assert result['analysis_output_dir_state'] == "/path/to/frames"
+    assert result['analysis_metadata_path_state'] == "/path/to/frames/metadata.json"
 
 
 @patch('app.backend.execute_propagation')
@@ -180,7 +180,7 @@ def test_run_propagation_wrapper_failure(mock_execute_propagation, backend):
         'gdino_config_path', 'gdino_checkpoint_path', True, 1, '🤖 Automatic'
     )
 
-    assert result[0] == "Propagation failed."
+    assert result['unified_log'] == "Propagation failed."
 
 
 @patch('app.backend.execute_session_load')
@@ -199,3 +199,20 @@ def test_run_session_load_wrapper(mock_execute_session_load, backend):
     result_list = list(result)
 
     assert result_list[0][0] == "Session loaded."
+
+
+@patch('app.backend.execute_session_load')
+def test_run_session_load_wrapper_failure(mock_execute_session_load, backend):
+    mock_execute_session_load.return_value = iter([
+        {
+            "unified_log": "Session load failed."
+        }
+    ])
+
+    result = backend.run_session_load_wrapper(
+        '/path/to/session'
+    )
+
+    result_list = list(result)
+
+    assert result_list[0][0] == "Session load failed."

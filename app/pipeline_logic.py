@@ -45,10 +45,11 @@ def execute_propagation(event: PropagationEvent, progress_queue: Queue,
     yield from pipeline.run()
 
 
-def execute_session_load(event: SessionLoadEvent, logger: UnifiedLogger,
+def execute_session_load(event: SessionLoadEvent, progress_queue: Queue,
+                         cancel_event: threading.Event, logger: UnifiedLogger,
                          config: Config, thumbnail_manager):
     """Loads a session from a previous run and prepares the UI."""
     params = AnalysisParameters.from_ui(**asdict(event))
-    pipeline = SessionLoadPipeline(params, None, None, logger, config,
+    pipeline = SessionLoadPipeline(params, progress_queue, cancel_event, logger, config,
                                    thumbnail_manager)
     yield from pipeline.run()

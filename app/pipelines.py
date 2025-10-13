@@ -46,12 +46,6 @@ class ExtractionPipeline(Pipeline):
         """Run the extraction pipeline."""
         self.progress_queue.put({"stage": "Starting extraction...", "total": 1, "progress": 0})
 
-        if self.params.upload_video:
-            source = self.params.upload_video
-            dest = str(self.config.DIRS['downloads'] / Path(source).name)
-            shutil.copy2(source, dest)
-            self.params.source_path = dest
-
         pipeline = ExtractionTool(self.params, self.progress_queue, self.cancel_event)
         result = pipeline.run()
 
