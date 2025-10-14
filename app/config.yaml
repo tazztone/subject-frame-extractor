@@ -12,13 +12,13 @@ ui_defaults:
 
   # --- Pre-Analysis & Seeding Settings ---
   pre_analysis_enabled: True         # Automatically analyze scene thumbnails to find the best frame for seeding.
-  pre_sample_nth: 1                  # When pre-analyzing, check every Nth frame in a scene. 1 = all frames. Higher values are faster for long scenes.
+  pre_sample_nth: 5                  # When pre-analyzing, check every Nth frame in a scene. 1 = all frames. Higher values are faster for long scenes.
   enable_face_filter: True           # Enable face similarity scoring (requires reference image).
   face_model_name: "buffalo_l"       # InsightFace model for face analysis.
   enable_subject_mask: True          # Enable subject masking and propagation.
   dam4sam_model_name: "sam21pp-L"    # DAM4SAM model for mask propagation.
   person_detector_model: "yolo11x.pt" # YOLO model for detecting persons.
-  primary_seed_strategy: "🔄 Face + Text Fallback"
+  primary_seed_strategy: "🤖 Automatic"
   seed_strategy: "Reference Face / Largest" # Fallback strategy if text prompt or face match fails.
   text_prompt: ""                    # Global text prompt for seeding (can be overridden per-scene).
 
