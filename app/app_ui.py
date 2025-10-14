@@ -12,7 +12,8 @@ from app.events import (ExtractionEvent, PreAnalysisEvent, PropagationEvent,
 from app.pipeline_logic import (
     execute_extraction,
     execute_pre_analysis,
-    execute_propagation
+    execute_propagation,
+    execute_session_load
 )
 from app.filter_logic import (load_and_prep_filter_data, build_all_metric_svgs,
                                     on_filters_changed, reset_filters,
