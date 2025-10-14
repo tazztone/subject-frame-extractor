@@ -62,17 +62,7 @@ class AnalysisPipeline(Pipeline):
     def run_full_analysis(self, scenes_to_process):
         """Run complete analysis pipeline."""
         
-        run_log_handler = None
         try:
-            run_log_path = self.output_dir / "analysis_run.log"
-            run_log_handler = logging.FileHandler(run_log_path, mode='w',
-                                                 encoding='utf-8')
-            formatter = logging.Formatter(
-                '%(asctime)s - %(levelname)s - %(message)s'
-            )
-            run_log_handler.setFormatter(formatter)
-            self.logger.logger.addHandler(run_log_handler)
-
             self.metadata_path.unlink(missing_ok=True)
             with self.metadata_path.open('w', encoding='utf-8') as f:
                 header = {"params": asdict(self.params)}
@@ -116,12 +106,8 @@ class AnalysisPipeline(Pipeline):
                 "output_dir": str(self.output_dir)
             }
         except Exception as e:
-            self.logger.error("Analysis pipeline failed", error=e)
+            self.logger.error("Analysis pipeline failed", component="analysis", exc_info=True, error=str(e))
             return {"error": str(e)}
-        finally:
-            if run_log_handler:
-                self.logger.logger.removeHandler(run_log_handler)
-                run_log_handler.close()
 
     def _create_frame_map(self):
         """Create frame mapping from output directory."""

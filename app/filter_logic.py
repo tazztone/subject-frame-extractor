@@ -106,6 +106,7 @@ def apply_all_filters_vectorized(all_frames_data, filters):
     metric_arrays["mask_area_pct"] = np.array([f.get("mask_area_pct", np.nan)
                                               for f in all_frames_data], dtype=np.float32)
 
+    kept_mask = np.ones(num_frames, dtype=bool)
     reasons = defaultdict(list)
 
     # --- 1. Deduplication ---
@@ -121,8 +122,9 @@ def apply_all_filters_vectorized(all_frames_data, filters):
             current_idx, prev_idx = sorted_indices[i], sorted_indices[i - 1]
             if prev_idx in hashes and current_idx in hashes and \
                (hashes[prev_idx] - hashes[current_idx]) <= dedup_thresh_val:
+                if dedup_mask[current_idx]:
+                    reasons[filenames[current_idx]].append('duplicate')
                 dedup_mask[current_idx] = False
-                reasons[filenames[current_idx]].append('duplicate')
 
     # --- 2. Combined Metric Filters ---
     metric_filter_mask = np.ones(num_frames, dtype=bool)
@@ -150,36 +152,33 @@ def apply_all_filters_vectorized(all_frames_data, filters):
         metric_filter_mask &= (mask_area_values >= mask_area_min)
 
     # --- 3. Final Mask and Reason Assignment ---
-    final_kept_mask = dedup_mask & metric_filter_mask
+    kept_mask = dedup_mask & metric_filter_mask
 
-    for i in np.where(~dedup_mask)[0]:
-        reasons[filenames[i]].append('duplicate')
+    # Now, assign reasons ONLY for the frames that were rejected by metrics but not by deduplication
+    metric_rejection_mask = ~metric_filter_mask & dedup_mask
 
-    for k in config.QUALITY_METRICS:
-        min_val, max_val = filters.get(f"{k}_min", 0), filters.get(f"{k}_max", 100)
-        rejected_indices = np.where((metric_arrays[k] < min_val) | (metric_arrays[k] > max_val))[0]
-        for i in rejected_indices:
-            reasons[filenames[i]].append(f"{k}_{'low' if metric_arrays[k][i] < min_val else 'high'}")
+    for i in np.where(metric_rejection_mask)[0]:
+        # Check each filter condition to see why it was rejected
+        for k in config.QUALITY_METRICS:
+            min_val, max_val = filters.get(f"{k}_min", 0), filters.get(f"{k}_max", 100)
+            if not (min_val <= metric_arrays[k][i] <= max_val):
+                reasons[filenames[i]].append(f"{k}_{'low' if metric_arrays[k][i] < min_val else 'high'}")
 
-    if filters.get("face_sim_enabled"):
-        face_sim_min = filters.get("face_sim_min", 0.5)
-        rejected_indices = np.where(metric_arrays["face_sim"] < face_sim_min)[0]
-        for i in rejected_indices:
-            reasons[filenames[i]].append("face_sim_low")
-        if filters.get("require_face_match"):
-            rejected_indices = np.where(np.isnan(metric_arrays["face_sim"]))[0]
-            for i in rejected_indices:
+        if filters.get("face_sim_enabled"):
+            face_sim_min = filters.get("face_sim_min", 0.5)
+            if metric_arrays["face_sim"][i] < face_sim_min:
+                reasons[filenames[i]].append("face_sim_low")
+            if filters.get("require_face_match") and np.isnan(metric_arrays["face_sim"][i]):
                 reasons[filenames[i]].append("face_missing")
 
-    if filters.get("mask_area_enabled"):
-        mask_area_min = filters.get("mask_area_pct_min", 1.0)
-        rejected_indices = np.where(metric_arrays["mask_area_pct"] < mask_area_min)[0]
-        for i in rejected_indices:
-            reasons[filenames[i]].append("mask_too_small")
+        if filters.get("mask_area_enabled"):
+            mask_area_min = filters.get("mask_area_pct_min", 1.0)
+            if metric_arrays["mask_area_pct"][i] < mask_area_min:
+                reasons[filenames[i]].append("mask_too_small")
 
     # --- 4. Final Selection ---
-    kept_indices = np.where(final_kept_mask)[0]
-    rejected_indices = np.where(~final_kept_mask)[0]
+    kept_indices = np.where(kept_mask)[0]
+    rejected_indices = np.where(~kept_mask)[0]
 
     kept = [all_frames_data[i] for i in kept_indices]
     rejected = [all_frames_data[i] for i in rejected_indices]
