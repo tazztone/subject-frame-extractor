@@ -36,7 +36,7 @@ def postprocess_mask(mask: np.ndarray, fill_holes: bool = True,
 
 
 def render_mask_overlay(frame_rgb: np.ndarray, mask_gray: np.ndarray,
-                        alpha: float = 0.5, logger: 'EnhancedLogger' = None) -> np.ndarray:
+                        alpha: float, logger: 'EnhancedLogger') -> np.ndarray:
     """Render a mask overlay on a frame."""
     if mask_gray is None:
         return frame_rgb

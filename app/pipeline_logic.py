@@ -39,7 +39,7 @@ def execute_extraction(event: ExtractionEvent, progress_queue: Queue,
         shutil.copy2(source, dest)
         params_dict['source_path'] = dest
 
-    params = AnalysisParameters.from_ui(**params_dict)
+    params = AnalysisParameters.from_ui(logger, **params_dict)
     pipeline = EnhancedExtractionPipeline(params, progress_queue, cancel_event)
 
     result = pipeline.run()
@@ -68,7 +68,7 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue,
         shutil.copy2(ref_upload, dest)
         params_dict['face_ref_img_path'] = str(dest)
 
-    params = AnalysisParameters.from_ui(**params_dict)
+    params = AnalysisParameters.from_ui(logger, **params_dict)
     output_dir = Path(params.output_folder)
 
     # Save the run configuration
@@ -280,8 +280,8 @@ def execute_propagation(event: PropagationEvent, progress_queue: Queue,
 
     progress_queue.put({"stage": f"Starting propagation on {len(scenes_to_process)} scenes...", "total": 1, "progress": 0})
 
-    params = AnalysisParameters.from_ui(**asdict(event.analysis_params))
-    pipeline = AnalysisPipeline(params, progress_queue, cancel_event, thumbnail_manager=thumbnail_manager)
+    params = AnalysisParameters.from_ui(logger, **asdict(event.analysis_params))
+    pipeline = AnalysisPipeline(params, progress_queue, cancel_event, thumbnail_manager=thumbnail_manager, logger=logger)
 
     result = pipeline.run_full_analysis(scenes_to_process)
 
