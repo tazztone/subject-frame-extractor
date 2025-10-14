@@ -7,7 +7,7 @@ import gradio as gr
 import numpy as np
 
 from app.config import Config
-from app.logging import UnifiedLogger
+from app.logging_enhanced import EnhancedLogger
 from app.events import FilterEvent
 from app.frames import render_mask_overlay
 
@@ -98,98 +98,101 @@ def apply_all_filters_vectorized(all_frames_data, filters):
 
     num_frames = len(all_frames_data)
     filenames = [f['filename'] for f in all_frames_data]
-    metric_arrays = {}
+    metric_arrays = {k: np.array([f.get("metrics", {}).get(f"{k}_score", np.nan)
+                                for f in all_frames_data], dtype=np.float32)
+                     for k in config.QUALITY_METRICS}
+    metric_arrays["face_sim"] = np.array([f.get("face_sim", np.nan)
+                                         for f in all_frames_data], dtype=np.float32)
+    metric_arrays["mask_area_pct"] = np.array([f.get("mask_area_pct", np.nan)
+                                              for f in all_frames_data], dtype=np.float32)
 
-    for k in config.QUALITY_METRICS:
-        metric_arrays[k] = np.array([
-            f.get("metrics", {}).get(f"{k}_score", np.nan)
-            for f in all_frames_data
-        ], dtype=np.float32)
-
-    metric_arrays["face_sim"] = np.array([
-        f.get("face_sim", np.nan) for f in all_frames_data
-    ], dtype=np.float32)
-    metric_arrays["mask_area_pct"] = np.array([
-        f.get("mask_area_pct", np.nan) for f in all_frames_data
-    ], dtype=np.float32)
-
-    kept_mask = np.ones(num_frames, dtype=bool)
     reasons = defaultdict(list)
 
-    # --- 1. Deduplication (run first on all frames) ---
+    # --- 1. Deduplication ---
+    dedup_mask = np.ones(num_frames, dtype=bool)
     dedup_thresh_val = filters.get("dedup_thresh", 5)
     if filters.get("enable_dedup") and dedup_thresh_val != -1:
         all_indices = list(range(num_frames))
         sorted_indices = sorted(all_indices, key=lambda i: filenames[i])
-        hashes = {
-            i: imagehash.hex_to_hash(all_frames_data[i]['phash'])
-            for i in sorted_indices if 'phash' in all_frames_data[i]
-        }
+        hashes = {i: imagehash.hex_to_hash(all_frames_data[i]['phash'])
+                  for i in sorted_indices if 'phash' in all_frames_data[i]}
 
         for i in range(1, len(sorted_indices)):
-            current_idx = sorted_indices[i]
-            prev_idx = sorted_indices[i-1]
-            if prev_idx in hashes and current_idx in hashes:
-                if (hashes[prev_idx] - hashes[current_idx]) <= dedup_thresh_val:
-                    kept_mask[current_idx] = False
-                    reasons[filenames[current_idx]].append('duplicate')
+            current_idx, prev_idx = sorted_indices[i], sorted_indices[i - 1]
+            if prev_idx in hashes and current_idx in hashes and \
+               (hashes[prev_idx] - hashes[current_idx]) <= dedup_thresh_val:
+                dedup_mask[current_idx] = False
+                reasons[filenames[current_idx]].append('duplicate')
 
-    # --- 2. Quality & Metric Filters (run on remaining frames) ---
+    # --- 2. Combined Metric Filters ---
+    metric_filter_mask = np.ones(num_frames, dtype=bool)
+
     for k in config.QUALITY_METRICS:
-        min_val, max_val = filters.get(f"{k}_min", 0), filters.get(f"{k}_max", 100)
-        current_kept_indices = np.where(kept_mask)[0]
-        values_to_check = metric_arrays[k][current_kept_indices]
-
-        low_mask_rel = values_to_check < min_val
-        high_mask_rel = values_to_check > max_val
-
-        low_indices_abs = current_kept_indices[low_mask_rel]
-        high_indices_abs = current_kept_indices[high_mask_rel]
-
-        for i in low_indices_abs:
-            reasons[filenames[i]].append(f"{k}_low")
-        for i in high_indices_abs:
-            reasons[filenames[i]].append(f"{k}_high")
-
-        kept_mask[low_indices_abs] = False
-        kept_mask[high_indices_abs] = False
+        min_val = filters.get(f"{k}_min", 0)
+        max_val = filters.get(f"{k}_max", 100)
+        metric_filter_mask &= (np.nan_to_num(metric_arrays[k], nan=min_val) >= min_val) & \
+                              (np.nan_to_num(metric_arrays[k], nan=max_val) <= max_val)
 
     if filters.get("face_sim_enabled"):
-        current_kept_indices = np.where(kept_mask)[0]
-        face_sim_values = metric_arrays["face_sim"][current_kept_indices]
-
-        valid = ~np.isnan(face_sim_values)
-        low_mask_rel = valid & (face_sim_values < filters.get("face_sim_min", 0.5))
-        low_indices_abs = current_kept_indices[low_mask_rel]
-        for i in low_indices_abs:
-            reasons[filenames[i]].append("face_sim_low")
-        kept_mask[low_indices_abs] = False
+        face_sim_min = filters.get("face_sim_min", 0.5)
+        face_sim_values = metric_arrays["face_sim"]
+        # Only filter frames that have a face similarity score
+        has_face_sim = ~np.isnan(face_sim_values)
+        metric_filter_mask[has_face_sim] &= (face_sim_values[has_face_sim] >= face_sim_min)
 
         if filters.get("require_face_match"):
-            missing_mask_rel = ~valid
-            missing_indices_abs = current_kept_indices[missing_mask_rel]
-            for i in missing_indices_abs:
-                reasons[filenames[i]].append("face_missing")
-            kept_mask[missing_indices_abs] = False
+            metric_filter_mask &= has_face_sim
+
 
     if filters.get("mask_area_enabled"):
-        current_kept_indices = np.where(kept_mask)[0]
-        mask_area_values = metric_arrays["mask_area_pct"][current_kept_indices]
+        mask_area_min = filters.get("mask_area_pct_min", 1.0)
+        mask_area_values = np.nan_to_num(metric_arrays["mask_area_pct"], nan=0.0)
+        metric_filter_mask &= (mask_area_values >= mask_area_min)
 
-        small_mask_rel = mask_area_values < filters.get("mask_area_pct_min", 1.0)
-        small_indices_abs = current_kept_indices[small_mask_rel]
-        for i in small_indices_abs:
+    # --- 3. Final Mask and Reason Assignment ---
+    final_kept_mask = dedup_mask & metric_filter_mask
+
+    for i in np.where(~dedup_mask)[0]:
+        reasons[filenames[i]].append('duplicate')
+
+    for k in config.QUALITY_METRICS:
+        min_val, max_val = filters.get(f"{k}_min", 0), filters.get(f"{k}_max", 100)
+        rejected_indices = np.where((metric_arrays[k] < min_val) | (metric_arrays[k] > max_val))[0]
+        for i in rejected_indices:
+            reasons[filenames[i]].append(f"{k}_{'low' if metric_arrays[k][i] < min_val else 'high'}")
+
+    if filters.get("face_sim_enabled"):
+        face_sim_min = filters.get("face_sim_min", 0.5)
+        rejected_indices = np.where(metric_arrays["face_sim"] < face_sim_min)[0]
+        for i in rejected_indices:
+            reasons[filenames[i]].append("face_sim_low")
+        if filters.get("require_face_match"):
+            rejected_indices = np.where(np.isnan(metric_arrays["face_sim"]))[0]
+            for i in rejected_indices:
+                reasons[filenames[i]].append("face_missing")
+
+    if filters.get("mask_area_enabled"):
+        mask_area_min = filters.get("mask_area_pct_min", 1.0)
+        rejected_indices = np.where(metric_arrays["mask_area_pct"] < mask_area_min)[0]
+        for i in rejected_indices:
             reasons[filenames[i]].append("mask_too_small")
-        kept_mask[small_indices_abs] = False
 
-    kept = [all_frames_data[i] for i in np.where(kept_mask)[0]]
-    rejected = [all_frames_data[i] for i in np.where(~kept_mask)[0]]
+    # --- 4. Final Selection ---
+    kept_indices = np.where(final_kept_mask)[0]
+    rejected_indices = np.where(~final_kept_mask)[0]
+
+    kept = [all_frames_data[i] for i in kept_indices]
+    rejected = [all_frames_data[i] for i in rejected_indices]
+
     counts = Counter(r for r_list in reasons.values() for r in r_list)
     return kept, rejected, counts, reasons
 
 
-def on_filters_changed(event: FilterEvent, thumbnail_manager):
+def on_filters_changed(event: FilterEvent, thumbnail_manager, logger=None):
     """Handle filter changes and update gallery."""
+    from app.logging_enhanced import EnhancedLogger
+    logger = logger or EnhancedLogger()
+
     if not event.all_frames_data:
         return {"filter_status_text": "Run analysis to see results.", "results_gallery": []}
 
@@ -206,14 +209,14 @@ def on_filters_changed(event: FilterEvent, thumbnail_manager):
     status_text, gallery_update = _update_gallery(
         event.all_frames_data, filters, event.output_dir,
         event.gallery_view, event.show_overlay, event.overlay_alpha,
-        thumbnail_manager
+        thumbnail_manager, logger
     )
     return {"filter_status_text": status_text, "results_gallery": gallery_update}
 
 
 def _update_gallery(all_frames_data, filters, output_dir,
                    gallery_view, show_overlay, overlay_alpha,
-                   thumbnail_manager):
+                   thumbnail_manager, logger):
     """Update the results gallery based on current filters."""
     kept, rejected, counts, per_frame_reasons = apply_all_filters_vectorized(
         all_frames_data, filters or {}
@@ -250,7 +253,7 @@ def _update_gallery(all_frames_data, filters, output_dir,
                 if mask_path.exists():
                     mask_gray = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
                     thumb_overlay_rgb = render_mask_overlay(
-                        thumb_rgb_np, mask_gray, float(overlay_alpha)
+                        thumb_rgb_np, mask_gray, float(overlay_alpha), logger=logger
                     )
                     preview_images.append((thumb_overlay_rgb, caption))
                 else:

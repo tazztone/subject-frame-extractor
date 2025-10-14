@@ -6,13 +6,13 @@ from insightface.app import FaceAnalysis
 
 
 @lru_cache(maxsize=None)
-def get_face_analyzer(model_name):
+def get_face_analyzer(model_name, logger=None):
     """Load and cache a face analysis model."""
     from app.config import Config
-    from app.logging import UnifiedLogger
+    from app.logging_enhanced import EnhancedLogger
 
     config = Config()
-    logger = UnifiedLogger()
+    logger = logger or EnhancedLogger()
 
     logger.info(f"Loading or getting cached face model: {model_name}")
     try:

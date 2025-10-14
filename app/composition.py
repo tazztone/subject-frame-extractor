@@ -4,7 +4,7 @@ import threading
 from queue import Queue
 
 from app.config import Config
-from app.logging import UnifiedLogger
+from app.logging_enhanced import EnhancedLogger
 from app.thumb_cache import ThumbnailManager
 from app.performance_optimizer import AdaptiveResourceManager
 
@@ -16,8 +16,12 @@ class CompositionRoot:
         """Initialize the composition root with all dependencies."""
         # Core dependencies
         self.config = Config()
-        self.logger = self.config.setup_directories_and_logger()
+        self.logger = EnhancedLogger(
+            log_dir=self.config.DIRS['logs'],
+            enable_performance_monitoring=True
+        )
         self.thumbnail_manager = ThumbnailManager(
+            logger=self.logger,
             max_size=self.config.thumbnail_cache_size
         )
         self.resource_manager = AdaptiveResourceManager(

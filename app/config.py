@@ -48,9 +48,3 @@ class Config:
         with open(self.CONFIG_FILE, 'r', encoding='utf-8') as f:
             return yaml.safe_load(f)
 
-    @classmethod
-    def setup_directories_and_logger(cls):
-        from app.logging import UnifiedLogger
-        for dir_path in cls.DIRS.values():
-            dir_path.mkdir(exist_ok=True)
-        return UnifiedLogger()

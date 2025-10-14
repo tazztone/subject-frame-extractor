@@ -30,12 +30,11 @@ class Frame:
     error: str | None = None
 
     def calculate_quality_metrics(self, thumb_image_rgb: np.ndarray,
+                                  config: 'Config',
+                                  logger: 'UnifiedLogger',
                                   mask: np.ndarray | None = None,
                                   niqe_metric=None):
         """Calculate quality metrics for this frame."""
-        # Import dependencies locally to avoid circular imports
-        from app.config import Config
-        from app.logging import UnifiedLogger
         from numba import njit
 
         @njit
@@ -43,9 +42,6 @@ class Frame:
             prob = hist / (np.sum(hist) + 1e-7)
             entropy = -np.sum(prob[prob > 0] * np.log2(prob[prob > 0]))
             return min(max(entropy / 8.0, 0), 1.0)
-
-        config = Config()
-        logger = UnifiedLogger()
 
         try:
             gray = cv2.cvtColor(thumb_image_rgb, cv2.COLOR_RGB2GRAY)

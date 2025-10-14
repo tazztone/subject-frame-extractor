@@ -6,25 +6,27 @@ import torch
 from DAM4SAM.dam4sam_tracker import DAM4SAMTracker
 
 from app.config import Config
-from app.logging import UnifiedLogger
+from app.logging_enhanced import EnhancedLogger
 from app.downloads import download_model
 
 
-def initialize_dam4sam_tracker(params):
+def initialize_dam4sam_tracker(params, logger=None):
     """Initialize DAM4SAM tracker with model downloading."""
-    
+    from app.error_handling import ErrorHandler
+
     config = Config()
-    logger = UnifiedLogger()
-    
+    logger = logger or EnhancedLogger()
+    error_handler = ErrorHandler(logger, config)
+
     if not all([DAM4SAMTracker, torch, torch.cuda.is_available()]):
         logger.error("DAM4SAM dependencies or CUDA not available.")
         return None
-        
+
     try:
         model_name = params.dam4sam_model_name
         logger.info("Initializing DAM4SAM tracker",
                    extra={'model': model_name})
-                   
+
         model_urls = {
             "sam21pp-T": ("https://dl.fbaipublicfiles.com/"
                          "segment_anything_2/092824/sam2.1_hiera_tiny.pt"),
@@ -35,10 +37,10 @@ def initialize_dam4sam_tracker(params):
             "sam21pp-L": ("https://dl.fbaipublicfiles.com/"
                          "segment_anything_2/092824/sam2.1_hiera_large.pt")
         }
-        
+
         checkpoint_path = config.DIRS['models'] / Path(model_urls[model_name]).name
         download_model(model_urls[model_name], checkpoint_path,
-                      f"{model_name} model", 100_000_000)
+                      f"{model_name} model", logger, error_handler, 100_000_000)
 
         from DAM4SAM.utils import utils
         actual_path, _ = utils.determine_tracker(model_name)

@@ -4,23 +4,22 @@ import numpy as np
 import torch
 
 from app.frames import rgb_to_pil, postprocess_mask
-from app.logging import UnifiedLogger
+from app.logging_enhanced import EnhancedLogger
 
 
 class MaskPropagator:
     """Handles propagating a mask from a seed frame throughout a scene."""
     
-    def __init__(self, params, tracker, cancel_event, progress_queue):
+    def __init__(self, params, tracker, cancel_event, progress_queue, logger=None):
         self.params = params
         self.tracker = tracker
         self.cancel_event = cancel_event
         self.progress_queue = progress_queue
+        self.logger = logger or EnhancedLogger()
         self._device = "cuda" if torch.cuda.is_available() else "cpu"
 
     def propagate(self, shot_frames_rgb, seed_idx, bbox_xywh):
         """Propagate mask from seed frame through all frames in the shot."""
-        logger = UnifiedLogger()
-        
         if not self.tracker or not shot_frames_rgb:
             err_msg = ("Tracker not initialized" if not self.tracker 
                       else "No frames")
@@ -34,10 +33,11 @@ class MaskPropagator:
                 [err_msg] * num_frames
             )
 
-        logger.info("Propagating masks", 
-                   extra={'num_frames': len(shot_frames_rgb), 
-                         'seed_index': seed_idx})
-        self.progress_queue.put({"stage": "Masking", 
+        self.logger.info("Propagating masks",
+                         component="propagator",
+                         user_context={'num_frames': len(shot_frames_rgb),
+                                       'seed_index': seed_idx})
+        self.progress_queue.put({"stage": "Masking",
                                "total": len(shot_frames_rgb)})
         masks = [None] * len(shot_frames_rgb)
 
@@ -100,7 +100,7 @@ class MaskPropagator:
                    else ([], [], [], []))
                    
         except Exception as e:
-            logger.critical("DAM4SAM propagation failed", exc_info=True)
+            self.logger.critical("DAM4SAM propagation failed", component="propagator", exc_info=True)
             h, w = shot_frames_rgb[0].shape[:2]
             error_msg = f"Propagation failed: {e}"
             num_frames = len(shot_frames_rgb)
