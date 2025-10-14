@@ -20,7 +20,7 @@ from app.utils import _to_json_safe
 from app.face import get_face_analyzer
 from app.person import get_person_detector
 from app.subject_masker import SubjectMasker
-from app.frames import create_frame_map
+from app.frames import create_frame_map, rgb_to_pil
 from app.models import Frame
 
 
