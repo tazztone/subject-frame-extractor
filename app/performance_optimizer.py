@@ -91,8 +91,9 @@ class AdaptiveResourceManager:
 
     def _adjust_parameters(self, metrics: Dict[str, Any]):
         """Automatically adjust processing parameters based on metrics."""
+        monitoring_config = self.config.settings.get('monitoring', {})
         # Memory-based adjustments
-        if metrics['process_memory_mb'] > self.config.memory_warning_threshold_mb:
+        if metrics['process_memory_mb'] > monitoring_config.get('memory_warning_threshold_mb', 8192):
             # Reduce batch size if using too much memory
             if self.current_limits['batch_size'] > 1:
                 old_batch_size = self.current_limits['batch_size']
@@ -108,7 +109,7 @@ class AdaptiveResourceManager:
                 gc.collect()
 
         # CPU-based adjustments
-        if metrics['cpu_percent'] > self.config.cpu_warning_threshold_percent:
+        if metrics['cpu_percent'] > monitoring_config.get('cpu_warning_threshold_percent', 90):
             # Reduce number of workers if CPU is overloaded
             if self.current_limits['num_workers'] > 1:
                 old_workers = self.current_limits['num_workers']
@@ -121,7 +122,7 @@ class AdaptiveResourceManager:
                 )
 
         # GPU memory adjustments
-        if 'gpu_memory_percent' in metrics and metrics['gpu_memory_percent'] > self.config.gpu_memory_warning_threshold_percent:
+        if 'gpu_memory_percent' in metrics and metrics['gpu_memory_percent'] > monitoring_config.get('gpu_memory_warning_threshold_percent', 90):
             self.logger.warning(
                 "High GPU memory usage detected, consider reducing batch size or switching to CPU",
                 component="resource_manager",
