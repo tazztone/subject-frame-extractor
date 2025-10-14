@@ -143,7 +143,7 @@ def apply_scene_overrides(scenes_list, selected_shot_id, prompt,
 
         ui_args = dict(zip(ana_ui_map_keys, ana_input_components))
         ui_args['output_folder'] = output_folder
-        params = AnalysisParameters.from_ui(**ui_args)
+        params = AnalysisParameters.from_ui(logger, **ui_args)
 
         face_analyzer, ref_emb, person_detector = None, None, None
         device = "cuda" if cuda_available else "cpu"

@@ -208,13 +208,11 @@ class AnalysisParameters:
             self.edge_strength_base_scale = config.edge_strength_base_scale
 
     @classmethod
-    def from_ui(cls, **kwargs):
+    def from_ui(cls, logger: 'EnhancedLogger', **kwargs):
         """Create instance from UI parameters."""
         from app.config import Config
-        from app.logging import UnifiedLogger
 
         config = Config()
-        logger = UnifiedLogger()
 
         valid_keys = {f.name for f in fields(cls)}
         filtered_defaults = {

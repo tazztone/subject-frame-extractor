@@ -2,7 +2,6 @@
 
 import urllib.request
 import shutil
-from timeout_decorator import TimeoutError
 
 from app.error_handling import ErrorHandler
 
