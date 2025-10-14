@@ -2,7 +2,7 @@ import gradio as gr
 import torch
 import threading
 import time
-from pathlib import Path
+import traceback
 from queue import Queue, Empty
 from concurrent.futures import ThreadPoolExecutor
 from app.config import Config
@@ -10,8 +10,6 @@ from app.logging import UnifiedLogger
 from app.thumb_cache import ThumbnailManager
 from app.events import (ExtractionEvent, PreAnalysisEvent, PropagationEvent,
                               FilterEvent, ExportEvent, SessionLoadEvent)
-from app.logging_enhanced import EnhancedLogger
-from app.progress_enhanced import AdvancedProgressTracker
 from app.pipeline_logic import (
     execute_extraction,
     execute_pre_analysis,
@@ -84,15 +82,19 @@ class AppUI:
         css = """.plot-and-slider-column { max-width: 560px !important; margin: auto; } .scene-editor { border: 1px solid #444; padding: 10px; border-radius: 5px; }"""
         
         with gr.Blocks(theme=gr.themes.Default(), css=css) as demo:
-            gr.Markdown("# 🎬 Frame Extractor & Analyzer v2.0")
-            if not self.cuda_available:
-                gr.Markdown("⚠️ **CPU Mode** — GPU-dependent features are "
-                          "disabled or will be slow.")
+            self._build_header()
 
-            self._build_session_loader()
+            with gr.Accordion("🔄 resume previous Session", open=False):
+                with gr.Row():
+                    self._create_component('session_path_input', 'textbox', {
+                        'label': "Load previous run",
+                        'placeholder': "Path to a previous run's output folder..."
+                    })
+                    self._create_component('load_session_button', 'button', {
+                        'value': "📂 Load Session"
+                    })
 
-            self.build_ui_content(demo)
-
+            self._build_main_tabs()
             self._build_footer()
 
             self._create_event_handlers()
@@ -110,16 +112,23 @@ class AppUI:
         self.components[name] = comp_map[comp_type](**kwargs)
         return self.components[name]
 
-    def _build_session_loader(self):
-        with gr.Accordion("🔄 resume previous Session", open=False):
-            with gr.Row():
-                self._create_component('session_path_input', 'textbox', {
-                    'label': "Load previous run",
-                    'placeholder': "Path to a previous run's output folder..."
-                })
-                self._create_component('load_session_button', 'button', {
-                    'value': "📂 Load Session"
-                })
+    def _build_header(self):
+        gr.Markdown("# 🎬 Frame Extractor & Analyzer v2.0")
+        if not self.cuda_available:
+            gr.Markdown("⚠️ **CPU Mode** — GPU-dependent features are "
+                      "disabled or will be slow.")
+
+    def _build_main_tabs(self):
+        with gr.Tabs() as main_tabs:
+            self.components['main_tabs'] = main_tabs
+            with gr.Tab("📹 1. Frame Extraction"):
+                self._create_extraction_tab()
+            with gr.Tab("🎯 2. Seeding & Scene Selection", id=1) as analysis_tab:
+                self.components['analysis_tab'] = analysis_tab
+                self._create_analysis_tab()
+            with gr.Tab("📊 3. Filtering & Export", id=2) as filtering_tab:
+                self.components['filtering_tab'] = filtering_tab
+                self._create_filtering_tab()
 
     def _build_footer(self):
         with gr.Row():
@@ -133,22 +142,6 @@ class AppUI:
                     'label': "📊 Status Summary", 'lines': 2,
                     'interactive': False
                 })
-                with gr.Row():
-                    self.components['progress_bar'] = gr.Progress()
-
-    def build_ui_content(self, demo):
-        """Build the main content of the UI, including tabs."""
-        with gr.Tabs() as main_tabs:
-            self.components['main_tabs'] = main_tabs
-            with gr.Tab("📹 1. Frame Extraction"):
-                self._create_extraction_tab()
-            with gr.Tab("🎯 2. Seeding & Scene Selection", id=1) as analysis_tab:
-                self.components['analysis_tab'] = analysis_tab
-                self._create_analysis_tab()
-            with gr.Tab("📊 3. Filtering & Export", id=2) as filtering_tab:
-                self.components['filtering_tab'] = filtering_tab
-                self._create_filtering_tab()
-        return demo
 
     def _create_extraction_tab(self):
         """Create the frame extraction tab."""
@@ -517,6 +510,7 @@ class AppUI:
 
     def _create_event_handlers(self):
         """Set up all UI event handlers."""
+        print("Components at start of _create_event_handlers:", self.components.keys())
         self.components.update({
             'extracted_video_path_state': gr.State(""),
             'extracted_frames_dir_state': gr.State(""),
@@ -707,127 +701,21 @@ class AppUI:
                 final_result.update(result)
         return final_result
 
+
 class EnhancedAppUI(AppUI):
     def __init__(self, config=None, logger=None, progress_queue=None, cancel_event=None):
-        # Use enhanced logger
+        super().__init__(config, logger, progress_queue, cancel_event)
         from app.logging_enhanced import EnhancedLogger
         from app.progress_enhanced import AdvancedProgressTracker
-
-        super().__init__(config, logger, progress_queue, cancel_event)
-
+        from pathlib import Path
         self.enhanced_logger = EnhancedLogger(
             log_dir=Path(self.config.DIRS['logs']),
             enable_performance_monitoring=getattr(self.config, 'enable_performance_monitoring', True)
         )
         self.enhanced_logger.set_progress_queue(self.progress_queue)
-
         self.progress_tracker = AdvancedProgressTracker(self.progress_queue, self.enhanced_logger)
-
-        # Performance monitoring state
         self.performance_metrics = {}
         self.log_filter_level = "INFO"
-
-    def build_ui(self):
-        """Build enhanced UI with advanced logging and monitoring."""
-        css = """
-        .log-container {
-            font-family: 'Courier New', monospace;
-            font-size: 12px;
-            background-color: #1e1e1e;
-            color: #d4d4d4;
-            border: 1px solid #444;
-            border-radius: 4px;
-        }
-        .progress-details {
-            font-size: 11px;
-            color: #888;
-            margin-top: 5px;
-        }
-        .performance-metrics {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-            gap: 10px;
-            margin: 10px 0;
-        }
-        .metric-card {
-            background: #f8f9fa;
-            border: 1px solid #dee2e6;
-            border-radius: 4px;
-            padding: 8px;
-            text-align: center;
-        }
-        .metric-value {
-            font-size: 18px;
-            font-weight: bold;
-            color: #007bff;
-        }
-        .metric-label {
-            font-size: 12px;
-            color: #6c757d;
-        }
-        """
-
-        with gr.Blocks(theme=gr.themes.Default(), css=css) as demo:
-            gr.Markdown("# 🎬 Frame Extractor & Analyzer v2.0 - Enhanced")
-
-            self._build_session_loader()
-
-            # Add performance monitoring section
-            if getattr(self.config, 'show_performance_metrics_in_ui', False):
-                with gr.Accordion("📊 System Performance", open=False):
-                    with gr.Row():
-                        self._create_component('cpu_usage', 'html', {
-                            'value': self._format_metric_card('CPU', '0%'),
-                            'elem_classes': ['metric-card']
-                        })
-                        self._create_component('memory_usage', 'html', {
-                            'value': self._format_metric_card('Memory', '0 MB'),
-                            'elem_classes': ['metric-card']
-                        })
-                        self._create_component('gpu_usage', 'html', {
-                            'value': self._format_metric_card('GPU', 'N/A'),
-                            'elem_classes': ['metric-card']
-                        })
-                        self._create_component('processing_rate', 'html', {
-                            'value': self._format_metric_card('Rate', '0/s'),
-                            'elem_classes': ['metric-card']
-                        })
-
-            self.build_ui_content(demo)
-
-            self._build_footer()
-
-            self.components['progress_bar'] = gr.Progress()
-            self._create_component('unified_log', 'textbox', {'visible': False})
-            self._create_component('unified_status', 'textbox', {'visible': False})
-            self._create_component('source_input', 'textbox', {'visible': False})
-            self._create_component('method_input', 'dropdown', {'visible': False})
-            self._create_component('use_png_input', 'checkbox', {'visible': False})
-            self._create_component('pre_analysis_enabled_input', 'checkbox', {'visible': False})
-            self._create_component('pre_sample_nth_input', 'number', {'visible': False})
-            self._create_component('enable_face_filter_input', 'checkbox', {'visible': False})
-            self._create_component('face_model_name_input', 'dropdown', {'visible': False})
-            self._create_component('face_ref_img_path_input', 'textbox', {'visible': False})
-            self._create_component('text_prompt_input', 'textbox', {'visible': False})
-            self._create_component('seed_strategy_input', 'dropdown', {'visible': False})
-            self._create_component('person_detector_model_input', 'dropdown', {'visible': False})
-            self._create_component('dam4sam_model_name_input', 'dropdown', {'visible': False})
-            self._create_component('enable_dedup_input', 'checkbox', {'visible': False})
-            self._create_component('extracted_video_path_state', 'textbox', {'visible': False})
-            self._create_component('extracted_frames_dir_state', 'textbox', {'visible': False})
-            self._create_component('analysis_output_dir_state', 'textbox', {'visible': False})
-            self._create_component('analysis_metadata_path_state', 'textbox', {'visible': False})
-            self._create_component('scenes_state', 'textbox', {'visible': False})
-            self._create_component('propagate_masks_button', 'button', {'visible': False})
-            self.components['filtering_tab'] = gr.Tab("📊 3. Filtering & Export", id=2)
-            self._create_component('scene_face_sim_min_input', 'slider', {'visible': False})
-            self._create_component('thumbnails_only_input', 'checkbox', {'visible': False})
-            self._create_component('thumb_megapixels_input', 'slider', {'visible': False})
-            self._create_component('ext_scene_detect_input', 'checkbox', {'visible': False})
-
-            self._create_event_handlers()
-
-        return demo
 
     def _build_footer(self):
         # Enhanced logging section
@@ -863,6 +751,7 @@ class EnhancedAppUI(AppUI):
                 })
 
                 # Enhanced progress bar with details
+                self.components['progress_bar'] = gr.Progress()
                 self.components['enhanced_progress'] = gr.Progress()
 
                 self._create_component('progress_details', 'html', {
@@ -903,408 +792,57 @@ class EnhancedAppUI(AppUI):
         </div>
         """
 
-    def _enhanced_run_task_with_progress(self, task_func, output_keys, progress_obj, *args):
+    def _run_task_with_progress(self, task_func, output_keys, progress_obj, *args):
         """Enhanced task runner with comprehensive monitoring."""
-
-        # Start performance monitoring
-        if self.enhanced_logger.performance_monitor:
-            self.performance_metrics = self.enhanced_logger.performance_monitor.get_system_metrics()
-
-        # Initialize enhanced progress tracking
         operation_name = getattr(task_func, '__name__', 'Unknown Operation')
-        self.progress_tracker.start_operation(
-            operation=operation_name,
-            total_items=1,  # Will be updated by task
-            metadata={'start_time': time.time()}
+
+        # This generator will yield UI updates. We'll wrap it to add our own.
+        original_task_generator = super()._run_task_with_progress(
+            task_func, output_keys, progress_obj, *args
         )
 
-        initial_updates = {'enhanced_log_display': "🚀 Starting enhanced operation..."}
-        yield tuple(initial_updates.get(k, gr.update()) for k in output_keys)
-
         try:
+            # Yield the initial update from the parent
+            yield next(original_task_generator)
+
+            # Wrap the rest of the execution in our context
             with self.enhanced_logger.operation_context(
                 operation_name=operation_name,
                 component="pipeline",
                 user_context={'args_count': len(args)}
             ):
-                # Run the original task with enhanced monitoring
-                for result in super()._run_task_with_progress(task_func, output_keys, progress_obj, *args):
-                    # Update performance metrics
+                # Process the rest of the updates from the parent generator
+                for result_tuple in original_task_generator:
                     if self.enhanced_logger.performance_monitor:
                         self.performance_metrics = self.enhanced_logger.performance_monitor.get_system_metrics()
 
-                    yield result
+                    # The parent generator already yields tuples for gr.update
+                    # We just pass them through. We could modify them here if needed.
+                    yield result_tuple
 
-                self.progress_tracker.complete_operation(success=True)
+            self.progress_tracker.complete_operation(success=True)
 
+        except StopIteration:
+            # This can happen if the parent generator finishes early.
+            # We mark it as successful.
+            self.progress_tracker.complete_operation(success=True)
+            self.enhanced_logger.success(f"Task {operation_name} completed.",
+                                       component="pipeline", operation=operation_name)
         except Exception as e:
+            # Log the error using the enhanced logger and tracker
             self.progress_tracker.complete_operation(success=False, message=str(e))
             self.enhanced_logger.error(f"Task execution failed: {str(e)}",
                                      component="pipeline",
                                      operation=operation_name,
-                                     error_type=type(e).__name__)
-            raise
+                                     error_type=type(e).__name__,
+                                     stack_trace=traceback.format_exc())
+            # We still need to yield a final state to the UI to show the error
+            final_updates = {
+                'unified_log': f"❌ Task failed: {e}",
+                'enhanced_log_display': f"❌ Task failed: {e}"
+            }
+            yield tuple(final_updates.get(k, gr.update()) for k in output_keys)
 
-    def _create_extraction_tab(self):
-        """Create the frame extraction tab."""
-        gr.Markdown("### Step 1: Provide a Video Source")
-        with gr.Row():
-            with gr.Column(scale=2):
-                self._create_component('source_input', 'textbox', {
-                    'label': "Video URL or Local Path",
-                    'placeholder': "Enter YouTube URL or local video file path"
-                })
-            with gr.Column(scale=1):
-                self._create_component('max_resolution', 'dropdown', {
-                    'choices': ["maximum available", "2160", "1080", "720"],
-                    'value': self.config.ui_defaults['max_resolution'],
-                    'label': "Download Resolution"
-                })
-        self._create_component('upload_video_input', 'file', {
-            'label': "Or Upload a Video File", 'file_types': ["video"], 'type': "filepath"
-        })
-
-        gr.Markdown("---")
-        gr.Markdown("### Step 2: Configure Extraction Method")
-        self._create_component('thumbnails_only_input', 'checkbox', {
-            'label': "Use Recommended Thumbnail Extraction (Faster, For Pre-Analysis)",
-            'value': self.config.ui_defaults['thumbnails_only']
-        })
-
-        with gr.Accordion("Thumbnail Settings", open=True) as recommended_accordion:
-            self.components['recommended_accordion'] = recommended_accordion
-            gr.Markdown("This is the fastest and most efficient method. It extracts lightweight thumbnails for scene analysis, allowing you to quickly find the best frames *before* extracting full-resolution images.")
-            self._create_component('thumb_megapixels_input', 'slider', {
-                'label': "Thumbnail Size (MP)", 'minimum': 0.1, 'maximum': 2.0, 'step': 0.1,
-                'value': self.config.ui_defaults['thumb_megapixels']
-            })
-            self._create_component('ext_scene_detect_input', 'checkbox', {
-                'label': "Use Scene Detection (Recommended)",
-                'value': self.config.ui_defaults['scene_detect']
-            })
-
-        with gr.Accordion("Advanced: Legacy Full-Frame Extraction", open=False) as legacy_accordion:
-            self.components['legacy_accordion'] = legacy_accordion
-            gr.Markdown("This method extracts full-resolution frames directly, which can be slow and generate a large number of files. Use this only if you have specific needs and understand the performance implications.")
-            method_choices = ["keyframes", "interval", "every_nth_frame", "all", "scene"]
-            self._create_component('method_input', 'dropdown', {
-                'choices': method_choices, 'value': self.config.ui_defaults['method'], 'label': "Extraction Method"
-            })
-            self._create_component('interval_input', 'textbox', {
-                'label': "Interval (seconds)", 'value': self.config.ui_defaults['interval'], 'visible': False
-            })
-            self._create_component('nth_frame_input', 'textbox', {
-                'label': "N-th Frame Value", 'value': self.config.ui_defaults["nth_frame"], 'visible': False
-            })
-            self._create_component('fast_scene_input', 'checkbox', {
-                'label': "Fast Scene Detect (for 'scene' method)", 'visible': False
-            })
-            self._create_component('use_png_input', 'checkbox', {
-                'label': "Save as PNG (slower, larger files)", 'value': self.config.ui_defaults['use_png']
-            })
-
-        gr.Markdown("---")
-        gr.Markdown("### Step 3: Start Extraction")
-        start_btn = gr.Button("🚀 Start Extraction", variant="primary")
-        self.components.update({'start_extraction_button': start_btn})
-
-    def _create_analysis_tab(self):
-        """Create the analysis and seeding tab."""
-        with gr.Row():
-            with gr.Column(scale=1):
-                gr.Markdown("### 🎯 Step 1: Choose Your Seeding Strategy")
-                self._create_component('primary_seed_strategy_input', 'radio', {
-                    'choices': ["👤 By Face", "📝 By Text", "🔄 Face + Text Fallback", "🤖 Automatic"],
-                    'value': "🔄 Face + Text Fallback",  # Make fallback the default
-                    'label': "Primary Seeding Strategy"
-                })
-
-                # --- Face Seeding Group ---
-                with gr.Group(visible=False) as face_seeding_group:
-                    self.components['face_seeding_group'] = face_seeding_group
-                    gr.Markdown("#### 👤 Configure Face Seeding")
-                    gr.Markdown("Upload a clear image of the person you want to find. The system will search for this person in the video.")
-                    self._create_component('face_ref_img_upload_input', 'file', {
-                        'label': "Upload Face Reference Image", 'type': "filepath"
-                    })
-                    self._create_component('face_ref_img_path_input', 'textbox', {
-                        'label': "Or provide a local file path"
-                    })
-                    self._create_component('enable_face_filter_input', 'checkbox', {
-                        'label': "Enable Face Similarity (must be checked for face seeding)",
-                        'value': False, 'interactive': False
-                    })
-
-                # --- Text Seeding Group ---
-                with gr.Group(visible=False) as text_seeding_group:
-                    self.components['text_seeding_group'] = text_seeding_group
-                    gr.Markdown("#### 📝 Configure Text Seeding")
-                    gr.Markdown("Describe the subject or object you want to find. Be as specific as possible for better results.")
-                    self._create_component('text_prompt_input', 'textbox', {
-                        'label': "Text Prompt",
-                        'placeholder': "e.g., 'a woman in a red dress'",
-                        'value': self.config.ui_defaults['text_prompt']
-                    })
-
-                # --- Automatic Seeding Group ---
-                with gr.Group(visible=True) as auto_seeding_group:
-                    self.components['auto_seeding_group'] = auto_seeding_group
-                    gr.Markdown("#### 🤖 Configure Automatic Seeding")
-                    gr.Markdown("The system will automatically identify the most prominent person in each scene. This is a good general-purpose starting point.")
-                    self._create_component('seed_strategy_input', 'dropdown', {
-                        'choices': ["Largest Person", "Center-most Person"],
-                        'value': "Largest Person",
-                        'label': "Automatic Seeding Method"
-                    })
-
-                with gr.Accordion("Advanced Settings", open=False):
-                    gr.Markdown("These settings control the underlying models and analysis parameters. Adjust them only if you understand their effect.")
-                    self._create_component('pre_analysis_enabled_input', 'checkbox', {
-                        'label': 'Enable Pre-Analysis to find best seed frame',
-                        'value': self.config.ui_defaults['pre_analysis_enabled']
-                    })
-                    self._create_component('pre_sample_nth_input', 'number', {
-                        'label': 'Sample every Nth thumbnail for pre-analysis',
-                        'value': self.config.ui_defaults['pre_sample_nth'],
-                        'interactive': True
-                    })
-                    self._create_component('person_detector_model_input', 'dropdown', {
-                        'choices': ['yolo11x.pt', 'yolo11s.pt'],
-                        'value': self.config.ui_defaults['person_detector_model'],
-                        'label': "Person Detector (for Automatic)"
-                    })
-                    self._create_component('face_model_name_input', 'dropdown', {
-                        'choices': ["buffalo_l", "buffalo_s"],
-                        'value': self.config.ui_defaults['face_model_name'],
-                        'label': "Face Model (for Face Seeding)"
-                    })
-                    self._create_component('dam4sam_model_name_input', 'dropdown', {
-                        'choices': ["sam21pp-T", "sam21pp-S", "sam21pp-B+", "sam21pp-L"],
-                        'value': self.config.ui_defaults['dam4sam_model_name'],
-                        'label': "SAM Tracker Model"
-                    })
-                    self._create_component('enable_dedup_input', 'checkbox', {
-                        'label': "Enable Deduplication (pHash)",
-                        'value': self.config.ui_defaults.get('enable_dedup', False)
-                    })
-
-                self._create_component('start_pre_analysis_button', 'button', {
-                    'value': '🌱 Find & Preview Scene Seeds', 'variant': 'primary'
-                })
-
-                with gr.Group(visible=False) as propagation_group:
-                    self.components['propagation_group'] = propagation_group
-                    gr.Markdown("---")
-                    gr.Markdown("### 🔬 Step 3: Propagate Masks")
-                    gr.Markdown("Once you are satisfied with the seeds, propagate the masks to the rest of the frames in the selected scenes.")
-
-                    self._create_component('propagate_masks_button', 'button', {
-                        'value': '🔬 Propagate Masks on Kept Scenes',
-                        'variant': 'primary',
-                        'interactive': False
-                    })
-
-            with gr.Column(scale=2, visible=False) as seeding_results_column:
-                self.components['seeding_results_column'] = seeding_results_column
-                gr.Markdown("### 🎭 Step 2: Review & Refine Seeds")
-                self._create_component('seeding_preview_gallery', 'gallery', {
-                    'label': 'Scene Seed Previews',
-                    'columns': [4, 6, 8],
-                    'rows': 2,
-                    'height': 'auto',
-                    'preview': True,
-                    'allow_preview': True,
-                    'object_fit': 'contain'
-                })
-
-                with gr.Accordion("Scene Editor", open=False,
-                                elem_classes="scene-editor") as scene_editor_accordion:
-                    self.components['scene_editor_accordion'] = scene_editor_accordion
-                    self._create_component('scene_editor_status_md', 'markdown', {
-                        'value': "Select a scene to edit."
-                    })
-                    with gr.Row():
-                        self._create_component('scene_editor_prompt_input',
-                                             'textbox', {
-                            'label': 'Per-Scene Text Prompt'
-                        })
-                    with gr.Row():
-                        self._create_component('scene_editor_box_thresh_input',
-                                             'slider', {
-                            'label': "Box Thresh", 'minimum': 0.0, 'maximum': 1.0,
-                            'step': 0.05,
-                            'value': self.config.grounding_dino_params['box_threshold']
-                        })
-                        self._create_component('scene_editor_text_thresh_input',
-                                             'slider', {
-                            'label': "Text Thresh", 'minimum': 0.0, 'maximum': 1.0,
-                            'step': 0.05,
-                            'value': self.config.grounding_dino_params['text_threshold']
-                        })
-                    with gr.Row():
-                        self._create_component('scene_recompute_button', 'button', {
-                            'value': '🔄 Recompute Preview'
-                        })
-                        self._create_component('scene_include_button', 'button', {
-                            'value': '👍 Include'
-                        })
-                        self._create_component('scene_exclude_button', 'button', {
-                            'value': '👎 Exclude'
-                        })
-
-                with gr.Accordion("Bulk Scene Actions & Filters", open=True):
-                    self._create_component('scene_filter_status', 'markdown', {
-                        'value': 'No scenes loaded.'
-                    })
-                    self._create_component('scene_mask_area_min_input', 'slider', {
-                        'label': "Min Seed Mask Area %", 'minimum': 0.0,
-                        'maximum': 100.0, 'value': self.config.min_mask_area_pct,
-                        'step': 0.1
-                    })
-                    self._create_component('scene_face_sim_min_input', 'slider', {
-                        'label': "Min Seed Face Sim", 'minimum': 0.0,
-                        'maximum': 1.0, 'value': 0.5, 'step': 0.05,
-                        'visible': False
-                    })
-                    self._create_component('scene_confidence_min_input', 'slider', {
-                        'label': "Min Seed Confidence", 'minimum': 0.0,
-                        'maximum': 1.0, 'value': 0.0, 'step': 0.05
-                    })
-                    with gr.Row():
-                        self._create_component('bulk_include_all_button', 'button', {
-                            'value': 'Include All'
-                        })
-                        self._create_component('bulk_exclude_all_button', 'button', {
-                            'value': 'Exclude All'
-                        })
-
-    def _create_filtering_tab(self):
-        """Create the filtering and export tab."""
-        with gr.Row():
-            with gr.Column(scale=1):
-                gr.Markdown("### 🎛️ Filter Controls")
-                self._create_component('auto_pctl_input', 'slider', {
-                    'label': 'Auto-Threshold Percentile', 'minimum': 1,
-                    'maximum': 99, 'value': 75, 'step': 1
-                })
-                with gr.Row():
-                    self._create_component('apply_auto_button', 'button', {
-                        'value': 'Apply Percentile to Mins'
-                    })
-                    self._create_component('reset_filters_button', 'button', {
-                        'value': "Reset Filters"
-                    })
-                self._create_component('filter_status_text', 'markdown', {
-                    'value': "Load an analysis to begin."
-                })
-
-                self.components['metric_plots'] = {}
-                self.components['metric_sliders'] = {}
-
-                with gr.Accordion("Deduplication", open=True, visible=True):
-                    f_def = self.config.filter_defaults['dedup_thresh']
-                    self._create_component('dedup_thresh_input', 'slider', {
-                        'label': "Similarity Threshold", 'minimum': f_def['min'],
-                        'maximum': f_def['max'], 'value': f_def['default'],
-                        'step': f_def['step']
-                    })
-
-                filter_display_order = [
-                    ('niqe', True), ('sharpness', True), ('edge_strength', True),
-                    ('contrast', True), ('brightness', False), ('entropy', False),
-                    ('face_sim', False), ('mask_area_pct', False)
-                ]
-
-                for metric_name, open_default in filter_display_order:
-                    if metric_name not in self.config.filter_defaults:
-                        continue
-                    f_def = self.config.filter_defaults[metric_name]
-                    with gr.Accordion(metric_name.replace('_', ' ').title(),
-                                    open=open_default):
-                        with gr.Column(elem_classes="plot-and-slider-column"):
-                            plot_name = f'plot_{metric_name}'
-                            self.components['metric_plots'][metric_name] = (
-                                self._create_component(plot_name, 'html', {
-                                    'visible': False
-                                })
-                            )
-
-                            min_slider_name = f'slider_{metric_name}_min'
-                            self.components['metric_sliders'][f"{metric_name}_min"] = (
-                                self._create_component(min_slider_name, 'slider', {
-                                    'label': "Min", 'minimum': f_def['min'],
-                                    'maximum': f_def['max'],
-                                    'value': f_def['default_min'],
-                                    'step': f_def['step'], 'interactive': True,
-                                    'visible': False
-                                })
-                            )
-
-                            if 'default_max' in f_def:
-                                max_slider_name = f'slider_{metric_name}_max'
-                                self.components['metric_sliders'][f"{metric_name}_max"] = (
-                                    self._create_component(max_slider_name, 'slider', {
-                                        'label': "Max", 'minimum': f_def['min'],
-                                        'maximum': f_def['max'],
-                                        'value': f_def['default_max'],
-                                        'step': f_def['step'], 'interactive': True,
-                                        'visible': False
-                                    })
-                                )
-
-                            if metric_name == "face_sim":
-                                self._create_component('require_face_match_input',
-                                                     'checkbox', {
-                                    'label': "Reject if no face",
-                                    'value': self.config.ui_defaults['require_face_match'],
-                                    'visible': False
-                                })
-
-            with gr.Column(scale=2):
-                with gr.Group(visible=False) as results_group:
-                    self.components['results_group'] = results_group
-                    gr.Markdown("### 🖼️ Step 2: Review Results")
-                    with gr.Row():
-                        self._create_component('gallery_view_toggle', 'radio', {
-                            'choices': ["Kept Frames", "Rejected Frames"],
-                            'value': "Kept Frames",
-                            'label': "Show in Gallery"
-                        })
-                        self._create_component('show_mask_overlay_input', 'checkbox', {
-                            'label': "Show Mask Overlay",
-                            'value': True
-                        })
-                        self._create_component('overlay_alpha_slider', 'slider', {
-                            'label': "Overlay Alpha", 'minimum': 0.0, 'maximum': 1.0,
-                            'value': 0.6, 'step': 0.1
-                        })
-                    self._create_component('results_gallery', 'gallery', {
-                        'columns': [4, 6, 8], 'rows': 2, 'height': 'auto',
-                        'preview': True, 'allow_preview': True, 'object_fit': 'contain'
-                    })
-
-                with gr.Group(visible=False) as export_group:
-                    self.components['export_group'] = export_group
-                    gr.Markdown("### 📤 Step 3: Export")
-                    self._create_component('export_button', 'button', {
-                        'value': "Export Kept Frames",
-                        'variant': "primary"
-                    })
-                    with gr.Accordion("Export Options", open=True):
-                        with gr.Row():
-                            self._create_component('enable_crop_input', 'checkbox', {
-                                'label': "✂️ Crop to Subject",
-                                'value': True
-                            })
-                            self._create_component('crop_padding_input', 'slider', {
-                                'label': "Padding %",
-                                'value': 1
-                            })
-                        self._create_component('crop_ar_input', 'textbox', {
-                            'label': "Crop ARs",
-                            'value': "16:9,1:1,9:16",
-                            'info': "Comma-separated list (e.g., 16:9, 1:1). The best-fitting AR for each subject's mask will be chosen automatically."
-                        })
     def _setup_visibility_toggles(self):
         """Set up UI visibility toggles."""
         c = self.components
@@ -1346,24 +884,6 @@ class EnhancedAppUI(AppUI):
             [c['face_seeding_group'], c['text_seeding_group'],
              c['auto_seeding_group'], c['enable_face_filter_input']]
         )
-
-    def _create_event_handlers(self):
-        """Set up all UI event handlers."""
-        self.components.update({
-            'extracted_video_path_state': gr.State(""),
-            'extracted_frames_dir_state': gr.State(""),
-            'analysis_output_dir_state': gr.State(""),
-            'analysis_metadata_path_state': gr.State(""),
-            'all_frames_data_state': gr.State([]),
-            'per_metric_values_state': gr.State({}),
-            'scenes_state': gr.State([]),
-            'selected_scene_id_state': gr.State(None)
-        })
-        self._setup_visibility_toggles()
-        self._setup_pipeline_handlers()
-        self._setup_filtering_handlers()
-        self._setup_scene_editor_handlers()
-        self._setup_bulk_scene_handlers()
 
     def _setup_pipeline_handlers(self):
         """Set up pipeline execution handlers using the correct progress pattern."""
