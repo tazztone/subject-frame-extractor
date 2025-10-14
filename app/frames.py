@@ -36,10 +36,8 @@ def postprocess_mask(mask: np.ndarray, fill_holes: bool = True,
 
 
 def render_mask_overlay(frame_rgb: np.ndarray, mask_gray: np.ndarray,
-                        alpha: float = 0.5, logger=None) -> np.ndarray:
+                        alpha: float = 0.5, logger: 'EnhancedLogger' = None) -> np.ndarray:
     """Render a mask overlay on a frame."""
-    logger = logger or EnhancedLogger()
-
     if mask_gray is None:
         return frame_rgb
 
@@ -68,10 +66,8 @@ def rgb_to_pil(image_rgb: np.ndarray) -> Image.Image:
     return Image.fromarray(image_rgb)
 
 
-def create_frame_map(output_dir: Path, logger=None):
+def create_frame_map(output_dir: Path, logger: 'EnhancedLogger'):
     """Load or create map from original frame number to sequential filename."""
-    logger = logger or EnhancedLogger()
-
     logger.info("Loading frame map...", component="frames")
     frame_map_path = output_dir / "frame_map.json"
 

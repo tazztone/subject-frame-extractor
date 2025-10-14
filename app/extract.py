@@ -17,50 +17,35 @@ class ExtractionPipeline(Pipeline):
         from app.video import VideoManager, run_scene_detection, run_ffmpeg_extraction
 
         config = Config()
-        run_log_handler = None
 
-        try:
-            self.logger.info("Preparing video source...")
-            vid_manager = VideoManager(self.params.source_path,
-                                     self.params.max_resolution)
-            video_path = Path(vid_manager.prepare_video(self.logger))
+        self.logger.info("Preparing video source...")
+        vid_manager = VideoManager(self.params.source_path,
+                                    self.params.max_resolution)
+        video_path = Path(vid_manager.prepare_video(self.logger))
 
-            output_dir = config.DIRS['downloads'] / video_path.stem
-            output_dir.mkdir(exist_ok=True)
+        output_dir = config.DIRS['downloads'] / video_path.stem
+        output_dir.mkdir(exist_ok=True)
 
-            run_log_path = output_dir / "extraction_run.log"
-            run_log_handler = logging.FileHandler(run_log_path, mode='w',
-                                                  encoding='utf-8')
-            formatter = logging.Formatter(
-                '%(asctime)s - %(levelname)s - %(message)s'
-            )
-            run_log_handler.setFormatter(formatter)
-            self.logger.logger.addHandler(run_log_handler)
+        self.logger.info("Video ready",
+                            user_context={'path': sanitize_filename(video_path.name)})
 
-            self.logger.info("Video ready",
-                             extra={'path': sanitize_filename(video_path.name)})
+        video_info = VideoManager.get_video_info(video_path)
 
-            video_info = VideoManager.get_video_info(video_path)
+        if self.params.scene_detect:
+            self._run_scene_detection(video_path, output_dir)
 
-            if self.params.scene_detect:
-                self._run_scene_detection(video_path, output_dir)
+        self._run_ffmpeg(video_path, output_dir, video_info)
 
-            self._run_ffmpeg(video_path, output_dir, video_info)
+        if self.cancel_event.is_set():
+            self.logger.info("Extraction cancelled by user.")
+            return
 
-            if self.cancel_event.is_set():
-                self.logger.info("Extraction cancelled by user.")
-                return
-
-            self.logger.success("Extraction complete.")
-            return {
-                "done": True,
-                "output_dir": str(output_dir),
-                "video_path": str(video_path)
-            }
-        finally:
-            if run_log_handler:
-                self.logger.logger.removeHandler(run_log_handler)
-                run_log_handler.close()
+        self.logger.success("Extraction complete.")
+        return {
+            "done": True,
+            "output_dir": str(output_dir),
+            "video_path": str(video_path)
+        }
 
     def _run_scene_detection(self, video_path, output_dir):
         """Run scene detection on the video."""
