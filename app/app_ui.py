@@ -2,7 +2,6 @@ import gradio as gr
 import torch
 import threading
 import time
-import traceback
 from queue import Queue, Empty
 from concurrent.futures import ThreadPoolExecutor
 from app.config import Config
@@ -142,6 +141,8 @@ class AppUI:
                     'label': "📊 Status Summary", 'lines': 2,
                     'interactive': False
                 })
+                with gr.Row():
+                    self.components['progress_bar'] = gr.Progress()
 
     def _create_extraction_tab(self):
         """Create the frame extraction tab."""
@@ -510,7 +511,6 @@ class AppUI:
 
     def _create_event_handlers(self):
         """Set up all UI event handlers."""
-        print("Components at start of _create_event_handlers:", self.components.keys())
         self.components.update({
             'extracted_video_path_state': gr.State(""),
             'extracted_frames_dir_state': gr.State(""),
@@ -737,7 +737,7 @@ class EnhancedAppUI(AppUI):
                         'scale': 1
                     })
 
-                self._create_component('enhanced_log_display', 'textbox', {
+                self._create_component('unified_log', 'textbox', {
                     'label': '📋 Enhanced Processing Log',
                     'lines': 15,
                     'interactive': False,
@@ -746,13 +746,12 @@ class EnhancedAppUI(AppUI):
                 })
 
             with gr.Column(scale=1):
-                self._create_component('operation_status', 'html', {
+                self._create_component('unified_status', 'html', {
                     'value': self._format_status_display('Idle', 0, 'Ready'),
                 })
 
                 # Enhanced progress bar with details
                 self.components['progress_bar'] = gr.Progress()
-                self.components['enhanced_progress'] = gr.Progress()
 
                 self._create_component('progress_details', 'html', {
                     'value': '',
@@ -794,54 +793,55 @@ class EnhancedAppUI(AppUI):
 
     def _run_task_with_progress(self, task_func, output_keys, progress_obj, *args):
         """Enhanced task runner with comprehensive monitoring."""
-        operation_name = getattr(task_func, '__name__', 'Unknown Operation')
 
-        # This generator will yield UI updates. We'll wrap it to add our own.
-        original_task_generator = super()._run_task_with_progress(
-            task_func, output_keys, progress_obj, *args
+        # Start performance monitoring
+        if self.enhanced_logger.performance_monitor:
+            self.performance_metrics = self.enhanced_logger.performance_monitor.get_system_metrics()
+
+        # Initialize enhanced progress tracking
+        operation_name = getattr(task_func, '__name__', 'Unknown Operation')
+        self.progress_tracker.start_operation(
+            operation=operation_name,
+            total_items=1,  # Will be updated by task
+            metadata={'start_time': time.time()}
         )
 
-        try:
-            # Yield the initial update from the parent
-            yield next(original_task_generator)
+        initial_updates = {'unified_log': "🚀 Starting enhanced operation..."}
+        yield tuple(initial_updates.get(k, gr.update()) for k in output_keys)
 
-            # Wrap the rest of the execution in our context
+        try:
             with self.enhanced_logger.operation_context(
                 operation_name=operation_name,
                 component="pipeline",
                 user_context={'args_count': len(args)}
             ):
-                # Process the rest of the updates from the parent generator
-                for result_tuple in original_task_generator:
+                # Run the original task with enhanced monitoring
+                for result in super()._run_task_with_progress(task_func, output_keys, progress_obj, *args):
+                    # Update performance metrics
                     if self.enhanced_logger.performance_monitor:
                         self.performance_metrics = self.enhanced_logger.performance_monitor.get_system_metrics()
 
-                    # The parent generator already yields tuples for gr.update
-                    # We just pass them through. We could modify them here if needed.
-                    yield result_tuple
+                    if isinstance(result, dict):
+                        # Yield other UI updates without throttling
+                        progress_updates = {'unified_log': "\n".join(result.get('log_buffer', [])),
+                                            'unified_status': self._format_status_display(
+                                                self.progress_tracker.current_state.operation,
+                                                result.get('progress', 0),
+                                                self.progress_tracker.current_state.stage
+                                            )}
+                        yield tuple(progress_updates.get(k, gr.update()) for k in output_keys)
+                    else:
+                        yield result
 
-            self.progress_tracker.complete_operation(success=True)
+                self.progress_tracker.complete_operation(success=True)
 
-        except StopIteration:
-            # This can happen if the parent generator finishes early.
-            # We mark it as successful.
-            self.progress_tracker.complete_operation(success=True)
-            self.enhanced_logger.success(f"Task {operation_name} completed.",
-                                       component="pipeline", operation=operation_name)
         except Exception as e:
-            # Log the error using the enhanced logger and tracker
             self.progress_tracker.complete_operation(success=False, message=str(e))
             self.enhanced_logger.error(f"Task execution failed: {str(e)}",
                                      component="pipeline",
                                      operation=operation_name,
-                                     error_type=type(e).__name__,
-                                     stack_trace=traceback.format_exc())
-            # We still need to yield a final state to the UI to show the error
-            final_updates = {
-                'unified_log': f"❌ Task failed: {e}",
-                'enhanced_log_display': f"❌ Task failed: {e}"
-            }
-            yield tuple(final_updates.get(k, gr.update()) for k in output_keys)
+                                     error_type=type(e).__name__)
+            raise
 
     def _setup_visibility_toggles(self):
         """Set up UI visibility toggles."""
