@@ -75,8 +75,11 @@ class ExtractionPipeline(Pipeline):
                                     self.cancel_event)
 
 
+from app.config import Config
+
 class EnhancedExtractionPipeline(ExtractionPipeline):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.config = Config()
         self.error_handler = ErrorHandler(self.logger, self.config)
         self.run = self.error_handler.with_retry(max_attempts=3, backoff_seconds=[1, 5, 15])(self.run)
