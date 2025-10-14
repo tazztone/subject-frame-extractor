@@ -89,31 +89,12 @@ class AppUI:
                 gr.Markdown("⚠️ **CPU Mode** — GPU-dependent features are "
                           "disabled or will be slow.")
 
-            with gr.Accordion("🔄 resume previous Session", open=False):
-                with gr.Row():
-                    self._create_component('session_path_input', 'textbox', {
-                        'label': "Load previous run",
-                        'placeholder': "Path to a previous run's output folder..."
-                    })
-                    self._create_component('load_session_button', 'button', {
-                        'value': "📂 Load Session"
-                    })
+            self._build_session_loader()
 
             self.build_ui_content(demo)
 
-            with gr.Row():
-                with gr.Column(scale=2):
-                    self._create_component('unified_log', 'textbox', {
-                        'label': "📋 Processing Log", 'lines': 10, 
-                        'interactive': False, 'autoscroll': True
-                    })
-                with gr.Column(scale=1):
-                    self._create_component('unified_status', 'textbox', {
-                        'label': "📊 Status Summary", 'lines': 2,
-                        'interactive': False
-                    })
-                    with gr.Row():
-                        self.components['progress_bar'] = gr.Progress()
+            self._build_footer()
+
             self._create_event_handlers()
         return demo
 
@@ -128,6 +109,32 @@ class AppUI:
         }
         self.components[name] = comp_map[comp_type](**kwargs)
         return self.components[name]
+
+    def _build_session_loader(self):
+        with gr.Accordion("🔄 resume previous Session", open=False):
+            with gr.Row():
+                self._create_component('session_path_input', 'textbox', {
+                    'label': "Load previous run",
+                    'placeholder': "Path to a previous run's output folder..."
+                })
+                self._create_component('load_session_button', 'button', {
+                    'value': "📂 Load Session"
+                })
+
+    def _build_footer(self):
+        with gr.Row():
+            with gr.Column(scale=2):
+                self._create_component('unified_log', 'textbox', {
+                    'label': "📋 Processing Log", 'lines': 10,
+                    'interactive': False, 'autoscroll': True
+                })
+            with gr.Column(scale=1):
+                self._create_component('unified_status', 'textbox', {
+                    'label': "📊 Status Summary", 'lines': 2,
+                    'interactive': False
+                })
+                with gr.Row():
+                    self.components['progress_bar'] = gr.Progress()
 
     def build_ui_content(self, demo):
         """Build the main content of the UI, including tabs."""
@@ -763,15 +770,7 @@ class EnhancedAppUI(AppUI):
         with gr.Blocks(theme=gr.themes.Default(), css=css) as demo:
             gr.Markdown("# 🎬 Frame Extractor & Analyzer v2.0 - Enhanced")
 
-            with gr.Accordion("🔄 resume previous Session", open=False):
-                with gr.Row():
-                    self._create_component('session_path_input', 'textbox', {
-                        'label': "Load previous run",
-                        'placeholder': "Path to a previous run's output folder..."
-                    })
-                    self._create_component('load_session_button', 'button', {
-                        'value': "📂 Load Session"
-                    })
+            self._build_session_loader()
 
             # Add performance monitoring section
             if getattr(self.config, 'show_performance_metrics_in_ui', False):
@@ -793,6 +792,10 @@ class EnhancedAppUI(AppUI):
                             'value': self._format_metric_card('Rate', '0/s'),
                             'elem_classes': ['metric-card']
                         })
+
+            self.build_ui_content(demo)
+
+            self._build_footer()
 
             self.components['progress_bar'] = gr.Progress()
             self._create_component('unified_log', 'textbox', {'visible': False})
@@ -816,86 +819,67 @@ class EnhancedAppUI(AppUI):
             self._create_component('analysis_metadata_path_state', 'textbox', {'visible': False})
             self._create_component('scenes_state', 'textbox', {'visible': False})
             self._create_component('propagate_masks_button', 'button', {'visible': False})
-            self._create_component('filtering_tab', 'button', {'visible': False})
+            self.components['filtering_tab'] = gr.Tab("📊 3. Filtering & Export", id=2)
             self._create_component('scene_face_sim_min_input', 'slider', {'visible': False})
             self._create_component('thumbnails_only_input', 'checkbox', {'visible': False})
             self._create_component('thumb_megapixels_input', 'slider', {'visible': False})
             self._create_component('ext_scene_detect_input', 'checkbox', {'visible': False})
-            with gr.Accordion("📊 System Performance", open=False):
-                with gr.Row():
-                    self._create_component('cpu_usage', 'html', {
-                        'value': self._format_metric_card('CPU', '0%'),
-                        'elem_classes': ['metric-card']
-                    })
-                    self._create_component('memory_usage', 'html', {
-                        'value': self._format_metric_card('Memory', '0 MB'),
-                        'elem_classes': ['metric-card']
-                    })
-                    self._create_component('gpu_usage', 'html', {
-                        'value': self._format_metric_card('GPU', 'N/A'),
-                        'elem_classes': ['metric-card']
-                    })
-                    self._create_component('processing_rate', 'html', {
-                        'value': self._format_metric_card('Rate', '0/s'),
-                        'elem_classes': ['metric-card']
-                    })
-
-            self.build_ui_content(demo)
-
-            # Enhanced logging section
-            with gr.Row():
-                with gr.Column(scale=3):
-                    with gr.Row():
-                        self._create_component('log_level_filter', 'dropdown', {
-                            'choices': ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'SUCCESS'],
-                            'value': 'INFO',
-                            'label': 'Log Level Filter',
-                            'scale': 1
-                        })
-                        self._create_component('clear_logs_button', 'button', {
-                            'value': '🗑️ Clear Logs',
-                            'scale': 1
-                        })
-                        self._create_component('export_logs_button', 'button', {
-                            'value': '📥 Export Logs',
-                            'scale': 1
-                        })
-
-                    self._create_component('enhanced_log_display', 'textbox', {
-                        'label': '📋 Enhanced Processing Log',
-                        'lines': 15,
-                        'interactive': False,
-                        'autoscroll': True,
-                        'elem_classes': ['log-container']
-                    })
-
-                with gr.Column(scale=1):
-                    self._create_component('operation_status', 'html', {
-                        'value': self._format_status_display('Idle', 0, 'Ready'),
-                    })
-
-                    # Enhanced progress bar with details
-                    self.components['enhanced_progress'] = gr.Progress()
-
-                    self._create_component('progress_details', 'html', {
-                        'value': '',
-                        'elem_classes': ['progress-details']
-                    })
-
-                    # Quick action buttons
-                    with gr.Row():
-                        self._create_component('pause_button', 'button', {
-                            'value': '⏸️ Pause',
-                            'interactive': False
-                        })
-                        self._create_component('cancel_button', 'button', {
-                            'value': '⏹️ Cancel',
-                            'interactive': False
-                        })
 
             self._create_event_handlers()
 
         return demo
+
+    def _build_footer(self):
+        # Enhanced logging section
+        with gr.Row():
+            with gr.Column(scale=3):
+                with gr.Row():
+                    self._create_component('log_level_filter', 'dropdown', {
+                        'choices': ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'SUCCESS'],
+                        'value': 'INFO',
+                        'label': 'Log Level Filter',
+                        'scale': 1
+                    })
+                    self._create_component('clear_logs_button', 'button', {
+                        'value': '🗑️ Clear Logs',
+                        'scale': 1
+                    })
+                    self._create_component('export_logs_button', 'button', {
+                        'value': '📥 Export Logs',
+                        'scale': 1
+                    })
+
+                self._create_component('enhanced_log_display', 'textbox', {
+                    'label': '📋 Enhanced Processing Log',
+                    'lines': 15,
+                    'interactive': False,
+                    'autoscroll': True,
+                    'elem_classes': ['log-container']
+                })
+
+            with gr.Column(scale=1):
+                self._create_component('operation_status', 'html', {
+                    'value': self._format_status_display('Idle', 0, 'Ready'),
+                })
+
+                # Enhanced progress bar with details
+                self.components['enhanced_progress'] = gr.Progress()
+
+                self._create_component('progress_details', 'html', {
+                    'value': '',
+                    'elem_classes': ['progress-details']
+                })
+
+                # Quick action buttons
+                with gr.Row():
+                    self._create_component('pause_button', 'button', {
+                        'value': '⏸️ Pause',
+                        'interactive': False
+                    })
+                    self._create_component('cancel_button', 'button', {
+                        'value': '⏹️ Cancel',
+                        'interactive': False
+                    })
 
     def _format_metric_card(self, label: str, value: str) -> str:
         """Format a metric card for display."""
