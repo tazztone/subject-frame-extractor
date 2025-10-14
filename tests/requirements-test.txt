@@ -1,0 +1,6 @@
+gradio
+pyyaml
+numpy
+Pillow
+scikit-image
+pytest

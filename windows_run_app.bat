@@ -29,7 +29,7 @@ echo Starting Subject Frame Extractor...
 echo The browser window should open automatically.
 echo If the app loads successfully, you'll see the interface in your browser (you may have to reload the page).
 echo.
-python app.py
+python main.py
 
 REM Keep the window open if there's an error
 if errorlevel 1 (
