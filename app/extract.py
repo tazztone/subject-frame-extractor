@@ -7,11 +7,8 @@ from app.base import Pipeline
 from app.error_handling import ErrorHandler
 
 
-class EnhancedExtractionPipeline(Pipeline):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.error_handler = ErrorHandler(self.logger, self.config)
-        self.run = self.error_handler.with_retry(max_attempts=3, backoff_seconds=[1, 5, 15])(self.run)
+class ExtractionPipeline(Pipeline):
+    """Pipeline for extracting frames from video sources."""
 
     def run(self):
         """Run the extraction pipeline."""
@@ -76,3 +73,10 @@ class EnhancedExtractionPipeline(Pipeline):
         return run_ffmpeg_extraction(video_path, output_dir, video_info,
                                     self.params, self.progress_queue,
                                     self.cancel_event)
+
+
+class EnhancedExtractionPipeline(ExtractionPipeline):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.error_handler = ErrorHandler(self.logger, self.config)
+        self.run = self.error_handler.with_retry(max_attempts=3, backoff_seconds=[1, 5, 15])(self.run)
