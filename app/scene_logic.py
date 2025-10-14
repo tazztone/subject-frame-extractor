@@ -8,7 +8,7 @@ import cv2
 import numpy as np
 
 from app.config import Config
-from app.logging import UnifiedLogger
+from app.logging_enhanced import EnhancedLogger
 from app.utils import _to_json_safe
 from app.models import AnalysisParameters
 from app.frames import render_mask_overlay
@@ -157,13 +157,14 @@ def apply_scene_overrides(scenes_list, selected_shot_id, prompt,
                     if faces:
                         ref_emb = max(faces, key=lambda x: x.det_score).normed_embedding
         from app.person import get_person_detector
-        person_detector = get_person_detector(params.person_detector_model, device)
+        person_detector = get_person_detector(params.person_detector_model, device, logger=logger)
 
         masker = SubjectMasker(params, Queue(), threading.Event(),
                              face_analyzer=face_analyzer,
                              reference_embedding=ref_emb,
                              person_detector=person_detector,
-                             thumbnail_manager=thumbnail_manager)
+                             thumbnail_manager=thumbnail_manager,
+                             logger=logger)
         masker.frame_map = masker._create_frame_map(output_folder)
 
         fname = masker.frame_map.get(scene_dict['best_seed_frame'])
@@ -212,7 +213,7 @@ def _regenerate_all_previews(scenes_list, output_folder, masker,
         details = scene_dict.get('seed_result', {}).get('details', {})
 
         mask = masker.get_mask_for_bbox(thumb_rgb, bbox) if bbox else None
-        overlay_rgb = (render_mask_overlay(thumb_rgb, mask)
+        overlay_rgb = (render_mask_overlay(thumb_rgb, mask, logger=logger)
                       if mask is not None
                       else masker.draw_bbox(thumb_rgb, bbox))
 

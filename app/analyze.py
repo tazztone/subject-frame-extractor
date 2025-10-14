@@ -15,7 +15,6 @@ import torch
 
 from app.base import Pipeline
 from app.thumb_cache import ThumbnailManager
-from app.logging import StructuredFormatter
 from app.utils import _to_json_safe
 from app.face import get_face_analyzer
 from app.person import get_person_detector
@@ -27,10 +26,11 @@ from app.models import Frame
 class AnalysisPipeline(Pipeline):
     """Pipeline for analyzing extracted video frames."""
     
-    def __init__(self, params, progress_queue, cancel_event, 
-                 thumbnail_manager=None):
-        
-        super().__init__(params, progress_queue, cancel_event)
+    def __init__(self, params, progress_queue, cancel_event,
+                 thumbnail_manager=None, logger=None):
+        from app.config import Config
+        super().__init__(params, progress_queue, cancel_event, logger=logger)
+        self.config = Config()
         self.output_dir = Path(self.params.output_folder)
         self.thumb_dir = self.output_dir / "thumbs"
         self.masks_dir = self.output_dir / "masks"
@@ -44,8 +44,8 @@ class AnalysisPipeline(Pipeline):
         self.scene_map = {}
         self.niqe_metric = None
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.thumbnail_manager = (thumbnail_manager if thumbnail_manager 
-                                is not None else ThumbnailManager())
+        self.thumbnail_manager = (thumbnail_manager if thumbnail_manager
+                                is not None else ThumbnailManager(self.logger))
 
     def _initialize_niqe_metric(self):
         """Initialize NIQE quality metric."""
@@ -65,13 +65,13 @@ class AnalysisPipeline(Pipeline):
         run_log_handler = None
         try:
             run_log_path = self.output_dir / "analysis_run.log"
-            run_log_handler = logging.FileHandler(run_log_path, mode='w', 
+            run_log_handler = logging.FileHandler(run_log_path, mode='w',
                                                  encoding='utf-8')
-            formatter = StructuredFormatter(
+            formatter = logging.Formatter(
                 '%(asctime)s - %(levelname)s - %(message)s'
             )
             run_log_handler.setFormatter(formatter)
-            self.logger.add_handler(run_log_handler)
+            self.logger.logger.addHandler(run_log_handler)
 
             self.metadata_path.unlink(missing_ok=True)
             with self.metadata_path.open('w', encoding='utf-8') as f:
@@ -82,13 +82,13 @@ class AnalysisPipeline(Pipeline):
 
             if self.params.enable_face_filter:
                 self.face_analyzer = get_face_analyzer(
-                    self.params.face_model_name
+                    self.params.face_model_name, logger=self.logger
                 )
                 if self.params.face_ref_img_path:
                     self._process_reference_face()
 
             person_detector = get_person_detector(
-                self.params.person_detector_model, self.device
+                self.params.person_detector_model, self.device, logger=self.logger
             )
 
             masker = SubjectMasker(
@@ -96,7 +96,8 @@ class AnalysisPipeline(Pipeline):
                 self._create_frame_map(), self.face_analyzer,
                 self.reference_embedding, person_detector,
                 thumbnail_manager=self.thumbnail_manager,
-                niqe_metric=self.niqe_metric
+                niqe_metric=self.niqe_metric,
+                logger=self.logger
             )
             self.mask_metadata = masker.run_propagation(
                 str(self.output_dir), scenes_to_process
@@ -115,9 +116,12 @@ class AnalysisPipeline(Pipeline):
                 "output_dir": str(self.output_dir)
             }
         except Exception as e:
-            return self.logger.pipeline_error("analysis", e)
+            self.logger.error("Analysis pipeline failed", error=e)
+            return {"error": str(e)}
         finally:
-            self.logger.remove_handler(run_log_handler)
+            if run_log_handler:
+                self.logger.logger.removeHandler(run_log_handler)
+                run_log_handler.close()
 
     def _create_frame_map(self):
         """Create frame mapping from output directory."""
@@ -212,7 +216,10 @@ class AnalysisPipeline(Pipeline):
                         )
 
             frame.calculate_quality_metrics(
-                thumb_image_rgb=thumb_image_rgb, mask=mask_thumb,
+                thumb_image_rgb=thumb_image_rgb,
+                config=self.config,
+                logger=self.logger,
+                mask=mask_thumb,
                 niqe_metric=self.niqe_metric
             )
 

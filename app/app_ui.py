@@ -5,7 +5,7 @@ import time
 from queue import Queue, Empty
 from concurrent.futures import ThreadPoolExecutor
 from app.config import Config
-from app.logging import UnifiedLogger
+from app.logging_enhanced import EnhancedLogger
 from app.thumb_cache import ThumbnailManager
 from app.events import (ExtractionEvent, PreAnalysisEvent, PropagationEvent,
                               FilterEvent, ExportEvent, SessionLoadEvent)
@@ -29,13 +29,14 @@ class AppUI:
     def __init__(self, config=None, logger=None, progress_queue=None, 
                  cancel_event=None):
         self.config = config or Config()
-        self.logger = logger or UnifiedLogger()
+        self.logger = logger or EnhancedLogger()
         self.progress_queue = progress_queue or Queue()
         self.cancel_event = cancel_event or threading.Event()
         
         self.components = {}
         self.cuda_available = torch.cuda.is_available()
         self.thumbnail_manager = ThumbnailManager(
+            logger=self.logger,
             max_size=self.config.thumbnail_cache_size
         )
         
@@ -1160,7 +1161,7 @@ class EnhancedAppUI(AppUI):
                 slider_values=slider_values
             )
 
-            filter_updates = on_filters_changed(filter_event, self.thumbnail_manager)
+            filter_updates = on_filters_changed(filter_event, self.thumbnail_manager, self.logger)
             updates.update({
                 c['filter_status_text']: filter_updates['filter_status_text'],
                 c['results_gallery']: filter_updates['results_gallery']

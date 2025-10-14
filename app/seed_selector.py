@@ -13,8 +13,8 @@ class SeedSelector:
     """Handles the logic for selecting the initial seed (bounding box) for a scene."""
 
     def __init__(self, params, face_analyzer, reference_embedding,
-                 person_detector, tracker, gdino_model):
-        from app.logging import UnifiedLogger
+                 person_detector, tracker, gdino_model, logger=None):
+        from app.logging_enhanced import EnhancedLogger
         self.params = params
         self.face_analyzer = face_analyzer
         self.reference_embedding = reference_embedding
@@ -22,7 +22,7 @@ class SeedSelector:
         self.tracker = tracker
         self._gdino = gdino_model
         self._device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.logger = UnifiedLogger()
+        self.logger = logger or EnhancedLogger()
 
     def select_seed(self, frame_rgb, current_params=None):
         """Main entry point for seed selection."""

@@ -12,7 +12,7 @@ import gradio as gr
 import numpy as np
 
 from app.config import Config
-from app.logging import UnifiedLogger
+from app.logging_enhanced import EnhancedLogger
 from app.models import Scene, AnalysisParameters
 from app.events import (ExtractionEvent, PreAnalysisEvent, PropagationEvent,
                               SessionLoadEvent)
@@ -26,7 +26,7 @@ from app.frames import render_mask_overlay, create_frame_map
 
 
 def execute_extraction(event: ExtractionEvent, progress_queue: Queue,
-                       cancel_event: threading.Event, logger: UnifiedLogger,
+                       cancel_event: threading.Event, logger: EnhancedLogger,
                        config: Config):
     """Execute extraction pipeline."""
     import tqdm
@@ -55,7 +55,7 @@ def execute_extraction(event: ExtractionEvent, progress_queue: Queue,
 
 
 def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue,
-                         cancel_event: threading.Event, logger: UnifiedLogger,
+                         cancel_event: threading.Event, logger: EnhancedLogger,
                          config: Config, thumbnail_manager, cuda_available):
     """Execute pre-analysis pipeline."""
     import pyiqa
@@ -106,7 +106,7 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue,
     face_analyzer, ref_emb = None, None
     if params.enable_face_filter:
         from app.face import get_face_analyzer
-        face_analyzer = get_face_analyzer(params.face_model_name)
+        face_analyzer = get_face_analyzer(params.face_model_name, logger=logger)
         if params.face_ref_img_path and Path(params.face_ref_img_path).exists():
             ref_img = cv2.imread(params.face_ref_img_path)
             faces = face_analyzer.get(ref_img)
@@ -114,7 +114,7 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue,
                 ref_emb = max(faces, key=lambda x: x.det_score).normed_embedding
 
     from app.person import get_person_detector
-    person_detector = get_person_detector(params.person_detector_model, device)
+    person_detector = get_person_detector(params.person_detector_model, device, logger=logger)
 
     masker = SubjectMasker(params, progress_queue, cancel_event, face_analyzer=face_analyzer,
                          reference_embedding=ref_emb, person_detector=person_detector,
@@ -165,7 +165,7 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue,
         }
 
 
-def execute_session_load(event: SessionLoadEvent, logger: UnifiedLogger, config: Config, thumbnail_manager):
+def execute_session_load(event: SessionLoadEvent, logger: EnhancedLogger, config: Config, thumbnail_manager):
     """Loads a session from a previous run and prepares the UI."""
     session_path = Path(event.session_path)
     config_path = session_path / "run_config.json"
@@ -270,7 +270,7 @@ def execute_session_load(event: SessionLoadEvent, logger: UnifiedLogger, config:
 
 
 def execute_propagation(event: PropagationEvent, progress_queue: Queue,
-                        cancel_event: threading.Event, logger: UnifiedLogger,
+                        cancel_event: threading.Event, logger: EnhancedLogger,
                         config: Config, thumbnail_manager, cuda_available):
     """Execute propagation pipeline."""
     scenes_to_process = [Scene(**s) for s in event.scenes if s['status'] == 'included']

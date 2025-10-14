@@ -11,7 +11,7 @@ from app.propagate import MaskPropagator
 from app.thumb_cache import ThumbnailManager
 from app.grounding import load_grounding_dino_model
 from app.sam_tracker import initialize_dam4sam_tracker
-from app.logging import UnifiedLogger
+from app.logging_enhanced import EnhancedLogger
 from app.utils import safe_resource_cleanup
 from app.frames import create_frame_map
 from app.models import MaskingResult
@@ -23,11 +23,12 @@ class SubjectMasker:
     def __init__(self, params, progress_queue, cancel_event, frame_map=None,
                  face_analyzer=None, reference_embedding=None, 
                  person_detector=None, thumbnail_manager=None, 
-                 niqe_metric=None):
+                 niqe_metric=None, logger=None):
         
         self.params = params
         self.progress_queue = progress_queue
         self.cancel_event = cancel_event
+        self.logger = logger or EnhancedLogger()
         self.frame_map = frame_map
         self.face_analyzer = face_analyzer
         self.reference_embedding = reference_embedding
@@ -38,17 +39,17 @@ class SubjectMasker:
         self._gdino = None
         self._sam2_img = None
         self._device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.thumbnail_manager = (thumbnail_manager if thumbnail_manager 
-                                is not None else ThumbnailManager())
+        self.thumbnail_manager = (thumbnail_manager if thumbnail_manager
+                                is not None else ThumbnailManager(self.logger))
         self.niqe_metric = niqe_metric
 
         # Initialize sub-components
         self._initialize_models()
         self.seed_selector = SeedSelector(params, face_analyzer, 
                                         reference_embedding, person_detector, 
-                                        self.tracker, self._gdino)
+                                        self.tracker, self._gdino, logger=self.logger)
         self.mask_propagator = MaskPropagator(params, self.tracker, 
-                                            cancel_event, progress_queue)
+                                            cancel_event, progress_queue, logger=self.logger)
 
     def _initialize_models(self):
         """Initialize ML models for masking."""
@@ -60,7 +61,7 @@ class SubjectMasker:
         
         if self._gdino is not None:
             return True
-        self._gdino = load_grounding_dino_model(self.params, self._device)
+        self._gdino = load_grounding_dino_model(self.params, self._device, self.logger)
         return self._gdino is not None
 
     def _initialize_tracker(self):
@@ -68,19 +69,18 @@ class SubjectMasker:
         
         if self.tracker:
             return True
-        self.tracker = initialize_dam4sam_tracker(self.params)
+        self.tracker = initialize_dam4sam_tracker(self.params, self.logger)
         return self.tracker is not None
 
     def run_propagation(self, frames_dir: str, scenes_to_process) -> dict:
         """Run mask propagation for all scenes."""
         
-        logger = UnifiedLogger()
         self.mask_dir = Path(frames_dir) / "masks"
         self.mask_dir.mkdir(exist_ok=True)
-        logger.info("Starting subject mask propagation...")
+        self.logger.info("Starting subject mask propagation...")
 
         if not self.tracker:
-            logger.error("Tracker not initialized; skipping masking.")
+            self.logger.error("Tracker not initialized; skipping masking.")
             return {}
 
         self.frame_map = self.frame_map or self._create_frame_map(frames_dir)
@@ -99,7 +99,7 @@ class SubjectMasker:
                     'start_frame': scene.start_frame,
                     'end_frame': scene.end_frame
                 }
-                logger.info("Masking shot", extra=shot_context)
+                self.logger.info("Masking shot", user_context=shot_context)
 
                 seed_frame_num = scene.best_seed_frame
                 shot_frames_data = self._load_shot_frames(
@@ -112,7 +112,7 @@ class SubjectMasker:
                 try:
                     seed_idx_in_shot = frame_numbers.index(seed_frame_num)
                 except ValueError:
-                    logger.warning(
+                    self.logger.warning(
                         f"Seed frame {seed_frame_num} not found in loaded "
                         f"shot frames for {scene.shot_id}, skipping."
                     )
@@ -160,7 +160,7 @@ class SubjectMasker:
                         mask_metadata[frame_fname_png] = asdict(MaskingResult(
                             mask_path=None, **result_args))
         
-        logger.success("Subject masking complete.")
+        self.logger.success("Subject masking complete.")
         return mask_metadata
 
     def _create_frame_map(self, frames_dir):
