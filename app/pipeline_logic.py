@@ -18,7 +18,7 @@ from app.events import (ExtractionEvent, PreAnalysisEvent, PropagationEvent,
                               SessionLoadEvent)
 from app.scene_logic import get_scene_status_text
 from app.subject_masker import SubjectMasker
-from app.extract import ExtractionPipeline
+from app.extract import EnhancedExtractionPipeline
 from app.analyze import AnalysisPipeline
 from app.frames import render_mask_overlay, create_frame_map
 
@@ -40,7 +40,7 @@ def execute_extraction(event: ExtractionEvent, progress_queue: Queue,
         params_dict['source_path'] = dest
 
     params = AnalysisParameters.from_ui(**params_dict)
-    pipeline = ExtractionPipeline(params, progress_queue, cancel_event)
+    pipeline = EnhancedExtractionPipeline(params, progress_queue, cancel_event)
 
     result = pipeline.run()
 
