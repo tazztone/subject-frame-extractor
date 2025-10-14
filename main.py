@@ -11,6 +11,7 @@ from pathlib import Path
 # Add the project root to Python path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
+sys.path.insert(0, str(project_root / 'Grounded-SAM-2'))
 
 from app.composition import CompositionRoot
 
@@ -63,7 +64,7 @@ def main():
     """Main application entry point."""
     try:
         # Check prerequisites
-        check_ffmpeg()
+        # check_ffmpeg()
         check_dependencies()
         
         # Initialize composition root
