@@ -54,6 +54,8 @@ def check_dependencies():
         print("WARNING: Missing ML dependencies detected:")
         for dep in missing_deps:
             print(f"   - {dep}")
+        print("\nNote: The application will start but ML features will not work.")
+        print("   Install missing dependencies with: pip install ultralytics insightface pyiqa imagehash")
         print("\nStarting application in limited mode...\n")
     else:
         print("All dependencies found. Starting full application...\n")
