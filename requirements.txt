@@ -15,7 +15,6 @@ pytest
 pyiqa
 matplotlib
 imagehash
-GPUtil
 
 # for groundingdino below
 wheel
