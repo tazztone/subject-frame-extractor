@@ -37,8 +37,7 @@ class MaskPropagator:
                          component="propagator",
                          user_context={'num_frames': len(shot_frames_rgb),
                                        'seed_index': seed_idx})
-        self.progress_queue.put({"stage": "Masking",
-                               "total": len(shot_frames_rgb)})
+        
         masks = [None] * len(shot_frames_rgb)
 
         def _propagate_direction(start_idx, end_idx, step):
@@ -56,7 +55,7 @@ class MaskPropagator:
                                 else np.zeros_like(shot_frames_rgb[i], 
                                                   dtype=np.uint8)[:, :, 0])
                 masks[i] = processed_mask
-                self.progress_queue.put({"progress": 1})
+                self.tracker.update_progress()
 
         try:
             with torch.cuda.amp.autocast(enabled=self._device == 'cuda'):
@@ -73,7 +72,7 @@ class MaskPropagator:
                            else np.zeros_like(shot_frames_rgb[seed_idx], 
                                             dtype=np.uint8)[:, :, 0])
                 masks[seed_idx] = seed_mask
-                self.progress_queue.put({"progress": 1})
+                self.tracker.update_progress()
                 
                 # Propagate forward
                 _propagate_direction(seed_idx + 1, len(shot_frames_rgb), 1)

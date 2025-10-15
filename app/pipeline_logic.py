@@ -110,7 +110,7 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue,
     masker = SubjectMasker(params, progress_queue, cancel_event, face_analyzer=face_analyzer,
                          reference_embedding=ref_emb, person_detector=person_detector,
                          niqe_metric=niqe_metric, thumbnail_manager=thumbnail_manager,
-                         logger=logger)
+                         logger=logger, tracker=tracker)
     masker.frame_map = masker._create_frame_map(str(output_dir))
     tracker.update_progress(stage_items_processed=4)
     

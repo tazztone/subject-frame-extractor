@@ -627,7 +627,7 @@ class EnhancedAppUI(AppUI):
 
         with ThreadPoolExecutor(max_workers=1) as executor:
             # Pass the tracker to the task function
-            future = executor.submit(task_func, *args, self.progress_tracker)
+            future = executor.submit(task_func, *args, tracker=self.progress_tracker)
             
             while not future.done():
                 if self.cancel_event.is_set():
@@ -669,7 +669,7 @@ class EnhancedAppUI(AppUI):
             if self.cancel_event.is_set():
                 final_msg, final_label = "⏹️ Task cancelled by user.", "Cancelled"
             else:
-                final_msg = result_dict.get("log", "✅ Task completed successfully.")
+                final_msg = result_dict.get("unified_log", "✅ Task completed successfully.")
                 final_label = "Complete"
                 final_updates = result_dict
         except Exception as e:
@@ -720,20 +720,19 @@ class EnhancedAppUI(AppUI):
                     final_result.update(result)
             if self.cancel_event.is_set():
                 tracker.complete_operation(success=False, message="User cancelled")
-                return {"log": "Extraction cancelled."}
+                return {"unified_log": "Extraction cancelled."}
 
             if final_result.get("done"):
                 video_path = final_result.get("extracted_video_path_state", "") or final_result.get("video_path", "")
                 frames_dir = final_result.get("extracted_frames_dir_state", "") or final_result.get("output_dir", "")
                 tracker.complete_operation(success=True)
                 return {
-                    "log": final_result.get("log", "✅ Extraction completed successfully."),
+                    "unified_log": final_result.get("log", "✅ Extraction completed successfully."),
                     "extracted_video_path_state": video_path,
-                    "extracted_frames_dir_state": frames_dir,
-                    "main_tabs": gr.update(selected=1)
+                    "extracted_frames_dir_state": frames_dir
                 }
             tracker.complete_operation(success=False, message="Extraction failed.")
-            return {"log": final_result.get("log", "❌ Extraction failed.")}
+            return {"unified_log": final_result.get("log", "❌ Extraction failed.")}
         except Exception as e:
             tracker.complete_operation(success=False, message=str(e))
             raise
@@ -758,7 +757,7 @@ class EnhancedAppUI(AppUI):
             
             if self.cancel_event.is_set():
                 tracker.complete_operation(success=False, message="User cancelled")
-                return {"log": "Pre-analysis cancelled."}
+                return {"unified_log": "Pre-analysis cancelled."}
 
             if final_result.get("done"):
                 scenes = final_result.get('scenes', [])
@@ -768,7 +767,7 @@ class EnhancedAppUI(AppUI):
                 has_face_sim = any(s.get('seed_metrics', {}).get('best_face_sim') is not None for s in scenes)
                 tracker.complete_operation(success=True)
                 return {
-                    "log": final_result.get("log", "✅ Pre-analysis completed successfully."),
+                    "unified_log": final_result.get("log", "✅ Pre-analysis completed successfully."),
                     "seeding_preview_gallery": gr.update(value=final_result.get('previews')),
                     "scenes_state": scenes,
                     "propagate_masks_button": gr.update(interactive=True),
@@ -778,7 +777,7 @@ class EnhancedAppUI(AppUI):
                     "propagation_group": gr.update(visible=True)
                 }
             tracker.complete_operation(success=False, message="Pre-analysis failed.")
-            return {"log": final_result.get("log", "❌ Pre-analysis failed.")}
+            return {"unified_log": final_result.get("log", "❌ Pre-analysis failed.")}
         except Exception as e:
             tracker.complete_operation(success=False, message=str(e))
             raise
@@ -807,19 +806,18 @@ class EnhancedAppUI(AppUI):
 
             if self.cancel_event.is_set():
                 tracker.complete_operation(success=False, message="User cancelled")
-                return {"log": "Propagation cancelled."}
+                return {"unified_log": "Propagation cancelled."}
 
             if final_result.get("done"):
                 tracker.complete_operation(success=True)
                 return {
-                    "log": final_result.get("log", "✅ Propagation completed successfully."),
+                    "unified_log": final_result.get("log", "✅ Propagation completed successfully."),
                     "analysis_output_dir_state": final_result.get('output_dir', ""),
                     "analysis_metadata_path_state": final_result.get('metadata_path', ""),
-                    "filtering_tab": gr.update(interactive=True),
-                    "main_tabs": gr.update(selected=2)
+                    "filtering_tab": gr.update(interactive=True)
                 }
             tracker.complete_operation(success=False, message="Propagation failed.")
-            return {"log": final_result.get("log", "❌ Propagation failed.")}
+            return {"unified_log": final_result.get("log", "❌ Propagation failed.")}
         except Exception as e:
             tracker.complete_operation(success=False, message=str(e))
             raise
@@ -832,6 +830,8 @@ class EnhancedAppUI(AppUI):
         try:
             for result in execute_session_load(event, self.enhanced_logger, self.config, self.thumbnail_manager, tracker):
                 if isinstance(result, dict):
+                    if 'log' in result:
+                        result['unified_log'] = result.pop('log')
                     final_result.update(result)
             tracker.complete_operation(success=True)
             return final_result
@@ -884,7 +884,10 @@ class EnhancedAppUI(AppUI):
     def _setup_pipeline_handlers(self):
         """Set up pipeline execution handlers using the correct progress pattern."""
         c = self.components
-        all_possible_outputs = list(self.components.values())
+        all_possible_outputs = [
+            comp for comp in self.components.values()
+            if isinstance(comp, (gr.components.Component, gr.State))
+        ]
 
         def session_load_handler(session_path, progress=gr.Progress()):
             yield from self._run_task_with_progress(
@@ -932,18 +935,49 @@ class EnhancedAppUI(AppUI):
         }
         self.ana_input_components = [c.get(ana_comp_map[k], ana_comp_map[k]) for k in self.ana_ui_map_keys]
         prop_inputs = [c['scenes_state']] + self.ana_input_components
+        
+        # --- Event Listeners with Chained Tab Switching ---
+        
+        def switch_to_analysis(frames_dir):
+            return gr.update(selected=1) if frames_dir else gr.update()
+
+        def switch_to_filtering(metadata_path):
+            return gr.update(selected=2) if metadata_path else gr.update()
 
         c['load_session_button'].click(
-            session_load_handler, inputs=[c['session_path_input']], outputs=all_possible_outputs
+            fn=session_load_handler, 
+            inputs=[c['session_path_input']], 
+            outputs=all_possible_outputs,
+            show_progress="hidden"
         )
+        
         c['start_extraction_button'].click(
-            extraction_handler, inputs=ext_inputs, outputs=all_possible_outputs
+            fn=extraction_handler, 
+            inputs=ext_inputs, 
+            outputs=all_possible_outputs,
+            show_progress="hidden"
+        ).then(
+            fn=switch_to_analysis,
+            inputs=c['extracted_frames_dir_state'],
+            outputs=c['main_tabs']
         )
+        
         c['start_pre_analysis_button'].click(
-            pre_analysis_handler, inputs=self.ana_input_components, outputs=all_possible_outputs
+            fn=pre_analysis_handler, 
+            inputs=self.ana_input_components, 
+            outputs=all_possible_outputs,
+            show_progress="hidden"
         )
+        
         c['propagate_masks_button'].click(
-            propagation_handler, inputs=prop_inputs, outputs=all_possible_outputs
+            fn=propagation_handler, 
+            inputs=prop_inputs, 
+            outputs=all_possible_outputs,
+            show_progress="hidden"
+        ).then(
+            fn=switch_to_filtering,
+            inputs=c['analysis_metadata_path_state'],
+            outputs=c['main_tabs']
         )
 
     def _setup_scene_editor_handlers(self):
