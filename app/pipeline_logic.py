@@ -12,26 +12,22 @@ import gradio as gr
 import numpy as np
 
 from app.config import Config
-from app.logging import UnifiedLogger
+from app.logging_enhanced import EnhancedLogger
 from app.models import Scene, AnalysisParameters
 from app.events import (ExtractionEvent, PreAnalysisEvent, PropagationEvent,
                               SessionLoadEvent)
 from app.scene_logic import get_scene_status_text
 from app.subject_masker import SubjectMasker
-from app.extract import ExtractionPipeline
+from app.extract import EnhancedExtractionPipeline
 from app.analyze import AnalysisPipeline
 from app.frames import render_mask_overlay, create_frame_map
-
-
+from app.progress_enhanced import AdvancedProgressTracker
 
 
 def execute_extraction(event: ExtractionEvent, progress_queue: Queue,
-                       cancel_event: threading.Event, logger: UnifiedLogger,
-                       config: Config):
+                       cancel_event: threading.Event, logger: EnhancedLogger,
+                       config: Config, tracker: AdvancedProgressTracker):
     """Execute extraction pipeline."""
-    import tqdm
-    progress_queue.put({"stage": "Starting extraction...", "total": 1, "progress": 0})
-
     params_dict = asdict(event)
     if event.upload_video:
         source = params_dict.pop('upload_video')
@@ -39,12 +35,12 @@ def execute_extraction(event: ExtractionEvent, progress_queue: Queue,
         shutil.copy2(source, dest)
         params_dict['source_path'] = dest
 
-    params = AnalysisParameters.from_ui(**params_dict)
-    pipeline = ExtractionPipeline(params, progress_queue, cancel_event)
+    params = AnalysisParameters.from_ui(logger, **params_dict)
+    pipeline = EnhancedExtractionPipeline(params, progress_queue, cancel_event, logger, tracker)
 
     result = pipeline.run()
 
-    if result.get("done"):
+    if result and result.get("done"):
         yield {
             "log": "Extraction complete.",
             "status": f"Output: {result['output_dir']}",
@@ -55,10 +51,10 @@ def execute_extraction(event: ExtractionEvent, progress_queue: Queue,
 
 
 def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue,
-                         cancel_event: threading.Event, logger: UnifiedLogger,
-                         config: Config, thumbnail_manager, cuda_available):
+                         cancel_event: threading.Event, logger: EnhancedLogger,
+                         config: Config, thumbnail_manager, cuda_available,
+                         tracker: AdvancedProgressTracker):
     """Execute pre-analysis pipeline."""
-    import pyiqa
     yield {"unified_log": "", "unified_status": "Starting Pre-Analysis...", "progress_bar": gr.update(visible=True, value=0)}
 
     params_dict = asdict(event)
@@ -68,10 +64,9 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue,
         shutil.copy2(ref_upload, dest)
         params_dict['face_ref_img_path'] = str(dest)
 
-    params = AnalysisParameters.from_ui(**params_dict)
+    params = AnalysisParameters.from_ui(logger, **params_dict)
     output_dir = Path(params.output_folder)
 
-    # Save the run configuration
     run_config_path = output_dir / "run_config.json"
     try:
         config_to_save = {k: v for k, v in params_dict.items() if k != 'face_ref_img_upload'}
@@ -89,42 +84,40 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue,
         shots = json.load(f)
     scenes = [Scene(shot_id=i, start_frame=s, end_frame=e) for i, (s, e) in enumerate(shots)]
 
-    scene_seeds_path = output_dir / "scene_seeds.json"
-    if scene_seeds_path.exists() and params.resume:
-        with scene_seeds_path.open('r', encoding='utf-8') as f:
-            loaded_seeds = json.load(f)
-        for scene in scenes:
-            if str(scene.shot_id) in loaded_seeds:
-                seed_data = loaded_seeds[str(scene.shot_id)]
-                scene.best_seed_frame = seed_data.get('seed_frame_idx')
-                scene.seed_config = seed_data.get('seed_config', {})
-                scene.status = seed_data.get('status', 'pending')
-                scene.seed_metrics = seed_data.get('seed_metrics', {})
-
+    tracker.start_stage("Loading Models", 4)
     device = "cuda" if cuda_available else "cpu"
-    niqe_metric = pyiqa.create_metric('niqe', device=device) if params.pre_analysis_enabled else None
+    niqe_metric = None
+    if params.pre_analysis_enabled:
+        import pyiqa
+        niqe_metric = pyiqa.create_metric('niqe', device=device)
+    tracker.update_progress(stage_items_processed=1)
+    
     face_analyzer, ref_emb = None, None
     if params.enable_face_filter:
         from app.face import get_face_analyzer
-        face_analyzer = get_face_analyzer(params.face_model_name)
+        face_analyzer = get_face_analyzer(params.face_model_name, logger=logger)
         if params.face_ref_img_path and Path(params.face_ref_img_path).exists():
             ref_img = cv2.imread(params.face_ref_img_path)
             faces = face_analyzer.get(ref_img)
             if faces:
                 ref_emb = max(faces, key=lambda x: x.det_score).normed_embedding
-
+    tracker.update_progress(stage_items_processed=2)
+    
     from app.person import get_person_detector
-    person_detector = get_person_detector(params.person_detector_model, device)
+    person_detector = get_person_detector(params.person_detector_model, device, logger=logger)
+    tracker.update_progress(stage_items_processed=3)
 
     masker = SubjectMasker(params, progress_queue, cancel_event, face_analyzer=face_analyzer,
                          reference_embedding=ref_emb, person_detector=person_detector,
-                         niqe_metric=niqe_metric, thumbnail_manager=thumbnail_manager)
+                         niqe_metric=niqe_metric, thumbnail_manager=thumbnail_manager,
+                         logger=logger, tracker=tracker)
     masker.frame_map = masker._create_frame_map(str(output_dir))
-
+    tracker.update_progress(stage_items_processed=4)
+    
     def pre_analysis_task():
-        progress_queue.put({"stage": "Pre-analyzing scenes", "total": len(scenes)})
+        tracker.start_stage("Pre-analyzing scenes", stage_items=len(scenes))
         previews = []
-        for scene in scenes:
+        for i, scene in enumerate(scenes):
             if cancel_event.is_set(): break
             if not scene.best_seed_frame:
                 masker._select_best_seed_frame_in_scene(scene, str(output_dir))
@@ -144,11 +137,11 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue,
                 area_pct = (np.sum(mask > 0) / (h * w)) * 100 if h * w > 0 else 0.0
                 scene.seed_result['details']['mask_area_pct'] = area_pct
 
-            overlay_rgb = (render_mask_overlay(thumb_rgb, mask) if mask is not None else masker.draw_bbox(thumb_rgb, bbox))
+            overlay_rgb = (render_mask_overlay(thumb_rgb, mask, logger) if mask is not None else masker.draw_bbox(thumb_rgb, bbox))
             caption = f"Scene {scene.shot_id} (Seed: {scene.best_seed_frame}) | {details.get('type', 'N/A')}"
             previews.append((overlay_rgb, caption))
             if scene.status == 'pending': scene.status = 'included'
-            progress_queue.put({"progress": 1})
+            tracker.update_progress(stage_items_processed=i + 1)
 
         return {"done": True, "previews": previews, "scenes": [asdict(s) for s in scenes]}
 
@@ -165,7 +158,7 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue,
         }
 
 
-def execute_session_load(event: SessionLoadEvent, logger: UnifiedLogger, config: Config, thumbnail_manager):
+def execute_session_load(event: SessionLoadEvent, logger: EnhancedLogger, config: Config, thumbnail_manager, tracker: AdvancedProgressTracker):
     """Loads a session from a previous run and prepares the UI."""
     session_path = Path(event.session_path)
     config_path = session_path / "run_config.json"
@@ -177,11 +170,13 @@ def execute_session_load(event: SessionLoadEvent, logger: UnifiedLogger, config:
             "status": "Session load failed."
         }
         return
-
+    
+    tracker.start_stage("Loading config", stage_items=1)
     try:
         with open(config_path, 'r', encoding='utf-8') as f:
             run_config = json.load(f)
         logger.info(f"Loaded run configuration from {config_path}")
+        tracker.update_progress(stage_items_processed=1)
 
         updates = {
             'source_input': gr.update(value=run_config.get('source_path', '')),
@@ -220,11 +215,12 @@ def execute_session_load(event: SessionLoadEvent, logger: UnifiedLogger, config:
             updates['propagate_masks_button'] = gr.update(interactive=True)
             logger.info(f"Loaded {len(scenes_as_dict)} scenes from {scene_seeds_path}")
 
+            tracker.start_stage("Loading previews", stage_items=len(scenes_as_dict))
             output_dir = Path(run_config.get('output_folder'))
-            frame_map = create_frame_map(output_dir)
+            frame_map = create_frame_map(output_dir, logger)
             previews = []
-            for scene in scenes_as_dict:
-                seed_frame_idx = scene.get('seed_frame_idx')
+            for i, scene in enumerate(scenes_as_dict):
+                seed_frame_idx = scene.get('best_seed_frame') or scene.get('seed_frame_idx')
                 if seed_frame_idx is not None:
                     fname = frame_map.get(seed_frame_idx)
                     if not fname:
@@ -240,17 +236,16 @@ def execute_session_load(event: SessionLoadEvent, logger: UnifiedLogger, config:
 
                     caption = f"Scene {scene['shot_id']} (Seed: {seed_frame_idx})"
                     previews.append((thumb_rgb, caption))
-
-            updates['seeding_preview_gallery'] = gr.update(value=previews)
+                tracker.update_progress(stage_items_processed=i + 1)
+            
+            updates['seeding_preview_gallery'] = gr.update(value=previews, visible=True)
+            updates['seeding_results_column'] = gr.update(visible=True)
+            updates['propagation_group'] = gr.update(visible=True)
             updates['scene_filter_status'] = get_scene_status_text(scenes_as_dict)
-
-            has_face_sim = any(
-                s.get('seed_metrics', {}).get('best_face_sim') is not None
-                for s in scenes_as_dict
-            )
+            has_face_sim = any(s.get('seed_metrics', {}).get('best_face_sim') is not None for s in scenes_as_dict)
             updates['scene_face_sim_min_input'] = gr.update(visible=has_face_sim)
 
-        metadata_path = session_path / "metadata.json"
+        metadata_path = session_path / "metadata.jsonl"
         if metadata_path.exists():
             updates['analysis_metadata_path_state'] = str(metadata_path)
             updates['filtering_tab'] = gr.update(interactive=True)
@@ -270,22 +265,21 @@ def execute_session_load(event: SessionLoadEvent, logger: UnifiedLogger, config:
 
 
 def execute_propagation(event: PropagationEvent, progress_queue: Queue,
-                        cancel_event: threading.Event, logger: UnifiedLogger,
-                        config: Config, thumbnail_manager, cuda_available):
+                        cancel_event: threading.Event, logger: EnhancedLogger,
+                        config: Config, thumbnail_manager, cuda_available,
+                        tracker: AdvancedProgressTracker):
     """Execute propagation pipeline."""
     scenes_to_process = [Scene(**s) for s in event.scenes if s['status'] == 'included']
     if not scenes_to_process:
         yield {"log": "No scenes were included for propagation.", "status": "Propagation skipped."}
         return
 
-    progress_queue.put({"stage": f"Starting propagation on {len(scenes_to_process)} scenes...", "total": 1, "progress": 0})
-
-    params = AnalysisParameters.from_ui(**asdict(event.analysis_params))
-    pipeline = AnalysisPipeline(params, progress_queue, cancel_event, thumbnail_manager=thumbnail_manager)
+    params = AnalysisParameters.from_ui(logger, **asdict(event.analysis_params))
+    pipeline = AnalysisPipeline(params, progress_queue, cancel_event, thumbnail_manager=thumbnail_manager, logger=logger, tracker=tracker)
 
     result = pipeline.run_full_analysis(scenes_to_process)
 
-    if result.get("done"):
+    if result and result.get("done"):
         yield {
             "log": "Propagation and analysis complete.",
             "status": f"Metadata saved to {result['metadata_path']}",

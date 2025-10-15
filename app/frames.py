@@ -7,7 +7,7 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from app.logging import UnifiedLogger
+from app.logging_enhanced import EnhancedLogger
 
 
 def postprocess_mask(mask: np.ndarray, fill_holes: bool = True,
@@ -36,10 +36,8 @@ def postprocess_mask(mask: np.ndarray, fill_holes: bool = True,
 
 
 def render_mask_overlay(frame_rgb: np.ndarray, mask_gray: np.ndarray,
-                        alpha: float = 0.5) -> np.ndarray:
+                        alpha: float, logger: 'EnhancedLogger') -> np.ndarray:
     """Render a mask overlay on a frame."""
-    logger = UnifiedLogger()
-
     if mask_gray is None:
         return frame_rgb
 
@@ -68,11 +66,9 @@ def rgb_to_pil(image_rgb: np.ndarray) -> Image.Image:
     return Image.fromarray(image_rgb)
 
 
-def create_frame_map(output_dir: Path):
+def create_frame_map(output_dir: Path, logger: 'EnhancedLogger'):
     """Load or create map from original frame number to sequential filename."""
-    logger = UnifiedLogger()
-
-    logger.info("Loading frame map...")
+    logger.info("Loading frame map...", component="frames")
     frame_map_path = output_dir / "frame_map.json"
 
     if not frame_map_path.exists():

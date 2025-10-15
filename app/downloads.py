@@ -3,22 +3,19 @@
 import urllib.request
 import shutil
 
-from app.logging import UnifiedLogger
-from app.utils import safe_execute_with_retry
+from app.error_handling import ErrorHandler
 
 
-def download_model(url, dest_path, description, min_size=1_000_000):
+def download_model(url, dest_path, description, logger, error_handler: ErrorHandler, min_size=1_000_000):
     """Download a model file if it doesn't already exist."""
-    logger = UnifiedLogger()
 
     if dest_path.is_file() and dest_path.stat().st_size >= min_size:
         return
 
+    @error_handler.with_retry(recoverable_exceptions=(urllib.error.URLError, TimeoutError, RuntimeError))
     def download_func():
-        logger.info(f"Downloading {description}",
-                    extra={'url': url, 'dest': dest_path})
-        req = urllib.request.Request(url,
-                                    headers={"User-Agent": "Mozilla/5.0"})
+        logger.info(f"Downloading {description}", extra={'url': url, 'dest': dest_path})
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with (urllib.request.urlopen(req, timeout=60) as resp,
               open(dest_path, "wb") as out):
             shutil.copyfileobj(resp, out)
@@ -27,10 +24,7 @@ def download_model(url, dest_path, description, min_size=1_000_000):
         logger.success(f"{description} downloaded successfully.")
 
     try:
-        safe_execute_with_retry(download_func)
+        download_func()
     except Exception as e:
-        logger.error(f"Failed to download {description}", exc_info=True,
-                     extra={'url': url})
-        raise RuntimeError(
-            f"Failed to download required model: {description}"
-        ) from e
+        logger.error(f"Failed to download {description}", exc_info=True, extra={'url': url})
+        raise RuntimeError(f"Failed to download required model: {description}") from e

@@ -79,3 +79,10 @@ model_paths:
 grounding_dino_params:
   box_threshold: 0.35
   text_threshold: 0.25
+
+monitoring:
+  # Performance monitoring thresholds
+  memory_warning_threshold_mb: 8192  # Warn when process uses > 8GB
+  memory_critical_threshold_mb: 16384  # Critical when > 16GB
+  cpu_warning_threshold_percent: 90
+  gpu_memory_warning_threshold_percent: 90

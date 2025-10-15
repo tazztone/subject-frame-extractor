@@ -76,6 +76,7 @@ class MockConfig:
             'box_threshold': 0.3,
             'text_threshold': 0.3,
         }
+        self.DIRS = {'logs': 'logs'}
         self.filter_defaults = {
             'dedup_thresh': {'min': 0, 'max': 10, 'default': 5, 'step': 1},
             'niqe': {'min': 0, 'max': 20, 'default_min': 0, 'step': 0.1},
@@ -92,13 +93,13 @@ class MockConfig:
         self.GROUNDING_DINO_CKPT = "mock_ckpt.pth"
 
 # We must import the application code AFTER the mocks are in place.
-from app.app_ui import AppUI
+from app.app_ui import EnhancedAppUI
 
 @pytest.fixture
 def mock_app_ui():
     """Fixture to create an AppUI instance with a mock config."""
     # The torch mock is already active from the global patch.
-    app_ui = AppUI(config=MockConfig())
+    app_ui = EnhancedAppUI(config=MockConfig())
     return app_ui
 
 def test_build_ui_does_not_crash(mock_app_ui):

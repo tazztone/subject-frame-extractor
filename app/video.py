@@ -10,7 +10,7 @@ import yt_dlp as ytdlp
 from scenedetect import detect, ContentDetector
 
 from app.config import Config
-from app.logging import UnifiedLogger
+from app.logging_enhanced import EnhancedLogger
 
 
 class VideoManager:
@@ -20,16 +20,17 @@ class VideoManager:
         self.is_youtube = ("youtube.com/" in source_path or
                            "youtu.be/" in source_path)
 
-    def prepare_video(self):
+    def prepare_video(self, logger=None):
         """Prepare video for processing (download if YouTube, validate)."""
         config = Config()
-        logger = UnifiedLogger()
+        logger = logger or EnhancedLogger()
 
         if self.is_youtube:
             if not ytdlp:
                 raise ImportError("yt-dlp not installed.")
             logger.info("Downloading video",
-                       extra={'source': self.source_path})
+                       component="video",
+                       user_context={'source': self.source_path})
 
             if self.max_resolution != "maximum available":
                 res_filter = f"[height<={self.max_resolution}]"
@@ -80,30 +81,30 @@ class VideoManager:
         return info
 
 
-def run_scene_detection(video_path, output_dir):
+def run_scene_detection(video_path, output_dir, logger=None):
     """Run scene detection and save results."""
-    logger = UnifiedLogger()
+    logger = logger or EnhancedLogger()
     
-    logger.info("Detecting scenes...")
+    logger.info("Detecting scenes...", component="video")
     try:
         scene_list = detect(str(video_path), ContentDetector())
         shots = ([(s.frame_num, e.frame_num) for s, e in scene_list]
                 if scene_list else [])
         with (output_dir / "scenes.json").open('w', encoding='utf-8') as f:
             json.dump(shots, f)
-        logger.success(f"Found {len(shots)} scenes.")
+        logger.success(f"Found {len(shots)} scenes.", component="video")
         return shots
     except Exception as e:
-        logger.error("Scene detection failed.", exc_info=True)
+        logger.error("Scene detection failed.", component="video", exc_info=True)
         return []
 
 
 def run_ffmpeg_extraction(video_path, output_dir, video_info, params,
-                          progress_queue, cancel_event):
+                          progress_queue, cancel_event, logger=None, tracker=None):
     """Run FFmpeg extraction with progress tracking."""
     import re
 
-    logger = UnifiedLogger()
+    logger = logger or EnhancedLogger()
     log_file_path = output_dir / "ffmpeg_log.txt"
 
     cmd_base = ['ffmpeg', '-y', '-i', str(video_path), '-hide_banner',
@@ -151,11 +152,9 @@ def run_ffmpeg_extraction(video_path, output_dir, video_info, params,
     with open(log_file_path, 'w', encoding='utf-8') as stderr_handle:
         process = subprocess.Popen(cmd, stderr=stderr_handle, text=True,
                                   encoding='utf-8', bufsize=1)
-        progress_queue.put({
-            "total": video_info.get('frame_count', 1),
-            "stage": "Extraction"
-        })
-
+        
+        # NOTE: Real-time progress is not feasible here.
+        # The tracker stage will complete when the process finishes.
         while process.poll() is None:
             if cancel_event.is_set():
                 process.terminate()
