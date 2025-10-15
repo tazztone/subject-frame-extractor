@@ -7,6 +7,7 @@ from app.config import Config
 from app.logging_enhanced import EnhancedLogger
 from app.thumb_cache import ThumbnailManager
 from app.performance_optimizer import AdaptiveResourceManager
+from app.progress_enhanced import AdvancedProgressTracker
 
 
 class CompositionRoot:
@@ -36,6 +37,9 @@ class CompositionRoot:
         
         # Set up logger with progress queue
         self.logger.set_progress_queue(self.progress_queue)
+
+        # Create the tracker here as the single source of truth
+        self.progress_tracker = AdvancedProgressTracker(self.progress_queue, self.logger)
         
         # UI will be lazy-loaded to avoid import issues
         self._app_ui = None
@@ -48,7 +52,11 @@ class CompositionRoot:
                 config=self.config,
                 logger=self.logger,
                 progress_queue=self.progress_queue,
-                cancel_event=self.cancel_event
+                cancel_event=self.cancel_event,
+                # Inject all shared dependencies into the UI
+                thumbnail_manager=self.get_thumbnail_manager(),
+                resource_manager=self.get_resource_manager(),
+                progress_tracker=self.progress_tracker
             )
         return self._app_ui
     

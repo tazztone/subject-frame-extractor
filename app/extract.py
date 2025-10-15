@@ -63,8 +63,9 @@ class ExtractionPipeline(Pipeline):
 from app.config import Config
 
 class EnhancedExtractionPipeline(ExtractionPipeline):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, params, progress_queue, cancel_event, logger=None, tracker=None):
+        super().__init__(params, progress_queue, cancel_event, logger)
         self.config = Config()
         self.error_handler = ErrorHandler(self.logger, self.config)
+        self.tracker = tracker
         self.run = self.error_handler.with_retry(max_attempts=3, backoff_seconds=[1, 5, 15])(self.run)

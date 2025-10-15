@@ -100,7 +100,7 @@ def run_scene_detection(video_path, output_dir, logger=None):
 
 
 def run_ffmpeg_extraction(video_path, output_dir, video_info, params,
-                          progress_queue, cancel_event, logger=None):
+                          progress_queue, cancel_event, logger=None, tracker=None):
     """Run FFmpeg extraction with progress tracking."""
     import re
 
