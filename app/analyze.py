@@ -27,9 +27,10 @@ class AnalysisPipeline(Pipeline):
     """Pipeline for analyzing extracted video frames."""
     
     def __init__(self, params, progress_queue, cancel_event,
-                 thumbnail_manager=None, logger=None):
+                 thumbnail_manager=None, logger=None, tracker=None):
         from app.config import Config
         super().__init__(params, progress_queue, cancel_event, logger=logger)
+        self.tracker = tracker
         self.config = Config()
         self.output_dir = Path(self.params.output_folder)
         self.thumb_dir = self.output_dir / "thumbs"
