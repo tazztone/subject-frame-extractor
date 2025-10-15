@@ -196,6 +196,17 @@ class EnhancedLogger:
         """Create a structured log event."""
         current_metrics = self.performance_monitor.get_system_metrics() if self.performance_monitor else {}
 
+        # Handle standard logging arguments that are not part of LogEvent
+        exc_info = kwargs.pop('exc_info', None)
+        extra = kwargs.pop('extra', None)
+
+        if exc_info:
+            kwargs['stack_trace'] = traceback.format_exc()
+
+        if extra:
+            kwargs['custom_fields'] = kwargs.get('custom_fields', {})
+            kwargs['custom_fields'].update(extra)
+
         return LogEvent(
             timestamp=datetime.now().isoformat(),
             level=level,
