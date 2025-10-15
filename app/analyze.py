@@ -15,22 +15,23 @@ import torch
 
 from app.base import Pipeline
 from app.thumb_cache import ThumbnailManager
-from app.logging import StructuredFormatter
 from app.utils import _to_json_safe
 from app.face import get_face_analyzer
 from app.person import get_person_detector
 from app.subject_masker import SubjectMasker
-from app.frames import create_frame_map
+from app.frames import create_frame_map, rgb_to_pil
 from app.models import Frame
 
 
 class AnalysisPipeline(Pipeline):
     """Pipeline for analyzing extracted video frames."""
     
-    def __init__(self, params, progress_queue, cancel_event, 
-                 thumbnail_manager=None):
-        
-        super().__init__(params, progress_queue, cancel_event)
+    def __init__(self, params, progress_queue, cancel_event,
+                 thumbnail_manager=None, logger=None, tracker=None):
+        from app.config import Config
+        super().__init__(params, progress_queue, cancel_event, logger=logger, tracker=tracker)
+        self.tracker = tracker
+        self.config = Config()
         self.output_dir = Path(self.params.output_folder)
         self.thumb_dir = self.output_dir / "thumbs"
         self.masks_dir = self.output_dir / "masks"
@@ -44,8 +45,8 @@ class AnalysisPipeline(Pipeline):
         self.scene_map = {}
         self.niqe_metric = None
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.thumbnail_manager = (thumbnail_manager if thumbnail_manager 
-                                is not None else ThumbnailManager())
+        self.thumbnail_manager = (thumbnail_manager if thumbnail_manager
+                                is not None else ThumbnailManager(self.logger))
 
     def _initialize_niqe_metric(self):
         """Initialize NIQE quality metric."""
@@ -62,33 +63,24 @@ class AnalysisPipeline(Pipeline):
     def run_full_analysis(self, scenes_to_process):
         """Run complete analysis pipeline."""
         
-        run_log_handler = None
         try:
-            run_log_path = self.output_dir / "analysis_run.log"
-            run_log_handler = logging.FileHandler(run_log_path, mode='w', 
-                                                 encoding='utf-8')
-            formatter = StructuredFormatter(
-                '%(asctime)s - %(levelname)s - %(message)s'
-            )
-            run_log_handler.setFormatter(formatter)
-            self.logger.add_handler(run_log_handler)
-
             self.metadata_path.unlink(missing_ok=True)
             with self.metadata_path.open('w', encoding='utf-8') as f:
                 header = {"params": asdict(self.params)}
                 f.write(json.dumps(_to_json_safe(header)) + '\n')
 
             self.scene_map = {s.shot_id: s for s in scenes_to_process}
-
+            
+            self.tracker.start_stage("Initializing Models")
             if self.params.enable_face_filter:
                 self.face_analyzer = get_face_analyzer(
-                    self.params.face_model_name
+                    self.params.face_model_name, logger=self.logger
                 )
                 if self.params.face_ref_img_path:
                     self._process_reference_face()
 
             person_detector = get_person_detector(
-                self.params.person_detector_model, self.device
+                self.params.person_detector_model, self.device, logger=self.logger
             )
 
             masker = SubjectMasker(
@@ -96,7 +88,9 @@ class AnalysisPipeline(Pipeline):
                 self._create_frame_map(), self.face_analyzer,
                 self.reference_embedding, person_detector,
                 thumbnail_manager=self.thumbnail_manager,
-                niqe_metric=self.niqe_metric
+                niqe_metric=self.niqe_metric,
+                logger=self.logger,
+                tracker=self.tracker
             )
             self.mask_metadata = masker.run_propagation(
                 str(self.output_dir), scenes_to_process
@@ -115,9 +109,8 @@ class AnalysisPipeline(Pipeline):
                 "output_dir": str(self.output_dir)
             }
         except Exception as e:
-            return self.logger.pipeline_error("analysis", e)
-        finally:
-            self.logger.remove_handler(run_log_handler)
+            self.logger.error("Analysis pipeline failed", component="analysis", exc_info=True, error=str(e))
+            return {"error": str(e)}
 
     def _create_frame_map(self):
         """Create frame mapping from output directory."""
@@ -162,16 +155,18 @@ class AnalysisPipeline(Pipeline):
             for fn in sorted(list(all_frame_nums_to_process))
         ]
 
-        self.progress_queue.put({
-            "total": len(image_files_to_process),
-            "stage": "Analysis"
-        })
+        self.tracker.start_stage("Analyzing Frames", stage_items=len(image_files_to_process))
         
         num_workers = (1 if self.params.disable_parallel 
                       else min(os.cpu_count() or 4, 8))
         with ThreadPoolExecutor(max_workers=num_workers) as executor:
-            list(executor.map(self._process_single_frame, 
-                            image_files_to_process))
+            futures = [executor.submit(self._process_single_frame, path) for path in image_files_to_process]
+            for i, future in enumerate(futures):
+                if self.cancel_event.is_set():
+                    break
+                future.result() # Wait for completion and handle exceptions
+                self.tracker.update_progress(stage_items_processed=i + 1)
+
 
     def _process_single_frame(self, thumb_path):
         """Process a single frame for analysis."""
@@ -212,7 +207,10 @@ class AnalysisPipeline(Pipeline):
                         )
 
             frame.calculate_quality_metrics(
-                thumb_image_rgb=thumb_image_rgb, mask=mask_thumb,
+                thumb_image_rgb=thumb_image_rgb,
+                config=self.config,
+                logger=self.logger,
+                mask=mask_thumb,
                 niqe_metric=self.niqe_metric
             )
 
@@ -251,7 +249,6 @@ class AnalysisPipeline(Pipeline):
                                                          encoding='utf-8') as f:
                 json.dump(meta, f)
                 f.write('\n')
-            self.progress_queue.put({"progress": 1})
             
         except Exception as e:
             self.logger.critical("Error processing frame", exc_info=True,
@@ -264,13 +261,12 @@ class AnalysisPipeline(Pipeline):
                                                          encoding='utf-8') as f:
                 json.dump(meta, f)
                 f.write('\n')
-            self.progress_queue.put({"progress": 1})
 
     def _analyze_face_similarity(self, frame, image_rgb):
         """Analyze face similarity for the frame."""
         try:
             # insightface expects BGR
-            image_bgr = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR)
+            image_bgr = cv2.cvtColor(image_rgb, cv2.COLOR_RGB_BGR)
             with self.gpu_lock:
                 faces = self.face_analyzer.get(image_bgr)
             if faces:

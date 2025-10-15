@@ -12,6 +12,7 @@ from pathlib import Path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 sys.path.insert(0, str(project_root / 'Grounded-SAM-2'))
+sys.path.insert(0, str(project_root / 'DAM4SAM'))
 
 from app.composition import CompositionRoot
 
@@ -55,7 +56,7 @@ def check_dependencies():
         for dep in missing_deps:
             print(f"   - {dep}")
         print("\nNote: The application will start but ML features will not work.")
-        print("   Install missing dependencies with: pip install ultralytics insightface pyiqa imagehash")
+        print("   Install missing dependencies")
         print("\nStarting application in limited mode...\n")
     else:
         print("All dependencies found. Starting full application...\n")
@@ -84,8 +85,6 @@ def main():
         print("\nApplication stopped by user")
     except Exception as e:
         print(f"Error starting application: {e}")
-        print("\nTry installing missing dependencies:")
-        print("   pip install ultralytics insightface pyiqa imagehash")
         sys.exit(1)
     finally:
         # Cleanup resources

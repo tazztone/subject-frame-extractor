@@ -11,7 +11,7 @@ from app.propagate import MaskPropagator
 from app.thumb_cache import ThumbnailManager
 from app.grounding import load_grounding_dino_model
 from app.sam_tracker import initialize_dam4sam_tracker
-from app.logging import UnifiedLogger
+from app.logging_enhanced import EnhancedLogger
 from app.utils import safe_resource_cleanup
 from app.frames import create_frame_map
 from app.models import MaskingResult
@@ -23,32 +23,34 @@ class SubjectMasker:
     def __init__(self, params, progress_queue, cancel_event, frame_map=None,
                  face_analyzer=None, reference_embedding=None, 
                  person_detector=None, thumbnail_manager=None, 
-                 niqe_metric=None):
+                 niqe_metric=None, logger=None, tracker=None):
         
         self.params = params
         self.progress_queue = progress_queue
         self.cancel_event = cancel_event
+        self.logger = logger or EnhancedLogger()
+        self.tracker = tracker
         self.frame_map = frame_map
         self.face_analyzer = face_analyzer
         self.reference_embedding = reference_embedding
         self.person_detector = person_detector
-        self.tracker = None
+        self.dam_tracker = None
         self.mask_dir = None
         self.shots = []
         self._gdino = None
         self._sam2_img = None
         self._device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.thumbnail_manager = (thumbnail_manager if thumbnail_manager 
-                                is not None else ThumbnailManager())
+        self.thumbnail_manager = (thumbnail_manager if thumbnail_manager
+                                is not None else ThumbnailManager(self.logger))
         self.niqe_metric = niqe_metric
 
         # Initialize sub-components
         self._initialize_models()
         self.seed_selector = SeedSelector(params, face_analyzer, 
                                         reference_embedding, person_detector, 
-                                        self.tracker, self._gdino)
-        self.mask_propagator = MaskPropagator(params, self.tracker, 
-                                            cancel_event, progress_queue)
+                                        self.dam_tracker, self._gdino, logger=self.logger)
+        self.mask_propagator = MaskPropagator(params, self.dam_tracker, 
+                                            cancel_event, progress_queue, logger=self.logger)
 
     def _initialize_models(self):
         """Initialize ML models for masking."""
@@ -60,46 +62,49 @@ class SubjectMasker:
         
         if self._gdino is not None:
             return True
-        self._gdino = load_grounding_dino_model(self.params, self._device)
+        self._gdino = load_grounding_dino_model(self.params, self._device, self.logger)
         return self._gdino is not None
 
     def _initialize_tracker(self):
         """Initialize DAM4SAM tracker."""
         
-        if self.tracker:
+        if self.dam_tracker:
             return True
-        self.tracker = initialize_dam4sam_tracker(self.params)
-        return self.tracker is not None
+        self.dam_tracker = initialize_dam4sam_tracker(self.params, self.logger)
+        return self.dam_tracker is not None
 
     def run_propagation(self, frames_dir: str, scenes_to_process) -> dict:
         """Run mask propagation for all scenes."""
         
-        logger = UnifiedLogger()
         self.mask_dir = Path(frames_dir) / "masks"
         self.mask_dir.mkdir(exist_ok=True)
-        logger.info("Starting subject mask propagation...")
+        self.logger.info("Starting subject mask propagation...")
 
-        if not self.tracker:
-            logger.error("Tracker not initialized; skipping masking.")
+        if not self.dam_tracker:
+            self.logger.error("Tracker not initialized; skipping masking.")
             return {}
 
         self.frame_map = self.frame_map or self._create_frame_map(frames_dir)
 
         mask_metadata = {}
         total_scenes = len(scenes_to_process)
+        self.tracker.start_stage("Mask Propagation", stage_items=total_scenes)
+
         for i, scene in enumerate(scenes_to_process):
             with safe_resource_cleanup():
                 if self.cancel_event.is_set():
                     break
-                self.progress_queue.put({
-                    "stage": f"Masking Scene {i+1}/{total_scenes}"
-                })
+                
                 shot_context = {
                     'shot_id': scene.shot_id,
                     'start_frame': scene.start_frame,
                     'end_frame': scene.end_frame
                 }
-                logger.info("Masking shot", extra=shot_context)
+                self.logger.info(f"Masking scene {i+1}/{total_scenes}", user_context=shot_context)
+                self.tracker.update_progress(
+                    stage_items_processed=i, 
+                    substage=f"Scene {scene.shot_id}"
+                )
 
                 seed_frame_num = scene.best_seed_frame
                 shot_frames_data = self._load_shot_frames(
@@ -112,7 +117,7 @@ class SubjectMasker:
                 try:
                     seed_idx_in_shot = frame_numbers.index(seed_frame_num)
                 except ValueError:
-                    logger.warning(
+                    self.logger.warning(
                         f"Seed frame {seed_frame_num} not found in loaded "
                         f"shot frames for {scene.shot_id}, skipping."
                     )
@@ -128,11 +133,14 @@ class SubjectMasker:
                                 error="Subject not found", 
                                 shot_id=scene.shot_id))
                     continue
-
-                masks, areas, empties, errors = self.mask_propagator.propagate(
+                
+                # Create a new propagator for each scene to ensure clean state
+                propagator = MaskPropagator(self.params, self.dam_tracker, self.cancel_event, self.progress_queue, self.logger)
+                
+                masks, areas, empties, errors = propagator.propagate(
                     small_images, seed_idx_in_shot, bbox)
 
-                for i, (original_fn, _, (h, w)) in enumerate(shot_frames_data):
+                for j, (original_fn, _, (h, w)) in enumerate(shot_frames_data):
                     frame_fname_webp = self.frame_map.get(original_fn)
                     if not frame_fname_webp:
                         continue
@@ -144,13 +152,13 @@ class SubjectMasker:
                         "shot_id": scene.shot_id,
                         "seed_type": seed_details.get('type'),
                         "seed_face_sim": seed_details.get('seed_face_sim'),
-                        "mask_area_pct": areas[i],
-                        "mask_empty": empties[i],
-                        "error": errors[i]
+                        "mask_area_pct": areas[j],
+                        "mask_empty": empties[j],
+                        "error": errors[j]
                     }
-                    if masks[i] is not None and np.any(masks[i]):
+                    if masks[j] is not None and np.any(masks[j]):
                         mask_full_res = cv2.resize(
-                            masks[i], (w, h), interpolation=cv2.INTER_NEAREST)
+                            masks[j], (w, h), interpolation=cv2.INTER_NEAREST)
                         if mask_full_res.ndim == 3:
                             mask_full_res = mask_full_res[:, :, 0]
                         cv2.imwrite(str(mask_path), mask_full_res)
@@ -160,12 +168,13 @@ class SubjectMasker:
                         mask_metadata[frame_fname_png] = asdict(MaskingResult(
                             mask_path=None, **result_args))
         
-        logger.success("Subject masking complete.")
+        self.tracker.update_progress(stage_items_processed=total_scenes)
+        self.logger.success("Subject masking complete.")
         return mask_metadata
 
     def _create_frame_map(self, frames_dir):
         """Create frame mapping."""
-        return create_frame_map(Path(frames_dir))
+        return create_frame_map(Path(frames_dir), self.logger)
 
     def _load_shot_frames(self, frames_dir, start, end):
         """Load frames for a shot from thumbnails."""
@@ -215,7 +224,7 @@ class SubjectMasker:
             face_sim = 0.0
             if (self.face_analyzer and 
                 self.reference_embedding is not None):
-                thumb_bgr = cv2.cvtColor(thumb_rgb, cv2.COLOR_RGB2BGR)
+                thumb_bgr = cv2.cvtColor(thumb_rgb, cv2.COLOR_RGB_BGR)
                 faces = self.face_analyzer.get(thumb_bgr)
                 if faces:
                     best_face = max(faces, key=lambda x: x.det_score)

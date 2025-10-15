@@ -57,19 +57,3 @@ def test_config_loading_file_not_found():
     with patch.object(Config, 'CONFIG_FILE', Path("non_existent_config.yaml")):
         with pytest.raises(FileNotFoundError):
             Config()
-
-@patch('app.config.Path.mkdir')
-@patch('app.logging.UnifiedLogger')
-def test_setup_directories_and_logger(mock_logger, mock_mkdir):
-    """
-    Tests that the setup method attempts to create all necessary directories
-    and initializes the logger.
-    """
-    Config.setup_directories_and_logger()
-
-    # Check that mkdir was called for each directory
-    expected_dirs = list(Config.DIRS.values())
-    assert mock_mkdir.call_count == len(expected_dirs)
-
-    # Check that UnifiedLogger was instantiated
-    mock_logger.assert_called_once()

@@ -6,13 +6,15 @@ from ultralytics import YOLO
 
 
 class PersonDetector:
-    def __init__(self, model="yolo11x.pt", imgsz=640, conf=0.3, device='cuda'):
+    def __init__(self, model="yolo11x.pt", imgsz=640, conf=0.3, device='cuda', logger=None):
         from app.config import Config
-        from app.logging import UnifiedLogger
+        from app.logging_enhanced import EnhancedLogger
         from app.downloads import download_model
+        from app.error_handling import ErrorHandler
 
         config = Config()
-        logger = UnifiedLogger()
+        self.logger = logger or EnhancedLogger()
+        error_handler = ErrorHandler(self.logger, config)
 
         if YOLO is None:
             raise ImportError("Ultralytics YOLO not installed.")
@@ -22,15 +24,16 @@ class PersonDetector:
 
         model_url = (f"https://huggingface.co/Ultralytics/YOLO11/"
                      f"resolve/main/{model}")
-        download_model(model_url, model_path, "YOLO person detector")
+        download_model(model_url, model_path, "YOLO person detector", self.logger, error_handler)
 
         self.device = device if torch.cuda.is_available() else 'cpu'
         self.model = YOLO(str(model_path))
         self.model.to(self.device)
         self.imgsz = imgsz
         self.conf = conf
-        logger.info("YOLO person detector loaded",
-                    extra={'device': self.device, 'model': model})
+        self.logger.info("YOLO person detector loaded",
+                         component="person_detector",
+                         user_context={'device': self.device, 'model': model})
 
     def detect_boxes(self, img_rgb):
         """Detect person bounding boxes in an RGB image."""
@@ -50,10 +53,10 @@ class PersonDetector:
 
 
 @lru_cache(maxsize=None)
-def get_person_detector(model_name, device):
+def get_person_detector(model_name, device, logger=None):
     """Load and cache a person detector model."""
-    from app.logging import UnifiedLogger
-    logger = UnifiedLogger()
+    from app.logging_enhanced import EnhancedLogger
+    logger = logger or EnhancedLogger()
 
-    logger.info(f"Loading or getting cached person detector: {model_name}")
-    return PersonDetector(model=model_name, device=device)
+    logger.info(f"Loading or getting cached person detector: {model_name}", component="person_detector")
+    return PersonDetector(model=model_name, device=device, logger=logger)

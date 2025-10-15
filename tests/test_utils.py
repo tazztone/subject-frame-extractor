@@ -8,7 +8,6 @@ from unittest.mock import patch, MagicMock
 # Import the code to be tested
 from app.utils import (
     sanitize_filename,
-    safe_execute_with_retry,
     safe_resource_cleanup,
     _to_json_safe,
 )
@@ -27,35 +26,6 @@ def test_sanitize_filename_truncates():
 def test_sanitize_filename_allows_valid_chars():
     valid_name = "valid-file_name.123.zip"
     assert sanitize_filename(valid_name) == valid_name
-
-# --- Tests for safe_execute_with_retry ---
-
-@patch('app.utils.time.sleep', return_value=None)
-@patch('app.logging.UnifiedLogger')
-def test_safe_execute_with_retry_success_on_first_try(mock_logger, mock_sleep):
-    func = MagicMock(return_value="success")
-    result = safe_execute_with_retry(func, max_retries=3)
-    assert result == "success"
-    func.assert_called_once()
-    mock_sleep.assert_not_called()
-
-@patch('app.utils.time.sleep', return_value=None)
-@patch('app.logging.UnifiedLogger')
-def test_safe_execute_with_retry_success_after_failures(mock_logger, mock_sleep):
-    func = MagicMock(side_effect=[ValueError("fail"), "success"])
-    result = safe_execute_with_retry(func, max_retries=3)
-    assert result == "success"
-    assert func.call_count == 2
-    mock_sleep.assert_called_once()
-
-@patch('app.utils.time.sleep', return_value=None)
-@patch('app.logging.UnifiedLogger')
-def test_safe_execute_with_retry_raises_after_max_retries(mock_logger, mock_sleep):
-    func = MagicMock(side_effect=ValueError("persistent failure"))
-    with pytest.raises(ValueError, match="persistent failure"):
-        safe_execute_with_retry(func, max_retries=2, delay=0.1)
-    assert func.call_count == 3
-    assert mock_sleep.call_count == 2
 
 # --- Tests for safe_resource_cleanup ---
 

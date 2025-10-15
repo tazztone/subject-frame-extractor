@@ -14,28 +14,6 @@ def sanitize_filename(name, max_length=50):
     return re.sub(r'[^\w\-_.]', '_', name)[:max_length]
 
 
-def safe_execute_with_retry(func, max_retries=3, delay=1.0, backoff=2.0):
-    """Execute a function with retry logic and exponential backoff."""
-    # Import logger locally to avoid circular imports
-    from app.logging import UnifiedLogger
-    logger = UnifiedLogger()
-
-    last_exception = None
-    for attempt in range(max_retries + 1):
-        try:
-            return func()
-        except Exception as e:
-            last_exception = e
-            if attempt < max_retries:
-                retry_msg = (f"Attempt {attempt + 1} failed. "
-                           f"Retrying in {delay}s...")
-                logger.warning(retry_msg, extra={'error': e})
-                time.sleep(delay)
-                delay *= backoff
-    error_msg = "Function failed after retries."
-    raise last_exception if last_exception else RuntimeError(error_msg)
-
-
 @contextmanager
 def safe_resource_cleanup():
     try:
