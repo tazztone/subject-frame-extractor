@@ -29,7 +29,7 @@ class AnalysisPipeline(Pipeline):
     def __init__(self, params, progress_queue, cancel_event,
                  thumbnail_manager=None, logger=None, tracker=None):
         from app.config import Config
-        super().__init__(params, progress_queue, cancel_event, logger=logger)
+        super().__init__(params, progress_queue, cancel_event, logger=logger, tracker=tracker)
         self.tracker = tracker
         self.config = Config()
         self.output_dir = Path(self.params.output_folder)
@@ -70,7 +70,8 @@ class AnalysisPipeline(Pipeline):
                 f.write(json.dumps(_to_json_safe(header)) + '\n')
 
             self.scene_map = {s.shot_id: s for s in scenes_to_process}
-
+            
+            self.tracker.start_stage("Initializing Models")
             if self.params.enable_face_filter:
                 self.face_analyzer = get_face_analyzer(
                     self.params.face_model_name, logger=self.logger
@@ -88,7 +89,8 @@ class AnalysisPipeline(Pipeline):
                 self.reference_embedding, person_detector,
                 thumbnail_manager=self.thumbnail_manager,
                 niqe_metric=self.niqe_metric,
-                logger=self.logger
+                logger=self.logger,
+                tracker=self.tracker
             )
             self.mask_metadata = masker.run_propagation(
                 str(self.output_dir), scenes_to_process
@@ -153,16 +155,18 @@ class AnalysisPipeline(Pipeline):
             for fn in sorted(list(all_frame_nums_to_process))
         ]
 
-        self.progress_queue.put({
-            "total": len(image_files_to_process),
-            "stage": "Analysis"
-        })
+        self.tracker.start_stage("Analyzing Frames", stage_items=len(image_files_to_process))
         
         num_workers = (1 if self.params.disable_parallel 
                       else min(os.cpu_count() or 4, 8))
         with ThreadPoolExecutor(max_workers=num_workers) as executor:
-            list(executor.map(self._process_single_frame, 
-                            image_files_to_process))
+            futures = [executor.submit(self._process_single_frame, path) for path in image_files_to_process]
+            for i, future in enumerate(futures):
+                if self.cancel_event.is_set():
+                    break
+                future.result() # Wait for completion and handle exceptions
+                self.tracker.update_progress(stage_items_processed=i + 1)
+
 
     def _process_single_frame(self, thumb_path):
         """Process a single frame for analysis."""
@@ -245,7 +249,6 @@ class AnalysisPipeline(Pipeline):
                                                          encoding='utf-8') as f:
                 json.dump(meta, f)
                 f.write('\n')
-            self.progress_queue.put({"progress": 1})
             
         except Exception as e:
             self.logger.critical("Error processing frame", exc_info=True,
@@ -258,13 +261,12 @@ class AnalysisPipeline(Pipeline):
                                                          encoding='utf-8') as f:
                 json.dump(meta, f)
                 f.write('\n')
-            self.progress_queue.put({"progress": 1})
 
     def _analyze_face_similarity(self, frame, image_rgb):
         """Analyze face similarity for the frame."""
         try:
             # insightface expects BGR
-            image_bgr = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR)
+            image_bgr = cv2.cvtColor(image_rgb, cv2.COLOR_RGB_BGR)
             with self.gpu_lock:
                 faces = self.face_analyzer.get(image_bgr)
             if faces:

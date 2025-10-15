@@ -152,11 +152,9 @@ def run_ffmpeg_extraction(video_path, output_dir, video_info, params,
     with open(log_file_path, 'w', encoding='utf-8') as stderr_handle:
         process = subprocess.Popen(cmd, stderr=stderr_handle, text=True,
                                   encoding='utf-8', bufsize=1)
-        progress_queue.put({
-            "total": video_info.get('frame_count', 1),
-            "stage": "Extraction"
-        })
-
+        
+        # NOTE: Real-time progress is not feasible here.
+        # The tracker stage will complete when the process finishes.
         while process.poll() is None:
             if cancel_event.is_set():
                 process.terminate()

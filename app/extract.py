@@ -18,6 +18,7 @@ class ExtractionPipeline(Pipeline):
 
         config = Config()
 
+        self.tracker.start_stage("Preparing Video", 1)
         self.logger.info("Preparing video source...")
         vid_manager = VideoManager(self.params.source_path,
                                     self.params.max_resolution)
@@ -25,6 +26,7 @@ class ExtractionPipeline(Pipeline):
 
         output_dir = config.DIRS['downloads'] / video_path.stem
         output_dir.mkdir(exist_ok=True)
+        self.tracker.update_progress(stage_items_processed=1)
 
         self.logger.info("Video ready",
                             user_context={'path': sanitize_filename(video_path.name)})
@@ -32,8 +34,10 @@ class ExtractionPipeline(Pipeline):
         video_info = VideoManager.get_video_info(video_path)
 
         if self.params.scene_detect:
+            self.tracker.start_stage("Scene Detection")
             self._run_scene_detection(video_path, output_dir)
 
+        self.tracker.start_stage("FFmpeg Extraction")
         self._run_ffmpeg(video_path, output_dir, video_info)
 
         if self.cancel_event.is_set():
@@ -57,14 +61,14 @@ class ExtractionPipeline(Pipeline):
         from app.video import run_ffmpeg_extraction
         return run_ffmpeg_extraction(video_path, output_dir, video_info,
                                     self.params, self.progress_queue,
-                                    self.cancel_event, self.logger)
+                                    self.cancel_event, self.logger, self.tracker)
 
 
 from app.config import Config
 
 class EnhancedExtractionPipeline(ExtractionPipeline):
     def __init__(self, params, progress_queue, cancel_event, logger=None, tracker=None):
-        super().__init__(params, progress_queue, cancel_event, logger)
+        super().__init__(params, progress_queue, cancel_event, logger, tracker)
         self.config = Config()
         self.error_handler = ErrorHandler(self.logger, self.config)
         self.tracker = tracker
