@@ -115,19 +115,6 @@ def mock_app_ui():
         app_ui = app.EnhancedAppUI()
         return app_ui
 
-@pytest.fixture
-def mock_config_file(tmp_path):
-    config_dir = tmp_path / "app"
-    config_dir.mkdir()
-    config_file = config_dir / "config.yaml"
-    config_data = {
-        'model_paths': {'grounding_dino_config': 'GroundingDINO_SwinT_OGC.py', 'grounding_dino_checkpoint': 'groundingdino_swint_ogc.pth'},
-        'grounding_dino_params': {'box_threshold': 0.35, 'text_threshold': 0.25},
-        'quality_weights': {'niqe': 0.2, 'sharpness': 0.3, 'contrast': 0.1, 'brightness': 0.1, 'entropy': 0.3},
-        'thumbnail_cache_size': 150,
-    }
-    with open(config_file, 'w') as f: yaml.dump(config_data, f)
-    return config_file
 
 @pytest.fixture
 def sample_frames_data():
@@ -185,12 +172,14 @@ class TestUtils:
             app._coerce("not-a-float", float)
 
 class TestConfig:
-    def test_config_loading_success(self, mock_config_file):
-        with patch.object(app.Config, 'CONFIG_FILE', mock_config_file):
-            config = app.Config()
-            assert config.thumbnail_cache_size == 150
-            assert config.GROUNDING_BOX_THRESHOLD == 0.35
-            assert 'sharpness' in config.QUALITY_METRICS
+    def test_config_loads_from_default_string(self):
+        """Verify that the Config class correctly loads settings from the hardcoded DEFAULT_CONFIG string."""
+        config = app.Config()
+        # Check a few values to ensure the YAML string was parsed correctly
+        assert 'ui_defaults' in config.settings
+        assert config.settings['ui_defaults']['max_resolution'] == "maximum available"
+        assert config.settings['quality_weights']['sharpness'] == 25
+        assert config.GROUNDING_BOX_THRESHOLD == 0.35
 
 
 class TestEnhancedLogging(unittest.TestCase):
