@@ -59,6 +59,7 @@ class AppUI:
 
         self.session_load_keys = [
             'unified_log', 'unified_status', 'progress_bar',
+            'progress_details', 'cancel_button', 'pause_button',
             # Extraction Tab
             'source_input', 'max_resolution', 'thumbnails_only_input',
             'thumb_megapixels_input', 'ext_scene_detect_input', 'method_input',
@@ -73,9 +74,12 @@ class AppUI:
             'extracted_video_path_state', 'extracted_frames_dir_state',
             'analysis_output_dir_state', 'analysis_metadata_path_state',
             'scenes_state',
-            # Other UI elements
-            'propagate_masks_button', 'filtering_tab',
-            'scene_face_sim_min_input'
+            # Seeding/Scene UI elements
+            'propagate_masks_button', 'seeding_preview_gallery',
+            'seeding_results_column', 'propagation_group',
+            'scene_filter_status', 'scene_face_sim_min_input',
+            # Other tabs
+            'filtering_tab'
         ]
 
     def build_ui(self):
@@ -711,7 +715,7 @@ class EnhancedAppUI(AppUI):
     def _create_pre_analysis_event(self, *args):
         """Create a PreAnalysisEvent from UI arguments."""
         ui_args = dict(zip(self.ana_ui_map_keys, args))
-        strategy = ui_args.pop('primary_seed_strategy', '🤖 Automatic')
+        strategy = ui_args.get('primary_seed_strategy', '🤖 Automatic')
 
         if strategy == "👤 By Face":
             ui_args.update({'enable_face_filter': True, 'text_prompt': ""})
@@ -886,14 +890,19 @@ class EnhancedAppUI(AppUI):
     def _setup_pipeline_handlers(self):
         """Set up pipeline execution handlers using the correct progress pattern."""
         c = self.components
-        all_possible_outputs = [
-            comp for comp in self.components.values()
-            if isinstance(comp, (gr.components.Component, gr.State))
-        ]
+
+        def is_gradio_obj(x):
+            return hasattr(x, "_id")
+
+        # Include components, states, and layout blocks; exclude plain dicts like metric_plots/sliders
+        all_possible_outputs = [v for v in c.values() if is_gradio_obj(v)]
 
         def session_load_handler(session_path, progress=gr.Progress()):
+            # Remove 'progress_bar' from keys if it exists, as it causes errors with new Gradio versions
+            session_load_keys_filtered = [k for k in self.session_load_keys if k != 'progress_bar']
+            session_load_outputs = [c[key] for key in session_load_keys_filtered if key in c and is_gradio_obj(c[key])]
             yield from self._run_task_with_progress(
-                self.run_session_load_wrapper, all_possible_outputs, progress, session_path
+                self.run_session_load_wrapper, session_load_outputs, progress, session_path
             )
 
         def extraction_handler(*args, progress=gr.Progress()):

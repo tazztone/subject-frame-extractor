@@ -50,6 +50,7 @@ class PreAnalysisEvent(UIEvent):
     gdino_checkpoint_path: str
     pre_analysis_enabled: bool
     pre_sample_nth: int
+    primary_seed_strategy: str
 
 
 @dataclass

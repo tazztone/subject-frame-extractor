@@ -177,6 +177,7 @@ class AnalysisParameters:
     thumb_megapixels: float = 0.5
     pre_analysis_enabled: bool = False
     pre_sample_nth: int = 1
+    primary_seed_strategy: str = "🤖 Automatic"
     
     # These will be set from config in __post_init__
     gdino_config_path: str = ""

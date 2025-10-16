@@ -55,7 +55,7 @@ class SeedSelector:
         
         else:  # Automatic
             self.logger.info("Starting 'Automatic' seeding.")
-            return self._object_first_seed(frame_rgb, p)
+            return self._choose_person_by_strategy(frame_rgb, p)
 
     def _face_with_text_fallback_seed(self, frame_rgb, params):
         """Mode 3: Face-First with Text Fallback Strategy"""

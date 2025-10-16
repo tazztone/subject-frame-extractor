@@ -56,7 +56,7 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue,
                          config: Config, thumbnail_manager, cuda_available,
                          tracker: AdvancedProgressTracker):
     """Execute pre-analysis pipeline."""
-    yield {"unified_log": "", "unified_status": "Starting Pre-Analysis...", "progress_bar": gr.update(visible=True, value=0)}
+    yield {"unified_log": "", "unified_status": "Starting Pre-Analysis..."}
 
     params_dict = asdict(event)
     if event.face_ref_img_upload:
