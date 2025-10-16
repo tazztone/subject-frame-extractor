@@ -115,19 +115,6 @@ def mock_app_ui():
         app_ui = app.EnhancedAppUI()
         return app_ui
 
-@pytest.fixture
-def mock_config_file(tmp_path):
-    config_dir = tmp_path / "app"
-    config_dir.mkdir()
-    config_file = config_dir / "config.yaml"
-    config_data = {
-        'model_paths': {'grounding_dino_config': 'GroundingDINO_SwinT_OGC.py', 'grounding_dino_checkpoint': 'groundingdino_swint_ogc.pth'},
-        'grounding_dino_params': {'box_threshold': 0.35, 'text_threshold': 0.25},
-        'quality_weights': {'niqe': 0.2, 'sharpness': 0.3, 'contrast': 0.1, 'brightness': 0.1, 'entropy': 0.3},
-        'thumbnail_cache_size': 150,
-    }
-    with open(config_file, 'w') as f: yaml.dump(config_data, f)
-    return config_file
 
 @pytest.fixture
 def sample_frames_data():
@@ -185,12 +172,14 @@ class TestUtils:
             app._coerce("not-a-float", float)
 
 class TestConfig:
-    def test_config_loading_success(self, mock_config_file):
-        with patch.object(app.Config, 'CONFIG_FILE', mock_config_file):
-            config = app.Config()
-            assert config.thumbnail_cache_size == 150
-            assert config.GROUNDING_BOX_THRESHOLD == 0.35
-            assert 'sharpness' in config.QUALITY_METRICS
+    def test_config_loads_from_default_string(self):
+        """Verify that the Config class correctly loads settings from the hardcoded DEFAULT_CONFIG string."""
+        config = app.Config()
+        # Check a few values to ensure the YAML string was parsed correctly
+        assert 'ui_defaults' in config.settings
+        assert config.settings['ui_defaults']['max_resolution'] == "maximum available"
+        assert config.settings['quality_weights']['sharpness'] == 25
+        assert config.GROUNDING_BOX_THRESHOLD == 0.35
 
 
 class TestEnhancedLogging(unittest.TestCase):
@@ -284,18 +273,40 @@ class TestQuality(unittest.TestCase):
         self.assertAlmostEqual(app.compute_entropy(hist), 1.0, places=5)
 
     def test_quality_metrics_small_mask_fallback(self):
-        frame = app.Frame(image_data=np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8), frame_number=1)
-        thumb_image_rgb = np.random.randint(0, 255, (50, 50, 3), dtype=np.uint8)
+        # Create a deterministic checkerboard pattern to guarantee non-zero sharpness
+        c100 = np.zeros((100, 100), dtype=np.uint8)
+        c100[::2, ::2] = 255; c100[1::2, 1::2] = 255
+        image_data = np.stack([c100]*3, axis=-1)
+        frame = app.Frame(image_data=image_data, frame_number=1)
+
+        c50 = np.zeros((50, 50), dtype=np.uint8)
+        c50[::2, ::2] = 255; c50[1::2, 1::2] = 255
+        thumb_image_rgb = np.stack([c50]*3, axis=-1)
         small_mask = np.zeros((50, 50), dtype=np.uint8)
         small_mask[25, 25] = 255 # Mask is too small (1 pixel)
-        mock_config = MockConfig()
+
+        # Use the correct QualityConfig dataclass for the test
+        mock_quality_config = app.QualityConfig(
+            sharpness_base_scale=1.0,
+            edge_strength_base_scale=1.0,
+            enable_niqe=False
+        )
         mock_logger = MagicMock()
 
-        # This should not raise an exception, but fallback to full-frame analysis
-        try:
-            frame.calculate_quality_metrics(thumb_image_rgb, mock_config, mock_logger, mask=small_mask)
-        except ValueError:
-            pytest.fail("calculate_quality_metrics raised ValueError on small mask, but should have fallen back.")
+        # Mock the app.Config call inside the method to control quality_weights
+        with patch('app.Config') as MockAppConfig:
+            mock_instance = MockAppConfig.return_value
+            mock_instance.quality_weights = {
+                'sharpness': 25, 'edge_strength': 15, 'contrast': 15,
+                'brightness': 10, 'entropy': 15, 'niqe': 20
+            }
+            mock_instance.QUALITY_METRICS = list(mock_instance.quality_weights.keys())
+
+            # This should not raise an exception, but fallback to full-frame analysis
+            try:
+                frame.calculate_quality_metrics(thumb_image_rgb, mock_quality_config, mock_logger, mask=small_mask)
+            except ValueError:
+                pytest.fail("calculate_quality_metrics raised ValueError on small mask, but should have fallen back.")
 
         # Ensure metrics were still calculated (not all zero)
         self.assertNotEqual(frame.metrics.sharpness_score, 0.0)
