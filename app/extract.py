@@ -9,20 +9,22 @@ from app.error_handling import ErrorHandler
 
 class ExtractionPipeline(Pipeline):
     """Pipeline for extracting frames from video sources."""
+    def __init__(self, params, progress_queue, cancel_event, logger=None, tracker=None):
+        super().__init__(params, progress_queue, cancel_event, logger, tracker)
+        self.config = None # This will be set by the EnhancedExtractionPipeline
 
     def run(self):
         """Run the extraction pipeline."""
-        from app.config import Config
         from app.utils import sanitize_filename
         from app.video import VideoManager, run_scene_detection, run_ffmpeg_extraction
 
-        config = Config()
+        config = self.config
 
         self.tracker.start_stage("Preparing Video", 1)
         self.logger.info("Preparing video source...")
         vid_manager = VideoManager(self.params.source_path,
                                     self.params.max_resolution)
-        video_path = Path(vid_manager.prepare_video(self.logger))
+        video_path = Path(vid_manager.prepare_video(config, self.logger))
 
         output_dir = config.DIRS['downloads'] / video_path.stem
         output_dir.mkdir(exist_ok=True)
@@ -67,9 +69,9 @@ class ExtractionPipeline(Pipeline):
 from app.config import Config
 
 class EnhancedExtractionPipeline(ExtractionPipeline):
-    def __init__(self, params, progress_queue, cancel_event, logger=None, tracker=None):
+    def __init__(self, params, progress_queue, cancel_event, config: 'Config', logger=None, tracker=None):
         super().__init__(params, progress_queue, cancel_event, logger, tracker)
-        self.config = Config()
+        self.config = config
         self.error_handler = ErrorHandler(self.logger, self.config)
         self.tracker = tracker
         self.run = self.error_handler.with_retry(max_attempts=3, backoff_seconds=[1, 5, 15])(self.run)

@@ -708,6 +708,22 @@ class EnhancedAppUI(AppUI):
             return "\n".join(filtered_logs[-1000:])
         c['log_level_filter'].change(update_log_filter, c['log_level_filter'], c['unified_log'])
 
+    def _create_pre_analysis_event(self, *args):
+        """Create a PreAnalysisEvent from UI arguments."""
+        ui_args = dict(zip(self.ana_ui_map_keys, args))
+        strategy = ui_args.pop('primary_seed_strategy', '🤖 Automatic')
+
+        if strategy == "👤 By Face":
+            ui_args.update({'enable_face_filter': True, 'text_prompt': ""})
+        elif strategy == "📝 By Text":
+            ui_args.update({'enable_face_filter': False, 'face_ref_img_path': "", 'face_ref_img_upload': None})
+        elif strategy == "🔄 Face + Text Fallback":
+            ui_args['enable_face_filter'] = True
+        elif strategy == "🤖 Automatic":
+            ui_args.update({'enable_face_filter': False, 'text_prompt': "", 'face_ref_img_path': "", 'face_ref_img_upload': None})
+
+        return PreAnalysisEvent(**ui_args)
+
     def run_extraction_wrapper(self, *args, tracker):
         """Wrapper for extraction pipeline. Returns a dict of final updates."""
         tracker.start_operation("Extraction", 1)
@@ -740,15 +756,7 @@ class EnhancedAppUI(AppUI):
     def run_pre_analysis_wrapper(self, *args, tracker):
         """Wrapper for pre-analysis pipeline. Returns a dict of final updates."""
         tracker.start_operation("Pre-Analysis", 1)
-        ui_args = dict(zip(self.ana_ui_map_keys, args))
-        strategy = ui_args.pop('primary_seed_strategy', '🤖 Automatic')
-
-        if strategy == "👤 By Face": ui_args.update({'enable_face_filter': True, 'text_prompt': ""})
-        elif strategy == "📝 By Text": ui_args.update({'enable_face_filter': False, 'face_ref_img_path': "", 'face_ref_img_upload': None})
-        elif strategy == "🔄 Face + Text Fallback": ui_args['enable_face_filter'] = True
-        elif strategy == "🤖 Automatic": ui_args.update({'enable_face_filter': False, 'text_prompt': "", 'face_ref_img_path': "", 'face_ref_img_upload': None})
-
-        event = PreAnalysisEvent(**ui_args)
+        event = self._create_pre_analysis_event(*args)
         final_result = {}
         try:
             for result in execute_pre_analysis(event, self.progress_queue, self.cancel_event, self.enhanced_logger, self.config, self.thumbnail_manager, self.cuda_available, tracker):
@@ -785,18 +793,12 @@ class EnhancedAppUI(AppUI):
     def run_propagation_wrapper(self, scenes, *args, tracker):
         """Wrapper for propagation pipeline. Returns a dict of final updates."""
         tracker.start_operation("Propagation", 1)
-        ui_args = dict(zip(self.ana_ui_map_keys, args))
-        strategy = ui_args.pop('primary_seed_strategy', '🤖 Automatic')
-
-        if strategy == "👤 By Face": ui_args.update({'enable_face_filter': True, 'text_prompt': ""})
-        elif strategy == "📝 By Text": ui_args.update({'enable_face_filter': False, 'face_ref_img_path': "", 'face_ref_img_upload': None})
-        elif strategy == "🔄 Face + Text Fallback": ui_args['enable_face_filter'] = True
-        elif strategy == "🤖 Automatic": ui_args.update({'enable_face_filter': False, 'text_prompt': "", 'face_ref_img_path': "", 'face_ref_img_upload': None})
-
-        analysis_params = PreAnalysisEvent(**ui_args)
+        analysis_params = self._create_pre_analysis_event(*args)
         event = PropagationEvent(
-            output_folder=ui_args['output_folder'], video_path=ui_args['video_path'],
-            scenes=scenes, analysis_params=analysis_params
+            output_folder=analysis_params.output_folder,
+            video_path=analysis_params.video_path,
+            scenes=scenes,
+            analysis_params=analysis_params
         )
         final_result = {}
         try:
@@ -1148,7 +1150,7 @@ class EnhancedAppUI(AppUI):
                 slider_values=slider_values
             )
 
-            filter_updates = on_filters_changed(filter_event, self.thumbnail_manager, self.logger)
+            filter_updates = on_filters_changed(filter_event, self.thumbnail_manager, self.config, self.logger)
             updates.update({
                 c['filter_status_text']: filter_updates['filter_status_text'],
                 c['results_gallery']: filter_updates['results_gallery']
@@ -1217,7 +1219,7 @@ class EnhancedAppUI(AppUI):
             slider_values=slider_values_dict
         )
 
-        result = on_filters_changed(event, self.thumbnail_manager)
+        result = on_filters_changed(event, self.thumbnail_manager, self.config)
         return result['filter_status_text'], result['results_gallery']
 
     def on_reset_filters(self, all_frames_data, per_metric_values, output_dir):
@@ -1263,7 +1265,7 @@ class EnhancedAppUI(AppUI):
         gallery, scenes, status = apply_scene_overrides(
             scenes_list, selected_shot_id, prompt, box_th, text_th,
             output_folder, self.ana_ui_map_keys, ana_args,
-            self.cuda_available, self.thumbnail_manager, self.logger
+            self.cuda_available, self.thumbnail_manager, self.config, self.logger
         )
         return gallery, scenes, status
 
@@ -1313,7 +1315,7 @@ class EnhancedAppUI(AppUI):
                 "enable_dedup": any('phash' in f for f in event.all_frames_data)
             })
 
-            kept, _, _, _ = apply_all_filters_vectorized(event.all_frames_data, filters)
+            kept, _, _, _ = apply_all_filters_vectorized(event.all_frames_data, filters, self.config)
             if not kept:
                 return "No frames kept after filtering. Nothing to export."
 

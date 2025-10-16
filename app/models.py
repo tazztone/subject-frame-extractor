@@ -189,6 +189,10 @@ class AnalysisParameters:
 
     def __post_init__(self):
         """Set config-dependent defaults after initialization."""
+        # This method is called after __init__, so we can't inject config directly.
+        # It's used to set defaults from a global config if they aren't provided.
+        # This is a slight break in the DI pattern but is localized here.
+        # The from_ui factory method *does* use proper DI.
         from app.config import Config
         config = Config()
 
@@ -208,12 +212,8 @@ class AnalysisParameters:
             self.edge_strength_base_scale = config.edge_strength_base_scale
 
     @classmethod
-    def from_ui(cls, logger: 'EnhancedLogger', **kwargs):
+    def from_ui(cls, logger: 'EnhancedLogger', config: 'Config', **kwargs):
         """Create instance from UI parameters."""
-        from app.config import Config
-
-        config = Config()
-
         valid_keys = {f.name for f in fields(cls)}
         filtered_defaults = {
             k: v for k, v in config.ui_defaults.items() if k in valid_keys
