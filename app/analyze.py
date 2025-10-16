@@ -26,12 +26,11 @@ from app.models import Frame
 class AnalysisPipeline(Pipeline):
     """Pipeline for analyzing extracted video frames."""
     
-    def __init__(self, params, progress_queue, cancel_event,
+    def __init__(self, params, progress_queue, cancel_event, config: 'Config',
                  thumbnail_manager=None, logger=None, tracker=None):
-        from app.config import Config
         super().__init__(params, progress_queue, cancel_event, logger=logger, tracker=tracker)
         self.tracker = tracker
-        self.config = Config()
+        self.config = config
         self.output_dir = Path(self.params.output_folder)
         self.thumb_dir = self.output_dir / "thumbs"
         self.masks_dir = self.output_dir / "masks"
@@ -74,18 +73,18 @@ class AnalysisPipeline(Pipeline):
             self.tracker.start_stage("Initializing Models")
             if self.params.enable_face_filter:
                 self.face_analyzer = get_face_analyzer(
-                    self.params.face_model_name, logger=self.logger
+                    self.params.face_model_name, self.config, logger=self.logger
                 )
                 if self.params.face_ref_img_path:
                     self._process_reference_face()
 
             person_detector = get_person_detector(
-                self.params.person_detector_model, self.device, logger=self.logger
+                self.params.person_detector_model, self.device, self.config, logger=self.logger
             )
 
             masker = SubjectMasker(
                 self.params, self.progress_queue, self.cancel_event,
-                self._create_frame_map(), self.face_analyzer,
+                self.config, self._create_frame_map(), self.face_analyzer,
                 self.reference_embedding, person_detector,
                 thumbnail_manager=self.thumbnail_manager,
                 niqe_metric=self.niqe_metric,
@@ -266,7 +265,7 @@ class AnalysisPipeline(Pipeline):
         """Analyze face similarity for the frame."""
         try:
             # insightface expects BGR
-            image_bgr = cv2.cvtColor(image_rgb, cv2.COLOR_RGB_BGR)
+            image_bgr = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR)
             with self.gpu_lock:
                 faces = self.face_analyzer.get(image_bgr)
             if faces:

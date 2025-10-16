@@ -6,15 +6,15 @@ from ultralytics import YOLO
 
 
 class PersonDetector:
-    def __init__(self, model="yolo11x.pt", imgsz=640, conf=0.3, device='cuda', logger=None):
-        from app.config import Config
+    def __init__(self, model="yolo11x.pt", imgsz=640, conf=0.3, device='cuda', config=None, logger=None):
         from app.logging_enhanced import EnhancedLogger
         from app.downloads import download_model
         from app.error_handling import ErrorHandler
+        from app.config import Config
 
-        config = Config()
+        self.config = config or Config()
         self.logger = logger or EnhancedLogger()
-        error_handler = ErrorHandler(self.logger, config)
+        error_handler = ErrorHandler(self.logger, self.config)
 
         if YOLO is None:
             raise ImportError("Ultralytics YOLO not installed.")
@@ -53,10 +53,10 @@ class PersonDetector:
 
 
 @lru_cache(maxsize=None)
-def get_person_detector(model_name, device, logger=None):
+def get_person_detector(model_name, device, config: 'Config', logger=None):
     """Load and cache a person detector model."""
     from app.logging_enhanced import EnhancedLogger
     logger = logger or EnhancedLogger()
 
     logger.info(f"Loading or getting cached person detector: {model_name}", component="person_detector")
-    return PersonDetector(model=model_name, device=device, logger=logger)
+    return PersonDetector(model=model_name, device=device, config=config, logger=logger)

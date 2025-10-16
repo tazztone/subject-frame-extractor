@@ -13,6 +13,7 @@ from app.utils import _to_json_safe
 from app.models import AnalysisParameters
 from app.frames import render_mask_overlay
 from app.subject_masker import SubjectMasker
+from app.models_manager import initialize_analysis_models
 
 
 def save_scene_seeds(scenes_list, output_dir_str, logger):
@@ -120,7 +121,7 @@ def apply_bulk_scene_filters(scenes, min_mask_area, min_face_sim,
 def apply_scene_overrides(scenes_list, selected_shot_id, prompt,
                         box_th, text_th, output_folder, ana_ui_map_keys,
                         ana_input_components, cuda_available,
-                        thumbnail_manager, logger):
+                        thumbnail_manager, config: 'Config', logger: 'EnhancedLogger'):
     """Apply overrides to a specific scene."""
     if selected_shot_id is None or not scenes_list:
         return (None, scenes_list,
@@ -143,26 +144,14 @@ def apply_scene_overrides(scenes_list, selected_shot_id, prompt,
 
         ui_args = dict(zip(ana_ui_map_keys, ana_input_components))
         ui_args['output_folder'] = output_folder
-        params = AnalysisParameters.from_ui(logger, **ui_args)
+        params = AnalysisParameters.from_ui(logger, config, **ui_args)
 
-        face_analyzer, ref_emb, person_detector = None, None, None
-        device = "cuda" if cuda_available else "cpu"
-        if params.enable_face_filter:
-            from app.face import get_face_analyzer
-            face_analyzer = get_face_analyzer(params.face_model_name)
-            if params.face_ref_img_path:
-                ref_img = cv2.imread(params.face_ref_img_path)
-                if ref_img is not None:
-                    faces = face_analyzer.get(ref_img)
-                    if faces:
-                        ref_emb = max(faces, key=lambda x: x.det_score).normed_embedding
-        from app.person import get_person_detector
-        person_detector = get_person_detector(params.person_detector_model, device, logger=logger)
+        models = initialize_analysis_models(params, config, logger, cuda_available)
 
-        masker = SubjectMasker(params, Queue(), threading.Event(),
-                             face_analyzer=face_analyzer,
-                             reference_embedding=ref_emb,
-                             person_detector=person_detector,
+        masker = SubjectMasker(params, Queue(), threading.Event(), config,
+                             face_analyzer=models["face_analyzer"],
+                             reference_embedding=models["ref_emb"],
+                             person_detector=models["person_detector"],
                              thumbnail_manager=thumbnail_manager,
                              logger=logger)
         masker.frame_map = masker._create_frame_map(output_folder)

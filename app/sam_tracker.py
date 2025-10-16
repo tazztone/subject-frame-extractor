@@ -3,6 +3,7 @@
 import shutil
 from pathlib import Path
 import torch
+from functools import lru_cache
 from DAM4SAM.dam4sam_tracker import DAM4SAMTracker
 
 from app.config import Config
@@ -10,11 +11,11 @@ from app.logging_enhanced import EnhancedLogger
 from app.downloads import download_model
 
 
-def initialize_dam4sam_tracker(params, logger=None):
-    """Initialize DAM4SAM tracker with model downloading."""
+@lru_cache(maxsize=None)
+def get_dam4sam_tracker(model_name: str, config: 'Config', logger=None):
+    """Initialize and cache DAM4SAM tracker with model downloading."""
     from app.error_handling import ErrorHandler
 
-    config = Config()
     logger = logger or EnhancedLogger()
     error_handler = ErrorHandler(logger, config)
 
@@ -23,7 +24,6 @@ def initialize_dam4sam_tracker(params, logger=None):
         return None
 
     try:
-        model_name = params.dam4sam_model_name
         logger.info("Initializing DAM4SAM tracker",
                    extra={'model': model_name})
 

@@ -59,14 +59,14 @@ def sample_frames_data():
 
 def test_apply_all_filters_no_filters(sample_frames_data, mock_config):
     """Test that with no filters, all frames are kept."""
-    kept, rejected, _, _ = apply_all_filters_vectorized(sample_frames_data, {})
+    kept, rejected, _, _ = apply_all_filters_vectorized(sample_frames_data, {}, mock_config)
     assert len(kept) == len(sample_frames_data)
     assert len(rejected) == 0
 
 def test_apply_quality_filters(sample_frames_data, mock_config):
     """Test filtering based on quality metrics like sharpness."""
     filters = {'sharpness_min': 10, 'contrast_min': 10}
-    kept, rejected, _, reasons = apply_all_filters_vectorized(sample_frames_data, filters)
+    kept, rejected, _, reasons = apply_all_filters_vectorized(sample_frames_data, filters, mock_config)
     assert len(kept) == 5
     assert len(rejected) == 1
     assert rejected[0]['filename'] == 'frame_03.png'
@@ -75,7 +75,7 @@ def test_apply_quality_filters(sample_frames_data, mock_config):
 def test_apply_face_similarity_filter(sample_frames_data, mock_config):
     """Test filtering based on face similarity score."""
     filters = {'face_sim_enabled': True, 'face_sim_min': 0.5}
-    kept, rejected, _, reasons = apply_all_filters_vectorized(sample_frames_data, filters)
+    kept, rejected, _, reasons = apply_all_filters_vectorized(sample_frames_data, filters, mock_config)
     assert len(kept) == 5
     assert len(rejected) == 1
     assert rejected[0]['filename'] == 'frame_04.png'
@@ -84,7 +84,7 @@ def test_apply_face_similarity_filter(sample_frames_data, mock_config):
 def test_apply_face_filter_require_match(sample_frames_data, mock_config):
     """Test rejecting frames that are missing a face when required."""
     filters = {'face_sim_enabled': True, 'require_face_match': True, 'face_sim_min': 0.5}
-    kept, rejected, _, reasons = apply_all_filters_vectorized(sample_frames_data, filters)
+    kept, rejected, _, reasons = apply_all_filters_vectorized(sample_frames_data, filters, mock_config)
     # Rejects frame_04 (low sim) and frame_06 (missing sim)
     assert len(kept) == 4
     assert len(rejected) == 2
@@ -94,7 +94,7 @@ def test_apply_face_filter_require_match(sample_frames_data, mock_config):
 def test_apply_mask_area_filter(sample_frames_data, mock_config):
     """Test filtering based on mask area percentage."""
     filters = {'mask_area_enabled': True, 'mask_area_pct_min': 10}
-    kept, rejected, _, reasons = apply_all_filters_vectorized(sample_frames_data, filters)
+    kept, rejected, _, reasons = apply_all_filters_vectorized(sample_frames_data, filters, mock_config)
     assert len(kept) == 5
     assert len(rejected) == 1
     assert rejected[0]['filename'] == 'frame_05.png'
@@ -115,7 +115,7 @@ def test_apply_deduplication_filter(sample_frames_data, mock_config):
     mock_imagehash.hex_to_hash.side_effect = lambda h: hash_objects.get(h)
 
     filters = {'enable_dedup': True, 'dedup_thresh': 5}
-    kept, rejected, _, reasons = apply_all_filters_vectorized(sample_frames_data, filters)
+    kept, rejected, _, reasons = apply_all_filters_vectorized(sample_frames_data, filters, mock_config)
 
     assert len(kept) == 5
     assert len(rejected) == 1
