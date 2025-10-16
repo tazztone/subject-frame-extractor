@@ -244,6 +244,10 @@ monitoring:
         if not all(k in self.settings['quality_weights'] for k in ['sharpness', 'contrast']):
              raise ValueError("quality_weights config is missing essential metrics.")
 
+        # Validate that the sum of quality_weights is not zero
+        if sum(self.settings['quality_weights'].values()) == 0:
+            raise ValueError("The sum of quality_weights cannot be zero.")
+
 
 # --- LOGGING ---
 
@@ -728,6 +732,12 @@ def compute_entropy(hist):
     entropy = -np.sum(prob[prob > 0] * np.log2(prob[prob > 0]))
     return min(max(entropy / 8.0, 0), 1.0)
 
+@dataclass
+class QualityConfig:
+    sharpness_base_scale: float
+    edge_strength_base_scale: float
+    enable_niqe: bool = True
+
 # --- MODELS ---
 
 @dataclass
@@ -749,7 +759,7 @@ class Frame:
     max_face_confidence: float | None = None
     error: str | None = None
 
-    def calculate_quality_metrics(self, thumb_image_rgb: np.ndarray, config: 'Config', logger: 'EnhancedLogger',
+    def calculate_quality_metrics(self, thumb_image_rgb: np.ndarray, quality_config: QualityConfig, logger: 'EnhancedLogger',
                                   mask: np.ndarray | None = None, niqe_metric=None):
         try:
             gray = cv2.cvtColor(thumb_image_rgb, cv2.COLOR_RGB2GRAY)
@@ -759,11 +769,11 @@ class Frame:
             lap = cv2.Laplacian(gray, cv2.CV_64F)
             masked_lap = lap[active_mask] if active_mask is not None else lap
             sharpness = np.var(masked_lap) if masked_lap.size > 0 else 0
-            sharpness_scaled = (sharpness / (config.sharpness_base_scale * (gray.size / 500_000)))
+            sharpness_scaled = (sharpness / (quality_config.sharpness_base_scale * (gray.size / 500_000)))
             sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
             sobely = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)
             edge_strength = np.mean(np.sqrt(sobelx**2 + sobely**2))
-            edge_strength_scaled = (edge_strength / (config.edge_strength_base_scale * (gray.size / 500_000)))
+            edge_strength_scaled = (edge_strength / (quality_config.edge_strength_base_scale * (gray.size / 500_000)))
             pixels = gray[active_mask] if active_mask is not None else gray
             mean_br, std_br = (np.mean(pixels), np.std(pixels)) if pixels.size > 0 else (0, 0)
             brightness = mean_br / 255.0
@@ -776,7 +786,7 @@ class Frame:
             hist = cv2.calcHist([gray_full], [0], active_mask_full, [256], [0, 256]).flatten()
             entropy = compute_entropy(hist)
             niqe_score = 0.0
-            if niqe_metric is not None:
+            if quality_config.enable_niqe and niqe_metric is not None:
                 try:
                     rgb_image = self.image_data
                     if active_mask_full is not None:
@@ -793,7 +803,10 @@ class Frame:
             scores_norm = {"sharpness": min(sharpness_scaled, 1.0), "edge_strength": min(edge_strength_scaled, 1.0),
                            "contrast": min(contrast, 2.0) / 2.0, "brightness": brightness, "entropy": entropy, "niqe": niqe_score / 100.0}
             self.metrics = FrameMetrics(**{f"{k}_score": float(v * 100) for k, v in scores_norm.items()})
-            quality_sum = sum(scores_norm[k] * (config.quality_weights[k] / 100.0) for k in config.QUALITY_METRICS)
+            # The quality_weights are part of the main config, not QualityConfig, so we'll need to pass them separately or access them differently.
+            # For now, let's assume the main config is accessible.
+            main_config = Config()
+            quality_sum = sum(scores_norm[k] * (main_config.quality_weights[k] / 100.0) for k in main_config.QUALITY_METRICS)
             self.metrics.quality_score = float(quality_sum * 100)
         except Exception as e:
             self.error = f"Quality calc failed: {e}"
@@ -928,6 +941,9 @@ class ThumbnailManager:
             return self.cache[thumb_path]
         if not thumb_path.exists(): return None
 
+        if len(self.cache) > self.max_size * 0.8:
+            self._cleanup_old_entries()
+
         if Image is None:
             self.logger.warning("Pillow not available; attempting to load with OpenCV", extra={'path': str(thumb_path)})
             if cv2 and thumb_path.suffix.lower() in {'.jpg','.jpeg','.png','.webp'}:
@@ -958,6 +974,14 @@ class ThumbnailManager:
         """Force clear the thumbnail cache to free memory"""
         self.cache.clear()
         gc.collect()
+
+    def _cleanup_old_entries(self):
+        """Clean up a percentage of the cache to make room for new entries."""
+        num_to_remove = int(self.max_size * 0.2)  # Remove 20% of the cache
+        for _ in range(num_to_remove):
+            if not self.cache:
+                break
+            self.cache.popitem(last=False)
 
 class AdaptiveResourceManager:
     def __init__(self, logger, config):
@@ -1302,7 +1326,8 @@ def postprocess_mask(mask: np.ndarray, fill_holes: bool = True, keep_largest_onl
     return (binary_mask * 255).astype(np.uint8)
 
 def render_mask_overlay(frame_rgb: np.ndarray, mask_gray: np.ndarray, alpha: float, logger: 'EnhancedLogger') -> np.ndarray:
-    if mask_gray is None: return frame_rgb
+    if mask_gray is None or frame_rgb is None:
+        return frame_rgb if frame_rgb is not None else np.array([])
     h, w = frame_rgb.shape[:2]
     if mask_gray.shape[:2] != (h, w): mask_gray = cv2.resize(mask_gray, (w, h), interpolation=cv2.INTER_NEAREST)
     m = (mask_gray > 128)
@@ -1606,14 +1631,20 @@ class SeedSelector:
     def _xyxy_to_xywh(self, box): x1, y1, x2, y2 = box; return [int(x1), int(y1), int(x2 - x1), int(y2 - y1)]
 
     def _sam2_mask_for_bbox(self, frame_rgb_small, bbox_xywh):
-        if not self.tracker or bbox_xywh is None: return None
+        if not self.tracker or bbox_xywh is None:
+            return None
         try:
             outputs = self.tracker.initialize(rgb_to_pil(frame_rgb_small), None, bbox=bbox_xywh)
             mask = outputs.get('pred_mask')
             if mask is not None: mask = postprocess_mask((mask * 255).astype(np.uint8), fill_holes=True, keep_largest_only=True)
             return mask
+        except (torch.cuda.OutOfMemoryError, RuntimeError) as e:
+            self.logger.warning(f"GPU error in mask generation: {e}")
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            return None
         except Exception as e:
-            self.logger.warning("DAM4SAM mask generation failed.", extra={'error': e})
+            self.logger.error(f"Unexpected error in mask generation: {e}")
             return None
 
 class SubjectMasker:
@@ -1855,7 +1886,7 @@ class AnalysisPipeline(Pipeline):
                     break
 
                 # Non-blocking check for completed futures
-                for i, future in enumerate(futures):
+                for future in futures[:]:  # Iterate over a copy
                     if future.done():
                         try:
                             future.result()  # To raise exceptions if any
@@ -1882,7 +1913,12 @@ class AnalysisPipeline(Pipeline):
                 if mask_full_path.exists():
                     mask_full = cv2.imread(str(mask_full_path), cv2.IMREAD_GRAYSCALE)
                     if mask_full is not None: mask_thumb = cv2.resize(mask_full, (thumb_image_rgb.shape[1], thumb_image_rgb.shape[0]), interpolation=cv2.INTER_NEAREST)
-            frame.calculate_quality_metrics(thumb_image_rgb, self.config, self.logger, mask=mask_thumb, niqe_metric=self.niqe_metric)
+            quality_conf = app.QualityConfig(
+                sharpness_base_scale=self.config.sharpness_base_scale,
+                edge_strength_base_scale=self.config.edge_strength_base_scale,
+                enable_niqe='niqe' in self.config.QUALITY_METRICS
+            )
+            frame.calculate_quality_metrics(thumb_image_rgb, quality_conf, self.logger, mask=mask_thumb, niqe_metric=self.niqe_metric)
             if self.params.enable_face_filter and self.reference_embedding is not None and self.face_analyzer: self._analyze_face_similarity(frame, thumb_image_rgb)
             meta = {"filename": base_filename, "metrics": asdict(frame.metrics)}
             if frame.face_similarity_score is not None: meta["face_sim"] = frame.face_similarity_score
