@@ -237,8 +237,7 @@ class SubjectMasker:
                 faces = self.face_analyzer.get(thumb_bgr)
                 if faces:
                     best_face = max(faces, key=lambda x: x.det_score)
-                    face_sim = 1.0 - (1 - np.dot(
-                        best_face.normed_embedding, self.reference_embedding))
+                    face_sim = np.dot(best_face.normed_embedding, self.reference_embedding)
 
             combined_score = (10 - niqe_score) + (face_sim * 10)
             scores.append(combined_score)

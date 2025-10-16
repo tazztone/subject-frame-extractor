@@ -202,7 +202,7 @@ def _regenerate_all_previews(scenes_list, output_folder, masker,
         details = scene_dict.get('seed_result', {}).get('details', {})
 
         mask = masker.get_mask_for_bbox(thumb_rgb, bbox) if bbox else None
-        overlay_rgb = (render_mask_overlay(thumb_rgb, mask, logger=logger)
+        overlay_rgb = (render_mask_overlay(thumb_rgb, mask, 0.6, logger=logger)
                       if mask is not None
                       else masker.draw_bbox(thumb_rgb, bbox))
 

@@ -214,18 +214,18 @@ class SeedSelector:
         if not faces:
             return None, {"error": "no_faces_detected"}
 
-        best_face, best_dist = None, float('inf')
+        best_face, best_sim = None, 0.0
         for face in faces:
-            dist = 1 - np.dot(face.normed_embedding, self.reference_embedding)
-            if dist < best_dist:
-                best_dist, best_face = dist, face
+            sim = np.dot(face.normed_embedding, self.reference_embedding)
+            if sim > best_sim:
+                best_sim, best_face = sim, face
 
-        if best_face and best_dist < 0.6: # Similarity threshold
-            details = {'type': 'face_match', 'seed_face_sim': 1 - best_dist}
+        if best_face and best_sim > 0.4: # Similarity threshold
+            details = {'type': 'face_match', 'seed_face_sim': best_sim}
             face_data = {'bbox': best_face.bbox.astype(int), 'embedding': best_face.normed_embedding}
             return face_data, details
         
-        return None, {'error': 'no_matching_face', 'best_dist': best_dist}
+        return None, {'error': 'no_matching_face', 'best_sim': best_sim}
 
     def _get_yolo_boxes(self, frame_rgb):
         """Get all 'person' bounding boxes from YOLO."""
