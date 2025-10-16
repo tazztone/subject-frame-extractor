@@ -216,6 +216,12 @@ monitoring:
         self.settings = yaml.safe_load(self.DEFAULT_CONFIG)
         self._validate_config()
 
+        for dir_name, dir_path in self.DIRS.items():
+            try:
+                dir_path.mkdir(exist_ok=True, parents=True)
+            except PermissionError:
+                raise RuntimeError(f"Cannot create {dir_name} directory at {dir_path}. Check permissions.")
+
         for key, value in self.settings.items():
             setattr(self, key, value)
 
@@ -493,25 +499,23 @@ class AdvancedProgressTracker:
                 custom_fields={'total_items_processed': self.current_state.current, 'success': success}))
 
     def _calculate_eta(self) -> tuple[float, str]:
-        if not self.current_state or self.current_state.current == 0: return float('inf'), "calculating..."
-        current_time = time.time()
-        elapsed = current_time - self.current_state.start_time
-        progress_ratio = self.current_state.current / self.current_state.total
-        eta_seconds = (elapsed / progress_ratio) - elapsed if progress_ratio > 0 else float('inf')
-        if self.current_state.stage in self.stage_history:
-            stage_history = self.stage_history[self.current_state.stage]
-            avg_stage_time = sum(stage_history) / len(stage_history)
-            remaining_stages = len(self.current_state.substages) - self.current_state.substages.index(self.current_state.stage) - 1 if self.current_state.stage in self.current_state.substages else 0
-            stage_eta = avg_stage_time * remaining_stages
-            if self.current_state.stage_total > 0:
-                stage_progress = self.current_state.stage_current / self.current_state.stage_total
-                current_stage_remaining = avg_stage_time * (1 - stage_progress)
-                stage_eta += current_stage_remaining
-            eta_seconds = min(eta_seconds, stage_eta)
-        if eta_seconds == float('inf'): return eta_seconds, "calculating..."
-        elif eta_seconds < 60: return eta_seconds, f"{int(eta_seconds)}s"
-        elif eta_seconds < 3600: return eta_seconds, f"{int(eta_seconds / 60)}m {int(eta_seconds % 60)}s"
-        else: return eta_seconds, f"{int(eta_seconds / 3600)}h {int((eta_seconds % 3600) / 60)}m"
+        if not self.current_state or self.current_state.current == 0:
+            return float('inf'), "calculating..."
+
+        elapsed = time.time() - self.current_state.start_time
+        items_per_second = self.current_state.current / elapsed
+        remaining_items = self.current_state.total - self.current_state.current
+
+        eta_seconds = remaining_items / items_per_second if items_per_second > 0 else float('inf')
+
+        if eta_seconds == float('inf'):
+            return eta_seconds, "calculating..."
+        elif eta_seconds < 60:
+            return eta_seconds, f"{int(eta_seconds)}s"
+        elif eta_seconds < 3600:
+            return eta_seconds, f"{int(eta_seconds / 60)}m {int(eta_seconds % 60)}s"
+        else:
+            return eta_seconds, f"{int(eta_seconds / 3600)}h {int((eta_seconds % 3600) / 60)}m"
 
     def _calculate_rate(self) -> float:
         if not self.current_state or self.current_state.current == 0: return 0.0
@@ -858,6 +862,18 @@ class AnalysisParameters:
 
     @classmethod
     def from_ui(cls, logger: 'EnhancedLogger', config: 'Config', **kwargs):
+        if 'thumb_megapixels' in kwargs:
+            thumb_mp = kwargs['thumb_megapixels']
+            if not isinstance(thumb_mp, (int, float)) or thumb_mp <= 0:
+                logger.warning(f"Invalid thumb_megapixels: {thumb_mp}, using default")
+                kwargs['thumb_megapixels'] = 0.5
+
+        if 'pre_sample_nth' in kwargs:
+            sample_nth = kwargs['pre_sample_nth']
+            if not isinstance(sample_nth, int) or sample_nth < 1:
+                logger.warning(f"Invalid pre_sample_nth: {sample_nth}, using 1")
+                kwargs['pre_sample_nth'] = 1
+
         valid_keys = {f.name for f in fields(cls)}
         filtered_defaults = {k: v for k, v in config.ui_defaults.items() if k in valid_keys}
         instance = cls(**filtered_defaults)
@@ -937,6 +953,11 @@ class ThumbnailManager:
         except Exception as e:
             self.logger.warning("Failed to load thumbnail with Pillow", extra={'path': str(thumb_path), 'error': e})
             return None
+
+    def clear_cache(self):
+        """Force clear the thumbnail cache to free memory"""
+        self.cache.clear()
+        gc.collect()
 
 class AdaptiveResourceManager:
     def __init__(self, logger, config):
@@ -1063,6 +1084,15 @@ def get_face_analyzer(model_name, config: 'Config', logger: 'EnhancedLogger'):
     except Exception as e:
         if "out of memory" in str(e) and torch.cuda.is_available():
             torch.cuda.empty_cache()
+            logger.warning("CUDA OOM, retrying with CPU...")
+            try:
+                # Retry with CPU
+                analyzer = FaceAnalysis(name=model_name, root=str(config.DIRS['models']),
+                                      providers=['CPUExecutionProvider'])
+                analyzer.prepare(ctx_id=-1, det_size=(640, 640))
+                return analyzer
+            except Exception as cpu_e:
+                logger.error(f"CPU fallback also failed: {cpu_e}")
         raise RuntimeError(f"Could not initialize face analysis model. Error: {e}") from e
 
 class PersonDetector:
@@ -1751,7 +1781,7 @@ class AnalysisPipeline(Pipeline):
         self.config, self.output_dir = config, Path(self.params.output_folder)
         self.thumb_dir, self.masks_dir = self.output_dir / "thumbs", self.output_dir / "masks"
         self.frame_map_path, self.metadata_path = self.output_dir / "frame_map.json", self.output_dir / "metadata.jsonl"
-        self.write_lock, self.gpu_lock = threading.Lock(), threading.Lock()
+        self.processing_lock = threading.Lock()
         self.face_analyzer, self.reference_embedding, self.mask_metadata = None, None, {}
         self.scene_map, self.niqe_metric = {}, None
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -1770,8 +1800,13 @@ class AnalysisPipeline(Pipeline):
 
     def run_full_analysis(self, scenes_to_process):
         try:
-            self.metadata_path.unlink(missing_ok=True)
-            with self.metadata_path.open('w', encoding='utf-8') as f: f.write(json.dumps(_to_json_safe({"params": asdict(self.params)})) + '\n')
+            # Ensure metadata file is properly handled
+            if self.metadata_path.exists():
+                self.metadata_path.unlink()
+
+            with open(self.metadata_path, 'w', encoding='utf-8') as f:
+                f.write(json.dumps(_to_json_safe({"params": asdict(self.params)})) + '\n')
+
             self.scene_map = {s.shot_id: s for s in scenes_to_process}
             self.tracker.start_stage("Initializing Models")
             if self.params.enable_face_filter:
@@ -1811,10 +1846,24 @@ class AnalysisPipeline(Pipeline):
         num_workers = 1 if self.params.disable_parallel else min(os.cpu_count() or 4, 8)
         with ThreadPoolExecutor(max_workers=num_workers) as executor:
             futures = [executor.submit(self._process_single_frame, path) for path in image_files_to_process]
-            for i, future in enumerate(futures):
-                if self.cancel_event.is_set(): break
-                future.result()
-                self.tracker.update_progress(stage_items_processed=i + 1)
+
+            completed_count = 0
+            while completed_count < len(futures):
+                if self.cancel_event.is_set():
+                    for f in futures:
+                        f.cancel()
+                    break
+
+                # Non-blocking check for completed futures
+                for i, future in enumerate(futures):
+                    if future.done():
+                        try:
+                            future.result()  # To raise exceptions if any
+                        except Exception as e:
+                            self.logger.error(f"Error processing future: {e}")
+                        completed_count +=1
+                        self.tracker.update_progress(stage_items_processed=completed_count)
+                time.sleep(0.1)  # Avoid busy-waiting
 
     def _process_single_frame(self, thumb_path):
         if self.cancel_event.is_set(): return
@@ -1844,15 +1893,22 @@ class AnalysisPipeline(Pipeline):
             if self.params.enable_dedup and imagehash: meta['phash'] = str(imagehash.phash(rgb_to_pil(thumb_image_rgb)))
             if frame.error: meta["error"] = frame.error
             if meta.get("mask_path"): meta["mask_path"] = Path(meta["mask_path"]).name
-            with self.write_lock, self.metadata_path.open('a', encoding='utf-8') as f: json.dump(_to_json_safe(meta), f); f.write('\n')
+            with self.processing_lock:
+                with self.metadata_path.open('a', encoding='utf-8') as f:
+                    json.dump(_to_json_safe(meta), f)
+                    f.write('\n')
         except Exception as e:
             self.logger.critical("Error processing frame", exc_info=True, extra={**log_context, 'error': e})
-            with self.write_lock, self.metadata_path.open('a', encoding='utf-8') as f: json.dump({"filename": thumb_path.name, "error": f"processing_failed: {e}"}, f); f.write('\n')
+            with self.processing_lock:
+                with self.metadata_path.open('a', encoding='utf-8') as f:
+                    json.dump({"filename": thumb_path.name, "error": f"processing_failed: {e}"}, f)
+                    f.write('\n')
 
     def _analyze_face_similarity(self, frame, image_rgb):
         try:
             image_bgr = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR)
-            with self.gpu_lock: faces = self.face_analyzer.get(image_bgr)
+            with self.processing_lock:
+                faces = self.face_analyzer.get(image_bgr)
             if faces:
                 best_face = max(faces, key=lambda x: x.det_score)
                 distance = 1 - np.dot(best_face.normed_embedding, self.reference_embedding)
@@ -2079,7 +2135,7 @@ def _regenerate_all_previews(scenes_list, output_folder, masker, thumbnail_manag
         thumb_rgb = thumbnail_manager.get(output_dir / "thumbs" / f"{Path(fname).stem}.webp")
         if thumb_rgb is None: continue
         bbox, details = scene_dict.get('seed_result', {}).get('bbox'), scene_dict.get('seed_result', {}).get('details', {})
-        mask = masker.get_mask_for_bbox(thumb_rgb, bbox) if bbox else None
+        mask = masker._sam2_mask_for_bbox(thumb_rgb, bbox) if bbox else None
         overlay_rgb = render_mask_overlay(thumb_rgb, mask, 0.6, logger=logger) if mask is not None else masker.draw_bbox(thumb_rgb, bbox)
         previews.append((overlay_rgb, f"Scene {scene_dict['shot_id']} (Seed: {scene_dict['best_seed_frame']}) | {details.get('type', 'N/A')}"))
     return previews
