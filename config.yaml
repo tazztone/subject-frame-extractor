@@ -18,9 +18,9 @@ ui_defaults:
   enable_subject_mask: True          # Enable subject masking and propagation.
   dam4sam_model_name: "sam21pp-L"    # DAM4SAM model for mask propagation.
   person_detector_model: "yolo11x.pt" # YOLO model for detecting persons.
-  primary_seed_strategy: "🔄 Face + Text Fallback" # Aligned with UI default
-  seed_strategy: "Largest Person"                # Default for 'Automatic' strategy
-  text_prompt: ""                    # Global text prompt for seeding (can be overridden per-scene).
+  primary_seed_strategy: "🤖 Automatic" # Default strategy on UI load
+  seed_strategy: "Largest Person"      # Default for 'Automatic' strategy
+  text_prompt: ""                      # Global text prompt for seeding (can be overridden per-scene).
 
   # --- Final Analysis & Filtering ---
   resume: False                      # Attempt to resume a previous analysis run (less relevant in new workflow).
@@ -72,7 +72,7 @@ min_mask_area_pct: 1.0
 # --- Model & Path Configuration ---
 # Paths for models and other external dependencies.
 model_paths:
-  grounding_dino_config: "Grounded-SAM-2/grounding_dino/groundingdino/config/GroundingDINO_SwinT_OGC.py"
+  grounding_dino_config: "Grounded-SAM-2/groundingdino/config/GroundingDINO_SwinT_OGC.py"
   grounding_dino_checkpoint: "models/groundingdino_swint_ogc.pth"
 
 # --- Grounded DINO/SAM2 Inference Parameters ---
