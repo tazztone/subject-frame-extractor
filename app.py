@@ -40,12 +40,19 @@ import types
 import urllib.request
 import yaml
 
+from pathlib import Path
+
+# Add submodules to Python path
+project_root = Path(__file__).parent
+sys.path.insert(0, str(project_root))
+sys.path.insert(0, str(project_root / 'Grounded-SAM-2'))
+sys.path.insert(0, str(project_root / 'DAM4SAM'))
+
 from collections import Counter, OrderedDict, defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, asdict, field, fields
 from enum import Enum
 from functools import lru_cache
-from pathlib import Path
 from queue import Queue, Empty
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -2549,12 +2556,29 @@ class EnhancedAppUI(AppUI):
 
     def _setup_scene_editor_handlers(self):
         c = self.components
-        c['seeding_preview_gallery'].select(lambda s, evt: (gr.update(open=True, value=f"**Editing Scene {s[evt.index]['shot_id']}** (Frames {s[evt.index]['start_frame']}-{s[evt.index]['end_frame']})"),
-                                                            s[evt.index]['shot_id'], s[evt.index].get('seed_config', {}).get('text_prompt', ''),
-                                                            s[evt.index].get('seed_config', {}).get('box_threshold', self.config.grounding_dino_params['box_threshold']),
-                                                            s[evt.index].get('seed_config', {}).get('text_threshold', self.config.grounding_dino_params['text_threshold'])) if s and evt.index is not None else (gr.update(open=False), None, "", self.config.grounding_dino_params['box_threshold'], self.config.grounding_dino_params['text_threshold']),
-                                          [c['scenes_state']], [c['scene_editor_accordion'], c['selected_scene_id_state'], c['scene_editor_prompt_input'],
-                                                                c['scene_editor_box_thresh_input'], c['scene_editor_text_thresh_input']])
+        def on_select_scene(scenes, evt: gr.SelectData):
+            if not scenes or evt.index is None:
+                return (gr.update(open=False), None, "",
+                       self.config.grounding_dino_params['box_threshold'],
+                       self.config.grounding_dino_params['text_threshold'])
+            scene = scenes[evt.index]
+            cfg = scene.get('seed_config', {})
+            status_md = (f"**Editing Scene {scene['shot_id']}** "
+                        f"(Frames {scene['start_frame']}-{scene['end_frame']})")
+            prompt = cfg.get('text_prompt', '') if cfg else ''
+
+            return (gr.update(open=True, value=status_md), scene['shot_id'],
+                   prompt,
+                   cfg.get('box_threshold', self.config.grounding_dino_params['box_threshold']),
+                   cfg.get('text_threshold', self.config.grounding_dino_params['text_threshold']))
+
+        c['seeding_preview_gallery'].select(
+            on_select_scene, [c['scenes_state']],
+            [c['scene_editor_accordion'], c['selected_scene_id_state'],
+             c['scene_editor_prompt_input'],
+             c['scene_editor_box_thresh_input'],
+             c['scene_editor_text_thresh_input']]
+        )
         recompute_inputs = [c['scenes_state'], c['selected_scene_id_state'], c['scene_editor_prompt_input'],
                             c['scene_editor_box_thresh_input'], c['scene_editor_text_thresh_input'], c['extracted_frames_dir_state']] + self.ana_input_components
         c['scene_recompute_button'].click(self.on_apply_scene_overrides, recompute_inputs, [c['seeding_preview_gallery'], c['scenes_state'], c['unified_status']])
@@ -2807,12 +2831,6 @@ def check_dependencies():
 
 def main():
     try:
-        # Add submodules to Python path
-        project_root = Path(__file__).parent
-        sys.path.insert(0, str(project_root))
-        sys.path.insert(0, str(project_root / 'Grounded-SAM-2'))
-        sys.path.insert(0, str(project_root / 'DAM4SAM'))
-
         # check_ffmpeg() # This can be disruptive, let's assume it's installed.
         check_dependencies()
         composition = CompositionRoot()
