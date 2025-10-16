@@ -50,8 +50,10 @@ class SubjectMasker:
         self.seed_selector = SeedSelector(params, face_analyzer, 
                                         reference_embedding, person_detector, 
                                         self.dam_tracker, self._gdino, logger=self.logger)
-        self.mask_propagator = MaskPropagator(params, self.dam_tracker, 
-                                            cancel_event, progress_queue, logger=self.logger)
+        self.mask_propagator = MaskPropagator(
+            params, self.dam_tracker, self.tracker,
+            cancel_event, progress_queue, logger=self.logger
+        )
 
     def _initialize_models(self):
         """Initialize ML models for masking."""
@@ -144,7 +146,10 @@ class SubjectMasker:
                     continue
                 
                 # Create a new propagator for each scene to ensure clean state
-                propagator = MaskPropagator(self.params, self.dam_tracker, self.cancel_event, self.progress_queue, self.logger)
+                propagator = MaskPropagator(
+                    self.params, self.dam_tracker, self.tracker,
+                    self.cancel_event, self.progress_queue, self.logger
+                )
                 
                 masks, areas, empties, errors = propagator.propagate(
                     small_images, seed_idx_in_shot, bbox)
