@@ -108,7 +108,7 @@ class AnalysisPipeline(Pipeline):
                 "output_dir": str(self.output_dir)
             }
         except Exception as e:
-            self.logger.error("Analysis pipeline failed", component="analysis", exc_info=True, error=str(e))
+            self.logger.error("Analysis pipeline failed", component="analysis", exc_info=True, extra={'error': str(e)})
             return {"error": str(e)}
 
     def _create_frame_map(self):

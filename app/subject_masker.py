@@ -47,9 +47,9 @@ class SubjectMasker:
 
         # Initialize sub-components
         self._initialize_models()
-        self.seed_selector = SeedSelector(params, face_analyzer, 
-                                        reference_embedding, person_detector, 
-                                        self.dam_tracker, self._gdino, logger=self.logger)
+        self.seed_selector = SeedSelector(params, face_analyzer,
+                                          reference_embedding, person_detector,
+                                          self.dam_tracker, self._gdino, logger=self.logger)
         self.mask_propagator = MaskPropagator(
             params, self.dam_tracker, self.tracker,
             cancel_event, progress_queue, logger=self.logger
@@ -106,16 +106,9 @@ class SubjectMasker:
                 if self.cancel_event.is_set():
                     break
                 
-                shot_context = {
-                    'shot_id': scene.shot_id,
-                    'start_frame': scene.start_frame,
-                    'end_frame': scene.end_frame
-                }
+                shot_context = {'shot_id': scene.shot_id, 'start_frame': scene.start_frame, 'end_frame': scene.end_frame}
                 self.logger.info(f"Masking scene {i+1}/{total_scenes}", user_context=shot_context)
-                self.tracker.update_progress(
-                    stage_items_processed=i, 
-                    substage=f"Scene {scene.shot_id}"
-                )
+                self.tracker.update_progress(stage_items_processed=i, substage=f"Scene {scene.shot_id}")
 
                 seed_frame_num = scene.best_seed_frame
                 shot_frames_data = self._load_shot_frames(
@@ -145,13 +138,7 @@ class SubjectMasker:
                                 shot_id=scene.shot_id))
                     continue
                 
-                # Create a new propagator for each scene to ensure clean state
-                propagator = MaskPropagator(
-                    self.params, self.dam_tracker, self.tracker,
-                    self.cancel_event, self.progress_queue, self.logger
-                )
-                
-                masks, areas, empties, errors = propagator.propagate(
+                masks, areas, empties, errors = self.mask_propagator.propagate(
                     small_images, seed_idx_in_shot, bbox)
 
                 for j, (original_fn, _, (h, w)) in enumerate(shot_frames_data):
