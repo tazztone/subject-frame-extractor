@@ -127,7 +127,7 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue,
                 area_pct = (np.sum(mask > 0) / (h * w)) * 100 if h * w > 0 else 0.0
                 scene.seed_result['details']['mask_area_pct'] = area_pct
 
-            overlay_rgb = (render_mask_overlay(thumb_rgb, mask, logger) if mask is not None else masker.draw_bbox(thumb_rgb, bbox))
+            overlay_rgb = (render_mask_overlay(thumb_rgb, mask, 0.6, logger=logger) if mask is not None else masker.draw_bbox(thumb_rgb, bbox))
             caption = f"Scene {scene.shot_id} (Seed: {scene.best_seed_frame}) | {details.get('type', 'N/A')}"
             previews.append((overlay_rgb, caption))
             if scene.status == 'pending': scene.status = 'included'
