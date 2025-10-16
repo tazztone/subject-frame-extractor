@@ -218,14 +218,22 @@ class AppUI:
         with gr.Row():
             with gr.Column(scale=1):
                 gr.Markdown("### 🎯 Step 1: Choose Your Seeding Strategy")
+
+                # Set default strategy and calculate initial visibility
+                default_strategy = "🔄 Face + Text Fallback"  # Keep in sync with primary_seed_strategy_input.value
+                is_face = default_strategy == "👤 By Face"
+                is_text = default_strategy == "📝 By Text"
+                is_fallback = default_strategy == "🔄 Face + Text Fallback"
+                is_auto = default_strategy == "🤖 Automatic"
+
                 self._create_component('primary_seed_strategy_input', 'radio', {
                     'choices': ["👤 By Face", "📝 By Text", "🔄 Face + Text Fallback", "🤖 Automatic"],
-                    'value': "🔄 Face + Text Fallback",  # Make fallback the default
+                    'value': default_strategy,
                     'label': "Primary Seeding Strategy"
                 })
 
                 # --- Face Seeding Group ---
-                with gr.Group(visible=False) as face_seeding_group:
+                with gr.Group(visible=(is_face or is_fallback)) as face_seeding_group:
                     self.components['face_seeding_group'] = face_seeding_group
                     gr.Markdown("#### 👤 Configure Face Seeding")
                     gr.Markdown("Upload a clear image of the person you want to find. The system will search for this person in the video.")
@@ -237,11 +245,11 @@ class AppUI:
                     })
                     self._create_component('enable_face_filter_input', 'checkbox', {
                         'label': "Enable Face Similarity (must be checked for face seeding)",
-                        'value': False, 'interactive': False
+                        'value': (is_face or is_fallback), 'interactive': False
                     })
 
                 # --- Text Seeding Group ---
-                with gr.Group(visible=False) as text_seeding_group:
+                with gr.Group(visible=(is_text or is_fallback)) as text_seeding_group:
                     self.components['text_seeding_group'] = text_seeding_group
                     gr.Markdown("#### 📝 Configure Text Seeding")
                     gr.Markdown("Describe the subject or object you want to find. Be as specific as possible for better results.")
@@ -252,7 +260,7 @@ class AppUI:
                     })
 
                 # --- Automatic Seeding Group ---
-                with gr.Group(visible=True) as auto_seeding_group:
+                with gr.Group(visible=is_auto) as auto_seeding_group:
                     self.components['auto_seeding_group'] = auto_seeding_group
                     gr.Markdown("#### 🤖 Configure Automatic Seeding")
                     gr.Markdown("The system will automatically identify the most prominent person in each scene. This is a good general-purpose starting point.")
@@ -725,6 +733,25 @@ class EnhancedAppUI(AppUI):
             ui_args['enable_face_filter'] = True
         elif strategy == "🤖 Automatic":
             ui_args.update({'enable_face_filter': False, 'text_prompt': "", 'face_ref_img_path': "", 'face_ref_img_upload': None})
+
+        # Coerce numeric fields to safe defaults
+        def to_int(v, default):
+            try:
+                vi = int(v)
+                return vi if vi > 0 else default
+            except (TypeError, ValueError):
+                return default
+
+        def to_float(v, default):
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                return default
+
+        ui_args['pre_sample_nth'] = to_int(ui_args.get('pre_sample_nth'), 5)
+        ui_args['min_mask_area_pct'] = to_float(ui_args.get('min_mask_area_pct'), 0.0)
+        ui_args['sharpness_base_scale'] = to_float(ui_args.get('sharpness_base_scale'), 1.0)
+        ui_args['edge_strength_base_scale'] = to_float(ui_args.get('edge_strength_base_scale'), 1.0)
 
         return PreAnalysisEvent(**ui_args)
 
