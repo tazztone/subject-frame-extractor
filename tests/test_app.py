@@ -24,6 +24,14 @@ mock_insightface = MagicMock(name='insightface')
 mock_insightface.app = MagicMock(name='insightface.app')
 
 mock_imagehash = MagicMock()
+mock_psutil = MagicMock(name='psutil')
+mock_psutil.cpu_percent.return_value = 50.0
+mock_psutil.virtual_memory.return_value = MagicMock(percent=50.0, available=1024*1024*1024)
+mock_psutil.disk_usage.return_value = MagicMock(percent=50.0)
+mock_process = mock_psutil.Process.return_value
+mock_process.memory_info.return_value.rss = 100 * 1024 * 1024
+mock_process.cpu_percent.return_value = 10.0
+
 
 modules_to_mock = {
     'torch': mock_torch,
@@ -32,7 +40,7 @@ modules_to_mock = {
     'torchvision.ops': mock_torchvision.ops,
     'torchvision.transforms': mock_torchvision.transforms,
     'torchvision.transforms.functional': mock_torchvision.transforms.functional,
-    'cv2': MagicMock(name='cv2'),
+    # 'cv2': MagicMock(name='cv2'), # cv2 is now used in tests, so we don't mock it globally
     'insightface': mock_insightface,
     'insightface.app': mock_insightface.app,
     'onnxruntime': MagicMock(name='onnxruntime'),
@@ -48,6 +56,7 @@ modules_to_mock = {
     'ultralytics': MagicMock(name='ultralytics'),
     'GPUtil': MagicMock(getGPUs=lambda: [MagicMock(memoryUtil=0.5)]),
     'imagehash': mock_imagehash,
+    'psutil': mock_psutil,
     'matplotlib': MagicMock(),
     'matplotlib.pyplot': MagicMock(),
     'scenedetect': MagicMock(),
@@ -150,6 +159,31 @@ class TestAppUI:
         except Exception as e:
             pytest.fail(f"build_ui() raised an exception: {e}")
 
+class TestUtils:
+    @pytest.mark.parametrize("value, to_type, expected", [
+        ("True", bool, True),
+        ("false", bool, False),
+        ("1", bool, True),
+        ("0", bool, False),
+        ("yes", bool, True),
+        ("no", bool, False),
+        (True, bool, True),
+        (False, bool, False),
+        ("123", int, 123),
+        (123, int, 123),
+        ("123.45", float, 123.45),
+        (123.45, float, 123.45),
+        ("string", str, "string"),
+    ])
+    def test_coerce(self, value, to_type, expected):
+        assert app._coerce(value, to_type) == expected
+
+    def test_coerce_invalid_raises(self):
+        with pytest.raises(ValueError):
+            app._coerce("not-a-number", int)
+        with pytest.raises(ValueError):
+            app._coerce("not-a-float", float)
+
 class TestConfig:
     def test_config_loading_success(self, mock_config_file):
         with patch.object(app.Config, 'CONFIG_FILE', mock_config_file):
@@ -160,18 +194,32 @@ class TestConfig:
 
 
 class TestEnhancedLogging(unittest.TestCase):
-    @patch('psutil.Process')
-    def test_enhanced_logger_basic_functionality(self, mock_process):
+    def test_enhanced_logger_basic_functionality(self):
+        """
+        Tests that the logger can be instantiated and basic log messages can be sent
+        without crashing. It also checks that the custom SUCCESS level works.
+        """
         logger = app.EnhancedLogger(log_to_console=False, log_to_file=False)
-        logger.info("Test info message", component="test")
-        logger.warning("Test warning message", component="test")
 
-    @patch('psutil.Process')
-    def test_operation_context_timing(self, mock_process):
+        # We use mock_open to prevent actual file I/O
+        with patch('builtins.open', mock_open()) as mock_file:
+            # Wrap in a try-except block to provide more context on failure
+            try:
+                logger.info("Test info message", component="test")
+                logger.warning("Test warning message", component="test")
+                logger.success("Test success message", component="test")
+            except Exception as e:
+                self.fail(f"Logger unexpectedly raised an exception: {e}")
+
+            # Verify that the manual file write was called for each log message
+            self.assertEqual(mock_file().write.call_count, 3)
+
+    def test_operation_context_timing(self):
         logger = app.EnhancedLogger(log_to_console=False, log_to_file=False)
-        with logger.operation_context("test_operation", "test_component") as ctx:
-            time.sleep(0.1)
-            self.assertEqual(ctx['operation'], "test_operation")
+        with patch('builtins.open', mock_open()):
+            with logger.operation_context("test_operation", "test_component") as ctx:
+                time.sleep(0.01)
+                self.assertEqual(ctx['operation'], "test_operation")
 
 class TestFilterLogic:
     @pytest.fixture
@@ -199,7 +247,11 @@ class TestPerformanceOptimizer(unittest.TestCase):
     @patch('app.EnhancedLogger')
     def setUp(self, mock_logger, mock_config):
         self.mock_config = mock_config
-        self.mock_config.settings = {'monitoring': {'memory_warning_threshold_mb': 100, 'cpu_warning_threshold_percent': 90}}
+        self.mock_config.settings = {'monitoring': {
+            'memory_warning_threshold_mb': 100,
+            'memory_critical_threshold_mb': 200,
+            'cpu_warning_threshold_percent': 90
+        }}
         self.mock_logger = mock_logger
         self.resource_manager = app.AdaptiveResourceManager(logger=self.mock_logger, config=self.mock_config)
 
@@ -215,10 +267,38 @@ class TestPerformanceOptimizer(unittest.TestCase):
         self.assertEqual(self.resource_manager.current_limits['batch_size'], 22)
         self.assertEqual(self.resource_manager.current_limits['num_workers'], 3)
 
+    @patch('time.sleep')
+    @patch('psutil.Process')
+    @patch('psutil.cpu_percent')
+    def test_adjust_parameters_critical_memory(self, mock_cpu_percent, mock_process, mock_sleep):
+        mock_cpu_percent.return_value = 50
+        mock_process.return_value.memory_info.return_value.rss = 250 * 1024 * 1024 # Above critical threshold
+        self.resource_manager.current_limits['batch_size'] = 32
+        self.resource_manager._adjust_parameters(self.resource_manager._get_resource_metrics())
+        self.assertEqual(self.resource_manager.current_limits['batch_size'], 1)
+        self.mock_logger.critical.assert_called_once()
+
 class TestQuality(unittest.TestCase):
     def test_compute_entropy(self):
         hist = np.ones(256, dtype=np.uint64)
         self.assertAlmostEqual(app.compute_entropy(hist), 1.0, places=5)
+
+    def test_quality_metrics_small_mask_fallback(self):
+        frame = app.Frame(image_data=np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8), frame_number=1)
+        thumb_image_rgb = np.random.randint(0, 255, (50, 50, 3), dtype=np.uint8)
+        small_mask = np.zeros((50, 50), dtype=np.uint8)
+        small_mask[25, 25] = 255 # Mask is too small (1 pixel)
+        mock_config = MockConfig()
+        mock_logger = MagicMock()
+
+        # This should not raise an exception, but fallback to full-frame analysis
+        try:
+            frame.calculate_quality_metrics(thumb_image_rgb, mock_config, mock_logger, mask=small_mask)
+        except ValueError:
+            pytest.fail("calculate_quality_metrics raised ValueError on small mask, but should have fallen back.")
+
+        # Ensure metrics were still calculated (not all zero)
+        self.assertNotEqual(frame.metrics.sharpness_score, 0.0)
 
 class TestSceneLogic:
     def test_get_scene_status_text(self):

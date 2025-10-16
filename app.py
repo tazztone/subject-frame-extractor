@@ -130,7 +130,7 @@ class Config:
     BASE_DIR = Path(__file__).parent
     DIRS = {
         'logs': BASE_DIR / "logs",
-        'configs': BASE_DIR / "app",
+        'configs': BASE_DIR / "configs",
         'models': BASE_DIR / "models",
         'downloads': BASE_DIR / "downloads"
     }
@@ -220,10 +220,8 @@ monitoring:
         self.GROUNDING_DINO_CONFIG = (
             self.BASE_DIR / self.model_paths['grounding_dino_config']
         )
-        self.GROUNDING_DINO_CKPT = (
-            self.DIRS['models'] /
-            Path(self.model_paths['grounding_dino_checkpoint']).name
-        )
+        ckpt_cfg = Path(self.model_paths['grounding_dino_checkpoint'])
+        self.GROUNDING_DINO_CKPT = ckpt_cfg if ckpt_cfg.is_absolute() else (self.DIRS['models'] / ckpt_cfg.name)
         self.GROUNDING_BOX_THRESHOLD = (
             self.grounding_dino_params['box_threshold']
         )
@@ -244,6 +242,9 @@ monitoring:
 
 
 # --- LOGGING ---
+
+SUCCESS_LEVEL_NUM = 25
+logging.addLevelName(SUCCESS_LEVEL_NUM, "SUCCESS")
 
 @dataclass
 class LogEvent:
@@ -281,7 +282,7 @@ class PerformanceMonitor:
             'memory_available_mb': psutil.virtual_memory().available / (1024**2),
             'disk_usage_percent': psutil.disk_usage('/').percent,
             'process_memory_mb': self.process.memory_info().rss / (1024**2),
-            'process_cpu_percent': self.process.cpu_percent(),
+            'process_cpu_percent': self.process.cpu_percent(interval=0.1),
         }
         if self.gpu_available:
             try:
@@ -331,9 +332,11 @@ class EnhancedLogger:
         file_handler.setFormatter(file_formatter)
         file_handler.setLevel(logging.DEBUG)
         self.logger.addHandler(file_handler)
-        self.structured_handler = logging.FileHandler(self.structured_log_file, encoding='utf-8')
-        self.structured_handler.setLevel(logging.DEBUG)
-        self.logger.addHandler(self.structured_handler)
+        # The structured handler is removed to prevent duplicate/mixed logging,
+        # as structured logs are written manually in _log_event.
+        # self.structured_handler = logging.FileHandler(self.structured_log_file, encoding='utf-8')
+        # self.structured_handler.setLevel(logging.DEBUG)
+        # self.logger.addHandler(self.structured_handler)
 
     def set_progress_queue(self, queue):
         self.progress_queue = queue
@@ -373,15 +376,23 @@ class EnhancedLogger:
                         memory_mb=current_metrics.get('process_memory_mb'), gpu_memory_mb=current_metrics.get('gpu_memory_used_mb'), **kwargs)
 
     def _log_event(self, event: LogEvent):
-        log_level = getattr(logging, event.level.upper(), logging.INFO)
+        log_level_name = event.level.upper()
+        log_level = getattr(logging, log_level_name, logging.INFO)
+        # Use custom level number for "SUCCESS"
+        if log_level_name == "SUCCESS":
+            log_level = SUCCESS_LEVEL_NUM
+
         extra_info = f" [{event.component}]"
         if event.operation: extra_info += f" [{event.operation}]"
         if event.duration_ms: extra_info += f" ({event.duration_ms:.1f}ms)"
+
         self.logger.log(log_level, f"{event.message}{extra_info}")
-        if hasattr(self, 'structured_handler'):
-            json_line = json.dumps(asdict(event), default=str, ensure_ascii=False)
-            with open(self.structured_log_file, 'a', encoding='utf-8') as f:
-                f.write(json_line + '\n')
+
+        # Manual write to JSONL file
+        json_line = json.dumps(asdict(event), default=str, ensure_ascii=False)
+        with open(self.structured_log_file, 'a', encoding='utf-8') as f:
+            f.write(json_line + '\n')
+
         if self.progress_queue:
             ui_message = f"[{event.level}] {event.message}"
             if event.operation: ui_message = f"[{event.operation}] {ui_message}"
@@ -677,6 +688,19 @@ class SessionLoadEvent(UIEvent):
 def sanitize_filename(name, max_length=50):
     return re.sub(r'[^\w\-_.]', '_', name)[:max_length]
 
+def _coerce(val, to_type):
+    if to_type is bool:
+        if isinstance(val, bool): return val
+        return str(val).strip().lower() in {"1", "true", "yes", "on"}
+    if to_type in (int, float):
+        try:
+            return to_type(val)
+        except (ValueError, TypeError):
+            # Let the caller handle the exception if it's inappropriate
+            # to fallback to a default. For AnalysisParameters, it has a try-except.
+            raise
+    return val
+
 @contextlib.contextmanager
 def safe_resource_cleanup():
     try: yield
@@ -728,7 +752,8 @@ class Frame:
         try:
             gray = cv2.cvtColor(thumb_image_rgb, cv2.COLOR_RGB2GRAY)
             active_mask = ((mask > 128) if mask is not None and mask.ndim == 2 else None)
-            if active_mask is not None and np.sum(active_mask) < 100: raise ValueError("Mask too small.")
+            if active_mask is not None and np.sum(active_mask) < 100:
+                active_mask = None # fallback to full-frame stats instead of raising
             lap = cv2.Laplacian(gray, cv2.CV_64F)
             masked_lap = lap[active_mask] if active_mask is not None else lap
             sharpness = np.var(masked_lap) if masked_lap.size > 0 else 0
@@ -837,12 +862,12 @@ class AnalysisParameters:
         filtered_defaults = {k: v for k, v in config.ui_defaults.items() if k in valid_keys}
         instance = cls(**filtered_defaults)
         for key, value in kwargs.items():
-            if hasattr(instance, key):
-                target_type = type(getattr(instance, key))
+            if hasattr(instance, key) and value is not None and value != '':
+                default = getattr(instance, key)
                 try:
-                    if value is not None and value != '': setattr(instance, key, target_type(value))
+                    setattr(instance, key, _coerce(value, type(default)))
                 except (ValueError, TypeError):
-                    logger.warning(f"Could not coerce UI value for '{key}' to {target_type}. Using default.", extra={'key': key, 'value': value})
+                    logger.warning(f"Could not coerce UI value for '{key}' to {type(default)}. Using default.", extra={'key': key, 'value': value})
         return instance
 
     def _get_config_hash(self, output_dir: Path) -> str:
@@ -886,6 +911,21 @@ class ThumbnailManager:
             self.cache.move_to_end(thumb_path)
             return self.cache[thumb_path]
         if not thumb_path.exists(): return None
+
+        if Image is None:
+            self.logger.warning("Pillow not available; attempting to load with OpenCV", extra={'path': str(thumb_path)})
+            if cv2 and thumb_path.suffix.lower() in {'.jpg','.jpeg','.png','.webp'}:
+                try:
+                    thumb_img_bgr = cv2.imread(str(thumb_path))
+                    if thumb_img_bgr is not None:
+                        thumb_img = cv2.cvtColor(thumb_img_bgr, cv2.COLOR_BGR2RGB)
+                        self.cache[thumb_path] = thumb_img
+                        if len(self.cache) > self.max_size: self.cache.popitem(last=False)
+                        return thumb_img
+                except Exception as e:
+                    self.logger.error("OpenCV failed to load thumbnail", extra={'path': str(thumb_path), 'error': e})
+            return None
+
         try:
             with Image.open(thumb_path) as pil_thumb:
                 thumb_img = np.array(pil_thumb.convert("RGB"))
@@ -893,7 +933,7 @@ class ThumbnailManager:
             if len(self.cache) > self.max_size: self.cache.popitem(last=False)
             return thumb_img
         except Exception as e:
-            self.logger.warning("Failed to load thumbnail", extra={'path': str(thumb_path), 'error': e})
+            self.logger.warning("Failed to load thumbnail with Pillow", extra={'path': str(thumb_path), 'error': e})
             return None
 
 class AdaptiveResourceManager:
@@ -949,13 +989,26 @@ class AdaptiveResourceManager:
 
     def _adjust_parameters(self, metrics: Dict[str, Any]):
         monitoring_config = self.config.settings.get('monitoring', {})
-        if metrics['process_memory_mb'] > monitoring_config.get('memory_warning_threshold_mb', 8192):
+        mem_used = metrics['process_memory_mb']
+        mem_crit = monitoring_config.get('memory_critical_threshold_mb', 16384)
+        mem_warn = monitoring_config.get('memory_warning_threshold_mb', 8192)
+
+        if mem_used > mem_crit:
+            if self.current_limits['batch_size'] > 1:
+                old_batch = self.current_limits['batch_size']
+                self.current_limits['batch_size'] = 1 # Aggressive reduction
+                self.logger.critical(f"Critical memory usage ({mem_used}MB), forcing batch size to 1 from {old_batch}",
+                                     component="resource_manager", custom_fields={'memory_mb': mem_used})
+                gc.collect()
+                if torch.cuda.is_available(): torch.cuda.empty_cache()
+        elif mem_used > mem_warn:
             if self.current_limits['batch_size'] > 1:
                 old_batch_size = self.current_limits['batch_size']
                 self.current_limits['batch_size'] = max(1, int(old_batch_size * 0.7))
                 self.logger.warning(f"High memory usage detected, reducing batch size from {old_batch_size} to {self.current_limits['batch_size']}",
                                     component="resource_manager", custom_fields={'memory_mb': metrics['process_memory_mb']})
                 gc.collect()
+
         if metrics['cpu_percent'] > monitoring_config.get('cpu_warning_threshold_percent', 90):
             if self.current_limits['num_workers'] > 1:
                 old_workers = self.current_limits['num_workers']
@@ -1986,7 +2039,8 @@ def apply_scene_overrides(scenes_list, selected_shot_id, prompt, box_th, text_th
                                thumbnail_manager=thumbnail_manager, logger=logger)
         masker.frame_map = masker._create_frame_map(output_folder)
         fname = masker.frame_map.get(scene_dict['best_seed_frame'])
-        if not fname: raise ValueError("Framemap lookup failed for re-seeding.")
+        if not fname:
+            raise ValueError(f"Framemap lookup failed for re-seeding shot {scene_dict.get('shot_id')} frame {scene_dict.get('best_seed_frame')}.")
         thumb_rgb = thumbnail_manager.get(Path(output_folder) / "thumbs" / f"{Path(fname).stem}.webp")
         bbox, details = masker.get_seed_for_frame(thumb_rgb, scene_dict['seed_config'])
         scene_dict['seed_result'] = {'bbox': bbox, 'details': details}
@@ -2051,7 +2105,7 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue, cancel_
                            reference_embedding=models["ref_emb"], person_detector=models["person_detector"],
                            niqe_metric=niqe_metric, thumbnail_manager=thumbnail_manager, logger=logger, tracker=tracker)
     masker.frame_map = masker._create_frame_map(str(output_dir))
-    tracker.update_progress(stage_items_processed=4)
+    tracker.update_progress(stage_items_processed=2)
     def pre_analysis_task():
         tracker.start_stage("Pre-analyzing scenes", stage_items=len(scenes))
         previews = []
