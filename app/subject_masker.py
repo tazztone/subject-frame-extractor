@@ -9,8 +9,8 @@ from dataclasses import asdict
 from app.seed_selector import SeedSelector
 from app.propagate import MaskPropagator
 from app.thumb_cache import ThumbnailManager
-from app.grounding import load_grounding_dino_model
-from app.sam_tracker import initialize_dam4sam_tracker
+from app.grounding import get_grounding_dino_model
+from app.sam_tracker import get_dam4sam_tracker
 from app.logging_enhanced import EnhancedLogger
 from app.utils import safe_resource_cleanup
 from app.frames import create_frame_map
@@ -20,12 +20,13 @@ from app.models import MaskingResult
 class SubjectMasker:
     """Orchestrates subject seeding and mask propagation for video analysis."""
     
-    def __init__(self, params, progress_queue, cancel_event, frame_map=None,
+    def __init__(self, params, progress_queue, cancel_event, config: 'Config', frame_map=None,
                  face_analyzer=None, reference_embedding=None, 
                  person_detector=None, thumbnail_manager=None, 
                  niqe_metric=None, logger=None, tracker=None):
         
         self.params = params
+        self.config = config
         self.progress_queue = progress_queue
         self.cancel_event = cancel_event
         self.logger = logger or EnhancedLogger()
@@ -62,7 +63,13 @@ class SubjectMasker:
         
         if self._gdino is not None:
             return True
-        self._gdino = load_grounding_dino_model(self.params, self._device, self.logger)
+        self._gdino = get_grounding_dino_model(
+            self.params.gdino_config_path,
+            self.params.gdino_checkpoint_path,
+            self.config,
+            self._device,
+            self.logger
+        )
         return self._gdino is not None
 
     def _initialize_tracker(self):
@@ -70,7 +77,9 @@ class SubjectMasker:
         
         if self.dam_tracker:
             return True
-        self.dam_tracker = initialize_dam4sam_tracker(self.params, self.logger)
+        self.dam_tracker = get_dam4sam_tracker(
+            self.params.dam4sam_model_name, self.config, self.logger
+        )
         return self.dam_tracker is not None
 
     def run_propagation(self, frames_dir: str, scenes_to_process) -> dict:
@@ -224,7 +233,7 @@ class SubjectMasker:
             face_sim = 0.0
             if (self.face_analyzer and 
                 self.reference_embedding is not None):
-                thumb_bgr = cv2.cvtColor(thumb_rgb, cv2.COLOR_RGB_BGR)
+                thumb_bgr = cv2.cvtColor(thumb_rgb, cv2.COLOR_RGB2BGR)
                 faces = self.face_analyzer.get(thumb_bgr)
                 if faces:
                     best_face = max(faces, key=lambda x: x.det_score)

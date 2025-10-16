@@ -22,6 +22,7 @@ from app.extract import EnhancedExtractionPipeline
 from app.analyze import AnalysisPipeline
 from app.frames import render_mask_overlay, create_frame_map
 from app.progress_enhanced import AdvancedProgressTracker
+from app.models_manager import initialize_analysis_models
 
 
 def execute_extraction(event: ExtractionEvent, progress_queue: Queue,
@@ -35,8 +36,8 @@ def execute_extraction(event: ExtractionEvent, progress_queue: Queue,
         shutil.copy2(source, dest)
         params_dict['source_path'] = dest
 
-    params = AnalysisParameters.from_ui(logger, **params_dict)
-    pipeline = EnhancedExtractionPipeline(params, progress_queue, cancel_event, logger, tracker)
+    params = AnalysisParameters.from_ui(logger, config, **params_dict)
+    pipeline = EnhancedExtractionPipeline(params, progress_queue, cancel_event, config, logger, tracker)
 
     result = pipeline.run()
 
@@ -64,7 +65,7 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue,
         shutil.copy2(ref_upload, dest)
         params_dict['face_ref_img_path'] = str(dest)
 
-    params = AnalysisParameters.from_ui(logger, **params_dict)
+    params = AnalysisParameters.from_ui(logger, config, **params_dict)
     output_dir = Path(params.output_folder)
 
     run_config_path = output_dir / "run_config.json"
@@ -84,31 +85,20 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue,
         shots = json.load(f)
     scenes = [Scene(shot_id=i, start_frame=s, end_frame=e) for i, (s, e) in enumerate(shots)]
 
-    tracker.start_stage("Loading Models", 4)
-    device = "cuda" if cuda_available else "cpu"
+    tracker.start_stage("Loading Models", 2)
+
+    models = initialize_analysis_models(params, config, logger, cuda_available)
+    tracker.update_progress(stage_items_processed=1)
+
     niqe_metric = None
     if params.pre_analysis_enabled:
         import pyiqa
-        niqe_metric = pyiqa.create_metric('niqe', device=device)
-    tracker.update_progress(stage_items_processed=1)
-    
-    face_analyzer, ref_emb = None, None
-    if params.enable_face_filter:
-        from app.face import get_face_analyzer
-        face_analyzer = get_face_analyzer(params.face_model_name, logger=logger)
-        if params.face_ref_img_path and Path(params.face_ref_img_path).exists():
-            ref_img = cv2.imread(params.face_ref_img_path)
-            faces = face_analyzer.get(ref_img)
-            if faces:
-                ref_emb = max(faces, key=lambda x: x.det_score).normed_embedding
-    tracker.update_progress(stage_items_processed=2)
-    
-    from app.person import get_person_detector
-    person_detector = get_person_detector(params.person_detector_model, device, logger=logger)
-    tracker.update_progress(stage_items_processed=3)
+        niqe_metric = pyiqa.create_metric('niqe', device=models['device'])
 
-    masker = SubjectMasker(params, progress_queue, cancel_event, face_analyzer=face_analyzer,
-                         reference_embedding=ref_emb, person_detector=person_detector,
+    masker = SubjectMasker(params, progress_queue, cancel_event, config,
+                         face_analyzer=models["face_analyzer"],
+                         reference_embedding=models["ref_emb"],
+                         person_detector=models["person_detector"],
                          niqe_metric=niqe_metric, thumbnail_manager=thumbnail_manager,
                          logger=logger, tracker=tracker)
     masker.frame_map = masker._create_frame_map(str(output_dir))
@@ -274,8 +264,8 @@ def execute_propagation(event: PropagationEvent, progress_queue: Queue,
         yield {"log": "No scenes were included for propagation.", "status": "Propagation skipped."}
         return
 
-    params = AnalysisParameters.from_ui(logger, **asdict(event.analysis_params))
-    pipeline = AnalysisPipeline(params, progress_queue, cancel_event, thumbnail_manager=thumbnail_manager, logger=logger, tracker=tracker)
+    params = AnalysisParameters.from_ui(logger, config, **asdict(event.analysis_params))
+    pipeline = AnalysisPipeline(params, progress_queue, cancel_event, config, thumbnail_manager=thumbnail_manager, logger=logger, tracker=tracker)
 
     result = pipeline.run_full_analysis(scenes_to_process)
 
