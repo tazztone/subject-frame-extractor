@@ -127,7 +127,7 @@ class Config:
         'models': BASE_DIR / "models",
         'downloads': BASE_DIR / "downloads"
     }
-    CONFIG_FILE = DIRS['configs'] / "config.yaml"
+    CONFIG_FILE = BASE_DIR / "config.yaml"
 
     def __init__(self):
         # Create a default config in memory if it doesn't exist
@@ -2492,8 +2492,35 @@ class EnhancedAppUI(AppUI):
         c = self.components
         all_outputs = [v for v in c.values() if hasattr(v, "_id")]
         session_outputs = [c[k] for k in self.session_load_keys if k != 'progress_bar' and k in c and hasattr(c[k], "_id")]
-        c['load_session_button'].click(lambda s, p=gr.Progress(): self._run_task_with_progress(self.run_session_load_wrapper, session_outputs, p, s),
-                                     [c['session_path_input']], all_outputs, show_progress="hidden")
+        def session_load_handler(session_path, progress=gr.Progress()):
+            # Remove 'progress_bar' from keys if it exists, as it causes errors with new Gradio versions
+            session_load_keys_filtered = [k for k in self.session_load_keys if k != 'progress_bar']
+            session_load_outputs = [c[key] for key in session_load_keys_filtered if key in c and hasattr(c[key], "_id")]
+            yield from self._run_task_with_progress(
+                self.run_session_load_wrapper, session_load_outputs, progress, session_path
+            )
+
+        def extraction_handler(*args, progress=gr.Progress()):
+            yield from self._run_task_with_progress(
+                self.run_extraction_wrapper, all_outputs, progress, *args
+            )
+
+        def pre_analysis_handler(*args, progress=gr.Progress()):
+            yield from self._run_task_with_progress(
+                self.run_pre_analysis_wrapper, all_outputs, progress, *args
+            )
+
+        def propagation_handler(scenes, *args, progress=gr.Progress()):
+            yield from self._run_task_with_progress(
+                self.run_propagation_wrapper, all_outputs, progress, scenes, *args
+            )
+
+        c['load_session_button'].click(
+            fn=session_load_handler,
+            inputs=[c['session_path_input']],
+            outputs=all_outputs,
+            show_progress="hidden"
+        )
         ext_inputs = [c[{'source_path': 'source_input', 'upload_video': 'upload_video_input', 'max_resolution': 'max_resolution',
                          'scene_detect': 'ext_scene_detect_input', **{k: f"{k}_input" for k in self.ext_ui_map_keys if k not in
                          ['source_path', 'upload_video', 'max_resolution', 'scene_detect']}}[k]] for k in self.ext_ui_map_keys]
@@ -2513,12 +2540,12 @@ class EnhancedAppUI(AppUI):
                                                            'pre_analysis_enabled': 'pre_analysis_enabled_input', 'pre_sample_nth': 'pre_sample_nth_input',
                                                            'primary_seed_strategy': 'primary_seed_strategy_input'}[k] for k in self.ana_ui_map_keys]]
         prop_inputs = [c['scenes_state']] + self.ana_input_components
-        c['start_extraction_button'].click(lambda *a, p=gr.Progress(): self._run_task_with_progress(self.run_extraction_wrapper, all_outputs, p, *a),
-                                         ext_inputs, all_outputs, show_progress="hidden").then(lambda d: gr.update(selected=1) if d else gr.update(), c['extracted_frames_dir_state'], c['main_tabs'])
-        c['start_pre_analysis_button'].click(lambda *a, p=gr.Progress(): self._run_task_with_progress(self.run_pre_analysis_wrapper, all_outputs, p, *a),
-                                           self.ana_input_components, all_outputs, show_progress="hidden")
-        c['propagate_masks_button'].click(lambda s, *a, p=gr.Progress(): self._run_task_with_progress(self.run_propagation_wrapper, all_outputs, p, s, *a),
-                                        prop_inputs, all_outputs, show_progress="hidden").then(lambda p: gr.update(selected=2) if p else gr.update(), c['analysis_metadata_path_state'], c['main_tabs'])
+        c['start_extraction_button'].click(fn=extraction_handler,
+                                         inputs=ext_inputs, outputs=all_outputs, show_progress="hidden").then(lambda d: gr.update(selected=1) if d else gr.update(), c['extracted_frames_dir_state'], c['main_tabs'])
+        c['start_pre_analysis_button'].click(fn=pre_analysis_handler,
+                                           inputs=self.ana_input_components, outputs=all_outputs, show_progress="hidden")
+        c['propagate_masks_button'].click(fn=propagation_handler,
+                                        inputs=prop_inputs, outputs=all_outputs, show_progress="hidden").then(lambda p: gr.update(selected=2) if p else gr.update(), c['analysis_metadata_path_state'], c['main_tabs'])
 
     def _setup_scene_editor_handlers(self):
         c = self.components
