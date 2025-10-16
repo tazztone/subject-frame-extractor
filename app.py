@@ -80,10 +80,6 @@ except ImportError:
     gdino_predict = None
     box_convert = None
 
-try:
-    from insightface.app import FaceAnalysis
-except ImportError:
-    FaceAnalysis = None
 
 try:
     from numba import njit
@@ -98,10 +94,6 @@ except ImportError:
     plt = None
     mticker = None
 
-try:
-    import pyiqa
-except ImportError:
-    pyiqa = None
 
 try:
     from PIL import Image
@@ -114,10 +106,6 @@ except ImportError:
     detect = None
     ContentDetector = None
 
-try:
-    from ultralytics import YOLO
-except ImportError:
-    YOLO = None
 
 try:
     import yt_dlp as ytdlp
@@ -130,115 +118,125 @@ class Config:
     BASE_DIR = Path(__file__).parent
     DIRS = {
         'logs': BASE_DIR / "logs",
-        'configs': BASE_DIR / "configs",
         'models': BASE_DIR / "models",
         'downloads': BASE_DIR / "downloads"
     }
-    CONFIG_FILE = BASE_DIR / "config.yaml"
+    DEFAULT_CONFIG = """
+# External configuration for UI defaults, model paths, and quality metric parameters.
+# This file allows for easy tuning without modifying the application code.
 
-    def __init__(self):
-        # Create a default config in memory if it doesn't exist
-        if not self.CONFIG_FILE.exists():
-            print(f"WARNING: Configuration file not found at {self.CONFIG_FILE}. Using default values.")
-            default_config_str = """
-# Default configuration for Frame Extractor & Analyzer
+# --- UI & Filter Defaults ---
+# Default values for the Gradio user interface components.
+ui_defaults:
+  # --- Extraction Settings (New Workflow) ---
+  thumbnails_only: True              # Recommended: Extract only thumbnails first. Full-res frames are extracted on-demand during export.
+  thumb_megapixels: 0.5              # Target resolution for thumbnails (e.g., 0.5 = ~960x540 for a 16:9 video).
+  scene_detect: True                 # Enable scene detection during extraction. Crucial for the new scene-based workflow.
+  max_resolution: "maximum available" # Max resolution for video downloads (e.g., from YouTube).
 
-# Paths for models
+  # --- Pre-Analysis & Seeding Settings ---
+  pre_analysis_enabled: True         # Automatically analyze scene thumbnails to find the best frame for seeding.
+  pre_sample_nth: 5                  # When pre-analyzing, check every Nth frame in a scene. 1 = all frames. Higher values are faster for long scenes.
+  enable_face_filter: True           # Enable face similarity scoring (requires reference image).
+  face_model_name: "buffalo_l"       # InsightFace model for face analysis.
+  enable_subject_mask: True          # Enable subject masking and propagation.
+  dam4sam_model_name: "sam21pp-L"    # DAM4SAM model for mask propagation.
+  person_detector_model: "yolo11x.pt" # YOLO model for detecting persons.
+  primary_seed_strategy: "🤖 Automatic" # Default strategy on UI load
+  seed_strategy: "Largest Person"      # Default for 'Automatic' strategy
+  text_prompt: ""                      # Global text prompt for seeding (can be overridden per-scene).
+
+  # --- Final Analysis & Filtering ---
+  resume: False                      # Attempt to resume a previous analysis run (less relevant in new workflow).
+  require_face_match: False          # In final filtering, reject frames that have no face detected.
+  enable_dedup: True                 # Enable perceptual hash-based near-duplicate removal during analysis.
+  dedup_thresh: 5                    # pHash distance threshold for deduplication (lower is stricter).
+
+  # --- Legacy Full-Frame Extraction Settings (used if 'thumbnails_only' is false) ---
+  method: "all"
+  interval: 5.0
+  fast_scene: False
+  use_png: True
+  nth_frame: 5
+  disable_parallel: False
+
+
+# Central registry for all filter sliders and checkboxes.
+# Used for component creation and reset behavior in the Filtering & Export tab.
+filter_defaults:
+  quality_score: { min: 0.0, max: 100.0, step: 0.5, default_min: 0.0, default_max: 100.0 }
+  sharpness: { min: 0.0, max: 100.0, step: 0.5, default_min: 0.0, default_max: 100.0 }
+  edge_strength: { min: 0.0, max: 100.0, step: 0.5, default_min: 0.0, default_max: 100.0 }
+  contrast: { min: 0.0, max: 100.0, step: 0.5, default_min: 0.0, default_max: 100.0 }
+  brightness: { min: 0.0, max: 100.0, step: 0.5, default_min: 0.0, default_max: 100.0 }
+  entropy: { min: 0.0, max: 100.0, step: 0.5, default_min: 0.0, default_max: 100.0 }
+  niqe: { min: 0.0, max: 100.0, step: 0.5, default_min: 0.0, default_max: 100.0 }
+  face_sim: { min: 0.0, max: 1.0, step: 0.01, default_min: 0.5 }
+  mask_area_pct: { min: 0.0, max: 100.0, step: 0.1, default_min: 1.0 }
+  dedup_thresh: { min: -1, max: 32, step: 1, default: -1 } # -1 disables dedup in the filter tab UI by default
+
+# --- Quality Metrics Configuration ---
+# Weights for combining individual quality scores into a single quality score.
+quality_weights:
+  sharpness: 25
+  edge_strength: 15
+  contrast: 15
+  brightness: 10
+  entropy: 15
+  niqe: 20
+
+# Base scaling constant for sharpness, adjusted by image resolution.
+# A higher value makes the score less sensitive.
+sharpness_base_scale: 2500
+edge_strength_base_scale: 100
+
+# Minimum percentage of the frame area that a subject mask must occupy to be considered valid.
+min_mask_area_pct: 1.0
+
+# --- Model & Path Configuration ---
+# Paths for models and other external dependencies.
 model_paths:
   grounding_dino_config: "Grounded-SAM-2/groundingdino/config/GroundingDINO_SwinT_OGC.py"
-  grounding_dino_checkpoint: "groundingdino_swint_ogc.pth"
+  grounding_dino_checkpoint: "models/groundingdino_swint_ogc.pth"
 
-# Parameters for Grounding DINO
+# --- Grounded DINO/SAM2 Inference Parameters ---
 grounding_dino_params:
   box_threshold: 0.35
   text_threshold: 0.25
 
-# Weights for quality scoring (must sum to 100)
-quality_weights:
-  sharpness: 25
-  edge_strength: 25
-  contrast: 20
-  entropy: 15
-  niqe: 15
-
-# UI default values
-ui_defaults:
-  max_resolution: "1080"
-  thumbnails_only: True
-  thumb_megapixels: 0.5
-  scene_detect: True
-  method: "scene"
-  interval: "1"
-  nth_frame: "10"
-  use_png: False
-  pre_analysis_enabled: True
-  pre_sample_nth: 5
-  enable_face_filter: False
-  face_model_name: "buffalo_l"
-  text_prompt: "a person"
-  seed_strategy: "Largest Person"
-  person_detector_model: "yolo11x.pt"
-  dam4sam_model_name: "sam21pp-T"
-  enable_dedup: False
-  require_face_match: False
-
-# Filter default values
-filter_defaults:
-  dedup_thresh: { min: 0, max: 20, default: 5, step: 1 }
-  niqe: { min: 0, max: 100, default_min: 10, step: 1 }
-  sharpness: { min: 0, max: 100, default_min: 20, step: 1 }
-  edge_strength: { min: 0, max: 100, default_min: 20, step: 1 }
-  contrast: { min: 0, max: 100, default_min: 15, step: 1 }
-  brightness: { min: 0, max: 100, default_min: 10, default_max: 90, step: 1 }
-  entropy: { min: 0, max: 100, default_min: 25, step: 1 }
-  face_sim: { min: 0.0, max: 1.0, default_min: 0.5, step: 0.05 }
-  mask_area_pct: { min: 0, max: 100, default_min: 1.0, step: 0.1 }
-
-# Analysis parameters
-min_mask_area_pct: 1.0
-sharpness_base_scale: 2500.0
-edge_strength_base_scale: 100.0
-thumbnail_cache_size: 200
-
-# Monitoring settings
 monitoring:
-  memory_warning_threshold_mb: 8192
+  # Performance monitoring thresholds
+  memory_warning_threshold_mb: 8192  # Warn when process uses > 8GB
+  memory_critical_threshold_mb: 16384  # Critical when > 16GB
   cpu_warning_threshold_percent: 90
   gpu_memory_warning_threshold_percent: 90
 """
-            self.settings = yaml.safe_load(default_config_str)
-        else:
-            self.settings = self.load_config()
+
+    def __init__(self):
+        self.settings = yaml.safe_load(self.DEFAULT_CONFIG)
+        self._validate_config()
 
         for key, value in self.settings.items():
             setattr(self, key, value)
 
-        self.thumbnail_cache_size = self.settings.get(
-            'thumbnail_cache_size', 200
-        )
+        self.thumbnail_cache_size = self.settings.get('thumbnail_cache_size', 200)
 
-        self.GROUNDING_DINO_CONFIG = (
-            self.BASE_DIR / self.model_paths['grounding_dino_config']
-        )
+        self.GROUNDING_DINO_CONFIG = self.BASE_DIR / self.model_paths['grounding_dino_config']
         ckpt_cfg = Path(self.model_paths['grounding_dino_checkpoint'])
         self.GROUNDING_DINO_CKPT = ckpt_cfg if ckpt_cfg.is_absolute() else (self.DIRS['models'] / ckpt_cfg.name)
-        self.GROUNDING_BOX_THRESHOLD = (
-            self.grounding_dino_params['box_threshold']
-        )
-        self.GROUNDING_TEXT_THRESHOLD = (
-            self.grounding_dino_params['text_threshold']
-        )
+        self.GROUNDING_BOX_THRESHOLD = self.grounding_dino_params['box_threshold']
+        self.GROUNDING_TEXT_THRESHOLD = self.grounding_dino_params['text_threshold']
         self.QUALITY_METRICS = list(self.quality_weights.keys())
 
-    def load_config(self):
-        self.DIRS['configs'].mkdir(exist_ok=True)
-        if not self.CONFIG_FILE.exists():
-            raise FileNotFoundError(
-                f"Configuration file not found at {self.CONFIG_FILE}. "
-                "Please ensure it exists."
-            )
-        with open(self.CONFIG_FILE, 'r', encoding='utf-8') as f:
-            return yaml.safe_load(f)
+    def _validate_config(self):
+        """Basic validation to ensure essential keys exist."""
+        required_keys = ['ui_defaults', 'filter_defaults', 'quality_weights', 'model_paths']
+        for key in required_keys:
+            if key not in self.settings:
+                raise ValueError(f"Missing required configuration section: '{key}'")
+
+        if not all(k in self.settings['quality_weights'] for k in ['sharpness', 'contrast']):
+             raise ValueError("quality_weights config is missing essential metrics.")
 
 
 # --- LOGGING ---
@@ -786,6 +784,8 @@ class Frame:
                         niqe_score = max(0, min(100, (10 - niqe_raw) * 10))
                 except Exception as e:
                     logger.warning("NIQE calculation failed", extra={'frame': self.frame_number, 'error': e})
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
             scores_norm = {"sharpness": min(sharpness_scaled, 1.0), "edge_strength": min(edge_strength_scaled, 1.0),
                            "contrast": min(contrast, 2.0) / 2.0, "brightness": brightness, "entropy": entropy, "niqe": niqe_score / 100.0}
             self.metrics = FrameMetrics(**{f"{k}_score": float(v * 100) for k, v in scores_norm.items()})
@@ -920,7 +920,8 @@ class ThumbnailManager:
                     if thumb_img_bgr is not None:
                         thumb_img = cv2.cvtColor(thumb_img_bgr, cv2.COLOR_BGR2RGB)
                         self.cache[thumb_path] = thumb_img
-                        if len(self.cache) > self.max_size: self.cache.popitem(last=False)
+                        while len(self.cache) > self.max_size:
+                            self.cache.popitem(last=False)
                         return thumb_img
                 except Exception as e:
                     self.logger.error("OpenCV failed to load thumbnail", extra={'path': str(thumb_path), 'error': e})
@@ -930,7 +931,8 @@ class ThumbnailManager:
             with Image.open(thumb_path) as pil_thumb:
                 thumb_img = np.array(pil_thumb.convert("RGB"))
             self.cache[thumb_path] = thumb_img
-            if len(self.cache) > self.max_size: self.cache.popitem(last=False)
+            while len(self.cache) > self.max_size:
+                self.cache.popitem(last=False)
             return thumb_img
         except Exception as e:
             self.logger.warning("Failed to load thumbnail with Pillow", extra={'path': str(thumb_path), 'error': e})
@@ -1049,7 +1051,7 @@ def download_model(url, dest_path, description, logger, error_handler: ErrorHand
 
 @lru_cache(maxsize=None)
 def get_face_analyzer(model_name, config: 'Config', logger: 'EnhancedLogger'):
-    if not FaceAnalysis: raise ImportError("insightface is not installed.")
+    from insightface.app import FaceAnalysis
     logger.info(f"Loading or getting cached face model: {model_name}")
     try:
         device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -1059,11 +1061,13 @@ def get_face_analyzer(model_name, config: 'Config', logger: 'EnhancedLogger'):
         logger.success(f"Face model loaded with {'CUDA' if device == 'cuda' else 'CPU'}.")
         return analyzer
     except Exception as e:
+        if "out of memory" in str(e) and torch.cuda.is_available():
+            torch.cuda.empty_cache()
         raise RuntimeError(f"Could not initialize face analysis model. Error: {e}") from e
 
 class PersonDetector:
     def __init__(self, model="yolo11x.pt", imgsz=640, conf=0.3, device='cuda', config=None, logger=None):
-        if not YOLO: raise ImportError("Ultralytics YOLO not installed.")
+        from ultralytics import YOLO
         self.config = config or Config()
         self.logger = logger or EnhancedLogger()
         error_handler = ErrorHandler(self.logger, self.config)
@@ -1141,6 +1145,8 @@ def get_dam4sam_tracker(model_name: str, config: 'Config', logger=None):
         return tracker
     except Exception as e:
         logger.error("Failed to initialize DAM4SAM tracker", exc_info=True)
+        if "out of memory" in str(e) and torch.cuda.is_available():
+            torch.cuda.empty_cache()
         return None
 
 def initialize_analysis_models(params: AnalysisParameters, config: Config, logger: EnhancedLogger, cuda_available: bool):
@@ -1496,6 +1502,8 @@ class SeedSelector:
                                                                box_threshold=float(box_th), text_threshold=float(text_th), device=self._device)
         except Exception as e:
             self.logger.error("Grounding DINO prediction failed.", exc_info=True)
+            if "out of memory" in str(e) and torch.cuda.is_available():
+                torch.cuda.empty_cache()
             return [], {"error": str(e)}
         if boxes_norm is None or len(boxes_norm) == 0: return [], {"type": "text_prompt", "error": "no_boxes"}
         scale = torch.tensor([w, h, w, h], device=boxes_norm.device, dtype=boxes_norm.dtype)
@@ -1681,9 +1689,14 @@ class SubjectMasker:
                 faces = self.face_analyzer.get(cv2.cvtColor(thumb_rgb, cv2.COLOR_RGB2BGR))
                 if faces: face_sim = np.dot(max(faces, key=lambda x: x.det_score).normed_embedding, self.reference_embedding)
             scores.append((10 - niqe_score) + (face_sim * 10))
-        best_local_idx = int(np.argmax(scores)) if scores else 0
+        if not scores:
+            best_local_idx = 0
+            scene.best_seed_frame = scene.start_frame # Fallback
+            scene.seed_metrics = {'reason': 'pre-analysis failed, no scores', 'score': 0}
+            return
+        best_local_idx = int(np.argmax(scores))
         scene.best_seed_frame = candidates[best_local_idx][0]
-        scene.seed_metrics = {'reason': 'pre-analysis complete', 'score': max(scores) if scores else 0, 'best_niqe': niqe_score, 'best_face_sim': face_sim}
+        scene.seed_metrics = {'reason': 'pre-analysis complete', 'score': max(scores), 'best_niqe': niqe_score, 'best_face_sim': face_sim}
 
     def get_seed_for_frame(self, frame_rgb: np.ndarray, seed_config: dict): return self.seed_selector.select_seed(frame_rgb, current_params=seed_config)
     def get_mask_for_bbox(self, frame_rgb_small, bbox_xywh): return self.seed_selector._sam2_mask_for_bbox(frame_rgb_small, bbox_xywh)
@@ -1745,11 +1758,15 @@ class AnalysisPipeline(Pipeline):
         self.thumbnail_manager = thumbnail_manager if thumbnail_manager is not None else ThumbnailManager(self.logger)
 
     def _initialize_niqe_metric(self):
-        if self.niqe_metric is None and pyiqa:
+        if self.niqe_metric is None:
             try:
+                import pyiqa
                 self.niqe_metric = pyiqa.create_metric('niqe', device=self.device)
                 self.logger.info("NIQE metric initialized successfully")
-            except Exception as e: self.logger.warning("Failed to initialize NIQE metric", extra={'error': e})
+            except ImportError:
+                self.logger.warning("pyiqa is not installed, NIQE metric is unavailable.")
+            except Exception as e:
+                self.logger.warning("Failed to initialize NIQE metric", extra={'error': e})
 
     def run_full_analysis(self, scenes_to_process):
         try:
@@ -1840,7 +1857,10 @@ class AnalysisPipeline(Pipeline):
                 best_face = max(faces, key=lambda x: x.det_score)
                 distance = 1 - np.dot(best_face.normed_embedding, self.reference_embedding)
                 frame.face_similarity_score, frame.max_face_confidence = 1.0 - float(distance), float(best_face.det_score)
-        except Exception as e: frame.error = f"Face similarity failed: {e}"
+        except Exception as e:
+            frame.error = f"Face similarity failed: {e}"
+            if "out of memory" in str(e) and torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
 # --- FILTERING & SCENE LOGIC ---
 
