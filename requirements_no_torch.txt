@@ -1,0 +1,24 @@
+gradio
+insightface
+numba
+numpy
+onnxruntime-gpu
+opencv-python==4.10.0.84
+Pillow==11.0.0
+PyYAML==6.0.2
+scenedetect
+vot-toolkit==0.7.1
+yt-dlp
+ultralytics
+huggingface_hub
+pytest
+pyiqa
+matplotlib
+imagehash
+GPUtil
+
+# for groundingdino below
+wheel
+defusedxml==0.7.1
+pycocotools==2.0.10
+supervision==0.26.1
