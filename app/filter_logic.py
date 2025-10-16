@@ -86,12 +86,9 @@ def histogram_svg(hist_data, title="", logger=None):
         return ""
 
 
-def apply_all_filters_vectorized(all_frames_data, filters):
+def apply_all_filters_vectorized(all_frames_data, filters, config: 'Config'):
     """Apply all filters to frame data using vectorized operations."""
-    from app.config import Config
     import imagehash
-
-    config = Config()
 
     if not all_frames_data:
         return [], [], Counter(), {}
@@ -187,7 +184,7 @@ def apply_all_filters_vectorized(all_frames_data, filters):
     return kept, rejected, counts, reasons
 
 
-def on_filters_changed(event: FilterEvent, thumbnail_manager, logger=None):
+def on_filters_changed(event: FilterEvent, thumbnail_manager, config: 'Config', logger=None):
     """Handle filter changes and update gallery."""
     from app.logging_enhanced import EnhancedLogger
     logger = logger or EnhancedLogger()
@@ -208,17 +205,17 @@ def on_filters_changed(event: FilterEvent, thumbnail_manager, logger=None):
     status_text, gallery_update = _update_gallery(
         event.all_frames_data, filters, event.output_dir,
         event.gallery_view, event.show_overlay, event.overlay_alpha,
-        thumbnail_manager, logger
+        thumbnail_manager, config, logger
     )
     return {"filter_status_text": status_text, "results_gallery": gallery_update}
 
 
 def _update_gallery(all_frames_data, filters, output_dir,
                    gallery_view, show_overlay, overlay_alpha,
-                   thumbnail_manager, logger):
+                   thumbnail_manager, config: 'Config', logger):
     """Update the results gallery based on current filters."""
     kept, rejected, counts, per_frame_reasons = apply_all_filters_vectorized(
-        all_frames_data, filters or {}
+        all_frames_data, filters or {}, config
     )
     status_parts = [f"**Kept:** {len(kept)}/{len(all_frames_data)}"]
     if counts:

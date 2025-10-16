@@ -6,12 +6,8 @@ from insightface.app import FaceAnalysis
 
 
 @lru_cache(maxsize=None)
-def get_face_analyzer(model_name, logger: 'EnhancedLogger'):
+def get_face_analyzer(model_name, config: 'Config', logger: 'EnhancedLogger'):
     """Load and cache a face analysis model."""
-    from app.config import Config
-
-    config = Config()
-
     logger.info(f"Loading or getting cached face model: {model_name}")
     try:
         device = "cuda" if torch.cuda.is_available() else "cpu"

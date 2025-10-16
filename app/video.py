@@ -20,9 +20,8 @@ class VideoManager:
         self.is_youtube = ("youtube.com/" in source_path or
                            "youtu.be/" in source_path)
 
-    def prepare_video(self, logger=None):
+    def prepare_video(self, config: 'Config', logger=None):
         """Prepare video for processing (download if YouTube, validate)."""
-        config = Config()
         logger = logger or EnhancedLogger()
 
         if self.is_youtube:
