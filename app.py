@@ -2203,10 +2203,12 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue, cancel_
                          config: Config, thumbnail_manager, cuda_available, tracker: AdvancedProgressTracker):
     yield {"unified_log": "", "unified_status": "Starting Pre-Analysis..."}
     params_dict = asdict(event)
+    final_face_ref_path = params_dict.get('face_ref_img_path')
     if event.face_ref_img_upload:
         ref_upload, dest = params_dict.pop('face_ref_img_upload'), config.DIRS['downloads'] / Path(event.face_ref_img_upload).name
         shutil.copy2(ref_upload, dest)
         params_dict['face_ref_img_path'] = str(dest)
+        final_face_ref_path = str(dest)
     params, output_dir = AnalysisParameters.from_ui(logger, config, **params_dict), Path(params_dict['output_folder'])
     try:
         with (output_dir / "run_config.json").open('w', encoding='utf-8') as f:
@@ -2249,8 +2251,11 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue, cancel_
         return {"done": True, "previews": previews, "scenes": [asdict(s) for s in scenes]}
     result = pre_analysis_task()
     if result.get("done"):
-        yield {"log": "Pre-analysis complete.", "status": f"{len(result['scenes'])} scenes found.", "previews": result['previews'],
+        final_yield = {"log": "Pre-analysis complete.", "status": f"{len(result['scenes'])} scenes found.", "previews": result['previews'],
                "scenes": result['scenes'], "output_dir": str(output_dir), "done": True}
+        if final_face_ref_path:
+            final_yield['final_face_ref_path'] = final_face_ref_path
+        yield final_yield
 
 def execute_session_load(event: SessionLoadEvent, logger: EnhancedLogger, config: Config, thumbnail_manager, tracker: AdvancedProgressTracker):
     session_path, config_path = Path(event.session_path), Path(event.session_path) / "run_config.json"
@@ -2618,10 +2623,13 @@ class EnhancedAppUI(AppUI):
                         scenes = result.get('scenes', [])
                         if scenes: save_scene_seeds(scenes, result['output_dir'], self.enhanced_logger)
                         tracker.complete_operation(success=True)
-                        return {"unified_log": result.get("log", "✅ Pre-analysis completed successfully."), "seeding_preview_gallery": gr.update(value=result.get('previews')),
-                                "scenes_state": scenes, "propagate_masks_button": gr.update(interactive=True), "scene_filter_status": get_scene_status_text(scenes),
-                                "scene_face_sim_min_input": gr.update(visible=any(s.get('seed_metrics', {}).get('best_face_sim') is not None for s in scenes)),
-                                "seeding_results_column": gr.update(visible=True), "propagation_group": gr.update(visible=True)}
+                        updates = {"unified_log": result.get("log", "✅ Pre-analysis completed successfully."), "seeding_preview_gallery": gr.update(value=result.get('previews')),
+                                   "scenes_state": scenes, "propagate_masks_button": gr.update(interactive=True), "scene_filter_status": get_scene_status_text(scenes),
+                                   "scene_face_sim_min_input": gr.update(visible=any(s.get('seed_metrics', {}).get('best_face_sim') is not None for s in scenes)),
+                                   "seeding_results_column": gr.update(visible=True), "propagation_group": gr.update(visible=True)}
+                        if result.get("final_face_ref_path"):
+                            updates["face_ref_img_path_input"] = result["final_face_ref_path"]
+                        return updates
             tracker.complete_operation(success=False, message="Pre-analysis failed.")
             return {"unified_log": "❌ Pre-analysis failed."}
         except Exception as e: tracker.complete_operation(success=False, message=str(e)); raise
