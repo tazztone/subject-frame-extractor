@@ -3056,7 +3056,6 @@ class EnhancedAppUI(AppUI):
             if not (frame_map_path := out_root / "frame_map.json").exists(): return "[ERROR] frame_map.json not found. Cannot export."
             with frame_map_path.open('r', encoding='utf-8') as f: frame_map_list = json.load(f)
             fn_to_orig_map = {f"frame_{i+1:06d}.png": orig for i, orig in enumerate(sorted(frame_map_list))}
-            fn_to_orig_map.update({f"frame_{i+1:06d}.webp": orig for i, orig in enumerate(sorted(frame_map_list))})
             frames_to_extract = sorted([fn_to_orig_map[f['filename']] for f in kept if f['filename'] in fn_to_orig_map])
             if not frames_to_extract: return "No frames to extract."
             select_filter = f"select='{'+'.join([f'eq(n,{fn})' for fn in frames_to_extract])}'"
@@ -3127,9 +3126,9 @@ class EnhancedAppUI(AppUI):
                             num_cropped += 1
                         else: # Fallback to just cropping the padded bounding box if no AR fits
                             cropped_img = frame_img[y1:y2, x1:x2]
-                        if cropped_img.size > 0:
-                            cv2.imwrite(str(crop_dir / f"{Path(frame_meta['filename']).stem}_crop_native.png"), cropped_img)
-                            num_cropped += 1
+                            if cropped_img.size > 0:
+                                cv2.imwrite(str(crop_dir / f"{Path(frame_meta['filename']).stem}_crop_native.png"), cropped_img)
+                                num_cropped += 1
                     except Exception as e: self.logger.error(f"Failed to crop frame {frame_meta['filename']}", exc_info=True)
                 self.logger.info(f"Cropping complete. Saved {num_cropped} cropped images.")
             return f"Exported {len(frames_to_extract)} frames to {export_dir.name}."
