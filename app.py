@@ -2916,6 +2916,18 @@ class EnhancedAppUI(AppUI):
             cmd = ['ffmpeg', '-y', '-i', str(event.video_path), '-vf', select_filter, '-vsync', 'vfr', str(export_dir / "frame_%06d.png")]
             self.logger.info("Starting final export extraction...", extra={'command': ' '.join(cmd)})
             subprocess.run(cmd, check=True, capture_output=True, text=True)
+
+            # Rename the sequentially numbered files to match their original analysis filenames.
+            self.logger.info("Renaming extracted frames to match original filenames...")
+            orig_to_filename_map = {v: k for k, v in fn_to_orig_map.items()}
+            for i, orig_frame_num in enumerate(frames_to_extract):
+                sequential_filename = f"frame_{i+1:06d}.png"
+                target_filename = orig_to_filename_map.get(orig_frame_num)
+                if target_filename and (export_dir / sequential_filename).exists():
+                    try:
+                        (export_dir / sequential_filename).rename(export_dir / target_filename)
+                    except FileNotFoundError:
+                        self.logger.warning(f"Could not find {sequential_filename} to rename.", extra={'target': target_filename})
             if event.enable_crop:
                 self.logger.info("Starting crop export...")
                 crop_dir = export_dir / "cropped"; crop_dir.mkdir(exist_ok=True)
