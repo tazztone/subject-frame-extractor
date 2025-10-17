@@ -70,7 +70,7 @@ except ImportError:
     GPUtil = None
 
 try:
-    from grounding_dino.groundingdino.util.inference import (
+    from groundingdino.util.inference import (
         load_model as gdino_load_model,
         predict as gdino_predict,
     )
@@ -201,7 +201,7 @@ min_mask_area_pct: 1.0
 # --- Model & Path Configuration ---
 # Paths for models and other external dependencies.
 model_paths:
-  grounding_dino_config: "Grounded-SAM-2/groundingdino/config/GroundingDINO_SwinT_OGC.py"
+  grounding_dino_config: "Grounded-SAM-2/grounding_dino/groundingdino/config/GroundingDINO_SwinT_OGC.py"
   grounding_dino_checkpoint: "models/groundingdino_swint_ogc.pth"
 
 # --- Grounded DINO/SAM2 Inference Parameters ---
