@@ -2258,51 +2258,199 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue, cancel_
             final_yield['final_face_ref_path'] = final_face_ref_path
         yield final_yield
 
-def execute_session_load(event: SessionLoadEvent, logger: EnhancedLogger, config: Config, thumbnail_manager, tracker: AdvancedProgressTracker):
-    session_path, config_path = Path(event.session_path), Path(event.session_path) / "run_config.json"
-    if not config_path.exists():
-        logger.error(f"Session load failed: run_config.json not found in {session_path}")
-        yield {"log": f"[ERROR] Could not find 'run_config.json' in the specified directory: {session_path}", "status": "Session load failed."}
-        return
-    tracker.start_stage("Loading config", stage_items=1)
+def validate_session_dir(path: str | Path) -> tuple[Path | None, str | None]:
     try:
-        with open(config_path, 'r', encoding='utf-8') as f: run_config = json.load(f)
-        logger.info(f"Loaded run configuration from {config_path}")
-        tracker.update_progress(stage_items_processed=1)
-        updates = {'source_input': gr.update(value=run_config.get('source_path', '')), 'max_resolution': gr.update(value=run_config.get('max_resolution', '1080')),
-                   'thumbnails_only_input': gr.update(value=run_config.get('thumbnails_only', True)), 'thumb_megapixels_input': gr.update(value=run_config.get('thumb_megapixels', 0.5)),
-                   'ext_scene_detect_input': gr.update(value=run_config.get('scene_detect', True)), 'method_input': gr.update(value=run_config.get('method', 'scene')),
-                   'use_png_input': gr.update(value=run_config.get('use_png', False)), 'pre_analysis_enabled_input': gr.update(value=run_config.get('pre_analysis_enabled', True)),
-                   'pre_sample_nth_input': gr.update(value=run_config.get('pre_sample_nth', 1)), 'enable_face_filter_input': gr.update(value=run_config.get('enable_face_filter', False)),
-                   'face_model_name_input': gr.update(value=run_config.get('face_model_name', 'buffalo_l')), 'face_ref_img_path_input': gr.update(value=run_config.get('face_ref_img_path', '')),
-                   'text_prompt_input': gr.update(value=run_config.get('text_prompt', '')), 'seed_strategy_input': gr.update(value=run_config.get('seed_strategy', 'Largest Person')),
-                   'person_detector_model_input': gr.update(value=run_config.get('person_detector_model', 'yolo11x.pt')), 'dam4sam_model_name_input': gr.update(value=run_config.get('dam4sam_model_name', 'sam21pp-T')),
-                   'enable_dedup_input': gr.update(value=run_config.get('enable_dedup', False)), 'extracted_video_path_state': run_config.get('video_path', ''),
-                   'extracted_frames_dir_state': run_config.get('output_folder', ''), 'analysis_output_dir_state': run_config.get('output_folder', '')}
-        if (scene_seeds_path := session_path / "scene_seeds.json").exists():
-            with open(scene_seeds_path, 'r', encoding='utf-8') as f: scenes_from_file = json.load(f)
-            scenes_as_dict = [{'shot_id': int(shot_id), **scene_data} for shot_id, scene_data in scenes_from_file.items()]
-            updates.update({'scenes_state': scenes_as_dict, 'propagate_masks_button': gr.update(interactive=True)})
-            logger.info(f"Loaded {len(scenes_as_dict)} scenes from {scene_seeds_path}")
-            tracker.start_stage("Loading previews", stage_items=len(scenes_as_dict))
-            output_dir, frame_map, previews = Path(run_config.get('output_folder')), create_frame_map(Path(run_config.get('output_folder')), logger), []
-            for i, scene in enumerate(scenes_as_dict):
-                seed_frame_idx = scene.get('best_seed_frame') or scene.get('seed_frame_idx')
-                if seed_frame_idx is not None and (fname := frame_map.get(seed_frame_idx)):
-                    thumb_rgb = thumbnail_manager.get(output_dir / "thumbs" / f"{Path(fname).stem}.webp")
-                    if thumb_rgb is not None: previews.append((thumb_rgb, f"Scene {scene['shot_id']} (Seed: {seed_frame_idx})"))
-                tracker.update_progress(stage_items_processed=i + 1)
-            updates.update({'seeding_preview_gallery': gr.update(value=previews, visible=True), 'seeding_results_column': gr.update(visible=True),
-                            'propagation_group': gr.update(visible=True), 'scene_filter_status': get_scene_status_text(scenes_as_dict),
-                            'scene_face_sim_min_input': gr.update(visible=any(s.get('seed_metrics', {}).get('best_face_sim') is not None for s in scenes_as_dict))})
-        if (metadata_path := session_path / "metadata.jsonl").exists():
-            updates.update({'analysis_metadata_path_state': str(metadata_path), 'filtering_tab': gr.update(interactive=True)})
-            logger.info(f"Found analysis metadata at {metadata_path}. Filtering tab will be enabled.")
-        updates.update({'log': f"Successfully loaded session from: {session_path}", 'status': "Session loaded. You can now proceed from where you left off."})
-        yield updates
+        p = Path(path).expanduser().resolve()
+        return (p if p.exists() and p.is_dir() else None,
+                None if p.exists() and p.is_dir() else f"Session directory does not exist: {p}")
     except Exception as e:
-        logger.error(f"Error loading session from {session_path}: {e}", exc_info=True)
-        yield {"log": f"[ERROR] An unexpected error occurred while loading the session: {e}", "status": "Session load failed."}
+        return None, f"Invalid session path: {e}"
+
+
+def execute_session_load(
+    event: SessionLoadEvent,
+    logger: EnhancedLogger,
+    config: Config,
+    thumbnail_manager,
+    tracker: AdvancedProgressTracker,
+):
+    session_path = Path(event.session_path).expanduser().resolve()
+    config_path = session_path / "run_config.json"
+    scene_seeds_path = session_path / "scene_seeds.json"
+    metadata_path = session_path / "metadata.jsonl"
+
+    def _resolve_output_dir(base: Path, output_folder: str | None) -> Path | None:
+        if not output_folder:
+            return None
+        try:
+            p = Path(output_folder)
+            if not p.is_absolute():
+                p = (base / p).resolve()
+            return p
+        except Exception:
+            return None
+
+    with logger.operation_context("Load Session", component="session_loader"):
+        tracker.start_operation("Load Session", total_items=3, stages=["Load config", "Load scenes", "Load previews"])
+
+        # Stage 1: Load config
+        tracker.start_stage("Load config", stage_items=1)
+        if not config_path.exists():
+            msg = f"Session load failed: run_config.json not found in {session_path}"
+            logger.error(msg, component="session_loader")
+            tracker.complete_operation(False, msg)
+            yield {
+                "log": f"[ERROR] Could not find 'run_config.json' in the specified directory: {session_path}",
+                "status": "Session load failed."
+            }
+            return
+
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                run_config = json.load(f)
+        except json.JSONDecodeError as e:
+            msg = f"run_config.json is invalid JSON: {e}"
+            logger.error(msg, component="session_loader", error_type=type(e).__name__)
+            tracker.complete_operation(False, msg)
+            yield {"log": f"[ERROR] {msg}", "status": "Session load failed."}
+            return
+
+        output_dir = _resolve_output_dir(session_path, run_config.get("output_folder"))
+        if output_dir is None:
+            logger.warning("Output folder missing or invalid; some previews may be unavailable.", component="session_loader")
+
+        tracker.update_progress(items_processed=1, stage_items_processed=1)
+
+        # Prepare initial UI updates from config
+        updates = {
+            "source_input": gr.update(value=run_config.get("source_path", "")),
+            "max_resolution": gr.update(value=run_config.get("max_resolution", "1080")),
+            "thumbnails_only_input": gr.update(value=run_config.get("thumbnails_only", True)),
+            "thumb_megapixels_input": gr.update(value=run_config.get("thumb_megapixels", 0.5)),
+            "ext_scene_detect_input": gr.update(value=run_config.get("scene_detect", True)),
+            "method_input": gr.update(value=run_config.get("method", "scene")),
+            "use_png_input": gr.update(value=run_config.get("use_png", False)),
+            "pre_analysis_enabled_input": gr.update(value=run_config.get("pre_analysis_enabled", True)),
+            "pre_sample_nth_input": gr.update(value=run_config.get("pre_sample_nth", 1)),
+            "enable_face_filter_input": gr.update(value=run_config.get("enable_face_filter", False)),
+            "face_model_name_input": gr.update(value=run_config.get("face_model_name", "buffalo_l")),
+            "face_ref_img_path_input": gr.update(value=run_config.get("face_ref_img_path", "")),
+            "text_prompt_input": gr.update(value=run_config.get("text_prompt", "")),
+            "seed_strategy_input": gr.update(value=run_config.get("seed_strategy", "Largest Person")),
+            "person_detector_model_input": gr.update(value=run_config.get("person_detector_model", "yolo11x.pt")),
+            "dam4sam_model_name_input": gr.update(value=run_config.get("dam4sam_model_name", "sam21pp-T")),
+            "enable_dedup_input": gr.update(value=run_config.get("enable_dedup", False)),
+            "extracted_video_path_state": run_config.get("video_path", ""),
+            "extracted_frames_dir_state": str(output_dir) if output_dir else "",
+            "analysis_output_dir_state": str(output_dir) if output_dir else "",
+        }
+
+        # Stage 2: Load scenes
+        tracker.start_stage("Load scenes", stage_items=1)
+        scenes_as_dict: list[dict[str, Any]] = []
+        if scene_seeds_path.exists():
+            try:
+                with open(scene_seeds_path, "r", encoding="utf-8") as f:
+                    scenes_from_file = json.load(f)
+                # Normalize and keep shot_id as int
+                scenes_as_dict = [
+                    {"shot_id": int(shot_id), **(scene_data or {})}
+                    for shot_id, scene_data in (scenes_from_file or {}).items()
+                ]
+                logger.info(f"Loaded {len(scenes_as_dict)} scenes from {scene_seeds_path}", component="session_loader")
+            except Exception as e:
+                logger.warning(f"Failed to parse scene_seeds.json: {e}", component="session_loader", error_type=type(e).__name__)
+        tracker.update_progress(stage_items_processed=1)
+
+        # Stage 3: Load previews (with cap and fallback)
+        preview_cap = 100
+        tracker.start_stage("Load previews", stage_items=min(len(scenes_as_dict), preview_cap))
+        previews: list[tuple[np.ndarray, str]] = []
+
+        frame_map: dict[int, str] = {}
+        if output_dir and output_dir.exists():
+            try:
+                frame_map = create_frame_map(output_dir, logger)
+            except Exception as e:
+                logger.warning(
+                    f"create_frame_map failed: {e}",
+                    component="session_loader",
+                    error_type=type(e).__name__,
+                )
+
+        def _load_preview(scene: dict[str, Any]) -> tuple[np.ndarray, str] | None:
+            seed_idx = scene.get("best_seed_frame") or scene.get("seed_frame_idx")
+            if seed_idx is None:
+                return None
+            fname = frame_map.get(int(seed_idx)) if frame_map else None
+            if not fname:
+                return None
+            stem = Path(fname).stem
+            thumb_path = (output_dir / "thumbs" / f"{stem}.webp") if output_dir else None
+            if thumb_path is None:
+                return None
+            # Prefer cache manager; fall back to direct disk read
+            thumb_rgb = thumbnail_manager.get(thumb_path)
+            if thumb_rgb is None and thumb_path.exists():
+                try:
+                    # Avoid cv2.imread unicode issues on Windows
+                    data = np.fromfile(str(thumb_path), dtype=np.uint8)
+                    bgr = cv2.imdecode(data, cv2.IMREAD_COLOR)
+                    if bgr is not None:
+                        thumb_rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+                except Exception:
+                    thumb_rgb = None
+            if thumb_rgb is not None:
+                return (thumb_rgb, f"Scene {scene.get('shot_id', '?')} (Seed: {seed_idx})")
+            return None
+
+        if scenes_as_dict:
+            try:
+                from concurrent.futures import ThreadPoolExecutor
+                max_workers = min(8, (os.cpu_count() or 4))
+                with ThreadPoolExecutor(max_workers=max_workers) as ex:
+                    for i, res in enumerate(ex.map(_load_preview, scenes_as_dict[:preview_cap])):
+                        if res:
+                            previews.append(res)
+                        tracker.update_progress(stage_items_processed=i + 1)
+                if len(scenes_as_dict) > preview_cap:
+                    logger.info(
+                        f"Preview cap reached ({preview_cap}). Remaining previews will load on demand.",
+                        component="session_loader"
+                    )
+            except Exception as e:
+                logger.warning(f"Concurrent preview loading failed: {e}", component="session_loader", error_type=type(e).__name__)
+
+            updates.update({
+                "scenes_state": scenes_as_dict,
+                "propagate_masks_button": gr.update(interactive=True),
+                "seeding_preview_gallery": gr.update(value=previews, visible=True),
+                "seeding_results_column": gr.update(visible=True),
+                "propagation_group": gr.update(visible=True),
+                "scene_filter_status": get_scene_status_text(scenes_as_dict),
+                "scene_face_sim_min_input": gr.update(
+                    visible=any((s.get("seed_metrics") or {}).get("best_face_sim") is not None for s in scenes_as_dict)
+                ),
+            })
+
+        # Enable filtering if metadata exists
+        if metadata_path.exists():
+            updates.update({
+                "analysis_metadata_path_state": str(metadata_path),
+                "filtering_tab": gr.update(interactive=True),
+            })
+            logger.info(
+                f"Found analysis metadata at {metadata_path}. Filtering tab enabled.",
+                component="session_loader",
+            )
+
+        # Always finalize successfully if we got here
+        updates.update({
+            "log": f"Successfully loaded session from: {session_path}",
+            "status": "... Session loaded. You can now proceed from where you left off.",
+        })
+        tracker.complete_operation(True, "Session loaded")
+        yield updates
 
 def execute_propagation(event: PropagationEvent, progress_queue: Queue, cancel_event: threading.Event, logger: EnhancedLogger,
                         config: Config, thumbnail_manager, cuda_available, tracker: AdvancedProgressTracker):
