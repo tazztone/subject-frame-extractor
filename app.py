@@ -2946,28 +2946,41 @@ class EnhancedAppUI(AppUI):
                         if not contours: continue
                         x, y, w, h = cv2.boundingRect(np.concatenate(contours))
                         frame_h, frame_w, mask_h, mask_w = *frame_img.shape[:2], *mask_img.shape[:2]
-                        if mask_h != frame_h or mask_w != frame_w:
-                            self.logger.info(f"Scaling bounding box for {frame_meta['filename']} from {mask_w}x{mask_h} to {frame_w}x{frame_h}")
-                            scale_x, scale_y = frame_w / mask_w, frame_h / mask_h
-                            x, y, w, h = int(x * scale_x), int(y * scale_y), int(w * scale_x), int(h * scale_y)
                         padding_px_w, padding_px_h = int(w * (event.crop_padding / 100.0)), int(h * (event.crop_padding / 100.0))
                         x1, y1, x2, y2 = max(0, x - padding_px_w), max(0, y - padding_px_h), min(frame_w, x + w + padding_px_w), min(frame_h, y + h + padding_px_h)
                         w_pad, h_pad = x2 - x1, y2 - y1
                         if w_pad <= 0 or h_pad <= 0: continue
                         center_x, center_y = x1 + w_pad // 2, y1 + h_pad // 2
-                        if not aspect_ratios or h_pad == 0: continue
-                        padded_ar, best_ar_dim, min_ar_diff = w_pad / h_pad, None, float('inf')
+
+                        def expand_to_ar(target_ar_val):
+                            if w_pad / (h_pad + 1e-9) < target_ar_val: new_w, new_h = int(np.ceil(h_pad * target_ar_val)), h_pad
+                            else: new_w, new_h = w_pad, int(np.ceil(w_pad / target_ar_val))
+                            if new_w > frame_w or new_h > frame_h: return None # Crop would be larger than frame
+                            nx1, ny1 = int(round(center_x - new_w / 2)), int(round(center_y - new_h / 2))
+                            if nx1 < 0: nx1 = 0
+                            if ny1 < 0: ny1 = 0
+                            if nx1 + new_w > frame_w: nx1 = frame_w - new_w
+                            if ny1 + new_h > frame_h: ny1 = frame_h - new_h
+                            nx2, ny2 = nx1 + new_w, ny1 + new_h
+                            # Ensure the original subject is still contained
+                            if nx1 > x1 or ny1 > y1 or nx2 < x2 or ny2 < y2: return None
+                            return (nx1, ny1, nx2, ny2, (new_w * new_h) / max(1, w_pad * h_pad))
+
+                        candidates = []
                         for ar_w, ar_h in aspect_ratios:
-                            if (diff := abs(ar_w / ar_h - padded_ar)) < min_ar_diff: min_ar_diff, best_ar_dim = diff, (ar_w, ar_h)
-                        if not best_ar_dim: continue
-                        ar_w, ar_h = best_ar_dim
-                        target_ar = ar_w / ar_h
-                        new_w, new_h = (w_pad, w_pad / target_ar) if w_pad / h_pad > target_ar else (h_pad * target_ar, h_pad)
-                        new_x, new_y = int(max(0, center_x - new_w / 2)), int(max(0, center_y - new_h / 2))
-                        new_w, new_h = int(min(frame_img.shape[1] - new_x, new_w)), int(min(frame_img.shape[0] - new_y, new_h))
-                        cropped_img = frame_img[new_y:new_y+new_h, new_x:new_x+new_w]
+                            if ar_h > 0:
+                                res = expand_to_ar(ar_w / ar_h)
+                                if res: candidates.append(res + (f"{ar_w}x{ar_h}",))
+
+                        if candidates:
+                            nx1_final, ny1_final, nx2_final, ny2_final, _, ar_str = sorted(candidates, key=lambda t: t[4])[0] # Get the one with the tightest fit
+                            cropped_img = frame_img[ny1_final:ny2_final, nx1_final:nx2_final]
+                            cv2.imwrite(str(crop_dir / f"{Path(frame_meta['filename']).stem}_crop_{ar_str}.png"), cropped_img)
+                            num_cropped += 1
+                        else: # Fallback to just cropping the padded bounding box if no AR fits
+                            cropped_img = frame_img[y1:y2, x1:x2]
                         if cropped_img.size > 0:
-                            cv2.imwrite(str(crop_dir / f"{Path(frame_meta['filename']).stem}_crop_{ar_w}x{ar_h}.png"), cropped_img)
+                            cv2.imwrite(str(crop_dir / f"{Path(frame_meta['filename']).stem}_crop_native.png"), cropped_img)
                             num_cropped += 1
                     except Exception as e: self.logger.error(f"Failed to crop frame {frame_meta['filename']}", exc_info=True)
                 self.logger.info(f"Cropping complete. Saved {num_cropped} cropped images.")
