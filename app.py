@@ -2180,7 +2180,7 @@ def _regenerate_all_previews(scenes_list, output_folder, masker, thumbnail_manag
         thumb_rgb = thumbnail_manager.get(output_dir / "thumbs" / f"{Path(fname).stem}.webp")
         if thumb_rgb is None: continue
         bbox, details = scene_dict.get('seed_result', {}).get('bbox'), scene_dict.get('seed_result', {}).get('details', {})
-        mask = masker._sam2_mask_for_bbox(thumb_rgb, bbox) if bbox else None
+        mask = masker.get_mask_for_bbox(thumb_rgb, bbox) if bbox else None
         overlay_rgb = render_mask_overlay(thumb_rgb, mask, 0.6, logger=logger) if mask is not None else masker.draw_bbox(thumb_rgb, bbox)
         previews.append((overlay_rgb, f"Scene {scene_dict['shot_id']} (Seed: {scene_dict['best_seed_frame']}) | {details.get('type', 'N/A')}"))
     return previews
@@ -2894,8 +2894,11 @@ class EnhancedAppUI(AppUI):
                        self.config.grounding_dino_params['text_threshold'])
             scene = scenes[evt.index]
             cfg = scene.get('seed_config', {})
-            status_md = (f"**Editing Scene {scene['shot_id']}** "
-                        f"(Frames {scene['start_frame']}-{scene['end_frame']})")
+            if scene.get('start_frame') is not None and scene.get('end_frame') is not None:
+                status_md = (f"**Editing Scene {scene['shot_id']}** "
+                             f"(Frames {scene['start_frame']}-{scene['end_frame']})")
+            else:
+                status_md = f"**Editing Scene {scene['shot_id']}**"
             prompt = cfg.get('text_prompt', '') if cfg else ''
 
             return (gr.update(open=True, value=status_md), scene['shot_id'],
