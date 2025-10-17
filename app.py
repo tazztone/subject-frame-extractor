@@ -399,7 +399,10 @@ class EnhancedLogger:
         if event.operation: extra_info += f" [{event.operation}]"
         if event.duration_ms: extra_info += f" ({event.duration_ms:.1f}ms)"
 
-        self.logger.log(log_level, f"{event.message}{extra_info}")
+        log_message = f"{event.message}{extra_info}"
+        if event.stack_trace:
+            log_message += f"\n{event.stack_trace}"
+        self.logger.log(log_level, log_message)
 
         # Manual write to JSONL file
         json_line = json.dumps(asdict(event), default=str, ensure_ascii=False)
@@ -1918,7 +1921,7 @@ class AnalysisPipeline(Pipeline):
                 if mask_full_path.exists():
                     mask_full = cv2.imread(str(mask_full_path), cv2.IMREAD_GRAYSCALE)
                     if mask_full is not None: mask_thumb = cv2.resize(mask_full, (thumb_image_rgb.shape[1], thumb_image_rgb.shape[0]), interpolation=cv2.INTER_NEAREST)
-            quality_conf = app.QualityConfig(
+            quality_conf = QualityConfig(
                 sharpness_base_scale=self.config.sharpness_base_scale,
                 edge_strength_base_scale=self.config.edge_strength_base_scale,
                 enable_niqe='niqe' in self.config.QUALITY_METRICS
