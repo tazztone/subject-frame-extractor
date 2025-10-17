@@ -101,6 +101,11 @@ except ImportError:
     Image = None
 
 try:
+    import pyiqa
+except ImportError:
+    pyiqa = None
+
+try:
     from scenedetect import detect, ContentDetector
 except ImportError:
     detect = None
