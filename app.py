@@ -1607,7 +1607,8 @@ class SeedSelector:
             return self._final_fallback_box(frame_rgb.shape), {'type': 'fallback_rect'}
         strategy = getattr(params, "seed_strategy", "Largest Person")
         if isinstance(params, dict): strategy = params.get('seed_strategy', strategy)
-        h, w, (cx, cy) = *frame_rgb.shape[:2], w / 2, h / 2
+        h, w = frame_rgb.shape[:2]
+        cx, cy = w / 2, h / 2
         score_func = {"Largest Person": lambda b: (b['bbox'][2] - b['bbox'][0]) * (b['bbox'][3] - b['bbox'][1]),
                       "Center-most Person": lambda b: -math.hypot((b['bbox'][0] + b['bbox'][2]) / 2 - cx, (b['bbox'][1] + b['bbox'][3]) / 2 - cy)}.get(strategy)
         best_person = sorted(boxes, key=score_func, reverse=True)[0]
