@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Frame Extractor & Analyzer v2.0
 Monolithic application file.
@@ -2159,9 +2158,12 @@ def apply_scene_overrides(scenes_list, selected_shot_id, prompt, box_th, text_th
                                reference_embedding=models["ref_emb"], person_detector=models["person_detector"],
                                thumbnail_manager=thumbnail_manager, logger=logger)
         masker.frame_map = masker._create_frame_map(output_folder)
-        fname = masker.frame_map.get(scene_dict['best_seed_frame'])
+        seed_frame_num = scene_dict.get('best_seed_frame') or scene_dict.get('seed_frame_idx')
+        if seed_frame_num is None:
+            raise ValueError(f"Scene {scene_dict.get('shot_id')} has no seed frame.")
+        fname = masker.frame_map.get(seed_frame_num)
         if not fname:
-            raise ValueError(f"Framemap lookup failed for re-seeding shot {scene_dict.get('shot_id')} frame {scene_dict.get('best_seed_frame')}.")
+            raise ValueError(f"Framemap lookup failed for re-seeding shot {scene_dict.get('shot_id')} frame {seed_frame_num}.")
         thumb_rgb = thumbnail_manager.get(Path(output_folder) / "thumbs" / f"{Path(fname).stem}.webp")
         bbox, details = masker.get_seed_for_frame(thumb_rgb, scene_dict['seed_config'])
         scene_dict['seed_result'] = {'bbox': bbox, 'details': details}
@@ -2175,14 +2177,17 @@ def apply_scene_overrides(scenes_list, selected_shot_id, prompt, box_th, text_th
 def _regenerate_all_previews(scenes_list, output_folder, masker, thumbnail_manager, logger):
     previews, output_dir = [], Path(output_folder)
     for scene_dict in scenes_list:
-        fname = masker.frame_map.get(scene_dict['best_seed_frame'])
+        seed_frame_num = scene_dict.get('best_seed_frame') or scene_dict.get('seed_frame_idx')
+        if seed_frame_num is None:
+            continue
+        fname = masker.frame_map.get(seed_frame_num)
         if not fname: continue
         thumb_rgb = thumbnail_manager.get(output_dir / "thumbs" / f"{Path(fname).stem}.webp")
         if thumb_rgb is None: continue
         bbox, details = scene_dict.get('seed_result', {}).get('bbox'), scene_dict.get('seed_result', {}).get('details', {})
         mask = masker.get_mask_for_bbox(thumb_rgb, bbox) if bbox else None
         overlay_rgb = render_mask_overlay(thumb_rgb, mask, 0.6, logger=logger) if mask is not None else masker.draw_bbox(thumb_rgb, bbox)
-        previews.append((overlay_rgb, f"Scene {scene_dict['shot_id']} (Seed: {scene_dict['best_seed_frame']}) | {details.get('type', 'N/A')}"))
+        previews.append((overlay_rgb, f"Scene {scene_dict['shot_id']} (Seed: {seed_frame_num}) | {details.get('type', 'N/A')}"))
     return previews
 
 # --- PIPELINE LOGIC ---
@@ -2231,7 +2236,8 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue, cancel_
     tracker.update_progress(stage_items_processed=2)
     def pre_analysis_task():
         tracker.start_stage("Pre-analyzing scenes", stage_items=len(scenes))
-        previews = []
+        previews_dir = output_dir / "previews"
+        previews_dir.mkdir(exist_ok=True)
         for i, scene in enumerate(scenes):
             if cancel_event.is_set(): break
             if not scene.best_seed_frame: masker._select_best_seed_frame_in_scene(scene, str(output_dir))
@@ -2246,13 +2252,20 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue, cancel_
                 h, w = mask.shape[:2]
                 scene.seed_result['details']['mask_area_pct'] = (np.sum(mask > 0) / (h * w)) * 100 if h * w > 0 else 0.0
             overlay_rgb = render_mask_overlay(thumb_rgb, mask, 0.6, logger=logger) if mask is not None else masker.draw_bbox(thumb_rgb, bbox)
-            previews.append((overlay_rgb, f"Scene {scene.shot_id} (Seed: {scene.best_seed_frame}) | {details.get('type', 'N/A')}"))
+            
+            preview_path = previews_dir / f"scene_{scene.shot_id:05d}.jpg"
+            try:
+                Image.fromarray(overlay_rgb).save(preview_path)
+                scene.preview_path = str(preview_path)
+            except Exception as e:
+                logger.error(f"Failed to save preview for scene {scene.shot_id}", exc_info=True)
+
             if scene.status == 'pending': scene.status = 'included'
             tracker.update_progress(stage_items_processed=i + 1)
-        return {"done": True, "previews": previews, "scenes": [asdict(s) for s in scenes]}
+        return {"done": True, "scenes": [asdict(s) for s in scenes]}
     result = pre_analysis_task()
     if result.get("done"):
-        final_yield = {"log": "Pre-analysis complete.", "status": f"{len(result['scenes'])} scenes found.", "previews": result['previews'],
+        final_yield = {"log": "Pre-analysis complete.", "status": f"{len(result['scenes'])} scenes found.",
                "scenes": result['scenes'], "output_dir": str(output_dir), "done": True}
         if final_face_ref_path:
             final_yield['final_face_ref_path'] = final_face_ref_path
@@ -2268,6 +2281,7 @@ def validate_session_dir(path: str | Path) -> tuple[Path | None, str | None]:
 
 
 def execute_session_load(
+    app_ui,
     event: SessionLoadEvent,
     logger: EnhancedLogger,
     config: Config,
@@ -2365,72 +2379,24 @@ def execute_session_load(
         # Stage 3: Load previews (with cap and fallback)
         preview_cap = 100
         tracker.start_stage("Load previews", stage_items=min(len(scenes_as_dict), preview_cap))
-        previews: list[tuple[np.ndarray, str]] = []
 
-        frame_map: dict[int, str] = {}
-        if output_dir and output_dir.exists():
-            try:
-                frame_map = create_frame_map(output_dir, logger)
-            except Exception as e:
-                logger.warning(
-                    f"create_frame_map failed: {e}",
-                    component="session_loader",
-                    error_type=type(e).__name__,
-                )
-
-        def _load_preview(scene: dict[str, Any]) -> tuple[np.ndarray, str] | None:
-            seed_idx = scene.get("best_seed_frame") or scene.get("seed_frame_idx")
-            if seed_idx is None:
-                return None
-            fname = frame_map.get(int(seed_idx)) if frame_map else None
-            if not fname:
-                return None
-            stem = Path(fname).stem
-            thumb_path = (output_dir / "thumbs" / f"{stem}.webp") if output_dir else None
-            if thumb_path is None:
-                return None
-            # Prefer cache manager; fall back to direct disk read
-            thumb_rgb = thumbnail_manager.get(thumb_path)
-            if thumb_rgb is None and thumb_path.exists():
-                try:
-                    # Avoid cv2.imread unicode issues on Windows
-                    data = np.fromfile(str(thumb_path), dtype=np.uint8)
-                    bgr = cv2.imdecode(data, cv2.IMREAD_COLOR)
-                    if bgr is not None:
-                        thumb_rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
-                except Exception:
-                    thumb_rgb = None
-            if thumb_rgb is not None:
-                return (thumb_rgb, f"Scene {scene.get('shot_id', '?')} (Seed: {seed_idx})")
-            return None
-
-        if scenes_as_dict:
-            try:
-                from concurrent.futures import ThreadPoolExecutor
-                max_workers = min(8, (os.cpu_count() or 4))
-                with ThreadPoolExecutor(max_workers=max_workers) as ex:
-                    for i, res in enumerate(ex.map(_load_preview, scenes_as_dict[:preview_cap])):
-                        if res:
-                            previews.append(res)
-                        tracker.update_progress(stage_items_processed=i + 1)
-                if len(scenes_as_dict) > preview_cap:
-                    logger.info(
-                        f"Preview cap reached ({preview_cap}). Remaining previews will load on demand.",
-                        component="session_loader"
-                    )
-            except Exception as e:
-                logger.warning(f"Concurrent preview loading failed: {e}", component="session_loader", error_type=type(e).__name__)
-
+        if scenes_as_dict and output_dir:
             updates.update({
                 "scenes_state": scenes_as_dict,
                 "propagate_masks_button": gr.update(interactive=True),
-                "seeding_preview_gallery": gr.update(value=previews, visible=True),
                 "seeding_results_column": gr.update(visible=True),
                 "propagation_group": gr.update(visible=True),
                 "scene_filter_status": get_scene_status_text(scenes_as_dict),
                 "scene_face_sim_min_input": gr.update(
                     visible=any((s.get("seed_metrics") or {}).get("best_face_sim") is not None for s in scenes_as_dict)
                 ),
+            })
+
+            # Initialize scene gallery for loaded session
+            gallery_items, index_map = build_scene_gallery_items(scenes_as_dict, "Kept", str(output_dir))
+            updates.update({
+                "scene_gallery": gr.update(value=gallery_items),
+                "scene_gallery_index_map_state": index_map
             })
 
         # Enable filtering if metadata exists
@@ -2464,6 +2430,61 @@ def execute_propagation(event: PropagationEvent, progress_queue: Queue, cancel_e
         yield {"log": "Propagation and analysis complete.", "status": f"Metadata saved to {result['metadata_path']}",
                "output_dir": result['output_dir'], "metadata_path": result['metadata_path'], "done": True}
 
+# --- Scene gallery helpers (module-level) ---
+def scene_matches_view(scene: dict, view: str) -> bool:
+    status = scene.get('status', 'pending')
+    if view == "All": 
+        return status in ("included", "excluded", "pending")
+    if view == "Kept": 
+        return status == "included"
+    if view == "Rejected": 
+        return status == "excluded"
+    return False
+
+def scene_caption(s: dict) -> str:
+    shot = s.get('shot_id', '?')
+    start_f = s.get('start_frame', '?')
+    end_f = s.get('end_frame', '?')
+    metrics = s.get('seed_metrics', {}) or {}
+    face = metrics.get('best_face_sim')
+    conf = metrics.get('score')
+    mask = (s.get('seed_result', {}).get('details', {}) or {}).get('mask_area_pct')
+    bits = [f"Scene {shot} [{start_f}-{end_f}]"]
+    if conf is not None: bits.append(f"conf {conf:.2f}")
+    if face is not None: bits.append(f"face {face:.2f}")
+    if mask is not None: bits.append(f"mask {mask:.1f}%")
+    return " | ".join(bits)
+
+def scene_thumb(s: dict, output_dir: str) -> str | None:
+    p = s.get('preview_path')
+    if p and os.path.isfile(p):
+        return p
+    shot_id = s.get('shot_id')
+    if shot_id is not None:
+        candidate = os.path.join(output_dir, "previews", f"scene_{int(shot_id):05d}.jpg")
+        if os.path.isfile(candidate):
+            return candidate
+    return None
+
+def build_scene_gallery_items(scenes: list[dict], view: str, output_dir: str):
+    items: list[tuple[str | None, str]] = []
+    index_map: list[int] = []
+    # Sort scenes by shot_id but keep track of original index in scenes list
+    if not scenes:
+        return [], []
+    indexed_scenes = sorted(list(enumerate(scenes)), key=lambda x: x[1].get('shot_id', 0))
+
+    for original_index, s in indexed_scenes:
+        if not scene_matches_view(s, view):
+            continue
+        img = scene_thumb(s, output_dir)
+        if img is None:
+            continue
+        cap = scene_caption(s)
+        items.append((img, cap))
+        index_map.append(original_index)
+    return items, index_map
+
 # --- UI ---
 
 class AppUI:
@@ -2487,8 +2508,9 @@ class AppUI:
                                   'face_model_name_input', 'face_ref_img_path_input', 'text_prompt_input', 'seed_strategy_input',
                                   'person_detector_model_input', 'dam4sam_model_name_input', 'enable_dedup_input', 'extracted_video_path_state',
                                   'extracted_frames_dir_state', 'analysis_output_dir_state', 'analysis_metadata_path_state', 'scenes_state',
-                                  'propagate_masks_button', 'seeding_preview_gallery', 'seeding_results_column', 'propagation_group',
-                                  'scene_filter_status', 'scene_face_sim_min_input', 'filtering_tab']
+                                  'propagate_masks_button', 'seeding_results_column', 'propagation_group',
+                                  'scene_filter_status', 'scene_face_sim_min_input', 'filtering_tab',
+                                  'scene_gallery', 'scene_gallery_index_map_state']
 
     def build_ui(self):
         css = """.plot-and-slider-column { max-width: 560px !important; margin: auto; } .scene-editor { border: 1px solid #444; padding: 10px; border-radius: 5px; } .log-container > .gr-utils-error { display: none !important; } .progress-details { font-size: 0.8em; color: #888; text-align: center; }"""
@@ -2560,9 +2582,10 @@ class AppUI:
                 with gr.Group(visible=(default_strategy == "👤 By Face" or default_strategy == "🔄 Face + Text Fallback")) as face_seeding_group:
                     self.components['face_seeding_group'] = face_seeding_group
                     gr.Markdown("#### 👤 Configure Face Seeding"); gr.Markdown("Upload a clear image of the person you want to find. The system will search for this person in the video.")
-                    self._create_component('face_ref_img_upload_input', 'file', {'label': "Upload Face Reference Image", 'type': "filepath"})
-                    self._create_component('face_ref_img_path_input', 'textbox', {'label': "Or provide a local file path"})
-                    self._create_component('enable_face_filter_input', 'checkbox', {'label': "Enable Face Similarity (must be checked for face seeding)", 'value': (default_strategy == "👤 By Face" or default_strategy == "🔄 Face + Text Fallback"), 'interactive': False})
+                    with gr.Row():
+                        self._create_component('face_ref_img_upload_input', 'file', {'label': "Upload Face Reference Image", 'type': "filepath"})
+                        self._create_component('face_ref_img_path_input', 'textbox', {'label': "Or provide a local file path"})
+                        self._create_component('enable_face_filter_input', 'checkbox', {'label': "Enable Face Similarity (must be checked for face seeding)", 'value': (default_strategy == "👤 By Face" or default_strategy == "🔄 Face + Text Fallback"), 'interactive': False})
                 with gr.Group(visible=(default_strategy == "📝 By Text" or default_strategy == "🔄 Face + Text Fallback")) as text_seeding_group:
                     self.components['text_seeding_group'] = text_seeding_group
                     gr.Markdown("#### 📝 Configure Text Seeding"); gr.Markdown("Describe the subject or object you want to find. Be as specific as possible for better results.")
@@ -2582,31 +2605,39 @@ class AppUI:
                 self._create_component('start_pre_analysis_button', 'button', {'value': '🌱 Find & Preview Scene Seeds', 'variant': 'primary'})
                 with gr.Group(visible=False) as propagation_group:
                     self.components['propagation_group'] = propagation_group
-                    gr.Markdown("---"); gr.Markdown("### 🔬 Step 3: Propagate Masks"); gr.Markdown("Once you are satisfied with the seeds, propagate the masks to the rest of the frames in the selected scenes.")
-                    self._create_component('propagate_masks_button', 'button', {'value': '🔬 Propagate Masks on Kept Scenes', 'variant': 'primary', 'interactive': False})
             with gr.Column(scale=2, visible=False) as seeding_results_column:
                 self.components['seeding_results_column'] = seeding_results_column
-                gr.Markdown("### 🎭 Step 2: Review & Refine Seeds")
-                self._create_component('seeding_preview_gallery', 'gallery', {'label': 'Scene Seed Previews', 'columns': [4, 6, 8], 'rows': 2, 'height': 'auto', 'preview': True, 'allow_preview': True, 'object_fit': 'contain'})
-                with gr.Accordion("Scene Editor", open=False, elem_classes="scene-editor") as scene_editor_accordion:
-                    self.components['scene_editor_accordion'] = scene_editor_accordion
-                    self._create_component('scene_editor_status_md', 'markdown', {'value': "Select a scene to edit."})
-                    with gr.Row(): self._create_component('scene_editor_prompt_input', 'textbox', {'label': 'Per-Scene Text Prompt'})
-                    with gr.Row():
-                        self._create_component('scene_editor_box_thresh_input', 'slider', {'label': "Box Thresh", 'minimum': 0.0, 'maximum': 1.0, 'step': 0.05, 'value': self.config.grounding_dino_params['box_threshold']})
-                        self._create_component('scene_editor_text_thresh_input', 'slider', {'label': "Text Thresh", 'minimum': 0.0, 'maximum': 1.0, 'step': 0.05, 'value': self.config.grounding_dino_params['text_threshold']})
-                    with gr.Row():
-                        self._create_component('scene_recompute_button', 'button', {'value': '🔄 Recompute Preview'})
-                        self._create_component('scene_include_button', 'button', {'value': '👍 Include'})
-                        self._create_component('scene_exclude_button', 'button', {'value': '👎 Exclude'})
+                gr.Markdown("### 🎭 Step 2: Review & Refine Scenes")
                 with gr.Accordion("Bulk Scene Actions & Filters", open=True):
                     self._create_component('scene_filter_status', 'markdown', {'value': 'No scenes loaded.'})
-                    self._create_component('scene_mask_area_min_input', 'slider', {'label': "Min Seed Mask Area %", 'minimum': 0.0, 'maximum': 100.0, 'value': self.config.min_mask_area_pct, 'step': 0.1})
-                    self._create_component('scene_face_sim_min_input', 'slider', {'label': "Min Seed Face Sim", 'minimum': 0.0, 'maximum': 1.0, 'value': 0.5, 'step': 0.05, 'visible': False})
-                    self._create_component('scene_confidence_min_input', 'slider', {'label': "Min Seed Confidence", 'minimum': 0.0, 'maximum': 1.0, 'value': 0.0, 'step': 0.05})
+                    with gr.Row():
+                        self._create_component('scene_mask_area_min_input', 'slider', {'label': "Min Seed Mask Area %", 'minimum': 0.0, 'maximum': 100.0, 'value': self.config.min_mask_area_pct, 'step': 0.1})
+                        self._create_component('scene_face_sim_min_input', 'slider', {'label': "Min Seed Face Sim", 'minimum': 0.0, 'maximum': 1.0, 'value': 0.5, 'step': 0.05, 'visible': False})
+                        self._create_component('scene_confidence_min_input', 'slider', {'label': "Min Seed Confidence", 'minimum': 0.0, 'maximum': 1.0, 'value': 0.0, 'step': 0.05})
                     with gr.Row():
                         self._create_component('bulk_include_all_button', 'button', {'value': 'Include All'})
                         self._create_component('bulk_exclude_all_button', 'button', {'value': 'Exclude All'})
+
+                with gr.Accordion("Scene Gallery", open=True):
+                    self._create_component(
+                        'scene_gallery_view_toggle',
+                        'radio',
+                        {
+                            'label': "Show",
+                            'choices': ["Kept", "Rejected", "All"],
+                            'value': "Kept"
+                        }
+                    )
+                    # A gallery to visualize scenes by status
+                    self.components['scene_gallery'] = gr.Gallery(
+                        label="Scenes",
+                        columns=6,
+                        height=320,
+                        show_label=True,
+                        allow_preview=True
+                    )
+                gr.Markdown("---"); gr.Markdown("### 🔬 Step 3: Propagate Masks"); gr.Markdown("Once you are satisfied with the seeds, propagate the masks to the rest of the frames in the selected scenes.")
+                self._create_component('propagate_masks_button', 'button', {'value': '🔬 Propagate Masks on Kept Scenes', 'variant': 'primary', 'interactive': False})
 
     def _create_filtering_tab(self):
         with gr.Row():
@@ -2651,12 +2682,16 @@ class AppUI:
                         self._create_component('crop_ar_input', 'textbox', {'label': "Crop ARs", 'value': "16:9,1:1,9:16", 'info': "Comma-separated list (e.g., 16:9, 1:1). The best-fitting AR for each subject's mask will be chosen automatically."})
 
     def get_all_filter_keys(self): return self.config.QUALITY_METRICS + ["face_sim", "mask_area_pct"]
+
+
+
     def _create_event_handlers(self):
         self.components.update({'extracted_video_path_state': gr.State(""), 'extracted_frames_dir_state': gr.State(""),
                                 'analysis_output_dir_state': gr.State(""), 'analysis_metadata_path_state': gr.State(""),
                                 'all_frames_data_state': gr.State([]), 'per_metric_values_state': gr.State({}),
-                                'scenes_state': gr.State([]), 'selected_scene_id_state': gr.State(None)})
-        self._setup_visibility_toggles(); self._setup_pipeline_handlers(); self._setup_filtering_handlers(); self._setup_scene_editor_handlers(); self._setup_bulk_scene_handlers()
+                                'scenes_state': gr.State([]), 'selected_scene_id_state': gr.State(None),
+                                'scene_gallery_index_map_state': gr.State([])})
+        self._setup_visibility_toggles(); self._setup_pipeline_handlers(); self._setup_filtering_handlers(); self._setup_bulk_scene_handlers()
 
 class EnhancedAppUI(AppUI):
     def __init__(self, config=None, logger=None, progress_queue=None, cancel_event=None, thumbnail_manager=None, resource_manager=None, progress_tracker=None):
@@ -2772,10 +2807,16 @@ class EnhancedAppUI(AppUI):
                         scenes = result.get('scenes', [])
                         if scenes: save_scene_seeds(scenes, result['output_dir'], self.enhanced_logger)
                         tracker.complete_operation(success=True)
-                        updates = {"unified_log": result.get("log", "✅ Pre-analysis completed successfully."), "seeding_preview_gallery": gr.update(value=result.get('previews')),
+                        updates = {"unified_log": result.get("log", "✅ Pre-analysis completed successfully."),
                                    "scenes_state": scenes, "propagate_masks_button": gr.update(interactive=True), "scene_filter_status": get_scene_status_text(scenes),
                                    "scene_face_sim_min_input": gr.update(visible=any(s.get('seed_metrics', {}).get('best_face_sim') is not None for s in scenes)),
                                    "seeding_results_column": gr.update(visible=True), "propagation_group": gr.update(visible=True)}
+                        # Initialize scene gallery
+                        gallery_items, index_map = build_scene_gallery_items(scenes, "Kept", result.get('output_dir', ''))
+                        updates.update({
+                            "scene_gallery": gr.update(value=gallery_items),
+                            "scene_gallery_index_map_state": index_map
+                        })
                         if result.get("final_face_ref_path"):
                             updates["face_ref_img_path_input"] = result["final_face_ref_path"]
                         return updates
@@ -2805,7 +2846,7 @@ class EnhancedAppUI(AppUI):
         tracker.start_operation("Session Load", 1)
         try:
             final_result = {}
-            for result in execute_session_load(SessionLoadEvent(session_path=session_path), self.enhanced_logger, self.config, self.thumbnail_manager, tracker):
+            for result in execute_session_load(self, SessionLoadEvent(session_path=session_path), self.enhanced_logger, self.config, self.thumbnail_manager, tracker):
                 if isinstance(result, dict):
                     if 'log' in result: result['unified_log'] = result.pop('log')
                     final_result.update(result)
@@ -2829,9 +2870,8 @@ class EnhancedAppUI(AppUI):
     def _setup_pipeline_handlers(self):
         c = self.components
         all_outputs = [v for v in c.values() if hasattr(v, "_id")]
-        session_outputs = [c[k] for k in self.session_load_keys if k != 'progress_bar' and k in c and hasattr(c[k], "_id")]
+        
         def session_load_handler(session_path, progress=gr.Progress()):
-            # Remove 'progress_bar' from keys if it exists, as it causes errors with new Gradio versions
             session_load_keys_filtered = [k for k in self.session_load_keys if k != 'progress_bar']
             session_load_outputs = [c[key] for key in session_load_keys_filtered if key in c and hasattr(c[key], "_id")]
             yield from self._run_task_with_progress(
@@ -2869,7 +2909,8 @@ class EnhancedAppUI(AppUI):
                                                            'dam4sam_model_name': 'dam4sam_model_name_input', 'person_detector_model': 'person_detector_model_input',
                                                            'seed_strategy': 'seed_strategy_input', 'scene_detect': 'ext_scene_detect_input',
                                                            'enable_dedup': 'enable_dedup_input', 'text_prompt': 'text_prompt_input',
-                                                           'box_threshold': 'scene_editor_box_thresh_input', 'text_threshold': 'scene_editor_text_thresh_input',
+                                                           'box_threshold': gr.State(self.config.grounding_dino_params['box_threshold']), 
+                                                           'text_threshold': gr.State(self.config.grounding_dino_params['text_threshold']),
                                                            'min_mask_area_pct': gr.State(self.config.min_mask_area_pct),
                                                            'sharpness_base_scale': gr.State(self.config.sharpness_base_scale),
                                                            'edge_strength_base_scale': gr.State(self.config.edge_strength_base_scale),
@@ -2885,56 +2926,116 @@ class EnhancedAppUI(AppUI):
         c['propagate_masks_button'].click(fn=propagation_handler,
                                         inputs=prop_inputs, outputs=all_outputs, show_progress="hidden").then(lambda p: gr.update(selected=2) if p else gr.update(), c['analysis_metadata_path_state'], c['main_tabs'])
 
-    def _setup_scene_editor_handlers(self):
-        c = self.components
-        def on_select_scene(scenes, evt: gr.SelectData):
-            if not scenes or evt.index is None:
-                return (gr.update(open=False), None, "",
-                       self.config.grounding_dino_params['box_threshold'],
-                       self.config.grounding_dino_params['text_threshold'])
-            scene = scenes[evt.index]
-            cfg = scene.get('seed_config', {})
-            if scene.get('start_frame') is not None and scene.get('end_frame') is not None:
-                status_md = (f"**Editing Scene {scene['shot_id']}** "
-                             f"(Frames {scene['start_frame']}-{scene['end_frame']})")
-            else:
-                status_md = f"**Editing Scene {scene['shot_id']}**"
-            prompt = cfg.get('text_prompt', '') if cfg else ''
-
-            return (gr.update(open=True, value=status_md), scene['shot_id'],
-                   prompt,
-                   cfg.get('box_threshold', self.config.grounding_dino_params['box_threshold']),
-                   cfg.get('text_threshold', self.config.grounding_dino_params['text_threshold']))
-
-        c['seeding_preview_gallery'].select(
-            on_select_scene, [c['scenes_state']],
-            [c['scene_editor_accordion'], c['selected_scene_id_state'],
-             c['scene_editor_prompt_input'],
-             c['scene_editor_box_thresh_input'],
-             c['scene_editor_text_thresh_input']]
-        )
-        recompute_inputs = [c['scenes_state'], c['selected_scene_id_state'], c['scene_editor_prompt_input'],
-                            c['scene_editor_box_thresh_input'], c['scene_editor_text_thresh_input'], c['extracted_frames_dir_state']] + self.ana_input_components
-        c['scene_recompute_button'].click(self.on_apply_scene_overrides, recompute_inputs, [c['seeding_preview_gallery'], c['scenes_state'], c['unified_status']])
-        include_exclude_inputs, include_exclude_outputs = [c['scenes_state'], c['selected_scene_id_state'], c['extracted_frames_dir_state']], [c['scenes_state'], c['scene_filter_status'], c['unified_status']]
-        c['scene_include_button'].click(self.on_toggle_scene_status, include_exclude_inputs + [gr.State('included')], include_exclude_outputs)
-        c['scene_exclude_button'].click(self.on_toggle_scene_status, include_exclude_inputs + [gr.State('excluded')], include_exclude_outputs)
-
     def _setup_bulk_scene_handlers(self):
         c = self.components
-        def bulk_toggle(s, status, folder):
-            if not s: return [], "No scenes to update."
-            for scene in s: scene['status'], scene['manual_status_change'] = status, True
-            save_scene_seeds(s, folder, self.logger)
-            return s, get_scene_status_text(s)
-        c['bulk_include_all_button'].click(lambda s, f: bulk_toggle(s, 'included', f), [c['scenes_state'], c['extracted_frames_dir_state']], [c['scenes_state'], c['scene_filter_status']])
-        c['bulk_exclude_all_button'].click(lambda s, f: bulk_toggle(s, 'excluded', f), [c['scenes_state'], c['extracted_frames_dir_state']], [c['scenes_state'], c['scene_filter_status']])
+        
+        def bulk_toggle(scenes, status, output_folder, view):
+            if not scenes:
+                return [], "No scenes to update.", gr.update(), []
+            for scene in scenes:
+                scene['status'], scene['manual_status_change'] = status, True
+            save_scene_seeds(scenes, output_folder, self.logger)
+            gallery_items, index_map = build_scene_gallery_items(scenes, view, output_folder)
+            return scenes, get_scene_status_text(scenes), gr.update(value=gallery_items), index_map
+
+        def _refresh_scene_gallery(scenes, view, output_dir):
+            items, index_map = build_scene_gallery_items(scenes, view, output_dir)
+            return gr.update(value=items), index_map
+
+        # On view toggle change
+        c['scene_gallery_view_toggle'].change(
+            _refresh_scene_gallery,
+            [c['scenes_state'], c['scene_gallery_view_toggle'], c['extracted_frames_dir_state']],
+            [c['scene_gallery'], c['scene_gallery_index_map_state']]
+        )
+
+        # Click to toggle a scene's status (kept <-> rejected)
+        def on_scene_gallery_select(evt: gr.SelectData, scenes, view, index_map, output_dir):
+            if not scenes or not index_map or evt is None or evt.index is None:
+                return scenes, get_scene_status_text(scenes), gr.update(), index_map
+            
+            if not (0 <= evt.index < len(index_map)):
+                self.logger.warning(f"Gallery select index {evt.index} out of bounds for index_map size {len(index_map)}")
+                return scenes, get_scene_status_text(scenes), gr.update(), index_map
+            
+            scene_idx_in_state = index_map[evt.index]
+            
+            if not (0 <= scene_idx_in_state < len(scenes)):
+                self.logger.warning(f"Mapped scene index {scene_idx_in_state} out of bounds for scenes_state size {len(scenes)}")
+                return scenes, get_scene_status_text(scenes), gr.update(), index_map
+                
+            scene = scenes[scene_idx_in_state]
+            old_status = scene.get('status', 'pending')
+            scene['status'] = 'excluded' if old_status == 'included' else 'included'
+            scene['manual_status_change'] = True
+            
+            save_scene_seeds(scenes, output_dir, self.logger)
+            gallery_items, new_index_map = build_scene_gallery_items(scenes, view, output_dir)
+            return scenes, get_scene_status_text(scenes), gr.update(value=gallery_items), new_index_map
+
+        c['scene_gallery'].select(
+            on_scene_gallery_select,
+            [c['scenes_state'], c['scene_gallery_view_toggle'],
+             c['scene_gallery_index_map_state'], c['extracted_frames_dir_state']],
+            [c['scenes_state'], c['scene_filter_status'],
+             c['scene_gallery'], c['scene_gallery_index_map_state']]
+        )
+
+        def init_scene_gallery(scenes, view, outdir):
+            if not scenes:
+                return gr.update(value=[]), []
+            gallery_items, index_map = build_scene_gallery_items(scenes, view, outdir)
+            return gr.update(value=gallery_items), index_map
+
+        c['scenes_state'].change(
+            init_scene_gallery,
+            [c['scenes_state'], c['scene_gallery_view_toggle'], c['extracted_frames_dir_state']],
+            [c['scene_gallery'], c['scene_gallery_index_map_state']]
+        )
+
+        bulk_action_outputs = [c['scenes_state'], c['scene_filter_status'], c['scene_gallery'], c['scene_gallery_index_map_state']]
+        
+        c['bulk_include_all_button'].click(
+            lambda s, f, v: bulk_toggle(s, 'included', f, v), 
+            [c['scenes_state'], c['extracted_frames_dir_state'], c['scene_gallery_view_toggle']], 
+            bulk_action_outputs
+        )
+        c['bulk_exclude_all_button'].click(
+            lambda s, f, v: bulk_toggle(s, 'excluded', f, v), 
+            [c['scenes_state'], c['extracted_frames_dir_state'], c['scene_gallery_view_toggle']], 
+            bulk_action_outputs
+        )
+
+        def on_apply_bulk_scene_filters_extended(scenes, min_mask_area, min_face_sim, min_confidence, enable_face_filter, output_folder, view):
+            if not scenes: 
+                return [], "No scenes to filter.", gr.update(), []
+            
+            self.logger.info("Applying bulk scene filters", extra={"min_mask_area": min_mask_area, "min_face_sim": min_face_sim, "min_confidence": min_confidence, "enable_face_filter": enable_face_filter})
+            
+            for scene in scenes:
+                if scene.get('manual_status_change', False):
+                    continue
+
+                is_excluded = False
+                seed_result = scene.get('seed_result', {})
+                details = seed_result.get('details', {})
+                seed_metrics = scene.get('seed_metrics', {})
+                
+                if details.get('mask_area_pct', 101.0) < min_mask_area: is_excluded = True
+                if enable_face_filter and not is_excluded and seed_metrics.get('best_face_sim', 1.01) < min_face_sim: is_excluded = True
+                if seed_metrics.get('score', 101.0) < min_confidence: is_excluded = True
+
+                scene['status'] = 'excluded' if is_excluded else 'included'
+
+            save_scene_seeds(scenes, output_folder, self.logger)
+            gallery_items, new_index_map = build_scene_gallery_items(scenes, view, output_folder)
+            return scenes, get_scene_status_text(scenes), gr.update(value=gallery_items), new_index_map
+
         bulk_filter_inputs = [c['scenes_state'], c['scene_mask_area_min_input'], c['scene_face_sim_min_input'],
-                              c['scene_confidence_min_input'], c['enable_face_filter_input'], c['extracted_frames_dir_state']]
-        bulk_filter_outputs = [c['scenes_state'], c['scene_filter_status']]
-        c['scene_mask_area_min_input'].release(self.on_apply_bulk_scene_filters, bulk_filter_inputs, bulk_filter_outputs)
-        for comp in [c['scene_face_sim_min_input'], c['scene_confidence_min_input']]:
-            comp.release(self.on_apply_bulk_scene_filters, bulk_filter_inputs, bulk_filter_outputs)
+                              c['scene_confidence_min_input'], c['enable_face_filter_input'], c['extracted_frames_dir_state'], c['scene_gallery_view_toggle']]
+        
+        for comp in [c['scene_mask_area_min_input'], c['scene_face_sim_min_input'], c['scene_confidence_min_input']]:
+            comp.release(on_apply_bulk_scene_filters_extended, bulk_filter_inputs, bulk_action_outputs)
 
     def _setup_filtering_handlers(self):
         c = self.components
