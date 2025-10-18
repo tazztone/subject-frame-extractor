@@ -1,9 +1,7 @@
+# keep app.py Monolithic!
 """
 Frame Extractor & Analyzer v2.0
-Monolithic application file.
 """
-
-# --- IMPORTS ---
 import argparse
 import atexit
 import contextlib
