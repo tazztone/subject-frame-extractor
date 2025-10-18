@@ -48,7 +48,7 @@ sys.path.insert(0, str(project_root / 'Grounded-SAM-2'))
 sys.path.insert(0, str(project_root / 'DAM4SAM'))
 
 from collections import Counter, OrderedDict, defaultdict
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, asdict, field, fields
 from enum import Enum
 from functools import lru_cache
@@ -767,7 +767,7 @@ class Frame:
     error: str | None = None
 
     def calculate_quality_metrics(self, thumb_image_rgb: np.ndarray, quality_config: QualityConfig, logger: 'EnhancedLogger',
-                                  mask: np.ndarray | None = None, niqe_metric=None):
+                                  mask: np.ndarray | None = None, niqe_metric=None, main_config: 'Config' = None):
         try:
             gray = cv2.cvtColor(thumb_image_rgb, cv2.COLOR_RGB2GRAY)
             active_mask = ((mask > 128) if mask is not None and mask.ndim == 2 else None)
@@ -811,10 +811,9 @@ class Frame:
                            "contrast": min(contrast, 2.0) / 2.0, "brightness": brightness, "entropy": entropy, "niqe": niqe_score / 100.0}
             self.metrics = FrameMetrics(**{f"{k}_score": float(v * 100) for k, v in scores_norm.items()})
             # The quality_weights are part of the main config, not QualityConfig, so we'll need to pass them separately or access them differently.
-            # For now, let's assume the main config is accessible.
-            main_config = Config()
-            quality_sum = sum(scores_norm[k] * (main_config.quality_weights[k] / 100.0) for k in main_config.QUALITY_METRICS)
-            self.metrics.quality_score = float(quality_sum * 100)
+            if main_config:
+                quality_sum = sum(scores_norm[k] * (main_config.quality_weights[k] / 100.0) for k in main_config.QUALITY_METRICS)
+                self.metrics.quality_score = float(quality_sum * 100)
         except Exception as e:
             self.error = f"Quality calc failed: {e}"
             logger.error("Frame quality calculation failed", exc_info=True, extra={'frame': self.frame_number})
@@ -1145,12 +1144,11 @@ class PersonDetector:
 
     def detect_boxes(self, img_rgb):
         res = self.model.predict(img_rgb, imgsz=self.imgsz, conf=self.conf, classes=[0], verbose=False, device=self.device)
-        boxes = []
-        for r in res:
-            if getattr(r, "boxes", None) is None: continue
-            for b in r.boxes.cpu():
-                boxes.append((*map(int, b.xyxy[0].tolist()), float(b.conf[0])))
-        return boxes
+        return [
+            (*map(int, b.xyxy[0].tolist()), float(b.conf[0]))
+            for r in res if getattr(r, "boxes", None) is not None
+            for b in r.boxes.cpu()
+        ]
 
 @lru_cache(maxsize=None)
 def get_person_detector(model_name, device, config: 'Config', logger=None):
@@ -1430,12 +1428,19 @@ class SeedSelector:
         self._device = "cuda" if torch.cuda.is_available() else "cpu"
         self.logger = logger or EnhancedLogger()
 
+    def _get_param(self, source, key, default=None):
+        """Safely gets a parameter from a source that can be a dict or an object."""
+        if isinstance(source, dict):
+            return source.get(key, default)
+        return getattr(source, key, default)
+
     def select_seed(self, frame_rgb, current_params=None):
-        p = self.params if current_params is None else current_params
-        primary_strategy = getattr(p, "primary_seed_strategy", "🤖 Automatic")
-        if isinstance(current_params, dict): primary_strategy = current_params.get('primary_seed_strategy', primary_strategy)
-        use_face_filter = getattr(p, "enable_face_filter", False)
-        if isinstance(current_params, dict): use_face_filter = current_params.get('enable_face_filter', use_face_filter)
+        params_source = current_params if current_params is not None else self.params
+        p = params_source  # Keep for passing to other methods
+
+        primary_strategy = self._get_param(params_source, 'primary_seed_strategy', "🤖 Automatic")
+        use_face_filter = self._get_param(params_source, 'enable_face_filter', False)
+
         if primary_strategy == "👤 By Face":
             if self.face_analyzer and self.reference_embedding is not None and use_face_filter:
                 self.logger.info("Starting 'Identity-First' seeding.")
@@ -1454,43 +1459,17 @@ class SeedSelector:
             return self._choose_person_by_strategy(frame_rgb, p)
 
     def _face_with_text_fallback_seed(self, frame_rgb, params):
-        target_face, face_details = self._find_target_face(frame_rgb)
-        if target_face and face_details.get('type') == 'face_match':
-            self.logger.info("Face match found, proceeding with identity-first strategy.")
-            yolo_boxes, dino_boxes = self._get_yolo_boxes(frame_rgb), self._get_dino_boxes(frame_rgb, params)[0]
-            best_box, best_details = self._score_and_select_candidate(target_face, yolo_boxes, dino_boxes)
-            if best_box:
-                self.logger.success("Face-based seed selected.", extra=best_details)
-                return best_box, best_details
-            else:
-                expanded_box = self._expand_face_to_body(target_face['bbox'], frame_rgb.shape)
-                return expanded_box, {"type": "expanded_box_from_face", "seed_face_sim": face_details.get('seed_face_sim', 0)}
-        self.logger.warning("Face detection failed, falling back to text prompt strategy.", extra=face_details)
-        text_prompt = getattr(params, "text_prompt", "")
-        if isinstance(params, dict): text_prompt = params.get('text_prompt', text_prompt)
-        if not text_prompt:
-            self.logger.warning("No text prompt provided for fallback. Using automatic strategy.")
-            return self._choose_person_by_strategy(frame_rgb, params)
-        dino_boxes, dino_details = self._get_dino_boxes(frame_rgb, params)
-        if dino_boxes:
-            yolo_boxes = self._get_yolo_boxes(frame_rgb)
-            if yolo_boxes:
-                best_iou, best_match = -1, None
-                for d_box in dino_boxes:
-                    for y_box in yolo_boxes:
-                        iou = self._calculate_iou(d_box['bbox'], y_box['bbox'])
-                        if iou > best_iou:
-                            best_iou, best_match = iou, {'bbox': d_box['bbox'], 'type': 'text_fallback_dino_yolo', 'iou': iou,
-                                                         'dino_conf': d_box['conf'], 'yolo_conf': y_box['conf'],
-                                                         'fallback_reason': face_details.get('error', 'face_detection_failed')}
-                if best_match and best_match['iou'] > 0.3:
-                    self.logger.info("Text fallback successful with DINO+YOLO intersection.", extra=best_match)
-                    return self._xyxy_to_xywh(best_match['bbox']), best_match
-            fallback_details = {**dino_details, 'type': 'text_fallback_dino_only', 'fallback_reason': face_details.get('error', 'face_detection_failed')}
-            self.logger.info("Text fallback using best DINO box.", extra=fallback_details)
-            return self._xyxy_to_xywh(dino_boxes[0]['bbox']), fallback_details
-        self.logger.warning("Both face and text strategies failed, using automatic fallback.")
-        return self._choose_person_by_strategy(frame_rgb, params)
+        # First, attempt the identity-first strategy.
+        box, details = self._identity_first_seed(frame_rgb, params)
+
+        # If it succeeds (i.e., finds a matching face and subject), return the result.
+        if box is not None:
+            self.logger.info("Face-first strategy successful.")
+            return box, details
+
+        # If it fails, log the failure and fall back to the object-first (text) strategy.
+        self.logger.warning("Face detection failed or no match found, falling back to text prompt strategy.", extra=details)
+        return self._object_first_seed(frame_rgb, params)
 
     def _identity_first_seed(self, frame_rgb, params):
         target_face, details = self._find_target_face(frame_rgb)
@@ -1551,12 +1530,10 @@ class SeedSelector:
             return []
 
     def _get_dino_boxes(self, frame_rgb, params):
-        prompt = getattr(params, "text_prompt", "")
-        if isinstance(params, dict): prompt = params.get('text_prompt', prompt)
+        prompt = self._get_param(params, "text_prompt", "")
         if not self._gdino or not prompt: return [], {}
-        box_th, text_th = getattr(params, "box_threshold", self.params.box_threshold), getattr(params, "text_threshold", self.params.text_threshold)
-        if isinstance(params, dict):
-            box_th, text_th = params.get('box_threshold', box_th), params.get('text_threshold', text_th)
+        box_th = self._get_param(params, "box_threshold", self.params.box_threshold)
+        text_th = self._get_param(params, "text_threshold", self.params.text_threshold)
         image_source, image_tensor = self._load_image_from_array(frame_rgb)
         h, w = image_source.shape[:2]
         try:
@@ -1856,6 +1833,7 @@ class AnalysisPipeline(Pipeline):
                                    self.face_analyzer, self.reference_embedding, person_detector, thumbnail_manager=self.thumbnail_manager,
                                    niqe_metric=self.niqe_metric, logger=self.logger, tracker=self.tracker)
             self.mask_metadata = masker.run_propagation(str(self.output_dir), scenes_to_process)
+            self._initialize_niqe_metric()
             self._run_analysis_loop(scenes_to_process)
             if self.cancel_event.is_set(): return {"log": "Analysis cancelled."}
             self.logger.success("Analysis complete.", extra={'output_dir': self.output_dir})
@@ -1887,29 +1865,24 @@ class AnalysisPipeline(Pipeline):
             futures = [executor.submit(self._process_single_frame, path) for path in image_files_to_process]
 
             completed_count = 0
-            while completed_count < len(futures):
+            for future in as_completed(futures):
                 if self.cancel_event.is_set():
                     for f in futures:
                         f.cancel()
                     break
 
-                # Non-blocking check for completed futures
-                for future in futures[:]:  # Iterate over a copy
-                    if future.done():
-                        try:
-                            future.result()  # To raise exceptions if any
-                        except Exception as e:
-                            self.logger.error(f"Error processing future: {e}")
-                        completed_count +=1
-                        self.tracker.update_progress(stage_items_processed=completed_count)
-                time.sleep(0.1)  # Avoid busy-waiting
+                try:
+                    future.result()  # To raise exceptions if any
+                except Exception as e:
+                    self.logger.error(f"Error processing future: {e}")
+                completed_count += 1
+                self.tracker.update_progress(stage_items_processed=completed_count)
 
     def _process_single_frame(self, thumb_path):
         if self.cancel_event.is_set(): return
         if not (frame_num_match := re.search(r'frame_(\d+)', thumb_path.name)): return
         log_context = {'file': thumb_path.name}
         try:
-            self._initialize_niqe_metric()
             thumb_image_rgb = self.thumbnail_manager.get(thumb_path)
             if thumb_image_rgb is None: raise ValueError("Could not read thumbnail.")
             frame, base_filename = Frame(thumb_image_rgb, -1), thumb_path.name.replace('.webp', '.png')
@@ -1926,7 +1899,7 @@ class AnalysisPipeline(Pipeline):
                 edge_strength_base_scale=self.config.edge_strength_base_scale,
                 enable_niqe='niqe' in self.config.QUALITY_METRICS
             )
-            frame.calculate_quality_metrics(thumb_image_rgb, quality_conf, self.logger, mask=mask_thumb, niqe_metric=self.niqe_metric)
+            frame.calculate_quality_metrics(thumb_image_rgb, quality_conf, self.logger, mask=mask_thumb, niqe_metric=self.niqe_metric, main_config=self.config)
             if self.params.enable_face_filter and self.reference_embedding is not None and self.face_analyzer: self._analyze_face_similarity(frame, thumb_image_rgb)
             meta = {"filename": base_filename, "metrics": asdict(frame.metrics)}
             if frame.face_similarity_score is not None: meta["face_sim"] = frame.face_similarity_score
@@ -2556,13 +2529,13 @@ class AppUI:
             with gr.Column(scale=1): self._create_component('max_resolution', 'dropdown', {'choices': ["maximum available", "2160", "1080", "720"], 'value': self.config.ui_defaults['max_resolution'], 'label': "Download Resolution"})
         self._create_component('upload_video_input', 'file', {'label': "Or Upload a Video File", 'file_types': ["video"], 'type': "filepath"})
         gr.Markdown("---"); gr.Markdown("### Step 2: Configure Extraction Method")
-        self._create_component('thumbnails_only_input', 'checkbox', {'label': "Use Recommended Thumbnail Extraction (Faster, For Pre-Analysis)", 'value': self.config.ui_defaults['thumbnails_only']})
         with gr.Accordion("Thumbnail Settings", open=True) as recommended_accordion:
+            self._create_component('thumbnails_only_input', 'checkbox', {'label': "Use Recommended Thumbnail Extraction (Faster, For Pre-Analysis)", 'value': self.config.ui_defaults['thumbnails_only']})
             self.components['recommended_accordion'] = recommended_accordion
             gr.Markdown("This is the fastest and most efficient method. It extracts lightweight thumbnails for scene analysis, allowing you to quickly find the best frames *before* extracting full-resolution images.")
             self._create_component('thumb_megapixels_input', 'slider', {'label': "Thumbnail Size (MP)", 'minimum': 0.1, 'maximum': 2.0, 'step': 0.1, 'value': self.config.ui_defaults['thumb_megapixels']})
             self._create_component('ext_scene_detect_input', 'checkbox', {'label': "Use Scene Detection (Recommended)", 'value': self.config.ui_defaults['scene_detect']})
-        with gr.Accordion("Advanced: Legacy Full-Frame Extraction", open=False) as legacy_accordion:
+        with gr.Accordion("old: Full-Frame Extraction", open=False) as legacy_accordion:
             self.components['legacy_accordion'] = legacy_accordion
             gr.Markdown("This method extracts full-resolution frames directly, which can be slow and generate a large number of files. Use this only if you have specific needs and understand the performance implications.")
             self._create_component('method_input', 'dropdown', {'choices': ["keyframes", "interval", "every_nth_frame", "all", "scene"], 'value': self.config.ui_defaults['method'], 'label': "Extraction Method"})
@@ -2702,11 +2675,11 @@ class EnhancedAppUI(AppUI):
     def _build_footer(self):
         with gr.Row():
             with gr.Column(scale=3):
+                self._create_component('unified_log', 'textbox', {'label': '📋 Enhanced Processing Log', 'lines': 15, 'interactive': False, 'autoscroll': True, 'elem_classes': ['log-container']})
                 with gr.Row():
                     self._create_component('log_level_filter', 'dropdown', {'choices': ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'SUCCESS', 'CRITICAL'], 'value': 'INFO', 'label': 'Log Level Filter', 'scale': 1})
                     self._create_component('clear_logs_button', 'button', {'value': '🗑️ Clear Logs', 'scale': 1})
                     self._create_component('export_logs_button', 'button', {'value': '📥 Export Logs', 'scale': 1})
-                self._create_component('unified_log', 'textbox', {'label': '📋 Enhanced Processing Log', 'lines': 15, 'interactive': False, 'autoscroll': True, 'elem_classes': ['log-container']})
             with gr.Column(scale=1):
                 self._create_component('unified_status', 'html', {'value': self._format_status_display('Idle', 0, 'Ready'),})
                 self.components['progress_bar'] = gr.Progress()
