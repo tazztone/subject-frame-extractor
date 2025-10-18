@@ -598,6 +598,23 @@ def _to_json_safe(obj):
     if hasattr(obj, '__dataclass_fields__'): return _to_json_safe(asdict(obj))
     return obj
 
+def _sanitize_face_ref(runconfig: dict, logger) -> tuple[str, bool]:
+    ref = (runconfig.get('face_ref_img_path') or '').strip()
+    vid = (runconfig.get('video_path') or '').strip()
+    if not ref:
+        logger.info("No face reference in session; face similarity disabled on load.", component="session_loader")
+        return "", False
+    bad_exts = {'.mp4','.mov','.mkv','.avi','.webm'}
+    img_exts = {'.png','.jpg','.jpeg','.webp','.bmp'}
+    p = Path(ref)
+    if ref == vid or p.suffix.lower() in bad_exts:
+        logger.warning("Reference path appears to be a video or equals video_path; clearing safely.", component="session_loader")
+        return "", False
+    if p.suffix.lower() not in img_exts or not p.is_file():
+        logger.warning("Reference path is not a valid image on disk; clearing safely.", component="session_loader", extra={'path': ref})
+        return "", False
+    return ref, True
+
 # --- QUALITY ---
 
 @njit
@@ -748,6 +765,11 @@ class AnalysisParameters:
 
     @classmethod
     def from_ui(cls, logger: 'EnhancedLogger', config: 'Config', **kwargs):
+        if 'face_ref_img_path' in kwargs or 'video_path' in kwargs:
+            sanitized_face_ref, face_filter_enabled = _sanitize_face_ref(kwargs, logger)
+            kwargs['face_ref_img_path'] = sanitized_face_ref
+            kwargs['enable_face_filter'] = face_filter_enabled
+        
         if 'thumb_megapixels' in kwargs:
             thumb_mp = kwargs['thumb_megapixels']
             if not isinstance(thumb_mp, (int, float)) or thumb_mp <= 0:
@@ -1630,6 +1652,13 @@ class ExtractionPipeline(Pipeline):
         video_path = Path(vid_manager.prepare_video(self.config, self.logger))
         output_dir = self.config.DIRS['downloads'] / video_path.stem
         output_dir.mkdir(exist_ok=True, parents=True)
+
+        params_dict = asdict(self.params)
+        params_dict['output_folder'] = str(output_dir)
+        params_dict['video_path'] = str(video_path)
+        with (output_dir / "run_config.json").open('w', encoding='utf-8') as f:
+            json.dump(_to_json_safe(params_dict), f, indent=2)
+
         self.logger.info("Video ready", user_context={'path': sanitize_filename(video_path.name)})
         video_info = VideoManager.get_video_info(video_path)
         if self.params.scene_detect:
@@ -2434,9 +2463,7 @@ class AppUI:
                         self._create_component('scene_mask_area_min_input', 'slider', {'label': "Min Seed Mask Area %", 'minimum': 0.0, 'maximum': 100.0, 'value': self.config.min_mask_area_pct, 'step': 0.1})
                         self._create_component('scene_face_sim_min_input', 'slider', {'label': "Min Seed Face Sim", 'minimum': 0.0, 'maximum': 1.0, 'value': 0.5, 'step': 0.05, 'visible': False})
                         self._create_component('scene_confidence_min_input', 'slider', {'label': "Min Seed Confidence", 'minimum': 0.0, 'maximum': 1.0, 'value': 0.0, 'step': 0.05})
-                    with gr.Row():
-                        self._create_component('bulk_include_all_button', 'button', {'value': 'Include All'})
-                        self._create_component('bulk_exclude_all_button', 'button', {'value': 'Exclude All'})
+
 
                 with gr.Accordion("Scene Gallery", open=True):
                     self._create_component(
@@ -2731,14 +2758,7 @@ class EnhancedAppUI(AppUI):
     def _setup_bulk_scene_handlers(self):
         c = self.components
         
-        def bulk_toggle(scenes, status, output_folder, view):
-            if not scenes:
-                return [], "No scenes to update.", gr.update(), []
-            for scene in scenes:
-                scene['status'], scene['manual_status_change'] = status, True
-            save_scene_seeds(scenes, output_folder, self.logger)
-            gallery_items, index_map = build_scene_gallery_items(scenes, view, output_folder)
-            return scenes, get_scene_status_text(scenes), gr.update(value=gallery_items), index_map
+
 
         def _refresh_scene_gallery(scenes, view, output_dir):
             items, index_map = build_scene_gallery_items(scenes, view, output_dir)
@@ -2797,16 +2817,7 @@ class EnhancedAppUI(AppUI):
 
         bulk_action_outputs = [c['scenes_state'], c['scene_filter_status'], c['scene_gallery'], c['scene_gallery_index_map_state']]
         
-        c['bulk_include_all_button'].click(
-            lambda s, f, v: bulk_toggle(s, 'included', f, v), 
-            [c['scenes_state'], c['extracted_frames_dir_state'], c['scene_gallery_view_toggle']], 
-            bulk_action_outputs
-        )
-        c['bulk_exclude_all_button'].click(
-            lambda s, f, v: bulk_toggle(s, 'excluded', f, v), 
-            [c['scenes_state'], c['extracted_frames_dir_state'], c['scene_gallery_view_toggle']], 
-            bulk_action_outputs
-        )
+
 
         def on_apply_bulk_scene_filters_extended(scenes, min_mask_area, min_face_sim, min_confidence, enable_face_filter, output_folder, view):
             if not scenes: 
