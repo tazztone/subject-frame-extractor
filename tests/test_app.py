@@ -205,10 +205,12 @@ class TestEnhancedLogging(unittest.TestCase):
 
     def test_operation_context_timing(self):
         logger = app.EnhancedLogger(log_to_console=False, log_to_file=False)
+        logger.logger.log = MagicMock()
         with patch('builtins.open', mock_open()):
-            with logger.operation_context("test_operation", "test_component") as ctx:
+            with logger.operation("test_operation", "test_component"):
                 time.sleep(0.01)
-                self.assertEqual(ctx['operation'], "test_operation")
+            # Check that info and success were called
+            self.assertEqual(logger.logger.log.call_count, 2)
 
 class TestFilterLogic:
     @pytest.fixture
@@ -341,7 +343,7 @@ class TestVideo(unittest.TestCase):
     def test_extraction_pipeline_run(self, mock_is_file, mock_ffmpeg, mock_info):
         with patch('app.Config', MockConfig):
             params = app.AnalysisParameters(source_path='/fake.mp4')
-            pipeline = app.EnhancedExtractionPipeline(params, MagicMock(), MagicMock(), app.Config(), MagicMock(), MagicMock())
+            pipeline = app.EnhancedExtractionPipeline(params, MagicMock(), MagicMock(), app.Config(), MagicMock())
             pipeline.run()
             mock_ffmpeg.assert_called()
 

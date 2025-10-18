@@ -352,27 +352,15 @@ class EnhancedLogger:
         self.progress_queue = queue
 
     @contextlib.contextmanager
-    def operation_context(self, operation_name: str, component: str, user_context: Optional[Dict[str, Any]] = None):
-        start_time = time.time()
-        start_metrics = self.performance_monitor.get_system_metrics() if self.performance_monitor else {}
-        operation_data = {'operation': operation_name, 'component': component, 'start_time': start_time,
-                          'start_metrics': start_metrics, 'user_context': user_context or {}}
-        with self._lock:
-            self._operation_stack.append(operation_data)
+    def operation(self, name, component="system"):
+        t0 = time.time()
+        self.info(f"Start {name}", component=component)
         try:
-            self.info(f"Starting {operation_name}", component=component, operation=operation_name, user_context=user_context)
-            yield operation_data
-            duration = (time.time() - start_time) * 1000
-            self.success(f"Completed {operation_name}", component=component, operation=operation_name, duration_ms=duration, user_context=user_context)
-        except Exception as e:
-            duration = (time.time() - start_time) * 1000
-            self.error(f"Failed {operation_name}: {str(e)}", component=component, operation=operation_name, duration_ms=duration,
-                       error_type=type(e).__name__, stack_trace=traceback.format_exc(), user_context=user_context)
+            yield
+            self.success(f"Done {name} in {(time.time()-t0)*1000:.0f}ms", component=component)
+        except Exception:
+            self.error(f"Failed {name}", component=component, stacktrace=traceback.format_exc())
             raise
-        finally:
-            with self._lock:
-                if self._operation_stack:
-                    self._operation_stack.pop()
 
     def _create_log_event(self, level: str, message: str, component: str, **kwargs) -> LogEvent:
         current_metrics = self.performance_monitor.get_system_metrics() if self.performance_monitor else {}
@@ -426,126 +414,7 @@ class ColoredFormatter(logging.Formatter):
         record.levelname = f"{color}{record.levelname}{self.COLORS['RESET']}"
         return super().format(record)
 
-# --- PROGRESS TRACKING ---
 
-@dataclass
-class ProgressState:
-    operation: str
-    stage: str
-    current: int
-    total: int
-    stage_current: int = 0
-    stage_total: int = 0
-    start_time: float = 0.0
-    stage_start_time: float = 0.0
-    substages: List[str] = None
-    current_substage: Optional[str] = None
-    metadata: Optional[Dict[str, Any]] = None
-
-class AdvancedProgressTracker:
-    def __init__(self, progress_queue: Queue, logger=None):
-        self.progress_queue = progress_queue
-        self.logger = logger
-        self.current_state: Optional[ProgressState] = None
-        self.history: List[Dict[str, Any]] = []
-        self.stage_history: Dict[str, List[float]] = {}
-        self.lock = threading.Lock()
-
-    def start_operation(self, operation: str, total_items: int, stages: List[str] = None, metadata: Dict[str, Any] = None):
-        with self.lock:
-            self.current_state = ProgressState(operation=operation, stage="initializing", current=0, total=total_items,
-                                               start_time=time.time(), substages=stages or [], metadata=metadata or {})
-        self._update_ui()
-        if self.logger:
-            self.logger.info(f"Started operation: {operation}", component="progress", operation=operation, custom_fields={'total_items': total_items})
-
-    def start_stage(self, stage_name: str, stage_items: int = None, substage: str = None):
-        if not self.current_state: return
-        with self.lock:
-            if self.current_state.stage != "initializing":
-                stage_duration = time.time() - self.current_state.stage_start_time
-                if self.current_state.stage not in self.stage_history: self.stage_history[self.current_state.stage] = []
-                self.stage_history[self.current_state.stage].append(stage_duration)
-            self.current_state.stage = stage_name
-            self.current_state.stage_current = 0
-            self.current_state.stage_total = stage_items or 0
-            self.current_state.stage_start_time = time.time()
-            self.current_state.current_substage = substage
-        self._update_ui()
-        if self.logger:
-            self.logger.info(f"Started stage: {stage_name}", component="progress", operation=self.current_state.operation, custom_fields={'stage_items': stage_items})
-
-    def update_progress(self, items_processed: int = 1, stage_items_processed: int = None, substage: str = None, metadata: Dict[str, Any] = None):
-        if not self.current_state: return
-        with self.lock:
-            self.current_state.current = min(self.current_state.current + items_processed, self.current_state.total)
-            if stage_items_processed is not None: self.current_state.stage_current = min(stage_items_processed, self.current_state.stage_total)
-            if substage: self.current_state.current_substage = substage
-            if metadata: self.current_state.metadata.update(metadata)
-        self._update_ui()
-
-    def complete_operation(self, success: bool = True, message: str = None):
-        if not self.current_state: return
-        total_duration = time.time() - self.current_state.start_time
-        with self.lock:
-            if self.current_state.stage != "initializing":
-                stage_duration = time.time() - self.current_state.stage_start_time
-                if self.current_state.stage not in self.stage_history: self.stage_history[self.current_state.stage] = []
-                self.stage_history[self.current_state.stage].append(stage_duration)
-            self.history.append({'operation': self.current_state.operation, 'total_items': self.current_state.total, 'duration': total_duration,
-                                 'success': success, 'timestamp': time.time(), 'stages': self.current_state.substages, 'final_metadata': self.current_state.metadata})
-            if success:
-                self.current_state.current = self.current_state.total
-                self.current_state.stage = "completed"
-            else:
-                self.current_state.stage = "failed"
-        self._update_ui(force_complete=True)
-        if self.logger:
-            status = "SUCCESS" if success else "ERROR"
-            self.logger._log_event(self.logger._create_log_event(
-                status, message or f"Operation {self.current_state.operation} {'completed' if success else 'failed'}", "progress",
-                operation=self.current_state.operation, duration_ms=total_duration * 1000,
-                custom_fields={'total_items_processed': self.current_state.current, 'success': success}))
-
-    def _calculate_eta(self) -> tuple[float, str]:
-        if not self.current_state or self.current_state.current == 0:
-            return float('inf'), "calculating..."
-
-        elapsed = time.time() - self.current_state.start_time
-        items_per_second = self.current_state.current / elapsed
-        remaining_items = self.current_state.total - self.current_state.current
-
-        eta_seconds = remaining_items / items_per_second if items_per_second > 0 else float('inf')
-
-        if eta_seconds == float('inf'):
-            return eta_seconds, "calculating..."
-        elif eta_seconds < 60:
-            return eta_seconds, f"{int(eta_seconds)}s"
-        elif eta_seconds < 3600:
-            return eta_seconds, f"{int(eta_seconds / 60)}m {int(eta_seconds % 60)}s"
-        else:
-            return eta_seconds, f"{int(eta_seconds / 3600)}h {int((eta_seconds % 3600) / 60)}m"
-
-    def _calculate_rate(self) -> float:
-        if not self.current_state or self.current_state.current == 0: return 0.0
-        elapsed = time.time() - self.current_state.start_time
-        return self.current_state.current / elapsed if elapsed > 0 else 0.0
-
-    def _update_ui(self, force_complete: bool = False):
-        if not self.current_state: return
-        progress_ratio = self.current_state.current / self.current_state.total if self.current_state.total > 0 else 0
-        eta_seconds, eta_str = self._calculate_eta()
-        rate = self._calculate_rate()
-        stage_progress = ""
-        if self.current_state.stage_total > 0:
-            stage_ratio = self.current_state.stage_current / self.current_state.stage_total
-            stage_progress = f" | Stage: {self.current_state.stage_current}/{self.current_state.stage_total} ({stage_ratio:.1%})"
-        substage_info = f" | {self.current_state.current_substage}" if self.current_state.current_substage else ""
-        progress_message = {"stage": self.current_state.stage, "progress": progress_ratio, "current": self.current_state.current,
-                            "total": self.current_state.total, "eta": eta_str, "rate": f"{rate:.1f}/s" if rate > 0 else "0.0/s",
-                            "detailed_status": f"{self.current_state.operation} | {self.current_state.stage} | {self.current_state.current}/{self.current_state.total} ({progress_ratio:.1%}) | ETA: {eta_str} | Rate: {rate:.1f}/s{stage_progress}{substage_info}"}
-        if self.current_state.metadata: progress_message["metadata"] = self.current_state.metadata
-        self.progress_queue.put(progress_message)
 
 # --- ERROR HANDLING ---
 
@@ -922,12 +791,11 @@ class MaskingResult:
 # --- BASE PIPELINE ---
 
 class Pipeline:
-    def __init__(self, params, progress_queue: Queue, cancel_event: threading.Event, logger: EnhancedLogger = None, tracker=None):
+    def __init__(self, params, progress_queue: Queue, cancel_event: threading.Event, logger: EnhancedLogger = None):
         self.params = params
         self.progress_queue = progress_queue
         self.cancel_event = cancel_event
         self.logger = logger or EnhancedLogger()
-        self.tracker = tracker
 
 # --- CACHING & OPTIMIZATION ---
 
@@ -1278,7 +1146,7 @@ def run_scene_detection(video_path, output_dir, logger=None):
         logger.error("Scene detection failed.", component="video", exc_info=True)
         return []
 
-def run_ffmpeg_extraction(video_path, output_dir, video_info, params, progress_queue, cancel_event, logger=None, tracker=None):
+def run_ffmpeg_extraction(video_path, output_dir, video_info, params, progress_queue, cancel_event, logger=None):
     logger = logger or EnhancedLogger()
     log_file_path = output_dir / "ffmpeg_log.txt"
     cmd_base = ['ffmpeg', '-y', '-i', str(video_path), '-hide_banner', '-loglevel', 'info']
@@ -1363,10 +1231,9 @@ def create_frame_map(output_dir: Path, logger: 'EnhancedLogger'):
 # --- MASKING & PROPAGATION ---
 
 class MaskPropagator:
-    def __init__(self, params, dam_tracker, progress_tracker, cancel_event, progress_queue, logger=None):
+    def __init__(self, params, dam_tracker, cancel_event, progress_queue, logger=None):
         self.params = params
         self.dam_tracker = dam_tracker
-        self.progress_tracker = progress_tracker
         self.cancel_event = cancel_event
         self.progress_queue = progress_queue
         self.logger = logger or EnhancedLogger()
@@ -1387,14 +1254,12 @@ class MaskPropagator:
                 mask = outputs.get('pred_mask')
                 if mask is not None: mask = postprocess_mask((mask * 255).astype(np.uint8), fill_holes=True, keep_largest_only=True)
                 masks[i] = mask if mask is not None else np.zeros_like(shot_frames_rgb[i], dtype=np.uint8)[:, :, 0]
-                if self.progress_tracker: self.progress_tracker.update_progress()
         try:
             with torch.cuda.amp.autocast(enabled=self._device == 'cuda'):
                 outputs = self.dam_tracker.initialize(rgb_to_pil(shot_frames_rgb[seed_idx]), None, bbox=bbox_xywh)
                 mask = outputs.get('pred_mask')
                 if mask is not None: mask = postprocess_mask((mask * 255).astype(np.uint8), fill_holes=True, keep_largest_only=True)
                 masks[seed_idx] = mask if mask is not None else np.zeros_like(shot_frames_rgb[seed_idx], dtype=np.uint8)[:, :, 0]
-                if self.progress_tracker: self.progress_tracker.update_progress()
                 _propagate_direction(seed_idx + 1, len(shot_frames_rgb), 1)
                 self.dam_tracker.initialize(rgb_to_pil(shot_frames_rgb[seed_idx]), None, bbox=bbox_xywh)
                 _propagate_direction(seed_idx - 1, -1, -1)
@@ -1457,6 +1322,11 @@ class SeedSelector:
             return self._choose_person_by_strategy(frame_rgb, p)
 
     def _face_with_text_fallback_seed(self, frame_rgb, params):
+        # If no reference embedding is available, go straight to text fallback.
+        if self.reference_embedding is None:
+            self.logger.warning("No reference face for face-first strategy, falling back to text prompt.", extra={'reason': 'no_ref_emb'})
+            return self._object_first_seed(frame_rgb, params)
+
         # First, attempt the identity-first strategy.
         box, details = self._identity_first_seed(frame_rgb, params)
 
@@ -1632,10 +1502,10 @@ class SeedSelector:
 
 class SubjectMasker:
     def __init__(self, params, progress_queue, cancel_event, config: 'Config', frame_map=None, face_analyzer=None,
-                 reference_embedding=None, person_detector=None, thumbnail_manager=None, niqe_metric=None, logger=None, tracker=None):
+                 reference_embedding=None, person_detector=None, thumbnail_manager=None, niqe_metric=None, logger=None):
         self.params, self.config, self.progress_queue, self.cancel_event = params, config, progress_queue, cancel_event
         self.logger = logger or EnhancedLogger()
-        self.tracker, self.frame_map = tracker, frame_map
+        self.frame_map = frame_map
         self.face_analyzer, self.reference_embedding, self.person_detector = face_analyzer, reference_embedding, person_detector
         self.dam_tracker, self.mask_dir, self.shots = None, None, []
         self._gdino, self._sam2_img = None, None
@@ -1644,7 +1514,7 @@ class SubjectMasker:
         self.niqe_metric = niqe_metric
         self._initialize_models()
         self.seed_selector = SeedSelector(params, face_analyzer, reference_embedding, person_detector, self.dam_tracker, self._gdino, logger=self.logger)
-        self.mask_propagator = MaskPropagator(params, self.dam_tracker, self.tracker, cancel_event, progress_queue, logger=self.logger)
+        self.mask_propagator = MaskPropagator(params, self.dam_tracker, cancel_event, progress_queue, logger=self.logger)
 
     def _initialize_models(self): self._init_grounder(); self._initialize_tracker()
     def _init_grounder(self):
@@ -1665,12 +1535,10 @@ class SubjectMasker:
             return {}
         self.frame_map = self.frame_map or self._create_frame_map(frames_dir)
         mask_metadata, total_scenes = {}, len(scenes_to_process)
-        self.tracker.start_stage("Mask Propagation", stage_items=total_scenes)
         for i, scene in enumerate(scenes_to_process):
             with safe_resource_cleanup():
                 if self.cancel_event.is_set(): break
                 self.logger.info(f"Masking scene {i+1}/{total_scenes}", user_context={'shot_id': scene.shot_id, 'start_frame': scene.start_frame, 'end_frame': scene.end_frame})
-                self.tracker.update_progress(stage_items_processed=i, substage=f"Scene {scene.shot_id}")
                 seed_frame_num = scene.best_seed_frame
                 shot_frames_data = self._load_shot_frames(frames_dir, scene.start_frame, scene.end_frame)
                 if not shot_frames_data: continue
@@ -1698,7 +1566,6 @@ class SubjectMasker:
                         mask_metadata[frame_fname_png] = asdict(MaskingResult(mask_path=str(mask_path), **result_args))
                     else:
                         mask_metadata[frame_fname_png] = asdict(MaskingResult(mask_path=None, **result_args))
-        self.tracker.update_progress(stage_items_processed=total_scenes)
         self.logger.success("Subject masking complete.")
         return mask_metadata
 
@@ -1753,24 +1620,20 @@ class SubjectMasker:
 # --- PIPELINES ---
 
 class ExtractionPipeline(Pipeline):
-    def __init__(self, params, progress_queue, cancel_event, logger=None, tracker=None):
-        super().__init__(params, progress_queue, cancel_event, logger, tracker)
+    def __init__(self, params, progress_queue, cancel_event, logger=None):
+        super().__init__(params, progress_queue, cancel_event, logger)
         self.config = None
 
     def run(self):
-        self.tracker.start_stage("Preparing Video", 1)
         self.logger.info("Preparing video source...")
         vid_manager = VideoManager(self.params.source_path, self.params.max_resolution)
         video_path = Path(vid_manager.prepare_video(self.config, self.logger))
         output_dir = self.config.DIRS['downloads'] / video_path.stem
         output_dir.mkdir(exist_ok=True, parents=True)
-        self.tracker.update_progress(stage_items_processed=1)
         self.logger.info("Video ready", user_context={'path': sanitize_filename(video_path.name)})
         video_info = VideoManager.get_video_info(video_path)
         if self.params.scene_detect:
-            self.tracker.start_stage("Scene Detection")
             self._run_scene_detection(video_path, output_dir)
-        self.tracker.start_stage("FFmpeg Extraction")
         self._run_ffmpeg(video_path, output_dir, video_info)
         if self.cancel_event.is_set():
             self.logger.info("Extraction cancelled by user.")
@@ -1779,19 +1642,18 @@ class ExtractionPipeline(Pipeline):
         return {"done": True, "output_dir": str(output_dir), "video_path": str(video_path)}
 
     def _run_scene_detection(self, video_path, output_dir): return run_scene_detection(video_path, output_dir, self.logger)
-    def _run_ffmpeg(self, video_path, output_dir, video_info): return run_ffmpeg_extraction(video_path, output_dir, video_info, self.params, self.progress_queue, self.cancel_event, self.logger, self.tracker)
+    def _run_ffmpeg(self, video_path, output_dir, video_info): return run_ffmpeg_extraction(video_path, output_dir, video_info, self.params, self.progress_queue, self.cancel_event, self.logger)
 
 class EnhancedExtractionPipeline(ExtractionPipeline):
-    def __init__(self, params, progress_queue, cancel_event, config: 'Config', logger=None, tracker=None):
-        super().__init__(params, progress_queue, cancel_event, logger, tracker)
+    def __init__(self, params, progress_queue, cancel_event, config: 'Config', logger=None):
+        super().__init__(params, progress_queue, cancel_event, logger)
         self.config = config
         self.error_handler = ErrorHandler(self.logger, self.config)
-        self.tracker = tracker
         self.run = self.error_handler.with_retry(max_attempts=3, backoff_seconds=[1, 5, 15])(self.run)
 
 class AnalysisPipeline(Pipeline):
-    def __init__(self, params, progress_queue, cancel_event, config: 'Config', thumbnail_manager=None, logger=None, tracker=None):
-        super().__init__(params, progress_queue, cancel_event, logger=logger, tracker=tracker)
+    def __init__(self, params, progress_queue, cancel_event, config: 'Config', thumbnail_manager=None, logger=None):
+        super().__init__(params, progress_queue, cancel_event, logger=logger)
         self.config, self.output_dir = config, Path(self.params.output_folder)
         self.thumb_dir, self.masks_dir = self.output_dir / "thumbs", self.output_dir / "masks"
         self.frame_map_path, self.metadata_path = self.output_dir / "frame_map.json", self.output_dir / "metadata.jsonl"
@@ -1822,14 +1684,14 @@ class AnalysisPipeline(Pipeline):
                 f.write(json.dumps(_to_json_safe({"params": asdict(self.params)})) + '\n')
 
             self.scene_map = {s.shot_id: s for s in scenes_to_process}
-            self.tracker.start_stage("Initializing Models")
+            self.logger.info("Initializing Models")
             if self.params.enable_face_filter:
                 self.face_analyzer = get_face_analyzer(self.params.face_model_name, self.config, logger=self.logger)
                 if self.params.face_ref_img_path: self._process_reference_face()
             person_detector = get_person_detector(self.params.person_detector_model, self.device, self.config, logger=self.logger)
             masker = SubjectMasker(self.params, self.progress_queue, self.cancel_event, self.config, self._create_frame_map(),
                                    self.face_analyzer, self.reference_embedding, person_detector, thumbnail_manager=self.thumbnail_manager,
-                                   niqe_metric=self.niqe_metric, logger=self.logger, tracker=self.tracker)
+                                   niqe_metric=self.niqe_metric, logger=self.logger)
             self.mask_metadata = masker.run_propagation(str(self.output_dir), scenes_to_process)
             self._initialize_niqe_metric()
             self._run_analysis_loop(scenes_to_process)
@@ -1857,7 +1719,7 @@ class AnalysisPipeline(Pipeline):
         frame_map = self._create_frame_map()
         all_frame_nums_to_process = {fn for scene in scenes_to_process for fn in range(scene.start_frame, scene.end_frame) if fn in frame_map}
         image_files_to_process = [self.thumb_dir / f"{Path(frame_map[fn]).stem}.webp" for fn in sorted(list(all_frame_nums_to_process))]
-        self.tracker.start_stage("Analyzing Frames", stage_items=len(image_files_to_process))
+        self.logger.info(f"Analyzing {len(image_files_to_process)} frames")
         num_workers = 1 if self.params.disable_parallel else min(os.cpu_count() or 4, 8)
         with ThreadPoolExecutor(max_workers=num_workers) as executor:
             futures = [executor.submit(self._process_single_frame, path) for path in image_files_to_process]
@@ -1874,7 +1736,6 @@ class AnalysisPipeline(Pipeline):
                 except Exception as e:
                     self.logger.error(f"Error processing future: {e}")
                 completed_count += 1
-                self.tracker.update_progress(stage_items_processed=completed_count)
 
     def _process_single_frame(self, thumb_path):
         if self.cancel_event.is_set(): return
@@ -2163,21 +2024,21 @@ def _regenerate_all_previews(scenes_list, output_folder, masker, thumbnail_manag
 
 # --- PIPELINE LOGIC ---
 
-def execute_extraction(event: ExtractionEvent, progress_queue: Queue, cancel_event: threading.Event, logger: EnhancedLogger, config: Config, tracker: AdvancedProgressTracker):
+def execute_extraction(event: ExtractionEvent, progress_queue: Queue, cancel_event: threading.Event, logger: EnhancedLogger, config: Config):
     params_dict = asdict(event)
     if event.upload_video:
         source, dest = params_dict.pop('upload_video'), str(config.DIRS['downloads'] / Path(event.upload_video).name)
         shutil.copy2(source, dest)
         params_dict['source_path'] = dest
     params = AnalysisParameters.from_ui(logger, config, **params_dict)
-    pipeline = EnhancedExtractionPipeline(params, progress_queue, cancel_event, config, logger, tracker)
+    pipeline = EnhancedExtractionPipeline(params, progress_queue, cancel_event, config, logger)
     result = pipeline.run()
     if result and result.get("done"):
         yield {"log": "Extraction complete.", "status": f"Output: {result['output_dir']}",
                "extracted_video_path_state": result.get("video_path", ""), "extracted_frames_dir_state": result["output_dir"], "done": True}
 
 def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue, cancel_event: threading.Event, logger: EnhancedLogger,
-                         config: Config, thumbnail_manager, cuda_available, tracker: AdvancedProgressTracker):
+                         config: Config, thumbnail_manager, cuda_available):
     yield {"unified_log": "", "unified_status": "Starting Pre-Analysis..."}
     params_dict = asdict(event)
     final_face_ref_path = params_dict.get('face_ref_img_path')
@@ -2196,17 +2057,15 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue, cancel_
         yield {"log": "[ERROR] scenes.json not found. Run extraction with scene detection."}
         return
     with scenes_path.open('r', encoding='utf-8') as f: scenes = [Scene(shot_id=i, start_frame=s, end_frame=e) for i, (s, e) in enumerate(json.load(f))]
-    tracker.start_stage("Loading Models", 2)
+    logger.info("Loading Models")
     models, niqe_metric = initialize_analysis_models(params, config, logger, cuda_available), None
-    tracker.update_progress(stage_items_processed=1)
     if params.pre_analysis_enabled and pyiqa: niqe_metric = pyiqa.create_metric('niqe', device=models['device'])
     masker = SubjectMasker(params, progress_queue, cancel_event, config, face_analyzer=models["face_analyzer"],
                            reference_embedding=models["ref_emb"], person_detector=models["person_detector"],
-                           niqe_metric=niqe_metric, thumbnail_manager=thumbnail_manager, logger=logger, tracker=tracker)
+                           niqe_metric=niqe_metric, thumbnail_manager=thumbnail_manager, logger=logger)
     masker.frame_map = masker._create_frame_map(str(output_dir))
-    tracker.update_progress(stage_items_processed=2)
     def pre_analysis_task():
-        tracker.start_stage("Pre-analyzing scenes", stage_items=len(scenes))
+        logger.info(f"Pre-analyzing {len(scenes)} scenes")
         previews_dir = output_dir / "previews"
         previews_dir.mkdir(exist_ok=True)
         for i, scene in enumerate(scenes):
@@ -2232,7 +2091,6 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue, cancel_
                 logger.error(f"Failed to save preview for scene {scene.shot_id}", exc_info=True)
 
             if scene.status == 'pending': scene.status = 'included'
-            tracker.update_progress(stage_items_processed=i + 1)
         return {"done": True, "scenes": [asdict(s) for s in scenes]}
     result = pre_analysis_task()
     if result.get("done"):
@@ -2257,7 +2115,6 @@ def execute_session_load(
     logger: EnhancedLogger,
     config: Config,
     thumbnail_manager,
-    tracker: AdvancedProgressTracker,
 ):
     session_path = Path(event.session_path).expanduser().resolve()
     config_path = session_path / "run_config.json"
@@ -2275,15 +2132,12 @@ def execute_session_load(
         except Exception:
             return None
 
-    with logger.operation_context("Load Session", component="session_loader"):
-        tracker.start_operation("Load Session", total_items=3, stages=["Load config", "Load scenes", "Load previews"])
-
+    with logger.operation("Load Session", component="session_loader"):
         # Stage 1: Load config
-        tracker.start_stage("Load config", stage_items=1)
+        logger.info("Loading config")
         if not config_path.exists():
             msg = f"Session load failed: run_config.json not found in {session_path}"
             logger.error(msg, component="session_loader")
-            tracker.complete_operation(False, msg)
             yield {
                 "log": f"[ERROR] Could not find 'run_config.json' in the specified directory: {session_path}",
                 "status": "Session load failed."
@@ -2296,15 +2150,12 @@ def execute_session_load(
         except json.JSONDecodeError as e:
             msg = f"run_config.json is invalid JSON: {e}"
             logger.error(msg, component="session_loader", error_type=type(e).__name__)
-            tracker.complete_operation(False, msg)
             yield {"log": f"[ERROR] {msg}", "status": "Session load failed."}
             return
 
         output_dir = _resolve_output_dir(session_path, run_config.get("output_folder"))
         if output_dir is None:
             logger.warning("Output folder missing or invalid; some previews may be unavailable.", component="session_loader")
-
-        tracker.update_progress(items_processed=1, stage_items_processed=1)
 
         # Prepare initial UI updates from config
         updates = {
@@ -2331,7 +2182,7 @@ def execute_session_load(
         }
 
         # Stage 2: Load scenes
-        tracker.start_stage("Load scenes", stage_items=1)
+        logger.info("Load scenes")
         scenes_as_dict: list[dict[str, Any]] = []
         if scene_seeds_path.exists():
             try:
@@ -2345,11 +2196,9 @@ def execute_session_load(
                 logger.info(f"Loaded {len(scenes_as_dict)} scenes from {scene_seeds_path}", component="session_loader")
             except Exception as e:
                 logger.warning(f"Failed to parse scene_seeds.json: {e}", component="session_loader", error_type=type(e).__name__)
-        tracker.update_progress(stage_items_processed=1)
 
         # Stage 3: Load previews (with cap and fallback)
-        preview_cap = 100
-        tracker.start_stage("Load previews", stage_items=min(len(scenes_as_dict), preview_cap))
+        logger.info("Load previews")
 
         if scenes_as_dict and output_dir:
             updates.update({
@@ -2386,16 +2235,15 @@ def execute_session_load(
             "log": f"Successfully loaded session from: {session_path}",
             "status": "... Session loaded. You can now proceed from where you left off.",
         })
-        tracker.complete_operation(True, "Session loaded")
         yield updates
 
 def execute_propagation(event: PropagationEvent, progress_queue: Queue, cancel_event: threading.Event, logger: EnhancedLogger,
-                        config: Config, thumbnail_manager, cuda_available, tracker: AdvancedProgressTracker):
+                        config: Config, thumbnail_manager, cuda_available):
     scenes_to_process = [Scene(**s) for s in event.scenes if s['status'] == 'included']
     if not scenes_to_process:
         yield {"log": "No scenes were included for propagation.", "status": "Propagation skipped."}
         return
-    params, pipeline = AnalysisParameters.from_ui(logger, config, **asdict(event.analysis_params)), AnalysisPipeline(AnalysisParameters.from_ui(logger, config, **asdict(event.analysis_params)), progress_queue, cancel_event, config, thumbnail_manager=thumbnail_manager, logger=logger, tracker=tracker)
+    params, pipeline = AnalysisParameters.from_ui(logger, config, **asdict(event.analysis_params)), AnalysisPipeline(AnalysisParameters.from_ui(logger, config, **asdict(event.analysis_params)), progress_queue, cancel_event, config, thumbnail_manager=thumbnail_manager, logger=logger)
     result = pipeline.run_full_analysis(scenes_to_process)
     if result and result.get("done"):
         yield {"log": "Propagation and analysis complete.", "status": f"Metadata saved to {result['metadata_path']}",
@@ -2555,8 +2403,9 @@ class AppUI:
                     gr.Markdown("#### 👤 Configure Face Seeding"); gr.Markdown("Upload a clear image of the person you want to find. The system will search for this person in the video.")
                     with gr.Row():
                         self._create_component('face_ref_img_upload_input', 'file', {'label': "Upload Face Reference Image", 'type': "filepath"})
-                        self._create_component('face_ref_img_path_input', 'textbox', {'label': "Or provide a local file path"})
-                        self._create_component('enable_face_filter_input', 'checkbox', {'label': "Enable Face Similarity (must be checked for face seeding)", 'value': (default_strategy == "👤 By Face" or default_strategy == "🔄 Face + Text Fallback"), 'interactive': False})
+                        with gr.Column():
+                            self._create_component('face_ref_img_path_input', 'textbox', {'label': "Or provide a local file path"})
+                            self._create_component('enable_face_filter_input', 'checkbox', {'label': "Enable Face Similarity (must be checked for face seeding)", 'value': (default_strategy == "👤 By Face" or default_strategy == "🔄 Face + Text Fallback"), 'interactive': False})
                 with gr.Group(visible=(default_strategy == "📝 By Text" or default_strategy == "🔄 Face + Text Fallback")) as text_seeding_group:
                     self.components['text_seeding_group'] = text_seeding_group
                     gr.Markdown("#### 📝 Configure Text Seeding"); gr.Markdown("Describe the subject or object you want to find. Be as specific as possible for better results.")
@@ -2665,9 +2514,9 @@ class AppUI:
         self._setup_visibility_toggles(); self._setup_pipeline_handlers(); self._setup_filtering_handlers(); self._setup_bulk_scene_handlers()
 
 class EnhancedAppUI(AppUI):
-    def __init__(self, config=None, logger=None, progress_queue=None, cancel_event=None, thumbnail_manager=None, resource_manager=None, progress_tracker=None):
+    def __init__(self, config=None, logger=None, progress_queue=None, cancel_event=None, thumbnail_manager=None, resource_manager=None):
         super().__init__(config, logger, progress_queue, cancel_event, thumbnail_manager)
-        self.enhanced_logger, self.progress_tracker, self.resource_manager = logger, progress_tracker, resource_manager
+        self.enhanced_logger, self.resource_manager = logger, resource_manager
         self.performance_metrics, self.log_filter_level, self.all_logs = {}, "INFO", []
 
     def _build_footer(self):
@@ -2694,7 +2543,7 @@ class EnhancedAppUI(AppUI):
         yield {self.components['cancel_button']: gr.update(interactive=True), self.components['pause_button']: gr.update(interactive=False)}
         op_name = getattr(task_func, '__name__', 'Unknown Task').replace('_wrapper', '')
         with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(task_func, *args, tracker=self.progress_tracker)
+            future = executor.submit(task_func, *args)
             while not future.done():
                 if self.cancel_event.is_set(): future.cancel(); break
                 try:
@@ -2703,10 +2552,6 @@ class EnhancedAppUI(AppUI):
                         self.all_logs.append(msg['log'])
                         if self.log_filter_level.upper() == "DEBUG" or f"[{self.log_filter_level.upper()}]" in msg['log']:
                             update_dict[self.components['unified_log']] = gr.update(value="\n".join([l for l in self.all_logs if self.log_filter_level.upper() == "DEBUG" or f"[{self.log_filter_level.upper()}]" in l][-1000:]))
-                    elif "detailed_status" in msg:
-                        progress(msg.get('progress', 0.0), msg.get('detailed_status', '...'))
-                        update_dict[self.components['unified_status']] = self._format_status_display(msg.get('operation', op_name), msg.get('progress', 0), msg.get('stage', '...'))
-                        update_dict[self.components['progress_details']] = f"ETA: {msg.get('eta', 'N/A')} | Rate: {msg.get('rate', 'N/A')}"
                     if update_dict: yield update_dict
                 except Empty: pass
                 time.sleep(0.05)
@@ -2747,37 +2592,30 @@ class EnhancedAppUI(AppUI):
             except (TypeError, ValueError): ui_args[k] = default
         return PreAnalysisEvent(**ui_args)
 
-    def run_extraction_wrapper(self, *args, tracker):
-        tracker.start_operation("Extraction", 1)
+    def run_extraction_wrapper(self, *args):
         event = ExtractionEvent(**dict(zip(self.ext_ui_map_keys, args)))
         try:
-            for result in execute_extraction(event, self.progress_queue, self.cancel_event, self.enhanced_logger, self.config, tracker):
+            for result in execute_extraction(event, self.progress_queue, self.cancel_event, self.enhanced_logger, self.config):
                 if isinstance(result, dict):
                     if self.cancel_event.is_set():
-                        tracker.complete_operation(success=False, message="User cancelled")
                         return {"unified_log": "Extraction cancelled."}
                     if result.get("done"):
-                        tracker.complete_operation(success=True)
                         return {"unified_log": result.get("log", "✅ Extraction completed successfully."),
                                 "extracted_video_path_state": result.get("video_path", "") or result.get("extracted_video_path_state", ""),
                                 "extracted_frames_dir_state": result.get("output_dir", "") or result.get("extracted_frames_dir_state", "")}
-            tracker.complete_operation(success=False, message="Extraction failed.")
             return {"unified_log": "❌ Extraction failed."}
-        except Exception as e: tracker.complete_operation(success=False, message=str(e)); raise
+        except Exception as e: raise
 
-    def run_pre_analysis_wrapper(self, *args, tracker):
-        tracker.start_operation("Pre-Analysis", 1)
+    def run_pre_analysis_wrapper(self, *args):
         event = self._create_pre_analysis_event(*args)
         try:
-            for result in execute_pre_analysis(event, self.progress_queue, self.cancel_event, self.enhanced_logger, self.config, self.thumbnail_manager, self.cuda_available, tracker):
+            for result in execute_pre_analysis(event, self.progress_queue, self.cancel_event, self.enhanced_logger, self.config, self.thumbnail_manager, self.cuda_available):
                 if isinstance(result, dict):
                     if self.cancel_event.is_set():
-                        tracker.complete_operation(success=False, message="User cancelled")
                         return {"unified_log": "Pre-analysis cancelled."}
                     if result.get("done"):
                         scenes = result.get('scenes', [])
                         if scenes: save_scene_seeds(scenes, result['output_dir'], self.enhanced_logger)
-                        tracker.complete_operation(success=True)
                         updates = {"unified_log": result.get("log", "✅ Pre-analysis completed successfully."),
                                    "scenes_state": scenes, "propagate_masks_button": gr.update(interactive=True), "scene_filter_status": get_scene_status_text(scenes),
                                    "scene_face_sim_min_input": gr.update(visible=any(s.get('seed_metrics', {}).get('best_face_sim') is not None for s in scenes)),
@@ -2791,39 +2629,32 @@ class EnhancedAppUI(AppUI):
                         if result.get("final_face_ref_path"):
                             updates["face_ref_img_path_input"] = result["final_face_ref_path"]
                         return updates
-            tracker.complete_operation(success=False, message="Pre-analysis failed.")
             return {"unified_log": "❌ Pre-analysis failed."}
-        except Exception as e: tracker.complete_operation(success=False, message=str(e)); raise
+        except Exception as e: raise
 
-    def run_propagation_wrapper(self, scenes, *args, tracker):
-        tracker.start_operation("Propagation", 1)
+    def run_propagation_wrapper(self, scenes, *args):
         event = PropagationEvent(output_folder=self._create_pre_analysis_event(*args).output_folder, video_path=self._create_pre_analysis_event(*args).video_path,
                                  scenes=scenes, analysis_params=self._create_pre_analysis_event(*args))
         try:
-            for result in execute_propagation(event, self.progress_queue, self.cancel_event, self.enhanced_logger, self.config, self.thumbnail_manager, self.cuda_available, tracker):
+            for result in execute_propagation(event, self.progress_queue, self.cancel_event, self.enhanced_logger, self.config, self.thumbnail_manager, self.cuda_available):
                 if isinstance(result, dict):
                     if self.cancel_event.is_set():
-                        tracker.complete_operation(success=False, message="User cancelled")
                         return {"unified_log": "Propagation cancelled."}
                     if result.get("done"):
-                        tracker.complete_operation(success=True)
                         return {"unified_log": result.get("log", "✅ Propagation completed successfully."), "analysis_output_dir_state": result.get('output_dir', ""),
                                 "analysis_metadata_path_state": result.get('metadata_path', ""), "filtering_tab": gr.update(interactive=True)}
-            tracker.complete_operation(success=False, message="Propagation failed.")
             return {"unified_log": "❌ Propagation failed."}
-        except Exception as e: tracker.complete_operation(success=False, message=str(e)); raise
+        except Exception as e: raise
 
-    def run_session_load_wrapper(self, session_path, tracker):
-        tracker.start_operation("Session Load", 1)
+    def run_session_load_wrapper(self, session_path):
         try:
             final_result = {}
-            for result in execute_session_load(self, SessionLoadEvent(session_path=session_path), self.enhanced_logger, self.config, self.thumbnail_manager, tracker):
+            for result in execute_session_load(self, SessionLoadEvent(session_path=session_path), self.enhanced_logger, self.config, self.thumbnail_manager):
                 if isinstance(result, dict):
                     if 'log' in result: result['unified_log'] = result.pop('log')
                     final_result.update(result)
-            tracker.complete_operation(success=True)
             return final_result
-        except Exception as e: tracker.complete_operation(success=False, message=str(e)); raise
+        except Exception as e: raise
 
     def _setup_visibility_toggles(self):
         c = self.components
@@ -3226,14 +3057,13 @@ class CompositionRoot:
         self.progress_queue = Queue()
         self.cancel_event = threading.Event()
         self.logger.set_progress_queue(self.progress_queue)
-        self.progress_tracker = AdvancedProgressTracker(self.progress_queue, self.logger)
         self._app_ui = None
 
     def get_app_ui(self):
         if self._app_ui is None:
             self._app_ui = EnhancedAppUI(config=self.config, logger=self.logger, progress_queue=self.progress_queue,
                                          cancel_event=self.cancel_event, thumbnail_manager=self.get_thumbnail_manager(),
-                                         resource_manager=self.get_resource_manager(), progress_tracker=self.progress_tracker)
+                                         resource_manager=self.get_resource_manager())
         return self._app_ui
 
     def get_config(self): return self.config
