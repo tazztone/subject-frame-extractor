@@ -2145,7 +2145,17 @@ def execute_session_load(
     config: Config,
     thumbnail_manager,
 ):
-    session_path = Path(event.session_path).expanduser().resolve()
+    if not event.session_path or not event.session_path.strip():
+        logger.error("No session path provided.", component="session_loader")
+        yield {"log": "[ERROR] Please enter a path to a session directory.", "status": "Session load failed."}
+        return
+
+    session_path, error = validate_session_dir(event.session_path)
+    if error:
+        logger.error(f"Invalid session path provided: {event.session_path}", component="session_loader")
+        yield {"log": f"[ERROR] {error}", "status": "Session load failed."}
+        return
+
     config_path = session_path / "run_config.json"
     scene_seeds_path = session_path / "scene_seeds.json"
     metadata_path = session_path / "metadata.jsonl"
@@ -2183,8 +2193,9 @@ def execute_session_load(
             return
 
         output_dir = _resolve_output_dir(session_path, run_config.get("output_folder"))
-        if output_dir is None:
+        if output_dir is None or not output_dir.exists():
             logger.warning("Output folder missing or invalid; some previews may be unavailable.", component="session_loader")
+
 
         # Prepare initial UI updates from config
         updates = {
@@ -2551,7 +2562,7 @@ class EnhancedAppUI(AppUI):
             with gr.Column(scale=3):
                 self._create_component('unified_log', 'textbox', {'label': '📋 Enhanced Processing Log', 'lines': 15, 'interactive': False, 'autoscroll': True, 'elem_classes': ['log-container']})
                 with gr.Row():
-                    self._create_component('log_level_filter', 'dropdown', {'choices': ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'SUCCESS', 'CRITICAL'], 'value': 'INFO', 'label': 'Log Level Filter', 'scale': 1})
+                    self._create_component('log_level_filter', 'dropdown', {'choices': ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'SUCCESS', 'CRITICAL'], 'value': 'DEBUG', 'label': 'Log Level Filter', 'scale': 1})
                     self._create_component('clear_logs_button', 'button', {'value': '🗑️ Clear Logs', 'scale': 1})
                     self._create_component('export_logs_button', 'button', {'value': '📥 Export Logs', 'scale': 1})
             with gr.Column(scale=1):
