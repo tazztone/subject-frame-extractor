@@ -2037,6 +2037,8 @@ def apply_scene_overrides(scenes_list, selected_shot_id, prompt, box_th, text_th
 
 def _regenerate_all_previews(scenes_list, output_folder, masker, thumbnail_manager, logger):
     previews, output_dir = [], Path(output_folder)
+    previews_dir = output_dir / "previews"
+    previews_dir.mkdir(parents=True, exist_ok=True)
     for scene_dict in scenes_list:
         seed_frame_num = scene_dict.get('best_seed_frame') or scene_dict.get('seed_frame_idx')
         if seed_frame_num is None:
@@ -2048,6 +2050,14 @@ def _regenerate_all_previews(scenes_list, output_folder, masker, thumbnail_manag
         bbox, details = scene_dict.get('seed_result', {}).get('bbox'), scene_dict.get('seed_result', {}).get('details', {})
         mask = masker.get_mask_for_bbox(thumb_rgb, bbox) if bbox else None
         overlay_rgb = render_mask_overlay(thumb_rgb, mask, 0.6, logger=logger) if mask is not None else masker.draw_bbox(thumb_rgb, bbox)
+        shotid = scene_dict.get("shot_id")
+        if shotid is not None:
+            preview_path = previews_dir / f"scene_{int(shotid):05d}.jpg"
+            try:
+                Image.fromarray(overlay_rgb).save(preview_path)
+                scene_dict["preview_path"] = str(preview_path)
+            except Exception as e:
+                logger.error(f"Failed to save preview for scene {shotid}", exc_info=True)
         previews.append((overlay_rgb, f"Scene {scene_dict['shot_id']} (Seed: {seed_frame_num}) | {details.get('type', 'N/A')}"))
     return previews
 
@@ -2468,7 +2478,7 @@ class AppUI:
             with gr.Column(scale=2, visible=False) as seeding_results_column:
                 self.components['seeding_results_column'] = seeding_results_column
                 gr.Markdown("### 🎭 Step 2: Review & Refine Scenes")
-                with gr.Accordion("Bulk Scene Actions & Filters", open=True):
+                with gr.Accordion("Bulk Scene Actions & Filters", open=False):
                     self._create_component('scene_filter_status', 'markdown', {'value': 'No scenes loaded.'})
                     with gr.Row():
                         self._create_component('scene_mask_area_min_input', 'slider', {'label': "Min Seed Mask Area %", 'minimum': 0.0, 'maximum': 100.0, 'value': self.config.min_mask_area_pct, 'step': 0.1})
@@ -2494,6 +2504,22 @@ class AppUI:
                         show_label=True,
                         allow_preview=True
                     )
+                with gr.Accordion("Scene Editor", open=False, elem_classes="scene-editor") as sceneeditoraccordion:
+                    self.components["sceneeditoraccordion"] = sceneeditoraccordion
+                    self._create_component("sceneeditorstatusmd", "markdown", {"value": "Select a scene to edit."})
+                    with gr.Row():
+                        self._create_component("sceneeditorpromptinput", "textbox", {"label": "Per-Scene Text Prompt"})
+                    with gr.Row():
+                        self._create_component("sceneeditorboxthreshinput", "slider", {
+                            "label": "Box Thresh", "minimum": 0.0, "maximum": 1.0, "step": 0.05,
+                            "value": self.config.grounding_dino_params["box_threshold"]})
+                        self._create_component("sceneeditortextthreshinput", "slider", {
+                            "label": "Text Thresh", "minimum": 0.0, "maximum": 1.0, "step": 0.05,
+                            "value": self.config.grounding_dino_params["text_threshold"]})
+                    with gr.Row():
+                        self._create_component("scenerecomputebutton", "button", {"value": "Recompute Preview"})
+                        self._create_component("sceneincludebutton", "button", {"value": "Include"})
+                        self._create_component("sceneexcludebutton", "button", {"value": "Exclude"})
                 gr.Markdown("---"); gr.Markdown("### 🔬 Step 3: Propagate Masks"); gr.Markdown("Once you are satisfied with the seeds, propagate the masks to the rest of the frames in the selected scenes.")
                 self._create_component('propagate_masks_button', 'button', {'value': '🔬 Propagate Masks on Kept Scenes', 'variant': 'primary', 'interactive': False})
 
@@ -2610,6 +2636,65 @@ class EnhancedAppUI(AppUI):
         final_updates_with_comps[self.components['progress_details']] = ""
         final_updates_with_comps[self.components['cancel_button']], final_updates_with_comps[self.components['pause_button']] = gr.update(interactive=False), gr.update(interactive=False)
         yield final_updates_with_comps
+
+    def on_select_for_edit(self, evt: gr.SelectData, scenes, view, indexmap, outputdir):
+        # validate selection
+        if not scenes or not indexmap or evt is None or evt.index is None:
+            return (scenes, get_scene_status_text(scenes), gr.update(), indexmap,
+                    None, gr.update(), gr.update(), gr.update(), gr.update(), gr.update())
+        if not (0 <= evt.index < len(indexmap)):
+            return (scenes, get_scene_status_text(scenes), gr.update(), indexmap,
+                    None, gr.update(), gr.update(), gr.update(), gr.update(), gr.update())
+
+        scene_idx_in_state = indexmap[evt.index]
+        if not (0 <= scene_idx_in_state < len(scenes)):
+            return (scenes, get_scene_status_text(scenes), gr.update(), indexmap,
+                    None, gr.update(), gr.update(), gr.update(), gr.update(), gr.update())
+
+        scene = scenes[scene_idx_in_state]
+        cfg = scene.get("seedconfig") or {}
+        shotid = scene.get("shotid")
+        # Editor status text
+        if scene.get("start_frame") is not None and scene.get("end_frame") is not None:
+            status_md = f"Editing Scene {shotid}  •  Frames {scene['start_frame']}-{scene['end_frame']}"
+        else:
+            status_md = f"Editing Scene {shotid}"
+        # Prefill values with scene seedconfig or defaults
+        prompt = cfg.get("text_prompt", "")
+        boxth = cfg.get("box_threshold", self.config.grounding_dino_params["box_threshold"])
+        textth = cfg.get("text_threshold", self.config.grounding_dino_params["text_threshold"])
+        return (
+            scenes,
+            get_scene_status_text(scenes),
+            gr.update(),                           # no immediate gallery change here
+            indexmap,
+            shotid,
+            gr.update(value=status_md),            # sceneeditorstatusmd
+            gr.update(value=prompt),               # sceneeditorpromptinput
+            gr.update(value=boxth),                # sceneeditorboxthreshinput
+            gr.update(value=textth),               # sceneeditortextthreshinput
+            gr.update(open=True),                  # sceneeditoraccordion
+        )
+
+    def on_recompute(self, scenes, selected_shotid, prompt, boxth, textth, outputfolder, *anaargs):
+        # Update seed for the selected scene using per-scene prompt/thresholds
+        _, updated_scenes, msg = self.on_apply_scene_overrides(
+            scenes, selected_shotid, prompt, boxth, textth,
+            outputfolder, *anaargs
+        )
+        # After reseeding, refresh gallery items so the saved preview is reread
+        gallery_items, index_map = build_scene_gallery_items(updated_scenes, self.components["scene_gallery_view_toggle"].value, outputfolder)
+        return (
+            updated_scenes,
+            gr.update(value=gallery_items),       # scenegallery
+            gr.update(value=index_map),           # scenegalleryindexmapstate
+            gr.update(value=msg),                 # sceneeditorstatusmd (feedback)
+        )
+
+    def on_editor_toggle(self, scenes, selected_shotid, outputfolder, view, new_status):
+        scenes, status_text, _ = self.on_toggle_scene_status(scenes, selected_shotid, outputfolder, new_status)
+        items, index_map = build_scene_gallery_items(scenes, view, outputfolder)
+        return scenes, status_text, gr.update(value=items), gr.update(value=index_map)
 
     def _create_event_handlers(self):
         super()._create_event_handlers()
@@ -2768,8 +2853,6 @@ class EnhancedAppUI(AppUI):
 
     def _setup_bulk_scene_handlers(self):
         c = self.components
-        
-
 
         def _refresh_scene_gallery(scenes, view, output_dir):
             items, index_map = build_scene_gallery_items(scenes, view, output_dir)
@@ -2782,36 +2865,36 @@ class EnhancedAppUI(AppUI):
             [c['scene_gallery'], c['scene_gallery_index_map_state']]
         )
 
-        # Click to toggle a scene's status (kept <-> rejected)
-        def on_scene_gallery_select(evt: gr.SelectData, scenes, view, index_map, output_dir):
-            if not scenes or not index_map or evt is None or evt.index is None:
-                return scenes, get_scene_status_text(scenes), gr.update(), index_map
-            
-            if not (0 <= evt.index < len(index_map)):
-                self.logger.warning(f"Gallery select index {evt.index} out of bounds for index_map size {len(index_map)}")
-                return scenes, get_scene_status_text(scenes), gr.update(), index_map
-            
-            scene_idx_in_state = index_map[evt.index]
-            
-            if not (0 <= scene_idx_in_state < len(scenes)):
-                self.logger.warning(f"Mapped scene index {scene_idx_in_state} out of bounds for scenes_state size {len(scenes)}")
-                return scenes, get_scene_status_text(scenes), gr.update(), index_map
-                
-            scene = scenes[scene_idx_in_state]
-            old_status = scene.get('status', 'pending')
-            scene['status'] = 'excluded' if old_status == 'included' else 'included'
-            scene['manual_status_change'] = True
-            
-            save_scene_seeds(scenes, output_dir, self.logger)
-            gallery_items, new_index_map = build_scene_gallery_items(scenes, view, output_dir)
-            return scenes, get_scene_status_text(scenes), gr.update(value=gallery_items), new_index_map
-
         c['scene_gallery'].select(
-            on_scene_gallery_select,
-            [c['scenes_state'], c['scene_gallery_view_toggle'],
-             c['scene_gallery_index_map_state'], c['extracted_frames_dir_state']],
-            [c['scenes_state'], c['scene_filter_status'],
-             c['scene_gallery'], c['scene_gallery_index_map_state']]
+            self.on_select_for_edit,
+            inputs=[c['scenes_state'], c['scene_gallery_view_toggle'], c['scene_gallery_index_map_state'], c['extracted_frames_dir_state']],
+            outputs=[
+                c['scenes_state'], c['scene_filter_status'], c['scene_gallery'], c['scene_gallery_index_map_state'],
+                c['selected_scene_id_state'],
+                c['sceneeditorstatusmd'], c['sceneeditorpromptinput'], c['sceneeditorboxthreshinput'], c['sceneeditortextthreshinput'],
+                c['sceneeditoraccordion'],
+            ]
+        )
+
+        c['scenerecomputebutton'].click(
+            self.on_recompute,
+            inputs=[
+                c['scenes_state'], c['selected_scene_id_state'], c['sceneeditorpromptinput'],
+                c['sceneeditorboxthreshinput'], c['sceneeditortextthreshinput'], c['extracted_frames_dir_state'],
+                *self.ana_input_components
+            ],
+            outputs=[c['scenes_state'], c['scene_gallery'], c['scene_gallery_index_map_state'], c['sceneeditorstatusmd']],
+        )
+
+        c['sceneincludebutton'].click(
+            lambda s, sid, out, v: self.on_editor_toggle(s, sid, out, v, "included"),
+            inputs=[c['scenes_state'], c['selected_scene_id_state'], c['extracted_frames_dir_state'], c['scene_gallery_view_toggle']],
+            outputs=[c['scenes_state'], c['scene_filter_status'], c['scene_gallery'], c['scene_gallery_index_map_state']],
+        )
+        c['sceneexcludebutton'].click(
+            lambda s, sid, out, v: self.on_editor_toggle(s, sid, out, v, "excluded"),
+            inputs=[c['scenes_state'], c['selected_scene_id_state'], c['extracted_frames_dir_state'], c['scene_gallery_view_toggle']],
+            outputs=[c['scenes_state'], c['scene_filter_status'], c['scene_gallery'], c['scene_gallery_index_map_state']],
         )
 
         def init_scene_gallery(scenes, view, outdir):
@@ -2827,8 +2910,6 @@ class EnhancedAppUI(AppUI):
         )
 
         bulk_action_outputs = [c['scenes_state'], c['scene_filter_status'], c['scene_gallery'], c['scene_gallery_index_map_state']]
-        
-
 
         def on_apply_bulk_scene_filters_extended(scenes, min_mask_area, min_face_sim, min_confidence, enable_face_filter, output_folder, view):
             if not scenes: 
