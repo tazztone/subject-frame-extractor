@@ -2488,7 +2488,7 @@ class AppUI:
                         self._create_component('face_ref_img_upload_input', 'file', {'label': "Upload Face Reference Image", 'type': "filepath"})
                         with gr.Column():
                             self._create_component('face_ref_img_path_input', 'textbox', {'label': "Or provide a local file path"})
-                            self._create_component('enable_face_filter_input', 'checkbox', {'label': "Enable Face Similarity (must be checked for face seeding)", 'value': (default_strategy == "👤 By Face" or default_strategy == "🔄 Face + Text Fallback"), 'interactive': False})
+                            self._create_component('enable_face_filter_input', 'checkbox', {'label': "Enable Face Similarity (must be checked for face seeding)", 'value': (default_strategy == "👤 By Face" or default_strategy == "🔄 Face + Text Fallback"), 'interactive': False, 'visible': False})
                 with gr.Group(visible=(default_strategy == "📝 By Text" or default_strategy == "🔄 Face + Text Fallback")) as text_seeding_group:
                     self.components['text_seeding_group'] = text_seeding_group
                     gr.Markdown("#### 📝 Configure Text Seeding"); gr.Markdown("Describe the subject or object you want to find. Be as specific as possible for better results.")
@@ -2515,8 +2515,8 @@ class AppUI:
                     self._create_component('scene_filter_status', 'markdown', {'value': 'No scenes loaded.'})
                     with gr.Row():
                         self._create_component('scene_mask_area_min_input', 'slider', {'label': "Min Seed Mask Area %", 'minimum': 0.0, 'maximum': 100.0, 'value': self.config.min_mask_area_pct, 'step': 0.1})
-                        self._create_component('scene_face_sim_min_input', 'slider', {'label': "Min Seed Face Sim", 'minimum': 0.0, 'maximum': 1.0, 'value': 0.5, 'step': 0.05, 'visible': False})
-                        self._create_component('scene_confidence_min_input', 'slider', {'label': "Min Seed Confidence", 'minimum': 0.0, 'maximum': 1.0, 'value': 0.0, 'step': 0.05})
+                        self._create_component('scene_face_sim_min_input', 'slider', {'label': "Min Seed Face Sim", 'minimum': 0.0, 'maximum': 1.0, 'value': 0.0, 'step': 0.05, 'visible': False})
+                        self._create_component('scene_confidence_min_input', 'slider', {'label': "Min Seed Confidence", 'minimum': 0.0, 'maximum': 10.0, 'value': 0.0, 'step': 0.05})
 
 
                 with gr.Accordion("Scene Gallery", open=True):
@@ -2711,9 +2711,10 @@ class EnhancedAppUI(AppUI):
 
     def on_recompute(self, scenes, selected_shotid, prompt, boxth, textth, outputfolder, *anaargs):
         # Update seed for the selected scene using per-scene prompt/thresholds
-        _, updated_scenes, msg = self.on_apply_scene_overrides(
+        _, updated_scenes, msg = apply_scene_overrides(
             scenes, selected_shotid, prompt, boxth, textth,
-            outputfolder, *anaargs
+            outputfolder, self.ana_ui_map_keys, anaargs,
+            self.cuda_available, self.thumbnail_manager, self.config, self.logger
         )
         # After reseeding, refresh gallery items so the saved preview is reread
         gallery_items, index_map = build_scene_gallery_items(updated_scenes, self.components["scene_gallery_view_toggle"].value, outputfolder)
