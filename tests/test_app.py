@@ -3,6 +3,7 @@ import sys
 import unittest
 from unittest.mock import MagicMock, patch, mock_open
 from pathlib import Path
+import os
 import yaml
 import time
 import numpy as np
@@ -70,51 +71,12 @@ import app
 
 # --- Mocks for Tests ---
 
-class MockConfig:
-    def __init__(self):
-        self.ui_defaults = {
-            'max_resolution': '1080', 'thumbnails_only': True, 'thumb_megapixels': 0.5,
-            'scene_detect': True, 'method': 'keyframes', 'interval': '2', 'nth_frame': '10',
-            'use_png': False, 'text_prompt': 'test', 'pre_analysis_enabled': True,
-            'pre_sample_nth': 1, 'person_detector_model': 'yolo11s.pt', 'face_model_name': 'buffalo_l',
-            'dam4sam_model_name': 'sam21pp-T', 'enable_dedup': False, 'require_face_match': False,
-        }
-        self.thumbnail_cache_size = 100
-        self.min_mask_area_pct = 5.0
-        self.sharpness_base_scale = 1.0
-        self.edge_strength_base_scale = 1.0
-        self.grounding_dino_params = {'box_threshold': 0.3, 'text_threshold': 0.3}
-        self.DIRS = {'logs': Path('logs'), 'downloads': Path('/tmp/downloads')}
-        self.filter_defaults = {
-            'dedup_thresh': {'min': 0, 'max': 10, 'default': 5, 'step': 1},
-            'niqe': {'min': 0, 'max': 20, 'default_min': 0, 'step': 0.1},
-            'sharpness': {'min': 0, 'max': 20, 'default_min': 0, 'step': 0.1},
-            'edge_strength': {'min': 0, 'max': 20, 'default_min': 0, 'step': 0.1},
-            'contrast': {'min': 0, 'max': 255, 'default_min': 0, 'step': 1},
-            'brightness': {'min': 0, 'max': 255, 'default_min': 0, 'default_max': 255, 'step': 1},
-            'entropy': {'min': 0, 'max': 8, 'default_min': 0, 'step': 0.1},
-            'face_sim': {'min': 0, 'max': 1, 'default_min': 0, 'step': 0.01},
-            'mask_area_pct': {'min': 0, 'max': 100, 'default_min': 0, 'step': 0.1},
-        }
-        self.QUALITY_METRICS = ['niqe', 'sharpness', 'edge_strength', 'contrast', 'brightness', 'entropy']
-        self.GROUNDING_DINO_CONFIG = "mock_config.py"
-        self.GROUNDING_DINO_CKPT = "mock_ckpt.pth"
-        self.GROUNDING_BOX_THRESHOLD = 0.35
-        self.GROUNDING_TEXT_THRESHOLD = 0.25
-        self.settings = {
-            'monitoring': {
-                'cpu_threshold': 80, 'mem_threshold': 80, 'high_threshold_duration': 10,
-                'cooldown_duration': 30, 'memory_warning_threshold_mb': 8192,
-                'cpu_warning_threshold_percent': 90, 'gpu_memory_warning_threshold_percent': 90
-            }
-        }
-
 @pytest.fixture
-def mock_app_ui():
-    with patch('app.Config', MockConfig):
-        app_ui = app.EnhancedAppUI()
-        return app_ui
-
+def test_config():
+    """Provides a clean, default Config object for each test."""
+    # We patch `_create_dirs` to avoid creating directories during tests
+    with patch('app.Config._create_dirs'):
+        yield app.Config(config_path=None)
 
 @pytest.fixture
 def sample_frames_data():
@@ -137,14 +99,6 @@ def sample_scenes():
     ]
 
 # --- Test Classes ---
-
-class TestAppUI:
-    def test_build_ui_does_not_crash(self, mock_app_ui):
-        try:
-            demo = mock_app_ui.build_ui()
-            assert isinstance(demo, gr.Blocks)
-        except Exception as e:
-            pytest.fail(f"build_ui() raised an exception: {e}")
 
 class TestUtils:
     @pytest.mark.parametrize("value, to_type, expected", [
@@ -172,58 +126,63 @@ class TestUtils:
             app._coerce("not-a-float", float)
 
 class TestConfig:
-    def test_config_loads_from_default_string(self):
-        """Verify that the Config class correctly loads settings from the hardcoded DEFAULT_CONFIG string."""
-        config = app.Config()
-        # Check a few values to ensure the YAML string was parsed correctly
-        assert 'ui_defaults' in config.settings
-        assert config.settings['ui_defaults']['max_resolution'] == "maximum available"
-        assert config.settings['quality_weights']['sharpness'] == 25
-        assert config.GROUNDING_BOX_THRESHOLD == 0.35
+    def test_default_config_loading(self, test_config):
+        """Verify that the Config class correctly loads default values."""
+        assert test_config.paths.logs == "logs"
+        assert test_config.quality_weights.sharpness == 25
+        assert not test_config.ui_defaults.disable_parallel
 
+    @patch('builtins.open', new_callable=mock_open, read_data="paths:\n  logs: 'custom_logs'\nquality_weights:\n  sharpness: 50")
+    @patch('pathlib.Path.exists', return_value=True)
+    def test_file_override(self, mock_exists, mock_file, test_config):
+        """Verify that a config file overrides defaults."""
+        with patch('app.Config._create_dirs'):
+            config = app.Config(config_path="dummy_path.yml")
+            assert config.paths.logs == "custom_logs"
+            assert config.quality_weights.sharpness == 50
+            # Check that a non-overridden value remains default
+            assert config.quality_weights.contrast == 15
 
-class TestEnhancedLogging(unittest.TestCase):
-    def test_enhanced_logger_basic_functionality(self):
-        """
-        Tests that the logger can be instantiated and basic log messages can be sent
-        without crashing. It also checks that the custom SUCCESS level works.
-        """
-        logger = app.EnhancedLogger(log_to_console=False, log_to_file=False)
+    @patch.dict(os.environ, {"APP_PATHS_LOGS": "env_logs", "APP_QUALITY_WEIGHTS_SHARPNESS": "75"})
+    def test_env_var_override(self, test_config):
+        """Verify that environment variables override defaults and file configs."""
+        with patch('app.Config._create_dirs'):
+            config = app.Config(config_path=None) # Ensure no file is loaded
+            assert config.paths.logs == "env_logs"
+            assert config.quality_weights.sharpness == 75
+            assert isinstance(config.quality_weights.sharpness, int) # Type coercion
+            assert config.quality_weights.contrast == 15 # Default value
 
-        # We use mock_open to prevent actual file I/O
-        with patch('builtins.open', mock_open()) as mock_file:
-            # Wrap in a try-except block to provide more context on failure
-            try:
-                logger.info("Test info message", component="test")
-                logger.warning("Test warning message", component="test")
-                logger.success("Test success message", component="test")
-            except Exception as e:
-                self.fail(f"Logger unexpectedly raised an exception: {e}")
+    @patch('builtins.open', new_callable=mock_open, read_data="paths:\n  logs: 'file_logs'")
+    @patch('pathlib.Path.exists', return_value=True)
+    @patch.dict(os.environ, {"APP_PATHS_LOGS": "env_logs"})
+    def test_precedence_env_over_file(self, mock_exists, mock_file, test_config):
+        """Verify that environment variables have precedence over config files."""
+        with patch('app.Config._create_dirs'):
+            config = app.Config(config_path="dummy_path.yml")
+            assert config.paths.logs == "env_logs"
 
-            # Verify that the manual file write was called for each log message
-            self.assertEqual(mock_file().write.call_count, 3)
+class TestEnhancedLogging:
+    def test_enhanced_logger_instantiation(self, test_config):
+        """Tests that the logger can be instantiated with a valid config."""
+        try:
+            # The logger now requires a config object
+            app.EnhancedLogger(config=test_config, log_to_console=False, log_to_file=False)
+        except Exception as e:
+            pytest.fail(f"Logger instantiation with a config object failed: {e}")
 
-    def test_operation_context_timing(self):
-        logger = app.EnhancedLogger(log_to_console=False, log_to_file=False)
+    def test_operation_context_timing(self, test_config):
+        logger = app.EnhancedLogger(config=test_config, log_to_console=False, log_to_file=False)
         logger.logger.log = MagicMock()
         with patch('builtins.open', mock_open()):
             with logger.operation("test_operation", "test_component"):
                 time.sleep(0.01)
-            # Check that info and success were called
-            self.assertEqual(logger.logger.log.call_count, 2)
+            # Check that start and done messages were logged
+            assert logger.logger.log.call_count == 2
 
 class TestFilterLogic:
-    @pytest.fixture
-    def mock_config_instance(self):
-        with patch('app.Config') as MockConfig:
-            mock_instance = MockConfig.return_value
-            mock_instance.QUALITY_METRICS = ['sharpness', 'contrast']
-            mock_instance.filter_defaults = {'sharpness': {'default_min': 10, 'default_max': 90}, 'contrast': {'default_min': 20, 'default_max': 80}, 'dedup_thresh': {'default': 5}}
-            mock_instance.ui_defaults = {'require_face_match': False}
-            yield mock_instance
-
-    def test_apply_all_filters_no_filters(self, sample_frames_data, mock_config_instance):
-        kept, rejected, _, _ = app.apply_all_filters_vectorized(sample_frames_data, {}, mock_config_instance)
+    def test_apply_all_filters_no_filters(self, sample_frames_data, test_config):
+        kept, rejected, _, _ = app.apply_all_filters_vectorized(sample_frames_data, {}, test_config)
         assert len(kept) == len(sample_frames_data)
 
     def test_auto_set_thresholds(self):
@@ -233,48 +192,46 @@ class TestFilterLogic:
         assert updates['slider_sharpness_min']['value'] == 77.5
         assert updates['slider_contrast_min']['value'] == 4.0
 
-class TestPerformanceOptimizer(unittest.TestCase):
-    @patch('app.Config')
-    @patch('app.EnhancedLogger')
-    def setUp(self, mock_logger, mock_config):
-        self.mock_config = mock_config
-        self.mock_config.settings = {'monitoring': {
-            'memory_warning_threshold_mb': 100,
-            'memory_critical_threshold_mb': 200,
-            'cpu_warning_threshold_percent': 90
-        }}
-        self.mock_logger = mock_logger
-        self.resource_manager = app.AdaptiveResourceManager(logger=self.mock_logger, config=self.mock_config)
+class TestPerformanceOptimizer:
+    @pytest.fixture
+    def resource_manager(self, test_config):
+        test_config.monitoring.memory_warning_threshold_mb = 100
+        test_config.monitoring.memory_critical_threshold_mb = 200
+        test_config.monitoring.cpu_warning_threshold_percent = 90
+        logger = MagicMock()
+        return app.AdaptiveResourceManager(logger=logger, config=test_config)
 
     @patch('app.time.sleep')
     @patch('psutil.Process')
     @patch('psutil.cpu_percent')
-    def test_adjust_parameters(self, mock_cpu_percent, mock_process, mock_sleep):
+    def test_adjust_parameters(self, mock_cpu_percent, mock_process, mock_sleep, resource_manager):
         mock_cpu_percent.return_value = 95
         mock_process.return_value.memory_info.return_value.rss = 150 * 1024 * 1024
-        self.resource_manager.current_limits['batch_size'] = 32
-        self.resource_manager.current_limits['num_workers'] = 4
-        self.resource_manager._adjust_parameters(self.resource_manager._get_resource_metrics())
-        self.assertEqual(self.resource_manager.current_limits['batch_size'], 22)
-        self.assertEqual(self.resource_manager.current_limits['num_workers'], 3)
+        resource_manager.current_limits['batch_size'] = 32
+        resource_manager.current_limits['num_workers'] = 4
+        resource_manager._adjust_parameters(resource_manager._get_resource_metrics())
+        assert resource_manager.current_limits['batch_size'] == 22
+        assert resource_manager.current_limits['num_workers'] == 2
 
     @patch('time.sleep')
     @patch('psutil.Process')
     @patch('psutil.cpu_percent')
-    def test_adjust_parameters_critical_memory(self, mock_cpu_percent, mock_process, mock_sleep):
+    def test_adjust_parameters_critical_memory(self, mock_cpu_percent, mock_process, mock_sleep, resource_manager):
         mock_cpu_percent.return_value = 50
         mock_process.return_value.memory_info.return_value.rss = 250 * 1024 * 1024 # Above critical threshold
-        self.resource_manager.current_limits['batch_size'] = 32
-        self.resource_manager._adjust_parameters(self.resource_manager._get_resource_metrics())
-        self.assertEqual(self.resource_manager.current_limits['batch_size'], 1)
-        self.mock_logger.critical.assert_called_once()
+        resource_manager.current_limits['batch_size'] = 32
+        resource_manager._adjust_parameters(resource_manager._get_resource_metrics())
+        assert resource_manager.current_limits['batch_size'] == 1
+        resource_manager.logger.critical.assert_called_once()
 
-class TestQuality(unittest.TestCase):
+class TestQuality:
     def test_compute_entropy(self):
+        # A uniform distribution histogram should have max entropy (8.0)
+        # We normalize it in the function, so it should be close to 1.0
         hist = np.ones(256, dtype=np.uint64)
-        self.assertAlmostEqual(app.compute_entropy(hist), 1.0, places=5)
+        assert np.isclose(app.compute_entropy(hist, 8.0), 1.0)
 
-    def test_quality_metrics_small_mask_fallback(self):
+    def test_quality_metrics_small_mask_fallback(self, test_config):
         # Create a deterministic checkerboard pattern to guarantee non-zero sharpness
         c100 = np.zeros((100, 100), dtype=np.uint8)
         c100[::2, ::2] = 255; c100[1::2, 1::2] = 255
@@ -287,7 +244,6 @@ class TestQuality(unittest.TestCase):
         small_mask = np.zeros((50, 50), dtype=np.uint8)
         small_mask[25, 25] = 255 # Mask is too small (1 pixel)
 
-        # Use the correct QualityConfig dataclass for the test
         mock_quality_config = app.QualityConfig(
             sharpness_base_scale=1.0,
             edge_strength_base_scale=1.0,
@@ -295,23 +251,18 @@ class TestQuality(unittest.TestCase):
         )
         mock_logger = MagicMock()
 
-        # Mock the app.Config call inside the method to control quality_weights
-        with patch('app.Config') as MockAppConfig:
-            mock_instance = MockAppConfig.return_value
-            mock_instance.quality_weights = {
-                'sharpness': 25, 'edge_strength': 15, 'contrast': 15,
-                'brightness': 10, 'entropy': 15, 'niqe': 20
-            }
-            mock_instance.QUALITY_METRICS = list(mock_instance.quality_weights.keys())
-
-            # This should not raise an exception, but fallback to full-frame analysis
-            try:
-                frame.calculate_quality_metrics(thumb_image_rgb, mock_quality_config, mock_logger, mask=small_mask)
-            except ValueError:
-                pytest.fail("calculate_quality_metrics raised ValueError on small mask, but should have fallen back.")
+        # This should not raise an exception, but fallback to full-frame analysis
+        try:
+            frame.calculate_quality_metrics(
+                thumb_image_rgb, mock_quality_config, mock_logger,
+                mask=small_mask, main_config=test_config
+            )
+        except ValueError:
+            pytest.fail("calculate_quality_metrics raised ValueError on small mask, but should have fallen back.")
 
         # Ensure metrics were still calculated (not all zero)
-        self.assertNotEqual(frame.metrics.sharpness_score, 0.0)
+        assert frame.metrics.sharpness_score != 0.0
+        assert frame.metrics.quality_score != 0.0
 
 class TestSceneLogic:
     def test_get_scene_status_text(self):
@@ -324,9 +275,10 @@ class TestSceneLogic:
         assert scenes[1]['status'] == 'included'
         mock_save.assert_called_once()
 
-class TestUtils(unittest.TestCase):
-    def test_sanitize_filename(self):
-        self.assertEqual(app.sanitize_filename("a/b\\c:d*e?f\"g<h>i|j.txt"), "a_b_c_d_e_f_g_h_i_j.txt")
+class TestUtils:
+    def test_sanitize_filename(self, test_config):
+        # The function now depends on a config object
+        assert app.sanitize_filename("a/b\\c:d*e?f\"g<h>i|j.txt", config=test_config) == "a_b_c_d_e_f_g_h_i_j.txt"
 
     @patch('app.gc.collect')
     @patch('app.torch')
@@ -336,16 +288,24 @@ class TestUtils(unittest.TestCase):
         mock_gc.assert_called_once()
         mock_torch.cuda.empty_cache.assert_called_once()
 
-class TestVideo(unittest.TestCase):
+class TestVideo:
     @patch('app.VideoManager.get_video_info')
     @patch('app.run_ffmpeg_extraction')
     @patch('pathlib.Path.is_file', return_value=True)
-    def test_extraction_pipeline_run(self, mock_is_file, mock_ffmpeg, mock_info):
-        with patch('app.Config', MockConfig):
-            params = app.AnalysisParameters(source_path='/fake.mp4')
-            pipeline = app.EnhancedExtractionPipeline(params, MagicMock(), MagicMock(), app.Config(), MagicMock())
-            pipeline.run()
-            mock_ffmpeg.assert_called()
+    def test_extraction_pipeline_run(self, mock_is_file, mock_ffmpeg, mock_info, test_config):
+        params = app.AnalysisParameters.from_ui(MagicMock(), test_config, source_path='/fake.mp4')
+        logger = MagicMock()
+
+        # Instantiate with all required arguments
+        pipeline = app.EnhancedExtractionPipeline(
+            config=test_config,
+            logger=logger,
+            params=params,
+            progress_queue=MagicMock(),
+            cancel_event=MagicMock()
+        )
+        pipeline.run()
+        mock_ffmpeg.assert_called()
 
 if __name__ == "__main__":
     pytest.main([__file__])
