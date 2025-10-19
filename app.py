@@ -1901,6 +1901,9 @@ class ExtractionPipeline(Pipeline):
         params_dict = asdict(self.params)
         params_dict['output_folder'] = str(output_dir)
         params_dict['video_path'] = str(video_path)
+        # Ensure output_dir is canonical and exists before saving
+        output_dir = Path(output_dir).resolve()
+        output_dir.mkdir(parents=True, exist_ok=True)
         with (output_dir / "run_config.json").open('w', encoding='utf-8') as f:
             json.dump(_to_json_safe(params_dict), f, indent=2)
 
@@ -2044,7 +2047,8 @@ class AnalysisPipeline(Pipeline):
             quality_conf = QualityConfig(
                 sharpness_base_scale=self.config.sharpness_base_scale,
                 edge_strength_base_scale=self.config.edge_strength_base_scale,
-                enable_niqe='niqe' in self.config.QUALITY_METRICS
+                # enable NIQE if the metric object was successfully initialized
+                enable_niqe=(self.niqe_metric is not None)
             )
             frame.calculate_quality_metrics(thumb_image_rgb, quality_conf, self.logger, mask=mask_thumb, niqe_metric=self.niqe_metric, main_config=self.config)
             if self.params.enable_face_filter and self.reference_embedding is not None and self.face_analyzer: self._analyze_face_similarity(frame, thumb_image_rgb)
@@ -2435,8 +2439,13 @@ def execute_session_load(
             return None
         try:
             p = Path(output_folder)
+            # If the given path already exists (absolute or relative to CWD), use it as-is.
+            if p.exists():
+                return p.resolve()
+            # Otherwise, resolve relative to the session directory.
             if not p.is_absolute():
-                p = (base / p).resolve()
+                resolved = (base / p).resolve()
+                return resolved
             return p
         except Exception:
             return None
@@ -2463,8 +2472,10 @@ def execute_session_load(
             return
 
         output_dir = _resolve_output_dir(session_path, run_config.get("output_folder"))
+        # If resolution failed or points to a non-existent place, trust the session directory the user entered.
         if output_dir is None or not output_dir.exists():
-            logger.warning("Output folder missing or invalid; some previews may be unavailable.", component="session_loader")
+            output_dir = session_path
+            logger.warning("Output folder missing or invalid; defaulting to session directory.", component="session_loader")
 
 
         # Prepare initial UI updates from config
@@ -2487,8 +2498,9 @@ def execute_session_load(
             "dam4sam_model_name_input": gr.update(value=run_config.get("dam4sam_model_name", "sam21pp-T")),
             "enable_dedup_input": gr.update(value=run_config.get("enable_dedup", False)),
             "extracted_video_path_state": run_config.get("video_path", ""),
-            "extracted_frames_dir_state": str(output_dir) if output_dir else "",
-            "analysis_output_dir_state": str(output_dir) if output_dir else "",
+            "extracted_frames_dir_state": str(output_dir),
+            # Ensure the state carries an absolute, normalized path for downstream steps
+            "analysis_output_dir_state": str(Path(str(output_dir)).resolve()),
         }
 
         # Stage 2: Load scenes
