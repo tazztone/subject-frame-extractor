@@ -307,5 +307,44 @@ class TestVideo:
         pipeline.run()
         mock_ffmpeg.assert_called()
 
+class TestModels:
+    @patch('app.download_model')
+    @patch('app.gdino_load_model')
+    def test_get_grounding_dino_model_path_resolution(self, mock_gdino_load_model, mock_download):
+        """
+        Tests that get_grounding_dino_model correctly handles relative, absolute, and empty paths.
+        """
+        # Case 1: Relative path
+        app.get_grounding_dino_model.cache_clear()
+        relative_path = "Grounded-SAM-2/grounding_dino/groundingdino/config/GroundingDINO_SwinT_OGC.py"
+        app.get_grounding_dino_model(
+            gdino_config_path=relative_path,
+            gdino_checkpoint_path="models/groundingdino_swint_ogc.pth",
+            models_path="models",
+            grounding_dino_url="http://fake.url/model.pth",
+            device="cpu"
+        )
+        mock_gdino_load_model.assert_called_once()
+        passed_config_path = mock_gdino_load_model.call_args.kwargs['model_config_path']
+        expected_path = app.project_root / relative_path
+        assert Path(passed_config_path).is_absolute(), "Should resolve relative paths to absolute"
+        assert Path(passed_config_path) == expected_path, "Should correctly join relative path with project root"
+
+        # Case 2: Empty path (should use default from Config)
+        mock_gdino_load_model.reset_mock()
+        app.get_grounding_dino_model.cache_clear()
+        app.get_grounding_dino_model(
+            gdino_config_path="",  # Empty path
+            gdino_checkpoint_path="models/groundingdino_swint_ogc.pth",
+            models_path="models",
+            grounding_dino_url="http://fake.url/model.pth",
+            device="cpu"
+        )
+        mock_gdino_load_model.assert_called_once()
+        passed_config_path_default = mock_gdino_load_model.call_args.kwargs['model_config_path']
+        expected_default_path = app.project_root / app.Config.Paths.grounding_dino_config
+        assert Path(passed_config_path_default).is_absolute(), "Should use an absolute path for the default"
+        assert Path(passed_config_path_default) == expected_default_path, "Should fall back to the default config path"
+
 if __name__ == "__main__":
     pytest.main([__file__])
