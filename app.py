@@ -710,7 +710,9 @@ class Scene:
     status: str = "pending"
     best_seed_frame: int | None = None
     seed_metrics: dict = field(default_factory=dict)
+    seed_frame_idx: int | None = None
     seed_config: dict = field(default_factory=dict)
+    seed_type: str | None = None
     seed_result: dict = field(default_factory=dict)
     preview_path: str | None = None
     manual_status_change: bool = False
@@ -1968,7 +1970,7 @@ def auto_set_thresholds(per_metric_values, p, slider_keys):
 
 def save_scene_seeds(scenes_list, output_dir_str, logger):
     if not scenes_list or not output_dir_str: return
-    scene_seeds = {str(s['shot_id']): {'seed_frame_idx': s.get('best_seed_frame'), 'seed_type': s.get('seed_result', {}).get('details', {}).get('type'),
+    scene_seeds = {str(s['shot_id']): {'best_seed_frame': s.get('best_seed_frame'), 'seed_frame_idx': s.get('seed_frame_idx'), 'seed_type': s.get('seed_result', {}).get('details', {}).get('type'),
                                        'seed_config': s.get('seed_config', {}), 'status': s.get('status', 'pending'), 'seed_metrics': s.get('seed_metrics', {})} for s in scenes_list}
     try:
         (Path(output_dir_str) / "scene_seeds.json").write_text(json.dumps(_to_json_safe(scene_seeds), indent=2), encoding='utf-8')
@@ -2019,9 +2021,9 @@ def apply_scene_overrides(scenes_list, selected_shot_id, prompt, box_th, text_th
                                reference_embedding=models["ref_emb"], person_detector=models["person_detector"],
                                thumbnail_manager=thumbnail_manager, logger=logger)
         masker.frame_map = masker._create_frame_map(output_folder)
-        seed_frame_num = scene_dict.get('best_seed_frame') or scene_dict.get('seed_frame_idx')
+        seed_frame_num = scene_dict.get('best_seed_frame') or scene_dict.get('seed_frame_idx') or scene_dict.get('start_frame')
         if seed_frame_num is None:
-            raise ValueError(f"Scene {scene_dict.get('shot_id')} has no seed frame.")
+            raise ValueError(f"Scene {scene_dict.get('shot_id')} has no seed or start frame.")
         fname = masker.frame_map.get(seed_frame_num)
         if not fname:
             raise ValueError(f"Framemap lookup failed for re-seeding shot {scene_dict.get('shot_id')} frame {seed_frame_num}.")
@@ -2040,7 +2042,7 @@ def _regenerate_all_previews(scenes_list, output_folder, masker, thumbnail_manag
     previews_dir = output_dir / "previews"
     previews_dir.mkdir(parents=True, exist_ok=True)
     for scene_dict in scenes_list:
-        seed_frame_num = scene_dict.get('best_seed_frame') or scene_dict.get('seed_frame_idx')
+        seed_frame_num = scene_dict.get('best_seed_frame') or scene_dict.get('seed_frame_idx') or scene_dict.get('start_frame')
         if seed_frame_num is None:
             continue
         fname = masker.frame_map.get(seed_frame_num)
@@ -2311,7 +2313,11 @@ def execute_session_load(
 
 def execute_propagation(event: PropagationEvent, progress_queue: Queue, cancel_event: threading.Event, logger: EnhancedLogger,
                         config: Config, thumbnail_manager, cuda_available):
-    scenes_to_process = [Scene(**s) for s in event.scenes if s['status'] == 'included']
+    scene_fields = {f.name for f in fields(Scene)}
+    scenes_to_process = [
+        Scene(**{k: v for k, v in s.items() if k in scene_fields})
+        for s in event.scenes if s.get('status') == 'included'
+    ]
     if not scenes_to_process:
         yield {"log": "No scenes were included for propagation.", "status": "Propagation skipped."}
         return
