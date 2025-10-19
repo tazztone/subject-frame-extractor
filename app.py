@@ -2325,6 +2325,79 @@ def _regenerate_all_previews(scenes_list, output_folder, masker, thumbnail_manag
         previews.append((overlay_rgb, f"Scene {scene_dict['shot_id']} (Seed: {seed_frame_num}) | {details.get('type', 'N/A')}"))
     return previews
 
+def _recompute_single_preview(scenes_list, selected_shot_id, output_folder, text_prompt, box_thresh, text_thresh, masker, thumbnail_manager, logger):
+    """
+    Recompute seed and preview for a single scene using per-scene overrides (prompt/thresholds).
+    """
+    if not scenes_list or selected_shot_id is None:
+        return None, scenes_list, "No scene selected."
+    # Find target scene
+    idx = next((i for i, s in enumerate(scenes_list) if s.get('shot_id') == selected_shot_id), None)
+    if idx is None:
+        return None, scenes_list, f"Scene {selected_shot_id} not found."
+    scene = scenes_list[idx]
+    out_dir = Path(output_folder)
+    fname = masker.frame_map.get(scene.get('best_seed_frame') or scene.get('seed_frame_idx') or scene.get('start_frame'))
+    if not fname:
+        return None, scenes_list, "No seed frame found for this scene."
+    # Load thumbnail
+    thumb_rgb = thumbnail_manager.get(out_dir / "thumbs" / f"{Path(fname).stem}.webp")
+    if thumb_rgb is None:
+        return None, scenes_list, "Thumbnail not found on disk."
+    # Build per-scene override config
+    scene_overrides = {
+        "text_prompt": text_prompt or "",
+        "box_threshold": float(box_thresh),
+        "text_threshold": float(text_thresh),
+        # keep current strategy flags as-is
+        "primary_seed_strategy": scene.get('seed_config', {}).get('primary_seed_strategy', "🤖 Automatic"),
+        "enable_face_filter": scene.get('seed_config', {}).get('enable_face_filter', False),
+        "seed_strategy": scene.get('seed_config', {}).get('seed_strategy', "Largest Person"),
+    }
+    # Recompute seed
+    bbox, details = masker.get_seed_for_frame(thumb_rgb, seed_config=scene_overrides)
+    scene['seed_config'] = {**scene.get('seed_config', {}), **scene_overrides}
+    scene['seed_result'] = {'bbox': bbox, 'details': details}
+    # Optionally compute a mask for overlay if SAM2 is available
+    mask = masker.get_mask_for_bbox(thumb_rgb, bbox) if bbox else None
+    if mask is not None:
+        h, w = mask.shape[:2]
+        scene['seed_result']['details']['mask_area_pct'] = (float(np.sum(mask > 0)) / float(h * w) * 100.0) if (h * w) > 0 else 0.0
+    # Save preview and return the updated image for the gallery
+    previews_dir = out_dir / "previews"
+    previews_dir.mkdir(parents=True, exist_ok=True)
+    overlay_rgb = render_mask_overlay(thumb_rgb, mask, 0.6, logger=logger) if mask is not None else masker.draw_bbox(thumb_rgb, bbox)
+    preview_path = previews_dir / f"scene_{int(scene['shot_id']):05d}.jpg"
+    try:
+        Image.fromarray(overlay_rgb).save(preview_path)
+        scene['preview_path'] = str(preview_path)
+    except Exception:
+        logger.error(f"Failed to save preview for scene {scene['shot_id']}", exc_info=True)
+    caption = f"Scene {scene['shot_id']} (Seed: {scene.get('best_seed_frame')}) | {details.get('type','N/A')}"
+    return (overlay_rgb, caption), scenes_list, f"Scene {scene['shot_id']} updated and saved."
+
+def _wire_recompute_handler(config, logger, thumbnail_manager, scenes, shot_id, outdir, text_prompt, box_thresh, text_thresh):
+    # Build a lightweight masker for recompute in the editor context
+    masker = SubjectMasker(
+        params=AnalysisParameters(),  # only seed selection is needed here
+        progress_queue=Queue(),
+        cancel_event=threading.Event(),
+        config=config,
+        frame_map=create_frame_map(Path(outdir), logger),
+        face_analyzer=None, reference_embedding=None,
+        person_detector=None, niqe_metric=None,
+        thumbnail_manager=thumbnail_manager,
+        logger=logger
+    )
+    updated_preview, updated_scenes, msg = _recompute_single_preview(
+        scenes, shot_id, outdir, text_prompt, box_thresh, text_thresh, masker, thumbnail_manager, logger
+    )
+    # If nothing to update, return pass-through values
+    if not updated_preview:
+        return gr.update(), updated_scenes, msg
+    # Update the gallery with just the recomputed scene preview; caller may choose to refresh all if needed
+    return gr.update(value=[updated_preview], rows=1), updated_scenes, msg
+
 # --- PIPELINE LOGIC ---
 
 def execute_extraction(event: ExtractionEvent, progress_queue: Queue, cancel_event: threading.Event, logger: EnhancedLogger, config: Config):
@@ -3245,14 +3318,24 @@ class EnhancedAppUI(AppUI):
             ]
         )
 
+        # Wire recompute to use current editor controls and state
         c['scenerecomputebutton'].click(
-            self.on_recompute,
+            fn=lambda scenes, shot_id, outdir, txt, bth, tth: _wire_recompute_handler(
+                self.config, self.enhanced_logger, self.thumbnail_manager, scenes, shot_id, outdir, txt, bth, tth
+            ),
             inputs=[
-                c['scenes_state'], c['selected_scene_id_state'], c['sceneeditorpromptinput'],
-                c['sceneeditorboxthreshinput'], c['sceneeditortextthreshinput'], c['extracted_frames_dir_state'],
-                *self.ana_input_components
+                c['scenes_state'],
+                c['selected_scene_id_state'],
+                c['analysis_output_dir_state'],
+                c['sceneeditorpromptinput'],   # text box id in editor
+                c['sceneeditorboxthreshinput'],    # slider id in editor
+                c['sceneeditortextthreshinput'],   # slider id in editor
             ],
-            outputs=[c['scenes_state'], c['scene_gallery'], c['scene_gallery_index_map_state'], c['sceneeditorstatusmd']],
+            outputs=[
+                c['scene_gallery'],                # or the gallery component used in step 2
+                c['scenes_state'],
+                c['unified_log'],
+            ],
         )
 
         c['sceneincludebutton'].click(
