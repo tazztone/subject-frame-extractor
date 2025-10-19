@@ -1261,11 +1261,21 @@ def get_grounding_dino_model(gdino_config_path: str, gdino_checkpoint_path: str,
     try:
         models_dir = Path(models_path)
         models_dir.mkdir(parents=True, exist_ok=True)
+
+        # Robust path handling for the config file
+        config_file_path = gdino_config_path or Config().paths.grounding_dino_config
+        config_path = Path(config_file_path)
+        if not config_path.is_absolute():
+            config_path = project_root / config_path
+
         ckpt_path = Path(gdino_checkpoint_path)
-        if not ckpt_path.is_absolute(): ckpt_path = models_dir / Path(grounding_dino_url).name
+        if not ckpt_path.is_absolute():
+            ckpt_path = models_dir / Path(grounding_dino_url).name
+        
         download_model(grounding_dino_url,
                        ckpt_path, "GroundingDINO Swin-T model", logger, error_handler, config=Config(), min_size=500_000_000)
-        gdino_model = gdino_load_model(model_config_path=gdino_config_path, model_checkpoint_path=str(ckpt_path), device=device)
+        
+        gdino_model = gdino_load_model(model_config_path=str(config_path), model_checkpoint_path=str(ckpt_path), device=device)
         logger.info("Grounding DINO model loaded.", component="grounding", custom_fields={'model_path': str(ckpt_path)})
         return gdino_model
     except Exception as e:
