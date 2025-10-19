@@ -1474,11 +1474,12 @@ def create_frame_map(output_dir: Path, logger: 'EnhancedLogger'):
 # --- MASKING & PROPAGATION ---
 
 class MaskPropagator:
-    def __init__(self, params, dam_tracker, cancel_event, progress_queue, logger=None):
+    def __init__(self, params, dam_tracker, cancel_event, progress_queue, config: 'Config', logger=None):
         self.params = params
         self.dam_tracker = dam_tracker
         self.cancel_event = cancel_event
         self.progress_queue = progress_queue
+        self.config = config
         self.logger = logger or EnhancedLogger()
         self._device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -1609,7 +1610,7 @@ class SeedSelector:
                         if iou > best_iou:
                             best_iou, best_match = iou, {'bbox': d_box['bbox'], 'type': 'dino_yolo_intersect', 'iou': iou,
                                                          'dino_conf': d_box['conf'], 'yolo_conf': y_box['conf']}
-                if best_match and best_match['iou'] > self.params.seeding_defaults.yolo_iou_threshold:
+                if best_match and best_match['iou'] > self.config.seeding_defaults.yolo_iou_threshold:
                     self.logger.info("Found high-confidence DINO+YOLO intersection.", extra=best_match)
                     return self._xyxy_to_xywh(best_match['bbox']), best_match
             self.logger.info("Using best DINO box without YOLO validation.", extra=dino_details)
@@ -1628,7 +1629,7 @@ class SeedSelector:
         for face in faces:
             sim = np.dot(face.normed_embedding, self.reference_embedding)
             if sim > best_sim: best_sim, best_face = sim, face
-        if best_face and best_sim > self.params.seeding_defaults.face_similarity_threshold:
+        if best_face and best_sim > self.config.seeding_defaults.face_similarity_threshold:
             return {'bbox': best_face.bbox.astype(int), 'embedding': best_face.normed_embedding}, {'type': 'face_match', 'seed_face_sim': best_sim}
         return None, {'error': 'no_matching_face', 'best_sim': best_sim}
 
@@ -1670,19 +1671,19 @@ class SeedSelector:
         for cand in candidates:
             score, details = 0, {'orig_conf': cand['conf'], 'orig_type': cand['type']}
             if self._box_contains(cand['bbox'], target_face['bbox']):
-                score += self.params.seeding_defaults.face_contain_score
+                score += self.config.seeding_defaults.face_contain_score
                 details['face_contained'] = True
-            score += cand['conf'] * self.params.seeding_defaults.confidence_score_multiplier
+            score += cand['conf'] * self.config.seeding_defaults.confidence_score_multiplier
             scored_candidates.append({'score': score, 'box': cand['bbox'], 'details': details})
         best_iou, best_pair = -1, None
         for y_box in yolo_boxes:
             for d_box in dino_boxes:
                 iou = self._calculate_iou(y_box['bbox'], d_box['bbox'])
                 if iou > best_iou: best_iou, best_pair = iou, (y_box, d_box)
-        if best_iou > self.params.seeding_defaults.yolo_iou_threshold:
+        if best_iou > self.config.seeding_defaults.yolo_iou_threshold:
             for cand in scored_candidates:
                 if np.array_equal(cand['box'], best_pair[0]['bbox']) or np.array_equal(cand['box'], best_pair[1]['bbox']):
-                    cand['score'] += self.params.seeding_defaults.iou_bonus
+                    cand['score'] += self.config.seeding_defaults.iou_bonus
                     cand['details']['high_iou_pair'] = True
         if not scored_candidates: return None, {}
         winner = max(scored_candidates, key=lambda x: x['score'])
@@ -1720,14 +1721,14 @@ class SeedSelector:
     def _expand_face_to_body(self, face_bbox, img_shape):
         H, W, (x1, y1, x2, y2) = *img_shape[:2], *face_bbox
         w, h, cx = x2 - x1, y2 - y1, x1 + w / 2
-        expansion_factors = self.params.seeding_defaults.face_to_body_expansion_factors
+        expansion_factors = self.config.seeding_defaults.face_to_body_expansion_factors
         new_w, new_h = min(W, w * expansion_factors[0]), min(H, h * expansion_factors[1])
         new_x1, new_y1 = max(0, cx - new_w / 2), max(0, y1 - h * expansion_factors[2])
         return [int(v) for v in [new_x1, new_y1, min(W, new_x1 + new_w) - new_x1, min(H, new_y1 + new_h) - new_y1]]
 
     def _final_fallback_box(self, img_shape):
         h, w, _ = img_shape
-        fallback_box = self.params.seeding_defaults.final_fallback_box
+        fallback_box = self.config.seeding_defaults.final_fallback_box
         return [int(w * fallback_box[0]), int(h * fallback_box[1]), int(w * fallback_box[2]), int(h * fallback_box[3])]
     def _xyxy_to_xywh(self, box): x1, y1, x2, y2 = box; return [int(x1), int(y1), int(x2 - x1), int(y2 - y1)]
 
@@ -1771,7 +1772,7 @@ class SubjectMasker:
             gdino_model=self._gdino,
             logger=self.logger,
         )
-        self.mask_propagator = MaskPropagator(params, self.dam_tracker, cancel_event, progress_queue, logger=self.logger)
+        self.mask_propagator = MaskPropagator(params, self.dam_tracker, cancel_event, progress_queue, config=self.config, logger=self.logger)
 
     def _initialize_models(self): self._init_grounder(); self._initialize_tracker()
     def _init_grounder(self):
@@ -1962,9 +1963,20 @@ class AnalysisPipeline(Pipeline):
             self.scene_map = {s.shot_id: s for s in scenes_to_process}
             self.logger.info("Initializing Models")
             if self.params.enable_face_filter:
-                self.face_analyzer = get_face_analyzer(self.params.face_model_name, self.config, logger=self.logger)
+                # lru_cache requires hashable args; pass primitives instead of unhashable Config
+                self.face_analyzer = get_face_analyzer(
+                    model_name=self.params.face_model_name,
+                    models_path=str(self.config.paths.models),
+                    det_size_tuple=tuple(self.config.model_defaults.face_analyzer_det_size)
+                )
                 if self.params.face_ref_img_path: self._process_reference_face()
-            person_detector = get_person_detector(self.params.person_detector_model, self.device, self.config, logger=self.logger)
+            # Use hashable primitives for lru_cache compatibility
+            person_detector = get_person_detector(
+                model_path_str=str(Path(self.config.paths.models) / self.params.person_detector_model),
+                device=self.device,
+                imgsz=self.config.person_detector.imgsz,
+                conf=self.config.person_detector.conf
+            )
             masker = SubjectMasker(self.params, self.progress_queue, self.cancel_event, self.config, self._create_frame_map(),
                                    self.face_analyzer, self.reference_embedding, person_detector, thumbnail_manager=self.thumbnail_manager,
                                    niqe_metric=self.niqe_metric, logger=self.logger)
