@@ -2,7 +2,6 @@
 """
 Frame Extractor & Analyzer v2.0
 """
-import argparse
 import atexit
 import contextlib
 import cv2
@@ -14,7 +13,6 @@ import gradio as gr
 import hashlib
 import imagehash
 import importlib
-import inspect
 import io
 import json
 import logging
@@ -22,18 +20,15 @@ import math
 import numpy as np
 import os
 import psutil
-import queue
 import re
 import shutil
 import subprocess
 import sys
-import tempfile
 import textwrap
 import threading
 import time
 import torch
 import traceback
-import types
 import urllib.request
 import yaml
 
@@ -47,7 +42,7 @@ sys.path.insert(0, str(project_root / 'DAM4SAM'))
 
 from collections import Counter, OrderedDict, defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, asdict, field, fields
+from dataclasses import dataclass, asdict, field, fields, is_dataclass
 from enum import Enum
 from functools import lru_cache
 from queue import Queue, Empty
@@ -114,7 +109,6 @@ try:
 except ImportError:
     ytdlp = None
 
-from dataclasses import dataclass, asdict, field, fields, is_dataclass
 # --- CONFIGURATION ---
 @dataclass
 class Config:
@@ -1401,7 +1395,7 @@ class VideoManager:
 
 def run_scene_detection(video_path, output_dir, logger=None):
     if not detect: raise ImportError("scenedetect is not installed.")
-    logger = logger or EnhancedLogger()
+    logger = logger or EnhancedLogger(config=Config())
     logger.info("Detecting scenes...", component="video")
     try:
         scene_list = detect(str(video_path), ContentDetector())
@@ -1503,7 +1497,7 @@ class MaskPropagator:
         self.cancel_event = cancel_event
         self.progress_queue = progress_queue
         self.config = config
-        self.logger = logger or EnhancedLogger()
+        self.logger = logger or EnhancedLogger(config=Config())
         self._device = "cuda" if torch.cuda.is_available() else "cpu"
 
     def propagate(self, shot_frames_rgb, seed_idx, bbox_xywh):
@@ -1557,7 +1551,7 @@ class SeedSelector:
         self.tracker = tracker
         self._gdino = gdino_model
         self._device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.logger = logger or EnhancedLogger()
+        self.logger = logger or EnhancedLogger(config=Config())
 
     def _get_param(self, source, key, default=None):
         """Safely gets a parameter from a source that can be a dict or an object."""
@@ -1776,7 +1770,7 @@ class SubjectMasker:
     def __init__(self, params, progress_queue, cancel_event, config: 'Config', frame_map=None, face_analyzer=None,
                  reference_embedding=None, person_detector=None, thumbnail_manager=None, niqe_metric=None, logger=None):
         self.params, self.config, self.progress_queue, self.cancel_event = params, config, progress_queue, cancel_event
-        self.logger = logger or EnhancedLogger()
+        self.logger = logger or EnhancedLogger(config=Config())
         self.frame_map = frame_map
         self.face_analyzer, self.reference_embedding, self.person_detector = face_analyzer, reference_embedding, person_detector
         self.dam_tracker, self.mask_dir, self.shots = None, None, []
@@ -2194,7 +2188,7 @@ def apply_all_filters_vectorized(all_frames_data, filters, config: 'Config'):
     return kept, rejected, Counter(r for r_list in reasons.values() for r in r_list), reasons
 
 def on_filters_changed(event: FilterEvent, thumbnail_manager, config: 'Config', logger=None):
-    logger = logger or EnhancedLogger()
+    logger = logger or EnhancedLogger(config=Config())
     if not event.all_frames_data: return {"filter_status_text": "Run analysis to see results.", "results_gallery": []}
     filters = event.slider_values.copy()
     filters.update({"require_face_match": event.require_face_match, "dedup_thresh": event.dedup_thresh,
@@ -2360,7 +2354,23 @@ def _recompute_single_preview(scenes_list, selected_shot_id, output_folder, text
         return None, scenes_list, f"Scene {selected_shot_id} not found."
     scene = scenes_list[idx]
     out_dir = Path(output_folder)
-    fname = masker.frame_map.get(scene.get('best_seed_frame') or scene.get('seed_frame_idx') or scene.get('start_frame'))
+    seed_frame_num = scene.get('best_seed_frame') or scene.get('seed_frame_idx') or scene.get('start_frame')
+    fname = masker.frame_map.get(seed_frame_num)
+
+    # DEBUG: Add logging to see what's happening
+    logger.info(f"DEBUG: seed_frame_num={seed_frame_num}, fname={fname}, frame_map keys={list(masker.frame_map.keys())[:10]}")
+
+    if not fname:
+        # Fallback: Try direct filename construction
+        if seed_frame_num is not None:
+            # Try to find the frame index in the frame_map.json list
+            try:
+                frame_index = list(masker.frame_map.keys()).index(seed_frame_num)
+                fname = f"frame_{frame_index+1:06d}.webp"
+                logger.info(f"DEBUG: Using fallback filename: {fname}")
+            except ValueError:
+                return None, scenes_list, f"No seed frame found for this scene. Seed frame: {seed_frame_num}"
+
     if not fname:
         return None, scenes_list, "No seed frame found for this scene."
     # Load thumbnail
@@ -2401,17 +2411,26 @@ def _recompute_single_preview(scenes_list, selected_shot_id, output_folder, text
 
 def _wire_recompute_handler(config, logger, thumbnail_manager, scenes, shot_id, outdir, text_prompt, box_thresh, text_thresh):
     # Build a lightweight masker for recompute in the editor context
+
+    # Fix: Properly create and assign frame_map
+    frame_map = create_frame_map(Path(outdir), logger)
+    logger.info(f"DEBUG: Created frame_map with {len(frame_map)} entries")
+
     masker = SubjectMasker(
         params=AnalysisParameters(),  # only seed selection is needed here
         progress_queue=Queue(),
         cancel_event=threading.Event(),
         config=config,
-        frame_map=create_frame_map(Path(outdir), logger),
+        frame_map=frame_map,  # Pass the created frame_map
         face_analyzer=None, reference_embedding=None,
         person_detector=None, niqe_metric=None,
         thumbnail_manager=thumbnail_manager,
         logger=logger
     )
+
+    # Fix: Ensure the frame_map is actually assigned to the masker
+    masker.frame_map = frame_map
+
     updated_preview, updated_scenes, msg = _recompute_single_preview(
         scenes, shot_id, outdir, text_prompt, box_thresh, text_thresh, masker, thumbnail_manager, logger
     )
@@ -3466,8 +3485,8 @@ class EnhancedAppUI(AppUI):
                 per_metric_values=metric_values,
                 output_dir=output_dir,
                 gallery_view="Kept Frames",
-                show_overlay=self.config.gradio_defaults['show_mask_overlay'],
-                overlay_alpha=self.config.gradio_defaults['overlay_alpha'],
+                show_overlay=self.config.gradio_defaults.show_mask_overlay,
+                overlay_alpha=self.config.gradio_defaults.overlay_alpha,
                 require_face_match=c['require_face_match_input'].value,
                 dedup_thresh=c['dedup_thresh_input'].value,
                 slider_values=slider_values
