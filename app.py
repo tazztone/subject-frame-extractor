@@ -196,7 +196,7 @@ class Config:
         face_model_name: str = "buffalo_l"
         enable_subject_mask: bool = True
         dam4sam_model_name: str = "sam21pp-L"
-        person_detector_model: str = "yolov11x.pt"
+        person_detector_model: str = "yolo11x.pt"
         primary_seed_strategy: str = "🤖 Automatic"
         seed_strategy: str = "Largest Person"
         text_prompt: str = ""
@@ -240,7 +240,7 @@ class Config:
         method: List[str] = field(default_factory=lambda: ["keyframes", "interval", "every_nth_frame", "all", "scene"])
         primary_seed_strategy: List[str] = field(default_factory=lambda: ["👤 By Face", "📝 By Text", "🔄 Face + Text Fallback", "🤖 Automatic"])
         seed_strategy: List[str] = field(default_factory=lambda: ["Largest Person", "Center-most Person"])
-        person_detector_model: List[str] = field(default_factory=lambda: ['yolov11x.pt', 'yolov11s.pt'])
+        person_detector_model: List[str] = field(default_factory=lambda: ['yolo11x.pt', 'yolo11s.pt'])
         face_model_name: List[str] = field(default_factory=lambda: ["buffalo_l", "buffalo_s"])
         dam4sam_model_name: List[str] = field(default_factory=lambda: ["sam21pp-T", "sam21pp-S", "sam21pp-B+", "sam21pp-L"])
         gallery_view: List[str] = field(default_factory=lambda: ["Kept Frames", "Rejected Frames"])
@@ -254,7 +254,7 @@ class Config:
 
     @dataclass
     class PersonDetector:
-        model: str = "yolov11x.pt"
+        model: str = "yolo11x.pt"
         imgsz: int = 640
         conf: float = 0.3
     
@@ -559,13 +559,16 @@ class EnhancedLogger:
             yield
             self.success(f"Done {name} in {(time.time()-t0)*1000:.0f}ms", component=component)
         except Exception:
-            self.error(f"Failed {name}", component=component, stacktrace=traceback.format_exc())
+            self.error(f"Failed {name}", component=component, stack_trace=traceback.format_exc())
             raise
 
     def _create_log_event(self, level: str, message: str, component: str, **kwargs) -> LogEvent:
         current_metrics = self.performance_monitor.get_system_metrics() if self.performance_monitor else {}
         exc_info = kwargs.pop('exc_info', None)
         extra = kwargs.pop('extra', None)
+        # Map legacy "stacktrace" to "stack_trace" for backward compatibility
+        if 'stacktrace' in kwargs:
+            kwargs['stack_trace'] = kwargs.pop('stacktrace')
         if exc_info: kwargs['stack_trace'] = traceback.format_exc()
         if extra:
             kwargs['custom_fields'] = kwargs.get('custom_fields', {})
@@ -2222,7 +2225,7 @@ def save_scene_seeds(scenes_list, output_dir_str, logger):
 
 def get_scene_status_text(scenes_list):
     if not scenes_list: return "No scenes loaded."
-    return f"{sum(1 for s in scenes_list if s['status'] == 'included')}/{len(scenes_list)} scenes included for propagation."
+    return f"{sum(1 for s in scenes_list if s.get('status', 'pending') == 'included')}/{len(scenes_list)} scenes included for propagation."
 
 def toggle_scene_status(scenes_list, selected_shot_id, new_status, output_folder, logger):
     if selected_shot_id is None or not scenes_list: return (scenes_list, get_scene_status_text(scenes_list), "No scene selected.")
@@ -2510,6 +2513,10 @@ def execute_session_load(
                     if shot_id in seeds_lookup:
                         scene.update(seeds_lookup[shot_id])
 
+                # Auto-include missing scene statuses on load (set to "included" as approved)
+                for s in scenes_as_dict:
+                    s.setdefault("status", "included")
+
                 logger.info(f"Merged data for {len(seeds_lookup)} scenes from {scene_seeds_path}", component="session_loader")
             except Exception as e:
                 logger.warning(f"Failed to parse or merge scene_seeds.json: {e}", component="session_loader", error_type=type(e).__name__)
@@ -2584,9 +2591,9 @@ def scene_matches_view(scene: dict, view: str) -> bool:
     status = scene.get('status', 'pending')
     if view == "All":
         return status in ("included", "excluded", "pending")
-    if view == config.choices.scene_gallery_view[0]:
+    if view == "Kept":
         return status == "included"
-    if view == config.choices.scene_gallery_view[1]:
+    if view == "Rejected":
         return status == "excluded"
     return False
 
