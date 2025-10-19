@@ -114,318 +114,276 @@ try:
 except ImportError:
     ytdlp = None
 
+from dataclasses import dataclass, asdict, field, fields, is_dataclass
 # --- CONFIGURATION ---
 @dataclass
-class PathsConfig:
-    logs: str
-    models: str
-    downloads: str
-    grounding_dino_config: str
-    grounding_dino_checkpoint: str
-
-@dataclass
-class ModelsConfig:
-    grounding_dino: str
-    dam4sam: Dict[str, str]
-    yolo: str
-    user_agent: str
-
-@dataclass
-class YouTubeDLConfig:
-    output_template: str
-    format_string: str
-
-@dataclass
-class FfmpegConfig:
-    log_level: str
-    thumbnail_quality: int
-    scene_threshold: float
-    fast_scene_threshold: float
-
-@dataclass
-class CacheConfig:
-    size: int
-    eviction_factor: float
-    cleanup_threshold: float
-
-@dataclass
-class ResourceManagerConfig:
-    monitor_interval_seconds: int
-    error_backoff_seconds: int
-    history_cutoff_hours: int
-    cpu_threshold_percent: int
-    gpu_threshold_percent: int
-    batch_size_reduction_factor: float
-
-@dataclass
-class RetryConfig:
-    max_attempts: int
-    backoff_seconds: List[float]
-
-@dataclass
-class QualityScalingConfig:
-    entropy_normalization: float
-    resolution_denominator: int
-    contrast_clamp: float
-    niqe_scale_factor: float
-    niqe_offset: float
-
-@dataclass
-class MaskingConfig:
-    keep_largest_only: bool
-    close_kernel_size: int
-    open_kernel_size: int
-
 class Config:
-    paths: PathsConfig
-    models: ModelsConfig
-    youtube_dl: YouTubeDLConfig
-    ffmpeg: FfmpegConfig
-    cache: CacheConfig
-    resource_manager: ResourceManagerConfig
-    retry: RetryConfig
-    quality_scaling: QualityScalingConfig
-    masking: MaskingConfig
-    logging: Dict[str, Any]
-    ui_defaults: Dict[str, Any]
-    filter_defaults: Dict[str, Any]
-    quality_weights: Dict[str, int]
-    choices: Dict[str, List[Any]]
+    @dataclass
+    class Paths:
+        logs: str = "logs"
+        models: str = "models"
+        downloads: str = "downloads"
+        grounding_dino_config: str = "Grounded-SAM-2/grounding_dino/groundingdino/config/GroundingDINO_SwinT_OGC.py"
+        grounding_dino_checkpoint: str = "models/groundingdino_swint_ogc.pth"
 
-    def __init__(self, config_path: Optional[str] = None):
-        self.DEFAULT_CONFIG = self._get_default_config()
-        self.settings = yaml.safe_load(self.DEFAULT_CONFIG)
+    @dataclass
+    class Models:
+        user_agent: str = "Mozilla/5.0"
+        grounding_dino: str = "https://github.com/IDEA-Research/GroundingDINO/releases/download/v0.1.0-alpha/groundingdino_swint_ogc.pth"
+        dam4sam: Dict[str, str] = field(default_factory=lambda: {
+            "sam21pp-T": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt",
+            "sam21pp-S": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_small.pt",
+            "sam21pp-B+": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_base_plus.pt",
+            "sam21pp-L": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt",
+        })
+        yolo: str = "https://huggingface.co/Ultralytics/YOLO11/resolve/main/"
 
-        if config_path and Path(config_path).exists():
-            with open(config_path, 'r') as f:
-                user_config = yaml.safe_load(f)
-            self._merge_configs(self.settings, user_config)
+    @dataclass
+    class YouTubeDL:
+        output_template: str = "%(id)s_%(title).40s_%(height)sp.%(ext)s"
+        format_string: str = "bestvideo[height<={max_res}][ext=mp4]+bestaudio[ext=m4a]/best[height<={max_res}][ext=mp4]/best"
 
-        self._override_with_env_vars(self.settings)
-        self._from_dict(self.settings)
-        self._validate_config()
+    @dataclass
+    class Ffmpeg:
+        log_level: str = "info"
+        thumbnail_quality: int = 80
+        scene_threshold: float = 0.4
+        fast_scene_threshold: float = 0.5
+
+    @dataclass
+    class Cache:
+        size: int = 200
+        eviction_factor: float = 0.2
+        cleanup_threshold: float = 0.8
+
+    @dataclass
+    class ResourceManager:
+        monitor_interval_seconds: int = 5
+        error_backoff_seconds: int = 10
+        history_cutoff_hours: int = 1
+        cpu_threshold_percent: int = 90
+        gpu_threshold_percent: int = 90
+        batch_size_reduction_factor: float = 0.7
+
+    @dataclass
+    class Retry:
+        max_attempts: int = 3
+        backoff_seconds: List[float] = field(default_factory=lambda: [1, 5, 15])
+
+    @dataclass
+    class QualityScaling:
+        entropy_normalization: float = 8.0
+        resolution_denominator: int = 500000
+        contrast_clamp: float = 2.0
+        niqe_offset: float = 10.0
+        niqe_scale_factor: float = 10.0
+
+    @dataclass
+    class Masking:
+        keep_largest_only: bool = True
+        close_kernel_size: int = 5
+        open_kernel_size: int = 5
+
+    @dataclass
+    class UIDefaults:
+        thumbnails_only: bool = True
+        thumb_megapixels: float = 0.5
+        scene_detect: bool = True
+        max_resolution: str = "maximum available"
+        pre_analysis_enabled: bool = True
+        pre_sample_nth: int = 5
+        enable_face_filter: bool = True
+        face_model_name: str = "buffalo_l"
+        enable_subject_mask: bool = True
+        dam4sam_model_name: str = "sam21pp-L"
+        person_detector_model: str = "yolo11x.pt"
+        primary_seed_strategy: str = "🤖 Automatic"
+        seed_strategy: str = "Largest Person"
+        text_prompt: str = ""
+        resume: bool = False
+        require_face_match: bool = False
+        enable_dedup: bool = True
+        dedup_thresh: int = 5
+        method: str = "all"
+        interval: float = 5.0
+        fast_scene: bool = False
+        use_png: bool = True
+        nth_frame: int = 5
+        disable_parallel: bool = False
+
+    @dataclass
+    class FilterDefaults:
+        quality_score: Dict[str, float] = field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.5, 'default_min': 0.0, 'default_max': 100.0})
+        sharpness: Dict[str, float] = field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.5, 'default_min': 0.0, 'default_max': 100.0})
+        edge_strength: Dict[str, float] = field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.5, 'default_min': 0.0, 'default_max': 100.0})
+        contrast: Dict[str, float] = field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.5, 'default_min': 0.0, 'default_max': 100.0})
+        brightness: Dict[str, float] = field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.5, 'default_min': 0.0, 'default_max': 100.0})
+        entropy: Dict[str, float] = field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.5, 'default_min': 0.0, 'default_max': 100.0})
+        niqe: Dict[str, float] = field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.5, 'default_min': 0.0, 'default_max': 100.0})
+        face_sim: Dict[str, float] = field(default_factory=lambda: {'min': 0.0, 'max': 1.0, 'step': 0.01, 'default_min': 0.5})
+        mask_area_pct: Dict[str, float] = field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.1, 'default_min': 1.0})
+        dedup_thresh: Dict[str, int] = field(default_factory=lambda: {'min': -1, 'max': 32, 'step': 1, 'default': -1})
+
+    @dataclass
+    class QualityWeights:
+        sharpness: int = 25
+        edge_strength: int = 15
+        contrast: int = 15
+        brightness: int = 10
+        entropy: int = 15
+        niqe: int = 20
+
+    @dataclass
+    class Choices:
+        max_resolution: List[str] = field(default_factory=lambda: ["maximum available", "2160", "1080", "720"])
+        extraction_method_toggle: List[str] = field(default_factory=lambda: ["Recommended Thumbnails", "Legacy Full-Frame"])
+        method: List[str] = field(default_factory=lambda: ["keyframes", "interval", "every_nth_frame", "all", "scene"])
+        primary_seed_strategy: List[str] = field(default_factory=lambda: ["👤 By Face", "📝 By Text", "🔄 Face + Text Fallback", "🤖 Automatic"])
+        seed_strategy: List[str] = field(default_factory=lambda: ["Largest Person", "Center-most Person"])
+        person_detector_model: List[str] = field(default_factory=lambda: ['yolo11x.pt', 'yolo11s.pt'])
+        face_model_name: List[str] = field(default_factory=lambda: ["buffalo_l", "buffalo_s"])
+        dam4sam_model_name: List[str] = field(default_factory=lambda: ["sam21pp-T", "sam21pp-S", "sam21pp-B+", "sam21pp-L"])
+        gallery_view: List[str] = field(default_factory=lambda: ["Kept Frames", "Rejected Frames"])
+        log_level: List[str] = field(default_factory=lambda: ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'SUCCESS', 'CRITICAL'])
+        scene_gallery_view: List[str] = field(default_factory=lambda: ["Kept", "Rejected", "All"])
+
+    @dataclass
+    class GroundingDinoParams:
+        box_threshold: float = 0.35
+        text_threshold: float = 0.25
+
+    @dataclass
+    class PersonDetector:
+        model: str = "yolo11x.pt"
+        imgsz: int = 640
+        conf: float = 0.3
+
+    @dataclass
+    class Logging:
+        log_level: str = "INFO"
+        log_format: str = '%(asctime)s | %(levelname)8s | %(name)s | %(message)s'
+        colored_logs: bool = True
+        structured_log_path: str = "structured_log.jsonl"
+
+    paths: Paths = field(default_factory=Paths)
+    models: Models = field(default_factory=Models)
+    youtube_dl: YouTubeDL = field(default_factory=YouTubeDL)
+    ffmpeg: Ffmpeg = field(default_factory=Ffmpeg)
+    cache: Cache = field(default_factory=Cache)
+    resource_manager: ResourceManager = field(default_factory=ResourceManager)
+    retry: Retry = field(default_factory=Retry)
+    quality_scaling: QualityScaling = field(default_factory=QualityScaling)
+    masking: Masking = field(default_factory=Masking)
+    ui_defaults: UIDefaults = field(default_factory=UIDefaults)
+    filter_defaults: FilterDefaults = field(default_factory=FilterDefaults)
+    quality_weights: QualityWeights = field(default_factory=QualityWeights)
+    choices: Choices = field(default_factory=Choices)
+    grounding_dino_params: GroundingDinoParams = field(default_factory=GroundingDinoParams)
+    person_detector: PersonDetector = field(default_factory=PersonDetector)
+    logging: Logging = field(default_factory=Logging)
+
+    sharpness_base_scale: int = 2500
+    edge_strength_base_scale: int = 100
+    min_mask_area_pct: float = 1.0
+
+    @dataclass
+    class Monitoring:
+        memory_warning_threshold_mb: int = 8192
+        memory_critical_threshold_mb: int = 16384
+        cpu_warning_threshold_percent: int = 90
+        gpu_memory_warning_threshold_percent: int = 90
+        memory_limit_mb: int = 8192
+
+    @dataclass
+    class ExportOptions:
+        enable_crop: bool = True
+        crop_padding: int = 1
+        crop_ars: str = "16:9,1:1,9:16"
+
+    @dataclass
+    class GradioDefaults:
+        auto_pctl_input: int = 75
+        show_mask_overlay: bool = True
+        overlay_alpha: float = 0.6
+
+    @dataclass
+    class SeedingDefaults:
+        face_similarity_threshold: float = 0.4
+        yolo_iou_threshold: float = 0.3
+        face_contain_score: int = 100
+        confidence_score_multiplier: int = 20
+        iou_bonus: int = 50
+        face_to_body_expansion_factors: List[float] = field(default_factory=lambda: [4.0, 7.0, 0.75])
+        final_fallback_box: List[float] = field(default_factory=lambda: [0.25, 0.25, 0.5, 0.5])
+
+    @dataclass
+    class UtilityDefaults:
+        max_filename_length: int = 50
+        video_extensions: List[str] = field(default_factory=lambda: ['.mp4','.mov','.mkv','.avi','.webm'])
+        image_extensions: List[str] = field(default_factory=lambda: ['.png','.jpg','.jpeg','.webp','.bmp'])
+
+    @dataclass
+    class PostProcessing:
+        mask_fill_kernel_size: int = 5
+
+    @dataclass
+    class Visualization:
+        bbox_color: List[int] = field(default_factory=lambda: [255, 0, 0])
+        bbox_thickness: int = 2
+
+    @dataclass
+    class Analysis:
+        max_workers: int = 8
+        default_batch_size: int = 32
+        default_workers: int = 4
+
+    @dataclass
+    class ModelDefaults:
+        face_analyzer_det_size: List[int] = field(default_factory=lambda: [640, 640])
+
+    monitoring: Monitoring = field(default_factory=Monitoring)
+    export_options: ExportOptions = field(default_factory=ExportOptions)
+    gradio_defaults: GradioDefaults = field(default_factory=GradioDefaults)
+    seeding_defaults: SeedingDefaults = field(default_factory=SeedingDefaults)
+    utility_defaults: UtilityDefaults = field(default_factory=UtilityDefaults)
+    post_processing: PostProcessing = field(default_factory=PostProcessing)
+    visualization: Visualization = field(default_factory=Visualization)
+    analysis: Analysis = field(default_factory=Analysis)
+    model_defaults: ModelDefaults = field(default_factory=ModelDefaults)
+    config_path: Optional[str] = "config.yml"
+
+    def __post_init__(self):
+        # Start from a snapshot of the initialized defaults
+        config_dict = asdict(self)
+
+        # 2. Override with file config
+        config_p = Path(self.config_path) if self.config_path else None
+        if config_p and config_p.exists():
+            try:
+                with open(config_p, 'r', encoding='utf-8') as f:
+                    file_config = yaml.safe_load(f)
+                if file_config:
+                    self._merge_configs(config_dict, file_config)
+            except Exception as e:
+                # Log this instead of raising, so we can fall back to defaults
+                print(f"Warning: Could not load or parse {self.config_path}: {e}") # Replace with logger later
+
+        # 3. Override with environment variables
+        self._override_with_env_vars(config_dict)
+
+        # 4. Populate the dataclass from the final merged dictionary
+        self._from_dict(config_dict)
+
+        # 5. Create necessary directories
         self._create_dirs()
-
-    def _get_default_config(self) -> str:
-        return textwrap.dedent("""
-        # Central configuration for the Frame Extractor & Analyzer application.
-        # Precedence: Environment Variables > config.yml > Defaults.
-        
-        # --- Paths and Directories ---
-        paths:
-          logs: "logs"
-          models: "models"
-          downloads: "downloads"
-          grounding_dino_config: "Grounded-SAM-2/grounding_dino/groundingdino/config/GroundingDINO_SwinT_OGC.py"
-          grounding_dino_checkpoint: "models/groundingdino_swint_ogc.pth"
-
-        # --- Model URLs and Settings ---
-        models:
-          user_agent: "Mozilla/5.0"
-          grounding_dino: "https://github.com/IDEA-Research/GroundingDINO/releases/download/v0.1.0-alpha/groundingdino_swint_ogc.pth"
-          dam4sam:
-            "sam21pp-T": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt"
-            "sam21pp-S": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_small.pt"
-            "sam21pp-B+": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_base_plus.pt"
-            "sam21pp-L": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt"
-          yolo: "https://huggingface.co/Ultralytics/YOLO11/resolve/main/"
-
-        # --- Video Downloading ---
-        youtube_dl:
-          output_template: "%(id)s_%(title).40s_%(height)sp.%(ext)s"
-          format_string: "bestvideo[height<={max_res}][ext=mp4]+bestaudio[ext=m4a]/best[height<={max_res}][ext=mp4]/best"
-
-        # --- FFMPEG ---
-        ffmpeg:
-          log_level: "info"
-          thumbnail_quality: 80
-          scene_threshold: 0.4
-          fast_scene_threshold: 0.5
-
-        # --- Caching ---
-        cache:
-          size: 200
-          eviction_factor: 0.2
-          cleanup_threshold: 0.8
-
-        # --- Resource Management ---
-        resource_manager:
-          monitor_interval_seconds: 5
-          error_backoff_seconds: 10
-          history_cutoff_hours: 1
-          cpu_threshold_percent: 90
-          gpu_threshold_percent: 90
-          batch_size_reduction_factor: 0.7
-
-        # --- Error Handling & Retries ---
-        retry:
-          max_attempts: 3
-          backoff_seconds: [1, 5, 15]
-
-        # --- Quality Metric Scaling ---
-        quality_scaling:
-          entropy_normalization: 8.0
-          resolution_denominator: 500000
-          contrast_clamp: 2.0
-          niqe_offset: 10.0
-          niqe_scale_factor: 10.0
-        
-        # --- Masking Post-processing ---
-        masking:
-          keep_largest_only: True
-          close_kernel_size: 5
-          open_kernel_size: 5 # Example, can be tuned
-
-        # --- UI & Filter Defaults ---
-        ui_defaults:
-          thumbnails_only: True
-          thumb_megapixels: 0.5
-          scene_detect: True
-          max_resolution: "maximum available"
-          pre_analysis_enabled: True
-          pre_sample_nth: 5
-          enable_face_filter: True
-          face_model_name: "buffalo_l"
-          enable_subject_mask: True
-          dam4sam_model_name: "sam21pp-L"
-          person_detector_model: "yolo11x.pt"
-          primary_seed_strategy: "🤖 Automatic"
-          seed_strategy: "Largest Person"
-          text_prompt: ""
-          resume: False
-          require_face_match: False
-          enable_dedup: True
-          dedup_thresh: 5
-          method: "all"
-          interval: 5.0
-          fast_scene: False
-          use_png: True
-          nth_frame: 5
-          disable_parallel: False
-
-        # --- Filter Defaults ---
-        filter_defaults:
-          quality_score: { min: 0.0, max: 100.0, step: 0.5, default_min: 0.0, default_max: 100.0 }
-          sharpness: { min: 0.0, max: 100.0, step: 0.5, default_min: 0.0, default_max: 100.0 }
-          edge_strength: { min: 0.0, max: 100.0, step: 0.5, default_min: 0.0, default_max: 100.0 }
-          contrast: { min: 0.0, max: 100.0, step: 0.5, default_min: 0.0, default_max: 100.0 }
-          brightness: { min: 0.0, max: 100.0, step: 0.5, default_min: 0.0, default_max: 100.0 }
-          entropy: { min: 0.0, max: 100.0, step: 0.5, default_min: 0.0, default_max: 100.0 }
-          niqe: { min: 0.0, max: 100.0, step: 0.5, default_min: 0.0, default_max: 100.0 }
-          face_sim: { min: 0.0, max: 1.0, step: 0.01, default_min: 0.5 }
-          mask_area_pct: { min: 0.0, max: 100.0, step: 0.1, default_min: 1.0 }
-          dedup_thresh: { min: -1, max: 32, step: 1, default: -1 }
-
-        # --- Quality Metrics Configuration ---
-        quality_weights:
-          sharpness: 25
-          edge_strength: 15
-          contrast: 15
-          brightness: 10
-          entropy: 15
-          niqe: 20
-        
-        sharpness_base_scale: 2500
-        edge_strength_base_scale: 100
-        min_mask_area_pct: 1.0
-
-        # --- Grounded DINO/SAM2 Inference Parameters ---
-        grounding_dino_params:
-          box_threshold: 0.35
-          text_threshold: 0.25
-
-        # --- Person Detector Configuration ---
-        person_detector:
-          model: "yolo11x.pt"
-          imgsz: 640
-          conf: 0.3
-
-        # --- Monitoring ---
-        monitoring:
-          memory_warning_threshold_mb: 8192
-          memory_critical_threshold_mb: 16384
-          cpu_warning_threshold_percent: 90
-          gpu_memory_warning_threshold_percent: 90
-
-        # --- Performance & Caching ---
-        thumbnail_cache_size: 200
-        default_batch_size: 32
-        default_workers: 4
-        memory_limit_mb: 8192
-
-        # --- Export Options ---
-        export_options:
-          enable_crop: True
-          crop_padding: 1
-          crop_ars: "16:9,1:1,9:16"
-
-        # --- Gradio UI Options ---
-        gradio_defaults:
-          auto_pctl_input: 75
-          show_mask_overlay: True
-          overlay_alpha: 0.6
-
-        # --- Seeding Defaults ---
-        seeding_defaults:
-          face_similarity_threshold: 0.4
-          yolo_iou_threshold: 0.3
-          face_contain_score: 100
-          confidence_score_multiplier: 20
-          iou_bonus: 50
-          face_to_body_expansion_factors: [4.0, 7.0, 0.75]
-          final_fallback_box: [0.25, 0.25, 0.5, 0.5]
-
-        # --- General Utility Defaults ---
-        utility_defaults:
-          max_filename_length: 50
-          video_extensions: ['.mp4','.mov','.mkv','.avi','.webm']
-          image_extensions: ['.png','.jpg','.jpeg','.webp','.bmp']
-
-        # --- Post-processing Defaults ---
-        post_processing:
-          mask_fill_kernel_size: 5
-
-        # --- Visualization Defaults ---
-        visualization:
-          bbox_color: [255, 0, 0]
-          bbox_thickness: 2
-
-        # --- Analysis Defaults ---
-        analysis:
-          max_workers: 8
-
-        # --- Logging Defaults ---
-        logging:
-          log_level: "INFO"
-          log_format: '%(asctime)s | %(levelname)8s | %(name)s | %(message)s'
-          colored_logs: True
-          structured_log_path: "structured_log.jsonl"
-
-        # --- Model Defaults ---
-        model_defaults:
-          face_analyzer_det_size: [640, 640]
-
-        # --- CHOICES ---
-        choices:
-            max_resolution: ["maximum available", "2160", "1080", "720"]
-            extraction_method_toggle: ["Recommended Thumbnails", "Legacy Full-Frame"]
-            method: ["keyframes", "interval", "every_nth_frame", "all", "scene"]
-            primary_seed_strategy: ["👤 By Face", "📝 By Text", "🔄 Face + Text Fallback", "🤖 Automatic"]
-            seed_strategy: ["Largest Person", "Center-most Person"]
-            person_detector_model: ['yolo11x.pt', 'yolo11s.pt']
-            face_model_name: ["buffalo_l", "buffalo_s"]
-            dam4sam_model_name: ["sam21pp-T", "sam21pp-S", "sam21pp-B+", "sam21pp-L"]
-            gallery_view: ["Kept Frames", "Rejected Frames"]
-            log_level: ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'SUCCESS', 'CRITICAL']
-            scene_gallery_view: ["Kept", "Rejected", "All"]
-        """)
 
     def _merge_configs(self, base, override):
         for key, value in override.items():
             if isinstance(value, dict) and isinstance(base.get(key), dict):
-                self._merge_configs(base[key], value)
+                base[key] = self._merge_configs(base.get(key, {}), value)
             else:
                 base[key] = value
+        return base
 
     def _override_with_env_vars(self, config_dict, prefix='APP'):
         for key, value in config_dict.items():
@@ -444,34 +402,44 @@ class Config:
             return int(env_val)
         if isinstance(default_val, float):
             return float(env_val)
+        if isinstance(default_val, list):
+            return [self._coerce_type(v.strip(), default_val[0] if default_val else "") for v in env_val.split(',')]
         return env_val
 
     def _from_dict(self, data: Dict[str, Any]):
-        for key, value in data.items():
-            if isinstance(value, dict) and key in self.__annotations__:
-                field_type = self.__annotations__[key]
-                setattr(self, key, field_type(**value))
-            else:
-                setattr(self, key, value)
+        for f in fields(self):
+            if f.name in data:
+                field_data = data[f.name]
+                # Check if the field is a dataclass and the data is a dict
+                if is_dataclass(f.type) and isinstance(field_data, dict):
+                    # Get the existing nested dataclass instance
+                    nested_instance = getattr(self, f.name)
+                    # Create a new dictionary from the nested instance
+                    nested_data = asdict(nested_instance)
+                    # Merge the new data into the existing data
+                    self._merge_configs(nested_data, field_data)
+                    # Create a new instance from the merged data
+                    setattr(self, f.name, f.type(**nested_data))
+                else:
+                    setattr(self, f.name, field_data)
+        self._validate_config()
 
     def _validate_config(self):
-        # Basic validation to ensure essential keys exist.
-        # This can be expanded with more robust checks.
-        if sum(self.quality_weights.values()) == 0:
+        if sum(asdict(self.quality_weights).values()) == 0:
             raise ValueError("The sum of quality_weights cannot be zero.")
-        # Add more validation logic here, e.g., for paths, ranges, etc.
 
     def _create_dirs(self):
-        for dir_path in self.paths.__dict__.values():
-            try:
-                Path(dir_path).mkdir(exist_ok=True, parents=True)
-            except PermissionError as e:
-                raise RuntimeError(f"Cannot create directory at {dir_path}. Check permissions.") from e
+        for dir_path in asdict(self.paths).values():
+            if isinstance(dir_path, str):
+                try:
+                    Path(dir_path).mkdir(exist_ok=True, parents=True)
+                except PermissionError as e:
+                    raise RuntimeError(f"Cannot create directory at {dir_path}. Check permissions.") from e
 
     def save_config(self, path: str):
         """Saves the current (resolved) configuration to a YAML file."""
         with open(path, 'w', encoding='utf-8') as f:
-            yaml.dump(self.settings, f, default_flow_style=False, sort_keys=False)
+            yaml.dump(asdict(self), f, default_flow_style=False, sort_keys=False)
 
 
 # --- LOGGING ---
@@ -534,22 +502,22 @@ class PerformanceMonitor:
         return metrics
 
 class EnhancedLogger:
-    def __init__(self, config: 'Config' | None = None, log_dir: Optional[Path] = None,
+    def __init__(self, config: 'Config', log_dir: Optional[Path] = None,
                  enable_performance_monitoring: bool = True, log_to_file: bool = True,
                  log_to_console: bool = True):
-        self.config = config or Config()
+        self.config = config
         self.log_dir = log_dir or Path(self.config.paths.logs)
         self.log_dir.mkdir(exist_ok=True, parents=True)
         self.progress_queue = None
         self.performance_monitor = PerformanceMonitor() if enable_performance_monitoring else None
         self.session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.session_log_file = self.log_dir / f"session_{self.session_id}.log"
-        self.structured_log_file = self.log_dir / self.config.logging.get("structured_log_path", f"structured_{self.session_id}.jsonl")
+        self.structured_log_file = self.log_dir / self.config.logging.structured_log_path
         self.logger = logging.getLogger(f'enhanced_logger_{self.session_id}')
         self.logger.setLevel(logging.DEBUG)
         self.logger.propagate = False
         self.logger.handlers.clear()
-        if log_to_console and self.config.logging.get('colored_logs', True):
+        if log_to_console and self.config.logging.colored_logs:
             self._setup_console_handler()
         if log_to_file:
             self._setup_file_handlers()
@@ -558,14 +526,14 @@ class EnhancedLogger:
 
     def _setup_console_handler(self):
         console_handler = logging.StreamHandler()
-        console_formatter = ColoredFormatter(self.config.logging['log_format'])
+        console_formatter = ColoredFormatter(self.config.logging.log_format)
         console_handler.setFormatter(console_formatter)
-        console_handler.setLevel(self.config.logging['log_level'])
+        console_handler.setLevel(self.config.logging.log_level)
         self.logger.addHandler(console_handler)
 
     def _setup_file_handlers(self):
         file_handler = logging.FileHandler(self.session_log_file, encoding='utf-8')
-        file_formatter = logging.Formatter(self.config.logging['log_format'])
+        file_formatter = logging.Formatter(self.config.logging.log_format)
         file_handler.setFormatter(file_formatter)
         file_handler.setLevel(logging.DEBUG)
         self.logger.addHandler(file_handler)
@@ -795,7 +763,7 @@ class SessionLoadEvent(UIEvent):
 # --- UTILS ---
 
 def sanitize_filename(name, config: 'Config', max_length=None):
-    max_length = max_length or config.utility_defaults['max_filename_length']
+    max_length = max_length or config.utility_defaults.max_filename_length
     return re.sub(r'[^\w\-_.]', '_', name)[:max_length]
 
 def _coerce(val, to_type):
@@ -834,8 +802,8 @@ def _sanitize_face_ref(runconfig: dict, logger) -> tuple[str, bool]:
     if not ref:
         logger.info("No face reference in session; face similarity disabled on load.", component="session_loader")
         return "", False
-    bad_exts = set(logger.config.utility_defaults['video_extensions'])
-    img_exts = set(logger.config.utility_defaults['image_extensions'])
+    bad_exts = set(logger.config.utility_defaults.video_extensions)
+    img_exts = set(logger.config.utility_defaults.image_extensions)
     p = Path(ref)
     if ref == vid or p.suffix.lower() in bad_exts:
         logger.warning("Reference path appears to be a video or equals video_path; clearing safely.", component="session_loader")
@@ -905,7 +873,7 @@ class Frame:
                 mask_full = cv2.resize(mask, (gray_full.shape[1], gray_full.shape[0]), interpolation=cv2.INTER_NEAREST)
                 active_mask_full = (mask_full > 128).astype(np.uint8)
             hist = cv2.calcHist([gray_full], [0], active_mask_full, [256], [0, 256]).flatten()
-            entropy = compute_entropy(hist)
+            entropy = compute_entropy(hist, main_config.quality_scaling.entropy_normalization)
             niqe_score = 0.0
             if quality_config.enable_niqe and niqe_metric is not None:
                 try:
@@ -926,7 +894,11 @@ class Frame:
             self.metrics = FrameMetrics(**{f"{k}_score": float(v * 100) for k, v in scores_norm.items()})
             # The quality_weights are part of the main config, not QualityConfig, so we'll need to pass them separately or access them differently.
             if main_config:
-                quality_sum = sum(scores_norm[k] * (main_config.quality_weights[k] / 100.0) for k in main_config.QUALITY_METRICS)
+                weights = asdict(main_config.quality_weights)
+                quality_sum = sum(
+                    scores_norm[k] * (weights[k] / 100.0)
+                    for k in scores_norm.keys() if k in weights
+                )
                 self.metrics.quality_score = float(quality_sum * 100)
         except Exception as e:
             self.error = f"Quality calc failed: {e}"
@@ -1001,7 +973,7 @@ class AnalysisParameters:
             thumb_mp = kwargs['thumb_megapixels']
             if not isinstance(thumb_mp, (int, float)) or thumb_mp <= 0:
                 logger.warning(f"Invalid thumb_megapixels: {thumb_mp}, using default")
-                kwargs['thumb_megapixels'] = config.ui_defaults['thumb_megapixels']
+                kwargs['thumb_megapixels'] = config.ui_defaults.thumb_megapixels
 
         if 'pre_sample_nth' in kwargs:
             sample_nth = kwargs['pre_sample_nth']
@@ -1010,7 +982,7 @@ class AnalysisParameters:
                 kwargs['pre_sample_nth'] = 1
 
         valid_keys = {f.name for f in fields(cls)}
-        filtered_defaults = {k: v for k, v in config.ui_defaults.items() if k in valid_keys}
+        filtered_defaults = {k: v for k, v in asdict(config.ui_defaults).items() if k in valid_keys}
         instance = cls(**filtered_defaults)
         for key, value in kwargs.items():
             if hasattr(instance, key) and value is not None and value != '':
@@ -1040,11 +1012,13 @@ class MaskingResult:
 # --- BASE PIPELINE ---
 
 class Pipeline:
-    def __init__(self, params, progress_queue: Queue, cancel_event: threading.Event, logger: EnhancedLogger = None):
+    def __init__(self, config: 'Config', logger: 'EnhancedLogger', params: 'AnalysisParameters',
+                 progress_queue: Queue, cancel_event: threading.Event):
+        self.config = config
+        self.logger = logger
         self.params = params
         self.progress_queue = progress_queue
         self.cancel_event = cancel_event
-        self.logger = logger or EnhancedLogger()
 
 # --- CACHING & OPTIMIZATION ---
 
@@ -1110,9 +1084,9 @@ class AdaptiveResourceManager:
         self.logger = logger
         self.config = config
         self.monitoring_active = False
-        self.current_limits = {'batch_size': self.config.default_batch_size,
-                               'num_workers': self.config.default_workers,
-                               'memory_limit_mb': self.config.memory_limit_mb}
+        self.current_limits = {'batch_size': self.config.analysis.default_batch_size,
+                               'num_workers': self.config.analysis.default_workers,
+                               'memory_limit_mb': self.config.monitoring.memory_limit_mb}
         self.performance_history = []
         self._monitor_thread = None
 
@@ -1157,12 +1131,9 @@ class AdaptiveResourceManager:
         return metrics
 
     def _adjust_parameters(self, metrics: Dict[str, Any]):
-        monitoring_config = self.config.settings.get('monitoring', {})
         mem_used = metrics['process_memory_mb']
-        mem_crit = monitoring_config.get('memory_critical_threshold_mb', 16384)
-        mem_warn = monitoring_config.get('memory_warning_threshold_mb', 8192)
 
-        if mem_used > mem_crit:
+        if mem_used > self.config.monitoring.memory_critical_threshold_mb:
             if self.current_limits['batch_size'] > 1:
                 old_batch = self.current_limits['batch_size']
                 self.current_limits['batch_size'] = 1 # Aggressive reduction
@@ -1170,21 +1141,21 @@ class AdaptiveResourceManager:
                                      component="resource_manager", custom_fields={'memory_mb': mem_used})
                 gc.collect()
                 if torch.cuda.is_available(): torch.cuda.empty_cache()
-        elif mem_used > mem_warn:
+        elif mem_used > self.config.monitoring.memory_warning_threshold_mb:
             if self.current_limits['batch_size'] > 1:
                 old_batch_size = self.current_limits['batch_size']
-                self.current_limits['batch_size'] = max(1, int(old_batch_size * 0.7))
+                self.current_limits['batch_size'] = max(1, int(old_batch_size * self.config.resource_manager.batch_size_reduction_factor))
                 self.logger.warning(f"High memory usage detected, reducing batch size from {old_batch_size} to {self.current_limits['batch_size']}",
                                     component="resource_manager", custom_fields={'memory_mb': metrics['process_memory_mb']})
                 gc.collect()
 
-        if metrics['cpu_percent'] > monitoring_config.get('cpu_warning_threshold_percent', 90):
+        if metrics['cpu_percent'] > self.config.monitoring.cpu_warning_threshold_percent:
             if self.current_limits['num_workers'] > 1:
                 old_workers = self.current_limits['num_workers']
-                self.current_limits['num_workers'] = max(1, int(old_workers * 0.8))
+                self.current_limits['num_workers'] = max(1, int(old_workers * self.config.resource_manager.batch_size_reduction_factor))
                 self.logger.warning(f"High CPU usage detected, reducing workers from {old_workers} to {self.current_limits['num_workers']}",
                                     component="resource_manager", custom_fields={'cpu_percent': metrics['cpu_percent']})
-        if 'gpu_memory_percent' in metrics and metrics['gpu_memory_percent'] > monitoring_config.get('gpu_memory_warning_threshold_percent', 90):
+        if 'gpu_memory_percent' in metrics and metrics['gpu_memory_percent'] > self.config.monitoring.gpu_memory_warning_threshold_percent:
             self.logger.warning("High GPU memory usage detected, consider reducing batch size or switching to CPU",
                                 component="resource_manager", custom_fields={'gpu_memory_percent': metrics['gpu_memory_percent']})
 
@@ -1224,7 +1195,7 @@ def get_face_analyzer(model_name, config: 'Config', logger: 'EnhancedLogger'):
         device = "cuda" if torch.cuda.is_available() else "cpu"
         providers = (['CUDAExecutionProvider', 'CPUExecutionProvider'] if device == 'cuda' else ['CPUExecutionProvider'])
         analyzer = FaceAnalysis(name=model_name, root=str(config.paths.models), providers=providers)
-        analyzer.prepare(ctx_id=0 if device == 'cuda' else -1, det_size=tuple(config.model_defaults['face_analyzer_det_size']))
+        analyzer.prepare(ctx_id=0 if device == 'cuda' else -1, det_size=tuple(config.model_defaults.face_analyzer_det_size))
         logger.success(f"Face model loaded with {'CUDA' if device == 'cuda' else 'CPU'}.")
         return analyzer
     except Exception as e:
@@ -1235,28 +1206,36 @@ def get_face_analyzer(model_name, config: 'Config', logger: 'EnhancedLogger'):
                 # Retry with CPU
                 analyzer = FaceAnalysis(name=model_name, root=str(config.paths.models),
                                       providers=['CPUExecutionProvider'])
-                analyzer.prepare(ctx_id=-1, det_size=tuple(config.model_defaults['face_analyzer_det_size']))
+                analyzer.prepare(ctx_id=-1, det_size=tuple(config.model_defaults.face_analyzer_det_size))
                 return analyzer
             except Exception as cpu_e:
                 logger.error(f"CPU fallback also failed: {cpu_e}")
         raise RuntimeError(f"Could not initialize face analysis model. Error: {e}") from e
 
 class PersonDetector:
-    def __init__(self, model=None, imgsz=None, conf=None, device='cuda', config=None, logger=None):
+    def __init__(self, config: 'Config', logger: 'EnhancedLogger', model: Optional[str] = None,
+                 imgsz: Optional[int] = None, conf: Optional[float] = None, device: str = 'cuda'):
         from ultralytics import YOLO
-        self.config = config or Config()
-        self.logger = logger or EnhancedLogger()
+        self.config = config
+        self.logger = logger
         error_handler = ErrorHandler(self.logger, self.config)
-        model_path = Path(self.config.paths.models) / (model or self.config.person_detector['model'])
+
+        model_name = model or self.config.person_detector.model
+        model_path = Path(self.config.paths.models) / model_name
         model_path.parent.mkdir(exist_ok=True)
-        model_url = f"{self.config.models.yolo}{model or self.config.person_detector['model']}"
+
+        model_url = f"{self.config.models.yolo}{model_name}"
         download_model(model_url, model_path, "YOLO person detector", self.logger, error_handler, config=self.config)
+
         self.device = device if torch.cuda.is_available() else 'cpu'
         self.model = YOLO(str(model_path))
         self.model.to(self.device)
-        self.imgsz = imgsz or self.config.person_detector['imgsz']
-        self.conf = conf or self.config.person_detector['conf']
-        self.logger.info("YOLO person detector loaded", component="person_detector", user_context={'device': self.device, 'model': model or self.config.person_detector['model']})
+
+        self.imgsz = imgsz or self.config.person_detector.imgsz
+        self.conf = conf or self.config.person_detector.conf
+
+        self.logger.info("YOLO person detector loaded", component="person_detector",
+                         custom_fields={'device': self.device, 'model': model_name})
 
     def detect_boxes(self, img_rgb):
         res = self.model.predict(img_rgb, imgsz=self.imgsz, conf=self.conf, classes=[0], verbose=False, device=self.device)
@@ -1267,10 +1246,9 @@ class PersonDetector:
         ]
 
 @lru_cache(maxsize=None)
-def get_person_detector(model_name, device, config: 'Config', logger=None):
-    logger = logger or EnhancedLogger()
+def get_person_detector(model_name: str, device: str, config: 'Config', logger: 'EnhancedLogger'):
     logger.info(f"Loading or getting cached person detector: {model_name}", component="person_detector")
-    return PersonDetector(model=model_name, device=device, config=config, logger=logger)
+    return PersonDetector(config=config, logger=logger, model=model_name, device=device)
 
 @lru_cache(maxsize=None)
 def get_grounding_dino_model(gdino_config_path: str, gdino_checkpoint_path: str, config: 'Config', device="cuda", logger=None):
@@ -1349,7 +1327,7 @@ class VideoManager:
     def __init__(self, source_path: str, config: 'Config', max_resolution: Optional[str] = None):
         self.source_path = source_path
         self.config = config
-        self.max_resolution = max_resolution or self.config.ui_defaults['max_resolution']
+        self.max_resolution = max_resolution or self.config.ui_defaults.max_resolution
         self.is_youtube = ("youtube.com/" in source_path or "youtu.be/" in source_path)
 
     def prepare_video(self, logger: 'EnhancedLogger') -> str:
@@ -1403,7 +1381,7 @@ def run_scene_detection(video_path, output_dir, logger=None):
 
 def run_ffmpeg_extraction(video_path, output_dir, video_info, params, progress_queue, cancel_event, logger: 'EnhancedLogger', config: 'Config'):
     log_file_path = output_dir / "ffmpeg_log.txt"
-    cmd_base = ['ffmpeg', '-y', '-i', str(video_path), '-hide_banner', '-loglevel', config.ffmpeg['log_level']]
+    cmd_base = ['ffmpeg', '-y', '-i', str(video_path), '-hide_banner', '-loglevel', config.ffmpeg.log_level]
     if params.thumbnails_only:
         thumb_dir = output_dir / "thumbs"
         thumb_dir.mkdir(exist_ok=True)
@@ -1413,10 +1391,10 @@ def run_ffmpeg_extraction(video_path, output_dir, video_info, params, progress_q
         vf_scale = f"scale=w=trunc(iw*{scale_factor}/2)*2:h=trunc(ih*{scale_factor}/2)*2"
         fps = video_info.get('fps', 30)
         vf_filter = f"fps={fps},{vf_scale},showinfo"
-        cmd = cmd_base + ['-vf', vf_filter, '-c:v', 'libwebp', '-lossless', '0', '-quality', str(config.ffmpeg['thumbnail_quality']), '-vsync', 'vfr', str(thumb_dir / "frame_%06d.webp")]
+        cmd = cmd_base + ['-vf', vf_filter, '-c:v', 'libwebp', '-lossless', '0', '-quality', str(config.ffmpeg.thumbnail_quality), '-vsync', 'vfr', str(thumb_dir / "frame_%06d.webp")]
     else:
         select_filter_map = {'interval': f"fps=1/{max(0.1, float(params.interval))}", 'keyframes': "select='eq(pict_type,I)'",
-                             'scene': f"select='gt(scene,{config.ffmpeg['fast_scene_threshold'] if params.fast_scene else config.ffmpeg['scene_threshold']})'", 'all': f"fps={video_info.get('fps', 30)}",
+                             'scene': f"select='gt(scene,{config.ffmpeg.fast_scene_threshold if params.fast_scene else config.ffmpeg.scene_threshold})'", 'all': f"fps={video_info.get('fps', 30)}",
                              'every_nth_frame': f"select='not(mod(n,{max(1, int(params.nth_frame))}))'"}
         select_filter = select_filter_map.get(params.method)
         vf_filter = (select_filter + ",showinfo") if select_filter else "showinfo"
@@ -1506,13 +1484,13 @@ class MaskPropagator:
                 if self.cancel_event.is_set(): break
                 outputs = self.dam_tracker.track(rgb_to_pil(shot_frames_rgb[i]))
                 mask = outputs.get('pred_mask')
-                if mask is not None: mask = postprocess_mask((mask * 255).astype(np.uint8), fill_holes=True, keep_largest_only=True)
+                if mask is not None: mask = postprocess_mask((mask * 255).astype(np.uint8), config=self.config, fill_holes=True, keep_largest_only=True)
                 masks[i] = mask if mask is not None else np.zeros_like(shot_frames_rgb[i], dtype=np.uint8)[:, :, 0]
         try:
             with torch.cuda.amp.autocast(enabled=self._device == 'cuda'):
                 outputs = self.dam_tracker.initialize(rgb_to_pil(shot_frames_rgb[seed_idx]), None, bbox=bbox_xywh)
                 mask = outputs.get('pred_mask')
-                if mask is not None: mask = postprocess_mask((mask * 255).astype(np.uint8), fill_holes=True, keep_largest_only=True)
+                if mask is not None: mask = postprocess_mask((mask * 255).astype(np.uint8), config=self.config, fill_holes=True, keep_largest_only=True)
                 masks[seed_idx] = mask if mask is not None else np.zeros_like(shot_frames_rgb[seed_idx], dtype=np.uint8)[:, :, 0]
                 _propagate_direction(seed_idx + 1, len(shot_frames_rgb), 1)
                 self.dam_tracker.initialize(rgb_to_pil(shot_frames_rgb[seed_idx]), None, bbox=bbox_xywh)
@@ -1535,8 +1513,9 @@ class MaskPropagator:
             return ([np.zeros((h, w), np.uint8)] * num_frames, [0.0] * num_frames, [True] * num_frames, [error_msg] * num_frames)
 
 class SeedSelector:
-    def __init__(self, params, face_analyzer, reference_embedding, person_detector, tracker, gdino_model, logger=None):
+    def __init__(self, params, config: 'Config', face_analyzer, reference_embedding, person_detector, tracker, gdino_model, logger=None):
         self.params = params
+        self.config = config
         self.face_analyzer = face_analyzer
         self.reference_embedding = reference_embedding
         self.person_detector = person_detector
@@ -1747,7 +1726,7 @@ class SeedSelector:
         try:
             outputs = self.tracker.initialize(rgb_to_pil(frame_rgb_small), None, bbox=bbox_xywh)
             mask = outputs.get('pred_mask')
-            if mask is not None: mask = postprocess_mask((mask * 255).astype(np.uint8), fill_holes=True, keep_largest_only=True)
+            if mask is not None: mask = postprocess_mask((mask * 255).astype(np.uint8), config=self.config, fill_holes=True, keep_largest_only=True)
             return mask
         except (torch.cuda.OutOfMemoryError, RuntimeError) as e:
             self.logger.warning(f"GPU error in mask generation: {e}")
@@ -1870,8 +1849,8 @@ class SubjectMasker:
     def get_seed_for_frame(self, frame_rgb: np.ndarray, seed_config: dict): return self.seed_selector.select_seed(frame_rgb, current_params=seed_config)
     def get_mask_for_bbox(self, frame_rgb_small, bbox_xywh): return self.seed_selector._sam2_mask_for_bbox(frame_rgb_small, bbox_xywh)
     def draw_bbox(self, img_rgb, xywh, color=None, thickness=None):
-        color = color or tuple(self.config.visualization['bbox_color'])
-        thickness = thickness or self.config.visualization['bbox_thickness']
+        color = color or tuple(self.config.visualization.bbox_color)
+        thickness = thickness or self.config.visualization.bbox_thickness
         x, y, w, h = map(int, xywh or [0, 0, 0, 0])
         img_out = img_rgb.copy()
         cv2.rectangle(img_out, (x, y), (x + w, y + h), color, thickness)
@@ -1880,14 +1859,10 @@ class SubjectMasker:
 # --- PIPELINES ---
 
 class ExtractionPipeline(Pipeline):
-    def __init__(self, params, progress_queue, cancel_event, logger=None):
-        super().__init__(params, progress_queue, cancel_event, logger)
-        self.config = None
-
     def run(self):
         self.logger.info("Preparing video source...")
-        vid_manager = VideoManager(self.params.source_path, self.params.max_resolution)
-        video_path = Path(vid_manager.prepare_video(self.config, self.logger))
+        vid_manager = VideoManager(self.params.source_path, self.config, self.params.max_resolution)
+        video_path = Path(vid_manager.prepare_video(self.logger))
         output_dir = Path(self.config.paths.downloads) / video_path.stem
         output_dir.mkdir(exist_ok=True, parents=True)
 
@@ -1912,26 +1887,26 @@ class ExtractionPipeline(Pipeline):
     def _run_ffmpeg(self, video_path, output_dir, video_info): return run_ffmpeg_extraction(video_path, output_dir, video_info, self.params, self.progress_queue, self.cancel_event, self.logger, self.config)
 
 class EnhancedExtractionPipeline(ExtractionPipeline):
-    def __init__(self, params, progress_queue, cancel_event, config: 'Config', logger=None):
-        super().__init__(params, progress_queue, cancel_event, logger)
-        self.config = config
+    def __init__(self, config: 'Config', logger: 'EnhancedLogger', params: 'AnalysisParameters',
+                 progress_queue: Queue, cancel_event: threading.Event):
+        super().__init__(config, logger, params, progress_queue, cancel_event)
         self.error_handler = ErrorHandler(self.logger, self.config)
-        self.run = self.error_handler.with_retry(
-            max_attempts=self.config.retry['max_attempts'],
-            backoff_seconds=self.config.retry['backoff_seconds']
-        )(self.run)
+        self.run = self.error_handler.with_retry()(self.run)
 
 class AnalysisPipeline(Pipeline):
-    def __init__(self, params, progress_queue, cancel_event, config: 'Config', thumbnail_manager=None, logger=None):
-        super().__init__(params, progress_queue, cancel_event, logger=logger)
-        self.config, self.output_dir = config, Path(self.params.output_folder)
-        self.thumb_dir, self.masks_dir = self.output_dir / "thumbs", self.output_dir / "masks"
-        self.frame_map_path, self.metadata_path = self.output_dir / "frame_map.json", self.output_dir / "metadata.jsonl"
+    def __init__(self, config: 'Config', logger: 'EnhancedLogger', params: 'AnalysisParameters',
+                 progress_queue: Queue, cancel_event: threading.Event,
+                 thumbnail_manager: 'ThumbnailManager'):
+        super().__init__(config, logger, params, progress_queue, cancel_event)
+        self.output_dir = Path(self.params.output_folder)
+        self.thumb_dir = self.output_dir / "thumbs"
+        self.masks_dir = self.output_dir / "masks"
+        self.metadata_path = self.output_dir / "metadata.jsonl"
         self.processing_lock = threading.Lock()
         self.face_analyzer, self.reference_embedding, self.mask_metadata = None, None, {}
         self.scene_map, self.niqe_metric = {}, None
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.thumbnail_manager = thumbnail_manager if thumbnail_manager is not None else ThumbnailManager(self.logger)
+        self.thumbnail_manager = thumbnail_manager
 
     def _initialize_niqe_metric(self):
         if self.niqe_metric is None:
@@ -2111,7 +2086,8 @@ def histogram_svg(hist_data, title="", logger=None):
 def apply_all_filters_vectorized(all_frames_data, filters, config: 'Config'):
     if not all_frames_data: return [], [], Counter(), {}
     num_frames, filenames = len(all_frames_data), [f['filename'] for f in all_frames_data]
-    metric_arrays = {k: np.array([f.get("metrics", {}).get(f"{k}_score", np.nan) for f in all_frames_data], dtype=np.float32) for k in config.QUALITY_METRICS}
+    quality_metric_keys = asdict(config.quality_weights).keys()
+    metric_arrays = {k: np.array([f.get("metrics", {}).get(f"{k}_score", np.nan) for f in all_frames_data], dtype=np.float32) for k in quality_metric_keys}
     metric_arrays.update({"face_sim": np.array([f.get("face_sim", np.nan) for f in all_frames_data], dtype=np.float32),
                           "mask_area_pct": np.array([f.get("mask_area_pct", np.nan) for f in all_frames_data], dtype=np.float32)})
     kept_mask, reasons, dedup_mask = np.ones(num_frames, dtype=bool), defaultdict(list), np.ones(num_frames, dtype=bool)
@@ -2123,7 +2099,7 @@ def apply_all_filters_vectorized(all_frames_data, filters, config: 'Config'):
                 if dedup_mask[c_idx]: reasons[filenames[c_idx]].append('duplicate')
                 dedup_mask[c_idx] = False
     metric_filter_mask = np.ones(num_frames, dtype=bool)
-    for k in config.QUALITY_METRICS:
+    for k in quality_metric_keys:
         min_v, max_v = filters.get(f"{k}_min", 0), filters.get(f"{k}_max", 100)
         metric_filter_mask &= (np.nan_to_num(metric_arrays[k], nan=min_v) >= min_v) & (np.nan_to_num(metric_arrays[k], nan=max_v) <= max_v)
     if filters.get("face_sim_enabled"):
@@ -2137,7 +2113,7 @@ def apply_all_filters_vectorized(all_frames_data, filters, config: 'Config'):
     kept_mask = dedup_mask & metric_filter_mask
     metric_rejection_mask = ~metric_filter_mask & dedup_mask
     for i in np.where(metric_rejection_mask)[0]:
-        for k in config.QUALITY_METRICS:
+        for k in quality_metric_keys:
             min_v, max_v = filters.get(f"{k}_min", 0), filters.get(f"{k}_max", 100)
             if not (min_v <= metric_arrays[k][i] <= max_v): reasons[filenames[i]].append(f"{k}_{'low' if metric_arrays[k][i] < min_v else 'high'}")
         if filters.get("face_sim_enabled"):
@@ -2184,14 +2160,14 @@ def reset_filters(all_frames_data, per_metric_values, output_dir, config, slider
     output_values, slider_default_values = {}, []
     for key in slider_keys:
         metric_key, default_key = re.sub(r'_(min|max)$', '', key), 'default_max' if key.endswith('_max') else 'default_min'
-        default_val = config.filter_defaults[metric_key][default_key]
+        default_val = getattr(config.filter_defaults, metric_key)[default_key]
         output_values[f'slider_{key}'] = gr.update(value=default_val)
         slider_default_values.append(default_val)
-    face_match_default, dedup_default = config.ui_defaults['require_face_match'], config.filter_defaults['dedup_thresh']['default']
+    face_match_default, dedup_default = config.ui_defaults.require_face_match, config.filter_defaults.dedup_thresh['default']
     output_values.update({'require_face_match_input': gr.update(value=face_match_default), 'dedup_thresh_input': gr.update(value=dedup_default)})
     if all_frames_data:
         slider_defaults_dict = {key: val for key, val in zip(slider_keys, slider_default_values)}
-        filter_event = FilterEvent(all_frames_data, per_metric_values, output_dir, "Kept Frames", config.gradio_defaults['show_mask_overlay'], config.gradio_defaults['overlay_alpha'], face_match_default, dedup_default, slider_defaults_dict)
+        filter_event = FilterEvent(all_frames_data, per_metric_values, output_dir, "Kept Frames", config.gradio_defaults.show_mask_overlay, config.gradio_defaults.overlay_alpha, face_match_default, dedup_default, slider_defaults_dict)
         updates = on_filters_changed(filter_event, thumbnail_manager, config)
         output_values.update({'filter_status_text': updates['filter_status_text'], 'results_gallery': updates['results_gallery']})
     else:
@@ -2311,7 +2287,7 @@ def execute_extraction(event: ExtractionEvent, progress_queue: Queue, cancel_eve
         shutil.copy2(source, dest)
         params_dict['source_path'] = dest
     params = AnalysisParameters.from_ui(logger, config, **params_dict)
-    pipeline = EnhancedExtractionPipeline(params, progress_queue, cancel_event, config, logger)
+    pipeline = EnhancedExtractionPipeline(config, logger, params, progress_queue, cancel_event)
     result = pipeline.run()
     if result and result.get("done"):
         yield {"log": "Extraction complete.", "status": f"Output: {result['output_dir']}",
@@ -2560,7 +2536,16 @@ def execute_propagation(event: PropagationEvent, progress_queue: Queue, cancel_e
     if not scenes_to_process:
         yield {"log": "No scenes were included for propagation.", "status": "Propagation skipped."}
         return
-    params, pipeline = AnalysisParameters.from_ui(logger, config, **asdict(event.analysis_params)), AnalysisPipeline(AnalysisParameters.from_ui(logger, config, **asdict(event.analysis_params)), progress_queue, cancel_event, config, thumbnail_manager=thumbnail_manager, logger=logger)
+
+    params = AnalysisParameters.from_ui(logger, config, **asdict(event.analysis_params))
+    pipeline = AnalysisPipeline(
+        config=config,
+        logger=logger,
+        params=params,
+        progress_queue=progress_queue,
+        cancel_event=cancel_event,
+        thumbnail_manager=thumbnail_manager
+    )
     result = pipeline.run_full_analysis(scenes_to_process)
     if result and result.get("done"):
         yield {"log": "Propagation and analysis complete.", "status": f"Metadata saved to {result['metadata_path']}",
@@ -2571,9 +2556,9 @@ def scene_matches_view(scene: dict, view: str) -> bool:
     status = scene.get('status', 'pending')
     if view == "All":
         return status in ("included", "excluded", "pending")
-    if view == config.choices['scene_gallery_view'][0]:
+    if view == config.choices.scene_gallery_view[0]:
         return status == "included"
-    if view == config.choices['scene_gallery_view'][1]:
+    if view == config.choices.scene_gallery_view[1]:
         return status == "excluded"
     return False
 
@@ -2624,13 +2609,14 @@ def build_scene_gallery_items(scenes: list[dict], view: str, output_dir: str):
 # --- UI ---
 
 class AppUI:
-    def __init__(self, config=None, logger=None, progress_queue=None, cancel_event=None, thumbnail_manager=None):
-        self.config = config or Config()
-        self.logger = logger or EnhancedLogger()
-        self.progress_queue = progress_queue or Queue()
-        self.cancel_event = cancel_event or threading.Event()
+    def __init__(self, config: 'Config', logger: 'EnhancedLogger', progress_queue: Queue,
+                 cancel_event: threading.Event, thumbnail_manager: 'ThumbnailManager'):
+        self.config = config
+        self.logger = logger
+        self.progress_queue = progress_queue
+        self.cancel_event = cancel_event
+        self.thumbnail_manager = thumbnail_manager
         self.components, self.cuda_available = {}, torch.cuda.is_available()
-        self.thumbnail_manager = thumbnail_manager or ThumbnailManager(logger=self.logger, max_size=self.config.thumbnail_cache_size)
         self.ext_ui_map_keys = ['source_path', 'upload_video', 'method', 'interval', 'nth_frame', 'fast_scene',
                                 'max_resolution', 'use_png', 'extraction_method_toggle', 'thumb_megapixels', 'scene_detect']
         self.ana_ui_map_keys = ['output_folder', 'video_path', 'resume', 'enable_face_filter', 'face_ref_img_path', 'face_ref_img_upload',
@@ -2690,46 +2676,46 @@ class AppUI:
         gr.Markdown("### Step 1: Provide a Video Source")
         with gr.Row():
             with gr.Column(scale=2): self._create_component('source_input', 'textbox', {'label': "Video URL or Local Path", 'placeholder': "Enter YouTube URL or local video file path"})
-            with gr.Column(scale=1): self._create_component('max_resolution', 'dropdown', {'choices': self.config.choices['max_resolution'], 'value': self.config.ui_defaults['max_resolution'], 'label': "Download Resolution"})
+            with gr.Column(scale=1): self._create_component('max_resolution', 'dropdown', {'choices': self.config.choices.max_resolution, 'value': self.config.ui_defaults.max_resolution, 'label': "Download Resolution"})
         self._create_component('upload_video_input', 'file', {'label': "Or Upload a Video File", 'file_types': ["video"], 'type': "filepath"})
         gr.Markdown("---"); gr.Markdown("### Step 2: Configure Extraction Method")
         # Toggle between Recommended Thumbnails and Legacy Full-Frame
         self._create_component('extraction_method_toggle_input', 'radio', {
             'label': "Extraction Method",
-            'choices': self.config.choices['extraction_method_toggle'],
-            'value': "Recommended Thumbnails" if self.config.ui_defaults.get('thumbnails_only', True) else "Legacy Full-Frame"
+            'choices': self.config.choices.extraction_method_toggle,
+            'value': "Recommended Thumbnails" if self.config.ui_defaults.thumbnails_only else "Legacy Full-Frame"
         })
 
         # Recommended (thumbnails) group
-        with gr.Group(visible=self.config.ui_defaults.get('thumbnails_only', True)) as thumbnail_group:
+        with gr.Group(visible=self.config.ui_defaults.thumbnails_only) as thumbnail_group:
             self.components['thumbnail_group'] = thumbnail_group
             gr.Markdown("Recommended Method: This is the fastest and most efficient method. It extracts lightweight thumbnails for scene analysis, allowing you to quickly find the best frames before extracting full-resolution images.")
             self._create_component('thumb_megapixels_input', 'slider', {
                 'label': "Thumbnail Size (MP)", 'minimum': 0.1, 'maximum': 2.0, 'step': 0.1,
-                'value': self.config.ui_defaults.get('thumb_megapixels', 0.5)
+                'value': self.config.ui_defaults.thumb_megapixels
             })
             self._create_component('ext_scene_detect_input', 'checkbox', {
                 'label': "Use Scene Detection (Recommended)",
-                'value': self.config.ui_defaults.get('scene_detect', True)
+                'value': self.config.ui_defaults.scene_detect
             })
 
         # Legacy (full‑frame) group
-        with gr.Group(visible=not self.config.ui_defaults.get('thumbnails_only', True)) as legacy_group:
+        with gr.Group(visible=not self.config.ui_defaults.thumbnails_only) as legacy_group:
             self.components['legacy_group'] = legacy_group
             gr.Markdown("Legacy Method: This extracts full‑resolution frames directly, which can be slow and generate many files. Use only if you have specific needs and understand the performance implications.")
             self._create_component('method_input', 'dropdown', {
-                'choices': self.config.choices['method'],
-                'value': self.config.ui_defaults.get('method', 'scene'),
+                'choices': self.config.choices.method,
+                'value': self.config.ui_defaults.method,
                 'label': "Extraction Method"
             })
             self._create_component('interval_input', 'textbox', {
                 'label': "Interval (seconds)",
-                'value': self.config.ui_defaults.get('interval', 5.0),
+                'value': self.config.ui_defaults.interval,
                 'visible': False
             })
             self._create_component('nth_frame_input', 'textbox', {
                 'label': "N-th Frame Value",
-                'value': self.config.ui_defaults.get("nth_frame", 5),
+                'value': self.config.ui_defaults.nth_frame,
                 'visible': False
             })
             self._create_component('fast_scene_input', 'checkbox', {
@@ -2738,7 +2724,7 @@ class AppUI:
             })
             self._create_component('use_png_input', 'checkbox', {
                 'label': "Save as PNG (slower, larger files)",
-                'value': self.config.ui_defaults.get('use_png', False)
+                'value': self.config.ui_defaults.use_png
             })
         gr.Markdown("---"); gr.Markdown("### Step 3: Start Extraction")
         self.components.update({'start_extraction_button': gr.Button("🚀 Start Extraction", variant="primary")})
@@ -2747,31 +2733,31 @@ class AppUI:
         with gr.Row():
             with gr.Column(scale=1):
                 gr.Markdown("### 🎯 Step 1: Choose Your Seeding Strategy")
-                self._create_component('primary_seed_strategy_input', 'radio', {'choices': self.config.choices['primary_seed_strategy'], 'value': self.config.ui_defaults['primary_seed_strategy'], 'label': "Primary Seeding Strategy"})
-                with gr.Group(visible=(self.config.ui_defaults['primary_seed_strategy'] == "👤 By Face" or self.config.ui_defaults['primary_seed_strategy'] == "🔄 Face + Text Fallback")) as face_seeding_group:
+                self._create_component('primary_seed_strategy_input', 'radio', {'choices': self.config.choices.primary_seed_strategy, 'value': self.config.ui_defaults.primary_seed_strategy, 'label': "Primary Seeding Strategy"})
+                with gr.Group(visible=(self.config.ui_defaults.primary_seed_strategy == "👤 By Face" or self.config.ui_defaults.primary_seed_strategy == "🔄 Face + Text Fallback")) as face_seeding_group:
                     self.components['face_seeding_group'] = face_seeding_group
                     gr.Markdown("#### 👤 Configure Face Seeding"); gr.Markdown("Upload a clear image of the person you want to find. The system will search for this person in the video.")
                     with gr.Row():
                         self._create_component('face_ref_img_upload_input', 'file', {'label': "Upload Face Reference Image", 'type': "filepath"})
                         with gr.Column():
                             self._create_component('face_ref_img_path_input', 'textbox', {'label': "Or provide a local file path"})
-                            self._create_component('enable_face_filter_input', 'checkbox', {'label': "Enable Face Similarity (must be checked for face seeding)", 'value': (self.config.ui_defaults['primary_seed_strategy'] == "👤 By Face" or self.config.ui_defaults['primary_seed_strategy'] == "🔄 Face + Text Fallback"), 'interactive': False, 'visible': False})
-                with gr.Group(visible=(self.config.ui_defaults['primary_seed_strategy'] == "📝 By Text" or self.config.ui_defaults['primary_seed_strategy'] == "🔄 Face + Text Fallback")) as text_seeding_group:
+                            self._create_component('enable_face_filter_input', 'checkbox', {'label': "Enable Face Similarity (must be checked for face seeding)", 'value': (self.config.ui_defaults.primary_seed_strategy == "👤 By Face" or self.config.ui_defaults.primary_seed_strategy == "🔄 Face + Text Fallback"), 'interactive': False, 'visible': False})
+                with gr.Group(visible=(self.config.ui_defaults.primary_seed_strategy == "📝 By Text" or self.config.ui_defaults.primary_seed_strategy == "🔄 Face + Text Fallback")) as text_seeding_group:
                     self.components['text_seeding_group'] = text_seeding_group
                     gr.Markdown("#### 📝 Configure Text Seeding"); gr.Markdown("Describe the subject or object you want to find. Be as specific as possible for better results.")
-                    self._create_component('text_prompt_input', 'textbox', {'label': "Text Prompt", 'placeholder': "e.g., 'a woman in a red dress'", 'value': self.config.ui_defaults['text_prompt']})
-                with gr.Group(visible=(self.config.ui_defaults['primary_seed_strategy'] == "🤖 Automatic")) as auto_seeding_group:
+                    self._create_component('text_prompt_input', 'textbox', {'label': "Text Prompt", 'placeholder': "e.g., 'a woman in a red dress'", 'value': self.config.ui_defaults.text_prompt})
+                with gr.Group(visible=(self.config.ui_defaults.primary_seed_strategy == "🤖 Automatic")) as auto_seeding_group:
                     self.components['auto_seeding_group'] = auto_seeding_group
                     gr.Markdown("#### 🤖 Configure Automatic Seeding"); gr.Markdown("The system will automatically identify the most prominent person in each scene. This is a good general-purpose starting point.")
-                    self._create_component('seed_strategy_input', 'dropdown', {'choices': self.config.choices['seed_strategy'], 'value': "Largest Person", 'label': "Automatic Seeding Method"})
+                    self._create_component('seed_strategy_input', 'dropdown', {'choices': self.config.choices.seed_strategy, 'value': "Largest Person", 'label': "Automatic Seeding Method"})
                 with gr.Accordion("Advanced Settings", open=False):
                     gr.Markdown("These settings control the underlying models and analysis parameters. Adjust them only if you understand their effect.")
-                    self._create_component('pre_analysis_enabled_input', 'checkbox', {'label': 'Enable Pre-Analysis to find best seed frame', 'value': self.config.ui_defaults['pre_analysis_enabled']})
-                    self._create_component('pre_sample_nth_input', 'number', {'label': 'Sample every Nth thumbnail for pre-analysis', 'value': self.config.ui_defaults['pre_sample_nth'], 'interactive': True})
-                    self._create_component('person_detector_model_input', 'dropdown', {'choices': self.config.choices['person_detector_model'], 'value': self.config.ui_defaults['person_detector_model'], 'label': "Person Detector (for Automatic)"})
-                    self._create_component('face_model_name_input', 'dropdown', {'choices': self.config.choices['face_model_name'], 'value': self.config.ui_defaults['face_model_name'], 'label': "Face Model (for Face Seeding)"})
-                    self._create_component('dam4sam_model_name_input', 'dropdown', {'choices': self.config.choices['dam4sam_model_name'], 'value': self.config.ui_defaults['dam4sam_model_name'], 'label': "SAM Tracker Model"})
-                    self._create_component('enable_dedup_input', 'checkbox', {'label': "Enable Deduplication (pHash)", 'value': self.config.ui_defaults.get('enable_dedup', False)})
+                    self._create_component('pre_analysis_enabled_input', 'checkbox', {'label': 'Enable Pre-Analysis to find best seed frame', 'value': self.config.ui_defaults.pre_analysis_enabled})
+                    self._create_component('pre_sample_nth_input', 'number', {'label': 'Sample every Nth thumbnail for pre-analysis', 'value': self.config.ui_defaults.pre_sample_nth, 'interactive': True})
+                    self._create_component('person_detector_model_input', 'dropdown', {'choices': self.config.choices.person_detector_model, 'value': self.config.ui_defaults.person_detector_model, 'label': "Person Detector (for Automatic)"})
+                    self._create_component('face_model_name_input', 'dropdown', {'choices': self.config.choices.face_model_name, 'value': self.config.ui_defaults.face_model_name, 'label': "Face Model (for Face Seeding)"})
+                    self._create_component('dam4sam_model_name_input', 'dropdown', {'choices': self.config.choices.dam4sam_model_name, 'value': self.config.ui_defaults.dam4sam_model_name, 'label': "SAM Tracker Model"})
+                    self._create_component('enable_dedup_input', 'checkbox', {'label': "Enable Deduplication (pHash)", 'value': self.config.ui_defaults.enable_dedup})
                 self._create_component('start_pre_analysis_button', 'button', {'value': '🌱 Find & Preview Scene Seeds', 'variant': 'primary'})
                 with gr.Group(visible=False) as propagation_group:
                     self.components['propagation_group'] = propagation_group
@@ -2812,10 +2798,10 @@ class AppUI:
                     with gr.Row():
                         self._create_component("sceneeditorboxthreshinput", "slider", {
                             "label": "Box Thresh", "minimum": 0.0, "maximum": 1.0, "step": 0.05,
-                            "value": self.config.grounding_dino_params["box_threshold"]})
+                            "value": self.config.grounding_dino_params.box_threshold})
                         self._create_component("sceneeditortextthreshinput", "slider", {
                             "label": "Text Thresh", "minimum": 0.0, "maximum": 1.0, "step": 0.05,
-                            "value": self.config.grounding_dino_params["text_threshold"]})
+                            "value": self.config.grounding_dino_params.text_threshold})
                     with gr.Row():
                         self._create_component("scenerecomputebutton", "button", {"value": "▶️Recompute Preview"})
                         self._create_component("sceneincludebutton", "button", {"value": "✅keep scene"})
@@ -2827,33 +2813,33 @@ class AppUI:
         with gr.Row():
             with gr.Column(scale=1):
                 gr.Markdown("### 🎛️ Filter Controls")
-                self._create_component('auto_pctl_input', 'slider', {'label': 'Auto-Threshold Percentile', 'minimum': 1, 'maximum': 99, 'value': self.config.gradio_defaults['auto_pctl_input'], 'step': 1})
+                self._create_component('auto_pctl_input', 'slider', {'label': 'Auto-Threshold Percentile', 'minimum': 1, 'maximum': 99, 'value': self.config.gradio_defaults.auto_pctl_input, 'step': 1})
                 with gr.Row():
                     self._create_component('apply_auto_button', 'button', {'value': 'Apply Percentile to Mins'})
                     self._create_component('reset_filters_button', 'button', {'value': "Reset Filters"})
                 self._create_component('filter_status_text', 'markdown', {'value': "Load an analysis to begin."})
                 self.components['metric_plots'], self.components['metric_sliders'] = {}, {}
                 with gr.Accordion("Deduplication", open=True, visible=True):
-                    f_def = self.config.filter_defaults['dedup_thresh']
+                    f_def = self.config.filter_defaults.dedup_thresh
                     self._create_component('dedup_thresh_input', 'slider', {'label': "Similarity Threshold", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': f_def['default'], 'step': f_def['step']})
                 for metric_name, open_default in [('niqe', True), ('sharpness', True), ('edge_strength', True), ('contrast', True),
                                                  ('brightness', False), ('entropy', False), ('face_sim', False), ('mask_area_pct', False)]:
-                    if metric_name not in self.config.filter_defaults: continue
-                    f_def = self.config.filter_defaults[metric_name]
+                    if not hasattr(self.config.filter_defaults, metric_name): continue
+                    f_def = getattr(self.config.filter_defaults, metric_name)
                     with gr.Accordion(metric_name.replace('_', ' ').title(), open=open_default):
                         with gr.Column(elem_classes="plot-and-slider-column"):
                             self.components['metric_plots'][metric_name] = self._create_component(f'plot_{metric_name}', 'html', {'visible': False})
                             self.components['metric_sliders'][f"{metric_name}_min"] = self._create_component(f'slider_{metric_name}_min', 'slider', {'label': "Min", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': f_def['default_min'], 'step': f_def['step'], 'interactive': True, 'visible': False})
                             if 'default_max' in f_def: self.components['metric_sliders'][f"{metric_name}_max"] = self._create_component(f'slider_{metric_name}_max', 'slider', {'label': "Max", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': f_def['default_max'], 'step': f_def['step'], 'interactive': True, 'visible': False})
-                            if metric_name == "face_sim": self._create_component('require_face_match_input', 'checkbox', {'label': "Reject if no face", 'value': self.config.ui_defaults['require_face_match'], 'visible': False})
+                            if metric_name == "face_sim": self._create_component('require_face_match_input', 'checkbox', {'label': "Reject if no face", 'value': self.config.ui_defaults.require_face_match, 'visible': False})
             with gr.Column(scale=2):
                 with gr.Group(visible=False) as results_group:
                     self.components['results_group'] = results_group
                     gr.Markdown("### 🖼️ Step 2: Review Results")
                     with gr.Row():
-                        self._create_component('gallery_view_toggle', 'radio', {'choices': self.config.choices['gallery_view'], 'value': "Kept Frames", 'label': "Show in Gallery"})
-                        self._create_component('show_mask_overlay_input', 'checkbox', {'label': "Show Mask Overlay", 'value': self.config.gradio_defaults['show_mask_overlay']})
-                        self._create_component('overlay_alpha_slider', 'slider', {'label': "Overlay Alpha", 'minimum': 0.0, 'maximum': 1.0, 'value': self.config.gradio_defaults['overlay_alpha'], 'step': 0.1})
+                        self._create_component('gallery_view_toggle', 'radio', {'choices': self.config.choices.gallery_view, 'value': "Kept Frames", 'label': "Show in Gallery"})
+                        self._create_component('show_mask_overlay_input', 'checkbox', {'label': "Show Mask Overlay", 'value': self.config.gradio_defaults.show_mask_overlay})
+                        self._create_component('overlay_alpha_slider', 'slider', {'label': "Overlay Alpha", 'minimum': 0.0, 'maximum': 1.0, 'value': self.config.gradio_defaults.overlay_alpha, 'step': 0.1})
                     self._create_component('results_gallery', 'gallery', {'columns': [4, 6, 8], 'rows': 2, 'height': 'auto', 'preview': True, 'allow_preview': True, 'object_fit': 'contain'})
                 with gr.Group(visible=False) as export_group:
                     self.components['export_group'] = export_group
@@ -2861,11 +2847,11 @@ class AppUI:
                     self._create_component('export_button', 'button', {'value': "Export Kept Frames", 'variant': "primary"})
                     with gr.Accordion("Export Options", open=True):
                         with gr.Row():
-                            self._create_component('enable_crop_input', 'checkbox', {'label': "✂️ Crop to Subject", 'value': self.config.export_options['enable_crop']})
-                            self._create_component('crop_padding_input', 'slider', {'label': "Padding %", 'value': self.config.export_options['crop_padding']})
-                        self._create_component('crop_ar_input', 'textbox', {'label': "Crop ARs", 'value': self.config.export_options['crop_ars'], 'info': "Comma-separated list (e.g., 16:9, 1:1). The best-fitting AR for each subject's mask will be chosen automatically."})
+                            self._create_component('enable_crop_input', 'checkbox', {'label': "✂️ Crop to Subject", 'value': self.config.export_options.enable_crop})
+                            self._create_component('crop_padding_input', 'slider', {'label': "Padding %", 'value': self.config.export_options.crop_padding})
+                        self._create_component('crop_ar_input', 'textbox', {'label': "Crop ARs", 'value': self.config.export_options.crop_ars, 'info': "Comma-separated list (e.g., 16:9, 1:1). The best-fitting AR for each subject's mask will be chosen automatically."})
 
-    def get_all_filter_keys(self): return self.config.QUALITY_METRICS + ["face_sim", "mask_area_pct"]
+    def get_all_filter_keys(self): return list(asdict(self.config.quality_weights).keys()) + ["face_sim", "mask_area_pct"]
 
 
 
@@ -2881,9 +2867,12 @@ class AppUI:
         ).then(lambda: "Configuration saved to config_dump.yml", [], self.components['unified_log'])
 
 class EnhancedAppUI(AppUI):
-    def __init__(self, config=None, logger=None, progress_queue=None, cancel_event=None, thumbnail_manager=None, resource_manager=None):
+    def __init__(self, config: 'Config', logger: 'EnhancedLogger', progress_queue: Queue,
+                 cancel_event: threading.Event, thumbnail_manager: 'ThumbnailManager',
+                 resource_manager: 'AdaptiveResourceManager'):
         super().__init__(config, logger, progress_queue, cancel_event, thumbnail_manager)
-        self.enhanced_logger, self.resource_manager = logger, resource_manager
+        self.enhanced_logger = logger
+        self.resource_manager = resource_manager
         self.performance_metrics, self.log_filter_level, self.all_logs = {}, "INFO", []
 
     def _build_footer(self):
@@ -2891,7 +2880,7 @@ class EnhancedAppUI(AppUI):
             with gr.Column(scale=3):
                 self._create_component('unified_log', 'textbox', {'label': '📋 Enhanced Processing Log', 'lines': 15, 'interactive': False, 'autoscroll': True, 'elem_classes': ['log-container']})
                 with gr.Row():
-                    self._create_component('log_level_filter', 'dropdown', {'choices': self.config.choices['log_level'], 'value': 'DEBUG', 'label': 'Log Level Filter', 'scale': 1})
+                    self._create_component('log_level_filter', 'dropdown', {'choices': self.config.choices.log_level, 'value': 'DEBUG', 'label': 'Log Level Filter', 'scale': 1})
                     self._create_component('clear_logs_button', 'button', {'value': '🗑️ Clear Logs', 'scale': 1})
                     self._create_component('export_logs_button', 'button', {'value': '📥 Export Logs', 'scale': 1})
             with gr.Column(scale=1):
@@ -2964,8 +2953,8 @@ class EnhancedAppUI(AppUI):
             status_md = f"Editing Scene {shotid}"
         # Prefill values with scene seedconfig or defaults
         prompt = cfg.get("text_prompt", "")
-        boxth = cfg.get("box_threshold", self.config.grounding_dino_params["box_threshold"])
-        textth = cfg.get("text_threshold", self.config.grounding_dino_params["text_threshold"])
+        boxth = cfg.get("box_threshold", self.config.grounding_dino_params.box_threshold)
+        textth = cfg.get("text_threshold", self.config.grounding_dino_params.text_threshold)
         return (
             scenes,
             get_scene_status_text(scenes),
@@ -3149,19 +3138,19 @@ class EnhancedAppUI(AppUI):
                          'scene_detect': 'ext_scene_detect_input', **{k: f"{k}_input" for k in self.ext_ui_map_keys if k not in
                          ['source_path', 'upload_video', 'max_resolution', 'scene_detect']}}[k]] for k in self.ext_ui_map_keys]
         self.ana_input_components = [c.get(k, k) for k in [{'output_folder': 'extracted_frames_dir_state', 'video_path': 'extracted_video_path_state',
-                                                           'resume': gr.State(self.config.ui_defaults['resume']), 'enable_face_filter': 'enable_face_filter_input',
+                                                           'resume': gr.State(self.config.ui_defaults.resume), 'enable_face_filter': 'enable_face_filter_input',
                                                            'face_ref_img_path': 'face_ref_img_path_input', 'face_ref_img_upload': 'face_ref_img_upload_input',
-                                                           'face_model_name': 'face_model_name_input', 'enable_subject_mask': gr.State(self.config.ui_defaults['enable_subject_mask']),
+                                                           'face_model_name': 'face_model_name_input', 'enable_subject_mask': gr.State(self.config.ui_defaults.enable_subject_mask),
                                                            'dam4sam_model_name': 'dam4sam_model_name_input', 'person_detector_model': 'person_detector_model_input',
                                                            'seed_strategy': 'seed_strategy_input', 'scene_detect': 'ext_scene_detect_input',
                                                            'enable_dedup': 'enable_dedup_input', 'text_prompt': 'text_prompt_input',
-                                                           'box_threshold': gr.State(self.config.grounding_dino_params['box_threshold']),
-                                                           'text_threshold': gr.State(self.config.grounding_dino_params['text_threshold']),
+                                                           'box_threshold': gr.State(self.config.grounding_dino_params.box_threshold),
+                                                           'text_threshold': gr.State(self.config.grounding_dino_params.text_threshold),
                                                            'min_mask_area_pct': gr.State(self.config.min_mask_area_pct),
                                                            'sharpness_base_scale': gr.State(self.config.sharpness_base_scale),
                                                            'edge_strength_base_scale': gr.State(self.config.edge_strength_base_scale),
-                                                           'gdino_config_path': gr.State(str(self.config.GROUNDING_DINO_CONFIG)),
-                                                           'gdino_checkpoint_path': gr.State(str(self.config.GROUNDING_DINO_CKPT)),
+                                                           'gdino_config_path': gr.State(str(self.config.paths.grounding_dino_config)),
+                                                           'gdino_checkpoint_path': gr.State(str(self.config.paths.grounding_dino_checkpoint)),
                                                            'pre_analysis_enabled': 'pre_analysis_enabled_input', 'pre_sample_nth': 'pre_sample_nth_input',
                                                            'primary_seed_strategy': 'primary_seed_strategy_input'}[k] for k in self.ana_ui_map_keys]]
         prop_inputs = [c['scenes_state']] + self.ana_input_components
@@ -3473,7 +3462,6 @@ class EnhancedAppUI(AppUI):
 
 class CompositionRoot:
     def __init__(self):
-        self.config = Config(config_path="config.yml")
         self.config = Config(config_path="config.yml")
         self.logger = EnhancedLogger(config=self.config)
         self.thumbnail_manager = ThumbnailManager(self.logger, self.config)
