@@ -1179,12 +1179,16 @@ class AdaptiveResourceManager:
 # --- MODEL LOADING & MANAGEMENT ---
 
 def download_model(url, dest_path, description, logger, error_handler: ErrorHandler, config: 'Config', min_size=1_000_000):
-    if dest_path.is_file() and dest_path.stat().st_size >= min_size: return
+    dest_path = Path(dest_path)
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
+    if dest_path.is_file() and (min_size is None or dest_path.stat().st_size >= min_size):
+        logger.info(f"Using cached {description}: {dest_path}")
+        return
     @error_handler.with_retry(recoverable_exceptions=(urllib.error.URLError, TimeoutError, RuntimeError))
     def download_func():
         logger.info(f"Downloading {description}", extra={'url': url, 'dest': dest_path})
         req = urllib.request.Request(url, headers={"User-Agent": config.models.user_agent})
-        with (urllib.request.urlopen(req, timeout=60) as resp, open(dest_path, "wb") as out):
+        with urllib.request.urlopen(req, timeout=60) as resp, open(dest_path, "wb") as out:
             shutil.copyfileobj(resp, out)
         if not dest_path.exists() or dest_path.stat().st_size < min_size:
             raise RuntimeError(f"Downloaded {description} seems incomplete")
@@ -1255,8 +1259,10 @@ def get_grounding_dino_model(gdino_config_path: str, gdino_checkpoint_path: str,
     logger = EnhancedLogger(config=Config()) # Fallback for standalone usage
     error_handler = ErrorHandler(logger, Config()) # Fallback for standalone usage
     try:
+        models_dir = Path(models_path)
+        models_dir.mkdir(parents=True, exist_ok=True)
         ckpt_path = Path(gdino_checkpoint_path)
-        if not ckpt_path.is_absolute(): ckpt_path = Path(models_path) / ckpt_path.name
+        if not ckpt_path.is_absolute(): ckpt_path = models_dir / Path(grounding_dino_url).name
         download_model(grounding_dino_url,
                        ckpt_path, "GroundingDINO Swin-T model", logger, error_handler, config=Config(), min_size=500_000_000)
         gdino_model = gdino_load_model(model_config_path=gdino_config_path, model_checkpoint_path=str(ckpt_path), device=device)
@@ -1283,14 +1289,21 @@ def get_dam4sam_tracker(model_name: str, models_path: str, model_urls_tuple: tup
         logger.error("DAM4SAM dependencies or CUDA not available.")
         return None
     try:
-        logger.info("Initializing DAM4SAM tracker", custom_fields={'model': model_name})
-        checkpoint_path = Path(models_path) / Path(model_urls[model_name]).name
-        download_model(model_urls[model_name], checkpoint_path, f"{model_name} model", logger, error_handler, config=Config(), min_size=100_000_000)
-        actual_path, _ = dam_utils.determine_tracker(model_name)
+        models_dir = Path(models_path)
+        models_dir.mkdir(parents=True, exist_ok=True)
+        # Choose a safe default if UI passes empty string
+        selected_name = (model_name or Config().ui_defaults.dam4sam_model_name or next(iter(model_urls.keys())))
+        if selected_name not in model_urls:
+            raise ValueError(f"Unknown DAM4SAM model: {selected_name}")
+        url = model_urls[selected_name]
+        checkpoint_path = models_dir / Path(url).name
+        logger.info(f"Initializing DAM4SAM tracker", custom_fields={'selected_model': selected_name, 'checkpoint_path': str(checkpoint_path)})
+        download_model(url, checkpoint_path, f"DAM4SAM {selected_name}", logger, error_handler, config=Config(), min_size=100_000_000)
+        actual_path, _ = dam_utils.determine_tracker(selected_name)
         if not Path(actual_path).exists():
             Path(actual_path).parent.mkdir(exist_ok=True, parents=True)
             shutil.copy(checkpoint_path, actual_path)
-        tracker = DAM4SAMTracker(model_name)
+        tracker = DAM4SAMTracker(selected_name)
         logger.success("DAM4SAM tracker initialized.")
         return tracker
     except Exception as e:
