@@ -295,7 +295,7 @@ class TestVideo:
     def test_extraction_pipeline_run(self, mock_is_file, mock_ffmpeg, mock_info, test_config):
         params = app.AnalysisParameters.from_ui(MagicMock(), test_config, source_path='/fake.mp4')
         logger = MagicMock()
-
+        
         # Instantiate with all required arguments
         pipeline = app.EnhancedExtractionPipeline(
             config=test_config,
