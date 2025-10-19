@@ -2211,7 +2211,7 @@ def execute_session_load(
         updates = {
             "source_input": gr.update(value=run_config.get("source_path", "")),
             "max_resolution": gr.update(value=run_config.get("max_resolution", "1080")),
-            "thumbnails_only_input": gr.update(value=run_config.get("thumbnails_only", True)),
+            "extraction_method_toggle_input": gr.update(value=("Recommended Thumbnails" if run_config.get('thumbnails_only', True) else "Legacy Full-Frame")),
             "thumb_megapixels_input": gr.update(value=run_config.get("thumb_megapixels", 0.5)),
             "ext_scene_detect_input": gr.update(value=run_config.get("scene_detect", True)),
             "method_input": gr.update(value=run_config.get("method", "scene")),
@@ -2365,14 +2365,14 @@ class AppUI:
         self.components, self.cuda_available = {}, torch.cuda.is_available()
         self.thumbnail_manager = thumbnail_manager or ThumbnailManager(logger=self.logger, max_size=self.config.thumbnail_cache_size)
         self.ext_ui_map_keys = ['source_path', 'upload_video', 'method', 'interval', 'nth_frame', 'fast_scene',
-                                'max_resolution', 'use_png', 'thumbnails_only', 'thumb_megapixels', 'scene_detect']
+                                'max_resolution', 'use_png', 'extraction_method_toggle', 'thumb_megapixels', 'scene_detect']
         self.ana_ui_map_keys = ['output_folder', 'video_path', 'resume', 'enable_face_filter', 'face_ref_img_path', 'face_ref_img_upload',
                                 'face_model_name', 'enable_subject_mask', 'dam4sam_model_name', 'person_detector_model', 'seed_strategy',
                                 'scene_detect', 'enable_dedup', 'text_prompt', 'box_threshold', 'text_threshold', 'min_mask_area_pct',
                                 'sharpness_base_scale', 'edge_strength_base_scale', 'gdino_config_path', 'gdino_checkpoint_path',
                                 'pre_analysis_enabled', 'pre_sample_nth', 'primary_seed_strategy']
         self.session_load_keys = ['unified_log', 'unified_status', 'progress_bar', 'progress_details', 'cancel_button', 'pause_button',
-                                  'source_input', 'max_resolution', 'thumbnails_only_input', 'thumb_megapixels_input', 'ext_scene_detect_input',
+                                  'source_input', 'max_resolution', 'extraction_method_toggle_input', 'thumb_megapixels_input', 'ext_scene_detect_input',
                                   'method_input', 'use_png_input', 'pre_analysis_enabled_input', 'pre_sample_nth_input', 'enable_face_filter_input',
                                   'face_model_name_input', 'face_ref_img_path_input', 'text_prompt_input', 'seed_strategy_input',
                                   'person_detector_model_input', 'dam4sam_model_name_input', 'enable_dedup_input', 'extracted_video_path_state',
@@ -2425,20 +2425,53 @@ class AppUI:
             with gr.Column(scale=1): self._create_component('max_resolution', 'dropdown', {'choices': ["maximum available", "2160", "1080", "720"], 'value': self.config.ui_defaults['max_resolution'], 'label': "Download Resolution"})
         self._create_component('upload_video_input', 'file', {'label': "Or Upload a Video File", 'file_types': ["video"], 'type': "filepath"})
         gr.Markdown("---"); gr.Markdown("### Step 2: Configure Extraction Method")
-        with gr.Accordion("Thumbnail Settings", open=True) as recommended_accordion:
-            self._create_component('thumbnails_only_input', 'checkbox', {'label': "Use Recommended Thumbnail Extraction (Faster, For Pre-Analysis)", 'value': self.config.ui_defaults['thumbnails_only']})
-            self.components['recommended_accordion'] = recommended_accordion
-            gr.Markdown("This is the fastest and most efficient method. It extracts lightweight thumbnails for scene analysis, allowing you to quickly find the best frames *before* extracting full-resolution images.")
-            self._create_component('thumb_megapixels_input', 'slider', {'label': "Thumbnail Size (MP)", 'minimum': 0.1, 'maximum': 2.0, 'step': 0.1, 'value': self.config.ui_defaults['thumb_megapixels']})
-            self._create_component('ext_scene_detect_input', 'checkbox', {'label': "Use Scene Detection (Recommended)", 'value': self.config.ui_defaults['scene_detect']})
-        with gr.Accordion("old: Full-Frame Extraction", open=False) as legacy_accordion:
-            self.components['legacy_accordion'] = legacy_accordion
-            gr.Markdown("This method extracts full-resolution frames directly, which can be slow and generate a large number of files. Use this only if you have specific needs and understand the performance implications.")
-            self._create_component('method_input', 'dropdown', {'choices': ["keyframes", "interval", "every_nth_frame", "all", "scene"], 'value': self.config.ui_defaults['method'], 'label': "Extraction Method"})
-            self._create_component('interval_input', 'textbox', {'label': "Interval (seconds)", 'value': self.config.ui_defaults['interval'], 'visible': False})
-            self._create_component('nth_frame_input', 'textbox', {'label': "N-th Frame Value", 'value': self.config.ui_defaults["nth_frame"], 'visible': False})
-            self._create_component('fast_scene_input', 'checkbox', {'label': "Fast Scene Detect (for 'scene' method)", 'visible': False})
-            self._create_component('use_png_input', 'checkbox', {'label': "Save as PNG (slower, larger files)", 'value': self.config.ui_defaults['use_png']})
+        # Toggle between Recommended Thumbnails and Legacy Full-Frame
+        self._create_component('extraction_method_toggle_input', 'radio', {
+            'label': "Extraction Method",
+            'choices': ["Recommended Thumbnails", "Legacy Full-Frame"],
+            'value': "Recommended Thumbnails" if self.config.ui_defaults.get('thumbnails_only', True) else "Legacy Full-Frame"
+        })
+
+        # Recommended (thumbnails) group
+        with gr.Group(visible=self.config.ui_defaults.get('thumbnails_only', True)) as thumbnail_group:
+            self.components['thumbnail_group'] = thumbnail_group
+            gr.Markdown("Recommended Method: This is the fastest and most efficient method. It extracts lightweight thumbnails for scene analysis, allowing you to quickly find the best frames before extracting full-resolution images.")
+            self._create_component('thumb_megapixels_input', 'slider', {
+                'label': "Thumbnail Size (MP)", 'minimum': 0.1, 'maximum': 2.0, 'step': 0.1,
+                'value': self.config.ui_defaults.get('thumb_megapixels', 0.5)
+            })
+            self._create_component('ext_scene_detect_input', 'checkbox', {
+                'label': "Use Scene Detection (Recommended)",
+                'value': self.config.ui_defaults.get('scene_detect', True)
+            })
+
+        # Legacy (full‑frame) group
+        with gr.Group(visible=not self.config.ui_defaults.get('thumbnails_only', True)) as legacy_group:
+            self.components['legacy_group'] = legacy_group
+            gr.Markdown("Legacy Method: This extracts full‑resolution frames directly, which can be slow and generate many files. Use only if you have specific needs and understand the performance implications.")
+            self._create_component('method_input', 'dropdown', {
+                'choices': ["keyframes", "interval", "every_nth_frame", "all", "scene"],
+                'value': self.config.ui_defaults.get('method', 'scene'),
+                'label': "Extraction Method"
+            })
+            self._create_component('interval_input', 'textbox', {
+                'label': "Interval (seconds)",
+                'value': self.config.ui_defaults.get('interval', 5.0),
+                'visible': False
+            })
+            self._create_component('nth_frame_input', 'textbox', {
+                'label': "N-th Frame Value",
+                'value': self.config.ui_defaults.get("nth_frame", 5),
+                'visible': False
+            })
+            self._create_component('fast_scene_input', 'checkbox', {
+                'label': "Fast Scene Detect (for 'scene' method)",
+                'visible': False
+            })
+            self._create_component('use_png_input', 'checkbox', {
+                'label': "Save as PNG (slower, larger files)",
+                'value': self.config.ui_defaults.get('use_png', False)
+            })
         gr.Markdown("---"); gr.Markdown("### Step 3: Start Extraction")
         self.components.update({'start_extraction_button': gr.Button("🚀 Start Extraction", variant="primary")})
 
@@ -2716,7 +2749,15 @@ class EnhancedAppUI(AppUI):
         return PreAnalysisEvent(**ui_args)
 
     def run_extraction_wrapper(self, *args):
-        event = ExtractionEvent(**dict(zip(self.ext_ui_map_keys, args)))
+        ui_args = dict(zip(self.ext_ui_map_keys, args))
+        # Map radio toggle -> boolean expected by pipeline
+        if 'extraction_method_toggle' in ui_args:
+            ui_args['thumbnails_only'] = (ui_args.pop('extraction_method_toggle') == "Recommended Thumbnails")
+        
+        # Construct ExtractionEvent with only its defined fields
+        event_fields = [f.name for f in dataclasses.fields(ExtractionEvent)]
+        event_args = {k: v for k, v in ui_args.items() if k in event_fields}
+        event = ExtractionEvent(**event_args)
         try:
             for result in execute_extraction(event, self.progress_queue, self.cancel_event, self.enhanced_logger, self.config):
                 if isinstance(result, dict):
@@ -2783,8 +2824,17 @@ class EnhancedAppUI(AppUI):
         c = self.components
         c['method_input'].change(lambda m: (gr.update(visible=m == 'interval'), gr.update(visible=m == 'scene'), gr.update(visible=m == 'every_nth_frame')),
                                  c['method_input'], [c['interval_input'], c['fast_scene_input'], c['nth_frame_input']])
-        c['thumbnails_only_input'].change(lambda r: {c['recommended_accordion']: gr.update(visible=r), c['legacy_accordion']: gr.update(visible=not r)},
-                                          [c['thumbnails_only_input']], [c['recommended_accordion'], c['legacy_accordion']])
+
+        # Show/hide groups when switching extraction method
+        c['extraction_method_toggle_input'].change(
+            lambda method: (
+                gr.update(visible=(method == "Recommended Thumbnails")),
+                gr.update(visible=(method == "Legacy Full-Frame")),
+            ),
+            inputs=[c['extraction_method_toggle_input']],
+            outputs=[c['thumbnail_group'], c['legacy_group']],
+        )
+
         c['primary_seed_strategy_input'].change(lambda s: {c['face_seeding_group']: gr.update(visible=s == "👤 By Face" or s == "🔄 Face + Text Fallback"),
                                                            c['text_seeding_group']: gr.update(visible=s == "📝 By Text" or s == "🔄 Face + Text Fallback"),
                                                            c['auto_seeding_group']: gr.update(visible=s == "🤖 Automatic"),
