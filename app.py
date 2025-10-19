@@ -196,7 +196,7 @@ class Config:
         face_model_name: str = "buffalo_l"
         enable_subject_mask: bool = True
         dam4sam_model_name: str = "sam21pp-L"
-        person_detector_model: str = "yolo11x.pt"
+        person_detector_model: str = "yolov11x.pt"
         primary_seed_strategy: str = "🤖 Automatic"
         seed_strategy: str = "Largest Person"
         text_prompt: str = ""
@@ -240,7 +240,7 @@ class Config:
         method: List[str] = field(default_factory=lambda: ["keyframes", "interval", "every_nth_frame", "all", "scene"])
         primary_seed_strategy: List[str] = field(default_factory=lambda: ["👤 By Face", "📝 By Text", "🔄 Face + Text Fallback", "🤖 Automatic"])
         seed_strategy: List[str] = field(default_factory=lambda: ["Largest Person", "Center-most Person"])
-        person_detector_model: List[str] = field(default_factory=lambda: ['yolo11x.pt', 'yolo11s.pt'])
+        person_detector_model: List[str] = field(default_factory=lambda: ['yolov11x.pt', 'yolov11s.pt'])
         face_model_name: List[str] = field(default_factory=lambda: ["buffalo_l", "buffalo_s"])
         dam4sam_model_name: List[str] = field(default_factory=lambda: ["sam21pp-T", "sam21pp-S", "sam21pp-B+", "sam21pp-L"])
         gallery_view: List[str] = field(default_factory=lambda: ["Kept Frames", "Rejected Frames"])
@@ -254,7 +254,7 @@ class Config:
 
     @dataclass
     class PersonDetector:
-        model: str = "yolo11x.pt"
+        model: str = "yolov11x.pt"
         imgsz: int = 640
         conf: float = 0.3
     
@@ -1758,7 +1758,16 @@ class SubjectMasker:
         self.thumbnail_manager = thumbnail_manager if thumbnail_manager is not None else ThumbnailManager(self.logger, self.config)
         self.niqe_metric = niqe_metric
         self._initialize_models()
-        self.seed_selector = SeedSelector(params, face_analyzer, reference_embedding, person_detector, self.dam_tracker, self._gdino, logger=self.logger)
+        self.seed_selector = SeedSelector(
+            params=params,
+            config=self.config,
+            face_analyzer=face_analyzer,
+            reference_embedding=reference_embedding,
+            person_detector=person_detector,
+            tracker=self.dam_tracker,
+            gdino_model=self._gdino,
+            logger=self.logger,
+        )
         self.mask_propagator = MaskPropagator(params, self.dam_tracker, cancel_event, progress_queue, logger=self.logger)
 
     def _initialize_models(self): self._init_grounder(); self._initialize_tracker()
@@ -2459,7 +2468,7 @@ def execute_session_load(
             "face_ref_img_path_input": gr.update(value=run_config.get("face_ref_img_path", "")),
             "text_prompt_input": gr.update(value=run_config.get("text_prompt", "")),
             "seed_strategy_input": gr.update(value=run_config.get("seed_strategy", "Largest Person")),
-            "person_detector_model_input": gr.update(value=run_config.get("person_detector_model", "yolo11x.pt")),
+            "person_detector_model_input": gr.update(value=run_config.get("person_detector_model", "yolov8x.pt")),
             "dam4sam_model_name_input": gr.update(value=run_config.get("dam4sam_model_name", "sam21pp-T")),
             "enable_dedup_input": gr.update(value=run_config.get("enable_dedup", False)),
             "extracted_video_path_state": run_config.get("video_path", ""),
