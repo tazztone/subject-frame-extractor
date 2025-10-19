@@ -1193,14 +1193,15 @@ def download_model(url, dest_path, description, logger, error_handler: ErrorHand
         raise RuntimeError(f"Failed to download required model: {description}") from e
 
 @lru_cache(maxsize=None)
-def get_face_analyzer(model_name, config: 'Config', logger: 'EnhancedLogger'):
+def get_face_analyzer(model_name: str, models_path: str, det_size_tuple: tuple):
     from insightface.app import FaceAnalysis
+    logger = EnhancedLogger(config=Config())
     logger.info(f"Loading or getting cached face model: {model_name}")
     try:
         device = "cuda" if torch.cuda.is_available() else "cpu"
         providers = (['CUDAExecutionProvider', 'CPUExecutionProvider'] if device == 'cuda' else ['CPUExecutionProvider'])
-        analyzer = FaceAnalysis(name=model_name, root=str(config.paths.models), providers=providers)
-        analyzer.prepare(ctx_id=0 if device == 'cuda' else -1, det_size=tuple(config.model_defaults.face_analyzer_det_size))
+        analyzer = FaceAnalysis(name=model_name, root=models_path, providers=providers)
+        analyzer.prepare(ctx_id=0 if device == 'cuda' else -1, det_size=det_size_tuple)
         logger.success(f"Face model loaded with {'CUDA' if device == 'cuda' else 'CPU'}.")
         return analyzer
     except Exception as e:
@@ -1209,38 +1210,27 @@ def get_face_analyzer(model_name, config: 'Config', logger: 'EnhancedLogger'):
             logger.warning("CUDA OOM, retrying with CPU...")
             try:
                 # Retry with CPU
-                analyzer = FaceAnalysis(name=model_name, root=str(config.paths.models),
+                analyzer = FaceAnalysis(name=model_name, root=models_path,
                                       providers=['CPUExecutionProvider'])
-                analyzer.prepare(ctx_id=-1, det_size=tuple(config.model_defaults.face_analyzer_det_size))
+                analyzer.prepare(ctx_id=-1, det_size=det_size_tuple)
                 return analyzer
             except Exception as cpu_e:
                 logger.error(f"CPU fallback also failed: {cpu_e}")
         raise RuntimeError(f"Could not initialize face analysis model. Error: {e}") from e
 
 class PersonDetector:
-    def __init__(self, config: 'Config', logger: 'EnhancedLogger', model: Optional[str] = None,
-                 imgsz: Optional[int] = None, conf: Optional[float] = None, device: str = 'cuda'):
+    def __init__(self, logger: 'EnhancedLogger', model_path: Path, imgsz: int, conf: float, device: str = 'cuda'):
         from ultralytics import YOLO
-        self.config = config
         self.logger = logger
-        error_handler = ErrorHandler(self.logger, self.config)
-
-        model_name = model or self.config.person_detector.model
-        model_path = Path(self.config.paths.models) / model_name
-        model_path.parent.mkdir(exist_ok=True)
-
-        model_url = f"{self.config.models.yolo}{model_name}"
-        download_model(model_url, model_path, "YOLO person detector", self.logger, error_handler, config=self.config)
-
         self.device = device if torch.cuda.is_available() else 'cpu'
+        if not model_path.exists():
+            raise FileNotFoundError(f"Person detector model not found at {model_path}")
         self.model = YOLO(str(model_path))
         self.model.to(self.device)
-
-        self.imgsz = imgsz or self.config.person_detector.imgsz
-        self.conf = conf or self.config.person_detector.conf
-
+        self.imgsz = imgsz
+        self.conf = conf
         self.logger.info("YOLO person detector loaded", component="person_detector",
-                         custom_fields={'device': self.device, 'model': model_name})
+                         custom_fields={'device': self.device, 'model': model_path.name})
 
     def detect_boxes(self, img_rgb):
         res = self.model.predict(img_rgb, imgsz=self.imgsz, conf=self.conf, classes=[0], verbose=False, device=self.device)
@@ -1251,22 +1241,23 @@ class PersonDetector:
         ]
 
 @lru_cache(maxsize=None)
-def get_person_detector(model_name: str, device: str, config: 'Config', logger: 'EnhancedLogger'):
-    logger.info(f"Loading or getting cached person detector: {model_name}", component="person_detector")
-    return PersonDetector(config=config, logger=logger, model=model_name, device=device)
+def get_person_detector(model_path_str: str, device: str, imgsz: int, conf: float):
+    logger = EnhancedLogger(config=Config())
+    logger.info(f"Loading or getting cached person detector from: {model_path_str}", component="person_detector")
+    return PersonDetector(logger=logger, model_path=Path(model_path_str), imgsz=imgsz, conf=conf, device=device)
 
 @lru_cache(maxsize=None)
-def get_grounding_dino_model(gdino_config_path: str, gdino_checkpoint_path: str, config: 'Config', device="cuda", logger=None):
+def get_grounding_dino_model(gdino_config_path: str, gdino_checkpoint_path: str, models_path: str, grounding_dino_url: str, device="cuda"):
     if not gdino_load_model: raise ImportError("GroundingDINO is not installed.")
-    logger = logger or EnhancedLogger()
-    error_handler = ErrorHandler(logger, config)
+    logger = EnhancedLogger(config=Config()) # Fallback for standalone usage
+    error_handler = ErrorHandler(logger, Config()) # Fallback for standalone usage
     try:
         ckpt_path = Path(gdino_checkpoint_path)
-        if not ckpt_path.is_absolute(): ckpt_path = Path(config.paths.models) / ckpt_path.name
-        download_model(config.models.grounding_dino,
-                       ckpt_path, "GroundingDINO Swin-T model", logger, error_handler, config=config, min_size=500_000_000)
+        if not ckpt_path.is_absolute(): ckpt_path = Path(models_path) / ckpt_path.name
+        download_model(grounding_dino_url,
+                       ckpt_path, "GroundingDINO Swin-T model", logger, error_handler, config=Config(), min_size=500_000_000)
         gdino_model = gdino_load_model(model_config_path=gdino_config_path, model_checkpoint_path=str(ckpt_path), device=device)
-        logger.info("Grounding DINO model loaded.", component="grounding", user_context={'model_path': str(ckpt_path)})
+        logger.info("Grounding DINO model loaded.", component="grounding", custom_fields={'model_path': str(ckpt_path)})
         return gdino_model
     except Exception as e:
         logger.warning("Grounding DINO unavailable.", component="grounding", exc_info=True)
@@ -1279,18 +1270,19 @@ def predict_grounding_dino(model, image_tensor, caption, box_threshold, text_thr
                              box_threshold=float(box_threshold), text_threshold=float(text_threshold))
 
 @lru_cache(maxsize=None)
-def get_dam4sam_tracker(model_name: str, config: 'Config', logger=None):
+def get_dam4sam_tracker(model_name: str, models_path: str, model_urls_tuple: tuple):
     if not DAM4SAMTracker or not dam_utils: raise ImportError("DAM4SAM is not installed.")
-    logger = logger or EnhancedLogger()
-    error_handler = ErrorHandler(logger, config)
+    logger = EnhancedLogger(config=Config()) # Fallback
+    error_handler = ErrorHandler(logger, Config()) # Fallback
+    model_urls = dict(model_urls_tuple)
+
     if not (DAM4SAMTracker and torch and torch.cuda.is_available()):
         logger.error("DAM4SAM dependencies or CUDA not available.")
         return None
     try:
-        logger.info("Initializing DAM4SAM tracker", extra={'model': model_name})
-        model_urls = config.models.dam4sam
-        checkpoint_path = Path(config.paths.models) / Path(model_urls[model_name]).name
-        download_model(model_urls[model_name], checkpoint_path, f"{model_name} model", logger, error_handler, config=config, min_size=100_000_000)
+        logger.info("Initializing DAM4SAM tracker", custom_fields={'model': model_name})
+        checkpoint_path = Path(models_path) / Path(model_urls[model_name]).name
+        download_model(model_urls[model_name], checkpoint_path, f"{model_name} model", logger, error_handler, config=Config(), min_size=100_000_000)
         actual_path, _ = dam_utils.determine_tracker(model_name)
         if not Path(actual_path).exists():
             Path(actual_path).parent.mkdir(exist_ok=True, parents=True)
@@ -1308,7 +1300,11 @@ def initialize_analysis_models(params: AnalysisParameters, config: Config, logge
     device = "cuda" if cuda_available else "cpu"
     face_analyzer, ref_emb, person_detector = None, None, None
     if params.enable_face_filter:
-        face_analyzer = get_face_analyzer(params.face_model_name, config, logger)
+        face_analyzer = get_face_analyzer(
+            model_name=params.face_model_name,
+            models_path=str(config.paths.models),
+            det_size_tuple=tuple(config.model_defaults.face_analyzer_det_size)
+        )
         if face_analyzer and params.face_ref_img_path:
             ref_path = Path(params.face_ref_img_path)
             if ref_path.exists() and ref_path.is_file():
@@ -1323,7 +1319,14 @@ def initialize_analysis_models(params: AnalysisParameters, config: Config, logge
                     else: logger.warning("Could not read reference face image.", extra={'path': ref_path})
                 except Exception as e: logger.error("Failed to process reference face image.", exc_info=True)
             else: logger.warning("Reference face image path does not exist.", extra={'path': ref_path})
-    person_detector = get_person_detector(params.person_detector_model, device, config, logger)
+
+    model_path = Path(config.paths.models) / params.person_detector_model
+    person_detector = get_person_detector(
+        model_path_str=str(model_path),
+        device=device,
+        imgsz=config.person_detector.imgsz,
+        conf=config.person_detector.conf
+    )
     return {"face_analyzer": face_analyzer, "ref_emb": ref_emb, "person_detector": person_detector, "device": device}
 
 # --- VIDEO & FRAME PROCESSING ---
@@ -1761,11 +1764,22 @@ class SubjectMasker:
     def _initialize_models(self): self._init_grounder(); self._initialize_tracker()
     def _init_grounder(self):
         if self._gdino is not None: return True
-        self._gdino = get_grounding_dino_model(self.params.gdino_config_path, self.params.gdino_checkpoint_path, self.config, self._device, self.logger)
+        self._gdino = get_grounding_dino_model(
+            gdino_config_path=self.params.gdino_config_path,
+            gdino_checkpoint_path=self.params.gdino_checkpoint_path,
+            models_path=str(self.config.paths.models),
+            grounding_dino_url=self.config.models.grounding_dino,
+            device=self._device
+        )
         return self._gdino is not None
     def _initialize_tracker(self):
         if self.dam_tracker: return True
-        self.dam_tracker = get_dam4sam_tracker(self.params.dam4sam_model_name, self.config, self.logger)
+        model_urls_tuple = tuple(self.config.models.dam4sam.items())
+        self.dam_tracker = get_dam4sam_tracker(
+            model_name=self.params.dam4sam_model_name,
+            models_path=str(self.config.paths.models),
+            model_urls_tuple=model_urls_tuple
+        )
         return self.dam_tracker is not None
 
     def run_propagation(self, frames_dir: str, scenes_to_process) -> dict:
