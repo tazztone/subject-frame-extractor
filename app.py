@@ -2234,18 +2234,40 @@ def execute_session_load(
         # Stage 2: Load scenes
         logger.info("Load scenes")
         scenes_as_dict: list[dict[str, Any]] = []
+        scenes_json_path = session_path / "scenes.json"
+
+        if scenes_json_path.exists():
+            try:
+                with open(scenes_json_path, "r", encoding="utf-8") as f:
+                    scene_ranges = json.load(f)
+                scenes_as_dict = [
+                    {"shot_id": i, "start_frame": s, "end_frame": e}
+                    for i, (s, e) in enumerate(scene_ranges)
+                ]
+                logger.info(f"Loaded {len(scenes_as_dict)} scene ranges from scenes.json")
+            except Exception as e:
+                logger.error(f"Failed to parse scenes.json: {e}", component="session_loader")
+                # Yield an error if base scene structure can't be loaded
+                yield {"log": f"[ERROR] Failed to read scenes.json: {e}", "status": "Session load failed."}
+                return
+
         if scene_seeds_path.exists():
             try:
                 with open(scene_seeds_path, "r", encoding="utf-8") as f:
                     scenes_from_file = json.load(f)
-                # Normalize and keep shot_id as int
-                scenes_as_dict = [
-                    {"shot_id": int(shot_id), **(scene_data or {})}
-                    for shot_id, scene_data in (scenes_from_file or {}).items()
-                ]
-                logger.info(f"Loaded {len(scenes_as_dict)} scenes from {scene_seeds_path}", component="session_loader")
+                
+                # Create a lookup for faster merging
+                seeds_lookup = {int(k): v for k, v in scenes_from_file.items()}
+                
+                # Merge data into the scenes_as_dict
+                for scene in scenes_as_dict:
+                    shot_id = scene.get("shot_id")
+                    if shot_id in seeds_lookup:
+                        scene.update(seeds_lookup[shot_id])
+
+                logger.info(f"Merged data for {len(seeds_lookup)} scenes from {scene_seeds_path}", component="session_loader")
             except Exception as e:
-                logger.warning(f"Failed to parse scene_seeds.json: {e}", component="session_loader", error_type=type(e).__name__)
+                logger.warning(f"Failed to parse or merge scene_seeds.json: {e}", component="session_loader", error_type=type(e).__name__)
 
         # Stage 3: Load previews (with cap and fallback)
         logger.info("Load previews")
@@ -2550,9 +2572,9 @@ class AppUI:
                             "label": "Text Thresh", "minimum": 0.0, "maximum": 1.0, "step": 0.05,
                             "value": self.config.grounding_dino_params["text_threshold"]})
                     with gr.Row():
-                        self._create_component("scenerecomputebutton", "button", {"value": "Recompute Preview"})
-                        self._create_component("sceneincludebutton", "button", {"value": "Include"})
-                        self._create_component("sceneexcludebutton", "button", {"value": "Exclude"})
+                        self._create_component("scenerecomputebutton", "button", {"value": "▶️Recompute Preview"})
+                        self._create_component("sceneincludebutton", "button", {"value": "✅keep scene"})
+                        self._create_component("sceneexcludebutton", "button", {"value": "❌reject scene"})
                 gr.Markdown("---"); gr.Markdown("### 🔬 Step 3: Propagate Masks"); gr.Markdown("Once you are satisfied with the seeds, propagate the masks to the rest of the frames in the selected scenes.")
                 self._create_component('propagate_masks_button', 'button', {'value': '🔬 Propagate Masks on Kept Scenes', 'variant': 'primary', 'interactive': False})
 
@@ -2685,8 +2707,8 @@ class EnhancedAppUI(AppUI):
                     None, gr.update(), gr.update(), gr.update(), gr.update(), gr.update())
 
         scene = scenes[scene_idx_in_state]
-        cfg = scene.get("seedconfig") or {}
-        shotid = scene.get("shotid")
+        cfg = scene.get("seed_config") or {}
+        shotid = scene.get("shot_id")
         # Editor status text
         if scene.get("start_frame") is not None and scene.get("end_frame") is not None:
             status_md = f"Editing Scene {shotid}  •  Frames {scene['start_frame']}-{scene['end_frame']}"
