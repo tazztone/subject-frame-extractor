@@ -3481,58 +3481,110 @@ class EnhancedAppUI(AppUI):
                         self.logger.warning(f"Could not find {sequential_filename} to rename.", extra={'target': target_filename})
             if event.enable_crop:
                 self.logger.info("Starting crop export...")
-                crop_dir = export_dir / "cropped"; crop_dir.mkdir(exist_ok=True)
-                try: aspect_ratios = [tuple(map(int, ar.strip().split(':'))) for ar in event.crop_ars.split(',') if ar.strip()]
-                except Exception: return "Invalid aspect ratio format. Use 'width:height,width:height' e.g. '16:9,1:1'."
+                crop_dir = export_dir / "cropped"
+                crop_dir.mkdir(exist_ok=True)
+                try:
+                    aspect_ratios = [
+                        (ar_str.replace(':', 'x'), float(ar_str.split(':')[0]) / float(ar_str.split(':')[1]))
+                        for ar_str in event.crop_ars.split(',') if ':' in ar_str
+                    ]
+                except (ValueError, ZeroDivisionError):
+                    return "Invalid aspect ratio format. Use 'width:height,width:height' e.g. '16:9,1:1'."
+
                 masks_root, num_cropped = out_root / "masks", 0
                 for frame_meta in kept:
                     if self.cancel_event.is_set(): break
                     try:
                         if not (full_frame_path := export_dir / frame_meta['filename']).exists(): continue
-                        if not (mask_path := masks_root / frame_meta.get('mask_path', '')).exists(): continue
-                        frame_img, mask_img = cv2.imread(str(full_frame_path)), cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
+                        mask_name = frame_meta.get('mask_path', '')
+                        if not mask_name or not (mask_path := masks_root / mask_name).exists(): continue
+
+                        frame_img = cv2.imread(str(full_frame_path))
+                        mask_img = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
+
                         if frame_img is None or mask_img is None: continue
+
                         contours, _ = cv2.findContours(mask_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
                         if not contours: continue
-                        x, y, w, h = cv2.boundingRect(np.concatenate(contours))
-                        frame_h, frame_w, mask_h, mask_w = *frame_img.shape[:2], *mask_img.shape[:2]
-                        padding_px_w, padding_px_h = int(w * (event.crop_padding / 100.0)), int(h * (event.crop_padding / 100.0))
-                        x1, y1, x2, y2 = max(0, x - padding_px_w), max(0, y - padding_px_h), min(frame_w, x + w + padding_px_w), min(frame_h, y + h + padding_px_h)
-                        w_pad, h_pad = x2 - x1, y2 - y1
-                        if w_pad <= 0 or h_pad <= 0: continue
-                        center_x, center_y = x1 + w_pad // 2, y1 + h_pad // 2
 
-                        def expand_to_ar(target_ar_val):
-                            if w_pad / (h_pad + 1e-9) < target_ar_val: new_w, new_h = int(np.ceil(h_pad * target_ar_val)), h_pad
-                            else: new_w, new_h = w_pad, int(np.ceil(w_pad / target_ar_val))
-                            if new_w > frame_w or new_h > frame_h: return None # Crop would be larger than frame
-                            nx1, ny1 = int(round(center_x - new_w / 2)), int(round(center_y - new_h / 2))
-                            if nx1 < 0: nx1 = 0
-                            if ny1 < 0: ny1 = 0
-                            if nx1 + new_w > frame_w: nx1 = frame_w - new_w
-                            if ny1 + new_h > frame_h: ny1 = frame_h - new_h
-                            nx2, ny2 = nx1 + new_w, ny1 + new_h
-                            # Ensure the original subject is still contained
-                            if nx1 > x1 or ny1 > y1 or nx2 < x2 or ny2 < y2: return None
-                            return (nx1, ny1, nx2, ny2, (new_w * new_h) / max(1, w_pad * h_pad))
+                        x_b, y_b, w_b, h_b = cv2.boundingRect(np.concatenate(contours))
+                        if w_b == 0 or h_b == 0: continue
 
-                        candidates = []
-                        for ar_w, ar_h in aspect_ratios:
-                            if ar_h > 0:
-                                res = expand_to_ar(ar_w / ar_h)
-                                if res: candidates.append(res + (f"{ar_w}x{ar_h}",))
+                        frame_h, frame_w = frame_img.shape[:2]
 
-                        if candidates:
-                            nx1_final, ny1_final, nx2_final, ny2_final, _, ar_str = sorted(candidates, key=lambda t: t[4])[0] # Get the one with the tightest fit
-                            cropped_img = frame_img[ny1_final:ny2_final, nx1_final:nx2_final]
-                            cv2.imwrite(str(crop_dir / f"{Path(frame_meta['filename']).stem}_crop_{ar_str}.png"), cropped_img)
-                            num_cropped += 1
-                        else: # Fallback to just cropping the padded bounding box if no AR fits
-                            cropped_img = frame_img[y1:y2, x1:x2]
+                        padding_factor = 1.0 + (event.crop_padding / 100.0)
+                        w_b_padded = w_b * padding_factor
+                        h_b_padded = h_b * padding_factor
+
+                        feasible_candidates = []
+                        for ar_str, r in aspect_ratios:
+                            # Calculate minimal AR-conforming rectangle that contains the PADDED subject box
+                            h_r = max(h_b_padded, w_b_padded / r)
+                            w_r = r * h_r
+
+                            # Feasibility Check 1: Crop dimensions must be within frame dimensions
+                            if w_r > frame_w or h_r > frame_h:
+                                continue
+
+                            # Feasibility Check 2: A valid placement must exist
+                            # Determine the valid interval for the top-left corner (x1, y1)
+                            x_max_b, y_max_b = x_b + w_b, y_b + h_b
+                            left_min = max(0, x_max_b - w_r)
+                            left_max = min(x_b, frame_w - w_r)
+
+                            top_min = max(0, y_max_b - h_r)
+                            top_max = min(y_b, frame_h - h_r)
+
+                            if left_min > left_max or top_min > top_max:
+                                continue # No valid placement possible
+
+                            # This AR is feasible, add to candidates
+                            area = w_r * h_r
+                            feasible_candidates.append({
+                                "ar_str": ar_str,
+                                "w_r": w_r,
+                                "h_r": h_r,
+                                "area": area,
+                                "left_min": left_min, "left_max": left_max,
+                                "top_min": top_min, "top_max": top_max,
+                            })
+
+                        if not feasible_candidates:
+                            # Fallback to native subject box if no AR is feasible
+                            cropped_img = frame_img[y_b:y_b+h_b, x_b:x_b+w_b]
                             if cropped_img.size > 0:
                                 cv2.imwrite(str(crop_dir / f"{Path(frame_meta['filename']).stem}_crop_native.png"), cropped_img)
                                 num_cropped += 1
-                    except Exception as e: self.logger.error(f"Failed to crop frame {frame_meta['filename']}", exc_info=True)
+                            continue
+
+                        # Select the best candidate (smallest area, with tie-breaking)
+                        subject_ar = w_b / h_b if h_b > 0 else 1
+                        def sort_key(candidate):
+                            ar_str = candidate['ar_str'].replace('x', ':')
+                            r = float(ar_str.split(':')[0]) / float(ar_str.split(':')[1])
+                            ar_diff = abs(r - subject_ar)
+                            return (candidate['area'], ar_diff)
+
+                        best_candidate = min(feasible_candidates, key=sort_key)
+
+                        # Placement Strategy: Center on subject, then clamp to feasible interval
+                        w_r, h_r = best_candidate['w_r'], best_candidate['h_r']
+                        center_x_b, center_y_b = x_b + w_b / 2, y_b + h_b / 2
+
+                        x1 = round(center_x_b - w_r / 2)
+                        y1 = round(center_y_b - h_r / 2)
+
+                        # Clamp to the pre-calculated feasible intervals
+                        x1 = int(max(best_candidate['left_min'], min(x1, best_candidate['left_max'])))
+                        y1 = int(max(best_candidate['top_min'], min(y1, best_candidate['top_max'])))
+
+                        cropped_img = frame_img[y1:y1+int(h_r), x1:x1+int(w_r)]
+                        if cropped_img.size > 0:
+                            cv2.imwrite(str(crop_dir / f"{Path(frame_meta['filename']).stem}_crop_{best_candidate['ar_str']}.png"), cropped_img)
+                            num_cropped += 1
+
+                    except Exception as e:
+                        self.logger.error(f"Failed to crop frame {frame_meta['filename']}", exc_info=True)
                 self.logger.info(f"Cropping complete. Saved {num_cropped} cropped images.")
             return f"Exported {len(frames_to_extract)} frames to {export_dir.name}."
         except subprocess.CalledProcessError as e:
