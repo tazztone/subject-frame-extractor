@@ -2505,7 +2505,7 @@ def execute_session_load(
             "face_ref_img_path_input": gr.update(value=run_config.get("face_ref_img_path", "")),
             "text_prompt_input": gr.update(value=run_config.get("text_prompt", "")),
             "seed_strategy_input": gr.update(value=run_config.get("seed_strategy", "Largest Person")),
-            "person_detector_model_input": gr.update(value=run_config.get("person_detector_model", "yolov8x.pt")),
+            "person_detector_model_input": gr.update(value=run_config.get("person_detector_model", "yolo11x.pt")),
             "dam4sam_model_name_input": gr.update(value=run_config.get("dam4sam_model_name", "sam21pp-T")),
             "enable_dedup_input": gr.update(value=run_config.get("enable_dedup", False)),
             "extracted_video_path_state": run_config.get("video_path", ""),
