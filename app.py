@@ -1904,12 +1904,14 @@ class AnalysisPipeline(Pipeline):
             self.mask_metadata = masker.run_propagation(str(self.output_dir), scenes_to_process)
             self._initialize_niqe_metric()
             self._run_analysis_loop(scenes_to_process)
-            if self.cancel_event.is_set(): return {"log": "Analysis cancelled."}
+            if self.cancel_event.is_set():
+                self.logger.info("Analysis cancelled by user.")
+                return {"log": "Analysis cancelled.", "done": False}
             self.logger.success("Analysis complete.", extra={'output_dir': self.output_dir})
             return {"done": True, "metadata_path": str(self.metadata_path), "output_dir": str(self.output_dir)}
         except Exception as e:
             self.logger.error("Analysis pipeline failed", component="analysis", exc_info=True, extra={'error': str(e)})
-            return {"error": str(e)}
+            return {"error": str(e), "done": False}
 
     def _create_frame_map(self): return create_frame_map(self.output_dir, self.logger)
     def _process_reference_face(self):
