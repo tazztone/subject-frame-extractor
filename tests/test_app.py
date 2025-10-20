@@ -8,6 +8,10 @@ import yaml
 import time
 import numpy as np
 import gradio as gr
+import cv2
+import datetime
+import cv2
+import datetime
 
 # Mock heavy dependencies before they are imported by the app
 mock_torch = MagicMock(name='torch')
@@ -688,6 +692,90 @@ class TestSessionManagement:
         assert "Successfully loaded session" in result['log']
         assert result['status'] == "... Session loaded. You can now proceed from where you left off."
         assert result['source_input']['value'] == "/fake/video.mp4"
+
+class TestExport:
+    @patch('app.subprocess.run')
+    @patch('app.datetime')
+    def test_export_cropping_logic(self, mock_datetime, mock_subprocess, tmp_path, test_config):
+        # 1. Setup mock UI and paths
+        mock_ui = MagicMock()
+        mock_ui.logger = MagicMock()
+        mock_ui.cancel_event = MagicMock()
+        mock_ui.cancel_event.is_set.return_value = False
+        mock_ui.config = test_config # Add the config attribute to the mock
+
+        # Mock datetime to control the output folder name
+        mock_datetime.now.return_value = datetime.datetime(2023, 1, 1, 12, 0, 0)
+
+        # 2. Create dummy files and directories
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+        masks_dir = output_dir / "masks"
+        masks_dir.mkdir()
+        video_path = tmp_path / "video.mp4"
+        video_path.touch()
+
+        # Create dummy image and mask data in memory
+        dummy_frame_img = np.zeros((1080, 1920, 3), dtype=np.uint8)
+        dummy_mask_img = np.zeros((1080, 1920), dtype=np.uint8)
+        # Subject bbox: x=760, y=390, w=400, h=300 (4:3 AR)
+        cv2.rectangle(dummy_mask_img, (760, 390), (1160, 690), 255, -1)
+
+        # Save the necessary input files that the function reads
+        cv2.imwrite(str(masks_dir / "frame_000001.png"), dummy_mask_img)
+        (output_dir / "frame_map.json").write_text('[1]')
+
+        # 3. Mock subprocess.run to simulate FFmpeg creating the exported frame
+        def simulate_ffmpeg_export(*args, **kwargs):
+            export_dir = tmp_path / "output_exported_20230101_120000"
+            export_dir.mkdir(exist_ok=True)
+            # The export function first calls ffmpeg to extract the full frame,
+            # then renames it. The cropping logic reads this renamed file.
+            exported_frame_path = export_dir / "frame_000001.png"
+            cv2.imwrite(str(exported_frame_path), dummy_frame_img)
+            return MagicMock(returncode=0, stderr="")
+
+        mock_subprocess.side_effect = simulate_ffmpeg_export
+
+        # 4. Setup frame metadata for the export event
+        all_frames_data = [{'filename': 'frame_000001.png', 'mask_path': 'frame_000001.png'}]
+
+        event = app.ExportEvent(
+            all_frames_data=all_frames_data,
+            output_dir=str(output_dir),
+            video_path=str(video_path),
+            enable_crop=True,
+            crop_ars="16:9,1:1",
+            crop_padding=10, # 10% padding
+            filter_args={}
+        )
+
+        # 5. Call the export function
+        app.EnhancedAppUI.export_kept_frames(mock_ui, event)
+
+        # 6. Assertions
+        mock_subprocess.assert_called_once()
+        crop_dir = tmp_path / "output_exported_20230101_120000" / "cropped"
+        assert crop_dir.exists()
+
+        # Logic Check:
+        # Bbox: w=400, h=300 (AR=1.33). Padding: 10% -> padded_w=440, padded_h=330.
+        # AR 16:9 (r=1.77): h_r=max(330, 440/r)=330, w_r=330*r=586.6. Area=193600. Diff=0.44
+        # AR 1:1 (r=1.0): h_r=max(330, 440/r)=440, w_r=440*r=440.0. Area=193600. Diff=0.33
+        # Areas are identical, tie-breaker chooses AR closest to subject AR (1.33), which is 1:1.
+        expected_crop_file = crop_dir / "frame_000001_crop_1x1.png"
+
+        files_in_crop_dir = list(crop_dir.glob('*'))
+        assert expected_crop_file.exists(), (
+            f"Expected crop file not found: {expected_crop_file}. "
+            f"Files found in crop dir: {[f.name for f in files_in_crop_dir]}"
+        )
+
+        cropped_image = cv2.imread(str(expected_crop_file))
+        assert cropped_image is not None, "Cropped image could not be read from disk."
+        h, w, _ = cropped_image.shape
+        assert w / h == pytest.approx(1/1, rel=0.01), f"Cropped image AR is {w/h}, expected ~{1/1}"
+
 
 if __name__ == "__main__":
     pytest.main([__file__])
