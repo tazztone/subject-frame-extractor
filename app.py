@@ -2213,8 +2213,9 @@ def apply_scene_overrides(scenes_list, selected_shot_id, prompt, box_th, text_th
         bbox, details = masker.get_seed_for_frame(thumb_rgb, scene_dict['seed_config'])
         scene_dict['seed_result'] = {'bbox': bbox, 'details': details}
         save_scene_seeds(scenes_list, output_folder, logger)
-        updated_gallery_previews = _regenerate_all_previews(scenes_list, output_folder, masker, thumbnail_manager, logger)
-        return (updated_gallery_previews, scenes_list, f"Scene {selected_shot_id} updated and saved.")
+        # The call to a non-existent function is removed. The UI handler for this
+        # function is responsible for regenerating previews if necessary.
+        return (None, scenes_list, f"Scene {selected_shot_id} updated and saved.")
     except Exception as e:
         logger.error("Failed to apply scene overrides", exc_info=True)
         return None, scenes_list, f"[ERROR] {e}"
