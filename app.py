@@ -2748,38 +2748,47 @@ class AppUI:
     def _create_extraction_tab(self):
         gr.Markdown("### Step 1: Provide a Video Source")
         with gr.Row():
-            with gr.Column(scale=2): self._create_component('source_input', 'textbox', {'label': "Video URL or Local Path", 'placeholder': "Enter YouTube URL or local video file path"})
-            with gr.Column(scale=1): self._create_component('max_resolution', 'dropdown', {'choices': self.config.choices.max_resolution, 'value': self.config.ui_defaults.max_resolution, 'label': "Download Resolution"})
+            with gr.Column(scale=2): self._create_component('source_input', 'textbox', {'label': "Video URL or Local Path", 'placeholder': "Enter YouTube URL or local video file path", 'info': "The application can download videos directly from YouTube or use a video file you have on your computer."})
+            with gr.Column(scale=1): self._create_component('max_resolution', 'dropdown', {'choices': self.config.choices.max_resolution, 'value': self.config.ui_defaults.max_resolution, 'label': "Max Download Resolution", 'info': "For YouTube videos, select the maximum resolution to download. 'Maximum available' will get the best quality possible."})
         self._create_component('upload_video_input', 'file', {'label': "Or Upload a Video File", 'file_types': ["video"], 'type': "filepath"})
         gr.Markdown("---"); gr.Markdown("### Step 2: Configure Extraction Method")
         # Toggle between Recommended Thumbnails and Legacy Full-Frame
         self._create_component('extraction_method_toggle_input', 'radio', {
             'label': "Extraction Method",
             'choices': self.config.choices.extraction_method_toggle,
-            'value': "Recommended Thumbnails" if self.config.ui_defaults.thumbnails_only else "Legacy Full-Frame"
+            'value': "Recommended Thumbnails" if self.config.ui_defaults.thumbnails_only else "Legacy Full-Frame",
+            'info': "Choose between the modern, efficient thumbnail-based workflow (Recommended) or the classic direct full-frame extraction (Legacy)."
         })
 
         # Recommended (thumbnails) group
         with gr.Group(visible=self.config.ui_defaults.thumbnails_only) as thumbnail_group:
             self.components['thumbnail_group'] = thumbnail_group
-            gr.Markdown("Recommended Method: This is the fastest and most efficient method. It extracts lightweight thumbnails for scene analysis, allowing you to quickly find the best frames before extracting full-resolution images.")
+            gr.Markdown("**Recommended Method (Thumbnail Extraction):** This is the fastest and most efficient way to process your video. It quickly extracts low-resolution, lightweight thumbnails for every frame. This allows you to perform scene analysis, find the best shots, and select your desired frames *before* extracting the final, full-resolution images. This workflow saves significant time and disk space.")
             self._create_component('thumb_megapixels_input', 'slider', {
                 'label': "Thumbnail Size (MP)", 'minimum': 0.1, 'maximum': 2.0, 'step': 0.1,
-                'value': self.config.ui_defaults.thumb_megapixels
+                'value': self.config.ui_defaults.thumb_megapixels,
+                'info': "Controls the resolution of the extracted thumbnails. Higher values create larger, more detailed thumbnails but increase extraction time and disk usage. 0.5 MP is a good balance for most videos."
             })
             self._create_component('ext_scene_detect_input', 'checkbox', {
-                'label': "Use Scene Detection (Recommended)",
-                'value': self.config.ui_defaults.scene_detect
+                'label': "Use Scene Detection",
+                'value': self.config.ui_defaults.scene_detect,
+                'info': "Automatically detects scene changes in the video. This is highly recommended as it groups frames into logical shots, making it much easier to find the best content in the next step."
             })
 
         # Legacy (full‑frame) group
         with gr.Group(visible=not self.config.ui_defaults.thumbnails_only) as legacy_group:
             self.components['legacy_group'] = legacy_group
-            gr.Markdown("Legacy Method: This extracts full‑resolution frames directly, which can be slow and generate many files. Use only if you have specific needs and understand the performance implications.")
+            gr.Markdown("**Legacy Method (Direct Full-Frame Extraction):** This method extracts full-resolution frames directly from the video based on the selected criteria. Be aware that this can be very slow and consume a large amount of disk space, especially for long, high-resolution videos. It is recommended for advanced users or specific use cases where the thumbnail workflow is not suitable.")
             self._create_component('method_input', 'dropdown', {
                 'choices': self.config.choices.method,
                 'value': self.config.ui_defaults.method,
-                'label': "Extraction Method"
+                'label': "Extraction Method",
+                'info': textwrap.dedent("""\
+                    - **Keyframes:** Extracts only the keyframes (I-frames). Good for a quick summary.
+                    - **Interval:** Extracts one frame every X seconds.
+                    - **Every Nth Frame:** Extracts one frame every N video frames.
+                    - **All:** Extracts every single frame. (Warning: massive disk usage and time).
+                    - **Scene:** Extracts frames where a scene change is detected.""")
             })
             self._create_component('interval_input', 'textbox', {
                 'label': "Interval (seconds)",
@@ -2792,12 +2801,14 @@ class AppUI:
                 'visible': False
             })
             self._create_component('fast_scene_input', 'checkbox', {
-                'label': "Fast Scene Detect (for 'scene' method)",
+                'label': "Fast Scene Detect (Lower Quality)",
+                'info': "Uses a faster but less precise algorithm for scene detection.",
                 'visible': False
             })
             self._create_component('use_png_input', 'checkbox', {
                 'label': "Save as PNG (slower, larger files)",
-                'value': self.config.ui_defaults.use_png
+                'value': self.config.ui_defaults.use_png,
+                'info': "PNG is lossless but results in much larger files than JPG. Recommended only if you need perfect image fidelity."
             })
         gr.Markdown("---"); gr.Markdown("### Step 3: Start Extraction")
         self.components.update({'start_extraction_button': gr.Button("🚀 Start Extraction", variant="primary")})
@@ -2806,10 +2817,20 @@ class AppUI:
         with gr.Row():
             with gr.Column(scale=1):
                 gr.Markdown("### 🎯 Step 1: Choose Your Seeding Strategy")
-                self._create_component('primary_seed_strategy_input', 'radio', {'choices': self.config.choices.primary_seed_strategy, 'value': self.config.choices.primary_seed_strategy[2], 'label': "Primary Seeding Strategy"})
+                gr.Markdown(
+                    """
+                    The goal of this step is to find the best single frame (the "seed") in each scene to represent the subject you're interested in.
+                    This seed frame is then used in the next step to track the subject across the entire scene.
+                    - **By Face**: Best for tracking a specific person. Requires a clear reference photo.
+                    - **By Text**: Good for tracking objects or people by description (e.g., "person in a red shirt").
+                    - **Face + Text Fallback**: The most robust option. It tries to find the person first, but if it can't, it will use the text prompt as a backup.
+                    - **Find Prominent Person**: A quick, automatic option that finds the largest or most central person. Less precise but very fast.
+                    """
+                )
+                self._create_component('primary_seed_strategy_input', 'radio', {'choices': self.config.choices.primary_seed_strategy, 'value': self.config.choices.primary_seed_strategy[2], 'label': "Primary Seeding Strategy", 'info': "Select the main method for identifying the subject in each scene. This initial identification is called the 'seed'."})
                 with gr.Group(visible=("By Face" in self.config.choices.primary_seed_strategy[2] or "Fallback" in self.config.choices.primary_seed_strategy[2])) as face_seeding_group:
                     self.components['face_seeding_group'] = face_seeding_group
-                    gr.Markdown("#### 👤 Configure Face Seeding"); gr.Markdown("Upload a clear image of the person you want to find. The system will search for this person in the video.")
+                    gr.Markdown("#### 👤 Configure Face Seeding"); gr.Markdown("This strategy prioritizes finding a specific person. Upload a clear, frontal photo of the person you want to track. The system will analyze each scene to find the frame where this person is most clearly visible and use it as the starting point (the 'seed').")
                     with gr.Row():
                         self._create_component('face_ref_img_upload_input', 'file', {'label': "Upload Face Reference Image", 'type': "filepath"})
                         with gr.Column():
@@ -2817,20 +2838,20 @@ class AppUI:
                             self._create_component('enable_face_filter_input', 'checkbox', {'label': "Enable Face Similarity (must be checked for face seeding)", 'value': ("By Face" in self.config.choices.primary_seed_strategy[2] or "Fallback" in self.config.choices.primary_seed_strategy[2]), 'interactive': False, 'visible': False})
                 with gr.Group(visible=("By Text" in self.config.choices.primary_seed_strategy[2] or "Fallback" in self.config.choices.primary_seed_strategy[2])) as text_seeding_group:
                     self.components['text_seeding_group'] = text_seeding_group
-                    gr.Markdown("#### 📝 Configure Text Seeding"); gr.Markdown("Describe the subject or object you want to find. Be as specific as possible for better results.")
-                    self._create_component('text_prompt_input', 'textbox', {'label': "Text Prompt", 'placeholder': "e.g., 'a woman in a red dress'", 'value': self.config.ui_defaults.text_prompt, 'info': "Describe the main subject (e.g., 'woman in red dress'). Used for Text and Fallback strategies."})
+                    gr.Markdown("#### 📝 Configure Text Seeding"); gr.Markdown("This strategy uses a text description to find the subject. It's useful for identifying objects, or people described by their clothing or appearance when a reference photo isn't available.")
+                    self._create_component('text_prompt_input', 'textbox', {'label': "Text Prompt", 'placeholder': "e.g., 'a woman in a red dress'", 'value': self.config.ui_defaults.text_prompt, 'info': "Describe the main subject (e.g., 'player wearing number 10', 'person in the green shirt')."})
                 with gr.Group(visible=("Prominent Person" in self.config.choices.primary_seed_strategy[2])) as auto_seeding_group:
                     self.components['auto_seeding_group'] = auto_seeding_group
-                    gr.Markdown("#### 🧑‍🤝‍🧑 Configure Prominent Person Seeding"); gr.Markdown("This mode uses a person detector (YOLO) to find all people in the scene, then selects one based on a simple geometric rule. It does not use face or text information.")
+                    gr.Markdown("#### 🧑‍🤝‍🧑 Configure Prominent Person Seeding"); gr.Markdown("This is a simple, fully automatic mode. It uses an object detector (YOLO) to find all people in the scene and then selects one based on a simple rule, like who is largest or most central. It's fast but less precise, as it doesn't use face identity or text descriptions.")
                     self._create_component('seed_strategy_input', 'dropdown', {'choices': self.config.choices.seed_strategy, 'value': "Largest Person", 'label': "Selection Method", 'info': "'Largest' picks the person taking up the most screen area. 'Center-most' picks the person closest to the frame's center."})
                 with gr.Accordion("Advanced Settings", open=False):
                     gr.Markdown("These settings control the underlying models and analysis parameters. Adjust them only if you understand their effect.")
-                    self._create_component('pre_analysis_enabled_input', 'checkbox', {'label': 'Enable Pre-Analysis to find best seed frame', 'value': self.config.ui_defaults.pre_analysis_enabled, 'info': "Analyzes a subset of frames in each scene to automatically find the highest quality frame to use as the 'seed' for masking."})
-                    self._create_component('pre_sample_nth_input', 'number', {'label': 'Sample every Nth thumbnail for pre-analysis', 'value': self.config.ui_defaults.pre_sample_nth, 'interactive': True, 'info': "For faster pre-analysis, check every Nth frame in a scene. 1 = check all, 5 = check every 5th."})
-                    self._create_component('person_detector_model_input', 'dropdown', {'choices': self.config.choices.person_detector_model, 'value': self.config.ui_defaults.person_detector_model, 'label': "Person Detector Model", 'info': "'x' (large) is more accurate but slower; 's' (small) is faster."})
-                    self._create_component('face_model_name_input', 'dropdown', {'choices': self.config.choices.face_model_name, 'value': self.config.ui_defaults.face_model_name, 'label': "Face Model", 'info': "'l' (large) is more accurate, 's' (small) is faster."})
-                    self._create_component('dam4sam_model_name_input', 'dropdown', {'choices': self.config.choices.dam4sam_model_name, 'value': self.config.ui_defaults.dam4sam_model_name, 'label': "SAM Tracker Model", 'info': "Larger models (L) are more robust but use more VRAM; smaller models (T) are faster."})
-                    self._create_component('enable_dedup_input', 'checkbox', {'label': "Enable Deduplication (pHash)", 'value': self.config.ui_defaults.enable_dedup, 'info': "Computes a 'perceptual hash' for each frame to help filter out visually similar duplicates later."})
+                    self._create_component('pre_analysis_enabled_input', 'checkbox', {'label': 'Enable Pre-Analysis to find best seed frame', 'value': self.config.ui_defaults.pre_analysis_enabled, 'info': "Analyzes a subset of frames in each scene to automatically find the highest quality frame to use as the 'seed' for masking. Highly recommended."})
+                    self._create_component('pre_sample_nth_input', 'number', {'label': 'Sample every Nth thumbnail for pre-analysis', 'value': self.config.ui_defaults.pre_sample_nth, 'interactive': True, 'info': "For faster pre-analysis, check every Nth frame in a scene instead of all of them. A value of 5 is a good starting point."})
+                    self._create_component('person_detector_model_input', 'dropdown', {'choices': self.config.choices.person_detector_model, 'value': self.config.ui_defaults.person_detector_model, 'label': "Person Detector Model", 'info': "YOLO Model for finding people. 'x' (large) is more accurate but slower; 's' (small) is much faster but may miss people."})
+                    self._create_component('face_model_name_input', 'dropdown', {'choices': self.config.choices.face_model_name, 'value': self.config.ui_defaults.face_model_name, 'label': "Face Recognition Model", 'info': "InsightFace model for face matching. 'l' (large) is more accurate; 's' (small) is faster and uses less memory."})
+                    self._create_component('dam4sam_model_name_input', 'dropdown', {'choices': self.config.choices.dam4sam_model_name, 'value': self.config.ui_defaults.dam4sam_model_name, 'label': "Mask Tracking Model", 'info': "The Segment Anything 2 model used for tracking the subject mask across frames. Larger models (L) are more robust but use more VRAM; smaller models (T) are faster."})
+                    self._create_component('enable_dedup_input', 'checkbox', {'label': "Enable Deduplication (pHash)", 'value': self.config.ui_defaults.enable_dedup, 'info': "Computes a 'perceptual hash' for each frame. This is used in the Filtering tab to help remove visually similar or identical frames."})
                 self._create_component('start_pre_analysis_button', 'button', {'value': '🌱 Find & Preview Scene Seeds', 'variant': 'primary'})
                 with gr.Group(visible=False) as propagation_group:
                     self.components['propagation_group'] = propagation_group
@@ -2888,7 +2909,8 @@ class AppUI:
         with gr.Row():
             with gr.Column(scale=1):
                 gr.Markdown("### 🎛️ Filter Controls")
-                self._create_component('auto_pctl_input', 'slider', {'label': 'Auto-Threshold Percentile', 'minimum': 1, 'maximum': 99, 'value': self.config.gradio_defaults.auto_pctl_input, 'step': 1})
+                gr.Markdown("Use these controls to refine your selection of frames. You can set minimum and maximum thresholds for various quality metrics.")
+                self._create_component('auto_pctl_input', 'slider', {'label': 'Auto-Threshold Percentile', 'minimum': 1, 'maximum': 99, 'value': self.config.gradio_defaults.auto_pctl_input, 'step': 1, 'info': "Quickly set all 'Min' sliders to a certain percentile of the data. For example, setting this to 75 and clicking 'Apply' will automatically reject the bottom 75% of frames for each metric."})
                 with gr.Row():
                     self._create_component('apply_auto_button', 'button', {'value': 'Apply Percentile to Mins'})
                     self._create_component('reset_filters_button', 'button', {'value': "Reset Filters"})
@@ -2896,17 +2918,18 @@ class AppUI:
                 self.components['metric_plots'], self.components['metric_sliders'] = {}, {}
                 with gr.Accordion("Deduplication", open=True, visible=True):
                     f_def = self.config.filter_defaults.dedup_thresh
-                    self._create_component('dedup_thresh_input', 'slider', {'label': "Similarity Threshold", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': f_def['default'], 'step': f_def['step']})
+                    self._create_component('dedup_thresh_input', 'slider', {'label': "Similarity Threshold", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': f_def['default'], 'step': f_def['step'], 'info': "Filters out visually similar frames. A lower value is stricter (more filtering). A value of 0 means only identical images will be removed. Set to -1 to disable."})
                 for metric_name, open_default in [('quality_score', True), ('niqe', False), ('sharpness', True), ('edge_strength', True), ('contrast', True),
                                                   ('brightness', False), ('entropy', False), ('face_sim', False), ('mask_area_pct', False)]:
                     if not hasattr(self.config.filter_defaults, metric_name): continue
                     f_def = getattr(self.config.filter_defaults, metric_name)
                     with gr.Accordion(metric_name.replace('_', ' ').title(), open=open_default):
+                        gr.Markdown(self.get_metric_description(metric_name), elem_classes="metric-description")
                         with gr.Column(elem_classes="plot-and-slider-column"):
                             self.components['metric_plots'][metric_name] = self._create_component(f'plot_{metric_name}', 'html', {'visible': False})
                             self.components['metric_sliders'][f"{metric_name}_min"] = self._create_component(f'slider_{metric_name}_min', 'slider', {'label': "Min", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': f_def['default_min'], 'step': f_def['step'], 'interactive': True, 'visible': False})
                             if 'default_max' in f_def: self.components['metric_sliders'][f"{metric_name}_max"] = self._create_component(f'slider_{metric_name}_max', 'slider', {'label': "Max", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': f_def['default_max'], 'step': f_def['step'], 'interactive': True, 'visible': False})
-                            if metric_name == "face_sim": self._create_component('require_face_match_input', 'checkbox', {'label': "Reject if no face", 'value': self.config.ui_defaults.require_face_match, 'visible': False})
+                            if metric_name == "face_sim": self._create_component('require_face_match_input', 'checkbox', {'label': "Reject if no face", 'value': self.config.ui_defaults.require_face_match, 'visible': False, 'info': "If checked, any frame without a detected face that meets the similarity threshold will be rejected."})
             with gr.Column(scale=2):
                 with gr.Group(visible=False) as results_group:
                     self.components['results_group'] = results_group
@@ -2928,7 +2951,19 @@ class AppUI:
 
     def get_all_filter_keys(self): return list(asdict(self.config.quality_weights).keys()) + ["quality_score", "face_sim", "mask_area_pct"]
 
-
+    def get_metric_description(self, metric_name):
+        descriptions = {
+            "quality_score": "A weighted average of all other quality metrics, providing an overall 'goodness' score for the frame.",
+            "niqe": "Natural Image Quality Evaluator. A no-reference, opinion-unaware quality score. Lower is generally better, but it's scaled here so higher is better (like other metrics). Tends to favor clean, natural-looking images.",
+            "sharpness": "Measures the amount of fine detail and edge clarity. Higher values indicate a sharper, more in-focus image.",
+            "edge_strength": "Specifically measures the prominence of edges in the image. It's related to sharpness but focuses more on strong outlines.",
+            "contrast": "The difference between the brightest and darkest parts of the image. Very high or very low contrast can be undesirable.",
+            "brightness": "The overall lightness or darkness of the image.",
+            "entropy": "Measures the amount of 'information' or complexity in the image. A very blurry or plain image will have low entropy.",
+            "face_sim": "Face Similarity. How closely the best-detected face in the frame matches the reference face image. Only appears if a reference face is used.",
+            "mask_area_pct": "Mask Area Percentage. The percentage of the screen taken up by the subject's mask. Useful for filtering out frames where the subject is too small or distant."
+        }
+        return descriptions.get(metric_name, "No description available.")
 
     def _create_event_handlers(self):
         self.components.update({'extracted_video_path_state': gr.State(""), 'extracted_frames_dir_state': gr.State(""),
