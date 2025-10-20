@@ -151,15 +151,6 @@ class Config:
         cleanup_threshold: float = 0.8
 
     @dataclass
-    class ResourceManager:
-        monitor_interval_seconds: int = 5
-        error_backoff_seconds: int = 10
-        history_cutoff_hours: int = 1
-        cpu_threshold_percent: int = 90
-        gpu_threshold_percent: int = 90
-        batch_size_reduction_factor: float = 0.7
-
-    @dataclass
     class Retry:
         max_attempts: int = 3
         backoff_seconds: List[float] = field(default_factory=lambda: [1, 5, 15])
@@ -264,7 +255,6 @@ class Config:
     youtube_dl: YouTubeDL = field(default_factory=YouTubeDL)
     ffmpeg: Ffmpeg = field(default_factory=Ffmpeg)
     cache: Cache = field(default_factory=Cache)
-    resource_manager: ResourceManager = field(default_factory=ResourceManager)
     retry: Retry = field(default_factory=Retry)
     quality_scaling: QualityScaling = field(default_factory=QualityScaling)
     masking: Masking = field(default_factory=Masking)
@@ -1081,94 +1071,6 @@ class ThumbnailManager:
                 break
             self.cache.popitem(last=False)
 
-class AdaptiveResourceManager:
-    def __init__(self, logger, config):
-        self.logger = logger
-        self.config = config
-        self.monitoring_active = False
-        self.current_limits = {'batch_size': self.config.analysis.default_batch_size,
-                               'num_workers': self.config.analysis.default_workers,
-                               'memory_limit_mb': self.config.monitoring.memory_limit_mb}
-        self.performance_history = []
-        self._monitor_thread = None
-
-    def start_monitoring(self):
-        self.monitoring_active = True
-        self._monitor_thread = threading.Thread(target=self._monitor_resources, daemon=True)
-        self._monitor_thread.start()
-        self.logger.info("Started adaptive resource monitoring", component="resource_manager")
-
-    def stop_monitoring(self):
-        self.monitoring_active = False
-        if self._monitor_thread: self._monitor_thread.join(timeout=1)
-        self.logger.info("Stopped adaptive resource monitoring", component="resource_manager")
-
-    def _monitor_resources(self):
-        while self.monitoring_active:
-            try:
-                metrics = self._get_resource_metrics()
-                self._adjust_parameters(metrics)
-                self.performance_history.append({'timestamp': time.time(), 'metrics': metrics, 'limits': self.current_limits.copy()})
-                cutoff_time = time.time() - 3600
-                self.performance_history = [h for h in self.performance_history if h['timestamp'] > cutoff_time]
-                time.sleep(5)
-            except Exception as e:
-                self.logger.error(f"Resource monitoring error: {e}", component="resource_manager")
-                time.sleep(10)
-
-    def _get_resource_metrics(self) -> Dict[str, Any]:
-        process = psutil.Process()
-        metrics = {'cpu_percent': psutil.cpu_percent(interval=1), 'memory_percent': psutil.virtual_memory().percent,
-                   'memory_available_mb': psutil.virtual_memory().available / (1024**2),
-                   'process_memory_mb': process.memory_info().rss / (1024**2),
-                   'disk_io': psutil.disk_io_counters()._asdict() if psutil.disk_io_counters() else {},
-                   'load_average': psutil.getloadavg() if hasattr(psutil, 'getloadavg') else [0, 0, 0]}
-        if GPUtil:
-            try:
-                gpus = GPUtil.getGPUs()
-                if gpus:
-                    gpu = gpus[0]
-                    metrics.update({'gpu_memory_percent': gpu.memoryUtil * 100, 'gpu_load_percent': gpu.load * 100, 'gpu_temperature': gpu.temperature})
-            except Exception: pass
-        return metrics
-
-    def _adjust_parameters(self, metrics: Dict[str, Any]):
-        mem_used = metrics['process_memory_mb']
-
-        if mem_used > self.config.monitoring.memory_critical_threshold_mb:
-            if self.current_limits['batch_size'] > 1:
-                old_batch = self.current_limits['batch_size']
-                self.current_limits['batch_size'] = 1 # Aggressive reduction
-                self.logger.critical(f"Critical memory usage ({mem_used}MB), forcing batch size to 1 from {old_batch}",
-                                     component="resource_manager", custom_fields={'memory_mb': mem_used})
-                gc.collect()
-                if torch.cuda.is_available(): torch.cuda.empty_cache()
-        elif mem_used > self.config.monitoring.memory_warning_threshold_mb:
-            if self.current_limits['batch_size'] > 1:
-                old_batch_size = self.current_limits['batch_size']
-                self.current_limits['batch_size'] = max(1, int(old_batch_size * self.config.resource_manager.batch_size_reduction_factor))
-                self.logger.warning(f"High memory usage detected, reducing batch size from {old_batch_size} to {self.current_limits['batch_size']}",
-                                    component="resource_manager", custom_fields={'memory_mb': metrics['process_memory_mb']})
-                gc.collect()
-
-        if metrics['cpu_percent'] > self.config.monitoring.cpu_warning_threshold_percent:
-            if self.current_limits['num_workers'] > 1:
-                old_workers = self.current_limits['num_workers']
-                self.current_limits['num_workers'] = max(1, int(old_workers * self.config.resource_manager.batch_size_reduction_factor))
-                self.logger.warning(f"High CPU usage detected, reducing workers from {old_workers} to {self.current_limits['num_workers']}",
-                                    component="resource_manager", custom_fields={'cpu_percent': metrics['cpu_percent']})
-        if 'gpu_memory_percent' in metrics and metrics['gpu_memory_percent'] > self.config.monitoring.gpu_memory_warning_threshold_percent:
-            self.logger.warning("High GPU memory usage detected, consider reducing batch size or switching to CPU",
-                                component="resource_manager", custom_fields={'gpu_memory_percent': metrics['gpu_memory_percent']})
-
-    def get_current_limits(self) -> Dict[str, Any]: return self.current_limits.copy()
-    def get_performance_summary(self) -> Dict[str, Any]:
-        if not self.performance_history: return {}
-        recent_metrics = self.performance_history[-10:]
-        avg_cpu = sum(m['metrics']['cpu_percent'] for m in recent_metrics) / len(recent_metrics)
-        avg_memory = sum(m['metrics']['process_memory_mb'] for m in recent_metrics) / len(recent_metrics)
-        return {'avg_cpu_percent': avg_cpu, 'avg_memory_mb': avg_memory, 'current_batch_size': self.current_limits['batch_size'],
-                'current_workers': self.current_limits['num_workers'], 'monitoring_duration_minutes': (time.time() - self.performance_history[0]['timestamp']) / 60}
 
 # --- MODEL LOADING & MANAGEMENT ---
 
@@ -3042,11 +2944,9 @@ class AppUI:
 
 class EnhancedAppUI(AppUI):
     def __init__(self, config: 'Config', logger: 'EnhancedLogger', progress_queue: Queue,
-                 cancel_event: threading.Event, thumbnail_manager: 'ThumbnailManager',
-                 resource_manager: 'AdaptiveResourceManager'):
+                 cancel_event: threading.Event, thumbnail_manager: 'ThumbnailManager'):
         super().__init__(config, logger, progress_queue, cancel_event, thumbnail_manager)
         self.enhanced_logger = logger
-        self.resource_manager = resource_manager
         self.performance_metrics, self.log_filter_level, self.all_logs = {}, "INFO", []
 
     def _build_footer(self):
@@ -3649,8 +3549,6 @@ class CompositionRoot:
         self.config = Config(config_path="config.yml")
         self.logger = EnhancedLogger(config=self.config)
         self.thumbnail_manager = ThumbnailManager(self.logger, self.config)
-        self.resource_manager = AdaptiveResourceManager(logger=self.logger, config=self.config)
-        self.resource_manager.start_monitoring()
         self.progress_queue = Queue()
         self.cancel_event = threading.Event()
         self.logger.set_progress_queue(self.progress_queue)
@@ -3659,17 +3557,14 @@ class CompositionRoot:
     def get_app_ui(self):
         if self._app_ui is None:
             self._app_ui = EnhancedAppUI(config=self.config, logger=self.logger, progress_queue=self.progress_queue,
-                                         cancel_event=self.cancel_event, thumbnail_manager=self.get_thumbnail_manager(),
-                                         resource_manager=self.get_resource_manager())
+                                         cancel_event=self.cancel_event, thumbnail_manager=self.get_thumbnail_manager())
         return self._app_ui
 
     def get_config(self): return self.config
     def get_logger(self): return self.logger
     def get_thumbnail_manager(self): return self.thumbnail_manager
-    def get_resource_manager(self): return self.resource_manager
     def cleanup(self):
         if hasattr(self.thumbnail_manager, 'cleanup'): self.thumbnail_manager.cleanup()
-        self.resource_manager.stop_monitoring()
         self.cancel_event.set()
 
 def check_ffmpeg():
