@@ -540,7 +540,6 @@ class TestEnhancedAppUI:
         cancel_event.is_set.return_value = False
         thumbnail_manager = MagicMock()
         logger = MagicMock()
-
         ui = app.EnhancedAppUI(
             config=test_config,
             logger=logger,
@@ -554,10 +553,8 @@ class TestEnhancedAppUI:
     def test_run_extraction_wrapper(self, mock_execute_extraction, mock_app_ui):
         """Test the extraction wrapper in the UI class."""
         mock_execute_extraction.return_value = iter([{"done": True, "log": "Success"}])
-
         args = [None] * len(mock_app_ui.ext_ui_map_keys)
         result = mock_app_ui.run_extraction_wrapper(*args)
-
         assert result['unified_log'] == "Success"
         mock_execute_extraction.assert_called_once()
 
@@ -565,13 +562,132 @@ class TestEnhancedAppUI:
     def test_run_pre_analysis_wrapper(self, mock_execute_pre_analysis, mock_app_ui):
         """Test the pre-analysis wrapper in the UI class."""
         mock_execute_pre_analysis.return_value = iter([{"done": True, "log": "Success", "scenes": []}])
-
         args = [None] * len(mock_app_ui.ana_ui_map_keys)
         result = mock_app_ui.run_pre_analysis_wrapper(*args)
-
         assert result['unified_log'] == "Success"
         mock_execute_pre_analysis.assert_called_once()
 
+    @patch('app.gr.Button')
+    def test_create_component(self, MockButton, mock_app_ui):
+        """Tests that _create_component correctly creates a Gradio component."""
+        MockButton.return_value = "mock_button"
+        name = "test_button"
+        comp_type = "button"
+        kwargs = {'value': "Test"}
+        component = mock_app_ui._create_component(name, comp_type, kwargs)
+        assert mock_app_ui.components[name] == "mock_button"
+        MockButton.assert_called_once_with(**kwargs)
+
+    def test_on_select_for_edit(self, mock_app_ui, sample_scenes):
+        """Tests the on_select_for_edit function for correct UI updates."""
+        index_map = list(range(len(sample_scenes)))
+        select_data = MagicMock(spec=gr.SelectData)
+        select_data.index = 0
+        outputs = mock_app_ui.on_select_for_edit(select_data, sample_scenes, "Kept", index_map, "/fake/dir")
+        (scenes, status_text, gallery_update, new_index_map, selected_id,
+         editor_status, prompt, box_thresh, text_thresh, accordion_update) = outputs
+        assert selected_id == sample_scenes[0]['shot_id']
+        assert "Editing Scene 1" in editor_status['value']
+        assert accordion_update['open'] is True
+
+class TestCompositionRoot:
+    @patch('app.Config')
+    @patch('app.EnhancedLogger')
+    @patch('app.ThumbnailManager')
+    @patch('app.Queue')
+    @patch('app.threading.Event')
+    def test_initialization(self, mock_event, mock_queue, mock_thumbnail_manager, mock_logger, mock_config):
+        """Tests that CompositionRoot initializes its components correctly."""
+        root = app.CompositionRoot()
+        assert isinstance(root.get_config(), MagicMock)
+        assert isinstance(root.get_logger(), MagicMock)
+        assert isinstance(root.get_thumbnail_manager(), MagicMock)
+        mock_logger.return_value.set_progress_queue.assert_called_once()
+
+    @patch('app.CompositionRoot.get_app_ui')
+    def test_cleanup(self, mock_get_app_ui):
+        """Tests that the cleanup method calls necessary cleanup functions."""
+        root = app.CompositionRoot()
+        root.thumbnail_manager.cleanup = MagicMock()
+        root.cancel_event.set = MagicMock()
+        root.cleanup()
+        root.thumbnail_manager.cleanup.assert_called_once()
+        root.cancel_event.set.assert_called_once()
+
+class TestErrorHandler:
+    @pytest.fixture
+    def error_handler(self, test_config):
+        """Provides an ErrorHandler instance with a mock logger."""
+        logger = MagicMock()
+        return app.ErrorHandler(logger, test_config)
+
+    def test_with_retry_success(self, error_handler):
+        """Tests that the retry decorator returns the function's result on success."""
+        @error_handler.with_retry()
+        def successful_func():
+            return "success"
+        assert successful_func() == "success"
+        error_handler.logger.warning.assert_not_called()
+
+    def test_with_retry_failure(self, error_handler):
+        """Tests that the retry decorator retries and then raises the exception."""
+        mock_func = MagicMock(side_effect=ValueError("test error"))
+        @error_handler.with_retry(max_attempts=2, backoff_seconds=[0.01])
+        def failing_func():
+            return mock_func()
+        with pytest.raises(ValueError, match="test error"):
+            failing_func()
+        assert mock_func.call_count == 2
+        error_handler.logger.warning.assert_called_once()
+        error_handler.logger.error.assert_called_once()
+
+    def test_with_fallback_success(self, error_handler):
+        """Tests that the fallback decorator returns the primary function's result on success."""
+        @error_handler.with_fallback(fallback_func=lambda: "fallback")
+        def successful_func():
+            return "primary"
+        assert successful_func() == "primary"
+        error_handler.logger.warning.assert_not_called()
+
+    def test_with_fallback_failure(self, error_handler):
+        """Tests that the fallback decorator returns the fallback function's result on failure."""
+        @error_handler.with_fallback(fallback_func=lambda: "fallback")
+        def failing_func():
+            raise ValueError("primary failed")
+        assert failing_func() == "fallback"
+        error_handler.logger.warning.assert_called_once()
+
+class TestSessionManagement:
+    @pytest.fixture
+    def mock_ui(self, test_config):
+        """Provides a mock UI object for session management tests."""
+        ui = MagicMock()
+        ui.config = test_config
+        ui.logger = MagicMock()
+        ui.thumbnail_manager = MagicMock()
+        return ui
+
+    @patch('app.validate_session_dir', return_value=(Path('/fake/session'), None))
+    @patch('pathlib.Path.exists', autospec=True)
+    def test_execute_session_load_success(self, mock_exists, mock_validate, mock_ui):
+        """Tests a successful session load."""
+        mock_files = {
+            str(Path('/fake/session/run_config.json')): '{"source_path": "/fake/video.mp4", "output_folder": "/fake/session"}',
+            str(Path('/fake/session/scenes.json')): '[[0, 100], [101, 200]]'
+        }
+        def open_side_effect(path, *args, **kwargs):
+            path_str = str(path)
+            return mock_open(read_data=mock_files.get(path_str, '')).return_value
+        def exists_side_effect(self):
+            s = str(self)
+            return s in mock_files or s == str(Path('/fake/session'))
+        mock_exists.side_effect = exists_side_effect
+        with patch('builtins.open', side_effect=open_side_effect):
+            event = app.SessionLoadEvent(session_path='/fake/session')
+            result = next(app.execute_session_load(mock_ui, event, mock_ui.logger, mock_ui.config, mock_ui.thumbnail_manager))
+        assert "Successfully loaded session" in result['log']
+        assert result['status'] == "... Session loaded. You can now proceed from where you left off."
+        assert result['source_input']['value'] == "/fake/video.mp4"
 
 if __name__ == "__main__":
     pytest.main([__file__])
