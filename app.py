@@ -1380,14 +1380,13 @@ def rgb_to_pil(image_rgb: np.ndarray) -> Image.Image:
 def create_frame_map(output_dir: Path, logger: 'EnhancedLogger'):
     logger.info("Loading frame map...", component="frames")
     frame_map_path = output_dir / "frame_map.json"
-    if not frame_map_path.exists():
-        thumb_files = sorted(list((output_dir / "thumbs").glob("frame_*.webp")), key=lambda p: int(re.search(r'frame_(\d+)', p.name).group(1)))
-        return {int(re.search(r'frame_(\d+)', f.name).group(1)): f.name for f in thumb_files}
     try:
         with open(frame_map_path, 'r', encoding='utf-8') as f: frame_map_list = json.load(f)
-        return {orig_num: f"frame_{i+1:06d}.webp" for i, orig_num in enumerate(sorted(frame_map_list))}
-    except Exception:
-        logger.error("Failed to parse frame_map.json. Using fallback.", exc_info=True)
+        # Ensure all frame numbers are integers, as JSON can load them as strings.
+        sorted_frames = sorted(map(int, frame_map_list))
+        return {orig_num: f"frame_{i+1:06d}.webp" for i, orig_num in enumerate(sorted_frames)}
+    except (FileNotFoundError, json.JSONDecodeError, TypeError) as e:
+        logger.error(f"Could not load or parse frame_map.json: {e}. Frame mapping will be empty. This can happen if extraction was incomplete.", exc_info=False)
         return {}
 
 # --- MASKING & PROPAGATION ---
@@ -2218,127 +2217,124 @@ def apply_scene_overrides(scenes_list, selected_shot_id, prompt, box_th, text_th
         logger.error("Failed to apply scene overrides", exc_info=True)
         return None, scenes_list, f"[ERROR] {e}"
 
-def _regenerate_all_previews(scenes_list, output_folder, masker, thumbnail_manager, logger):
-    previews, output_dir = [], Path(output_folder)
-    previews_dir = output_dir / "previews"
-    previews_dir.mkdir(parents=True, exist_ok=True)
-    for scene_dict in scenes_list:
-        seed_frame_num = scene_dict.get('best_seed_frame') or scene_dict.get('seed_frame_idx') or scene_dict.get('start_frame')
-        if seed_frame_num is None:
-            continue
-        fname = masker.frame_map.get(seed_frame_num)
-        if not fname: continue
-        thumb_rgb = thumbnail_manager.get(output_dir / "thumbs" / f"{Path(fname).stem}.webp")
-        if thumb_rgb is None: continue
-        bbox, details = scene_dict.get('seed_result', {}).get('bbox'), scene_dict.get('seed_result', {}).get('details', {})
-        mask = masker.get_mask_for_bbox(thumb_rgb, bbox) if bbox else None
-        overlay_rgb = render_mask_overlay(thumb_rgb, mask, 0.6, logger=logger) if mask is not None else masker.draw_bbox(thumb_rgb, bbox)
-        shotid = scene_dict.get("shot_id")
-        if shotid is not None:
-            preview_path = previews_dir / f"scene_{int(shotid):05d}.jpg"
-            try:
-                Image.fromarray(overlay_rgb).save(preview_path)
-                scene_dict["preview_path"] = str(preview_path)
-            except Exception as e:
-                logger.error(f"Failed to save preview for scene {shotid}", exc_info=True)
-        previews.append((overlay_rgb, f"Scene {scene_dict['shot_id']} (Seed: {seed_frame_num}) | {details.get('type', 'N/A')}"))
-    return previews
+# --- Cleaned Scene Recomputation Workflow ---
 
-def _recompute_single_preview(scenes_list, selected_shot_id, output_folder, text_prompt, box_thresh, text_thresh, masker, thumbnail_manager, logger):
+def _create_analysis_context(config, logger, thumbnail_manager, cuda_available, ana_ui_map_keys, ana_input_components) -> SubjectMasker:
     """
-    Recompute seed and preview for a single scene using per-scene overrides (prompt/thresholds).
+    Factory function to create a fully initialized SubjectMasker from UI state.
+    This centralizes context creation and ensures robustness.
     """
-    if not scenes_list or selected_shot_id is None:
-        return None, scenes_list, "No scene selected."
-    # Find target scene
-    idx = next((i for i, s in enumerate(scenes_list) if s.get('shot_id') == selected_shot_id), None)
-    if idx is None:
-        return None, scenes_list, f"Scene {selected_shot_id} not found."
-    scene = scenes_list[idx]
-    out_dir = Path(output_folder)
-    seed_frame_num = scene.get('best_seed_frame') or scene.get('seed_frame_idx') or scene.get('start_frame')
+    ui_args = dict(zip(ana_ui_map_keys, ana_input_components))
+    
+    # --- Robust Path Handling ---
+    output_folder_str = ui_args.get('output_folder')
+    if not output_folder_str or not Path(output_folder_str).exists():
+        raise FileNotFoundError(f"Output folder is not valid or does not exist: {output_folder_str}")
+    resolved_outdir = Path(output_folder_str).resolve()
+    ui_args['output_folder'] = str(resolved_outdir)
 
-    # --- FIX STARTS HERE ---
+    # Create parameters and initialize all necessary models
+    params = AnalysisParameters.from_ui(logger, config, **ui_args)
+    models = initialize_analysis_models(params, config, logger, cuda_available)
+    frame_map = create_frame_map(resolved_outdir, logger)
+    
+    if not frame_map:
+        raise RuntimeError("Failed to create frame map. Check if frame_map.json exists and is valid.")
+
+    # Return a fully configured SubjectMasker instance
+    return SubjectMasker(
+        params=params, progress_queue=Queue(), cancel_event=threading.Event(), config=config,
+        frame_map=frame_map, face_analyzer=models["face_analyzer"],
+        reference_embedding=models["ref_emb"], person_detector=models["person_detector"],
+        niqe_metric=None, thumbnail_manager=thumbnail_manager, logger=logger
+    )
+
+def _recompute_single_preview(scene: dict, masker: SubjectMasker, overrides: dict, thumbnail_manager, logger):
+    """
+    Recomputes the seed for a single scene using a pre-built masker and specific overrides.
+    Updates the scene dictionary in-place.
+    """
+    out_dir = Path(masker.params.output_folder)
+    seed_frame_num = scene.get('best_seed_frame') or scene.get('start_frame')
     if seed_frame_num is None:
-        return None, scenes_list, "Scene has no seed frame number assigned."
+        raise ValueError(f"Scene {scene.get('shot_id')} has no seed frame number.")
 
-    try:
-        # Defensively cast the seed frame number to an integer.
-        seed_frame_num_int = int(seed_frame_num)
-    except (ValueError, TypeError):
-        return None, scenes_list, f"Invalid seed frame number format: {seed_frame_num}"
-
-    fname = masker.frame_map.get(seed_frame_num_int)
-    # --- FIX ENDS HERE ---
-
+    fname = masker.frame_map.get(int(seed_frame_num))
     if not fname:
-        return None, scenes_list, f"Error: Seed frame {seed_frame_num_int} not found in the project's frame map."
-    # Load thumbnail
+        raise FileNotFoundError(f"Seed frame {seed_frame_num} not found in project's frame map.")
+
     thumb_rgb = thumbnail_manager.get(out_dir / "thumbs" / f"{Path(fname).stem}.webp")
     if thumb_rgb is None:
-        return None, scenes_list, "Thumbnail not found on disk."
-    # Build per-scene override config
-    scene_overrides = {
-        "text_prompt": text_prompt or "",
-        "box_threshold": float(box_thresh),
-        "text_threshold": float(text_thresh),
-        # keep current strategy flags as-is
-        "primary_seed_strategy": scene.get('seed_config', {}).get('primary_seed_strategy', "🤖 Automatic"),
-        "enable_face_filter": scene.get('seed_config', {}).get('enable_face_filter', False),
-        "seed_strategy": scene.get('seed_config', {}).get('seed_strategy', "Largest Person"),
-    }
-    # Recompute seed
-    bbox, details = masker.get_seed_for_frame(thumb_rgb, seed_config=scene_overrides)
-    scene['seed_config'] = {**scene.get('seed_config', {}), **scene_overrides}
+        raise FileNotFoundError(f"Thumbnail for frame {seed_frame_num} not found on disk.")
+
+    # Create a temporary config for this specific seed selection run
+    seed_config = {**asdict(masker.params), **overrides}
+    
+    # If the user provides a text prompt in the editor, it's a strong signal
+    # to use the text-first seeding strategy for this specific re-computation.
+    if overrides.get("text_prompt", "").strip():
+        seed_config['primary_seed_strategy'] = "📝 By Text"
+        logger.info(f"Recomputing scene {scene.get('shot_id')} with text-first strategy due to override.", extra={'prompt': overrides.get("text_prompt")})
+
+    # Recompute seed and update scene dictionary
+    bbox, details = masker.get_seed_for_frame(thumb_rgb, seed_config=seed_config)
+    scene['seed_config'].update(overrides)
     scene['seed_result'] = {'bbox': bbox, 'details': details}
-    # Optionally compute a mask for overlay if SAM2 is available
+    
+    # Update metrics that are displayed in the caption
+    new_score = details.get('final_score') or details.get('conf') or details.get('dino_conf')
+    if new_score is not None:
+        scene.setdefault('seed_metrics', {})['score'] = new_score
+
+    # Generate and save a new preview image
     mask = masker.get_mask_for_bbox(thumb_rgb, bbox) if bbox else None
     if mask is not None:
-        h, w = mask.shape[:2]
-        scene['seed_result']['details']['mask_area_pct'] = (float(np.sum(mask > 0)) / float(h * w) * 100.0) if (h * w) > 0 else 0.0
-    # Save preview and return the updated image for the gallery
+        h, w = mask.shape[:2]; area = (h * w)
+        scene['seed_result']['details']['mask_area_pct'] = (np.sum(mask > 0) / area * 100.0) if area > 0 else 0.0
+
+    overlay_rgb = render_mask_overlay(thumb_rgb, mask, 0.6, logger=logger) if mask is not None else masker.draw_bbox(thumb_rgb, bbox)
     previews_dir = out_dir / "previews"
     previews_dir.mkdir(parents=True, exist_ok=True)
-    overlay_rgb = render_mask_overlay(thumb_rgb, mask, 0.6, logger=logger) if mask is not None else masker.draw_bbox(thumb_rgb, bbox)
     preview_path = previews_dir / f"scene_{int(scene['shot_id']):05d}.jpg"
     try:
         Image.fromarray(overlay_rgb).save(preview_path)
         scene['preview_path'] = str(preview_path)
     except Exception:
         logger.error(f"Failed to save preview for scene {scene['shot_id']}", exc_info=True)
-    caption = f"Scene {scene['shot_id']} (Seed: {scene.get('best_seed_frame')}) | {details.get('type','N/A')}"
-    return (overlay_rgb, caption), scenes_list, f"Scene {scene['shot_id']} updated and saved."
 
-def _wire_recompute_handler(config, logger, thumbnail_manager, scenes, shot_id, outdir, text_prompt, box_thresh, text_thresh):
-    # Build a lightweight masker for recompute in the editor context
+def _wire_recompute_handler(config, logger, thumbnail_manager, scenes, shot_id, outdir, text_prompt, box_thresh, text_thresh,
+                            view, ana_ui_map_keys, ana_input_components, cuda_available):
+    """
+    Orchestrator for the 'Recompute Preview' button. Cleanly builds context and executes logic.
+    """
+    try:
+        # 1. Create the full analysis context from the current UI state
+        # We need to combine the specific inputs from the recompute button with the general analysis inputs
+        ui_args = dict(zip(ana_ui_map_keys, ana_input_components))
+        ui_args['output_folder'] = outdir # This is critical
+        
+        # The ana_input_components passed to this handler already contain the full UI state,
+        # so we can create the masker directly from them.
+        masker = _create_analysis_context(config, logger, thumbnail_manager, cuda_available,
+                                          ana_ui_map_keys, ana_input_components)
 
-    # Fix: Properly create and assign frame_map
-    frame_map = create_frame_map(Path(outdir), logger)
-    logger.info(f"DEBUG: Created frame_map with {len(frame_map)} entries")
+        # 2. Find the target scene and apply overrides
+        scene_idx = next((i for i, s in enumerate(scenes) if s.get('shot_id') == shot_id), None)
+        if scene_idx is None:
+            return scenes, gr.update(), gr.update(), f"Error: Scene {shot_id} not found."
 
-    masker = SubjectMasker(
-        params=AnalysisParameters(),  # only seed selection is needed here
-        progress_queue=Queue(),
-        cancel_event=threading.Event(),
-        config=config,
-        frame_map=frame_map,  # Pass the created frame_map
-        face_analyzer=None, reference_embedding=None,
-        person_detector=None, niqe_metric=None,
-        thumbnail_manager=thumbnail_manager,
-        logger=logger
-    )
+        overrides = {"text_prompt": text_prompt, "box_threshold": float(box_thresh), "text_threshold": float(text_thresh)}
+        _recompute_single_preview(scenes[scene_idx], masker, overrides, thumbnail_manager, logger)
 
-    # Fix: Ensure the frame_map is actually assigned to the masker
-    masker.frame_map = frame_map
+        # 3. Persist the changes and update the UI
+        save_scene_seeds(scenes, outdir, logger)
+        gallery_items, index_map = build_scene_gallery_items(scenes, view, outdir)
+        msg = f"Scene {shot_id} preview recomputed successfully."
+        return scenes, gr.update(value=gallery_items), gr.update(value=index_map), msg
 
-    updated_preview, updated_scenes, msg = _recompute_single_preview(
-        scenes, shot_id, outdir, text_prompt, box_thresh, text_thresh, masker, thumbnail_manager, logger
-    )
-    # If nothing to update, return pass-through values
-    if not updated_preview:
-        return gr.update(), updated_scenes, msg
-    # Update the gallery with just the recomputed scene preview; caller may choose to refresh all if needed
-    return gr.update(value=[updated_preview], rows=1), updated_scenes, msg
+    except Exception as e:
+        logger.error("Failed to recompute scene preview", exc_info=True)
+        return scenes, gr.update(), gr.update(), f"[ERROR] Recompute failed: {str(e)}"
 
 # --- PIPELINE LOGIC ---
 
@@ -3260,21 +3256,23 @@ class EnhancedAppUI(AppUI):
 
         # Wire recompute to use current editor controls and state
         c['scenerecomputebutton'].click(
-            fn=lambda scenes, shot_id, outdir, txt, bth, tth: _wire_recompute_handler(
-                self.config, self.enhanced_logger, self.thumbnail_manager, scenes, shot_id, outdir, txt, bth, tth
+            fn=lambda scenes, shot_id, outdir, view, txt, bth, tth, *ana_args: _wire_recompute_handler(
+                self.config, self.enhanced_logger, self.thumbnail_manager, scenes, shot_id, outdir, txt, bth, tth, view,
+                self.ana_ui_map_keys, ana_args, self.cuda_available
             ),
             inputs=[
                 c['scenes_state'],
                 c['selected_scene_id_state'],
                 c['analysis_output_dir_state'],
-                c['sceneeditorpromptinput'],   # text box id in editor
-                c['sceneeditorboxthreshinput'],    # slider id in editor
-                c['sceneeditortextthreshinput'],   # slider id in editor
+                c['scene_gallery_view_toggle'],
+                c['sceneeditorpromptinput'], c['sceneeditorboxthreshinput'], c['sceneeditortextthreshinput'],
+                *self.ana_input_components
             ],
             outputs=[
-                c['scene_gallery'],                # or the gallery component used in step 2
                 c['scenes_state'],
-                c['unified_log'],
+                c['scene_gallery'],
+                c['scene_gallery_index_map_state'],
+                c['sceneeditorstatusmd'],
             ],
         )
 
