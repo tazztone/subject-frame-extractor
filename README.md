@@ -281,14 +281,6 @@ This project builds upon several excellent open-source projects:
 - 💡 **Feature Requests**: [Start a discussion](https://github.com/tazztone/subject-frame-extractor/discussions)
 - 📖 **Documentation**: Check this README and inline code comments
 
-## 📚 Documentation
-
-This repository is documented using Google Style Python Docstrings. All public classes, methods, and functions should have a complete docstring that explains their purpose, arguments, and return values.
-
-### Maintaining Documentation
-
-When adding or modifying code, please ensure that the accompanying docstrings are updated to reflect the changes. This practice is crucial for maintaining a clean, understandable, and maintainable codebase.
-
 ---
 
 <p align="center">
