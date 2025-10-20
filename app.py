@@ -184,7 +184,7 @@ class Config:
         person_detector_model: str = "yolo11x.pt"
         primary_seed_strategy: str = "🤖 Automatic"
         seed_strategy: str = "Largest Person"
-        text_prompt: str = ""
+        text_prompt: str = "a person"
         resume: bool = False
         require_face_match: bool = False
         enable_dedup: bool = True
@@ -223,7 +223,7 @@ class Config:
         max_resolution: List[str] = field(default_factory=lambda: ["maximum available", "2160", "1080", "720"])
         extraction_method_toggle: List[str] = field(default_factory=lambda: ["Recommended Thumbnails", "Legacy Full-Frame"])
         method: List[str] = field(default_factory=lambda: ["keyframes", "interval", "every_nth_frame", "all", "scene"])
-        primary_seed_strategy: List[str] = field(default_factory=lambda: ["👤 By Face", "📝 By Text", "🔄 Face + Text Fallback", "🤖 Automatic"])
+        primary_seed_strategy: List[str] = field(default_factory=lambda: ["👤 By Face", "📝 By Text", "🔄 Face + Text Fallback", "🧑‍🤝‍🧑 Find Prominent Person"])
         seed_strategy: List[str] = field(default_factory=lambda: ["Largest Person", "Center-most Person"])
         person_detector_model: List[str] = field(default_factory=lambda: ['yolo11x.pt', 'yolo11s.pt'])
         face_model_name: List[str] = field(default_factory=lambda: ["buffalo_l", "buffalo_s"])
@@ -2803,31 +2803,31 @@ class AppUI:
         with gr.Row():
             with gr.Column(scale=1):
                 gr.Markdown("### 🎯 Step 1: Choose Your Seeding Strategy")
-                self._create_component('primary_seed_strategy_input', 'radio', {'choices': self.config.choices.primary_seed_strategy, 'value': self.config.ui_defaults.primary_seed_strategy, 'label': "Primary Seeding Strategy"})
-                with gr.Group(visible=(self.config.ui_defaults.primary_seed_strategy == "👤 By Face" or self.config.ui_defaults.primary_seed_strategy == "🔄 Face + Text Fallback")) as face_seeding_group:
+                self._create_component('primary_seed_strategy_input', 'radio', {'choices': self.config.choices.primary_seed_strategy, 'value': self.config.choices.primary_seed_strategy[2], 'label': "Primary Seeding Strategy"})
+                with gr.Group(visible=("By Face" in self.config.choices.primary_seed_strategy[2] or "Fallback" in self.config.choices.primary_seed_strategy[2])) as face_seeding_group:
                     self.components['face_seeding_group'] = face_seeding_group
                     gr.Markdown("#### 👤 Configure Face Seeding"); gr.Markdown("Upload a clear image of the person you want to find. The system will search for this person in the video.")
                     with gr.Row():
                         self._create_component('face_ref_img_upload_input', 'file', {'label': "Upload Face Reference Image", 'type': "filepath"})
                         with gr.Column():
                             self._create_component('face_ref_img_path_input', 'textbox', {'label': "Or provide a local file path"})
-                            self._create_component('enable_face_filter_input', 'checkbox', {'label': "Enable Face Similarity (must be checked for face seeding)", 'value': (self.config.ui_defaults.primary_seed_strategy == "👤 By Face" or self.config.ui_defaults.primary_seed_strategy == "🔄 Face + Text Fallback"), 'interactive': False, 'visible': False})
-                with gr.Group(visible=(self.config.ui_defaults.primary_seed_strategy == "📝 By Text" or self.config.ui_defaults.primary_seed_strategy == "🔄 Face + Text Fallback")) as text_seeding_group:
+                            self._create_component('enable_face_filter_input', 'checkbox', {'label': "Enable Face Similarity (must be checked for face seeding)", 'value': ("By Face" in self.config.choices.primary_seed_strategy[2] or "Fallback" in self.config.choices.primary_seed_strategy[2]), 'interactive': False, 'visible': False})
+                with gr.Group(visible=("By Text" in self.config.choices.primary_seed_strategy[2] or "Fallback" in self.config.choices.primary_seed_strategy[2])) as text_seeding_group:
                     self.components['text_seeding_group'] = text_seeding_group
                     gr.Markdown("#### 📝 Configure Text Seeding"); gr.Markdown("Describe the subject or object you want to find. Be as specific as possible for better results.")
-                    self._create_component('text_prompt_input', 'textbox', {'label': "Text Prompt", 'placeholder': "e.g., 'a woman in a red dress'", 'value': self.config.ui_defaults.text_prompt})
-                with gr.Group(visible=(self.config.ui_defaults.primary_seed_strategy == "🤖 Automatic")) as auto_seeding_group:
+                    self._create_component('text_prompt_input', 'textbox', {'label': "Text Prompt", 'placeholder': "e.g., 'a woman in a red dress'", 'value': self.config.ui_defaults.text_prompt, 'info': "Describe the main subject (e.g., 'woman in red dress'). Used for Text and Fallback strategies."})
+                with gr.Group(visible=("Prominent Person" in self.config.choices.primary_seed_strategy[2])) as auto_seeding_group:
                     self.components['auto_seeding_group'] = auto_seeding_group
-                    gr.Markdown("#### 🤖 Configure Automatic Seeding"); gr.Markdown("The system will automatically identify the most prominent person in each scene. This is a good general-purpose starting point.")
-                    self._create_component('seed_strategy_input', 'dropdown', {'choices': self.config.choices.seed_strategy, 'value': "Largest Person", 'label': "Automatic Seeding Method"})
+                    gr.Markdown("#### 🧑‍🤝‍🧑 Configure Prominent Person Seeding"); gr.Markdown("This mode uses a person detector (YOLO) to find all people in the scene, then selects one based on a simple geometric rule. It does not use face or text information.")
+                    self._create_component('seed_strategy_input', 'dropdown', {'choices': self.config.choices.seed_strategy, 'value': "Largest Person", 'label': "Selection Method", 'info': "'Largest' picks the person taking up the most screen area. 'Center-most' picks the person closest to the frame's center."})
                 with gr.Accordion("Advanced Settings", open=False):
                     gr.Markdown("These settings control the underlying models and analysis parameters. Adjust them only if you understand their effect.")
-                    self._create_component('pre_analysis_enabled_input', 'checkbox', {'label': 'Enable Pre-Analysis to find best seed frame', 'value': self.config.ui_defaults.pre_analysis_enabled})
-                    self._create_component('pre_sample_nth_input', 'number', {'label': 'Sample every Nth thumbnail for pre-analysis', 'value': self.config.ui_defaults.pre_sample_nth, 'interactive': True})
-                    self._create_component('person_detector_model_input', 'dropdown', {'choices': self.config.choices.person_detector_model, 'value': self.config.ui_defaults.person_detector_model, 'label': "Person Detector (for Automatic)"})
-                    self._create_component('face_model_name_input', 'dropdown', {'choices': self.config.choices.face_model_name, 'value': self.config.ui_defaults.face_model_name, 'label': "Face Model (for Face Seeding)"})
-                    self._create_component('dam4sam_model_name_input', 'dropdown', {'choices': self.config.choices.dam4sam_model_name, 'value': self.config.ui_defaults.dam4sam_model_name, 'label': "SAM Tracker Model"})
-                    self._create_component('enable_dedup_input', 'checkbox', {'label': "Enable Deduplication (pHash)", 'value': self.config.ui_defaults.enable_dedup})
+                    self._create_component('pre_analysis_enabled_input', 'checkbox', {'label': 'Enable Pre-Analysis to find best seed frame', 'value': self.config.ui_defaults.pre_analysis_enabled, 'info': "Analyzes a subset of frames in each scene to automatically find the highest quality frame to use as the 'seed' for masking."})
+                    self._create_component('pre_sample_nth_input', 'number', {'label': 'Sample every Nth thumbnail for pre-analysis', 'value': self.config.ui_defaults.pre_sample_nth, 'interactive': True, 'info': "For faster pre-analysis, check every Nth frame in a scene. 1 = check all, 5 = check every 5th."})
+                    self._create_component('person_detector_model_input', 'dropdown', {'choices': self.config.choices.person_detector_model, 'value': self.config.ui_defaults.person_detector_model, 'label': "Person Detector Model", 'info': "'x' (large) is more accurate but slower; 's' (small) is faster."})
+                    self._create_component('face_model_name_input', 'dropdown', {'choices': self.config.choices.face_model_name, 'value': self.config.ui_defaults.face_model_name, 'label': "Face Model", 'info': "'l' (large) is more accurate, 's' (small) is faster."})
+                    self._create_component('dam4sam_model_name_input', 'dropdown', {'choices': self.config.choices.dam4sam_model_name, 'value': self.config.ui_defaults.dam4sam_model_name, 'label': "SAM Tracker Model", 'info': "Larger models (L) are more robust but use more VRAM; smaller models (T) are faster."})
+                    self._create_component('enable_dedup_input', 'checkbox', {'label': "Enable Deduplication (pHash)", 'value': self.config.ui_defaults.enable_dedup, 'info': "Computes a 'perceptual hash' for each frame to help filter out visually similar duplicates later."})
                 self._create_component('start_pre_analysis_button', 'button', {'value': '🌱 Find & Preview Scene Seeds', 'variant': 'primary'})
                 with gr.Group(visible=False) as propagation_group:
                     self.components['propagation_group'] = propagation_group
@@ -2864,14 +2864,16 @@ class AppUI:
                     self.components["sceneeditoraccordion"] = sceneeditoraccordion
                     self._create_component("sceneeditorstatusmd", "markdown", {"value": "Select a scene to edit."})
                     with gr.Row():
-                        self._create_component("sceneeditorpromptinput", "textbox", {"label": "Per-Scene Text Prompt"})
+                        self._create_component("sceneeditorpromptinput", "textbox", {"label": "Per-Scene Text Prompt", "info": "Override the main text prompt for this scene only. This will force a text-based search."})
                     with gr.Row():
+                        info_box = "Confidence for detecting an object's bounding box. Higher = fewer, more confident detections."
                         self._create_component("sceneeditorboxthreshinput", "slider", {
-                            "label": "Box Thresh", "minimum": 0.0, "maximum": 1.0, "step": 0.05,
-                            "value": self.config.grounding_dino_params.box_threshold})
+                            "label": "Box Thresh", "minimum": 0.0, "maximum": 1.0, "step": 0.05, "info": info_box,
+                            "value": self.config.grounding_dino_params.box_threshold,})
+                        info_text = "Confidence for matching the prompt to an object. Higher = stricter text match."
                         self._create_component("sceneeditortextthreshinput", "slider", {
-                            "label": "Text Thresh", "minimum": 0.0, "maximum": 1.0, "step": 0.05,
-                            "value": self.config.grounding_dino_params.text_threshold})
+                            "label": "Text Thresh", "minimum": 0.0, "maximum": 1.0, "step": 0.05, "info": info_text,
+                            "value": self.config.grounding_dino_params.text_threshold,})
                     with gr.Row():
                         self._create_component("scenerecomputebutton", "button", {"value": "▶️Recompute Preview"})
                         self._create_component("sceneincludebutton", "button", {"value": "✅keep scene"})
@@ -2892,8 +2894,8 @@ class AppUI:
                 with gr.Accordion("Deduplication", open=True, visible=True):
                     f_def = self.config.filter_defaults.dedup_thresh
                     self._create_component('dedup_thresh_input', 'slider', {'label': "Similarity Threshold", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': f_def['default'], 'step': f_def['step']})
-                for metric_name, open_default in [('niqe', True), ('sharpness', True), ('edge_strength', True), ('contrast', True),
-                                                 ('brightness', False), ('entropy', False), ('face_sim', False), ('mask_area_pct', False)]:
+                for metric_name, open_default in [('quality_score', True), ('niqe', False), ('sharpness', True), ('edge_strength', True), ('contrast', True),
+                                                  ('brightness', False), ('entropy', False), ('face_sim', False), ('mask_area_pct', False)]:
                     if not hasattr(self.config.filter_defaults, metric_name): continue
                     f_def = getattr(self.config.filter_defaults, metric_name)
                     with gr.Accordion(metric_name.replace('_', ' ').title(), open=open_default):
@@ -2921,7 +2923,7 @@ class AppUI:
                             self._create_component('crop_padding_input', 'slider', {'label': "Padding %", 'value': self.config.export_options.crop_padding})
                         self._create_component('crop_ar_input', 'textbox', {'label': "Crop ARs", 'value': self.config.export_options.crop_ars, 'info': "Comma-separated list (e.g., 16:9, 1:1). The best-fitting AR for each subject's mask will be chosen automatically."})
 
-    def get_all_filter_keys(self): return list(asdict(self.config.quality_weights).keys()) + ["face_sim", "mask_area_pct"]
+    def get_all_filter_keys(self): return list(asdict(self.config.quality_weights).keys()) + ["quality_score", "face_sim", "mask_area_pct"]
 
 
 
@@ -3066,11 +3068,11 @@ class EnhancedAppUI(AppUI):
 
     def _create_pre_analysis_event(self, *args):
         ui_args = dict(zip(self.ana_ui_map_keys, args))
-        strategy = ui_args.get('primary_seed_strategy', '🤖 Automatic')
+        strategy = ui_args.get('primary_seed_strategy', '🧑‍🤝‍🧑 Find Prominent Person')
         if strategy == "👤 By Face": ui_args.update({'enable_face_filter': True, 'text_prompt': ""})
         elif strategy == "📝 By Text": ui_args.update({'enable_face_filter': False, 'face_ref_img_path': "", 'face_ref_img_upload': None})
         elif strategy == "🔄 Face + Text Fallback": ui_args['enable_face_filter'] = True
-        elif strategy == "🤖 Automatic": ui_args.update({'enable_face_filter': False, 'text_prompt': "", 'face_ref_img_path': "", 'face_ref_img_upload': None})
+        elif strategy == "🧑‍🤝‍🧑 Find Prominent Person": ui_args.update({'enable_face_filter': False, 'text_prompt': "", 'face_ref_img_path': "", 'face_ref_img_upload': None})
         for k, v_type, default in [('pre_sample_nth', int, 5), ('min_mask_area_pct', float, 0.0), ('sharpness_base_scale', float, 1.0), ('edge_strength_base_scale', float, 1.0)]:
             try: ui_args[k] = v_type(ui_args.get(k)) if v_type != int or int(ui_args.get(k)) > 0 else default
             except (TypeError, ValueError): ui_args[k] = default
@@ -3165,7 +3167,7 @@ class EnhancedAppUI(AppUI):
 
         c['primary_seed_strategy_input'].change(lambda s: {c['face_seeding_group']: gr.update(visible=s == "👤 By Face" or s == "🔄 Face + Text Fallback"),
                                                            c['text_seeding_group']: gr.update(visible=s == "📝 By Text" or s == "🔄 Face + Text Fallback"),
-                                                           c['auto_seeding_group']: gr.update(visible=s == "🤖 Automatic"),
+                                                           c['auto_seeding_group']: gr.update(visible=s == "🧑‍🤝‍🧑 Find Prominent Person"),
                                                            c['enable_face_filter_input']: gr.update(value=s == "👤 By Face" or s == "🔄 Face + Text Fallback")},
                                                  [c['primary_seed_strategy_input']], [c['face_seeding_group'], c['text_seeding_group'],
                                                                                      c['auto_seeding_group'], c['enable_face_filter_input']])
