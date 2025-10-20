@@ -2257,24 +2257,22 @@ def _recompute_single_preview(scenes_list, selected_shot_id, output_folder, text
     scene = scenes_list[idx]
     out_dir = Path(output_folder)
     seed_frame_num = scene.get('best_seed_frame') or scene.get('seed_frame_idx') or scene.get('start_frame')
-    fname = masker.frame_map.get(seed_frame_num)
 
-    # DEBUG: Add logging to see what's happening
-    logger.info(f"DEBUG: seed_frame_num={seed_frame_num}, fname={fname}, frame_map keys={list(masker.frame_map.keys())[:10]}")
+    # --- FIX STARTS HERE ---
+    if seed_frame_num is None:
+        return None, scenes_list, "Scene has no seed frame number assigned."
 
-    if not fname:
-        # Fallback: Try direct filename construction
-        if seed_frame_num is not None:
-            # Try to find the frame index in the frame_map.json list
-            try:
-                frame_index = list(masker.frame_map.keys()).index(seed_frame_num)
-                fname = f"frame_{frame_index+1:06d}.webp"
-                logger.info(f"DEBUG: Using fallback filename: {fname}")
-            except ValueError:
-                return None, scenes_list, f"No seed frame found for this scene. Seed frame: {seed_frame_num}"
+    try:
+        # Defensively cast the seed frame number to an integer.
+        seed_frame_num_int = int(seed_frame_num)
+    except (ValueError, TypeError):
+        return None, scenes_list, f"Invalid seed frame number format: {seed_frame_num}"
+
+    fname = masker.frame_map.get(seed_frame_num_int)
+    # --- FIX ENDS HERE ---
 
     if not fname:
-        return None, scenes_list, "No seed frame found for this scene."
+        return None, scenes_list, f"Error: Seed frame {seed_frame_num_int} not found in the project's frame map."
     # Load thumbnail
     thumb_rgb = thumbnail_manager.get(out_dir / "thumbs" / f"{Path(fname).stem}.webp")
     if thumb_rgb is None:
