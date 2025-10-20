@@ -91,11 +91,12 @@ def sample_frames_data():
 
 @pytest.fixture
 def sample_scenes():
+    # Add start_frame and end_frame to match the Scene dataclass structure
     return [
-        {'shot_id': 1, 'status': 'pending', 'seed_result': {'details': {'mask_area_pct': 50}}, 'seed_metrics': {'best_face_sim': 0.9, 'score': 0.95}},
-        {'shot_id': 2, 'status': 'pending', 'seed_result': {'details': {'mask_area_pct': 5}}, 'seed_metrics': {'best_face_sim': 0.8, 'score': 0.9}},
-        {'shot_id': 3, 'status': 'pending', 'seed_result': {'details': {'mask_area_pct': 60}}, 'seed_metrics': {'best_face_sim': 0.4, 'score': 0.8}},
-        {'shot_id': 4, 'status': 'pending', 'seed_result': {'details': {'mask_area_pct': 70}}, 'seed_metrics': {'score': 0.7}},
+        {'shot_id': 1, 'start_frame': 0, 'end_frame': 100, 'status': 'pending', 'seed_result': {'details': {'mask_area_pct': 50}}, 'seed_metrics': {'best_face_sim': 0.9, 'score': 0.95}},
+        {'shot_id': 2, 'start_frame': 101, 'end_frame': 200, 'status': 'pending', 'seed_result': {'details': {'mask_area_pct': 5}}, 'seed_metrics': {'best_face_sim': 0.8, 'score': 0.9}},
+        {'shot_id': 3, 'start_frame': 201, 'end_frame': 300, 'status': 'pending', 'seed_result': {'details': {'mask_area_pct': 60}}, 'seed_metrics': {'best_face_sim': 0.4, 'score': 0.8}},
+        {'shot_id': 4, 'start_frame': 301, 'end_frame': 400, 'status': 'pending', 'seed_result': {'details': {'mask_area_pct': 70}}, 'seed_metrics': {'score': 0.7}},
     ]
 
 # --- Test Classes ---
@@ -192,6 +193,67 @@ class TestFilterLogic:
         assert updates['slider_sharpness_min']['value'] == 77.5
         assert updates['slider_contrast_min']['value'] == 4.0
 
+    def test_apply_all_filters_with_face_and_mask(self, sample_frames_data, test_config):
+        """Verify filtering by face similarity and mask area."""
+        filters = {
+            "face_sim_enabled": True,
+            "face_sim_min": 0.5,
+            "mask_area_enabled": True,
+            "mask_area_pct_min": 10.0,
+        }
+        kept, rejected, _, _ = app.apply_all_filters_vectorized(sample_frames_data, filters, test_config)
+
+        kept_filenames = {f['filename'] for f in kept}
+        rejected_filenames = {f['filename'] for f in rejected}
+
+        assert 'frame_01.png' in kept_filenames
+        assert 'frame_04.png' in rejected_filenames # face_sim too low
+        assert 'frame_05.png' in rejected_filenames # mask_area_pct too low
+
+    @patch('app._update_gallery')
+    def test_on_filters_changed(self, mock_update_gallery, sample_frames_data, test_config):
+        """Verify that on_filters_changed correctly calls the gallery update function."""
+        mock_update_gallery.return_value = ("Status", gr.update(value=[]))
+        slider_values = {'sharpness_min': 10.0}
+        event = app.FilterEvent(
+            all_frames_data=sample_frames_data,
+            per_metric_values={'face_sim': [0.8], 'mask_area_pct': [20.0]},
+            output_dir="/fake/dir",
+            gallery_view="Kept Frames",
+            show_overlay=True,
+            overlay_alpha=0.5,
+            require_face_match=False,
+            dedup_thresh=-1,
+            slider_values=slider_values
+        )
+
+        result = app.on_filters_changed(event, MagicMock(), test_config)
+
+        mock_update_gallery.assert_called_once()
+        assert "filter_status_text" in result
+        assert "results_gallery" in result
+
+    @patch('app.on_filters_changed')
+    def test_reset_filters(self, mock_on_filters_changed, sample_frames_data, test_config):
+        """Verify that resetting filters restores default values and updates the UI."""
+        mock_on_filters_changed.return_value = {"filter_status_text": "Reset", "results_gallery": []}
+        slider_keys = ['sharpness_min', 'sharpness_max']
+
+        # This function is now part of the UI class, but we test the core logic
+        result = app.reset_filters(
+            all_frames_data=sample_frames_data,
+            per_metric_values={},
+            output_dir="/fake/dir",
+            config=test_config,
+            slider_keys=slider_keys,
+            thumbnail_manager=MagicMock()
+        )
+
+        assert result['slider_sharpness_min']['value'] == test_config.filter_defaults.sharpness['default_min']
+        assert result['slider_sharpness_max']['value'] == test_config.filter_defaults.sharpness['default_max']
+        assert result['require_face_match_input']['value'] == test_config.ui_defaults.require_face_match
+        mock_on_filters_changed.assert_called_once()
+
 
 class TestQuality:
     def test_compute_entropy(self):
@@ -243,6 +305,61 @@ class TestSceneLogic:
         scenes, _, _ = app.toggle_scene_status(sample_scenes, 2, 'included', '/fake/dir', MagicMock())
         assert scenes[1]['status'] == 'included'
         mock_save.assert_called_once()
+
+    @patch('app.save_scene_seeds')
+    def test_apply_bulk_scene_filters(self, mock_save, sample_scenes):
+        """Verify that bulk filters correctly include/exclude scenes."""
+        scenes, _ = app.apply_bulk_scene_filters(
+            scenes=sample_scenes,
+            min_mask_area=10.0,
+            min_face_sim=0.5,
+            min_confidence=0.85,
+            enable_face_filter=True,
+            output_folder='/fake/dir',
+            logger=MagicMock()
+        )
+
+        status_map = {s['shot_id']: s['status'] for s in scenes}
+        assert status_map[1] == 'included'
+        assert status_map[2] == 'excluded' # Mask area too low
+        assert status_map[3] == 'excluded' # Face sim too low
+        assert status_map[4] == 'excluded' # Confidence too low
+        mock_save.assert_called_once()
+
+    @patch('app.save_scene_seeds')
+    @patch('app.get_person_detector')
+    @patch('app.get_face_analyzer')
+    @patch('app.SubjectMasker')
+    @patch('app.ThumbnailManager')
+    def test_apply_scene_overrides(self, mock_thumbnail_manager, mock_subject_masker, mock_get_face_analyzer, mock_get_person_detector, mock_save, sample_scenes, test_config):
+        """Verify that applying a scene override re-computes the seed."""
+        mock_masker_instance = mock_subject_masker.return_value
+        mock_masker_instance.get_seed_for_frame.return_value = ([10, 10, 20, 20], {'type': 'recomputed'})
+        # Set the frame_map directly on the mock instance
+        mock_masker_instance.frame_map = {s['shot_id']: f"frame_{s['shot_id']}.webp" for s in sample_scenes}
+        mock_get_person_detector.return_value = MagicMock()
+        mock_get_face_analyzer.return_value = MagicMock()
+        mock_thumbnail_manager.get.return_value = np.zeros((64, 64, 3), dtype=np.uint8)
+
+        _, updated_scenes, msg = app.apply_scene_overrides(
+            scenes_list=sample_scenes,
+            selected_shot_id=1,
+            prompt="new prompt",
+            box_th=0.5,
+            text_th=0.5,
+            output_folder='/fake/dir',
+            ana_ui_map_keys=['output_folder'], # Need to provide at least one key
+            ana_input_components=['/fake/dir'],
+            cuda_available=False,
+            thumbnail_manager=mock_thumbnail_manager,
+            config=test_config,
+            logger=MagicMock()
+        )
+
+        assert "updated and saved" in msg
+        assert updated_scenes[0]['seed_result']['details']['type'] == 'recomputed'
+        mock_save.assert_called_once()
+
 
 class TestUtils:
     def test_sanitize_filename(self, test_config):
@@ -349,6 +466,21 @@ class TestVideoManager:
         video_manager = app.VideoManager(source_path, test_config)
 
         with pytest.raises(FileNotFoundError):
+            video_manager.prepare_video(MagicMock())
+
+    @patch('app.ytdlp')
+    def test_prepare_video_youtube_download_failure(self, mock_ytdlp, test_config):
+        """Verify that a download error from yt-dlp raises a RuntimeError."""
+        source_path = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+        video_manager = app.VideoManager(source_path, test_config)
+
+        mock_yt_downloader = MagicMock()
+        mock_ytdlp.YoutubeDL.return_value.__enter__.return_value = mock_yt_downloader
+        # Simulate a download error
+        mock_ytdlp.utils.DownloadError = Exception # Mock the exception class
+        mock_yt_downloader.extract_info.side_effect = mock_ytdlp.utils.DownloadError("Video unavailable")
+
+        with pytest.raises(RuntimeError, match="Download failed"):
             video_manager.prepare_video(MagicMock())
 
 
@@ -477,6 +609,42 @@ class TestSeedSelector:
         with patch.object(selector, '_get_yolo_boxes', return_value=yolo_boxes):
             box, details = selector.select_seed(frame_rgb)
             assert box == expected_box
+
+    def test_select_seed_face_fallback_to_text(self, mock_seed_selector):
+        """Test 'Face + Text Fallback' when no face is found."""
+        selector = mock_seed_selector
+        selector.params.primary_seed_strategy = "🔄 Face + Text Fallback"
+        selector.params.text_prompt = "a dog"
+        frame_rgb = np.zeros((200, 200, 3), dtype=np.uint8)
+
+        dino_result = [{'bbox': [20, 20, 60, 60], 'conf': 0.8, 'label': 'dog', 'type': 'dino'}]
+        # No face is found, but a DINO box is.
+        with patch.object(selector, '_find_target_face', return_value=(None, {'error': 'no_matching_face'})) as mock_find_face, \
+             patch.object(selector, '_get_dino_boxes', return_value=(dino_result, {'type': 'dino'})) as mock_get_dino:
+
+            box, details = selector.select_seed(frame_rgb)
+
+            assert box == [20, 20, 40, 40]
+            assert details['type'] == 'dino'
+            mock_find_face.assert_called_once()
+            mock_get_dino.assert_called_once()
+
+    def test_identity_first_fallback_to_expanded_box(self, mock_seed_selector):
+        """Test _identity_first_seed fallback to an expanded face box."""
+        selector = mock_seed_selector
+        frame_rgb = np.zeros((200, 200, 3), dtype=np.uint8)
+
+        # A face is found, but no corresponding body boxes.
+        with patch.object(selector, '_find_target_face', return_value=({'bbox': [90, 90, 110, 110]}, {'type': 'face_match'})) as mock_find_face, \
+             patch.object(selector, '_get_yolo_boxes', return_value=[]) as mock_get_yolo, \
+             patch.object(selector, '_get_dino_boxes', return_value=([], {})) as mock_get_dino, \
+             patch.object(selector, '_expand_face_to_body', return_value=[50, 50, 100, 100]) as mock_expand:
+
+            box, details = selector._identity_first_seed(frame_rgb, selector.params)
+
+            assert box == [50, 50, 100, 100]
+            assert details['type'] == 'expanded_box_from_face'
+            mock_expand.assert_called_once()
 
 
 class TestAnalysisPipeline:
