@@ -214,7 +214,7 @@ class Config:
         brightness: Dict[str, float] = field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.5, 'default_min': 0.0, 'default_max': 100.0})
         entropy: Dict[str, float] = field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.5, 'default_min': 0.0, 'default_max': 100.0})
         niqe: Dict[str, float] = field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.5, 'default_min': 0.0, 'default_max': 100.0})
-        face_sim: Dict[str, float] = field(default_factory=lambda: {'min': 0.0, 'max': 1.0, 'step': 0.01, 'default_min': 0.5})
+        face_sim: Dict[str, float] = field(default_factory=lambda: {'min': 0.0, 'max': 1.0, 'step': 0.01, 'default_min': 0.0})
         mask_area_pct: Dict[str, float] = field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.1, 'default_min': 1.0})
         dedup_thresh: Dict[str, int] = field(default_factory=lambda: {'min': -1, 'max': 32, 'step': 1, 'default': -1})
         eyes_open: Dict[str, float] = field(default_factory=lambda: {'min': 0.0, 'max': 1.0, 'step': 0.01, 'default_min': 0.3})
@@ -298,7 +298,7 @@ class Config:
 
     @dataclass
     class GradioDefaults:
-        auto_pctl_input: int = 75
+        auto_pctl_input: int = 25
         show_mask_overlay: bool = True
         overlay_alpha: float = 0.6
 
@@ -2522,13 +2522,23 @@ def reset_filters(all_frames_data, per_metric_values, output_dir, config, slider
         output_values.update({'filter_status_text': "Load an analysis to begin.", 'results_gallery': []})
     return output_values
 
-def auto_set_thresholds(per_metric_values, p, slider_keys):
+def auto_set_thresholds(per_metric_values, p, slider_keys, selected_metrics):
     updates = {}
     if not per_metric_values: return {f'slider_{key}': gr.update() for key in slider_keys}
-    pmap = {k: float(np.percentile(np.asarray(vals, dtype=np.float32), p)) for k, vals in per_metric_values.items() if not k.endswith('_hist') and vals}
+    # Calculate percentile values only for the selected metrics
+    pmap = {
+        k: float(np.percentile(np.asarray(vals, dtype=np.float32), p))
+        for k, vals in per_metric_values.items()
+        if not k.endswith('_hist') and vals and k in selected_metrics
+    }
     for key in slider_keys:
-        updates[f'slider_{key}'] = gr.update()
-        if key.endswith('_min') and (metric := key[:-4]) in pmap: updates[f'slider_{key}'] = gr.update(value=round(pmap[metric], 2))
+        metric_name = key.replace('_min', '').replace('_max', '')
+        # Only update the slider if its corresponding metric was selected
+        if key.endswith('_min') and metric_name in pmap:
+            updates[f'slider_{key}'] = gr.update(value=round(pmap[metric_name], 2))
+        else:
+            # Otherwise, send a no-op update to leave it unchanged
+            updates[f'slider_{key}'] = gr.update()
     return updates
 
 def save_scene_seeds(scenes_list, output_dir_str, logger):
@@ -3085,7 +3095,7 @@ class AppUI:
 
     def _create_component(self, name, comp_type, kwargs):
         comp_map = {'button': gr.Button, 'textbox': gr.Textbox, 'dropdown': gr.Dropdown, 'slider': gr.Slider, 'checkbox': gr.Checkbox,
-                    'file': gr.File, 'radio': gr.Radio, 'gallery': gr.Gallery, 'plot': gr.Plot, 'markdown': gr.Markdown, 'html': gr.HTML, 'number': gr.Number}
+                    'file': gr.File, 'radio': gr.Radio, 'gallery': gr.Gallery, 'plot': gr.Plot, 'markdown': gr.Markdown, 'html': gr.HTML, 'number': gr.Number, 'cbg': gr.CheckboxGroup}
         self.components[name] = comp_map[comp_type](**kwargs)
         return self.components[name]
 
@@ -3272,6 +3282,7 @@ class AppUI:
                 gr.Markdown("### 🎛️ Filter Controls")
                 gr.Markdown("Use these controls to refine your selection of frames. You can set minimum and maximum thresholds for various quality metrics.")
                 self._create_component('auto_pctl_input', 'slider', {'label': 'Auto-Threshold Percentile', 'minimum': 1, 'maximum': 99, 'value': self.config.gradio_defaults.auto_pctl_input, 'step': 1, 'info': "Quickly set all 'Min' sliders to a certain percentile of the data. For example, setting this to 75 and clicking 'Apply' will automatically reject the bottom 75% of frames for each metric."})
+                self._create_component('auto_threshold_metrics_input', 'cbg', {'label': "Metrics to Auto-Threshold", 'choices': self.get_all_filter_keys(), 'value': self.get_all_filter_keys(), 'interactive': True})
                 with gr.Row():
                     self._create_component('apply_auto_button', 'button', {'value': 'Apply Percentile to Mins'})
                     self._create_component('reset_filters_button', 'button', {'value': "Reset Filters"})
@@ -3866,7 +3877,7 @@ class EnhancedAppUI(AppUI):
         c['export_button'].click(self.export_kept_frames_wrapper, export_inputs, c['unified_log'])
         reset_outputs_comps = slider_comps + [c['dedup_thresh_input'], c['require_face_match_input'], c['filter_status_text'], c['results_gallery']]
         c['reset_filters_button'].click(self.on_reset_filters, [c['all_frames_data_state'], c['per_metric_values_state'], c['analysis_output_dir_state']], reset_outputs_comps)
-        c['apply_auto_button'].click(self.on_auto_set_thresholds, [c['per_metric_values_state'], c['auto_pctl_input']],
+        c['apply_auto_button'].click(self.on_auto_set_thresholds, [c['per_metric_values_state'], c['auto_pctl_input'], c['auto_threshold_metrics_input']],
                                    [c['metric_sliders'][k] for k in slider_keys]).then(self.on_filters_changed_wrapper, fast_filter_inputs, fast_filter_outputs)
 
     def on_filters_changed_wrapper(self, all_frames_data, per_metric_values, output_dir, gallery_view, show_overlay, overlay_alpha, require_face_match, dedup_thresh, *slider_values):
@@ -3883,9 +3894,9 @@ class EnhancedAppUI(AppUI):
                         result.get('filter_status_text', gr.update()), result.get('results_gallery', gr.update())])
         return tuple(updates)
 
-    def on_auto_set_thresholds(self, per_metric_values, p):
+    def on_auto_set_thresholds(self, per_metric_values, p, selected_metrics):
         slider_keys = sorted(self.components['metric_sliders'].keys())
-        updates = auto_set_thresholds(per_metric_values, p, slider_keys)
+        updates = auto_set_thresholds(per_metric_values, p, slider_keys, selected_metrics)
         return [updates.get(f'slider_{key}', gr.update()) for key in slider_keys]
 
     def on_toggle_scene_status(self, scenes_list, selected_shot_id, output_folder, new_status):
