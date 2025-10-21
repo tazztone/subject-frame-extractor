@@ -2399,7 +2399,9 @@ def build_all_metric_svgs(per_metric_values, get_all_filter_keys, logger):
     return svgs
 
 def histogram_svg(hist_data, title="", logger=None):
-    if not hist_data or not plt: return ""
+    if not plt:
+        return """<svg width="100" height="20" xmlns="http://www.w3.org/2000/svg"><text x="5" y="15" font-family="sans-serif" font-size="10" fill="orange">Matplotlib missing</text></svg>"""
+    if not hist_data: return ""
     try:
         counts, bins = hist_data
         if not isinstance(counts, list) or not isinstance(bins, list) or len(bins) != len(counts) + 1: return ""
@@ -2416,7 +2418,7 @@ def histogram_svg(hist_data, title="", logger=None):
         return buf.getvalue()
     except Exception as e:
         if logger: logger.error("Failed to generate histogram SVG.", exc_info=True)
-        return ""
+        return """<svg width="100" height="20" xmlns="http://www.w3.org/2000/svg"><text x="5" y="15" font-family="sans-serif" font-size="10" fill="red">Plotting failed</text></svg>"""
 
 def apply_all_filters_vectorized(all_frames_data, filters, config: 'Config'):
     if not all_frames_data: return [], [], Counter(), {}
@@ -2486,7 +2488,10 @@ def on_filters_changed(event: FilterEvent, thumbnail_manager, config: 'Config', 
 def _update_gallery(all_frames_data, filters, output_dir, gallery_view, show_overlay, overlay_alpha, thumbnail_manager, config: 'Config', logger):
     kept, rejected, counts, per_frame_reasons = apply_all_filters_vectorized(all_frames_data, filters or {}, config)
     status_parts = [f"**Kept:** {len(kept)}/{len(all_frames_data)}"]
-    if counts: status_parts.append(f"**Rejections:** {', '.join([f'{k}: {v}' for k, v in counts.most_common(3)])}")
+    if counts:
+        rejection_reasons = ', '.join([f'{k}: {v}' for k, v in counts.most_common()])
+        status_parts.append(f"**Rejections:** {rejection_reasons}")
+
     status_text, frames_to_show, preview_images = " | ".join(status_parts), rejected if gallery_view == "Rejected Frames" else kept, []
     if output_dir:
         output_path, thumb_dir, masks_dir = Path(output_dir), Path(output_dir) / "thumbs", Path(output_dir) / "masks"
@@ -3822,9 +3827,8 @@ class EnhancedAppUI(AppUI):
             if not metadata_path or not output_dir:
                 return [gr.update()] * len(load_outputs)
 
-            all_frames, metric_values = load_and_prep_filter_data(
-                metadata_path, self.get_all_filter_keys)
-            svgs = build_all_metric_svgs(metric_values, self.get_all_filter_keys, self.logger)
+            all_frames, metric_values = load_and_prep_filter_data(metadata_path, self.get_all_filter_keys())
+            svgs = build_all_metric_svgs(metric_values, self.get_all_filter_keys(), self.logger)
 
             updates = {
                 c['all_frames_data_state']: all_frames,
@@ -3834,19 +3838,19 @@ class EnhancedAppUI(AppUI):
             }
 
             for k in self.get_all_filter_keys():
-                has_data = k in metric_values and len(metric_values.get(k, [])) > 0
-                if k in c['metric_plots']:
-                    updates[c['metric_plots'][k]] = gr.update(visible=has_data,
-                                                            value=svgs.get(k, ""))
-                if f"{k}_min" in c['metric_sliders']:
-                    updates[c['metric_sliders'][f"{k}_min"]] = gr.update(
-                        visible=has_data)
-                if f"{k}_max" in c['metric_sliders']:
-                    updates[c['metric_sliders'][f"{k}_max"]] = gr.update(
-                        visible=has_data)
+                has_data = k in metric_values and metric_values.get(k)
+                plot_comp = c['metric_plots'].get(k)
+                min_slider = c['metric_sliders'].get(f"{k}_min")
+                max_slider = c['metric_sliders'].get(f"{k}_max")
+
+                if plot_comp:
+                    updates[plot_comp] = gr.update(visible=has_data, value=svgs.get(k, ""))
+                if min_slider:
+                    updates[min_slider] = gr.update(visible=has_data)
+                if max_slider:
+                    updates[max_slider] = gr.update(visible=has_data)
                 if k == "face_sim" and 'require_face_match_input' in c:
-                    updates[c['require_face_match_input']] = gr.update(
-                        visible=has_data)
+                    updates[c['require_face_match_input']] = gr.update(visible=has_data)
 
             slider_values = {key: c['metric_sliders'][key].value for key in slider_keys}
             filter_event = FilterEvent(
