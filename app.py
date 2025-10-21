@@ -1034,6 +1034,11 @@ class Frame:
                                   mask: np.ndarray | None = None, niqe_metric=None, main_config: 'Config' = None, face_landmarker=None):
         try:
             if face_landmarker:
+                if not thumb_image_rgb.flags['C_CONTIGUOUS']:
+                    thumb_image_rgb = np.ascontiguousarray(thumb_image_rgb, dtype=np.uint8)
+                if thumb_image_rgb.dtype != np.uint8:
+                    thumb_image_rgb = thumb_image_rgb.astype(np.uint8)
+
                 mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=thumb_image_rgb)
                 landmarker_result = face_landmarker.detect(mp_image)
 
@@ -1318,7 +1323,9 @@ def get_face_landmarker(model_path: str, logger: 'EnhancedLogger'):
             base_options=base_options,
             output_face_blendshapes=True,
             output_facial_transformation_matrixes=True,
-            num_faces=1,
+            num_faces=3,
+            min_face_detection_confidence=0.3,
+            min_face_presence_confidence=0.3
         )
         detector = vision.FaceLandmarker.create_from_options(options)
         logger.success("Face landmarker model loaded successfully.")
