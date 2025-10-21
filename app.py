@@ -3156,7 +3156,7 @@ class AppUI:
             with gr.Column(scale=2, visible=False) as seeding_results_column:
                 self.components['seeding_results_column'] = seeding_results_column
                 gr.Markdown("### 🎭 Step 2: Review & Refine Scenes")
-                with gr.Accordion("Bulk Scene Actions & Filters", open=False):
+                with gr.Accordion("Scene Filtering", open=True):
                     self._create_component('scene_filter_status', 'markdown', {'value': 'No scenes loaded.'})
                     with gr.Row():
                         self._create_component('scene_mask_area_min_input', 'slider', {'label': "Min Seed Mask Area %", 'minimum': 0.0, 'maximum': 100.0, 'value': self.config.min_mask_area_pct, 'step': 0.1})
