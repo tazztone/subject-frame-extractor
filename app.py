@@ -399,7 +399,12 @@ class Config:
         if isinstance(default_val, float):
             return float(env_val)
         if isinstance(default_val, list):
-            return [self._coerce_type(v.strip(), default_val[0] if default_val else "") for v in env_val.split(',')]
+            if not env_val.strip():
+                return default_val
+            parts = [p.strip() for p in env_val.split(',') if p.strip()]
+            if not parts:
+                return default_val
+            return [self._coerce_type(p, default_val[0] if default_val else "") for p in parts]
         return env_val
 
     def _from_dict(self, data: Dict[str, Any]):
@@ -523,7 +528,7 @@ class EnhancedLogger:
         if log_to_file:
             self._setup_file_handlers()
         self._operation_stack: List[Dict[str, Any]] = []
-        self._lock = threading.Lock()
+        self._file_lock = threading.Lock()
 
     def _setup_console_handler(self):
         console_handler = logging.StreamHandler()
@@ -590,8 +595,9 @@ class EnhancedLogger:
 
         # Manual write to JSONL file
         json_line = json.dumps(asdict(event), default=str, ensure_ascii=False)
-        with open(self.structured_log_file, 'a', encoding='utf-8') as f:
-            f.write(json_line + '\n')
+        with self._file_lock:
+            with open(self.structured_log_file, 'a', encoding='utf-8') as f:
+                f.write(json_line + '\n')
 
         if self.progress_queue:
             ui_message = f"[{event.level}] {event.message}"
@@ -719,15 +725,16 @@ class RecoveryStrategy(Enum):
     ABORT = "abort"
 
 class ErrorHandler:
-    def __init__(self, logger, config):
+    def __init__(self, logger, max_attempts: int, backoff_seconds: list):
         self.logger = logger
-        self.config = config
+        self.max_attempts = max_attempts
+        self.backoff_seconds = backoff_seconds
         self.error_count = 0
         self.recovery_attempts = {}
 
     def with_retry(self, max_attempts=None, backoff_seconds=None, recoverable_exceptions: tuple = (Exception,)):
-        max_attempts = max_attempts or self.config.retry.max_attempts
-        backoff_seconds = backoff_seconds or self.config.retry.backoff_seconds
+        max_attempts = max_attempts or self.max_attempts
+        backoff_seconds = backoff_seconds or self.backoff_seconds
         def decorator(func: Callable) -> Callable:
             @functools.wraps(func)
             def wrapper(*args, **kwargs) -> Any:
@@ -1236,7 +1243,7 @@ class ThumbnailManager:
 
 # --- MODEL LOADING & MANAGEMENT ---
 
-def download_model(url, dest_path, description, logger, error_handler: ErrorHandler, config: 'Config', min_size=1_000_000):
+def download_model(url, dest_path, description, logger, error_handler: ErrorHandler, user_agent: str, min_size=1_000_000):
     dest_path = Path(dest_path)
     dest_path.parent.mkdir(parents=True, exist_ok=True)
     if dest_path.is_file() and (min_size is None or dest_path.stat().st_size >= min_size):
@@ -1245,7 +1252,7 @@ def download_model(url, dest_path, description, logger, error_handler: ErrorHand
     @error_handler.with_retry(recoverable_exceptions=(urllib.error.URLError, TimeoutError, RuntimeError))
     def download_func():
         logger.info(f"Downloading {description}", extra={'url': url, 'dest': dest_path})
-        req = urllib.request.Request(url, headers={"User-Agent": config.models.user_agent})
+        req = urllib.request.Request(url, headers={"User-Agent": user_agent})
         with urllib.request.urlopen(req, timeout=60) as resp, open(dest_path, "wb") as out:
             shutil.copyfileobj(resp, out)
         if not dest_path.exists() or dest_path.stat().st_size < min_size:
@@ -1258,10 +1265,9 @@ def download_model(url, dest_path, description, logger, error_handler: ErrorHand
         raise RuntimeError(f"Failed to download required model: {description}") from e
 
 @lru_cache(maxsize=None)
-def get_face_landmarker(model_path: str):
+def get_face_landmarker(model_path: str, logger: 'EnhancedLogger'):
     if not vision:
         raise ImportError("MediaPipe vision components are not installed.")
-    logger = EnhancedLogger(config=Config())
     logger.info("Loading or getting cached MediaPipe face landmarker model.", component="face_landmarker")
     try:
         base_options = python.BaseOptions(model_asset_path=model_path)
@@ -1279,9 +1285,8 @@ def get_face_landmarker(model_path: str):
         raise RuntimeError("Could not initialize MediaPipe face landmarker model.") from e
 
 @lru_cache(maxsize=None)
-def get_face_analyzer(model_name: str, models_path: str, det_size_tuple: tuple):
+def get_face_analyzer(model_name: str, models_path: str, det_size_tuple: tuple, logger: 'EnhancedLogger'):
     from insightface.app import FaceAnalysis
-    logger = EnhancedLogger(config=Config())
     logger.info(f"Loading or getting cached face model: {model_name}")
     try:
         device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -1320,23 +1325,27 @@ class PersonDetector:
 
     def detect_boxes(self, img_rgb):
         res = self.model.predict(img_rgb, imgsz=self.imgsz, conf=self.conf, classes=[0], verbose=False, device=self.device)
-        return [
-            (*map(int, b.xyxy[0].tolist()), float(b.conf[0]))
-            for r in res if getattr(r, "boxes", None) is not None
-            for b in r.boxes.cpu()
-        ]
+        out = []
+        for r in res:
+            if getattr(r, "boxes", None) is None:
+                continue
+            for b in r.boxes.cpu():
+                x1, y1, x2, y2 = map(int, b.xyxy[0].tolist())
+                conf = float(b.conf[0])
+                out.append({"bbox": [x1, y1, x2, y2], "conf": conf, "type": "yolo"})
+        return out
 
 @lru_cache(maxsize=None)
-def get_person_detector(model_path_str: str, device: str, imgsz: int, conf: float):
-    logger = EnhancedLogger(config=Config())
+def get_person_detector(model_path_str: str, device: str, imgsz: int, conf: float, logger: 'EnhancedLogger'):
     logger.info(f"Loading or getting cached person detector from: {model_path_str}", component="person_detector")
     return PersonDetector(logger=logger, model_path=Path(model_path_str), imgsz=imgsz, conf=conf, device=device)
 
 @lru_cache(maxsize=None)
-def get_grounding_dino_model(gdino_config_path: str, gdino_checkpoint_path: str, models_path: str, grounding_dino_url: str, device="cuda"):
+def get_grounding_dino_model(gdino_config_path: str, gdino_checkpoint_path: str, models_path: str, grounding_dino_url: str, user_agent: str, retry_params: tuple, device="cuda", logger: 'EnhancedLogger' = None):
     if not gdino_load_model: raise ImportError("GroundingDINO is not installed.")
-    logger = EnhancedLogger(config=Config()) # Fallback for standalone usage
-    error_handler = ErrorHandler(logger, Config()) # Fallback for standalone usage
+    if logger is None:
+        logger = EnhancedLogger(config=Config())
+    error_handler = ErrorHandler(logger, *retry_params)
     try:
         models_dir = Path(models_path)
         models_dir.mkdir(parents=True, exist_ok=True)
@@ -1352,7 +1361,7 @@ def get_grounding_dino_model(gdino_config_path: str, gdino_checkpoint_path: str,
             ckpt_path = models_dir / Path(grounding_dino_url).name
         
         download_model(grounding_dino_url,
-                       ckpt_path, "GroundingDINO Swin-T model", logger, error_handler, config=Config(), min_size=500_000_000)
+                       ckpt_path, "GroundingDINO Swin-T model", logger, error_handler, user_agent, min_size=500_000_000)
         
         gdino_model = gdino_load_model(model_config_path=str(config_path), model_checkpoint_path=str(ckpt_path), device=device)
         logger.info("Grounding DINO model loaded.", component="grounding", custom_fields={'model_path': str(ckpt_path)})
@@ -1368,10 +1377,9 @@ def predict_grounding_dino(model, image_tensor, caption, box_threshold, text_thr
                              box_threshold=float(box_threshold), text_threshold=float(text_threshold))
 
 @lru_cache(maxsize=None)
-def get_dam4sam_tracker(model_name: str, models_path: str, model_urls_tuple: tuple):
+def get_dam4sam_tracker(model_name: str, models_path: str, model_urls_tuple: tuple, user_agent: str, retry_params: tuple, logger: 'EnhancedLogger'):
     if not DAM4SAMTracker or not dam_utils: raise ImportError("DAM4SAM is not installed.")
-    logger = EnhancedLogger(config=Config()) # Fallback
-    error_handler = ErrorHandler(logger, Config()) # Fallback
+    error_handler = ErrorHandler(logger, *retry_params)
     model_urls = dict(model_urls_tuple)
 
     if not (DAM4SAMTracker and torch and torch.cuda.is_available()):
@@ -1387,7 +1395,7 @@ def get_dam4sam_tracker(model_name: str, models_path: str, model_urls_tuple: tup
         url = model_urls[selected_name]
         checkpoint_path = models_dir / Path(url).name
         logger.info(f"Initializing DAM4SAM tracker", custom_fields={'selected_model': selected_name, 'checkpoint_path': str(checkpoint_path)})
-        download_model(url, checkpoint_path, f"DAM4SAM {selected_name}", logger, error_handler, config=Config(), min_size=100_000_000)
+        download_model(url, checkpoint_path, f"DAM4SAM {selected_name}", logger, error_handler, user_agent, min_size=100_000_000)
         actual_path, _ = dam_utils.determine_tracker(selected_name)
         if not Path(actual_path).exists():
             Path(actual_path).parent.mkdir(exist_ok=True, parents=True)
@@ -1408,7 +1416,8 @@ def initialize_analysis_models(params: AnalysisParameters, config: Config, logge
         face_analyzer = get_face_analyzer(
             model_name=params.face_model_name,
             models_path=str(config.paths.models),
-            det_size_tuple=tuple(config.model_defaults.face_analyzer_det_size)
+            det_size_tuple=tuple(config.model_defaults.face_analyzer_det_size),
+            logger=logger
         )
         if face_analyzer and params.face_ref_img_path:
             ref_path = Path(params.face_ref_img_path)
@@ -1430,14 +1439,16 @@ def initialize_analysis_models(params: AnalysisParameters, config: Config, logge
         model_path_str=str(model_path),
         device=device,
         imgsz=config.person_detector.imgsz,
-        conf=config.person_detector.conf
+        conf=config.person_detector.conf,
+        logger=logger
     )
 
     # Initialize MediaPipe Face Landmarker
     landmarker_path = Path(config.paths.models) / Path(config.models.face_landmarker).name
-    download_model(config.models.face_landmarker, landmarker_path, "MediaPipe Face Landmarker", logger, ErrorHandler(logger, config), config)
+    error_handler = ErrorHandler(logger, config.retry.max_attempts, config.retry.backoff_seconds)
+    download_model(config.models.face_landmarker, landmarker_path, "MediaPipe Face Landmarker", logger, error_handler, config.models.user_agent)
     if landmarker_path.exists():
-        face_landmarker = get_face_landmarker(str(landmarker_path))
+        face_landmarker = get_face_landmarker(str(landmarker_path), logger)
 
     return {"face_analyzer": face_analyzer, "ref_emb": ref_emb, "person_detector": person_detector, "face_landmarker": face_landmarker, "device": device}
 
@@ -1457,7 +1468,12 @@ class VideoManager:
             logger.info("Downloading video", component="video", user_context={'source': self.source_path})
             
             tmpl = self.config.youtube_dl.output_template
-            fmt = self.config.youtube_dl.format_string.replace("{max_res}", str(self.max_resolution)) if self.max_resolution != "maximum available" else self.config.youtube_dl.format_string.replace("[height<={max_res}]", "")
+            max_h = None if self.max_resolution == "maximum available" else int(self.max_resolution)
+            fmt = (
+                "bestvideo[ext=mp4][height<={h}]+bestaudio[ext=m4a]/best[ext=mp4][height<={h}]/best".format(h=max_h)
+                if max_h else
+                "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best"
+            )
 
             ydl_opts = {
                 'outtmpl': str(Path(self.config.paths.downloads) / tmpl),
@@ -1480,8 +1496,11 @@ class VideoManager:
     def get_video_info(video_path):
         cap = cv2.VideoCapture(str(video_path))
         if not cap.isOpened(): raise IOError(f"Could not open video: {video_path}")
+        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        if not np.isfinite(fps) or fps <= 0:
+            fps = 30.0
         info = {"width": int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), "height": int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
-                "fps": cap.get(cv2.CAP_PROP_FPS), "frame_count": int(cap.get(cv2.CAP_PROP_FRAME_COUNT))}
+                "fps": fps, "frame_count": int(cap.get(cv2.CAP_PROP_FRAME_COUNT))}
         cap.release()
         return info
 
@@ -1684,7 +1703,10 @@ class MaskPropagator:
                 is_empty = area_pct < self.params.min_mask_area_pct
                 error = "Empty mask" if is_empty else None
                 final_results.append((mask, float(area_pct), bool(is_empty), error))
-            return tuple(zip(*final_results)) if final_results else ([], [], [], [])
+            if not final_results:
+                return ([], [], [], [])
+            masks, areas, empties, errors = map(list, zip(*final_results))
+            return masks, areas, empties, errors
         except Exception as e:
             self.logger.critical("DAM4SAM propagation failed", component="propagator", exc_info=True)
             h, w = shot_frames_rgb[0].shape[:2]
@@ -1804,8 +1826,7 @@ class SeedSelector:
     def _get_yolo_boxes(self, frame_rgb):
         if not self.person_detector: return []
         try:
-            boxes = self.person_detector.detect_boxes(frame_rgb)
-            return [{'bbox': b[:4], 'conf': b[4], 'type': 'yolo'} for b in boxes]
+            return self.person_detector.detect_boxes(frame_rgb)
         except Exception as e:
             self.logger.warning("YOLO person detector failed.", exc_info=True)
             return []
@@ -1945,21 +1966,29 @@ class SubjectMasker:
     def _initialize_models(self): self._init_grounder(); self._initialize_tracker()
     def _init_grounder(self):
         if self._gdino is not None: return True
+        retry_params = (self.config.retry.max_attempts, tuple(self.config.retry.backoff_seconds))
         self._gdino = get_grounding_dino_model(
             gdino_config_path=self.params.gdino_config_path,
             gdino_checkpoint_path=self.params.gdino_checkpoint_path,
             models_path=str(self.config.paths.models),
             grounding_dino_url=self.config.models.grounding_dino,
-            device=self._device
+            user_agent=self.config.models.user_agent,
+            retry_params=retry_params,
+            device=self._device,
+            logger=self.logger
         )
         return self._gdino is not None
     def _initialize_tracker(self):
         if self.dam_tracker: return True
         model_urls_tuple = tuple(self.config.models.dam4sam.items())
+        retry_params = (self.config.retry.max_attempts, tuple(self.config.retry.backoff_seconds))
         self.dam_tracker = get_dam4sam_tracker(
             model_name=self.params.dam4sam_model_name,
             models_path=str(self.config.paths.models),
-            model_urls_tuple=model_urls_tuple
+            model_urls_tuple=model_urls_tuple,
+            user_agent=self.config.models.user_agent,
+            retry_params=retry_params,
+            logger=self.logger
         )
         return self.dam_tracker is not None
 
@@ -2114,7 +2143,7 @@ class EnhancedExtractionPipeline(ExtractionPipeline):
     def __init__(self, config: 'Config', logger: 'EnhancedLogger', params: 'AnalysisParameters',
                  progress_queue: Queue, cancel_event: threading.Event):
         super().__init__(config, logger, params, progress_queue, cancel_event)
-        self.error_handler = ErrorHandler(self.logger, self.config)
+        self.error_handler = ErrorHandler(self.logger, self.config.retry.max_attempts, self.config.retry.backoff_seconds)
         self.run = self.error_handler.with_retry()(self.run)
 
 class AnalysisPipeline(Pipeline):

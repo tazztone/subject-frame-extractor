@@ -404,6 +404,8 @@ class TestModels:
             gdino_checkpoint_path="models/groundingdino_swint_ogc.pth",
             models_path="models",
             grounding_dino_url="http://fake.url/model.pth",
+            user_agent="test-agent",
+            retry_params=(3, (1, 2, 3)),
             device="cpu"
         )
         mock_gdino_load_model.assert_called_once()
@@ -420,6 +422,8 @@ class TestModels:
             gdino_checkpoint_path="models/groundingdino_swint_ogc.pth",
             models_path="models",
             grounding_dino_url="http://fake.url/model.pth",
+            user_agent="test-agent",
+            retry_params=(3, (1, 2, 3)),
             device="cpu"
         )
         mock_gdino_load_model.assert_called_once()
@@ -783,7 +787,7 @@ class TestErrorHandler:
     def error_handler(self, test_config):
         """Provides an ErrorHandler instance with a mock logger."""
         logger = MagicMock()
-        return app.ErrorHandler(logger, test_config)
+        return app.ErrorHandler(logger, test_config.retry.max_attempts, test_config.retry.backoff_seconds)
 
     def test_with_retry_success(self, error_handler):
         """Tests that the retry decorator returns the function's result on success."""
