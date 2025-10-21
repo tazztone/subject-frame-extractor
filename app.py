@@ -2255,51 +2255,6 @@ def toggle_scene_status(scenes_list, selected_shot_id, new_status, output_folder
         return (scenes_list, get_scene_status_text(scenes_list), f"Scene {selected_shot_id} status set to {new_status}.")
     return (scenes_list, get_scene_status_text(scenes_list), f"Could not find scene {selected_shot_id}.")
 
-def apply_bulk_scene_filters(scenes, min_mask_area, min_face_sim, min_confidence, enable_face_filter, output_folder, logger):
-    if not scenes: return [], "No scenes to filter."
-    logger.info("Applying bulk scene filters", extra={"min_mask_area": min_mask_area, "min_face_sim": min_face_sim, "min_confidence": min_confidence, "enable_face_filter": enable_face_filter})
-    for scene in scenes:
-        scene['manual_status_change'] = False
-        is_excluded = False
-        details, seed_metrics = scene.get('seed_result', {}).get('details', {}), scene.get('seed_metrics', {})
-        if details.get('mask_area_pct', 101) < min_mask_area: is_excluded = True
-        if enable_face_filter and not is_excluded and seed_metrics.get('best_face_sim', 1.01) < min_face_sim: is_excluded = True
-        if seed_metrics.get('score', 101.0) < min_confidence: is_excluded = True
-        scene['status'] = 'excluded' if is_excluded else 'included'
-    save_scene_seeds(scenes, output_folder, logger)
-    return scenes, get_scene_status_text(scenes)
-
-def apply_scene_overrides(scenes_list, selected_shot_id, prompt, box_th, text_th, output_folder, ana_ui_map_keys,
-                          ana_input_components, cuda_available, thumbnail_manager, config: 'Config', logger: 'EnhancedLogger'):
-    if selected_shot_id is None or not scenes_list: return (None, scenes_list, "No scene selected to apply overrides.")
-    scene_idx, scene_dict = next(((i, s) for i, s in enumerate(scenes_list) if s['shot_id'] == selected_shot_id), (None, None))
-    if scene_dict is None: return (None, scenes_list, "Error: Selected scene not found in state.")
-    try:
-        scene_dict['seed_config'] = {'text_prompt': prompt, 'box_threshold': box_th, 'text_threshold': text_th}
-        ui_args = dict(zip(ana_ui_map_keys, ana_input_components))
-        ui_args['output_folder'] = output_folder
-        params, models = AnalysisParameters.from_ui(logger, config, **ui_args), initialize_analysis_models(AnalysisParameters.from_ui(logger, config, **ui_args), config, logger, cuda_available)
-        masker = SubjectMasker(params, Queue(), threading.Event(), config, face_analyzer=models["face_analyzer"],
-                               reference_embedding=models["ref_emb"], person_detector=models["person_detector"],
-                               thumbnail_manager=thumbnail_manager, logger=logger)
-        masker.frame_map = masker._create_frame_map(output_folder)
-        seed_frame_num = scene_dict.get('best_seed_frame') or scene_dict.get('seed_frame_idx') or scene_dict.get('start_frame')
-        if seed_frame_num is None:
-            raise ValueError(f"Scene {scene_dict.get('shot_id')} has no seed or start frame.")
-        fname = masker.frame_map.get(seed_frame_num)
-        if not fname:
-            raise ValueError(f"Framemap lookup failed for re-seeding shot {scene_dict.get('shot_id')} frame {seed_frame_num}.")
-        thumb_rgb = thumbnail_manager.get(Path(output_folder) / "thumbs" / f"{Path(fname).stem}.webp")
-        bbox, details = masker.get_seed_for_frame(thumb_rgb, scene_dict['seed_config'])
-        scene_dict['seed_result'] = {'bbox': bbox, 'details': details}
-        save_scene_seeds(scenes_list, output_folder, logger)
-        # The call to a non-existent function is removed. The UI handler for this
-        # function is responsible for regenerating previews if necessary.
-        return (None, scenes_list, f"Scene {selected_shot_id} updated and saved.")
-    except Exception as e:
-        logger.error("Failed to apply scene overrides", exc_info=True)
-        return None, scenes_list, f"[ERROR] {e}"
-
 # --- Cleaned Scene Recomputation Workflow ---
 
 def _create_analysis_context(config, logger, thumbnail_manager, cuda_available, ana_ui_map_keys, ana_input_components) -> SubjectMasker:
@@ -3553,13 +3508,6 @@ class EnhancedAppUI(AppUI):
 
     def on_toggle_scene_status(self, scenes_list, selected_shot_id, output_folder, new_status):
         return toggle_scene_status(scenes_list, selected_shot_id, new_status, output_folder, self.logger)
-
-    def on_apply_bulk_scene_filters(self, scenes, min_mask_area, min_face_sim, min_confidence, enable_face_filter, output_folder):
-        return apply_bulk_scene_filters(scenes, min_mask_area, min_face_sim, min_confidence, enable_face_filter, output_folder, self.logger)
-
-    def on_apply_scene_overrides(self, scenes_list, selected_shot_id, prompt, box_th, text_th, output_folder, *ana_args):
-        return apply_scene_overrides(scenes_list, selected_shot_id, prompt, box_th, text_th, output_folder, self.ana_ui_map_keys,
-                                     ana_args, self.cuda_available, self.thumbnail_manager, self.config, self.logger)
 
     def export_kept_frames_wrapper(self, all_frames_data, output_dir, video_path, enable_crop, crop_ars, crop_padding, require_face_match, dedup_thresh, *slider_values):
         filter_args = {k: v for k, v in zip(sorted(self.components['metric_sliders'].keys()), slider_values)}
