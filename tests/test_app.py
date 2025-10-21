@@ -940,6 +940,78 @@ class TestExport:
         h, w, _ = cropped_image.shape
         assert w / h == pytest.approx(1/1, rel=0.01), f"Cropped image AR is {w/h}, expected ~{1/1}"
 
+class TestSubjectMasker:
+    @pytest.fixture
+    def subject_masker(self, test_config):
+        """Provides a SubjectMasker instance with mocked dependencies."""
+        with patch.object(app.SubjectMasker, '_initialize_models', lambda x: None):
+            params = app.AnalysisParameters.from_ui(MagicMock(), test_config)
+            progress_queue = MagicMock()
+            cancel_event = MagicMock()
+            masker = app.SubjectMasker(params, progress_queue, cancel_event, config=test_config, logger=MagicMock())
+            yield masker
+
+    @patch('app.get_grounding_dino_model')
+    def test_init_grounder_success(self, mock_get_model, subject_masker):
+        """Test successful loading of the Grounding DINO model during initialization."""
+        mock_get_model.return_value = "dino_model"
+        result = subject_masker._init_grounder()
+        assert result is True
+        assert subject_masker._gdino == "dino_model"
+        mock_get_model.assert_called_once()
+
+    @patch('app.get_grounding_dino_model', return_value=None)
+    def test_init_grounder_failure(self, mock_get_model, subject_masker):
+        """Test failure to load the Grounding DINO model."""
+        result = subject_masker._init_grounder()
+        assert result is False
+        assert subject_masker._gdino is None
+        mock_get_model.assert_called_once()
+
+
+class TestAnalysisParameters:
+    @patch('app._sanitize_face_ref', return_value=('/fake/ref.png', True))
+    def test_from_ui_instantiation(self, mock_sanitize, test_config):
+        """Verify that AnalysisParameters correctly captures and processes UI inputs."""
+        mock_logger = MagicMock()
+        mock_ui_state = {
+            'source_path': '/path/to/video.mp4',
+            'output_folder': '/path/to/output',
+            'face_ref_img_path': '/fake/ref.png', # This value is passed to the mock
+            'disable_parallel': True,
+        }
+        params = app.AnalysisParameters.from_ui(mock_logger, test_config, **mock_ui_state)
+
+        assert params.source_path == '/path/to/video.mp4'
+        assert params.output_folder == '/path/to/output'
+        assert params.face_ref_img_path == '/fake/ref.png'
+        assert params.disable_parallel is True
+        # Check a default value was set correctly
+        assert params.method == test_config.ui_defaults.method
+        mock_logger.error.assert_not_called()
+        mock_sanitize.assert_called_once()
+
+
+class TestThumbnailManager:
+    @patch('app.Image.open')
+    @patch('pathlib.Path.exists', return_value=True)
+    def test_get_thumbnail(self, mock_exists, mock_image_open, test_config):
+        """Test adding and retrieving a thumbnail."""
+        manager = app.ThumbnailManager(logger=MagicMock(), config=test_config)
+        mock_pil_image = MagicMock()
+        mock_pil_image.convert.return_value = mock_pil_image
+        # Mock the context manager used by PIL
+        mock_image_open.return_value.__enter__.return_value = mock_pil_image
+
+        # Test retrieving a thumbnail, which implicitly adds it to the cache
+        thumb_path = Path("/fake/path1.png")
+        thumb_array = manager.get(thumb_path)
+
+        assert thumb_path in manager.cache
+        assert thumb_array is not None
+        # Ensure the mock was used
+        mock_image_open.assert_called_with(thumb_path)
+
 
 if __name__ == "__main__":
     pytest.main([__file__])
