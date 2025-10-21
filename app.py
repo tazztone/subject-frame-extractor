@@ -74,6 +74,15 @@ except ImportError:
 
 
 try:
+    import mediapipe as mp
+    from mediapipe.tasks import python
+    from mediapipe.tasks.python import vision
+except ImportError:
+    mp = None
+    python = None
+    vision = None
+
+try:
     from numba import njit
 except ImportError:
     def njit(func):
@@ -124,6 +133,7 @@ class Config:
     class Models:
         user_agent: str = "Mozilla/5.0"
         grounding_dino: str = "https://github.com/IDEA-Research/GroundingDINO/releases/download/v0.1.0-alpha/groundingdino_swint_ogc.pth"
+        face_landmarker: str = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
         dam4sam: Dict[str, str] = field(default_factory=lambda: {
             "sam21pp-T": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt",
             "sam21pp-S": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_small.pt",
@@ -208,6 +218,9 @@ class Config:
         face_sim: Dict[str, float] = field(default_factory=lambda: {'min': 0.0, 'max': 1.0, 'step': 0.01, 'default_min': 0.5})
         mask_area_pct: Dict[str, float] = field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.1, 'default_min': 1.0})
         dedup_thresh: Dict[str, int] = field(default_factory=lambda: {'min': -1, 'max': 32, 'step': 1, 'default': -1})
+        eyes_open: Dict[str, float] = field(default_factory=lambda: {'min': 0.0, 'max': 1.0, 'step': 0.01, 'default_min': 0.3})
+        yaw: Dict[str, float] = field(default_factory=lambda: {'min': -180.0, 'max': 180.0, 'step': 1, 'default_min': -25, 'default_max': 25})
+        pitch: Dict[str, float] = field(default_factory=lambda: {'min': -180.0, 'max': 180.0, 'step': 1, 'default_min': -25, 'default_max': 25})
 
     @dataclass
     class QualityWeights:
@@ -952,6 +965,11 @@ class FrameMetrics:
     brightness_score: float = 0.0
     entropy_score: float = 0.0
     niqe_score: float = 0.0
+    eyes_open: float = 0.0
+    blink_prob: float = 0.0
+    yaw: float = 0.0
+    pitch: float = 0.0
+    roll: float = 0.0
 
 @dataclass
 class Frame:
@@ -963,8 +981,30 @@ class Frame:
     error: str | None = None
 
     def calculate_quality_metrics(self, thumb_image_rgb: np.ndarray, quality_config: QualityConfig, logger: 'EnhancedLogger',
-                                  mask: np.ndarray | None = None, niqe_metric=None, main_config: 'Config' = None):
+                                  mask: np.ndarray | None = None, niqe_metric=None, main_config: 'Config' = None, face_landmarker=None):
         try:
+            if face_landmarker:
+                mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=thumb_image_rgb)
+                landmarker_result = face_landmarker.detect(mp_image)
+
+                if landmarker_result.face_blendshapes:
+                    blendshapes = {b.category_name: b.score for b in landmarker_result.face_blendshapes[0]}
+                    self.metrics.eyes_open = 1.0 - max(blendshapes.get('eyeBlinkLeft', 0), blendshapes.get('eyeBlinkRight', 0))
+                    self.metrics.blink_prob = max(blendshapes.get('eyeBlinkLeft', 0), blendshapes.get('eyeBlinkRight', 0))
+
+                if landmarker_result.facial_transformation_matrixes:
+                    matrix = landmarker_result.facial_transformation_matrixes[0]
+                    sy = math.sqrt(matrix[0, 0] * matrix[0, 0] + matrix[1, 0] * matrix[1, 0])
+                    singular = sy < 1e-6
+                    if not singular:
+                        self.metrics.pitch = math.degrees(math.atan2(-matrix[2, 0], sy))
+                        self.metrics.yaw = math.degrees(math.atan2(matrix[1, 0], matrix[0, 0]))
+                        self.metrics.roll = math.degrees(math.atan2(matrix[2, 1], matrix[2, 2]))
+                    else:
+                        self.metrics.pitch = math.degrees(math.atan2(-matrix[2, 0], sy))
+                        self.metrics.yaw = 0
+                        self.metrics.roll = 0
+
             gray = cv2.cvtColor(thumb_image_rgb, cv2.COLOR_RGB2GRAY)
             active_mask = ((mask > 128) if mask is not None and mask.ndim == 2 else None)
             if active_mask is not None and np.sum(active_mask) < 100:
@@ -1218,6 +1258,27 @@ def download_model(url, dest_path, description, logger, error_handler: ErrorHand
         raise RuntimeError(f"Failed to download required model: {description}") from e
 
 @lru_cache(maxsize=None)
+def get_face_landmarker(model_path: str):
+    if not vision:
+        raise ImportError("MediaPipe vision components are not installed.")
+    logger = EnhancedLogger(config=Config())
+    logger.info("Loading or getting cached MediaPipe face landmarker model.", component="face_landmarker")
+    try:
+        base_options = python.BaseOptions(model_asset_path=model_path)
+        options = vision.FaceLandmarkerOptions(
+            base_options=base_options,
+            output_face_blendshapes=True,
+            output_facial_transformation_matrixes=True,
+            num_faces=1,
+        )
+        detector = vision.FaceLandmarker.create_from_options(options)
+        logger.success("Face landmarker model loaded successfully.")
+        return detector
+    except Exception as e:
+        logger.error(f"Could not initialize MediaPipe face landmarker model. Error: {e}", component="face_landmarker")
+        raise RuntimeError("Could not initialize MediaPipe face landmarker model.") from e
+
+@lru_cache(maxsize=None)
 def get_face_analyzer(model_name: str, models_path: str, det_size_tuple: tuple):
     from insightface.app import FaceAnalysis
     logger = EnhancedLogger(config=Config())
@@ -1342,7 +1403,7 @@ def get_dam4sam_tracker(model_name: str, models_path: str, model_urls_tuple: tup
 
 def initialize_analysis_models(params: AnalysisParameters, config: Config, logger: EnhancedLogger, cuda_available: bool):
     device = "cuda" if cuda_available else "cpu"
-    face_analyzer, ref_emb, person_detector = None, None, None
+    face_analyzer, ref_emb, person_detector, face_landmarker = None, None, None, None
     if params.enable_face_filter:
         face_analyzer = get_face_analyzer(
             model_name=params.face_model_name,
@@ -1371,7 +1432,14 @@ def initialize_analysis_models(params: AnalysisParameters, config: Config, logge
         imgsz=config.person_detector.imgsz,
         conf=config.person_detector.conf
     )
-    return {"face_analyzer": face_analyzer, "ref_emb": ref_emb, "person_detector": person_detector, "device": device}
+
+    # Initialize MediaPipe Face Landmarker
+    landmarker_path = Path(config.paths.models) / Path(config.models.face_landmarker).name
+    download_model(config.models.face_landmarker, landmarker_path, "MediaPipe Face Landmarker", logger, ErrorHandler(logger, config), config)
+    if landmarker_path.exists():
+        face_landmarker = get_face_landmarker(str(landmarker_path))
+
+    return {"face_analyzer": face_analyzer, "ref_emb": ref_emb, "person_detector": person_detector, "face_landmarker": face_landmarker, "device": device}
 
 # --- VIDEO & FRAME PROCESSING ---
 
@@ -1851,11 +1919,11 @@ class SeedSelector:
 
 class SubjectMasker:
     def __init__(self, params, progress_queue, cancel_event, config: 'Config', frame_map=None, face_analyzer=None,
-                 reference_embedding=None, person_detector=None, thumbnail_manager=None, niqe_metric=None, logger=None):
+                 reference_embedding=None, person_detector=None, thumbnail_manager=None, niqe_metric=None, logger=None, face_landmarker=None):
         self.params, self.config, self.progress_queue, self.cancel_event = params, config, progress_queue, cancel_event
         self.logger = logger or EnhancedLogger(config=Config())
         self.frame_map = frame_map
-        self.face_analyzer, self.reference_embedding, self.person_detector = face_analyzer, reference_embedding, person_detector
+        self.face_analyzer, self.reference_embedding, self.person_detector, self.face_landmarker = face_analyzer, reference_embedding, person_detector, face_landmarker
         self.dam_tracker, self.mask_dir, self.shots = None, None, []
         self._gdino, self._sam2_img = None, None
         self._device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -2059,7 +2127,7 @@ class AnalysisPipeline(Pipeline):
         self.masks_dir = self.output_dir / "masks"
         self.metadata_path = self.output_dir / "metadata.jsonl"
         self.processing_lock = threading.Lock()
-        self.face_analyzer, self.reference_embedding, self.mask_metadata = None, None, {}
+        self.face_analyzer, self.reference_embedding, self.mask_metadata, self.face_landmarker = None, None, {}, None
         self.scene_map, self.niqe_metric = {}, None
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.thumbnail_manager = thumbnail_manager
@@ -2086,24 +2154,18 @@ class AnalysisPipeline(Pipeline):
 
             self.scene_map = {s.shot_id: s for s in scenes_to_process}
             self.logger.info("Initializing Models")
-            if self.params.enable_face_filter:
-                # lru_cache requires hashable args; pass primitives instead of unhashable Config
-                self.face_analyzer = get_face_analyzer(
-                    model_name=self.params.face_model_name,
-                    models_path=str(self.config.paths.models),
-                    det_size_tuple=tuple(self.config.model_defaults.face_analyzer_det_size)
-                )
-                if self.params.face_ref_img_path: self._process_reference_face()
-            # Use hashable primitives for lru_cache compatibility
-            person_detector = get_person_detector(
-                model_path_str=str(Path(self.config.paths.models) / self.params.person_detector_model),
-                device=self.device,
-                imgsz=self.config.person_detector.imgsz,
-                conf=self.config.person_detector.conf
-            )
+            models = initialize_analysis_models(self.params, self.config, self.logger, self.device == 'cuda')
+            self.face_analyzer = models['face_analyzer']
+            self.reference_embedding = models['ref_emb']
+            self.face_landmarker = models['face_landmarker']
+            person_detector = models['person_detector']
+
+            if self.face_analyzer and self.params.face_ref_img_path:
+                self._process_reference_face()
+
             masker = SubjectMasker(self.params, self.progress_queue, self.cancel_event, self.config, self._create_frame_map(),
                                    self.face_analyzer, self.reference_embedding, person_detector, thumbnail_manager=self.thumbnail_manager,
-                                   niqe_metric=self.niqe_metric, logger=self.logger)
+                                   niqe_metric=self.niqe_metric, logger=self.logger, face_landmarker=self.face_landmarker)
             self.mask_metadata = masker.run_propagation(str(self.output_dir), scenes_to_process, tracker=tracker)
             self._initialize_niqe_metric()
             self._run_analysis_loop(scenes_to_process)
@@ -2173,7 +2235,7 @@ class AnalysisPipeline(Pipeline):
                 # enable NIQE if the metric object was successfully initialized
                 enable_niqe=(self.niqe_metric is not None)
             )
-            frame.calculate_quality_metrics(thumb_image_rgb, quality_conf, self.logger, mask=mask_thumb, niqe_metric=self.niqe_metric, main_config=self.config)
+            frame.calculate_quality_metrics(thumb_image_rgb, quality_conf, self.logger, mask=mask_thumb, niqe_metric=self.niqe_metric, main_config=self.config, face_landmarker=self.face_landmarker)
             if self.params.enable_face_filter and self.reference_embedding is not None and self.face_analyzer: self._analyze_face_similarity(frame, thumb_image_rgb)
             meta = {"filename": base_filename, "metrics": asdict(frame.metrics)}
             if frame.face_similarity_score is not None: meta["face_sim"] = frame.face_similarity_score
@@ -2222,7 +2284,12 @@ def load_and_prep_filter_data(metadata_path, get_all_filter_keys):
         values = np.asarray([f.get(k, f.get("metrics", {}).get(f"{k}_score")) for f in all_frames
                              if (f.get(k) is not None or f.get("metrics", {}).get(f"{k}_score") is not None)], dtype=float)
         if values.size > 0:
-            hist_range = (0, 1) if k == 'face_sim' else (0, 100)
+            if k == 'face_sim' or k == 'eyes_open':
+                hist_range = (0, 1)
+            elif k == 'yaw' or k == 'pitch':
+                hist_range = (-45, 45)
+            else:
+                hist_range = (0, 100)
             counts, bins = np.histogram(values, bins=50, range=hist_range)
             metric_values[k], metric_values[f"{k}_hist"] = values.tolist(), (counts.tolist(), bins.tolist())
     return all_frames, metric_values
@@ -2259,7 +2326,10 @@ def apply_all_filters_vectorized(all_frames_data, filters, config: 'Config'):
     quality_metric_keys = asdict(config.quality_weights).keys()
     metric_arrays = {k: np.array([f.get("metrics", {}).get(f"{k}_score", np.nan) for f in all_frames_data], dtype=np.float32) for k in quality_metric_keys}
     metric_arrays.update({"face_sim": np.array([f.get("face_sim", np.nan) for f in all_frames_data], dtype=np.float32),
-                          "mask_area_pct": np.array([f.get("mask_area_pct", np.nan) for f in all_frames_data], dtype=np.float32)})
+                          "mask_area_pct": np.array([f.get("mask_area_pct", np.nan) for f in all_frames_data], dtype=np.float32),
+                          "eyes_open": np.array([f.get("metrics", {}).get("eyes_open", np.nan) for f in all_frames_data], dtype=np.float32),
+                          "yaw": np.array([f.get("metrics", {}).get("yaw", np.nan) for f in all_frames_data], dtype=np.float32),
+                          "pitch": np.array([f.get("metrics", {}).get("pitch", np.nan) for f in all_frames_data], dtype=np.float32)})
     kept_mask, reasons, dedup_mask = np.ones(num_frames, dtype=bool), defaultdict(list), np.ones(num_frames, dtype=bool)
     if filters.get("enable_dedup") and imagehash and filters.get("dedup_thresh", 5) != -1:
         sorted_indices, hashes = sorted(range(num_frames), key=lambda i: filenames[i]), {i: imagehash.hex_to_hash(all_frames_data[i]['phash']) for i in range(num_frames) if 'phash' in all_frames_data[i]}
@@ -2280,6 +2350,16 @@ def apply_all_filters_vectorized(all_frames_data, filters, config: 'Config'):
     if filters.get("mask_area_enabled"):
         mask_area_min = filters.get("mask_area_pct_min", 1.0)
         metric_filter_mask &= (np.nan_to_num(metric_arrays["mask_area_pct"], nan=0.0) >= mask_area_min)
+
+    eyes_open_min = filters.get("eyes_open_min", 0.3)
+    metric_filter_mask &= (np.nan_to_num(metric_arrays["eyes_open"], nan=eyes_open_min) >= eyes_open_min)
+
+    yaw_min, yaw_max = filters.get("yaw_min", -25), filters.get("yaw_max", 25)
+    metric_filter_mask &= (np.nan_to_num(metric_arrays["yaw"], nan=yaw_min) >= yaw_min) & (np.nan_to_num(metric_arrays["yaw"], nan=yaw_max) <= yaw_max)
+
+    pitch_min, pitch_max = filters.get("pitch_min", -25), filters.get("pitch_max", 25)
+    metric_filter_mask &= (np.nan_to_num(metric_arrays["pitch"], nan=pitch_min) >= pitch_min) & (np.nan_to_num(metric_arrays["pitch"], nan=pitch_max) <= pitch_max)
+
     kept_mask = dedup_mask & metric_filter_mask
     metric_rejection_mask = ~metric_filter_mask & dedup_mask
     for i in np.where(metric_rejection_mask)[0]:
@@ -2377,51 +2457,6 @@ def toggle_scene_status(scenes_list, selected_shot_id, new_status, output_folder
         save_scene_seeds(scenes_list, output_folder, logger)
         return (scenes_list, get_scene_status_text(scenes_list), f"Scene {selected_shot_id} status set to {new_status}.")
     return (scenes_list, get_scene_status_text(scenes_list), f"Could not find scene {selected_shot_id}.")
-
-def apply_bulk_scene_filters(scenes, min_mask_area, min_face_sim, min_confidence, enable_face_filter, output_folder, logger):
-    if not scenes: return [], "No scenes to filter."
-    logger.info("Applying bulk scene filters", extra={"min_mask_area": min_mask_area, "min_face_sim": min_face_sim, "min_confidence": min_confidence, "enable_face_filter": enable_face_filter})
-    for scene in scenes:
-        scene['manual_status_change'] = False
-        is_excluded = False
-        details, seed_metrics = scene.get('seed_result', {}).get('details', {}), scene.get('seed_metrics', {})
-        if details.get('mask_area_pct', 101) < min_mask_area: is_excluded = True
-        if enable_face_filter and not is_excluded and seed_metrics.get('best_face_sim', 1.01) < min_face_sim: is_excluded = True
-        if seed_metrics.get('score', 101.0) < min_confidence: is_excluded = True
-        scene['status'] = 'excluded' if is_excluded else 'included'
-    save_scene_seeds(scenes, output_folder, logger)
-    return scenes, get_scene_status_text(scenes)
-
-def apply_scene_overrides(scenes_list, selected_shot_id, prompt, box_th, text_th, output_folder, ana_ui_map_keys,
-                          ana_input_components, cuda_available, thumbnail_manager, config: 'Config', logger: 'EnhancedLogger'):
-    if selected_shot_id is None or not scenes_list: return (None, scenes_list, "No scene selected to apply overrides.")
-    scene_idx, scene_dict = next(((i, s) for i, s in enumerate(scenes_list) if s['shot_id'] == selected_shot_id), (None, None))
-    if scene_dict is None: return (None, scenes_list, "Error: Selected scene not found in state.")
-    try:
-        scene_dict['seed_config'] = {'text_prompt': prompt, 'box_threshold': box_th, 'text_threshold': text_th}
-        ui_args = dict(zip(ana_ui_map_keys, ana_input_components))
-        ui_args['output_folder'] = output_folder
-        params, models = AnalysisParameters.from_ui(logger, config, **ui_args), initialize_analysis_models(AnalysisParameters.from_ui(logger, config, **ui_args), config, logger, cuda_available)
-        masker = SubjectMasker(params, Queue(), threading.Event(), config, face_analyzer=models["face_analyzer"],
-                               reference_embedding=models["ref_emb"], person_detector=models["person_detector"],
-                               thumbnail_manager=thumbnail_manager, logger=logger)
-        masker.frame_map = masker._create_frame_map(output_folder)
-        seed_frame_num = scene_dict.get('best_seed_frame') or scene_dict.get('seed_frame_idx') or scene_dict.get('start_frame')
-        if seed_frame_num is None:
-            raise ValueError(f"Scene {scene_dict.get('shot_id')} has no seed or start frame.")
-        fname = masker.frame_map.get(seed_frame_num)
-        if not fname:
-            raise ValueError(f"Framemap lookup failed for re-seeding shot {scene_dict.get('shot_id')} frame {seed_frame_num}.")
-        thumb_rgb = thumbnail_manager.get(Path(output_folder) / "thumbs" / f"{Path(fname).stem}.webp")
-        bbox, details = masker.get_seed_for_frame(thumb_rgb, scene_dict['seed_config'])
-        scene_dict['seed_result'] = {'bbox': bbox, 'details': details}
-        save_scene_seeds(scenes_list, output_folder, logger)
-        # The call to a non-existent function is removed. The UI handler for this
-        # function is responsible for regenerating previews if necessary.
-        return (None, scenes_list, f"Scene {selected_shot_id} updated and saved.")
-    except Exception as e:
-        logger.error("Failed to apply scene overrides", exc_info=True)
-        return None, scenes_list, f"[ERROR] {e}"
 
 # --- Cleaned Scene Recomputation Workflow ---
 
@@ -3148,7 +3183,8 @@ class AppUI:
                     f_def = self.config.filter_defaults.dedup_thresh
                     self._create_component('dedup_thresh_input', 'slider', {'label': "Similarity Threshold", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': f_def['default'], 'step': f_def['step'], 'info': "Filters out visually similar frames. A lower value is stricter (more filtering). A value of 0 means only identical images will be removed. Set to -1 to disable."})
                 for metric_name, open_default in [('quality_score', True), ('niqe', False), ('sharpness', True), ('edge_strength', True), ('contrast', True),
-                                                  ('brightness', False), ('entropy', False), ('face_sim', False), ('mask_area_pct', False)]:
+                                                  ('brightness', False), ('entropy', False), ('face_sim', False), ('mask_area_pct', False),
+                                                  ('eyes_open', True), ('yaw', True), ('pitch', True)]:
                     if not hasattr(self.config.filter_defaults, metric_name): continue
                     f_def = getattr(self.config.filter_defaults, metric_name)
                     with gr.Accordion(metric_name.replace('_', ' ').title(), open=open_default):
@@ -3177,7 +3213,8 @@ class AppUI:
                             self._create_component('crop_padding_input', 'slider', {'label': "Padding %", 'value': self.config.export_options.crop_padding})
                         self._create_component('crop_ar_input', 'textbox', {'label': "Crop ARs", 'value': self.config.export_options.crop_ars, 'info': "Comma-separated list (e.g., 16:9, 1:1). The best-fitting AR for each subject's mask will be chosen automatically."})
 
-    def get_all_filter_keys(self): return list(asdict(self.config.quality_weights).keys()) + ["quality_score", "face_sim", "mask_area_pct"]
+    def get_all_filter_keys(self):
+        return list(asdict(self.config.quality_weights).keys()) + ["quality_score", "face_sim", "mask_area_pct", "eyes_open", "yaw", "pitch"]
 
     def get_metric_description(self, metric_name):
         descriptions = {
@@ -3189,7 +3226,10 @@ class AppUI:
             "brightness": "The overall lightness or darkness of the image.",
             "entropy": "Measures the amount of 'information' or complexity in the image. A very blurry or plain image will have low entropy.",
             "face_sim": "Face Similarity. How closely the best-detected face in the frame matches the reference face image. Only appears if a reference face is used.",
-            "mask_area_pct": "Mask Area Percentage. The percentage of the screen taken up by the subject's mask. Useful for filtering out frames where the subject is too small or distant."
+            "mask_area_pct": "Mask Area Percentage. The percentage of the screen taken up by the subject's mask. Useful for filtering out frames where the subject is too small or distant.",
+            "eyes_open": "A score from 0.0 to 1.0 indicating how open the eyes are. A value of 1.0 means the eyes are fully open, and 0.0 means they are fully closed.",
+            "yaw": "The rotation of the head around the vertical axis (turning left or right).",
+            "pitch": "The rotation of the head around the side-to-side axis (looking up or down)."
         }
         return descriptions.get(metric_name, "No description available.")
 
@@ -3704,13 +3744,6 @@ class EnhancedAppUI(AppUI):
 
     def on_toggle_scene_status(self, scenes_list, selected_shot_id, output_folder, new_status):
         return toggle_scene_status(scenes_list, selected_shot_id, new_status, output_folder, self.logger)
-
-    def on_apply_bulk_scene_filters(self, scenes, min_mask_area, min_face_sim, min_confidence, enable_face_filter, output_folder):
-        return apply_bulk_scene_filters(scenes, min_mask_area, min_face_sim, min_confidence, enable_face_filter, output_folder, self.logger)
-
-    def on_apply_scene_overrides(self, scenes_list, selected_shot_id, prompt, box_th, text_th, output_folder, *ana_args):
-        return apply_scene_overrides(scenes_list, selected_shot_id, prompt, box_th, text_th, output_folder, self.ana_ui_map_keys,
-                                     ana_args, self.cuda_available, self.thumbnail_manager, self.config, self.logger)
 
     def export_kept_frames_wrapper(self, all_frames_data, output_dir, video_path, enable_crop, crop_ars, crop_padding, require_face_match, dedup_thresh, *slider_values):
         filter_args = {k: v for k, v in zip(sorted(self.components['metric_sliders'].keys()), slider_values)}
