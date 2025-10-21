@@ -614,7 +614,96 @@ class ColoredFormatter(logging.Formatter):
         record.levelname = f"{color}{record.levelname}{self.COLORS['RESET']}"
         return super().format(record)
 
+class AdvancedProgressTracker:
+    def __init__(self, progress, queue: Queue, logger: EnhancedLogger, ui_stage_name: str = ""):
+        self.progress = progress  # gr.Progress object
+        self.queue = queue
+        self.logger = logger
+        self.stage = ui_stage_name or "Working"
+        self.total = 1
+        self.done = 0
+        self._t0 = time.time()
+        self._last_ts = self._t0
+        self._ema_dt = None  # exponential moving average of per-item time
+        self._alpha = 0.2    # smoothing factor
 
+    def start(self, total_items: int, desc: str | None = None):
+        self.total = max(1, int(total_items))
+        self.done = 0
+        self.stage = desc or self.stage
+        self._t0 = time.time()
+        self._last_ts = self._t0
+        self._ema_dt = None
+        self._emit(f"{self.stage}: 0/{self.total} • ETA —")
+        self._overlay()
+
+    def step(self, n: int = 1, desc: str | None = None):
+        now = time.time()
+        dt = now - self._last_ts
+        self._last_ts = now
+        if dt > 0:
+            if self._ema_dt is None:
+                self._ema_dt = dt / max(1, n)
+            else:
+                self._ema_dt = self._alpha * (dt / max(1, n)) + (1 - self._alpha) * self._ema_dt
+        self.done = min(self.total, self.done + n)
+        if desc:
+            self.stage = desc
+        self._overlay()
+
+    def set(self, done: int, desc: str | None = None):
+        delta = max(0, done - self.done)
+        self.step(delta, desc=desc)
+
+    def message(self, text: str):
+        self._emit(text)
+
+    def done_stage(self, final_text: str | None = None):
+        self.done = self.total
+        self._overlay()
+        if final_text:
+            self._emit(final_text)
+
+    def _overlay(self):
+        fraction = self.done / max(1, self.total)
+        eta_s = self._eta_seconds()
+        eta_str = self._fmt_eta(eta_s)
+        # Gradio overlay
+        if self.progress:
+            self.progress(fraction, desc=f"{self.stage} ({self.done}/{self.total}) • ETA {eta_str}")
+        # In-page widgets via queue
+        self.queue.put({
+            "progress": {
+                "stage": self.stage,
+                "done": self.done,
+                "total": self.total,
+                "eta": eta_str,
+                "fraction": fraction
+            }
+        })
+        # Optional: also log
+        self.logger.info(f"{self.stage}: {self.done}/{self.total} • ETA {eta_str}", component="progress")
+
+    def _eta_seconds(self):
+        if self._ema_dt is None:
+            return None
+        remaining = max(0, self.total - self.done)
+        return self._ema_dt * remaining
+
+    @staticmethod
+    def _fmt_eta(eta_s):
+        if eta_s is None:
+            return "—"
+        if eta_s < 60:
+            return f"{int(eta_s)}s"
+        m, s = divmod(int(eta_s), 60)
+        if m < 60:
+            return f"{m}m {s}s"
+        h, m = divmod(m, 60)
+        return f"{h}h {m}m"
+
+    def _emit(self, text: str):
+        self.queue.put({"log": f"[PROGRESS] {text}"})
 
 # --- ERROR HANDLING ---
 
@@ -766,6 +855,39 @@ class SessionLoadEvent(UIEvent):
     session_path: str
 
 # --- UTILS ---
+
+def estimate_totals(params: 'AnalysisParameters', video_info: dict, scenes: list['Scene'] | None) -> dict:
+    fps = max(1, int(video_info.get("fps") or 30))
+    total_frames = int(video_info.get("frame_count") or 0)
+
+    # Extraction totals
+    method = params.method
+    if params.thumbnails_only:
+        extraction_total = total_frames
+    elif method == "interval":
+        extraction_total = max(1, int(total_frames / max(0.1, params.interval) / fps))
+    elif method == "every_nth_frame":
+        extraction_total = max(1, int(total_frames / max(1, params.nth_frame)))
+    elif method == "all":
+        extraction_total = total_frames
+    else:
+        extraction_total = max(1, int(total_frames * 0.15))  # heuristic for keyframes/scene
+
+    # Pre-analysis: one seed attempt per scene (adjust if you do retries)
+    scenes_count = len(scenes or [])
+    pre_analysis_total = max(0, scenes_count)
+
+    # Propagation: frames per scene
+    propagation_total = 0
+    if scenes:
+        for sc in scenes:
+            propagation_total += max(0, sc.end_frame - sc.start_frame + 1)
+
+    return {
+        "extraction": extraction_total,
+        "pre_analysis": pre_analysis_total,
+        "propagation": propagation_total
+    }
 
 def sanitize_filename(name, config: 'Config', max_length=None):
     max_length = max_length or config.utility_defaults.max_filename_length
@@ -1377,41 +1499,91 @@ def run_scene_detection(video_path, output_dir, logger=None):
         logger.error("Scene detection failed.", component="video", exc_info=True)
         return []
 
-def run_ffmpeg_extraction(video_path, output_dir, video_info, params, progress_queue, cancel_event, logger: 'EnhancedLogger', config: 'Config'):
+def run_ffmpeg_extraction(video_path, output_dir, video_info, params, progress_queue, cancel_event, logger: 'EnhancedLogger', config: 'Config', tracker: 'AdvancedProgressTracker' = None):
     log_file_path = output_dir / "ffmpeg_log.txt"
-    cmd_base = ['ffmpeg', '-y', '-i', str(video_path), '-hide_banner', '-loglevel', config.ffmpeg.log_level]
+    cmd_base = ['ffmpeg', '-y', '-i', str(video_path), '-hide_banner']
+
+    # Use native progress reporting for better performance and reliability
+    progress_args = ['-progress', 'pipe:1', '-nostats', '-loglevel', 'error']
+    cmd_base.extend(progress_args)
+
     if params.thumbnails_only:
         thumb_dir = output_dir / "thumbs"
         thumb_dir.mkdir(exist_ok=True)
         target_area = params.thumb_megapixels * 1_000_000
         w, h = video_info.get('width', 1920), video_info.get('height', 1080)
-        scale_factor = math.sqrt(target_area / (w * h))
+        scale_factor = math.sqrt(target_area / (w * h)) if w * h > 0 else 1.0
         vf_scale = f"scale=w=trunc(iw*{scale_factor}/2)*2:h=trunc(ih*{scale_factor}/2)*2"
         fps = video_info.get('fps', 30)
         vf_filter = f"fps={fps},{vf_scale},showinfo"
         cmd = cmd_base + ['-vf', vf_filter, '-c:v', 'libwebp', '-lossless', '0', '-quality', str(config.ffmpeg.thumbnail_quality), '-vsync', 'vfr', str(thumb_dir / "frame_%06d.webp")]
     else:
-        select_filter_map = {'interval': f"fps=1/{max(0.1, float(params.interval))}", 'keyframes': "select='eq(pict_type,I)'",
-                             'scene': f"select='gt(scene,{config.ffmpeg.fast_scene_threshold if params.fast_scene else config.ffmpeg.scene_threshold})'", 'all': f"fps={video_info.get('fps', 30)}",
-                             'every_nth_frame': f"select='not(mod(n,{max(1, int(params.nth_frame))}))'"}
+        # Legacy full-frame extraction (kept for compatibility)
+        select_filter_map = {
+            'interval': f"fps=1/{max(0.1, float(params.interval))}",
+            'keyframes': "select='eq(pict_type,I)'",
+            'scene': f"select='gt(scene,{config.ffmpeg.fast_scene_threshold if params.fast_scene else config.ffmpeg.scene_threshold})'",
+            'all': f"fps={video_info.get('fps', 30)}",
+            'every_nth_frame': f"select='not(mod(n,{max(1, int(params.nth_frame))}))'"
+        }
         select_filter = select_filter_map.get(params.method)
         vf_filter = (select_filter + ",showinfo") if select_filter else "showinfo"
         ext = 'png' if params.use_png else 'jpg'
         cmd = cmd_base + ['-vf', vf_filter, '-vsync', 'vfr', '-f', 'image2', str(output_dir / f"frame_%06d.{ext}")]
-    with open(log_file_path, 'w', encoding='utf-8') as stderr_handle:
-        process = subprocess.Popen(cmd, stderr=stderr_handle, text=True, encoding='utf-8', bufsize=1)
+
+    # We need both stdout (for progress) and stderr (for showinfo)
+    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8', bufsize=1)
+
+    frame_map_list = []
+
+    # Live processing of both streams
+    with process.stdout, process.stderr:
+        stdout_thread = threading.Thread(target=lambda: _process_ffmpeg_stream(process.stdout, 'frame=', tracker, "Extracting frames"))
+        stderr_thread = threading.Thread(target=lambda: frame_map_list.extend(_process_ffmpeg_showinfo(process.stderr)))
+        stdout_thread.start()
+        stderr_thread.start()
+
         while process.poll() is None:
-            if cancel_event.is_set(): process.terminate(); break
+            if cancel_event.is_set():
+                process.terminate()
+                break
             time.sleep(0.1)
-        process.wait()
-    try:
-        with open(log_file_path, 'r', encoding='utf-8') as f: log_content = f.read()
-        frame_map_list = [int(m.group(1)) for m in re.finditer(r' n:\s*(\d+)', log_content)]
-        with open(output_dir / "frame_map.json", 'w', encoding='utf-8') as f: json.dump(frame_map_list, f)
-    finally:
-        log_file_path.unlink(missing_ok=True)
-    if process.returncode != 0 and not cancel_event.is_set():
+
+        stdout_thread.join()
+        stderr_thread.join()
+
+    process.wait()
+
+    if frame_map_list:
+        with open(output_dir / "frame_map.json", 'w', encoding='utf-8') as f:
+            json.dump(sorted(frame_map_list), f)
+
+    if process.returncode not in [0, -9] and not cancel_event.is_set(): # -9 is SIGKILL, can happen on cancel
         raise RuntimeError(f"FFmpeg failed with code {process.returncode}.")
+
+def _process_ffmpeg_stream(stream, prefix, tracker, desc):
+    """Helper to process a stream for progress updates."""
+    last_frame = -1
+    for line in iter(stream.readline, ''):
+        if line.startswith(prefix):
+            try:
+                current_frame = int(line.strip().split('=')[1])
+                if current_frame > last_frame and tracker:
+                    tracker.set(current_frame, desc=desc)
+                    last_frame = current_frame
+            except (ValueError, IndexError):
+                pass # Ignore malformed lines
+    stream.close()
+
+def _process_ffmpeg_showinfo(stream):
+    """Helper to extract frame numbers from showinfo output."""
+    frame_numbers = []
+    for line in iter(stream.readline, ''):
+        match = re.search(r' n:\s*(\d+)', line)
+        if match:
+            frame_numbers.append(int(match.group(1)))
+    stream.close()
+    return frame_numbers
 
 def postprocess_mask(mask: np.ndarray, config: 'Config', fill_holes: bool = True, keep_largest_only: bool = True) -> np.ndarray:
     if mask is None or mask.size == 0: return mask
@@ -1469,7 +1641,7 @@ class MaskPropagator:
         self.logger = logger or EnhancedLogger(config=Config())
         self._device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    def propagate(self, shot_frames_rgb, seed_idx, bbox_xywh):
+    def propagate(self, shot_frames_rgb, seed_idx, bbox_xywh, tracker: 'AdvancedProgressTracker' = None):
         if not self.dam_tracker or not shot_frames_rgb:
             err_msg = "Tracker not initialized" if not self.dam_tracker else "No frames"
             shape = shot_frames_rgb[0].shape[:2] if shot_frames_rgb else (100, 100)
@@ -1477,22 +1649,32 @@ class MaskPropagator:
             return ([np.zeros(shape, np.uint8)] * num_frames, [0.0] * num_frames, [True] * num_frames, [err_msg] * num_frames)
         self.logger.info("Propagating masks", component="propagator", user_context={'num_frames': len(shot_frames_rgb), 'seed_index': seed_idx})
         masks = [None] * len(shot_frames_rgb)
-        def _propagate_direction(start_idx, end_idx, step):
+
+        if tracker:
+            tracker.message(f"Propagating masks for {len(shot_frames_rgb)} frames")
+
+        def _propagate_direction(start_idx, end_idx, step, desc):
             for i in range(start_idx, end_idx, step):
                 if self.cancel_event.is_set(): break
                 outputs = self.dam_tracker.track(rgb_to_pil(shot_frames_rgb[i]))
                 mask = outputs.get('pred_mask')
                 if mask is not None: mask = postprocess_mask((mask * 255).astype(np.uint8), config=self.config, fill_holes=True, keep_largest_only=True)
                 masks[i] = mask if mask is not None else np.zeros_like(shot_frames_rgb[i], dtype=np.uint8)[:, :, 0]
+                if tracker: tracker.step(1, desc=desc)
         try:
             with torch.cuda.amp.autocast(enabled=self._device == 'cuda'):
                 outputs = self.dam_tracker.initialize(rgb_to_pil(shot_frames_rgb[seed_idx]), None, bbox=bbox_xywh)
                 mask = outputs.get('pred_mask')
                 if mask is not None: mask = postprocess_mask((mask * 255).astype(np.uint8), config=self.config, fill_holes=True, keep_largest_only=True)
                 masks[seed_idx] = mask if mask is not None else np.zeros_like(shot_frames_rgb[seed_idx], dtype=np.uint8)[:, :, 0]
-                _propagate_direction(seed_idx + 1, len(shot_frames_rgb), 1)
+
+                # Propagate forward
+                _propagate_direction(seed_idx + 1, len(shot_frames_rgb), 1, "Propagation (→)")
+
+                # Re-initialize for backward propagation
                 self.dam_tracker.initialize(rgb_to_pil(shot_frames_rgb[seed_idx]), None, bbox=bbox_xywh)
-                _propagate_direction(seed_idx - 1, -1, -1)
+                _propagate_direction(seed_idx - 1, -1, -1, "Propagation (←)")
+
             h, w = shot_frames_rgb[0].shape[:2]
             final_results = []
             for i, mask in enumerate(masks):
@@ -1781,7 +1963,7 @@ class SubjectMasker:
         )
         return self.dam_tracker is not None
 
-    def run_propagation(self, frames_dir: str, scenes_to_process) -> dict:
+    def run_propagation(self, frames_dir: str, scenes_to_process, tracker: 'AdvancedProgressTracker' = None) -> dict:
         self.mask_dir = Path(frames_dir) / "masks"
         self.mask_dir.mkdir(exist_ok=True)
         self.logger.info("Starting subject mask propagation...")
@@ -1794,20 +1976,30 @@ class SubjectMasker:
             with safe_resource_cleanup():
                 if self.cancel_event.is_set(): break
                 self.logger.info(f"Masking scene {i+1}/{total_scenes}", user_context={'shot_id': scene.shot_id, 'start_frame': scene.start_frame, 'end_frame': scene.end_frame})
-                seed_frame_num = scene.best_seed_frame
+
                 shot_frames_data = self._load_shot_frames(frames_dir, scene.start_frame, scene.end_frame)
                 if not shot_frames_data: continue
+
+                if tracker:
+                    tracker.message(f"Scene {i+1}/{len(scenes_to_process)}: {len(shot_frames_data)} frames")
+
                 frame_numbers, small_images, dims = zip(*shot_frames_data)
-                try: seed_idx_in_shot = frame_numbers.index(seed_frame_num)
-                except ValueError:
-                    self.logger.warning(f"Seed frame {seed_frame_num} not found in loaded shot frames for {scene.shot_id}, skipping.")
+
+                try:
+                    seed_frame_num = scene.best_seed_frame
+                    seed_idx_in_shot = frame_numbers.index(seed_frame_num)
+                except (ValueError, AttributeError):
+                    self.logger.warning(f"Seed frame {scene.best_seed_frame} not found in loaded shot frames for {scene.shot_id}, skipping.")
                     continue
+
                 bbox, seed_details = scene.seed_result.get('bbox'), scene.seed_result.get('details', {})
                 if bbox is None:
                     for fn in frame_numbers:
                         if (fname := self.frame_map.get(fn)): mask_metadata[fname] = asdict(MaskingResult(error="Subject not found", shot_id=scene.shot_id))
                     continue
-                masks, areas, empties, errors = self.mask_propagator.propagate(small_images, seed_idx_in_shot, bbox)
+
+                masks, areas, empties, errors = self.mask_propagator.propagate(small_images, seed_idx_in_shot, bbox, tracker=tracker)
+
                 for j, (original_fn, _, (h, w)) in enumerate(shot_frames_data):
                     frame_fname_webp = self.frame_map.get(original_fn)
                     if not frame_fname_webp: continue
@@ -1877,7 +2069,7 @@ class SubjectMasker:
 # --- PIPELINES ---
 
 class ExtractionPipeline(Pipeline):
-    def run(self):
+    def run(self, tracker: 'AdvancedProgressTracker' = None):
         self.logger.info("Preparing video source...")
         vid_manager = VideoManager(self.params.source_path, self.config, self.params.max_resolution)
         video_path = Path(vid_manager.prepare_video(self.logger))
@@ -1895,17 +2087,28 @@ class ExtractionPipeline(Pipeline):
 
         self.logger.info("Video ready", user_context={'path': sanitize_filename(video_path.name, self.config)})
         video_info = VideoManager.get_video_info(video_path)
+
+        if tracker:
+            totals = estimate_totals(self.params, video_info, None)
+            tracker.start(totals["extraction"], desc="Extracting frames")
+
         if self.params.scene_detect:
             self._run_scene_detection(video_path, output_dir)
-        self._run_ffmpeg(video_path, output_dir, video_info)
+
+        self._run_ffmpeg(video_path, output_dir, video_info, tracker=tracker)
+
         if self.cancel_event.is_set():
             self.logger.info("Extraction cancelled by user.")
+            if tracker: tracker.done_stage("Extraction cancelled")
             return
+
+        if tracker: tracker.done_stage("Extraction complete")
         self.logger.success("Extraction complete.")
         return {"done": True, "output_dir": str(output_dir), "video_path": str(video_path)}
 
     def _run_scene_detection(self, video_path, output_dir): return run_scene_detection(video_path, output_dir, self.logger)
-    def _run_ffmpeg(self, video_path, output_dir, video_info): return run_ffmpeg_extraction(video_path, output_dir, video_info, self.params, self.progress_queue, self.cancel_event, self.logger, self.config)
+    def _run_ffmpeg(self, video_path, output_dir, video_info, tracker=None):
+        return run_ffmpeg_extraction(video_path, output_dir, video_info, self.params, self.progress_queue, self.cancel_event, self.logger, self.config, tracker=tracker)
 
 class EnhancedExtractionPipeline(ExtractionPipeline):
     def __init__(self, config: 'Config', logger: 'EnhancedLogger', params: 'AnalysisParameters',
@@ -1940,7 +2143,7 @@ class AnalysisPipeline(Pipeline):
             except Exception as e:
                 self.logger.warning("Failed to initialize NIQE metric", extra={'error': e})
 
-    def run_full_analysis(self, scenes_to_process):
+    def run_full_analysis(self, scenes_to_process, tracker: 'AdvancedProgressTracker' = None):
         try:
             # Ensure metadata file is properly handled
             if self.metadata_path.exists():
@@ -1963,7 +2166,7 @@ class AnalysisPipeline(Pipeline):
             masker = SubjectMasker(self.params, self.progress_queue, self.cancel_event, self.config, self._create_frame_map(),
                                    self.face_analyzer, self.reference_embedding, person_detector, thumbnail_manager=self.thumbnail_manager,
                                    niqe_metric=self.niqe_metric, logger=self.logger, face_landmarker=self.face_landmarker)
-            self.mask_metadata = masker.run_propagation(str(self.output_dir), scenes_to_process)
+            self.mask_metadata = masker.run_propagation(str(self.output_dir), scenes_to_process, tracker=tracker)
             self._initialize_niqe_metric()
             self._run_analysis_loop(scenes_to_process)
             if self.cancel_event.is_set():
@@ -2376,22 +2579,33 @@ def _wire_recompute_handler(config, logger, thumbnail_manager, scenes, shot_id, 
 
 # --- PIPELINE LOGIC ---
 
-def execute_extraction(event: ExtractionEvent, progress_queue: Queue, cancel_event: threading.Event, logger: EnhancedLogger, config: Config):
+def execute_extraction(event: ExtractionEvent, progress_queue: Queue, cancel_event: threading.Event, logger: EnhancedLogger, config: Config, progress=None):
     params_dict = asdict(event)
     if event.upload_video:
         source, dest = params_dict.pop('upload_video'), str(Path(config.paths.downloads) / Path(event.upload_video).name)
         shutil.copy2(source, dest)
         params_dict['source_path'] = dest
+
     params = AnalysisParameters.from_ui(logger, config, **params_dict)
+    tracker = AdvancedProgressTracker(progress, progress_queue, logger, ui_stage_name="Extracting")
     pipeline = EnhancedExtractionPipeline(config, logger, params, progress_queue, cancel_event)
-    result = pipeline.run()
+
+    # The run method now accepts the tracker
+    result = pipeline.run(tracker=tracker)
+
     if result and result.get("done"):
-        yield {"log": "Extraction complete.", "status": f"Output: {result['output_dir']}",
-               "extracted_video_path_state": result.get("video_path", ""), "extracted_frames_dir_state": result["output_dir"], "done": True}
+        yield {
+            "log": "Extraction complete.",
+            "status": f"Output: {result['output_dir']}",
+            "extracted_video_path_state": result.get("video_path", ""),
+            "extracted_frames_dir_state": result["output_dir"],
+            "done": True
+        }
 
 def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue, cancel_event: threading.Event, logger: EnhancedLogger,
-                         config: Config, thumbnail_manager, cuda_available):
+                         config: Config, thumbnail_manager, cuda_available, progress=None):
     yield {"unified_log": "", "unified_status": "Starting Pre-Analysis..."}
+    tracker = AdvancedProgressTracker(progress, progress_queue, logger, ui_stage_name="Pre-Analysis")
     params_dict = asdict(event)
     final_face_ref_path = params_dict.get('face_ref_img_path')
     if event.face_ref_img_upload:
@@ -2416,12 +2630,18 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue, cancel_
                            reference_embedding=models["ref_emb"], person_detector=models["person_detector"],
                            niqe_metric=niqe_metric, thumbnail_manager=thumbnail_manager, logger=logger)
     masker.frame_map = masker._create_frame_map(str(output_dir))
+
+    video_info = VideoManager.get_video_info(params.video_path)
+    totals = estimate_totals(params, video_info, scenes)
+    tracker.start(totals["pre_analysis"], desc="Analyzing scenes")
+
     def pre_analysis_task():
         logger.info(f"Pre-analyzing {len(scenes)} scenes")
         previews_dir = output_dir / "previews"
         previews_dir.mkdir(exist_ok=True)
         for i, scene in enumerate(scenes):
             if cancel_event.is_set(): break
+            tracker.step(1, desc=f"Scene {scene.shot_id}")
             if not scene.best_seed_frame: masker._select_best_seed_frame_in_scene(scene, str(output_dir))
             fname = masker.frame_map.get(scene.best_seed_frame)
             if not fname: continue
@@ -2443,7 +2663,10 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue, cancel_
                 logger.error(f"Failed to save preview for scene {scene.shot_id}", exc_info=True)
 
             if scene.status == 'pending': scene.status = 'included'
+
+        tracker.done_stage("Pre-analysis complete")
         return {"done": True, "scenes": [asdict(s) for s in scenes]}
+
     result = pre_analysis_task()
     if result.get("done"):
         final_yield = {"log": "Pre-analysis complete.", "status": f"{len(result['scenes'])} scenes found.",
@@ -2635,7 +2858,7 @@ def execute_session_load(
         yield updates
 
 def execute_propagation(event: PropagationEvent, progress_queue: Queue, cancel_event: threading.Event, logger: EnhancedLogger,
-                        config: Config, thumbnail_manager, cuda_available):
+                        config: Config, thumbnail_manager, cuda_available, progress=None):
     scene_fields = {f.name for f in fields(Scene)}
     scenes_to_process = [
         Scene(**{k: v for k, v in s.items() if k in scene_fields})
@@ -2646,6 +2869,12 @@ def execute_propagation(event: PropagationEvent, progress_queue: Queue, cancel_e
         return
 
     params = AnalysisParameters.from_ui(logger, config, **asdict(event.analysis_params))
+    tracker = AdvancedProgressTracker(progress, progress_queue, logger, ui_stage_name="Propagation")
+
+    video_info = VideoManager.get_video_info(params.video_path)
+    totals = estimate_totals(params, video_info, scenes_to_process)
+    tracker.start(totals["propagation"], desc="Propagating masks")
+
     pipeline = AnalysisPipeline(
         config=config,
         logger=logger,
@@ -2654,7 +2883,7 @@ def execute_propagation(event: PropagationEvent, progress_queue: Queue, cancel_e
         cancel_event=cancel_event,
         thumbnail_manager=thumbnail_manager
     )
-    result = pipeline.run_full_analysis(scenes_to_process)
+    result = pipeline.run_full_analysis(scenes_to_process, tracker=tracker)
     if result and result.get("done"):
         yield {"log": "Propagation and analysis complete.", "status": f"Metadata saved to {result['metadata_path']}",
                "output_dir": result['output_dir'], "metadata_path": result['metadata_path'], "done": True}
@@ -2732,7 +2961,7 @@ class AppUI:
                                 'scene_detect', 'enable_dedup', 'text_prompt', 'box_threshold', 'text_threshold', 'min_mask_area_pct',
                                 'sharpness_base_scale', 'edge_strength_base_scale', 'gdino_config_path', 'gdino_checkpoint_path',
                                 'pre_analysis_enabled', 'pre_sample_nth', 'primary_seed_strategy']
-        self.session_load_keys = ['unified_log', 'unified_status', 'progress_bar', 'progress_details', 'cancel_button', 'pause_button',
+        self.session_load_keys = ['unified_log', 'unified_status', 'progress_details', 'cancel_button', 'pause_button',
                                   'source_input', 'max_resolution', 'extraction_method_toggle_input', 'thumb_megapixels_input', 'ext_scene_detect_input',
                                   'method_input', 'use_png_input', 'pre_analysis_enabled_input', 'pre_sample_nth_input', 'enable_face_filter_input',
                                   'face_model_name_input', 'face_ref_img_path_input', 'text_prompt_input', 'seed_strategy_input',
@@ -2778,7 +3007,6 @@ class AppUI:
             with gr.Column(scale=2): self._create_component('unified_log', 'textbox', {'label': "📋 Processing Log", 'lines': 10, 'interactive': False, 'autoscroll': True})
             with gr.Column(scale=1):
                 self._create_component('unified_status', 'textbox', {'label': "📊 Status Summary", 'lines': 2, 'interactive': False})
-                with gr.Row(): self.components['progress_bar'] = gr.Progress()
 
     def _create_extraction_tab(self):
         gr.Markdown("### Step 1: Provide a Video Source")
@@ -3056,6 +3284,14 @@ class EnhancedAppUI(AppUI):
                         self.all_logs.append(msg['log'])
                         if self.log_filter_level.upper() == "DEBUG" or f"[{self.log_filter_level.upper()}]" in msg['log']:
                             update_dict[self.components['unified_log']] = gr.update(value="\n".join([l for l in self.all_logs if self.log_filter_level.upper() == "DEBUG" or f"[{self.log_filter_level.upper()}]" in l][-1000:]))
+                    if "progress" in msg:
+                        p = msg["progress"]
+                        stage, done, total, eta, frac = p["stage"], p["done"], p["total"], p["eta"], p["fraction"]
+                        status_html = f"<b>{stage}</b>: {done}/{total} • ETA {eta}"
+                        details_html = f"{int(frac*100)}% complete"
+                        update_dict[self.components['unified_status']] = gr.update(value=status_html)
+                        update_dict[self.components['progress_details']] = gr.update(value=details_html)
+
                     if update_dict: yield update_dict
                 except Empty: pass
                 time.sleep(0.05)
@@ -3156,7 +3392,7 @@ class EnhancedAppUI(AppUI):
             except (TypeError, ValueError): ui_args[k] = default
         return PreAnalysisEvent(**ui_args)
 
-    def run_extraction_wrapper(self, *args):
+    def run_extraction_wrapper(self, *args, progress=gr.Progress(track_tqdm=True)):
         ui_args = dict(zip(self.ext_ui_map_keys, args))
         # Map radio toggle -> boolean expected by pipeline
         if 'extraction_method_toggle' in ui_args:
@@ -3167,7 +3403,7 @@ class EnhancedAppUI(AppUI):
         event_args = {k: v for k, v in ui_args.items() if k in event_fields}
         event = ExtractionEvent(**event_args)
         try:
-            for result in execute_extraction(event, self.progress_queue, self.cancel_event, self.enhanced_logger, self.config):
+            for result in execute_extraction(event, self.progress_queue, self.cancel_event, self.enhanced_logger, self.config, progress=progress):
                 if isinstance(result, dict):
                     if self.cancel_event.is_set():
                         return {"unified_log": "Extraction cancelled."}
@@ -3178,10 +3414,10 @@ class EnhancedAppUI(AppUI):
             return {"unified_log": "❌ Extraction failed."}
         except Exception as e: raise
 
-    def run_pre_analysis_wrapper(self, *args):
+    def run_pre_analysis_wrapper(self, *args, progress=gr.Progress(track_tqdm=True)):
         event = self._create_pre_analysis_event(*args)
         try:
-            for result in execute_pre_analysis(event, self.progress_queue, self.cancel_event, self.enhanced_logger, self.config, self.thumbnail_manager, self.cuda_available):
+            for result in execute_pre_analysis(event, self.progress_queue, self.cancel_event, self.enhanced_logger, self.config, self.thumbnail_manager, self.cuda_available, progress=progress):
                 if isinstance(result, dict):
                     if self.cancel_event.is_set():
                         return {"unified_log": "Pre-analysis cancelled."}
@@ -3204,11 +3440,11 @@ class EnhancedAppUI(AppUI):
             return {"unified_log": "❌ Pre-analysis failed."}
         except Exception as e: raise
 
-    def run_propagation_wrapper(self, scenes, *args):
+    def run_propagation_wrapper(self, scenes, *args, progress=gr.Progress(track_tqdm=True)):
         event = PropagationEvent(output_folder=self._create_pre_analysis_event(*args).output_folder, video_path=self._create_pre_analysis_event(*args).video_path,
                                  scenes=scenes, analysis_params=self._create_pre_analysis_event(*args))
         try:
-            for result in execute_propagation(event, self.progress_queue, self.cancel_event, self.enhanced_logger, self.config, self.thumbnail_manager, self.cuda_available):
+            for result in execute_propagation(event, self.progress_queue, self.cancel_event, self.enhanced_logger, self.config, self.thumbnail_manager, self.cuda_available, progress=progress):
                 if isinstance(result, dict):
                     if self.cancel_event.is_set():
                         return {"unified_log": "Propagation cancelled."}
