@@ -865,6 +865,10 @@ class SessionLoadEvent(UIEvent):
 def _to_json_safe(obj):
     if isinstance(obj, (Path, datetime)):
         return str(obj)
+    if np.issubdtype(type(obj), np.floating):
+        return float(obj)
+    if np.issubdtype(type(obj), np.integer):
+        return int(obj)
     if dataclasses.is_dataclass(obj):
         return dataclasses.asdict(obj)
     if isinstance(obj, dict):
