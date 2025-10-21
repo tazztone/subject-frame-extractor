@@ -63,6 +63,10 @@ modules_to_mock = {
     'matplotlib.pyplot': MagicMock(),
     'scenedetect': MagicMock(),
     'yt_dlp': MagicMock(),
+    'mediapipe': MagicMock(),
+    'mediapipe.tasks': MagicMock(),
+    'mediapipe.tasks.python': MagicMock(),
+    'mediapipe.tasks.python.vision': MagicMock(),
 }
 
 patch.dict(sys.modules, modules_to_mock).start()
@@ -190,7 +194,8 @@ class TestFilterLogic:
     def test_auto_set_thresholds(self):
         per_metric_values = {'sharpness': list(range(10, 101, 10)), 'contrast': [1, 2, 3, 4, 5]}
         slider_keys = ['sharpness_min', 'sharpness_max', 'contrast_min']
-        updates = app.auto_set_thresholds(per_metric_values, 75, slider_keys)
+        selected_metrics = list(per_metric_values.keys())
+        updates = app.auto_set_thresholds(per_metric_values, 75, slider_keys, selected_metrics)
         assert updates['slider_sharpness_min']['value'] == 77.5
         assert updates['slider_contrast_min']['value'] == 4.0
 
