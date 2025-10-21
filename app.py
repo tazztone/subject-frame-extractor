@@ -3347,6 +3347,7 @@ class EnhancedAppUI(AppUI):
         super().__init__(config, logger, progress_queue, cancel_event, thumbnail_manager)
         self.enhanced_logger = logger
         self.performance_metrics, self.log_filter_level, self.all_logs = {}, "INFO", []
+        self.last_run_args = None
 
     def _build_footer(self):
         with gr.Row():
@@ -3368,6 +3369,7 @@ class EnhancedAppUI(AppUI):
     def _format_status_display(self, op: str, prog: float, stage: str) -> str: return f"""<div style="margin: 10px 0;"><h4>{op}</h4><div style="background: #e0e0e0; border-radius: 4px; height: 20px; margin: 5px 0;"><div style="background: #007bff; height: 100%; width: {int(prog*100)}%; border-radius: 4px; transition: width 0.3s ease;"></div></div><div style="font-size: 12px; color: #666;">{stage} - {prog:.1%}</div></div>"""
 
     def _run_task_with_progress(self, task_func, output_components, progress, *args):
+        self.last_run_args = args
         self.cancel_event.clear()
         # Find the tracker instance passed in args
         tracker_instance = next((arg for arg in args if isinstance(arg, AdvancedProgressTracker)), None)
