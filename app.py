@@ -1523,7 +1523,7 @@ def run_ffmpeg_extraction(video_path, output_dir, video_info, params, progress_q
     cmd_base = ['ffmpeg', '-y', '-i', str(video_path), '-hide_banner']
 
     # Use native progress reporting for better performance and reliability
-    progress_args = ['-progress', 'pipe:1', '-nostats', '-loglevel', 'error']
+    progress_args = ['-progress', 'pipe:1', '-nostats', '-loglevel', 'info']
     cmd_base.extend(progress_args)
 
     if params.thumbnails_only:
