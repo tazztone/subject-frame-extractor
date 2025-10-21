@@ -30,7 +30,6 @@ import time
 import torch
 import traceback
 import urllib.request
-import yaml
 
 from pathlib import Path
 
@@ -347,7 +346,7 @@ class Config:
     visualization: Visualization = field(default_factory=Visualization)
     analysis: Analysis = field(default_factory=Analysis)
     model_defaults: ModelDefaults = field(default_factory=ModelDefaults)
-    config_path: Optional[str] = "config.yml"
+    config_path: Optional[str] = "config.json"
 
     def __post_init__(self):
         # Start from a snapshot of the initialized defaults
@@ -358,7 +357,7 @@ class Config:
         if config_p and config_p.exists():
             try:
                 with open(config_p, 'r', encoding='utf-8') as f:
-                    file_config = yaml.safe_load(f)
+                    file_config = json.load(f)
                 if file_config:
                     self._merge_configs(config_dict, file_config)
             except Exception as e:
@@ -439,9 +438,9 @@ class Config:
                     raise RuntimeError(f"Cannot create directory at {dir_path}. Check permissions.") from e
 
     def save_config(self, path: str):
-        """Saves the current (resolved) configuration to a YAML file."""
+        """Saves the current (resolved) configuration to a JSON file."""
         with open(path, 'w', encoding='utf-8') as f:
-            yaml.dump(asdict(self), f, default_flow_style=False, sort_keys=False)
+            json.dump(_to_json_safe(asdict(self)), f, indent=2, ensure_ascii=False)
 
 
 # --- LOGGING ---
@@ -856,6 +855,17 @@ class SessionLoadEvent(UIEvent):
 
 # --- UTILS ---
 
+def _to_json_safe(obj):
+    if isinstance(obj, (Path, datetime)):
+        return str(obj)
+    if dataclasses.is_dataclass(obj):
+        return dataclasses.asdict(obj)
+    if isinstance(obj, dict):
+        return {k: _to_json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_to_json_safe(i) for i in obj]
+    return obj
+
 def estimate_totals(params: 'AnalysisParameters', video_info: dict, scenes: list['Scene'] | None) -> dict:
     fps = max(1, int(video_info.get("fps") or 30))
     total_frames = int(video_info.get("frame_count") or 0)
@@ -912,16 +922,6 @@ def safe_resource_cleanup():
     finally:
         gc.collect()
         if torch.cuda.is_available(): torch.cuda.empty_cache()
-
-def _to_json_safe(obj):
-    if isinstance(obj, dict): return {k: _to_json_safe(v) for k, v in obj.items()}
-    if isinstance(obj, (list, tuple)): return [_to_json_safe(v) for v in obj]
-    if isinstance(obj, Path): return str(obj)
-    if isinstance(obj, np.generic): return _to_json_safe(obj.item())
-    if isinstance(obj, np.ndarray): return obj.tolist()
-    if isinstance(obj, float): return round(obj, 4)
-    if hasattr(obj, '__dataclass_fields__'): return _to_json_safe(asdict(obj))
-    return obj
 
 def _sanitize_face_ref(runconfig: dict, logger) -> tuple[str, bool]:
     ref = (runconfig.get('face_ref_img_path') or '').strip()
@@ -3545,6 +3545,31 @@ class EnhancedAppUI(AppUI):
         c['propagate_masks_button'].click(fn=propagation_handler,
                                         inputs=prop_inputs, outputs=all_outputs, show_progress="hidden").then(lambda p: gr.update(selected=2) if p else gr.update(), c['analysis_metadata_path_state'], c['main_tabs'])
 
+    def on_apply_bulk_scene_filters_extended(self, scenes, min_mask_area, min_face_sim, min_confidence, enable_face_filter, output_folder, view):
+        if not scenes:
+            return [], "No scenes to filter.", gr.update(), []
+
+        self.logger.info("Applying bulk scene filters", extra={"min_mask_area": min_mask_area, "min_face_sim": min_face_sim, "min_confidence": min_confidence, "enable_face_filter": enable_face_filter})
+
+        for scene in scenes:
+            if scene.get('manual_status_change', False):
+                continue
+
+            is_excluded = False
+            seed_result = scene.get('seed_result', {})
+            details = seed_result.get('details', {})
+            seed_metrics = scene.get('seed_metrics', {})
+
+            if details.get('mask_area_pct', 101.0) < min_mask_area: is_excluded = True
+            if enable_face_filter and not is_excluded and seed_metrics.get('best_face_sim', 1.01) < min_face_sim: is_excluded = True
+            if seed_metrics.get('score', 101.0) < min_confidence: is_excluded = True
+
+            scene['status'] = 'excluded' if is_excluded else 'included'
+
+        save_scene_seeds(scenes, output_folder, self.logger)
+        gallery_items, new_index_map = build_scene_gallery_items(scenes, view, output_folder)
+        return scenes, get_scene_status_text(scenes), gr.update(value=gallery_items), new_index_map
+
     def _setup_bulk_scene_handlers(self):
         c = self.components
 
@@ -3617,36 +3642,11 @@ class EnhancedAppUI(AppUI):
 
         bulk_action_outputs = [c['scenes_state'], c['scene_filter_status'], c['scene_gallery'], c['scene_gallery_index_map_state']]
 
-        def on_apply_bulk_scene_filters_extended(scenes, min_mask_area, min_face_sim, min_confidence, enable_face_filter, output_folder, view):
-            if not scenes: 
-                return [], "No scenes to filter.", gr.update(), []
-            
-            self.logger.info("Applying bulk scene filters", extra={"min_mask_area": min_mask_area, "min_face_sim": min_face_sim, "min_confidence": min_confidence, "enable_face_filter": enable_face_filter})
-            
-            for scene in scenes:
-                if scene.get('manual_status_change', False):
-                    continue
-
-                is_excluded = False
-                seed_result = scene.get('seed_result', {})
-                details = seed_result.get('details', {})
-                seed_metrics = scene.get('seed_metrics', {})
-                
-                if details.get('mask_area_pct', 101.0) < min_mask_area: is_excluded = True
-                if enable_face_filter and not is_excluded and seed_metrics.get('best_face_sim', 1.01) < min_face_sim: is_excluded = True
-                if seed_metrics.get('score', 101.0) < min_confidence: is_excluded = True
-
-                scene['status'] = 'excluded' if is_excluded else 'included'
-
-            save_scene_seeds(scenes, output_folder, self.logger)
-            gallery_items, new_index_map = build_scene_gallery_items(scenes, view, output_folder)
-            return scenes, get_scene_status_text(scenes), gr.update(value=gallery_items), new_index_map
-
         bulk_filter_inputs = [c['scenes_state'], c['scene_mask_area_min_input'], c['scene_face_sim_min_input'],
                               c['scene_confidence_min_input'], c['enable_face_filter_input'], c['extracted_frames_dir_state'], c['scene_gallery_view_toggle']]
         
         for comp in [c['scene_mask_area_min_input'], c['scene_face_sim_min_input'], c['scene_confidence_min_input']]:
-            comp.release(on_apply_bulk_scene_filters_extended, bulk_filter_inputs, bulk_action_outputs)
+            comp.release(self.on_apply_bulk_scene_filters_extended, bulk_filter_inputs, bulk_action_outputs)
 
     def _setup_filtering_handlers(self):
         c = self.components
