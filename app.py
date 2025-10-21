@@ -553,13 +553,21 @@ class EnhancedLogger:
         self.progress_queue = queue
 
     @contextlib.contextmanager
-    def operation(self, name, component="system"):
+    def operation(self, name, component="system", tracker=None):
         t0 = time.time()
+        if tracker:
+            tracker.set_stage(name)
         self.info(f"Start {name}", component=component)
         try:
             yield
-            self.success(f"Done {name} in {(time.time()-t0)*1000:.0f}ms", component=component)
-        except Exception:
+            duration = (time.time() - t0) * 1000
+            if tracker:
+                tracker.done_stage(f"{name} complete")
+            self.success(f"Done {name} in {duration:.0f}ms", component=component)
+        except Exception as e:
+            if tracker:
+                # Freeze progress and show failure state
+                tracker.set_stage(f"{name}: Failed", substage=str(e))
             self.error(f"Failed {name}", component=component, stack_trace=traceback.format_exc())
             raise
 
@@ -621,28 +629,34 @@ class ColoredFormatter(logging.Formatter):
 
 class AdvancedProgressTracker:
     def __init__(self, progress, queue: Queue, logger: EnhancedLogger, ui_stage_name: str = ""):
-        self.progress = progress  # gr.Progress object
+        self.progress = progress
         self.queue = queue
         self.logger = logger
         self.stage = ui_stage_name or "Working"
+        self.substage: Optional[str] = None
         self.total = 1
         self.done = 0
         self._t0 = time.time()
         self._last_ts = self._t0
-        self._ema_dt = None  # exponential moving average of per-item time
-        self._alpha = 0.2    # smoothing factor
+        self._ema_dt = None
+        self._alpha = 0.2
+        self._last_update_ts: float = 0.0
+        self.throttle_interval: float = 0.1  # 10 Hz
+        self.pause_event = threading.Event()
 
-    def start(self, total_items: int, desc: str | None = None):
+    def start(self, total_items: int, desc: Optional[str] = None):
         self.total = max(1, int(total_items))
         self.done = 0
-        self.stage = desc or self.stage
+        if desc:
+            self.stage = desc
+        self.substage = None
         self._t0 = time.time()
         self._last_ts = self._t0
         self._ema_dt = None
-        self._emit(f"{self.stage}: 0/{self.total} • ETA —")
-        self._overlay()
+        self._overlay(force=True)
 
-    def step(self, n: int = 1, desc: str | None = None):
+    def step(self, n: int = 1, desc: Optional[str] = None, substage: Optional[str] = None):
+        self.pause_event.wait()
         now = time.time()
         dt = now - self._last_ts
         self._last_ts = now
@@ -654,40 +668,55 @@ class AdvancedProgressTracker:
         self.done = min(self.total, self.done + n)
         if desc:
             self.stage = desc
+        if substage is not None:
+            self.substage = substage
         self._overlay()
 
-    def set(self, done: int, desc: str | None = None):
+    def set(self, done: int, desc: Optional[str] = None, substage: Optional[str] = None):
         delta = max(0, done - self.done)
-        self.step(delta, desc=desc)
+        if delta > 0:
+            self.step(delta, desc=desc, substage=substage)
 
-    def message(self, text: str):
-        self._emit(text)
+    def set_stage(self, stage: str, substage: Optional[str] = None):
+        self.stage = stage
+        self.substage = substage
+        self._overlay(force=True)
 
-    def done_stage(self, final_text: str | None = None):
+    def done_stage(self, final_text: Optional[str] = None):
         self.done = self.total
-        self._overlay()
+        self._overlay(force=True)
         if final_text:
-            self._emit(final_text)
+            self.logger.info(final_text, component="progress")
 
-    def _overlay(self):
+    def _overlay(self, force: bool = False):
+        now = time.time()
         fraction = self.done / max(1, self.total)
+        if not force and (now - self._last_update_ts < self.throttle_interval):
+            return
+        self._last_update_ts = now
+
         eta_s = self._eta_seconds()
         eta_str = self._fmt_eta(eta_s)
-        # Gradio overlay
+
+        desc_parts = [f"{self.stage} ({self.done}/{self.total})"]
+        if self.substage:
+            desc_parts.append(self.substage)
+        desc_parts.append(f"ETA {eta_str}")
+        gradio_desc = " • ".join(desc_parts)
+
         if self.progress:
-            self.progress(fraction, desc=f"{self.stage} ({self.done}/{self.total}) • ETA {eta_str}")
-        # In-page widgets via queue
-        self.queue.put({
-            "progress": {
-                "stage": self.stage,
-                "done": self.done,
-                "total": self.total,
-                "eta": eta_str,
-                "fraction": fraction
-            }
-        })
-        # Optional: also log
-        self.logger.info(f"{self.stage}: {self.done}/{self.total} • ETA {eta_str}", component="progress")
+            self.progress(fraction, desc=gradio_desc)
+
+        progress_event = ProgressEvent(
+            stage=self.stage,
+            substage=self.substage,
+            done=self.done,
+            total=self.total,
+            fraction=fraction,
+            eta_seconds=eta_s,
+            eta_formatted=eta_str
+        )
+        self.queue.put({"progress": asdict(progress_event)})
 
     def _eta_seconds(self):
         if self._ema_dt is None:
@@ -706,9 +735,6 @@ class AdvancedProgressTracker:
             return f"{m}m {s}s"
         h, m = divmod(m, 60)
         return f"{h}h {m}m"
-
-    def _emit(self, text: str):
-        self.queue.put({"log": f"[PROGRESS] {text}"})
 
 # --- ERROR HANDLING ---
 
@@ -782,6 +808,16 @@ class ErrorHandler:
         return decorator
 
 # --- EVENTS ---
+
+@dataclass
+class ProgressEvent:
+    stage: str
+    substage: Optional[str] = None
+    done: int = 0
+    total: int = 1
+    fraction: float = 0.0
+    eta_seconds: Optional[float] = None
+    eta_formatted: str = "—"
 
 @dataclass
 class UIEvent: pass
@@ -1563,16 +1599,26 @@ def run_ffmpeg_extraction(video_path, output_dir, video_info, params, progress_q
 
     # Live processing of both streams
     with process.stdout, process.stderr:
-        stdout_thread = threading.Thread(target=lambda: _process_ffmpeg_stream(process.stdout, 'frame=', tracker, "Extracting frames"))
+        total_duration_s = video_info.get("frame_count", 0) / max(0.01, video_info.get("fps", 30))
+        stdout_thread = threading.Thread(target=lambda: _process_ffmpeg_stream(process.stdout, tracker, "Extracting frames", total_duration_s))
         stderr_thread = threading.Thread(target=lambda: frame_map_list.extend(_process_ffmpeg_showinfo(process.stderr)))
         stdout_thread.start()
         stderr_thread.start()
 
-        while process.poll() is None:
+        while True:
             if cancel_event.is_set():
                 process.terminate()
                 break
-            time.sleep(0.1)
+
+            # Non-blocking check for process completion
+            if process.poll() is not None:
+                break
+
+            # Wait for a short period before checking again
+            try:
+                process.wait(timeout=0.1)
+            except subprocess.TimeoutExpired:
+                continue
 
         stdout_thread.join()
         stderr_thread.join()
@@ -1586,18 +1632,34 @@ def run_ffmpeg_extraction(video_path, output_dir, video_info, params, progress_q
     if process.returncode not in [0, -9] and not cancel_event.is_set(): # -9 is SIGKILL, can happen on cancel
         raise RuntimeError(f"FFmpeg failed with code {process.returncode}.")
 
-def _process_ffmpeg_stream(stream, prefix, tracker, desc):
-    """Helper to process a stream for progress updates."""
-    last_frame = -1
+def _process_ffmpeg_stream(stream, tracker, desc, total_duration_s: float):
+    """Helper to process FFmpeg's native '-progress pipe:1' output."""
+    progress_data = {}
     for line in iter(stream.readline, ''):
-        if line.startswith(prefix):
-            try:
-                current_frame = int(line.strip().split('=')[1])
-                if current_frame > last_frame and tracker:
-                    tracker.set(current_frame, desc=desc)
-                    last_frame = current_frame
-            except (ValueError, IndexError):
-                pass # Ignore malformed lines
+        try:
+            key, value = line.strip().split('=', 1)
+            progress_data[key] = value
+
+            if key == 'progress' and value == 'end':
+                if tracker:
+                    # Set to 100% and finalize
+                    tracker.set(tracker.total, desc=desc)
+                break
+
+            # Use out_time_us for a more accurate fraction than frame number
+            if key == 'out_time_us' and total_duration_s > 0:
+                us = int(value)
+                fraction = us / (total_duration_s * 1_000_000)
+                if tracker:
+                    done = int(fraction * tracker.total)
+                    tracker.set(done, desc=desc)
+            # Fallback to frame if out_time_us is not available or duration is unknown
+            elif key == 'frame' and tracker and total_duration_s <= 0:
+                 current_frame = int(value)
+                 tracker.set(current_frame, desc=desc)
+
+        except ValueError:
+            pass  # Ignore malformed lines
     stream.close()
 
 def _process_ffmpeg_showinfo(stream):
@@ -1676,7 +1738,7 @@ class MaskPropagator:
         masks = [None] * len(shot_frames_rgb)
 
         if tracker:
-            tracker.message(f"Propagating masks for {len(shot_frames_rgb)} frames")
+            tracker.set_stage(f"Propagating masks for {len(shot_frames_rgb)} frames")
 
         def _propagate_direction(start_idx, end_idx, step, desc):
             for i in range(start_idx, end_idx, step):
@@ -2016,7 +2078,7 @@ class SubjectMasker:
                 if not shot_frames_data: continue
 
                 if tracker:
-                    tracker.message(f"Scene {i+1}/{len(scenes_to_process)}: {len(shot_frames_data)} frames")
+                    tracker.set_stage(f"Scene {i+1}/{len(scenes_to_process)}", substage=f"{len(shot_frames_data)} frames")
 
                 frame_numbers, small_images, dims = zip(*shot_frames_data)
 
@@ -3307,23 +3369,39 @@ class EnhancedAppUI(AppUI):
 
     def _run_task_with_progress(self, task_func, output_components, progress, *args):
         self.cancel_event.clear()
-        yield {self.components['cancel_button']: gr.update(interactive=True), self.components['pause_button']: gr.update(interactive=False)}
+        # Find the tracker instance passed in args
+        tracker_instance = next((arg for arg in args if isinstance(arg, AdvancedProgressTracker)), None)
+        if tracker_instance:
+            tracker_instance.pause_event.set() # Start in a non-paused state
+
+        yield {self.components['cancel_button']: gr.update(interactive=True), self.components['pause_button']: gr.update(interactive=True)}
         op_name = getattr(task_func, '__name__', 'Unknown Task').replace('_wrapper', '')
+
         with ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(task_func, *args)
             while not future.done():
                 if self.cancel_event.is_set(): future.cancel(); break
+
+                if tracker_instance and not tracker_instance.pause_event.is_set():
+                    time.sleep(0.2)
+                    continue
+
                 try:
                     msg, update_dict = self.progress_queue.get(timeout=0.1), {}
                     if "log" in msg:
                         self.all_logs.append(msg['log'])
+                        # This logic can be simplified but is kept for now.
                         if self.log_filter_level.upper() == "DEBUG" or f"[{self.log_filter_level.upper()}]" in msg['log']:
                             update_dict[self.components['unified_log']] = gr.update(value="\n".join([l for l in self.all_logs if self.log_filter_level.upper() == "DEBUG" or f"[{self.log_filter_level.upper()}]" in l][-1000:]))
                     if "progress" in msg:
-                        p = msg["progress"]
-                        stage, done, total, eta, frac = p["stage"], p["done"], p["total"], p["eta"], p["fraction"]
-                        status_html = f"<b>{stage}</b>: {done}/{total} • ETA {eta}"
-                        details_html = f"{int(frac*100)}% complete"
+                        p = ProgressEvent(**msg["progress"])
+                        progress(p.fraction, desc=f"{p.stage} ({p.done}/{p.total}) • {p.eta_formatted}")
+                        status_html = f"<b>{p.stage}</b>: {p.done}/{p.total} • ETA {p.eta_formatted}"
+                        if p.substage:
+                            status_html += f"<br><small>{p.substage}</small>"
+                        if tracker_instance and not tracker_instance.pause_event.is_set():
+                             status_html = "<b>Paused</b>"
+                        details_html = f"{int(p.fraction*100)}% complete"
                         update_dict[self.components['unified_status']] = gr.update(value=status_html)
                         update_dict[self.components['progress_details']] = gr.update(value=details_html)
 
@@ -3332,12 +3410,18 @@ class EnhancedAppUI(AppUI):
                 time.sleep(0.05)
         final_updates, final_msg, final_label = {}, "✅ Task completed successfully.", "Complete"
         try:
-            result_dict = future.result() or {}
-            if self.cancel_event.is_set(): final_msg, final_label = "⏹️ Task cancelled by user.", "Cancelled"
-            else: final_msg, final_updates = result_dict.get("unified_log", final_msg), result_dict
+            if self.cancel_event.is_set():
+                final_msg, final_label = "⏹️ Task cancelled by user.", "Cancelled"
+                if tracker_instance:
+                    tracker_instance.done_stage(final_label)
+            else:
+                result_dict = future.result() or {}
+                final_msg, final_updates = result_dict.get("unified_log", final_msg), result_dict
         except Exception as e:
             self.enhanced_logger.error("Task execution failed in UI runner", exc_info=True)
             final_msg, final_label = f"❌ Task failed: {e}", "Failed"
+            if tracker_instance:
+                tracker_instance.set_stage(final_label, substage=str(e))
         self.all_logs.append(f"[{final_label.upper()}] {final_msg}")
         filtered_logs = [l for l in self.all_logs if self.log_filter_level.upper() == "DEBUG" or f"[{self.log_filter_level.upper()}]" in l]
         final_updates_with_comps = {self.components.get(k): v for k, v in final_updates.items() if self.components.get(k)}
@@ -3408,12 +3492,29 @@ class EnhancedAppUI(AppUI):
         items, index_map = build_scene_gallery_items(scenes, view, outputfolder)
         return scenes, status_text, gr.update(value=items), gr.update(value=index_map)
 
+    def _toggle_pause(self, tracker):
+        if tracker.pause_event.is_set():
+            tracker.pause_event.clear()
+            return "⏸️ Paused"
+        else:
+            tracker.pause_event.set()
+            return "▶️ Resume"
+
     def _create_event_handlers(self):
         super()._create_event_handlers()
         c = self.components
         c['cancel_button'].click(lambda: self.cancel_event.set(), [], [])
+
+        # This is a bit of a hack to get the tracker instance.
+        # A better solution would be to manage trackers more explicitly.
+        c['pause_button'].click(
+            self._toggle_pause,
+            inputs=[gr.State(lambda: next((arg for arg in self.last_run_args if isinstance(arg, AdvancedProgressTracker)), None))],
+            outputs=c['pause_button']
+        )
+
         c['clear_logs_button'].click(lambda: (self.all_logs.clear(), "")[1], [], c['unified_log'])
-        c['log_level_filter'].change(lambda level: (setattr(self, 'log_filter_level', level), "\n".join([l for l in self.all_logs if level.upper() == "DEBUG" or f"[{level.upper()}]" in l][-1000:]))[1], c['log_level_filter'], c['unified_log'])
+        c['log_level_filter'].change(lambda level: (setattr(self, 'log_filter_level', level), "\n".join([l for l in self.all_logs if self.log_filter_level.upper() == "DEBUG" or f"[{level.upper()}]" in l][-1000:]))[1], c['log_level_filter'], c['unified_log'])
 
     def _create_pre_analysis_event(self, *args):
         ui_args = dict(zip(self.ana_ui_map_keys, args))
