@@ -865,9 +865,9 @@ class SessionLoadEvent(UIEvent):
 def _to_json_safe(obj):
     if isinstance(obj, (Path, datetime)):
         return str(obj)
-    if np.issubdtype(type(obj), np.floating):
+    if hasattr(np, 'floating') and isinstance(obj, np.floating):
         return float(obj)
-    if np.issubdtype(type(obj), np.integer):
+    if hasattr(np, 'integer') and isinstance(obj, np.integer):
         return int(obj)
     if dataclasses.is_dataclass(obj):
         return dataclasses.asdict(obj)
@@ -875,6 +875,8 @@ def _to_json_safe(obj):
         return {k: _to_json_safe(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
         return [_to_json_safe(i) for i in obj]
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
     return obj
 
 def estimate_totals(params: 'AnalysisParameters', video_info: dict, scenes: list['Scene'] | None) -> dict:
