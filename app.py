@@ -400,10 +400,8 @@ class Config:
             return float(env_val)
         if isinstance(default_val, list):
             if not env_val.strip():
-                return default_val
+                return []
             parts = [p.strip() for p in env_val.split(',') if p.strip()]
-            if not parts:
-                return default_val
             return [self._coerce_type(p, default_val[0] if default_val else "") for p in parts]
         return env_val
 
