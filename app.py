@@ -643,6 +643,7 @@ class AdvancedProgressTracker:
         self._last_update_ts: float = 0.0
         self.throttle_interval: float = 0.1  # 10 Hz
         self.pause_event = threading.Event()
+        self.pause_event.set()
 
     def start(self, total_items: int, desc: Optional[str] = None):
         self.total = max(1, int(total_items))
@@ -3069,7 +3070,7 @@ class AppUI:
                                   'scene_gallery', 'scene_gallery_index_map_state']
 
     def build_ui(self):
-        css = """.plot-and-slider-column { max-width: 560px !important; margin: auto; } .scene-editor { border: 1px solid #444; padding: 10px; border-radius: 5px; } .log-container > .gr-utils-error { display: none !important; } .progress-details { font-size: 0.8em; color: #888; text-align: center; }"""
+        css = """.plot-and-slider-column { max-width: 560px !important; margin: auto; } .scene-editor { border: 1px solid #444; padding: 10px; border-radius: 5px; } .log-container > .gr-utils-error { display: none !important; } .progress-details { font-size: 1rem !important; color: #333 !important; font-weight: 500; padding: 8px 0; } .gr-progress .progress { height: 28px !important; }"""
         with gr.Blocks(theme=gr.themes.Default(), css=css) as demo:
             self._build_header()
             with gr.Accordion("🔄 resume previous Session", open=False):
@@ -3540,6 +3541,13 @@ class EnhancedAppUI(AppUI):
         event_fields = [f.name for f in dataclasses.fields(ExtractionEvent)]
         event_args = {k: v for k, v in ui_args.items() if k in event_fields}
         event = ExtractionEvent(**event_args)
+        
+        # This is a bit of a hack, but we need to set the tracker to a running state
+        # before the task starts, otherwise the progress thread will block.
+        # A better solution would be to manage trackers more explicitly.
+        tracker = AdvancedProgressTracker(progress, self.progress_queue, self.enhanced_logger, ui_stage_name="Extracting")
+        tracker.pause_event.set()
+
         try:
             for result in execute_extraction(event, self.progress_queue, self.cancel_event, self.enhanced_logger, self.config, progress=progress):
                 if isinstance(result, dict):
