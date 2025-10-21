@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import MagicMock, patch, mock_open
 from pathlib import Path
 import os
-import yaml
+import json
 import time
 import numpy as np
 import gradio as gr
@@ -134,12 +134,12 @@ class TestConfig:
         assert test_config.quality_weights.sharpness == 25
         assert not test_config.ui_defaults.disable_parallel
 
-    @patch('builtins.open', new_callable=mock_open, read_data="paths:\n  logs: 'custom_logs'\nquality_weights:\n  sharpness: 50")
+    @patch('builtins.open', new_callable=mock_open, read_data='{"paths": {"logs": "custom_logs"}, "quality_weights": {"sharpness": 50}}')
     @patch('pathlib.Path.exists', return_value=True)
     def test_file_override(self, mock_exists, mock_file, test_config):
         """Verify that a config file overrides defaults."""
         with patch('app.Config._create_dirs'):
-            config = app.Config(config_path="dummy_path.yml")
+            config = app.Config(config_path="dummy_path.json")
             assert config.paths.logs == "custom_logs"
             assert config.quality_weights.sharpness == 50
             # Check that a non-overridden value remains default
@@ -308,16 +308,17 @@ class TestSceneLogic:
         mock_save.assert_called_once()
 
     @patch('app.save_scene_seeds')
-    def test_apply_bulk_scene_filters(self, mock_save, sample_scenes):
+    def test_apply_bulk_scene_filters(self, mock_save, sample_scenes, test_config):
         """Verify that bulk filters correctly include/exclude scenes."""
-        scenes, _ = app.apply_bulk_scene_filters(
+        ui = app.EnhancedAppUI(config=test_config, logger=MagicMock(), progress_queue=MagicMock(), cancel_event=MagicMock(), thumbnail_manager=MagicMock())
+        scenes, _, _, _ = ui.on_apply_bulk_scene_filters_extended(
             scenes=sample_scenes,
             min_mask_area=10.0,
             min_face_sim=0.5,
             min_confidence=0.85,
             enable_face_filter=True,
             output_folder='/fake/dir',
-            logger=MagicMock()
+            view="Kept"
         )
 
         status_map = {s['shot_id']: s['status'] for s in scenes}
@@ -328,37 +329,31 @@ class TestSceneLogic:
         mock_save.assert_called_once()
 
     @patch('app.save_scene_seeds')
-    @patch('app.get_person_detector')
-    @patch('app.get_face_analyzer')
-    @patch('app.SubjectMasker')
-    @patch('app.ThumbnailManager')
-    def test_apply_scene_overrides(self, mock_thumbnail_manager, mock_subject_masker, mock_get_face_analyzer, mock_get_person_detector, mock_save, sample_scenes, test_config):
+    @patch('app._create_analysis_context')
+    @patch('app._recompute_single_preview')
+    def test_apply_scene_overrides(self, mock_recompute, mock_create_context, mock_save, sample_scenes, test_config):
         """Verify that applying a scene override re-computes the seed."""
-        mock_masker_instance = mock_subject_masker.return_value
-        mock_masker_instance.get_seed_for_frame.return_value = ([10, 10, 20, 20], {'type': 'recomputed'})
-        # Set the frame_map directly on the mock instance
-        mock_masker_instance.frame_map = {s['shot_id']: f"frame_{s['shot_id']}.webp" for s in sample_scenes}
-        mock_get_person_detector.return_value = MagicMock()
-        mock_get_face_analyzer.return_value = MagicMock()
-        mock_thumbnail_manager.get.return_value = np.zeros((64, 64, 3), dtype=np.uint8)
+        mock_masker = MagicMock()
+        mock_create_context.return_value = mock_masker
 
-        _, updated_scenes, msg = app.apply_scene_overrides(
-            scenes_list=sample_scenes,
-            selected_shot_id=1,
-            prompt="new prompt",
-            box_th=0.5,
-            text_th=0.5,
-            output_folder='/fake/dir',
-            ana_ui_map_keys=['output_folder'], # Need to provide at least one key
-            ana_input_components=['/fake/dir'],
-            cuda_available=False,
-            thumbnail_manager=mock_thumbnail_manager,
+        updated_scenes, _, _, msg = app._wire_recompute_handler(
             config=test_config,
-            logger=MagicMock()
+            logger=MagicMock(),
+            thumbnail_manager=MagicMock(),
+            scenes=sample_scenes,
+            shot_id=1,
+            outdir='/fake/dir',
+            text_prompt="new prompt",
+            box_thresh=0.5,
+            text_thresh=0.5,
+            view="Kept",
+            ana_ui_map_keys=[],
+            ana_input_components=[],
+            cuda_available=False,
         )
 
-        assert "updated and saved" in msg
-        assert updated_scenes[0]['seed_result']['details']['type'] == 'recomputed'
+        mock_recompute.assert_called_once()
+        assert "recomputed successfully" in msg
         mock_save.assert_called_once()
 
 
