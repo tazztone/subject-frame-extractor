@@ -1100,7 +1100,8 @@ class Frame:
                         torch.cuda.empty_cache()
             scores_norm = {"sharpness": min(sharpness_scaled, 1.0), "edge_strength": min(edge_strength_scaled, 1.0),
                            "contrast": min(contrast, main_config.quality_scaling.contrast_clamp) / main_config.quality_scaling.contrast_clamp, "brightness": brightness, "entropy": entropy, "niqe": niqe_score / 100.0}
-            self.metrics = FrameMetrics(**{f"{k}_score": float(v * 100) for k, v in scores_norm.items()})
+            for k, v in scores_norm.items():
+                setattr(self.metrics, f'{k}_score', float(v * 100))
             # The quality_weights are part of the main config, not QualityConfig, so we'll need to pass them separately or access them differently.
             if main_config:
                 weights = asdict(main_config.quality_weights)
@@ -2386,8 +2387,13 @@ def load_and_prep_filter_data(metadata_path, get_all_filter_keys):
         all_frames = [json.loads(line) for line in f if line.strip()]
     metric_values = {}
     for k in get_all_filter_keys:
-        values = np.asarray([f.get(k, f.get("metrics", {}).get(f"{k}_score")) for f in all_frames
-                             if (f.get(k) is not None or f.get("metrics", {}).get(f"{k}_score") is not None)], dtype=float)
+        # Correctly extract quality_score from the nested metrics dict
+        if k == 'quality_score':
+            values = np.asarray([f.get("metrics", {}).get("quality_score") for f in all_frames
+                                 if f.get("metrics", {}).get("quality_score") is not None], dtype=float)
+        else:
+            values = np.asarray([f.get(k, f.get("metrics", {}).get(f"{k}_score")) for f in all_frames
+                                 if (f.get(k) is not None or f.get("metrics", {}).get(f"{k}_score") is not None)], dtype=float)
         if values.size > 0:
             if k == 'face_sim' or k == 'eyes_open':
                 hist_range = (0, 1)
@@ -2607,7 +2613,8 @@ def _create_analysis_context(config, logger, thumbnail_manager, cuda_available, 
         params=params, progress_queue=Queue(), cancel_event=threading.Event(), config=config,
         frame_map=frame_map, face_analyzer=models["face_analyzer"],
         reference_embedding=models["ref_emb"], person_detector=models["person_detector"],
-        niqe_metric=None, thumbnail_manager=thumbnail_manager, logger=logger
+        niqe_metric=None, thumbnail_manager=thumbnail_manager, logger=logger,
+        face_landmarker=models["face_landmarker"]
     )
 
 def _recompute_single_preview(scene: dict, masker: SubjectMasker, overrides: dict, thumbnail_manager, logger):
@@ -2748,7 +2755,8 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue, cancel_
     if params.pre_analysis_enabled and pyiqa: niqe_metric = pyiqa.create_metric('niqe', device=models['device'])
     masker = SubjectMasker(params, progress_queue, cancel_event, config, face_analyzer=models["face_analyzer"],
                            reference_embedding=models["ref_emb"], person_detector=models["person_detector"],
-                           niqe_metric=niqe_metric, thumbnail_manager=thumbnail_manager, logger=logger)
+                           niqe_metric=niqe_metric, thumbnail_manager=thumbnail_manager, logger=logger,
+                           face_landmarker=models["face_landmarker"])
     masker.frame_map = masker._create_frame_map(str(output_dir))
 
     video_info = VideoManager.get_video_info(params.video_path)
@@ -3362,8 +3370,8 @@ class AppUI:
                                 'scene_gallery_index_map_state': gr.State([])})
         self._setup_visibility_toggles(); self._setup_pipeline_handlers(); self._setup_filtering_handlers(); self._setup_bulk_scene_handlers()
         self.components['save_config_button'].click(
-            lambda: self.config.save_config('config_dump.yml'), [], []
-        ).then(lambda: "Configuration saved to config_dump.yml", [], self.components['unified_log'])
+            lambda: self.config.save_config('config_dump.json'), [], []
+        ).then(lambda: "Configuration saved to config_dump.json", [], self.components['unified_log'])
 
 class EnhancedAppUI(AppUI):
     def __init__(self, config: 'Config', logger: 'EnhancedLogger', progress_queue: Queue,
@@ -3877,6 +3885,13 @@ class EnhancedAppUI(AppUI):
                 c['filter_status_text']: filter_updates['filter_status_text'],
                 c['results_gallery']: filter_updates['results_gallery']
             })
+
+            # Show the quality score plot
+            if 'quality_score' in metric_values:
+                quality_score_vals = metric_values['quality_score']
+                svg = histogram_svg((np.histogram(quality_score_vals, bins=50, range=(0, 100))), title='Quality Score', logger=self.logger)
+                updates[c['plot_quality_score']] = gr.update(value=svg, visible=True)
+
 
             return [updates.get(comp, gr.update()) for comp in load_outputs]
 
