@@ -2385,7 +2385,7 @@ def load_and_prep_filter_data(metadata_path, get_all_filter_keys):
         except StopIteration: return [], {}
         all_frames = [json.loads(line) for line in f if line.strip()]
     metric_values = {}
-    for k in get_all_filter_keys():
+    for k in get_all_filter_keys:
         values = np.asarray([f.get(k, f.get("metrics", {}).get(f"{k}_score")) for f in all_frames
                              if (f.get(k) is not None or f.get("metrics", {}).get(f"{k}_score") is not None)], dtype=float)
         if values.size > 0:
@@ -2401,7 +2401,7 @@ def load_and_prep_filter_data(metadata_path, get_all_filter_keys):
 
 def build_all_metric_svgs(per_metric_values, get_all_filter_keys, logger):
     svgs = {}
-    for k in get_all_filter_keys():
+    for k in get_all_filter_keys:
         if (h := per_metric_values.get(f"{k}_hist")): svgs[k] = histogram_svg(h, title="", logger=logger)
     return svgs
 
