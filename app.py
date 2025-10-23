@@ -217,7 +217,7 @@ class Config:
         face_sim: Dict[str, float] = field(default_factory=lambda: {'min': 0.0, 'max': 1.0, 'step': 0.01, 'default_min': 0.0})
         mask_area_pct: Dict[str, float] = field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.1, 'default_min': 1.0})
         dedup_thresh: Dict[str, int] = field(default_factory=lambda: {'min': -1, 'max': 32, 'step': 1, 'default': -1})
-        eyes_open: Dict[str, float] = field(default_factory=lambda: {'min': 0.0, 'max': 1.0, 'step': 0.01, 'default_min': 0.3})
+        eyes_open: Dict[str, float] = field(default_factory=lambda: {'min': 0.0, 'max': 1.0, 'step': 0.01, 'default_min': 0.0})
         yaw: Dict[str, float] = field(default_factory=lambda: {'min': -180.0, 'max': 180.0, 'step': 1, 'default_min': -25, 'default_max': 25})
         pitch: Dict[str, float] = field(default_factory=lambda: {'min': -180.0, 'max': 180.0, 'step': 1, 'default_min': -25, 'default_max': 25})
 
