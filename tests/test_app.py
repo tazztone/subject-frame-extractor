@@ -782,17 +782,28 @@ class TestEnhancedAppUI:
         assert mock_app_ui.components[name] == "mock_button"
         MockButton.assert_called_once_with(**kwargs)
 
-    def test_on_select_for_edit(self, mock_app_ui, sample_scenes):
+    @patch('app.scene_thumb', return_value='/fake/thumb.jpg')
+    def test_on_select_for_edit(self, mock_scene_thumb, mock_app_ui, sample_scenes):
         """Tests the on_select_for_edit function for correct UI updates."""
         index_map = list(range(len(sample_scenes)))
         select_data = MagicMock(spec=gr.SelectData)
         select_data.index = 0
+
+        # Mock the thumbnail manager to return a dummy image
+        dummy_image = np.zeros((100, 200, 3), dtype=np.uint8)
+        mock_app_ui.thumbnail_manager.get.return_value = dummy_image
+
         outputs = mock_app_ui.on_select_for_edit(select_data, sample_scenes, "Kept", index_map, "/fake/dir")
+
         (scenes, status_text, gallery_update, new_index_map, selected_id,
-         editor_status, prompt, box_thresh, text_thresh, accordion_update) = outputs
+         editor_status, prompt, box_thresh, text_thresh, accordion_update,
+         gallery_image, gallery_shape) = outputs
+
         assert selected_id == sample_scenes[0]['shot_id']
         assert "Editing Scene 1" in editor_status['value']
         assert accordion_update['open'] is True
+        np.testing.assert_array_equal(gallery_image, dummy_image)
+        assert gallery_shape == (100, 200)
 
 class TestCompositionRoot:
     @patch('app.Config')

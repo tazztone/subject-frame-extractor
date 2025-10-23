@@ -399,10 +399,13 @@ class Config:
         if isinstance(default_val, float):
             return float(env_val)
         if isinstance(default_val, list):
-            if not env_val.strip():
+            if not env_val: # Check for empty string specifically
                 return []
             parts = [p.strip() for p in env_val.split(',') if p.strip()]
-            return [self._coerce_type(p, default_val[0] if default_val else "") for p in parts]
+            # Ensure that if default_val is empty, we handle it gracefully.
+            # Coercing to string is a safe bet for elements in a list from env var.
+            element_default = default_val[0] if default_val else ""
+            return [self._coerce_type(p, element_default) for p in parts]
         return env_val
 
     def _from_dict(self, data: Dict[str, Any]):
@@ -3602,7 +3605,9 @@ class AppUI:
                                 'analysis_output_dir_state': gr.State(""), 'analysis_metadata_path_state': gr.State(""),
                                 'all_frames_data_state': gr.State([]), 'per_metric_values_state': gr.State({}),
                                 'scenes_state': gr.State([]), 'selected_scene_id_state': gr.State(None),
-                                'scene_gallery_index_map_state': gr.State([])})
+                            'scene_gallery_index_map_state': gr.State([]),
+                            'gallery_image_state': gr.State(None),
+                            'gallery_shape_state': gr.State(None)})
         self._setup_visibility_toggles(); self._setup_pipeline_handlers(); self._setup_filtering_handlers(); self._setup_bulk_scene_handlers()
         self.components['save_config_button'].click(
             lambda: self.config.save_config('config_dump.json'), [], []
@@ -3701,7 +3706,16 @@ class EnhancedAppUI(AppUI):
         final_updates_with_comps[self.components['cancel_button']], final_updates_with_comps[self.components['pause_button']] = gr.update(interactive=False), gr.update(interactive=False)
         yield final_updates_with_comps
 
-    def on_detect_yolo_for_scene_wrapper(self, scenes, shot_id, outdir, yolo_conf, *ana_args):
+    def _scale_xywh(self, xywh, src_hw, dst_hw):
+        x, y, w, h = map(int, xywh)
+        src_h, src_w = src_hw
+        dst_h, dst_w = dst_hw
+        sx = dst_w / max(1, src_w)
+        sy = dst_h / max(1, src_h)
+        return [int(round(x * sx)), int(round(y * sy)),
+                int(round(w * sx)), int(round(h * sy))]
+
+    def on_detect_yolo_for_scene_wrapper(self, scenes, shot_id, outdir, yolo_conf, gallery_image, *ana_args):
         try:
             masker = _create_analysis_context(self.config, self.logger, self.thumbnail_manager, self.cuda_available,
                                               self.ana_ui_map_keys, ana_args)
@@ -3711,16 +3725,23 @@ class EnhancedAppUI(AppUI):
 
             seed_frame_num = scene.get('best_seed_frame') or scene.get('start_frame')
             fname = masker.frame_map.get(int(seed_frame_num))
-            thumb_rgb = self.thumbnail_manager.get(Path(outdir) / "thumbs" / f"{Path(fname).stem}.webp")
+            seed_thumb_path = Path(outdir) / "thumbs" / f"{Path(fname).stem}.webp"
+            seed_thumb = self.thumbnail_manager.get(seed_thumb_path)
+            yolo_boxes = [box for box in masker.seed_selector._get_yolo_boxes(seed_thumb) if box['conf'] >= yolo_conf] if seed_thumb is not None else []
 
-            yolo_boxes = [box for box in masker.seed_selector._get_yolo_boxes(thumb_rgb) if box['conf'] >= yolo_conf]
+            canvas = gallery_image if gallery_image is not None else seed_thumb
+            if canvas is None:
+                return gr.update(), "No image available to preview candidates."
 
             items = []
+            src_hw = seed_thumb.shape[:2] if seed_thumb is not None else canvas.shape[:2]
+            dst_hw = canvas.shape[:2]
             for i, b in enumerate(yolo_boxes):
-                xywh = masker.seed_selector._xyxy_to_xywh(b["bbox"])
-                preview = masker.draw_bbox(thumb_rgb, xywh)
-                h, w, _ = thumb_rgb.shape
-                area_pct = (xywh[2] * xywh[3]) / (w * h) * 100
+                xywh_seed = masker.seed_selector._xyxy_to_xywh(b["bbox"])
+                xywh_draw = self._scale_xywh(xywh_seed, src_hw, dst_hw)
+                preview = masker.draw_bbox(canvas, xywh_draw)
+                h, w, _ = canvas.shape
+                area_pct = (xywh_draw[2] * xywh_draw[3]) / (w * h) * 100
                 cap = f"Person {i+1} | conf {b['conf']:.2f} | area {area_pct:.1f}%"
                 items.append((preview, cap))
 
@@ -3796,19 +3817,25 @@ class EnhancedAppUI(AppUI):
         # validate selection
         if not scenes or not indexmap or evt is None or evt.index is None:
             return (scenes, get_scene_status_text(scenes), gr.update(), indexmap,
-                    None, gr.update(), gr.update(), gr.update(), gr.update(), gr.update())
+                    None, gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), None, None)
         if not (0 <= evt.index < len(indexmap)):
             return (scenes, get_scene_status_text(scenes), gr.update(), indexmap,
-                    None, gr.update(), gr.update(), gr.update(), gr.update(), gr.update())
+                    None, gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), None, None)
 
         scene_idx_in_state = indexmap[evt.index]
         if not (0 <= scene_idx_in_state < len(scenes)):
             return (scenes, get_scene_status_text(scenes), gr.update(), indexmap,
-                    None, gr.update(), gr.update(), gr.update(), gr.update(), gr.update())
+                    None, gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), None, None)
 
         scene = scenes[scene_idx_in_state]
         cfg = scene.get("seed_config") or {}
         shotid = scene.get("shot_id")
+
+        # Load the selected image into state for reuse
+        thumb_path_str = scene_thumb(scene, outputdir)
+        gallery_image = self.thumbnail_manager.get(Path(thumb_path_str)) if thumb_path_str else None
+        gallery_shape = gallery_image.shape[:2] if gallery_image is not None else None
+
         # Editor status text
         if scene.get("start_frame") is not None and scene.get("end_frame") is not None:
             status_md = f"Editing Scene {shotid}  •  Frames {scene['start_frame']}-{scene['end_frame']}"
@@ -3829,6 +3856,8 @@ class EnhancedAppUI(AppUI):
             gr.update(value=boxth),                # sceneeditorboxthreshinput
             gr.update(value=textth),               # sceneeditortextthreshinput
             gr.update(open=True),                  # sceneeditoraccordion
+            gallery_image,
+            gallery_shape,
         )
 
     def on_recompute(self, scenes, selected_shotid, prompt, boxth, textth, outputfolder, *anaargs):
@@ -3879,7 +3908,8 @@ class EnhancedAppUI(AppUI):
                 c['scenes_state'],
                 c['selected_scene_id_state'],
                 c['analysis_output_dir_state'],
-                c['sceneeditor_yolo_conf_slider']
+                c['sceneeditor_yolo_conf_slider'],
+                c['gallery_image_state']
             ] + self.ana_input_components,
             outputs=[c['sceneeditor_yolo_gallery'], c['sceneeditorstatusmd']]
         )
