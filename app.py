@@ -1318,11 +1318,18 @@ def download_model(url, dest_path, description, logger, error_handler: ErrorHand
         logger.error(f"Failed to download {description}", exc_info=True, extra={'url': url})
         raise RuntimeError(f"Failed to download required model: {description}") from e
 
-@lru_cache(maxsize=None)
+# Thread-local storage for non-thread-safe models
+thread_local = threading.local()
+
 def get_face_landmarker(model_path: str, logger: 'EnhancedLogger'):
     if not vision:
         raise ImportError("MediaPipe vision components are not installed.")
-    logger.info("Loading or getting cached MediaPipe face landmarker model.", component="face_landmarker")
+
+    # Check if a landmarker instance already exists for this thread
+    if hasattr(thread_local, 'face_landmarker_instance'):
+        return thread_local.face_landmarker_instance
+
+    logger.info("Initializing MediaPipe FaceLandmarker for new thread.", component="face_landmarker")
     try:
         base_options = python.BaseOptions(model_asset_path=model_path)
         options = vision.FaceLandmarkerOptions(
@@ -1331,10 +1338,14 @@ def get_face_landmarker(model_path: str, logger: 'EnhancedLogger'):
             output_facial_transformation_matrixes=True,
             num_faces=1,
             min_face_detection_confidence=0.3,
-            min_face_presence_confidence=0.3
+            min_face_presence_confidence=0.3,
         )
         detector = vision.FaceLandmarker.create_from_options(options)
-        logger.success("Face landmarker model loaded successfully.")
+
+        # Cache the instance on the current thread
+        thread_local.face_landmarker_instance = detector
+
+        logger.success("Face landmarker model initialized successfully for this thread.")
         return detector
     except Exception as e:
         logger.error(f"Could not initialize MediaPipe face landmarker model. Error: {e}", component="face_landmarker")
