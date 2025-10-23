@@ -2169,7 +2169,10 @@ class SubjectMasker:
         scene.best_seed_frame = candidates[best_local_idx][0]
         scene.seed_metrics = {'reason': 'pre-analysis complete', 'score': max(scores), 'best_niqe': niqe_score, 'best_face_sim': face_sim}
 
-    def get_seed_for_frame(self, frame_rgb: np.ndarray, seed_config: dict): return self.seed_selector.select_seed(frame_rgb, current_params=seed_config)
+    def get_seed_for_frame(self, frame_rgb: np.ndarray, seed_config: dict):
+        if isinstance(seed_config, dict) and seed_config.get("manual_bbox_xywh"):
+            return seed_config["manual_bbox_xywh"], {"type": seed_config.get("seedtype", "manual")}
+        return self.seed_selector.select_seed(frame_rgb, current_params=seed_config)
     def get_mask_for_bbox(self, frame_rgb_small, bbox_xywh): return self.seed_selector._sam2_mask_for_bbox(frame_rgb_small, bbox_xywh)
     def draw_bbox(self, img_rgb, xywh, color=None, thickness=None):
         color = color or tuple(self.config.visualization.bbox_color)
@@ -3307,21 +3310,34 @@ class AppUI:
                 with gr.Accordion("Scene Editor", open=False, elem_classes="scene-editor") as sceneeditoraccordion:
                     self.components["sceneeditoraccordion"] = sceneeditoraccordion
                     self._create_component("sceneeditorstatusmd", "markdown", {"value": "Select a scene to edit."})
-                    with gr.Row():
-                        self._create_component("sceneeditorpromptinput", "textbox", {"label": "Per-Scene Text Prompt", "info": "Override the main text prompt for this scene only. This will force a text-based search."})
-                    with gr.Row():
-                        info_box = "Confidence for detecting an object's bounding box. Higher = fewer, more confident detections."
-                        self._create_component("sceneeditorboxthreshinput", "slider", {
-                            "label": "Box Thresh", "minimum": 0.0, "maximum": 1.0, "step": 0.05, "info": info_box,
-                            "value": self.config.grounding_dino_params.box_threshold,})
-                        info_text = "Confidence for matching the prompt to an object. Higher = stricter text match."
-                        self._create_component("sceneeditortextthreshinput", "slider", {
-                            "label": "Text Thresh", "minimum": 0.0, "maximum": 1.0, "step": 0.05, "info": info_text,
-                            "value": self.config.grounding_dino_params.text_threshold,})
+                    self._create_component('scene_editor_seed_mode', 'radio', {'choices': ["DINO Text Prompt", "YOLO Bbox"], 'value': "DINO Text Prompt", 'label': "Seeding Method"})
+
+                    with gr.Group(visible=True) as dino_seed_group:
+                        self.components['dino_seed_group'] = dino_seed_group
+                        with gr.Row():
+                            self._create_component("sceneeditorpromptinput", "textbox", {"label": "Per-Scene Text Prompt", "info": "Override the main text prompt for this scene only. This will force a text-based search."})
+                        with gr.Row():
+                            info_box = "Confidence for detecting an object's bounding box. Higher = fewer, more confident detections."
+                            self._create_component("sceneeditorboxthreshinput", "slider", {
+                                "label": "Box Thresh", "minimum": 0.0, "maximum": 1.0, "step": 0.05, "info": info_box,
+                                "value": self.config.grounding_dino_params.box_threshold,})
+                            info_text = "Confidence for matching the prompt to an object. Higher = stricter text match."
+                            self._create_component("sceneeditortextthreshinput", "slider", {
+                                "label": "Text Thresh", "minimum": 0.0, "maximum": 1.0, "step": 0.05, "info": info_text,
+                                "value": self.config.grounding_dino_params.text_threshold,})
+
+                    with gr.Group(visible=False) as yolo_seed_group:
+                        self.components['yolo_seed_group'] = yolo_seed_group
+                        with gr.Row():
+                            self._create_component('sceneeditor_detectyolo_button', 'button', {'value': "Detect People on Seed Frame"})
+                            self._create_component('sceneeditor_yolo_conf_slider', 'slider', {'label': "YOLO Conf Min", 'minimum': 0.0, 'maximum': 1.0, 'step': 0.05, 'value': self.config.person_detector.conf})
+                        self._create_component('sceneeditor_yolo_gallery', 'gallery', {'columns': 4, 'height': 240, 'label': "YOLO Candidates", 'allow_preview': True})
+
                     with gr.Row():
                         self._create_component("scenerecomputebutton", "button", {"value": "▶️Recompute Preview"})
                         self._create_component("sceneincludebutton", "button", {"value": "✅keep scene"})
                         self._create_component("sceneexcludebutton", "button", {"value": "❌reject scene"})
+                        self._create_component("sceneresetbutton", "button", {"value": "🔄 Reset Scene"})
                 gr.Markdown("---"); gr.Markdown("### 🔬 Step 3: Propagate Masks"); gr.Markdown("Once you are satisfied with the seeds, propagate the masks to the rest of the frames in the selected scenes.")
                 self._create_component('propagate_masks_button', 'button', {'value': '🔬 Propagate Masks on Kept Scenes', 'variant': 'primary', 'interactive': False})
 
@@ -3495,6 +3511,97 @@ class EnhancedAppUI(AppUI):
         final_updates_with_comps[self.components['cancel_button']], final_updates_with_comps[self.components['pause_button']] = gr.update(interactive=False), gr.update(interactive=False)
         yield final_updates_with_comps
 
+    def on_detect_yolo_for_scene_wrapper(self, scenes, shot_id, outdir, yolo_conf, *ana_args):
+        try:
+            masker = _create_analysis_context(self.config, self.logger, self.thumbnail_manager, self.cuda_available,
+                                              self.ana_ui_map_keys, ana_args)
+            scene = next((s for s in scenes if s['shot_id'] == shot_id), None)
+            if not scene:
+                return gr.update(), "Scene not found."
+
+            seed_frame_num = scene.get('best_seed_frame') or scene.get('start_frame')
+            fname = masker.frame_map.get(int(seed_frame_num))
+            thumb_rgb = self.thumbnail_manager.get(Path(outdir) / "thumbs" / f"{Path(fname).stem}.webp")
+
+            yolo_boxes = [box for box in masker.seed_selector._get_yolo_boxes(thumb_rgb) if box['conf'] >= yolo_conf]
+
+            items = []
+            for i, b in enumerate(yolo_boxes):
+                xywh = masker.seed_selector._xyxy_to_xywh(b["bbox"])
+                preview = masker.draw_bbox(thumb_rgb, xywh)
+                h, w, _ = thumb_rgb.shape
+                area_pct = (xywh[2] * xywh[3]) / (w * h) * 100
+                cap = f"Person {i+1} | conf {b['conf']:.2f} | area {area_pct:.1f}%"
+                items.append((preview, cap))
+
+            return gr.update(value=items), f"Found {len(items)} YOLO candidates."
+        except Exception as e:
+            self.logger.error("Failed to detect YOLO boxes for scene", exc_info=True)
+            return gr.update(), f"Error: {e}"
+
+    def on_pick_yolo_candidate_wrapper(self, evt: gr.SelectData, scenes, shot_id, outdir, view, yolo_conf, *ana_args):
+        try:
+            if evt is None or evt.index is None:
+                return scenes, gr.update(), gr.update(), "No candidate selected."
+
+            masker = _create_analysis_context(self.config, self.logger, self.thumbnail_manager, self.cuda_available,
+                                              self.ana_ui_map_keys, ana_args)
+            scene = next((s for s in scenes if s['shot_id'] == shot_id), None)
+            if not scene:
+                return scenes, gr.update(), gr.update(), "Scene not found."
+
+            seed_frame_num = scene.get('best_seed_frame') or scene.get('start_frame')
+            fname = masker.frame_map.get(int(seed_frame_num))
+            thumb_rgb = self.thumbnail_manager.get(Path(outdir) / "thumbs" / f"{Path(fname).stem}.webp")
+
+            yolo_boxes = [box for box in masker.seed_selector._get_yolo_boxes(thumb_rgb) if box['conf'] >= yolo_conf]
+
+            if evt.index >= len(yolo_boxes):
+                return scenes, gr.update(), gr.update(), "Selected index is out of bounds."
+
+            selected_box = yolo_boxes[evt.index]
+            selected_xywh = masker.seed_selector._xyxy_to_xywh(selected_box['bbox'])
+
+            overrides = {"manual_bbox_xywh": selected_xywh, "seedtype": "yolo_manual"}
+
+            scene_idx = scenes.index(scene)
+            _recompute_single_preview(scenes[scene_idx], masker, overrides, self.thumbnail_manager, self.logger)
+
+            save_scene_seeds(scenes, outdir, self.logger)
+            gallery_items, index_map = build_scene_gallery_items(scenes, view, outdir)
+
+            return scenes, gr.update(value=gallery_items), gr.update(value=index_map), "YOLO box selected and preview recomputed."
+        except Exception as e:
+            self.logger.error("Failed to pick YOLO candidate", exc_info=True)
+            return scenes, gr.update(), gr.update(), f"Error: {e}"
+
+    def on_reset_scene_wrapper(self, scenes, shot_id, outdir, view, *ana_args):
+        try:
+            scene = next((s for s in scenes if s['shot_id'] == shot_id), None)
+            if not scene:
+                return scenes, gr.update(), gr.update(), "Scene not found."
+
+            # Clear all scene-specific overrides
+            scene['seed_config'] = {}
+            scene['seed_result'] = {}
+            scene['manual_status_change'] = False
+            scene['status'] = 'pending'
+
+            masker = _create_analysis_context(self.config, self.logger, self.thumbnail_manager, self.cuda_available,
+                                              self.ana_ui_map_keys, ana_args)
+
+            # Rerun the original seed selection
+            scene_idx = scenes.index(scene)
+            _recompute_single_preview(scenes[scene_idx], masker, {}, self.thumbnail_manager, self.logger)
+
+            save_scene_seeds(scenes, outdir, self.logger)
+            gallery_items, index_map = build_scene_gallery_items(scenes, view, outdir)
+
+            return scenes, gr.update(value=gallery_items), gr.update(value=index_map), f"Scene {shot_id} has been reset."
+        except Exception as e:
+            self.logger.error(f"Failed to reset scene {shot_id}", exc_info=True)
+            return scenes, gr.update(), gr.update(), f"Error resetting scene: {e}"
+
     def on_select_for_edit(self, evt: gr.SelectData, scenes, view, indexmap, outputdir):
         # validate selection
         if not scenes or not indexmap or evt is None or evt.index is None:
@@ -3574,6 +3681,34 @@ class EnhancedAppUI(AppUI):
             self._toggle_pause,
             inputs=[gr.State(lambda: next((arg for arg in self.last_run_args if isinstance(arg, AdvancedProgressTracker)), None) if self.last_run_args else None)],
             outputs=c['pause_button']
+        )
+
+        c['sceneeditor_detectyolo_button'].click(
+            self.on_detect_yolo_for_scene_wrapper,
+            inputs=[
+                c['scenes_state'],
+                c['selected_scene_id_state'],
+                c['analysis_output_dir_state'],
+                c['sceneeditor_yolo_conf_slider']
+            ] + self.ana_input_components,
+            outputs=[c['sceneeditor_yolo_gallery'], c['sceneeditorstatusmd']]
+        )
+
+        c['sceneeditor_yolo_gallery'].select(
+            self.on_pick_yolo_candidate_wrapper,
+            inputs=[
+                c['scenes_state'],
+                c['selected_scene_id_state'],
+                c['analysis_output_dir_state'],
+                c['scene_gallery_view_toggle'],
+                c['sceneeditor_yolo_conf_slider']
+            ] + self.ana_input_components,
+            outputs=[
+                c['scenes_state'],
+                c['scene_gallery'],
+                c['scene_gallery_index_map_state'],
+                c['sceneeditorstatusmd']
+            ]
         )
 
         c['clear_logs_button'].click(lambda: (self.all_logs.clear(), "")[1], [], c['unified_log'])
@@ -3691,6 +3826,15 @@ class EnhancedAppUI(AppUI):
                                                            c['enable_face_filter_input']: gr.update(value=s == "👤 By Face" or s == "🔄 Face + Text Fallback")},
                                                  [c['primary_seed_strategy_input']], [c['face_seeding_group'], c['text_seeding_group'],
                                                                                      c['auto_seeding_group'], c['enable_face_filter_input']])
+
+        c['scene_editor_seed_mode'].change(
+            lambda mode: {
+                c['dino_seed_group']: gr.update(visible=mode == "DINO Text Prompt"),
+                c['yolo_seed_group']: gr.update(visible=mode == "YOLO Bbox"),
+            },
+            inputs=[c['scene_editor_seed_mode']],
+            outputs=[c['dino_seed_group'], c['yolo_seed_group']]
+        )
 
     def _setup_pipeline_handlers(self):
         c = self.components
@@ -3821,6 +3965,22 @@ class EnhancedAppUI(AppUI):
                 c['scene_gallery_index_map_state'],
                 c['sceneeditorstatusmd'],
             ],
+        )
+
+        c['sceneresetbutton'].click(
+            self.on_reset_scene_wrapper,
+            inputs=[
+                c['scenes_state'],
+                c['selected_scene_id_state'],
+                c['analysis_output_dir_state'],
+                c['scene_gallery_view_toggle']
+            ] + self.ana_input_components,
+            outputs=[
+                c['scenes_state'],
+                c['scene_gallery'],
+                c['scene_gallery_index_map_state'],
+                c['sceneeditorstatusmd']
+            ]
         )
 
         c['sceneincludebutton'].click(
