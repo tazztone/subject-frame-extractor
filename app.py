@@ -4059,40 +4059,62 @@ class EnhancedAppUI(AppUI):
                         frame_h, frame_w = frame_img.shape[:2]
 
                         padding_factor = 1.0 + (event.crop_padding / 100.0)
-                        w_b_padded = w_b * padding_factor
-                        h_b_padded = h_b * padding_factor
-
+                        
                         feasible_candidates = []
                         for ar_str, r in aspect_ratios:
-                            # Calculate minimal AR-conforming rectangle that contains the PADDED subject box
-                            h_r = max(h_b_padded, w_b_padded / r)
-                            w_r = r * h_r
+                            # Determine the smallest crop that contains the subject box at the target AR
+                            if w_b / h_b > r:
+                                w_c, h_c = w_b, w_b / r
+                            else:
+                                h_c, w_c = h_b, h_b * r
 
-                            # Feasibility Check 1: Crop dimensions must be within frame dimensions
-                            if w_r > frame_w or h_r > frame_h:
-                                continue
+                            # Apply padding
+                            w_padded, h_padded = w_c * padding_factor, h_c * padding_factor
 
-                            # Feasibility Check 2: A valid placement must exist
-                            # Determine the valid interval for the top-left corner (x1, y1)
-                            x_max_b, y_max_b = x_b + w_b, y_b + h_b
-                            left_min = max(0, x_max_b - w_r)
-                            left_max = min(x_b, frame_w - w_r)
+                            # Clamp dimensions to frame boundaries, preserving AR
+                            scale = 1.0
+                            if w_padded > frame_w:
+                                scale = min(scale, frame_w / w_padded)
+                            if h_padded > frame_h:
+                                scale = min(scale, frame_h / h_padded)
+                            
+                            w_final, h_final = w_padded * scale, h_padded * scale
 
-                            top_min = max(0, y_max_b - h_r)
-                            top_max = min(y_b, frame_h - h_r)
+                            # Ensure the final crop is still large enough to contain the subject
+                            if w_final < w_b or h_final < h_b:
+                                # This can happen if padding is negative or scale-down is too aggressive.
+                                # As a fallback, ensure subject is contained, which may break padding.
+                                if w_final < w_b:
+                                    w_final = w_b
+                                    h_final = w_final / r
+                                if h_final < h_b:
+                                    h_final = h_b
+                                    w_final = h_final * r
+                                # Re-clamp to frame boundaries after this adjustment
+                                if w_final > frame_w:
+                                    w_final = frame_w
+                                    h_final = w_final / r
+                                if h_final > frame_h:
+                                    h_final = frame_h
+                                    w_final = h_final * r
+                            
+                            # Position the crop to center the subject, then clamp to frame edges
+                            center_x_b, center_y_b = x_b + w_b / 2, y_b + h_b / 2
+                            x1 = center_x_b - w_final / 2
+                            y1 = center_y_b - h_final / 2
 
-                            if left_min > left_max or top_min > top_max:
-                                continue # No valid placement possible
+                            x1 = max(0, min(x1, frame_w - w_final))
+                            y1 = max(0, min(y1, frame_h - h_final))
 
-                            # This AR is feasible, add to candidates
-                            area = w_r * h_r
+                            # Final check to ensure subject is contained after all adjustments
+                            if (x1 > x_b or y1 > y_b or x1 + w_final < x_b + w_b or y1 + h_final < y_b + h_b):
+                                continue # This AR is not feasible with the given constraints
+
                             feasible_candidates.append({
                                 "ar_str": ar_str,
-                                "w_r": w_r,
-                                "h_r": h_r,
-                                "area": area,
-                                "left_min": left_min, "left_max": left_max,
-                                "top_min": top_min, "top_max": top_max,
+                                "x1": x1, "y1": y1,
+                                "w_r": w_final, "h_r": h_final,
+                                "area": w_final * h_final,
                             })
 
                         if not feasible_candidates:
@@ -4103,28 +4125,19 @@ class EnhancedAppUI(AppUI):
                                 num_cropped += 1
                             continue
 
-                        # Select the best candidate (smallest area, with tie-breaking)
+                        # Select the best candidate (smallest area that contains the subject)
                         subject_ar = w_b / h_b if h_b > 0 else 1
-                        def sort_key(candidate):
-                            ar_str = candidate['ar_str'].replace('x', ':')
-                            r = float(ar_str.split(':')[0]) / float(ar_str.split(':')[1])
+                        def sort_key(c):
+                            r = c['w_r'] / c['h_r'] if c['h_r'] > 0 else 1
                             ar_diff = abs(r - subject_ar)
-                            return (candidate['area'], ar_diff)
+                            return (c['area'], ar_diff)
 
                         best_candidate = min(feasible_candidates, key=sort_key)
+                        
+                        x1, y1 = int(best_candidate['x1']), int(best_candidate['y1'])
+                        w_r, h_r = int(best_candidate['w_r']), int(best_candidate['h_r'])
 
-                        # Placement Strategy: Center on subject, then clamp to feasible interval
-                        w_r, h_r = best_candidate['w_r'], best_candidate['h_r']
-                        center_x_b, center_y_b = x_b + w_b / 2, y_b + h_b / 2
-
-                        x1 = round(center_x_b - w_r / 2)
-                        y1 = round(center_y_b - h_r / 2)
-
-                        # Clamp to the pre-calculated feasible intervals
-                        x1 = int(max(best_candidate['left_min'], min(x1, best_candidate['left_max'])))
-                        y1 = int(max(best_candidate['top_min'], min(y1, best_candidate['top_max'])))
-
-                        cropped_img = frame_img[y1:y1+int(h_r), x1:x1+int(w_r)]
+                        cropped_img = frame_img[y1:y1+h_r, x1:x1+w_r]
                         if cropped_img.size > 0:
                             cv2.imwrite(str(crop_dir / f"{Path(frame_meta['filename']).stem}_crop_{best_candidate['ar_str']}.png"), cropped_img)
                             num_cropped += 1
