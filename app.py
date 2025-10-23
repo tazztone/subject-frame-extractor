@@ -2676,23 +2676,6 @@ def _update_gallery(all_frames_data, filters, output_dir, gallery_view, show_ove
             else: preview_images.append((thumb_rgb_np, caption))
     return status_text, gr.update(value=preview_images, rows=1 if gallery_view == "Rejected Frames" else 2)
 
-def reset_filters(all_frames_data, per_metric_values, output_dir, config, slider_keys, thumbnail_manager):
-    output_values, slider_default_values = {}, []
-    for key in slider_keys:
-        metric_key, default_key = re.sub(r'_(min|max)$', '', key), 'default_max' if key.endswith('_max') else 'default_min'
-        default_val = getattr(config.filter_defaults, metric_key)[default_key]
-        output_values[f'slider_{key}'] = gr.update(value=default_val)
-        slider_default_values.append(default_val)
-    face_match_default, dedup_default = config.ui_defaults.require_face_match, config.filter_defaults.dedup_thresh['default']
-    output_values.update({'require_face_match_input': gr.update(value=face_match_default), 'dedup_thresh_input': gr.update(value=dedup_default)})
-    if all_frames_data:
-        slider_defaults_dict = {key: val for key, val in zip(slider_keys, slider_default_values)}
-        filter_event = FilterEvent(all_frames_data, per_metric_values, output_dir, "Kept Frames", config.gradio_defaults.show_mask_overlay, config.gradio_defaults.overlay_alpha, face_match_default, dedup_default, slider_defaults_dict)
-        updates = on_filters_changed(filter_event, thumbnail_manager, config)
-        output_values.update({'filter_status_text': updates['filter_status_text'], 'results_gallery': updates['results_gallery']})
-    else:
-        output_values.update({'filter_status_text': "Load an analysis to begin.", 'results_gallery': []})
-    return output_values
 
 def auto_set_thresholds(per_metric_values, p, slider_keys, selected_metrics):
     updates = {}
@@ -3553,9 +3536,13 @@ class AppUI:
                 with gr.Row():
                     self._create_component('apply_auto_button', 'button', {'value': 'Apply Percentile to Mins'})
                     self._create_component('reset_filters_button', 'button', {'value': "Reset Filters"})
+                with gr.Row():
+                    self._create_component('expand_all_metrics_button', 'button', {'value': 'Expand All'})
+                    self._create_component('collapse_all_metrics_button', 'button', {'value': 'Collapse All'})
                 self._create_component('filter_status_text', 'markdown', {'value': "Load an analysis to begin."})
-                self.components['metric_plots'], self.components['metric_sliders'] = {}, {}
-                with gr.Accordion("Deduplication", open=True, visible=True):
+                self.components['metric_plots'], self.components['metric_sliders'], self.components['metric_accs'] = {}, {}, {}
+                with gr.Accordion("Deduplication", open=True, visible=False) as dedup_acc:
+                    self.components['metric_accs']['dedup'] = dedup_acc
                     f_def = self.config.filter_defaults.dedup_thresh
                     self._create_component('dedup_thresh_input', 'slider', {'label': "Similarity Threshold", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': f_def['default'], 'step': f_def['step'], 'info': "Filters out visually similar frames. A lower value is stricter (more filtering). A value of 0 means only identical images will be removed. Set to -1 to disable."})
                 for metric_name, open_default in [('quality_score', True), ('niqe', False), ('sharpness', True), ('edge_strength', True), ('contrast', True),
@@ -3563,13 +3550,14 @@ class AppUI:
                                                   ('eyes_open', True), ('yaw', True), ('pitch', True)]:
                     if not hasattr(self.config.filter_defaults, metric_name): continue
                     f_def = getattr(self.config.filter_defaults, metric_name)
-                    with gr.Accordion(metric_name.replace('_', ' ').title(), open=open_default):
+                    with gr.Accordion(metric_name.replace('_', ' ').title(), open=open_default, visible=False) as acc:
+                        self.components['metric_accs'][metric_name] = acc
                         gr.Markdown(self.get_metric_description(metric_name), elem_classes="metric-description")
                         with gr.Column(elem_classes="plot-and-slider-column"):
-                            self.components['metric_plots'][metric_name] = self._create_component(f'plot_{metric_name}', 'html', {'visible': False})
-                            self.components['metric_sliders'][f"{metric_name}_min"] = self._create_component(f'slider_{metric_name}_min', 'slider', {'label': "Min", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': f_def['default_min'], 'step': f_def['step'], 'interactive': True, 'visible': False})
-                            if 'default_max' in f_def: self.components['metric_sliders'][f"{metric_name}_max"] = self._create_component(f'slider_{metric_name}_max', 'slider', {'label': "Max", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': f_def['default_max'], 'step': f_def['step'], 'interactive': True, 'visible': False})
-                            if metric_name == "face_sim": self._create_component('require_face_match_input', 'checkbox', {'label': "Reject if no face", 'value': self.config.ui_defaults.require_face_match, 'visible': False, 'info': "If checked, any frame without a detected face that meets the similarity threshold will be rejected."})
+                            self.components['metric_plots'][metric_name] = self._create_component(f'plot_{metric_name}', 'html', {'visible': True})
+                            self.components['metric_sliders'][f"{metric_name}_min"] = self._create_component(f'slider_{metric_name}_min', 'slider', {'label': "Min", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': f_def['default_min'], 'step': f_def['step'], 'interactive': True, 'visible': True})
+                            if 'default_max' in f_def: self.components['metric_sliders'][f"{metric_name}_max"] = self._create_component(f'slider_{metric_name}_max', 'slider', {'label': "Max", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': f_def['default_max'], 'step': f_def['step'], 'interactive': True, 'visible': True})
+                            if metric_name == "face_sim": self._create_component('require_face_match_input', 'checkbox', {'label': "Reject if no face", 'value': self.config.ui_defaults.require_face_match, 'visible': True, 'info': "If checked, any frame without a detected face that meets the similarity threshold will be rejected."})
             with gr.Column(scale=2):
                 with gr.Group(visible=False) as results_group:
                     self.components['results_group'] = results_group
@@ -4253,58 +4241,26 @@ class EnhancedAppUI(AppUI):
         def load_and_trigger_update(metadata_path, output_dir):
             if not metadata_path or not output_dir:
                 return [gr.update()] * len(load_outputs)
-
             all_frames, metric_values = load_and_prep_filter_data(metadata_path, self.get_all_filter_keys())
             svgs = build_all_metric_svgs(metric_values, self.get_all_filter_keys(), self.logger)
-
-            updates = {
-                c['all_frames_data_state']: all_frames,
-                c['per_metric_values_state']: metric_values,
-                c['results_group']: gr.update(visible=True),
-                c['export_group']: gr.update(visible=True)
-            }
-
+            has_phash = any('phash' in f for f in all_frames) if all_frames else False
+            updates = {c['all_frames_data_state']: all_frames, c['per_metric_values_state']: metric_values,
+                       c['results_group']: gr.update(visible=True), c['export_group']: gr.update(visible=True)}
+            if c['metric_accs'].get('dedup'):
+                updates[c['metric_accs']['dedup']] = gr.update(visible=has_phash)
+            preferred_open = next((candidate for candidate in ['quality_score', 'sharpness', 'edge_strength'] if candidate in metric_values), None)
             for k in self.get_all_filter_keys():
-                has_data = k in metric_values and metric_values.get(k)
+                acc = c['metric_accs'].get(k)
                 plot_comp = c['metric_plots'].get(k)
-                min_slider = c['metric_sliders'].get(f"{k}_min")
-                max_slider = c['metric_sliders'].get(f"{k}_max")
-
-                if plot_comp:
-                    updates[plot_comp] = gr.update(visible=has_data, value=svgs.get(k, ""))
-                if min_slider:
-                    updates[min_slider] = gr.update(visible=has_data)
-                if max_slider:
-                    updates[max_slider] = gr.update(visible=has_data)
-                if k == "face_sim" and 'require_face_match_input' in c:
-                    updates[c['require_face_match_input']] = gr.update(visible=has_data)
-
+                has_data = k in metric_values and metric_values.get(k)
+                if acc:
+                    updates[acc] = gr.update(visible=has_data, open=(k == preferred_open))
+                if plot_comp and has_data:
+                    updates[plot_comp] = gr.update(value=svgs.get(k, ""))
             slider_values = {key: c['metric_sliders'][key].value for key in slider_keys}
-            filter_event = FilterEvent(
-                all_frames_data=all_frames,
-                per_metric_values=metric_values,
-                output_dir=output_dir,
-                gallery_view="Kept Frames",
-                show_overlay=self.config.gradio_defaults.show_mask_overlay,
-                overlay_alpha=self.config.gradio_defaults.overlay_alpha,
-                require_face_match=c['require_face_match_input'].value,
-                dedup_thresh=c['dedup_thresh_input'].value,
-                slider_values=slider_values
-            )
-
+            filter_event = FilterEvent(all_frames_data=all_frames, per_metric_values=metric_values, output_dir=output_dir, gallery_view="Kept Frames", show_overlay=self.config.gradio_defaults.show_mask_overlay, overlay_alpha=self.config.gradio_defaults.overlay_alpha, require_face_match=c['require_face_match_input'].value, dedup_thresh=c['dedup_thresh_input'].value, slider_values=slider_values)
             filter_updates = on_filters_changed(filter_event, self.thumbnail_manager, self.config, self.logger)
-            updates.update({
-                c['filter_status_text']: filter_updates['filter_status_text'],
-                c['results_gallery']: filter_updates['results_gallery']
-            })
-
-            # Show the quality score plot
-            if 'quality_score' in metric_values:
-                quality_score_vals = metric_values['quality_score']
-                svg = histogram_svg((np.histogram(quality_score_vals, bins=50, range=(0, 100))), title='Quality Score', logger=self.logger)
-                updates[c['plot_quality_score']] = gr.update(value=svg, visible=True)
-
-
+            updates.update({c['filter_status_text']: filter_updates['filter_status_text'], c['results_gallery']: filter_updates['results_gallery']})
             return [updates.get(comp, gr.update()) for comp in load_outputs]
 
         c['filtering_tab'].select(load_and_trigger_update,
@@ -4313,7 +4269,8 @@ class EnhancedAppUI(AppUI):
         export_inputs = [c['all_frames_data_state'], c['analysis_output_dir_state'], c['extracted_video_path_state'], c['enable_crop_input'],
                          c['crop_ar_input'], c['crop_padding_input'], c['require_face_match_input'], c['dedup_thresh_input']] + slider_comps
         c['export_button'].click(self.export_kept_frames_wrapper, export_inputs, c['unified_log'])
-        reset_outputs_comps = slider_comps + [c['dedup_thresh_input'], c['require_face_match_input'], c['filter_status_text'], c['results_gallery']]
+        reset_outputs_comps = (slider_comps + [c['dedup_thresh_input'], c['require_face_match_input'], c['filter_status_text'], c['results_gallery']] +
+                               [c['metric_accs'][k] for k in sorted(c['metric_accs'].keys())])
         c['reset_filters_button'].click(self.on_reset_filters, [c['all_frames_data_state'], c['per_metric_values_state'], c['analysis_output_dir_state']], reset_outputs_comps)
         c['apply_auto_button'].click(self.on_auto_set_thresholds, [c['per_metric_values_state'], c['auto_pctl_input'], c['auto_threshold_metrics_input']],
                                    [c['metric_sliders'][k] for k in slider_keys]).then(self.on_filters_changed_wrapper, fast_filter_inputs, fast_filter_outputs)
@@ -4325,12 +4282,49 @@ class EnhancedAppUI(AppUI):
         return result['filter_status_text'], result['results_gallery']
 
     def on_reset_filters(self, all_frames_data, per_metric_values, output_dir):
-        slider_keys = sorted(self.components['metric_sliders'].keys())
-        result = reset_filters(all_frames_data, per_metric_values, output_dir, self.config, slider_keys, self.thumbnail_manager)
-        updates = [result.get(f"slider_{key}", gr.update()) for key in slider_keys]
-        updates.extend([result.get('dedup_thresh_input', gr.update()), result.get('require_face_match_input', gr.update()),
-                        result.get('filter_status_text', gr.update()), result.get('results_gallery', gr.update())])
-        return tuple(updates)
+        c = self.components
+        slider_keys = sorted(c['metric_sliders'].keys())
+        acc_keys = sorted(c['metric_accs'].keys())
+        slider_default_values = []
+        slider_updates = []
+        for key in slider_keys:
+            metric_key = re.sub(r'_(min|max)$', '', key)
+            default_key = 'default_max' if key.endswith('_max') else 'default_min'
+            f_def = getattr(self.config.filter_defaults, metric_key, {})
+            default_val = f_def.get(default_key, 0)
+            slider_updates.append(gr.update(value=default_val))
+            slider_default_values.append(default_val)
+        face_match_default = self.config.ui_defaults.require_face_match
+        dedup_default = self.config.filter_defaults.dedup_thresh['default']
+        dedup_update = gr.update(value=dedup_default)
+        face_match_update = gr.update(value=face_match_default)
+        if all_frames_data:
+            slider_defaults_dict = {key: val for key, val in zip(slider_keys, slider_default_values)}
+            filter_event = FilterEvent(
+                all_frames_data, per_metric_values, output_dir, "Kept Frames",
+                self.config.gradio_defaults.show_mask_overlay, self.config.gradio_defaults.overlay_alpha,
+                face_match_default, dedup_default, slider_defaults_dict
+            )
+            filter_updates = on_filters_changed(filter_event, self.thumbnail_manager, self.config)
+            status_update = filter_updates['filter_status_text']
+            gallery_update = filter_updates['results_gallery']
+        else:
+            status_update = "Load an analysis to begin."
+            gallery_update = gr.update(value=[])
+        acc_updates = []
+        for key in acc_keys:
+            if all_frames_data:
+                is_dedup = key == 'dedup'
+                if is_dedup:
+                    visible = any('phash' in f for f in all_frames_data)
+                    acc_updates.append(gr.update(visible=visible))
+                else:
+                    visible = key in per_metric_values
+                    preferred_open = next((candidate for candidate in ['quality_score', 'sharpness'] if candidate in per_metric_values), None)
+                    acc_updates.append(gr.update(visible=visible, open=(key == preferred_open)))
+            else:
+                acc_updates.append(gr.update(visible=False))
+        return tuple(slider_updates + [dedup_update, face_match_update, status_update, gallery_update] + acc_updates)
 
     def on_auto_set_thresholds(self, per_metric_values, p, selected_metrics):
         slider_keys = sorted(self.components['metric_sliders'].keys())
