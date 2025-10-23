@@ -2387,13 +2387,13 @@ def load_and_prep_filter_data(metadata_path, get_all_filter_keys):
         all_frames = [json.loads(line) for line in f if line.strip()]
     metric_values = {}
     for k in get_all_filter_keys:
-        # Correctly extract quality_score from the nested metrics dict
         if k == 'quality_score':
-            values = np.asarray([f.get("metrics", {}).get("quality_score") for f in all_frames
-                                 if f.get("metrics", {}).get("quality_score") is not None], dtype=float)
+            values = np.asarray([f.get("metrics", {}).get("quality_score") for f in all_frames if f.get("metrics", {}).get("quality_score") is not None], dtype=float)
+        elif k in ['yaw', 'pitch', 'eyes_open']:
+            values = np.asarray([f.get("metrics", {}).get(k) for f in all_frames if f.get("metrics", {}).get(k) is not None], dtype=float)
         else:
-            values = np.asarray([f.get(k, f.get("metrics", {}).get(f"{k}_score")) for f in all_frames
-                                 if (f.get(k) is not None or f.get("metrics", {}).get(f"{k}_score") is not None)], dtype=float)
+            values = np.asarray([f.get(k, f.get("metrics", {}).get(f"{k}_score")) for f in all_frames if f.get(k) is not None or f.get("metrics", {}).get(f"{k}_score") is not None], dtype=float)
+
         if values.size > 0:
             if k == 'face_sim' or k == 'eyes_open':
                 hist_range = (0, 1)
@@ -2436,9 +2436,11 @@ def histogram_svg(hist_data, title="", logger=None):
 def apply_all_filters_vectorized(all_frames_data, filters, config: 'Config'):
     if not all_frames_data: return [], [], Counter(), {}
     num_frames, filenames = len(all_frames_data), [f['filename'] for f in all_frames_data]
-    quality_metric_keys = asdict(config.quality_weights).keys()
+    quality_metric_keys = list(asdict(config.quality_weights).keys())
+    filter_metric_keys = quality_metric_keys + ["quality_score"]
     metric_arrays = {k: np.array([f.get("metrics", {}).get(f"{k}_score", np.nan) for f in all_frames_data], dtype=np.float32) for k in quality_metric_keys}
-    metric_arrays.update({"face_sim": np.array([f.get("face_sim", np.nan) for f in all_frames_data], dtype=np.float32),
+    metric_arrays.update({"quality_score": np.array([f.get("metrics", {}).get("quality_score", np.nan) for f in all_frames_data], dtype=np.float32),
+                          "face_sim": np.array([f.get("face_sim", np.nan) for f in all_frames_data], dtype=np.float32),
                           "mask_area_pct": np.array([f.get("mask_area_pct", np.nan) for f in all_frames_data], dtype=np.float32),
                           "eyes_open": np.array([f.get("metrics", {}).get("eyes_open", np.nan) for f in all_frames_data], dtype=np.float32),
                           "yaw": np.array([f.get("metrics", {}).get("yaw", np.nan) for f in all_frames_data], dtype=np.float32),
@@ -2452,7 +2454,7 @@ def apply_all_filters_vectorized(all_frames_data, filters, config: 'Config'):
                 if dedup_mask[c_idx]: reasons[filenames[c_idx]].append('duplicate')
                 dedup_mask[c_idx] = False
     metric_filter_mask = np.ones(num_frames, dtype=bool)
-    for k in quality_metric_keys:
+    for k in filter_metric_keys:
         min_v, max_v = filters.get(f"{k}_min", 0), filters.get(f"{k}_max", 100)
         metric_filter_mask &= (np.nan_to_num(metric_arrays[k], nan=min_v) >= min_v) & (np.nan_to_num(metric_arrays[k], nan=max_v) <= max_v)
     if filters.get("face_sim_enabled"):
@@ -2476,13 +2478,25 @@ def apply_all_filters_vectorized(all_frames_data, filters, config: 'Config'):
     kept_mask = dedup_mask & metric_filter_mask
     metric_rejection_mask = ~metric_filter_mask & dedup_mask
     for i in np.where(metric_rejection_mask)[0]:
-        for k in quality_metric_keys:
+        for k in filter_metric_keys:
             min_v, max_v = filters.get(f"{k}_min", 0), filters.get(f"{k}_max", 100)
-            if not (min_v <= metric_arrays[k][i] <= max_v): reasons[filenames[i]].append(f"{k}_{'low' if metric_arrays[k][i] < min_v else 'high'}")
+            v = metric_arrays[k][i]
+            if not (min_v <= v <= max_v):
+                reasons[filenames[i]].append(f"{k}_{'low' if v < min_v else 'high'}")
         if filters.get("face_sim_enabled"):
             if metric_arrays["face_sim"][i] < filters.get("face_sim_min", 0.5): reasons[filenames[i]].append("face_sim_low")
             if filters.get("require_face_match") and np.isnan(metric_arrays["face_sim"][i]): reasons[filenames[i]].append("face_missing")
         if filters.get("mask_area_enabled") and metric_arrays["mask_area_pct"][i] < filters.get("mask_area_pct_min", 1.0): reasons[filenames[i]].append("mask_too_small")
+        if np.nan_to_num(metric_arrays["eyes_open"][i], nan=filters.get("eyes_open_min", 0.3)) < filters.get("eyes_open_min", 0.3):
+            reasons[filenames[i]].append("eyes_closed")
+        yaw_min, yaw_max = filters.get("yaw_min", -25), filters.get("yaw_max", 25)
+        vy = np.nan_to_num(metric_arrays["yaw"][i], nan=yaw_min)
+        if not (yaw_min <= vy <= yaw_max):
+            reasons[filenames[i]].append("yaw_out_of_range")
+        pitch_min, pitch_max = filters.get("pitch_min", -25), filters.get("pitch_max", 25)
+        vp = np.nan_to_num(metric_arrays["pitch"][i], nan=pitch_min)
+        if not (pitch_min <= vp <= pitch_max):
+            reasons[filenames[i]].append("pitch_out_of_range")
     kept, rejected = [all_frames_data[i] for i in np.where(kept_mask)[0]], [all_frames_data[i] for i in np.where(~kept_mask)[0]]
     return kept, rejected, Counter(r for r_list in reasons.values() for r in r_list), reasons
 
