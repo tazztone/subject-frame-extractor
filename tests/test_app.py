@@ -701,7 +701,7 @@ class TestAnalysisPipeline:
 
             assert result.get('done', False), f"Pipeline failed, result: {result}"
             assert Path(result['metadata_path']).exists()
-            mock_run_loop.assert_called_once_with(scenes_to_process)
+        mock_run_loop.assert_called_once_with(scenes_to_process, tracker=None)
 
 
 class TestEnhancedAppUI:

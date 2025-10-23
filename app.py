@@ -400,10 +400,8 @@ class Config:
             return float(env_val)
         if isinstance(default_val, list):
             if not env_val.strip():
-                return default_val
+                return []
             parts = [p.strip() for p in env_val.split(',') if p.strip()]
-            if not parts:
-                return default_val
             return [self._coerce_type(p, default_val[0] if default_val else "") for p in parts]
         return env_val
 
@@ -1031,54 +1029,41 @@ class Frame:
     error: str | None = None
 
     def calculate_quality_metrics(self, thumb_image_rgb: np.ndarray, quality_config: QualityConfig, logger: 'EnhancedLogger',
-                                  mask: np.ndarray | None = None, niqe_metric=None, main_config: 'Config' = None):
+                                  mask: np.ndarray | None = None, niqe_metric=None, main_config: 'Config' = None, face_landmarker=None, face_bbox: Optional[List[int]] = None):
         try:
-            if mask is not None and main_config:
-                # Find bounding box of the mask
-                contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-                if contours:
-                    x, y, w, h = cv2.boundingRect(np.concatenate(contours))
+            if face_landmarker:
+                # if a face bounding box is provided, crop the image to that box
+                if face_bbox:
+                    x1, y1, x2, y2 = face_bbox
+                    face_img = thumb_image_rgb[y1:y2, x1:x2]
+                else:
+                    face_img = thumb_image_rgb
 
-                    # Clamp coordinates to be within the image dimensions
-                    img_h, img_w = thumb_image_rgb.shape[:2]
-                    x1 = max(0, x)
-                    y1 = max(0, y)
-                    x2 = min(img_w, x + w)
-                    y2 = min(img_h, y + h)
+                if not face_img.flags['C_CONTIGUOUS']:
+                    face_img = np.ascontiguousarray(face_img, dtype=np.uint8)
+                if face_img.dtype != np.uint8:
+                    face_img = face_img.astype(np.uint8)
 
-                    # Crop the face from the thumb_image_rgb using the clamped coordinates
-                    face_crop = thumb_image_rgb[y1:y2, x1:x2]
+                mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=face_img)
+                landmarker_result = face_landmarker.detect(mp_image)
 
-                    if face_crop.size > 0:
-                        # Ensure the crop is C-contiguous and uint8
-                        if not face_crop.flags['C_CONTIGUOUS']:
-                            face_crop = np.ascontiguousarray(face_crop, dtype=np.uint8)
-                        if face_crop.dtype != np.uint8:
-                            face_crop = face_crop.astype(np.uint8)
+                if landmarker_result.face_blendshapes:
+                    blendshapes = {b.category_name: b.score for b in landmarker_result.face_blendshapes[0]}
+                    self.metrics.eyes_open = 1.0 - max(blendshapes.get('eyeBlinkLeft', 0), blendshapes.get('eyeBlinkRight', 0))
+                    self.metrics.blink_prob = max(blendshapes.get('eyeBlinkLeft', 0), blendshapes.get('eyeBlinkRight', 0))
 
-                        landmarker_path = Path(main_config.paths.models) / Path(main_config.models.face_landmarker).name
-                        single_face_landmarker = get_face_landmarker(str(landmarker_path), logger)
-
-                        mp_image_face = mp.Image(image_format=mp.ImageFormat.SRGB, data=face_crop)
-                        landmarker_result_face = single_face_landmarker.detect(mp_image_face)
-
-                        if landmarker_result_face.face_blendshapes:
-                            blendshapes = {b.category_name: b.score for b in landmarker_result_face.face_blendshapes[0]}
-                            self.metrics.eyes_open = 1.0 - max(blendshapes.get('eyeBlinkLeft', 0), blendshapes.get('eyeBlinkRight', 0))
-                            self.metrics.blink_prob = max(blendshapes.get('eyeBlinkLeft', 0), blendshapes.get('eyeBlinkRight', 0))
-
-                        if landmarker_result_face.facial_transformation_matrixes:
-                            matrix = landmarker_result_face.facial_transformation_matrixes[0]
-                            sy = math.sqrt(matrix[0, 0] * matrix[0, 0] + matrix[1, 0] * matrix[1, 0])
-                            singular = sy < 1e-6
-                            if not singular:
-                                self.metrics.pitch = math.degrees(math.atan2(-matrix[2, 0], sy))
-                                self.metrics.yaw = math.degrees(math.atan2(matrix[1, 0], matrix[0, 0]))
-                                self.metrics.roll = math.degrees(math.atan2(matrix[2, 1], matrix[2, 2]))
-                            else:
-                                self.metrics.pitch = math.degrees(math.atan2(-matrix[2, 0], sy))
-                                self.metrics.yaw = 0
-                                self.metrics.roll = 0
+                if landmarker_result.facial_transformation_matrixes:
+                    matrix = landmarker_result.facial_transformation_matrixes[0]
+                    sy = math.sqrt(matrix[0, 0] * matrix[0, 0] + matrix[1, 0] * matrix[1, 0])
+                    singular = sy < 1e-6
+                    if not singular:
+                        self.metrics.pitch = math.degrees(math.atan2(-matrix[2, 0], sy))
+                        self.metrics.yaw = math.degrees(math.atan2(matrix[1, 0], matrix[0, 0]))
+                        self.metrics.roll = math.degrees(math.atan2(matrix[2, 1], matrix[2, 2]))
+                    else:
+                        self.metrics.pitch = math.degrees(math.atan2(-matrix[2, 0], sy))
+                        self.metrics.yaw = 0
+                        self.metrics.roll = 0
 
             gray = cv2.cvtColor(thumb_image_rgb, cv2.COLOR_RGB2GRAY)
             active_mask = ((mask > 128) if mask is not None and mask.ndim == 2 else None)
@@ -1794,6 +1779,8 @@ class MaskPropagator:
                 mask = outputs.get('pred_mask')
                 if mask is not None: mask = postprocess_mask((mask * 255).astype(np.uint8), config=self.config, fill_holes=True, keep_largest_only=True)
                 masks[seed_idx] = mask if mask is not None else np.zeros_like(shot_frames_rgb[seed_idx], dtype=np.uint8)[:, :, 0]
+                if tracker:
+                    tracker.step(1, desc="Propagation (seed)")
 
                 # Propagate forward
                 _propagate_direction(seed_idx + 1, len(shot_frames_rgb), 1, "Propagation (→)")
@@ -2304,8 +2291,10 @@ class AnalysisPipeline(Pipeline):
                                    self.face_analyzer, self.reference_embedding, person_detector, thumbnail_manager=self.thumbnail_manager,
                                    niqe_metric=self.niqe_metric, logger=self.logger, face_landmarker=self.face_landmarker)
             self.mask_metadata = masker.run_propagation(str(self.output_dir), scenes_to_process, tracker=tracker)
+            if tracker:
+                tracker.set_stage("Analyzing frames")
             self._initialize_niqe_metric()
-            self._run_analysis_loop(scenes_to_process)
+            self._run_analysis_loop(scenes_to_process, tracker=tracker)
             if self.cancel_event.is_set():
                 self.logger.info("Analysis cancelled by user.")
                 return {"log": "Analysis cancelled.", "done": False}
@@ -2328,7 +2317,7 @@ class AnalysisPipeline(Pipeline):
         self.reference_embedding = max(ref_faces, key=lambda x: x.det_score).normed_embedding
         self.logger.success("Reference face processed.")
 
-    def _run_analysis_loop(self, scenes_to_process):
+    def _run_analysis_loop(self, scenes_to_process, tracker: 'AdvancedProgressTracker' = None):
         frame_map = self._create_frame_map()
         all_frame_nums_to_process = {fn for scene in scenes_to_process for fn in range(scene.start_frame, scene.end_frame) if fn in frame_map}
         image_files_to_process = [self.thumb_dir / f"{Path(frame_map[fn]).stem}.webp" for fn in sorted(list(all_frame_nums_to_process))]
@@ -2336,19 +2325,17 @@ class AnalysisPipeline(Pipeline):
         num_workers = 1 if self.params.disable_parallel else min(os.cpu_count() or 4, self.config.analysis.max_workers)
         with ThreadPoolExecutor(max_workers=num_workers) as executor:
             futures = [executor.submit(self._process_single_frame, path) for path in image_files_to_process]
-
-            completed_count = 0
             for future in as_completed(futures):
                 if self.cancel_event.is_set():
-                    for f in futures:
-                        f.cancel()
+                    for f in futures: f.cancel()
                     break
-
                 try:
-                    future.result()  # To raise exceptions if any
+                    future.result()
+                    if tracker:
+                        tracker.step(1)
                 except Exception as e:
                     self.logger.error(f"Error processing future: {e}")
-                completed_count += 1
+
 
     def _process_single_frame(self, thumb_path):
         if self.cancel_event.is_set(): return
@@ -2372,8 +2359,10 @@ class AnalysisPipeline(Pipeline):
                 # enable NIQE if the metric object was successfully initialized
                 enable_niqe=(self.niqe_metric is not None)
             )
-            frame.calculate_quality_metrics(thumb_image_rgb, quality_conf, self.logger, mask=mask_thumb, niqe_metric=self.niqe_metric, main_config=self.config)
-            if self.params.enable_face_filter and self.reference_embedding is not None and self.face_analyzer: self._analyze_face_similarity(frame, thumb_image_rgb)
+            face_bbox = None
+            if self.face_analyzer:
+                face_bbox = self._analyze_face_similarity(frame, thumb_image_rgb)
+            frame.calculate_quality_metrics(thumb_image_rgb, quality_conf, self.logger, mask=mask_thumb, niqe_metric=self.niqe_metric, main_config=self.config, face_landmarker=self.face_landmarker, face_bbox=face_bbox)
             meta = {"filename": base_filename, "metrics": asdict(frame.metrics)}
             if frame.face_similarity_score is not None: meta["face_sim"] = frame.face_similarity_score
             if frame.max_face_confidence is not None: meta["face_conf"] = frame.max_face_confidence
@@ -2395,18 +2384,22 @@ class AnalysisPipeline(Pipeline):
                     f.write('\n')
 
     def _analyze_face_similarity(self, frame, image_rgb):
+        face_bbox = None
         try:
             image_bgr = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR)
             with self.processing_lock:
                 faces = self.face_analyzer.get(image_bgr)
             if faces:
                 best_face = max(faces, key=lambda x: x.det_score)
-                distance = 1 - np.dot(best_face.normed_embedding, self.reference_embedding)
-                frame.face_similarity_score, frame.max_face_confidence = 1.0 - float(distance), float(best_face.det_score)
+                face_bbox = best_face.bbox.astype(int)
+                if self.params.enable_face_filter and self.reference_embedding is not None:
+                    distance = 1 - np.dot(best_face.normed_embedding, self.reference_embedding)
+                    frame.face_similarity_score, frame.max_face_confidence = 1.0 - float(distance), float(best_face.det_score)
         except Exception as e:
             frame.error = f"Face similarity failed: {e}"
             if "out of memory" in str(e) and torch.cuda.is_available():
                 torch.cuda.empty_cache()
+        return face_bbox
 
 # --- FILTERING & SCENE LOGIC ---
 
@@ -3046,7 +3039,9 @@ def execute_propagation(event: PropagationEvent, progress_queue: Queue, cancel_e
 
     video_info = VideoManager.get_video_info(params.video_path)
     totals = estimate_totals(params, video_info, scenes_to_process)
-    tracker.start(totals["propagation"], desc="Propagating masks")
+    # Double the total to account for both propagation and analysis, which are roughly equal.
+    total_steps = totals.get("propagation", 0)
+    tracker.start(total_steps * 2, desc="Propagating masks")
 
     pipeline = AnalysisPipeline(
         config=config,
