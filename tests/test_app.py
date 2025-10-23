@@ -656,7 +656,7 @@ class TestAnalysisPipeline:
     @pytest.fixture
     def mock_analysis_pipeline(self, test_config, tmp_path):
         """Provides an AnalysisPipeline instance with mocked dependencies."""
-        params = app.AnalysisParameters.from_ui(MagicMock(), test_config, output_folder=str(tmp_path))
+        params = app.AnalysisParameters.from_ui(MagicMock(), test_config, output_folder=str(tmp_path), video_path='/fake/video.mp4')
         progress_queue = MagicMock()
         cancel_event = MagicMock()
         cancel_event.is_set.return_value = False  # Ensure the pipeline doesn't exit prematurely
@@ -677,6 +677,14 @@ class TestAnalysisPipeline:
         (tmp_path / "frame_map.json").write_text("[1, 2, 3]")
         (tmp_path / "thumbs" / "frame_1.webp").touch()
 
+        # Create a dummy frame_data.json for the video workflow test
+        dummy_frame_data = [
+            {"frame_number": 1, "filename": "frame_1.webp", "metrics": {}},
+            {"frame_number": 2, "filename": "frame_2.webp", "metrics": {}},
+            {"frame_number": 3, "filename": "frame_3.webp", "metrics": {}},
+        ]
+        (tmp_path / "frame_data.json").write_text(json.dumps(dummy_frame_data))
+
         return pipeline
 
     @patch('app.get_face_analyzer')
@@ -692,8 +700,9 @@ class TestAnalysisPipeline:
         mock_masker_instance = mock_subject_masker.return_value
         mock_masker_instance.run_propagation.return_value = {} # No masks
 
-        # Mock the loop that processes frames to avoid dealing with threads
-        with patch.object(pipeline, '_run_analysis_loop', return_value=None) as mock_run_loop:
+        # Mock the actual frame processing to prevent heavy computation,
+        # but allow the main loop and file creation logic to run.
+        with patch.object(pipeline, '_process_single_frame', return_value=None) as mock_process_frame:
             # Create a dummy file to be found by the pipeline
             (pipeline.output_dir / "frame_map.json").write_text("[1, 2, 3]")
 
@@ -701,7 +710,8 @@ class TestAnalysisPipeline:
 
             assert result.get('done', False), f"Pipeline failed, result: {result}"
             assert Path(result['metadata_path']).exists()
-        mock_run_loop.assert_called_once_with(scenes_to_process, tracker=None)
+            # We expect it to be called for each frame in the scene
+            assert mock_process_frame.call_count > 0
 
 
 class TestEnhancedAppUI:
