@@ -243,21 +243,42 @@ class TestFilterLogic:
     def test_reset_filters(self, mock_on_filters_changed, sample_frames_data, test_config):
         """Verify that resetting filters restores default values and updates the UI."""
         mock_on_filters_changed.return_value = {"filter_status_text": "Reset", "results_gallery": []}
-        slider_keys = ['sharpness_min', 'sharpness_max']
 
-        # This function is now part of the UI class, but we test the core logic
-        result = app.reset_filters(
+        # Mock the UI components that on_reset_filters interacts with
+        mock_ui = MagicMock(spec=app.EnhancedAppUI)
+        mock_ui.config = test_config
+        mock_ui.thumbnail_manager = MagicMock()
+        mock_ui.components = {
+            'metric_sliders': {
+                'sharpness_min': MagicMock(),
+                'sharpness_max': MagicMock(),
+            },
+            'metric_accs': {
+                'sharpness': MagicMock()
+            },
+            'dedup_thresh_input': MagicMock(),
+            'require_face_match_input': MagicMock(),
+            'filter_status_text': MagicMock(),
+            'results_gallery': MagicMock(),
+        }
+
+        # The method is now part of the class, so we call it from an instance
+        result_tuple = app.EnhancedAppUI.on_reset_filters(
+            mock_ui,
             all_frames_data=sample_frames_data,
-            per_metric_values={},
-            output_dir="/fake/dir",
-            config=test_config,
-            slider_keys=slider_keys,
-            thumbnail_manager=MagicMock()
+            per_metric_values={'sharpness': [1,2,3]}, # Provide some metric values to avoid early exit
+            output_dir="/fake/dir"
         )
 
-        assert result['slider_sharpness_min']['value'] == test_config.filter_defaults.sharpness['default_min']
-        assert result['slider_sharpness_max']['value'] == test_config.filter_defaults.sharpness['default_max']
-        assert result['require_face_match_input']['value'] == test_config.ui_defaults.require_face_match
+        # The result is a tuple of gradio updates, so we need to check the values within them
+        slider_updates = result_tuple[0:2]
+        dedup_update, face_match_update, status_update, gallery_update, acc_update = result_tuple[2:]
+
+        assert slider_updates[0]['value'] == test_config.filter_defaults.sharpness['default_max']
+        assert slider_updates[1]['value'] == test_config.filter_defaults.sharpness['default_min']
+        assert face_match_update['value'] == test_config.ui_defaults.require_face_match
+
+        # Verify that the on_filters_changed function was called as part of the reset logic
         mock_on_filters_changed.assert_called_once()
 
 
