@@ -1031,15 +1031,22 @@ class Frame:
     error: str | None = None
 
     def calculate_quality_metrics(self, thumb_image_rgb: np.ndarray, quality_config: QualityConfig, logger: 'EnhancedLogger',
-                                  mask: np.ndarray | None = None, niqe_metric=None, main_config: 'Config' = None, face_landmarker=None):
+                                  mask: np.ndarray | None = None, niqe_metric=None, main_config: 'Config' = None, face_landmarker=None, face_bbox: Optional[List[int]] = None):
         try:
             if face_landmarker:
-                if not thumb_image_rgb.flags['C_CONTIGUOUS']:
-                    thumb_image_rgb = np.ascontiguousarray(thumb_image_rgb, dtype=np.uint8)
-                if thumb_image_rgb.dtype != np.uint8:
-                    thumb_image_rgb = thumb_image_rgb.astype(np.uint8)
+                # if a face bounding box is provided, crop the image to that box
+                if face_bbox:
+                    x1, y1, x2, y2 = face_bbox
+                    face_img = thumb_image_rgb[y1:y2, x1:x2]
+                else:
+                    face_img = thumb_image_rgb
 
-                mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=thumb_image_rgb)
+                if not face_img.flags['C_CONTIGUOUS']:
+                    face_img = np.ascontiguousarray(face_img, dtype=np.uint8)
+                if face_img.dtype != np.uint8:
+                    face_img = face_img.astype(np.uint8)
+
+                mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=face_img)
                 landmarker_result = face_landmarker.detect(mp_image)
 
                 if landmarker_result.face_blendshapes:
@@ -1324,7 +1331,7 @@ def get_face_landmarker(model_path: str, logger: 'EnhancedLogger'):
             base_options=base_options,
             output_face_blendshapes=True,
             output_facial_transformation_matrixes=True,
-            num_faces=3,
+            num_faces=1,
             min_face_detection_confidence=0.3,
             min_face_presence_confidence=0.3
         )
@@ -2341,8 +2348,10 @@ class AnalysisPipeline(Pipeline):
                 # enable NIQE if the metric object was successfully initialized
                 enable_niqe=(self.niqe_metric is not None)
             )
-            frame.calculate_quality_metrics(thumb_image_rgb, quality_conf, self.logger, mask=mask_thumb, niqe_metric=self.niqe_metric, main_config=self.config, face_landmarker=self.face_landmarker)
-            if self.params.enable_face_filter and self.reference_embedding is not None and self.face_analyzer: self._analyze_face_similarity(frame, thumb_image_rgb)
+            face_bbox = None
+            if self.face_analyzer:
+                face_bbox = self._analyze_face_similarity(frame, thumb_image_rgb)
+            frame.calculate_quality_metrics(thumb_image_rgb, quality_conf, self.logger, mask=mask_thumb, niqe_metric=self.niqe_metric, main_config=self.config, face_landmarker=self.face_landmarker, face_bbox=face_bbox)
             meta = {"filename": base_filename, "metrics": asdict(frame.metrics)}
             if frame.face_similarity_score is not None: meta["face_sim"] = frame.face_similarity_score
             if frame.max_face_confidence is not None: meta["face_conf"] = frame.max_face_confidence
@@ -2364,18 +2373,22 @@ class AnalysisPipeline(Pipeline):
                     f.write('\n')
 
     def _analyze_face_similarity(self, frame, image_rgb):
+        face_bbox = None
         try:
             image_bgr = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR)
             with self.processing_lock:
                 faces = self.face_analyzer.get(image_bgr)
             if faces:
                 best_face = max(faces, key=lambda x: x.det_score)
-                distance = 1 - np.dot(best_face.normed_embedding, self.reference_embedding)
-                frame.face_similarity_score, frame.max_face_confidence = 1.0 - float(distance), float(best_face.det_score)
+                face_bbox = best_face.bbox.astype(int)
+                if self.params.enable_face_filter and self.reference_embedding is not None:
+                    distance = 1 - np.dot(best_face.normed_embedding, self.reference_embedding)
+                    frame.face_similarity_score, frame.max_face_confidence = 1.0 - float(distance), float(best_face.det_score)
         except Exception as e:
             frame.error = f"Face similarity failed: {e}"
             if "out of memory" in str(e) and torch.cuda.is_available():
                 torch.cuda.empty_cache()
+        return face_bbox
 
 # --- FILTERING & SCENE LOGIC ---
 
