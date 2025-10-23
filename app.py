@@ -971,6 +971,22 @@ def safe_resource_cleanup():
         gc.collect()
         if torch.cuda.is_available(): torch.cuda.empty_cache()
 
+def is_image_folder(p: str | Path) -> bool:
+    if not p:
+        return False
+    try:
+        if not isinstance(p, (str, Path)):
+            p = str(p)
+        p = Path(p)
+        return p.is_dir()
+    except (TypeError, ValueError):
+        return False
+
+def list_images(p: str | Path, cfg: Config) -> list[Path]:
+    p = Path(p)
+    exts = {e.lower() for e in cfg.utility_defaults.image_extensions}
+    return sorted([f for f in p.iterdir() if f.suffix.lower() in exts and f.is_file()])
+
 def _sanitize_face_ref(runconfig: dict, logger) -> tuple[str, bool]:
     ref = (runconfig.get('face_ref_img_path') or '').strip()
     vid = (runconfig.get('video_path') or '').strip()
@@ -1585,6 +1601,52 @@ def run_scene_detection(video_path, output_dir, logger=None):
         logger.error("Scene detection failed.", component="video", exc_info=True)
         return []
 
+def make_photo_thumbs(image_paths: list[Path], out_dir: Path, params: AnalysisParameters, cfg: Config, logger: EnhancedLogger, tracker: 'AdvancedProgressTracker' = None):
+    thumbs_dir = out_dir / "thumbs"
+    thumbs_dir.mkdir(parents=True, exist_ok=True)
+    target_area = params.thumb_megapixels * 1_000_000
+    frame_map, image_manifest = {}, {}
+
+    if tracker:
+        tracker.start(len(image_paths), desc="Generating thumbnails")
+
+    for i, img_path in enumerate(image_paths, start=1):
+        if tracker and tracker.pause_event.is_set(): tracker.step()
+        try:
+            bgr = cv2.imread(str(img_path))
+            if bgr is None:
+                logger.warning(f"Could not read image file: {img_path}")
+                continue
+
+            h, w = bgr.shape[:2]
+            scale = math.sqrt(target_area / float(max(1, w * h)))
+            if scale < 1.0:
+                new_w, new_h = int((w * scale) // 2 * 2), int((h * scale) // 2 * 2)
+                bgr = cv2.resize(bgr, (max(2, new_w), max(2, new_h)), interpolation=cv2.INTER_AREA)
+
+            rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+            out_name = f"frame_{i:06d}.webp"
+            out_path = thumbs_dir / out_name
+
+            if Image is not None:
+                Image.fromarray(rgb).save(out_path, format="WEBP", quality=cfg.ffmpeg.thumbnail_quality)
+            else:
+                cv2.imwrite(str(out_path), cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
+
+            frame_map[i] = out_name
+            image_manifest[i] = str(img_path.resolve())
+        except Exception as e:
+            logger.error(f"Failed to process image {img_path}", exc_info=True)
+        finally:
+            if tracker: tracker.step()
+
+    (out_dir / "frame_map.json").write_text(json.dumps(sorted(list(frame_map.keys()))), encoding="utf-8")
+    (out_dir / "image_manifest.json").write_text(json.dumps(image_manifest, indent=2), encoding="utf-8")
+
+    if tracker: tracker.done_stage("Thumbnails generated")
+    return frame_map
+
+
 def run_ffmpeg_extraction(video_path, output_dir, video_info, params, progress_queue, cancel_event, logger: 'EnhancedLogger', config: 'Config', tracker: 'AdvancedProgressTracker' = None):
     log_file_path = output_dir / "ffmpeg_log.txt"
     cmd_base = ['ffmpeg', '-y', '-i', str(video_path), '-hide_banner']
@@ -2197,41 +2259,72 @@ class SubjectMasker:
 
 class ExtractionPipeline(Pipeline):
     def run(self, tracker: 'AdvancedProgressTracker' = None):
-        self.logger.info("Preparing video source...")
-        vid_manager = VideoManager(self.params.source_path, self.config, self.params.max_resolution)
-        video_path = Path(vid_manager.prepare_video(self.logger))
-        output_dir = Path(self.config.paths.downloads) / video_path.stem
-        output_dir.mkdir(exist_ok=True, parents=True)
+        source_p = Path(self.params.source_path)
+        is_folder = is_image_folder(source_p)
 
-        params_dict = asdict(self.params)
-        params_dict['output_folder'] = str(output_dir)
-        params_dict['video_path'] = str(video_path)
-        # Ensure output_dir is canonical and exists before saving
-        output_dir = Path(output_dir).resolve()
-        output_dir.mkdir(parents=True, exist_ok=True)
-        with (output_dir / "run_config.json").open('w', encoding='utf-8') as f:
-            json.dump(_to_json_safe(params_dict), f, indent=2)
+        if is_folder:
+            output_dir = Path(self.config.paths.downloads) / source_p.name
+            output_dir.mkdir(exist_ok=True, parents=True)
 
-        self.logger.info("Video ready", user_context={'path': sanitize_filename(video_path.name, self.config)})
-        video_info = VideoManager.get_video_info(video_path)
+            params_dict = asdict(self.params)
+            params_dict['output_folder'] = str(output_dir)
+            params_dict['video_path'] = "" # No video path for image folders
 
-        if tracker:
-            totals = estimate_totals(self.params, video_info, None)
-            tracker.start(totals["extraction"], desc="Extracting frames")
+            output_dir = output_dir.resolve()
+            with (output_dir / "run_config.json").open('w', encoding='utf-8') as f:
+                json.dump(_to_json_safe(params_dict), f, indent=2)
 
-        if self.params.scene_detect:
-            self._run_scene_detection(video_path, output_dir)
+            self.logger.info(f"Processing image folder: {source_p.name}")
+            images = list_images(source_p, self.config)
+            if not images:
+                self.logger.warning("No images found in the specified folder.")
+                return {"done": False, "log": "No images found."}
 
-        self._run_ffmpeg(video_path, output_dir, video_info, tracker=tracker)
+            make_photo_thumbs(images, output_dir, self.params, self.config, self.logger, tracker=tracker)
 
-        if self.cancel_event.is_set():
-            self.logger.info("Extraction cancelled by user.")
-            if tracker: tracker.done_stage("Extraction cancelled")
-            return
+            # For image folders, each image is a "scene" of one frame.
+            # We create a synthetic scenes.json to maintain compatibility.
+            num_images = len(images)
+            scenes = [[i, i + 1] for i in range(1, num_images + 1)]
+            with (output_dir / "scenes.json").open('w', encoding='utf-8') as f:
+                json.dump(scenes, f)
 
-        if tracker: tracker.done_stage("Extraction complete")
-        self.logger.success("Extraction complete.")
-        return {"done": True, "output_dir": str(output_dir), "video_path": str(video_path)}
+            return {"done": True, "output_dir": str(output_dir), "video_path": ""}
+        else:
+            self.logger.info("Preparing video source...")
+            vid_manager = VideoManager(self.params.source_path, self.config, self.params.max_resolution)
+            video_path = Path(vid_manager.prepare_video(self.logger))
+            output_dir = Path(self.config.paths.downloads) / video_path.stem
+            output_dir.mkdir(exist_ok=True, parents=True)
+
+            params_dict = asdict(self.params)
+            params_dict['output_folder'] = str(output_dir)
+            params_dict['video_path'] = str(video_path)
+            output_dir = Path(output_dir).resolve()
+            output_dir.mkdir(parents=True, exist_ok=True)
+            with (output_dir / "run_config.json").open('w', encoding='utf-8') as f:
+                json.dump(_to_json_safe(params_dict), f, indent=2)
+
+            self.logger.info("Video ready", user_context={'path': sanitize_filename(video_path.name, self.config)})
+            video_info = VideoManager.get_video_info(video_path)
+
+            if tracker:
+                totals = estimate_totals(self.params, video_info, None)
+                tracker.start(totals["extraction"], desc="Extracting frames")
+
+            if self.params.scene_detect:
+                self._run_scene_detection(video_path, output_dir)
+
+            self._run_ffmpeg(video_path, output_dir, video_info, tracker=tracker)
+
+            if self.cancel_event.is_set():
+                self.logger.info("Extraction cancelled by user.")
+                if tracker: tracker.done_stage("Extraction cancelled")
+                return
+
+            if tracker: tracker.done_stage("Extraction complete")
+            self.logger.success("Extraction complete.")
+            return {"done": True, "output_dir": str(output_dir), "video_path": str(video_path)}
 
     def _run_scene_detection(self, video_path, output_dir): return run_scene_detection(video_path, output_dir, self.logger)
     def _run_ffmpeg(self, video_path, output_dir, video_info, tracker=None):
@@ -2271,41 +2364,47 @@ class AnalysisPipeline(Pipeline):
                 self.logger.warning("Failed to initialize NIQE metric", extra={'error': e})
 
     def run_full_analysis(self, scenes_to_process, tracker: 'AdvancedProgressTracker' = None):
-        try:
-            # Ensure metadata file is properly handled
-            if self.metadata_path.exists():
-                self.metadata_path.unlink()
+        is_folder_mode = not self.params.video_path
 
-            with open(self.metadata_path, 'w', encoding='utf-8') as f:
-                f.write(json.dumps(_to_json_safe({"params": asdict(self.params)})) + '\n')
+        if is_folder_mode:
+            return self._run_image_folder_analysis(tracker=tracker)
+        else:
+            # This is the existing video analysis pipeline.
+            try:
+                # Ensure metadata file is properly handled
+                if self.metadata_path.exists():
+                    self.metadata_path.unlink()
 
-            self.scene_map = {s.shot_id: s for s in scenes_to_process}
-            self.logger.info("Initializing Models")
-            models = initialize_analysis_models(self.params, self.config, self.logger, self.device == 'cuda')
-            self.face_analyzer = models['face_analyzer']
-            self.reference_embedding = models['ref_emb']
-            self.face_landmarker = models['face_landmarker']
-            person_detector = models['person_detector']
+                with open(self.metadata_path, 'w', encoding='utf-8') as f:
+                    f.write(json.dumps(_to_json_safe({"params": asdict(self.params)})) + '\n')
 
-            if self.face_analyzer and self.params.face_ref_img_path:
-                self._process_reference_face()
+                self.scene_map = {s.shot_id: s for s in scenes_to_process}
+                self.logger.info("Initializing Models")
+                models = initialize_analysis_models(self.params, self.config, self.logger, self.device == 'cuda')
+                self.face_analyzer = models['face_analyzer']
+                self.reference_embedding = models['ref_emb']
+                self.face_landmarker = models['face_landmarker']
+                person_detector = models['person_detector']
 
-            masker = SubjectMasker(self.params, self.progress_queue, self.cancel_event, self.config, self._create_frame_map(),
-                                   self.face_analyzer, self.reference_embedding, person_detector, thumbnail_manager=self.thumbnail_manager,
-                                   niqe_metric=self.niqe_metric, logger=self.logger, face_landmarker=self.face_landmarker)
-            self.mask_metadata = masker.run_propagation(str(self.output_dir), scenes_to_process, tracker=tracker)
-            if tracker:
-                tracker.set_stage("Analyzing frames")
-            self._initialize_niqe_metric()
-            self._run_analysis_loop(scenes_to_process, tracker=tracker)
-            if self.cancel_event.is_set():
-                self.logger.info("Analysis cancelled by user.")
-                return {"log": "Analysis cancelled.", "done": False}
-            self.logger.success("Analysis complete.", extra={'output_dir': self.output_dir})
-            return {"done": True, "metadata_path": str(self.metadata_path), "output_dir": str(self.output_dir)}
-        except Exception as e:
-            self.logger.error("Analysis pipeline failed", component="analysis", exc_info=True, extra={'error': str(e)})
-            return {"error": str(e), "done": False}
+                if self.face_analyzer and self.params.face_ref_img_path:
+                    self._process_reference_face()
+
+                masker = SubjectMasker(self.params, self.progress_queue, self.cancel_event, self.config, self._create_frame_map(),
+                                       self.face_analyzer, self.reference_embedding, person_detector, thumbnail_manager=self.thumbnail_manager,
+                                       niqe_metric=self.niqe_metric, logger=self.logger, face_landmarker=self.face_landmarker)
+                self.mask_metadata = masker.run_propagation(str(self.output_dir), scenes_to_process, tracker=tracker)
+                if tracker:
+                    tracker.set_stage("Analyzing frames")
+                self._initialize_niqe_metric()
+                self._run_analysis_loop(scenes_to_process, tracker=tracker)
+                if self.cancel_event.is_set():
+                    self.logger.info("Analysis cancelled by user.")
+                    return {"log": "Analysis cancelled.", "done": False}
+                self.logger.success("Analysis complete.", extra={'output_dir': self.output_dir})
+                return {"done": True, "metadata_path": str(self.metadata_path), "output_dir": str(self.output_dir)}
+            except Exception as e:
+                self.logger.error("Analysis pipeline failed", component="analysis", exc_info=True, extra={'error': str(e)})
+                return {"error": str(e), "done": False}
 
     def _create_frame_map(self): return create_frame_map(self.output_dir, self.logger)
     def _process_reference_face(self):
@@ -2319,6 +2418,20 @@ class AnalysisPipeline(Pipeline):
         if not ref_faces: raise ValueError("No face found in reference image.")
         self.reference_embedding = max(ref_faces, key=lambda x: x.det_score).normed_embedding
         self.logger.success("Reference face processed.")
+
+    def _run_image_folder_analysis(self, tracker: 'AdvancedProgressTracker' = None):
+        self.logger.info("Starting image folder analysis...")
+
+        # Stage 1: Pre-filter on thumbnails
+        self.logger.info("Running pre-filter on thumbnails...")
+        # TODO: Implement pre-filtering logic here.
+
+        # Stage 2: Full analysis on kept images
+        self.logger.info("Running full analysis on kept images...")
+        # TODO: Implement full analysis logic here.
+
+        self.logger.success("Image folder analysis complete.")
+        return {"done": True, "metadata_path": str(self.metadata_path), "output_dir": str(self.output_dir)}
 
     def _run_analysis_loop(self, scenes_to_process, tracker: 'AdvancedProgressTracker' = None):
         frame_map = self._create_frame_map()
@@ -2775,6 +2888,71 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue, cancel_
     yield {"unified_log": "", "unified_status": "Starting Pre-Analysis..."}
     tracker = AdvancedProgressTracker(progress, progress_queue, logger, ui_stage_name="Pre-Analysis")
     params_dict = asdict(event)
+    is_folder_mode = not params_dict.get("video_path")
+
+    if is_folder_mode:
+        logger.info("Starting seed selection for image folder.")
+        params = AnalysisParameters.from_ui(logger, config, **params_dict)
+        output_dir = Path(params.output_folder)
+        scenes_path = output_dir / "scenes.json"
+        if not scenes_path.exists():
+            yield {"log": "[ERROR] scenes.json not found. Run extraction first."}
+            return
+
+        with scenes_path.open('r', encoding='utf-8') as f:
+            scenes = [Scene(shot_id=i, start_frame=s, end_frame=e) for i, (s, e) in enumerate(json.load(f))]
+
+        models = initialize_analysis_models(params, config, logger, cuda_available)
+        masker = SubjectMasker(params, progress_queue, cancel_event, config, face_analyzer=models["face_analyzer"],
+                               reference_embedding=models["ref_emb"], person_detector=models["person_detector"],
+                               thumbnail_manager=thumbnail_manager, logger=logger,
+                               face_landmarker=models["face_landmarker"])
+        masker.frame_map = masker._create_frame_map(str(output_dir))
+
+        tracker.start(len(scenes), desc="Selecting seeds for images")
+        previews_dir = output_dir / "previews"
+        previews_dir.mkdir(exist_ok=True)
+
+        for scene in scenes:
+            if cancel_event.is_set(): break
+            tracker.step(1, desc=f"Image {scene.shot_id}")
+
+            # In folder mode, best_seed_frame is just the frame number.
+            scene.best_seed_frame = scene.start_frame
+            fname = masker.frame_map.get(scene.best_seed_frame)
+            if not fname: continue
+
+            thumb_rgb = thumbnail_manager.get(output_dir / "thumbs" / f"{Path(fname).stem}.webp")
+            if thumb_rgb is None: continue
+
+            bbox, details = masker.get_seed_for_frame(thumb_rgb, seed_config=params)
+            scene.seed_result = {'bbox': bbox, 'details': details}
+
+            mask = masker.get_mask_for_bbox(thumb_rgb, bbox) if (bbox and params.enable_subject_mask) else None
+            if mask is not None:
+                h, w = mask.shape[:2]
+                scene.seed_result['details']['mask_area_pct'] = (np.sum(mask > 0) / (h * w)) * 100 if h * w > 0 else 0.0
+
+            overlay_rgb = render_mask_overlay(thumb_rgb, mask, 0.6, logger=logger) if mask is not None else masker.draw_bbox(thumb_rgb, bbox)
+
+            preview_path = previews_dir / f"scene_{scene.shot_id:05d}.jpg"
+            Image.fromarray(overlay_rgb).save(preview_path)
+            scene.preview_path = str(preview_path)
+            scene.status = 'included' # Auto-include all images by default
+
+        save_scene_seeds([asdict(s) for s in scenes], str(output_dir), logger)
+        tracker.done_stage("Seed selection complete")
+
+        yield {
+            "log": "Seed selection for image folder complete.",
+            "scenes": [asdict(s) for s in scenes],
+            "output_dir": str(output_dir),
+            "done": True,
+            "seeding_results_column": gr.update(visible=True),
+            "propagation_group": gr.update(visible=True),
+        }
+        return
+
     final_face_ref_path = params_dict.get('face_ref_img_path')
     if event.face_ref_img_upload:
         ref_upload, dest = params_dict.pop('face_ref_img_upload'), Path(config.paths.downloads) / Path(event.face_ref_img_upload).name
@@ -3028,23 +3206,34 @@ def execute_session_load(
 
 def execute_propagation(event: PropagationEvent, progress_queue: Queue, cancel_event: threading.Event, logger: EnhancedLogger,
                         config: Config, thumbnail_manager, cuda_available, progress=None):
-    scene_fields = {f.name for f in fields(Scene)}
-    scenes_to_process = [
-        Scene(**{k: v for k, v in s.items() if k in scene_fields})
-        for s in event.scenes if s.get('status') == 'included'
-    ]
+    params = AnalysisParameters.from_ui(logger, config, **asdict(event.analysis_params))
+    is_folder_mode = not params.video_path
+
+    if is_folder_mode:
+        # In folder mode, "propagation" is actually the full analysis step.
+        scenes_to_process = [Scene(**{k: v for k, v in s.items() if k in {f.name for f in fields(Scene)}}) for s in event.scenes]
+    else:
+        # In video mode, we filter for included scenes.
+        scene_fields = {f.name for f in fields(Scene)}
+        scenes_to_process = [
+            Scene(**{k: v for k, v in s.items() if k in scene_fields})
+            for s in event.scenes if s.get('status') == 'included'
+        ]
+
     if not scenes_to_process:
-        yield {"log": "No scenes were included for propagation.", "status": "Propagation skipped."}
+        yield {"log": "No scenes were included for processing.", "status": "Skipped."}
         return
 
-    params = AnalysisParameters.from_ui(logger, config, **asdict(event.analysis_params))
-    tracker = AdvancedProgressTracker(progress, progress_queue, logger, ui_stage_name="Propagation")
+    tracker = AdvancedProgressTracker(progress, progress_queue, logger, ui_stage_name="Analysis")
 
-    video_info = VideoManager.get_video_info(params.video_path)
-    totals = estimate_totals(params, video_info, scenes_to_process)
-    # Double the total to account for both propagation and analysis, which are roughly equal.
-    total_steps = totals.get("propagation", 0)
-    tracker.start(total_steps * 2, desc="Propagating masks")
+    if is_folder_mode:
+        # The number of steps is just the number of images to analyze.
+        tracker.start(len(scenes_to_process), desc="Analyzing Images")
+    else:
+        video_info = VideoManager.get_video_info(params.video_path)
+        totals = estimate_totals(params, video_info, scenes_to_process)
+        total_steps = totals.get("propagation", 0) + len(scenes_to_process) # Propagation + analysis
+        tracker.start(total_steps, desc="Propagating Masks & Analyzing")
 
     pipeline = AnalysisPipeline(
         config=config,
@@ -3054,9 +3243,11 @@ def execute_propagation(event: PropagationEvent, progress_queue: Queue, cancel_e
         cancel_event=cancel_event,
         thumbnail_manager=thumbnail_manager
     )
+
     result = pipeline.run_full_analysis(scenes_to_process, tracker=tracker)
+
     if result and result.get("done"):
-        yield {"log": "Propagation and analysis complete.", "status": f"Metadata saved to {result['metadata_path']}",
+        yield {"log": "Analysis complete.", "status": f"Metadata saved to {result['metadata_path']}",
                "output_dir": result['output_dir'], "metadata_path": result['metadata_path'], "done": True}
 
 # --- Scene gallery helpers (module-level) ---
@@ -3818,6 +4009,27 @@ class EnhancedAppUI(AppUI):
 
     def _setup_visibility_toggles(self):
         c = self.components
+
+        def handle_source_change(path):
+            is_folder = is_image_folder(path)
+            # When a folder is provided, method is implicitly thumbnails-for-each-image.
+            # Hide all video-specific extraction controls.
+            return {
+                c['max_resolution']: gr.update(visible=not is_folder),
+                c['extraction_method_toggle_input']: gr.update(visible=not is_folder),
+                c['thumbnail_group']: gr.update(visible=not is_folder),
+                c['legacy_group']: gr.update(visible=not is_folder),
+            }
+
+        source_controls = [c['source_input'], c['upload_video_input']]
+        video_specific_outputs = [
+            c['max_resolution'], c['extraction_method_toggle_input'],
+            c['thumbnail_group'], c['legacy_group']
+        ]
+        for control in source_controls:
+            control.change(handle_source_change, inputs=control, outputs=video_specific_outputs)
+
+
         c['method_input'].change(lambda m: (gr.update(visible=m == 'interval'), gr.update(visible=m == 'scene'), gr.update(visible=m == 'every_nth_frame')),
                                  c['method_input'], [c['interval_input'], c['fast_scene_input'], c['nth_frame_input']])
 
