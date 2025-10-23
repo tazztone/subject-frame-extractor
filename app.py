@@ -1768,6 +1768,8 @@ class MaskPropagator:
                 mask = outputs.get('pred_mask')
                 if mask is not None: mask = postprocess_mask((mask * 255).astype(np.uint8), config=self.config, fill_holes=True, keep_largest_only=True)
                 masks[seed_idx] = mask if mask is not None else np.zeros_like(shot_frames_rgb[seed_idx], dtype=np.uint8)[:, :, 0]
+                if tracker:
+                    tracker.step(1, desc="Propagation (seed)")
 
                 # Propagate forward
                 _propagate_direction(seed_idx + 1, len(shot_frames_rgb), 1, "Propagation (→)")
@@ -2278,8 +2280,10 @@ class AnalysisPipeline(Pipeline):
                                    self.face_analyzer, self.reference_embedding, person_detector, thumbnail_manager=self.thumbnail_manager,
                                    niqe_metric=self.niqe_metric, logger=self.logger, face_landmarker=self.face_landmarker)
             self.mask_metadata = masker.run_propagation(str(self.output_dir), scenes_to_process, tracker=tracker)
+            if tracker:
+                tracker.set_stage("Analyzing frames")
             self._initialize_niqe_metric()
-            self._run_analysis_loop(scenes_to_process)
+            self._run_analysis_loop(scenes_to_process, tracker=tracker)
             if self.cancel_event.is_set():
                 self.logger.info("Analysis cancelled by user.")
                 return {"log": "Analysis cancelled.", "done": False}
@@ -2302,7 +2306,7 @@ class AnalysisPipeline(Pipeline):
         self.reference_embedding = max(ref_faces, key=lambda x: x.det_score).normed_embedding
         self.logger.success("Reference face processed.")
 
-    def _run_analysis_loop(self, scenes_to_process):
+    def _run_analysis_loop(self, scenes_to_process, tracker: 'AdvancedProgressTracker' = None):
         frame_map = self._create_frame_map()
         all_frame_nums_to_process = {fn for scene in scenes_to_process for fn in range(scene.start_frame, scene.end_frame) if fn in frame_map}
         image_files_to_process = [self.thumb_dir / f"{Path(frame_map[fn]).stem}.webp" for fn in sorted(list(all_frame_nums_to_process))]
@@ -2310,19 +2314,17 @@ class AnalysisPipeline(Pipeline):
         num_workers = 1 if self.params.disable_parallel else min(os.cpu_count() or 4, self.config.analysis.max_workers)
         with ThreadPoolExecutor(max_workers=num_workers) as executor:
             futures = [executor.submit(self._process_single_frame, path) for path in image_files_to_process]
-
-            completed_count = 0
             for future in as_completed(futures):
                 if self.cancel_event.is_set():
-                    for f in futures:
-                        f.cancel()
+                    for f in futures: f.cancel()
                     break
-
                 try:
-                    future.result()  # To raise exceptions if any
+                    future.result()
+                    if tracker:
+                        tracker.step(1)
                 except Exception as e:
                     self.logger.error(f"Error processing future: {e}")
-                completed_count += 1
+
 
     def _process_single_frame(self, thumb_path):
         if self.cancel_event.is_set(): return
@@ -3026,7 +3028,9 @@ def execute_propagation(event: PropagationEvent, progress_queue: Queue, cancel_e
 
     video_info = VideoManager.get_video_info(params.video_path)
     totals = estimate_totals(params, video_info, scenes_to_process)
-    tracker.start(totals["propagation"], desc="Propagating masks")
+    # Double the total to account for both propagation and analysis, which are roughly equal.
+    total_steps = totals.get("propagation", 0)
+    tracker.start(total_steps * 2, desc="Propagating masks")
 
     pipeline = AnalysisPipeline(
         config=config,
