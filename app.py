@@ -3973,14 +3973,58 @@ class EnhancedAppUI(AppUI):
             # Rename the sequentially numbered files to match their original analysis filenames.
             self.logger.info("Renaming extracted frames to match original filenames...")
             orig_to_filename_map = {v: k for k, v in fn_to_orig_map.items()}
+            
+            # Build rename plan
+            plan = []
             for i, orig_frame_num in enumerate(frames_to_extract):
                 sequential_filename = f"frame_{i+1:06d}.png"
                 target_filename = orig_to_filename_map.get(orig_frame_num)
-                if target_filename and (export_dir / sequential_filename).exists():
-                    try:
-                        (export_dir / sequential_filename).rename(export_dir / target_filename)
-                    except FileNotFoundError:
-                        self.logger.warning(f"Could not find {sequential_filename} to rename.", extra={'target': target_filename})
+                if not target_filename:
+                    continue
+                
+                src = export_dir / sequential_filename
+                dst = export_dir / target_filename
+                if src == dst:
+                    continue
+                plan.append((src, dst))
+
+            # Phase 1: move all sources to unique temps
+            temp_map = {}
+            for i, (src, _) in enumerate(plan):
+                if not src.exists():
+                    continue
+                tmp = export_dir / f"__tmp_{i:06d}__{src.name}"
+                # Ensure no accidental collision with prior tmp
+                j = i
+                while tmp.exists():
+                    j += 1
+                    tmp = export_dir / f"__tmp_{j:06d}__{src.name}"
+                try:
+                    src.rename(tmp)
+                    temp_map[src] = tmp
+                except FileNotFoundError:
+                    self.logger.warning(f"Could not find {src.name} to rename to temporary file.", extra={'target': tmp.name})
+
+
+            # Phase 2: move temps to final destinations
+            for src, dst in plan:
+                tmp = temp_map.get(src)
+                if tmp is None or not tmp.exists():
+                    continue
+                
+                # If dst somehow exists (e.g., external file), pick a fresh suffix or remove it per your policy
+                if dst.exists():
+                    # choose one: raise, delete, or re-suffix; here we re-suffix deterministically
+                    stem, ext = dst.stem, dst.suffix
+                    k, alt = 1, export_dir / f"{stem} (1){ext}"
+                    while alt.exists():
+                        k += 1
+                        alt = export_dir / f"{stem} ({k}){ext}"
+                    dst = alt
+                try:
+                    tmp.rename(dst)
+                except FileNotFoundError:
+                    self.logger.warning(f"Could not find temporary file {tmp.name} to rename to final destination.", extra={'target': dst.name})
             if event.enable_crop:
                 self.logger.info("Starting crop export...")
                 crop_dir = export_dir / "cropped"
