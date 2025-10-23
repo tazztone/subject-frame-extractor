@@ -1031,34 +1031,54 @@ class Frame:
     error: str | None = None
 
     def calculate_quality_metrics(self, thumb_image_rgb: np.ndarray, quality_config: QualityConfig, logger: 'EnhancedLogger',
-                                  mask: np.ndarray | None = None, niqe_metric=None, main_config: 'Config' = None, face_landmarker=None):
+                                  mask: np.ndarray | None = None, niqe_metric=None, main_config: 'Config' = None):
         try:
-            if face_landmarker:
-                if not thumb_image_rgb.flags['C_CONTIGUOUS']:
-                    thumb_image_rgb = np.ascontiguousarray(thumb_image_rgb, dtype=np.uint8)
-                if thumb_image_rgb.dtype != np.uint8:
-                    thumb_image_rgb = thumb_image_rgb.astype(np.uint8)
+            if mask is not None and main_config:
+                # Find bounding box of the mask
+                contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                if contours:
+                    x, y, w, h = cv2.boundingRect(np.concatenate(contours))
 
-                mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=thumb_image_rgb)
-                landmarker_result = face_landmarker.detect(mp_image)
+                    # Clamp coordinates to be within the image dimensions
+                    img_h, img_w = thumb_image_rgb.shape[:2]
+                    x1 = max(0, x)
+                    y1 = max(0, y)
+                    x2 = min(img_w, x + w)
+                    y2 = min(img_h, y + h)
 
-                if landmarker_result.face_blendshapes:
-                    blendshapes = {b.category_name: b.score for b in landmarker_result.face_blendshapes[0]}
-                    self.metrics.eyes_open = 1.0 - max(blendshapes.get('eyeBlinkLeft', 0), blendshapes.get('eyeBlinkRight', 0))
-                    self.metrics.blink_prob = max(blendshapes.get('eyeBlinkLeft', 0), blendshapes.get('eyeBlinkRight', 0))
+                    # Crop the face from the thumb_image_rgb using the clamped coordinates
+                    face_crop = thumb_image_rgb[y1:y2, x1:x2]
 
-                if landmarker_result.facial_transformation_matrixes:
-                    matrix = landmarker_result.facial_transformation_matrixes[0]
-                    sy = math.sqrt(matrix[0, 0] * matrix[0, 0] + matrix[1, 0] * matrix[1, 0])
-                    singular = sy < 1e-6
-                    if not singular:
-                        self.metrics.pitch = math.degrees(math.atan2(-matrix[2, 0], sy))
-                        self.metrics.yaw = math.degrees(math.atan2(matrix[1, 0], matrix[0, 0]))
-                        self.metrics.roll = math.degrees(math.atan2(matrix[2, 1], matrix[2, 2]))
-                    else:
-                        self.metrics.pitch = math.degrees(math.atan2(-matrix[2, 0], sy))
-                        self.metrics.yaw = 0
-                        self.metrics.roll = 0
+                    if face_crop.size > 0:
+                        # Ensure the crop is C-contiguous and uint8
+                        if not face_crop.flags['C_CONTIGUOUS']:
+                            face_crop = np.ascontiguousarray(face_crop, dtype=np.uint8)
+                        if face_crop.dtype != np.uint8:
+                            face_crop = face_crop.astype(np.uint8)
+
+                        landmarker_path = Path(main_config.paths.models) / Path(main_config.models.face_landmarker).name
+                        single_face_landmarker = get_face_landmarker(str(landmarker_path), logger)
+
+                        mp_image_face = mp.Image(image_format=mp.ImageFormat.SRGB, data=face_crop)
+                        landmarker_result_face = single_face_landmarker.detect(mp_image_face)
+
+                        if landmarker_result_face.face_blendshapes:
+                            blendshapes = {b.category_name: b.score for b in landmarker_result_face.face_blendshapes[0]}
+                            self.metrics.eyes_open = 1.0 - max(blendshapes.get('eyeBlinkLeft', 0), blendshapes.get('eyeBlinkRight', 0))
+                            self.metrics.blink_prob = max(blendshapes.get('eyeBlinkLeft', 0), blendshapes.get('eyeBlinkRight', 0))
+
+                        if landmarker_result_face.facial_transformation_matrixes:
+                            matrix = landmarker_result_face.facial_transformation_matrixes[0]
+                            sy = math.sqrt(matrix[0, 0] * matrix[0, 0] + matrix[1, 0] * matrix[1, 0])
+                            singular = sy < 1e-6
+                            if not singular:
+                                self.metrics.pitch = math.degrees(math.atan2(-matrix[2, 0], sy))
+                                self.metrics.yaw = math.degrees(math.atan2(matrix[1, 0], matrix[0, 0]))
+                                self.metrics.roll = math.degrees(math.atan2(matrix[2, 1], matrix[2, 2]))
+                            else:
+                                self.metrics.pitch = math.degrees(math.atan2(-matrix[2, 0], sy))
+                                self.metrics.yaw = 0
+                                self.metrics.roll = 0
 
             gray = cv2.cvtColor(thumb_image_rgb, cv2.COLOR_RGB2GRAY)
             active_mask = ((mask > 128) if mask is not None and mask.ndim == 2 else None)
@@ -1313,23 +1333,34 @@ def download_model(url, dest_path, description, logger, error_handler: ErrorHand
         logger.error(f"Failed to download {description}", exc_info=True, extra={'url': url})
         raise RuntimeError(f"Failed to download required model: {description}") from e
 
-@lru_cache(maxsize=None)
+# Thread-local storage for non-thread-safe models
+thread_local = threading.local()
+
 def get_face_landmarker(model_path: str, logger: 'EnhancedLogger'):
     if not vision:
         raise ImportError("MediaPipe vision components are not installed.")
-    logger.info("Loading or getting cached MediaPipe face landmarker model.", component="face_landmarker")
+
+    # Check if a landmarker instance already exists for this thread
+    if hasattr(thread_local, 'face_landmarker_instance'):
+        return thread_local.face_landmarker_instance
+
+    logger.info("Initializing MediaPipe FaceLandmarker for new thread.", component="face_landmarker")
     try:
         base_options = python.BaseOptions(model_asset_path=model_path)
         options = vision.FaceLandmarkerOptions(
             base_options=base_options,
             output_face_blendshapes=True,
             output_facial_transformation_matrixes=True,
-            num_faces=3,
+            num_faces=1,
             min_face_detection_confidence=0.3,
-            min_face_presence_confidence=0.3
+            min_face_presence_confidence=0.3,
         )
         detector = vision.FaceLandmarker.create_from_options(options)
-        logger.success("Face landmarker model loaded successfully.")
+
+        # Cache the instance on the current thread
+        thread_local.face_landmarker_instance = detector
+
+        logger.success("Face landmarker model initialized successfully for this thread.")
         return detector
     except Exception as e:
         logger.error(f"Could not initialize MediaPipe face landmarker model. Error: {e}", component="face_landmarker")
@@ -2341,7 +2372,7 @@ class AnalysisPipeline(Pipeline):
                 # enable NIQE if the metric object was successfully initialized
                 enable_niqe=(self.niqe_metric is not None)
             )
-            frame.calculate_quality_metrics(thumb_image_rgb, quality_conf, self.logger, mask=mask_thumb, niqe_metric=self.niqe_metric, main_config=self.config, face_landmarker=self.face_landmarker)
+            frame.calculate_quality_metrics(thumb_image_rgb, quality_conf, self.logger, mask=mask_thumb, niqe_metric=self.niqe_metric, main_config=self.config)
             if self.params.enable_face_filter and self.reference_embedding is not None and self.face_analyzer: self._analyze_face_similarity(frame, thumb_image_rgb)
             meta = {"filename": base_filename, "metrics": asdict(frame.metrics)}
             if frame.face_similarity_score is not None: meta["face_sim"] = frame.face_similarity_score
