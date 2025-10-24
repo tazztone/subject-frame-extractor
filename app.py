@@ -3484,9 +3484,9 @@ class AppUI:
                     # A gallery to visualize scenes by status
                     self.components['scene_gallery'] = gr.Gallery(
                         label="Scenes",
-                        columns=[9999],
+                        columns=[99999],
                         rows=1,
-                        height=160,
+                        height=560,
                         show_label=True,
                         allow_preview=True,
                         container=True
