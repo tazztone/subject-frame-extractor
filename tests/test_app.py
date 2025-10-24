@@ -817,6 +817,25 @@ class TestEnhancedAppUI:
         assert "Editing Scene 1" in editor_status['value']
         assert accordion_update['open'] is True
 
+    def test_create_analysis_context_invalid_folder(self, mock_app_ui):
+        """
+        Tests that _create_analysis_context raises FileNotFoundError
+        when the output folder is a boolean (simulating a UI mapping error).
+        """
+        ana_ui_map_keys = ['output_folder']
+        # Simulate the buggy condition where a boolean is passed instead of a path
+        ana_input_components = [False]
+
+        with pytest.raises(FileNotFoundError, match="Output folder is not valid or does not exist: False"):
+            app._create_analysis_context(
+                config=mock_app_ui.config,
+                logger=mock_app_ui.logger,
+                thumbnail_manager=mock_app_ui.thumbnail_manager,
+                cuda_available=False,
+                ana_ui_map_keys=ana_ui_map_keys,
+                ana_input_components=ana_input_components
+            )
+
 class TestCompositionRoot:
     @patch('app.Config')
     @patch('app.EnhancedLogger')
