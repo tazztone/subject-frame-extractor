@@ -1150,7 +1150,7 @@ class TestImageFolderUtils:
 
         image_paths = [Path('/fake/dir/img1.jpg'), Path('/fake/dir/img2.png')]
         out_dir = Path('/fake/output')
-        mock_logger = MagicMock(spec=app.EnhancedLogger)
+        mock_logger = MagicMock(spec=app.AppLogger)
 
         params = app.AnalysisParameters.from_ui(mock_logger, test_config, thumb_megapixels=0.5)
         app.make_photo_thumbs(image_paths, out_dir, params, test_config, mock_logger)
