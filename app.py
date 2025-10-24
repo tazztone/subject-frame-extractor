@@ -3678,7 +3678,7 @@ class EnhancedAppUI(AppUI):
             return gallery_update, subject_id_update, message, yolo_results, gr.update(interactive=len(yolo_boxes) > 0)
         except Exception as e:
             self.logger.error("Failed to detect YOLO boxes for scene", exc_info=True)
-            return gr.update(), gr.update(), f"Error: {e}", yolo_results
+            return gr.update(), gr.update(), f"Error: {e}", yolo_results, gr.update()
 
     def __init__(self, config: 'Config', logger: 'AppLogger', progress_queue: Queue,
                  cancel_event: threading.Event, thumbnail_manager: 'ThumbnailManager'):
