@@ -4640,19 +4640,9 @@ class CompositionRoot:
         if hasattr(self.thumbnail_manager, 'cleanup'): self.thumbnail_manager.cleanup()
         self.cancel_event.set()
 
-def check_dependencies():
-    missing_deps = []
-    for dep in ["ultralytics", "insightface", "pyiqa", "imagehash"]:
-        try: importlib.import_module(dep)
-        except ImportError: missing_deps.append(dep)
-    if missing_deps:
-        print("WARNING: Missing ML dependencies detected:", *[f"   - {d}" for d in missing_deps],
-              "\nNote: The application will start but ML features will not work.\n   Install missing dependencies\n\nStarting application in limited mode...\n", sep='\n')
-    else: print("All dependencies found. Starting full application...\n")
 
 def main():
     try:
-        check_dependencies()
         composition = CompositionRoot()
         demo = composition.get_app_ui().build_ui()
         print("Frame Extractor & Analyzer v2.0\nStarting application...")
