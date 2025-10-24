@@ -3941,7 +3941,7 @@ class EnhancedAppUI(AppUI):
             inputs=[
                 c['scenes_state'],
                 c['selected_scene_id_state'],
-                c['analysis_output_dir_state'],
+                c['extracted_frames_dir_state'],
                 c['sceneeditor_yolo_conf_slider'],
             ] + self.ana_input_components,
             outputs=[c['yolo_preview_image'], c['yolo_box_state'], c['sceneeditorstatusmd']]
