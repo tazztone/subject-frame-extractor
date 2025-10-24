@@ -386,6 +386,40 @@ class TestVideo:
         pipeline.run()
         mock_ffmpeg.assert_called()
 
+    @patch('app.is_image_folder', return_value=True)
+    @patch('app.list_images')
+    @patch('app.make_photo_thumbs')
+    @patch('pathlib.Path.mkdir')
+    @patch('app.io.open', new_callable=mock_open)
+    def test_extraction_pipeline_image_folder(self, mock_io_open, mock_mkdir, mock_make_thumbs, mock_list_images, mock_is_folder, test_config):
+        # Arrange
+        mock_list_images.return_value = [Path('/fake/dir/img1.jpg')]
+        params = app.AnalysisParameters.from_ui(MagicMock(), test_config, source_path='/fake/dir')
+        logger = MagicMock()
+        pipeline = app.EnhancedExtractionPipeline(
+            config=test_config,
+            logger=logger,
+            params=params,
+            progress_queue=MagicMock(),
+            cancel_event=MagicMock()
+        )
+
+        # Act
+        result = pipeline.run()
+
+        # Assert
+        mock_is_folder.assert_called_once_with(Path('/fake/dir'))
+        mock_list_images.assert_called_once()
+        mock_make_thumbs.assert_called_once()
+
+        # Verify that run_config.json and scenes.json were written
+        opened_files = {call_args.args[0] for call_args in mock_io_open.call_args_list}
+        assert any('run_config.json' in str(p) for p in opened_files)
+        assert any('scenes.json' in str(p) for p in opened_files)
+
+        assert result['done']
+        assert not result['video_path'] # No video path for image folders
+
 class TestModels:
     @patch('app.download_model')
     @patch('app.gdino_load_model')
@@ -704,6 +738,19 @@ class TestAnalysisPipeline:
             assert Path(result['metadata_path']).exists()
             # We expect it to be called for each frame in the scene
             assert mock_process_frame.call_count > 0
+
+    @patch('app.AnalysisPipeline._run_image_folder_analysis')
+    def test_run_full_analysis_image_folder_branch(self, mock_run_image_folder, mock_analysis_pipeline):
+        # Arrange
+        pipeline = mock_analysis_pipeline
+        pipeline.params.video_path = "" # This indicates image folder mode
+        scenes_to_process = []
+
+        # Act
+        pipeline.run_full_analysis(scenes_to_process)
+
+        # Assert
+        mock_run_image_folder.assert_called_once()
 
 
 class TestEnhancedAppUI:
@@ -1027,3 +1074,84 @@ class TestThumbnailManager:
 
 if __name__ == "__main__":
     pytest.main([__file__])
+
+
+class TestImageFolderUtils:
+    @patch('pathlib.Path.is_dir')
+    def test_is_image_folder(self, mock_is_dir):
+        # Test case 1: A valid directory path
+        mock_is_dir.return_value = True
+        assert app.is_image_folder('/fake/dir') is True
+        # Test case 2: A path that is not a directory (a file)
+        mock_is_dir.return_value = False
+        assert app.is_image_folder('/fake/file.txt') is False
+        # Test case 3: A non-string input
+        assert app.is_image_folder(None) is False
+        assert app.is_image_folder(123) is False
+        # Test case 4: An empty string
+        assert app.is_image_folder('') is False
+
+    @patch('pathlib.Path.iterdir')
+    def test_list_images(self, mock_iterdir, test_config):
+        def create_mock_path(name, is_file_val):
+            p = MagicMock(spec=Path)
+            p.name = name
+            p.suffix = Path(name).suffix
+            p.is_file.return_value = is_file_val
+            # Make the mock comparable for sorting
+            p.__lt__ = lambda s, o: s.name < o.name
+            return p
+
+        mock_files = [
+            create_mock_path('z_img.jpg', True),
+            create_mock_path('a_img.png', True),
+            create_mock_path('doc.txt', True),
+            create_mock_path('subdir', False),
+            create_mock_path('b_img.JPG', True),
+        ]
+        mock_iterdir.return_value = mock_files
+
+        result = app.list_images(Path('/fake/dir'), cfg=test_config)
+        result_names = [r.name for r in result]
+
+        assert len(result) == 3
+        # Assert that the list is sorted by name
+        assert result_names == ['a_img.png', 'b_img.JPG', 'z_img.jpg']
+        assert all(p.suffix.lower() in test_config.utility_defaults.image_extensions for p in result)
+
+    @patch('app.cv2.imread')
+    @patch('app.Image.fromarray')
+    @patch('pathlib.Path.mkdir')
+    @patch('app.io.open', new_callable=mock_open)
+    def test_make_photo_thumbs(self, mock_io_open, mock_mkdir, mock_fromarray, mock_imread, test_config):
+        mock_imread.return_value = np.zeros((1000, 1000, 3), dtype=np.uint8)
+        mock_image_instance = MagicMock()
+        mock_image_instance.save = MagicMock()
+        mock_fromarray.return_value = mock_image_instance
+
+        image_paths = [Path('/fake/dir/img1.jpg'), Path('/fake/dir/img2.png')]
+        out_dir = Path('/fake/output')
+        mock_logger = MagicMock(spec=app.EnhancedLogger)
+
+        params = app.AnalysisParameters.from_ui(mock_logger, test_config, thumb_megapixels=0.5)
+        app.make_photo_thumbs(image_paths, out_dir, params, test_config, mock_logger)
+
+        mock_mkdir.assert_called_with(parents=True, exist_ok=True)
+        assert mock_imread.call_count == len(image_paths)
+        assert mock_fromarray.call_count == len(image_paths)
+
+        # Check that the correct files were opened
+        opened_files = [call_args.args[0] for call_args in mock_io_open.call_args_list]
+        assert out_dir / "frame_map.json" in opened_files
+        assert out_dir / "image_manifest.json" in opened_files
+
+        # Check that the correct content was written to the mock file handle
+        file_handle_mock = mock_io_open.return_value
+        expected_frame_map_content = json.dumps([1, 2])
+        expected_manifest_content = json.dumps({
+            "1": str(image_paths[0].resolve()),
+            "2": str(image_paths[1].resolve())
+        }, indent=2)
+
+        file_handle_mock.write.assert_any_call(expected_frame_map_content)
+        file_handle_mock.write.assert_any_call(expected_manifest_content)
