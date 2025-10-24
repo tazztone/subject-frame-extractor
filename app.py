@@ -2,7 +2,6 @@
 """
 Frame Extractor & Analyzer v2.0
 """
-import atexit
 import contextlib
 import cv2
 import dataclasses
@@ -24,7 +23,6 @@ import re
 import shutil
 import subprocess
 import sys
-import textwrap
 import threading
 import time
 import torch
@@ -2910,10 +2908,23 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue, cancel_
     params_dict = asdict(event)
     is_folder_mode = not params_dict.get("video_path")
 
+    params = AnalysisParameters.from_ui(logger, config, **params_dict)
+    output_dir = Path(params.output_folder)
+
+    logger.info("Loading Models")
+    models = initialize_analysis_models(params, config, logger, cuda_available)
+    niqe_metric = None
+    if not is_folder_mode and params.pre_analysis_enabled and pyiqa:
+        niqe_metric = pyiqa.create_metric('niqe', device=models['device'])
+
+    masker = SubjectMasker(params, progress_queue, cancel_event, config, face_analyzer=models["face_analyzer"],
+                           reference_embedding=models["ref_emb"], person_detector=models["person_detector"],
+                           niqe_metric=niqe_metric, thumbnail_manager=thumbnail_manager, logger=logger,
+                           face_landmarker=models["face_landmarker"])
+    masker.frame_map = masker._create_frame_map(str(output_dir))
+
     if is_folder_mode:
         logger.info("Starting seed selection for image folder.")
-        params = AnalysisParameters.from_ui(logger, config, **params_dict)
-        output_dir = Path(params.output_folder)
         scenes_path = output_dir / "scenes.json"
         if not scenes_path.exists():
             yield {"log": "[ERROR] scenes.json not found. Run extraction first."}
@@ -2921,13 +2932,6 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue, cancel_
 
         with scenes_path.open('r', encoding='utf-8') as f:
             scenes = [Scene(shot_id=i, start_frame=s, end_frame=e) for i, (s, e) in enumerate(json.load(f))]
-
-        models = initialize_analysis_models(params, config, logger, cuda_available)
-        masker = SubjectMasker(params, progress_queue, cancel_event, config, face_analyzer=models["face_analyzer"],
-                               reference_embedding=models["ref_emb"], person_detector=models["person_detector"],
-                               thumbnail_manager=thumbnail_manager, logger=logger,
-                               face_landmarker=models["face_landmarker"])
-        masker.frame_map = masker._create_frame_map(str(output_dir))
 
         tracker.start(len(scenes), desc="Selecting seeds for images")
         previews_dir = output_dir / "previews"
@@ -2937,7 +2941,6 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue, cancel_
             if cancel_event.is_set(): break
             tracker.step(1, desc=f"Image {scene.shot_id}")
 
-            # In folder mode, best_seed_frame is just the frame number.
             scene.best_seed_frame = scene.start_frame
             fname = masker.frame_map.get(scene.best_seed_frame)
             if not fname: continue
@@ -2958,7 +2961,7 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue, cancel_
             preview_path = previews_dir / f"scene_{scene.shot_id:05d}.jpg"
             Image.fromarray(overlay_rgb).save(preview_path)
             scene.preview_path = str(preview_path)
-            scene.status = 'included' # Auto-include all images by default
+            scene.status = 'included'
 
         save_scene_seeds([asdict(s) for s in scenes], str(output_dir), logger)
         tracker.done_stage("Seed selection complete")
@@ -2979,7 +2982,6 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue, cancel_
         shutil.copy2(ref_upload, dest)
         params_dict['face_ref_img_path'] = str(dest)
         final_face_ref_path = str(dest)
-    params, output_dir = AnalysisParameters.from_ui(logger, config, **params_dict), Path(params_dict['output_folder'])
     try:
         with (output_dir / "run_config.json").open('w', encoding='utf-8') as f:
             json.dump({k: v for k, v in params_dict.items() if k != 'face_ref_img_upload'}, f, indent=4)
@@ -2989,14 +2991,6 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue, cancel_
         yield {"log": "[ERROR] scenes.json not found. Run extraction with scene detection."}
         return
     with scenes_path.open('r', encoding='utf-8') as f: scenes = [Scene(shot_id=i, start_frame=s, end_frame=e) for i, (s, e) in enumerate(json.load(f))]
-    logger.info("Loading Models")
-    models, niqe_metric = initialize_analysis_models(params, config, logger, cuda_available), None
-    if params.pre_analysis_enabled and pyiqa: niqe_metric = pyiqa.create_metric('niqe', device=models['device'])
-    masker = SubjectMasker(params, progress_queue, cancel_event, config, face_analyzer=models["face_analyzer"],
-                           reference_embedding=models["ref_emb"], person_detector=models["person_detector"],
-                           niqe_metric=niqe_metric, thumbnail_manager=thumbnail_manager, logger=logger,
-                           face_landmarker=models["face_landmarker"])
-    masker.frame_map = masker._create_frame_map(str(output_dir))
 
     video_info = VideoManager.get_video_info(params.video_path)
     totals = estimate_totals(params, video_info, scenes)
@@ -3368,6 +3362,9 @@ class AppUI:
             self._create_event_handlers()
         return demo
 
+    def _get_comp(self, name):
+        return self.components.get(name)
+
     def _create_component(self, name, comp_type, kwargs):
         comp_map = {'button': gr.Button, 'textbox': gr.Textbox, 'dropdown': gr.Dropdown, 'slider': gr.Slider, 'checkbox': gr.Checkbox,
                     'file': gr.File, 'radio': gr.Radio, 'gallery': gr.Gallery, 'plot': gr.Plot, 'markdown': gr.Markdown, 'html': gr.HTML, 'number': gr.Number, 'cbg': gr.CheckboxGroup, 'image': gr.Image}
@@ -3430,12 +3427,12 @@ class AppUI:
                 'choices': self.config.choices.method,
                 'value': self.config.ui_defaults.method,
                 'label': "Extraction Method",
-                'info': textwrap.dedent("""\
+                'info': """
                     - **Keyframes:** Extracts only the keyframes (I-frames). Good for a quick summary.
                     - **Interval:** Extracts one frame every X seconds.
                     - **Every Nth Frame:** Extracts one frame every N video frames.
                     - **All:** Extracts every single frame. (Warning: massive disk usage and time).
-                    - **Scene:** Extracts frames where a scene change is detected.""")
+                    - **Scene:** Extracts frames where a scene change is detected."""
             })
             self._create_component('interval_input', 'textbox', {
                 'label': "Interval (seconds)",
@@ -3894,24 +3891,8 @@ class EnhancedAppUI(AppUI):
             button_update,
         )
 
-    def on_recompute(self, scenes, selected_shotid, prompt, boxth, textth, outputfolder, *anaargs):
-        # Update seed for the selected scene using per-scene prompt/thresholds
-        _, updated_scenes, msg = apply_scene_overrides(
-            scenes, selected_shotid, prompt, boxth, textth,
-            outputfolder, self.ana_ui_map_keys, anaargs,
-            self.cuda_available, self.thumbnail_manager, self.config, self.logger
-        )
-        # After reseeding, refresh gallery items so the saved preview is reread
-        gallery_items, index_map = build_scene_gallery_items(updated_scenes, self.components["scene_gallery_view_toggle"].value, outputfolder)
-        return (
-            updated_scenes,
-            gr.update(value=gallery_items),       # scenegallery
-            gr.update(value=index_map),           # scenegalleryindexmapstate
-            gr.update(value=msg),                 # sceneeditorstatusmd (feedback)
-        )
-
     def on_editor_toggle(self, scenes, selected_shotid, outputfolder, view, new_status):
-        scenes, status_text, _, button_update = self.on_toggle_scene_status(scenes, selected_shotid, outputfolder, new_status)
+        scenes, status_text, _, button_update = toggle_scene_status(scenes, selected_shotid, new_status, outputfolder, self.logger)
         items, index_map = build_scene_gallery_items(scenes, view, outputfolder)
         return scenes, status_text, gr.update(value=items), gr.update(value=index_map), button_update
 
@@ -4419,9 +4400,6 @@ class EnhancedAppUI(AppUI):
         updates = auto_set_thresholds(per_metric_values, p, slider_keys, selected_metrics)
         return [updates.get(f'slider_{key}', gr.update()) for key in slider_keys]
 
-    def on_toggle_scene_status(self, scenes_list, selected_shot_id, output_folder, new_status):
-        return toggle_scene_status(scenes_list, selected_shot_id, new_status, output_folder, self.logger)
-
     def export_kept_frames_wrapper(self, all_frames_data, output_dir, video_path, enable_crop, crop_ars, crop_padding, require_face_match, dedup_thresh, *slider_values):
         filter_args = {k: v for k, v in zip(sorted(self.components['metric_sliders'].keys()), slider_values)}
         filter_args.update({"require_face_match": require_face_match, "dedup_thresh": dedup_thresh})
@@ -4658,10 +4636,6 @@ class CompositionRoot:
         if hasattr(self.thumbnail_manager, 'cleanup'): self.thumbnail_manager.cleanup()
         self.cancel_event.set()
 
-def check_ffmpeg():
-    if not shutil.which("ffmpeg"):
-        raise RuntimeError("FFMPEG is not installed or not in the system's PATH. Please install FFmpeg to use this application.")
-
 def check_dependencies():
     missing_deps = []
     for dep in ["ultralytics", "insightface", "pyiqa", "imagehash"]:
@@ -4674,7 +4648,6 @@ def check_dependencies():
 
 def main():
     try:
-        # check_ffmpeg() # This can be disruptive, let's assume it's installed.
         check_dependencies()
         composition = CompositionRoot()
         demo = composition.get_app_ui().build_ui()
