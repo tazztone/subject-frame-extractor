@@ -2764,10 +2764,20 @@ def _create_analysis_context(config, logger, thumbnail_manager, cuda_available, 
     This centralizes context creation and ensures robustness.
     """
     ui_args = dict(zip(ana_ui_map_keys, ana_input_components))
-    
-    # --- Robust Path Handling ---
+
+    # --- Defensive Patch for Mismatched UI Args ---
+    if 'outputfolder' in ui_args and 'output_folder' not in ui_args:
+        ui_args['output_folder'] = ui_args.pop('outputfolder')
+
     output_folder_str = ui_args.get('output_folder')
-    if not output_folder_str or not Path(output_folder_str).exists():
+
+    # Defensive fix for mis-mapped booleans or missing values
+    if not output_folder_str or isinstance(output_folder_str, bool):
+        logger.error(f"Output folder is not valid (was '{output_folder_str}', type: {type(output_folder_str)}). This is likely due to a UI argument mapping error.", component="analysis")
+        raise FileNotFoundError(f"Output folder is not valid or does not exist: {output_folder_str}")
+
+    # --- Robust Path Handling ---
+    if not Path(output_folder_str).exists():
         raise FileNotFoundError(f"Output folder is not valid or does not exist: {output_folder_str}")
     resolved_outdir = Path(output_folder_str).resolve()
     ui_args['output_folder'] = str(resolved_outdir)
