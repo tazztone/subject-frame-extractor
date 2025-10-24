@@ -3817,6 +3817,43 @@ class EnhancedAppUI(AppUI):
             self.logger.error("Failed to select YOLO subject", exc_info=True)
             return scenes, gr.update(), gr.update(), f"Error: {e}"
 
+    def _setup_bulk_scene_handlers(self):
+        super()._setup_bulk_scene_handlers()
+        c = self.components
+
+        yolo_detection_inputs = [
+            c['scenes_state'],
+            c['selected_scene_id_state'],
+            c['extracted_frames_dir_state'],
+            c['sceneeditor_yolo_conf_slider'],
+            c['yolo_results_state'],
+            c['scene_gallery_view_toggle'],
+            c['scene_gallery_index_map_state'],
+        ] + self.ana_input_components
+
+        yolo_detection_outputs = [
+            c['scene_gallery'], # To update the thumbnail
+            c['scene_editor_yolo_subject_id'], # To update the radio choices
+            c['sceneeditorstatusmd'],
+            c['yolo_results_state'],
+            c['scenerecomputebutton'],
+        ]
+
+        def trigger_yolo_if_active(seed_mode, scenes, shot_id, outdir, yolo_conf, yolo_results, view, indexmap, *ana_args):
+            if seed_mode == "YOLO Bbox":
+                return self.on_yolo_person_detection_wrapper(scenes, shot_id, outdir, yolo_conf, yolo_results, view, indexmap, *ana_args)
+            return [gr.update()] * len(yolo_detection_outputs)
+
+        c['scene_gallery'].select(
+            None,
+            None,
+            None
+        ).then(
+            trigger_yolo_if_active,
+            inputs=[c['scene_editor_seed_mode']] + yolo_detection_inputs,
+            outputs=yolo_detection_outputs
+        )
+
     def on_reset_scene_wrapper(self, scenes, shot_id, outdir, view, *ana_args):
         try:
             scene = next((s for s in scenes if s['shot_id'] == shot_id), None)
