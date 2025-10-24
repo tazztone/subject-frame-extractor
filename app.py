@@ -3652,7 +3652,7 @@ class EnhancedAppUI(AppUI):
             message = f"Found {len(yolo_boxes)} YOLO candidates. Select a subject and click 'Recompute Preview'."
             if not yolo_boxes:
                 message = "No people found. Try adjusting the YOLO confidence threshold."
-                return gr.update(), gr.update(interactive=False), message, yolo_results, gr.update(interactive=False)
+                return gr.update(), gr.update(interactive=False, choices=[]), message, yolo_results, gr.update(interactive=False)
 
             # Update the scene's preview path to the new overlay image
             previews_dir = Path(outdir) / "previews"
