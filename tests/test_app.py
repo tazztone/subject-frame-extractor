@@ -168,17 +168,17 @@ class TestConfig:
             config = app.Config(config_path="dummy_path.yml")
             assert config.paths.logs == "env_logs"
 
-class TestEnhancedLogging:
-    def test_enhanced_logger_instantiation(self, test_config):
+class TestAppLogger:
+    def test_app_logger_instantiation(self, test_config):
         """Tests that the logger can be instantiated with a valid config."""
         try:
             # The logger now requires a config object
-            app.EnhancedLogger(config=test_config, log_to_console=False, log_to_file=False)
+            app.AppLogger(config=test_config, log_to_console=False, log_to_file=False)
         except Exception as e:
             pytest.fail(f"Logger instantiation with a config object failed: {e}")
 
     def test_operation_context_timing(self, test_config):
-        logger = app.EnhancedLogger(config=test_config, log_to_console=False, log_to_file=False)
+        logger = app.AppLogger(config=test_config, log_to_console=False, log_to_file=False)
         logger.logger.log = MagicMock()
         with patch('builtins.open', mock_open()):
             with logger.operation("test_operation", "test_component"):
@@ -772,7 +772,7 @@ class TestEnhancedAppUI:
 
 class TestCompositionRoot:
     @patch('app.Config')
-    @patch('app.EnhancedLogger')
+    @patch('app.AppLogger')
     @patch('app.ThumbnailManager')
     @patch('app.Queue')
     @patch('app.threading.Event')

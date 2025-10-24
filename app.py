@@ -11,14 +11,12 @@ import gc
 import gradio as gr
 import hashlib
 import imagehash
-import importlib
 import io
 import json
 import logging
 import math
 import numpy as np
 import os
-import psutil
 import re
 import shutil
 import subprocess
@@ -42,7 +40,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, asdict, field, fields, is_dataclass
 from enum import Enum
 from functools import lru_cache
-from queue import Queue, Empty
+from queue import Queue
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 # --- DEPENDENCY IMPORTS (with error handling) ---
@@ -53,21 +51,15 @@ except ImportError:
     DAM4SAMTracker = None
     dam_utils = None
 
-try:
-    import GPUtil
-except ImportError:
-    GPUtil = None
 
 try:
     from groundingdino.util.inference import (
         load_model as gdino_load_model,
         predict as gdino_predict,
     )
-    from torchvision.ops import box_convert
 except ImportError:
     gdino_load_model = None
     gdino_predict = None
-    box_convert = None
 
 
 try:
@@ -460,61 +452,20 @@ class LogEvent:
     component: str
     operation: Optional[str] = None
     duration_ms: Optional[float] = None
-    memory_mb: Optional[float] = None
-    gpu_memory_mb: Optional[float] = None
     error_type: Optional[str] = None
     stack_trace: Optional[str] = None
     user_context: Optional[Dict[str, Any]] = None
     performance_metrics: Optional[Dict[str, Any]] = None
     custom_fields: Optional[Dict[str, Any]] = None
 
-class PerformanceMonitor:
-    def __init__(self):
-        self.process = psutil.Process()
-        self.gpu_available = self._check_gpu_availability()
-
-    def _check_gpu_availability(self) -> bool:
-        if not GPUtil: return False
-        try:
-            GPUtil.getGPUs()
-            return True
-        except:
-            return False
-
-    def get_system_metrics(self) -> Dict[str, Any]:
-        metrics = {
-            'cpu_percent': psutil.cpu_percent(interval=0.1),
-            'memory_percent': psutil.virtual_memory().percent,
-            'memory_available_mb': psutil.virtual_memory().available / (1024**2),
-            'disk_usage_percent': psutil.disk_usage('/').percent,
-            'process_memory_mb': self.process.memory_info().rss / (1024**2),
-            'process_cpu_percent': self.process.cpu_percent(interval=0.1),
-        }
-        if self.gpu_available:
-            try:
-                gpus = GPUtil.getGPUs()
-                if gpus:
-                    gpu = gpus[0]
-                    metrics.update({
-                        'gpu_memory_used_mb': gpu.memoryUsed,
-                        'gpu_memory_total_mb': gpu.memoryTotal,
-                        'gpu_memory_percent': gpu.memoryUtil * 100,
-                        'gpu_load_percent': gpu.load * 100,
-                        'gpu_temperature': gpu.temperature
-                    })
-            except Exception:
-                pass
-        return metrics
-
-class EnhancedLogger:
+class AppLogger:
     def __init__(self, config: 'Config', log_dir: Optional[Path] = None,
-                 enable_performance_monitoring: bool = True, log_to_file: bool = True,
+                 log_to_file: bool = True,
                  log_to_console: bool = True):
         self.config = config
         self.log_dir = log_dir or Path(self.config.paths.logs)
         self.log_dir.mkdir(exist_ok=True, parents=True)
         self.progress_queue = None
-        self.performance_monitor = PerformanceMonitor() if enable_performance_monitoring else None
         self.session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.session_log_file = self.log_dir / f"session_{self.session_id}.log"
         self.structured_log_file = self.log_dir / self.config.logging.structured_log_path
@@ -571,7 +522,6 @@ class EnhancedLogger:
             raise
 
     def _create_log_event(self, level: str, message: str, component: str, **kwargs) -> LogEvent:
-        current_metrics = self.performance_monitor.get_system_metrics() if self.performance_monitor else {}
         exc_info = kwargs.pop('exc_info', None)
         extra = kwargs.pop('extra', None)
         # Map legacy "stacktrace" to "stack_trace" for backward compatibility
@@ -582,7 +532,7 @@ class EnhancedLogger:
             kwargs['custom_fields'] = kwargs.get('custom_fields', {})
             kwargs['custom_fields'].update(extra)
         return LogEvent(timestamp=datetime.now().isoformat(), level=level, message=message, component=component,
-                        memory_mb=current_metrics.get('process_memory_mb'), gpu_memory_mb=current_metrics.get('gpu_memory_used_mb'), **kwargs)
+                        **kwargs)
 
     def _log_event(self, event: LogEvent):
         log_level_name = event.level.upper()
@@ -627,7 +577,7 @@ class ColoredFormatter(logging.Formatter):
         return super().format(record)
 
 class AdvancedProgressTracker:
-    def __init__(self, progress, queue: Queue, logger: EnhancedLogger, ui_stage_name: str = ""):
+    def __init__(self, progress, queue: Queue, logger: AppLogger, ui_stage_name: str = ""):
         self.progress = progress
         self.queue = queue
         self.logger = logger
@@ -1045,7 +995,7 @@ class Frame:
     max_face_confidence: float | None = None
     error: str | None = None
 
-    def calculate_quality_metrics(self, thumb_image_rgb: np.ndarray, quality_config: QualityConfig, logger: 'EnhancedLogger',
+    def calculate_quality_metrics(self, thumb_image_rgb: np.ndarray, quality_config: QualityConfig, logger: 'AppLogger',
                                   mask: np.ndarray | None = None, niqe_metric=None, main_config: 'Config' = None, face_landmarker=None, face_bbox: Optional[List[int]] = None):
         try:
             if face_landmarker:
@@ -1195,7 +1145,7 @@ class AnalysisParameters:
         pass
 
     @classmethod
-    def from_ui(cls, logger: 'EnhancedLogger', config: 'Config', **kwargs):
+    def from_ui(cls, logger: 'AppLogger', config: 'Config', **kwargs):
         if 'face_ref_img_path' in kwargs or 'video_path' in kwargs:
             sanitized_face_ref, face_filter_enabled = _sanitize_face_ref(kwargs, logger)
             kwargs['face_ref_img_path'] = sanitized_face_ref
@@ -1244,7 +1194,7 @@ class MaskingResult:
 # --- BASE PIPELINE ---
 
 class Pipeline:
-    def __init__(self, config: 'Config', logger: 'EnhancedLogger', params: 'AnalysisParameters',
+    def __init__(self, config: 'Config', logger: 'AppLogger', params: 'AnalysisParameters',
                  progress_queue: Queue, cancel_event: threading.Event):
         self.config = config
         self.logger = logger
@@ -1338,7 +1288,7 @@ def download_model(url, dest_path, description, logger, error_handler: ErrorHand
 # Thread-local storage for non-thread-safe models
 thread_local = threading.local()
 
-def get_face_landmarker(model_path: str, logger: 'EnhancedLogger'):
+def get_face_landmarker(model_path: str, logger: 'AppLogger'):
     if not vision:
         raise ImportError("MediaPipe vision components are not installed.")
 
@@ -1369,7 +1319,7 @@ def get_face_landmarker(model_path: str, logger: 'EnhancedLogger'):
         raise RuntimeError("Could not initialize MediaPipe face landmarker model.") from e
 
 @lru_cache(maxsize=None)
-def get_face_analyzer(model_name: str, models_path: str, det_size_tuple: tuple, logger: 'EnhancedLogger'):
+def get_face_analyzer(model_name: str, models_path: str, det_size_tuple: tuple, logger: 'AppLogger'):
     from insightface.app import FaceAnalysis
     logger.info(f"Loading or getting cached face model: {model_name}")
     try:
@@ -1394,7 +1344,7 @@ def get_face_analyzer(model_name: str, models_path: str, det_size_tuple: tuple, 
         raise RuntimeError(f"Could not initialize face analysis model. Error: {e}") from e
 
 class PersonDetector:
-    def __init__(self, logger: 'EnhancedLogger', model_path: Path, imgsz: int, conf: float, device: str = 'cuda'):
+    def __init__(self, logger: 'AppLogger', model_path: Path, imgsz: int, conf: float, device: str = 'cuda'):
         from ultralytics import YOLO
         self.logger = logger
         self.device = device if torch.cuda.is_available() else 'cpu'
@@ -1420,15 +1370,15 @@ class PersonDetector:
         return out
 
 @lru_cache(maxsize=None)
-def get_person_detector(model_path_str: str, device: str, imgsz: int, conf: float, logger: 'EnhancedLogger'):
+def get_person_detector(model_path_str: str, device: str, imgsz: int, conf: float, logger: 'AppLogger'):
     logger.info(f"Loading or getting cached person detector from: {model_path_str}", component="person_detector")
     return PersonDetector(logger=logger, model_path=Path(model_path_str), imgsz=imgsz, conf=conf, device=device)
 
 @lru_cache(maxsize=None)
-def get_grounding_dino_model(gdino_config_path: str, gdino_checkpoint_path: str, models_path: str, grounding_dino_url: str, user_agent: str, retry_params: tuple, device="cuda", logger: 'EnhancedLogger' = None):
+def get_grounding_dino_model(gdino_config_path: str, gdino_checkpoint_path: str, models_path: str, grounding_dino_url: str, user_agent: str, retry_params: tuple, device="cuda", logger: 'AppLogger' = None):
     if not gdino_load_model: raise ImportError("GroundingDINO is not installed.")
     if logger is None:
-        logger = EnhancedLogger(config=Config())
+        logger = AppLogger(config=Config())
     error_handler = ErrorHandler(logger, *retry_params)
     try:
         models_dir = Path(models_path)
@@ -1461,7 +1411,7 @@ def predict_grounding_dino(model, image_tensor, caption, box_threshold, text_thr
                              box_threshold=float(box_threshold), text_threshold=float(text_threshold))
 
 @lru_cache(maxsize=None)
-def get_dam4sam_tracker(model_name: str, models_path: str, model_urls_tuple: tuple, user_agent: str, retry_params: tuple, logger: 'EnhancedLogger'):
+def get_dam4sam_tracker(model_name: str, models_path: str, model_urls_tuple: tuple, user_agent: str, retry_params: tuple, logger: 'AppLogger'):
     if not DAM4SAMTracker or not dam_utils: raise ImportError("DAM4SAM is not installed.")
     error_handler = ErrorHandler(logger, *retry_params)
     model_urls = dict(model_urls_tuple)
@@ -1493,7 +1443,7 @@ def get_dam4sam_tracker(model_name: str, models_path: str, model_urls_tuple: tup
             torch.cuda.empty_cache()
         return None
 
-def initialize_analysis_models(params: AnalysisParameters, config: Config, logger: EnhancedLogger, cuda_available: bool):
+def initialize_analysis_models(params: AnalysisParameters, config: Config, logger: AppLogger, cuda_available: bool):
     device = "cuda" if cuda_available else "cpu"
     face_analyzer, ref_emb, person_detector, face_landmarker = None, None, None, None
     if params.enable_face_filter:
@@ -1545,7 +1495,7 @@ class VideoManager:
         self.max_resolution = max_resolution or self.config.ui_defaults.max_resolution
         self.is_youtube = ("youtube.com/" in source_path or "youtu.be/" in source_path)
 
-    def prepare_video(self, logger: 'EnhancedLogger') -> str:
+    def prepare_video(self, logger: 'AppLogger') -> str:
         if self.is_youtube:
             if not ytdlp:
                 raise ImportError("yt-dlp not installed.")
@@ -1590,7 +1540,7 @@ class VideoManager:
 
 def run_scene_detection(video_path, output_dir, logger=None):
     if not detect: raise ImportError("scenedetect is not installed.")
-    logger = logger or EnhancedLogger(config=Config())
+    logger = logger or AppLogger(config=Config())
     logger.info("Detecting scenes...", component="video")
     try:
         scene_list = detect(str(video_path), ContentDetector())
@@ -1602,7 +1552,7 @@ def run_scene_detection(video_path, output_dir, logger=None):
         logger.error("Scene detection failed.", component="video", exc_info=True)
         return []
 
-def make_photo_thumbs(image_paths: list[Path], out_dir: Path, params: AnalysisParameters, cfg: Config, logger: EnhancedLogger, tracker: 'AdvancedProgressTracker' = None):
+def make_photo_thumbs(image_paths: list[Path], out_dir: Path, params: AnalysisParameters, cfg: Config, logger: AppLogger, tracker: 'AdvancedProgressTracker' = None):
     thumbs_dir = out_dir / "thumbs"
     thumbs_dir.mkdir(parents=True, exist_ok=True)
     target_area = params.thumb_megapixels * 1_000_000
@@ -1648,7 +1598,7 @@ def make_photo_thumbs(image_paths: list[Path], out_dir: Path, params: AnalysisPa
     return frame_map
 
 
-def run_ffmpeg_extraction(video_path, output_dir, video_info, params, progress_queue, cancel_event, logger: 'EnhancedLogger', config: 'Config', tracker: 'AdvancedProgressTracker' = None):
+def run_ffmpeg_extraction(video_path, output_dir, video_info, params, progress_queue, cancel_event, logger: 'AppLogger', config: 'Config', tracker: 'AdvancedProgressTracker' = None):
     log_file_path = output_dir / "ffmpeg_log.txt"
     cmd_base = ['ffmpeg', '-y', '-i', str(video_path), '-hide_banner']
 
@@ -1773,7 +1723,7 @@ def postprocess_mask(mask: np.ndarray, config: 'Config', fill_holes: bool = True
             binary_mask = (labels == largest_label).astype(np.uint8)
     return (binary_mask * 255).astype(np.uint8)
 
-def render_mask_overlay(frame_rgb: np.ndarray, mask_gray: np.ndarray, alpha: float, logger: 'EnhancedLogger') -> np.ndarray:
+def render_mask_overlay(frame_rgb: np.ndarray, mask_gray: np.ndarray, alpha: float, logger: 'AppLogger') -> np.ndarray:
     if mask_gray is None or frame_rgb is None:
         return frame_rgb if frame_rgb is not None else np.array([])
     h, w = frame_rgb.shape[:2]
@@ -1792,7 +1742,7 @@ def rgb_to_pil(image_rgb: np.ndarray) -> Image.Image:
     if not Image: raise ImportError("Pillow is not installed.")
     return Image.fromarray(image_rgb)
 
-def create_frame_map(output_dir: Path, logger: 'EnhancedLogger'):
+def create_frame_map(output_dir: Path, logger: 'AppLogger'):
     logger.info("Loading frame map...", component="frames")
     frame_map_path = output_dir / "frame_map.json"
     try:
@@ -1813,7 +1763,7 @@ class MaskPropagator:
         self.cancel_event = cancel_event
         self.progress_queue = progress_queue
         self.config = config
-        self.logger = logger or EnhancedLogger(config=Config())
+        self.logger = logger or AppLogger(config=Config())
         self._device = "cuda" if torch.cuda.is_available() else "cpu"
 
     def propagate(self, shot_frames_rgb, seed_idx, bbox_xywh, tracker: 'AdvancedProgressTracker' = None):
@@ -1882,7 +1832,7 @@ class SeedSelector:
         self.tracker = tracker
         self._gdino = gdino_model
         self._device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.logger = logger or EnhancedLogger(config=Config())
+        self.logger = logger or AppLogger(config=Config())
 
     def _get_param(self, source, key, default=None):
         """Safely gets a parameter from a source that can be a dict or an object."""
@@ -2100,7 +2050,7 @@ class SubjectMasker:
     def __init__(self, params, progress_queue, cancel_event, config: 'Config', frame_map=None, face_analyzer=None,
                  reference_embedding=None, person_detector=None, thumbnail_manager=None, niqe_metric=None, logger=None, face_landmarker=None):
         self.params, self.config, self.progress_queue, self.cancel_event = params, config, progress_queue, cancel_event
-        self.logger = logger or EnhancedLogger(config=Config())
+        self.logger = logger or AppLogger(config=Config())
         self.frame_map = frame_map
         self.face_analyzer, self.reference_embedding, self.person_detector, self.face_landmarker = face_analyzer, reference_embedding, person_detector, face_landmarker
         self.dam_tracker, self.mask_dir, self.shots = None, None, []
@@ -2342,14 +2292,14 @@ class ExtractionPipeline(Pipeline):
         return run_ffmpeg_extraction(video_path, output_dir, video_info, self.params, self.progress_queue, self.cancel_event, self.logger, self.config, tracker=tracker)
 
 class EnhancedExtractionPipeline(ExtractionPipeline):
-    def __init__(self, config: 'Config', logger: 'EnhancedLogger', params: 'AnalysisParameters',
+    def __init__(self, config: 'Config', logger: 'AppLogger', params: 'AnalysisParameters',
                  progress_queue: Queue, cancel_event: threading.Event):
         super().__init__(config, logger, params, progress_queue, cancel_event)
         self.error_handler = ErrorHandler(self.logger, self.config.retry.max_attempts, self.config.retry.backoff_seconds)
         self.run = self.error_handler.with_retry()(self.run)
 
 class AnalysisPipeline(Pipeline):
-    def __init__(self, config: 'Config', logger: 'EnhancedLogger', params: 'AnalysisParameters',
+    def __init__(self, config: 'Config', logger: 'AppLogger', params: 'AnalysisParameters',
                  progress_queue: Queue, cancel_event: threading.Event,
                  thumbnail_manager: 'ThumbnailManager'):
         super().__init__(config, logger, params, progress_queue, cancel_event)
@@ -2652,7 +2602,7 @@ def apply_all_filters_vectorized(all_frames_data, filters, config: 'Config'):
     return kept, rejected, Counter(r for r_list in reasons.values() for r in r_list), reasons
 
 def on_filters_changed(event: FilterEvent, thumbnail_manager, config: 'Config', logger=None):
-    logger = logger or EnhancedLogger(config=Config())
+    logger = logger or AppLogger(config=Config())
     if not event.all_frames_data: return {"filter_status_text": "Run analysis to see results.", "results_gallery": []}
     filters = event.slider_values.copy()
     filters.update({"require_face_match": event.require_face_match, "dedup_thresh": event.dedup_thresh,
@@ -2878,7 +2828,7 @@ def _wire_recompute_handler(config, logger, thumbnail_manager, scenes, shot_id, 
 
 # --- PIPELINE LOGIC ---
 
-def execute_extraction(event: ExtractionEvent, progress_queue: Queue, cancel_event: threading.Event, logger: EnhancedLogger, config: Config, progress=None):
+def execute_extraction(event: ExtractionEvent, progress_queue: Queue, cancel_event: threading.Event, logger: AppLogger, config: Config, progress=None):
     params_dict = asdict(event)
     if event.upload_video:
         source, dest = params_dict.pop('upload_video'), str(Path(config.paths.downloads) / Path(event.upload_video).name)
@@ -2901,7 +2851,7 @@ def execute_extraction(event: ExtractionEvent, progress_queue: Queue, cancel_eve
             "done": True
         }
 
-def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue, cancel_event: threading.Event, logger: EnhancedLogger,
+def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue, cancel_event: threading.Event, logger: AppLogger,
                          config: Config, thumbnail_manager, cuda_available, progress=None):
     yield {"unified_log": "", "unified_status": "Starting Pre-Analysis..."}
     tracker = AdvancedProgressTracker(progress, progress_queue, logger, ui_stage_name="Pre-Analysis")
@@ -3048,7 +2998,7 @@ def validate_session_dir(path: str | Path) -> tuple[Path | None, str | None]:
 def execute_session_load(
     app_ui,
     event: SessionLoadEvent,
-    logger: EnhancedLogger,
+    logger: AppLogger,
     config: Config,
     thumbnail_manager,
 ):
@@ -3219,7 +3169,7 @@ def execute_session_load(
         })
         yield updates
 
-def execute_propagation(event: PropagationEvent, progress_queue: Queue, cancel_event: threading.Event, logger: EnhancedLogger,
+def execute_propagation(event: PropagationEvent, progress_queue: Queue, cancel_event: threading.Event, logger: AppLogger,
                         config: Config, thumbnail_manager, cuda_available, progress=None):
     params = AnalysisParameters.from_ui(logger, config, **asdict(event.analysis_params))
     is_folder_mode = not params.video_path
@@ -3323,7 +3273,7 @@ def build_scene_gallery_items(scenes: list[dict], view: str, output_dir: str):
 # --- UI ---
 
 class AppUI:
-    def __init__(self, config: 'Config', logger: 'EnhancedLogger', progress_queue: Queue,
+    def __init__(self, config: 'Config', logger: 'AppLogger', progress_queue: Queue,
                  cancel_event: threading.Event, thumbnail_manager: 'ThumbnailManager'):
         self.config = config
         self.logger = logger
@@ -3716,10 +3666,10 @@ class EnhancedAppUI(AppUI):
             self.logger.error("Failed to detect YOLO boxes for scene", exc_info=True)
             return gr.update(), gr.update(), f"Error: {e}", yolo_results
 
-    def __init__(self, config: 'Config', logger: 'EnhancedLogger', progress_queue: Queue,
+    def __init__(self, config: 'Config', logger: 'AppLogger', progress_queue: Queue,
                  cancel_event: threading.Event, thumbnail_manager: 'ThumbnailManager'):
         super().__init__(config, logger, progress_queue, cancel_event, thumbnail_manager)
-        self.enhanced_logger = logger
+        self.app_logger = logger
         self.performance_metrics, self.log_filter_level, self.all_logs = {}, "INFO", []
         self.last_run_args = None
 
@@ -3794,7 +3744,7 @@ class EnhancedAppUI(AppUI):
                 result_dict = future.result() or {}
                 final_msg, final_updates = result_dict.get("unified_log", final_msg), result_dict
         except Exception as e:
-            self.enhanced_logger.error("Task execution failed in UI runner", exc_info=True)
+            self.app_logger.error("Task execution failed in UI runner", exc_info=True)
             final_msg, final_label = f"❌ Task failed: {e}", "Failed"
             if tracker_instance:
                 tracker_instance.set_stage(final_label, substage=str(e))
@@ -4015,11 +3965,11 @@ class EnhancedAppUI(AppUI):
         # This is a bit of a hack, but we need to set the tracker to a running state
         # before the task starts, otherwise the progress thread will block.
         # A better solution would be to manage trackers more explicitly.
-        tracker = AdvancedProgressTracker(progress, self.progress_queue, self.enhanced_logger, ui_stage_name="Extracting")
+        tracker = AdvancedProgressTracker(progress, self.progress_queue, self.app_logger, ui_stage_name="Extracting")
         tracker.pause_event.set()
 
         try:
-            for result in execute_extraction(event, self.progress_queue, self.cancel_event, self.enhanced_logger, self.config, progress=progress):
+            for result in execute_extraction(event, self.progress_queue, self.cancel_event, self.app_logger, self.config, progress=progress):
                 if isinstance(result, dict):
                     if self.cancel_event.is_set():
                         return {"unified_log": "Extraction cancelled."}
@@ -4033,13 +3983,13 @@ class EnhancedAppUI(AppUI):
     def run_pre_analysis_wrapper(self, *args, progress=gr.Progress(track_tqdm=True)):
         event = self._create_pre_analysis_event(*args)
         try:
-            for result in execute_pre_analysis(event, self.progress_queue, self.cancel_event, self.enhanced_logger, self.config, self.thumbnail_manager, self.cuda_available, progress=progress):
+            for result in execute_pre_analysis(event, self.progress_queue, self.cancel_event, self.app_logger, self.config, self.thumbnail_manager, self.cuda_available, progress=progress):
                 if isinstance(result, dict):
                     if self.cancel_event.is_set():
                         return {"unified_log": "Pre-analysis cancelled."}
                     if result.get("done"):
                         scenes = result.get('scenes', [])
-                        if scenes: save_scene_seeds(scenes, result['output_dir'], self.enhanced_logger)
+                        if scenes: save_scene_seeds(scenes, result['output_dir'], self.app_logger)
                         status_text, button_update = get_scene_status_text(scenes)
                         updates = {"unified_log": result.get("log", "✅ Pre-analysis completed successfully."),
                                    "scenes_state": scenes, "propagate_masks_button": button_update, "scene_filter_status": status_text,
@@ -4061,7 +4011,7 @@ class EnhancedAppUI(AppUI):
         event = PropagationEvent(output_folder=self._create_pre_analysis_event(*args).output_folder, video_path=self._create_pre_analysis_event(*args).video_path,
                                  scenes=scenes, analysis_params=self._create_pre_analysis_event(*args))
         try:
-            for result in execute_propagation(event, self.progress_queue, self.cancel_event, self.enhanced_logger, self.config, self.thumbnail_manager, self.cuda_available, progress=progress):
+            for result in execute_propagation(event, self.progress_queue, self.cancel_event, self.app_logger, self.config, self.thumbnail_manager, self.cuda_available, progress=progress):
                 if isinstance(result, dict):
                     if self.cancel_event.is_set():
                         return {"unified_log": "Propagation cancelled."}
@@ -4074,7 +4024,7 @@ class EnhancedAppUI(AppUI):
     def run_session_load_wrapper(self, session_path):
         try:
             final_result = {}
-            for result in execute_session_load(self, SessionLoadEvent(session_path=session_path), self.enhanced_logger, self.config, self.thumbnail_manager):
+            for result in execute_session_load(self, SessionLoadEvent(session_path=session_path), self.app_logger, self.config, self.thumbnail_manager):
                 if isinstance(result, dict):
                     if 'log' in result: result['unified_log'] = result.pop('log')
                     final_result.update(result)
@@ -4271,7 +4221,7 @@ class EnhancedAppUI(AppUI):
                 self.on_select_yolo_subject_wrapper(subject_id, yolo_results, scenes, shot_id, outdir, view, yolo_conf, *ana_args)
                 if seed_mode == "YOLO Bbox" else
                 _wire_recompute_handler(
-                    self.config, self.enhanced_logger, self.thumbnail_manager, scenes, shot_id, outdir, txt, bth, tth, view,
+                    self.config, self.app_logger, self.thumbnail_manager, scenes, shot_id, outdir, txt, bth, tth, view,
                     self.ana_ui_map_keys, ana_args, self.cuda_available
                 ),
             inputs=[
@@ -4660,7 +4610,7 @@ class EnhancedAppUI(AppUI):
 class CompositionRoot:
     def __init__(self):
         self.config = Config(config_path="config.yml")
-        self.logger = EnhancedLogger(config=self.config)
+        self.logger = AppLogger(config=self.config)
         self.thumbnail_manager = ThumbnailManager(self.logger, self.config)
         self.progress_queue = Queue()
         self.cancel_event = threading.Event()
