@@ -3928,6 +3928,8 @@ class EnhancedAppUI(AppUI):
             c['extracted_frames_dir_state'],
             c['sceneeditor_yolo_conf_slider'],
             c['yolo_results_state'],
+            c['scene_gallery_view_toggle'],
+            c['scene_gallery_index_map_state'],
         ] + self.ana_input_components
 
         yolo_detection_outputs = [
