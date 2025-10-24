@@ -797,7 +797,7 @@ class TestEnhancedAppUI:
 
         (scenes, status_text, gallery_update, new_index_map, selected_id,
          editor_status, prompt, box_thresh, text_thresh, accordion_update,
-         gallery_image, gallery_shape) = outputs
+         gallery_image, gallery_shape, main_image_update) = outputs
 
         assert selected_id == sample_scenes[0]['shot_id']
         assert "Editing Scene 1" in editor_status['value']
