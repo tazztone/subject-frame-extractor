@@ -3375,16 +3375,17 @@ class AppUI:
         with gr.Group(visible=self.config.ui_defaults.thumbnails_only) as thumbnail_group:
             self.components['thumbnail_group'] = thumbnail_group
             gr.Markdown("**Recommended Method (Thumbnail Extraction):** This is the fastest and most efficient way to process your video. It quickly extracts low-resolution, lightweight thumbnails for every frame. This allows you to perform scene analysis, find the best shots, and select your desired frames *before* extracting the final, full-resolution images. This workflow saves significant time and disk space.")
-            self._create_component('thumb_megapixels_input', 'slider', {
-                'label': "Thumbnail Size (MP)", 'minimum': 0.1, 'maximum': 2.0, 'step': 0.1,
-                'value': self.config.ui_defaults.thumb_megapixels,
-                'info': "Controls the resolution of the extracted thumbnails. Higher values create larger, more detailed thumbnails but increase extraction time and disk usage. 0.5 MP is a good balance for most videos."
-            })
-            self._create_component('ext_scene_detect_input', 'checkbox', {
-                'label': "Use Scene Detection",
-                'value': self.config.ui_defaults.scene_detect,
-                'info': "Automatically detects scene changes in the video. This is highly recommended as it groups frames into logical shots, making it much easier to find the best content in the next step."
-            })
+            with gr.Accordion("Advanced Settings", open=False):
+                self._create_component('thumb_megapixels_input', 'slider', {
+                    'label': "Thumbnail Size (MP)", 'minimum': 0.1, 'maximum': 2.0, 'step': 0.1,
+                    'value': self.config.ui_defaults.thumb_megapixels,
+                    'info': "Controls the resolution of the extracted thumbnails. Higher values create larger, more detailed thumbnails but increase extraction time and disk usage. 0.5 MP is a good balance for most videos."
+                })
+                self._create_component('ext_scene_detect_input', 'checkbox', {
+                    'label': "Use Scene Detection",
+                    'value': self.config.ui_defaults.scene_detect,
+                    'info': "Automatically detects scene changes in the video. This is highly recommended as it groups frames into logical shots, making it much easier to find the best content in the next step."
+                })
 
         # Legacy (full‑frame) group
         with gr.Group(visible=not self.config.ui_defaults.thumbnails_only) as legacy_group:
@@ -4047,14 +4048,22 @@ class EnhancedAppUI(AppUI):
 
         def handle_source_change(path):
             is_folder = is_image_folder(path)
-            # When a folder is provided, method is implicitly thumbnails-for-each-image.
-            # Hide all video-specific extraction controls.
-            return {
-                c['max_resolution']: gr.update(visible=not is_folder),
-                c['extraction_method_toggle_input']: gr.update(visible=not is_folder),
-                c['thumbnail_group']: gr.update(visible=not is_folder),
-                c['legacy_group']: gr.update(visible=not is_folder),
-            }
+            # When a folder is provided, or input is cleared, hide video-specific controls.
+            if is_folder or not path:
+                return {
+                    c['max_resolution']: gr.update(visible=False),
+                    c['extraction_method_toggle_input']: gr.update(visible=False),
+                    c['thumbnail_group']: gr.update(visible=False),
+                    c['legacy_group']: gr.update(visible=False),
+                }
+            # When a video path is provided (or any non-folder path), show the default view.
+            else:
+                return {
+                    c['max_resolution']: gr.update(visible=True),
+                    c['extraction_method_toggle_input']: gr.update(visible=True, value="Recommended Thumbnails"),
+                    c['thumbnail_group']: gr.update(visible=True),
+                    c['legacy_group']: gr.update(visible=False),
+                }
 
         source_controls = [c['source_input'], c['upload_video_input']]
         video_specific_outputs = [
