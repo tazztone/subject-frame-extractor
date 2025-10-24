@@ -3309,7 +3309,8 @@ class AppUI:
                                   'scene_gallery', 'scene_gallery_index_map_state']
 
     def build_ui(self):
-        css = """.plot-and-slider-column { max-width: 560px !important; margin: auto; } .scene-editor { border: 1px solid #444; padding: 10px; border-radius: 5px; } .log-container > .gr-utils-error { display: none !important; } .progress-details { font-size: 1rem !important; color: #333 !important; font-weight: 500; padding: 8px 0; } .gr-progress .progress { height: 28px !important; }"""
+        css = """.gradio-gallery { overflow-y: hidden !important; }
+.plot-and-slider-column { max-width: 560px !important; margin: auto; } .scene-editor { border: 1px solid #444; padding: 10px; border-radius: 5px; } .log-container > .gr-utils-error { display: none !important; } .progress-details { font-size: 1rem !important; color: #333 !import ant; font-weight: 500; padding: 8px 0; } .gr-progress .progress { height: 28px !important; }"""
         with gr.Blocks(theme=gr.themes.Default(), css=css) as demo:
             self._build_header()
             with gr.Accordion("🔄 resume previous Session", open=False):
@@ -3483,10 +3484,12 @@ class AppUI:
                     # A gallery to visualize scenes by status
                     self.components['scene_gallery'] = gr.Gallery(
                         label="Scenes",
-                        columns=6,
-                        height=320,
+                        columns=[9999],
+                        rows=1,
+                        height=160,
                         show_label=True,
-                        allow_preview=True
+                        allow_preview=True,
+                        container=True
                     )
                 with gr.Accordion("Scene Editor", open=False, elem_classes="scene-editor") as sceneeditoraccordion:
                     self.components["sceneeditoraccordion"] = sceneeditoraccordion
@@ -3649,6 +3652,7 @@ class EnhancedAppUI(AppUI):
             message = f"Found {len(yolo_boxes)} YOLO candidates. Select a subject and click 'Recompute Preview'."
             if not yolo_boxes:
                 message = "No people found. Try adjusting the YOLO confidence threshold."
+                return gr.update(), gr.update(interactive=False), message, yolo_results, gr.update(interactive=False)
 
             # Update the scene's preview path to the new overlay image
             previews_dir = Path(outdir) / "previews"
@@ -3671,7 +3675,7 @@ class EnhancedAppUI(AppUI):
                 'yolo_boxes': yolo_boxes,
                 'message': message
             }
-            return gallery_update, subject_id_update, message, yolo_results
+            return gallery_update, subject_id_update, message, yolo_results, gr.update(interactive=len(yolo_boxes) > 0)
         except Exception as e:
             self.logger.error("Failed to detect YOLO boxes for scene", exc_info=True)
             return gr.update(), gr.update(), f"Error: {e}", yolo_results
@@ -3822,8 +3826,9 @@ class EnhancedAppUI(AppUI):
             # Clear all scene-specific overrides
             scene['seed_config'] = {}
             scene['seed_result'] = {}
+            scene['seed_metrics'] = {}
             scene['manual_status_change'] = False
-            scene['status'] = 'pending'
+            scene['status'] = 'included'
 
             masker = _create_analysis_context(self.config, self.logger, self.thumbnail_manager, self.cuda_available,
                                               self.ana_ui_map_keys, ana_args)
@@ -3937,6 +3942,7 @@ class EnhancedAppUI(AppUI):
             c['scene_editor_yolo_subject_id'], # To update the radio choices
             c['sceneeditorstatusmd'],
             c['yolo_results_state'],
+            c['scenerecomputebutton'],
         ]
 
         c['scene_editor_seed_mode'].change(
