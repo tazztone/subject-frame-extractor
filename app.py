@@ -40,7 +40,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, asdict, field, fields, is_dataclass
 from enum import Enum
 from functools import lru_cache
-from queue import Queue
+from queue import Empty, Queue
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 # --- DEPENDENCY IMPORTS (with error handling) ---
