@@ -3531,7 +3531,6 @@ class AppUI:
                 with gr.Accordion("Scene Editor", open=False, elem_classes="scene-editor") as sceneeditoraccordion:
                     self.components["sceneeditoraccordion"] = sceneeditoraccordion
                     self._create_component("sceneeditorstatusmd", "markdown", {"value": "Select a scene to edit."})
-                    self._create_component('yolo_preview_image', 'image', {'label': "YOLO Preview", 'interactive': False, 'visible': False})
                     self._create_component('scene_editor_seed_mode', 'radio', {'choices': ["DINO Text Prompt", "YOLO Bbox"], 'value': "DINO Text Prompt", 'label': "Seeding Method"})
 
                     with gr.Group(visible=True) as dino_seed_group:
@@ -3551,11 +3550,9 @@ class AppUI:
                     with gr.Group(visible=False) as yolo_seed_group:
                         self.components['yolo_seed_group'] = yolo_seed_group
                         with gr.Row():
-                            self._create_component('sceneeditor_detectyolo_button', 'button', {'value': "Detect People on Seed Frame"})
                             self._create_component('sceneeditor_yolo_conf_slider', 'slider', {'label': "YOLO Conf Min", 'minimum': 0.0, 'maximum': 1.0, 'step': 0.05, 'value': self.config.person_detector.conf})
                         with gr.Row():
-                            self._create_component('scene_editor_yolo_subject_id', 'number', {'label': "Subject ID", 'info': "Enter the number of the person to select.", 'interactive': True})
-                            self._create_component('scene_editor_select_yolo_subject_button', 'button', {'value': "Select Subject"})
+                            self._create_component('scene_editor_yolo_subject_id', 'radio', {'label': "Subject ID", 'info': "Select the subject to use for seeding.", 'interactive': True})
 
                     with gr.Row():
                         self._create_component("scenerecomputebutton", "button", {"value": "▶️Recompute Preview"})
@@ -3644,13 +3641,81 @@ class AppUI:
                             'scene_gallery_index_map_state': gr.State([]),
                             'gallery_image_state': gr.State(None),
                             'gallery_shape_state': gr.State(None),
-                            'yolo_box_state': gr.State([])})
+                            'gallery_shape_state': gr.State(None),
+                            'yolo_results_state': gr.State({})})
         self._setup_visibility_toggles(); self._setup_pipeline_handlers(); self._setup_filtering_handlers(); self._setup_bulk_scene_handlers()
         self.components['save_config_button'].click(
             lambda: self.config.save_config('config_dump.json'), [], []
         ).then(lambda: "Configuration saved to config_dump.json", [], self.components['unified_log'])
 
 class EnhancedAppUI(AppUI):
+    def on_yolo_person_detection_wrapper(self, scenes, shot_id, outdir, yolo_conf, yolo_results, view, indexmap, *ana_args):
+        try:
+            # Check if results are already cached for this shot_id and conf
+            cached_result = yolo_results.get(shot_id, {}).get(yolo_conf)
+            if cached_result:
+                yolo_boxes = cached_result['yolo_boxes']
+                message = cached_result['message']
+                # Still need to update the gallery view
+                gallery_items, new_index_map = build_scene_gallery_items(scenes, view, outdir)
+                gallery_update = gr.update(value=gallery_items)
+                subject_choices = [str(i + 1) for i in range(len(yolo_boxes))]
+                return gallery_update, gr.update(choices=subject_choices, value=None), message, yolo_results
+
+            masker = _create_analysis_context(self.config, self.logger, self.thumbnail_manager, self.cuda_available,
+                                              self.ana_ui_map_keys, ana_args)
+            scene_idx = next((i for i, s in enumerate(scenes) if s.get('shot_id') == shot_id), None)
+            if scene_idx is None:
+                return gr.update(), gr.update(), "Scene not found.", yolo_results
+
+            scene = scenes[scene_idx]
+            seed_frame_num = scene.get('best_seed_frame') or scene.get('start_frame')
+            fname = masker.frame_map.get(int(seed_frame_num))
+            if not fname:
+                return gr.update(), gr.update(), "Seed frame not in frame map.", yolo_results
+
+            seed_thumb_path = Path(outdir) / "thumbs" / f"{Path(fname).stem}.webp"
+            seed_thumb = self.thumbnail_manager.get(seed_thumb_path)
+            if seed_thumb is None:
+                return gr.update(), gr.update(), "Could not load seed thumbnail.", yolo_results
+
+            yolo_boxes = [box for box in masker.seed_selector._get_yolo_boxes(seed_thumb) if box['conf'] >= yolo_conf]
+
+            canvas_with_boxes = seed_thumb.copy()
+            for i, b in enumerate(yolo_boxes):
+                xywh_seed = masker.seed_selector._xyxy_to_xywh(b["bbox"])
+                canvas_with_boxes = masker.draw_bbox(canvas_with_boxes, xywh_seed, label=str(i + 1))
+
+            message = f"Found {len(yolo_boxes)} YOLO candidates. Select a subject and click 'Recompute Preview'."
+            if not yolo_boxes:
+                message = "No people found. Try adjusting the YOLO confidence threshold."
+
+            # Update the scene's preview path to the new overlay image
+            previews_dir = Path(outdir) / "previews"
+            previews_dir.mkdir(parents=True, exist_ok=True)
+            temp_preview_path = previews_dir / f"temp_yolo_preview_{shot_id}.jpg"
+            Image.fromarray(canvas_with_boxes).save(temp_preview_path)
+            scenes[scene_idx]['preview_path'] = str(temp_preview_path)
+
+            gallery_items, new_index_map = build_scene_gallery_items(scenes, view, outdir)
+            gallery_update = gr.update(value=gallery_items)
+
+            # Update subject ID radio buttons
+            subject_choices = [str(i + 1) for i in range(len(yolo_boxes))]
+            subject_id_update = gr.update(choices=subject_choices, value=None, interactive=True)
+
+            # Cache the new result
+            if shot_id not in yolo_results:
+                yolo_results[shot_id] = {}
+            yolo_results[shot_id][yolo_conf] = {
+                'yolo_boxes': yolo_boxes,
+                'message': message
+            }
+            return gallery_update, subject_id_update, message, yolo_results
+        except Exception as e:
+            self.logger.error("Failed to detect YOLO boxes for scene", exc_info=True)
+            return gr.update(), gr.update(), f"Error: {e}", yolo_results
+
     def __init__(self, config: 'Config', logger: 'EnhancedLogger', progress_queue: Queue,
                  cancel_event: threading.Event, thumbnail_manager: 'ThumbnailManager'):
         super().__init__(config, logger, progress_queue, cancel_event, thumbnail_manager)
@@ -3752,39 +3817,14 @@ class EnhancedAppUI(AppUI):
         return [int(round(x * sx)), int(round(y * sy)),
                 int(round(w * sx)), int(round(h * sy))]
 
-    def on_detect_yolo_for_scene_wrapper(self, scenes, shot_id, outdir, yolo_conf, *ana_args):
+    def on_select_yolo_subject_wrapper(self, subject_id, yolo_results, scenes, shot_id, outdir, view, yolo_conf, *ana_args):
         try:
-            masker = _create_analysis_context(self.config, self.logger, self.thumbnail_manager, self.cuda_available,
-                                              self.ana_ui_map_keys, ana_args)
-            scene = next((s for s in scenes if s['shot_id'] == shot_id), None)
-            if not scene:
-                return gr.update(visible=False), [], "Scene not found."
+            if not subject_id:
+                return scenes, gr.update(), gr.update(), "Please select a Subject ID."
 
-            seed_frame_num = scene.get('best_seed_frame') or scene.get('start_frame')
-            fname = masker.frame_map.get(int(seed_frame_num))
-            if not fname:
-                return gr.update(visible=False), [], "Seed frame not in frame map."
-
-            seed_thumb_path = Path(outdir) / "thumbs" / f"{Path(fname).stem}.webp"
-            seed_thumb = self.thumbnail_manager.get(seed_thumb_path)
-            if seed_thumb is None:
-                 return gr.update(visible=False), [], "Could not load seed thumbnail."
-
-            yolo_boxes = [box for box in masker.seed_selector._get_yolo_boxes(seed_thumb) if box['conf'] >= yolo_conf]
-
-            canvas_with_boxes = seed_thumb.copy()
-            for i, b in enumerate(yolo_boxes):
-                xywh_seed = masker.seed_selector._xyxy_to_xywh(b["bbox"])
-                canvas_with_boxes = masker.draw_bbox(canvas_with_boxes, xywh_seed, label=str(i + 1))
-
-            return gr.update(value=canvas_with_boxes, visible=True), yolo_boxes, f"Found {len(yolo_boxes)} YOLO candidates. Enter an ID and click 'Select Subject'."
-        except Exception as e:
-            self.logger.error("Failed to detect YOLO boxes for scene", exc_info=True)
-            return gr.update(visible=False), [], f"Error: {e}"
-
-    def on_select_yolo_subject_wrapper(self, subject_id, yolo_boxes, scenes, shot_id, outdir, view, *ana_args):
-        try:
             subject_idx = int(subject_id) - 1
+            yolo_boxes = yolo_results.get(shot_id, {}).get(yolo_conf, {}).get('yolo_boxes', [])
+
             if not (0 <= subject_idx < len(yolo_boxes)):
                 return scenes, gr.update(), gr.update(), f"Invalid Subject ID. Please enter a number between 1 and {len(yolo_boxes)}."
 
@@ -3840,20 +3880,20 @@ class EnhancedAppUI(AppUI):
             self.logger.error(f"Failed to reset scene {shot_id}", exc_info=True)
             return scenes, gr.update(), gr.update(), f"Error resetting scene: {e}"
 
-    def on_select_for_edit(self, evt: gr.SelectData, scenes, view, indexmap, outputdir):
+    def on_select_for_edit(self, evt: gr.SelectData, scenes, view, indexmap, outputdir, yolo_results_state):
         status_text, button_update = get_scene_status_text(scenes)
         # validate selection
         if not scenes or not indexmap or evt is None or evt.index is None:
             return (scenes, status_text, gr.update(), indexmap,
-                    None, gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), None, None, button_update)
+                    None, gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), None, None, None, button_update, {})
         if not (0 <= evt.index < len(indexmap)):
             return (scenes, status_text, gr.update(), indexmap,
-                    None, gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), None, None, button_update)
+                    None, gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), None, None, None, button_update, {})
 
         scene_idx_in_state = indexmap[evt.index]
         if not (0 <= scene_idx_in_state < len(scenes)):
             return (scenes, status_text, gr.update(), indexmap,
-                    None, gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), None, None, gr.update(visible=False), None, button_update)
+                    None, gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), None, None, None, button_update, {})
 
         scene = scenes[scene_idx_in_state]
         cfg = scene.get("seed_config") or {}
@@ -3886,9 +3926,9 @@ class EnhancedAppUI(AppUI):
             gr.update(open=True),
             gallery_image,
             gallery_shape,
-            gr.update(visible=False), # Hide yolo preview
             None, # Clear subject ID
             button_update,
+            {}, # Clear yolo results
         )
 
     def on_editor_toggle(self, scenes, selected_shotid, outputfolder, view, new_status):
@@ -3905,6 +3945,7 @@ class EnhancedAppUI(AppUI):
             return "▶️ Resume"
 
     def _create_event_handlers(self):
+        print("Creating event handlers...")
         super()._create_event_handlers()
         c = self.components
         c['cancel_button'].click(lambda: self.cancel_event.set(), [], [])
@@ -3917,37 +3958,36 @@ class EnhancedAppUI(AppUI):
             outputs=c['pause_button']
         )
 
-        c['sceneeditor_detectyolo_button'].click(
-            self.on_detect_yolo_for_scene_wrapper,
-            inputs=[
-                c['scenes_state'],
-                c['selected_scene_id_state'],
-                c['extracted_frames_dir_state'],
-                c['sceneeditor_yolo_conf_slider'],
-            ] + self.ana_input_components,
-            outputs=[c['yolo_preview_image'], c['yolo_box_state'], c['sceneeditorstatusmd']]
-        )
-
-        c['scene_editor_select_yolo_subject_button'].click(
-            self.on_select_yolo_subject_wrapper,
-            inputs=[
-                c['scene_editor_yolo_subject_id'],
-                c['yolo_box_state'],
-                c['scenes_state'],
-                c['selected_scene_id_state'],
-                c['analysis_output_dir_state'],
-                c['scene_gallery_view_toggle'],
-            ] + self.ana_input_components,
-            outputs=[
-                c['scenes_state'],
-                c['scene_gallery'],
-                c['scene_gallery_index_map_state'],
-                c['sceneeditorstatusmd'],
-            ]
-        )
-
         c['clear_logs_button'].click(lambda: (self.all_logs.clear(), "")[1], [], c['unified_log'])
         c['log_level_filter'].change(lambda level: (setattr(self, 'log_filter_level', level), "\n".join([l for l in self.all_logs if self.log_filter_level.upper() == "DEBUG" or f"[{level.upper()}]" in l][-1000:]))[1], c['log_level_filter'], c['unified_log'])
+
+        # Automatic YOLO detection handlers
+        yolo_detection_inputs = [
+            c['scenes_state'],
+            c['selected_scene_id_state'],
+            c['extracted_frames_dir_state'],
+            c['sceneeditor_yolo_conf_slider'],
+            c['yolo_results_state'],
+        ] + self.ana_input_components
+
+        yolo_detection_outputs = [
+            c['scene_gallery'], # To update the thumbnail
+            c['scene_editor_yolo_subject_id'], # To update the radio choices
+            c['sceneeditorstatusmd'],
+            c['yolo_results_state'],
+        ]
+
+        c['scene_editor_seed_mode'].change(
+            self.on_yolo_person_detection_wrapper,
+            inputs=yolo_detection_inputs,
+            outputs=yolo_detection_outputs
+        )
+
+        c['sceneeditor_yolo_conf_slider'].release(
+            self.on_yolo_person_detection_wrapper,
+            inputs=yolo_detection_inputs,
+            outputs=yolo_detection_outputs
+        )
 
     def _create_pre_analysis_event(self, *args):
         ui_args = dict(zip(self.ana_ui_map_keys, args))
@@ -4211,7 +4251,7 @@ class EnhancedAppUI(AppUI):
 
         c['scene_gallery'].select(
             self.on_select_for_edit,
-            inputs=[c['scenes_state'], c['scene_gallery_view_toggle'], c['scene_gallery_index_map_state'], c['extracted_frames_dir_state']],
+            inputs=[c['scenes_state'], c['scene_gallery_view_toggle'], c['scene_gallery_index_map_state'], c['extracted_frames_dir_state'], c['yolo_results_state']],
             outputs=[
                 c['scenes_state'], c['scene_filter_status'], c['scene_gallery'], c['scene_gallery_index_map_state'],
                 c['selected_scene_id_state'],
@@ -4219,24 +4259,28 @@ class EnhancedAppUI(AppUI):
                 c['sceneeditoraccordion'],
                 c['gallery_image_state'],
                 c['gallery_shape_state'],
-                c['yolo_preview_image'],
                 c['scene_editor_yolo_subject_id'],
                 c['propagate_masks_button'],
+                c['yolo_results_state'],
             ]
         )
 
         # Wire recompute to use current editor controls and state
         c['scenerecomputebutton'].click(
-            fn=lambda scenes, shot_id, outdir, view, txt, bth, tth, *ana_args: _wire_recompute_handler(
-                self.config, self.enhanced_logger, self.thumbnail_manager, scenes, shot_id, outdir, txt, bth, tth, view,
-                self.ana_ui_map_keys, ana_args, self.cuda_available
-            ),
+            fn=lambda scenes, shot_id, outdir, view, txt, bth, tth, seed_mode, subject_id, yolo_results, yolo_conf, *ana_args:
+                self.on_select_yolo_subject_wrapper(subject_id, yolo_results, scenes, shot_id, outdir, view, yolo_conf, *ana_args)
+                if seed_mode == "YOLO Bbox" else
+                _wire_recompute_handler(
+                    self.config, self.enhanced_logger, self.thumbnail_manager, scenes, shot_id, outdir, txt, bth, tth, view,
+                    self.ana_ui_map_keys, ana_args, self.cuda_available
+                ),
             inputs=[
                 c['scenes_state'],
                 c['selected_scene_id_state'],
                 c['analysis_output_dir_state'],
                 c['scene_gallery_view_toggle'],
                 c['sceneeditorpromptinput'], c['sceneeditorboxthreshinput'], c['sceneeditortextthreshinput'],
+                c['scene_editor_seed_mode'], c['scene_editor_yolo_subject_id'], c['yolo_results_state'], c['sceneeditor_yolo_conf_slider'],
                 *self.ana_input_components
             ],
             outputs=[
@@ -4653,7 +4697,8 @@ def main():
         demo = composition.get_app_ui().build_ui()
         print("Frame Extractor & Analyzer v2.0\nStarting application...")
         demo.launch()
-    except KeyboardInterrupt: print("\nApplication stopped by user")
+    except KeyboardInterrupt:
+        print("\nApplication stopped by user")
     except Exception as e:
         print(f"Error starting application: {e}")
         sys.exit(1)
