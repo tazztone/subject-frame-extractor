@@ -3335,7 +3335,7 @@ class AppUI:
 
     def _create_component(self, name, comp_type, kwargs):
         comp_map = {'button': gr.Button, 'textbox': gr.Textbox, 'dropdown': gr.Dropdown, 'slider': gr.Slider, 'checkbox': gr.Checkbox,
-                    'file': gr.File, 'radio': gr.Radio, 'gallery': gr.Gallery, 'plot': gr.Plot, 'markdown': gr.Markdown, 'html': gr.HTML, 'number': gr.Number, 'cbg': gr.CheckboxGroup}
+                    'file': gr.File, 'radio': gr.Radio, 'gallery': gr.Gallery, 'plot': gr.Plot, 'markdown': gr.Markdown, 'html': gr.HTML, 'number': gr.Number, 'cbg': gr.CheckboxGroup, 'image': gr.Image}
         self.components[name] = comp_map[comp_type](**kwargs)
         return self.components[name]
 
@@ -3498,6 +3498,7 @@ class AppUI:
                 with gr.Accordion("Scene Editor", open=False, elem_classes="scene-editor") as sceneeditoraccordion:
                     self.components["sceneeditoraccordion"] = sceneeditoraccordion
                     self._create_component("sceneeditorstatusmd", "markdown", {"value": "Select a scene to edit."})
+                    self._create_component('scene_editor_main_image', 'image', {'label': "Scene Preview", 'interactive': True})
                     self._create_component('scene_editor_seed_mode', 'radio', {'choices': ["DINO Text Prompt", "YOLO Bbox"], 'value': "DINO Text Prompt", 'label': "Seeding Method"})
 
                     with gr.Group(visible=True) as dino_seed_group:
@@ -3519,7 +3520,6 @@ class AppUI:
                         with gr.Row():
                             self._create_component('sceneeditor_detectyolo_button', 'button', {'value': "Detect People on Seed Frame"})
                             self._create_component('sceneeditor_yolo_conf_slider', 'slider', {'label': "YOLO Conf Min", 'minimum': 0.0, 'maximum': 1.0, 'step': 0.05, 'value': self.config.person_detector.conf})
-                        self._create_component('sceneeditor_yolo_gallery', 'gallery', {'columns': 4, 'height': 240, 'label': "YOLO Candidates", 'allow_preview': True})
 
                     with gr.Row():
                         self._create_component("scenerecomputebutton", "button", {"value": "▶️Recompute Preview"})
@@ -3733,27 +3733,25 @@ class EnhancedAppUI(AppUI):
             if canvas is None:
                 return gr.update(), "No image available to preview candidates."
 
-            items = []
+            canvas_with_boxes = canvas.copy()
             src_hw = seed_thumb.shape[:2] if seed_thumb is not None else canvas.shape[:2]
             dst_hw = canvas.shape[:2]
             for i, b in enumerate(yolo_boxes):
                 xywh_seed = masker.seed_selector._xyxy_to_xywh(b["bbox"])
                 xywh_draw = self._scale_xywh(xywh_seed, src_hw, dst_hw)
-                preview = masker.draw_bbox(canvas, xywh_draw)
-                h, w, _ = canvas.shape
-                area_pct = (xywh_draw[2] * xywh_draw[3]) / (w * h) * 100
-                cap = f"Person {i+1} | conf {b['conf']:.2f} | area {area_pct:.1f}%"
-                items.append((preview, cap))
+                canvas_with_boxes = masker.draw_bbox(canvas_with_boxes, xywh_draw)
 
-            return gr.update(value=items), f"Found {len(items)} YOLO candidates."
+            return gr.update(value=canvas_with_boxes), f"Found {len(yolo_boxes)} YOLO candidates."
         except Exception as e:
             self.logger.error("Failed to detect YOLO boxes for scene", exc_info=True)
             return gr.update(), f"Error: {e}"
 
-    def on_pick_yolo_candidate_wrapper(self, evt: gr.SelectData, scenes, shot_id, outdir, view, yolo_conf, *ana_args):
+    def on_pick_yolo_candidate_wrapper(self, evt: gr.SelectData, scenes, shot_id, outdir, view, yolo_conf, gallery_image, *ana_args):
         try:
             if evt is None or evt.index is None:
                 return scenes, gr.update(), gr.update(), "No candidate selected."
+
+            click_x, click_y = evt.index
 
             masker = _create_analysis_context(self.config, self.logger, self.thumbnail_manager, self.cuda_available,
                                               self.ana_ui_map_keys, ana_args)
@@ -3763,14 +3761,31 @@ class EnhancedAppUI(AppUI):
 
             seed_frame_num = scene.get('best_seed_frame') or scene.get('start_frame')
             fname = masker.frame_map.get(int(seed_frame_num))
-            thumb_rgb = self.thumbnail_manager.get(Path(outdir) / "thumbs" / f"{Path(fname).stem}.webp")
+            seed_thumb_path = Path(outdir) / "thumbs" / f"{Path(fname).stem}.webp"
+            seed_thumb = self.thumbnail_manager.get(seed_thumb_path)
 
-            yolo_boxes = [box for box in masker.seed_selector._get_yolo_boxes(thumb_rgb) if box['conf'] >= yolo_conf]
+            yolo_boxes = [box for box in masker.seed_selector._get_yolo_boxes(seed_thumb) if box['conf'] >= yolo_conf] if seed_thumb is not None else []
 
-            if evt.index >= len(yolo_boxes):
-                return scenes, gr.update(), gr.update(), "Selected index is out of bounds."
+            canvas = gallery_image if gallery_image is not None else seed_thumb
+            if canvas is None:
+                 return scenes, gr.update(), gr.update(), "Cannot determine canvas for selection."
 
-            selected_box = yolo_boxes[evt.index]
+            src_hw = seed_thumb.shape[:2] if seed_thumb is not None else canvas.shape[:2]
+            dst_hw = canvas.shape[:2]
+
+            selected_box_index = -1
+            for i, b in enumerate(yolo_boxes):
+                xywh_seed = masker.seed_selector._xyxy_to_xywh(b["bbox"])
+                x1, y1, w, h = self._scale_xywh(xywh_seed, src_hw, dst_hw)
+                x2, y2 = x1 + w, y1 + h
+                if x1 <= click_x <= x2 and y1 <= click_y <= y2:
+                    selected_box_index = i
+                    break
+
+            if selected_box_index == -1:
+                return scenes, gr.update(), gr.update(), "No YOLO box was clicked."
+
+            selected_box = yolo_boxes[selected_box_index]
             selected_xywh = masker.seed_selector._xyxy_to_xywh(selected_box['bbox'])
 
             overrides = {"manual_bbox_xywh": selected_xywh, "seedtype": "yolo_manual"}
@@ -3848,16 +3863,17 @@ class EnhancedAppUI(AppUI):
         return (
             scenes,
             get_scene_status_text(scenes),
-            gr.update(),                           # no immediate gallery change here
+            gr.update(),
             indexmap,
             shotid,
-            gr.update(value=status_md),            # sceneeditorstatusmd
-            gr.update(value=prompt),               # sceneeditorpromptinput
-            gr.update(value=boxth),                # sceneeditorboxthreshinput
-            gr.update(value=textth),               # sceneeditortextthreshinput
-            gr.update(open=True),                  # sceneeditoraccordion
+            gr.update(value=status_md),
+            gr.update(value=prompt),
+            gr.update(value=boxth),
+            gr.update(value=textth),
+            gr.update(open=True),
             gallery_image,
             gallery_shape,
+            gr.update(value=gallery_image),
         )
 
     def on_recompute(self, scenes, selected_shotid, prompt, boxth, textth, outputfolder, *anaargs):
@@ -3909,19 +3925,20 @@ class EnhancedAppUI(AppUI):
                 c['selected_scene_id_state'],
                 c['analysis_output_dir_state'],
                 c['sceneeditor_yolo_conf_slider'],
-                c['gallery_image_state']
+                c['scene_editor_main_image']
             ] + self.ana_input_components,
-            outputs=[c['sceneeditor_yolo_gallery'], c['sceneeditorstatusmd']]
+            outputs=[c['scene_editor_main_image'], c['sceneeditorstatusmd']]
         )
 
-        c['sceneeditor_yolo_gallery'].select(
+        c['scene_editor_main_image'].select(
             self.on_pick_yolo_candidate_wrapper,
             inputs=[
                 c['scenes_state'],
                 c['selected_scene_id_state'],
                 c['analysis_output_dir_state'],
                 c['scene_gallery_view_toggle'],
-                c['sceneeditor_yolo_conf_slider']
+                c['sceneeditor_yolo_conf_slider'],
+                c['scene_editor_main_image']
             ] + self.ana_input_components,
             outputs=[
                 c['scenes_state'],
@@ -4183,6 +4200,9 @@ class EnhancedAppUI(AppUI):
                 c['selected_scene_id_state'],
                 c['sceneeditorstatusmd'], c['sceneeditorpromptinput'], c['sceneeditorboxthreshinput'], c['sceneeditortextthreshinput'],
                 c['sceneeditoraccordion'],
+                c['gallery_image_state'],
+                c['gallery_shape_state'],
+                c['scene_editor_main_image'],
             ]
         )
 
