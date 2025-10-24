@@ -3623,24 +3623,24 @@ class EnhancedAppUI(AppUI):
                 gallery_items, new_index_map = build_scene_gallery_items(scenes, view, outdir)
                 gallery_update = gr.update(value=gallery_items)
                 subject_choices = [str(i + 1) for i in range(len(yolo_boxes))]
-                return gallery_update, gr.update(choices=subject_choices, value=None), message, yolo_results
+                return gallery_update, gr.update(choices=subject_choices, value=None), message, yolo_results, gr.update(interactive=len(yolo_boxes) > 0)
 
             masker = _create_analysis_context(self.config, self.logger, self.thumbnail_manager, self.cuda_available,
                                               self.ana_ui_map_keys, ana_args)
             scene_idx = next((i for i, s in enumerate(scenes) if s.get('shot_id') == shot_id), None)
             if scene_idx is None:
-                return gr.update(), gr.update(), "Scene not found.", yolo_results
+                return gr.update(), gr.update(), "Scene not found.", yolo_results, gr.update(interactive=False)
 
             scene = scenes[scene_idx]
             seed_frame_num = scene.get('best_seed_frame') or scene.get('start_frame')
             fname = masker.frame_map.get(int(seed_frame_num))
             if not fname:
-                return gr.update(), gr.update(), "Seed frame not in frame map.", yolo_results
+                return gr.update(), gr.update(), "Seed frame not in frame map.", yolo_results, gr.update(interactive=False)
 
             seed_thumb_path = Path(outdir) / "thumbs" / f"{Path(fname).stem}.webp"
             seed_thumb = self.thumbnail_manager.get(seed_thumb_path)
             if seed_thumb is None:
-                return gr.update(), gr.update(), "Could not load seed thumbnail.", yolo_results
+                return gr.update(), gr.update(), "Could not load seed thumbnail.", yolo_results, gr.update(interactive=False)
 
             yolo_boxes = [box for box in masker.seed_selector._get_yolo_boxes(seed_thumb) if box['conf'] >= yolo_conf]
 
@@ -3816,6 +3816,43 @@ class EnhancedAppUI(AppUI):
         except Exception as e:
             self.logger.error("Failed to select YOLO subject", exc_info=True)
             return scenes, gr.update(), gr.update(), f"Error: {e}"
+
+    def _setup_bulk_scene_handlers(self):
+        super()._setup_bulk_scene_handlers()
+        c = self.components
+
+        yolo_detection_inputs = [
+            c['scenes_state'],
+            c['selected_scene_id_state'],
+            c['extracted_frames_dir_state'],
+            c['sceneeditor_yolo_conf_slider'],
+            c['yolo_results_state'],
+            c['scene_gallery_view_toggle'],
+            c['scene_gallery_index_map_state'],
+        ] + self.ana_input_components
+
+        yolo_detection_outputs = [
+            c['scene_gallery'], # To update the thumbnail
+            c['scene_editor_yolo_subject_id'], # To update the radio choices
+            c['sceneeditorstatusmd'],
+            c['yolo_results_state'],
+            c['scenerecomputebutton'],
+        ]
+
+        def trigger_yolo_if_active(seed_mode, scenes, shot_id, outdir, yolo_conf, yolo_results, view, indexmap, *ana_args):
+            if seed_mode == "YOLO Bbox":
+                return self.on_yolo_person_detection_wrapper(scenes, shot_id, outdir, yolo_conf, yolo_results, view, indexmap, *ana_args)
+            return [gr.update()] * len(yolo_detection_outputs)
+
+        c['scene_gallery'].select(
+            None,
+            None,
+            None
+        ).then(
+            trigger_yolo_if_active,
+            inputs=[c['scene_editor_seed_mode']] + yolo_detection_inputs,
+            outputs=yolo_detection_outputs
+        )
 
     def on_reset_scene_wrapper(self, scenes, shot_id, outdir, view, *ana_args):
         try:
