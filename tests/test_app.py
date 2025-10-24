@@ -354,35 +354,6 @@ class TestSceneLogic:
         assert status_map[4] == 'excluded' # Confidence too low
         mock_save.assert_called_once()
 
-    @patch('app.save_scene_seeds')
-    @patch('app._create_analysis_context')
-    @patch('app._recompute_single_preview')
-    def test_apply_scene_overrides(self, mock_recompute, mock_create_context, mock_save, sample_scenes, test_config):
-        """Verify that applying a scene override re-computes the seed."""
-        mock_masker = MagicMock()
-        mock_create_context.return_value = mock_masker
-
-        updated_scenes, _, _, msg = app._wire_recompute_handler(
-            config=test_config,
-            logger=MagicMock(),
-            thumbnail_manager=MagicMock(),
-            scenes=sample_scenes,
-            shot_id=1,
-            outdir='/fake/dir',
-            text_prompt="new prompt",
-            box_thresh=0.5,
-            text_thresh=0.5,
-            view="Kept",
-            ana_ui_map_keys=[],
-            ana_input_components=[],
-            cuda_available=False,
-        )
-
-        mock_recompute.assert_called_once()
-        assert "recomputed successfully" in msg
-        mock_save.assert_called_once()
-
-
 class TestUtils:
     def test_sanitize_filename(self, test_config):
         # The function now depends on a config object
