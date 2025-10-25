@@ -26,8 +26,15 @@ import time
 import torch
 import traceback
 import urllib.request
+from torchvision.ops import box_convert
 
 from pathlib import Path
+
+# --- Hugging Face Cache Setup ---
+# Set cache directories for transformers and other Hugging Face assets
+# to prevent re-downloading large models (like BERT for GroundingDINO) on every run.
+os.environ['TRANSFORMERS_CACHE'] = './models/transformers_cache'
+os.environ['HF_HOME'] = './models/huggingface'
 
 # Add submodules to Python path
 project_root = Path(__file__).parent
@@ -2902,8 +2909,24 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue, cancel_
     params_dict = asdict(event)
     is_folder_mode = not params_dict.get("video_path")
 
+    # Handle face reference upload before initializing parameters
+    final_face_ref_path = params_dict.get('face_ref_img_path')
+    if event.face_ref_img_upload:
+        ref_upload, dest = params_dict.pop('face_ref_img_upload'), Path(config.paths.downloads) / Path(event.face_ref_img_upload).name
+        shutil.copy2(ref_upload, dest)
+        params_dict['face_ref_img_path'] = str(dest)
+        final_face_ref_path = str(dest)
+
     params = AnalysisParameters.from_ui(logger, config, **params_dict)
     output_dir = Path(params.output_folder)
+
+    # Save the final resolved config (including the copied face ref path)
+    try:
+        with (output_dir / "run_config.json").open('w', encoding='utf-8') as f:
+            # Use the latest params_dict which has the correct face_ref_img_path
+            json.dump({k: v for k, v in params_dict.items() if k != 'face_ref_img_upload'}, f, indent=4)
+    except Exception as e:
+        logger.error(f"Failed to save run configuration: {e}", exc_info=True)
 
     logger.info("Loading Models")
     models = initialize_analysis_models(params, config, logger, cuda_available)
@@ -2970,16 +2993,6 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue, cancel_
         }
         return
 
-    final_face_ref_path = params_dict.get('face_ref_img_path')
-    if event.face_ref_img_upload:
-        ref_upload, dest = params_dict.pop('face_ref_img_upload'), Path(config.paths.downloads) / Path(event.face_ref_img_upload).name
-        shutil.copy2(ref_upload, dest)
-        params_dict['face_ref_img_path'] = str(dest)
-        final_face_ref_path = str(dest)
-    try:
-        with (output_dir / "run_config.json").open('w', encoding='utf-8') as f:
-            json.dump({k: v for k, v in params_dict.items() if k != 'face_ref_img_upload'}, f, indent=4)
-    except Exception as e: logger.error(f"Failed to save run configuration: {e}", exc_info=True)
     scenes_path = output_dir / "scenes.json"
     if not scenes_path.exists():
         yield {"log": "[ERROR] scenes.json not found. Run extraction with scene detection."}
@@ -3524,13 +3537,12 @@ class AppUI:
                 with gr.Group(visible=("By Text" in self.config.choices.primary_seed_strategy[2] or "Fallback" in self.config.choices.primary_seed_strategy[2])) as text_seeding_group:
                     self.components['text_seeding_group'] = text_seeding_group
                     gr.Markdown("#### 📝 Configure Text Seeding"); gr.Markdown("This strategy uses a text description to find the subject. It's useful for identifying objects, or people described by their clothing or appearance when a reference photo isn't available.")
-                    with gr.Accordion("🔬 Advanced Detection (GroundingDINO)", open=False):
+                    with gr.Accordion("🔬 Advanced Detection (GroundingDINO)", open=True):
                         gr.Markdown("Use GroundingDINO for text-based object detection with custom prompts.")
                         self._create_component('text_prompt_input', 'textbox', {'label': "Text Prompt", 'placeholder': "e.g., 'a woman in a red dress'", 'value': self.config.ui_defaults.text_prompt, 'info': "Describe the main subject (e.g., 'player wearing number 10', 'person in the green shirt')."})
                         with gr.Row():
                             self._create_component('box_threshold', 'slider', {'minimum': 0.0, 'maximum': 1.0, 'value': self.config.grounding_dino_params.box_threshold, 'label': "Box Threshold"})
                             self._create_component('text_threshold', 'slider', {'minimum': 0.0, 'maximum': 1.0, 'value': self.config.grounding_dino_params.text_threshold, 'label': "Text Threshold"})
-                        self._create_component('dino_detect_btn', 'button', {'value': "🎯 Run GroundingDINO Detection"})
                 with gr.Group(visible=("Prominent Person" in self.config.choices.primary_seed_strategy[2])) as auto_seeding_group:
                     self.components['auto_seeding_group'] = auto_seeding_group
                     gr.Markdown("#### 🧑‍🤝‍🧑 Configure Prominent Person Seeding"); gr.Markdown("This is a simple, fully automatic mode. It uses an object detector (YOLO) to find all people in the scene and then selects one based on a simple rule, like who is largest or most central. It's fast but less precise, as it doesn't use face identity or text descriptions.")
