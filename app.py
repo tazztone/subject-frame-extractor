@@ -2093,7 +2093,14 @@ class SubjectMasker:
         )
         self.mask_propagator = MaskPropagator(params, self.dam_tracker, cancel_event, progress_queue, config=self.config, logger=self.logger)
 
-    def _initialize_models(self): pass
+    def _initialize_models(self):
+        # Conditionally initialize models based on the analysis parameters.
+        # This prevents loading large models into memory if they are not needed for the selected workflow.
+        text_based_seeding = "By Text" in self.params.primary_seed_strategy or "Fallback" in self.params.primary_seed_strategy
+        if text_based_seeding:
+            self._init_grounder()
+        if self.params.enable_subject_mask:
+            self._initialize_tracker()
     def _init_grounder(self):
         if self._gdino is not None: return True
         retry_params = (self.config.retry.max_attempts, tuple(self.config.retry.backoff_seconds))
@@ -3716,7 +3723,8 @@ class EnhancedAppUI(AppUI):
     def on_yolo_person_detection_wrapper(self, scenes, shot_id, outdir, yolo_conf, yolo_results, view, indexmap, *ana_args):
         try:
             # Check if results are already cached for this shot_id and conf
-            cached_result = yolo_results.get(shot_id, {}).get(yolo_conf)
+            conf_key = str(yolo_conf)
+            cached_result = yolo_results.get(shot_id, {}).get(conf_key)
             if cached_result:
                 yolo_boxes = cached_result['yolo_boxes']
                 message = cached_result['message']
@@ -3772,7 +3780,8 @@ class EnhancedAppUI(AppUI):
             # Cache the new result
             if shot_id not in yolo_results:
                 yolo_results[shot_id] = {}
-            yolo_results[shot_id][yolo_conf] = {
+            conf_key = str(yolo_conf)
+            yolo_results[shot_id][conf_key] = {
                 'yolo_boxes': yolo_boxes,
                 'message': message
             }
@@ -3888,7 +3897,8 @@ class EnhancedAppUI(AppUI):
                 return scenes, gr.update(), gr.update(), "Please select a Subject ID."
 
             subject_idx = int(subject_id) - 1
-            yolo_boxes = yolo_results.get(shot_id, {}).get(yolo_conf, {}).get('yolo_boxes', [])
+            conf_key = str(yolo_conf)
+            yolo_boxes = yolo_results.get(shot_id, {}).get(conf_key, {}).get('yolo_boxes', [])
 
             if not (0 <= subject_idx < len(yolo_boxes)):
                 return scenes, gr.update(), gr.update(), f"Invalid Subject ID. Please enter a number between 1 and {len(yolo_boxes)}."
