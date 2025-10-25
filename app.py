@@ -3536,7 +3536,6 @@ class AppUI:
                 gr.Markdown("### 🎛️ Filter Controls")
                 gr.Markdown("Use these controls to refine your selection of frames. You can set minimum and maximum thresholds for various quality metrics.")
                 self._create_component('auto_pctl_input', 'slider', {'label': 'Auto-Threshold Percentile', 'minimum': 1, 'maximum': 99, 'value': self.config.gradio_defaults.auto_pctl_input, 'step': 1, 'info': "Quickly set all 'Min' sliders to a certain percentile of the data. For example, setting this to 75 and clicking 'Apply' will automatically reject the bottom 75% of frames for each metric."})
-                self._create_component('auto_threshold_metrics_input', 'cbg', {'label': "Metrics to Auto-Threshold", 'choices': self.get_all_filter_keys(), 'value': self.get_all_filter_keys(), 'interactive': True})
                 with gr.Row():
                     self._create_component('apply_auto_button', 'button', {'value': 'Apply Percentile to Mins'})
                     self._create_component('reset_filters_button', 'button', {'value': "Reset Filters"})
@@ -3544,7 +3543,8 @@ class AppUI:
                     self._create_component('expand_all_metrics_button', 'button', {'value': 'Expand All'})
                     self._create_component('collapse_all_metrics_button', 'button', {'value': 'Collapse All'})
                 self._create_component('filter_status_text', 'markdown', {'value': "Load an analysis to begin."})
-                self.components['metric_plots'], self.components['metric_sliders'], self.components['metric_accs'] = {}, {}, {}
+                self.components['metric_plots'], self.components['metric_sliders'], self.components['metric_accs'], self.components['metric_auto_threshold_cbs'] = {}, {}, {}, {}
+
                 with gr.Accordion("Deduplication", open=True, visible=False) as dedup_acc:
                     self.components['metric_accs']['dedup'] = dedup_acc
                     f_def = self.config.filter_defaults.dedup_thresh
@@ -3561,6 +3561,8 @@ class AppUI:
                             self.components['metric_plots'][metric_name] = self._create_component(f'plot_{metric_name}', 'html', {'visible': True})
                             self.components['metric_sliders'][f"{metric_name}_min"] = self._create_component(f'slider_{metric_name}_min', 'slider', {'label': "Min", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': f_def['default_min'], 'step': f_def['step'], 'interactive': True, 'visible': True})
                             if 'default_max' in f_def: self.components['metric_sliders'][f"{metric_name}_max"] = self._create_component(f'slider_{metric_name}_max', 'slider', {'label': "Max", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': f_def['default_max'], 'step': f_def['step'], 'interactive': True, 'visible': True})
+                            self.components['metric_auto_threshold_cbs'][metric_name] = self._create_component(f'auto_threshold_{metric_name}', 'checkbox', {'label': "Auto-Threshold this metric", 'value': False, 'interactive': True, 'visible': True})
+
                             if metric_name == "face_sim": self._create_component('require_face_match_input', 'checkbox', {'label': "Reject if no face", 'value': self.config.ui_defaults.require_face_match, 'visible': True, 'info': "If checked, any frame without a detected face that meets the similarity threshold will be rejected."})
             with gr.Column(scale=2):
                 with gr.Group(visible=False) as results_group:
@@ -4420,8 +4422,23 @@ class EnhancedAppUI(AppUI):
         reset_outputs_comps = (slider_comps + [c['dedup_thresh_input'], c['require_face_match_input'], c['filter_status_text'], c['results_gallery']] +
                                [c['metric_accs'][k] for k in sorted(c['metric_accs'].keys())])
         c['reset_filters_button'].click(self.on_reset_filters, [c['all_frames_data_state'], c['per_metric_values_state'], c['analysis_output_dir_state']], reset_outputs_comps)
-        c['apply_auto_button'].click(self.on_auto_set_thresholds, [c['per_metric_values_state'], c['auto_pctl_input'], c['auto_threshold_metrics_input']],
-                                   [c['metric_sliders'][k] for k in slider_keys]).then(self.on_filters_changed_wrapper, fast_filter_inputs, fast_filter_outputs)
+
+        auto_threshold_checkboxes = [c['metric_auto_threshold_cbs'][k] for k in sorted(c['metric_auto_threshold_cbs'].keys())]
+        auto_set_inputs = [c['per_metric_values_state'], c['auto_pctl_input']] + auto_threshold_checkboxes
+
+        c['apply_auto_button'].click(
+            self.on_auto_set_thresholds,
+            auto_set_inputs,
+            [c['metric_sliders'][k] for k in slider_keys]
+        ).then(
+            self.on_filters_changed_wrapper,
+            fast_filter_inputs,
+            fast_filter_outputs
+        )
+
+        all_accordions = list(c['metric_accs'].values())
+        c['expand_all_metrics_button'].click(lambda: {acc: gr.update(open=True) for acc in all_accordions}, [], all_accordions)
+        c['collapse_all_metrics_button'].click(lambda: {acc: gr.update(open=False) for acc in all_accordions}, [], all_accordions)
 
     def on_filters_changed_wrapper(self, all_frames_data, per_metric_values, output_dir, gallery_view, show_overlay, overlay_alpha, require_face_match, dedup_thresh, *slider_values):
         result = on_filters_changed(FilterEvent(all_frames_data, per_metric_values, output_dir, gallery_view, show_overlay, overlay_alpha,
@@ -4474,8 +4491,10 @@ class EnhancedAppUI(AppUI):
                 acc_updates.append(gr.update(visible=False))
         return tuple(slider_updates + [dedup_update, face_match_update, status_update, gallery_update] + acc_updates)
 
-    def on_auto_set_thresholds(self, per_metric_values, p, selected_metrics):
+    def on_auto_set_thresholds(self, per_metric_values, p, *checkbox_values):
         slider_keys = sorted(self.components['metric_sliders'].keys())
+        auto_threshold_cbs_keys = sorted(self.components['metric_auto_threshold_cbs'].keys())
+        selected_metrics = [metric_name for metric_name, is_selected in zip(auto_threshold_cbs_keys, checkbox_values) if is_selected]
         updates = auto_set_thresholds(per_metric_values, p, slider_keys, selected_metrics)
         return [updates.get(f'slider_{key}', gr.update()) for key in slider_keys]
 
