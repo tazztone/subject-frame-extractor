@@ -811,11 +811,12 @@ class TestEnhancedAppUI:
 
         (scenes, status_text, gallery_update, new_index_map, selected_id,
          editor_status, prompt, box_thresh, text_thresh, accordion_update,
-         gallery_image, gallery_shape, sub_num_update, button_update, yolo_results) = outputs
+         gallery_image, gallery_shape, sub_num_update, button_update, yolo_results, seed_mode) = outputs
 
         assert selected_id == sample_scenes[0]['shot_id']
         assert "Editing Scene 1" in editor_status['value']
         assert accordion_update['open'] is True
+        assert seed_mode == "YOLO Bbox"
 
     def test_create_analysis_context_invalid_folder(self, mock_app_ui):
         """
