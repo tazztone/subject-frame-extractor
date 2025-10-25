@@ -3432,9 +3432,17 @@ class AppUI:
     def _build_main_tabs(self):
         with gr.Tabs() as main_tabs:
             self.components['main_tabs'] = main_tabs
-            with gr.Tab("📹 1. Frame Extraction"): self._create_extraction_tab()
-            with gr.Tab("🎯 2. Seeding & Scene Selection", id=1) as analysis_tab: self.components['analysis_tab'] = analysis_tab; self._create_analysis_tab()
-            with gr.Tab("📊 3. Filtering & Export", id=2) as filtering_tab: self.components['filtering_tab'] = filtering_tab; self._create_filtering_tab()
+            with gr.Tab("📹 1. Frame Extraction", id=0):
+                self._create_extraction_tab()
+            with gr.Tab("👩🏼‍🦰 2. Define Subject", id=1) as define_subject_tab:
+                self.components['define_subject_tab'] = define_subject_tab
+                self._create_define_subject_tab()
+            with gr.Tab("🎞️ 3. Scene Selection", id=2) as scene_selection_tab:
+                self.components['scene_selection_tab'] = scene_selection_tab
+                self._create_scene_selection_tab()
+            with gr.Tab("📊 4. Filtering & Export", id=3) as filtering_tab:
+                self.components['filtering_tab'] = filtering_tab
+                self._create_filtering_tab()
 
     def _build_footer(self):
         with gr.Row():
@@ -3511,7 +3519,7 @@ class AppUI:
         gr.Markdown("---"); gr.Markdown("### Step 3: Start Extraction")
         self.components.update({'start_extraction_button': gr.Button("🚀 Start Extraction", variant="primary")})
 
-    def _create_analysis_tab(self):
+    def _create_define_subject_tab(self):
         with gr.Row():
             with gr.Column(scale=1):
                 gr.Markdown("### 🎯 Step 1: Choose Your Seeding Strategy")
@@ -3561,7 +3569,9 @@ class AppUI:
                 self._create_component('start_pre_analysis_button', 'button', {'value': '🌱 Find & Preview Scene Seeds', 'variant': 'primary'})
                 with gr.Group(visible=False) as propagation_group:
                     self.components['propagation_group'] = propagation_group
-            with gr.Column(scale=2, visible=False) as seeding_results_column:
+
+    def _create_scene_selection_tab(self):
+        with gr.Column(scale=2, visible=False) as seeding_results_column:
                 self.components['seeding_results_column'] = seeding_results_column
                 gr.Markdown("### 🎭 Step 2: Review & Refine Scenes")
                 with gr.Accordion("Scene Filtering", open=True):
@@ -3630,6 +3640,9 @@ class AppUI:
                         self._create_component("sceneresetbutton", "button", {"value": "🔄 Reset Scene"})
                 gr.Markdown("---"); gr.Markdown("### 🔬 Step 3: Propagate Masks"); gr.Markdown("Once you are satisfied with the seeds, propagate the masks to the rest of the frames in the selected scenes.")
                 self._create_component('propagate_masks_button', 'button', {'value': '🔬 Propagate Masks on Kept Scenes', 'variant': 'primary', 'interactive': False})
+
+    def _create_analysis_tab(self):
+        pass
 
     def _create_filtering_tab(self):
         with gr.Row():
@@ -4222,10 +4235,12 @@ class EnhancedAppUI(AppUI):
                         scenes = result.get('scenes', [])
                         if scenes: save_scene_seeds(scenes, result['output_dir'], self.app_logger)
                         status_text, button_update = get_scene_status_text(scenes)
-                        updates = {"unified_log": result.get("log", "✅ Pre-analysis completed successfully."),
+                        log_message = result.get("log", "✅ Pre-analysis completed successfully.") + "\nSwitching to Scene Selection tab."
+                        updates = {"unified_log": log_message,
                                    "scenes_state": scenes, "propagate_masks_button": button_update, "scene_filter_status": status_text,
                                    "scene_face_sim_min_input": gr.update(visible=any(s.get('seed_metrics', {}).get('best_face_sim') is not None for s in scenes)),
-                                   "seeding_results_column": gr.update(visible=True), "propagation_group": gr.update(visible=True)}
+                                   "seeding_results_column": gr.update(visible=True),
+                                   "main_tabs": gr.update(selected=2)}
                         # Initialize scene gallery
                         gallery_items, index_map = build_scene_gallery_items(scenes, "Kept", result.get('output_dir', ''))
                         updates.update({
@@ -4380,7 +4395,7 @@ class EnhancedAppUI(AppUI):
         c['start_pre_analysis_button'].click(fn=pre_analysis_handler,
                                            inputs=self.ana_input_components, outputs=all_outputs, show_progress="hidden")
         c['propagate_masks_button'].click(fn=propagation_handler,
-                                        inputs=prop_inputs, outputs=all_outputs, show_progress="hidden").then(lambda p: gr.update(selected=2) if p else gr.update(), c['analysis_metadata_path_state'], c['main_tabs'])
+                                        inputs=prop_inputs, outputs=all_outputs, show_progress="hidden").then(lambda p: gr.update(selected=3) if p else gr.update(), c['analysis_metadata_path_state'], c['main_tabs'])
 
     def on_apply_bulk_scene_filters_extended(self, scenes, min_mask_area, min_face_sim, min_confidence, enable_face_filter, output_folder, view):
         if not scenes:
