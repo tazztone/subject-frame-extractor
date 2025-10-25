@@ -2071,7 +2071,7 @@ class SubjectMasker:
         )
         self.mask_propagator = MaskPropagator(params, self.dam_tracker, cancel_event, progress_queue, config=self.config, logger=self.logger)
 
-    def _initialize_models(self): self._init_grounder(); self._initialize_tracker()
+    def _initialize_models(self): pass
     def _init_grounder(self):
         if self._gdino is not None: return True
         retry_params = (self.config.retry.max_attempts, tuple(self.config.retry.backoff_seconds))
@@ -2196,6 +2196,11 @@ class SubjectMasker:
     def get_seed_for_frame(self, frame_rgb: np.ndarray, seed_config: dict):
         if isinstance(seed_config, dict) and seed_config.get("manual_bbox_xywh"):
             return seed_config["manual_bbox_xywh"], {"type": seed_config.get("seedtype", "manual")}
+
+        # Lazy load models if needed
+        self._init_grounder()
+        self._initialize_tracker()
+
         return self.seed_selector.select_seed(frame_rgb, current_params=seed_config)
     def get_mask_for_bbox(self, frame_rgb_small, bbox_xywh): return self.seed_selector._sam2_mask_for_bbox(frame_rgb_small, bbox_xywh)
     def draw_bbox(self, img_rgb, xywh, color=None, thickness=None, label=None):
@@ -3845,13 +3850,17 @@ class EnhancedAppUI(AppUI):
             return [gr.update()] * len(yolo_detection_outputs)
 
         c['scene_gallery'].select(
-            None,
-            None,
-            None
+            self.on_select_for_edit,
+            [c['scenes_state'], c['scene_gallery_view_toggle'], c['scene_gallery_index_map_state'], c['extracted_frames_dir_state'], c['yolo_results_state']],
+            [c['scenes_state'], c['scene_filter_status'], c['scene_gallery'], c['scene_gallery_index_map_state'], c['selected_scene_id_state'],
+             c['sceneeditorstatusmd'], c['sceneeditorpromptinput'], c['sceneeditorboxthreshinput'], c['sceneeditortextthreshinput'],
+             c['sceneeditoraccordion'], c['gallery_image_state'], c['gallery_shape_state'],
+             c['scene_editor_yolo_subject_id'], c['propagate_masks_button'], c['yolo_results_state'], c['scene_editor_seed_mode']]
         ).then(
-            trigger_yolo_if_active,
-            inputs=[c['scene_editor_seed_mode']] + yolo_detection_inputs,
-            outputs=yolo_detection_outputs
+            lambda scenes, shot_id, outdir, yolo_conf, yolo_results, view, indexmap, *ana_args:
+                self.on_yolo_person_detection_wrapper(scenes, shot_id, outdir, yolo_conf, yolo_results, view, indexmap, *ana_args),
+            yolo_detection_inputs,
+            yolo_detection_outputs
         )
 
     def on_reset_scene_wrapper(self, scenes, shot_id, outdir, view, *ana_args):
@@ -3887,15 +3896,15 @@ class EnhancedAppUI(AppUI):
         # validate selection
         if not scenes or not indexmap or evt is None or evt.index is None:
             return (scenes, status_text, gr.update(), indexmap,
-                    None, gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), None, None, None, button_update, {})
+                    None, gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), None, None, None, button_update, {}, "YOLO Bbox")
         if not (0 <= evt.index < len(indexmap)):
             return (scenes, status_text, gr.update(), indexmap,
-                    None, gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), None, None, None, button_update, {})
+                    None, gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), None, None, None, button_update, {}, "YOLO Bbox")
 
         scene_idx_in_state = indexmap[evt.index]
         if not (0 <= scene_idx_in_state < len(scenes)):
             return (scenes, status_text, gr.update(), indexmap,
-                    None, gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), None, None, None, button_update, {})
+                    None, gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), None, None, None, button_update, {}, "YOLO Bbox")
 
         scene = scenes[scene_idx_in_state]
         cfg = scene.get("seed_config") or {}
@@ -3931,6 +3940,7 @@ class EnhancedAppUI(AppUI):
             None, # Clear subject ID
             button_update,
             {}, # Clear yolo results
+            "YOLO Bbox"
         )
 
     def on_editor_toggle(self, scenes, selected_shotid, outputfolder, view, new_status):
@@ -3986,6 +3996,25 @@ class EnhancedAppUI(AppUI):
             self.on_yolo_person_detection_wrapper,
             inputs=yolo_detection_inputs,
             outputs=yolo_detection_outputs
+        )
+
+        c['scene_editor_yolo_subject_id'].change(
+            self.on_select_yolo_subject_wrapper,
+            inputs=[
+                c['scene_editor_yolo_subject_id'],
+                c['yolo_results_state'],
+                c['scenes_state'],
+                c['selected_scene_id_state'],
+                c['extracted_frames_dir_state'],
+                c['scene_gallery_view_toggle'],
+                c['sceneeditor_yolo_conf_slider']
+            ] + self.ana_input_components,
+            outputs=[
+                c['scenes_state'],
+                c['scene_gallery'],
+                c['scene_gallery_index_map_state'],
+                c['sceneeditorstatusmd']
+            ]
         )
 
         c['sceneeditor_yolo_conf_slider'].release(
@@ -4267,6 +4296,7 @@ class EnhancedAppUI(AppUI):
                 c['scene_editor_yolo_subject_id'],
                 c['propagate_masks_button'],
                 c['yolo_results_state'],
+                c['scene_editor_seed_mode'],
             ]
         )
 
