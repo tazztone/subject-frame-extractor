@@ -44,6 +44,12 @@ from queue import Empty, Queue
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 # --- DEPENDENCY IMPORTS (with error handling) ---
+
+# --- Global Model Cache ---
+_yolo_model_cache = {}
+_dino_model_cache = None
+_dam4sam_model_cache = {}
+
 try:
     from DAM4SAM.dam4sam_tracker import DAM4SAMTracker
     from DAM4SAM.utils import utils as dam_utils
@@ -1100,6 +1106,9 @@ class Scene:
     seed_result: dict = field(default_factory=dict)
     preview_path: str | None = None
     manual_status_change: bool = False
+    is_overridden: bool = False
+    initial_bbox: Optional[list] = None
+    selected_bbox: Optional[list] = None
 
 @dataclass
 class AnalysisParameters:
@@ -1369,40 +1378,46 @@ class PersonDetector:
                 out.append({"bbox": [x1, y1, x2, y2], "conf": conf, "type": "yolo"})
         return out
 
-@lru_cache(maxsize=None)
 def get_person_detector(model_path_str: str, device: str, imgsz: int, conf: float, logger: 'AppLogger'):
-    logger.info(f"Loading or getting cached person detector from: {model_path_str}", component="person_detector")
-    return PersonDetector(logger=logger, model_path=Path(model_path_str), imgsz=imgsz, conf=conf, device=device)
+    """Load YOLO model on first use, cache for reuse."""
+    global _yolo_model_cache
+    if model_path_str not in _yolo_model_cache:
+        logger.info(f"Loading YOLO model: {Path(model_path_str).name} (first use)", component="person_detector")
+        from ultralytics import YOLO
+        _yolo_model_cache[model_path_str] = PersonDetector(logger=logger, model_path=Path(model_path_str), imgsz=imgsz, conf=conf, device=device)
+        logger.success(f"YOLO model {Path(model_path_str).name} loaded successfully", component="person_detector")
+    return _yolo_model_cache[model_path_str]
 
-@lru_cache(maxsize=None)
 def get_grounding_dino_model(gdino_config_path: str, gdino_checkpoint_path: str, models_path: str, grounding_dino_url: str, user_agent: str, retry_params: tuple, device="cuda", logger: 'AppLogger' = None):
-    if not gdino_load_model: raise ImportError("GroundingDINO is not installed.")
-    if logger is None:
-        logger = AppLogger(config=Config())
-    error_handler = ErrorHandler(logger, *retry_params)
-    try:
-        models_dir = Path(models_path)
-        models_dir.mkdir(parents=True, exist_ok=True)
-
-        # Robust path handling for the config file
-        config_file_path = gdino_config_path or Config().paths.grounding_dino_config
-        config_path = Path(config_file_path)
-        if not config_path.is_absolute():
-            config_path = project_root / config_path
-
-        ckpt_path = Path(gdino_checkpoint_path)
-        if not ckpt_path.is_absolute():
-            ckpt_path = models_dir / Path(grounding_dino_url).name
-        
-        download_model(grounding_dino_url,
-                       ckpt_path, "GroundingDINO Swin-T model", logger, error_handler, user_agent, min_size=500_000_000)
-        
-        gdino_model = gdino_load_model(model_config_path=str(config_path), model_checkpoint_path=str(ckpt_path), device=device)
-        logger.info("Grounding DINO model loaded.", component="grounding", custom_fields={'model_path': str(ckpt_path)})
-        return gdino_model
-    except Exception as e:
-        logger.warning("Grounding DINO unavailable.", component="grounding", exc_info=True)
+    """Load GroundingDINO model only when needed."""
+    global _dino_model_cache
+    if _dino_model_cache is None:
+        if not gdino_load_model: raise ImportError("GroundingDINO is not installed.")
+        if logger is None:
+            logger = AppLogger(config=Config())
+        logger.info("Loading GroundingDINO model (first use)...", component="grounding")
+        error_handler = ErrorHandler(logger, *retry_params)
+        try:
+            models_dir = Path(models_path)
+            models_dir.mkdir(parents=True, exist_ok=True)
+            config_file_path = gdino_config_path or Config().paths.grounding_dino_config
+            config_path = Path(config_file_path)
+            if not config_path.is_absolute():
+                config_path = project_root / config_path
+            ckpt_path = Path(gdino_checkpoint_path)
+            if not ckpt_path.is_absolute():
+                ckpt_path = models_dir / Path(grounding_dino_url).name
+            download_model(grounding_dino_url,
+                           ckpt_path, "GroundingDINO Swin-T model", logger, error_handler, user_agent, min_size=500_000_000)
+            _dino_model_cache = gdino_load_model(model_config_path=str(config_path), model_checkpoint_path=str(ckpt_path), device=device)
+            logger.success("GroundingDINO model loaded successfully", component="grounding", custom_fields={'model_path': str(ckpt_path)})
+        except Exception as e:
+            logger.error("Grounding DINO model loading failed.", component="grounding", exc_info=True)
+            # Set to a dummy object to prevent retrying on every call
+            _dino_model_cache = "failed"
+    if _dino_model_cache == "failed":
         return None
+    return _dino_model_cache
 
 def predict_grounding_dino(model, image_tensor, caption, box_threshold, text_threshold, device="cuda"):
     if not gdino_predict: raise ImportError("GroundingDINO is not installed.")
@@ -1410,38 +1425,45 @@ def predict_grounding_dino(model, image_tensor, caption, box_threshold, text_thr
         return gdino_predict(model=model, image=image_tensor.to(device), caption=caption,
                              box_threshold=float(box_threshold), text_threshold=float(text_threshold))
 
-@lru_cache(maxsize=None)
 def get_dam4sam_tracker(model_name: str, models_path: str, model_urls_tuple: tuple, user_agent: str, retry_params: tuple, logger: 'AppLogger'):
-    if not DAM4SAMTracker or not dam_utils: raise ImportError("DAM4SAM is not installed.")
-    error_handler = ErrorHandler(logger, *retry_params)
+    """Load DAM4SAM model on first use."""
+    global _dam4sam_model_cache
     model_urls = dict(model_urls_tuple)
+    selected_name = (model_name or Config().ui_defaults.dam4sam_model_name or next(iter(model_urls.keys())))
 
-    if not (DAM4SAMTracker and torch and torch.cuda.is_available()):
-        logger.error("DAM4SAM dependencies or CUDA not available.")
+    if selected_name not in _dam4sam_model_cache:
+        if not DAM4SAMTracker or not dam_utils: raise ImportError("DAM4SAM is not installed.")
+        logger.info(f"Loading DAM4SAM model: {selected_name} (first use)", component="dam4sam")
+        error_handler = ErrorHandler(logger, *retry_params)
+
+        if not (DAM4SAMTracker and torch and torch.cuda.is_available()):
+            logger.error("DAM4SAM dependencies or CUDA not available.")
+            _dam4sam_model_cache[selected_name] = "failed"
+        else:
+            try:
+                models_dir = Path(models_path)
+                models_dir.mkdir(parents=True, exist_ok=True)
+                if selected_name not in model_urls:
+                    raise ValueError(f"Unknown DAM4SAM model: {selected_name}")
+                url = model_urls[selected_name]
+                checkpoint_path = models_dir / Path(url).name
+                download_model(url, checkpoint_path, f"DAM4SAM {selected_name}", logger, error_handler, user_agent, min_size=100_00_000)
+                actual_path, _ = dam_utils.determine_tracker(selected_name)
+                if not Path(actual_path).exists():
+                    Path(actual_path).parent.mkdir(exist_ok=True, parents=True)
+                    shutil.copy(checkpoint_path, actual_path)
+                tracker = DAM4SAMTracker(selected_name)
+                _dam4sam_model_cache[selected_name] = tracker
+                logger.success(f"DAM4SAM tracker {selected_name} initialized.", component="dam4sam")
+            except Exception as e:
+                logger.error(f"Failed to initialize DAM4SAM tracker {selected_name}", exc_info=True)
+                if "out of memory" in str(e) and torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                _dam4sam_model_cache[selected_name] = "failed"
+
+    if _dam4sam_model_cache.get(selected_name) == "failed":
         return None
-    try:
-        models_dir = Path(models_path)
-        models_dir.mkdir(parents=True, exist_ok=True)
-        # Choose a safe default if UI passes empty string
-        selected_name = (model_name or Config().ui_defaults.dam4sam_model_name or next(iter(model_urls.keys())))
-        if selected_name not in model_urls:
-            raise ValueError(f"Unknown DAM4SAM model: {selected_name}")
-        url = model_urls[selected_name]
-        checkpoint_path = models_dir / Path(url).name
-        logger.info(f"Initializing DAM4SAM tracker", custom_fields={'selected_model': selected_name, 'checkpoint_path': str(checkpoint_path)})
-        download_model(url, checkpoint_path, f"DAM4SAM {selected_name}", logger, error_handler, user_agent, min_size=100_000_000)
-        actual_path, _ = dam_utils.determine_tracker(selected_name)
-        if not Path(actual_path).exists():
-            Path(actual_path).parent.mkdir(exist_ok=True, parents=True)
-            shutil.copy(checkpoint_path, actual_path)
-        tracker = DAM4SAMTracker(selected_name)
-        logger.success("DAM4SAM tracker initialized.")
-        return tracker
-    except Exception as e:
-        logger.error("Failed to initialize DAM4SAM tracker", exc_info=True)
-        if "out of memory" in str(e) and torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        return None
+    return _dam4sam_model_cache.get(selected_name)
 
 def initialize_analysis_models(params: AnalysisParameters, config: Config, logger: AppLogger, cuda_available: bool):
     device = "cuda" if cuda_available else "cpu"
@@ -3250,6 +3272,10 @@ def scene_caption(s: dict) -> str:
     conf = metrics.get('score')
     mask = (s.get('seed_result', {}).get('details', {}) or {}).get('mask_area_pct')
     bits = [f"Scene {shot} [{start_f}-{end_f}]"]
+    if s.get('is_overridden', False):
+        bits[0] += " ✏️"
+    else:
+        bits[0] += " 🤖"
     if conf is not None: bits.append(f"conf {conf:.2f}")
     if face is not None: bits.append(f"face {face:.2f}")
     if mask is not None: bits.append(f"mask {mask:.1f}%")
@@ -3269,21 +3295,63 @@ def scene_thumb(s: dict, output_dir: str) -> str | None:
 def build_scene_gallery_items(scenes: list[dict], view: str, output_dir: str):
     items: list[tuple[str | None, str]] = []
     index_map: list[int] = []
-    # Sort scenes by shot_id but keep track of original index in scenes list
     if not scenes:
         return [], []
+
+    previews_dir = Path(output_dir) / "previews"
+    previews_dir.mkdir(parents=True, exist_ok=True)
+
     indexed_scenes = sorted(list(enumerate(scenes)), key=lambda x: x[1].get('shot_id', 0))
 
     for original_index, s in indexed_scenes:
         if not scene_matches_view(s, view):
             continue
-        img = scene_thumb(s, output_dir)
-        if img is None:
+
+        img_path = scene_thumb(s, output_dir)
+        if img_path is None:
             continue
+
+        if s.get('is_overridden', False):
+            thumb_img_np = cv2.imread(img_path)
+            if thumb_img_np is not None:
+                badged_thumb = create_scene_thumbnail_with_badge(thumb_img_np, original_index, True)
+
+                # Save the modified thumbnail to a new file
+                shot_id = s.get('shot_id', original_index)
+                override_preview_path = previews_dir / f"scene_{shot_id:05d}_override.jpg"
+                cv2.imwrite(str(override_preview_path), badged_thumb)
+                img_path = str(override_preview_path)
+
         cap = scene_caption(s)
-        items.append((img, cap))
+        items.append((img_path, cap))
         index_map.append(original_index)
+
     return items, index_map
+def create_scene_thumbnail_with_badge(scene_img, scene_index, is_overridden):
+    """Add visual indicator to scene thumbnail if manually overridden."""
+    thumb = scene_img.copy()
+    h, w = thumb.shape[:2]
+
+    if is_overridden:
+        # Add teal border (4px thick)
+        border_color = (33, 128, 141)  # var(--color-teal-500)
+        cv2.rectangle(thumb, (0, 0), (w-1, h-1), border_color, 4)
+
+        # Add "✏️" emoji badge in top-right corner
+        badge_size = int(min(w, h) * 0.15)  # 15% of smallest dimension
+        badge_pos = (w - badge_size - 5, 5)
+
+        # Draw white circle background for badge
+        cv2.circle(thumb,
+                    (badge_pos[0] + badge_size//2, badge_pos[1] + badge_size//2),
+                   badge_size//2, (255, 255, 255), -1)
+
+        # Add text "✏" (pencil as ASCII alternative)
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        cv2.putText(thumb, "E", badge_pos, font, 0.5, border_color, 2)
+
+    return thumb
+
 
 # --- UI ---
 
@@ -3449,11 +3517,20 @@ class AppUI:
                 with gr.Group(visible=("By Text" in self.config.choices.primary_seed_strategy[2] or "Fallback" in self.config.choices.primary_seed_strategy[2])) as text_seeding_group:
                     self.components['text_seeding_group'] = text_seeding_group
                     gr.Markdown("#### 📝 Configure Text Seeding"); gr.Markdown("This strategy uses a text description to find the subject. It's useful for identifying objects, or people described by their clothing or appearance when a reference photo isn't available.")
-                    self._create_component('text_prompt_input', 'textbox', {'label': "Text Prompt", 'placeholder': "e.g., 'a woman in a red dress'", 'value': self.config.ui_defaults.text_prompt, 'info': "Describe the main subject (e.g., 'player wearing number 10', 'person in the green shirt')."})
+                    with gr.Accordion("🔬 Advanced Detection (GroundingDINO)", open=False):
+                        gr.Markdown("Use GroundingDINO for text-based object detection with custom prompts.")
+                        self._create_component('text_prompt_input', 'textbox', {'label': "Text Prompt", 'placeholder': "e.g., 'a woman in a red dress'", 'value': self.config.ui_defaults.text_prompt, 'info': "Describe the main subject (e.g., 'player wearing number 10', 'person in the green shirt')."})
+                        with gr.Row():
+                            self._create_component('box_threshold', 'slider', {'minimum': 0.0, 'maximum': 1.0, 'value': self.config.grounding_dino_params.box_threshold, 'label': "Box Threshold"})
+                            self._create_component('text_threshold', 'slider', {'minimum': 0.0, 'maximum': 1.0, 'value': self.config.grounding_dino_params.text_threshold, 'label': "Text Threshold"})
+                        self._create_component('dino_detect_btn', 'button', {'value': "🎯 Run GroundingDINO Detection"})
                 with gr.Group(visible=("Prominent Person" in self.config.choices.primary_seed_strategy[2])) as auto_seeding_group:
                     self.components['auto_seeding_group'] = auto_seeding_group
                     gr.Markdown("#### 🧑‍🤝‍🧑 Configure Prominent Person Seeding"); gr.Markdown("This is a simple, fully automatic mode. It uses an object detector (YOLO) to find all people in the scene and then selects one based on a simple rule, like who is largest or most central. It's fast but less precise, as it doesn't use face identity or text descriptions.")
                     self._create_component('seed_strategy_input', 'dropdown', {'choices': self.config.choices.seed_strategy, 'value': "Largest Person", 'label': "Selection Method", 'info': "'Largest' picks the person taking up the most screen area. 'Center-most' picks the person closest to the frame's center."})
+                with gr.Row():
+                    self._create_component('person_detector_model_input', 'dropdown', {'choices': self.config.choices.person_detector_model, 'value': self.config.ui_defaults.person_detector_model, 'label': "YOLO Model"})
+                self._create_component('person_radio', 'radio', {'label': "Select Person", 'choices': [], 'visible': False})
                 with gr.Accordion("Advanced Settings", open=False):
                     gr.Markdown("These settings control the underlying models and analysis parameters. Adjust them only if you understand their effect.")
                     self._create_component('pre_analysis_enabled_input', 'checkbox', {'label': 'Enable Pre-Analysis to find best seed frame', 'value': self.config.ui_defaults.pre_analysis_enabled, 'info': "Analyzes a subset of frames in each scene to automatically find the highest quality frame to use as the 'seed' for masking. Highly recommended."})
@@ -3496,6 +3573,11 @@ class AppUI:
                         allow_preview=True,
                         container=True
                     )
+                    self._create_component('auto_detect_checkbox', 'checkbox', {
+                        'label': "🔍 Auto-detect persons on scene selection",
+                        'value': True,
+                        'info': "Automatically run YOLO detection when clicking a scene thumbnail"
+                    })
                 with gr.Accordion("Scene Editor", open=False, elem_classes="scene-editor") as sceneeditoraccordion:
                     self.components["sceneeditoraccordion"] = sceneeditoraccordion
                     self._create_component("sceneeditorstatusmd", "markdown", {"value": "Select a scene to edit."})
@@ -3619,6 +3701,18 @@ class AppUI:
         ).then(lambda: "Configuration saved to config_dump.json", [], self.components['unified_log'])
 
 class EnhancedAppUI(AppUI):
+    def on_scene_select_yolo_detection_wrapper(self, scenes, shot_id, outdir, yolo_conf, yolo_results, view, indexmap, auto_detect_enabled, *ana_args):
+        if not auto_detect_enabled:
+            gallery_items, _ = build_scene_gallery_items(scenes, view, outdir)
+            return (
+                gr.update(value=gallery_items),
+                gr.update(choices=[], interactive=False, value=None),
+                "Auto-detection is off. Enable it or use the Scene Editor to detect objects.",
+                yolo_results,
+                gr.update(interactive=False)
+            )
+        return self.on_yolo_person_detection_wrapper(scenes, shot_id, outdir, yolo_conf, yolo_results, view, indexmap, *ana_args)
+
     def on_yolo_person_detection_wrapper(self, scenes, shot_id, outdir, yolo_conf, yolo_results, view, indexmap, *ana_args):
         try:
             # Check if results are already cached for this shot_id and conf
@@ -3811,10 +3905,28 @@ class EnhancedAppUI(AppUI):
             overrides = {"manual_bbox_xywh": selected_xywh, "seedtype": "yolo_manual"}
 
             scene_idx = scenes.index(scene)
+
+            # Store initial bbox if it doesn't exist
+            if 'initial_bbox' not in scenes[scene_idx] or scenes[scene_idx]['initial_bbox'] is None:
+                scenes[scene_idx]['initial_bbox'] = selected_xywh
+
+            scenes[scene_idx]['selected_bbox'] = selected_xywh
+
+            # Check if selection differs from initial auto-detected bbox
+            initial_bbox = scenes[scene_idx].get('initial_bbox')
+            if initial_bbox is not None and selected_xywh != initial_bbox:
+                scenes[scene_idx]['is_overridden'] = True
+            else:
+                scenes[scene_idx]['is_overridden'] = False
+
             _recompute_single_preview(scenes[scene_idx], masker, overrides, self.thumbnail_manager, self.logger)
 
+            # Explicitly save the changes to persist the auto-save
             save_scene_seeds(scenes, outdir, self.logger)
+
+            # Refresh gallery with new badge
             gallery_items, index_map = build_scene_gallery_items(scenes, view, outdir)
+
 
             return scenes, gr.update(value=gallery_items), gr.update(value=index_map), f"Subject {subject_id} selected and preview recomputed."
 
@@ -3851,6 +3963,16 @@ class EnhancedAppUI(AppUI):
                 return self.on_yolo_person_detection_wrapper(scenes, shot_id, outdir, yolo_conf, yolo_results, view, indexmap, *ana_args)
             return [gr.update()] * len(yolo_detection_outputs)
 
+        scene_select_yolo_inputs = [
+            c['scenes_state'],
+            c['selected_scene_id_state'],
+            c['extracted_frames_dir_state'],
+            c['sceneeditor_yolo_conf_slider'],
+            c['yolo_results_state'],
+            c['scene_gallery_view_toggle'],
+            c['scene_gallery_index_map_state'],
+            c['auto_detect_checkbox'],
+        ] + self.ana_input_components
         c['scene_gallery'].select(
             self.on_select_for_edit,
             [c['scenes_state'], c['scene_gallery_view_toggle'], c['scene_gallery_index_map_state'], c['extracted_frames_dir_state'], c['yolo_results_state']],
@@ -3859,9 +3981,8 @@ class EnhancedAppUI(AppUI):
              c['sceneeditoraccordion'], c['gallery_image_state'], c['gallery_shape_state'],
              c['scene_editor_yolo_subject_id'], c['propagate_masks_button'], c['yolo_results_state'], c['scene_editor_seed_mode']]
         ).then(
-            lambda scenes, shot_id, outdir, yolo_conf, yolo_results, view, indexmap, *ana_args:
-                self.on_yolo_person_detection_wrapper(scenes, shot_id, outdir, yolo_conf, yolo_results, view, indexmap, *ana_args),
-            yolo_detection_inputs,
+            self.on_scene_select_yolo_detection_wrapper,
+            scene_select_yolo_inputs,
             yolo_detection_outputs
         )
 
@@ -3877,6 +3998,8 @@ class EnhancedAppUI(AppUI):
             scene['seed_metrics'] = {}
             scene['manual_status_change'] = False
             scene['status'] = 'included'
+            scene['is_overridden'] = False
+            scene['selected_bbox'] = scene.get('initial_bbox')
 
             masker = _create_analysis_context(self.config, self.logger, self.thumbnail_manager, self.cuda_available,
                                               self.ana_ui_map_keys, ana_args)
@@ -4172,9 +4295,10 @@ class EnhancedAppUI(AppUI):
             lambda mode: {
                 c['dino_seed_group']: gr.update(visible=mode == "DINO Text Prompt"),
                 c['yolo_seed_group']: gr.update(visible=mode == "YOLO Bbox"),
+                c['scenerecomputebutton']: gr.update(visible=mode == "DINO Text Prompt"),
             },
             inputs=[c['scene_editor_seed_mode']],
-            outputs=[c['dino_seed_group'], c['yolo_seed_group']]
+            outputs=[c['dino_seed_group'], c['yolo_seed_group'], c['scenerecomputebutton']]
         )
 
     def _setup_pipeline_handlers(self):
