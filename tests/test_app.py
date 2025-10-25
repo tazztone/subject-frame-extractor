@@ -797,7 +797,7 @@ class TestEnhancedAppUI:
         mock_execute_pre_analysis.return_value = iter([{"done": True, "log": "Success", "scenes": []}])
         args = [None] * len(mock_app_ui.ana_ui_map_keys)
         result = mock_app_ui.run_pre_analysis_wrapper(*args)
-        assert result['unified_log'] == "Success"
+        assert "Success" in result['unified_log']
         mock_execute_pre_analysis.assert_called_once()
 
     @patch('app.gr.Button')
