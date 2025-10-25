@@ -334,8 +334,15 @@ class TestSceneLogic:
         mock_save.assert_called_once()
 
     @patch('app.save_scene_seeds')
-    def test_apply_bulk_scene_filters(self, mock_save, sample_scenes, test_config):
+    def test_apply_bulk_scene_filters(self, mock_save, sample_scenes, test_config, tmp_path):
         """Verify that bulk filters correctly include/exclude scenes."""
+        # Create a dummy preview file for the scene_thumb function to find
+        (tmp_path / "previews").mkdir()
+        for scene in sample_scenes:
+            scene['preview_path'] = str(tmp_path / "previews" / f"scene_{scene['shot_id']}.jpg")
+            with open(scene['preview_path'], 'w') as f:
+                f.write('') # Create an empty file
+
         ui = app.EnhancedAppUI(config=test_config, logger=MagicMock(), progress_queue=MagicMock(), cancel_event=MagicMock(), thumbnail_manager=MagicMock())
         scenes, _, _, _, _ = ui.on_apply_bulk_scene_filters_extended(
             scenes=sample_scenes,
@@ -343,7 +350,7 @@ class TestSceneLogic:
             min_face_sim=0.5,
             min_confidence=0.85,
             enable_face_filter=True,
-            output_folder='/fake/dir',
+            output_folder=str(tmp_path),
             view="Kept"
         )
 
@@ -421,6 +428,8 @@ class TestVideo:
         assert not result['video_path'] # No video path for image folders
 
 class TestModels:
+    def setup_method(self):
+        self.logger = MagicMock()
     @patch('app.download_model')
     @patch('app.gdino_load_model')
     def test_get_grounding_dino_model_path_resolution(self, mock_gdino_load_model, mock_download):
@@ -428,7 +437,7 @@ class TestModels:
         Tests that get_grounding_dino_model correctly handles relative, absolute, and empty paths.
         """
         # Case 1: Relative path
-        app.get_grounding_dino_model.cache_clear()
+        app._dino_model_cache = None
         relative_path = "Grounded-SAM-2/grounding_dino/groundingdino/config/GroundingDINO_SwinT_OGC.py"
         app.get_grounding_dino_model(
             gdino_config_path=relative_path,
@@ -437,7 +446,8 @@ class TestModels:
             grounding_dino_url="http://fake.url/model.pth",
             user_agent="test-agent",
             retry_params=(3, (1, 2, 3)),
-            device="cpu"
+            device="cpu",
+            logger=self.logger
         )
         mock_gdino_load_model.assert_called_once()
         passed_config_path = mock_gdino_load_model.call_args.kwargs['model_config_path']
@@ -447,7 +457,7 @@ class TestModels:
 
         # Case 2: Empty path (should use default from Config)
         mock_gdino_load_model.reset_mock()
-        app.get_grounding_dino_model.cache_clear()
+        app._dino_model_cache = None
         app.get_grounding_dino_model(
             gdino_config_path="",  # Empty path
             gdino_checkpoint_path="models/groundingdino_swint_ogc.pth",
@@ -455,7 +465,8 @@ class TestModels:
             grounding_dino_url="http://fake.url/model.pth",
             user_agent="test-agent",
             retry_params=(3, (1, 2, 3)),
-            device="cpu"
+            device="cpu",
+            logger=self.logger
         )
         mock_gdino_load_model.assert_called_once()
         passed_config_path_default = mock_gdino_load_model.call_args.kwargs['model_config_path']
@@ -811,11 +822,12 @@ class TestEnhancedAppUI:
 
         (scenes, status_text, gallery_update, new_index_map, selected_id,
          editor_status, prompt, box_thresh, text_thresh, accordion_update,
-         gallery_image, gallery_shape, sub_num_update, button_update, yolo_results) = outputs
+         gallery_image, gallery_shape, sub_num_update, button_update, yolo_results, seed_mode) = outputs
 
         assert selected_id == sample_scenes[0]['shot_id']
         assert "Editing Scene 1" in editor_status['value']
         assert accordion_update['open'] is True
+        assert seed_mode == "YOLO Bbox"
 
     def test_create_analysis_context_invalid_folder(self, mock_app_ui):
         """
@@ -913,24 +925,19 @@ class TestSessionManagement:
         ui.thumbnail_manager = MagicMock()
         return ui
 
-    @patch('app.validate_session_dir', return_value=(Path('/fake/session'), None))
-    @patch('pathlib.Path.exists', autospec=True)
-    def test_execute_session_load_success(self, mock_exists, mock_validate, mock_ui):
+    @patch('app.validate_session_dir')
+    def test_execute_session_load_success(self, mock_validate, mock_ui, tmp_path):
         """Tests a successful session load."""
-        mock_files = {
-            str(Path('/fake/session/run_config.json')): '{"source_path": "/fake/video.mp4", "output_folder": "/fake/session"}',
-            str(Path('/fake/session/scenes.json')): '[[0, 100], [101, 200]]'
-        }
-        def open_side_effect(path, *args, **kwargs):
-            path_str = str(path)
-            return mock_open(read_data=mock_files.get(path_str, '')).return_value
-        def exists_side_effect(self):
-            s = str(self)
-            return s in mock_files or s == str(Path('/fake/session'))
-        mock_exists.side_effect = exists_side_effect
-        with patch('builtins.open', side_effect=open_side_effect):
-            event = app.SessionLoadEvent(session_path='/fake/session')
-            result = next(app.execute_session_load(mock_ui, event, mock_ui.logger, mock_ui.config, mock_ui.thumbnail_manager))
+        session_path = tmp_path / "session"
+        session_path.mkdir()
+        (session_path / "run_config.json").write_text('{"source_path": "/fake/video.mp4", "output_folder": "session"}')
+        (session_path / "scenes.json").write_text('[[0, 100], [101, 200]]')
+
+        mock_validate.return_value = (session_path, None)
+
+        event = app.SessionLoadEvent(session_path=str(session_path))
+        result = next(app.execute_session_load(mock_ui, event, mock_ui.logger, mock_ui.config, mock_ui.thumbnail_manager))
+
         assert "Successfully loaded session" in result['log']
         assert result['status'] == "... Session loaded. You can now proceed from where you left off."
         assert result['source_input']['value'] == "/fake/video.mp4"
