@@ -4713,7 +4713,7 @@ class EnhancedAppUI(AppUI):
 
 class CompositionRoot:
     def __init__(self):
-        self.config = Config(config_path="config.yml")
+        self.config = Config(config_path="config.json")
         self.logger = AppLogger(config=self.config)
         self.thumbnail_manager = ThumbnailManager(self.logger, self.config)
         self.progress_queue = Queue()
