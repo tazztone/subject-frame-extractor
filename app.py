@@ -2849,6 +2849,10 @@ def _wire_recompute_handler(config, logger, thumbnail_manager, scenes, shot_id, 
     Orchestrator for the 'Recompute Preview' button. Cleanly builds context and executes logic.
     """
     try:
+        # If the DINO text prompt is empty, do nothing.
+        if not text_prompt or not text_prompt.strip():
+            return scenes, gr.update(), gr.update(), "Enter a text prompt to use advanced seeding."
+
         # 1. Create the full analysis context from the current UI state
         # We need to combine the specific inputs from the recompute button with the general analysis inputs
         ui_args = dict(zip(ana_ui_map_keys, ana_input_components))
@@ -2870,7 +2874,7 @@ def _wire_recompute_handler(config, logger, thumbnail_manager, scenes, shot_id, 
         # 3. Persist the changes and update the UI
         save_scene_seeds(scenes, outdir, logger)
         gallery_items, index_map = build_scene_gallery_items(scenes, view, outdir)
-        msg = f"Scene {shot_id} preview recomputed successfully."
+        msg = f"Scene {shot_id} preview recomputed successfully with DINO."
         return scenes, gr.update(value=gallery_items), gr.update(value=index_map), msg
 
     except Exception as e:
@@ -3610,28 +3614,31 @@ class AppUI:
                 with gr.Accordion("Scene Editor", open=False, elem_classes="scene-editor") as sceneeditoraccordion:
                     self.components["sceneeditoraccordion"] = sceneeditoraccordion
                     self._create_component("sceneeditorstatusmd", "markdown", {"value": "Select a scene to edit."})
-                    self._create_component('scene_editor_seed_mode', 'radio', {'choices': ["DINO Text Prompt", "YOLO Bbox"], 'value': "DINO Text Prompt", 'label': "Seeding Method"})
 
-                    with gr.Group(visible=True) as dino_seed_group:
-                        self.components['dino_seed_group'] = dino_seed_group
-                        with gr.Row():
-                            self._create_component("sceneeditorpromptinput", "textbox", {"label": "Per-Scene Text Prompt", "info": "Override the main text prompt for this scene only. This will force a text-based search."})
-                        with gr.Row():
-                            info_box = "Confidence for detecting an object's bounding box. Higher = fewer, more confident detections."
-                            self._create_component("sceneeditorboxthreshinput", "slider", {
-                                "label": "Box Thresh", "minimum": 0.0, "maximum": 1.0, "step": 0.05, "info": info_box,
-                                "value": self.config.grounding_dino_params.box_threshold,})
-                            info_text = "Confidence for matching the prompt to an object. Higher = stricter text match."
-                            self._create_component("sceneeditortextthreshinput", "slider", {
-                                "label": "Text Thresh", "minimum": 0.0, "maximum": 1.0, "step": 0.05, "info": info_text,
-                                "value": self.config.grounding_dino_params.text_threshold,})
-
-                    with gr.Group(visible=False) as yolo_seed_group:
+                    # YOLO controls are now the primary method
+                    with gr.Group() as yolo_seed_group:
                         self.components['yolo_seed_group'] = yolo_seed_group
                         with gr.Row():
                             self._create_component('sceneeditor_yolo_conf_slider', 'slider', {'label': "YOLO Conf Min", 'minimum': 0.0, 'maximum': 1.0, 'step': 0.05, 'value': self.config.person_detector.conf})
                         with gr.Row():
-                            self._create_component('scene_editor_yolo_subject_id', 'radio', {'label': "Subject ID", 'info': "Select the subject to use for seeding.", 'interactive': True})
+                            self._create_component('scene_editor_yolo_subject_id', 'radio', {'label': "Subject ID", 'info': "Select the auto-detected subject to use for seeding.", 'interactive': True})
+
+                    # DINO controls are now in an "Advanced" accordion
+                    with gr.Accordion("Advanced Seeding (optional)", open=False):
+                        with gr.Group() as dino_seed_group:
+                            self.components['dino_seed_group'] = dino_seed_group
+                            gr.Markdown("Use a text prompt for seeding. This will override the YOLO detection above.")
+                            with gr.Row():
+                                self._create_component("sceneeditorpromptinput", "textbox", {"label": "DINO Text Prompt", "info": "e.g., 'person in a red shirt'"})
+                            with gr.Row():
+                                info_box = "Confidence for detecting an object's bounding box. Higher = fewer, more confident detections."
+                                self._create_component("sceneeditorboxthreshinput", "slider", {
+                                    "label": "Box Thresh", "minimum": 0.0, "maximum": 1.0, "step": 0.05, "info": info_box,
+                                    "value": self.config.grounding_dino_params.box_threshold,})
+                                info_text = "Confidence for matching the prompt to an object. Higher = stricter text match."
+                                self._create_component("sceneeditortextthreshinput", "slider", {
+                                    "label": "Text Thresh", "minimum": 0.0, "maximum": 1.0, "step": 0.05, "info": info_text,
+                                    "value": self.config.grounding_dino_params.text_threshold,})
 
                     with gr.Row():
                         self._create_component("scenerecomputebutton", "button", {"value": "▶️Recompute Preview"})
@@ -4014,7 +4021,7 @@ class EnhancedAppUI(AppUI):
             [c['scenes_state'], c['scene_filter_status'], c['scene_gallery'], c['scene_gallery_index_map_state'], c['selected_scene_id_state'],
              c['sceneeditorstatusmd'], c['sceneeditorpromptinput'], c['sceneeditorboxthreshinput'], c['sceneeditortextthreshinput'],
              c['sceneeditoraccordion'], c['gallery_image_state'], c['gallery_shape_state'],
-             c['scene_editor_yolo_subject_id'], c['propagate_masks_button'], c['yolo_results_state'], c['scene_editor_seed_mode']]
+             c['scene_editor_yolo_subject_id'], c['propagate_masks_button'], c['yolo_results_state']]
         ).then(
             self.on_scene_select_yolo_detection_wrapper,
             scene_select_yolo_inputs,
@@ -4056,15 +4063,15 @@ class EnhancedAppUI(AppUI):
         # validate selection
         if not scenes or not indexmap or evt is None or evt.index is None:
             return (scenes, status_text, gr.update(), indexmap,
-                    None, gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), None, None, None, button_update, {}, "YOLO Bbox")
+                    None, gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), None, None, None, button_update, {})
         if not (0 <= evt.index < len(indexmap)):
             return (scenes, status_text, gr.update(), indexmap,
-                    None, gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), None, None, None, button_update, {}, "YOLO Bbox")
+                    None, gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), None, None, None, button_update, {})
 
         scene_idx_in_state = indexmap[evt.index]
         if not (0 <= scene_idx_in_state < len(scenes)):
             return (scenes, status_text, gr.update(), indexmap,
-                    None, gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), None, None, None, button_update, {}, "YOLO Bbox")
+                    None, gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), None, None, None, button_update, {})
 
         scene = scenes[scene_idx_in_state]
         cfg = scene.get("seed_config") or {}
@@ -4152,11 +4159,6 @@ class EnhancedAppUI(AppUI):
             c['scenerecomputebutton'],
         ]
 
-        c['scene_editor_seed_mode'].change(
-            self.on_yolo_person_detection_wrapper,
-            inputs=yolo_detection_inputs,
-            outputs=yolo_detection_outputs
-        )
 
         c['scene_editor_yolo_subject_id'].change(
             self.on_select_yolo_subject_wrapper,
@@ -4328,15 +4330,6 @@ class EnhancedAppUI(AppUI):
                                                  [c['primary_seed_strategy_input']], [c['face_seeding_group'], c['text_seeding_group'],
                                                                                      c['auto_seeding_group'], c['enable_face_filter_input']])
 
-        c['scene_editor_seed_mode'].change(
-            lambda mode: {
-                c['dino_seed_group']: gr.update(visible=mode == "DINO Text Prompt"),
-                c['yolo_seed_group']: gr.update(visible=mode == "YOLO Bbox"),
-                c['scenerecomputebutton']: gr.update(visible=mode == "DINO Text Prompt"),
-            },
-            inputs=[c['scene_editor_seed_mode']],
-            outputs=[c['dino_seed_group'], c['yolo_seed_group'], c['scenerecomputebutton']]
-        )
 
     def _setup_pipeline_handlers(self):
         c = self.components
@@ -4465,12 +4458,12 @@ class EnhancedAppUI(AppUI):
 
         # Wire recompute to use current editor controls and state
         c['scenerecomputebutton'].click(
-            fn=lambda scenes, shot_id, outdir, view, txt, bth, tth, seed_mode, subject_id, yolo_results, yolo_conf, *ana_args:
-                self.on_select_yolo_subject_wrapper(subject_id, yolo_results, scenes, shot_id, outdir, view, yolo_conf, *ana_args)
-                if seed_mode == "YOLO Bbox" else
+            fn=lambda scenes, shot_id, outdir, view, txt, bth, tth, subject_id, yolo_results, yolo_conf, *ana_args:
                 _wire_recompute_handler(
                     self.config, self.app_logger, self.thumbnail_manager, scenes, shot_id, outdir, txt, bth, tth, view,
                     self.ana_ui_map_keys, ana_args, self.cuda_available
+                ) if (txt and txt.strip()) else self.on_select_yolo_subject_wrapper(
+                    subject_id, yolo_results, scenes, shot_id, outdir, view, yolo_conf, *ana_args
                 ),
             inputs=[
                 c['scenes_state'],
@@ -4478,7 +4471,7 @@ class EnhancedAppUI(AppUI):
                 c['analysis_output_dir_state'],
                 c['scene_gallery_view_toggle'],
                 c['sceneeditorpromptinput'], c['sceneeditorboxthreshinput'], c['sceneeditortextthreshinput'],
-                c['scene_editor_seed_mode'], c['scene_editor_yolo_subject_id'], c['yolo_results_state'], c['sceneeditor_yolo_conf_slider'],
+                c['scene_editor_yolo_subject_id'], c['yolo_results_state'], c['sceneeditor_yolo_conf_slider'],
                 *self.ana_input_components
             ],
             outputs=[
