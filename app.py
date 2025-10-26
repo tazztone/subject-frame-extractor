@@ -826,6 +826,21 @@ class PreAnalysisEvent(UIEvent):
     pre_analysis_enabled: bool
     pre_sample_nth: int
     primary_seed_strategy: str
+    compute_quality_score: bool = True
+    compute_sharpness: bool = True
+    compute_edge_strength: bool = True
+    compute_contrast: bool = True
+    compute_brightness: bool = True
+    compute_entropy: bool = True
+    compute_eyes_open: bool = True
+    compute_yaw: bool = True
+    compute_pitch: bool = True
+    compute_face_sim: bool = True
+    compute_subject_mask_area: bool = True
+    compute_niqe: bool = True
+    compute_phash: bool = True
+    enable_dedup: bool = True
+    dedup_thresh: int = 5
 
 @dataclass
 class PropagationEvent(UIEvent):
@@ -1010,10 +1025,14 @@ class Frame:
     error: str | None = None
 
     def calculate_quality_metrics(self, thumb_image_rgb: np.ndarray, quality_config: QualityConfig, logger: 'AppLogger',
-                                  mask: np.ndarray | None = None, niqe_metric=None, main_config: 'Config' = None, face_landmarker=None, face_bbox: Optional[List[int]] = None):
+                                  mask: np.ndarray | None = None, niqe_metric=None, main_config: 'Config' = None,
+                                  face_landmarker=None, face_bbox: Optional[List[int]] = None,
+                                  metrics_to_compute: Optional[Dict[str, bool]] = None):
         try:
-            if face_landmarker:
-                # if a face bounding box is provided, crop the image to that box
+            if metrics_to_compute is None:
+                metrics_to_compute = {k: True for k in ['eyes_open', 'yaw', 'pitch', 'sharpness', 'edge_strength', 'contrast', 'brightness', 'entropy', 'quality']}
+
+            if face_landmarker and any(metrics_to_compute.get(k) for k in ['eyes_open', 'yaw', 'pitch']):
                 if face_bbox:
                     x1, y1, x2, y2 = face_bbox
                     face_img = thumb_image_rgb[y1:y2, x1:x2]
@@ -1030,70 +1049,90 @@ class Frame:
 
                 if landmarker_result.face_blendshapes:
                     blendshapes = {b.category_name: b.score for b in landmarker_result.face_blendshapes[0]}
-                    self.metrics.eyes_open = 1.0 - max(blendshapes.get('eyeBlinkLeft', 0), blendshapes.get('eyeBlinkRight', 0))
-                    self.metrics.blink_prob = max(blendshapes.get('eyeBlinkLeft', 0), blendshapes.get('eyeBlinkRight', 0))
+                    if metrics_to_compute.get('eyes_open'):
+                        self.metrics.eyes_open = 1.0 - max(blendshapes.get('eyeBlinkLeft', 0), blendshapes.get('eyeBlinkRight', 0))
+                        self.metrics.blink_prob = max(blendshapes.get('eyeBlinkLeft', 0), blendshapes.get('eyeBlinkRight', 0))
 
-                if landmarker_result.facial_transformation_matrixes:
+                if landmarker_result.facial_transformation_matrixes and any(metrics_to_compute.get(k) for k in ['yaw', 'pitch']):
                     matrix = landmarker_result.facial_transformation_matrixes[0]
                     sy = math.sqrt(matrix[0, 0] * matrix[0, 0] + matrix[1, 0] * matrix[1, 0])
                     singular = sy < 1e-6
                     if not singular:
-                        self.metrics.pitch = math.degrees(math.atan2(-matrix[2, 0], sy))
-                        self.metrics.yaw = math.degrees(math.atan2(matrix[1, 0], matrix[0, 0]))
+                        if metrics_to_compute.get('pitch'): self.metrics.pitch = math.degrees(math.atan2(-matrix[2, 0], sy))
+                        if metrics_to_compute.get('yaw'): self.metrics.yaw = math.degrees(math.atan2(matrix[1, 0], matrix[0, 0]))
                         self.metrics.roll = math.degrees(math.atan2(matrix[2, 1], matrix[2, 2]))
                     else:
-                        self.metrics.pitch = math.degrees(math.atan2(-matrix[2, 0], sy))
-                        self.metrics.yaw = 0
+                        if metrics_to_compute.get('pitch'): self.metrics.pitch = math.degrees(math.atan2(-matrix[2, 0], sy))
+                        if metrics_to_compute.get('yaw'): self.metrics.yaw = 0
                         self.metrics.roll = 0
 
+            scores_norm = {}
             gray = cv2.cvtColor(thumb_image_rgb, cv2.COLOR_RGB2GRAY)
             active_mask = ((mask > 128) if mask is not None and mask.ndim == 2 else None)
             if active_mask is not None and np.sum(active_mask) < 100:
-                active_mask = None # fallback to full-frame stats instead of raising
-            lap = cv2.Laplacian(gray, cv2.CV_64F)
-            masked_lap = lap[active_mask] if active_mask is not None else lap
-            sharpness = np.var(masked_lap) if masked_lap.size > 0 else 0
-            sharpness_scaled = (sharpness / (quality_config.sharpness_base_scale * (gray.size / main_config.quality_scaling.resolution_denominator)))
-            sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
-            sobely = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)
-            edge_strength = np.mean(np.sqrt(sobelx**2 + sobely**2))
-            edge_strength_scaled = (edge_strength / (quality_config.edge_strength_base_scale * (gray.size / main_config.quality_scaling.resolution_denominator)))
-            pixels = gray[active_mask] if active_mask is not None else gray
-            mean_br, std_br = (np.mean(pixels), np.std(pixels)) if pixels.size > 0 else (0, 0)
-            brightness = mean_br / 255.0
-            contrast = std_br / (mean_br + 1e-7)
-            gray_full = cv2.cvtColor(self.image_data, cv2.COLOR_RGB2GRAY)
-            active_mask_full = None
-            if mask is not None:
-                mask_full = cv2.resize(mask, (gray_full.shape[1], gray_full.shape[0]), interpolation=cv2.INTER_NEAREST)
-                active_mask_full = (mask_full > 128).astype(np.uint8)
-            hist = cv2.calcHist([gray_full], [0], active_mask_full, [256], [0, 256]).flatten()
-            entropy = compute_entropy(hist, main_config.quality_scaling.entropy_normalization)
-            niqe_score = 0.0
+                active_mask = None
+
+            if metrics_to_compute.get('sharpness'):
+                lap = cv2.Laplacian(gray, cv2.CV_64F)
+                masked_lap = lap[active_mask] if active_mask is not None else lap
+                sharpness = np.var(masked_lap) if masked_lap.size > 0 else 0
+                sharpness_scaled = (sharpness / (quality_config.sharpness_base_scale * (gray.size / main_config.quality_scaling.resolution_denominator)))
+                scores_norm["sharpness"] = min(sharpness_scaled, 1.0)
+                self.metrics.sharpness_score = float(scores_norm["sharpness"] * 100)
+
+            if metrics_to_compute.get('edge_strength'):
+                sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
+                sobely = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)
+                edge_strength = np.mean(np.sqrt(sobelx**2 + sobely**2))
+                edge_strength_scaled = (edge_strength / (quality_config.edge_strength_base_scale * (gray.size / main_config.quality_scaling.resolution_denominator)))
+                scores_norm["edge_strength"] = min(edge_strength_scaled, 1.0)
+                self.metrics.edge_strength_score = float(scores_norm["edge_strength"] * 100)
+
+            if metrics_to_compute.get('contrast') or metrics_to_compute.get('brightness'):
+                pixels = gray[active_mask] if active_mask is not None else gray
+                mean_br, std_br = (np.mean(pixels), np.std(pixels)) if pixels.size > 0 else (0, 0)
+                if metrics_to_compute.get('brightness'):
+                    brightness = mean_br / 255.0
+                    scores_norm["brightness"] = brightness
+                    self.metrics.brightness_score = float(brightness * 100)
+                if metrics_to_compute.get('contrast'):
+                    contrast = std_br / (mean_br + 1e-7)
+                    scores_norm["contrast"] = min(contrast, main_config.quality_scaling.contrast_clamp) / main_config.quality_scaling.contrast_clamp
+                    self.metrics.contrast_score = float(scores_norm["contrast"] * 100)
+
+            if metrics_to_compute.get('entropy'):
+                gray_full = cv2.cvtColor(self.image_data, cv2.COLOR_RGB2GRAY)
+                active_mask_full = None
+                if mask is not None:
+                    mask_full = cv2.resize(mask, (gray_full.shape[1], gray_full.shape[0]), interpolation=cv2.INTER_NEAREST)
+                    active_mask_full = (mask_full > 128).astype(np.uint8)
+                hist = cv2.calcHist([gray_full], [0], active_mask_full, [256], [0, 256]).flatten()
+                entropy = compute_entropy(hist, main_config.quality_scaling.entropy_normalization)
+                scores_norm["entropy"] = entropy
+                self.metrics.entropy_score = float(entropy * 100)
+
             if quality_config.enable_niqe and niqe_metric is not None:
                 try:
                     rgb_image = self.image_data
-                    if active_mask_full is not None:
-                        mask_3ch = (np.stack([active_mask_full] * 3, axis=-1) > 0)
+                    if active_mask is not None:
+                        active_mask_full = cv2.resize(mask, (rgb_image.shape[1], rgb_image.shape[0]), interpolation=cv2.INTER_NEAREST) > 128
+                        mask_3ch = (np.stack([active_mask_full] * 3, axis=-1))
                         rgb_image = np.where(mask_3ch, rgb_image, 0)
                     img_tensor = (torch.from_numpy(rgb_image).float().permute(2, 0, 1).unsqueeze(0) / 255.0)
                     with (torch.no_grad(), torch.cuda.amp.autocast(enabled=torch.cuda.is_available())):
                         niqe_raw = float(niqe_metric(img_tensor.to(niqe_metric.device)))
                         niqe_score = max(0, min(100, (main_config.quality_scaling.niqe_offset - niqe_raw) * main_config.quality_scaling.niqe_scale_factor))
+                        scores_norm["niqe"] = niqe_score / 100.0
+                        self.metrics.niqe_score = float(niqe_score)
                 except Exception as e:
                     logger.warning("NIQE calculation failed", extra={'frame': self.frame_number, 'error': e})
-                    if torch.cuda.is_available():
-                        torch.cuda.empty_cache()
-            scores_norm = {"sharpness": min(sharpness_scaled, 1.0), "edge_strength": min(edge_strength_scaled, 1.0),
-                           "contrast": min(contrast, main_config.quality_scaling.contrast_clamp) / main_config.quality_scaling.contrast_clamp, "brightness": brightness, "entropy": entropy, "niqe": niqe_score / 100.0}
-            for k, v in scores_norm.items():
-                setattr(self.metrics, f'{k}_score', float(v * 100))
-            # The quality_weights are part of the main config, not QualityConfig, so we'll need to pass them separately or access them differently.
-            if main_config:
+                    if torch.cuda.is_available(): torch.cuda.empty_cache()
+
+            if main_config and metrics_to_compute.get('quality'):
                 weights = asdict(main_config.quality_weights)
                 quality_sum = sum(
-                    scores_norm[k] * (weights[k] / 100.0)
-                    for k in scores_norm.keys() if k in weights
+                    scores_norm.get(k, 0) * (weights.get(k, 0) / 100.0)
+                    for k in scores_norm.keys()
                 )
                 self.metrics.quality_score = float(quality_sum * 100)
         except Exception as e:
@@ -1153,6 +1192,21 @@ class AnalysisParameters:
     min_mask_area_pct: float = 1.0
     sharpness_base_scale: float = 2500.0
     edge_strength_base_scale: float = 100.0
+    compute_quality_score: bool = True
+    compute_sharpness: bool = True
+    compute_edge_strength: bool = True
+    compute_contrast: bool = True
+    compute_brightness: bool = True
+    compute_entropy: bool = True
+    compute_eyes_open: bool = True
+    compute_yaw: bool = True
+    compute_pitch: bool = True
+    compute_face_sim: bool = True
+    compute_subject_mask_area: bool = True
+    compute_niqe: bool = True
+    compute_phash: bool = True
+    enable_dedup: bool = True
+    dedup_thresh: int = 5
 
     def __post_init__(self):
         # This post_init is now less critical as config is passed on creation,
@@ -1179,15 +1233,40 @@ class AnalysisParameters:
                 kwargs['pre_sample_nth'] = 1
 
         valid_keys = {f.name for f in fields(cls)}
-        filtered_defaults = {k: v for k, v in asdict(config.ui_defaults).items() if k in valid_keys}
-        instance = cls(**filtered_defaults)
+
+        # Start with all-False for compute flags, then selectively enable
+        defaults = {f.name: False for f in fields(cls) if f.name.startswith('compute_')}
+
+        # Merge UI defaults
+        ui_defaults = asdict(config.ui_defaults)
+        for key in valid_keys:
+            if key in ui_defaults:
+                defaults[key] = ui_defaults[key]
+
+        # Explicitly set compute defaults from filter_defaults as a baseline
+        # This reflects the current behavior where if a filter exists, we compute the metric
+        for metric in config.filter_defaults.__annotations__.keys():
+            compute_key = f"compute_{metric}"
+            if compute_key in valid_keys:
+                defaults[compute_key] = True
+
+        # Also handle phash/dedup specially
+        defaults['compute_phash'] = True
+
+        instance = cls(**defaults)
+
         for key, value in kwargs.items():
-            if hasattr(instance, key) and value is not None and value != '':
+            if hasattr(instance, key) and value is not None:
+                # Allow empty strings for certain text fields if needed, but otherwise skip
+                if isinstance(value, str) and not value.strip() and key not in ['text_prompt', 'face_ref_img_path']:
+                    continue
+
                 default = getattr(instance, key)
                 try:
                     setattr(instance, key, _coerce(value, type(default)))
                 except (ValueError, TypeError):
                     logger.warning(f"Could not coerce UI value for '{key}' to {type(default)}. Using default.", extra={'key': key, 'value': value})
+
         return instance
 
     def _get_config_hash(self, output_dir: Path) -> str:
@@ -2485,20 +2564,53 @@ class AnalysisPipeline(Pipeline):
             quality_conf = QualityConfig(
                 sharpness_base_scale=self.config.sharpness_base_scale,
                 edge_strength_base_scale=self.config.edge_strength_base_scale,
-                # enable NIQE if the metric object was successfully initialized
-                enable_niqe=(self.niqe_metric is not None)
+                enable_niqe=(self.niqe_metric is not None and self.params.compute_niqe)
             )
             face_bbox = None
-            if self.face_analyzer:
+            if self.params.compute_face_sim and self.face_analyzer:
                 face_bbox = self._analyze_face_similarity(frame, thumb_image_rgb)
-            frame.calculate_quality_metrics(thumb_image_rgb, quality_conf, self.logger, mask=mask_thumb, niqe_metric=self.niqe_metric, main_config=self.config, face_landmarker=self.face_landmarker, face_bbox=face_bbox)
+
+            # Create a dictionary to hold metrics that should be computed
+            metrics_to_compute = {
+                'quality': self.params.compute_quality_score,
+                'sharpness': self.params.compute_sharpness,
+                'edge_strength': self.params.compute_edge_strength,
+                'contrast': self.params.compute_contrast,
+                'brightness': self.params.compute_brightness,
+                'entropy': self.params.compute_entropy,
+                'eyes_open': self.params.compute_eyes_open,
+                'yaw': self.params.compute_yaw,
+                'pitch': self.params.compute_pitch,
+            }
+            # Only call calculate_quality_metrics if at least one metric is requested
+            if any(metrics_to_compute.values()) or self.params.compute_niqe:
+                 frame.calculate_quality_metrics(
+                    thumb_image_rgb, quality_conf, self.logger,
+                    mask=mask_thumb, niqe_metric=self.niqe_metric, main_config=self.config,
+                    face_landmarker=self.face_landmarker, face_bbox=face_bbox,
+                    metrics_to_compute=metrics_to_compute
+                )
+
             meta = {"filename": base_filename, "metrics": asdict(frame.metrics)}
-            if frame.face_similarity_score is not None: meta["face_sim"] = frame.face_similarity_score
-            if frame.max_face_confidence is not None: meta["face_conf"] = frame.max_face_confidence
-            meta.update(mask_meta)
+            if self.params.compute_face_sim:
+                if frame.face_similarity_score is not None:
+                    meta["face_sim"] = frame.face_similarity_score
+                if frame.max_face_confidence is not None:
+                    meta["face_conf"] = frame.max_face_confidence
+
+            if self.params.compute_subject_mask_area:
+                meta.update(mask_meta)
+
             if meta.get("shot_id") is not None and (scene := self.scene_map.get(meta["shot_id"])) and scene.seed_metrics:
                 meta['seed_face_sim'] = scene.seed_metrics.get('best_face_sim')
-            if self.params.enable_dedup and imagehash: meta['phash'] = str(imagehash.phash(rgb_to_pil(thumb_image_rgb)))
+
+            if self.params.compute_phash and imagehash:
+                meta['phash'] = str(imagehash.phash(rgb_to_pil(thumb_image_rgb)))
+
+            # This is to ensure the UI slider is respected
+            if 'dedup_thresh' in self.params.__dict__:
+                meta['dedup_thresh'] = self.params.dedup_thresh
+
             if frame.error: meta["error"] = frame.error
             if meta.get("mask_path"): meta["mask_path"] = Path(meta["mask_path"]).name
             with self.processing_lock:
@@ -3254,10 +3366,15 @@ def execute_session_load(
             )
 
         # Always finalize successfully if we got here
+        # Add metric compute flags to the updates dictionary
+        for metric in app_ui.ana_ui_map_keys:
+            if metric.startswith('compute_'):
+                updates[metric] = gr.update(value=run_config.get(metric, True))
+
         updates.update({
             "log": f"Successfully loaded session from: {session_path}",
             "status": "... Session loaded. You can now proceed from where you left off.",
-            "main_tabs": gr.update(selected=2)
+            "main_tabs": gr.update(selected=3)
         })
         yield updates
 
@@ -3428,11 +3545,17 @@ class AppUI:
         self.components, self.cuda_available = {}, torch.cuda.is_available()
         self.ext_ui_map_keys = ['source_path', 'upload_video', 'method', 'interval', 'nth_frame', 'fast_scene',
                                 'max_resolution', 'use_png', 'extraction_method_toggle', 'thumb_megapixels', 'scene_detect']
-        self.ana_ui_map_keys = ['output_folder', 'video_path', 'resume', 'enable_face_filter', 'face_ref_img_path', 'face_ref_img_upload',
-                                'face_model_name', 'enable_subject_mask', 'dam4sam_model_name', 'person_detector_model', 'best_frame_strategy',
-                                'scene_detect', 'text_prompt', 'box_threshold', 'text_threshold', 'min_mask_area_pct',
-                                'sharpness_base_scale', 'edge_strength_base_scale', 'gdino_config_path', 'gdino_checkpoint_path',
-                                'pre_analysis_enabled', 'pre_sample_nth', 'primary_seed_strategy']
+        self.ana_ui_map_keys = [
+            'output_folder', 'video_path', 'resume', 'enable_face_filter', 'face_ref_img_path', 'face_ref_img_upload',
+            'face_model_name', 'enable_subject_mask', 'dam4sam_model_name', 'person_detector_model', 'best_frame_strategy',
+            'scene_detect', 'text_prompt', 'box_threshold', 'text_threshold', 'min_mask_area_pct',
+            'sharpness_base_scale', 'edge_strength_base_scale', 'gdino_config_path', 'gdino_checkpoint_path',
+            'pre_analysis_enabled', 'pre_sample_nth', 'primary_seed_strategy',
+            'compute_quality_score', 'compute_sharpness', 'compute_edge_strength', 'compute_contrast',
+            'compute_brightness', 'compute_entropy', 'compute_eyes_open', 'compute_yaw', 'compute_pitch',
+            'compute_face_sim', 'compute_subject_mask_area', 'compute_niqe', 'compute_phash',
+            'enable_dedup', 'dedup_thresh'
+        ]
         self.session_load_keys = ['unified_log', 'unified_status', 'progress_details', 'cancel_button', 'pause_button',
                                   'source_input', 'max_resolution', 'extraction_method_toggle_input', 'thumb_megapixels_input', 'ext_scene_detect_input',
                                   'method_input', 'use_png_input', 'pre_analysis_enabled_input', 'pre_sample_nth_input', 'enable_face_filter_input',
@@ -3482,7 +3605,10 @@ class AppUI:
             with gr.Tab("🎞️ 3. Scene Selection", id=2) as scene_selection_tab:
                 self.components['scene_selection_tab'] = scene_selection_tab
                 self._create_scene_selection_tab()
-            with gr.Tab("📊 4. Filtering & Export", id=3) as filtering_tab:
+            with gr.Tab("📝 4. Metrics", id=3) as metrics_tab:
+                self.components['metrics_tab'] = metrics_tab
+                self._create_metrics_tab()
+            with gr.Tab("📊 5. Filtering & Export", id=4) as filtering_tab:
                 self.components['filtering_tab'] = filtering_tab
                 self._create_filtering_tab()
 
@@ -3686,6 +3812,40 @@ class AppUI:
 
                 gr.Markdown("---"); gr.Markdown("### 🔬 Step 3: Propagate Masks"); gr.Markdown("Once you are satisfied with the seeds, propagate the masks to the rest of the frames in the selected scenes.")
                 self._create_component('propagate_masks_button', 'button', {'value': '🔬 Propagate Masks on Kept Scenes', 'variant': 'primary', 'interactive': False})
+
+    def _create_metrics_tab(self):
+        gr.Markdown("### Step 4: Select Metrics to Compute")
+        gr.Markdown("Choose which metrics to calculate during the analysis phase. More metrics provide more filtering options but may increase processing time.")
+
+        with gr.Row():
+            with gr.Column():
+                self._create_component('compute_quality_score', 'checkbox', {'label': "Quality Score", 'value': True})
+                self._create_component('compute_sharpness', 'checkbox', {'label': "Sharpness", 'value': True})
+                self._create_component('compute_edge_strength', 'checkbox', {'label': "Edge Strength", 'value': True})
+                self._create_component('compute_contrast', 'checkbox', {'label': "Contrast", 'value': True})
+                self._create_component('compute_brightness', 'checkbox', {'label': "Brightness", 'value': True})
+                self._create_component('compute_entropy', 'checkbox', {'label': "Entropy", 'value': True})
+            with gr.Column():
+                self._create_component('compute_eyes_open', 'checkbox', {'label': "Eyes Open", 'value': True})
+                self._create_component('compute_yaw', 'checkbox', {'label': "Yaw", 'value': True})
+                self._create_component('compute_pitch', 'checkbox', {'label': "Pitch", 'value': True})
+                self._create_component('compute_face_sim', 'checkbox', {'label': "Face Similarity", 'value': True})
+                self._create_component('compute_subject_mask_area', 'checkbox', {'label': "Subject Mask Area", 'value': True})
+                self._create_component('compute_niqe', 'checkbox', {'label': "NIQE", 'value': pyiqa is not None, 'interactive': pyiqa is not None, 'info': "Requires 'pyiqa' to be installed."})
+
+        with gr.Accordion("Deduplication Settings", open=True):
+            self._create_component('compute_phash', 'checkbox', {'label': "Compute p-hash for Deduplication", 'value': True})
+            with gr.Group(visible=True) as dedup_controls:
+                self.components['dedup_controls_group'] = dedup_controls
+                self._create_component('enable_dedup_metrics', 'checkbox', {'label': "Enable Deduplication", 'value': self.config.ui_defaults.enable_dedup})
+                f_def = self.config.filter_defaults.dedup_thresh
+                self._create_component('dedup_thresh_metrics', 'slider', {'label': "Similarity Threshold", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': self.config.ui_defaults.dedup_thresh, 'step': f_def['step'], 'info': "Filters out visually similar frames. A lower value is stricter (more filtering). A value of 0 means only identical images will be removed. Set to -1 to disable."})
+
+        self.components['compute_phash'].change(
+            lambda x: gr.update(visible=x),
+            self.components['compute_phash'],
+            self.components['dedup_controls_group'],
+        )
 
     def _create_analysis_tab(self):
         pass
@@ -4433,14 +4593,21 @@ class EnhancedAppUI(AppUI):
                                                            'gdino_config_path': gr.State(str(self.config.paths.grounding_dino_config)),
                                                            'gdino_checkpoint_path': gr.State(str(self.config.paths.grounding_dino_checkpoint)),
                                                            'pre_analysis_enabled': 'pre_analysis_enabled_input', 'pre_sample_nth': 'pre_sample_nth_input',
-                                                           'primary_seed_strategy': 'primary_seed_strategy_input'}[k] for k in self.ana_ui_map_keys]]
+                                                           'primary_seed_strategy': 'primary_seed_strategy_input',
+                                                           **{f'compute_{m}': f'compute_{m}' for m in [
+                                                               'quality_score', 'sharpness', 'edge_strength', 'contrast', 'brightness', 'entropy',
+                                                               'eyes_open', 'yaw', 'pitch', 'face_sim', 'subject_mask_area', 'niqe', 'phash'
+                                                           ]},
+                                                           'enable_dedup': 'enable_dedup_metrics',
+                                                           'dedup_thresh': 'dedup_thresh_metrics'
+                                                          }[k] for k in self.ana_ui_map_keys]]
         prop_inputs = [c['scenes_state']] + self.ana_input_components
         c['start_extraction_button'].click(fn=extraction_handler,
                                          inputs=ext_inputs, outputs=all_outputs, show_progress="hidden").then(lambda d: gr.update(selected=1) if d else gr.update(), c['extracted_frames_dir_state'], c['main_tabs'])
         c['start_pre_analysis_button'].click(fn=pre_analysis_handler,
                                            inputs=self.ana_input_components, outputs=all_outputs, show_progress="hidden")
         c['propagate_masks_button'].click(fn=propagation_handler,
-                                        inputs=prop_inputs, outputs=all_outputs, show_progress="hidden").then(lambda p: gr.update(selected=3) if p else gr.update(), c['analysis_metadata_path_state'], c['main_tabs'])
+                                        inputs=prop_inputs, outputs=all_outputs, show_progress="hidden").then(lambda p: gr.update(selected=4) if p else gr.update(), c['analysis_metadata_path_state'], c['main_tabs'])
 
     def on_apply_bulk_scene_filters_extended(self, scenes, min_mask_area, min_face_sim, min_confidence, enable_face_filter, output_folder, view):
         if not scenes:
