@@ -2168,10 +2168,10 @@ class SubjectMasker:
                 frame_numbers, small_images, dims = zip(*shot_frames_data)
 
                 try:
-                    seed_frame_num = scene.best_seed_frame
-                    seed_idx_in_shot = frame_numbers.index(seed_frame_num)
+                    best_frame_num = scene.best_frame
+                    seed_idx_in_shot = frame_numbers.index(best_frame_num)
                 except (ValueError, AttributeError):
-                    self.logger.warning(f"Seed frame {scene.best_seed_frame} not found in loaded shot frames for {scene.shot_id}, skipping.")
+                    self.logger.warning(f"Best frame {scene.best_frame} not found in loaded shot frames for {scene.shot_id}, skipping.")
                     continue
 
                 bbox, seed_details = scene.seed_result.get('bbox'), scene.seed_result.get('details', {})
@@ -2209,13 +2209,13 @@ class SubjectMasker:
             frames.append((fn, thumb_img, thumb_img.shape[:2]))
         return frames
 
-    def _select_best_seed_frame_in_scene(self, scene, frames_dir: str):
+    def _select_best_frame_in_scene(self, scene, frames_dir: str):
         if not self.params.pre_analysis_enabled:
-            scene.best_seed_frame, scene.seed_metrics = scene.start_frame, {'reason': 'pre-analysis disabled'}
+            scene.best_frame, scene.seed_metrics = scene.start_frame, {'reason': 'pre-analysis disabled'}
             return
         shot_frames = self._load_shot_frames(frames_dir, scene.start_frame, scene.end_frame)
         if not shot_frames:
-            scene.best_seed_frame, scene.seed_metrics = scene.start_frame, {'reason': 'no frames loaded'}
+            scene.best_frame, scene.seed_metrics = scene.start_frame, {'reason': 'no frames loaded'}
             return
         candidates, scores = shot_frames[::max(1, self.params.pre_sample_nth)], []
         for frame_num, thumb_rgb, _ in candidates:
@@ -2231,11 +2231,11 @@ class SubjectMasker:
             scores.append((10 - niqe_score) + (face_sim * 10))
         if not scores:
             best_local_idx = 0
-            scene.best_seed_frame = scene.start_frame # Fallback
+            scene.best_frame = scene.start_frame # Fallback
             scene.seed_metrics = {'reason': 'pre-analysis failed, no scores', 'score': 0}
             return
         best_local_idx = int(np.argmax(scores))
-        scene.best_seed_frame = candidates[best_local_idx][0]
+        scene.best_frame = candidates[best_local_idx][0]
         scene.seed_metrics = {'reason': 'pre-analysis complete', 'score': max(scores), 'best_niqe': niqe_score, 'best_face_sim': face_sim}
 
     def get_seed_for_frame(self, frame_rgb: np.ndarray, seed_config: dict):
@@ -2987,8 +2987,8 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue, cancel_
             if cancel_event.is_set(): break
             tracker.step(1, desc=f"Image {scene.shot_id}")
 
-            scene.best_seed_frame = scene.start_frame
-            fname = masker.frame_map.get(scene.best_seed_frame)
+            scene.best_frame = scene.start_frame
+            fname = masker.frame_map.get(scene.best_frame)
             if not fname: continue
 
             thumb_rgb = thumbnail_manager.get(output_dir / "thumbs" / f"{Path(fname).stem}.webp")
@@ -3039,8 +3039,8 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue, cancel_
         for i, scene in enumerate(scenes):
             if cancel_event.is_set(): break
             tracker.step(1, desc=f"Scene {scene.shot_id}")
-            if not scene.best_seed_frame: masker._select_best_seed_frame_in_scene(scene, str(output_dir))
-            fname = masker.frame_map.get(scene.best_seed_frame)
+            if not scene.best_frame: masker._select_best_frame_in_scene(scene, str(output_dir))
+            fname = masker.frame_map.get(scene.best_frame)
             if not fname: continue
             thumb_rgb = thumbnail_manager.get(output_dir / "thumbs" / f"{Path(fname).stem}.webp")
             if thumb_rgb is None: continue
@@ -3803,19 +3803,19 @@ class EnhancedAppUI(AppUI):
                 return gr.update(), gr.update(), "Scene not found.", yolo_results, gr.update(interactive=False)
 
             scene = scenes[scene_idx]
-            seed_frame_num = scene.get('best_seed_frame') or scene.get('start_frame')
-            fname = masker.frame_map.get(int(seed_frame_num))
+            best_frame_num = scene.get('best_frame') or scene.get('start_frame')
+            fname = masker.frame_map.get(int(best_frame_num))
             if not fname:
-                return gr.update(), gr.update(), "Seed frame not in frame map.", yolo_results, gr.update(interactive=False)
+                return gr.update(), gr.update(), "Best frame not in frame map.", yolo_results, gr.update(interactive=False)
 
-            seed_thumb_path = Path(outdir) / "thumbs" / f"{Path(fname).stem}.webp"
-            seed_thumb = self.thumbnail_manager.get(seed_thumb_path)
-            if seed_thumb is None:
-                return gr.update(), gr.update(), "Could not load seed thumbnail.", yolo_results, gr.update(interactive=False)
+            best_frame_thumb_path = Path(outdir) / "thumbs" / f"{Path(fname).stem}.webp"
+            best_frame_thumb = self.thumbnail_manager.get(best_frame_thumb_path)
+            if best_frame_thumb is None:
+                return gr.update(), gr.update(), "Could not load best frame thumbnail.", yolo_results, gr.update(interactive=False)
 
-            yolo_boxes = [box for box in masker.seed_selector._get_yolo_boxes(seed_thumb) if box['conf'] >= yolo_conf]
+            yolo_boxes = [box for box in masker.seed_selector._get_yolo_boxes(best_frame_thumb) if box['conf'] >= yolo_conf]
 
-            canvas_with_boxes = draw_boxes_preview(seed_thumb, [b['bbox'] for b in yolo_boxes], self.config)
+            canvas_with_boxes = draw_boxes_preview(best_frame_thumb, [b['bbox'] for b in yolo_boxes], self.config)
 
             message = f"Found {len(yolo_boxes)} YOLO candidates. Select a subject and click 'Recompute Preview'."
             if not yolo_boxes:
