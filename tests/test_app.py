@@ -822,12 +822,11 @@ class TestEnhancedAppUI:
 
         (scenes, status_text, gallery_update, new_index_map, selected_id,
          editor_status, prompt, box_thresh, text_thresh, accordion_update,
-         gallery_image, gallery_shape, sub_num_update, button_update, yolo_results, seed_mode) = outputs
+         gallery_image, gallery_shape, sub_num_update, button_update, yolo_results) = outputs
 
         assert selected_id == sample_scenes[0]['shot_id']
         assert "Editing Scene 1" in editor_status['value']
         assert accordion_update['open'] is True
-        assert seed_mode == "YOLO Bbox"
 
     def test_create_analysis_context_invalid_folder(self, mock_app_ui):
         """
@@ -1173,7 +1172,7 @@ class TestImageFolderUtils:
 
         # Check that the correct content was written to the mock file handle
         file_handle_mock = mock_io_open.return_value
-        expected_frame_map_content = json.dumps([1, 2])
+        expected_frame_map_content = json.dumps({"1": "frame_000001.webp", "2": "frame_000002.webp"}, indent=2)
         expected_manifest_content = json.dumps({
             "1": str(image_paths[0].resolve()),
             "2": str(image_paths[1].resolve())
