@@ -209,7 +209,6 @@ class Config:
         use_png: bool = True
         nth_frame: int = 5
         disable_parallel: bool = False
-        scene_editor_seed_mode: str = "per-scene"
 
     @dataclass
     class FilterDefaults:
@@ -249,7 +248,6 @@ class Config:
         gallery_view: List[str] = field(default_factory=lambda: ["Kept Frames", "Rejected Frames"])
         log_level: List[str] = field(default_factory=lambda: ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'SUCCESS', 'CRITICAL'])
         scene_gallery_view: List[str] = field(default_factory=lambda: ["Kept", "Rejected", "All"])
-        scene_editor_seed_mode: List[str] = field(default_factory=lambda: ["fixed", "per-scene", "random"])
 
     @dataclass
     class GroundingDinoParams:
@@ -815,9 +813,8 @@ class PreAnalysisEvent(UIEvent):
     enable_subject_mask: bool
     dam4sam_model_name: str
     person_detector_model: str
-    seed_strategy: str
+    best_frame_strategy: str
     scene_detect: bool
-    enable_dedup: bool
     text_prompt: str
     box_threshold: float
     text_threshold: float
@@ -1109,7 +1106,7 @@ class Scene:
     start_frame: int
     end_frame: int
     status: str = "pending"
-    best_seed_frame: int | None = None
+    best_frame: int | None = None
     seed_metrics: dict = field(default_factory=dict)
     seed_frame_idx: int | None = None
     seed_config: dict = field(default_factory=dict)
@@ -1143,8 +1140,6 @@ class AnalysisParameters:
     scene_detect: bool = False
     nth_frame: int = 0
     require_face_match: bool = False
-    enable_dedup: bool = False
-    dedup_thresh: int = 0
     text_prompt: str = ""
     thumbnails_only: bool = True
     thumb_megapixels: float = 0.5
@@ -2105,13 +2100,23 @@ class SubjectMasker:
         self.mask_propagator = MaskPropagator(params, self.dam_tracker, cancel_event, progress_queue, config=self.config, logger=self.logger)
 
     def _initialize_models(self):
-        # Conditionally initialize models based on the analysis parameters.
-        # This prevents loading large models into memory if they are not needed for the selected workflow.
-        text_based_seeding = "By Text" in self.params.primary_seed_strategy or "Fallback" in self.params.primary_seed_strategy
-        if text_based_seeding:
-            self._init_grounder()
+        primary_strategy = self.params.primary_seed_strategy
+        if primary_strategy == "🧑‍🤝‍🧑 Find Prominent Person":
+            # This strategy only requires YOLO, which is loaded on demand.
+            # No need to load other models.
+            return
+
+        # Conditionally initialize models for other strategies.
+        if self.params.enable_face_filter:
+            if self.face_analyzer is None:
+                self.logger.warning("Face analyzer is not available.")
+
         if self.params.enable_subject_mask:
             self._initialize_tracker()
+
+        text_based_seeding = "By Text" in primary_strategy or "Fallback" in primary_strategy
+        if text_based_seeding:
+            self._init_grounder()
     def _init_grounder(self):
         if self._gdino is not None: return True
         retry_params = (self.config.retry.max_attempts, tuple(self.config.retry.backoff_seconds))
@@ -2704,8 +2709,17 @@ def auto_set_thresholds(per_metric_values, p, slider_keys, selected_metrics):
 
 def save_scene_seeds(scenes_list, output_dir_str, logger):
     if not scenes_list or not output_dir_str: return
-    scene_seeds = {str(s['shot_id']): {'best_seed_frame': s.get('best_seed_frame'), 'seed_frame_idx': s.get('seed_frame_idx'), 'seed_type': s.get('seed_result', {}).get('details', {}).get('type'),
-                                       'seed_config': s.get('seed_config', {}), 'status': s.get('status', 'pending'), 'seed_metrics': s.get('seed_metrics', {})} for s in scenes_list}
+    scene_seeds = {}
+    for s in scenes_list:
+        data = {
+            'best_frame': s.get('best_frame', s.get('best_seed_frame')),
+            'seed_frame_idx': s.get('seed_frame_idx'),
+            'seed_type': s.get('seed_result', {}).get('details', {}).get('type'),
+            'seed_config': s.get('seed_config', {}),
+            'status': s.get('status', 'pending'),
+            'seed_metrics': s.get('seed_metrics', {})
+        }
+        scene_seeds[str(s['shot_id'])] = data
     try:
         (Path(output_dir_str) / "scene_seeds.json").write_text(json.dumps(_to_json_safe(scene_seeds), indent=2), encoding='utf-8')
         logger.info("Saved scene_seeds.json")
@@ -2733,6 +2747,13 @@ def get_scene_status_text(scenes_list):
 
     button_text = f"🔬 Propagate Masks on {included_count} Kept Scenes"
     return status_text, gr.update(value=button_text, interactive=included_count > 0)
+
+def draw_boxes_preview(img, boxes_xyxy, cfg):
+    img = img.copy()
+    for x1,y1,x2,y2 in boxes_xyxy:
+        cv2.rectangle(img, (int(x1),int(y1)), (int(x2),int(y2)),
+                      cfg.visualization.bbox_color, cfg.visualization.bbox_thickness)
+    return img
 
 def toggle_scene_status(scenes_list, selected_shot_id, new_status, output_folder, logger):
     if selected_shot_id is None or not scenes_list:
@@ -2796,21 +2817,21 @@ def _create_analysis_context(config, logger, thumbnail_manager, cuda_available, 
 
 def _recompute_single_preview(scene: dict, masker: SubjectMasker, overrides: dict, thumbnail_manager, logger):
     """
-    Recomputes the seed for a single scene using a pre-built masker and specific overrides.
+    Recomputes the best frame for a single scene using a pre-built masker and specific overrides.
     Updates the scene dictionary in-place.
     """
     out_dir = Path(masker.params.output_folder)
-    seed_frame_num = scene.get('best_seed_frame') or scene.get('start_frame')
-    if seed_frame_num is None:
-        raise ValueError(f"Scene {scene.get('shot_id')} has no seed frame number.")
+    best_frame_num = scene.get('best_frame') or scene.get('start_frame')
+    if best_frame_num is None:
+        raise ValueError(f"Scene {scene.get('shot_id')} has no best frame number.")
 
-    fname = masker.frame_map.get(int(seed_frame_num))
+    fname = masker.frame_map.get(int(best_frame_num))
     if not fname:
-        raise FileNotFoundError(f"Seed frame {seed_frame_num} not found in project's frame map.")
+        raise FileNotFoundError(f"Best frame {best_frame_num} not found in project's frame map.")
 
     thumb_rgb = thumbnail_manager.get(out_dir / "thumbs" / f"{Path(fname).stem}.webp")
     if thumb_rgb is None:
-        raise FileNotFoundError(f"Thumbnail for frame {seed_frame_num} not found on disk.")
+        raise FileNotFoundError(f"Thumbnail for frame {best_frame_num} not found on disk.")
 
     # Create a temporary config for this specific seed selection run
     seed_config = {**asdict(masker.params), **overrides}
@@ -3183,7 +3204,9 @@ def execute_session_load(
                 for scene in scenes_as_dict:
                     shot_id = scene.get("shot_id")
                     if shot_id in seeds_lookup:
-                        scene.update(seeds_lookup[shot_id])
+                        rec = seeds_lookup[shot_id]
+                        rec['best_frame'] = rec.get('best_frame', rec.get('best_seed_frame'))
+                        scene.update(rec)
 
                 # Auto-include missing scene statuses on load (set to "included" as approved)
                 for s in scenes_as_dict:
@@ -3395,15 +3418,15 @@ class AppUI:
         self.ext_ui_map_keys = ['source_path', 'upload_video', 'method', 'interval', 'nth_frame', 'fast_scene',
                                 'max_resolution', 'use_png', 'extraction_method_toggle', 'thumb_megapixels', 'scene_detect']
         self.ana_ui_map_keys = ['output_folder', 'video_path', 'resume', 'enable_face_filter', 'face_ref_img_path', 'face_ref_img_upload',
-                                'face_model_name', 'enable_subject_mask', 'dam4sam_model_name', 'person_detector_model', 'seed_strategy',
-                                'scene_detect', 'enable_dedup', 'text_prompt', 'box_threshold', 'text_threshold', 'min_mask_area_pct',
+                                'face_model_name', 'enable_subject_mask', 'dam4sam_model_name', 'person_detector_model', 'best_frame_strategy',
+                                'scene_detect', 'text_prompt', 'box_threshold', 'text_threshold', 'min_mask_area_pct',
                                 'sharpness_base_scale', 'edge_strength_base_scale', 'gdino_config_path', 'gdino_checkpoint_path',
                                 'pre_analysis_enabled', 'pre_sample_nth', 'primary_seed_strategy']
         self.session_load_keys = ['unified_log', 'unified_status', 'progress_details', 'cancel_button', 'pause_button',
                                   'source_input', 'max_resolution', 'extraction_method_toggle_input', 'thumb_megapixels_input', 'ext_scene_detect_input',
                                   'method_input', 'use_png_input', 'pre_analysis_enabled_input', 'pre_sample_nth_input', 'enable_face_filter_input',
-                                  'face_model_name_input', 'face_ref_img_path_input', 'text_prompt_input', 'seed_strategy_input',
-                                  'person_detector_model_input', 'dam4sam_model_name_input', 'enable_dedup_input', 'extracted_video_path_state',
+                                  'face_ref_img_path_input', 'text_prompt_input', 'best_frame_strategy_input',
+                                  'person_detector_model_input', 'dam4sam_model_name_input', 'extracted_video_path_state',
                                   'extracted_frames_dir_state', 'analysis_output_dir_state', 'analysis_metadata_path_state', 'scenes_state',
                                   'propagate_masks_button', 'seeding_results_column', 'propagation_group',
                                   'scene_filter_status', 'scene_face_sim_min_input', 'filtering_tab',
@@ -3533,48 +3556,45 @@ class AppUI:
                 gr.Markdown("### 🎯 Step 1: Choose Your Seeding Strategy")
                 gr.Markdown(
                     """
-                    The goal of this step is to find the best single frame (the "seed") in each scene to represent the subject you're interested in.
-                    This seed frame is then used in the next step to track the subject across the entire scene.
+                    The goal of this step is to find the best single frame (the "best frame") in each scene to represent the subject you're interested in.
+                    This best frame is then used in the next step to track the subject across the entire scene.
                     - **By Face**: Best for tracking a specific person. Requires a clear reference photo.
                     - **By Text**: Good for tracking objects or people by description (e.g., "person in a red shirt").
                     - **Face + Text Fallback**: The most robust option. It tries to find the person first, but if it can't, it will use the text prompt as a backup.
                     - **Find Prominent Person**: A quick, automatic option that finds the largest or most central person. Less precise but very fast.
                     """
                 )
-                self._create_component('primary_seed_strategy_input', 'radio', {'choices': self.config.choices.primary_seed_strategy, 'value': self.config.choices.primary_seed_strategy[2], 'label': "Primary Seeding Strategy", 'info': "Select the main method for identifying the subject in each scene. This initial identification is called the 'seed'."})
+                self._create_component('primary_seed_strategy_input', 'radio', {'choices': self.config.choices.primary_seed_strategy, 'value': self.config.choices.primary_seed_strategy[2], 'label': "Primary Best-Frame Selection Strategy", 'info': "Select the main method for identifying the subject in each scene. This initial identification is called the 'best-frame selection'."})
                 with gr.Group(visible=("By Face" in self.config.choices.primary_seed_strategy[2] or "Fallback" in self.config.choices.primary_seed_strategy[2])) as face_seeding_group:
                     self.components['face_seeding_group'] = face_seeding_group
-                    gr.Markdown("#### 👤 Configure Face Seeding"); gr.Markdown("This strategy prioritizes finding a specific person. Upload a clear, frontal photo of the person you want to track. The system will analyze each scene to find the frame where this person is most clearly visible and use it as the starting point (the 'seed').")
+                    gr.Markdown("#### 👤 Configure Face Selection"); gr.Markdown("This strategy prioritizes finding a specific person. Upload a clear, frontal photo of the person you want to track. The system will analyze each scene to find the frame where this person is most clearly visible and use it as the starting point (the 'best frame').")
                     with gr.Row():
                         self._create_component('face_ref_img_upload_input', 'file', {'label': "Upload Face Reference Image", 'type': "filepath"})
                         with gr.Column():
                             self._create_component('face_ref_img_path_input', 'textbox', {'label': "Or provide a local file path"})
-                            self._create_component('enable_face_filter_input', 'checkbox', {'label': "Enable Face Similarity (must be checked for face seeding)", 'value': ("By Face" in self.config.choices.primary_seed_strategy[2] or "Fallback" in self.config.choices.primary_seed_strategy[2]), 'interactive': False, 'visible': False})
+                            self._create_component('enable_face_filter_input', 'checkbox', {'label': "Enable Face Similarity (must be checked for face selection)", 'value': ("By Face" in self.config.choices.primary_seed_strategy[2] or "Fallback" in self.config.choices.primary_seed_strategy[2]), 'interactive': False, 'visible': False})
                 with gr.Group(visible=("By Text" in self.config.choices.primary_seed_strategy[2] or "Fallback" in self.config.choices.primary_seed_strategy[2])) as text_seeding_group:
                     self.components['text_seeding_group'] = text_seeding_group
-                    gr.Markdown("#### 📝 Configure Text Seeding"); gr.Markdown("This strategy uses a text description to find the subject. It's useful for identifying objects, or people described by their clothing or appearance when a reference photo isn't available.")
+                    gr.Markdown("#### 📝 Configure Text Selection"); gr.Markdown("This strategy uses a text description to find the subject. It's useful for identifying objects, or people described by their clothing or appearance when a reference photo isn't available.")
                     with gr.Accordion("🔬 Advanced Detection (GroundingDINO)", open=True):
                         gr.Markdown("Use GroundingDINO for text-based object detection with custom prompts.")
-                        self._create_component('text_prompt_input', 'textbox', {'label': "Text Prompt", 'placeholder': "e.g., 'a woman in a red dress'", 'value': self.config.ui_defaults.text_prompt, 'info': "Describe the main subject (e.g., 'player wearing number 10', 'person in the green shirt')."})
+                        self._create_component('text_prompt_input', 'textbox', {'label': "Text Prompt", 'placeholder': "e.g., 'a woman in a red dress'", 'value': self.config.ui_defaults.text_prompt, 'info': "Describe the main subject to find the best frame (e.g., 'player wearing number 10', 'person in the green shirt')."})
                         with gr.Row():
                             self._create_component('box_threshold', 'slider', {'minimum': 0.0, 'maximum': 1.0, 'value': self.config.grounding_dino_params.box_threshold, 'label': "Box Threshold"})
                             self._create_component('text_threshold', 'slider', {'minimum': 0.0, 'maximum': 1.0, 'value': self.config.grounding_dino_params.text_threshold, 'label': "Text Threshold"})
                 with gr.Group(visible=("Prominent Person" in self.config.choices.primary_seed_strategy[2])) as auto_seeding_group:
                     self.components['auto_seeding_group'] = auto_seeding_group
-                    gr.Markdown("#### 🧑‍🤝‍🧑 Configure Prominent Person Seeding"); gr.Markdown("This is a simple, fully automatic mode. It uses an object detector (YOLO) to find all people in the scene and then selects one based on a simple rule, like who is largest or most central. It's fast but less precise, as it doesn't use face identity or text descriptions.")
-                    self._create_component('seed_strategy_input', 'dropdown', {'choices': self.config.choices.seed_strategy, 'value': "Largest Person", 'label': "Selection Method", 'info': "'Largest' picks the person taking up the most screen area. 'Center-most' picks the person closest to the frame's center."})
-                with gr.Row():
-                    self._create_component('person_detector_model_input', 'dropdown', {'choices': self.config.choices.person_detector_model, 'value': self.config.ui_defaults.person_detector_model, 'label': "YOLO Model"})
+                    gr.Markdown("#### 🧑‍🤝‍🧑 Configure Prominent Person Selection"); gr.Markdown("This is a simple, fully automatic mode. It uses an object detector (YOLO) to find all people in the scene and then selects one based on a simple rule, like who is largest or most central. It's fast but less precise, as it doesn't use face identity or text descriptions.")
+                    self._create_component('best_frame_strategy_input', 'dropdown', {'choices': self.config.choices.seed_strategy, 'value': "Largest Person", 'label': "Selection Method", 'info': "'Largest' picks the person taking up the most screen area. 'Center-most' picks the person closest to the frame's center."})
                 self._create_component('person_radio', 'radio', {'label': "Select Person", 'choices': [], 'visible': False})
                 with gr.Accordion("Advanced Settings", open=False):
                     gr.Markdown("These settings control the underlying models and analysis parameters. Adjust them only if you understand their effect.")
-                    self._create_component('pre_analysis_enabled_input', 'checkbox', {'label': 'Enable Pre-Analysis to find best seed frame', 'value': self.config.ui_defaults.pre_analysis_enabled, 'info': "Analyzes a subset of frames in each scene to automatically find the highest quality frame to use as the 'seed' for masking. Highly recommended."})
+                    self._create_component('pre_analysis_enabled_input', 'checkbox', {'label': 'Enable Pre-Analysis to find best frame', 'value': self.config.ui_defaults.pre_analysis_enabled, 'info': "Analyzes a subset of frames in each scene to automatically find the highest quality frame to use as the 'best frame' for masking. Highly recommended."})
                     self._create_component('pre_sample_nth_input', 'number', {'label': 'Sample every Nth thumbnail for pre-analysis', 'value': self.config.ui_defaults.pre_sample_nth, 'interactive': True, 'info': "For faster pre-analysis, check every Nth frame in a scene instead of all of them. A value of 5 is a good starting point."})
                     self._create_component('person_detector_model_input', 'dropdown', {'choices': self.config.choices.person_detector_model, 'value': self.config.ui_defaults.person_detector_model, 'label': "Person Detector Model", 'info': "YOLO Model for finding people. 'x' (large) is more accurate but slower; 's' (small) is much faster but may miss people."})
                     self._create_component('face_model_name_input', 'dropdown', {'choices': self.config.choices.face_model_name, 'value': self.config.ui_defaults.face_model_name, 'label': "Face Recognition Model", 'info': "InsightFace model for face matching. 'l' (large) is more accurate; 's' (small) is faster and uses less memory."})
                     self._create_component('dam4sam_model_name_input', 'dropdown', {'choices': self.config.choices.dam4sam_model_name, 'value': self.config.ui_defaults.dam4sam_model_name, 'label': "Mask Tracking Model", 'info': "The Segment Anything 2 model used for tracking the subject mask across frames. Larger models (L) are more robust but use more VRAM; smaller models (T) are faster."})
-                    self._create_component('enable_dedup_input', 'checkbox', {'label': "Enable Deduplication (pHash)", 'value': self.config.ui_defaults.enable_dedup, 'info': "Computes a 'perceptual hash' for each frame. This is used in the Filtering tab to help remove visually similar or identical frames."})
-                self._create_component('start_pre_analysis_button', 'button', {'value': '🌱 Find & Preview Scene Seeds', 'variant': 'primary'})
+                self._create_component('start_pre_analysis_button', 'button', {'value': '🌱 Find & Preview Best Frames', 'variant': 'primary'})
                 with gr.Group(visible=False) as propagation_group:
                     self.components['propagation_group'] = propagation_group
 
@@ -3585,9 +3605,12 @@ class AppUI:
                 with gr.Accordion("Scene Filtering", open=True):
                     self._create_component('scene_filter_status', 'markdown', {'value': 'No scenes loaded.'})
                     with gr.Row():
-                        self._create_component('scene_mask_area_min_input', 'slider', {'label': "Min Seed Mask Area %", 'minimum': 0.0, 'maximum': 100.0, 'value': self.config.min_mask_area_pct, 'step': 0.1})
-                        self._create_component('scene_face_sim_min_input', 'slider', {'label': "Min Seed Face Sim", 'minimum': 0.0, 'maximum': 1.0, 'value': 0.0, 'step': 0.05, 'visible': False})
-                        self._create_component('scene_confidence_min_input', 'slider', {'label': "Min Seed Confidence", 'minimum': 0.0, 'maximum': 10.0, 'value': 0.0, 'step': 0.05})
+                        self._create_component('scene_mask_area_min_input', 'slider', {'label': "Min Best Frame Mask Area %", 'minimum': 0.0, 'maximum': 100.0, 'value': self.config.min_mask_area_pct, 'step': 0.1})
+                        self._create_component('scene_face_sim_min_input', 'slider', {'label': "Min Best Frame Face Sim", 'minimum': 0.0, 'maximum': 1.0, 'value': 0.0, 'step': 0.05, 'visible': False})
+                        self._create_component('scene_confidence_min_input', 'slider', {'label': "Min Best Frame Confidence", 'minimum': 0.0, 'maximum': 1.0, 'value': 0.0, 'step': 0.05})
+                with gr.Accordion("Advanced Settings", open=False):
+                    self._create_component('person_detector_model_display', 'textbox', {'label': "Person Detector Model", 'value': self.config.person_detector.model, 'interactive': False})
+                    self._create_component('person_detector_conf_slider', 'slider', {'label': "Person Detector Confidence", 'minimum': 0.0, 'maximum': 1.0, 'step': 0.05, 'value': self.config.person_detector.conf})
 
 
                 with gr.Accordion("Scene Gallery", open=True):
@@ -3650,12 +3673,6 @@ class AppUI:
                         self._create_component("sceneexcludebutton", "button", {"value": "❌reject scene"})
                         self._create_component("sceneresetbutton", "button", {"value": "🔄 Reset Scene"})
 
-                    # Add scene_editor_seed_mode component
-                    self._create_component('scene_editor_seed_mode', 'radio', {
-                        'choices': self.config.choices.scene_editor_seed_mode,
-                        'value': self.config.ui_defaults.scene_editor_seed_mode,
-                        'label': "Seed mode"
-                    })
                 gr.Markdown("---"); gr.Markdown("### 🔬 Step 3: Propagate Masks"); gr.Markdown("Once you are satisfied with the seeds, propagate the masks to the rest of the frames in the selected scenes.")
                 self._create_component('propagate_masks_button', 'button', {'value': '🔬 Propagate Masks on Kept Scenes', 'variant': 'primary', 'interactive': False})
 
@@ -3680,6 +3697,7 @@ class AppUI:
                 with gr.Accordion("Deduplication", open=True, visible=False) as dedup_acc:
                     self.components['metric_accs']['dedup'] = dedup_acc
                     f_def = self.config.filter_defaults.dedup_thresh
+                    self._create_component('enable_dedup_input', 'checkbox', {'label': "Enable Deduplication", 'value': self.config.ui_defaults.enable_dedup})
                     self._create_component('dedup_thresh_input', 'slider', {'label': "Similarity Threshold", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': f_def['default'], 'step': f_def['step'], 'info': "Filters out visually similar frames. A lower value is stricter (more filtering). A value of 0 means only identical images will be removed. Set to -1 to disable."})
                 for metric_name, open_default in [('quality_score', True), ('niqe', False), ('sharpness', True), ('edge_strength', True), ('contrast', True),
                                                   ('brightness', False), ('entropy', False), ('face_sim', False), ('mask_area_pct', False),
@@ -3750,11 +3768,6 @@ class AppUI:
             lambda: self.config.save_config('config_dump.json'), [], []
         ).then(lambda: "Configuration saved to config_dump.json", [], self.components['unified_log'])
 
-        # Wire handler for scene_editor_seed_mode
-        sm = self.components.get('scene_editor_seed_mode')
-        if sm is None:
-            raise RuntimeError("scene_editor_seed_mode component must be created before wiring handlers")
-        sm.change(fn=lambda v: v or "per-scene", inputs=sm, outputs=None)
 
 class EnhancedAppUI(AppUI):
     def on_scene_select_yolo_detection_wrapper(self, scenes, shot_id, outdir, yolo_conf, yolo_results, view, indexmap, auto_detect_enabled, *ana_args):
@@ -3802,10 +3815,7 @@ class EnhancedAppUI(AppUI):
 
             yolo_boxes = [box for box in masker.seed_selector._get_yolo_boxes(seed_thumb) if box['conf'] >= yolo_conf]
 
-            canvas_with_boxes = seed_thumb.copy()
-            for i, b in enumerate(yolo_boxes):
-                xywh_seed = masker.seed_selector._xyxy_to_xywh(b["bbox"])
-                canvas_with_boxes = masker.draw_bbox(canvas_with_boxes, xywh_seed, label=str(i + 1))
+            canvas_with_boxes = draw_boxes_preview(seed_thumb, [b['bbox'] for b in yolo_boxes], self.config)
 
             message = f"Found {len(yolo_boxes)} YOLO candidates. Select a subject and click 'Recompute Preview'."
             if not yolo_boxes:
@@ -4017,10 +4027,9 @@ class EnhancedAppUI(AppUI):
             c['scenerecomputebutton'],
         ]
 
-        def trigger_yolo_if_active(seed_mode, scenes, shot_id, outdir, yolo_conf, yolo_results, view, indexmap, *ana_args):
-            if seed_mode == "YOLO Bbox":
-                return self.on_yolo_person_detection_wrapper(scenes, shot_id, outdir, yolo_conf, yolo_results, view, indexmap, *ana_args)
-            return [gr.update()] * len(yolo_detection_outputs)
+        def trigger_yolo_if_active(scenes, shot_id, outdir, yolo_conf, yolo_results, view, indexmap, *ana_args):
+            # The seed_mode parameter is removed and the logic is simplified to always trigger YOLO detection.
+            return self.on_yolo_person_detection_wrapper(scenes, shot_id, outdir, yolo_conf, yolo_results, view, indexmap, *ana_args)
 
         scene_select_yolo_inputs = [
             c['scenes_state'],
@@ -4123,8 +4132,7 @@ class EnhancedAppUI(AppUI):
             gallery_shape,
             None, # Clear subject ID
             button_update,
-            {}, # Clear yolo results
-            "YOLO Bbox"
+            {} # Clear yolo results
         )
 
     def on_editor_toggle(self, scenes, selected_shotid, outputfolder, view, new_status):
@@ -4208,7 +4216,7 @@ class EnhancedAppUI(AppUI):
         if strategy == "👤 By Face": ui_args.update({'enable_face_filter': True, 'text_prompt': ""})
         elif strategy == "📝 By Text": ui_args.update({'enable_face_filter': False, 'face_ref_img_path': "", 'face_ref_img_upload': None})
         elif strategy == "🔄 Face + Text Fallback": ui_args['enable_face_filter'] = True
-        elif strategy == "🧑‍🤝‍🧑 Find Prominent Person": ui_args.update({'enable_face_filter': False, 'text_prompt': "", 'face_ref_img_path': "", 'face_ref_img_upload': None})
+        elif strategy == "🧑‍🤝‍🧑 Find Prominent Person": ui_args.update({'enable_face_filter': False, 'text_prompt': "", 'face_ref_img_path': "", 'face_ref_img_upload': None, 'enable_subject_mask': False})
         for k, v_type, default in [('pre_sample_nth', int, 5), ('min_mask_area_pct', float, 0.0), ('sharpness_base_scale', float, 1.0), ('edge_strength_base_scale', float, 1.0)]:
             try: ui_args[k] = v_type(ui_args.get(k)) if v_type != int or int(ui_args.get(k)) > 0 else default
             except (TypeError, ValueError): ui_args[k] = default
@@ -4388,7 +4396,7 @@ class EnhancedAppUI(AppUI):
                                                            'face_ref_img_path': 'face_ref_img_path_input', 'face_ref_img_upload': 'face_ref_img_upload_input',
                                                            'face_model_name': 'face_model_name_input', 'enable_subject_mask': gr.State(self.config.ui_defaults.enable_subject_mask),
                                                            'dam4sam_model_name': 'dam4sam_model_name_input', 'person_detector_model': 'person_detector_model_input',
-                                                           'seed_strategy': 'seed_strategy_input', 'scene_detect': 'ext_scene_detect_input',
+                                                               'best_frame_strategy': 'best_frame_strategy_input', 'scene_detect': 'ext_scene_detect_input',
                                                            'enable_dedup': 'enable_dedup_input', 'text_prompt': 'text_prompt_input',
                                                            'box_threshold': gr.State(self.config.grounding_dino_params.box_threshold),
                                                            'text_threshold': gr.State(self.config.grounding_dino_params.text_threshold),
@@ -4469,7 +4477,6 @@ class EnhancedAppUI(AppUI):
                 c['scene_editor_yolo_subject_id'],
                 c['propagate_masks_button'],
                 c['yolo_results_state'],
-                c['scene_editor_seed_mode'],
             ]
         )
 
