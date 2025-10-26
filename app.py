@@ -2904,7 +2904,8 @@ def _wire_recompute_handler(config, logger, thumbnail_manager, scenes, shot_id, 
 
     except Exception as e:
         logger.error("Failed to recompute scene preview", exc_info=True)
-        return scenes, gr.update(), gr.update(), f"[ERROR] Recompute failed: {str(e)}"
+        gallery_items, index_map = build_scene_gallery_items(scenes, view, outdir)
+        return scenes, gr.update(value=gallery_items), gr.update(value=index_map), f"[ERROR] Recompute failed: {str(e)}"
 
 # --- PIPELINE LOGIC ---
 
@@ -3228,7 +3229,7 @@ def execute_session_load(
                 "propagation_group": gr.update(visible=True),
                 "scene_filter_status": status_text,
                 "scene_face_sim_min_input": gr.update(
-                    visible=any((s.get("seed_metrics") or {}).get("best_face_sim") is not None for s in scenes_as_dict)
+                    visible=any((s.get("seed_metrics") or {}).get("best_face_sim") is not None for s in (scenes_as_dict or []))
                 ),
             })
 
@@ -3254,8 +3255,16 @@ def execute_session_load(
         updates.update({
             "log": f"Successfully loaded session from: {session_path}",
             "status": "... Session loaded. You can now proceed from where you left off.",
+            "main_tabs": gr.update(selected=2)
         })
         yield updates
+
+        # Follow-up gallery initialization
+        if scenes_as_dict and output_dir:
+            yield {
+                "scene_gallery": gr.update(value=gallery_items),
+                "scene_gallery_index_map_state": index_map
+            }
 
 def execute_propagation(event: PropagationEvent, progress_queue: Queue, cancel_event: threading.Event, logger: AppLogger,
                         config: Config, thumbnail_manager, cuda_available, progress=None):
@@ -3564,16 +3573,16 @@ class AppUI:
                     - **Find Prominent Person**: A quick, automatic option that finds the largest or most central person. Less precise but very fast.
                     """
                 )
-                self._create_component('primary_seed_strategy_input', 'radio', {'choices': self.config.choices.primary_seed_strategy, 'value': self.config.choices.primary_seed_strategy[2], 'label': "Primary Best-Frame Selection Strategy", 'info': "Select the main method for identifying the subject in each scene. This initial identification is called the 'best-frame selection'."})
-                with gr.Group(visible=("By Face" in self.config.choices.primary_seed_strategy[2] or "Fallback" in self.config.choices.primary_seed_strategy[2])) as face_seeding_group:
+                self._create_component('primary_seed_strategy_input', 'radio', {'choices': self.config.choices.primary_seed_strategy, 'value': self.config.ui_defaults.primary_seed_strategy, 'label': "Primary Best-Frame Selection Strategy", 'info': "Select the main method for identifying the subject in each scene. This initial identification is called the 'best-frame selection'."})
+                with gr.Group(visible="By Face" in self.config.ui_defaults.primary_seed_strategy or "Fallback" in self.config.ui_defaults.primary_seed_strategy) as face_seeding_group:
                     self.components['face_seeding_group'] = face_seeding_group
                     gr.Markdown("#### 👤 Configure Face Selection"); gr.Markdown("This strategy prioritizes finding a specific person. Upload a clear, frontal photo of the person you want to track. The system will analyze each scene to find the frame where this person is most clearly visible and use it as the starting point (the 'best frame').")
                     with gr.Row():
                         self._create_component('face_ref_img_upload_input', 'file', {'label': "Upload Face Reference Image", 'type': "filepath"})
                         with gr.Column():
                             self._create_component('face_ref_img_path_input', 'textbox', {'label': "Or provide a local file path"})
-                            self._create_component('enable_face_filter_input', 'checkbox', {'label': "Enable Face Similarity (must be checked for face selection)", 'value': ("By Face" in self.config.choices.primary_seed_strategy[2] or "Fallback" in self.config.choices.primary_seed_strategy[2]), 'interactive': False, 'visible': False})
-                with gr.Group(visible=("By Text" in self.config.choices.primary_seed_strategy[2] or "Fallback" in self.config.choices.primary_seed_strategy[2])) as text_seeding_group:
+                            self._create_component('enable_face_filter_input', 'checkbox', {'label': "Enable Face Similarity (must be checked for face selection)", 'value': self.config.ui_defaults.enable_face_filter, 'interactive': True, 'visible': "By Face" in self.config.ui_defaults.primary_seed_strategy or "Fallback" in self.config.ui_defaults.primary_seed_strategy})
+                with gr.Group(visible="By Text" in self.config.ui_defaults.primary_seed_strategy or "Fallback" in self.config.ui_defaults.primary_seed_strategy) as text_seeding_group:
                     self.components['text_seeding_group'] = text_seeding_group
                     gr.Markdown("#### 📝 Configure Text Selection"); gr.Markdown("This strategy uses a text description to find the subject. It's useful for identifying objects, or people described by their clothing or appearance when a reference photo isn't available.")
                     with gr.Accordion("🔬 Advanced Detection (GroundingDINO)", open=True):
@@ -3582,7 +3591,7 @@ class AppUI:
                         with gr.Row():
                             self._create_component('box_threshold', 'slider', {'minimum': 0.0, 'maximum': 1.0, 'value': self.config.grounding_dino_params.box_threshold, 'label': "Box Threshold"})
                             self._create_component('text_threshold', 'slider', {'minimum': 0.0, 'maximum': 1.0, 'value': self.config.grounding_dino_params.text_threshold, 'label': "Text Threshold"})
-                with gr.Group(visible=("Prominent Person" in self.config.choices.primary_seed_strategy[2])) as auto_seeding_group:
+                with gr.Group(visible="Prominent Person" in self.config.ui_defaults.primary_seed_strategy) as auto_seeding_group:
                     self.components['auto_seeding_group'] = auto_seeding_group
                     gr.Markdown("#### 🧑‍🤝‍🧑 Configure Prominent Person Selection"); gr.Markdown("This is a simple, fully automatic mode. It uses an object detector (YOLO) to find all people in the scene and then selects one based on a simple rule, like who is largest or most central. It's fast but less precise, as it doesn't use face identity or text descriptions.")
                     self._create_component('best_frame_strategy_input', 'dropdown', {'choices': self.config.choices.seed_strategy, 'value': "Largest Person", 'label': "Selection Method", 'info': "'Largest' picks the person taking up the most screen area. 'Center-most' picks the person closest to the frame's center."})
@@ -3761,7 +3770,6 @@ class AppUI:
                             'scene_gallery_index_map_state': gr.State([]),
                             'gallery_image_state': gr.State(None),
                             'gallery_shape_state': gr.State(None),
-                            'gallery_shape_state': gr.State(None),
                             'yolo_results_state': gr.State({})})
         self._setup_visibility_toggles(); self._setup_pipeline_handlers(); self._setup_filtering_handlers(); self._setup_bulk_scene_handlers()
         self.components['save_config_button'].click(
@@ -3772,46 +3780,46 @@ class AppUI:
 class EnhancedAppUI(AppUI):
     def on_scene_select_yolo_detection_wrapper(self, scenes, shot_id, outdir, yolo_conf, yolo_results, view, indexmap, auto_detect_enabled, *ana_args):
         if not auto_detect_enabled:
-            gallery_items, _ = build_scene_gallery_items(scenes, view, outdir)
+            gallery_items, new_index_map = build_scene_gallery_items(scenes, view, outdir)
             return (
                 gr.update(value=gallery_items),
                 gr.update(choices=[], interactive=False, value=None),
                 "Auto-detection is off. Enable it or use the Scene Editor to detect objects.",
                 yolo_results,
-                gr.update(interactive=False)
+                gr.update(interactive=False),
+                gr.update(value=new_index_map)
             )
         return self.on_yolo_person_detection_wrapper(scenes, shot_id, outdir, yolo_conf, yolo_results, view, indexmap, *ana_args)
 
     def on_yolo_person_detection_wrapper(self, scenes, shot_id, outdir, yolo_conf, yolo_results, view, indexmap, *ana_args):
         try:
-            # Check if results are already cached for this shot_id and conf
+            gallery_items, new_index_map = build_scene_gallery_items(scenes, view, outdir)
+            gallery_update = gr.update(value=gallery_items)
+
             conf_key = str(yolo_conf)
             cached_result = yolo_results.get(shot_id, {}).get(conf_key)
             if cached_result:
                 yolo_boxes = cached_result['yolo_boxes']
                 message = cached_result['message']
-                # Still need to update the gallery view
-                gallery_items, new_index_map = build_scene_gallery_items(scenes, view, outdir)
-                gallery_update = gr.update(value=gallery_items)
                 subject_choices = [str(i + 1) for i in range(len(yolo_boxes))]
-                return gallery_update, gr.update(choices=subject_choices, value=None), message, yolo_results, gr.update(interactive=len(yolo_boxes) > 0)
+                return gallery_update, gr.update(choices=subject_choices, value=None), message, yolo_results, gr.update(interactive=len(yolo_boxes) > 0), gr.update(value=new_index_map)
 
             masker = _create_analysis_context(self.config, self.logger, self.thumbnail_manager, self.cuda_available,
                                               self.ana_ui_map_keys, ana_args)
             scene_idx = next((i for i, s in enumerate(scenes) if s.get('shot_id') == shot_id), None)
             if scene_idx is None:
-                return gr.update(), gr.update(), "Scene not found.", yolo_results, gr.update(interactive=False)
+                return gallery_update, gr.update(), "Scene not found.", yolo_results, gr.update(interactive=False), gr.update(value=new_index_map)
 
             scene = scenes[scene_idx]
             best_frame_num = scene.get('best_frame') or scene.get('start_frame')
             fname = masker.frame_map.get(int(best_frame_num))
             if not fname:
-                return gr.update(), gr.update(), "Best frame not in frame map.", yolo_results, gr.update(interactive=False)
+                return gallery_update, gr.update(), "Best frame not in frame map.", yolo_results, gr.update(interactive=False), gr.update(value=new_index_map)
 
             best_frame_thumb_path = Path(outdir) / "thumbs" / f"{Path(fname).stem}.webp"
             best_frame_thumb = self.thumbnail_manager.get(best_frame_thumb_path)
             if best_frame_thumb is None:
-                return gr.update(), gr.update(), "Could not load best frame thumbnail.", yolo_results, gr.update(interactive=False)
+                return gallery_update, gr.update(), "Could not load best frame thumbnail.", yolo_results, gr.update(interactive=False), gr.update(value=new_index_map)
 
             yolo_boxes = [box for box in masker.seed_selector._get_yolo_boxes(best_frame_thumb) if box['conf'] >= yolo_conf]
 
@@ -3820,9 +3828,9 @@ class EnhancedAppUI(AppUI):
             message = f"Found {len(yolo_boxes)} YOLO candidates. Select a subject and click 'Recompute Preview'."
             if not yolo_boxes:
                 message = "No people found. Try adjusting the YOLO confidence threshold."
-                return gr.update(), gr.update(interactive=False, choices=[]), message, yolo_results, gr.update(interactive=False)
+                gallery_items, new_index_map = build_scene_gallery_items(scenes, view, outdir)
+                return gr.update(value=gallery_items), gr.update(interactive=False, choices=[]), message, yolo_results, gr.update(interactive=False), gr.update(value=new_index_map)
 
-            # Update the scene's preview path to the new overlay image
             previews_dir = Path(outdir) / "previews"
             previews_dir.mkdir(parents=True, exist_ok=True)
             temp_preview_path = previews_dir / f"temp_yolo_preview_{shot_id}.jpg"
@@ -3832,22 +3840,17 @@ class EnhancedAppUI(AppUI):
             gallery_items, new_index_map = build_scene_gallery_items(scenes, view, outdir)
             gallery_update = gr.update(value=gallery_items)
 
-            # Update subject ID radio buttons
             subject_choices = [str(i + 1) for i in range(len(yolo_boxes))]
             subject_id_update = gr.update(choices=subject_choices, value=None, interactive=True)
 
-            # Cache the new result
             if shot_id not in yolo_results:
                 yolo_results[shot_id] = {}
-            conf_key = str(yolo_conf)
-            yolo_results[shot_id][conf_key] = {
-                'yolo_boxes': yolo_boxes,
-                'message': message
-            }
-            return gallery_update, subject_id_update, message, yolo_results, gr.update(interactive=len(yolo_boxes) > 0)
+            yolo_results[shot_id][conf_key] = {'yolo_boxes': yolo_boxes, 'message': message}
+            return gallery_update, subject_id_update, message, yolo_results, gr.update(interactive=len(yolo_boxes) > 0), gr.update(value=new_index_map)
         except Exception as e:
             self.logger.error("Failed to detect YOLO boxes for scene", exc_info=True)
-            return gr.update(), gr.update(), f"Error: {e}", yolo_results, gr.update()
+            gallery_items, new_index_map = build_scene_gallery_items(scenes, view, outdir)
+            return gr.update(value=gallery_items), gr.update(), f"Error: {e}", yolo_results, gr.update(), gr.update(value=new_index_map)
 
     def __init__(self, config: 'Config', logger: 'AppLogger', progress_queue: Queue,
                  cancel_event: threading.Event, thumbnail_manager: 'ThumbnailManager'):
@@ -4000,10 +4003,12 @@ class EnhancedAppUI(AppUI):
             return scenes, gr.update(value=gallery_items), gr.update(value=index_map), f"Subject {subject_id} selected and preview recomputed."
 
         except (ValueError, TypeError):
-            return scenes, gr.update(), gr.update(), "Invalid Subject ID. Please enter a number."
+            gallery_items, index_map = build_scene_gallery_items(scenes, view, outdir)
+            return scenes, gr.update(value=gallery_items), gr.update(value=index_map), "Invalid Subject ID. Please enter a number."
         except Exception as e:
             self.logger.error("Failed to select YOLO subject", exc_info=True)
-            return scenes, gr.update(), gr.update(), f"Error: {e}"
+            gallery_items, index_map = build_scene_gallery_items(scenes, view, outdir)
+            return scenes, gr.update(value=gallery_items), gr.update(value=index_map), f"Error: {e}"
 
     def _setup_bulk_scene_handlers(self):
         super()._setup_bulk_scene_handlers()
@@ -4082,7 +4087,8 @@ class EnhancedAppUI(AppUI):
             return scenes, gr.update(value=gallery_items), gr.update(value=index_map), f"Scene {shot_id} has been reset."
         except Exception as e:
             self.logger.error(f"Failed to reset scene {shot_id}", exc_info=True)
-            return scenes, gr.update(), gr.update(), f"Error resetting scene: {e}"
+            gallery_items, index_map = build_scene_gallery_items(scenes, view, outdir)
+            return scenes, gr.update(value=gallery_items), gr.update(value=index_map), f"Error resetting scene: {e}"
 
     def on_select_for_edit(self, evt: gr.SelectData, scenes, view, indexmap, outputdir, yolo_results_state):
         status_text, button_update = get_scene_status_text(scenes)
@@ -4265,7 +4271,7 @@ class EnhancedAppUI(AppUI):
                         log_message = result.get("log", "✅ Pre-analysis completed successfully.") + "\nSwitching to Scene Selection tab."
                         updates = {"unified_log": log_message,
                                    "scenes_state": scenes, "propagate_masks_button": button_update, "scene_filter_status": status_text,
-                                   "scene_face_sim_min_input": gr.update(visible=any(s.get('seed_metrics', {}).get('best_face_sim') is not None for s in scenes)),
+                                   "scene_face_sim_min_input": gr.update(visible=any((s.get("seed_metrics") or {}).get("best_face_sim") is not None for s in (scenes or []))),
                                    "seeding_results_column": gr.update(visible=True),
                                    "main_tabs": gr.update(selected=2)}
                         # Initialize scene gallery
@@ -4348,12 +4354,24 @@ class EnhancedAppUI(AppUI):
             outputs=[c['thumbnail_group'], c['legacy_group']],
         )
 
-        c['primary_seed_strategy_input'].change(lambda s: {c['face_seeding_group']: gr.update(visible=s == "👤 By Face" or s == "🔄 Face + Text Fallback"),
-                                                           c['text_seeding_group']: gr.update(visible=s == "📝 By Text" or s == "🔄 Face + Text Fallback"),
-                                                           c['auto_seeding_group']: gr.update(visible=s == "🧑‍🤝‍🧑 Find Prominent Person"),
-                                                           c['enable_face_filter_input']: gr.update(value=s == "👤 By Face" or s == "🔄 Face + Text Fallback")},
-                                                 [c['primary_seed_strategy_input']], [c['face_seeding_group'], c['text_seeding_group'],
-                                                                                     c['auto_seeding_group'], c['enable_face_filter_input']])
+        c['primary_seed_strategy_input'].change(
+            lambda s: {
+                c['face_seeding_group']: gr.update(visible="By Face" in s or "Fallback" in s),
+                c['text_seeding_group']: gr.update(visible="By Text" in s or "Fallback" in s),
+                c['auto_seeding_group']: gr.update(visible="Prominent Person" in s),
+                c['enable_face_filter_input']: gr.update(
+                    value="By Face" in s or "Fallback" in s,
+                    visible="By Face" in s or "Fallback" in s
+                )
+            },
+            [c['primary_seed_strategy_input']],
+            [
+                c['face_seeding_group'],
+                c['text_seeding_group'],
+                c['auto_seeding_group'],
+                c['enable_face_filter_input']
+            ]
+        )
 
 
     def _setup_pipeline_handlers(self):
