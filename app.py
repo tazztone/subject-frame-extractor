@@ -1968,8 +1968,9 @@ class SeedSelector:
             return []
 
     def _get_dino_boxes(self, frame_rgb, params):
-        prompt = self._get_param(params, "text_prompt", "")
-        if not self._gdino or not prompt: return [], {}
+        prompt = self._get_param(params, "text_prompt", "").strip()
+        if not self._gdino or not prompt:
+            return [], {}
         box_th = self._get_param(params, "box_threshold", self.params.box_threshold)
         text_th = self._get_param(params, "text_threshold", self.params.text_threshold)
         image_source, image_tensor = self._load_image_from_array(frame_rgb)
@@ -2102,14 +2103,15 @@ class SubjectMasker:
     def _initialize_models(self):
         primary_strategy = self.params.primary_seed_strategy
         if primary_strategy == "🧑‍🤝‍🧑 Find Prominent Person":
-            # This strategy only requires YOLO, which is loaded on demand.
-            # No need to load other models.
+            self.logger.info("YOLO-only mode enabled for 'Find Prominent Person' strategy. Skipping other model loads.")
+            self.dam_tracker = None
+            self._gdino = None
+            self.face_analyzer = None
             return
 
         # Conditionally initialize models for other strategies.
-        if self.params.enable_face_filter:
-            if self.face_analyzer is None:
-                self.logger.warning("Face analyzer is not available.")
+        if self.params.enable_face_filter and self.face_analyzer is None:
+            self.logger.warning("Face analyzer is not available but face filter is enabled.")
 
         if self.params.enable_subject_mask:
             self._initialize_tracker()
@@ -4222,7 +4224,14 @@ class EnhancedAppUI(AppUI):
         if strategy == "👤 By Face": ui_args.update({'enable_face_filter': True, 'text_prompt': ""})
         elif strategy == "📝 By Text": ui_args.update({'enable_face_filter': False, 'face_ref_img_path': "", 'face_ref_img_upload': None})
         elif strategy == "🔄 Face + Text Fallback": ui_args['enable_face_filter'] = True
-        elif strategy == "🧑‍🤝‍🧑 Find Prominent Person": ui_args.update({'enable_face_filter': False, 'text_prompt': "", 'face_ref_img_path': "", 'face_ref_img_upload': None, 'enable_subject_mask': False})
+        elif strategy == "🧑‍🤝‍🧑 Find Prominent Person":
+            ui_args.update({
+                'enable_face_filter': False,
+                'text_prompt': "",
+                'face_ref_img_path': "",
+                'face_ref_img_upload': None,
+                'enable_subject_mask': False
+            })
         for k, v_type, default in [('pre_sample_nth', int, 5), ('min_mask_area_pct', float, 0.0), ('sharpness_base_scale', float, 1.0), ('edge_strength_base_scale', float, 1.0)]:
             try: ui_args[k] = v_type(ui_args.get(k)) if v_type != int or int(ui_args.get(k)) > 0 else default
             except (TypeError, ValueError): ui_args[k] = default
