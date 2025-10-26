@@ -33,8 +33,10 @@ from pathlib import Path
 # --- Hugging Face Cache Setup ---
 # Set cache directories for transformers and other Hugging Face assets
 # to prevent re-downloading large models (like BERT for GroundingDINO) on every run.
-os.environ['TRANSFORMERS_CACHE'] = './models/transformers_cache'
-os.environ['HF_HOME'] = './models/huggingface'
+# Use HF_HOME instead of deprecated TRANSFORMERS_CACHE
+hf_home = Path(__file__).parent / 'models' / 'huggingface'
+hf_home.mkdir(parents=True, exist_ok=True)
+os.environ['HF_HOME'] = str(hf_home.resolve())
 
 # Add submodules to Python path
 project_root = Path(__file__).parent
@@ -207,6 +209,7 @@ class Config:
         use_png: bool = True
         nth_frame: int = 5
         disable_parallel: bool = False
+        scene_editor_seed_mode: str = "per-scene"
 
     @dataclass
     class FilterDefaults:
@@ -246,6 +249,7 @@ class Config:
         gallery_view: List[str] = field(default_factory=lambda: ["Kept Frames", "Rejected Frames"])
         log_level: List[str] = field(default_factory=lambda: ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'SUCCESS', 'CRITICAL'])
         scene_gallery_view: List[str] = field(default_factory=lambda: ["Kept", "Rejected", "All"])
+        scene_editor_seed_mode: List[str] = field(default_factory=lambda: ["fixed", "per-scene", "random"])
 
     @dataclass
     class GroundingDinoParams:
@@ -1444,7 +1448,7 @@ def get_dam4sam_tracker(model_name: str, models_path: str, model_urls_tuple: tup
         error_handler = ErrorHandler(logger, *retry_params)
 
         if not (DAM4SAMTracker and torch and torch.cuda.is_available()):
-            logger.error("DAM4SAM dependencies or CUDA not available.")
+            logger.error("DAM4SAM requires CUDA but it's not available.")
             _dam4sam_model_cache[selected_name] = "failed"
         else:
             try:
@@ -1620,7 +1624,7 @@ def make_photo_thumbs(image_paths: list[Path], out_dir: Path, params: AnalysisPa
         finally:
             if tracker: tracker.step()
 
-    (out_dir / "frame_map.json").write_text(json.dumps(sorted(list(frame_map.keys()))), encoding="utf-8")
+    (out_dir / "frame_map.json").write_text(json.dumps(frame_map, indent=2), encoding="utf-8")
     (out_dir / "image_manifest.json").write_text(json.dumps(image_manifest, indent=2), encoding="utf-8")
 
     if tracker: tracker.done_stage("Thumbnails generated")
@@ -3645,6 +3649,13 @@ class AppUI:
                         self._create_component("sceneincludebutton", "button", {"value": "✅keep scene"})
                         self._create_component("sceneexcludebutton", "button", {"value": "❌reject scene"})
                         self._create_component("sceneresetbutton", "button", {"value": "🔄 Reset Scene"})
+
+                    # Add scene_editor_seed_mode component
+                    self._create_component('scene_editor_seed_mode', 'radio', {
+                        'choices': self.config.choices.scene_editor_seed_mode,
+                        'value': self.config.ui_defaults.scene_editor_seed_mode,
+                        'label': "Seed mode"
+                    })
                 gr.Markdown("---"); gr.Markdown("### 🔬 Step 3: Propagate Masks"); gr.Markdown("Once you are satisfied with the seeds, propagate the masks to the rest of the frames in the selected scenes.")
                 self._create_component('propagate_masks_button', 'button', {'value': '🔬 Propagate Masks on Kept Scenes', 'variant': 'primary', 'interactive': False})
 
@@ -3738,6 +3749,12 @@ class AppUI:
         self.components['save_config_button'].click(
             lambda: self.config.save_config('config_dump.json'), [], []
         ).then(lambda: "Configuration saved to config_dump.json", [], self.components['unified_log'])
+
+        # Wire handler for scene_editor_seed_mode
+        sm = self.components.get('scene_editor_seed_mode')
+        if sm is None:
+            raise RuntimeError("scene_editor_seed_mode component must be created before wiring handlers")
+        sm.change(fn=lambda v: v or "per-scene", inputs=sm, outputs=None)
 
 class EnhancedAppUI(AppUI):
     def on_scene_select_yolo_detection_wrapper(self, scenes, shot_id, outdir, yolo_conf, yolo_results, view, indexmap, auto_detect_enabled, *ana_args):
