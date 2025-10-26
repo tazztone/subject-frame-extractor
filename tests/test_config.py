@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import patch, mock_open, MagicMock
 import os
+import app
 
 from app import Config, CompositionRoot
 
