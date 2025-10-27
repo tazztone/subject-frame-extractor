@@ -1441,18 +1441,20 @@ def get_face_analyzer(model_name: str, models_path: str, det_size_tuple: tuple, 
         raise RuntimeError(f"Could not initialize face analysis model. Error: {e}") from e
 
 class PersonDetector:
-    def __init__(self, logger: 'AppLogger', model_path: Path, imgsz: int, conf: float, device: str = 'cuda'):
+    def __init__(self, logger: 'AppLogger', model_path: Path | str, imgsz: int, conf: float, device: str = 'cuda'):
         from ultralytics import YOLO
         self.logger = logger
         self.device = device if torch.cuda.is_available() else 'cpu'
-        if not model_path.exists():
-            raise FileNotFoundError(f"Person detector model not found at {model_path}")
-        self.model = YOLO(str(model_path))
+        # Allow passing a model name or a local path
+        model_str = str(model_path)
+        if not Path(model_str).exists():
+            self.logger.info(f"Loading YOLO model by name: {model_str} (will auto-download if needed)")
+        self.model = YOLO(model_str)
         self.model.to(self.device)
         self.imgsz = imgsz
         self.conf = conf
         self.logger.info("YOLO person detector loaded", component="person_detector",
-                         custom_fields={'device': self.device, 'model': model_path.name})
+                         custom_fields={'device': self.device, 'model': model_str})
 
     def detect_boxes(self, img_rgb):
         res = self.model.predict(img_rgb, imgsz=self.imgsz, conf=self.conf, classes=[0], verbose=False, device=self.device)
@@ -1494,7 +1496,7 @@ def get_grounding_dino_model(gdino_config_path: str, gdino_checkpoint_path: str,
                 config_path = project_root / config_path
             ckpt_path = Path(gdino_checkpoint_path)
             if not ckpt_path.is_absolute():
-                ckpt_path = models_dir / Path(grounding_dino_url).name
+                ckpt_path = models_dir / ckpt_path.name
             download_model(grounding_dino_url,
                            ckpt_path, "GroundingDINO Swin-T model", logger, error_handler, user_agent, min_size=500_000_000)
             _dino_model_cache = gdino_load_model(model_config_path=str(config_path), model_checkpoint_path=str(ckpt_path), device=device)
@@ -1654,7 +1656,7 @@ def run_scene_detection(video_path, output_dir, logger=None):
     logger.info("Detecting scenes...", component="video")
     try:
         scene_list = detect(str(video_path), ContentDetector())
-        shots = ([(s.frame_num, e.frame_num) for s, e in scene_list] if scene_list else [])
+        shots = ([(s.get_frames(), e.get_frames()) for s, e in scene_list] if scene_list else [])
         with (output_dir / "scenes.json").open('w', encoding='utf-8') as f: json.dump(shots, f)
         logger.success(f"Found {len(shots)} scenes.", component="video")
         return shots
@@ -1852,14 +1854,14 @@ def rgb_to_pil(image_rgb: np.ndarray) -> Image.Image:
     if not Image: raise ImportError("Pillow is not installed.")
     return Image.fromarray(image_rgb)
 
-def create_frame_map(output_dir: Path, logger: 'AppLogger'):
+def create_frame_map(output_dir: Path, logger: 'AppLogger', ext: str = ".webp"):
     logger.info("Loading frame map...", component="frames")
     frame_map_path = output_dir / "frame_map.json"
     try:
         with open(frame_map_path, 'r', encoding='utf-8') as f: frame_map_list = json.load(f)
         # Ensure all frame numbers are integers, as JSON can load them as strings.
         sorted_frames = sorted(map(int, frame_map_list))
-        return {orig_num: f"frame_{i+1:06d}.webp" for i, orig_num in enumerate(sorted_frames)}
+        return {orig_num: f"frame_{i+1:06d}{ext}" for i, orig_num in enumerate(sorted_frames)}
     except (FileNotFoundError, json.JSONDecodeError, TypeError) as e:
         logger.error(f"Could not load or parse frame_map.json: {e}. Frame mapping will be empty. This can happen if extraction was incomplete.", exc_info=False)
         return {}
@@ -2380,7 +2382,7 @@ class ExtractionPipeline(Pipeline):
             # For image folders, each image is a "scene" of one frame.
             # We create a synthetic scenes.json to maintain compatibility.
             num_images = len(images)
-            scenes = [[i, i + 1] for i in range(1, num_images + 1)]
+            scenes = [[i, i] for i in range(1, num_images + 1)]
             with (output_dir / "scenes.json").open('w', encoding='utf-8') as f:
                 json.dump(scenes, f)
 
@@ -2501,7 +2503,9 @@ class AnalysisPipeline(Pipeline):
                 self.logger.error("Analysis pipeline failed", component="analysis", exc_info=True, extra={'error': str(e)})
                 return {"error": str(e), "done": False}
 
-    def _create_frame_map(self): return create_frame_map(self.output_dir, self.logger)
+    def _create_frame_map(self):
+        ext = ".webp" if self.params.thumbnails_only else ".png" if self.params.use_png else ".jpg"
+        return create_frame_map(self.output_dir, self.logger, ext=ext)
     def _process_reference_face(self):
         if not self.face_analyzer: return
         ref_path = Path(self.params.face_ref_img_path)
@@ -2531,7 +2535,7 @@ class AnalysisPipeline(Pipeline):
     def _run_analysis_loop(self, scenes_to_process, tracker: 'AdvancedProgressTracker' = None):
         frame_map = self._create_frame_map()
         all_frame_nums_to_process = {fn for scene in scenes_to_process for fn in range(scene.start_frame, scene.end_frame) if fn in frame_map}
-        image_files_to_process = [self.thumb_dir / f"{Path(frame_map[fn]).stem}.webp" for fn in sorted(list(all_frame_nums_to_process))]
+        image_files_to_process = [self.thumb_dir / frame_map[fn] for fn in sorted(list(all_frame_nums_to_process)) if frame_map.get(fn)]
         self.logger.info(f"Analyzing {len(image_files_to_process)} frames")
         num_workers = 1 if self.params.disable_parallel else min(os.cpu_count() or 4, self.config.analysis.max_workers)
         with ThreadPoolExecutor(max_workers=num_workers) as executor:
@@ -2555,7 +2559,7 @@ class AnalysisPipeline(Pipeline):
         try:
             thumb_image_rgb = self.thumbnail_manager.get(thumb_path)
             if thumb_image_rgb is None: raise ValueError("Could not read thumbnail.")
-            frame, base_filename = Frame(thumb_image_rgb, -1), thumb_path.name.replace('.webp', '.png')
+            frame, base_filename = Frame(thumb_image_rgb, -1), thumb_path.name
             mask_meta = self.mask_metadata.get(base_filename, {})
             mask_thumb = None
             if mask_meta.get("mask_path"):
@@ -4977,8 +4981,17 @@ class EnhancedAppUI(AppUI):
             out_root = Path(event.output_dir)
             if not (frame_map_path := out_root / "frame_map.json").exists(): return "[ERROR] frame_map.json not found. Cannot export."
             with frame_map_path.open('r', encoding='utf-8') as f: frame_map_list = json.load(f)
-            fn_to_orig_map = {f"frame_{i+1:06d}.png": orig for i, orig in enumerate(sorted(frame_map_list))}
-            frames_to_extract = sorted([fn_to_orig_map[f['filename']] for f in kept if f['filename'] in fn_to_orig_map])
+
+            # Determine analysis ext from any kept filename
+            sample_name = next((f['filename'] for f in kept if 'filename' in f), None)
+            analyzed_ext = Path(sample_name).suffix if sample_name else '.webp'
+
+            # Build map using analyzed_ext, not hardcoded .png
+            fn_to_orig_map = {f"frame_{i+1:06d}{analyzed_ext}": orig
+            for i, orig in enumerate(sorted(frame_map_list))}
+            frames_to_extract = sorted([fn_to_orig_map.get(f['filename']) for f in kept if f.get('filename') in fn_to_orig_map])
+            frames_to_extract = [n for n in frames_to_extract if n is not None]
+
             if not frames_to_extract: return "No frames to extract."
             select_filter = f"select='{'+'.join([f'eq(n,{fn})' for fn in frames_to_extract])}'"
             export_dir = out_root.parent / f"{out_root.name}_exported_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
