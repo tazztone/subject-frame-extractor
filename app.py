@@ -1072,33 +1072,36 @@ class Frame:
             if active_mask is not None and np.sum(active_mask) < 100:
                 active_mask = None
 
+            def _calculate_and_store_score(name, value):
+                normalized_value = min(max(value, 0.0), 1.0)
+                scores_norm[name] = normalized_value
+                setattr(self.metrics, f"{name}_score", float(normalized_value * 100))
+
+
             if metrics_to_compute.get('sharpness'):
                 lap = cv2.Laplacian(gray, cv2.CV_64F)
                 masked_lap = lap[active_mask] if active_mask is not None else lap
                 sharpness = np.var(masked_lap) if masked_lap.size > 0 else 0
                 sharpness_scaled = (sharpness / (quality_config.sharpness_base_scale * (gray.size / main_config.quality_scaling.resolution_denominator)))
-                scores_norm["sharpness"] = min(sharpness_scaled, 1.0)
-                self.metrics.sharpness_score = float(scores_norm["sharpness"] * 100)
+                _calculate_and_store_score("sharpness", sharpness_scaled)
 
             if metrics_to_compute.get('edge_strength'):
                 sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
                 sobely = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)
                 edge_strength = np.mean(np.sqrt(sobelx**2 + sobely**2))
                 edge_strength_scaled = (edge_strength / (quality_config.edge_strength_base_scale * (gray.size / main_config.quality_scaling.resolution_denominator)))
-                scores_norm["edge_strength"] = min(edge_strength_scaled, 1.0)
-                self.metrics.edge_strength_score = float(scores_norm["edge_strength"] * 100)
+                _calculate_and_store_score("edge_strength", edge_strength_scaled)
 
             if metrics_to_compute.get('contrast') or metrics_to_compute.get('brightness'):
                 pixels = gray[active_mask] if active_mask is not None else gray
                 mean_br, std_br = (np.mean(pixels), np.std(pixels)) if pixels.size > 0 else (0, 0)
                 if metrics_to_compute.get('brightness'):
                     brightness = mean_br / 255.0
-                    scores_norm["brightness"] = brightness
-                    self.metrics.brightness_score = float(brightness * 100)
+                    _calculate_and_store_score("brightness", brightness)
                 if metrics_to_compute.get('contrast'):
                     contrast = std_br / (mean_br + 1e-7)
-                    scores_norm["contrast"] = min(contrast, main_config.quality_scaling.contrast_clamp) / main_config.quality_scaling.contrast_clamp
-                    self.metrics.contrast_score = float(scores_norm["contrast"] * 100)
+                    contrast_scaled = min(contrast, main_config.quality_scaling.contrast_clamp) / main_config.quality_scaling.contrast_clamp
+                    _calculate_and_store_score("contrast", contrast_scaled)
 
             if metrics_to_compute.get('entropy'):
                 gray_full = cv2.cvtColor(self.image_data, cv2.COLOR_RGB2GRAY)
@@ -2645,29 +2648,58 @@ class AnalysisPipeline(Pipeline):
 # --- FILTERING & SCENE LOGIC ---
 
 def load_and_prep_filter_data(metadata_path, get_all_filter_keys):
-    if not metadata_path or not Path(metadata_path).exists(): return [], {}
+    if not metadata_path or not Path(metadata_path).exists():
+        return [], {}
+
     with Path(metadata_path).open('r', encoding='utf-8') as f:
-        try: next(f)
-        except StopIteration: return [], {}
+        try:
+            next(f)  # Skip the header line
+        except StopIteration:
+            return [], {}
         all_frames = [json.loads(line) for line in f if line.strip()]
+
     metric_values = {}
+    metric_configs = {
+        'quality_score': {'path': ("metrics", "quality_score"), 'range': (0, 100)},
+        'yaw': {'path': ("metrics", "yaw"), 'range': (-45, 45)},
+        'pitch': {'path': ("metrics", "pitch"), 'range': (-45, 45)},
+        'eyes_open': {'path': ("metrics", "eyes_open"), 'range': (0, 1)},
+        'face_sim': {'path': ("face_sim",), 'range': (0, 1)},
+    }
+    # Add other metrics with a default range
     for k in get_all_filter_keys:
-        if k == 'quality_score':
-            values = np.asarray([f.get("metrics", {}).get("quality_score") for f in all_frames if f.get("metrics", {}).get("quality_score") is not None], dtype=float)
-        elif k in ['yaw', 'pitch', 'eyes_open']:
-            values = np.asarray([f.get("metrics", {}).get(k) for f in all_frames if f.get("metrics", {}).get(k) is not None], dtype=float)
-        else:
-            values = np.asarray([f.get(k, f.get("metrics", {}).get(f"{k}_score")) for f in all_frames if f.get(k) is not None or f.get("metrics", {}).get(f"{k}_score") is not None], dtype=float)
+        if k not in metric_configs:
+            metric_configs[k] = {'path': (k,), 'alt_path': ("metrics", f"{k}_score"), 'range': (0, 100)}
+
+    for k in get_all_filter_keys:
+        config = metric_configs.get(k)
+        if not config: continue
+
+        path = config.get('path')
+        alt_path = config.get('alt_path')
+
+        values = []
+        for f in all_frames:
+            val = None
+            if path:
+                if len(path) == 1: val = f.get(path[0])
+                else: val = f.get(path[0], {}).get(path[1])
+
+            if val is None and alt_path:
+                if len(alt_path) == 1: val = f.get(alt_path[0])
+                else: val = f.get(alt_path[0], {}).get(alt_path[1])
+
+            if val is not None:
+                values.append(val)
+
+        values = np.asarray(values, dtype=float)
 
         if values.size > 0:
-            if k == 'face_sim' or k == 'eyes_open':
-                hist_range = (0, 1)
-            elif k == 'yaw' or k == 'pitch':
-                hist_range = (-45, 45)
-            else:
-                hist_range = (0, 100)
+            hist_range = config.get('range', (0, 100))
             counts, bins = np.histogram(values, bins=50, range=hist_range)
-            metric_values[k], metric_values[f"{k}_hist"] = values.tolist(), (counts.tolist(), bins.tolist())
+            metric_values[k] = values.tolist()
+            metric_values[f"{k}_hist"] = (counts.tolist(), bins.tolist())
+
     return all_frames, metric_values
 
 def build_all_metric_svgs(per_metric_values, get_all_filter_keys, logger):
@@ -2699,71 +2731,124 @@ def histogram_svg(hist_data, title="", logger=None):
         return """<svg width="100" height="20" xmlns="http://www.w3.org/2000/svg"><text x="5" y="15" font-family="sans-serif" font-size="10" fill="red">Plotting failed</text></svg>"""
 
 def apply_all_filters_vectorized(all_frames_data, filters, config: 'Config'):
-    if not all_frames_data: return [], [], Counter(), {}
-    num_frames, filenames = len(all_frames_data), [f['filename'] for f in all_frames_data]
-    quality_metric_keys = list(asdict(config.quality_weights).keys())
-    filter_metric_keys = quality_metric_keys + ["quality_score"]
-    metric_arrays = {k: np.array([f.get("metrics", {}).get(f"{k}_score", np.nan) for f in all_frames_data], dtype=np.float32) for k in quality_metric_keys}
-    metric_arrays.update({"quality_score": np.array([f.get("metrics", {}).get("quality_score", np.nan) for f in all_frames_data], dtype=np.float32),
-                          "face_sim": np.array([f.get("face_sim", np.nan) for f in all_frames_data], dtype=np.float32),
-                          "mask_area_pct": np.array([f.get("mask_area_pct", np.nan) for f in all_frames_data], dtype=np.float32),
-                          "eyes_open": np.array([f.get("metrics", {}).get("eyes_open", np.nan) for f in all_frames_data], dtype=np.float32),
-                          "yaw": np.array([f.get("metrics", {}).get("yaw", np.nan) for f in all_frames_data], dtype=np.float32),
-                          "pitch": np.array([f.get("metrics", {}).get("pitch", np.nan) for f in all_frames_data], dtype=np.float32)})
-    kept_mask, reasons, dedup_mask = np.ones(num_frames, dtype=bool), defaultdict(list), np.ones(num_frames, dtype=bool)
-    if filters.get("enable_dedup") and imagehash and filters.get("dedup_thresh", 5) != -1:
-        sorted_indices, hashes = sorted(range(num_frames), key=lambda i: filenames[i]), {i: imagehash.hex_to_hash(all_frames_data[i]['phash']) for i in range(num_frames) if 'phash' in all_frames_data[i]}
+    if not all_frames_data:
+        return [], [], Counter(), {}
+
+    num_frames = len(all_frames_data)
+    filenames = [f['filename'] for f in all_frames_data]
+
+    # 1. Consolidate metric data extraction
+    metric_sources = {
+        **{k: ("metrics", f"{k}_score") for k in asdict(config.quality_weights).keys()},
+        "quality_score": ("metrics", "quality_score"),
+        "face_sim": ("face_sim",),
+        "mask_area_pct": ("mask_area_pct",),
+        "eyes_open": ("metrics", "eyes_open"),
+        "yaw": ("metrics", "yaw"),
+        "pitch": ("metrics", "pitch"),
+    }
+
+    metric_arrays = {}
+    for key, path in metric_sources.items():
+        if len(path) == 1:
+            metric_arrays[key] = np.array([f.get(path[0], np.nan) for f in all_frames_data], dtype=np.float32)
+        else:  # Assumes len==2
+            metric_arrays[key] = np.array([f.get(path[0], {}).get(path[1], np.nan) for f in all_frames_data], dtype=np.float32)
+
+    # 2. Handle deduplication
+    dedup_mask = np.ones(num_frames, dtype=bool)
+    reasons = defaultdict(list)
+    if filters.get("enable_dedup") and imagehash and filters.get("dedup_thresh", -1) != -1:
+        sorted_indices = sorted(range(num_frames), key=lambda i: filenames[i])
+        hashes = {i: imagehash.hex_to_hash(all_frames_data[i]['phash']) for i in range(num_frames) if 'phash' in all_frames_data[i]}
         for i in range(1, len(sorted_indices)):
             c_idx, p_idx = sorted_indices[i], sorted_indices[i - 1]
             if p_idx in hashes and c_idx in hashes and (hashes[p_idx] - hashes[c_idx]) <= filters.get("dedup_thresh", 5):
-                if dedup_mask[c_idx]: reasons[filenames[c_idx]].append('duplicate')
+                if dedup_mask[c_idx]:
+                    reasons[filenames[c_idx]].append('duplicate')
                 dedup_mask[c_idx] = False
+
+    # 3. Define all metric filters in a structured way
+    filter_definitions = [
+        *[{'key': k, 'type': 'range'} for k in asdict(config.quality_weights).keys()],
+        {'key': 'quality_score', 'type': 'range'},
+        {'key': 'face_sim', 'type': 'min', 'enabled_key': 'face_sim_enabled', 'reason_low': 'face_sim_low', 'reason_missing': 'face_missing'},
+        {'key': 'mask_area_pct', 'type': 'min', 'enabled_key': 'mask_area_enabled', 'reason_low': 'mask_too_small'},
+        {'key': 'eyes_open', 'type': 'min', 'reason_low': 'eyes_closed'},
+        {'key': 'yaw', 'type': 'range', 'reason_range': 'yaw_out_of_range'},
+        {'key': 'pitch', 'type': 'range', 'reason_range': 'pitch_out_of_range'},
+    ]
+
     metric_filter_mask = np.ones(num_frames, dtype=bool)
-    for k in filter_metric_keys:
-        min_v, max_v = filters.get(f"{k}_min", 0), filters.get(f"{k}_max", 100)
-        metric_filter_mask &= (np.nan_to_num(metric_arrays[k], nan=min_v) >= min_v) & (np.nan_to_num(metric_arrays[k], nan=max_v) <= max_v)
-    if filters.get("face_sim_enabled"):
-        face_sim_min, face_sim_values = filters.get("face_sim_min", 0.5), metric_arrays["face_sim"]
-        has_face_sim = ~np.isnan(face_sim_values)
-        metric_filter_mask[has_face_sim] &= (face_sim_values[has_face_sim] >= face_sim_min)
-        if filters.get("require_face_match"): metric_filter_mask &= has_face_sim
-    if filters.get("mask_area_enabled"):
-        mask_area_min = filters.get("mask_area_pct_min", 1.0)
-        metric_filter_mask &= (np.nan_to_num(metric_arrays["mask_area_pct"], nan=0.0) >= mask_area_min)
 
-    eyes_open_min = filters.get("eyes_open_min", 0.3)
-    metric_filter_mask &= (np.nan_to_num(metric_arrays["eyes_open"], nan=eyes_open_min) >= eyes_open_min)
+    # 4. Apply filters in a loop
+    for f_def in filter_definitions:
+        key, f_type = f_def['key'], f_def['type']
+        if f_def.get('enabled_key') and not filters.get(f_def['enabled_key']):
+            continue
 
-    yaw_min, yaw_max = filters.get("yaw_min", -25), filters.get("yaw_max", 25)
-    metric_filter_mask &= (np.nan_to_num(metric_arrays["yaw"], nan=yaw_min) >= yaw_min) & (np.nan_to_num(metric_arrays["yaw"], nan=yaw_max) <= yaw_max)
+        arr = metric_arrays.get(key)
+        if arr is None: continue
 
-    pitch_min, pitch_max = filters.get("pitch_min", -25), filters.get("pitch_max", 25)
-    metric_filter_mask &= (np.nan_to_num(metric_arrays["pitch"], nan=pitch_min) >= pitch_min) & (np.nan_to_num(metric_arrays["pitch"], nan=pitch_max) <= pitch_max)
+        f_defaults = getattr(config.filter_defaults, key, {})
 
+        if f_type == 'range':
+            min_v = filters.get(f"{key}_min", f_defaults.get('default_min', -np.inf))
+            max_v = filters.get(f"{key}_max", f_defaults.get('default_max', np.inf))
+            nan_fill = f_defaults.get('default_min', min_v)
+            mask = (np.nan_to_num(arr, nan=nan_fill) >= min_v) & (np.nan_to_num(arr, nan=nan_fill) <= max_v)
+            metric_filter_mask &= mask
+
+        elif f_type == 'min':
+            min_v = filters.get(f"{key}_min", f_defaults.get('default_min', -np.inf))
+            nan_fill = f_defaults.get('default_min', min_v)
+            if key == 'face_sim':
+                has_face_sim = ~np.isnan(arr)
+                mask = np.ones(num_frames, dtype=bool)
+                mask[has_face_sim] = (arr[has_face_sim] >= min_v)
+                if filters.get("require_face_match"):
+                    mask &= has_face_sim
+            else:
+                mask = np.nan_to_num(arr, nan=nan_fill) >= min_v
+            metric_filter_mask &= mask
+
+    # 5. Combine masks and collect rejection reasons
     kept_mask = dedup_mask & metric_filter_mask
     metric_rejection_mask = ~metric_filter_mask & dedup_mask
+
     for i in np.where(metric_rejection_mask)[0]:
-        for k in filter_metric_keys:
-            min_v, max_v = filters.get(f"{k}_min", 0), filters.get(f"{k}_max", 100)
-            v = metric_arrays[k][i]
-            if not (min_v <= v <= max_v):
-                reasons[filenames[i]].append(f"{k}_{'low' if v < min_v else 'high'}")
-        if filters.get("face_sim_enabled"):
-            if metric_arrays["face_sim"][i] < filters.get("face_sim_min", 0.5): reasons[filenames[i]].append("face_sim_low")
-            if filters.get("require_face_match") and np.isnan(metric_arrays["face_sim"][i]): reasons[filenames[i]].append("face_missing")
-        if filters.get("mask_area_enabled") and metric_arrays["mask_area_pct"][i] < filters.get("mask_area_pct_min", 1.0): reasons[filenames[i]].append("mask_too_small")
-        if np.nan_to_num(metric_arrays["eyes_open"][i], nan=filters.get("eyes_open_min", 0.3)) < filters.get("eyes_open_min", 0.3):
-            reasons[filenames[i]].append("eyes_closed")
-        yaw_min, yaw_max = filters.get("yaw_min", -25), filters.get("yaw_max", 25)
-        vy = np.nan_to_num(metric_arrays["yaw"][i], nan=yaw_min)
-        if not (yaw_min <= vy <= yaw_max):
-            reasons[filenames[i]].append("yaw_out_of_range")
-        pitch_min, pitch_max = filters.get("pitch_min", -25), filters.get("pitch_max", 25)
-        vp = np.nan_to_num(metric_arrays["pitch"][i], nan=pitch_min)
-        if not (pitch_min <= vp <= pitch_max):
-            reasons[filenames[i]].append("pitch_out_of_range")
-    kept, rejected = [all_frames_data[i] for i in np.where(kept_mask)[0]], [all_frames_data[i] for i in np.where(~kept_mask)[0]]
-    return kept, rejected, Counter(r for r_list in reasons.values() for r in r_list), reasons
+        for f_def in filter_definitions:
+            key, f_type = f_def['key'], f_def['type']
+            if f_def.get('enabled_key') and not filters.get(f_def['enabled_key']):
+                continue
+            arr = metric_arrays.get(key)
+            if arr is None: continue
+
+            f_defaults = getattr(config.filter_defaults, key, {})
+            v = arr[i]
+
+            if f_type == 'range':
+                min_v = filters.get(f"{key}_min", f_defaults.get('default_min', -np.inf))
+                max_v = filters.get(f"{key}_max", f_defaults.get('default_max', np.inf))
+                if not np.isnan(v):
+                    reason = f_def.get('reason_range')
+                    if v < min_v: reasons[filenames[i]].append(reason or f_def.get('reason_low', f"{key}_low"))
+                    if v > max_v: reasons[filenames[i]].append(reason or f_def.get('reason_high', f"{key}_high"))
+
+            elif f_type == 'min':
+                min_v = filters.get(f"{key}_min", f_defaults.get('default_min', -np.inf))
+                if not np.isnan(v) and v < min_v:
+                    reasons[filenames[i]].append(f_def.get('reason_low', f"{key}_low"))
+
+                if key == 'face_sim' and filters.get('require_face_match') and np.isnan(v):
+                    reasons[filenames[i]].append(f_def.get('reason_missing', 'face_missing'))
+
+    # 6. Finalize results
+    kept = [all_frames_data[i] for i in np.where(kept_mask)[0]]
+    rejected = [all_frames_data[i] for i in np.where(~kept_mask)[0]]
+    total_reasons = Counter(r for r_list in reasons.values() for r in r_list)
+
+    return kept, rejected, total_reasons, reasons
 
 def on_filters_changed(event: FilterEvent, thumbnail_manager, config: 'Config', logger=None):
     logger = logger or AppLogger(config=Config())
@@ -3870,17 +3955,21 @@ class AppUI:
                     f_def = self.config.filter_defaults.dedup_thresh
                     self._create_component('enable_dedup_input', 'checkbox', {'label': "Enable Deduplication", 'value': self.config.ui_defaults.enable_dedup})
                     self._create_component('dedup_thresh_input', 'slider', {'label': "Similarity Threshold", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': f_def['default'], 'step': f_def['step'], 'info': "Filters out visually similar frames. A lower value is stricter (more filtering). A value of 0 means only identical images will be removed. Set to -1 to disable."})
-                for metric_name, open_default in [('quality_score', True), ('niqe', False), ('sharpness', True), ('edge_strength', True), ('contrast', True),
-                                                  ('brightness', False), ('entropy', False), ('face_sim', False), ('mask_area_pct', False),
-                                                  ('eyes_open', True), ('yaw', True), ('pitch', True)]:
+                metric_configs = {
+                    'quality_score': {'open': True}, 'niqe': {'open': False}, 'sharpness': {'open': True},
+                    'edge_strength': {'open': True}, 'contrast': {'open': True}, 'brightness': {'open': False},
+                    'entropy': {'open': False}, 'face_sim': {'open': False}, 'mask_area_pct': {'open': False},
+                    'eyes_open': {'open': True}, 'yaw': {'open': True}, 'pitch': {'open': True}
+                }
+                for metric_name, metric_config in metric_configs.items():
                     if not hasattr(self.config.filter_defaults, metric_name): continue
                     f_def = getattr(self.config.filter_defaults, metric_name)
-                    with gr.Accordion(metric_name.replace('_', ' ').title(), open=open_default, visible=False) as acc:
+                    with gr.Accordion(metric_name.replace('_', ' ').title(), open=metric_config['open'], visible=False) as acc:
                         self.components['metric_accs'][metric_name] = acc
                         gr.Markdown(self.get_metric_description(metric_name), elem_classes="metric-description")
                         with gr.Column(elem_classes="plot-and-slider-column"):
                             self.components['metric_plots'][metric_name] = self._create_component(f'plot_{metric_name}', 'html', {'visible': True})
-                            self.components['metric_sliders'][f"{metric_name}_min"] = self._create_component(f'slider_{metric_name}_min', 'slider', {'label': "Min", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': f_def['default_min'], 'step': f_def['step'], 'interactive': True, 'visible': True})
+                            self.components['metric_sliders'][f"{metric_name}_min"] = self._create_component(f'slider_{metric_name}_min', 'slider', {'label': "Min", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': f_def.get('default_min', f_def['min']), 'step': f_def['step'], 'interactive': True, 'visible': True})
                             if 'default_max' in f_def: self.components['metric_sliders'][f"{metric_name}_max"] = self._create_component(f'slider_{metric_name}_max', 'slider', {'label': "Max", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': f_def['default_max'], 'step': f_def['step'], 'interactive': True, 'visible': True})
                             self.components['metric_auto_threshold_cbs'][metric_name] = self._create_component(f'auto_threshold_{metric_name}', 'checkbox', {'label': "Auto-Threshold this metric", 'value': False, 'interactive': True, 'visible': True})
 
