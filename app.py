@@ -41,7 +41,6 @@ os.environ['HF_HOME'] = str(hf_home.resolve())
 # Add submodules to Python path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
-sys.path.insert(0, str(project_root / 'Grounded-SAM-2'))
 sys.path.insert(0, str(project_root / 'DAM4SAM'))
 
 from collections import Counter, OrderedDict, defaultdict
@@ -130,7 +129,7 @@ class Config:
         logs: str = "logs"
         models: str = "models"
         downloads: str = "downloads"
-        grounding_dino_config: str = "Grounded-SAM-2/grounding_dino/groundingdino/config/GroundingDINO_SwinT_OGC.py"
+        grounding_dino_config: str = "groundingdino/config/GroundingDINO_SwinT_OGC.py"
         grounding_dino_checkpoint: str = "models/groundingdino_swint_ogc.pth"
 
     @dataclass
@@ -1491,15 +1490,12 @@ def get_grounding_dino_model(gdino_config_path: str, gdino_checkpoint_path: str,
             models_dir = Path(models_path)
             models_dir.mkdir(parents=True, exist_ok=True)
             config_file_path = gdino_config_path or Config().paths.grounding_dino_config
-            config_path = Path(config_file_path)
-            if not config_path.is_absolute():
-                config_path = project_root / config_path
             ckpt_path = Path(gdino_checkpoint_path)
             if not ckpt_path.is_absolute():
                 ckpt_path = models_dir / ckpt_path.name
             download_model(grounding_dino_url,
                            ckpt_path, "GroundingDINO Swin-T model", logger, error_handler, user_agent, min_size=500_000_000)
-            _dino_model_cache = gdino_load_model(model_config_path=str(config_path), model_checkpoint_path=str(ckpt_path), device=device)
+            _dino_model_cache = gdino_load_model(model_config_path=config_file_path, model_checkpoint_path=str(ckpt_path), device=device)
             logger.success("GroundingDINO model loaded successfully", component="grounding", custom_fields={'model_path': str(ckpt_path)})
         except Exception as e:
             logger.error("Grounding DINO model loading failed.", component="grounding", exc_info=True)
