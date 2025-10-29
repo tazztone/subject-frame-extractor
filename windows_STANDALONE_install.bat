@@ -12,11 +12,10 @@ echo --- Starting Project Setup ---
 
 REM 1) Clone repo (branch choice)
 echo [1/6] Cloning the main repository...
-
 echo.
 echo Select the branch to clone:
-echo   [1] Main (stable)
-echo   [2] Dev (latest features)
+echo [1] Main (stable)
+echo [2] Dev (latest features)
 echo.
 CHOICE /C 12 /M "Enter your choice:"
 if ERRORLEVEL 2 (
@@ -34,7 +33,7 @@ if not exist subject-frame-extractor (
 
 pushd subject-frame-extractor
 
-REM 2) Submodules (DAM4SAM)
+REM 2) Submodules (DAM4SAM only)
 echo [2/6] Initializing git submodules...
 git submodule update --init --recursive || goto :end
 
@@ -43,35 +42,29 @@ echo [3/6] Creating Python virtual environment...
 python -m venv venv || goto :end
 call venv\Scripts\activate.bat || goto :end
 
-REM 4) Base deps
+REM 4) Base deps (install PyTorch first for correct CUDA build)
 echo [4/6] Installing Python dependencies...
 python -m pip install -U pip || goto :end
 pip install -U uv || goto :end
+uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128 || goto :end
 
-REM Install project requirements
+REM Install project requirements (includes groundingdino-py)
 if exist requirements.txt (
   uv pip install -r requirements.txt || goto :end
 )
 
-REM 5a) DAM4SAM (SAM2 provider)
+REM 5) Install DAM4SAM (preferred SAM2) without optional CUDA extension
 echo [5/6] Installing DAM4SAM (preferred sam2)...
 pushd DAM4SAM
 if exist requirements.txt (
-  uv pip install -r requirements.txt || echo Warning: Some dependencies probably fail to install, continuing...
+  uv pip install -r requirements.txt || echo Warning: Continuing despite DAM4SAM extra-deps issues...
 )
-REM Skip optional CUDA extension on Windows
 set "SAM2_BUILD_CUDA=0"
 pip install -e . || goto :end
 popd
 
-REM lastly Install PyTorch (adjust CUDA wheel index if needed)
-uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128 || goto :end
-
 echo.
 echo --- Installation Complete! ---
-echo - DAM4SAM's sam2 will be imported due to .pth order.
-echo - Grounding DINO is installed without registering another sam2.
-echo - To verify: python -c "import sam2; print(sam2.__file__)"
 
 :end
 echo.
