@@ -23,7 +23,7 @@ REM Open browser to Gradio interface first
 echo Opening browser to http://localhost:7860
 start http://localhost:7860
 
-REM Run the app_small.py application
+REM Run the application
 echo.
 echo Starting Subject Frame Extractor...
 echo The browser window should open automatically.
