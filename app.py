@@ -2371,7 +2371,7 @@ class SubjectMasker:
         scene.best_frame = candidates[best_local_idx][0]
         scene.seed_metrics = {'reason': 'pre-analysis complete', 'score': max(scores), 'best_niqe': niqe_score, 'best_face_sim': face_sim}
 
-    def get_seed_for_frame(self, frame_rgb: np.ndarray, seed_config=dict):
+    def get_seed_for_frame(self, frame_rgb: np.ndarray, seed_config=dict, scene=None):
         if isinstance(seed_config, dict) and seed_config.get('manual_bbox_xywh'):
             return seed_config['manual_bbox_xywh'], {'type': seed_config.get('seed_type', 'manual')}
 
@@ -2381,7 +2381,7 @@ class SubjectMasker:
             self._init_grounder()
 
         self._initialize_tracker()
-        return self.seed_selector.select_seed(frame_rgb, current_params=seed_config)
+        return self.seed_selector.select_seed(frame_rgb, current_params=seed_config, scene=scene)
     def get_mask_for_bbox(self, frame_rgb_small, bbox_xywh): return self.seed_selector._sam2_mask_for_bbox(frame_rgb_small, bbox_xywh)
     def draw_bbox(self, img_rgb, xywh, color=None, thickness=None, label=None):
         color = color or tuple(self.config.visualization.bbox_color)
