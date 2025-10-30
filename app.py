@@ -69,7 +69,7 @@ except ImportError:
 try:
     from groundingdino.util.inference import (
         load_model as gdino_load_model,
-        predict as gdino_predict,
+        predict as gdino_predict
     )
 except ImportError:
     gdino_load_model = None
