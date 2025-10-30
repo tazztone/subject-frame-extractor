@@ -416,15 +416,10 @@ class Config:
         for f in fields(self):
             if f.name in data:
                 field_data = data[f.name]
-                # Check if the field is a dataclass and the data is a dict
                 if is_dataclass(f.type) and isinstance(field_data, dict):
-                    # Get the existing nested dataclass instance
                     nested_instance = getattr(self, f.name)
-                    # Create a new dictionary from the nested instance
                     nested_data = asdict(nested_instance)
-                    # Merge the new data into the existing data
                     self._merge_configs(nested_data, field_data)
-                    # Create a new instance from the merged data
                     setattr(self, f.name, f.type(**nested_data))
                 else:
                     setattr(self, f.name, field_data)
@@ -435,17 +430,9 @@ class Config:
             raise ValueError("The sum of quality_weights cannot be zero.")
 
     def _create_dirs(self):
-        dir_paths = [
-            self.paths.logs,
-            self.paths.models,
-            self.paths.downloads,
-        ]
-        for dir_path in dir_paths:
+        for dir_path in [self.paths.logs, self.paths.models, self.paths.downloads]:
             if isinstance(dir_path, str):
-                try:
-                    Path(dir_path).mkdir(exist_ok=True, parents=True)
-                except PermissionError as e:
-                    raise RuntimeError(f"Cannot create directory at {dir_path}. Check permissions.") from e
+                Path(dir_path).mkdir(exist_ok=True, parents=True)
 
     def save_config(self, path: str):
         """Saves the current (resolved) configuration to a JSON file."""
@@ -1366,6 +1353,7 @@ def download_model(url, dest_path, description, logger, error_handler: ErrorHand
     if dest_path.is_file() and (min_size is None or dest_path.stat().st_size >= min_size):
         logger.info(f"Using cached {description}: {dest_path}")
         return
+
     @error_handler.with_retry(recoverable_exceptions=(urllib.error.URLError, TimeoutError, RuntimeError))
     def download_func():
         logger.info(f"Downloading {description}", extra={'url': url, 'dest': dest_path})
@@ -1375,11 +1363,8 @@ def download_model(url, dest_path, description, logger, error_handler: ErrorHand
         if not dest_path.exists() or dest_path.stat().st_size < min_size:
             raise RuntimeError(f"Downloaded {description} seems incomplete")
         logger.success(f"{description} downloaded successfully.")
-    try:
-        download_func()
-    except Exception as e:
-        logger.error(f"Failed to download {description}", exc_info=True, extra={'url': url})
-        raise RuntimeError(f"Failed to download required model: {description}") from e
+
+    download_func()
 
 # Thread-local storage for non-thread-safe models
 thread_local = threading.local()
@@ -1647,18 +1632,16 @@ class VideoManager:
         return info
 
 def run_scene_detection(video_path, output_dir, logger=None):
-    if not detect: raise ImportError("scenedetect is not installed.")
+    if not detect:
+        raise ImportError("scenedetect is not installed.")
     logger = logger or AppLogger(config=Config())
     logger.info("Detecting scenes...", component="video")
-    try:
-        scene_list = detect(str(video_path), ContentDetector())
-        shots = ([(s.get_frames(), e.get_frames()) for s, e in scene_list] if scene_list else [])
-        with (output_dir / "scenes.json").open('w', encoding='utf-8') as f: json.dump(shots, f)
-        logger.success(f"Found {len(shots)} scenes.", component="video")
-        return shots
-    except Exception as e:
-        logger.error("Scene detection failed.", component="video", exc_info=True)
-        return []
+    scene_list = detect(str(video_path), ContentDetector())
+    shots = [(s.get_frames(), e.get_frames()) for s, e in scene_list] if scene_list else []
+    with (output_dir / "scenes.json").open("w", encoding="utf-8") as f:
+        json.dump(shots, f)
+    logger.success(f"Found {len(shots)} scenes.", component="video")
+    return shots
 
 def make_photo_thumbs(image_paths: list[Path], out_dir: Path, params: AnalysisParameters, cfg: Config, logger: AppLogger, tracker: 'AdvancedProgressTracker' = None):
     thumbs_dir = out_dir / "thumbs"
@@ -1670,34 +1653,28 @@ def make_photo_thumbs(image_paths: list[Path], out_dir: Path, params: AnalysisPa
         tracker.start(len(image_paths), desc="Generating thumbnails")
 
     for i, img_path in enumerate(image_paths, start=1):
-        if tracker and tracker.pause_event.is_set(): tracker.step()
-        try:
-            bgr = cv2.imread(str(img_path))
-            if bgr is None:
-                logger.warning(f"Could not read image file: {img_path}")
-                continue
-
-            h, w = bgr.shape[:2]
-            scale = math.sqrt(target_area / float(max(1, w * h)))
-            if scale < 1.0:
-                new_w, new_h = int((w * scale) // 2 * 2), int((h * scale) // 2 * 2)
-                bgr = cv2.resize(bgr, (max(2, new_w), max(2, new_h)), interpolation=cv2.INTER_AREA)
-
-            rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
-            out_name = f"frame_{i:06d}.webp"
-            out_path = thumbs_dir / out_name
-
-            if Image is not None:
-                Image.fromarray(rgb).save(out_path, format="WEBP", quality=cfg.ffmpeg.thumbnail_quality)
-            else:
-                cv2.imwrite(str(out_path), cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
-
-            frame_map[i] = out_name
-            image_manifest[i] = str(img_path.resolve())
-        except Exception as e:
-            logger.error(f"Failed to process image {img_path}", exc_info=True)
-        finally:
-            if tracker: tracker.step()
+        bgr = cv2.imread(str(img_path))
+        if bgr is None:
+            logger.warning(f"Could not read image file: {img_path}")
+            if tracker:
+                tracker.step()
+            continue
+        h, w = bgr.shape[:2]
+        scale = math.sqrt(target_area / float(max(1, w * h)))
+        if scale < 1.0:
+            new_w, new_h = int((w * scale) // 2 * 2), int((h * scale) // 2 * 2)
+            bgr = cv2.resize(bgr, (max(2, new_w), max(2, new_h)), interpolation=cv2.INTER_AREA)
+        rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+        out_name = f"frame_{i:06d}.webp"
+        out_path = thumbs_dir / out_name
+        if Image is not None:
+            Image.fromarray(rgb).save(out_path, format="WEBP", quality=cfg.ffmpeg.thumbnail_quality)
+        else:
+            cv2.imwrite(str(out_path), cv2.cvtColor(rgb, cv2.COLOR_RGB_BGR))
+        frame_map[i] = out_name
+        image_manifest[i] = str(img_path.resolve())
+        if tracker:
+            tracker.step()
 
     (out_dir / "frame_map.json").write_text(json.dumps(frame_map, indent=2), encoding="utf-8")
     (out_dir / "image_manifest.json").write_text(json.dumps(image_manifest, indent=2), encoding="utf-8")
@@ -2907,22 +2884,21 @@ def auto_set_thresholds(per_metric_values, p, slider_keys, selected_metrics):
     return updates
 
 def save_scene_seeds(scenes_list, output_dir_str, logger):
-    if not scenes_list or not output_dir_str: return
+    if not scenes_list or not output_dir_str:
+        return
     scene_seeds = {}
     for s in scenes_list:
         data = {
-            'best_frame': s.get('best_frame', s.get('best_seed_frame')),
-            'seed_frame_idx': s.get('seed_frame_idx'),
-            'seed_type': s.get('seed_result', {}).get('details', {}).get('type'),
-            'seed_config': s.get('seed_config', {}),
-            'status': s.get('status', 'pending'),
-            'seed_metrics': s.get('seed_metrics', {})
+            "best_frame": s.get("best_frame", s.get("best_seed_frame")),
+            "seed_frame_idx": s.get("seed_frame_idx"),
+            "seed_type": s.get("seed_result", {}).get("details", {}).get("type"),
+            "seed_config": s.get("seed_config", {}),
+            "status": s.get("status", "pending"),
+            "seed_metrics": s.get("seed_metrics", {}),
         }
-        scene_seeds[str(s['shot_id'])] = data
-    try:
-        (Path(output_dir_str) / "scene_seeds.json").write_text(json.dumps(_to_json_safe(scene_seeds), indent=2), encoding='utf-8')
-        logger.info("Saved scene_seeds.json")
-    except Exception as e: logger.error("Failed to save scene_seeds.json", exc_info=True)
+        scene_seeds[str(s["shot_id"])] = data
+    (Path(output_dir_str) / "scene_seeds.json").write_text(json.dumps(_to_json_safe(scene_seeds), indent=2), encoding="utf-8")
+    logger.info("Saved scene_seeds.json")
 
 def get_scene_status_text(scenes_list):
     if not scenes_list:
@@ -4965,219 +4941,178 @@ class EnhancedAppUI(AppUI):
         return self.export_kept_frames(ExportEvent(all_frames_data, output_dir, video_path, enable_crop, crop_ars, crop_padding, filter_args))
 
     def export_kept_frames(self, event: ExportEvent):
-        if not event.all_frames_data: return "No metadata to export."
-        if not event.video_path or not Path(event.video_path).exists(): return "[ERROR] Original video path is required for export."
-        try:
-            filters = event.filter_args.copy()
-            filters.update({"face_sim_enabled": any("face_sim" in f for f in event.all_frames_data),
-                            "mask_area_enabled": any("mask_area_pct" in f for f in event.all_frames_data),
-                            "enable_dedup": any('phash' in f for f in event.all_frames_data)})
-            kept, _, _, _ = apply_all_filters_vectorized(event.all_frames_data, filters, self.config)
-            if not kept: return "No frames kept after filtering. Nothing to export."
-            out_root = Path(event.output_dir)
-            if not (frame_map_path := out_root / "frame_map.json").exists(): return "[ERROR] frame_map.json not found. Cannot export."
-            with frame_map_path.open('r', encoding='utf-8') as f: frame_map_list = json.load(f)
-
-            # Determine analysis ext from any kept filename
-            sample_name = next((f['filename'] for f in kept if 'filename' in f), None)
-            analyzed_ext = Path(sample_name).suffix if sample_name else '.webp'
-
-            # Build map using analyzed_ext, not hardcoded .png
-            fn_to_orig_map = {f"frame_{i+1:06d}{analyzed_ext}": orig
-            for i, orig in enumerate(sorted(frame_map_list))}
-            frames_to_extract = sorted([fn_to_orig_map.get(f['filename']) for f in kept if f.get('filename') in fn_to_orig_map])
-            frames_to_extract = [n for n in frames_to_extract if n is not None]
-
-            if not frames_to_extract: return "No frames to extract."
-            select_filter = f"select='{'+'.join([f'eq(n,{fn})' for fn in frames_to_extract])}'"
-            export_dir = out_root.parent / f"{out_root.name}_exported_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-            export_dir.mkdir(exist_ok=True, parents=True)
-            cmd = ['ffmpeg', '-y', '-i', str(event.video_path), '-vf', select_filter, '-vsync', 'vfr', str(export_dir / "frame_%06d.png")]
-            self.logger.info("Starting final export extraction...", extra={'command': ' '.join(cmd)})
-            subprocess.run(cmd, check=True, capture_output=True, text=True)
-
-            # Rename the sequentially numbered files to match their original analysis filenames.
-            self.logger.info("Renaming extracted frames to match original filenames...")
-            orig_to_filename_map = {v: k for k, v in fn_to_orig_map.items()}
-            
-            # Build rename plan
-            plan = []
-            for i, orig_frame_num in enumerate(frames_to_extract):
-                sequential_filename = f"frame_{i+1:06d}.png"
-                target_filename = orig_to_filename_map.get(orig_frame_num)
-                if not target_filename:
-                    continue
-                
-                src = export_dir / sequential_filename
-                dst = export_dir / target_filename
-                if src == dst:
-                    continue
-                plan.append((src, dst))
-
-            # Phase 1: move all sources to unique temps
-            temp_map = {}
-            for i, (src, _) in enumerate(plan):
-                if not src.exists():
-                    continue
-                tmp = export_dir / f"__tmp_{i:06d}__{src.name}"
-                # Ensure no accidental collision with prior tmp
-                j = i
-                while tmp.exists():
-                    j += 1
-                    tmp = export_dir / f"__tmp_{j:06d}__{src.name}"
+        if not event.all_frames_data:
+            return "No metadata to export."
+        if not event.video_path or not Path(event.video_path).exists():
+            return "[ERROR] Original video path is required for export."
+        filters = event.filter_args.copy()
+        filters.update(
+            {
+                "face_sim_enabled": any("face_sim" in f for f in event.all_frames_data),
+                "mask_area_enabled": any("mask_area_pct" in f for f in event.all_frames_data),
+                "enable_dedup": any("phash" in f for f in event.all_frames_data),
+            }
+        )
+        kept, _, _, _ = apply_all_filters_vectorized(event.all_frames_data, filters, self.config)
+        if not kept:
+            return "No frames kept after filtering. Nothing to export."
+        out_root = Path(event.output_dir)
+        if not (frame_map_path := out_root / "frame_map.json").exists():
+            return "[ERROR] frame_map.json not found. Cannot export."
+        with frame_map_path.open("r", encoding="utf-8") as f:
+            frame_map_list = json.load(f)
+        sample_name = next((f["filename"] for f in kept if "filename" in f), None)
+        analyzed_ext = Path(sample_name).suffix if sample_name else ".webp"
+        fn_to_orig_map = {f"frame_{i+1:06d}{analyzed_ext}": orig for i, orig in enumerate(sorted(frame_map_list))}
+        frames_to_extract = sorted([fn_to_orig_map.get(f["filename"]) for f in kept if f.get("filename") in fn_to_orig_map])
+        frames_to_extract = [n for n in frames_to_extract if n is not None]
+        if not frames_to_extract:
+            return "No frames to extract."
+        select_filter = f"select='{'+'.join([f'eq(n,{fn})' for fn in frames_to_extract])}'"
+        export_dir = out_root.parent / f"{out_root.name}_exported_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        export_dir.mkdir(exist_ok=True, parents=True)
+        cmd = ["ffmpeg", "-y", "-i", str(event.video_path), "-vf", select_filter, "-vsync", "vfr", str(export_dir / "frame_%06d.png")]
+        self.logger.info("Starting final export extraction...", extra={"command": " ".join(cmd)})
+        subprocess.run(cmd, check=True, capture_output=True, text=True)
+        self.logger.info("Renaming extracted frames to match original filenames...")
+        orig_to_filename_map = {v: k for k, v in fn_to_orig_map.items()}
+        plan = []
+        for i, orig_frame_num in enumerate(frames_to_extract):
+            sequential_filename = f"frame_{i+1:06d}.png"
+            target_filename = orig_to_filename_map.get(orig_frame_num)
+            if not target_filename:
+                continue
+            src = export_dir / sequential_filename
+            dst = export_dir / target_filename
+            if src == dst:
+                continue
+            plan.append((src, dst))
+        temp_map = {}
+        for i, (src, _) in enumerate(plan):
+            if not src.exists():
+                continue
+            tmp = export_dir / f"__tmp_{i:06d}__{src.name}"
+            j = i
+            while tmp.exists():
+                j += 1
+                tmp = export_dir / f"__tmp_{j:06d}__{src.name}"
+            try:
+                src.rename(tmp)
+                temp_map[src] = tmp
+            except FileNotFoundError:
+                self.logger.warning(f"Could not find {src.name} to rename to temporary file.", extra={"target": tmp.name})
+        for src, dst in plan:
+            tmp = temp_map.get(src)
+            if tmp is None or not tmp.exists():
+                continue
+            if dst.exists():
+                stem, ext = dst.stem, dst.suffix
+                k, alt = 1, export_dir / f"{stem} (1){ext}"
+                while alt.exists():
+                    k += 1
+                    alt = export_dir / f"{stem} ({k}){ext}"
+                dst = alt
+            try:
+                tmp.rename(dst)
+            except FileNotFoundError:
+                self.logger.warning(f"Could not find temporary file {tmp.name} to rename to final destination.", extra={"target": dst.name})
+        if event.enable_crop:
+            self.logger.info("Starting crop export...")
+            crop_dir = export_dir / "cropped"
+            crop_dir.mkdir(exist_ok=True)
+            try:
+                aspect_ratios = [(ar_str.replace(":", "x"), float(ar_str.split(":")[0]) / float(ar_str.split(":")[1])) for ar_str in event.crop_ars.split(",") if ":" in ar_str]
+            except (ValueError, ZeroDivisionError):
+                return "Invalid aspect ratio format. Use 'width:height,width:height' e.g. '16:9,1:1'."
+            masks_root, num_cropped = out_root / "masks", 0
+            for frame_meta in kept:
+                if self.cancel_event.is_set():
+                    break
                 try:
-                    src.rename(tmp)
-                    temp_map[src] = tmp
-                except FileNotFoundError:
-                    self.logger.warning(f"Could not find {src.name} to rename to temporary file.", extra={'target': tmp.name})
-
-
-            # Phase 2: move temps to final destinations
-            for src, dst in plan:
-                tmp = temp_map.get(src)
-                if tmp is None or not tmp.exists():
-                    continue
-                
-                # If dst somehow exists (e.g., external file), pick a fresh suffix or remove it per your policy
-                if dst.exists():
-                    # choose one: raise, delete, or re-suffix; here we re-suffix deterministically
-                    stem, ext = dst.stem, dst.suffix
-                    k, alt = 1, export_dir / f"{stem} (1){ext}"
-                    while alt.exists():
-                        k += 1
-                        alt = export_dir / f"{stem} ({k}){ext}"
-                    dst = alt
-                try:
-                    tmp.rename(dst)
-                except FileNotFoundError:
-                    self.logger.warning(f"Could not find temporary file {tmp.name} to rename to final destination.", extra={'target': dst.name})
-            if event.enable_crop:
-                self.logger.info("Starting crop export...")
-                crop_dir = export_dir / "cropped"
-                crop_dir.mkdir(exist_ok=True)
-                try:
-                    aspect_ratios = [
-                        (ar_str.replace(':', 'x'), float(ar_str.split(':')[0]) / float(ar_str.split(':')[1]))
-                        for ar_str in event.crop_ars.split(',') if ':' in ar_str
-                    ]
-                except (ValueError, ZeroDivisionError):
-                    return "Invalid aspect ratio format. Use 'width:height,width:height' e.g. '16:9,1:1'."
-
-                masks_root, num_cropped = out_root / "masks", 0
-                for frame_meta in kept:
-                    if self.cancel_event.is_set(): break
-                    try:
-                        if not (full_frame_path := export_dir / frame_meta['filename']).exists(): continue
-                        mask_name = frame_meta.get('mask_path', '')
-                        if not mask_name or not (mask_path := masks_root / mask_name).exists(): continue
-
-                        frame_img = cv2.imread(str(full_frame_path))
-                        mask_img = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
-
-                        if frame_img is None or mask_img is None: continue
-
-                        contours, _ = cv2.findContours(mask_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-                        if not contours: continue
-
-                        x_b, y_b, w_b, h_b = cv2.boundingRect(np.concatenate(contours))
-                        if w_b == 0 or h_b == 0: continue
-
-                        frame_h, frame_w = frame_img.shape[:2]
-
-                        padding_factor = 1.0 + (event.crop_padding / 100.0)
-                        
-                        feasible_candidates = []
-                        for ar_str, r in aspect_ratios:
-                            # Determine the smallest crop that contains the subject box at the target AR
-                            if w_b / h_b > r:
-                                w_c, h_c = w_b, w_b / r
-                            else:
-                                h_c, w_c = h_b, h_b * r
-
-                            # Apply padding
-                            w_padded, h_padded = w_c * padding_factor, h_c * padding_factor
-
-                            # Clamp dimensions to frame boundaries, preserving AR
-                            scale = 1.0
-                            if w_padded > frame_w:
-                                scale = min(scale, frame_w / w_padded)
-                            if h_padded > frame_h:
-                                scale = min(scale, frame_h / h_padded)
-                            
-                            w_final, h_final = w_padded * scale, h_padded * scale
-
-                            # Ensure the final crop is still large enough to contain the subject
-                            if w_final < w_b or h_final < h_b:
-                                # This can happen if padding is negative or scale-down is too aggressive.
-                                # As a fallback, ensure subject is contained, which may break padding.
-                                if w_final < w_b:
-                                    w_final = w_b
-                                    h_final = w_final / r
-                                if h_final < h_b:
-                                    h_final = h_b
-                                    w_final = h_final * r
-                                # Re-clamp to frame boundaries after this adjustment
-                                if w_final > frame_w:
-                                    w_final = frame_w
-                                    h_final = w_final / r
-                                if h_final > frame_h:
-                                    h_final = frame_h
-                                    w_final = h_final * r
-                            
-                            # Position the crop to center the subject, then clamp to frame edges
-                            center_x_b, center_y_b = x_b + w_b / 2, y_b + h_b / 2
-                            x1 = center_x_b - w_final / 2
-                            y1 = center_y_b - h_final / 2
-
-                            x1 = max(0, min(x1, frame_w - w_final))
-                            y1 = max(0, min(y1, frame_h - h_final))
-
-                            # Final check to ensure subject is contained after all adjustments
-                            if (x1 > x_b or y1 > y_b or x1 + w_final < x_b + w_b or y1 + h_final < y_b + h_b):
-                                continue # This AR is not feasible with the given constraints
-
-                            feasible_candidates.append({
-                                "ar_str": ar_str,
-                                "x1": x1, "y1": y1,
-                                "w_r": w_final, "h_r": h_final,
-                                "area": w_final * h_final,
-                            })
-
-                        if not feasible_candidates:
-                            # Fallback to native subject box if no AR is feasible
-                            cropped_img = frame_img[y_b:y_b+h_b, x_b:x_b+w_b]
-                            if cropped_img.size > 0:
-                                cv2.imwrite(str(crop_dir / f"{Path(frame_meta['filename']).stem}_crop_native.png"), cropped_img)
-                                num_cropped += 1
+                    if not (full_frame_path := export_dir / frame_meta["filename"]).exists():
+                        continue
+                    mask_name = frame_meta.get("mask_path", "")
+                    if not mask_name or not (mask_path := masks_root / mask_name).exists():
+                        continue
+                    frame_img = cv2.imread(str(full_frame_path))
+                    mask_img = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
+                    if frame_img is None or mask_img is None:
+                        continue
+                    contours, _ = cv2.findContours(mask_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                    if not contours:
+                        continue
+                    x_b, y_b, w_b, h_b = cv2.boundingRect(np.concatenate(contours))
+                    if w_b == 0 or h_b == 0:
+                        continue
+                    frame_h, frame_w = frame_img.shape[:2]
+                    padding_factor = 1.0 + (event.crop_padding / 100.0)
+                    feasible_candidates = []
+                    for ar_str, r in aspect_ratios:
+                        if w_b / h_b > r:
+                            w_c, h_c = w_b, w_b / r
+                        else:
+                            h_c, w_c = h_b, h_b * r
+                        w_padded, h_padded = w_c * padding_factor, h_c * padding_factor
+                        scale = 1.0
+                        if w_padded > frame_w:
+                            scale = min(scale, frame_w / w_padded)
+                        if h_padded > frame_h:
+                            scale = min(scale, frame_h / h_padded)
+                        w_final, h_final = w_padded * scale, h_padded * scale
+                        if w_final < w_b or h_final < h_b:
+                            if w_final < w_b:
+                                w_final = w_b
+                                h_final = w_final / r
+                            if h_final < h_b:
+                                h_final = h_b
+                                w_final = h_final * r
+                            if w_final > frame_w:
+                                w_final = frame_w
+                                h_final = w_final / r
+                            if h_final > frame_h:
+                                h_final = frame_h
+                                w_final = h_final * r
+                        center_x_b, center_y_b = x_b + w_b / 2, y_b + h_b / 2
+                        x1 = center_x_b - w_final / 2
+                        y1 = center_y_b - h_final / 2
+                        x1 = max(0, min(x1, frame_w - w_final))
+                        y1 = max(0, min(y1, frame_h - h_final))
+                        if x1 > x_b or y1 > y_b or x1 + w_final < x_b + w_b or y1 + h_final < y_b + h_b:
                             continue
-
-                        # Select the best candidate (smallest area that contains the subject)
-                        subject_ar = w_b / h_b if h_b > 0 else 1
-                        def sort_key(c):
-                            r = c['w_r'] / c['h_r'] if c['h_r'] > 0 else 1
-                            ar_diff = abs(r - subject_ar)
-                            return (c['area'], ar_diff)
-
-                        best_candidate = min(feasible_candidates, key=sort_key)
-                        
-                        x1, y1 = int(best_candidate['x1']), int(best_candidate['y1'])
-                        w_r, h_r = int(best_candidate['w_r']), int(best_candidate['h_r'])
-
-                        cropped_img = frame_img[y1:y1+h_r, x1:x1+w_r]
+                        feasible_candidates.append(
+                            {
+                                "ar_str": ar_str,
+                                "x1": x1,
+                                "y1": y1,
+                                "w_r": w_final,
+                                "h_r": h_final,
+                                "area": w_final * h_final,
+                            }
+                        )
+                    if not feasible_candidates:
+                        cropped_img = frame_img[y_b : y_b + h_b, x_b : x_b + w_b]
                         if cropped_img.size > 0:
-                            cv2.imwrite(str(crop_dir / f"{Path(frame_meta['filename']).stem}_crop_{best_candidate['ar_str']}.png"), cropped_img)
+                            cv2.imwrite(str(crop_dir / f"{Path(frame_meta['filename']).stem}_crop_native.png"), cropped_img)
                             num_cropped += 1
+                        continue
+                    subject_ar = w_b / h_b if h_b > 0 else 1
 
-                    except Exception as e:
-                        self.logger.error(f"Failed to crop frame {frame_meta['filename']}", exc_info=True)
-                self.logger.info(f"Cropping complete. Saved {num_cropped} cropped images.")
-            return f"Exported {len(frames_to_extract)} frames to {export_dir.name}."
-        except subprocess.CalledProcessError as e:
-            self.logger.error("FFmpeg export failed", exc_info=True, extra={'stderr': e.stderr})
-            return "Error during export: FFmpeg failed. Check logs."
-        except Exception as e:
-            self.logger.error("Error during export process", exc_info=True)
-            return f"Error during export: {e}"
+                    def sort_key(c):
+                        r = c["w_r"] / c["h_r"] if c["h_r"] > 0 else 1
+                        ar_diff = abs(r - subject_ar)
+                        return (c["area"], ar_diff)
+
+                    best_candidate = min(feasible_candidates, key=sort_key)
+                    x1, y1 = int(best_candidate["x1"]), int(best_candidate["y1"])
+                    w_r, h_r = int(best_candidate["w_r"]), int(best_candidate["h_r"])
+                    cropped_img = frame_img[y1 : y1 + h_r, x1 : x1 + w_r]
+                    if cropped_img.size > 0:
+                        cv2.imwrite(str(crop_dir / f"{Path(frame_meta['filename']).stem}_crop_{best_candidate['ar_str']}.png"), cropped_img)
+                        num_cropped += 1
+                except Exception as e:
+                    self.logger.error(f"Failed to crop frame {frame_meta['filename']}", exc_info=True)
+            self.logger.info(f"Cropping complete. Saved {num_cropped} cropped images.")
+        return f"Exported {len(frames_to_extract)} frames to {export_dir.name}."
 
 # --- COMPOSITION & MAIN ---
 
@@ -5206,18 +5141,13 @@ class CompositionRoot:
 
 
 def main():
+    composition = CompositionRoot()
     try:
-        composition = CompositionRoot()
         demo = composition.get_app_ui().build_ui()
         print("Frame Extractor & Analyzer v2.0\nStarting application...")
         demo.launch()
-    except KeyboardInterrupt:
-        print("\nApplication stopped by user")
-    except Exception as e:
-        print(f"Error starting application: {e}")
-        sys.exit(1)
     finally:
-        if 'composition' in locals(): composition.cleanup()
+        composition.cleanup()
 
 if __name__ == "__main__":
     main()
