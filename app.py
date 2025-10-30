@@ -836,8 +836,6 @@ class PreAnalysisEvent(UIEvent):
     compute_subject_mask_area: bool = True
     compute_niqe: bool = True
     compute_phash: bool = True
-    enable_dedup: bool = True
-    dedup_thresh: int = 5
 
 @dataclass
 class PropagationEvent(UIEvent):
@@ -1205,8 +1203,6 @@ class AnalysisParameters:
     compute_subject_mask_area: bool = True
     compute_niqe: bool = True
     compute_phash: bool = True
-    enable_dedup: bool = True
-    dedup_thresh: int = 5
 
     def __post_init__(self):
         # This post_init is now less critical as config is passed on creation,
@@ -2237,7 +2233,6 @@ class SubjectMasker:
         primary_strategy = self.params.primary_seed_strategy
         if primary_strategy == "🧑‍🤝‍🧑 Find Prominent Person":
             self.logger.info("YOLO-only mode enabled for 'Find Prominent Person' strategy. Skipping other model loads.")
-            self.dam_tracker = None
             self._gdino = None
             # Note: face_analyzer and face_landmarker are handled externally
             return
@@ -2290,8 +2285,10 @@ class SubjectMasker:
         self.mask_dir = Path(frames_dir) / "masks"
         self.mask_dir.mkdir(exist_ok=True)
         self.logger.info("Starting subject mask propagation...")
-        if not self.dam_tracker:
-            self.logger.error("Tracker not initialized; skipping masking.")
+        # Ensure the tracker is initialized before proceeding. This is crucial for strategies
+        # like "YOLO-only" that defer tracker loading.
+        if not self._initialize_tracker():
+            self.logger.error("Tracker could not be initialized; skipping masking.")
             return {}
         self.frame_map = self.frame_map or self._create_frame_map(frames_dir)
         mask_metadata, total_scenes = {}, len(scenes_to_process)
@@ -2337,6 +2334,12 @@ class SubjectMasker:
                     else:
                         mask_metadata[frame_fname_png] = asdict(MaskingResult(mask_path=None, **result_args))
         self.logger.success("Subject masking complete.")
+        try:
+            with (self.mask_dir.parent / "mask_metadata.json").open('w', encoding='utf-8') as f:
+                json.dump(mask_metadata, f, indent=2)
+            self.logger.info("Saved mask metadata.")
+        except Exception as e:
+            self.logger.error("Failed to save mask metadata", exc_info=True)
         return mask_metadata
 
     def _create_frame_map(self, frames_dir): return create_frame_map(Path(frames_dir), self.logger)
@@ -2554,18 +2557,42 @@ class AnalysisPipeline(Pipeline):
                                        self.face_analyzer, self.reference_embedding, person_detector, thumbnail_manager=self.thumbnail_manager,
                                        niqe_metric=self.niqe_metric, logger=self.logger, face_landmarker=self.face_landmarker)
                 self.mask_metadata = masker.run_propagation(str(self.output_dir), scenes_to_process, tracker=tracker)
-                if tracker:
-                    tracker.set_stage("Analyzing frames")
-                self._initialize_niqe_metric()
-                self._run_analysis_loop(scenes_to_process, tracker=tracker)
+
                 if self.cancel_event.is_set():
-                    self.logger.info("Analysis cancelled by user.")
-                    return {"log": "Analysis cancelled.", "done": False}
-                self.logger.success("Analysis complete.", extra={'output_dir': self.output_dir})
-                return {"done": True, "metadata_path": str(self.metadata_path), "output_dir": str(self.output_dir)}
+                    self.logger.info("Propagation cancelled by user.")
+                    return {"log": "Propagation cancelled.", "done": False}
+
+                self.logger.success("Propagation complete.", extra={'output_dir': self.output_dir})
+                return {"done": True, "output_dir": str(self.output_dir)}
             except Exception as e:
-                self.logger.error("Analysis pipeline failed", component="analysis", exc_info=True, extra={'error': str(e)})
+                self.logger.error("Propagation pipeline failed", component="analysis", exc_info=True, extra={'error': str(e)})
                 return {"error": str(e), "done": False}
+
+    def run_analysis_only(self, scenes_to_process, tracker: 'AdvancedProgressTracker' = None):
+        try:
+            if not self.metadata_path.exists():
+                with open(self.metadata_path, 'w', encoding='utf-8') as f:
+                    f.write(json.dumps(_to_json_safe({"params": asdict(self.params)})) + '\n')
+            self.scene_map = {s.shot_id: s for s in scenes_to_process}
+            self.logger.info("Initializing Models for Analysis")
+            models = initialize_analysis_models(self.params, self.config, self.logger, self.device == 'cuda')
+            self.face_analyzer = models['face_analyzer']
+            self.reference_embedding = models['ref_emb']
+            self.face_landmarker = models['face_landmarker']
+            if self.face_analyzer and self.params.face_ref_img_path: self._process_reference_face()
+            mask_metadata_path = self.output_dir / "mask_metadata.json"
+            if mask_metadata_path.exists():
+                with open(mask_metadata_path, 'r', encoding='utf-8') as f: self.mask_metadata = json.load(f)
+            else: self.mask_metadata = {}
+            if tracker: tracker.set_stage("Analyzing frames")
+            self._initialize_niqe_metric()
+            self._run_analysis_loop(scenes_to_process, tracker=tracker)
+            if self.cancel_event.is_set(): return {"log": "Analysis cancelled.", "done": False}
+            self.logger.success("Analysis complete.", extra={'output_dir': self.output_dir})
+            return {"done": True, "metadata_path": str(self.metadata_path), "output_dir": str(self.output_dir)}
+        except Exception as e:
+            self.logger.error("Analysis pipeline failed", exc_info=True, extra={'error': str(e)})
+            return {"error": str(e), "done": False}
 
     def _create_frame_map(self):
         ext = ".webp" if self.params.thumbnails_only else ".png"
@@ -3581,6 +3608,26 @@ def execute_propagation(event: PropagationEvent, progress_queue: Queue, cancel_e
     result = pipeline.run_full_analysis(scenes_to_process, tracker=tracker)
 
     if result and result.get("done"):
+        yield {"log": "Propagation complete.", "status": f"Output at {result['output_dir']}",
+               "output_dir": result['output_dir'], "done": True}
+
+def execute_analysis(event: PropagationEvent, progress_queue: Queue, cancel_event: threading.Event, logger: AppLogger,
+                     config: Config, thumbnail_manager, cuda_available, progress=None):
+    params = AnalysisParameters.from_ui(logger, config, **asdict(event.analysis_params))
+    scenes_to_process = [Scene(**{k: v for k, v in s.items() if k in {f.name for f in fields(Scene)}}) for s in event.scenes if s.get('status') == 'included']
+    if not scenes_to_process:
+        yield {"log": "No scenes to analyze.", "status": "Skipped."}
+        return
+
+    video_info = VideoManager.get_video_info(params.video_path)
+    totals = estimate_totals(params, video_info, scenes_to_process)
+    tracker = AdvancedProgressTracker(progress, progress_queue, logger, ui_stage_name="Analyzing")
+    tracker.start(sum(s.end_frame - s.start_frame for s in scenes_to_process), desc="Analyzing Frames")
+
+    pipeline = AnalysisPipeline(config, logger, params, progress_queue, cancel_event, thumbnail_manager)
+    result = pipeline.run_analysis_only(scenes_to_process, tracker=tracker)
+
+    if result and result.get("done"):
         yield {"log": "Analysis complete.", "status": f"Metadata saved to {result['metadata_path']}",
                "output_dir": result['output_dir'], "metadata_path": result['metadata_path'], "done": True}
 
@@ -3706,8 +3753,7 @@ class AppUI:
             'pre_analysis_enabled', 'pre_sample_nth', 'primary_seed_strategy',
             'compute_quality_score', 'compute_sharpness', 'compute_edge_strength', 'compute_contrast',
             'compute_brightness', 'compute_entropy', 'compute_eyes_open', 'compute_yaw', 'compute_pitch',
-            'compute_face_sim', 'compute_subject_mask_area', 'compute_niqe', 'compute_phash',
-            'enable_dedup', 'dedup_thresh'
+            'compute_face_sim', 'compute_subject_mask_area', 'compute_niqe', 'compute_phash'
         ]
         self.session_load_keys = ['unified_log', 'unified_status', 'progress_details', 'cancel_button', 'pause_button',
                                   'source_input', 'max_resolution', 'thumb_megapixels_input', 'ext_scene_detect_input',
@@ -3943,17 +3989,8 @@ class AppUI:
 
         with gr.Accordion("Deduplication Settings", open=True):
             self._create_component('compute_phash', 'checkbox', {'label': "Compute p-hash for Deduplication", 'value': True})
-            with gr.Group(visible=True) as dedup_controls:
-                self.components['dedup_controls_group'] = dedup_controls
-                self._create_component('enable_dedup_metrics', 'checkbox', {'label': "Enable Deduplication", 'value': self.config.ui_defaults.enable_dedup})
-                f_def = self.config.filter_defaults.dedup_thresh
-                self._create_component('dedup_thresh_metrics', 'slider', {'label': "Similarity Threshold", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': self.config.ui_defaults.dedup_thresh, 'step': f_def['step'], 'info': "Filters out visually similar frames. A lower value is stricter (more filtering). A value of 0 means only identical images will be removed. Set to -1 to disable."})
+        self.components['start_analysis_button'] = gr.Button("Analyze Selected Frames", variant="primary")
 
-        self.components['compute_phash'].change(
-            lambda x: gr.update(visible=x),
-            self.components['compute_phash'],
-            self.components['dedup_controls_group'],
-        )
 
     def _create_analysis_tab(self):
         pass
@@ -3978,6 +4015,12 @@ class AppUI:
                     f_def = self.config.filter_defaults.dedup_thresh
                     self._create_component('enable_dedup_input', 'checkbox', {'label': "Enable Deduplication", 'value': self.config.ui_defaults.enable_dedup})
                     self._create_component('dedup_thresh_input', 'slider', {'label': "Similarity Threshold", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': f_def['default'], 'step': f_def['step'], 'info': "Filters out visually similar frames. A lower value is stricter (more filtering). A value of 0 means only identical images will be removed. Set to -1 to disable."})
+
+                with gr.Accordion("Similarity", open=True, visible=True) as similarity_acc:
+                    self.components['metric_accs']['similarity'] = similarity_acc
+                    f_def = self.config.filter_defaults.dedup_thresh
+                    self._create_component('similarity_thresh_input', 'slider', {'label': "Similarity Threshold", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': self.config.ui_defaults.dedup_thresh, 'step': f_def['step'], 'info': "Filters out visually similar frames. A lower value is stricter (more filtering). A value of 0 means only identical images will be removed. Set to -1 to disable."})
+
                 metric_configs = {
                     'quality_score': {'open': True}, 'niqe': {'open': False}, 'sharpness': {'open': True},
                     'edge_strength': {'open': True}, 'contrast': {'open': True}, 'brightness': {'open': False},
@@ -4445,9 +4488,23 @@ class EnhancedAppUI(AppUI):
                     if self.cancel_event.is_set():
                         return {"unified_log": "Propagation cancelled."}
                     if result.get("done"):
-                        return {"unified_log": result.get("log", "✅ Propagation completed successfully."), "analysis_output_dir_state": result.get('output_dir', ""),
-                                "analysis_metadata_path_state": result.get('metadata_path', ""), "filtering_tab": gr.update(interactive=True)}
+                        return {"unified_log": result.get("log", "✅ Propagation completed successfully."),
+                                "analysis_output_dir_state": result.get('output_dir', "")}
             return {"unified_log": "❌ Propagation failed."}
+        except Exception as e: raise
+
+    def run_analysis_wrapper(self, scenes, *args, progress=gr.Progress(track_tqdm=True)):
+        event = PropagationEvent(output_folder=self._create_pre_analysis_event(*args).output_folder, video_path=self._create_pre_analysis_event(*args).video_path,
+                                 scenes=scenes, analysis_params=self._create_pre_analysis_event(*args))
+        try:
+            for result in execute_analysis(event, self.progress_queue, self.cancel_event, self.app_logger, self.config, self.thumbnail_manager, self.cuda_available, progress=progress):
+                if isinstance(result, dict):
+                    if self.cancel_event.is_set():
+                        return {"unified_log": "Analysis cancelled."}
+                    if result.get("done"):
+                        return {"unified_log": result.get("log", "✅ Analysis completed successfully."), "analysis_output_dir_state": result.get('output_dir', ""),
+                                "analysis_metadata_path_state": result.get('metadata_path', ""), "filtering_tab": gr.update(interactive=True)}
+            return {"unified_log": "❌ Analysis failed."}
         except Exception as e: raise
 
     def run_session_load_wrapper(self, session_path):
@@ -4571,9 +4628,7 @@ class EnhancedAppUI(AppUI):
                                                            **{f'compute_{m}': f'compute_{m}' for m in [
                                                                'quality_score', 'sharpness', 'edge_strength', 'contrast', 'brightness', 'entropy',
                                                                'eyes_open', 'yaw', 'pitch', 'face_sim', 'subject_mask_area', 'niqe', 'phash'
-                                                           ]},
-                                                           'enable_dedup': 'enable_dedup_metrics',
-                                                           'dedup_thresh': 'dedup_thresh_metrics'
+                                                           ]}
                                                           }[k] for k in self.ana_ui_map_keys]]
         prop_inputs = [c['scenes_state']] + self.ana_input_components
         c['start_extraction_button'].click(fn=extraction_handler,
@@ -4581,7 +4636,11 @@ class EnhancedAppUI(AppUI):
         c['start_pre_analysis_button'].click(fn=pre_analysis_handler,
                                            inputs=self.ana_input_components, outputs=all_outputs, show_progress="hidden")
         c['propagate_masks_button'].click(fn=propagation_handler,
-                                        inputs=prop_inputs, outputs=all_outputs, show_progress="hidden").then(lambda p: gr.update(selected=4) if p else gr.update(), c['analysis_metadata_path_state'], c['main_tabs'])
+                                        inputs=prop_inputs, outputs=all_outputs, show_progress="hidden").then(lambda p: gr.update(selected=3) if p else gr.update(), c['analysis_output_dir_state'], c['main_tabs'])
+
+        analysis_inputs = [c['scenes_state']] + self.ana_input_components
+        c['start_analysis_button'].click(fn=self.run_analysis_wrapper,
+                                         inputs=analysis_inputs, outputs=all_outputs, show_progress="hidden").then(lambda p: gr.update(selected=4) if p else gr.update(), c['analysis_metadata_path_state'], c['main_tabs'])
 
     def on_apply_bulk_scene_filters_extended(self, scenes, min_mask_area, min_face_sim, min_confidence, enable_face_filter, output_folder, view):
         if not scenes:
