@@ -129,7 +129,7 @@ class Config:
         logs: str = "logs"
         models: str = "models"
         downloads: str = "downloads"
-        grounding_dino_config: str = "groundingdino/config/GroundingDINO_SwinT_OGC.py"
+        grounding_dino_config: str = "GroundingDINO_SwinT_OGC.py" # Will be resolved via importlib.resources
         grounding_dino_checkpoint: str = "models/groundingdino_swint_ogc.pth"
 
     @dataclass
@@ -1119,7 +1119,7 @@ class Frame:
                         mask_3ch = (np.stack([active_mask_full] * 3, axis=-1))
                         rgb_image = np.where(mask_3ch, rgb_image, 0)
                     img_tensor = (torch.from_numpy(rgb_image).float().permute(2, 0, 1).unsqueeze(0) / 255.0)
-                    with (torch.no_grad(), torch.cuda.amp.autocast(enabled=torch.cuda.is_available())):
+                    with (torch.no_grad(), torch.amp.autocast('cuda', enabled=torch.cuda.is_available())):
                         niqe_raw = float(niqe_metric(img_tensor.to(niqe_metric.device)))
                         niqe_score = max(0, min(100, (main_config.quality_scaling.niqe_offset - niqe_raw) * main_config.quality_scaling.niqe_scale_factor))
                         scores_norm["niqe"] = niqe_score / 100.0
@@ -1475,6 +1475,20 @@ def get_person_detector(model_path_str: str, device: str, imgsz: int, conf: floa
         logger.success(f"YOLO model {Path(model_path_str).name} loaded successfully", component="person_detector")
     return _yolo_model_cache[model_path_str]
 
+
+def resolve_grounding_dino_config(config_path: str) -> str:
+    """Resolve GroundingDINO config path via importlib.resources."""
+    try:
+        import importlib.resources as pkg_resources
+        from groundingdino import config as gdino_config_module
+        with pkg_resources.path(gdino_config_module, config_path) as config_file:
+            return str(config_file)
+    except (ImportError, ModuleNotFoundError, FileNotFoundError):
+        raise RuntimeError(
+            f"Could not resolve GroundingDINO config '{config_path}'. "
+            "Ensure the 'groundingdino-py' package is installed correctly and the config file exists within it."
+        )
+
 def get_grounding_dino_model(gdino_config_path: str, gdino_checkpoint_path: str, models_path: str, grounding_dino_url: str, user_agent: str, retry_params: tuple, device="cuda", logger: 'AppLogger' = None):
     """Load GroundingDINO model only when needed."""
     global _dino_model_cache
@@ -1487,13 +1501,20 @@ def get_grounding_dino_model(gdino_config_path: str, gdino_checkpoint_path: str,
         try:
             models_dir = Path(models_path)
             models_dir.mkdir(parents=True, exist_ok=True)
+
             config_file_path = gdino_config_path or Config().paths.grounding_dino_config
+            # Use the new resolver function
+            config_path = resolve_grounding_dino_config(config_file_path)
             ckpt_path = Path(gdino_checkpoint_path)
             if not ckpt_path.is_absolute():
                 ckpt_path = models_dir / ckpt_path.name
             download_model(grounding_dino_url,
                            ckpt_path, "GroundingDINO Swin-T model", logger, error_handler, user_agent, min_size=500_000_000)
-            _dino_model_cache = gdino_load_model(model_config_path=config_file_path, model_checkpoint_path=str(ckpt_path), device=device)
+            _dino_model_cache = gdino_load_model(
+                model_config_path=config_path,
+                model_checkpoint_path=str(ckpt_path),
+                device=device
+            )
             logger.success("GroundingDINO model loaded successfully", component="grounding", custom_fields={'model_path': str(ckpt_path)})
         except Exception as e:
             logger.error("Grounding DINO model loading failed.", component="grounding", exc_info=True)
@@ -1505,7 +1526,7 @@ def get_grounding_dino_model(gdino_config_path: str, gdino_checkpoint_path: str,
 
 def predict_grounding_dino(model, image_tensor, caption, box_threshold, text_threshold, device="cuda"):
     if not gdino_predict: raise ImportError("GroundingDINO is not installed.")
-    with torch.no_grad(), torch.cuda.amp.autocast(enabled=(device == 'cuda')):
+    with torch.no_grad(), torch.amp.autocast('cuda', enabled=(device == 'cuda')):
         return gdino_predict(model=model, image=image_tensor.to(device), caption=caption,
                              box_threshold=float(box_threshold), text_threshold=float(text_threshold))
 
@@ -1552,6 +1573,19 @@ def get_dam4sam_tracker(model_name: str, models_path: str, model_urls_tuple: tup
 def initialize_analysis_models(params: AnalysisParameters, config: Config, logger: AppLogger, cuda_available: bool):
     device = "cuda" if cuda_available else "cpu"
     face_analyzer, ref_emb, person_detector, face_landmarker = None, None, None, None
+
+    # For YOLO-only mode, only the person detector is needed.
+    if params.primary_seed_strategy == "🧑‍🤝‍🧑 Find Prominent Person":
+        model_path = Path(config.paths.models) / params.person_detector_model
+        person_detector = get_person_detector(
+            model_path_str=str(model_path),
+            device=device,
+            imgsz=config.person_detector.imgsz,
+            conf=config.person_detector.conf,
+            logger=logger
+        )
+        return {"face_analyzer": None, "ref_emb": None, "person_detector": person_detector, "face_landmarker": None, "device": device}
+
     if params.enable_face_filter:
         face_analyzer = get_face_analyzer(
             model_name=params.face_model_name,
@@ -1899,7 +1933,7 @@ class MaskPropagator:
                 masks[i] = mask if mask is not None else np.zeros_like(shot_frames_rgb[i], dtype=np.uint8)[:, :, 0]
                 if tracker: tracker.step(1, desc=desc)
         try:
-            with torch.cuda.amp.autocast(enabled=self._device == 'cuda'):
+            with torch.amp.autocast('cuda', enabled=self._device == 'cuda'):
                 outputs = self.dam_tracker.initialize(rgb_to_pil(shot_frames_rgb[seed_idx]), None, bbox=bbox_xywh)
                 mask = outputs.get('pred_mask')
                 if mask is not None: mask = postprocess_mask((mask * 255).astype(np.uint8), config=self.config, fill_holes=True, keep_largest_only=True)
@@ -2181,7 +2215,7 @@ class SubjectMasker:
         self._device = "cuda" if torch.cuda.is_available() else "cpu"
         self.thumbnail_manager = thumbnail_manager if thumbnail_manager is not None else ThumbnailManager(self.logger, self.config)
         self.niqe_metric = niqe_metric
-        self._initialize_models()
+        self.initialize_models()
         self.seed_selector = SeedSelector(
             params=params,
             config=self.config,
@@ -2194,27 +2228,30 @@ class SubjectMasker:
         )
         self.mask_propagator = MaskPropagator(params, self.dam_tracker, cancel_event, progress_queue, config=self.config, logger=self.logger)
 
-    def _initialize_models(self):
+    def initialize_models(self):
         primary_strategy = self.params.primary_seed_strategy
         if primary_strategy == "🧑‍🤝‍🧑 Find Prominent Person":
             self.logger.info("YOLO-only mode enabled for 'Find Prominent Person' strategy. Skipping other model loads.")
             self.dam_tracker = None
             self._gdino = None
-            self.face_analyzer = None
+            # Note: face_analyzer and face_landmarker are handled externally
             return
 
-        # Conditionally initialize models for other strategies.
+        # Continue with normal model loading for other strategies
         if self.params.enable_face_filter and self.face_analyzer is None:
             self.logger.warning("Face analyzer is not available but face filter is enabled.")
 
         if self.params.enable_subject_mask:
             self._initialize_tracker()
 
-        text_based_seeding = "By Text" in primary_strategy or "Fallback" in primary_strategy
+        text_based_seeding = ("📝 By Text" in primary_strategy or "Fallback" in primary_strategy)
         if text_based_seeding:
             self._init_grounder()
     def _init_grounder(self):
         if self._gdino is not None: return True
+        # Skip grounder for strategies that don't need it
+        if self.params.primary_seed_strategy == "🧑‍🤝‍🧑 Find Prominent Person":
+            return False
         retry_params = (self.config.retry.max_attempts, tuple(self.config.retry.backoff_seconds))
         self._gdino = get_grounding_dino_model(
             gdino_config_path=self.params.gdino_config_path,
@@ -2318,7 +2355,7 @@ class SubjectMasker:
             niqe_score = 10.0
             if self.niqe_metric:
                 img_tensor = (torch.from_numpy(thumb_rgb).float().permute(2, 0, 1).unsqueeze(0) / 255.0)
-                with (torch.no_grad(), torch.cuda.amp.autocast(enabled=self._device == 'cuda')):
+                with (torch.no_grad(), torch.amp.autocast('cuda', enabled=self._device == 'cuda')):
                     niqe_score = float(self.niqe_metric(img_tensor.to(self.niqe_metric.device)))
             face_sim = 0.0
             if self.face_analyzer and self.reference_embedding is not None:
@@ -2334,23 +2371,17 @@ class SubjectMasker:
         scene.best_frame = candidates[best_local_idx][0]
         scene.seed_metrics = {'reason': 'pre-analysis complete', 'score': max(scores), 'best_niqe': niqe_score, 'best_face_sim': face_sim}
 
-        # NEW: Always run YOLO detection on the selected best frame
-        if self.person_detector:
-            thumb_rgb = candidates[best_local_idx][1]
-            if thumb_rgb is not None:
-                yolo_boxes = self.person_detector.detect_boxes(thumb_rgb)
-                # Store YOLO results for later use in seeding
-                scene.yolo_detections = yolo_boxes
+    def get_seed_for_frame(self, frame_rgb: np.ndarray, seed_config=dict):
+        if isinstance(seed_config, dict) and seed_config.get('manual_bbox_xywh'):
+            return seed_config['manual_bbox_xywh'], {'type': seed_config.get('seed_type', 'manual')}
 
-    def get_seed_for_frame(self, frame_rgb: np.ndarray, seed_config: dict, scene: Scene = None):
-        if isinstance(seed_config, dict) and seed_config.get("manual_bbox_xywh"):
-            return seed_config["manual_bbox_xywh"], {"type": seed_config.get("seedtype", "manual")}
+        # Only initialize grounder for strategies that need it
+        primary_strategy = getattr(self.params, 'primary_seed_strategy', 'Automatic')
+        if primary_strategy != "🧑‍🤝‍🧑 Find Prominent Person":
+            self._init_grounder()
 
-        # Lazy load models if needed
-        self._init_grounder()
         self._initialize_tracker()
-
-        return self.seed_selector.select_seed(frame_rgb, current_params=seed_config, scene=scene)
+        return self.seed_selector.select_seed(frame_rgb, current_params=seed_config)
     def get_mask_for_bbox(self, frame_rgb_small, bbox_xywh): return self.seed_selector._sam2_mask_for_bbox(frame_rgb_small, bbox_xywh)
     def draw_bbox(self, img_rgb, xywh, color=None, thickness=None, label=None):
         color = color or tuple(self.config.visualization.bbox_color)
@@ -3183,7 +3214,9 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue, cancel_
     models = initialize_analysis_models(params, config, logger, cuda_available)
     niqe_metric = None
     if not is_folder_mode and params.pre_analysis_enabled and pyiqa:
-        niqe_metric = pyiqa.create_metric('niqe', device=models['device'])
+        # Skip NIQE for YOLO-only mode to save memory
+        if params.primary_seed_strategy != "🧑‍🤝‍🧑 Find Prominent Person":
+            niqe_metric = pyiqa.create_metric('niqe', device=models['device'])
 
     masker = SubjectMasker(params, progress_queue, cancel_event, config, face_analyzer=models["face_analyzer"],
                            reference_embedding=models["ref_emb"], person_detector=models["person_detector"],
