@@ -729,9 +729,11 @@ class TestAnalysisPipeline:
             result = pipeline.run_full_analysis(scenes_to_process)
 
             assert result.get('done', False), f"Pipeline failed, result: {result}"
-            assert Path(result['metadata_path']).exists()
-            # We expect it to be called for each frame in the scene
-            assert mock_process_frame.call_count > 0
+            assert 'metadata_path' not in result
+            assert result['output_dir'] == str(pipeline.output_dir)
+            mock_masker_instance.run_propagation.assert_called_once()
+            # We expect it to not be called because analysis is now separate
+            mock_process_frame.call_count == 0
 
     @patch('app.AnalysisPipeline._run_image_folder_analysis')
     def test_run_full_analysis_image_folder_branch(self, mock_run_image_folder, mock_analysis_pipeline):
