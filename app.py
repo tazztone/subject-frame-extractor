@@ -1156,6 +1156,7 @@ class Scene:
     is_overridden: bool = False
     initial_bbox: Optional[list] = None
     selected_bbox: Optional[list] = None
+    yolo_detections: List[dict] = field(default_factory=list)
 
 @dataclass
 class AnalysisParameters:
@@ -1951,7 +1952,7 @@ class SeedSelector:
             return source.get(key, default)
         return getattr(source, key, default)
 
-    def select_seed(self, frame_rgb, current_params=None):
+    def select_seed(self, frame_rgb, current_params=None, scene=None):
         params_source = current_params if current_params is not None else self.params
         p = params_source  # Keep for passing to other methods
 
@@ -1961,28 +1962,28 @@ class SeedSelector:
         if primary_strategy == "👤 By Face":
             if self.face_analyzer and self.reference_embedding is not None and use_face_filter:
                 self.logger.info("Starting 'Identity-First' seeding.")
-                return self._identity_first_seed(frame_rgb, p)
+                return self._identity_first_seed(frame_rgb, p, scene)
             else:
                 self.logger.warning("Face strategy selected but no reference face provided.")
-                return self._object_first_seed(frame_rgb, p)
+                return self._object_first_seed(frame_rgb, p, scene)
         elif primary_strategy == "📝 By Text":
             self.logger.info("Starting 'Object-First' seeding.")
-            return self._object_first_seed(frame_rgb, p)
+            return self._object_first_seed(frame_rgb, p, scene)
         elif primary_strategy == "🔄 Face + Text Fallback":
             self.logger.info("Starting 'Face-First with Text Fallback' seeding.")
-            return self._face_with_text_fallback_seed(frame_rgb, p)
+            return self._face_with_text_fallback_seed(frame_rgb, p, scene)
         else:
             self.logger.info("Starting 'Automatic' seeding.")
-            return self._choose_person_by_strategy(frame_rgb, p)
+            return self._choose_person_by_strategy(frame_rgb, p, scene)
 
-    def _face_with_text_fallback_seed(self, frame_rgb, params):
+    def _face_with_text_fallback_seed(self, frame_rgb, params, scene=None):
         # If no reference embedding is available, go straight to text fallback.
         if self.reference_embedding is None:
             self.logger.warning("No reference face for face-first strategy, falling back to text prompt.", extra={'reason': 'no_ref_emb'})
-            return self._object_first_seed(frame_rgb, params)
+            return self._object_first_seed(frame_rgb, params, scene)
 
         # First, attempt the identity-first strategy.
-        box, details = self._identity_first_seed(frame_rgb, params)
+        box, details = self._identity_first_seed(frame_rgb, params, scene)
 
         # If it succeeds (i.e., finds a matching face and subject), return the result.
         if box is not None:
@@ -1991,14 +1992,14 @@ class SeedSelector:
 
         # If it fails, log the failure and fall back to the object-first (text) strategy.
         self.logger.warning("Face detection failed or no match found, falling back to text prompt strategy.", extra=details)
-        return self._object_first_seed(frame_rgb, params)
+        return self._object_first_seed(frame_rgb, params, scene)
 
-    def _identity_first_seed(self, frame_rgb, params):
+    def _identity_first_seed(self, frame_rgb, params, scene=None):
         target_face, details = self._find_target_face(frame_rgb)
         if not target_face:
             self.logger.warning("Target face not found in scene.", extra=details)
             return None, {"type": "no_subject_found"}
-        yolo_boxes, dino_boxes = self._get_yolo_boxes(frame_rgb), self._get_dino_boxes(frame_rgb, params)[0]
+        yolo_boxes, dino_boxes = self._get_yolo_boxes(frame_rgb, scene), self._get_dino_boxes(frame_rgb, params)[0]
         best_box, best_details = self._score_and_select_candidate(target_face, yolo_boxes, dino_boxes)
         if best_box:
             self.logger.success("Evidence-based seed selected.", extra=best_details)
@@ -2007,10 +2008,10 @@ class SeedSelector:
         expanded_box = self._expand_face_to_body(target_face['bbox'], frame_rgb.shape)
         return expanded_box, {"type": "expanded_box_from_face", "seed_face_sim": details.get('seed_face_sim', 0)}
 
-    def _object_first_seed(self, frame_rgb, params):
+    def _object_first_seed(self, frame_rgb, params, scene=None):
         dino_boxes, dino_details = self._get_dino_boxes(frame_rgb, params)
         if dino_boxes:
-            yolo_boxes = self._get_yolo_boxes(frame_rgb)
+            yolo_boxes = self._get_yolo_boxes(frame_rgb, scene)
             if yolo_boxes:
                 best_iou, best_match = -1, None
                 for d_box in dino_boxes:
@@ -2025,7 +2026,7 @@ class SeedSelector:
             self.logger.info("Using best DINO box without YOLO validation.", extra=dino_details)
             return self._xyxy_to_xywh(dino_boxes[0]['bbox']), dino_details
         self.logger.info("No DINO results, falling back to YOLO-only strategy.")
-        return self._choose_person_by_strategy(frame_rgb, params)
+        return self._choose_person_by_strategy(frame_rgb, params, scene)
 
     def _find_target_face(self, frame_rgb):
         frame_bgr = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
@@ -2042,9 +2043,14 @@ class SeedSelector:
             return {'bbox': best_face.bbox.astype(int), 'embedding': best_face.normed_embedding}, {'type': 'face_match', 'seed_face_sim': best_sim}
         return None, {'error': 'no_matching_face', 'best_sim': best_sim}
 
-    def _get_yolo_boxes(self, frame_rgb):
-        if not self.person_detector: return []
+    def _get_yolo_boxes(self, frame_rgb, scene=None):
+        if scene and hasattr(scene, 'yolo_detections') and scene.yolo_detections:
+            return scene.yolo_detections
+
+        if not self.person_detector:
+            return []
         try:
+            self.logger.warning("No pre-computed YOLO boxes found, running detection as a fallback.")
             return self.person_detector.detect_boxes(frame_rgb)
         except Exception as e:
             self.logger.warning("YOLO person detector failed.", exc_info=True)
@@ -2098,11 +2104,16 @@ class SeedSelector:
         winner = max(scored_candidates, key=lambda x: x['score'])
         return self._xyxy_to_xywh(winner['box']), {'type': 'evidence_based_selection', 'final_score': winner['score'], **winner['details']}
 
-    def _choose_person_by_strategy(self, frame_rgb, params):
-        boxes = self._get_yolo_boxes(frame_rgb)
+    def _choose_person_by_strategy(self, frame_rgb, params, scene=None):
+        boxes = self._get_yolo_boxes(frame_rgb, scene)  # This now uses pre-computed results
         if not boxes:
-            self.logger.warning("No persons found for fallback strategy.")
-            return self._final_fallback_box(frame_rgb.shape), {'type': 'fallback_rect'}
+            self.logger.warning(f"No people detected in scene - using fallback region")
+            fallback_box = self._final_fallback_box(frame_rgb.shape)
+            return fallback_box, {
+                'type': 'no_people_fallback',
+                'reason': 'No people detected in best frame',
+                'detection_attempted': True
+            }
         strategy = getattr(params, "seed_strategy", "Largest Person")
         if isinstance(params, dict): strategy = params.get('seed_strategy', strategy)
         h, w = frame_rgb.shape[:2]
@@ -2323,7 +2334,15 @@ class SubjectMasker:
         scene.best_frame = candidates[best_local_idx][0]
         scene.seed_metrics = {'reason': 'pre-analysis complete', 'score': max(scores), 'best_niqe': niqe_score, 'best_face_sim': face_sim}
 
-    def get_seed_for_frame(self, frame_rgb: np.ndarray, seed_config: dict):
+        # NEW: Always run YOLO detection on the selected best frame
+        if self.person_detector:
+            thumb_rgb = candidates[best_local_idx][1]
+            if thumb_rgb is not None:
+                yolo_boxes = self.person_detector.detect_boxes(thumb_rgb)
+                # Store YOLO results for later use in seeding
+                scene.yolo_detections = yolo_boxes
+
+    def get_seed_for_frame(self, frame_rgb: np.ndarray, seed_config: dict, scene: Scene = None):
         if isinstance(seed_config, dict) and seed_config.get("manual_bbox_xywh"):
             return seed_config["manual_bbox_xywh"], {"type": seed_config.get("seedtype", "manual")}
 
@@ -2331,7 +2350,7 @@ class SubjectMasker:
         self._init_grounder()
         self._initialize_tracker()
 
-        return self.seed_selector.select_seed(frame_rgb, current_params=seed_config)
+        return self.seed_selector.select_seed(frame_rgb, current_params=seed_config, scene=scene)
     def get_mask_for_bbox(self, frame_rgb_small, bbox_xywh): return self.seed_selector._sam2_mask_for_bbox(frame_rgb_small, bbox_xywh)
     def draw_bbox(self, img_rgb, xywh, color=None, thickness=None, label=None):
         color = color or tuple(self.config.visualization.bbox_color)
@@ -3045,7 +3064,7 @@ def _recompute_single_preview(scene: dict, masker: SubjectMasker, overrides: dic
         logger.info(f"Recomputing scene {scene.get('shot_id')} with text-first strategy due to override.", extra={'prompt': overrides.get("text_prompt")})
 
     # Recompute seed and update scene dictionary
-    bbox, details = masker.get_seed_for_frame(thumb_rgb, seed_config=seed_config)
+    bbox, details = masker.get_seed_for_frame(thumb_rgb, seed_config=seed_config, scene=scene)
     scene['seed_config'].update(overrides)
     scene['seed_result'] = {'bbox': bbox, 'details': details}
     
@@ -3247,7 +3266,7 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue, cancel_
             if not fname: continue
             thumb_rgb = thumbnail_manager.get(output_dir / "thumbs" / f"{Path(fname).stem}.webp")
             if thumb_rgb is None: continue
-            bbox, details = masker.get_seed_for_frame(thumb_rgb, seed_config=scene.seed_config or params)
+            bbox, details = masker.get_seed_for_frame(thumb_rgb, seed_config=scene.seed_config or params, scene=scene)
             scene.seed_result = {'bbox': bbox, 'details': details}
             mask = masker.get_mask_for_bbox(thumb_rgb, bbox) if bbox else None
             if mask is not None:
@@ -3761,16 +3780,7 @@ class AppUI:
         with gr.Row():
             with gr.Column(scale=1):
                 gr.Markdown("### 🎯 Step 1: Choose Your Seeding Strategy")
-                gr.Markdown(
-                    """
-                    The goal of this step is to find the best single frame (the "best frame") in each scene to represent the subject you're interested in.
-                    This best frame is then used in the next step to track the subject across the entire scene.
-                    - **By Face**: Best for tracking a specific person. Requires a clear reference photo.
-                    - **By Text**: Good for tracking objects or people by description (e.g., "person in a red shirt").
-                    - **Face + Text Fallback**: The most robust option. It tries to find the person first, but if it can't, it will use the text prompt as a backup.
-                    - **Find Prominent Person**: A quick, automatic option that finds the largest or most central person. Less precise but very fast.
-                    """
-                )
+                gr.Markdown(""" This step analyzes each scene to find the best frame and automatically detects people using YOLO.  The system will: 1. Find the highest quality frame in each scene 2. Detect all people in that frame   3. Select the best subject based on your chosen strategy 4. Generate a preview with the subject highlighted """)
                 self._create_component('primary_seed_strategy_input', 'radio', {'choices': self.config.choices.primary_seed_strategy, 'value': self.config.ui_defaults.primary_seed_strategy, 'label': "Primary Best-Frame Selection Strategy", 'info': "Select the main method for identifying the subject in each scene. This initial identification is called the 'best-frame selection'."})
                 with gr.Group(visible="By Face" in self.config.ui_defaults.primary_seed_strategy or "Fallback" in self.config.ui_defaults.primary_seed_strategy) as face_seeding_group:
                     self.components['face_seeding_group'] = face_seeding_group
@@ -3808,7 +3818,7 @@ class AppUI:
     def _create_scene_selection_tab(self):
         with gr.Column(scale=2, visible=False) as seeding_results_column:
                 self.components['seeding_results_column'] = seeding_results_column
-                gr.Markdown("### 🎭 Step 2: Review & Refine Scenes")
+                gr.Markdown(""" ### 🎭 Step 2: Review & Refine Scene Selection Review the automatically detected subjects and refine the selection if needed. Each scene shows the best frame with the selected subject highlighted. """)
                 with gr.Accordion("Scene Filtering", open=True):
                     self._create_component('scene_filter_status', 'markdown', {'value': 'No scenes loaded.'})
                     with gr.Row():
@@ -3840,11 +3850,6 @@ class AppUI:
                         allow_preview=True,
                         container=True
                     )
-                    self._create_component('auto_detect_checkbox', 'checkbox', {
-                        'label': "🔍 Auto-detect persons on scene selection",
-                        'value': True,
-                        'info': "Automatically run YOLO detection when clicking a scene thumbnail"
-                    })
                 with gr.Accordion("Scene Editor", open=False, elem_classes="scene-editor") as sceneeditoraccordion:
                     self.components["sceneeditoraccordion"] = sceneeditoraccordion
                     self._create_component("sceneeditorstatusmd", "markdown", {"value": "Select a scene to edit."})
@@ -4014,19 +4019,6 @@ class AppUI:
 
 
 class EnhancedAppUI(AppUI):
-    def on_scene_select_yolo_detection_wrapper(self, scenes, shot_id, outdir, yolo_conf, yolo_results, view, indexmap, auto_detect_enabled, *ana_args):
-        if not auto_detect_enabled:
-            gallery_items, new_index_map = build_scene_gallery_items(scenes, view, outdir)
-            return (
-                gr.update(value=gallery_items),
-                gr.update(choices=[], interactive=False, value=None),
-                "Auto-detection is off. Enable it or use the Scene Editor to detect objects.",
-                yolo_results,
-                gr.update(interactive=False),
-                gr.update(value=new_index_map)
-            )
-        return self.on_yolo_person_detection_wrapper(scenes, shot_id, outdir, yolo_conf, yolo_results, view, indexmap, *ana_args)
-
     def on_yolo_person_detection_wrapper(self, scenes, shot_id, outdir, yolo_conf, yolo_results, view, indexmap, *ana_args):
         try:
             gallery_items, new_index_map = build_scene_gallery_items(scenes, view, outdir)
@@ -4272,16 +4264,6 @@ class EnhancedAppUI(AppUI):
             # The seed_mode parameter is removed and the logic is simplified to always trigger YOLO detection.
             return self.on_yolo_person_detection_wrapper(scenes, shot_id, outdir, yolo_conf, yolo_results, view, indexmap, *ana_args)
 
-        scene_select_yolo_inputs = [
-            c['scenes_state'],
-            c['selected_scene_id_state'],
-            c['extracted_frames_dir_state'],
-            c['sceneeditor_yolo_conf_slider'],
-            c['yolo_results_state'],
-            c['scene_gallery_view_toggle'],
-            c['scene_gallery_index_map_state'],
-            c['auto_detect_checkbox'],
-        ] + self.ana_input_components
         c['scene_gallery'].select(
             self.on_select_for_edit,
             [c['scenes_state'], c['scene_gallery_view_toggle'], c['scene_gallery_index_map_state'], c['extracted_frames_dir_state'], c['yolo_results_state']],
@@ -4289,10 +4271,6 @@ class EnhancedAppUI(AppUI):
              c['sceneeditorstatusmd'], c['sceneeditorpromptinput'], c['sceneeditorboxthreshinput'], c['sceneeditortextthreshinput'],
              c['sceneeditoraccordion'], c['gallery_image_state'], c['gallery_shape_state'],
              c['scene_editor_yolo_subject_id'], c['propagate_masks_button'], c['yolo_results_state']]
-        ).then(
-            self.on_scene_select_yolo_detection_wrapper,
-            scene_select_yolo_inputs,
-            yolo_detection_outputs
         )
 
     def on_reset_scene_wrapper(self, scenes, shot_id, outdir, view, *ana_args):
