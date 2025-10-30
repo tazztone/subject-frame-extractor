@@ -238,7 +238,7 @@ class Config:
     class Choices:
         max_resolution: List[str] = field(default_factory=lambda: ["maximum available", "2160", "1080", "720"])
         extraction_method_toggle: List[str] = field(default_factory=lambda: ["Recommended Thumbnails", "Legacy Full-Frame"])
-        method: List[str] = field(default_factory=lambda: ["keyframes", "interval", "every_nth_frame", "all", "scene"])
+        method: List[str] = field(default_factory=lambda: ["keyframes", "interval", "every_nth_frame", "nth_plus_keyframes", "all"])
         primary_seed_strategy: List[str] = field(default_factory=lambda: ["👤 By Face", "📝 By Text", "🔄 Face + Text Fallback", "🧑‍🤝‍🧑 Find Prominent Person"])
         seed_strategy: List[str] = field(default_factory=lambda: ["Largest Person", "Center-most Person"])
         person_detector_model: List[str] = field(default_factory=lambda: ['yolo11x.pt', 'yolo11s.pt'])
@@ -899,16 +899,16 @@ def estimate_totals(params: 'AnalysisParameters', video_info: dict, scenes: list
 
     # Extraction totals
     method = params.method
-    if params.thumbnails_only:
-        extraction_total = total_frames
-    elif method == "interval":
+    if method == "interval":
         extraction_total = max(1, int(total_frames / max(0.1, params.interval) / fps))
     elif method == "every_nth_frame":
         extraction_total = max(1, int(total_frames / max(1, params.nth_frame)))
     elif method == "all":
         extraction_total = total_frames
+    elif method in ("keyframes", "nth_plus_keyframes"):
+        extraction_total = max(1, int(total_frames * 0.15))  # keep heuristic
     else:
-        extraction_total = max(1, int(total_frames * 0.15))  # heuristic for keyframes/scene
+        extraction_total = total_frames
 
     # Pre-analysis: one seed attempt per scene (adjust if you do retries)
     scenes_count = len(scenes or [])
@@ -1714,29 +1714,37 @@ def run_ffmpeg_extraction(video_path, output_dir, video_info, params, progress_q
     progress_args = ['-progress', 'pipe:1', '-nostats', '-loglevel', 'info']
     cmd_base.extend(progress_args)
 
-    if params.thumbnails_only:
-        thumb_dir = output_dir / "thumbs"
-        thumb_dir.mkdir(exist_ok=True)
-        target_area = params.thumb_megapixels * 1_000_000
-        w, h = video_info.get('width', 1920), video_info.get('height', 1080)
-        scale_factor = math.sqrt(target_area / (w * h)) if w * h > 0 else 1.0
-        vf_scale = f"scale=w=trunc(iw*{scale_factor}/2)*2:h=trunc(ih*{scale_factor}/2)*2"
-        fps = video_info.get('fps', 30)
-        vf_filter = f"fps={fps},{vf_scale},showinfo"
-        cmd = cmd_base + ['-vf', vf_filter, '-c:v', 'libwebp', '-lossless', '0', '-quality', str(config.ffmpeg.thumbnail_quality), '-vsync', 'vfr', str(thumb_dir / "frame_%06d.webp")]
-    else:
-        # Legacy full-frame extraction (kept for compatibility)
-        select_filter_map = {
-            'interval': f"fps=1/{max(0.1, float(params.interval))}",
-            'keyframes': "select='eq(pict_type,I)'",
-            'scene': f"select='gt(scene,{config.ffmpeg.fast_scene_threshold if params.fast_scene else config.ffmpeg.scene_threshold})'",
-            'all': f"fps={video_info.get('fps', 30)}",
-            'every_nth_frame': f"select='not(mod(n,{max(1, int(params.nth_frame))}))'"
-        }
-        select_filter = select_filter_map.get(params.method)
-        vf_filter = (select_filter + ",showinfo") if select_filter else "showinfo"
-        ext = 'png' if params.use_png else 'jpg'
-        cmd = cmd_base + ['-vf', vf_filter, '-vsync', 'vfr', '-f', 'image2', str(output_dir / f"frame_%06d.{ext}")]
+    thumb_dir = output_dir / "thumbs"
+    thumb_dir.mkdir(exist_ok=True)
+
+    target_area = params.thumb_megapixels * 1_000_000
+    w, h = video_info.get('width', 1920), video_info.get('height', 1080)
+    scale_factor = math.sqrt(target_area / (w * h)) if w * h > 0 else 1.0
+    vf_scale = f"scale=w=trunc(iw*{scale_factor}/2)*2:h=trunc(ih*{scale_factor}/2)*2"
+
+    fps = max(1, int(video_info.get('fps', 30)))
+    N = max(1, int(params.nth_frame or 0))
+    interval = max(0.1, float(params.interval or 0.0))
+
+    select_map = {
+        "keyframes": "select='eq(pict_type,I)'",
+        "every_nth_frame": f"select='not(mod(n,{N}))'",
+        "nth_plus_keyframes": f"select='or(eq(pict_type,I),not(mod(n,{N})))'",
+        "interval": f"fps=1/{interval}",
+        "all": f"fps={fps}",
+        "": f"fps={fps}",
+        None: f"fps={fps}",
+    }
+    first_filter = select_map.get(params.method, f"fps={fps}")
+    vf_filter = f"{first_filter},{vf_scale},showinfo"
+
+    cmd = cmd_base + [
+        "-vf", vf_filter,
+        "-c:v", "libwebp", "-lossless", "0",
+        "-quality", str(config.ffmpeg.thumbnail_quality),
+        "-vsync", "vfr",
+        str(thumb_dir / "frame_%06d.webp"),
+    ]
 
     # We need both stdout (for progress) and stderr (for showinfo)
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8', bufsize=1)
@@ -3351,7 +3359,6 @@ def execute_session_load(
         updates = {
             "source_input": gr.update(value=run_config.get("source_path", "")),
             "max_resolution": gr.update(value=run_config.get("max_resolution", "1080")),
-            "extraction_method_toggle_input": gr.update(value=("Recommended Thumbnails" if run_config.get('thumbnails_only', True) else "Legacy Full-Frame")),
             "thumb_megapixels_input": gr.update(value=run_config.get("thumb_megapixels", 0.5)),
             "ext_scene_detect_input": gr.update(value=run_config.get("scene_detect", True)),
             "method_input": gr.update(value=run_config.get("method", "scene")),
@@ -3629,7 +3636,7 @@ class AppUI:
         self.thumbnail_manager = thumbnail_manager
         self.components, self.cuda_available = {}, torch.cuda.is_available()
         self.ext_ui_map_keys = ['source_path', 'upload_video', 'method', 'interval', 'nth_frame', 'fast_scene',
-                                'max_resolution', 'use_png', 'extraction_method_toggle', 'thumb_megapixels', 'scene_detect']
+                                'max_resolution', 'use_png', 'thumb_megapixels', 'scene_detect']
         self.ana_ui_map_keys = [
             'output_folder', 'video_path', 'resume', 'enable_face_filter', 'face_ref_img_path', 'face_ref_img_upload',
             'face_model_name', 'enable_subject_mask', 'dam4sam_model_name', 'person_detector_model', 'best_frame_strategy',
@@ -3642,7 +3649,7 @@ class AppUI:
             'enable_dedup', 'dedup_thresh'
         ]
         self.session_load_keys = ['unified_log', 'unified_status', 'progress_details', 'cancel_button', 'pause_button',
-                                  'source_input', 'max_resolution', 'extraction_method_toggle_input', 'thumb_megapixels_input', 'ext_scene_detect_input',
+                                  'source_input', 'max_resolution', 'thumb_megapixels_input', 'ext_scene_detect_input',
                                   'method_input', 'use_png_input', 'pre_analysis_enabled_input', 'pre_sample_nth_input', 'enable_face_filter_input',
                                   'face_ref_img_path_input', 'text_prompt_input', 'best_frame_strategy_input',
                                   'person_detector_model_input', 'dam4sam_model_name_input', 'extracted_video_path_state',
@@ -3710,18 +3717,10 @@ class AppUI:
             with gr.Column(scale=1): self._create_component('max_resolution', 'dropdown', {'choices': self.config.choices.max_resolution, 'value': self.config.ui_defaults.max_resolution, 'label': "Max Download Resolution", 'info': "For YouTube videos, select the maximum resolution to download. 'Maximum available' will get the best quality possible."})
         self._create_component('upload_video_input', 'file', {'label': "Or Upload a Video File", 'file_types': ["video"], 'type': "filepath"})
         gr.Markdown("---"); gr.Markdown("### Step 2: Configure Extraction Method")
-        # Toggle between Recommended Thumbnails and Legacy Full-Frame
-        self._create_component('extraction_method_toggle_input', 'radio', {
-            'label': "Extraction Method",
-            'choices': self.config.choices.extraction_method_toggle,
-            'value': "Recommended Thumbnails" if self.config.ui_defaults.thumbnails_only else "Legacy Full-Frame",
-            'info': "Choose between the modern, efficient thumbnail-based workflow (Recommended) or the classic direct full-frame extraction (Legacy)."
-        })
 
-        # Recommended (thumbnails) group
-        with gr.Group(visible=self.config.ui_defaults.thumbnails_only) as thumbnail_group:
+        with gr.Group(visible=True) as thumbnail_group:
             self.components['thumbnail_group'] = thumbnail_group
-            gr.Markdown("**Recommended Method (Thumbnail Extraction):** This is the fastest and most efficient way to process your video. It quickly extracts low-resolution, lightweight thumbnails for every frame. This allows you to perform scene analysis, find the best shots, and select your desired frames *before* extracting the final, full-resolution images. This workflow saves significant time and disk space.")
+            gr.Markdown("**Thumbnail Extraction:** This is the fastest and most efficient way to process your video. It quickly extracts low-resolution, lightweight thumbnails for every frame. This allows you to perform scene analysis, find the best shots, and select your desired frames *before* extracting the final, full-resolution images. This workflow saves significant time and disk space.")
             with gr.Accordion("Advanced Settings", open=False):
                 self._create_component('thumb_megapixels_input', 'slider', {
                     'label': "Thumbnail Size (MP)", 'minimum': 0.1, 'maximum': 2.0, 'step': 0.1,
@@ -3733,42 +3732,39 @@ class AppUI:
                     'value': self.config.ui_defaults.scene_detect,
                     'info': "Automatically detects scene changes in the video. This is highly recommended as it groups frames into logical shots, making it much easier to find the best content in the next step."
                 })
+                self._create_component('method_input', 'dropdown', {
+                    'choices': self.config.choices.method,
+                    'value': self.config.ui_defaults.method,
+                    'label': "Frame Selection Method",
+                    'info': """
+                        - **Keyframes:** Extracts only the keyframes (I-frames). Good for a quick summary.
+                        - **Interval:** Extracts one frame every X seconds.
+                        - **Every Nth Frame:** Extracts one frame every N decoded frames.
+                        - **Nth + Keyframes:** Keeps keyframes plus frames at a regular cadence.
+                        - **All:** Extracts every single frame. (Warning: massive disk usage and time)."""
+                })
+                self._create_component('interval_input', 'textbox', {
+                    'label': "Interval (seconds)",
+                    'value': self.config.ui_defaults.interval,
+                    'visible': self.config.ui_defaults.method == 'interval'
+                })
+                self._create_component('nth_frame_input', 'textbox', {
+                    'label': "N-th Frame Value",
+                    'value': self.config.ui_defaults.nth_frame,
+                    'visible': self.config.ui_defaults.method in ['every_nth_frame', 'nth_plus_keyframes']
+                })
+                self._create_component('fast_scene_input', 'checkbox', {
+                    'label': "Fast Scene Detect (Lower Quality)",
+                    'info': "Uses a faster but less precise algorithm for scene detection.",
+                    'visible': False
+                })
+                self._create_component('use_png_input', 'checkbox', {
+                    'label': "Save as PNG (slower, larger files)",
+                    'value': self.config.ui_defaults.use_png,
+                    'info': "PNG is lossless but results in much larger files than JPG. Recommended only if you need perfect image fidelity for legacy export flows."
+                })
 
-        # Legacy (full‑frame) group
-        with gr.Group(visible=not self.config.ui_defaults.thumbnails_only) as legacy_group:
-            self.components['legacy_group'] = legacy_group
-            gr.Markdown("**Legacy Method (Direct Full-Frame Extraction):** This method extracts full-resolution frames directly from the video based on the selected criteria. Be aware that this can be very slow and consume a large amount of disk space, especially for long, high-resolution videos. It is recommended for advanced users or specific use cases where the thumbnail workflow is not suitable.")
-            self._create_component('method_input', 'dropdown', {
-                'choices': self.config.choices.method,
-                'value': self.config.ui_defaults.method,
-                'label': "Extraction Method",
-                'info': """
-                    - **Keyframes:** Extracts only the keyframes (I-frames). Good for a quick summary.
-                    - **Interval:** Extracts one frame every X seconds.
-                    - **Every Nth Frame:** Extracts one frame every N video frames.
-                    - **All:** Extracts every single frame. (Warning: massive disk usage and time).
-                    - **Scene:** Extracts frames where a scene change is detected."""
-            })
-            self._create_component('interval_input', 'textbox', {
-                'label': "Interval (seconds)",
-                'value': self.config.ui_defaults.interval,
-                'visible': False
-            })
-            self._create_component('nth_frame_input', 'textbox', {
-                'label': "N-th Frame Value",
-                'value': self.config.ui_defaults.nth_frame,
-                'visible': False
-            })
-            self._create_component('fast_scene_input', 'checkbox', {
-                'label': "Fast Scene Detect (Lower Quality)",
-                'info': "Uses a faster but less precise algorithm for scene detection.",
-                'visible': False
-            })
-            self._create_component('use_png_input', 'checkbox', {
-                'label': "Save as PNG (slower, larger files)",
-                'value': self.config.ui_defaults.use_png,
-                'info': "PNG is lossless but results in much larger files than JPG. Recommended only if you need perfect image fidelity."
-            })
+
         gr.Markdown("---"); gr.Markdown("### Step 3: Start Extraction")
         self.components.update({'start_extraction_button': gr.Button("🚀 Start Extraction", variant="primary")})
 
@@ -4488,9 +4484,8 @@ class EnhancedAppUI(AppUI):
 
     def run_extraction_wrapper(self, *args, progress=gr.Progress(track_tqdm=True)):
         ui_args = dict(zip(self.ext_ui_map_keys, args))
-        # Map radio toggle -> boolean expected by pipeline
-        if 'extraction_method_toggle' in ui_args:
-            ui_args['thumbnails_only'] = (ui_args.pop('extraction_method_toggle') == "Recommended Thumbnails")
+        # UI is now unified, so this is always true.
+        ui_args['thumbnails_only'] = True
         
         # Construct ExtractionEvent with only its defined fields
         event_fields = [f.name for f in dataclasses.fields(ExtractionEvent)]
@@ -4577,39 +4572,32 @@ class EnhancedAppUI(AppUI):
             if is_folder or not path:
                 return {
                     c['max_resolution']: gr.update(visible=False),
-                    c['extraction_method_toggle_input']: gr.update(visible=False),
                     c['thumbnail_group']: gr.update(visible=False),
-                    c['legacy_group']: gr.update(visible=False),
                 }
             # When a video path is provided (or any non-folder path), show the default view.
             else:
                 return {
                     c['max_resolution']: gr.update(visible=True),
-                    c['extraction_method_toggle_input']: gr.update(visible=True, value="Recommended Thumbnails"),
                     c['thumbnail_group']: gr.update(visible=True),
-                    c['legacy_group']: gr.update(visible=False),
                 }
 
         source_controls = [c['source_input'], c['upload_video_input']]
         video_specific_outputs = [
-            c['max_resolution'], c['extraction_method_toggle_input'],
-            c['thumbnail_group'], c['legacy_group']
+            c['max_resolution'],
+            c['thumbnail_group'],
         ]
         for control in source_controls:
             control.change(handle_source_change, inputs=control, outputs=video_specific_outputs)
 
 
-        c['method_input'].change(lambda m: (gr.update(visible=m == 'interval'), gr.update(visible=m == 'scene'), gr.update(visible=m == 'every_nth_frame')),
-                                 c['method_input'], [c['interval_input'], c['fast_scene_input'], c['nth_frame_input']])
-
-        # Show/hide groups when switching extraction method
-        c['extraction_method_toggle_input'].change(
-            lambda method: (
-                gr.update(visible=(method == "Recommended Thumbnails")),
-                gr.update(visible=(method == "Legacy Full-Frame")),
-            ),
-            inputs=[c['extraction_method_toggle_input']],
-            outputs=[c['thumbnail_group'], c['legacy_group']],
+        c['method_input'].change(
+            lambda m: {
+                c['interval_input']: gr.update(visible=m == 'interval'),
+                c['nth_frame_input']: gr.update(visible=m in ['every_nth_frame', 'nth_plus_keyframes']),
+                c['fast_scene_input']: gr.update(visible=m == 'scene')
+            },
+            c['method_input'],
+            [c['interval_input'], c['nth_frame_input'], c['fast_scene_input']]
         )
 
         c['primary_seed_strategy_input'].change(
