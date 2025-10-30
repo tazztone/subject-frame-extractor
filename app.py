@@ -205,7 +205,6 @@ class Config:
         method: str = "all"
         interval: float = 5.0
         fast_scene: bool = False
-        use_png: bool = True
         nth_frame: int = 5
         disable_parallel: bool = False
 
@@ -795,7 +794,6 @@ class ExtractionEvent(UIEvent):
     nth_frame: str
     fast_scene: bool
     max_resolution: str
-    use_png: bool
     thumbnails_only: bool
     thumb_megapixels: float
     scene_detect: bool
@@ -1166,7 +1164,6 @@ class AnalysisParameters:
     interval: float = 0.0
     max_resolution: str = ""
     fast_scene: bool = False
-    use_png: bool = True
     output_folder: str = ""
     video_path: str = ""
     disable_parallel: bool = False
@@ -1732,19 +1729,17 @@ def run_ffmpeg_extraction(video_path, output_dir, video_info, params, progress_q
         "nth_plus_keyframes": f"select='or(eq(pict_type,I),not(mod(n,{N})))'",
         "interval": f"fps=1/{interval}",
         "all": f"fps={fps}",
-        "": f"fps={fps}",
-        None: f"fps={fps}",
     }
-    first_filter = select_map.get(params.method, f"fps={fps}")
-    vf_filter = f"{first_filter},{vf_scale},showinfo"
+    vf_select = select_map.get(params.method, f"fps={fps}")
 
-    cmd = cmd_base + [
-        "-vf", vf_filter,
-        "-c:v", "libwebp", "-lossless", "0",
-        "-quality", str(config.ffmpeg.thumbnail_quality),
-        "-vsync", "vfr",
-        str(thumb_dir / "frame_%06d.webp"),
-    ]
+    if params.thumbnails_only:
+        vf = f"{vf_select},{vf_scale},showinfo"
+        cmd = cmd_base + ["-vf", vf, "-c:v", "libwebp", "-lossless", "0",
+                          "-quality", str(config.ffmpeg.thumbnail_quality),
+                          "-vsync", "vfr", str(thumb_dir / "frame_%06d.webp")]
+    else:
+        vf = f"{vf_select},showinfo"
+        cmd = cmd_base + ["-vf", vf, "-c:v", "png", "-vsync", "vfr", str(thumb_dir / "frame_%06d.png")]
 
     # We need both stdout (for progress) and stderr (for showinfo)
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8', bufsize=1)
@@ -2508,7 +2503,7 @@ class AnalysisPipeline(Pipeline):
                 return {"error": str(e), "done": False}
 
     def _create_frame_map(self):
-        ext = ".webp" if self.params.thumbnails_only else ".png" if self.params.use_png else ".jpg"
+        ext = ".webp" if self.params.thumbnails_only else ".png"
         return create_frame_map(self.output_dir, self.logger, ext=ext)
     def _process_reference_face(self):
         if not self.face_analyzer: return
@@ -3362,7 +3357,6 @@ def execute_session_load(
             "thumb_megapixels_input": gr.update(value=run_config.get("thumb_megapixels", 0.5)),
             "ext_scene_detect_input": gr.update(value=run_config.get("scene_detect", True)),
             "method_input": gr.update(value=run_config.get("method", "scene")),
-            "use_png_input": gr.update(value=run_config.get("use_png", False)),
             "pre_analysis_enabled_input": gr.update(value=run_config.get("pre_analysis_enabled", True)),
             "pre_sample_nth_input": gr.update(value=run_config.get("pre_sample_nth", 1)),
             "enable_face_filter_input": gr.update(value=run_config.get("enable_face_filter", False)),
@@ -3636,7 +3630,7 @@ class AppUI:
         self.thumbnail_manager = thumbnail_manager
         self.components, self.cuda_available = {}, torch.cuda.is_available()
         self.ext_ui_map_keys = ['source_path', 'upload_video', 'method', 'interval', 'nth_frame', 'fast_scene',
-                                'max_resolution', 'use_png', 'thumb_megapixels', 'scene_detect']
+                                'max_resolution', 'thumb_megapixels', 'scene_detect']
         self.ana_ui_map_keys = [
             'output_folder', 'video_path', 'resume', 'enable_face_filter', 'face_ref_img_path', 'face_ref_img_upload',
             'face_model_name', 'enable_subject_mask', 'dam4sam_model_name', 'person_detector_model', 'best_frame_strategy',
@@ -3650,7 +3644,7 @@ class AppUI:
         ]
         self.session_load_keys = ['unified_log', 'unified_status', 'progress_details', 'cancel_button', 'pause_button',
                                   'source_input', 'max_resolution', 'thumb_megapixels_input', 'ext_scene_detect_input',
-                                  'method_input', 'use_png_input', 'pre_analysis_enabled_input', 'pre_sample_nth_input', 'enable_face_filter_input',
+                                  'method_input', 'pre_analysis_enabled_input', 'pre_sample_nth_input', 'enable_face_filter_input',
                                   'face_ref_img_path_input', 'text_prompt_input', 'best_frame_strategy_input',
                                   'person_detector_model_input', 'dam4sam_model_name_input', 'extracted_video_path_state',
                                   'extracted_frames_dir_state', 'analysis_output_dir_state', 'analysis_metadata_path_state', 'scenes_state',
@@ -3757,11 +3751,6 @@ class AppUI:
                     'label': "Fast Scene Detect (Lower Quality)",
                     'info': "Uses a faster but less precise algorithm for scene detection.",
                     'visible': False
-                })
-                self._create_component('use_png_input', 'checkbox', {
-                    'label': "Save as PNG (slower, larger files)",
-                    'value': self.config.ui_defaults.use_png,
-                    'info': "PNG is lossless but results in much larger files than JPG. Recommended only if you need perfect image fidelity for legacy export flows."
                 })
 
 
