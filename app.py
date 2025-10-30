@@ -3889,24 +3889,14 @@ class AppUI:
                         self.components['yolo_seed_group'] = yolo_seed_group
                         with gr.Row():
                             self._create_component('scene_editor_yolo_subject_id', 'radio', {'label': "Subject ID", 'info': "Select the auto-detected subject to use for seeding.", 'interactive': True})
-
-                    # DINO controls are now in an "Advanced" accordion
-                    with gr.Accordion("Advanced Seeding (optional)", open=False):
-                        with gr.Group() as dino_seed_group:
-                            self.components['dino_seed_group'] = dino_seed_group
-                            gr.Markdown("Use a text prompt for seeding. This will override the YOLO detection above.")
-                            with gr.Row():
+                        with gr.Column():
+                            with gr.Accordion("Advanced Seeding (optional)", open=False):
+                                gr.Markdown("Use a text prompt for seeding. This will override the YOLO detection above.")
                                 self._create_component("sceneeditorpromptinput", "textbox", {"label": "DINO Text Prompt", "info": "e.g., 'person in a red shirt'"})
-                            with gr.Row():
                                 info_box = "Confidence for detecting an object's bounding box. Higher = fewer, more confident detections."
-                                self._create_component("sceneeditorboxthreshinput", "slider", {
-                                    "label": "Box Thresh", "minimum": 0.0, "maximum": 1.0, "step": 0.05, "info": info_box,
-                                    "value": self.config.grounding_dino_params.box_threshold,})
+                                self._create_component("sceneeditorboxthreshinput", "slider", {"label": "Box Thresh", "minimum": 0.0, "maximum": 1.0, "step": 0.05, "info": info_box, "value": self.config.grounding_dino_params.box_threshold})
                                 info_text = "Confidence for matching the prompt to an object. Higher = stricter text match."
-                                self._create_component("sceneeditortextthreshinput", "slider", {
-                                    "label": "Text Thresh", "minimum": 0.0, "maximum": 1.0, "step": 0.05, "info": info_text,
-                                    "value": self.config.grounding_dino_params.text_threshold,})
-
+                                self._create_component("sceneeditortextthreshinput", "slider", {"label": "Text Thresh", "minimum": 0.0, "maximum": 1.0, "step": 0.05, "info": info_text, "value": self.config.grounding_dino_params.text_threshold})
                     with gr.Row():
                         self._create_component("scenerecomputebutton", "button", {"value": "▶️Recompute Preview"})
                         self._create_component("sceneincludebutton", "button", {"value": "✅keep scene"})
@@ -4165,9 +4155,6 @@ class EnhancedAppUI(AppUI):
 
             masker = _create_analysis_context(self.config, self.logger, self.thumbnail_manager, self.cuda_available,
                                               self.ana_ui_map_keys, ana_args)
-            scene = next((s for s in scenes if s['shot_id'] == shot_id), None)
-            if not scene:
-                return scenes, gr.update(), gr.update(), "Scene not found."
 
             selected_box = yolo_boxes[subject_idx]
             selected_xywh = masker.seed_selector._xyxy_to_xywh(selected_box['bbox'])
