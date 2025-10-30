@@ -2371,7 +2371,7 @@ class SubjectMasker:
         scene.best_frame = candidates[best_local_idx][0]
         scene.seed_metrics = {'reason': 'pre-analysis complete', 'score': max(scores), 'best_niqe': niqe_score, 'best_face_sim': face_sim}
 
-    def get_seed_for_frame(self, frame_rgb: np.ndarray, seed_config=dict):
+    def get_seed_for_frame(self, frame_rgb: np.ndarray, seed_config=dict, scene=None):
         if isinstance(seed_config, dict) and seed_config.get('manual_bbox_xywh'):
             return seed_config['manual_bbox_xywh'], {'type': seed_config.get('seed_type', 'manual')}
 
@@ -2381,7 +2381,7 @@ class SubjectMasker:
             self._init_grounder()
 
         self._initialize_tracker()
-        return self.seed_selector.select_seed(frame_rgb, current_params=seed_config)
+        return self.seed_selector.select_seed(frame_rgb, current_params=seed_config, scene=scene)
     def get_mask_for_bbox(self, frame_rgb_small, bbox_xywh): return self.seed_selector._sam2_mask_for_bbox(frame_rgb_small, bbox_xywh)
     def draw_bbox(self, img_rgb, xywh, color=None, thickness=None, label=None):
         color = color or tuple(self.config.visualization.bbox_color)
@@ -3858,9 +3858,6 @@ class AppUI:
                         self._create_component('scene_mask_area_min_input', 'slider', {'label': "Min Best Frame Mask Area %", 'minimum': 0.0, 'maximum': 100.0, 'value': self.config.min_mask_area_pct, 'step': 0.1})
                         self._create_component('scene_face_sim_min_input', 'slider', {'label': "Min Best Frame Face Sim", 'minimum': 0.0, 'maximum': 1.0, 'value': 0.0, 'step': 0.05, 'visible': False})
                         self._create_component('scene_confidence_min_input', 'slider', {'label': "Min Best Frame Confidence", 'minimum': 0.0, 'maximum': 1.0, 'value': 0.0, 'step': 0.05})
-                with gr.Accordion("Advanced Settings", open=False):
-                    self._create_component('person_detector_model_display', 'textbox', {'label': "Person Detector Model", 'value': self.config.person_detector.model, 'interactive': False})
-                    self._create_component('person_detector_conf_slider', 'slider', {'label': "Person Detector Confidence", 'minimum': 0.0, 'maximum': 1.0, 'step': 0.05, 'value': self.config.person_detector.conf})
 
 
                 with gr.Accordion("Scene Gallery", open=True):
@@ -3886,8 +3883,11 @@ class AppUI:
                 with gr.Accordion("Scene Editor", open=False, elem_classes="scene-editor") as sceneeditoraccordion:
                     self.components["sceneeditoraccordion"] = sceneeditoraccordion
                     self._create_component("sceneeditorstatusmd", "markdown", {"value": "Select a scene to edit."})
-                    with gr.Row():
-                        with gr.Column():
+
+                    # YOLO controls are now the primary method
+                    with gr.Group() as yolo_seed_group:
+                        self.components['yolo_seed_group'] = yolo_seed_group
+                        with gr.Row():
                             self._create_component('scene_editor_yolo_subject_id', 'radio', {'label': "Subject ID", 'info': "Select the auto-detected subject to use for seeding.", 'interactive': True})
                         with gr.Column():
                             with gr.Accordion("Advanced Seeding (optional)", open=False):
@@ -4630,12 +4630,12 @@ class EnhancedAppUI(AppUI):
 
         # Wire recompute to use current editor controls and state
         c['scenerecomputebutton'].click(
-            fn=lambda scenes, shot_id, outdir, view, txt, bth, tth, subject_id, yolo_results, yolo_conf, *ana_args:
+            fn=lambda scenes, shot_id, outdir, view, txt, bth, tth, subject_id, *ana_args:
                 _wire_recompute_handler(
                     self.config, self.app_logger, self.thumbnail_manager, scenes, shot_id, outdir, txt, bth, tth, view,
                     self.ana_ui_map_keys, ana_args, self.cuda_available
                 ) if (txt and txt.strip()) else self.on_select_yolo_subject_wrapper(
-                    subject_id, yolo_results, scenes, shot_id, outdir, view, yolo_conf, *ana_args
+                    subject_id, scenes, shot_id, outdir, view, *ana_args
                 ),
             inputs=[
                 c['scenes_state'],
@@ -4643,7 +4643,7 @@ class EnhancedAppUI(AppUI):
                 c['analysis_output_dir_state'],
                 c['scene_gallery_view_toggle'],
                 c['sceneeditorpromptinput'], c['sceneeditorboxthreshinput'], c['sceneeditortextthreshinput'],
-                c['scene_editor_yolo_subject_id'], c['yolo_results_state'], c['sceneeditor_yolo_conf_slider'],
+                c['scene_editor_yolo_subject_id'],
                 *self.ana_input_components
             ],
             outputs=[
