@@ -802,11 +802,11 @@ class TestEnhancedAppUI:
         select_data.index = 0 # Corresponds to shot_id 1
 
         # The yolo_results_state argument is no longer needed
-        outputs = mock_app_ui.on_select_for_edit(select_data, sample_scenes, "Kept", index_map, "/fake/dir")
+        outputs = mock_app_ui.on_select_for_edit(sample_scenes, "Kept", index_map, "/fake/dir", {}, event=select_data)
 
         (scenes, status_text, gallery_update, new_index_map, selected_id,
          editor_status, prompt, box_thresh, text_thresh, accordion_update,
-         gallery_image, gallery_shape, sub_num_update, button_update) = outputs
+         gallery_image, gallery_shape, sub_num_update, button_update, yolo_results_out) = outputs
 
         assert selected_id == sample_scenes[0]['shot_id']
         assert "Editing Scene 1" in editor_status['value']
