@@ -432,16 +432,17 @@ class TestModels:
         self.logger = MagicMock()
     @patch('app.download_model')
     @patch('app.gdino_load_model')
-    def test_get_grounding_dino_model_path_resolution(self, mock_gdino_load_model, mock_download):
+    @patch('app.resolve_grounding_dino_config')
+    def test_get_grounding_dino_model_uses_resolver(self, mock_resolve_config, mock_gdino_load_model, mock_download):
         """
-        Tests that get_grounding_dino_model correctly handles relative and empty paths
-        by passing them directly to the loader.
+        Tests that get_grounding_dino_model uses the path returned by the resolver.
         """
-        # Case 1: Relative path is passed through directly
         app._dino_model_cache = None
-        relative_path = "groundingdino/config/GroundingDINO_SwinT_OGC.py"
+        fake_resolved_path = "/resolved/path/to/config.py"
+        mock_resolve_config.return_value = fake_resolved_path
+
         app.get_grounding_dino_model(
-            gdino_config_path=relative_path,
+            gdino_config_path="some_config.py",
             gdino_checkpoint_path="models/groundingdino_swint_ogc.pth",
             models_path="models",
             grounding_dino_url="http://fake.url/model.pth",
@@ -450,9 +451,11 @@ class TestModels:
             device="cpu",
             logger=self.logger
         )
+
+        mock_resolve_config.assert_called_once_with("some_config.py")
         mock_gdino_load_model.assert_called_once()
         passed_config_path = mock_gdino_load_model.call_args.kwargs['model_config_path']
-        assert Path(passed_config_path).is_absolute(), "Should resolve relative paths to absolute"
+        assert passed_config_path == fake_resolved_path
 
 class TestVideoManager:
     @patch('app.ytdlp')

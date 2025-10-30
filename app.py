@@ -1479,26 +1479,17 @@ def get_person_detector(model_path_str: str, device: str, imgsz: int, conf: floa
 
 
 def resolve_grounding_dino_config(config_path: str) -> str:
-    """Resolve GroundingDINO config path with package fallback."""
-    # First try as absolute path
-    config_abs = Path(config_path)
-    if config_abs.is_absolute() and config_abs.exists():
-        return str(config_abs)
-
-    # Try relative to project root
-    config_rel = project_root / config_path
-    if config_rel.exists():
-        return str(config_rel)
-
-    # Try importlib.resources as fallback for pip package
+    """Resolve GroundingDINO config path via importlib.resources."""
     try:
         import importlib.resources as pkg_resources
         from groundingdino import config as gdino_config_module
         with pkg_resources.path(gdino_config_module, config_path) as config_file:
             return str(config_file)
-    except (ImportError, AttributeError, FileNotFoundError):
-        # Fallback to original path (might fail, but preserves existing behavior)
-        return str(config_rel)
+    except (ImportError, ModuleNotFoundError, FileNotFoundError):
+        raise RuntimeError(
+            f"Could not resolve GroundingDINO config '{config_path}'. "
+            "Ensure the 'groundingdino-py' package is installed correctly and the config file exists within it."
+        )
 
 def get_grounding_dino_model(gdino_config_path: str, gdino_checkpoint_path: str, models_path: str, grounding_dino_url: str, user_agent: str, retry_params: tuple, device="cuda", logger: 'AppLogger' = None):
     """Load GroundingDINO model only when needed."""
@@ -1584,6 +1575,19 @@ def get_dam4sam_tracker(model_name: str, models_path: str, model_urls_tuple: tup
 def initialize_analysis_models(params: AnalysisParameters, config: Config, logger: AppLogger, cuda_available: bool):
     device = "cuda" if cuda_available else "cpu"
     face_analyzer, ref_emb, person_detector, face_landmarker = None, None, None, None
+
+    # For YOLO-only mode, only the person detector is needed.
+    if params.primary_seed_strategy == "🧑‍🤝‍🧑 Find Prominent Person":
+        model_path = Path(config.paths.models) / params.person_detector_model
+        person_detector = get_person_detector(
+            model_path_str=str(model_path),
+            device=device,
+            imgsz=config.person_detector.imgsz,
+            conf=config.person_detector.conf,
+            logger=logger
+        )
+        return {"face_analyzer": None, "ref_emb": None, "person_detector": person_detector, "face_landmarker": None, "device": device}
+
     if params.enable_face_filter:
         face_analyzer = get_face_analyzer(
             model_name=params.face_model_name,
