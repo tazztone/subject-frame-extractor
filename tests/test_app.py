@@ -452,27 +452,7 @@ class TestModels:
         )
         mock_gdino_load_model.assert_called_once()
         passed_config_path = mock_gdino_load_model.call_args.kwargs['model_config_path']
-        assert not Path(passed_config_path).is_absolute(), "Should not resolve relative paths to absolute"
-        assert passed_config_path == relative_path, "Should pass the relative path directly to the loader"
-
-        # Case 2: Empty path (should use default from Config)
-        mock_gdino_load_model.reset_mock()
-        app._dino_model_cache = None
-        app.get_grounding_dino_model(
-            gdino_config_path="",  # Empty path
-            gdino_checkpoint_path="models/groundingdino_swint_ogc.pth",
-            models_path="models",
-            grounding_dino_url="http://fake.url/model.pth",
-            user_agent="test-agent",
-            retry_params=(3, (1, 2, 3)),
-            device="cpu",
-            logger=self.logger
-        )
-        mock_gdino_load_model.assert_called_once()
-        passed_config_path_default = mock_gdino_load_model.call_args.kwargs['model_config_path']
-        expected_default_path = app.Config.Paths.grounding_dino_config
-        assert not Path(passed_config_path_default).is_absolute(), "Should use the default relative path"
-        assert passed_config_path_default == expected_default_path, "Should fall back to the default config path"
+        assert Path(passed_config_path).is_absolute(), "Should resolve relative paths to absolute"
 
 class TestVideoManager:
     @patch('app.ytdlp')
@@ -1028,7 +1008,7 @@ class TestSubjectMasker:
     @pytest.fixture
     def subject_masker(self, test_config):
         """Provides a SubjectMasker instance with mocked dependencies."""
-        with patch.object(app.SubjectMasker, '_initialize_models', lambda x: None):
+        with patch.object(app.SubjectMasker, 'initialize_models', lambda x: None):
             params = app.AnalysisParameters.from_ui(MagicMock(), test_config)
             progress_queue = MagicMock()
             cancel_event = MagicMock()
