@@ -635,6 +635,62 @@ class TestSeedSelector:
             box, details = selector.select_seed(frame_rgb)
             assert box == expected_box
 
+    @pytest.mark.parametrize("strategy, expected_box_index", [
+        ("Highest Confidence", 0),
+        ("Tallest Person", 1),
+        ("Area x Confidence", 3),
+        ("Rule-of-Thirds", 2),
+        ("Edge-avoiding", 3),
+        ("Balanced", 3),
+    ])
+    def test_new_person_selection_strategies(self, mock_seed_selector, strategy, expected_box_index):
+        """Test the new prominent person selection strategies."""
+        selector = mock_seed_selector
+        selector.params.primary_seed_strategy = "🧑‍🤝‍🧑 Find Prominent Person"
+        selector.params.seed_strategy = strategy
+        frame_rgb = np.zeros((200, 200, 3), dtype=np.uint8)
+
+        yolo_boxes = [
+            {'bbox': [10, 10, 80, 80], 'conf': 0.95, 'type': 'yolo'},    # Highest Confidence
+            {'bbox': [10, 10, 50, 190], 'conf': 0.80, 'type': 'yolo'},   # Tallest
+            {'bbox': [46, 46, 86, 86], 'conf': 0.90, 'type': 'yolo'},    # Center on Rule-of-Thirds point
+            {'bbox': [55, 55, 145, 145], 'conf': 0.85, 'type': 'yolo'}, # Most Edge-Avoiding & Best Area x Confidence
+        ]
+
+        expected_box = selector._xyxy_to_xywh(yolo_boxes[expected_box_index]['bbox'])
+
+        with patch.object(selector, '_get_yolo_boxes', return_value=yolo_boxes):
+            box, details = selector.select_seed(frame_rgb)
+            assert box == expected_box
+
+    def test_best_face_strategy(self, mock_seed_selector):
+        """Test the 'Best Face' selection strategy."""
+        selector = mock_seed_selector
+        selector.params.primary_seed_strategy = "🧑‍🤝‍🧑 Find Prominent Person"
+        selector.params.seed_strategy = "Best Face"
+        frame_rgb = np.zeros((200, 200, 3), dtype=np.uint8)
+
+        yolo_boxes = [
+            {'bbox': [10, 10, 80, 80], 'conf': 0.9, 'type': 'yolo'},
+            {'bbox': [100, 10, 180, 80], 'conf': 0.9, 'type': 'yolo'},
+        ]
+
+        # Mock face detection results
+        mock_face1 = MagicMock()
+        mock_face1.bbox = np.array([20, 20, 30, 30])
+        mock_face1.det_score = 0.8
+        mock_face2 = MagicMock()
+        mock_face2.bbox = np.array([110, 20, 30, 30])
+        mock_face2.det_score = 0.95 # Higher score
+
+        selector.face_analyzer.get.return_value = [mock_face1, mock_face2]
+
+        expected_box = selector._xyxy_to_xywh(yolo_boxes[1]['bbox'])
+
+        with patch.object(selector, '_get_yolo_boxes', return_value=yolo_boxes):
+            box, details = selector.select_seed(frame_rgb)
+            assert box == expected_box
+
     def test_select_seed_face_fallback_to_text(self, mock_seed_selector):
         """Test 'Face + Text Fallback' when no face is found."""
         selector = mock_seed_selector
