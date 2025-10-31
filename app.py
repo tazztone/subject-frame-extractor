@@ -1557,9 +1557,13 @@ def get_dam4sam_tracker(model_name: str, models_path: str, model_urls_tuple: tup
                 _dam4sam_model_cache[selected_name] = tracker
                 logger.success(f"DAM4SAM tracker {selected_name} initialized.", component="dam4sam")
             except Exception as e:
-                logger.error(f"Failed to initialize DAM4SAM tracker {selected_name}", exc_info=True)
-                if "out of memory" in str(e) and torch.cuda.is_available():
+                logger.error(f"Failed to initialize DAM4SAM tracker {selected_name}: {str(e)}", exc_info=True)
+                # Log specific CUDA/memory information
+                if torch.cuda.is_available():
+                    logger.error(f"CUDA memory: {torch.cuda.memory_allocated()/1024**3:.1f}GB allocated, {torch.cuda.memory_reserved()/1024**3:.1f}GB reserved")
                     torch.cuda.empty_cache()
+                else:
+                    logger.error("CUDA not available - DAM4SAM requires GPU")
                 _dam4sam_model_cache[selected_name] = "failed"
 
     if _dam4sam_model_cache.get(selected_name) == "failed":
@@ -2269,17 +2273,31 @@ class SubjectMasker:
         return self._gdino is not None
     def _initialize_tracker(self):
         if self.dam_tracker: return True
-        model_urls_tuple = tuple(self.config.models.dam4sam.items())
-        retry_params = (self.config.retry.max_attempts, tuple(self.config.retry.backoff_seconds))
-        self.dam_tracker = get_dam4sam_tracker(
-            model_name=self.params.dam4sam_model_name,
-            models_path=str(self.config.paths.models),
-            model_urls_tuple=model_urls_tuple,
-            user_agent=self.config.models.user_agent,
-            retry_params=retry_params,
-            logger=self.logger
-        )
-        return self.dam_tracker is not None
+
+        try:
+            model_urls_tuple = tuple(self.config.models.dam4sam.items())
+            retry_params = (self.config.retry.max_attempts, tuple(self.config.retry.backoff_seconds))
+
+            self.logger.info(f"Initializing DAM4SAM tracker: {self.params.dam4sam_model_name}")
+            self.dam_tracker = get_dam4sam_tracker(
+                model_name=self.params.dam4sam_model_name,
+                models_path=str(self.config.paths.models),
+                model_urls_tuple=model_urls_tuple,
+                user_agent=self.config.models.user_agent,
+                retry_params=retry_params,
+                logger=self.logger
+            )
+
+            if self.dam_tracker is None or self.dam_tracker == "failed":
+                self.logger.error("DAM4SAM tracker initialization returned None/failed")
+                return False
+
+            self.logger.success("DAM4SAM tracker initialized successfully")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Exception during DAM4SAM tracker initialization: {e}", exc_info=True)
+            return False
 
     def run_propagation(self, frames_dir: str, scenes_to_process, tracker: 'AdvancedProgressTracker' = None) -> dict:
         self.mask_dir = Path(frames_dir) / "masks"
@@ -2288,8 +2306,9 @@ class SubjectMasker:
         # Ensure the tracker is initialized before proceeding. This is crucial for strategies
         # like "YOLO-only" that defer tracker loading.
         if not self._initialize_tracker():
-            self.logger.error("Tracker could not be initialized; skipping masking.")
-            return {}
+            self.logger.error("DAM4SAM tracker could not be initialized; mask propagation failed.")
+            # Return error structure instead of empty dict
+            return {"error": "DAM4SAM tracker initialization failed", "completed": False}
         self.frame_map = self.frame_map or self._create_frame_map(frames_dir)
         mask_metadata, total_scenes = {}, len(scenes_to_process)
         for i, scene in enumerate(scenes_to_process):
@@ -3608,8 +3627,20 @@ def execute_propagation(event: PropagationEvent, progress_queue: Queue, cancel_e
     result = pipeline.run_full_analysis(scenes_to_process, tracker=tracker)
 
     if result and result.get("done"):
-        yield {"log": "Propagation complete.", "status": f"Output at {result['output_dir']}",
-               "output_dir": result['output_dir'], "done": True}
+        # Verify that masks were actually created
+        masks_dir = Path(result['output_dir']) / "masks"
+        mask_files = list(masks_dir.glob("*.png")) if masks_dir.exists() else []
+
+        if not mask_files:
+            yield {"log": "❌ Propagation failed - no masks were generated. Check DAM4SAM initialization.",
+                    "status": "Failed", "done": False}
+            return
+
+        yield {"log": f"✅ Propagation complete. Generated {len(mask_files)} masks.",
+                "status": f"Output at {result['output_dir']}", "output_dir": result['output_dir'], "done": True}
+    else:
+        yield {"log": "❌ Propagation failed - pipeline returned no results.",
+                "status": "Failed", "done": False}
 
 def execute_analysis(event: PropagationEvent, progress_queue: Queue, cancel_event: threading.Event, logger: AppLogger,
                      config: Config, thumbnail_manager, cuda_available, progress=None):
