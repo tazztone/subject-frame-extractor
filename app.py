@@ -239,7 +239,7 @@ class Config:
         extraction_method_toggle: List[str] = field(default_factory=lambda: ["Recommended Thumbnails", "Legacy Full-Frame"])
         method: List[str] = field(default_factory=lambda: ["keyframes", "interval", "every_nth_frame", "nth_plus_keyframes", "all"])
         primary_seed_strategy: List[str] = field(default_factory=lambda: ["👤 By Face", "📝 By Text", "🔄 Face + Text Fallback", "🧑‍🤝‍🧑 Find Prominent Person"])
-        seed_strategy: List[str] = field(default_factory=lambda: ["Largest Person", "Center-most Person"])
+        seed_strategy: List[str] = field(default_factory=lambda: ["Largest Person", "Center-most Person", "Highest Confidence", "Tallest Person", "Area x Confidence", "Rule-of-Thirds", "Edge-avoiding", "Balanced", "Best Face"])
         person_detector_model: List[str] = field(default_factory=lambda: ['yolo11x.pt', 'yolo11s.pt'])
         face_model_name: List[str] = field(default_factory=lambda: ["buffalo_l", "buffalo_s"])
         dam4sam_model_name: List[str] = field(default_factory=lambda: ["sam21pp-T", "sam21pp-S", "sam21pp-B+", "sam21pp-L"])
@@ -2157,9 +2157,74 @@ class SeedSelector:
         if isinstance(params, dict): strategy = params.get('seed_strategy', strategy)
         h, w = frame_rgb.shape[:2]
         cx, cy = w / 2, h / 2
-        score_func = {"Largest Person": lambda b: (b['bbox'][2] - b['bbox'][0]) * (b['bbox'][3] - b['bbox'][1]),
-                      "Center-most Person": lambda b: -math.hypot((b['bbox'][0] + b['bbox'][2]) / 2 - cx, (b['bbox'][1] + b['bbox'][3]) / 2 - cy)}.get(strategy)
-        best_person = sorted(boxes, key=score_func, reverse=True)[0]
+
+        def area(b):
+            x1, y1, x2, y2 = b['bbox']
+            return (x2 - x1) * (y2 - y1)
+
+        def height(b):
+            x1, y1, x2, y2 = b['bbox']
+            return y2 - y1
+
+        def center_dist(b):
+            x1, y1, x2, y2 = b['bbox']
+            bx, by = (x1 + x2) / 2, (y1 + y2) / 2
+            return math.hypot(bx - cx, by - cy)
+
+        def thirds_dist(b):
+            thirds = [(w / 3, h / 3), (2 * w / 3, h / 3), (w / 3, 2 * h / 3), (2 * w / 3, 2 * h / 3)]
+            x1, y1, x2, y2 = b['bbox']
+            bx, by = (x1 + x2) / 2, (y1 + y2) / 2
+            return min(math.hypot(bx - tx, by - ty) for tx, ty in thirds)
+
+        def min_dist_to_edge(b):
+            x1, y1, x2, y2 = b['bbox']
+            return min(x1, y1, w - x2, h - y2)
+
+        def balanced_score(b):
+            norm_area = area(b) / (w * h)
+            norm_edge = min_dist_to_edge(b) / (min(w, h) / 2)
+            return 0.4 * norm_area + 0.4 * b['conf'] + 0.2 * norm_edge
+
+        # Memoize face detection results for the current frame
+        all_faces = None
+        if strategy == "Best Face" and self.face_analyzer:
+            all_faces = self.face_analyzer.get(cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR))
+
+        def best_face_score(b):
+            if not all_faces:
+                return 0.0
+
+            yolo_bbox = b['bbox']
+            faces_in_box = []
+            for face in all_faces:
+                face_cx = face.bbox[0] + face.bbox[2] / 2
+                face_cy = face.bbox[1] + face.bbox[3] / 2
+                if yolo_bbox[0] <= face_cx < yolo_bbox[2] and yolo_bbox[1] <= face_cy < yolo_bbox[3]:
+                    faces_in_box.append(face)
+
+            if not faces_in_box:
+                return 0.0
+
+            return max(f.det_score for f in faces_in_box)
+
+        score_funcs = {
+            "Largest Person": lambda b: area(b),
+            "Center-most Person": lambda b: -center_dist(b),
+            "Highest Confidence": lambda b: b['conf'],
+            "Tallest Person": lambda b: height(b),
+            "Area x Confidence": lambda b: area(b) * b['conf'],
+            "Rule-of-Thirds": lambda b: -thirds_dist(b),
+            "Edge-avoiding": lambda b: min_dist_to_edge(b),
+            "Balanced": balanced_score,
+            "Best Face": best_face_score,
+        }
+
+        score = score_funcs.get(strategy, score_funcs["Largest Person"])
+
+        # Tie-breaking with confidence, then area
+        best_person = sorted(boxes, key=lambda b: (score(b), b['conf'], area(b)), reverse=True)[0]
+
         return self._xyxy_to_xywh(best_person['bbox']), {'type': f'person_{strategy.lower().replace(" ", "_")}', 'conf': best_person['conf']}
 
     def _load_image_from_array(self, image_rgb: np.ndarray):
@@ -3927,7 +3992,7 @@ class AppUI:
                 with gr.Group(visible="Prominent Person" in self.config.ui_defaults.primary_seed_strategy) as auto_seeding_group:
                     self.components['auto_seeding_group'] = auto_seeding_group
                     gr.Markdown("#### 🧑‍🤝‍🧑 Configure Prominent Person Selection"); gr.Markdown("This is a simple, fully automatic mode. It uses an object detector (YOLO) to find all people in the scene and then selects one based on a simple rule, like who is largest or most central. It's fast but less precise, as it doesn't use face identity or text descriptions.")
-                    self._create_component('best_frame_strategy_input', 'dropdown', {'choices': self.config.choices.seed_strategy, 'value': "Largest Person", 'label': "Selection Method", 'info': "'Largest' picks the person taking up the most screen area. 'Center-most' picks the person closest to the frame's center."})
+                    self._create_component('best_frame_strategy_input', 'dropdown', {'choices': self.config.choices.seed_strategy, 'value': "Largest Person", 'label': "Selection Method", 'info': "'Largest' picks the person with the biggest bounding box. 'Center-most' picks the person closest to the center. 'Highest Confidence' selects the person with the highest detection confidence. 'Tallest Person' prefers subjects that are standing. 'Area x Confidence' balances size and confidence. 'Rule-of-Thirds' prefers subjects near the thirds lines. 'Edge-avoiding' avoids subjects near the frame's edge. 'Balanced' provides a good mix of area, confidence, and edge-avoidance. 'Best Face' selects the person with the highest quality face detection."})
                 self._create_component('person_radio', 'radio', {'label': "Select Person", 'choices': [], 'visible': False})
                 with gr.Accordion("Advanced Settings", open=False):
                     gr.Markdown("These settings control the underlying models and analysis parameters. Adjust them only if you understand their effect.")
