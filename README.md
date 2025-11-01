@@ -109,7 +109,7 @@ This tab is for getting frames from your video source.
     -   **Advanced Method**: If you have specific needs, you can uncheck the "Recommended" option to access legacy full-frame extraction methods like `keyframes`, `interval`, or `every_nth_frame`. This is slower and not recommended for most workflows.
 3.  **Start Extraction**: Click the "Start Extraction" button to begin. The results will be saved to the `downloads/` folder and will be automatically available for the next step.
 
-### Tab 2: 🎯 Seeding & Scene Selection
+### Tab 2: 🎯 Define Subject
 
 This tab is for identifying your subject within the extracted scenes.
 
@@ -118,13 +118,22 @@ This tab is for identifying your subject within the extracted scenes.
     -   **📝 By Text**: Describe your subject using a text prompt (e.g., "a man in a blue shirt").
     -   **🤖 Automatic**: Let the AI find the most prominent person in each scene automatically. This is a great general-purpose starting point.
 2.  **Find & Preview Scene Seeds**: Click the **"Find & Preview Scene Seeds"** button. The app runs a pre-analysis to find the best "seed frame" in each scene—the single frame where your subject is clearest.
-3.  **Review & Refine Seeds**: A gallery of these seed frames will appear, along with controls to:
-    -   Quickly include or exclude entire scenes.
-    -   Use the **Scene Editor** to fine-tune the detection for a specific scene.
-    -   Apply **Bulk Filters** to remove scenes that don't meet a minimum quality standard.
-4.  **Propagate Masks**: Once you're happy with your seeds, click **"Propagate Masks on Kept Scenes"**. The AI uses the seed frame to track the subject through all other frames in each selected scene.
 
-### Tab 3: 📊 Filtering & Export
+### Tab 3: 🎞️ Scene Selection
+
+This tab becomes active after you complete the subject definition. It allows you to refine your selection before the heavy processing begins.
+
+1.  **Review & Refine Seeds**: A gallery of these seed frames will appear, along with controls to:
+    -   Quickly include or exclude entire scenes.
+    -   Use the **Scene Editor** to fine-tune the detection for a specific scene. You can select a different person from the YOLO detections or provide a text prompt to override the initial seed.
+    -   Apply **Bulk Filters** to remove scenes that don't meet a minimum quality standard.
+2.  **Propagate Masks**: Once you're happy with your seeds, click **"Propagate Masks on Kept Scenes"**. The AI uses the seed frame to track the subject through all other frames in each selected scene.
+
+### Tab 4: 📝 Metrics
+
+Choose which metrics to calculate during the analysis phase. More metrics provide more filtering options but may increase processing time.
+
+### Tab 5: 📊 Filtering & Export
 
 This tab becomes active after you complete mask propagation. It allows you to refine your selection and export the final frames.
 
@@ -140,27 +149,29 @@ This tab becomes active after you complete mask propagation. It allows you to re
 
 ## ⚙️ Configuration
 
-The application uses YAML configuration for fine-tuning:
+The application uses a `config.json` file for fine-tuning, which can be saved from the UI.
 
-### Quality Metric Weights (`configs/config.yaml`)
-```yaml
-quality_weights:
-  sharpness: 25      # Edge clarity
-  edge_strength: 15  # Edge density  
-  contrast: 15       # Dynamic range
-  brightness: 10     # Luminance distribution
-  entropy: 15        # Information content
-  niqe: 20          # Perceptual quality
+### Quality Metric Weights
+```json
+"quality_weights": {
+  "sharpness": 25,
+  "edge_strength": 15,
+  "contrast": 15,
+  "brightness": 10,
+  "entropy": 15,
+  "niqe": 20
+}
 ```
 
 ### UI Defaults
-```yaml
-ui_defaults:
-  enable_face_filter: true
-  enable_subject_mask: true
-  dam4sam_model_name: "sam21pp-L"  # Largest, most accurate
-  person_detector_model: "yolo11x.pt"
-  face_model_name: "buffalo_l"
+```json
+"ui_defaults": {
+  "enable_face_filter": true,
+  "enable_subject_mask": true,
+  "dam4sam_model_name": "sam21pp-L",
+  "person_detector_model": "yolo11x.pt",
+  "face_model_name": "buffalo_l"
+}
 ```
 
 ## 🔧 Advanced Usage
@@ -174,10 +185,9 @@ Ground subjects using natural language with Grounded-DINO:
 ```
 
 ### Batch Processing
-Process multiple videos by running the analysis pipeline programmatically:
+Process multiple videos by running the analysis pipeline programmatically. Note that the `app.py` is not structured as a library, so this requires refactoring.
 ```python
-from app.pipelines.analyze import AnalysisPipeline
-from app.logic.events import PreAnalysisEvent
+from app import AnalysisPipeline, PreAnalysisEvent # Fictional import
 
 params = PreAnalysisEvent(
     output_folder="path/to/frames",
@@ -187,6 +197,7 @@ params = PreAnalysisEvent(
     face_ref_img_path="reference.jpg"
 )
 
+# This is a conceptual example; direct import is not supported.
 pipeline = AnalysisPipeline(params, queue, cancel_event)
 result = pipeline.run_full_analysis(scenes_to_process)
 ```
@@ -204,20 +215,18 @@ Choose models based on your hardware and accuracy needs:
 
 ```
 subject-frame-extractor/
-├── main.py                    # Main application
-├── configs/
-│   └── config.yaml          # Configuration settings
-├── requirements.txt          # Python dependencies
-├── DAM4SAM/                 # Subject tracking submodule
-├── Grounded-SAM-2/          # Grounding/segmentation submodule
-├── downloads/               # Output directory (created at runtime)
+├── app.py                     # Main application
+├── requirements.txt           # Python dependencies
+├── DAM4SAM/                   # Subject tracking submodule
+├── Grounded-SAM-2/            # Grounding/segmentation submodule
+├── downloads/                 # Output directory (created at runtime)
 │   └── [video_name]/
 │       ├── frame_000001.png
-│       ├── metadata.jsonl   # Analysis results
-│       ├── masks/           # Subject masks
-│       └── thumbs/          # Preview thumbnails
-├── models/                  # Cached AI models
-└── logs/                    # Application logs
+│       ├── metadata.jsonl     # Analysis results
+│       ├── masks/             # Subject masks
+│       └── thumbs/            # Preview thumbnails
+├── models/                    # Cached AI models
+└── logs/                      # Application logs
 ```
 
 ## 🔍 Troubleshooting
