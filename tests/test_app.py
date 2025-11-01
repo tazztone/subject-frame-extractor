@@ -281,6 +281,33 @@ class TestFilterLogic:
         # Verify that the on_filters_changed function was called as part of the reset logic
         mock_on_filters_changed.assert_called_once()
 
+    def test_load_and_prep_filter_data_hardcoded_hist_ranges(self, tmp_path):
+        """
+        This test demonstrates the bug of hardcoded histogram ranges for yaw and pitch.
+        It will fail because it asserts a different range than the hardcoded one.
+        """
+        # Create mock metadata. The values don't matter as much as the bin ranges.
+        metadata_content = (
+            json.dumps({"params": {}}) + '\n' +
+            json.dumps({"filename": "f1", "metrics": {"yaw": 0, "pitch": 0}}) + '\n'
+        )
+        metadata_path = tmp_path / "metadata.jsonl"
+        metadata_path.write_text(metadata_content)
+
+        config = app.Config()
+        _, metric_values = app.load_and_prep_filter_data(
+            metadata_path,
+            get_all_filter_keys=['yaw', 'pitch'],
+            config=config
+        )
+
+        # The function hardcodes the range to (-45, 45).
+        # A proper implementation should get this from the config.
+        # To demonstrate the failure, we assert the expected configurable range.
+        yaw_hist_bins = metric_values.get('yaw_hist', ([], []))[1]
+        assert yaw_hist_bins[0] == -180.0, "Yaw histogram min-range should be from config (-180), not hardcoded."
+        assert yaw_hist_bins[-1] == 180.0, "Yaw histogram max-range should be from config (180), not hardcoded."
+
 
 class TestQuality:
     def test_compute_entropy(self):
