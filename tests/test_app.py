@@ -271,15 +271,69 @@ class TestFilterLogic:
         )
 
         # The result is a tuple of gradio updates, so we need to check the values within them
-        slider_updates = result_tuple[0:2]
-        dedup_update, face_match_update, status_update, gallery_update, acc_update = result_tuple[2:]
+        slider_updates = sorted(result_tuple[0:2], key=lambda x: x['value'])
+        # Update unpacking to match the new return signature
+        dedup_update, face_match_update, status_update, gallery_update, acc_update, enable_dedup_update = result_tuple[2:]
 
-        assert slider_updates[0]['value'] == test_config.filter_defaults.sharpness['default_max']
-        assert slider_updates[1]['value'] == test_config.filter_defaults.sharpness['default_min']
+        assert slider_updates[0]['value'] == test_config.filter_defaults.sharpness['default_min']
+        assert slider_updates[1]['value'] == test_config.filter_defaults.sharpness['default_max']
         assert face_match_update['value'] == test_config.ui_defaults.require_face_match
 
         # Verify that the on_filters_changed function was called as part of the reset logic
         mock_on_filters_changed.assert_called_once()
+
+
+    def test_deduplication_filter(self, sample_frames_data, test_config):
+        """Verify that the deduplication filter removes similar frames."""
+        # Frame 1 and 2 have identical phash
+        filters = {"enable_dedup": True, "dedup_thresh": 0}
+
+        # A more realistic mock for imagehash that returns different objects for different hashes
+        hash_a = MagicMock(name="hash_a")
+        hash_b = MagicMock(name="hash_b")
+        hash_c = MagicMock(name="hash_c")
+        hash_d = MagicMock(name="hash_d")
+        hash_e = MagicMock(name="hash_e")
+
+        # The lambda needs to accept two arguments (self and other) because of how it's called on the mock instance.
+        hash_a.__sub__ = lambda s, o: 0 if o is hash_a else 1
+        hash_b.__sub__ = lambda s, o: 0 if o is hash_b else 1
+        hash_c.__sub__ = lambda s, o: 0 if o is hash_c else 1
+        hash_d.__sub__ = lambda s, o: 0 if o is hash_d else 1
+        hash_e.__sub__ = lambda s, o: 0 if o is hash_e else 1
+
+        def side_effect(h_str):
+            if h_str == 'a'*16: return hash_a
+            if h_str == 'b'*16: return hash_b
+            if h_str == 'c'*16: return hash_c
+            if h_str == 'd'*16: return hash_d
+            if h_str == 'e'*16: return hash_e
+            return MagicMock() # Should not happen in this test
+
+        mock_imagehash.hex_to_hash.side_effect = side_effect
+
+        kept, rejected, _, _ = app.apply_all_filters_vectorized(sample_frames_data, filters, test_config)
+
+        kept_filenames = {f['filename'] for f in kept}
+        assert 'frame_01.png' in kept_filenames
+        assert 'frame_02.png' not in kept_filenames # Should be removed as a duplicate
+        assert len(kept) == len(sample_frames_data) - 1
+
+    def test_face_similarity_filter_require_match(self, sample_frames_data, test_config):
+        """Verify face similarity filter rejects frames with low similarity AND frames with no face when required."""
+        filters = {
+            "face_sim_enabled": True,
+            "face_sim_min": 0.5,
+            "require_face_match": True # Explicitly require a face
+        }
+        kept, rejected, _, _ = app.apply_all_filters_vectorized(sample_frames_data, filters, test_config)
+
+        kept_filenames = {f['filename'] for f in kept}
+        rejected_filenames = {f['filename'] for f in rejected}
+
+        assert 'frame_01.png' in kept_filenames # High similarity
+        assert 'frame_04.png' in rejected_filenames # Low similarity
+        assert 'frame_06.png' in rejected_filenames # No face_sim value and require_face_match is on
 
 
 class TestQuality:
