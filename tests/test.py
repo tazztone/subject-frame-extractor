@@ -10,15 +10,28 @@ import numpy as np
 import gradio as gr
 import cv2
 import datetime
-import cv2
-import datetime
 
 # Mock heavy dependencies before they are imported by the app
 mock_torch = MagicMock(name='torch')
 mock_torch.__version__ = "2.0.0"
+mock_torch.__path__ = ['fake'] # Make it a package
+mock_torch.__spec__ = MagicMock()
 mock_torch.hub = MagicMock(name='torch.hub')
 mock_torch.cuda = MagicMock(name='torch.cuda')
 mock_torch.cuda.is_available.return_value = False
+
+mock_torch_autograd = MagicMock(name='torch.autograd')
+mock_torch_autograd.Variable = MagicMock(name='torch.autograd.Variable')
+
+mock_torch_nn = MagicMock(name='torch.nn')
+mock_torch_nn.__path__ = ['fake'] # Make it a package
+mock_torch_nn_init = MagicMock(name='torch.nn.init')
+mock_torch_nn_functional = MagicMock(name='torch.nn.functional')
+mock_torch_optim = MagicMock(name='torch.optim')
+mock_torch_utils = MagicMock(name='torch.utils')
+mock_torch_utils.__path__ = ['fake']
+mock_torch_utils_data = MagicMock(name='torch.utils.data')
+
 
 mock_torchvision = MagicMock(name='torchvision')
 mock_torchvision.ops = MagicMock(name='torchvision.ops')
@@ -41,6 +54,13 @@ mock_process.cpu_percent.return_value = 10.0
 modules_to_mock = {
     'torch': mock_torch,
     'torch.hub': mock_torch.hub,
+    'torch.autograd': mock_torch_autograd,
+    'torch.nn': mock_torch_nn,
+    'torch.nn.init': mock_torch_nn_init,
+    'torch.nn.functional': mock_torch_nn_functional,
+    'torch.optim': mock_torch_optim,
+    'torch.utils': mock_torch_utils,
+    'torch.utils.data': mock_torch_utils_data,
     'torchvision': mock_torchvision,
     'torchvision.ops': mock_torchvision.ops,
     'torchvision.transforms': mock_torchvision.transforms,
@@ -73,6 +93,7 @@ patch.dict(sys.modules, modules_to_mock).start()
 
 # Now import the monolithic app
 import app
+from app import Config, CompositionRoot
 
 # --- Mocks for Tests ---
 
@@ -168,6 +189,59 @@ class TestConfig:
             config = app.Config(config_path="dummy_path.yml")
             assert config.paths.logs == "env_logs"
 
+    @patch('app.Path.mkdir')
+    def test_create_dirs_called_on_init(self, mock_mkdir):
+        """Verify that necessary directories are created on Config initialization."""
+        with patch('app.open', mock_open(read_data='{}'), create=True):
+            Config(config_path='dummy_path.json')
+            # Check that mkdir was called for the default log, models, and downloads paths
+            assert unittest.mock.call(exist_ok=True, parents=True) in mock_mkdir.call_args_list
+
+    @patch('app.Path.mkdir', MagicMock())
+    @patch.dict(os.environ, {
+        'APP_PATHS_LOGS': 'env_logs',
+        'APP_LOGGING_LOG_LEVEL': 'DEBUG',
+        'APP_RETRY_MAX_ATTEMPTS': '10',
+        'APP_CACHE_SIZE': '500',
+        'APP_YOUTUBE_DL_FORMAT_STRING': 'bestvideo',
+        'APP_CHOICES_MAX_RESOLUTION': '4320,1440',
+        'APP_MONITORING_CPU_WARNING_THRESHOLD_PERCENT': '95.5',
+        'APP_GRADIO_DEFAULTS_SHOW_MASK_OVERLAY': 'false'
+    })
+    def test_env_vars_override_defaults(self):
+        """Test that environment variables correctly override default config values."""
+        with patch('app.open', mock_open(read_data='{}'), create=True):
+            cfg = Config(config_path='nonexistent.json') # Ensure no file is read
+
+            assert cfg.paths.logs == 'env_logs'
+            assert cfg.logging.log_level == 'DEBUG'
+            assert cfg.retry.max_attempts == 10
+            assert cfg.cache.size == 500
+            assert cfg.youtube_dl.format_string == 'bestvideo'
+            assert cfg.choices.max_resolution == ['4320', '1440']
+            assert cfg.monitoring.cpu_warning_threshold_percent == 95.5
+            assert not cfg.gradio_defaults.show_mask_overlay
+
+    @patch('app.Path.mkdir', MagicMock())
+    @patch.dict(os.environ, {
+        'APP_PATHS_LOGS': 'env_logs_override_file',
+        'APP_RETRY_MAX_ATTEMPTS': '20'
+    })
+    def test_env_vars_override_file_config(self):
+        """Test that environment variables take precedence over a config file."""
+        file_config = {
+            "paths": {"logs": "file_logs"},
+            "retry": {"max_attempts": 5}
+        }
+        mock_file_content = json.dumps(file_config)
+
+        with patch('app.open', mock_open(read_data=mock_file_content), create=True), \
+             patch('app.Path.exists', return_value=True):
+            cfg = Config(config_path='dummy_path.json')
+
+            assert cfg.paths.logs == 'env_logs_override_file' # Env var wins
+            assert cfg.retry.max_attempts == 20             # Env var wins
+
 class TestAppLogger:
     def test_app_logger_instantiation(self, test_config):
         """Tests that the logger can be instantiated with a valid config."""
@@ -230,6 +304,7 @@ class TestFilterLogic:
             overlay_alpha=0.5,
             require_face_match=False,
             dedup_thresh=-1,
+            dedup_method="phash",
             slider_values=slider_values
         )
 
@@ -260,6 +335,7 @@ class TestFilterLogic:
             'require_face_match_input': MagicMock(),
             'filter_status_text': MagicMock(),
             'results_gallery': MagicMock(),
+            'dedup_method_input': MagicMock(value="phash"),
         }
 
         # The method is now part of the class, so we call it from an instance
@@ -281,6 +357,33 @@ class TestFilterLogic:
 
         # Verify that the on_filters_changed function was called as part of the reset logic
         mock_on_filters_changed.assert_called_once()
+
+    def test_load_and_prep_filter_data_hardcoded_hist_ranges(self, tmp_path):
+        """
+        This test demonstrates the bug of hardcoded histogram ranges for yaw and pitch.
+        It will fail because it asserts a different range than the hardcoded one.
+        """
+        # Create mock metadata. The values don't matter as much as the bin ranges.
+        metadata_content = (
+            json.dumps({"params": {}}) + '\n' +
+            json.dumps({"filename": "f1", "metrics": {"yaw": 0, "pitch": 0}}) + '\n'
+        )
+        metadata_path = tmp_path / "metadata.jsonl"
+        metadata_path.write_text(metadata_content)
+
+        config = app.Config()
+        _, metric_values = app.load_and_prep_filter_data(
+            metadata_path,
+            get_all_filter_keys=['yaw', 'pitch'],
+            config=config
+        )
+
+        # The function hardcodes the range to (-45, 45).
+        # A proper implementation should get this from the config.
+        # To demonstrate the failure, we assert the expected configurable range.
+        yaw_hist_bins = metric_values.get('yaw_hist', ([], []))[1]
+        assert yaw_hist_bins[0] == -180.0, "Yaw histogram min-range should be from config (-180), not hardcoded."
+        assert yaw_hist_bins[-1] == 180.0, "Yaw histogram max-range should be from config (180), not hardcoded."
 
 
     def test_deduplication_filter(self, sample_frames_data, test_config):
@@ -966,6 +1069,41 @@ class TestCompositionRoot:
         root.cleanup()
         root.thumbnail_manager.cleanup.assert_called_once()
         root.cancel_event.set.assert_called_once()
+
+    def test_composition_root_uses_json_not_yml(self):
+        """
+        Verify that CompositionRoot looks for config.json, not config.yml.
+        This test will fail if the bug is present.
+        """
+        with patch('app.Config', autospec=True) as MockConfig:
+            # Configure the mock instance and its nested attributes *before* it's used.
+            mock_instance = MockConfig.return_value
+
+            # Mock the nested dataclasses that AppLogger will access
+            mock_paths = MagicMock()
+            mock_paths.logs = "from_json_mock"
+            mock_instance.paths = mock_paths
+
+            mock_logging = MagicMock()
+            mock_logging.structured_log_path = "mock.jsonl"
+            mock_logging.colored_logs = False
+            mock_logging.log_level = "INFO"
+            mock_logging.log_format = ""
+            mock_instance.logging = mock_logging
+
+            mock_cache = MagicMock()
+            mock_cache.size = 200
+            mock_instance.cache = mock_cache
+
+
+            # Now, when CompositionRoot is initialized, it will use the pre-configured mock
+            root = CompositionRoot()
+
+            # Assert that the Config class was initialized with the correct path.
+            MockConfig.assert_called_once_with(config_path="config.json")
+
+            # Assert that the logger was initialized correctly using the mocked config
+            assert root.config.paths.logs == "from_json_mock"
 
 class TestErrorHandler:
     @pytest.fixture
