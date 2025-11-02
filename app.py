@@ -5092,8 +5092,8 @@ class EnhancedAppUI(AppUI):
 
         return gr.update(value=gallery_items)
 
-    def on_discovered_face_select(self, all_faces, confidence, *args, evt: gr.EventData):
-        if not all_faces or evt.index is None:
+    def on_discovered_face_select(self, all_faces, confidence, *args, evt: gr.EventData = None):
+        if not all_faces or evt is None or evt.index is None:
             return "", None
 
         selected_person_label = self.gallery_to_cluster_map.get(evt.index)
