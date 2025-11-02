@@ -5379,7 +5379,7 @@ class EnhancedAppUI(AppUI):
             filter_event = FilterEvent(
                 all_frames_data, per_metric_values, output_dir, "Kept Frames",
                 self.config.gradio_defaults.show_mask_overlay, self.config.gradio_defaults.overlay_alpha,
-                face_match_default, dedup_default, slider_defaults_dict
+                face_match_default, dedup_default, self.components['dedup_method_input'].value, slider_defaults_dict
             )
             filter_updates = on_filters_changed(filter_event, self.thumbnail_manager, self.config)
             status_update = filter_updates['filter_status_text']
