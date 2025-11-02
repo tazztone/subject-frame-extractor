@@ -5278,7 +5278,7 @@ class EnhancedAppUI(AppUI):
 
         c['calculate_diff_button'].click(
             self.calculate_visual_diff,
-            [c['results_gallery'], c['all_frames_data_state'], c['dedup_method_input'], c['dedup_thresh_input'], c['ssim_threshold_input'], c['lpips_threshold_input'], c['thumbnail_manager']],
+            [c['results_gallery'], c['all_frames_data_state'], c['dedup_method_input'], c['dedup_thresh_input'], c['ssim_threshold_input'], c['lpips_threshold_input']],
             [c['visual_diff_image']]
         )
 
@@ -5296,7 +5296,7 @@ class EnhancedAppUI(AppUI):
                                     self.thumbnail_manager, self.config)
         return result['filter_status_text'], result['results_gallery']
 
-    def calculate_visual_diff(self, gallery, all_frames_data, dedup_method, dedup_thresh, ssim_thresh, lpips_thresh, thumbnail_manager):
+    def calculate_visual_diff(self, gallery, all_frames_data, dedup_method, dedup_thresh, ssim_thresh, lpips_thresh):
         if not gallery or not gallery.selection:
             return None
 
@@ -5316,8 +5316,8 @@ class EnhancedAppUI(AppUI):
                     duplicate_frame_data = frame_data
                     break
             elif dedup_method == "SSIM":
-                img1 = thumbnail_manager.get(Path(self.config.paths.downloads) / Path(selected_frame_data['filename']).parent.name / "thumbs" / selected_frame_data['filename'])
-                img2 = thumbnail_manager.get(Path(self.config.paths.downloads) / Path(frame_data['filename']).parent.name / "thumbs" / frame_data['filename'])
+                img1 = self.thumbnail_manager.get(Path(self.config.paths.downloads) / Path(selected_frame_data['filename']).parent.name / "thumbs" / selected_frame_data['filename'])
+                img2 = self.thumbnail_manager.get(Path(self.config.paths.downloads) / Path(frame_data['filename']).parent.name / "thumbs" / frame_data['filename'])
                 if img1 is not None and img2 is not None:
                     img1_gray = cv2.cvtColor(img1, cv2.COLOR_RGB2GRAY)
                     img2_gray = cv2.cvtColor(img2, cv2.COLOR_RGB2GRAY)
@@ -5331,8 +5331,8 @@ class EnhancedAppUI(AppUI):
                     transforms.ToTensor(),
                     transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
                 ])
-                img1 = thumbnail_manager.get(Path(self.config.paths.downloads) / Path(selected_frame_data['filename']).parent.name / "thumbs" / selected_frame_data['filename'])
-                img2 = thumbnail_manager.get(Path(self.config.paths.downloads) / Path(frame_data['filename']).parent.name / "thumbs" / frame_data['filename'])
+                img1 = self.thumbnail_manager.get(Path(self.config.paths.downloads) / Path(selected_frame_data['filename']).parent.name / "thumbs" / selected_frame_data['filename'])
+                img2 = self.thumbnail_manager.get(Path(self.config.paths.downloads) / Path(frame_data['filename']).parent.name / "thumbs" / frame_data['filename'])
                 if img1 is not None and img2 is not None:
                     img1_t = transform(img1).unsqueeze(0)
                     img2_t = transform(img2).unsqueeze(0)
@@ -5342,8 +5342,8 @@ class EnhancedAppUI(AppUI):
                         break
 
         if duplicate_frame_data:
-            img1 = thumbnail_manager.get(Path(self.config.paths.downloads) / Path(selected_frame_data['filename']).parent.name / "thumbs" / selected_frame_data['filename'])
-            img2 = thumbnail_manager.get(Path(self.config.paths.downloads) / Path(duplicate_frame_data['filename']).parent.name / "thumbs" / duplicate_frame_data['filename'])
+            img1 = self.thumbnail_manager.get(Path(self.config.paths.downloads) / Path(selected_frame_data['filename']).parent.name / "thumbs" / selected_frame_data['filename'])
+            img2 = self.thumbnail_manager.get(Path(self.config.paths.downloads) / Path(duplicate_frame_data['filename']).parent.name / "thumbs" / duplicate_frame_data['filename'])
 
             if img1 is not None and img2 is not None:
                 # Create a side-by-side comparison image
