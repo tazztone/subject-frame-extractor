@@ -17,3 +17,7 @@ matplotlib
 imagehash
 mediapipe
 groundingdino-py
+scikit-learn
+imagehash
+torch
+torchvision
