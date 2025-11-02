@@ -16,4 +16,9 @@ pyiqa
 matplotlib
 imagehash
 mediapipe
+torch
+torchvision
 groundingdino-py
+scikit-image
+lpips
+inference[clip]
