@@ -3389,7 +3389,7 @@ def _wire_recompute_handler(config, logger, thumbnail_manager, scenes, shot_id, 
 
 # --- PIPELINE LOGIC ---
 
-def execute_extraction(event: ExtractionEvent, progress_queue: Queue, cancel_event: threading.Event, logger: AppLogger, config: Config, progress=None):
+def execute_extraction(event: ExtractionEvent, progress_queue: Queue, cancel_event: threading.Event, logger: AppLogger, config: Config, thumbnail_manager=None, cuda_available=None, progress=None):
     try:
         params_dict = asdict(event)
         if event.upload_video:
@@ -4845,90 +4845,90 @@ class EnhancedAppUI(AppUI):
             except (TypeError, ValueError): ui_args[k] = default
         return PreAnalysisEvent(**ui_args)
 
+    def _run_pipeline(self, pipeline_func, event, progress, success_callback=None, *args):
+        try:
+            for result in pipeline_func(event, self.progress_queue, self.cancel_event, self.app_logger, self.config, self.thumbnail_manager, self.cuda_available, progress=progress):
+                if isinstance(result, dict):
+                    if self.cancel_event.is_set():
+                        yield {"unified_log": f"{pipeline_func.__name__} cancelled."}
+                        return
+                    if result.get("done"):
+                        if success_callback:
+                            yield success_callback(result)
+                        return
+            yield {"unified_log": f"❌ {pipeline_func.__name__} failed."}
+        except Exception as e:
+            self.app_logger.error(f"{pipeline_func.__name__} execution failed", exc_info=True)
+            yield {"unified_log": f"[ERROR] {pipeline_func.__name__} failed unexpectedly: {e}"}
+
     def run_extraction_wrapper(self, *args, progress=gr.Progress(track_tqdm=True)):
         ui_args = dict(zip(self.ext_ui_map_keys, args))
-        # UI is now unified, so this is always true.
         ui_args['thumbnails_only'] = True
         
-        # Construct ExtractionEvent with only its defined fields
         event_fields = [f.name for f in dataclasses.fields(ExtractionEvent)]
         event_args = {k: v for k, v in ui_args.items() if k in event_fields}
         event = ExtractionEvent(**event_args)
-        
-        # This is a bit of a hack, but we need to set the tracker to a running state
-        # before the task starts, otherwise the progress thread will block.
-        # A better solution would be to manage trackers more explicitly.
-        tracker = AdvancedProgressTracker(progress, self.progress_queue, self.app_logger, ui_stage_name="Extracting")
-        tracker.pause_event.set()
 
-        try:
-            for result in execute_extraction(event, self.progress_queue, self.cancel_event, self.app_logger, self.config, progress=progress):
-                if isinstance(result, dict):
-                    if self.cancel_event.is_set():
-                        return {"unified_log": "Extraction cancelled."}
-                    if result.get("done"):
-                        return {"unified_log": result.get("log", "✅ Extraction completed successfully."),
-                                "extracted_video_path_state": result.get("video_path", "") or result.get("extracted_video_path_state", ""),
-                                "extracted_frames_dir_state": result.get("output_dir", "") or result.get("extracted_frames_dir_state", "")}
-            return {"unified_log": "❌ Extraction failed."}
-        except Exception as e: raise
+        yield from self._run_pipeline(execute_extraction, event, progress, self._on_extraction_success)
+
+    def _on_extraction_success(self, result):
+        return {
+            "unified_log": result.get("log", "✅ Extraction completed successfully."),
+            "extracted_video_path_state": result.get("video_path", "") or result.get("extracted_video_path_state", ""),
+            "extracted_frames_dir_state": result.get("output_dir", "") or result.get("extracted_frames_dir_state", "")
+        }
+
+    def _on_pre_analysis_success(self, result):
+        scenes = result.get('scenes', [])
+        if scenes:
+            save_scene_seeds(scenes, result['output_dir'], self.app_logger)
+        status_text, button_update = get_scene_status_text(scenes)
+        log_message = result.get("log", "✅ Pre-analysis completed successfully.") + "\nSwitching to Scene Selection tab."
+        updates = {
+            "unified_log": log_message,
+            "scenes_state": scenes,
+            "propagate_masks_button": button_update,
+            "scene_filter_status": status_text,
+            "scene_face_sim_min_input": gr.update(visible=any((s.get("seed_metrics") or {}).get("best_face_sim") is not None for s in (scenes or []))),
+            "seeding_results_column": gr.update(visible=True),
+            "main_tabs": gr.update(selected=2)
+        }
+        gallery_items, index_map = build_scene_gallery_items(scenes, "Kept", result.get('output_dir', ''))
+        updates.update({
+            "scene_gallery": gr.update(value=gallery_items),
+            "scene_gallery_index_map_state": index_map
+        })
+        if result.get("final_face_ref_path"):
+            updates["face_ref_img_path_input"] = result["final_face_ref_path"]
+        return updates
 
     def run_pre_analysis_wrapper(self, *args, progress=gr.Progress(track_tqdm=True)):
         event = self._create_pre_analysis_event(*args)
-        try:
-            for result in execute_pre_analysis(event, self.progress_queue, self.cancel_event, self.app_logger, self.config, self.thumbnail_manager, self.cuda_available, progress=progress):
-                if isinstance(result, dict):
-                    if self.cancel_event.is_set():
-                        return {"unified_log": "Pre-analysis cancelled."}
-                    if result.get("done"):
-                        scenes = result.get('scenes', [])
-                        if scenes: save_scene_seeds(scenes, result['output_dir'], self.app_logger)
-                        status_text, button_update = get_scene_status_text(scenes)
-                        log_message = result.get("log", "✅ Pre-analysis completed successfully.") + "\nSwitching to Scene Selection tab."
-                        updates = {"unified_log": log_message,
-                                   "scenes_state": scenes, "propagate_masks_button": button_update, "scene_filter_status": status_text,
-                                   "scene_face_sim_min_input": gr.update(visible=any((s.get("seed_metrics") or {}).get("best_face_sim") is not None for s in (scenes or []))),
-                                   "seeding_results_column": gr.update(visible=True),
-                                   "main_tabs": gr.update(selected=2)}
-                        # Initialize scene gallery
-                        gallery_items, index_map = build_scene_gallery_items(scenes, "Kept", result.get('output_dir', ''))
-                        updates.update({
-                            "scene_gallery": gr.update(value=gallery_items),
-                            "scene_gallery_index_map_state": index_map
-                        })
-                        if result.get("final_face_ref_path"):
-                            updates["face_ref_img_path_input"] = result["final_face_ref_path"]
-                        return updates
-            return {"unified_log": "❌ Pre-analysis failed."}
-        except Exception as e: raise
+        yield from self._run_pipeline(execute_pre_analysis, event, progress, self._on_pre_analysis_success)
 
     def run_propagation_wrapper(self, scenes, *args, progress=gr.Progress(track_tqdm=True)):
         event = PropagationEvent(output_folder=self._create_pre_analysis_event(*args).output_folder, video_path=self._create_pre_analysis_event(*args).video_path,
                                  scenes=scenes, analysis_params=self._create_pre_analysis_event(*args))
-        try:
-            for result in execute_propagation(event, self.progress_queue, self.cancel_event, self.app_logger, self.config, self.thumbnail_manager, self.cuda_available, progress=progress):
-                if isinstance(result, dict):
-                    if self.cancel_event.is_set():
-                        return {"unified_log": "Propagation cancelled."}
-                    if result.get("done"):
-                        return {"unified_log": result.get("log", "✅ Propagation completed successfully."),
-                                "analysis_output_dir_state": result.get('output_dir', "")}
-            return {"unified_log": "❌ Propagation failed."}
-        except Exception as e: raise
+        yield from self._run_pipeline(execute_propagation, event, progress, self._on_propagation_success)
+
+    def _on_propagation_success(self, result):
+        return {
+            "unified_log": result.get("log", "✅ Propagation completed successfully."),
+            "analysis_output_dir_state": result.get('output_dir', "")
+        }
 
     def run_analysis_wrapper(self, scenes, *args, progress=gr.Progress(track_tqdm=True)):
         event = PropagationEvent(output_folder=self._create_pre_analysis_event(*args).output_folder, video_path=self._create_pre_analysis_event(*args).video_path,
                                  scenes=scenes, analysis_params=self._create_pre_analysis_event(*args))
-        try:
-            for result in execute_analysis(event, self.progress_queue, self.cancel_event, self.app_logger, self.config, self.thumbnail_manager, self.cuda_available, progress=progress):
-                if isinstance(result, dict):
-                    if self.cancel_event.is_set():
-                        return {"unified_log": "Analysis cancelled."}
-                    if result.get("done"):
-                        return {"unified_log": result.get("log", "✅ Analysis completed successfully."), "analysis_output_dir_state": result.get('output_dir', ""),
-                                "analysis_metadata_path_state": result.get('metadata_path', ""), "filtering_tab": gr.update(interactive=True)}
-            return {"unified_log": "❌ Analysis failed."}
-        except Exception as e: raise
+        yield from self._run_pipeline(execute_analysis, event, progress, self._on_analysis_success)
+
+    def _on_analysis_success(self, result):
+        return {
+            "unified_log": result.get("log", "✅ Analysis completed successfully."),
+            "analysis_output_dir_state": result.get('output_dir', ""),
+            "analysis_metadata_path_state": result.get('metadata_path', ""),
+            "filtering_tab": gr.update(interactive=True)
+        }
 
     def run_session_load_wrapper(self, session_path):
         try:
