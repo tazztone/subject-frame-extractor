@@ -2830,7 +2830,7 @@ class AnalysisPipeline(Pipeline):
 
 # --- FILTERING & SCENE LOGIC ---
 
-def load_and_prep_filter_data(metadata_path, get_all_filter_keys):
+def load_and_prep_filter_data(metadata_path, get_all_filter_keys, config):
     if not metadata_path or not Path(metadata_path).exists():
         return [], {}
 
@@ -2844,8 +2844,8 @@ def load_and_prep_filter_data(metadata_path, get_all_filter_keys):
     metric_values = {}
     metric_configs = {
         'quality_score': {'path': ("metrics", "quality_score"), 'range': (0, 100)},
-        'yaw': {'path': ("metrics", "yaw"), 'range': (-45, 45)},
-        'pitch': {'path': ("metrics", "pitch"), 'range': (-45, 45)},
+        'yaw': {'path': ("metrics", "yaw"), 'range': (config.filter_defaults.yaw.get('min', -45), config.filter_defaults.yaw.get('max', 45))},
+        'pitch': {'path': ("metrics", "pitch"), 'range': (config.filter_defaults.pitch.get('min', -45), config.filter_defaults.pitch.get('max', 45))},
         'eyes_open': {'path': ("metrics", "eyes_open"), 'range': (0, 1)},
         'face_sim': {'path': ("face_sim",), 'range': (0, 1)},
     }
@@ -5093,8 +5093,7 @@ class EnhancedAppUI(AppUI):
             if not metadata_path or not output_dir:
                 # Return an update for every component in load_outputs to avoid errors
                 return [gr.update()] * len(load_outputs)
-
-            all_frames, metric_values = load_and_prep_filter_data(metadata_path, self.get_all_filter_keys())
+            all_frames, metric_values = load_and_prep_filter_data(metadata_path, self.get_all_filter_keys(), self.config)
             svgs = build_all_metric_svgs(metric_values, self.get_all_filter_keys(), self.logger)
 
             updates = {
