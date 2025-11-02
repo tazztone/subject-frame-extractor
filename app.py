@@ -4710,12 +4710,12 @@ class EnhancedAppUI(AppUI):
                 thumb_megapixels=0.2,
                 scene_detect=True
             )
-            ext_result_gen = execute_extraction(ext_event, self.progress_queue, self.cancel_event, self.logger, self.config)
-            ext_result = {}
-            for result in ext_result_gen:
-                ext_result = result
-            if not ext_result.get("done"):
-                raise RuntimeError(f"Extraction failed: {ext_result}")
+            ext_result = None
+            for ev in execute_extraction(ext_event, self.progress_queue, self.cancel_event, self.logger, self.config):
+                if isinstance(ev, dict) and ("done" in ev or "output_dir" in ev):
+                    ext_result = ev
+            if not ext_result or not ext_result.get("done"):
+                raise RuntimeError("Extraction failed")
             report[-1] += " OK"
 
             # Pre-analysis
@@ -4745,11 +4745,11 @@ class EnhancedAppUI(AppUI):
                 pre_sample_nth=1,
                 primary_seed_strategy="🧑‍🤝‍🧑 Find Prominent Person"
             )
-            pre_ana_result_gen = execute_pre_analysis(pre_ana_event, self.progress_queue, self.cancel_event, self.logger, self.config, self.thumbnail_manager, self.cuda_available)
-            pre_ana_result = {}
-            for result in pre_ana_result_gen:
-                pre_ana_result = result
-            if not pre_ana_result.get("done"):
+            pre_ana_result = None
+            for ev in execute_pre_analysis(pre_ana_event, self.progress_queue, self.cancel_event, self.logger, self.config, self.thumbnail_manager, self.cuda_available):
+                if isinstance(ev, dict) and ("done" in ev or "output_dir" in ev):
+                    pre_ana_result = ev
+            if not pre_ana_result or not pre_ana_result.get("done"):
                 raise RuntimeError(f"Pre-analysis failed: {pre_ana_result}")
             report[-1] += " OK"
 
@@ -4763,22 +4763,22 @@ class EnhancedAppUI(AppUI):
                 scenes=scenes,
                 analysis_params=pre_ana_event
             )
-            prop_result_gen = execute_propagation(prop_event, self.progress_queue, self.cancel_event, self.logger, self.config, self.thumbnail_manager, self.cuda_available)
-            prop_result = {}
-            for result in prop_result_gen:
-                prop_result = result
-            if not prop_result.get("done"):
-                raise RuntimeError(f"Propagation failed: {prop_result}")
+            prop_result = None
+            for ev in execute_propagation(prop_event, self.progress_queue, self.cancel_event, self.logger, self.config, self.thumbnail_manager, self.cuda_available):
+                if isinstance(ev, dict) and ("done" in ev or "output_dir" in ev):
+                    prop_result = ev
+            if not prop_result or not prop_result.get("done"):
+                raise RuntimeError("Propagation failed")
             report[-1] += " OK"
 
             # Analysis
             report.append("  - Stage 4: Frame Analysis...")
-            ana_result_gen = execute_analysis(prop_event, self.progress_queue, self.cancel_event, self.logger, self.config, self.thumbnail_manager, self.cuda_available)
-            ana_result = {}
-            for result in ana_result_gen:
-                ana_result = result
-            if not ana_result.get("done"):
-                raise RuntimeError(f"Analysis failed: {ana_result}")
+            ana_result = None
+            for ev in execute_analysis(prop_event, self.progress_queue, self.cancel_event, self.logger, self.config, self.thumbnail_manager, self.cuda_available):
+                if isinstance(ev, dict) and ("done" in ev or "output_dir" in ev):
+                    ana_result = ev
+            if not ana_result or not ana_result.get("done"):
+                raise RuntimeError("Analysis failed")
             report[-1] += " OK"
 
             metadata_path = ana_result['metadata_path']
@@ -5016,6 +5016,10 @@ class EnhancedAppUI(AppUI):
                 self.run_propagation_wrapper, all_outputs, progress, scenes, *args
             )
 
+        def analysis_handler(scenes, *args, progress: gr.Progress):
+            # Mirror the other handlers so Gradio gets consistent multi-output updates
+            yield from self._run_task_with_progress(self.run_analysis_wrapper, all_outputs, progress, scenes, *args)
+
         c['load_session_button'].click(
             fn=session_load_handler,
             inputs=[c['session_path_input']],
@@ -5055,7 +5059,7 @@ class EnhancedAppUI(AppUI):
                                         inputs=prop_inputs, outputs=all_outputs, show_progress="hidden").then(lambda p: gr.update(selected=3) if p else gr.update(), c['analysis_output_dir_state'], c['main_tabs'])
 
         analysis_inputs = [c['scenes_state']] + self.ana_input_components
-        c['start_analysis_button'].click(fn=self.run_analysis_wrapper,
+        c['start_analysis_button'].click(fn=analysis_handler,
                                          inputs=analysis_inputs, outputs=all_outputs, show_progress="hidden").then(lambda p: gr.update(selected=4) if p else gr.update(), c['analysis_metadata_path_state'], c['main_tabs'])
 
         c['find_people_button'].click(
