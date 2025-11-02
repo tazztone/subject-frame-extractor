@@ -4677,7 +4677,6 @@ class EnhancedAppUI(AppUI):
                 method='interval',
                 interval='1.0',
                 nth_frame='5',
-                fast_scene=False,
                 max_resolution="720",
                 thumbnails_only=True,
                 thumb_megapixels=0.2,
