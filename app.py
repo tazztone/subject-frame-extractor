@@ -402,6 +402,8 @@ class Config:
         if isinstance(default_val, bool):
             return env_val.lower() in ['true', '1', 'yes']
         if isinstance(default_val, int):
+            if '.' in env_val:
+                return float(env_val)
             return int(env_val)
         if isinstance(default_val, float):
             return float(env_val)
