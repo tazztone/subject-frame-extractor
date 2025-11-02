@@ -60,6 +60,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 _yolo_model_cache = {}
 _dino_model_cache = None
 _dam4sam_model_cache = {}
+_lpips_model_cache = {}
 
 try:
     from DAM4SAM.dam4sam_tracker import DAM4SAMTracker
@@ -1582,6 +1583,14 @@ def get_dam4sam_tracker(model_name: str, models_path: str, model_urls_tuple: tup
         return None
     return _dam4sam_model_cache.get(selected_name)
 
+
+def get_lpips_metric(model_name='alex', device='cuda'):
+    global _lpips_model_cache
+    device = device if torch.cuda.is_available() else 'cpu'
+    if model_name not in _lpips_model_cache:
+        _lpips_model_cache[model_name] = lpips.LPIPS(net=model_name).to(device)
+    return _lpips_model_cache[model_name]
+
 def initialize_analysis_models(params: AnalysisParameters, config: Config, logger: AppLogger, cuda_available: bool):
     device = "cuda" if cuda_available else "cpu"
     face_analyzer, ref_emb, person_detector, face_landmarker = None, None, None, None
@@ -2725,20 +2734,26 @@ class AnalysisPipeline(Pipeline):
         all_frame_nums_to_process = {fn for scene in scenes_to_process for fn in range(scene.start_frame, scene.end_frame) if fn in frame_map}
         image_files_to_process = [self.thumb_dir / frame_map[fn] for fn in sorted(list(all_frame_nums_to_process)) if frame_map.get(fn)]
         self.logger.info(f"Analyzing {len(image_files_to_process)} frames")
-        num_workers = 1 if self.params.disable_parallel else min(os.cpu_count() or 4, self.config.analysis.max_workers)
+        num_workers = 1 if self.params.disable_parallel else min(os.cpu_count() or 4, self.config.analysis.default_workers)
+        batch_size = self.config.analysis.default_batch_size
         with ThreadPoolExecutor(max_workers=num_workers) as executor:
-            futures = [executor.submit(self._process_single_frame, path) for path in image_files_to_process]
+            batches = [image_files_to_process[i:i + batch_size] for i in range(0, len(image_files_to_process), batch_size)]
+            futures = [executor.submit(self._process_batch, batch) for batch in batches]
             for future in as_completed(futures):
                 if self.cancel_event.is_set():
                     for f in futures: f.cancel()
                     break
                 try:
-                    future.result()
-                    if tracker:
-                        tracker.step(1)
+                    num_processed = future.result()
+                    if tracker and num_processed:
+                        tracker.step(num_processed)
                 except Exception as e:
-                    self.logger.error(f"Error processing future: {e}")
+                    self.logger.error(f"Error processing batch future: {e}")
 
+    def _process_batch(self, batch_paths):
+        for path in batch_paths:
+            self._process_single_frame(path)
+        return len(batch_paths)
 
     def _process_single_frame(self, thumb_path):
         if self.cancel_event.is_set(): return
@@ -3091,7 +3106,7 @@ def apply_ssim_dedup(all_frames_data, filters, dedup_mask, reasons, thumbnail_ma
 
 def apply_lpips_dedup(all_frames_data, filters, dedup_mask, reasons, thumbnail_manager, config):
     threshold = filters.get("lpips_threshold", 0.1)
-    loss_fn = lpips.LPIPS(net='alex')
+    loss_fn = get_lpips_metric()
     num_frames = len(all_frames_data)
     sorted_indices = sorted(range(num_frames), key=lambda i: all_frames_data[i]['filename'])
 
