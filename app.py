@@ -4712,7 +4712,7 @@ class EnhancedAppUI(AppUI):
                 face_model_name='buffalo_l',
                 enable_subject_mask=True,
                 dam4sam_model_name='sam21pp-T',
-                person_detector_model='yolo11s.pt',
+                person_detector_model='yolo11x.pt',
                 best_frame_strategy='Largest Person',
                 scene_detect=True,
                 text_prompt="",
@@ -4730,7 +4730,7 @@ class EnhancedAppUI(AppUI):
             pre_ana_result_gen = execute_pre_analysis(pre_ana_event, self.progress_queue, self.cancel_event, self.logger, self.config, self.thumbnail_manager, self.cuda_available)
             pre_ana_result = next(pre_ana_result_gen)
             if not pre_ana_result.get("done"):
-                raise RuntimeError("Pre-analysis failed")
+                raise RuntimeError(f"Pre-analysis failed: {pre_ana_result}")
             report[-1] += " OK"
 
             scenes = pre_ana_result['scenes']
