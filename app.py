@@ -27,6 +27,9 @@ import torch
 import traceback
 import urllib.request
 from torchvision.ops import box_convert
+from skimage.metrics import structural_similarity as ssim
+import lpips
+from torchvision import transforms
 
 from pathlib import Path
 
@@ -858,6 +861,7 @@ class FilterEvent(UIEvent):
     require_face_match: bool
     dedup_thresh: int
     slider_values: dict[str, float]
+    dedup_method: str
 
 @dataclass
 class ExportEvent(UIEvent):
@@ -2911,7 +2915,7 @@ def histogram_svg(hist_data, title="", logger=None):
         if logger: logger.error("Failed to generate histogram SVG.", exc_info=True)
         return """<svg width="100" height="20" xmlns="http://www.w3.org/2000/svg"><text x="5" y="15" font-family="sans-serif" font-size="10" fill="red">Plotting failed</text></svg>"""
 
-def apply_all_filters_vectorized(all_frames_data, filters, config: 'Config'):
+def apply_all_filters_vectorized(all_frames_data, filters, config: 'Config', thumbnail_manager=None):
     if not all_frames_data:
         return [], [], Counter(), {}
 
@@ -2939,15 +2943,27 @@ def apply_all_filters_vectorized(all_frames_data, filters, config: 'Config'):
     # 2. Handle deduplication
     dedup_mask = np.ones(num_frames, dtype=bool)
     reasons = defaultdict(list)
-    if filters.get("enable_dedup") and imagehash and filters.get("dedup_thresh", -1) != -1:
-        sorted_indices = sorted(range(num_frames), key=lambda i: filenames[i])
-        hashes = {i: imagehash.hex_to_hash(all_frames_data[i]['phash']) for i in range(num_frames) if 'phash' in all_frames_data[i]}
-        for i in range(1, len(sorted_indices)):
-            c_idx, p_idx = sorted_indices[i], sorted_indices[i - 1]
-            if p_idx in hashes and c_idx in hashes and (hashes[p_idx] - hashes[c_idx]) <= filters.get("dedup_thresh", 5):
-                if dedup_mask[c_idx]:
-                    reasons[filenames[c_idx]].append('duplicate')
-                dedup_mask[c_idx] = False
+    dedup_method = filters.get("dedup_method", "pHash")
+
+    if filters.get("enable_dedup"):
+        if dedup_method == "pHash" and imagehash and filters.get("dedup_thresh", -1) != -1:
+            sorted_indices = sorted(range(num_frames), key=lambda i: filenames[i])
+            hashes = {i: imagehash.hex_to_hash(all_frames_data[i]['phash']) for i in range(num_frames) if 'phash' in all_frames_data[i]}
+            for i in range(1, len(sorted_indices)):
+                c_idx, p_idx = sorted_indices[i], sorted_indices[i - 1]
+                if p_idx in hashes and c_idx in hashes and (hashes[p_idx] - hashes[c_idx]) <= filters.get("dedup_thresh", 5):
+                    if all_frames_data[c_idx].get('metrics', {}).get('quality_score', 0) > all_frames_data[p_idx].get('metrics', {}).get('quality_score', 0):
+                        if dedup_mask[p_idx]:
+                            reasons[filenames[p_idx]].append('duplicate')
+                        dedup_mask[p_idx] = False
+                    else:
+                        if dedup_mask[c_idx]:
+                            reasons[filenames[c_idx]].append('duplicate')
+                        dedup_mask[c_idx] = False
+        elif dedup_method == "SSIM" and thumbnail_manager:
+            dedup_mask, reasons = apply_ssim_dedup(all_frames_data, filters, dedup_mask, reasons, thumbnail_manager, config)
+        elif dedup_method == "LPIPS" and thumbnail_manager:
+            dedup_mask, reasons = apply_lpips_dedup(all_frames_data, filters, dedup_mask, reasons, thumbnail_manager, config)
 
     # 3. Define all metric filters in a structured way
     filter_definitions = [
@@ -3031,6 +3047,82 @@ def apply_all_filters_vectorized(all_frames_data, filters, config: 'Config'):
 
     return kept, rejected, total_reasons, reasons
 
+def apply_ssim_dedup(all_frames_data, filters, dedup_mask, reasons, thumbnail_manager, config):
+    threshold = filters.get("ssim_threshold", 0.95)
+    num_frames = len(all_frames_data)
+    sorted_indices = sorted(range(num_frames), key=lambda i: all_frames_data[i]['filename'])
+
+    for i in range(1, len(sorted_indices)):
+        c_idx, p_idx = sorted_indices[i], sorted_indices[i - 1]
+
+        c_frame_data = all_frames_data[c_idx]
+        p_frame_data = all_frames_data[p_idx]
+
+        c_thumb_path = Path(config.paths.downloads) / Path(p_frame_data['filename']).parent.name / "thumbs" / c_frame_data['filename']
+        p_thumb_path = Path(config.paths.downloads) / Path(p_frame_data['filename']).parent.name / "thumbs" / p_frame_data['filename']
+
+        img1 = thumbnail_manager.get(p_thumb_path)
+        img2 = thumbnail_manager.get(c_thumb_path)
+
+        if img1 is not None and img2 is not None:
+            img1_gray = cv2.cvtColor(img1, cv2.COLOR_RGB2GRAY)
+            img2_gray = cv2.cvtColor(img2, cv2.COLOR_RGB2GRAY)
+
+            similarity = ssim(img1_gray, img2_gray)
+
+            if similarity >= threshold:
+                # Keep the one with the higher quality score
+                if all_frames_data[c_idx].get('metrics', {}).get('quality_score', 0) > all_frames_data[p_idx].get('metrics', {}).get('quality_score', 0):
+                    if dedup_mask[p_idx]:
+                        reasons[all_frames_data[p_idx]['filename']].append('duplicate')
+                    dedup_mask[p_idx] = False
+                else:
+                    if dedup_mask[c_idx]:
+                        reasons[all_frames_data[c_idx]['filename']].append('duplicate')
+                    dedup_mask[c_idx] = False
+    return dedup_mask, reasons
+
+def apply_lpips_dedup(all_frames_data, filters, dedup_mask, reasons, thumbnail_manager, config):
+    threshold = filters.get("lpips_threshold", 0.1)
+    loss_fn = lpips.LPIPS(net='alex')
+    num_frames = len(all_frames_data)
+    sorted_indices = sorted(range(num_frames), key=lambda i: all_frames_data[i]['filename'])
+
+    transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+    ])
+
+    for i in range(1, len(sorted_indices)):
+        c_idx, p_idx = sorted_indices[i], sorted_indices[i - 1]
+
+        c_frame_data = all_frames_data[c_idx]
+        p_frame_data = all_frames_data[p_idx]
+
+        c_thumb_path = Path(config.paths.downloads) / Path(p_frame_data['filename']).parent.name / "thumbs" / c_frame_data['filename']
+        p_thumb_path = Path(config.paths.downloads) / Path(p_frame_data['filename']).parent.name / "thumbs" / p_frame_data['filename']
+
+        img1 = thumbnail_manager.get(p_thumb_path)
+        img2 = thumbnail_manager.get(c_thumb_path)
+
+        if img1 is not None and img2 is not None:
+            img1_t = transform(img1).unsqueeze(0)
+            img2_t = transform(img2).unsqueeze(0)
+
+            distance = loss_fn.forward(img1_t, img2_t).item()
+
+            if distance <= threshold:
+                if all_frames_data[c_idx].get('metrics', {}).get('quality_score', 0) > all_frames_data[p_idx].get('metrics', {}).get('quality_score', 0):
+                    if dedup_mask[p_idx]:
+                        reasons[all_frames_data[p_idx]['filename']].append('duplicate')
+                    dedup_mask[p_idx] = False
+                else:
+                    if dedup_mask[c_idx]:
+                        reasons[all_frames_data[c_idx]['filename']].append('duplicate')
+                    dedup_mask[c_idx] = False
+    return dedup_mask, reasons
+
+
 def on_filters_changed(event: FilterEvent, thumbnail_manager, config: 'Config', logger=None):
     logger = logger or AppLogger(config=Config())
     if not event.all_frames_data: return {"filter_status_text": "Run analysis to see results.", "results_gallery": []}
@@ -3038,13 +3130,14 @@ def on_filters_changed(event: FilterEvent, thumbnail_manager, config: 'Config', 
     filters.update({"require_face_match": event.require_face_match, "dedup_thresh": event.dedup_thresh,
                     "face_sim_enabled": bool(event.per_metric_values.get("face_sim")),
                     "mask_area_enabled": bool(event.per_metric_values.get("mask_area_pct")),
-                    "enable_dedup": any('phash' in f for f in event.all_frames_data) if event.all_frames_data else False})
+                    "enable_dedup": any('phash' in f for f in event.all_frames_data) if event.all_frames_data else False,
+                    "dedup_method": event.dedup_method})
     status_text, gallery_update = _update_gallery(event.all_frames_data, filters, event.output_dir, event.gallery_view,
                                                   event.show_overlay, event.overlay_alpha, thumbnail_manager, config, logger)
     return {"filter_status_text": status_text, "results_gallery": gallery_update}
 
 def _update_gallery(all_frames_data, filters, output_dir, gallery_view, show_overlay, overlay_alpha, thumbnail_manager, config: 'Config', logger):
-    kept, rejected, counts, per_frame_reasons = apply_all_filters_vectorized(all_frames_data, filters or {}, config)
+    kept, rejected, counts, per_frame_reasons = apply_all_filters_vectorized(all_frames_data, filters or {}, config, thumbnail_manager)
     status_parts = [f"**Kept:** {len(kept)}/{len(all_frames_data)}"]
     if counts:
         rejection_reasons = ', '.join([f'{k}: {v}' for k, v in counts.most_common()])
@@ -4107,7 +4200,13 @@ class AppUI:
                     self.components['metric_accs']['dedup'] = dedup_acc
                     f_def = self.config.filter_defaults.dedup_thresh
                     self._create_component('enable_dedup_input', 'checkbox', {'label': "Enable Deduplication", 'value': self.config.ui_defaults.enable_dedup})
-                    self._create_component('dedup_thresh_input', 'slider', {'label': "Similarity Threshold", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': f_def['default'], 'step': f_def['step'], 'info': "Filters out visually similar frames. A lower value is stricter (more filtering). A value of 0 means only identical images will be removed. Set to -1 to disable."})
+                    self._create_component('dedup_method_input', 'dropdown', {'label': "Deduplication Method", 'choices': ["pHash", "SSIM", "LPIPS"], 'value': "pHash"})
+                    self._create_component('dedup_thresh_input', 'slider', {'label': "pHash Threshold", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': f_def['default'], 'step': f_def['step'], 'info': "Filters out visually similar frames. A lower value is stricter (more filtering). A value of 0 means only identical images will be removed. Set to -1 to disable."})
+                    self._create_component('ssim_threshold_input', 'slider', {'label': "SSIM Threshold", 'minimum': 0.0, 'maximum': 1.0, 'value': 0.95, 'step': 0.01, 'visible': False})
+                    self._create_component('lpips_threshold_input', 'slider', {'label': "LPIPS Threshold", 'minimum': 0.0, 'maximum': 1.0, 'value': 0.1, 'step': 0.01, 'visible': False})
+                    self._create_component('dedup_visual_diff_input', 'checkbox', {'label': "Enable Visual Diff", 'value': False})
+                    self._create_component('visual_diff_image', 'image', {'label': "Visual Diff", 'visible': False})
+                    self._create_component('calculate_diff_button', 'button', {'value': "Calculate Diff", 'visible': False})
 
                 metric_configs = {
                     'quality_score': {'open': True}, 'niqe': {'open': False}, 'sharpness': {'open': True},
@@ -5067,10 +5166,10 @@ class EnhancedAppUI(AppUI):
         slider_keys, slider_comps = sorted(c['metric_sliders'].keys()), [c['metric_sliders'][k] for k in sorted(c['metric_sliders'].keys())]
         fast_filter_inputs = [c['all_frames_data_state'], c['per_metric_values_state'], c['analysis_output_dir_state'],
                               c['gallery_view_toggle'], c['show_mask_overlay_input'], c['overlay_alpha_slider'],
-                              c['require_face_match_input'], c['dedup_thresh_input'], c['enable_dedup_input']] + slider_comps
+                              c['require_face_match_input'], c['dedup_thresh_input'], c['enable_dedup_input'], c['dedup_method_input']] + slider_comps
         fast_filter_outputs = [c['filter_status_text'], c['results_gallery']]
         for control in (slider_comps + [c['dedup_thresh_input'], c['gallery_view_toggle'], c['show_mask_overlay_input'],
-                                       c['overlay_alpha_slider'], c['require_face_match_input'], c['enable_dedup_input']]):
+                                       c['overlay_alpha_slider'], c['require_face_match_input'], c['enable_dedup_input'], c['dedup_method_input']]):
             (control.release if hasattr(control, 'release') else control.input if hasattr(control, 'input') else control.change)(self.on_filters_changed_wrapper, fast_filter_inputs, fast_filter_outputs)
 
         load_outputs = ([c['all_frames_data_state'], c['per_metric_values_state'], c['filter_status_text'], c['results_gallery'],
@@ -5158,19 +5257,102 @@ class EnhancedAppUI(AppUI):
         c['expand_all_metrics_button'].click(lambda: {acc: gr.update(open=True) for acc in all_accordions}, [], all_accordions)
         c['collapse_all_metrics_button'].click(lambda: {acc: gr.update(open=False) for acc in all_accordions}, [], all_accordions)
 
-    def on_filters_changed_wrapper(self, all_frames_data, per_metric_values, output_dir, gallery_view, show_overlay, overlay_alpha, require_face_match, dedup_thresh, enable_dedup, *slider_values):
+        c['dedup_method_input'].change(
+            lambda method: {
+                c['dedup_thresh_input']: gr.update(visible=method == 'pHash', label=f"{method} Threshold"),
+                c['ssim_threshold_input']: gr.update(visible=method == 'SSIM'),
+                c['lpips_threshold_input']: gr.update(visible=method == 'LPIPS')
+            },
+            c['dedup_method_input'],
+            [c['dedup_thresh_input'], c['ssim_threshold_input'], c['lpips_threshold_input']]
+        )
+
+        c['dedup_visual_diff_input'].change(
+            lambda x: {
+                c['visual_diff_image']: gr.update(visible=x),
+                c['calculate_diff_button']: gr.update(visible=x)
+            },
+            c['dedup_visual_diff_input'],
+            [c['visual_diff_image'], c['calculate_diff_button']]
+        )
+
+        c['calculate_diff_button'].click(
+            self.calculate_visual_diff,
+            [c['results_gallery'], c['all_frames_data_state'], c['dedup_method_input'], c['dedup_thresh_input'], c['ssim_threshold_input'], c['lpips_threshold_input'], c['thumbnail_manager']],
+            [c['visual_diff_image']]
+        )
+
+    def on_filters_changed_wrapper(self, all_frames_data, per_metric_values, output_dir, gallery_view, show_overlay, overlay_alpha, require_face_match, dedup_thresh, enable_dedup, dedup_method, *slider_values):
         slider_values_dict = {k: v for k, v in zip(sorted(self.components['metric_sliders'].keys()), slider_values)}
 
         # Manually add enable_dedup to the dictionary passed to the event
         # because it's not a slider and isn't included in slider_values
         event_filters = slider_values_dict
         event_filters['enable_dedup'] = enable_dedup
+        event_filters['dedup_method'] = dedup_method
 
         result = on_filters_changed(FilterEvent(all_frames_data, per_metric_values, output_dir, gallery_view, show_overlay, overlay_alpha,
-                                                require_face_match, dedup_thresh, event_filters),
+                                                require_face_match, dedup_thresh, event_filters, dedup_method),
                                     self.thumbnail_manager, self.config)
         return result['filter_status_text'], result['results_gallery']
 
+    def calculate_visual_diff(self, gallery, all_frames_data, dedup_method, dedup_thresh, ssim_thresh, lpips_thresh, thumbnail_manager):
+        if not gallery or not gallery.selection:
+            return None
+
+        selected_image_index = gallery.selection['index']
+        selected_frame_data = all_frames_data[selected_image_index]
+
+        # Find the duplicate frame
+        duplicate_frame_data = None
+        for frame_data in all_frames_data:
+            if frame_data['filename'] == selected_frame_data['filename']:
+                continue
+
+            if dedup_method == "pHash":
+                hash1 = imagehash.hex_to_hash(selected_frame_data['phash'])
+                hash2 = imagehash.hex_to_hash(frame_data['phash'])
+                if hash1 - hash2 <= dedup_thresh:
+                    duplicate_frame_data = frame_data
+                    break
+            elif dedup_method == "SSIM":
+                img1 = thumbnail_manager.get(Path(self.config.paths.downloads) / Path(selected_frame_data['filename']).parent.name / "thumbs" / selected_frame_data['filename'])
+                img2 = thumbnail_manager.get(Path(self.config.paths.downloads) / Path(frame_data['filename']).parent.name / "thumbs" / frame_data['filename'])
+                if img1 is not None and img2 is not None:
+                    img1_gray = cv2.cvtColor(img1, cv2.COLOR_RGB2GRAY)
+                    img2_gray = cv2.cvtColor(img2, cv2.COLOR_RGB2GRAY)
+                    similarity = ssim(img1_gray, img2_gray)
+                    if similarity >= ssim_thresh:
+                        duplicate_frame_data = frame_data
+                        break
+            elif dedup_method == "LPIPS":
+                loss_fn = lpips.LPIPS(net='alex')
+                transform = transforms.Compose([
+                    transforms.ToTensor(),
+                    transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+                ])
+                img1 = thumbnail_manager.get(Path(self.config.paths.downloads) / Path(selected_frame_data['filename']).parent.name / "thumbs" / selected_frame_data['filename'])
+                img2 = thumbnail_manager.get(Path(self.config.paths.downloads) / Path(frame_data['filename']).parent.name / "thumbs" / frame_data['filename'])
+                if img1 is not None and img2 is not None:
+                    img1_t = transform(img1).unsqueeze(0)
+                    img2_t = transform(img2).unsqueeze(0)
+                    distance = loss_fn.forward(img1_t, img2_t).item()
+                    if distance <= lpips_thresh:
+                        duplicate_frame_data = frame_data
+                        break
+
+        if duplicate_frame_data:
+            img1 = thumbnail_manager.get(Path(self.config.paths.downloads) / Path(selected_frame_data['filename']).parent.name / "thumbs" / selected_frame_data['filename'])
+            img2 = thumbnail_manager.get(Path(self.config.paths.downloads) / Path(duplicate_frame_data['filename']).parent.name / "thumbs" / duplicate_frame_data['filename'])
+
+            if img1 is not None and img2 is not None:
+                # Create a side-by-side comparison image
+                h, w, _ = img1.shape
+                comparison_image = np.zeros((h, w * 2, 3), dtype=np.uint8)
+                comparison_image[:, :w] = img1
+                comparison_image[:, w:] = img2
+                return comparison_image
+        return None
 
     def on_reset_filters(self, all_frames_data, per_metric_values, output_dir):
         c = self.components
