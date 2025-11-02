@@ -18,8 +18,6 @@ imagehash
 mediapipe
 scikit-learn
 imagehash
-torch
-torchvision
 groundingdino-py==0.4.0
 scikit-image
 lpips
