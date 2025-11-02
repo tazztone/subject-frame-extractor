@@ -45,7 +45,6 @@ Settings for `ffmpeg` used for frame extraction.
 *   [`log_level`](app.py:143): Logging level for `ffmpeg`.
 *   [`thumbnail_quality`](app.py:144): Quality setting for thumbnail extraction.
 *   [`scene_threshold`](app.py:145): Threshold for scene detection.
-*   [`fast_scene_threshold`](app.py:146): Threshold for fast scene detection.
 
 ### 2.5. `Cache`
 

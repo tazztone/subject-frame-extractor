@@ -339,3 +339,5 @@ pytest.ini
 previews/
 from_json_mock/mock.jsonl
 pytest.ini
+jules-dry-run-assets.zip
+*.patch
