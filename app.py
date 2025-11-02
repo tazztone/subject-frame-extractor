@@ -3981,6 +3981,12 @@ class AppUI:
 
     def build_ui(self):
         css = """.gradio-gallery { overflow-y: hidden !important; }
+                 .gradio-gallery img {
+                    width: 100%;
+                    height: 100%;
+                    object-fit: scale-down;
+                    object-position: top left;
+                 }
 .plot-and-slider-column { max-width: 560px !important; margin: auto; } .scene-editor { border: 1px solid #444; padding: 10px; border-radius: 5px; } .log-container > .gr-utils-error { display: none !important; } .progress-details { font-size: 1rem !important; color: #333 !import ant; font-weight: 500; padding: 8px 0; } .gr-progress .progress { height: 28px !important; }"""
         with gr.Blocks(theme=gr.themes.Default(), css=css) as demo:
             self._build_header()
