@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import patch, mock_open, MagicMock
 import os
 import app
+import json
 
 from app import Config, CompositionRoot
 
@@ -50,3 +51,57 @@ def test_composition_root_uses_json():
          patch('app.AppLogger'): # Prevent logger instantiation
         app.CompositionRoot()
         mock_config.assert_called_once_with(config_path="config.json")
+
+class TestConfigInitialization(unittest.TestCase):
+    @patch('app.Path.mkdir')
+    def test_create_dirs_called_on_init(self, mock_mkdir):
+        """Verify that necessary directories are created on Config initialization."""
+        with patch('app.open', mock_open(read_data='{}'), create=True):
+            Config(config_path='dummy_path.json')
+            # Check that mkdir was called for the default log, models, and downloads paths
+            self.assertIn(unittest.mock.call(exist_ok=True, parents=True), mock_mkdir.call_args_list)
+
+    @patch('app.Path.mkdir', MagicMock())
+    @patch.dict(os.environ, {
+        'APP_PATHS_LOGS': 'env_logs',
+        'APP_LOGGING_LOG_LEVEL': 'DEBUG',
+        'APP_RETRY_MAX_ATTEMPTS': '10',
+        'APP_CACHE_SIZE': '500',
+        'APP_YOUTUBE_DL_FORMAT_STRING': 'bestvideo',
+        'APP_CHOICES_MAX_RESOLUTION': '4320,1440',
+        'APP_MONITORING_CPU_WARNING_THRESHOLD_PERCENT': '95.5',
+        'APP_GRADIO_DEFAULTS_SHOW_MASK_OVERLAY': 'false'
+    })
+    def test_env_vars_override_defaults(self):
+        """Test that environment variables correctly override default config values."""
+        with patch('app.open', mock_open(read_data='{}'), create=True):
+            cfg = Config(config_path='nonexistent.json') # Ensure no file is read
+
+            self.assertEqual(cfg.paths.logs, 'env_logs')
+            self.assertEqual(cfg.logging.log_level, 'DEBUG')
+            self.assertEqual(cfg.retry.max_attempts, 10)
+            self.assertEqual(cfg.cache.size, 500)
+            self.assertEqual(cfg.youtube_dl.format_string, 'bestvideo')
+            self.assertEqual(cfg.choices.max_resolution, ['4320', '1440'])
+            self.assertEqual(cfg.monitoring.cpu_warning_threshold_percent, 95.5)
+            self.assertFalse(cfg.gradio_defaults.show_mask_overlay)
+
+    @patch('app.Path.mkdir', MagicMock())
+    @patch.dict(os.environ, {
+        'APP_PATHS_LOGS': 'env_logs_override_file',
+        'APP_RETRY_MAX_ATTEMPTS': '20'
+    })
+    def test_env_vars_override_file_config(self):
+        """Test that environment variables take precedence over a config file."""
+        file_config = {
+            "paths": {"logs": "file_logs"},
+            "retry": {"max_attempts": 5}
+        }
+        mock_file_content = json.dumps(file_config)
+
+        with patch('app.open', mock_open(read_data=mock_file_content), create=True), \
+             patch('app.Path.exists', return_value=True):
+            cfg = Config(config_path='dummy_path.json')
+
+            self.assertEqual(cfg.paths.logs, 'env_logs_override_file') # Env var wins
+            self.assertEqual(cfg.retry.max_attempts, 20)             # Env var wins
