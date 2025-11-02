@@ -159,7 +159,6 @@ class Config:
         log_level: str = "info"
         thumbnail_quality: int = 80
         scene_threshold: float = 0.4
-        fast_scene_threshold: float = 0.5
 
     @dataclass
     class Cache:
@@ -208,7 +207,6 @@ class Config:
         dedup_thresh: int = 5
         method: str = "all"
         interval: float = 5.0
-        fast_scene: bool = False
         nth_frame: int = 5
         disable_parallel: bool = False
 
@@ -798,7 +796,6 @@ class ExtractionEvent(UIEvent):
     method: str
     interval: str
     nth_frame: str
-    fast_scene: bool
     max_resolution: str
     thumbnails_only: bool
     thumb_megapixels: float
@@ -1168,7 +1165,6 @@ class AnalysisParameters:
     method: str = ""
     interval: float = 0.0
     max_resolution: str = ""
-    fast_scene: bool = False
     output_folder: str = ""
     video_path: str = ""
     disable_parallel: bool = False
@@ -3845,7 +3841,7 @@ class AppUI:
         self.cancel_event = cancel_event
         self.thumbnail_manager = thumbnail_manager
         self.components, self.cuda_available = {}, torch.cuda.is_available()
-        self.ext_ui_map_keys = ['source_path', 'upload_video', 'method', 'interval', 'nth_frame', 'fast_scene',
+        self.ext_ui_map_keys = ['source_path', 'upload_video', 'method', 'interval', 'nth_frame',
                                 'max_resolution', 'thumb_megapixels', 'scene_detect']
         self.ana_ui_map_keys = [
             'output_folder', 'video_path', 'resume', 'enable_face_filter', 'face_ref_img_path', 'face_ref_img_upload',
@@ -3964,13 +3960,6 @@ class AppUI:
                     'value': self.config.ui_defaults.nth_frame,
                     'visible': self.config.ui_defaults.method in ['every_nth_frame', 'nth_plus_keyframes']
                 })
-                self._create_component('fast_scene_input', 'checkbox', {
-                    'label': "Fast Scene Detect (Lower Quality)",
-                    'info': "Uses a faster but less precise algorithm for scene detection.",
-                    'visible': False
-                })
-
-
         gr.Markdown("---"); gr.Markdown("### Step 3: Start Extraction")
         self.components.update({'start_extraction_button': gr.Button("🚀 Start Extraction", variant="primary")})
 
@@ -4841,11 +4830,10 @@ class EnhancedAppUI(AppUI):
         c['method_input'].change(
             lambda m: {
                 c['interval_input']: gr.update(visible=m == 'interval'),
-                c['nth_frame_input']: gr.update(visible=m in ['every_nth_frame', 'nth_plus_keyframes']),
-                c['fast_scene_input']: gr.update(visible=m == 'scene')
+                c['nth_frame_input']: gr.update(visible=m in ['every_nth_frame', 'nth_plus_keyframes'])
             },
             c['method_input'],
-            [c['interval_input'], c['nth_frame_input'], c['fast_scene_input']]
+            [c['interval_input'], c['nth_frame_input']]
         )
 
         c['primary_seed_strategy_input'].change(
