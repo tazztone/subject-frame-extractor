@@ -3388,27 +3388,31 @@ def _wire_recompute_handler(config, logger, thumbnail_manager, scenes, shot_id, 
 # --- PIPELINE LOGIC ---
 
 def execute_extraction(event: ExtractionEvent, progress_queue: Queue, cancel_event: threading.Event, logger: AppLogger, config: Config, progress=None):
-    params_dict = asdict(event)
-    if event.upload_video:
-        source, dest = params_dict.pop('upload_video'), str(Path(config.paths.downloads) / Path(event.upload_video).name)
-        shutil.copy2(source, dest)
-        params_dict['source_path'] = dest
+    try:
+        params_dict = asdict(event)
+        if event.upload_video:
+            source, dest = params_dict.pop('upload_video'), str(Path(config.paths.downloads) / Path(event.upload_video).name)
+            shutil.copy2(source, dest)
+            params_dict['source_path'] = dest
 
-    params = AnalysisParameters.from_ui(logger, config, **params_dict)
-    tracker = AdvancedProgressTracker(progress, progress_queue, logger, ui_stage_name="Extracting")
-    pipeline = EnhancedExtractionPipeline(config, logger, params, progress_queue, cancel_event)
+        params = AnalysisParameters.from_ui(logger, config, **params_dict)
+        tracker = AdvancedProgressTracker(progress, progress_queue, logger, ui_stage_name="Extracting")
+        pipeline = EnhancedExtractionPipeline(config, logger, params, progress_queue, cancel_event)
 
-    # The run method now accepts the tracker
-    result = pipeline.run(tracker=tracker)
+        # The run method now accepts the tracker
+        result = pipeline.run(tracker=tracker)
 
-    if result and result.get("done"):
-        yield {
-            "log": "Extraction complete.",
-            "status": f"Output: {result['output_dir']}",
-            "extracted_video_path_state": result.get("video_path", ""),
-            "extracted_frames_dir_state": result["output_dir"],
-            "done": True
-        }
+        if result and result.get("done"):
+            yield {
+                "log": "Extraction complete.",
+                "status": f"Output: {result['output_dir']}",
+                "extracted_video_path_state": result.get("video_path", ""),
+                "extracted_frames_dir_state": result["output_dir"],
+                "done": True
+            }
+    except Exception as e:
+        logger.error("Extraction execution failed", exc_info=True)
+        yield {"log": f"[ERROR] Extraction failed unexpectedly: {e}", "done": False}
 
 def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue, cancel_event: threading.Event, logger: AppLogger,
                          config: Config, thumbnail_manager, cuda_available, progress=None):
@@ -3755,81 +3759,89 @@ def execute_session_load(
 
 def execute_propagation(event: PropagationEvent, progress_queue: Queue, cancel_event: threading.Event, logger: AppLogger,
                         config: Config, thumbnail_manager, cuda_available, progress=None):
-    params = AnalysisParameters.from_ui(logger, config, **asdict(event.analysis_params))
-    is_folder_mode = not params.video_path
+    try:
+        params = AnalysisParameters.from_ui(logger, config, **asdict(event.analysis_params))
+        is_folder_mode = not params.video_path
 
-    if is_folder_mode:
-        # In folder mode, "propagation" is actually the full analysis step.
-        scenes_to_process = [Scene(**{k: v for k, v in s.items() if k in {f.name for f in fields(Scene)}}) for s in event.scenes]
-    else:
-        # In video mode, we filter for included scenes.
-        scene_fields = {f.name for f in fields(Scene)}
-        scenes_to_process = [
-            Scene(**{k: v for k, v in s.items() if k in scene_fields})
-            for s in event.scenes if s.get('status') == 'included'
-        ]
+        if is_folder_mode:
+            # In folder mode, "propagation" is actually the full analysis step.
+            scenes_to_process = [Scene(**{k: v for k, v in s.items() if k in {f.name for f in fields(Scene)}}) for s in event.scenes]
+        else:
+            # In video mode, we filter for included scenes.
+            scene_fields = {f.name for f in fields(Scene)}
+            scenes_to_process = [
+                Scene(**{k: v for k, v in s.items() if k in scene_fields})
+                for s in event.scenes if s.get('status') == 'included'
+            ]
 
-    if not scenes_to_process:
-        yield {"log": "No scenes were included for processing.", "status": "Skipped."}
-        return
-
-    tracker = AdvancedProgressTracker(progress, progress_queue, logger, ui_stage_name="Analysis")
-
-    if is_folder_mode:
-        # The number of steps is just the number of images to analyze.
-        tracker.start(len(scenes_to_process), desc="Analyzing Images")
-    else:
-        video_info = VideoManager.get_video_info(params.video_path)
-        totals = estimate_totals(params, video_info, scenes_to_process)
-        total_steps = totals.get("propagation", 0) + len(scenes_to_process) # Propagation + analysis
-        tracker.start(total_steps, desc="Propagating Masks & Analyzing")
-
-    pipeline = AnalysisPipeline(
-        config=config,
-        logger=logger,
-        params=params,
-        progress_queue=progress_queue,
-        cancel_event=cancel_event,
-        thumbnail_manager=thumbnail_manager
-    )
-
-    result = pipeline.run_full_analysis(scenes_to_process, tracker=tracker)
-
-    if result and result.get("done"):
-        # Verify that masks were actually created
-        masks_dir = Path(result['output_dir']) / "masks"
-        mask_files = list(masks_dir.glob("*.png")) if masks_dir.exists() else []
-
-        if not mask_files:
-            yield {"log": "❌ Propagation failed - no masks were generated. Check DAM4SAM initialization.",
-                    "status": "Failed", "done": False}
+        if not scenes_to_process:
+            yield {"log": "No scenes were included for processing.", "status": "Skipped."}
             return
 
-        yield {"log": f"✅ Propagation complete. Generated {len(mask_files)} masks.",
-                "status": f"Output at {result['output_dir']}", "output_dir": result['output_dir'], "done": True}
-    else:
-        yield {"log": "❌ Propagation failed - pipeline returned no results.",
-                "status": "Failed", "done": False}
+        tracker = AdvancedProgressTracker(progress, progress_queue, logger, ui_stage_name="Analysis")
+
+        if is_folder_mode:
+            # The number of steps is just the number of images to analyze.
+            tracker.start(len(scenes_to_process), desc="Analyzing Images")
+        else:
+            video_info = VideoManager.get_video_info(params.video_path)
+            totals = estimate_totals(params, video_info, scenes_to_process)
+            total_steps = totals.get("propagation", 0) + len(scenes_to_process) # Propagation + analysis
+            tracker.start(total_steps, desc="Propagating Masks & Analyzing")
+
+        pipeline = AnalysisPipeline(
+            config=config,
+            logger=logger,
+            params=params,
+            progress_queue=progress_queue,
+            cancel_event=cancel_event,
+            thumbnail_manager=thumbnail_manager
+        )
+
+        result = pipeline.run_full_analysis(scenes_to_process, tracker=tracker)
+
+        if result and result.get("done"):
+            # Verify that masks were actually created
+            masks_dir = Path(result['output_dir']) / "masks"
+            mask_files = list(masks_dir.glob("*.png")) if masks_dir.exists() else []
+
+            if not mask_files:
+                yield {"log": "❌ Propagation failed - no masks were generated. Check DAM4SAM initialization.",
+                        "status": "Failed", "done": False}
+                return
+
+            yield {"log": f"✅ Propagation complete. Generated {len(mask_files)} masks.",
+                    "status": f"Output at {result['output_dir']}", "output_dir": result['output_dir'], "done": True}
+        else:
+            yield {"log": "❌ Propagation failed - pipeline returned no results.",
+                    "status": "Failed", "done": False}
+    except Exception as e:
+        logger.error("Propagation execution failed", exc_info=True)
+        yield {"log": f"[ERROR] Propagation failed unexpectedly: {e}", "done": False}
 
 def execute_analysis(event: PropagationEvent, progress_queue: Queue, cancel_event: threading.Event, logger: AppLogger,
                      config: Config, thumbnail_manager, cuda_available, progress=None):
-    params = AnalysisParameters.from_ui(logger, config, **asdict(event.analysis_params))
-    scenes_to_process = [Scene(**{k: v for k, v in s.items() if k in {f.name for f in fields(Scene)}}) for s in event.scenes if s.get('status') == 'included']
-    if not scenes_to_process:
-        yield {"log": "No scenes to analyze.", "status": "Skipped."}
-        return
+    try:
+        params = AnalysisParameters.from_ui(logger, config, **asdict(event.analysis_params))
+        scenes_to_process = [Scene(**{k: v for k, v in s.items() if k in {f.name for f in fields(Scene)}}) for s in event.scenes if s.get('status') == 'included']
+        if not scenes_to_process:
+            yield {"log": "No scenes to analyze.", "status": "Skipped."}
+            return
 
-    video_info = VideoManager.get_video_info(params.video_path)
-    totals = estimate_totals(params, video_info, scenes_to_process)
-    tracker = AdvancedProgressTracker(progress, progress_queue, logger, ui_stage_name="Analyzing")
-    tracker.start(sum(s.end_frame - s.start_frame for s in scenes_to_process), desc="Analyzing Frames")
+        video_info = VideoManager.get_video_info(params.video_path)
+        totals = estimate_totals(params, video_info, scenes_to_process)
+        tracker = AdvancedProgressTracker(progress, progress_queue, logger, ui_stage_name="Analyzing")
+        tracker.start(sum(s.end_frame - s.start_frame for s in scenes_to_process), desc="Analyzing Frames")
 
-    pipeline = AnalysisPipeline(config, logger, params, progress_queue, cancel_event, thumbnail_manager)
-    result = pipeline.run_analysis_only(scenes_to_process, tracker=tracker)
+        pipeline = AnalysisPipeline(config, logger, params, progress_queue, cancel_event, thumbnail_manager)
+        result = pipeline.run_analysis_only(scenes_to_process, tracker=tracker)
 
-    if result and result.get("done"):
-        yield {"log": "Analysis complete.", "status": f"Metadata saved to {result['metadata_path']}",
-               "output_dir": result['output_dir'], "metadata_path": result['metadata_path'], "done": True}
+        if result and result.get("done"):
+            yield {"log": "Analysis complete.", "status": f"Metadata saved to {result['metadata_path']}",
+                   "output_dir": result['output_dir'], "metadata_path": result['metadata_path'], "done": True}
+    except Exception as e:
+        logger.error("Analysis execution failed", exc_info=True)
+        yield {"log": f"[ERROR] Analysis failed unexpectedly: {e}", "done": False}
 
 # --- Scene gallery helpers (module-level) ---
 def scene_matches_view(scene: dict, view: str) -> bool:
