@@ -2922,14 +2922,8 @@ def histogram_svg(hist_data, title="", logger=None):
         if logger: logger.error("Failed to generate histogram SVG.", exc_info=True)
         return """<svg width="100" height="20" xmlns="http://www.w3.org/2000/svg"><text x="5" y="15" font-family="sans-serif" font-size="10" fill="red">Plotting failed</text></svg>"""
 
-def apply_all_filters_vectorized(all_frames_data, filters, config: 'Config', thumbnail_manager=None):
-    if not all_frames_data:
-        return [], [], Counter(), {}
-
-    num_frames = len(all_frames_data)
-    filenames = [f['filename'] for f in all_frames_data]
-
-    # 1. Consolidate metric data extraction
+def _extract_metric_arrays(all_frames_data, config: 'Config'):
+    """Extracts metric data into NumPy arrays for vectorized operations."""
     metric_sources = {
         **{k: ("metrics", f"{k}_score") for k in asdict(config.quality_weights).keys()},
         "quality_score": ("metrics", "quality_score"),
@@ -2939,15 +2933,19 @@ def apply_all_filters_vectorized(all_frames_data, filters, config: 'Config', thu
         "yaw": ("metrics", "yaw"),
         "pitch": ("metrics", "pitch"),
     }
-
     metric_arrays = {}
     for key, path in metric_sources.items():
         if len(path) == 1:
             metric_arrays[key] = np.array([f.get(path[0], np.nan) for f in all_frames_data], dtype=np.float32)
-        else:  # Assumes len==2
+        else:
             metric_arrays[key] = np.array([f.get(path[0], {}).get(path[1], np.nan) for f in all_frames_data], dtype=np.float32)
+    return metric_arrays
 
-    # 2. Handle deduplication
+
+def _apply_deduplication_filter(all_frames_data, filters, thumbnail_manager, config: 'Config'):
+    """Applies deduplication filters and returns a mask and reasons."""
+    num_frames = len(all_frames_data)
+    filenames = [f['filename'] for f in all_frames_data]
     dedup_mask = np.ones(num_frames, dtype=bool)
     reasons = defaultdict(list)
     dedup_method = filters.get("dedup_method", "pHash")
@@ -2971,8 +2969,14 @@ def apply_all_filters_vectorized(all_frames_data, filters, config: 'Config', thu
             dedup_mask, reasons = apply_ssim_dedup(all_frames_data, filters, dedup_mask, reasons, thumbnail_manager, config)
         elif dedup_method == "LPIPS" and thumbnail_manager:
             dedup_mask, reasons = apply_lpips_dedup(all_frames_data, filters, dedup_mask, reasons, thumbnail_manager, config)
+    return dedup_mask, reasons
 
-    # 3. Define all metric filters in a structured way
+def _apply_metric_filters(all_frames_data, metric_arrays, filters, config: 'Config'):
+    """Applies metric-based filters and returns a mask and reasons."""
+    num_frames = len(all_frames_data)
+    filenames = [f['filename'] for f in all_frames_data]
+    reasons = defaultdict(list)
+
     filter_definitions = [
         *[{'key': k, 'type': 'range'} for k in asdict(config.quality_weights).keys()],
         {'key': 'quality_score', 'type': 'range'},
@@ -2985,7 +2989,6 @@ def apply_all_filters_vectorized(all_frames_data, filters, config: 'Config', thu
 
     metric_filter_mask = np.ones(num_frames, dtype=bool)
 
-    # 4. Apply filters in a loop
     for f_def in filter_definitions:
         key, f_type = f_def['key'], f_def['type']
         if f_def.get('enabled_key') and not filters.get(f_def['enabled_key']):
@@ -3016,10 +3019,8 @@ def apply_all_filters_vectorized(all_frames_data, filters, config: 'Config', thu
                 mask = np.nan_to_num(arr, nan=nan_fill) >= min_v
             metric_filter_mask &= mask
 
-    # 5. Combine masks and collect rejection reasons
-    kept_mask = dedup_mask & metric_filter_mask
-    metric_rejection_mask = ~metric_filter_mask & dedup_mask
-
+    # Collect rejection reasons for frames that failed the metric filters
+    metric_rejection_mask = ~metric_filter_mask
     for i in np.where(metric_rejection_mask)[0]:
         for f_def in filter_definitions:
             key, f_type = f_def['key'], f_def['type']
@@ -3038,16 +3039,41 @@ def apply_all_filters_vectorized(all_frames_data, filters, config: 'Config', thu
                     reason = f_def.get('reason_range')
                     if v < min_v: reasons[filenames[i]].append(reason or f_def.get('reason_low', f"{key}_low"))
                     if v > max_v: reasons[filenames[i]].append(reason or f_def.get('reason_high', f"{key}_high"))
-
             elif f_type == 'min':
                 min_v = filters.get(f"{key}_min", f_defaults.get('default_min', -np.inf))
                 if not np.isnan(v) and v < min_v:
                     reasons[filenames[i]].append(f_def.get('reason_low', f"{key}_low"))
-
                 if key == 'face_sim' and filters.get('require_face_match') and np.isnan(v):
                     reasons[filenames[i]].append(f_def.get('reason_missing', 'face_missing'))
 
-    # 6. Finalize results
+    return metric_filter_mask, reasons
+
+def apply_all_filters_vectorized(all_frames_data, filters, config: 'Config', thumbnail_manager=None):
+    if not all_frames_data:
+        return [], [], Counter(), {}
+
+    num_frames = len(all_frames_data)
+    filenames = [f['filename'] for f in all_frames_data]
+
+    # 1. Consolidate metric data extraction
+    metric_arrays = _extract_metric_arrays(all_frames_data, config)
+
+    # 2. Handle deduplication
+    dedup_mask, reasons = _apply_deduplication_filter(
+        all_frames_data, filters, thumbnail_manager, config
+    )
+
+    # 3. Apply metric-based filters
+    metric_filter_mask, metric_reasons = _apply_metric_filters(
+        all_frames_data, metric_arrays, filters, config
+    )
+    # 4. Combine masks and reasons
+    kept_mask = dedup_mask & metric_filter_mask
+    # Merge the reasons from both filtering steps
+    for fname, reason_list in metric_reasons.items():
+        reasons[fname].extend(reason_list)
+
+    # 5. Finalize results
     kept = [all_frames_data[i] for i in np.where(kept_mask)[0]]
     rejected = [all_frames_data[i] for i in np.where(~kept_mask)[0]]
     total_reasons = Counter(r for r_list in reasons.values() for r in r_list)
