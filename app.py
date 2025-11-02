@@ -121,6 +121,10 @@ try:
 except ImportError:
     ytdlp = None
 
+try:
+    from ultralytics import YOLO
+except ImportError:
+    YOLO = None
 # --- CONFIGURATION ---
 @dataclass
 class Config:
@@ -3871,6 +3875,8 @@ class AppUI:
                     self._create_component('session_path_input', 'textbox', {'label': "Load previous run", 'placeholder': "Path to a previous run's output folder..."})
                     self._create_component('load_session_button', 'button', {'value': "📂 Load Session"})
                     self._create_component('save_config_button', 'button', {'value': "💾 Save Current Config"})
+            with gr.Accordion("⚙️ System Diagnostics", open=False):
+                self._create_component('run_diagnostics_button', 'button', {'value': "Run System Diagnostics"})
             self._build_main_tabs()
             self._build_footer()
             self._create_event_handlers()
@@ -4106,16 +4112,11 @@ class AppUI:
                 self._create_component('filter_status_text', 'markdown', {'value': "Load an analysis to begin."})
                 self.components['metric_plots'], self.components['metric_sliders'], self.components['metric_accs'], self.components['metric_auto_threshold_cbs'] = {}, {}, {}, {}
 
-                with gr.Accordion("Deduplication", open=True, visible=False) as dedup_acc:
+                with gr.Accordion("Deduplication", open=True, visible=True) as dedup_acc:
                     self.components['metric_accs']['dedup'] = dedup_acc
                     f_def = self.config.filter_defaults.dedup_thresh
                     self._create_component('enable_dedup_input', 'checkbox', {'label': "Enable Deduplication", 'value': self.config.ui_defaults.enable_dedup})
                     self._create_component('dedup_thresh_input', 'slider', {'label': "Similarity Threshold", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': f_def['default'], 'step': f_def['step'], 'info': "Filters out visually similar frames. A lower value is stricter (more filtering). A value of 0 means only identical images will be removed. Set to -1 to disable."})
-
-                with gr.Accordion("Similarity", open=True, visible=True) as similarity_acc:
-                    self.components['metric_accs']['similarity'] = similarity_acc
-                    f_def = self.config.filter_defaults.dedup_thresh
-                    self._create_component('similarity_thresh_input', 'slider', {'label': "Similarity Threshold", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': self.config.ui_defaults.dedup_thresh, 'step': f_def['step'], 'info': "Filters out visually similar frames. A lower value is stricter (more filtering). A value of 0 means only identical images will be removed. Set to -1 to disable."})
 
                 metric_configs = {
                     'quality_score': {'open': True}, 'niqe': {'open': False}, 'sharpness': {'open': True},
@@ -4499,6 +4500,201 @@ class EnhancedAppUI(AppUI):
             ]
         )
 
+        c['run_diagnostics_button'].click(
+            self.run_system_diagnostics,
+            inputs=[],
+            outputs=[c['unified_log']]
+        )
+
+    def run_system_diagnostics(self):
+        self.logger.info("Starting system diagnostics...")
+        report = ["\n\n--- System Diagnostics Report ---"]
+
+        # 1. System Information
+        report.append("\n[SECTION 1: System & Environment]")
+        try:
+            python_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+            report.append(f"  - Python Version: OK ({python_version})")
+        except Exception as e:
+            report.append(f"  - Python Version: FAILED ({e})")
+
+        try:
+            torch_version = torch.__version__
+            cuda_available = torch.cuda.is_available()
+            report.append(f"  - PyTorch Version: OK ({torch_version})")
+            if cuda_available:
+                cuda_version = torch.version.cuda
+                gpu_name = torch.cuda.get_device_name(0)
+                report.append(f"  - CUDA: OK (Version: {cuda_version}, GPU: {gpu_name})")
+            else:
+                report.append("  - CUDA: NOT AVAILABLE (Running in CPU mode)")
+        except Exception as e:
+            report.append(f"  - PyTorch/CUDA Check: FAILED ({e})")
+
+        # 2. Dependency Checks
+        report.append("\n[SECTION 2: Core Dependencies]")
+        dependencies = ["cv2", "gradio", "imagehash", "mediapipe", "ultralytics", "groundingdino", "DAM4SAM"]
+        for dep in dependencies:
+            try:
+                __import__(dep.split('.')[0])
+                report.append(f"  - {dep}: OK")
+            except ImportError:
+                report.append(f"  - {dep}: FAILED (Not Installed)")
+
+
+        # 3. Path and File Checks
+        report.append("\n[SECTION 3: Paths & Assets]")
+        paths_to_check = {
+            "Models Directory": Path(self.config.paths.models),
+            "Dry Run Assets": Path("dry-run-assets"),
+            "Sample Video": Path("dry-run-assets/sample.mp4"),
+            "Sample Image": Path("dry-run-assets/sample.jpg")
+        }
+        for name, path in paths_to_check.items():
+            if path.exists():
+                report.append(f"  - {name}: OK (Path: {path})")
+            else:
+                report.append(f"  - {name}: FAILED (Path not found: {path})")
+
+
+        # 4. Model Loading Simulation
+        report.append("\n[SECTION 4: Model Loading Simulation]")
+        try:
+            self.logger.info("Simulating YOLO model load...")
+            get_person_detector(
+                model_path_str=str(Path(self.config.paths.models) / self.config.ui_defaults.person_detector_model),
+                device="cuda" if self.cuda_available else "cpu",
+                imgsz=self.config.person_detector.imgsz,
+                conf=self.config.person_detector.conf,
+                logger=self.logger
+            )
+            report.append("  - YOLO Model: OK")
+        except Exception as e:
+            report.append(f"  - YOLO Model: FAILED ({e})")
+
+        # 5. Pipeline Simulation
+        report.append("\n[SECTION 5: E2E Pipeline Simulation]")
+        temp_output_dir = Path(self.config.paths.downloads) / "dry_run_output"
+        shutil.rmtree(temp_output_dir, ignore_errors=True)
+        temp_output_dir.mkdir(parents=True, exist_ok=True)
+
+        try:
+            # Extraction
+            report.append("  - Stage 1: Frame Extraction...")
+            ext_event = ExtractionEvent(
+                source_path="dry-run-assets/sample.mp4",
+                upload_video=None,
+                method='interval',
+                interval='1.0',
+                nth_frame='5',
+                fast_scene=False,
+                max_resolution="720",
+                thumbnails_only=True,
+                thumb_megapixels=0.2,
+                scene_detect=True
+            )
+            ext_result_gen = execute_extraction(ext_event, self.progress_queue, self.cancel_event, self.logger, self.config)
+            ext_result = next(ext_result_gen)
+            if not ext_result.get("done"):
+                raise RuntimeError("Extraction failed")
+            report[-1] += " OK"
+
+            # Pre-analysis
+            report.append("  - Stage 2: Pre-analysis...")
+            pre_ana_event = PreAnalysisEvent(
+                output_folder=ext_result['extracted_frames_dir_state'],
+                video_path=ext_result['extracted_video_path_state'],
+                resume=False,
+                enable_face_filter=True,
+                face_ref_img_path="dry-run-assets/sample.jpg",
+                face_ref_img_upload=None,
+                face_model_name='buffalo_l',
+                enable_subject_mask=True,
+                dam4sam_model_name='sam21pp-T',
+                person_detector_model='yolo11s.pt',
+                best_frame_strategy='Largest Person',
+                scene_detect=True,
+                text_prompt="",
+                box_threshold=0.35,
+                text_threshold=0.25,
+                min_mask_area_pct=1.0,
+                sharpness_base_scale=2500.0,
+                edge_strength_base_scale=100.0,
+                gdino_config_path=self.config.paths.grounding_dino_config,
+                gdino_checkpoint_path=self.config.paths.grounding_dino_checkpoint,
+                pre_analysis_enabled=True,
+                pre_sample_nth=1,
+                primary_seed_strategy="🧑‍🤝‍🧑 Find Prominent Person"
+            )
+            pre_ana_result_gen = execute_pre_analysis(pre_ana_event, self.progress_queue, self.cancel_event, self.logger, self.config, self.thumbnail_manager, self.cuda_available)
+            pre_ana_result = next(pre_ana_result_gen)
+            if not pre_ana_result.get("done"):
+                raise RuntimeError("Pre-analysis failed")
+            report[-1] += " OK"
+
+            scenes = pre_ana_result['scenes']
+
+            # Propagation
+            report.append("  - Stage 3: Mask Propagation...")
+            prop_event = PropagationEvent(
+                output_folder=pre_ana_result['output_dir'],
+                video_path=ext_result['extracted_video_path_state'],
+                scenes=scenes,
+                analysis_params=pre_ana_event
+            )
+            prop_result_gen = execute_propagation(prop_event, self.progress_queue, self.cancel_event, self.logger, self.config, self.thumbnail_manager, self.cuda_available)
+            prop_result = next(prop_result_gen)
+            if not prop_result.get("done"):
+                raise RuntimeError("Propagation failed")
+            report[-1] += " OK"
+
+            # Analysis
+            report.append("  - Stage 4: Frame Analysis...")
+            ana_result_gen = execute_analysis(prop_event, self.progress_queue, self.cancel_event, self.logger, self.config, self.thumbnail_manager, self.cuda_available)
+            ana_result = next(ana_result_gen)
+            if not ana_result.get("done"):
+                raise RuntimeError("Analysis failed")
+            report[-1] += " OK"
+
+            metadata_path = ana_result['metadata_path']
+            all_frames, _ = load_and_prep_filter_data(metadata_path, self.get_all_filter_keys())
+
+            # Filtering
+            report.append("  - Stage 5: Filtering...")
+            filters = {'require_face_match': False, 'dedup_thresh': -1}
+            kept, _, _, _ = apply_all_filters_vectorized(all_frames, filters, self.config)
+            report[-1] += f" OK (kept {len(kept)} frames)"
+
+            # Export
+            report.append("  - Stage 6: Export...")
+            export_event = ExportEvent(
+                all_frames_data=all_frames,
+                output_dir=ana_result['output_dir'],
+                video_path=ext_result['extracted_video_path_state'],
+                enable_crop=False,
+                crop_ars="",
+                crop_padding=0,
+                filter_args=filters
+            )
+            export_msg = self.export_kept_frames(export_event)
+            if "Error" in export_msg:
+                 raise RuntimeError(f"Export failed: {export_msg}")
+            report[-1] += " OK"
+
+        except Exception as e:
+            error_message = f"FAILED ({e})"
+            if len(report) > 0 and "..." in report[-1]:
+                report[-1] += error_message
+            else:
+                report.append(f"  - Pipeline Simulation: {error_message}")
+            self.logger.error("Dry run pipeline failed", exc_info=True)
+
+
+        # Log the final report
+        final_report = "\n".join(report)
+        self.logger.info(final_report)
+        yield final_report
+
     def _create_pre_analysis_event(self, *args):
         ui_args = dict(zip(self.ana_ui_map_keys, args))
         strategy = ui_args.get('primary_seed_strategy', '🧑‍🤝‍🧑 Find Prominent Person')
@@ -4881,47 +5077,78 @@ class EnhancedAppUI(AppUI):
         slider_keys, slider_comps = sorted(c['metric_sliders'].keys()), [c['metric_sliders'][k] for k in sorted(c['metric_sliders'].keys())]
         fast_filter_inputs = [c['all_frames_data_state'], c['per_metric_values_state'], c['analysis_output_dir_state'],
                               c['gallery_view_toggle'], c['show_mask_overlay_input'], c['overlay_alpha_slider'],
-                              c['require_face_match_input'], c['dedup_thresh_input']] + slider_comps
+                              c['require_face_match_input'], c['dedup_thresh_input'], c['enable_dedup_input']] + slider_comps
         fast_filter_outputs = [c['filter_status_text'], c['results_gallery']]
         for control in (slider_comps + [c['dedup_thresh_input'], c['gallery_view_toggle'], c['show_mask_overlay_input'],
-                                       c['overlay_alpha_slider'], c['require_face_match_input']]):
+                                       c['overlay_alpha_slider'], c['require_face_match_input'], c['enable_dedup_input']]):
             (control.release if hasattr(control, 'release') else control.input if hasattr(control, 'input') else control.change)(self.on_filters_changed_wrapper, fast_filter_inputs, fast_filter_outputs)
+
         load_outputs = ([c['all_frames_data_state'], c['per_metric_values_state'], c['filter_status_text'], c['results_gallery'],
-                         c['results_group'], c['export_group']] + [c['metric_plots'][k] for k in self.get_all_filter_keys() if k in c['metric_plots']] +
-                        slider_comps + [c['require_face_match_input']])
+                         c['results_group'], c['export_group']] +
+                        [c['metric_plots'].get(k) for k in self.get_all_filter_keys() if c['metric_plots'].get(k)] +
+                        slider_comps + [c['require_face_match_input']] +
+                        [c['metric_accs'].get(k) for k in sorted(c['metric_accs'].keys()) if c['metric_accs'].get(k)])
+
         def load_and_trigger_update(metadata_path, output_dir):
             if not metadata_path or not output_dir:
+                # Return an update for every component in load_outputs to avoid errors
                 return [gr.update()] * len(load_outputs)
             all_frames, metric_values = load_and_prep_filter_data(metadata_path, self.get_all_filter_keys(), self.config)
             svgs = build_all_metric_svgs(metric_values, self.get_all_filter_keys(), self.logger)
-            has_phash = any('phash' in f for f in all_frames) if all_frames else False
-            updates = {c['all_frames_data_state']: all_frames, c['per_metric_values_state']: metric_values,
-                       c['results_group']: gr.update(visible=True), c['export_group']: gr.update(visible=True)}
-            if c['metric_accs'].get('dedup'):
-                updates[c['metric_accs']['dedup']] = gr.update(visible=has_phash)
-            preferred_open = next((candidate for candidate in ['quality_score', 'sharpness', 'edge_strength'] if candidate in metric_values), None)
+
+            updates = {
+                c['all_frames_data_state']: all_frames,
+                c['per_metric_values_state']: metric_values,
+                c['results_group']: gr.update(visible=True),
+                c['export_group']: gr.update(visible=True)
+            }
+
+            # Update visibility and content of metric accordions and plots
             for k in self.get_all_filter_keys():
                 acc = c['metric_accs'].get(k)
                 plot_comp = c['metric_plots'].get(k)
                 has_data = k in metric_values and metric_values.get(k)
+
                 if acc:
-                    updates[acc] = gr.update(visible=has_data, open=(k == preferred_open))
+                    updates[acc] = gr.update(visible=has_data)
                 if plot_comp and has_data:
                     updates[plot_comp] = gr.update(value=svgs.get(k, ""))
-            slider_values = {key: c['metric_sliders'][key].value for key in slider_keys}
-            filter_event = FilterEvent(all_frames_data=all_frames, per_metric_values=metric_values, output_dir=output_dir, gallery_view="Kept Frames", show_overlay=self.config.gradio_defaults.show_mask_overlay, overlay_alpha=self.config.gradio_defaults.overlay_alpha, require_face_match=c['require_face_match_input'].value, dedup_thresh=c['dedup_thresh_input'].value, slider_values=slider_values)
-            filter_updates = on_filters_changed(filter_event, self.thumbnail_manager, self.config, self.logger)
-            updates.update({c['filter_status_text']: filter_updates['filter_status_text'], c['results_gallery']: filter_updates['results_gallery']})
-            return [updates.get(comp, gr.update()) for comp in load_outputs]
 
-        c['filtering_tab'].select(load_and_trigger_update,
-                                [c['analysis_metadata_path_state'],
-                                 c['analysis_output_dir_state']], load_outputs)
+            # Initial filter application
+            slider_values_dict = {key: c['metric_sliders'][key].value for key in slider_keys}
+            slider_values_dict['enable_dedup'] = c['enable_dedup_input'].value
+            filter_event = FilterEvent(
+                all_frames_data=all_frames, per_metric_values=metric_values, output_dir=output_dir,
+                gallery_view="Kept Frames", show_overlay=self.config.gradio_defaults.show_mask_overlay,
+                overlay_alpha=self.config.gradio_defaults.overlay_alpha,
+                require_face_match=c['require_face_match_input'].value,
+                dedup_thresh=c['dedup_thresh_input'].value, slider_values=slider_values_dict
+            )
+            filter_updates = on_filters_changed(filter_event, self.thumbnail_manager, self.config, self.logger)
+            updates.update({
+                c['filter_status_text']: filter_updates['filter_status_text'],
+                c['results_gallery']: filter_updates['results_gallery']
+            })
+
+            # Create a list of updates in the correct order for the outputs
+            final_updates_list = [updates.get(comp, gr.update()) for comp in load_outputs]
+            return final_updates_list
+
+        c['filtering_tab'].select(
+            load_and_trigger_update,
+            [c['analysis_metadata_path_state'], c['analysis_output_dir_state']],
+            load_outputs
+        )
+
         export_inputs = [c['all_frames_data_state'], c['analysis_output_dir_state'], c['extracted_video_path_state'], c['enable_crop_input'],
-                         c['crop_ar_input'], c['crop_padding_input'], c['require_face_match_input'], c['dedup_thresh_input']] + slider_comps
+                         c['crop_ar_input'], c['crop_padding_input'], c['require_face_match_input'], c['dedup_thresh_input'], c['enable_dedup_input']] + slider_comps
         c['export_button'].click(self.export_kept_frames_wrapper, export_inputs, c['unified_log'])
-        reset_outputs_comps = (slider_comps + [c['dedup_thresh_input'], c['require_face_match_input'], c['filter_status_text'], c['results_gallery']] +
-                               [c['metric_accs'][k] for k in sorted(c['metric_accs'].keys())])
+
+        reset_outputs_comps = (slider_comps + [c['dedup_thresh_input'], c['require_face_match_input'],
+                                              c['filter_status_text'], c['results_gallery']] +
+                               [c['metric_accs'][k] for k in sorted(c['metric_accs'].keys())] +
+                               [c['enable_dedup_input']]) # Add the checkbox to the outputs
+
         c['reset_filters_button'].click(self.on_reset_filters, [c['all_frames_data_state'], c['per_metric_values_state'], c['analysis_output_dir_state']], reset_outputs_comps)
 
         auto_threshold_checkboxes = [c['metric_auto_threshold_cbs'][k] for k in sorted(c['metric_auto_threshold_cbs'].keys())]
@@ -4941,11 +5168,19 @@ class EnhancedAppUI(AppUI):
         c['expand_all_metrics_button'].click(lambda: {acc: gr.update(open=True) for acc in all_accordions}, [], all_accordions)
         c['collapse_all_metrics_button'].click(lambda: {acc: gr.update(open=False) for acc in all_accordions}, [], all_accordions)
 
-    def on_filters_changed_wrapper(self, all_frames_data, per_metric_values, output_dir, gallery_view, show_overlay, overlay_alpha, require_face_match, dedup_thresh, *slider_values):
+    def on_filters_changed_wrapper(self, all_frames_data, per_metric_values, output_dir, gallery_view, show_overlay, overlay_alpha, require_face_match, dedup_thresh, enable_dedup, *slider_values):
+        slider_values_dict = {k: v for k, v in zip(sorted(self.components['metric_sliders'].keys()), slider_values)}
+
+        # Manually add enable_dedup to the dictionary passed to the event
+        # because it's not a slider and isn't included in slider_values
+        event_filters = slider_values_dict
+        event_filters['enable_dedup'] = enable_dedup
+
         result = on_filters_changed(FilterEvent(all_frames_data, per_metric_values, output_dir, gallery_view, show_overlay, overlay_alpha,
-                                                require_face_match, dedup_thresh, {k: v for k, v in zip(sorted(self.components['metric_sliders'].keys()), slider_values)}),
+                                                require_face_match, dedup_thresh, event_filters),
                                     self.thumbnail_manager, self.config)
         return result['filter_status_text'], result['results_gallery']
+
 
     def on_reset_filters(self, all_frames_data, per_metric_values, output_dir):
         c = self.components
@@ -4966,6 +5201,9 @@ class EnhancedAppUI(AppUI):
         face_match_update = gr.update(value=face_match_default)
         if all_frames_data:
             slider_defaults_dict = {key: val for key, val in zip(slider_keys, slider_default_values)}
+            # Ensure the deduplication checkbox is also reset to its default state
+            slider_defaults_dict['enable_dedup'] = self.config.ui_defaults.enable_dedup
+
             filter_event = FilterEvent(
                 all_frames_data, per_metric_values, output_dir, "Kept Frames",
                 self.config.gradio_defaults.show_mask_overlay, self.config.gradio_defaults.overlay_alpha,
@@ -4978,19 +5216,27 @@ class EnhancedAppUI(AppUI):
             status_update = "Load an analysis to begin."
             gallery_update = gr.update(value=[])
         acc_updates = []
+        # When resetting, also reset the visibility of the accordions based on available data
         for key in acc_keys:
             if all_frames_data:
-                is_dedup = key == 'dedup'
-                if is_dedup:
+                visible = False
+                if key == 'dedup':
                     visible = any('phash' in f for f in all_frames_data)
-                    acc_updates.append(gr.update(visible=visible))
+                elif key == 'face_sim':
+                    visible = 'face_sim' in per_metric_values and any(per_metric_values['face_sim'])
                 else:
                     visible = key in per_metric_values
-                    preferred_open = next((candidate for candidate in ['quality_score', 'sharpness'] if candidate in per_metric_values), None)
-                    acc_updates.append(gr.update(visible=visible, open=(key == preferred_open)))
+
+                # Determine if it should be open
+                preferred_open = next((candidate for candidate in ['quality_score', 'sharpness'] if candidate in per_metric_values), None)
+                acc_updates.append(gr.update(visible=visible, open=(key == preferred_open)))
             else:
                 acc_updates.append(gr.update(visible=False))
-        return tuple(slider_updates + [dedup_update, face_match_update, status_update, gallery_update] + acc_updates)
+
+        # Add the update for the checkbox itself to the returned tuple
+        enable_dedup_update = gr.update(value=self.config.ui_defaults.enable_dedup)
+
+        return tuple(slider_updates + [dedup_update, face_match_update, status_update, gallery_update] + acc_updates + [enable_dedup_update])
 
     def on_auto_set_thresholds(self, per_metric_values, p, *checkbox_values):
         slider_keys = sorted(self.components['metric_sliders'].keys())
@@ -4999,9 +5245,9 @@ class EnhancedAppUI(AppUI):
         updates = auto_set_thresholds(per_metric_values, p, slider_keys, selected_metrics)
         return [updates.get(f'slider_{key}', gr.update()) for key in slider_keys]
 
-    def export_kept_frames_wrapper(self, all_frames_data, output_dir, video_path, enable_crop, crop_ars, crop_padding, require_face_match, dedup_thresh, *slider_values):
+    def export_kept_frames_wrapper(self, all_frames_data, output_dir, video_path, enable_crop, crop_ars, crop_padding, require_face_match, dedup_thresh, enable_dedup, *slider_values):
         filter_args = {k: v for k, v in zip(sorted(self.components['metric_sliders'].keys()), slider_values)}
-        filter_args.update({"require_face_match": require_face_match, "dedup_thresh": dedup_thresh})
+        filter_args.update({"require_face_match": require_face_match, "dedup_thresh": dedup_thresh, "enable_dedup": enable_dedup})
         return self.export_kept_frames(ExportEvent(all_frames_data, output_dir, video_path, enable_crop, crop_ars, crop_padding, filter_args))
 
     def export_kept_frames(self, event: ExportEvent):
