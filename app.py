@@ -3412,146 +3412,150 @@ def execute_extraction(event: ExtractionEvent, progress_queue: Queue, cancel_eve
 
 def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue, cancel_event: threading.Event, logger: AppLogger,
                          config: Config, thumbnail_manager, cuda_available, progress=None):
-    yield {"unified_log": "", "unified_status": "Starting Pre-Analysis..."}
-    tracker = AdvancedProgressTracker(progress, progress_queue, logger, ui_stage_name="Pre-Analysis")
-    params_dict = asdict(event)
-    is_folder_mode = not params_dict.get("video_path")
-
-    # Handle face reference upload before initializing parameters
-    final_face_ref_path = params_dict.get('face_ref_img_path')
-    if event.face_ref_img_upload:
-        ref_upload, dest = params_dict.pop('face_ref_img_upload'), Path(config.paths.downloads) / Path(event.face_ref_img_upload).name
-        shutil.copy2(ref_upload, dest)
-        params_dict['face_ref_img_path'] = str(dest)
-        final_face_ref_path = str(dest)
-
-    params = AnalysisParameters.from_ui(logger, config, **params_dict)
-    output_dir = Path(params.output_folder)
-
-    # Save the final resolved config (including the copied face ref path)
     try:
-        with (output_dir / "run_config.json").open('w', encoding='utf-8') as f:
-            # Use the latest params_dict which has the correct face_ref_img_path
-            json.dump({k: v for k, v in params_dict.items() if k != 'face_ref_img_upload'}, f, indent=4)
-    except Exception as e:
-        logger.error(f"Failed to save run configuration: {e}", exc_info=True)
+        yield {"unified_log": "", "unified_status": "Starting Pre-Analysis..."}
+        tracker = AdvancedProgressTracker(progress, progress_queue, logger, ui_stage_name="Pre-Analysis")
+        params_dict = asdict(event)
+        is_folder_mode = not params_dict.get("video_path")
 
-    logger.info("Loading Models")
-    models = initialize_analysis_models(params, config, logger, cuda_available)
-    niqe_metric = None
-    if not is_folder_mode and params.pre_analysis_enabled and pyiqa:
-        # Skip NIQE for YOLO-only mode to save memory
-        if params.primary_seed_strategy != "🧑‍🤝‍🧑 Find Prominent Person":
-            niqe_metric = pyiqa.create_metric('niqe', device=models['device'])
+        # Handle face reference upload before initializing parameters
+        final_face_ref_path = params_dict.get('face_ref_img_path')
+        if event.face_ref_img_upload:
+            ref_upload, dest = params_dict.pop('face_ref_img_upload'), Path(config.paths.downloads) / Path(event.face_ref_img_upload).name
+            shutil.copy2(ref_upload, dest)
+            params_dict['face_ref_img_path'] = str(dest)
+            final_face_ref_path = str(dest)
 
-    masker = SubjectMasker(params, progress_queue, cancel_event, config, face_analyzer=models["face_analyzer"],
-                           reference_embedding=models["ref_emb"], person_detector=models["person_detector"],
-                           niqe_metric=niqe_metric, thumbnail_manager=thumbnail_manager, logger=logger,
-                           face_landmarker=models["face_landmarker"])
-    masker.frame_map = masker._create_frame_map(str(output_dir))
+        params = AnalysisParameters.from_ui(logger, config, **params_dict)
+        output_dir = Path(params.output_folder)
 
-    if is_folder_mode:
-        logger.info("Starting seed selection for image folder.")
-        scenes_path = output_dir / "scenes.json"
-        if not scenes_path.exists():
-            yield {"log": "[ERROR] scenes.json not found. Run extraction first."}
-            return
+        # Save the final resolved config (including the copied face ref path)
+        try:
+            with (output_dir / "run_config.json").open('w', encoding='utf-8') as f:
+                # Use the latest params_dict which has the correct face_ref_img_path
+                json.dump({k: v for k, v in params_dict.items() if k != 'face_ref_img_upload'}, f, indent=4)
+        except Exception as e:
+            logger.error(f"Failed to save run configuration: {e}", exc_info=True)
 
-        with scenes_path.open('r', encoding='utf-8') as f:
-            scenes = [Scene(shot_id=i, start_frame=s, end_frame=e) for i, (s, e) in enumerate(json.load(f))]
+        logger.info("Loading Models")
+        models = initialize_analysis_models(params, config, logger, cuda_available)
+        niqe_metric = None
+        if not is_folder_mode and params.pre_analysis_enabled and pyiqa:
+            # Skip NIQE for YOLO-only mode to save memory
+            if params.primary_seed_strategy != "🧑‍🤝‍🧑 Find Prominent Person":
+                niqe_metric = pyiqa.create_metric('niqe', device=models['device'])
 
-        tracker.start(len(scenes), desc="Selecting seeds for images")
-        previews_dir = output_dir / "previews"
-        previews_dir.mkdir(exist_ok=True)
+        masker = SubjectMasker(params, progress_queue, cancel_event, config, face_analyzer=models["face_analyzer"],
+                               reference_embedding=models["ref_emb"], person_detector=models["person_detector"],
+                               niqe_metric=niqe_metric, thumbnail_manager=thumbnail_manager, logger=logger,
+                               face_landmarker=models["face_landmarker"])
+        masker.frame_map = masker._create_frame_map(str(output_dir))
 
-        for scene in scenes:
-            if cancel_event.is_set(): break
-            tracker.step(1, desc=f"Image {scene.shot_id}")
+        if is_folder_mode:
+            logger.info("Starting seed selection for image folder.")
+            scenes_path = output_dir / "scenes.json"
+            if not scenes_path.exists():
+                yield {"log": "[ERROR] scenes.json not found. Run extraction first."}
+                return
 
-            scene.best_frame = scene.start_frame
-            fname = masker.frame_map.get(scene.best_frame)
-            if not fname: continue
+            with scenes_path.open('r', encoding='utf-8') as f:
+                scenes = [Scene(shot_id=i, start_frame=s, end_frame=e) for i, (s, e) in enumerate(json.load(f))]
 
-            thumb_rgb = thumbnail_manager.get(output_dir / "thumbs" / f"{Path(fname).stem}.webp")
-            if thumb_rgb is None: continue
+            tracker.start(len(scenes), desc="Selecting seeds for images")
+            previews_dir = output_dir / "previews"
+            previews_dir.mkdir(exist_ok=True)
 
-            bbox, details = masker.get_seed_for_frame(thumb_rgb, seed_config=params)
-            scene.seed_result = {'bbox': bbox, 'details': details}
+            for scene in scenes:
+                if cancel_event.is_set(): break
+                tracker.step(1, desc=f"Image {scene.shot_id}")
 
-            mask = masker.get_mask_for_bbox(thumb_rgb, bbox) if (bbox and params.enable_subject_mask) else None
-            if mask is not None:
-                h, w = mask.shape[:2]
-                scene.seed_result['details']['mask_area_pct'] = (np.sum(mask > 0) / (h * w)) * 100 if h * w > 0 else 0.0
+                scene.best_frame = scene.start_frame
+                fname = masker.frame_map.get(scene.best_frame)
+                if not fname: continue
 
-            overlay_rgb = render_mask_overlay(thumb_rgb, mask, 0.6, logger=logger) if mask is not None else masker.draw_bbox(thumb_rgb, bbox)
+                thumb_rgb = thumbnail_manager.get(output_dir / "thumbs" / f"{Path(fname).stem}.webp")
+                if thumb_rgb is None: continue
 
-            preview_path = previews_dir / f"scene_{scene.shot_id:05d}.jpg"
-            Image.fromarray(overlay_rgb).save(preview_path)
-            scene.preview_path = str(preview_path)
-            scene.status = 'included'
+                bbox, details = masker.get_seed_for_frame(thumb_rgb, seed_config=params)
+                scene.seed_result = {'bbox': bbox, 'details': details}
 
-        save_scene_seeds([asdict(s) for s in scenes], str(output_dir), logger)
-        tracker.done_stage("Seed selection complete")
+                mask = masker.get_mask_for_bbox(thumb_rgb, bbox) if (bbox and params.enable_subject_mask) else None
+                if mask is not None:
+                    h, w = mask.shape[:2]
+                    scene.seed_result['details']['mask_area_pct'] = (np.sum(mask > 0) / (h * w)) * 100 if h * w > 0 else 0.0
 
-        yield {
-            "log": "Seed selection for image folder complete.",
-            "scenes": [asdict(s) for s in scenes],
-            "output_dir": str(output_dir),
-            "done": True,
-            "seeding_results_column": gr.update(visible=True),
-            "propagation_group": gr.update(visible=True),
-        }
-        return
+                overlay_rgb = render_mask_overlay(thumb_rgb, mask, 0.6, logger=logger) if mask is not None else masker.draw_bbox(thumb_rgb, bbox)
 
-    scenes_path = output_dir / "scenes.json"
-    if not scenes_path.exists():
-        yield {"log": "[ERROR] scenes.json not found. Run extraction with scene detection."}
-        return
-    with scenes_path.open('r', encoding='utf-8') as f: scenes = [Scene(shot_id=i, start_frame=s, end_frame=e) for i, (s, e) in enumerate(json.load(f))]
-
-    video_info = VideoManager.get_video_info(params.video_path)
-    totals = estimate_totals(params, video_info, scenes)
-    tracker.start(totals["pre_analysis"], desc="Analyzing scenes")
-
-    def pre_analysis_task():
-        logger.info(f"Pre-analyzing {len(scenes)} scenes")
-        previews_dir = output_dir / "previews"
-        previews_dir.mkdir(exist_ok=True)
-        for i, scene in enumerate(scenes):
-            if cancel_event.is_set(): break
-            tracker.step(1, desc=f"Scene {scene.shot_id}")
-            if not scene.best_frame: masker._select_best_frame_in_scene(scene, str(output_dir))
-            fname = masker.frame_map.get(scene.best_frame)
-            if not fname: continue
-            thumb_rgb = thumbnail_manager.get(output_dir / "thumbs" / f"{Path(fname).stem}.webp")
-            if thumb_rgb is None: continue
-            bbox, details = masker.get_seed_for_frame(thumb_rgb, seed_config=scene.seed_config or params, scene=scene)
-            scene.seed_result = {'bbox': bbox, 'details': details}
-            mask = masker.get_mask_for_bbox(thumb_rgb, bbox) if bbox else None
-            if mask is not None:
-                h, w = mask.shape[:2]
-                scene.seed_result['details']['mask_area_pct'] = (np.sum(mask > 0) / (h * w)) * 100 if h * w > 0 else 0.0
-            overlay_rgb = render_mask_overlay(thumb_rgb, mask, 0.6, logger=logger) if mask is not None else masker.draw_bbox(thumb_rgb, bbox)
-            
-            preview_path = previews_dir / f"scene_{scene.shot_id:05d}.jpg"
-            try:
+                preview_path = previews_dir / f"scene_{scene.shot_id:05d}.jpg"
                 Image.fromarray(overlay_rgb).save(preview_path)
                 scene.preview_path = str(preview_path)
-            except Exception as e:
-                logger.error(f"Failed to save preview for scene {scene.shot_id}", exc_info=True)
+                scene.status = 'included'
 
-            if scene.status == 'pending': scene.status = 'included'
+            save_scene_seeds([asdict(s) for s in scenes], str(output_dir), logger)
+            tracker.done_stage("Seed selection complete")
 
-        tracker.done_stage("Pre-analysis complete")
-        return {"done": True, "scenes": [asdict(s) for s in scenes]}
+            yield {
+                "log": "Seed selection for image folder complete.",
+                "scenes": [asdict(s) for s in scenes],
+                "output_dir": str(output_dir),
+                "done": True,
+                "seeding_results_column": gr.update(visible=True),
+                "propagation_group": gr.update(visible=True),
+            }
+            return
 
-    result = pre_analysis_task()
-    if result.get("done"):
-        final_yield = {"log": "Pre-analysis complete.", "status": f"{len(result['scenes'])} scenes found.",
-               "scenes": result['scenes'], "output_dir": str(output_dir), "done": True}
-        if final_face_ref_path:
-            final_yield['final_face_ref_path'] = final_face_ref_path
-        yield final_yield
+        scenes_path = output_dir / "scenes.json"
+        if not scenes_path.exists():
+            yield {"log": "[ERROR] scenes.json not found. Run extraction with scene detection."}
+            return
+        with scenes_path.open('r', encoding='utf-8') as f: scenes = [Scene(shot_id=i, start_frame=s, end_frame=e) for i, (s, e) in enumerate(json.load(f))]
+
+        video_info = VideoManager.get_video_info(params.video_path)
+        totals = estimate_totals(params, video_info, scenes)
+        tracker.start(totals["pre_analysis"], desc="Analyzing scenes")
+
+        def pre_analysis_task():
+            logger.info(f"Pre-analyzing {len(scenes)} scenes")
+            previews_dir = output_dir / "previews"
+            previews_dir.mkdir(exist_ok=True)
+            for i, scene in enumerate(scenes):
+                if cancel_event.is_set(): break
+                tracker.step(1, desc=f"Scene {scene.shot_id}")
+                if not scene.best_frame: masker._select_best_frame_in_scene(scene, str(output_dir))
+                fname = masker.frame_map.get(scene.best_frame)
+                if not fname: continue
+                thumb_rgb = thumbnail_manager.get(output_dir / "thumbs" / f"{Path(fname).stem}.webp")
+                if thumb_rgb is None: continue
+                bbox, details = masker.get_seed_for_frame(thumb_rgb, seed_config=scene.seed_config or params, scene=scene)
+                scene.seed_result = {'bbox': bbox, 'details': details}
+                mask = masker.get_mask_for_bbox(thumb_rgb, bbox) if bbox else None
+                if mask is not None:
+                    h, w = mask.shape[:2]
+                    scene.seed_result['details']['mask_area_pct'] = (np.sum(mask > 0) / (h * w)) * 100 if h * w > 0 else 0.0
+                overlay_rgb = render_mask_overlay(thumb_rgb, mask, 0.6, logger=logger) if mask is not None else masker.draw_bbox(thumb_rgb, bbox)
+
+                preview_path = previews_dir / f"scene_{scene.shot_id:05d}.jpg"
+                try:
+                    Image.fromarray(overlay_rgb).save(preview_path)
+                    scene.preview_path = str(preview_path)
+                except Exception as e:
+                    logger.error(f"Failed to save preview for scene {scene.shot_id}", exc_info=True)
+
+                if scene.status == 'pending': scene.status = 'included'
+
+            tracker.done_stage("Pre-analysis complete")
+            return {"done": True, "scenes": [asdict(s) for s in scenes]}
+
+        result = pre_analysis_task()
+        if result.get("done"):
+            final_yield = {"log": "Pre-analysis complete.", "status": f"{len(result['scenes'])} scenes found.",
+                   "scenes": result['scenes'], "output_dir": str(output_dir), "done": True}
+            if final_face_ref_path:
+                final_yield['final_face_ref_path'] = final_face_ref_path
+            yield final_yield
+    except Exception as e:
+        logger.error("Pre-analysis execution failed", exc_info=True)
+        yield {"log": f"[ERROR] Pre-analysis failed unexpectedly: {e}", "done": False}
 
 def validate_session_dir(path: str | Path) -> tuple[Path | None, str | None]:
     try:
@@ -4728,7 +4732,9 @@ class EnhancedAppUI(AppUI):
                 primary_seed_strategy="🧑‍🤝‍🧑 Find Prominent Person"
             )
             pre_ana_result_gen = execute_pre_analysis(pre_ana_event, self.progress_queue, self.cancel_event, self.logger, self.config, self.thumbnail_manager, self.cuda_available)
-            pre_ana_result = next(pre_ana_result_gen)
+            pre_ana_result = {}
+            for result in pre_ana_result_gen:
+                pre_ana_result = result
             if not pre_ana_result.get("done"):
                 raise RuntimeError(f"Pre-analysis failed: {pre_ana_result}")
             report[-1] += " OK"
