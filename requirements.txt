@@ -16,9 +16,6 @@ pyiqa
 matplotlib
 imagehash
 mediapipe
-torch
-torchvision
-groundingdino-py
+groundingdino-py==0.4.0
 scikit-image
 lpips
-inference[clip]
