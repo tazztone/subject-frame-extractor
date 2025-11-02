@@ -115,6 +115,11 @@ except ImportError:
     detect = None
     ContentDetector = None
 
+try:
+    from sklearn.cluster import DBSCAN
+except ImportError:
+    DBSCAN = None
+
 
 try:
     import yt_dlp as ytdlp
@@ -3983,9 +3988,15 @@ class AppUI:
                     gr.Markdown("#### 👤 Configure Face Selection"); gr.Markdown("This strategy prioritizes finding a specific person. Upload a clear, frontal photo of the person you want to track. The system will analyze each scene to find the frame where this person is most clearly visible and use it as the starting point (the 'best frame').")
                     with gr.Row():
                         self._create_component('face_ref_img_upload_input', 'file', {'label': "Upload Face Reference Image", 'type': "filepath"})
+                        self._create_component('face_ref_image', 'image', {'label': "Reference Image", 'interactive': False})
                         with gr.Column():
                             self._create_component('face_ref_img_path_input', 'textbox', {'label': "Or provide a local file path"})
                             self._create_component('enable_face_filter_input', 'checkbox', {'label': "Enable Face Similarity (must be checked for face selection)", 'value': self.config.ui_defaults.enable_face_filter, 'interactive': True, 'visible': "By Face" in self.config.ui_defaults.primary_seed_strategy or "Fallback" in self.config.ui_defaults.primary_seed_strategy})
+                    self._create_component('find_people_button', 'button', {'value': "Find People From Video"})
+                    with gr.Group(visible=False) as discovered_people_group:
+                        self.components['discovered_people_group'] = discovered_people_group
+                        self._create_component('discovered_faces_gallery', 'gallery', {'label': "Discovered People", 'columns': 8, 'height': 'auto'})
+                        self._create_component('identity_confidence_slider', 'slider', {'label': "Identity Confidence", 'minimum': 0.0, 'maximum': 1.0, 'step': 0.05, 'value': 0.5})
                 with gr.Group(visible="By Text" in self.config.ui_defaults.primary_seed_strategy or "Fallback" in self.config.ui_defaults.primary_seed_strategy) as text_seeding_group:
                     self.components['text_seeding_group'] = text_seeding_group
                     gr.Markdown("#### 📝 Configure Text Selection"); gr.Markdown("This strategy uses a text description to find the subject. It's useful for identifying objects, or people described by their clothing or appearance when a reference photo isn't available.")
@@ -4184,7 +4195,8 @@ class AppUI:
                             'scene_gallery_index_map_state': gr.State([]),
                             'gallery_image_state': gr.State(None),
                             'gallery_shape_state': gr.State(None),
-                            'yolo_results_state': gr.State({})})
+                            'yolo_results_state': gr.State({}),
+                            'discovered_faces_state': gr.State([])})
         self._setup_visibility_toggles(); self._setup_pipeline_handlers(); self._setup_filtering_handlers(); self._setup_bulk_scene_handlers()
         self.components['save_config_button'].click(
             lambda: self.config.save_config('config_dump.json'), [], []
@@ -4933,6 +4945,194 @@ class EnhancedAppUI(AppUI):
         analysis_inputs = [c['scenes_state']] + self.ana_input_components
         c['start_analysis_button'].click(fn=self.run_analysis_wrapper,
                                          inputs=analysis_inputs, outputs=all_outputs, show_progress="hidden").then(lambda p: gr.update(selected=4) if p else gr.update(), c['analysis_metadata_path_state'], c['main_tabs'])
+
+        c['find_people_button'].click(
+            self.on_find_people_from_video,
+            inputs=self.ana_input_components,
+            outputs=[c['discovered_people_group'], c['discovered_faces_gallery'], c['identity_confidence_slider'], c['discovered_faces_state']]
+        )
+
+        c['identity_confidence_slider'].release(
+            self.on_identity_confidence_change,
+            inputs=[c['identity_confidence_slider'], c['discovered_faces_state']],
+            outputs=[c['discovered_faces_gallery']]
+        )
+
+        c['discovered_faces_gallery'].select(
+            self.on_discovered_face_select,
+            inputs=[c['discovered_faces_state'], c['identity_confidence_slider']] + self.ana_input_components,
+            outputs=[c['face_ref_img_path_input'], c['face_ref_image']]
+        )
+
+    def on_identity_confidence_change(self, confidence, all_faces):
+        if not all_faces:
+            return []
+
+        from sklearn.cluster import DBSCAN
+        embeddings = np.array([face['embedding'] for face in all_faces])
+        # The confidence slider is inverted to map to epsilon
+        eps = 1.0 - confidence
+        clustering = DBSCAN(eps=eps, min_samples=2, metric="cosine").fit(embeddings)
+        labels = clustering.labels_
+
+        unique_labels = sorted(list(set(labels)))
+        gallery_items = []
+        self.gallery_to_cluster_map = {}
+        gallery_idx = 0
+
+        for label in unique_labels:
+            if label == -1:
+                continue # Skip noise
+
+            self.gallery_to_cluster_map[gallery_idx] = label
+            gallery_idx += 1
+
+            cluster_faces = [all_faces[i] for i, l in enumerate(labels) if l == label]
+            best_face = max(cluster_faces, key=lambda x: x['det_score'])
+
+            thumb_rgb = self.thumbnail_manager.get(Path(best_face['thumb_path']))
+            x1, y1, x2, y2 = best_face['bbox'].astype(int)
+            face_crop = thumb_rgb[y1:y2, x1:x2]
+
+            gallery_items.append((face_crop, f"Person {label}"))
+
+        return gr.update(value=gallery_items)
+
+    def on_discovered_face_select(self, all_faces, confidence, *args, evt: gr.EventData):
+        if not all_faces or evt.index is None:
+            return "", None
+
+        selected_person_label = self.gallery_to_cluster_map.get(evt.index)
+        if selected_person_label is None:
+            self.logger.error(f"Could not find cluster label for gallery index {evt.index}")
+            return "", None
+
+        params = self._create_pre_analysis_event(*args)
+        video_path = params.video_path
+
+        from sklearn.cluster import DBSCAN
+        embeddings = np.array([face['embedding'] for face in all_faces])
+        eps = 1.0 - confidence
+        clustering = DBSCAN(eps=eps, min_samples=2, metric="cosine").fit(embeddings)
+        labels = clustering.labels_
+
+
+        cluster_faces = [all_faces[i] for i, l in enumerate(labels) if l == selected_person_label]
+        if not cluster_faces:
+            return "", None
+
+        best_face = max(cluster_faces, key=lambda x: x['det_score'])
+        best_frame_num = best_face['frame_num']
+
+        # Extract high-res frame
+        cap = cv2.VideoCapture(video_path)
+        cap.set(cv2.CAP_PROP_POS_FRAMES, best_frame_num)
+        ret, frame = cap.read()
+        cap.release()
+
+        if not ret:
+            return "", None
+
+        # Get high-res face crop
+        x1, y1, x2, y2 = best_face['bbox'].astype(int)
+        # Scale bbox to full-res frame
+        thumb_rgb = self.thumbnail_manager.get(Path(best_face['thumb_path']))
+        h, w, _ = thumb_rgb.shape
+        fh, fw, _ = frame.shape
+        x1, y1, x2, y2 = int(x1 * fw/w), int(y1 * fh/h), int(x2 * fw/w), int(y2 * fh/h)
+
+        face_crop = frame[y1:y2, x1:x2]
+
+        # Save the crop to a file
+        face_crop_path = Path(params.output_folder) / "reference_face.png"
+        cv2.imwrite(str(face_crop_path), face_crop)
+
+        return str(face_crop_path), face_crop
+
+    def on_find_people_from_video(self, *args):
+        try:
+            params = self._create_pre_analysis_event(*args)
+            output_dir = Path(params.output_folder)
+            if not output_dir.exists():
+                return gr.update(visible=False), [], 0.5, []
+
+            models = initialize_analysis_models(params, self.config, self.logger, self.cuda_available)
+            person_detector = models['person_detector']
+            face_analyzer = models['face_analyzer']
+
+            if not person_detector or not face_analyzer:
+                self.logger.error("Person detector or face analyzer not available.")
+                return gr.update(visible=False), [], 0.5, []
+
+            frame_map = create_frame_map(output_dir, self.logger)
+            if not frame_map:
+                self.logger.error("Frame map not found.")
+                return gr.update(visible=False), [], 0.5, []
+
+            all_faces = []
+            thumb_dir = output_dir / "thumbs"
+
+            for frame_num, thumb_filename in frame_map.items():
+                if frame_num % params.pre_sample_nth != 0:
+                    continue
+
+                thumb_path = thumb_dir / thumb_filename
+                thumb_rgb = self.thumbnail_manager.get(thumb_path)
+                if thumb_rgb is None:
+                    continue
+
+                people = person_detector.detect_boxes(thumb_rgb)
+                if not people:
+                    continue
+
+                thumb_bgr = cv2.cvtColor(thumb_rgb, cv2.COLOR_RGB2BGR)
+                faces = face_analyzer.get(thumb_bgr)
+
+                for face in faces:
+                    all_faces.append({
+                        'frame_num': frame_num,
+                        'bbox': face.bbox,
+                        'embedding': face.normed_embedding,
+                        'det_score': face.det_score,
+                        'thumb_path': str(thumb_path)
+                    })
+
+            if not all_faces:
+                self.logger.warning("No faces found in the video.")
+                return gr.update(visible=True), [], 0.5, []
+
+            # Simple clustering for now
+            from sklearn.cluster import DBSCAN
+            embeddings = np.array([face['embedding'] for face in all_faces])
+            clustering = DBSCAN(eps=0.5, min_samples=2, metric="cosine").fit(embeddings)
+            labels = clustering.labels_
+
+            unique_labels = sorted(list(set(labels)))
+            gallery_items = []
+            self.gallery_to_cluster_map = {}
+            gallery_idx = 0
+
+            for label in unique_labels:
+                if label == -1:
+                    continue # Skip noise
+
+                self.gallery_to_cluster_map[gallery_idx] = label
+                gallery_idx += 1
+
+                cluster_faces = [all_faces[i] for i, l in enumerate(labels) if l == label]
+                best_face = max(cluster_faces, key=lambda x: x['det_score'])
+
+                thumb_rgb = self.thumbnail_manager.get(Path(best_face['thumb_path']))
+                x1, y1, x2, y2 = best_face['bbox'].astype(int)
+                face_crop = thumb_rgb[y1:y2, x1:x2]
+
+                gallery_items.append((face_crop, f"Person {label}"))
+
+            return gr.update(visible=True), gallery_items, 0.5, all_faces
+
+        except Exception as e:
+            self.logger.error(f"Error in on_find_people_from_video: {e}", exc_info=True)
+            return gr.update(visible=False), [], 0.5, []
 
     def on_apply_bulk_scene_filters_extended(self, scenes, min_mask_area, min_face_sim, min_confidence, enable_face_filter, output_folder, view):
         if not scenes:
