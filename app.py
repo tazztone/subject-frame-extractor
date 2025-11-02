@@ -324,6 +324,7 @@ class Config:
         iou_bonus: int = 50
         face_to_body_expansion_factors: List[float] = field(default_factory=lambda: [4.0, 7.0, 0.75])
         final_fallback_box: List[float] = field(default_factory=lambda: [0.25, 0.25, 0.5, 0.5])
+        balanced_score_weights: Dict[str, float] = field(default_factory=lambda: {'area': 0.4, 'confidence': 0.4, 'edge': 0.2})
 
     @dataclass
     class UtilityDefaults:
@@ -2193,9 +2194,10 @@ class SeedSelector:
             return min(x1, y1, w - x2, h - y2)
 
         def balanced_score(b):
+            weights = self.config.seeding_defaults.balanced_score_weights
             norm_area = area(b) / (w * h)
             norm_edge = min_dist_to_edge(b) / (min(w, h) / 2)
-            return 0.4 * norm_area + 0.4 * b['conf'] + 0.2 * norm_edge
+            return weights['area'] * norm_area + weights['confidence'] * b['conf'] + weights['edge'] * norm_edge
 
         # Memoize face detection results for the current frame
         all_faces = None
@@ -4064,14 +4066,18 @@ class AppUI:
                         - **Nth + Keyframes:** Keeps keyframes plus frames at a regular cadence.
                         - **All:** Extracts every single frame. (Warning: massive disk usage and time)."""
                 })
-                self._create_component('interval_input', 'textbox', {
+                self._create_component('interval_input', 'number', {
                     'label': "Interval (seconds)",
                     'value': self.config.ui_defaults.interval,
+                    'minimum': 0.1,
+                    'step': 0.1,
                     'visible': self.config.ui_defaults.method == 'interval'
                 })
-                self._create_component('nth_frame_input', 'textbox', {
+                self._create_component('nth_frame_input', 'number', {
                     'label': "N-th Frame Value",
                     'value': self.config.ui_defaults.nth_frame,
+                    'minimum': 1,
+                    'step': 1,
                     'visible': self.config.ui_defaults.method in ['every_nth_frame', 'nth_plus_keyframes']
                 })
         gr.Markdown("---"); gr.Markdown("### Step 3: Start Extraction")
@@ -5684,7 +5690,7 @@ class EnhancedAppUI(AppUI):
             # Rename the sequentially numbered files to match their original analysis filenames.
             self.logger.info("Renaming extracted frames to match original filenames...")
             orig_to_filename_map = {v: k for k, v in fn_to_orig_map.items()}
-            
+
             # Build rename plan
             plan = []
             for i, orig_frame_num in enumerate(frames_to_extract):
@@ -5692,13 +5698,16 @@ class EnhancedAppUI(AppUI):
                 target_filename = orig_to_filename_map.get(orig_frame_num)
                 if not target_filename:
                     continue
-                
+
                 src = export_dir / sequential_filename
                 dst = export_dir / target_filename
                 if src == dst:
                     continue
                 plan.append((src, dst))
 
+            # Use a two-phase rename to avoid conflicts: first move all sources to unique temporary names,
+            # then move temps to final destinations. This prevents overwriting when multiple renames
+            # involve files that could conflict with each other during the process.
             # Phase 1: move all sources to unique temps
             temp_map = {}
             for i, (src, _) in enumerate(plan):
