@@ -149,12 +149,20 @@ class Config:
     class Models:
         user_agent: str = "Mozilla/5.0"
         grounding_dino: str = "https://github.com/IDEA-Research/GroundingDINO/releases/download/v0.1.0-alpha/groundingdino_swint_ogc.pth"
+        grounding_dino_sha256: str = "632890e5af9241ca1b7f1f946b5a9f8c505651504443df4e2593265745a18f13"
         face_landmarker: str = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
+        face_landmarker_sha256: Optional[str] = None # No official hash found
         dam4sam: Dict[str, str] = field(default_factory=lambda: {
             "sam21pp-T": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt",
             "sam21pp-S": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_small.pt",
             "sam21pp-B+": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_base_plus.pt",
             "sam21pp-L": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt",
+        })
+        dam4sam_sha256: Dict[str, str] = field(default_factory=lambda: {
+            "sam21pp-T": "7402e0d864fa82708a20fbd15bc84245c2f26dff0eb43a4b5b93452deb34be69",
+            "sam21pp-S": "95949964d4e548409021d47b22712d5f1abf2564cc0c3c765ba599a24ac7dce3",
+            "sam21pp-B+": "a2345aede8715ab1d5d31b4a509fb160c5a4af1970f199d9054ccfb746c004c5",
+            "sam21pp-L": "8b36b71d5cafc83a0975d14d0afae81c3915804e12cc896b0665eaabcc445d56",
         })
         yolo: str = "https://huggingface.co/Ultralytics/YOLO11/resolve/main/"
 
@@ -420,9 +428,11 @@ class Config:
         if isinstance(default_val, bool):
             return env_val.lower() in ['true', '1', 'yes']
         if isinstance(default_val, int):
-            if '.' in env_val:
-                return float(env_val)
-            return int(env_val)
+            try:
+                # Handle cases like "5.0" from env var for an int field
+                return int(float(env_val))
+            except ValueError:
+                return int(env_val) # Fallback for non-float strings
         if isinstance(default_val, float):
             return float(env_val)
         if isinstance(default_val, list):
@@ -608,10 +618,15 @@ class AppLogger:
 class ColoredFormatter(logging.Formatter):
     COLORS = {'DEBUG': '\033[36m', 'INFO': '\033[37m', 'WARNING': '\033[33m',
               'ERROR': '\033[31m', 'CRITICAL': '\033[35m', 'SUCCESS': '\033[32m', 'RESET': '\033[0m'}
+
     def format(self, record):
-        color = self.COLORS.get(record.levelname, self.COLORS['RESET'])
-        record.levelname = f"{color}{record.levelname}{self.COLORS['RESET']}"
-        return super().format(record)
+        original_levelname = record.levelname
+        try:
+            color = self.COLORS.get(original_levelname, self.COLORS['RESET'])
+            record.levelname = f"{color}{original_levelname}{self.COLORS['RESET']}"
+            return super().format(record)
+        finally:
+            record.levelname = original_levelname
 
 class AdvancedProgressTracker:
     def __init__(self, progress, queue: Queue, logger: AppLogger, ui_stage_name: str = ""):
@@ -1112,6 +1127,8 @@ class Frame:
                         self.metrics.blink_prob = max(blendshapes.get('eyeBlinkLeft', 0), blendshapes.get('eyeBlinkRight', 0))
 
                 if landmarker_result.facial_transformation_matrixes and any(metrics_to_compute.get(k) for k in ['yaw', 'pitch']):
+                    if not landmarker_result.facial_transformation_matrixes:
+                        continue
                     matrix = landmarker_result.facial_transformation_matrixes[0]
                     sy = math.sqrt(matrix[0, 0] * matrix[0, 0] + matrix[1, 0] * matrix[1, 0])
                     singular = sy < 1e-6
@@ -1416,25 +1433,57 @@ class ThumbnailManager:
 
 # --- MODEL LOADING & MANAGEMENT ---
 
-def download_model(url, dest_path, description, logger, error_handler: ErrorHandler, user_agent: str, min_size=1_000_000):
+def _compute_sha256(path: Path) -> str:
+    """Computes the SHA256 hash of a file."""
+    h = hashlib.sha256()
+    with open(path, 'rb') as f:
+        while chunk := f.read(8192):
+            h.update(chunk)
+    return h.hexdigest()
+
+def download_model(url, dest_path, description, logger, error_handler: ErrorHandler, user_agent: str, min_size=1_000_000, expected_sha256: Optional[str] = None):
     dest_path = Path(dest_path)
     dest_path.parent.mkdir(parents=True, exist_ok=True)
-    if dest_path.is_file() and (min_size is None or dest_path.stat().st_size >= min_size):
-        logger.info(f"Using cached {description}: {dest_path}")
-        return
+    if dest_path.is_file():
+        if expected_sha256:
+            actual_sha256 = _compute_sha256(dest_path)
+            if actual_sha256 == expected_sha256:
+                logger.info(f"Using cached and verified {description}: {dest_path}")
+                return
+            else:
+                logger.warning(f"Cached {description} has incorrect SHA256. Re-downloading.",
+                               extra={'expected': expected_sha256, 'actual': actual_sha256})
+                dest_path.unlink()
+        elif min_size is None or dest_path.stat().st_size >= min_size:
+            logger.info(f"Using cached {description} (SHA not verified): {dest_path}")
+            return
+
     @error_handler.with_retry(recoverable_exceptions=(urllib.error.URLError, TimeoutError, RuntimeError))
     def download_func():
         logger.info(f"Downloading {description}", extra={'url': url, 'dest': dest_path})
         req = urllib.request.Request(url, headers={"User-Agent": user_agent})
-        with urllib.request.urlopen(req, timeout=60) as resp, open(dest_path, "wb") as out:
+        with urllib.request.urlopen(req, timeout=180) as resp, open(dest_path, "wb") as out:
             shutil.copyfileobj(resp, out)
-        if not dest_path.exists() or dest_path.stat().st_size < min_size:
-            raise RuntimeError(f"Downloaded {description} seems incomplete")
-        logger.success(f"{description} downloaded successfully.")
+
+        if not dest_path.exists():
+            raise RuntimeError(f"Download of {description} failed (file not found after download).")
+
+        if expected_sha256:
+            actual_sha256 = _compute_sha256(dest_path)
+            if actual_sha256 != expected_sha256:
+                raise RuntimeError(f"SHA256 mismatch for {description}. Expected {expected_sha256}, got {actual_sha256}.")
+        elif dest_path.stat().st_size < min_size:
+            raise RuntimeError(f"Downloaded {description} seems incomplete (file size too small).")
+
+        logger.success(f"{description} downloaded and verified successfully.")
+
     try:
         download_func()
     except Exception as e:
         logger.error(f"Failed to download {description}", exc_info=True, extra={'url': url})
+        # Clean up partial download if it exists
+        if dest_path.exists():
+            dest_path.unlink()
         raise RuntimeError(f"Failed to download required model: {description}") from e
 
 # Thread-local storage for non-thread-safe models
@@ -1500,19 +1549,31 @@ class PersonDetector:
         from ultralytics import YOLO
         self.logger = logger
         self.device = device if torch.cuda.is_available() else 'cpu'
-        # Allow passing a model name or a local path
-        model_str = str(model_path)
-        if not Path(model_str).exists():
-            self.logger.info(f"Loading YOLO model by name: {model_str} (will auto-download if needed)")
-        self.model = YOLO(model_str)
-        self.model.to(self.device)
-        self.imgsz = imgsz
-        self.conf = conf
-        self.logger.info("YOLO person detector loaded", component="person_detector",
-                         custom_fields={'device': self.device, 'model': model_str})
+        model_p = Path(model_path)
+        model_str = str(model_p)
+
+        if not model_p.exists():
+            # If the path doesn't exist, pass just the filename to YOLO
+            # so it can trigger the auto-download from Ultralytics Hub.
+            model_str_for_yolo = model_p.name
+            self.logger.info(f"Local YOLO model not found at '{model_str}'. Attempting to load by name for auto-download.",
+                             component="person_detector", extra={'model_name': model_str_for_yolo})
+        else:
+            model_str_for_yolo = model_str
+
+        try:
+            self.model = YOLO(model_str_for_yolo)
+            self.model.to(self.device)
+            self.imgsz = imgsz
+            self.conf = conf
+            self.logger.info("YOLO person detector loaded", component="person_detector",
+                             custom_fields={'device': self.device, 'model': model_str_for_yolo})
+        except Exception as e:
+            self.logger.error("Failed to load YOLO model", component="person_detector", exc_info=True)
+            raise e
 
     def detect_boxes(self, img_rgb):
-        res = self.model.predict(img_rgb, imgsz=self.imgsz, conf=self.conf, classes=[0], verbose=False, device=self.device)
+        res = self.model.predict(img_rgb, imgsz=self.imgsz, conf=self.conf, classes=[0], verbose=False)
         out = []
         for r in res:
             if getattr(r, "boxes", None) is None:
@@ -1572,7 +1633,8 @@ def get_grounding_dino_model(gdino_config_path: str, gdino_checkpoint_path: str,
             if not ckpt_path.is_absolute():
                 ckpt_path = models_dir / ckpt_path.name
             download_model(grounding_dino_url,
-                           ckpt_path, "GroundingDINO Swin-T model", logger, error_handler, user_agent, min_size=500_000_000)
+                           ckpt_path, "GroundingDINO Swin-T model", logger, error_handler, user_agent,
+                           expected_sha256=Config().models.grounding_dino_sha256)
             _dino_model_cache = gdino_load_model(
                 model_config_path=config_path,
                 model_checkpoint_path=str(ckpt_path),
@@ -1614,8 +1676,10 @@ def get_dam4sam_tracker(model_name: str, models_path: str, model_urls_tuple: tup
                 if selected_name not in model_urls:
                     raise ValueError(f"Unknown DAM4SAM model: {selected_name}")
                 url = model_urls[selected_name]
+                expected_sha256 = Config().models.dam4sam_sha256.get(selected_name)
                 checkpoint_path = models_dir / Path(url).name
-                download_model(url, checkpoint_path, f"DAM4SAM {selected_name}", logger, error_handler, user_agent, min_size=100_00_000)
+                download_model(url, checkpoint_path, f"DAM4SAM {selected_name}", logger, error_handler, user_agent,
+                               expected_sha256=expected_sha256)
                 actual_path, _ = dam_utils.determine_tracker(selected_name)
                 if not Path(actual_path).exists():
                     Path(actual_path).parent.mkdir(exist_ok=True, parents=True)
@@ -1695,7 +1759,8 @@ def initialize_analysis_models(params: AnalysisParameters, config: Config, logge
     # Initialize MediaPipe Face Landmarker
     landmarker_path = Path(config.paths.models) / Path(config.models.face_landmarker).name
     error_handler = ErrorHandler(logger, config.retry.max_attempts, config.retry.backoff_seconds)
-    download_model(config.models.face_landmarker, landmarker_path, "MediaPipe Face Landmarker", logger, error_handler, config.models.user_agent)
+    download_model(config.models.face_landmarker, landmarker_path, "MediaPipe Face Landmarker", logger, error_handler,
+                   config.models.user_agent, expected_sha256=config.models.face_landmarker_sha256)
     if landmarker_path.exists():
         face_landmarker = get_face_landmarker(str(landmarker_path), logger)
 
@@ -1726,7 +1791,7 @@ class VideoManager:
 
             ydl_opts = {
                 'outtmpl': str(Path(self.config.paths.downloads) / tmpl),
-                'format': fmt,
+                'format': self.config.youtube_dl.format_string.format(max_res=max_h) if max_h else "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best",
                 'merge_output_format': 'mp4',
                 'noprogress': True,
                 'quiet': True
@@ -5804,30 +5869,46 @@ class EnhancedAppUI(AppUI):
         return self.export_kept_frames(ExportEvent(all_frames_data, output_dir, video_path, enable_crop, crop_ars, crop_padding, filter_args))
 
     def export_kept_frames(self, event: ExportEvent):
-        if not event.all_frames_data: return "No metadata to export."
-        if not event.video_path or not Path(event.video_path).exists(): return "[ERROR] Original video path is required for export."
+        if not event.all_frames_data:
+            return "No metadata to export."
+        if not event.video_path or not Path(event.video_path).exists():
+            return "[ERROR] Original video path is required for export."
+
+        out_root = Path(event.output_dir)
+
         try:
             filters = event.filter_args.copy()
-            filters.update({"face_sim_enabled": any("face_sim" in f for f in event.all_frames_data),
-                            "mask_area_enabled": any("mask_area_pct" in f for f in event.all_frames_data),
-                            "enable_dedup": any('phash' in f for f in event.all_frames_data)})
+            filters.update({
+                "face_sim_enabled": any("face_sim" in f for f in event.all_frames_data),
+                "mask_area_enabled": any("mask_area_pct" in f for f in event.all_frames_data),
+                "enable_dedup": any('phash' in f for f in event.all_frames_data)
+            })
             kept, _, _, _ = apply_all_filters_vectorized(event.all_frames_data, filters, self.config)
-            if not kept: return "No frames kept after filtering. Nothing to export."
-            out_root = Path(event.output_dir)
-            if not (frame_map_path := out_root / "frame_map.json").exists(): return "[ERROR] frame_map.json not found. Cannot export."
-            with frame_map_path.open('r', encoding='utf-8') as f: frame_map_list = json.load(f)
+            if not kept:
+                return "No frames kept after filtering. Nothing to export."
 
-            # Determine analysis ext from any kept filename
+            frame_map_path = out_root / "frame_map.json"
+            if not frame_map_path.exists():
+                return "[ERROR] frame_map.json not found. Cannot export."
+            with frame_map_path.open('r', encoding='utf-8') as f:
+                frame_map_list = json.load(f)
+
             sample_name = next((f['filename'] for f in kept if 'filename' in f), None)
             analyzed_ext = Path(sample_name).suffix if sample_name else '.webp'
 
-            # Build map using analyzed_ext, not hardcoded .png
-            fn_to_orig_map = {f"frame_{i+1:06d}{analyzed_ext}": orig
-            for i, orig in enumerate(sorted(frame_map_list))}
-            frames_to_extract = sorted([fn_to_orig_map.get(f['filename']) for f in kept if f.get('filename') in fn_to_orig_map])
+            fn_to_orig_map = {
+                f"frame_{i+1:06d}{analyzed_ext}": orig
+                for i, orig in enumerate(sorted(frame_map_list))
+            }
+            frames_to_extract = sorted([
+                fn_to_orig_map.get(f['filename'])
+                for f in kept if f.get('filename') in fn_to_orig_map
+            ])
             frames_to_extract = [n for n in frames_to_extract if n is not None]
 
-            if not frames_to_extract: return "No frames to extract."
+            if not frames_to_extract:
+                return "No frames to extract."
+
             select_filter = f"select='{'+'.join([f'eq(n,{fn})' for fn in frames_to_extract])}'"
             export_dir = out_root.parent / f"{out_root.name}_exported_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             export_dir.mkdir(exist_ok=True, parents=True)
@@ -5835,34 +5916,23 @@ class EnhancedAppUI(AppUI):
             self.logger.info("Starting final export extraction...", extra={'command': ' '.join(cmd)})
             subprocess.run(cmd, check=True, capture_output=True, text=True)
 
-            # Rename the sequentially numbered files to match their original analysis filenames.
             self.logger.info("Renaming extracted frames to match original filenames...")
             orig_to_filename_map = {v: k for k, v in fn_to_orig_map.items()}
-
-            # Build rename plan
             plan = []
             for i, orig_frame_num in enumerate(frames_to_extract):
                 sequential_filename = f"frame_{i+1:06d}.png"
                 target_filename = orig_to_filename_map.get(orig_frame_num)
                 if not target_filename:
                     continue
-
                 src = export_dir / sequential_filename
                 dst = export_dir / target_filename
-                if src == dst:
-                    continue
-                plan.append((src, dst))
+                if src != dst:
+                    plan.append((src, dst))
 
-            # Use a two-phase rename to avoid conflicts: first move all sources to unique temporary names,
-            # then move temps to final destinations. This prevents overwriting when multiple renames
-            # involve files that could conflict with each other during the process.
-            # Phase 1: move all sources to unique temps
             temp_map = {}
             for i, (src, _) in enumerate(plan):
-                if not src.exists():
-                    continue
+                if not src.exists(): continue
                 tmp = export_dir / f"__tmp_{i:06d}__{src.name}"
-                # Ensure no accidental collision with prior tmp
                 j = i
                 while tmp.exists():
                     j += 1
@@ -5871,28 +5941,23 @@ class EnhancedAppUI(AppUI):
                     src.rename(tmp)
                     temp_map[src] = tmp
                 except FileNotFoundError:
-                    self.logger.warning(f"Could not find {src.name} to rename to temporary file.", extra={'target': tmp.name})
+                    self.logger.warning(f"Could not find {src.name} to rename.", extra={'target': tmp.name})
 
-
-            # Phase 2: move temps to final destinations
             for src, dst in plan:
                 tmp = temp_map.get(src)
-                if tmp is None or not tmp.exists():
-                    continue
-                
-                # If dst somehow exists (e.g., external file), pick a fresh suffix or remove it per your policy
-                if dst.exists():
-                    # choose one: raise, delete, or re-suffix; here we re-suffix deterministically
-                    stem, ext = dst.stem, dst.suffix
-                    k, alt = 1, export_dir / f"{stem} (1){ext}"
-                    while alt.exists():
-                        k += 1
-                        alt = export_dir / f"{stem} ({k}){ext}"
-                    dst = alt
-                try:
-                    tmp.rename(dst)
-                except FileNotFoundError:
-                    self.logger.warning(f"Could not find temporary file {tmp.name} to rename to final destination.", extra={'target': dst.name})
+                if tmp and tmp.exists():
+                    if dst.exists():
+                        stem, ext = dst.stem, dst.suffix
+                        k, alt = 1, export_dir / f"{stem} (1){ext}"
+                        while alt.exists():
+                            k += 1
+                            alt = export_dir / f"{stem} ({k}){ext}"
+                        dst = alt
+                    try:
+                        tmp.rename(dst)
+                    except FileNotFoundError:
+                        self.logger.warning(f"Could not find temp file {tmp.name} to rename.", extra={'target': dst.name})
+
             if event.enable_crop:
                 self.logger.info("Starting crop export...")
                 crop_dir = export_dir / "cropped"
@@ -6013,7 +6078,7 @@ class EnhancedAppUI(AppUI):
                     except Exception as e:
                         self.logger.error(f"Failed to crop frame {frame_meta['filename']}", exc_info=True)
                 self.logger.info(f"Cropping complete. Saved {num_cropped} cropped images.")
-            return f"Exported {len(frames_to_extract)} frames to {export_dir.name}."
+            return f"Exported {len(kept)} frames to {export_dir.name}."
         except subprocess.CalledProcessError as e:
             self.logger.error("FFmpeg export failed", exc_info=True, extra={'stderr': e.stderr})
             return "Error during export: FFmpeg failed. Check logs."
