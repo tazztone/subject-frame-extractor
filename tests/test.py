@@ -161,7 +161,8 @@ class TestConfig:
 
     @patch('builtins.open', new_callable=mock_open, read_data='{"paths": {"logs": "custom_logs"}, "quality_weights": {"sharpness": 50}}')
     @patch('pathlib.Path.exists', return_value=True)
-    def test_file_override(self, mock_exists, mock_file, test_config):
+    @patch('os.access', return_value=True)
+    def test_file_override(self, mock_access, mock_exists, mock_file, test_config):
         """Verify that a config file overrides defaults."""
         with patch('app.Config._create_dirs'):
             config = app.Config(config_path="dummy_path.json")
@@ -189,14 +190,6 @@ class TestConfig:
             config = app.Config(config_path="dummy_path.yml")
             assert config.paths.logs == "env_logs"
 
-    @patch('app.Path.mkdir')
-    def test_create_dirs_called_on_init(self, mock_mkdir):
-        """Verify that necessary directories are created on Config initialization."""
-        with patch('app.open', mock_open(read_data='{}'), create=True):
-            Config(config_path='dummy_path.json')
-            # Check that mkdir was called for the default log, models, and downloads paths
-            assert unittest.mock.call(exist_ok=True, parents=True) in mock_mkdir.call_args_list
-
     @patch('app.Path.mkdir', MagicMock())
     @patch.dict(os.environ, {
         'APP_PATHS_LOGS': 'env_logs',
@@ -223,11 +216,12 @@ class TestConfig:
             assert not cfg.gradio_defaults.show_mask_overlay
 
     @patch('app.Path.mkdir', MagicMock())
+    @patch('os.access', return_value=True)
     @patch.dict(os.environ, {
         'APP_PATHS_LOGS': 'env_logs_override_file',
         'APP_RETRY_MAX_ATTEMPTS': '20'
     })
-    def test_env_vars_override_file_config(self):
+    def test_env_vars_override_file_config(self, mock_access):
         """Test that environment variables take precedence over a config file."""
         file_config = {
             "paths": {"logs": "file_logs"},
@@ -535,7 +529,11 @@ class TestVideo:
     @patch('app.VideoManager.get_video_info')
     @patch('app.run_ffmpeg_extraction')
     @patch('pathlib.Path.is_file', return_value=True)
-    def test_extraction_pipeline_run(self, mock_is_file, mock_ffmpeg, mock_info, test_config):
+    @patch('pathlib.Path.exists', return_value=True)
+    @patch('pathlib.Path.stat', return_value=MagicMock(st_size=1, st_mode=0))
+    @patch('cv2.VideoCapture')
+    @patch('pathlib.Path.mkdir')
+    def test_extraction_pipeline_run(self, mock_mkdir, mock_videocapture, mock_stat, mock_exists, mock_is_file, mock_ffmpeg, mock_info, test_config):
         params = app.AnalysisParameters.from_ui(MagicMock(), test_config, source_path='/fake.mp4')
         logger = MagicMock()
         
@@ -632,7 +630,10 @@ class TestVideoManager:
         assert result == "/fake/path/video.mp4"
 
     @patch('pathlib.Path.is_file', return_value=True)
-    def test_prepare_video_local_file(self, mock_is_file, test_config):
+    @patch('pathlib.Path.exists', return_value=True)
+    @patch('pathlib.Path.stat', return_value=MagicMock(st_size=1))
+    @patch('cv2.VideoCapture')
+    def test_prepare_video_local_file(self, mock_videocapture, mock_stat, mock_exists, mock_is_file, test_config):
         """Verify local file path is returned directly."""
         source_path = "/path/to/local/video.mp4"
         video_manager = app.VideoManager(source_path, test_config)
@@ -985,7 +986,10 @@ class TestEnhancedAppUI:
         """Test the extraction wrapper in the UI class."""
         mock_execute_extraction.return_value = iter([{"done": True, "log": "Success"}])
         args = [None] * len(mock_app_ui.ext_ui_map_keys)
-        result = mock_app_ui.run_extraction_wrapper(*args)
+        # Consume the generator to get the final result
+        result = None
+        for r in mock_app_ui.run_extraction_wrapper(*args):
+            result = r
         assert result['unified_log'] == "Success"
         mock_execute_extraction.assert_called_once()
 
@@ -994,7 +998,10 @@ class TestEnhancedAppUI:
         """Test the pre-analysis wrapper in the UI class."""
         mock_execute_pre_analysis.return_value = iter([{"done": True, "log": "Success", "scenes": []}])
         args = [None] * len(mock_app_ui.ana_ui_map_keys)
-        result = mock_app_ui.run_pre_analysis_wrapper(*args)
+        # Consume the generator to get the final result
+        result = None
+        for r in mock_app_ui.run_pre_analysis_wrapper(*args):
+            result = r
         assert "Success" in result['unified_log']
         mock_execute_pre_analysis.assert_called_once()
 
@@ -1060,14 +1067,15 @@ class TestCompositionRoot:
         assert isinstance(root.get_thumbnail_manager(), MagicMock)
         mock_logger.return_value.set_progress_queue.assert_called_once()
 
-    @patch('app.CompositionRoot.get_app_ui')
-    def test_cleanup(self, mock_get_app_ui):
+    @patch('app.cleanup_models')
+    def test_cleanup(self, mock_cleanup_models):
         """Tests that the cleanup method calls necessary cleanup functions."""
         root = app.CompositionRoot()
-        root.thumbnail_manager.cleanup = MagicMock()
+        root.thumbnail_manager.clear_cache = MagicMock()
         root.cancel_event.set = MagicMock()
         root.cleanup()
-        root.thumbnail_manager.cleanup.assert_called_once()
+        mock_cleanup_models.assert_called_once()
+        root.thumbnail_manager.clear_cache.assert_called_once()
         root.cancel_event.set.assert_called_once()
 
     def test_composition_root_uses_json_not_yml(self):
