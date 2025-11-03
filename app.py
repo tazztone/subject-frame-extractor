@@ -386,7 +386,17 @@ class Config:
         self._from_dict(config_dict)
 
         # 5. Create necessary directories
-        self._create_dirs()
+        self._validate_paths()
+
+    def _validate_paths(self):
+        """Validate critical paths exist and are accessible"""
+        required_dirs = [self.paths.logs, self.paths.models, self.paths.downloads]
+        for dir_path in required_dirs:
+            path = Path(dir_path)
+            if not path.exists():
+                path.mkdir(parents=True, exist_ok=True)
+            if not os.access(path, os.W_OK):
+                raise PermissionError(f"No write permission for: {path}")
 
     def _merge_configs(self, base, override):
         for key, value in override.items():
@@ -885,6 +895,45 @@ class SessionLoadEvent(UIEvent):
     session_path: str
 
 # --- UTILS ---
+import functools
+
+def handle_common_errors(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except FileNotFoundError as e:
+            return {"error": f"File not found: {e}. Please check the path."}
+        except RuntimeError as e:
+            if "CUDA out of memory" in str(e):
+                return {"error": "GPU memory full. Try reducing batch size or using CPU mode."}
+            return {"error": f"Processing error: {e}"}
+        except Exception as e:
+            return {"error": f"Unexpected error: {e}"}
+    return wrapper
+
+def monitor_memory_usage(logger, threshold_mb=8000):
+    if torch.cuda.is_available():
+        allocated = torch.cuda.memory_allocated() / 1024**2
+        if allocated > threshold_mb:
+            logger.warning(f"High GPU memory usage: {allocated:.1f}MB")
+            torch.cuda.empty_cache()
+
+def validate_video_file(video_path):
+    path = Path(video_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Video file not found: {video_path}")
+    if path.stat().st_size == 0:
+        raise ValueError(f"Video file is empty: {video_path}")
+
+    # Quick format check
+    try:
+        cap = cv2.VideoCapture(str(video_path))
+        if not cap.isOpened():
+            raise ValueError(f"Could not open video file: {video_path}")
+        cap.release()
+    except Exception as e:
+        raise ValueError(f"Invalid video file: {e}")
 
 def _to_json_safe(obj):
     if isinstance(obj, (Path, datetime)):
@@ -1478,10 +1527,15 @@ def get_person_detector(model_path_str: str, device: str, imgsz: int, conf: floa
     """Load YOLO model on first use, cache for reuse."""
     global _yolo_model_cache
     if model_path_str not in _yolo_model_cache:
-        logger.info(f"Loading YOLO model: {Path(model_path_str).name} (first use)", component="person_detector")
-        from ultralytics import YOLO
-        _yolo_model_cache[model_path_str] = PersonDetector(logger=logger, model_path=Path(model_path_str), imgsz=imgsz, conf=conf, device=device)
-        logger.success(f"YOLO model {Path(model_path_str).name} loaded successfully", component="person_detector")
+        try:
+            logger.info(f"Loading YOLO model: {Path(model_path_str).name} (first use)", component="person_detector")
+            from ultralytics import YOLO
+            _yolo_model_cache[model_path_str] = PersonDetector(logger=logger, model_path=Path(model_path_str), imgsz=imgsz, conf=conf, device=device)
+            logger.success(f"YOLO model {Path(model_path_str).name} loaded successfully", component="person_detector")
+        except Exception as e:
+            logger.warning(f"Primary detector failed, using fallback: {e}")
+            # Try smaller model
+            _yolo_model_cache[model_path_str] = get_person_detector(model_path_str="yolo11s.pt", device=device, imgsz=imgsz, conf=conf, logger=logger)
     return _yolo_model_cache[model_path_str]
 
 
@@ -1684,7 +1738,7 @@ class VideoManager:
             except ytdlp.utils.DownloadError as e:
                 raise RuntimeError(f"Download failed. Resolution may not be available. Details: {e}") from e
         local_path = Path(self.source_path)
-        if not local_path.is_file(): raise FileNotFoundError(f"Video file not found: {local_path}")
+        validate_video_file(local_path)
         return str(local_path)
 
     @staticmethod
@@ -2398,7 +2452,9 @@ class SubjectMasker:
             return {"error": "DAM4SAM tracker initialization failed", "completed": False}
         self.frame_map = self.frame_map or self._create_frame_map(frames_dir)
         mask_metadata, total_scenes = {}, len(scenes_to_process)
+        progress_file = self.mask_dir.parent / "progress.json"
         for i, scene in enumerate(scenes_to_process):
+            monitor_memory_usage(self.logger, self.config.monitoring.memory_warning_threshold_mb)
             with safe_resource_cleanup():
                 if self.cancel_event.is_set(): break
                 self.logger.info(f"Masking scene {i+1}/{total_scenes}", user_context={'shot_id': scene.shot_id, 'start_frame': scene.start_frame, 'end_frame': scene.end_frame})
@@ -2638,8 +2694,15 @@ class AnalysisPipeline(Pipeline):
         else:
             # This is the existing video analysis pipeline.
             try:
+                # Check for existing progress
+                progress_file = self.output_dir / "progress.json"
+                if progress_file.exists() and self.params.resume:
+                    with open(progress_file) as f:
+                        progress_data = json.load(f)
+                    # Resume from last completed scene
+                    scenes_to_process = self._filter_completed_scenes(scenes_to_process, progress_data)
                 # Ensure metadata file is properly handled
-                if self.metadata_path.exists():
+                if self.metadata_path.exists() and not self.params.resume:
                     self.metadata_path.unlink()
 
                 with open(self.metadata_path, 'w', encoding='utf-8') as f:
@@ -2662,7 +2725,12 @@ class AnalysisPipeline(Pipeline):
                 masker = SubjectMasker(self.params, self.progress_queue, self.cancel_event, self.config, self._create_frame_map(),
                                        self.face_analyzer, self.reference_embedding, person_detector, thumbnail_manager=self.thumbnail_manager,
                                        niqe_metric=self.niqe_metric, logger=self.logger, face_landmarker=self.face_landmarker)
-                self.mask_metadata = masker.run_propagation(str(self.output_dir), scenes_to_process, tracker=tracker)
+                for scene in scenes_to_process:
+                    if self.cancel_event.is_set():
+                        self.logger.info("Propagation cancelled by user.")
+                        break
+                    self.mask_metadata.update(masker.run_propagation(str(self.output_dir), [scene], tracker=tracker))
+                    self._save_progress(scene, progress_file)
 
                 if self.cancel_event.is_set():
                     self.logger.info("Propagation cancelled by user.")
@@ -2703,6 +2771,19 @@ class AnalysisPipeline(Pipeline):
     def _create_frame_map(self):
         ext = ".webp" if self.params.thumbnails_only else ".png"
         return create_frame_map(self.output_dir, self.logger, ext=ext)
+
+    def _filter_completed_scenes(self, scenes, progress_data):
+        completed_scenes = progress_data.get("completed_scenes", [])
+        return [s for s in scenes if s.shot_id not in completed_scenes]
+
+    def _save_progress(self, current_scene, progress_file):
+        progress_data = {"completed_scenes": []}
+        if progress_file.exists():
+            with open(progress_file) as f:
+                progress_data = json.load(f)
+        progress_data["completed_scenes"].append(current_scene.shot_id)
+        with open(progress_file, 'w') as f:
+            json.dump(progress_data, f)
     def _process_reference_face(self):
         if not self.face_analyzer: return
         ref_path = Path(self.params.face_ref_img_path)
@@ -2740,6 +2821,7 @@ class AnalysisPipeline(Pipeline):
             batches = [image_files_to_process[i:i + batch_size] for i in range(0, len(image_files_to_process), batch_size)]
             futures = [executor.submit(self._process_batch, batch) for batch in batches]
             for future in as_completed(futures):
+                monitor_memory_usage(self.logger, self.config.monitoring.memory_warning_threshold_mb)
                 if self.cancel_event.is_set():
                     for f in futures: f.cancel()
                     break
@@ -3430,6 +3512,7 @@ def _wire_recompute_handler(config, logger, thumbnail_manager, scenes, shot_id, 
 
 # --- PIPELINE LOGIC ---
 
+@handle_common_errors
 def execute_extraction(event: ExtractionEvent, progress_queue: Queue, cancel_event: threading.Event, logger: AppLogger, config: Config, thumbnail_manager=None, cuda_available=None, progress=None):
     try:
         params_dict = asdict(event)
@@ -3457,6 +3540,7 @@ def execute_extraction(event: ExtractionEvent, progress_queue: Queue, cancel_eve
         logger.error("Extraction execution failed", exc_info=True)
         yield {"log": f"[ERROR] Extraction failed unexpectedly: {e}", "done": False}
 
+@handle_common_errors
 def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue, cancel_event: threading.Event, logger: AppLogger,
                          config: Config, thumbnail_manager, cuda_available, progress=None):
     try:
@@ -3858,10 +3942,14 @@ def execute_propagation(event: PropagationEvent, progress_queue: Queue, cancel_e
         else:
             yield {"log": "❌ Propagation failed - pipeline returned no results.",
                     "status": "Failed", "done": False}
+    except torch.cuda.OutOfMemoryError:
+        logger.error("CUDA out of memory during propagation")
+        yield {"log": "[ERROR] GPU memory exhausted. Try smaller model or batch size.", "done": False}
     except Exception as e:
         logger.error("Propagation execution failed", exc_info=True)
         yield {"log": f"[ERROR] Propagation failed unexpectedly: {e}", "done": False}
 
+@handle_common_errors
 def execute_analysis(event: PropagationEvent, progress_queue: Queue, cancel_event: threading.Event, logger: AppLogger,
                      config: Config, thumbnail_manager, cuda_available, progress=None):
     try:
@@ -4054,7 +4142,11 @@ class AppUI:
 
     def _build_header(self):
         gr.Markdown("# 🎬 Frame Extractor & Analyzer v2.0")
-        if not self.cuda_available: gr.Markdown("⚠️ **CPU Mode** — GPU-dependent features are disabled or will be slow.")
+        status_color = "🟢" if self.cuda_available else "🟡"
+        status_text = "GPU Accelerated" if self.cuda_available else "CPU Mode (Slower)"
+        gr.Markdown(f"{status_color} **{status_text}**")
+        if not self.cuda_available:
+            gr.Markdown("⚠️ **CPU Mode** — GPU-dependent features are disabled or will be slow.")
 
     def _build_main_tabs(self):
         with gr.Tabs() as main_tabs:
@@ -4402,8 +4494,17 @@ class EnhancedAppUI(AppUI):
 
         with ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(task_func, *args)
-            while not future.done():
-                if self.cancel_event.is_set(): future.cancel(); break
+            start_time = time.time()
+            while future.running():
+                if time.time() - start_time > 3600:
+                    self.app_logger.error("Task timed out after 1 hour")
+                    self.cancel_event.set()
+                    future.cancel()
+                    break
+
+                if self.cancel_event.is_set():
+                    future.cancel()
+                    break
 
                 if tracker_instance and not tracker_instance.pause_event.is_set():
                     time.sleep(0.2)
@@ -4413,7 +4514,6 @@ class EnhancedAppUI(AppUI):
                     msg, update_dict = self.progress_queue.get(timeout=0.1), {}
                     if "log" in msg:
                         self.all_logs.append(msg['log'])
-                        # This logic can be simplified but is kept for now.
                         if self.log_filter_level.upper() == "DEBUG" or f"[{self.log_filter_level.upper()}]" in msg['log']:
                             update_dict[self.components['unified_log']] = gr.update(value="\n".join([l for l in self.all_logs if self.log_filter_level.upper() == "DEBUG" or f"[{self.log_filter_level.upper()}]" in l][-1000:]))
                     if "progress" in msg:
@@ -4429,7 +4529,8 @@ class EnhancedAppUI(AppUI):
                         update_dict[self.components['progress_details']] = gr.update(value=details_html)
 
                     if update_dict: yield update_dict
-                except Empty: pass
+                except Empty:
+                    pass
                 time.sleep(0.05)
         final_updates, final_msg, final_label = {}, "✅ Task completed successfully.", "Complete"
         try:
@@ -5921,6 +6022,16 @@ class EnhancedAppUI(AppUI):
             return f"Error during export: {e}"
 
 # --- COMPOSITION & MAIN ---
+def cleanup_models():
+    global _yolo_model_cache, _dino_model_cache, _dam4sam_model_cache, _lpips_model_cache
+    _yolo_model_cache.clear()
+    _dino_model_cache = None
+    _dam4sam_model_cache.clear()
+    _lpips_model_cache.clear()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    gc.collect()
+
 
 class CompositionRoot:
     def __init__(self):
@@ -5942,7 +6053,10 @@ class CompositionRoot:
     def get_logger(self): return self.logger
     def get_thumbnail_manager(self): return self.thumbnail_manager
     def cleanup(self):
-        if hasattr(self.thumbnail_manager, 'cleanup'): self.thumbnail_manager.cleanup()
+        cleanup_models()
+        self.thumbnail_manager.clear_cache()
+        if hasattr(self, '_app_ui'):
+            self._app_ui = None
         self.cancel_event.set()
 
 
