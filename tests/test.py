@@ -10,6 +10,7 @@ import numpy as np
 import gradio as gr
 import cv2
 import datetime
+from collections import deque
 
 # Mock heavy dependencies before they are imported by the app
 mock_torch = MagicMock(name='torch')
@@ -983,19 +984,30 @@ class TestEnhancedAppUI:
     @patch('app.execute_extraction')
     def test_run_extraction_wrapper(self, mock_execute_extraction, mock_app_ui):
         """Test the extraction wrapper in the UI class."""
-        mock_execute_extraction.return_value = iter([{"done": True, "log": "Success"}])
+        mock_execute_extraction.return_value = iter([{"done": True, "log": "Success", "output_dir": "/fake"}])
         args = [None] * len(mock_app_ui.ext_ui_map_keys)
-        result = mock_app_ui.run_extraction_wrapper(*args)
-        assert result['unified_log'] == "Success"
+
+        # Act
+        updates = mock_app_ui.run_extraction_wrapper(*args)
+        # The wrapper is a generator; consume it to get the final update
+        final_update = deque(updates, maxlen=1)[0]
+
+        # Assert
+        assert final_update['unified_log'] == "Success"
         mock_execute_extraction.assert_called_once()
 
     @patch('app.execute_pre_analysis')
     def test_run_pre_analysis_wrapper(self, mock_execute_pre_analysis, mock_app_ui):
         """Test the pre-analysis wrapper in the UI class."""
-        mock_execute_pre_analysis.return_value = iter([{"done": True, "log": "Success", "scenes": []}])
+        mock_execute_pre_analysis.return_value = iter([{"done": True, "log": "Success", "scenes": [], "output_dir": "/fake"}])
         args = [None] * len(mock_app_ui.ana_ui_map_keys)
-        result = mock_app_ui.run_pre_analysis_wrapper(*args)
-        assert "Success" in result['unified_log']
+
+        # Act
+        updates = mock_app_ui.run_pre_analysis_wrapper(*args)
+        final_update = deque(updates, maxlen=1)[0]
+
+        # Assert
+        assert "Success" in final_update['unified_log']
         mock_execute_pre_analysis.assert_called_once()
 
     @patch('app.gr.Button')
