@@ -1129,8 +1129,7 @@ class Frame:
                         self.metrics.blink_prob = max(blendshapes.get('eyeBlinkLeft', 0), blendshapes.get('eyeBlinkRight', 0))
 
                 if landmarker_result.facial_transformation_matrixes and any(metrics_to_compute.get(k) for k in ['yaw', 'pitch']):
-                    if not landmarker_result.facial_transformation_matrixes:
-                        continue
+
                     matrix = landmarker_result.facial_transformation_matrixes[0]
                     sy = math.sqrt(matrix[0, 0] * matrix[0, 0] + matrix[1, 0] * matrix[1, 0])
                     singular = sy < 1e-6
