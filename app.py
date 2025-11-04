@@ -149,12 +149,20 @@ class Config:
     class Models:
         user_agent: str = "Mozilla/5.0"
         grounding_dino: str = "https://github.com/IDEA-Research/GroundingDINO/releases/download/v0.1.0-alpha/groundingdino_swint_ogc.pth"
+        grounding_dino_sha256: str = "632890e5af9241ca1b7f1f946b5a9f8c505651504443df4e2593265745a18f13"
         face_landmarker: str = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
+        face_landmarker_sha256: Optional[str] = None # No official hash found
         dam4sam: Dict[str, str] = field(default_factory=lambda: {
             "sam21pp-T": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt",
             "sam21pp-S": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_small.pt",
             "sam21pp-B+": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_base_plus.pt",
             "sam21pp-L": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt",
+        })
+        dam4sam_sha256: Dict[str, str] = field(default_factory=lambda: {
+            "sam21pp-T": "7402e0d864fa82708a20fbd15bc84245c2f26dff0eb43a4b5b93452deb34be69",
+            "sam21pp-S": "95949964d4e548409021d47b22712d5f1abf2564cc0c3c765ba599a24ac7dce3",
+            "sam21pp-B+": "a2345aede8715ab1d5d31b4a509fb160c5a4af1970f199d9054ccfb746c004c5",
+            "sam21pp-L": "8b36b71d5cafc83a0975d14d0afae81c3915804e12cc896b0665eaabcc445d56",
         })
         yolo: str = "https://huggingface.co/Ultralytics/YOLO11/resolve/main/"
 
@@ -386,7 +394,17 @@ class Config:
         self._from_dict(config_dict)
 
         # 5. Create necessary directories
-        self._create_dirs()
+        self._validate_paths()
+
+    def _validate_paths(self):
+        """Validate critical paths exist and are accessible"""
+        required_dirs = [self.paths.logs, self.paths.models, self.paths.downloads]
+        for dir_path in required_dirs:
+            path = Path(dir_path)
+            if not path.exists():
+                path.mkdir(parents=True, exist_ok=True)
+            if not os.access(path, os.W_OK):
+                raise PermissionError(f"No write permission for: {path}")
 
     def _merge_configs(self, base, override):
         for key, value in override.items():
@@ -410,9 +428,11 @@ class Config:
         if isinstance(default_val, bool):
             return env_val.lower() in ['true', '1', 'yes']
         if isinstance(default_val, int):
-            if '.' in env_val:
-                return float(env_val)
-            return int(env_val)
+            try:
+                # Handle cases like "5.0" from env var for an int field
+                return int(float(env_val))
+            except ValueError:
+                return int(env_val) # Fallback for non-float strings
         if isinstance(default_val, float):
             return float(env_val)
         if isinstance(default_val, list):
@@ -598,10 +618,15 @@ class AppLogger:
 class ColoredFormatter(logging.Formatter):
     COLORS = {'DEBUG': '\033[36m', 'INFO': '\033[37m', 'WARNING': '\033[33m',
               'ERROR': '\033[31m', 'CRITICAL': '\033[35m', 'SUCCESS': '\033[32m', 'RESET': '\033[0m'}
+
     def format(self, record):
-        color = self.COLORS.get(record.levelname, self.COLORS['RESET'])
-        record.levelname = f"{color}{record.levelname}{self.COLORS['RESET']}"
-        return super().format(record)
+        original_levelname = record.levelname
+        try:
+            color = self.COLORS.get(original_levelname, self.COLORS['RESET'])
+            record.levelname = f"{color}{original_levelname}{self.COLORS['RESET']}"
+            return super().format(record)
+        finally:
+            record.levelname = original_levelname
 
 class AdvancedProgressTracker:
     def __init__(self, progress, queue: Queue, logger: AppLogger, ui_stage_name: str = ""):
@@ -885,6 +910,45 @@ class SessionLoadEvent(UIEvent):
     session_path: str
 
 # --- UTILS ---
+import functools
+
+def handle_common_errors(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except FileNotFoundError as e:
+            return {"error": f"File not found: {e}. Please check the path."}
+        except RuntimeError as e:
+            if "CUDA out of memory" in str(e):
+                return {"error": "GPU memory full. Try reducing batch size or using CPU mode."}
+            return {"error": f"Processing error: {e}"}
+        except Exception as e:
+            return {"error": f"Unexpected error: {e}"}
+    return wrapper
+
+def monitor_memory_usage(logger, threshold_mb=8000):
+    if torch.cuda.is_available():
+        allocated = torch.cuda.memory_allocated() / 1024**2
+        if allocated > threshold_mb:
+            logger.warning(f"High GPU memory usage: {allocated:.1f}MB")
+            torch.cuda.empty_cache()
+
+def validate_video_file(video_path):
+    path = Path(video_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Video file not found: {video_path}")
+    if path.stat().st_size == 0:
+        raise ValueError(f"Video file is empty: {video_path}")
+
+    # Quick format check
+    try:
+        cap = cv2.VideoCapture(str(video_path))
+        if not cap.isOpened():
+            raise ValueError(f"Could not open video file: {video_path}")
+        cap.release()
+    except Exception as e:
+        raise ValueError(f"Invalid video file: {e}")
 
 def estimate_totals(params: 'AnalysisParameters', video_info: dict, scenes: list['Scene'] | None) -> dict:
     fps = max(1, int(video_info.get("fps") or 30))
@@ -1065,6 +1129,8 @@ class Frame:
                         self.metrics.blink_prob = max(blendshapes.get('eyeBlinkLeft', 0), blendshapes.get('eyeBlinkRight', 0))
 
                 if landmarker_result.facial_transformation_matrixes and any(metrics_to_compute.get(k) for k in ['yaw', 'pitch']):
+                    if not landmarker_result.facial_transformation_matrixes:
+                        continue
                     matrix = landmarker_result.facial_transformation_matrixes[0]
                     sy = math.sqrt(matrix[0, 0] * matrix[0, 0] + matrix[1, 0] * matrix[1, 0])
                     singular = sy < 1e-6
@@ -1369,25 +1435,57 @@ class ThumbnailManager:
 
 # --- MODEL LOADING & MANAGEMENT ---
 
-def download_model(url, dest_path, description, logger, error_handler: ErrorHandler, user_agent: str, min_size=1_000_000):
+def _compute_sha256(path: Path) -> str:
+    """Computes the SHA256 hash of a file."""
+    h = hashlib.sha256()
+    with open(path, 'rb') as f:
+        while chunk := f.read(8192):
+            h.update(chunk)
+    return h.hexdigest()
+
+def download_model(url, dest_path, description, logger, error_handler: ErrorHandler, user_agent: str, min_size=1_000_000, expected_sha256: Optional[str] = None):
     dest_path = Path(dest_path)
     dest_path.parent.mkdir(parents=True, exist_ok=True)
-    if dest_path.is_file() and (min_size is None or dest_path.stat().st_size >= min_size):
-        logger.info(f"Using cached {description}: {dest_path}")
-        return
+    if dest_path.is_file():
+        if expected_sha256:
+            actual_sha256 = _compute_sha256(dest_path)
+            if actual_sha256 == expected_sha256:
+                logger.info(f"Using cached and verified {description}: {dest_path}")
+                return
+            else:
+                logger.warning(f"Cached {description} has incorrect SHA256. Re-downloading.",
+                               extra={'expected': expected_sha256, 'actual': actual_sha256})
+                dest_path.unlink()
+        elif min_size is None or dest_path.stat().st_size >= min_size:
+            logger.info(f"Using cached {description} (SHA not verified): {dest_path}")
+            return
+
     @error_handler.with_retry(recoverable_exceptions=(urllib.error.URLError, TimeoutError, RuntimeError))
     def download_func():
         logger.info(f"Downloading {description}", extra={'url': url, 'dest': dest_path})
         req = urllib.request.Request(url, headers={"User-Agent": user_agent})
-        with urllib.request.urlopen(req, timeout=60) as resp, open(dest_path, "wb") as out:
+        with urllib.request.urlopen(req, timeout=180) as resp, open(dest_path, "wb") as out:
             shutil.copyfileobj(resp, out)
-        if not dest_path.exists() or dest_path.stat().st_size < min_size:
-            raise RuntimeError(f"Downloaded {description} seems incomplete")
-        logger.success(f"{description} downloaded successfully.")
+
+        if not dest_path.exists():
+            raise RuntimeError(f"Download of {description} failed (file not found after download).")
+
+        if expected_sha256:
+            actual_sha256 = _compute_sha256(dest_path)
+            if actual_sha256 != expected_sha256:
+                raise RuntimeError(f"SHA256 mismatch for {description}. Expected {expected_sha256}, got {actual_sha256}.")
+        elif dest_path.stat().st_size < min_size:
+            raise RuntimeError(f"Downloaded {description} seems incomplete (file size too small).")
+
+        logger.success(f"{description} downloaded and verified successfully.")
+
     try:
         download_func()
     except Exception as e:
         logger.error(f"Failed to download {description}", exc_info=True, extra={'url': url})
+        # Clean up partial download if it exists
+        if dest_path.exists():
+            dest_path.unlink()
         raise RuntimeError(f"Failed to download required model: {description}") from e
 
 # Thread-local storage for non-thread-safe models
@@ -1453,19 +1551,31 @@ class PersonDetector:
         from ultralytics import YOLO
         self.logger = logger
         self.device = device if torch.cuda.is_available() else 'cpu'
-        # Allow passing a model name or a local path
-        model_str = str(model_path)
-        if not Path(model_str).exists():
-            self.logger.info(f"Loading YOLO model by name: {model_str} (will auto-download if needed)")
-        self.model = YOLO(model_str)
-        self.model.to(self.device)
-        self.imgsz = imgsz
-        self.conf = conf
-        self.logger.info("YOLO person detector loaded", component="person_detector",
-                         custom_fields={'device': self.device, 'model': model_str})
+        model_p = Path(model_path)
+        model_str = str(model_p)
+
+        if not model_p.exists():
+            # If the path doesn't exist, pass just the filename to YOLO
+            # so it can trigger the auto-download from Ultralytics Hub.
+            model_str_for_yolo = model_p.name
+            self.logger.info(f"Local YOLO model not found at '{model_str}'. Attempting to load by name for auto-download.",
+                             component="person_detector", extra={'model_name': model_str_for_yolo})
+        else:
+            model_str_for_yolo = model_str
+
+        try:
+            self.model = YOLO(model_str_for_yolo)
+            self.model.to(self.device)
+            self.imgsz = imgsz
+            self.conf = conf
+            self.logger.info("YOLO person detector loaded", component="person_detector",
+                             custom_fields={'device': self.device, 'model': model_str_for_yolo})
+        except Exception as e:
+            self.logger.error("Failed to load YOLO model", component="person_detector", exc_info=True)
+            raise e
 
     def detect_boxes(self, img_rgb):
-        res = self.model.predict(img_rgb, imgsz=self.imgsz, conf=self.conf, classes=[0], verbose=False, device=self.device)
+        res = self.model.predict(img_rgb, imgsz=self.imgsz, conf=self.conf, classes=[0], verbose=False)
         out = []
         for r in res:
             if getattr(r, "boxes", None) is None:
@@ -1480,10 +1590,15 @@ def get_person_detector(model_path_str: str, device: str, imgsz: int, conf: floa
     """Load YOLO model on first use, cache for reuse."""
     global _yolo_model_cache
     if model_path_str not in _yolo_model_cache:
-        logger.info(f"Loading YOLO model: {Path(model_path_str).name} (first use)", component="person_detector")
-        from ultralytics import YOLO
-        _yolo_model_cache[model_path_str] = PersonDetector(logger=logger, model_path=Path(model_path_str), imgsz=imgsz, conf=conf, device=device)
-        logger.success(f"YOLO model {Path(model_path_str).name} loaded successfully", component="person_detector")
+        try:
+            logger.info(f"Loading YOLO model: {Path(model_path_str).name} (first use)", component="person_detector")
+            from ultralytics import YOLO
+            _yolo_model_cache[model_path_str] = PersonDetector(logger=logger, model_path=Path(model_path_str), imgsz=imgsz, conf=conf, device=device)
+            logger.success(f"YOLO model {Path(model_path_str).name} loaded successfully", component="person_detector")
+        except Exception as e:
+            logger.warning(f"Primary detector failed, using fallback: {e}")
+            # Try smaller model
+            _yolo_model_cache[model_path_str] = get_person_detector(model_path_str="yolo11s.pt", device=device, imgsz=imgsz, conf=conf, logger=logger)
     return _yolo_model_cache[model_path_str]
 
 
@@ -1520,7 +1635,8 @@ def get_grounding_dino_model(gdino_config_path: str, gdino_checkpoint_path: str,
             if not ckpt_path.is_absolute():
                 ckpt_path = models_dir / ckpt_path.name
             download_model(grounding_dino_url,
-                           ckpt_path, "GroundingDINO Swin-T model", logger, error_handler, user_agent, min_size=500_000_000)
+                           ckpt_path, "GroundingDINO Swin-T model", logger, error_handler, user_agent,
+                           expected_sha256=Config().models.grounding_dino_sha256)
             _dino_model_cache = gdino_load_model(
                 model_config_path=config_path,
                 model_checkpoint_path=str(ckpt_path),
@@ -1562,8 +1678,10 @@ def get_dam4sam_tracker(model_name: str, models_path: str, model_urls_tuple: tup
                 if selected_name not in model_urls:
                     raise ValueError(f"Unknown DAM4SAM model: {selected_name}")
                 url = model_urls[selected_name]
+                expected_sha256 = Config().models.dam4sam_sha256.get(selected_name)
                 checkpoint_path = models_dir / Path(url).name
-                download_model(url, checkpoint_path, f"DAM4SAM {selected_name}", logger, error_handler, user_agent, min_size=100_00_000)
+                download_model(url, checkpoint_path, f"DAM4SAM {selected_name}", logger, error_handler, user_agent,
+                               expected_sha256=expected_sha256)
                 actual_path, _ = dam_utils.determine_tracker(selected_name)
                 if not Path(actual_path).exists():
                     Path(actual_path).parent.mkdir(exist_ok=True, parents=True)
@@ -1643,7 +1761,8 @@ def initialize_analysis_models(params: AnalysisParameters, config: Config, logge
     # Initialize MediaPipe Face Landmarker
     landmarker_path = Path(config.paths.models) / Path(config.models.face_landmarker).name
     error_handler = ErrorHandler(logger, config.retry.max_attempts, config.retry.backoff_seconds)
-    download_model(config.models.face_landmarker, landmarker_path, "MediaPipe Face Landmarker", logger, error_handler, config.models.user_agent)
+    download_model(config.models.face_landmarker, landmarker_path, "MediaPipe Face Landmarker", logger, error_handler,
+                   config.models.user_agent, expected_sha256=config.models.face_landmarker_sha256)
     if landmarker_path.exists():
         face_landmarker = get_face_landmarker(str(landmarker_path), logger)
 
@@ -1674,7 +1793,7 @@ class VideoManager:
 
             ydl_opts = {
                 'outtmpl': str(Path(self.config.paths.downloads) / tmpl),
-                'format': fmt,
+                'format': self.config.youtube_dl.format_string.format(max_res=max_h) if max_h else "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best",
                 'merge_output_format': 'mp4',
                 'noprogress': True,
                 'quiet': True
@@ -1686,7 +1805,7 @@ class VideoManager:
             except ytdlp.utils.DownloadError as e:
                 raise RuntimeError(f"Download failed. Resolution may not be available. Details: {e}") from e
         local_path = Path(self.source_path)
-        if not local_path.is_file(): raise FileNotFoundError(f"Video file not found: {local_path}")
+        validate_video_file(local_path)
         return str(local_path)
 
     @staticmethod
@@ -2400,7 +2519,9 @@ class SubjectMasker:
             return {"error": "DAM4SAM tracker initialization failed", "completed": False}
         self.frame_map = self.frame_map or self._create_frame_map(frames_dir)
         mask_metadata, total_scenes = {}, len(scenes_to_process)
+        progress_file = self.mask_dir.parent / "progress.json"
         for i, scene in enumerate(scenes_to_process):
+            monitor_memory_usage(self.logger, self.config.monitoring.memory_warning_threshold_mb)
             with safe_resource_cleanup():
                 if self.cancel_event.is_set(): break
                 self.logger.info(f"Masking scene {i+1}/{total_scenes}", user_context={'shot_id': scene.shot_id, 'start_frame': scene.start_frame, 'end_frame': scene.end_frame})
@@ -2640,8 +2761,15 @@ class AnalysisPipeline(Pipeline):
         else:
             # This is the existing video analysis pipeline.
             try:
+                # Check for existing progress
+                progress_file = self.output_dir / "progress.json"
+                if progress_file.exists() and self.params.resume:
+                    with open(progress_file) as f:
+                        progress_data = json.load(f)
+                    # Resume from last completed scene
+                    scenes_to_process = self._filter_completed_scenes(scenes_to_process, progress_data)
                 # Ensure metadata file is properly handled
-                if self.metadata_path.exists():
+                if self.metadata_path.exists() and not self.params.resume:
                     self.metadata_path.unlink()
 
                 with open(self.metadata_path, 'w', encoding='utf-8') as f:
@@ -2664,7 +2792,12 @@ class AnalysisPipeline(Pipeline):
                 masker = SubjectMasker(self.params, self.progress_queue, self.cancel_event, self.config, self._create_frame_map(),
                                        self.face_analyzer, self.reference_embedding, person_detector, thumbnail_manager=self.thumbnail_manager,
                                        niqe_metric=self.niqe_metric, logger=self.logger, face_landmarker=self.face_landmarker)
-                self.mask_metadata = masker.run_propagation(str(self.output_dir), scenes_to_process, tracker=tracker)
+                for scene in scenes_to_process:
+                    if self.cancel_event.is_set():
+                        self.logger.info("Propagation cancelled by user.")
+                        break
+                    self.mask_metadata.update(masker.run_propagation(str(self.output_dir), [scene], tracker=tracker))
+                    self._save_progress(scene, progress_file)
 
                 if self.cancel_event.is_set():
                     self.logger.info("Propagation cancelled by user.")
@@ -2705,6 +2838,19 @@ class AnalysisPipeline(Pipeline):
     def _create_frame_map(self):
         ext = ".webp" if self.params.thumbnails_only else ".png"
         return create_frame_map(self.output_dir, self.logger, ext=ext)
+
+    def _filter_completed_scenes(self, scenes, progress_data):
+        completed_scenes = progress_data.get("completed_scenes", [])
+        return [s for s in scenes if s.shot_id not in completed_scenes]
+
+    def _save_progress(self, current_scene, progress_file):
+        progress_data = {"completed_scenes": []}
+        if progress_file.exists():
+            with open(progress_file) as f:
+                progress_data = json.load(f)
+        progress_data["completed_scenes"].append(current_scene.shot_id)
+        with open(progress_file, 'w') as f:
+            json.dump(progress_data, f)
     def _process_reference_face(self):
         if not self.face_analyzer: return
         ref_path = Path(self.params.face_ref_img_path)
@@ -2742,6 +2888,7 @@ class AnalysisPipeline(Pipeline):
             batches = [image_files_to_process[i:i + batch_size] for i in range(0, len(image_files_to_process), batch_size)]
             futures = [executor.submit(self._process_batch, batch) for batch in batches]
             for future in as_completed(futures):
+                monitor_memory_usage(self.logger, self.config.monitoring.memory_warning_threshold_mb)
                 if self.cancel_event.is_set():
                     for f in futures: f.cancel()
                     break
@@ -3435,6 +3582,7 @@ def _wire_recompute_handler(config, logger, thumbnail_manager, scenes, shot_id, 
 
 # --- PIPELINE LOGIC ---
 
+@handle_common_errors
 def execute_extraction(event: ExtractionEvent, progress_queue: Queue, cancel_event: threading.Event, logger: AppLogger, config: Config, thumbnail_manager=None, cuda_available=None, progress=None):
     try:
         params_dict = asdict(event)
@@ -3462,6 +3610,7 @@ def execute_extraction(event: ExtractionEvent, progress_queue: Queue, cancel_eve
         logger.error("Extraction execution failed", exc_info=True)
         yield {"log": f"[ERROR] Extraction failed unexpectedly: {e}", "done": False}
 
+@handle_common_errors
 def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue, cancel_event: threading.Event, logger: AppLogger,
                          config: Config, thumbnail_manager, cuda_available, progress=None):
     try:
@@ -3863,10 +4012,14 @@ def execute_propagation(event: PropagationEvent, progress_queue: Queue, cancel_e
         else:
             yield {"log": "❌ Propagation failed - pipeline returned no results.",
                     "status": "Failed", "done": False}
+    except torch.cuda.OutOfMemoryError:
+        logger.error("CUDA out of memory during propagation")
+        yield {"log": "[ERROR] GPU memory exhausted. Try smaller model or batch size.", "done": False}
     except Exception as e:
         logger.error("Propagation execution failed", exc_info=True)
         yield {"log": f"[ERROR] Propagation failed unexpectedly: {e}", "done": False}
 
+@handle_common_errors
 def execute_analysis(event: PropagationEvent, progress_queue: Queue, cancel_event: threading.Event, logger: AppLogger,
                      config: Config, thumbnail_manager, cuda_available, progress=None):
     try:
@@ -4059,7 +4212,11 @@ class AppUI:
 
     def _build_header(self):
         gr.Markdown("# 🎬 Frame Extractor & Analyzer v2.0")
-        if not self.cuda_available: gr.Markdown("⚠️ **CPU Mode** — GPU-dependent features are disabled or will be slow.")
+        status_color = "🟢" if self.cuda_available else "🟡"
+        status_text = "GPU Accelerated" if self.cuda_available else "CPU Mode (Slower)"
+        gr.Markdown(f"{status_color} **{status_text}**")
+        if not self.cuda_available:
+            gr.Markdown("⚠️ **CPU Mode** — GPU-dependent features are disabled or will be slow.")
 
     def _build_main_tabs(self):
         with gr.Tabs() as main_tabs:
@@ -4407,8 +4564,17 @@ class EnhancedAppUI(AppUI):
 
         with ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(task_func, *args)
-            while not future.done():
-                if self.cancel_event.is_set(): future.cancel(); break
+            start_time = time.time()
+            while future.running():
+                if time.time() - start_time > 3600:
+                    self.app_logger.error("Task timed out after 1 hour")
+                    self.cancel_event.set()
+                    future.cancel()
+                    break
+
+                if self.cancel_event.is_set():
+                    future.cancel()
+                    break
 
                 if tracker_instance and not tracker_instance.pause_event.is_set():
                     time.sleep(0.2)
@@ -4418,7 +4584,6 @@ class EnhancedAppUI(AppUI):
                     msg, update_dict = self.progress_queue.get(timeout=0.1), {}
                     if "log" in msg:
                         self.all_logs.append(msg['log'])
-                        # This logic can be simplified but is kept for now.
                         if self.log_filter_level.upper() == "DEBUG" or f"[{self.log_filter_level.upper()}]" in msg['log']:
                             update_dict[self.components['unified_log']] = gr.update(value="\n".join([l for l in self.all_logs if self.log_filter_level.upper() == "DEBUG" or f"[{self.log_filter_level.upper()}]" in l][-1000:]))
                     if "progress" in msg:
@@ -4434,7 +4599,8 @@ class EnhancedAppUI(AppUI):
                         update_dict[self.components['progress_details']] = gr.update(value=details_html)
 
                     if update_dict: yield update_dict
-                except Empty: pass
+                except Empty:
+                    pass
                 time.sleep(0.05)
         final_updates, final_msg, final_label = {}, "✅ Task completed successfully.", "Complete"
         try:
@@ -5708,30 +5874,46 @@ class EnhancedAppUI(AppUI):
         return self.export_kept_frames(ExportEvent(all_frames_data, output_dir, video_path, enable_crop, crop_ars, crop_padding, filter_args))
 
     def export_kept_frames(self, event: ExportEvent):
-        if not event.all_frames_data: return "No metadata to export."
-        if not event.video_path or not Path(event.video_path).exists(): return "[ERROR] Original video path is required for export."
+        if not event.all_frames_data:
+            return "No metadata to export."
+        if not event.video_path or not Path(event.video_path).exists():
+            return "[ERROR] Original video path is required for export."
+
+        out_root = Path(event.output_dir)
+
         try:
             filters = event.filter_args.copy()
-            filters.update({"face_sim_enabled": any("face_sim" in f for f in event.all_frames_data),
-                            "mask_area_enabled": any("mask_area_pct" in f for f in event.all_frames_data),
-                            "enable_dedup": any('phash' in f for f in event.all_frames_data)})
+            filters.update({
+                "face_sim_enabled": any("face_sim" in f for f in event.all_frames_data),
+                "mask_area_enabled": any("mask_area_pct" in f for f in event.all_frames_data),
+                "enable_dedup": any('phash' in f for f in event.all_frames_data)
+            })
             kept, _, _, _ = apply_all_filters_vectorized(event.all_frames_data, filters, self.config)
-            if not kept: return "No frames kept after filtering. Nothing to export."
-            out_root = Path(event.output_dir)
-            if not (frame_map_path := out_root / "frame_map.json").exists(): return "[ERROR] frame_map.json not found. Cannot export."
-            with frame_map_path.open('r', encoding='utf-8') as f: frame_map_list = json.load(f)
+            if not kept:
+                return "No frames kept after filtering. Nothing to export."
 
-            # Determine analysis ext from any kept filename
+            frame_map_path = out_root / "frame_map.json"
+            if not frame_map_path.exists():
+                return "[ERROR] frame_map.json not found. Cannot export."
+            with frame_map_path.open('r', encoding='utf-8') as f:
+                frame_map_list = json.load(f)
+
             sample_name = next((f['filename'] for f in kept if 'filename' in f), None)
             analyzed_ext = Path(sample_name).suffix if sample_name else '.webp'
 
-            # Build map using analyzed_ext, not hardcoded .png
-            fn_to_orig_map = {f"frame_{i+1:06d}{analyzed_ext}": orig
-            for i, orig in enumerate(sorted(frame_map_list))}
-            frames_to_extract = sorted([fn_to_orig_map.get(f['filename']) for f in kept if f.get('filename') in fn_to_orig_map])
+            fn_to_orig_map = {
+                f"frame_{i+1:06d}{analyzed_ext}": orig
+                for i, orig in enumerate(sorted(frame_map_list))
+            }
+            frames_to_extract = sorted([
+                fn_to_orig_map.get(f['filename'])
+                for f in kept if f.get('filename') in fn_to_orig_map
+            ])
             frames_to_extract = [n for n in frames_to_extract if n is not None]
 
-            if not frames_to_extract: return "No frames to extract."
+            if not frames_to_extract:
+                return "No frames to extract."
+
             select_filter = f"select='{'+'.join([f'eq(n,{fn})' for fn in frames_to_extract])}'"
             export_dir = out_root.parent / f"{out_root.name}_exported_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             export_dir.mkdir(exist_ok=True, parents=True)
@@ -5739,34 +5921,23 @@ class EnhancedAppUI(AppUI):
             self.logger.info("Starting final export extraction...", extra={'command': ' '.join(cmd)})
             subprocess.run(cmd, check=True, capture_output=True, text=True)
 
-            # Rename the sequentially numbered files to match their original analysis filenames.
             self.logger.info("Renaming extracted frames to match original filenames...")
             orig_to_filename_map = {v: k for k, v in fn_to_orig_map.items()}
-
-            # Build rename plan
             plan = []
             for i, orig_frame_num in enumerate(frames_to_extract):
                 sequential_filename = f"frame_{i+1:06d}.png"
                 target_filename = orig_to_filename_map.get(orig_frame_num)
                 if not target_filename:
                     continue
-
                 src = export_dir / sequential_filename
                 dst = export_dir / target_filename
-                if src == dst:
-                    continue
-                plan.append((src, dst))
+                if src != dst:
+                    plan.append((src, dst))
 
-            # Use a two-phase rename to avoid conflicts: first move all sources to unique temporary names,
-            # then move temps to final destinations. This prevents overwriting when multiple renames
-            # involve files that could conflict with each other during the process.
-            # Phase 1: move all sources to unique temps
             temp_map = {}
             for i, (src, _) in enumerate(plan):
-                if not src.exists():
-                    continue
+                if not src.exists(): continue
                 tmp = export_dir / f"__tmp_{i:06d}__{src.name}"
-                # Ensure no accidental collision with prior tmp
                 j = i
                 while tmp.exists():
                     j += 1
@@ -5775,28 +5946,23 @@ class EnhancedAppUI(AppUI):
                     src.rename(tmp)
                     temp_map[src] = tmp
                 except FileNotFoundError:
-                    self.logger.warning(f"Could not find {src.name} to rename to temporary file.", extra={'target': tmp.name})
+                    self.logger.warning(f"Could not find {src.name} to rename.", extra={'target': tmp.name})
 
-
-            # Phase 2: move temps to final destinations
             for src, dst in plan:
                 tmp = temp_map.get(src)
-                if tmp is None or not tmp.exists():
-                    continue
-                
-                # If dst somehow exists (e.g., external file), pick a fresh suffix or remove it per your policy
-                if dst.exists():
-                    # choose one: raise, delete, or re-suffix; here we re-suffix deterministically
-                    stem, ext = dst.stem, dst.suffix
-                    k, alt = 1, export_dir / f"{stem} (1){ext}"
-                    while alt.exists():
-                        k += 1
-                        alt = export_dir / f"{stem} ({k}){ext}"
-                    dst = alt
-                try:
-                    tmp.rename(dst)
-                except FileNotFoundError:
-                    self.logger.warning(f"Could not find temporary file {tmp.name} to rename to final destination.", extra={'target': dst.name})
+                if tmp and tmp.exists():
+                    if dst.exists():
+                        stem, ext = dst.stem, dst.suffix
+                        k, alt = 1, export_dir / f"{stem} (1){ext}"
+                        while alt.exists():
+                            k += 1
+                            alt = export_dir / f"{stem} ({k}){ext}"
+                        dst = alt
+                    try:
+                        tmp.rename(dst)
+                    except FileNotFoundError:
+                        self.logger.warning(f"Could not find temp file {tmp.name} to rename.", extra={'target': dst.name})
+
             if event.enable_crop:
                 self.logger.info("Starting crop export...")
                 crop_dir = export_dir / "cropped"
@@ -5917,7 +6083,7 @@ class EnhancedAppUI(AppUI):
                     except Exception as e:
                         self.logger.error(f"Failed to crop frame {frame_meta['filename']}", exc_info=True)
                 self.logger.info(f"Cropping complete. Saved {num_cropped} cropped images.")
-            return f"Exported {len(frames_to_extract)} frames to {export_dir.name}."
+            return f"Exported {len(kept)} frames to {export_dir.name}."
         except subprocess.CalledProcessError as e:
             self.logger.error("FFmpeg export failed", exc_info=True, extra={'stderr': e.stderr})
             return "Error during export: FFmpeg failed. Check logs."
@@ -5926,6 +6092,16 @@ class EnhancedAppUI(AppUI):
             return f"Error during export: {e}"
 
 # --- COMPOSITION & MAIN ---
+def cleanup_models():
+    global _yolo_model_cache, _dino_model_cache, _dam4sam_model_cache, _lpips_model_cache
+    _yolo_model_cache.clear()
+    _dino_model_cache = None
+    _dam4sam_model_cache.clear()
+    _lpips_model_cache.clear()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    gc.collect()
+
 
 class CompositionRoot:
     def __init__(self):
@@ -5947,7 +6123,10 @@ class CompositionRoot:
     def get_logger(self): return self.logger
     def get_thumbnail_manager(self): return self.thumbnail_manager
     def cleanup(self):
-        if hasattr(self.thumbnail_manager, 'cleanup'): self.thumbnail_manager.cleanup()
+        cleanup_models()
+        self.thumbnail_manager.clear_cache()
+        if hasattr(self, '_app_ui'):
+            self._app_ui = None
         self.cancel_event.set()
 
 
