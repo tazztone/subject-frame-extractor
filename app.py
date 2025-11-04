@@ -950,23 +950,6 @@ def validate_video_file(video_path):
     except Exception as e:
         raise ValueError(f"Invalid video file: {e}")
 
-def _to_json_safe(obj):
-    if isinstance(obj, (Path, datetime)):
-        return str(obj)
-    if hasattr(np, 'floating') and isinstance(obj, np.floating):
-        return float(obj)
-    if hasattr(np, 'integer') and isinstance(obj, np.integer):
-        return int(obj)
-    if dataclasses.is_dataclass(obj):
-        return dataclasses.asdict(obj)
-    if isinstance(obj, dict):
-        return {k: _to_json_safe(v) for k, v in obj.items()}
-    if isinstance(obj, (list, tuple)):
-        return [_to_json_safe(i) for i in obj]
-    if isinstance(obj, np.ndarray):
-        return obj.tolist()
-    return obj
-
 def estimate_totals(params: 'AnalysisParameters', video_info: dict, scenes: list['Scene'] | None) -> dict:
     fps = max(1, int(video_info.get("fps") or 30))
     total_frames = int(video_info.get("frame_count") or 0)
@@ -1003,6 +986,25 @@ def estimate_totals(params: 'AnalysisParameters', video_info: dict, scenes: list
 def sanitize_filename(name, config: 'Config', max_length=None):
     max_length = max_length or config.utility_defaults.max_filename_length
     return re.sub(r'[^\w\-_.]', '_', name)[:max_length]
+
+def _to_json_safe(obj):
+    import numpy as np
+    from pathlib import Path
+    if isinstance(obj, dict):
+        return {k: _to_json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_to_json_safe(v) for v in obj]
+    if isinstance(obj, (np.integer,)):
+        return int(obj)
+    if isinstance(obj, (np.floating,)):
+        return float(obj)
+    if isinstance(obj, (np.bool_,)):
+        return bool(obj)
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, Path):
+        return str(obj)
+    return obj
 
 def _coerce(val, to_type):
     if to_type is bool:
@@ -2970,10 +2972,13 @@ class AnalysisPipeline(Pipeline):
 
             if frame.error: meta["error"] = frame.error
             if meta.get("mask_path"): meta["mask_path"] = Path(meta["mask_path"]).name
+
+            # Sanitize the dictionary to ensure all values are JSON-serializable
+            meta = _to_json_safe(meta)
+
             with self.processing_lock:
                 with self.metadata_path.open('a', encoding='utf-8') as f:
-                    json.dump(_to_json_safe(meta), f)
-                    f.write('\n')
+                    f.write(json.dumps(meta) + '\n')
         except Exception as e:
             self.logger.critical("Error processing frame", exc_info=True, extra={**log_context, 'error': e})
             with self.processing_lock:
