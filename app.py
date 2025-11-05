@@ -97,8 +97,53 @@ from ultralytics import YOLO
 # --- CONFIGURATION ---
 @dataclass
 class Config:
+    """Manages the application's configuration settings.
+
+    This class centralizes all configuration parameters, loading them from a
+    JSON file and allowing overrides from environment variables. It's structured
+    with nested dataclasses for better organization.
+
+    Attributes:
+        paths: Configuration for file system paths.
+        models: Configuration for model URLs, checksums, and endpoints.
+        youtube_dl: Settings for yt-dlp.
+        ffmpeg: Parameters for FFmpeg operations.
+        cache: Configuration for in-memory caches.
+        retry: Default settings for retry logic.
+        quality_scaling: Factors for normalizing quality metrics.
+        masking: Parameters for image mask post-processing.
+        ui_defaults: Default values for Gradio UI components.
+        filter_defaults: Default settings for the filtering tab.
+        quality_weights: Weights for calculating the overall quality score.
+        choices: Predefined lists of choices for UI dropdowns and radios.
+        grounding_dino_params: Parameters for the GroundingDINO model.
+        person_detector: Configuration for the YOLO person detector model.
+        logging: Settings for the application logger.
+        sharpness_base_scale: A scaling factor for the sharpness metric.
+        edge_strength_base_scale: A scaling factor for the edge strength metric.
+        min_mask_area_pct: Minimum percentage of image area for a mask to be considered valid.
+        monitoring: Thresholds for system resource monitoring.
+        export_options: Settings for the final media export.
+        gradio_defaults: Default values specific to Gradio UI behavior.
+        seeding_defaults: Parameters for the seed selection logic.
+        utility_defaults: Miscellaneous utility parameters.
+        post_processing: Configuration for post-processing steps.
+        visualization: Settings for visual elements like bounding boxes.
+        analysis: Parameters for the analysis pipeline.
+        model_defaults: Default settings for various models.
+        config_path: The path to the JSON configuration file.
+    """
     @dataclass
     class Paths:
+        """Configuration for file system paths.
+
+        Attributes:
+            logs: Directory to store log files.
+            models: Directory to store downloaded AI models.
+            downloads: Directory for downloaded videos and temporary files.
+            grounding_dino_config: Path to the GroundingDINO model config file.
+            grounding_dino_checkpoint: Path to the GroundingDINO model checkpoint file.
+        """
         logs: str = "logs"
         models: str = "models"
         downloads: str = "downloads"
@@ -107,6 +152,18 @@ class Config:
 
     @dataclass
     class Models:
+        """Configuration for model URLs, checksums, and endpoints.
+
+        Attributes:
+            user_agent: The user agent string to use for model downloads.
+            grounding_dino: URL for the GroundingDINO model weights.
+            grounding_dino_sha256: SHA256 checksum for the GroundingDINO model.
+            face_landmarker: URL for the MediaPipe Face Landmarker model.
+            face_landmarker_sha256: SHA256 checksum for the Face Landmarker model.
+            dam4sam: Dictionary of DAM4SAM model names to their download URLs.
+            dam4sam_sha256: Dictionary of DAM4SAM model names to their SHA256 checksums.
+            yolo: Base URL for YOLO model downloads.
+        """
         user_agent: str = "Mozilla/5.0"
         grounding_dino: str = "https://github.com/IDEA-Research/GroundingDINO/releases/download/v0.1.0-alpha/groundingdino_swint_ogc.pth"
         grounding_dino_sha256: str = "3b3ca2563c77c69f651d7bd133e97139c186df06231157a64c507099c52bc799"
@@ -128,28 +185,67 @@ class Config:
 
     @dataclass
     class YouTubeDL:
+        """Settings for yt-dlp.
+
+        Attributes:
+            output_template: The template for naming downloaded video files.
+            format_string: The format selection string for yt-dlp.
+        """
         output_template: str = "%(id)s_%(title).40s_%(height)sp.%(ext)s"
         format_string: str = "bestvideo[height<={max_res}][ext=mp4]+bestaudio[ext=m4a]/best[height<={max_res}][ext=mp4]/best"
 
     @dataclass
     class Ffmpeg:
+        """Parameters for FFmpeg operations.
+
+        Attributes:
+            log_level: The log level for FFmpeg processes.
+            thumbnail_quality: The quality setting for WebP thumbnails (0-100).
+            scene_threshold: The threshold for the ContentDetector in PySceneDetect.
+        """
         log_level: str = "info"
         thumbnail_quality: int = 80
         scene_threshold: float = 0.4
 
     @dataclass
     class Cache:
+        """Configuration for in-memory caches.
+
+        Attributes:
+            size: The maximum number of items to store in the cache.
+            eviction_factor: The percentage of items to remove when the cache is full.
+            cleanup_threshold: The fullness percentage at which to trigger a cleanup.
+        """
         size: int = 200
         eviction_factor: float = 0.2
         cleanup_threshold: float = 0.8
 
     @dataclass
     class Retry:
+        """Default settings for retry logic.
+
+        Attributes:
+            max_attempts: The maximum number of times to retry a failed operation.
+            backoff_seconds: A list of delays (in seconds) between retry attempts.
+        """
         max_attempts: int = 3
         backoff_seconds: List[float] = field(default_factory=lambda: [1, 5, 15])
 
     @dataclass
     class QualityScaling:
+        """Factors for normalizing quality metrics.
+
+        These values are used to scale raw metric outputs into a normalized
+        0-1 range before they are weighted and combined into a final quality score.
+
+        Attributes:
+            entropy_normalization: The expected maximum entropy value for normalization.
+            resolution_denominator: A denominator to adjust sharpness and edge strength
+                based on image resolution.
+            contrast_clamp: The maximum raw contrast value to consider.
+            niqe_offset: An offset to apply to the raw NIQE score.
+            niqe_scale_factor: A factor to scale the NIQE score.
+        """
         entropy_normalization: float = 8.0
         resolution_denominator: int = 500000
         contrast_clamp: float = 2.0
@@ -158,12 +254,26 @@ class Config:
 
     @dataclass
     class Masking:
+        """Parameters for image mask post-processing.
+
+        Attributes:
+            keep_largest_only: If True, only the largest contiguous region in a mask
+                will be kept.
+            close_kernel_size: The kernel size for the morphological closing operation
+                (used to fill small holes).
+            open_kernel_size: The kernel size for the morphological opening operation
+                (used to remove small noise).
+        """
         keep_largest_only: bool = True
         close_kernel_size: int = 5
         open_kernel_size: int = 5
 
     @dataclass
     class UIDefaults:
+        """Default values for Gradio UI components.
+
+        This ensures a consistent starting state for the user interface.
+        """
         thumbnails_only: bool = True
         thumb_megapixels: float = 0.5
         scene_detect: bool = True
@@ -189,6 +299,11 @@ class Config:
 
     @dataclass
     class FilterDefaults:
+        """Default settings for the filtering tab.
+
+        Each attribute is a dictionary defining the min, max, step, and default
+        values for a UI slider corresponding to a quality metric.
+        """
         quality_score: Dict[str, float] = field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.5, 'default_min': 0.0, 'default_max': 100.0})
         sharpness: Dict[str, float] = field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.5, 'default_min': 0.0, 'default_max': 100.0})
         edge_strength: Dict[str, float] = field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.5, 'default_min': 0.0, 'default_max': 100.0})
@@ -205,6 +320,11 @@ class Config:
 
     @dataclass
     class QualityWeights:
+        """Weights for calculating the overall quality score.
+
+        The final quality score is a weighted average of the normalized scores
+        for each of these metrics.
+        """
         sharpness: int = 25
         edge_strength: int = 15
         contrast: int = 15
@@ -214,6 +334,7 @@ class Config:
 
     @dataclass
     class Choices:
+        """Predefined lists of choices for UI dropdowns and radios."""
         max_resolution: List[str] = field(default_factory=lambda: ["maximum available", "2160", "1080", "720"])
         extraction_method_toggle: List[str] = field(default_factory=lambda: ["Recommended Thumbnails", "Legacy Full-Frame"])
         method: List[str] = field(default_factory=lambda: ["keyframes", "interval", "every_nth_frame", "nth_plus_keyframes", "all"])
@@ -228,17 +349,38 @@ class Config:
 
     @dataclass
     class GroundingDinoParams:
+        """Parameters for the GroundingDINO model.
+
+        Attributes:
+            box_threshold: The confidence threshold for object detection boxes.
+            text_threshold: The confidence threshold for matching text prompts to objects.
+        """
         box_threshold: float = 0.35
         text_threshold: float = 0.25
 
     @dataclass
     class PersonDetector:
+        """Configuration for the YOLO person detector model.
+
+        Attributes:
+            model: The filename of the YOLO model to use.
+            imgsz: The image size for inference.
+            conf: The confidence threshold for person detection.
+        """
         model: str = "yolo11x.pt"
         imgsz: int = 640
         conf: float = 0.3
     
     @dataclass
     class Logging:
+        """Settings for the application logger.
+
+        Attributes:
+            log_level: The minimum log level to output (e.g., "INFO", "DEBUG").
+            log_format: The format string for log messages.
+            colored_logs: Whether to use ANSI color codes in console output.
+            structured_log_path: The file path for structured JSONL logs.
+        """
         log_level: str = "INFO"
         log_format: str = '%(asctime)s | %(levelname)8s | %(name)s | %(message)s'
         colored_logs: bool = True
@@ -266,6 +408,7 @@ class Config:
     
     @dataclass
     class Monitoring:
+        """Thresholds for system resource monitoring."""
         memory_warning_threshold_mb: int = 8192
         memory_critical_threshold_mb: int = 16384
         cpu_warning_threshold_percent: int = 90
@@ -274,18 +417,21 @@ class Config:
 
     @dataclass
     class ExportOptions:
+        """Settings for the final media export."""
         enable_crop: bool = True
         crop_padding: int = 1
         crop_ars: str = "16:9,1:1,9:16"
 
     @dataclass
     class GradioDefaults:
+        """Default values specific to Gradio UI behavior."""
         auto_pctl_input: int = 25
         show_mask_overlay: bool = True
         overlay_alpha: float = 0.6
 
     @dataclass
     class SeedingDefaults:
+        """Parameters for the seed selection logic."""
         face_similarity_threshold: float = 0.4
         yolo_iou_threshold: float = 0.3
         face_contain_score: int = 100
@@ -297,27 +443,32 @@ class Config:
 
     @dataclass
     class UtilityDefaults:
+        """Miscellaneous utility parameters."""
         max_filename_length: int = 50
         video_extensions: List[str] = field(default_factory=lambda: ['.mp4','.mov','.mkv','.avi','.webm'])
         image_extensions: List[str] = field(default_factory=lambda: ['.png','.jpg','.jpeg','.webp','.bmp'])
 
     @dataclass
     class PostProcessing:
+        """Configuration for post-processing steps."""
         mask_fill_kernel_size: int = 5
 
     @dataclass
     class Visualization:
+        """Settings for visual elements like bounding boxes."""
         bbox_color: List[int] = field(default_factory=lambda: [255, 0, 0])
         bbox_thickness: int = 2
 
     @dataclass
     class Analysis:
+        """Parameters for the analysis pipeline."""
         max_workers: int = 8
         default_batch_size: int = 32
         default_workers: int = 4
         
     @dataclass
     class ModelDefaults:
+        """Default settings for various models."""
         face_analyzer_det_size: List[int] = field(default_factory=lambda: [640, 640])
 
     monitoring: Monitoring = field(default_factory=Monitoring)
@@ -332,6 +483,15 @@ class Config:
     config_path: Optional[str] = "config.json"
 
     def __post_init__(self):
+        """
+        Initializes the Config object after its creation.
+
+        This method orchestrates the loading of configuration from different
+        sources in the correct order of precedence:
+        1. Default values from the dataclass definition.
+        2. Values from the JSON configuration file (`config.json`).
+        3. Overrides from environment variables.
+        """
         # Start from a snapshot of the initialized defaults
         config_dict = asdict(self)
 
@@ -357,7 +517,14 @@ class Config:
         self._validate_paths()
 
     def _validate_paths(self):
-        """Validate critical paths exist and are accessible"""
+        """Validates that critical paths exist and are accessible.
+
+        Ensures that the directories specified in `self.paths` are created
+        and have write permissions.
+
+        Raises:
+            PermissionError: If a required directory is not writable.
+        """
         required_dirs = [self.paths.logs, self.paths.models, self.paths.downloads]
         for dir_path in required_dirs:
             path = Path(dir_path)
@@ -366,7 +533,20 @@ class Config:
             if not os.access(path, os.W_OK):
                 raise PermissionError(f"No write permission for: {path}")
 
-    def _merge_configs(self, base, override):
+    def _merge_configs(self, base: dict, override: dict) -> dict:
+        """
+        Recursively merges two dictionaries.
+
+        The `override` dictionary's values take precedence over the `base`
+        dictionary's values.
+
+        Args:
+            base: The base dictionary.
+            override: The dictionary with values to override.
+
+        Returns:
+            The merged dictionary.
+        """
         for key, value in override.items():
             if isinstance(value, dict) and isinstance(base.get(key), dict):
                 base[key] = self._merge_configs(base.get(key, {}), value)
@@ -374,7 +554,14 @@ class Config:
                 base[key] = value
         return base
 
-    def _override_with_env_vars(self, config_dict, prefix='APP'):
+    def _override_with_env_vars(self, config_dict: dict, prefix: str = 'APP'):
+        """
+        Recursively overrides configuration with environment variables.
+
+        Args:
+            config_dict: The dictionary of configuration to override.
+            prefix: The current prefix for environment variable names.
+        """
         for key, value in config_dict.items():
             new_prefix = f"{prefix}_{key.upper()}"
             if isinstance(value, dict):
@@ -384,7 +571,17 @@ class Config:
                 if env_var is not None:
                     config_dict[key] = self._coerce_type(env_var, value)
 
-    def _coerce_type(self, env_val, default_val):
+    def _coerce_type(self, env_val: str, default_val: Any) -> Any:
+        """
+        Coerces an environment variable string to the type of a default value.
+
+        Args:
+            env_val: The environment variable value (as a string).
+            default_val: The default value to infer the type from.
+
+        Returns:
+            The coerced value.
+        """
         if isinstance(default_val, bool):
             return env_val.lower() in ['true', '1', 'yes']
         if isinstance(default_val, int):
@@ -406,6 +603,12 @@ class Config:
         return env_val
 
     def _from_dict(self, data: Dict[str, Any]):
+        """
+        Populates the dataclass fields from a dictionary.
+
+        Args:
+            data: The dictionary containing the configuration data.
+        """
         for f in fields(self):
             if f.name in data:
                 field_data = data[f.name]
@@ -424,10 +627,22 @@ class Config:
         self._validate_config()
 
     def _validate_config(self):
+        """
+        Performs validation checks on the final configuration.
+
+        Raises:
+            ValueError: If the configuration is invalid.
+        """
         if sum(asdict(self.quality_weights).values()) == 0:
             raise ValueError("The sum of quality_weights cannot be zero.")
 
     def _create_dirs(self):
+        """
+        Creates necessary directories based on the configuration.
+
+        Raises:
+            RuntimeError: If a directory cannot be created due to permissions.
+        """
         dir_paths = [
             self.paths.logs,
             self.paths.models,
@@ -441,7 +656,11 @@ class Config:
                     raise RuntimeError(f"Cannot create directory at {dir_path}. Check permissions.") from e
 
     def save_config(self, path: str):
-        """Saves the current (resolved) configuration to a JSON file."""
+        """Saves the current (resolved) configuration to a JSON file.
+
+        Args:
+            path: The file path to save the configuration to.
+        """
         with open(path, 'w', encoding='utf-8') as f:
             json.dump(_to_json_safe(asdict(self)), f, indent=2, ensure_ascii=False)
 
@@ -453,6 +672,21 @@ logging.addLevelName(SUCCESS_LEVEL_NUM, "SUCCESS")
 
 @dataclass
 class LogEvent:
+    """Represents a structured log entry.
+
+    Attributes:
+        timestamp: The ISO 8601 timestamp of the event.
+        level: The log level (e.g., "INFO", "ERROR").
+        message: The log message.
+        component: The application component that generated the log.
+        operation: The high-level operation during which the event occurred.
+        duration_ms: The duration of the operation in milliseconds.
+        error_type: The type of error, if any.
+        stack_trace: The stack trace, if an error occurred.
+        user_context: A dictionary of user-provided context.
+        performance_metrics: A dictionary of performance metrics.
+        custom_fields: A dictionary for any other custom data.
+    """
     timestamp: str
     level: str
     message: str
@@ -466,9 +700,23 @@ class LogEvent:
     custom_fields: Optional[Dict[str, Any]] = None
 
 class AppLogger:
+    """A comprehensive logger for the application.
+
+    This logger handles both colored console logging and structured JSONL file
+    logging. It also integrates with a progress queue to send log messages
+    to the Gradio UI.
+    """
     def __init__(self, config: 'Config', log_dir: Optional[Path] = None,
                  log_to_file: bool = True,
                  log_to_console: bool = True):
+        """Initializes the AppLogger.
+
+        Args:
+            config: The application's configuration object.
+            log_dir: The directory to store log files in.
+            log_to_file: Whether to enable file logging.
+            log_to_console: Whether to enable console logging.
+        """
         self.config = config
         self.log_dir = log_dir or Path(self.config.paths.logs)
         self.log_dir.mkdir(exist_ok=True, parents=True)
@@ -488,6 +736,7 @@ class AppLogger:
         self._file_lock = threading.Lock()
 
     def _setup_console_handler(self):
+        """Sets up the console handler with colored output."""
         console_handler = logging.StreamHandler()
         console_formatter = ColoredFormatter(self.config.logging.log_format)
         console_handler.setFormatter(console_formatter)
@@ -495,6 +744,7 @@ class AppLogger:
         self.logger.addHandler(console_handler)
 
     def _setup_file_handlers(self):
+        """Sets up file handlers for both plain text and structured logs."""
         file_handler = logging.FileHandler(self.session_log_file, encoding='utf-8')
         file_formatter = logging.Formatter(self.config.logging.log_format)
         file_handler.setFormatter(file_formatter)
@@ -506,11 +756,25 @@ class AppLogger:
         # self.structured_handler.setLevel(logging.DEBUG)
         # self.logger.addHandler(self.structured_handler)
 
-    def set_progress_queue(self, queue):
+    def set_progress_queue(self, queue: Queue):
+        """
+        Sets the queue for sending progress and log updates to the UI.
+
+        Args:
+            queue: The queue instance to use.
+        """
         self.progress_queue = queue
 
     @contextlib.contextmanager
-    def operation(self, name, component="system", tracker=None):
+    def operation(self, name: str, component: str = "system", tracker: Optional['AdvancedProgressTracker'] = None):
+        """
+        A context manager for logging the start, end, and duration of an operation.
+
+        Args:
+            name: The name of the operation.
+            component: The component performing the operation.
+            tracker: An optional AdvancedProgressTracker to update.
+        """
         t0 = time.time()
         if tracker:
             tracker.set_stage(name)
@@ -529,6 +793,18 @@ class AppLogger:
             raise
 
     def _create_log_event(self, level: str, message: str, component: str, **kwargs) -> LogEvent:
+        """
+        Creates a LogEvent object from log data.
+
+        Args:
+            level: The log level.
+            message: The log message.
+            component: The component generating the log.
+            **kwargs: Additional fields for the LogEvent.
+
+        Returns:
+            A populated LogEvent object.
+        """
         exc_info = kwargs.pop('exc_info', None)
         extra = kwargs.pop('extra', None)
         # Map legacy "stacktrace" to "stack_trace" for backward compatibility
@@ -542,6 +818,15 @@ class AppLogger:
                         **kwargs)
 
     def _log_event(self, event: LogEvent):
+        """
+        Handles the actual logging of a LogEvent.
+
+        This method writes to the plain text log, the structured JSONL log,
+        and sends a message to the UI progress queue.
+
+        Args:
+            event: The LogEvent to process.
+        """
         log_level_name = event.level.upper()
         log_level = getattr(logging, log_level_name, logging.INFO)
         # Use custom level number for "SUCCESS"
@@ -568,18 +853,39 @@ class AppLogger:
             if event.operation: ui_message = f"[{event.operation}] {ui_message}"
             self.progress_queue.put({"log": ui_message})
 
-    def debug(self, message: str, component: str = "system", **kwargs): self._log_event(self._create_log_event("DEBUG", message, component, **kwargs))
-    def info(self, message: str, component: str = "system", **kwargs): self._log_event(self._create_log_event("INFO", message, component, **kwargs))
-    def warning(self, message: str, component: str = "system", **kwargs): self._log_event(self._create_log_event("WARNING", message, component, **kwargs))
-    def error(self, message: str, component: str = "system", **kwargs): self._log_event(self._create_log_event("ERROR", message, component, **kwargs))
-    def success(self, message: str, component: str = "system", **kwargs): self._log_event(self._create_log_event("SUCCESS", message, component, **kwargs))
-    def critical(self, message: str, component: str = "system", **kwargs): self._log_event(self._create_log_event("CRITICAL", message, component, **kwargs))
+    def debug(self, message: str, component: str = "system", **kwargs):
+        """Logs a message with level DEBUG."""
+        self._log_event(self._create_log_event("DEBUG", message, component, **kwargs))
+    def info(self, message: str, component: str = "system", **kwargs):
+        """Logs a message with level INFO."""
+        self._log_event(self._create_log_event("INFO", message, component, **kwargs))
+    def warning(self, message: str, component: str = "system", **kwargs):
+        """Logs a message with level WARNING."""
+        self._log_event(self._create_log_event("WARNING", message, component, **kwargs))
+    def error(self, message: str, component: str = "system", **kwargs):
+        """Logs a message with level ERROR."""
+        self._log_event(self._create_log_event("ERROR", message, component, **kwargs))
+    def success(self, message: str, component: str = "system", **kwargs):
+        """Logs a message with custom level SUCCESS."""
+        self._log_event(self._create_log_event("SUCCESS", message, component, **kwargs))
+    def critical(self, message: str, component: str = "system", **kwargs):
+        """Logs a message with level CRITICAL."""
+        self._log_event(self._create_log_event("CRITICAL", message, component, **kwargs))
 
 class ColoredFormatter(logging.Formatter):
+    """A logging formatter that adds ANSI color codes to log levels."""
     COLORS = {'DEBUG': '\033[36m', 'INFO': '\033[37m', 'WARNING': '\033[33m',
               'ERROR': '\033[31m', 'CRITICAL': '\033[35m', 'SUCCESS': '\033[32m', 'RESET': '\033[0m'}
 
-    def format(self, record):
+    def format(self, record: logging.LogRecord) -> str:
+        """Formats the log record with color.
+
+        Args:
+            record: The log record to format.
+
+        Returns:
+            The formatted log message string.
+        """
         original_levelname = record.levelname
         try:
             color = self.COLORS.get(original_levelname, self.COLORS['RESET'])
@@ -589,7 +895,16 @@ class ColoredFormatter(logging.Formatter):
             record.levelname = original_levelname
 
 class AdvancedProgressTracker:
-    def __init__(self, progress, queue: Queue, logger: AppLogger, ui_stage_name: str = ""):
+    """Manages and displays progress for long-running tasks in the UI."""
+    def __init__(self, progress: Callable, queue: Queue, logger: AppLogger, ui_stage_name: str = ""):
+        """Initializes the AdvancedProgressTracker.
+
+        Args:
+            progress: The Gradio `gr.Progress` object.
+            queue: The queue for sending updates to the UI thread.
+            logger: The application logger.
+            ui_stage_name: The initial stage name to display in the UI.
+        """
         self.progress = progress
         self.queue = queue
         self.logger = logger
@@ -607,6 +922,13 @@ class AdvancedProgressTracker:
         self.pause_event.set()
 
     def start(self, total_items: int, desc: Optional[str] = None):
+        """
+        Starts or resets the progress tracker.
+
+        Args:
+            total_items: The total number of items to process.
+            desc: The description of the current stage.
+        """
         self.total = max(1, int(total_items))
         self.done = 0
         if desc:
@@ -618,6 +940,14 @@ class AdvancedProgressTracker:
         self._overlay(force=True)
 
     def step(self, n: int = 1, desc: Optional[str] = None, substage: Optional[str] = None):
+        """
+        Increments the progress by a given amount.
+
+        Args:
+            n: The number of items completed in this step.
+            desc: An optional new description for the stage.
+            substage: An optional description for the current sub-task.
+        """
         self.pause_event.wait()
         now = time.time()
         dt = now - self._last_ts
@@ -635,22 +965,51 @@ class AdvancedProgressTracker:
         self._overlay()
 
     def set(self, done: int, desc: Optional[str] = None, substage: Optional[str] = None):
+        """
+        Sets the progress to a specific value.
+
+        Args:
+            done: The new number of completed items.
+            desc: An optional new description for the stage.
+            substage: An optional description for the current sub-task.
+        """
         delta = max(0, done - self.done)
         if delta > 0:
             self.step(delta, desc=desc, substage=substage)
 
     def set_stage(self, stage: str, substage: Optional[str] = None):
+        """
+        Updates the current stage and substage descriptions.
+
+        Args:
+            stage: The new description for the main stage.
+            substage: The new description for the sub-task.
+        """
         self.stage = stage
         self.substage = substage
         self._overlay(force=True)
 
     def done_stage(self, final_text: Optional[str] = None):
+        """
+        Marks the current stage as complete.
+
+        Args:
+            final_text: An optional message to log upon completion.
+        """
         self.done = self.total
         self._overlay(force=True)
         if final_text:
             self.logger.info(final_text, component="progress")
 
     def _overlay(self, force: bool = False):
+        """
+        Updates the Gradio progress UI and sends a progress event to the queue.
+
+        This method is throttled to prevent overwhelming the UI.
+
+        Args:
+            force: If True, bypasses the throttling mechanism.
+        """
         now = time.time()
         fraction = self.done / max(1, self.total)
         if not force and (now - self._last_update_ts < self.throttle_interval):
@@ -680,14 +1039,29 @@ class AdvancedProgressTracker:
         )
         self.queue.put({"progress": asdict(progress_event)})
 
-    def _eta_seconds(self):
+    def _eta_seconds(self) -> Optional[float]:
+        """
+        Calculates the estimated time remaining in seconds.
+
+        Returns:
+            The estimated seconds remaining, or None if not enough data is available.
+        """
         if self._ema_dt is None:
             return None
         remaining = max(0, self.total - self.done)
         return self._ema_dt * remaining
 
     @staticmethod
-    def _fmt_eta(eta_s):
+    def _fmt_eta(eta_s: Optional[float]) -> str:
+        """
+        Formats ETA in seconds into a human-readable string (e.g., "1m 30s").
+
+        Args:
+            eta_s: The ETA in seconds.
+
+        Returns:
+            A formatted string representation of the ETA.
+        """
         if eta_s is None:
             return "—"
         if eta_s < 60:
@@ -701,26 +1075,47 @@ class AdvancedProgressTracker:
 # --- ERROR HANDLING ---
 
 class ErrorSeverity(Enum):
+    """Enumeration for the severity of an error."""
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
     CRITICAL = "critical"
 
 class RecoveryStrategy(Enum):
+    """Enumeration for possible error recovery strategies."""
     RETRY = "retry"
     FALLBACK = "fallback"
     SKIP = "skip"
     ABORT = "abort"
 
 class ErrorHandler:
-    def __init__(self, logger, max_attempts: int, backoff_seconds: list):
+    """Provides decorators for implementing error handling strategies."""
+    def __init__(self, logger: 'AppLogger', max_attempts: int, backoff_seconds: list):
+        """Initializes the ErrorHandler.
+
+        Args:
+            logger: The application logger.
+            max_attempts: The default maximum number of retry attempts.
+            backoff_seconds: The default list of backoff delays for retries.
+        """
         self.logger = logger
         self.max_attempts = max_attempts
         self.backoff_seconds = backoff_seconds
         self.error_count = 0
         self.recovery_attempts = {}
 
-    def with_retry(self, max_attempts=None, backoff_seconds=None, recoverable_exceptions: tuple = (Exception,)):
+    def with_retry(self, max_attempts: Optional[int] = None, backoff_seconds: Optional[list] = None, recoverable_exceptions: tuple = (Exception,)):
+        """
+        A decorator that retries a function upon failure.
+
+        Args:
+            max_attempts: The maximum number of attempts. Defaults to the instance's default.
+            backoff_seconds: A list of delays between retries. Defaults to the instance's default.
+            recoverable_exceptions: A tuple of exception types that should trigger a retry.
+
+        Returns:
+            The decorated function.
+        """
         max_attempts = max_attempts or self.max_attempts
         backoff_seconds = backoff_seconds or self.backoff_seconds
         def decorator(func: Callable) -> Callable:
@@ -748,6 +1143,15 @@ class ErrorHandler:
         return decorator
 
     def with_fallback(self, fallback_func: Callable):
+        """
+        A decorator that executes a fallback function if the primary function fails.
+
+        Args:
+            fallback_func: The function to execute if the decorated function fails.
+
+        Returns:
+            The decorated function.
+        """
         def decorator(func: Callable) -> Callable:
             @functools.wraps(func)
             def wrapper(*args, **kwargs) -> Any:
@@ -773,6 +1177,7 @@ class ErrorHandler:
 
 @dataclass
 class ProgressEvent:
+    """Represents a progress update for the UI."""
     stage: str
     substage: Optional[str] = None
     done: int = 0
@@ -782,10 +1187,13 @@ class ProgressEvent:
     eta_formatted: str = "—"
 
 @dataclass
-class UIEvent: pass
+class UIEvent:
+    """Base class for events originating from the UI."""
+    pass
 
 @dataclass
 class ExtractionEvent(UIEvent):
+    """Data for an extraction pipeline run."""
     source_path: str
     upload_video: Optional[str]
     method: str
@@ -798,6 +1206,7 @@ class ExtractionEvent(UIEvent):
 
 @dataclass
 class PreAnalysisEvent(UIEvent):
+    """Data for a pre-analysis pipeline run."""
     output_folder: str
     video_path: str
     resume: bool
@@ -837,6 +1246,7 @@ class PreAnalysisEvent(UIEvent):
 
 @dataclass
 class PropagationEvent(UIEvent):
+    """Data for a mask propagation pipeline run."""
     output_folder: str
     video_path: str
     scenes: list[dict[str, Any]]
@@ -844,6 +1254,7 @@ class PropagationEvent(UIEvent):
 
 @dataclass
 class FilterEvent(UIEvent):
+    """Data for a filter change event."""
     all_frames_data: list[dict[str, Any]]
     per_metric_values: dict[str, Any]
     output_dir: str
@@ -857,6 +1268,7 @@ class FilterEvent(UIEvent):
 
 @dataclass
 class ExportEvent(UIEvent):
+    """Data for an export event."""
     all_frames_data: list[dict[str, Any]]
     output_dir: str
     video_path: str
@@ -867,12 +1279,23 @@ class ExportEvent(UIEvent):
 
 @dataclass
 class SessionLoadEvent(UIEvent):
+    """Data for a session load event."""
     session_path: str
 
 # --- UTILS ---
 import functools
 
-def handle_common_errors(func):
+def handle_common_errors(func: Callable) -> Callable:
+    """
+    A decorator to catch and format common exceptions for UI display.
+
+    Args:
+        func: The function to wrap.
+
+    Returns:
+        A wrapped function that returns a dictionary with an 'error' key
+        if a handled exception occurs.
+    """
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         try:
@@ -887,14 +1310,33 @@ def handle_common_errors(func):
             return {"error": f"Unexpected error: {e}"}
     return wrapper
 
-def monitor_memory_usage(logger, threshold_mb=8000):
+def monitor_memory_usage(logger: 'AppLogger', threshold_mb: int = 8000):
+    """
+    Checks GPU memory usage and logs a warning if it exceeds a threshold.
+
+    Args:
+        logger: The application logger.
+        threshold_mb: The memory usage threshold in megabytes.
+    """
     if torch.cuda.is_available():
         allocated = torch.cuda.memory_allocated() / 1024**2
         if allocated > threshold_mb:
             logger.warning(f"High GPU memory usage: {allocated:.1f}MB")
             torch.cuda.empty_cache()
 
-def validate_video_file(video_path):
+def validate_video_file(video_path: str):
+    """
+    Performs basic validation on a video file.
+
+    Checks for existence, non-zero size, and whether it can be opened by OpenCV.
+
+    Args:
+        video_path: The path to the video file.
+
+    Raises:
+        FileNotFoundError: If the video file does not exist.
+        ValueError: If the file is empty or cannot be opened.
+    """
     path = Path(video_path)
     if not path.exists():
         raise FileNotFoundError(f"Video file not found: {video_path}")
@@ -910,7 +1352,18 @@ def validate_video_file(video_path):
     except Exception as e:
         raise ValueError(f"Invalid video file: {e}")
 
-def estimate_totals(params: 'AnalysisParameters', video_info: dict, scenes: list['Scene'] | None) -> dict:
+def estimate_totals(params: 'AnalysisParameters', video_info: dict, scenes: Optional[list['Scene']]) -> dict:
+    """
+    Estimates the total number of items for each pipeline stage for the progress bar.
+
+    Args:
+        params: The analysis parameters.
+        video_info: A dictionary with video metadata (fps, frame_count).
+        scenes: A list of detected scenes.
+
+    Returns:
+        A dictionary with estimated totals for extraction, pre_analysis, and propagation.
+    """
     fps = max(1, int(video_info.get("fps") or 30))
     total_frames = int(video_info.get("frame_count") or 0)
 
@@ -943,11 +1396,35 @@ def estimate_totals(params: 'AnalysisParameters', video_info: dict, scenes: list
         "propagation": propagation_total
     }
 
-def sanitize_filename(name, config: 'Config', max_length=None):
+def sanitize_filename(name: str, config: 'Config', max_length: Optional[int] = None) -> str:
+    """
+    Sanitizes a string to be used as a valid filename.
+
+    Replaces invalid characters with underscores and truncates to a maximum length.
+
+    Args:
+        name: The input string.
+        config: The application configuration.
+        max_length: The maximum allowed length of the filename.
+
+    Returns:
+        The sanitized filename string.
+    """
     max_length = max_length or config.utility_defaults.max_filename_length
     return re.sub(r'[^\w\-_.]', '_', name)[:max_length]
 
-def _to_json_safe(obj):
+def _to_json_safe(obj: Any) -> Any:
+    """
+    Recursively converts an object to a JSON-serializable format.
+
+    Handles common non-serializable types like NumPy arrays and Path objects.
+
+    Args:
+        obj: The object to convert.
+
+    Returns:
+        A JSON-serializable representation of the object.
+    """
     import numpy as np
     from pathlib import Path
     if isinstance(obj, dict):
@@ -966,7 +1443,23 @@ def _to_json_safe(obj):
         return str(obj)
     return obj
 
-def _coerce(val, to_type):
+def _coerce(val: Any, to_type: type) -> Any:
+    """
+    Coerces a value to a specified type.
+
+    Handles boolean, integer, and float conversions from strings.
+
+    Args:
+        val: The value to coerce.
+        to_type: The target type.
+
+    Returns:
+        The coerced value.
+
+    Raises:
+        ValueError: If the value cannot be coerced to the target type.
+        TypeError: If the value cannot be coerced to the target type.
+    """
     if to_type is bool:
         if isinstance(val, bool): return val
         return str(val).strip().lower() in {"1", "true", "yes", "on"}
@@ -981,12 +1474,24 @@ def _coerce(val, to_type):
 
 @contextlib.contextmanager
 def safe_resource_cleanup():
+    """
+    A context manager to perform garbage collection and clear CUDA cache.
+    """
     try: yield
     finally:
         gc.collect()
         if torch.cuda.is_available(): torch.cuda.empty_cache()
 
-def is_image_folder(p: str | Path) -> bool:
+def is_image_folder(p: Union[str, Path]) -> bool:
+    """
+    Checks if a given path is a directory.
+
+    Args:
+        p: The path to check.
+
+    Returns:
+        True if the path is a directory, False otherwise.
+    """
     if not p:
         return False
     try:
@@ -997,12 +1502,32 @@ def is_image_folder(p: str | Path) -> bool:
     except (TypeError, ValueError):
         return False
 
-def list_images(p: str | Path, cfg: Config) -> list[Path]:
+def list_images(p: Union[str, Path], cfg: Config) -> list[Path]:
+    """
+    Lists all image files in a given directory.
+
+    Args:
+        p: The path to the directory.
+        cfg: The application configuration, used to determine valid image extensions.
+
+    Returns:
+        A sorted list of Path objects for the image files.
+    """
     p = Path(p)
     exts = {e.lower() for e in cfg.utility_defaults.image_extensions}
     return sorted([f for f in p.iterdir() if f.suffix.lower() in exts and f.is_file()])
 
-def _sanitize_face_ref(runconfig: dict, logger) -> tuple[str, bool]:
+def _sanitize_face_ref(runconfig: dict, logger: 'AppLogger') -> tuple[str, bool]:
+    """
+    Validates the face reference image path from a loaded session.
+
+    Args:
+        runconfig: The loaded run configuration dictionary.
+        logger: The application logger.
+
+    Returns:
+        A tuple containing the sanitized path and a boolean indicating if it's valid.
+    """
     ref = (runconfig.get('face_ref_img_path') or '').strip()
     vid = (runconfig.get('video_path') or '').strip()
     if not ref:
@@ -1022,13 +1547,24 @@ def _sanitize_face_ref(runconfig: dict, logger) -> tuple[str, bool]:
 # --- QUALITY ---
 
 @njit
-def compute_entropy(hist, entropy_norm):
+def compute_entropy(hist: np.ndarray, entropy_norm: float) -> float:
+    """
+    Computes the normalized entropy of an image from its histogram.
+
+    Args:
+        hist: The histogram of the image.
+        entropy_norm: The normalization factor for the entropy value.
+
+    Returns:
+        The normalized entropy value between 0.0 and 1.0.
+    """
     prob = hist / (np.sum(hist) + 1e-7)
     entropy = -np.sum(prob[prob > 0] * np.log2(prob[prob > 0]))
     return min(max(entropy / entropy_norm, 0), 1.0)
 
 @dataclass
 class QualityConfig:
+    """Configuration for quality metric calculations."""
     sharpness_base_scale: float
     edge_strength_base_scale: float
     enable_niqe: bool = True
@@ -1037,6 +1573,7 @@ class QualityConfig:
 
 @dataclass
 class FrameMetrics:
+    """A container for all calculated metrics of a single frame."""
     quality_score: float = 0.0
     sharpness_score: float = 0.0
     edge_strength_score: float = 0.0
@@ -1052,17 +1589,33 @@ class FrameMetrics:
 
 @dataclass
 class Frame:
+    """Represents a single video frame and its associated data."""
     image_data: np.ndarray
     frame_number: int
     metrics: FrameMetrics = field(default_factory=FrameMetrics)
-    face_similarity_score: float | None = None
-    max_face_confidence: float | None = None
-    error: str | None = None
+    face_similarity_score: Optional[float] = None
+    max_face_confidence: Optional[float] = None
+    error: Optional[str] = None
 
-    def calculate_quality_metrics(self, thumb_image_rgb: np.ndarray, quality_config: QualityConfig, logger: 'AppLogger',
-                                  mask: np.ndarray | None = None, niqe_metric=None, main_config: 'Config' = None,
-                                  face_landmarker=None, face_bbox: Optional[List[int]] = None,
+    def calculate_quality_metrics(self, thumb_image_rgb: np.ndarray, quality_config: 'QualityConfig', logger: 'AppLogger',
+                                  mask: Optional[np.ndarray] = None, niqe_metric: Optional[Callable] = None,
+                                  main_config: Optional['Config'] = None, face_landmarker: Optional[Callable] = None,
+                                  face_bbox: Optional[List[int]] = None,
                                   metrics_to_compute: Optional[Dict[str, bool]] = None):
+        """
+        Calculates a suite of quality metrics for the frame.
+
+        Args:
+            thumb_image_rgb: The thumbnail image data in RGB format.
+            quality_config: Configuration for quality calculations.
+            logger: The application logger.
+            mask: An optional mask to apply to the image for metric calculation.
+            niqe_metric: The pre-initialized NIQE metric model.
+            main_config: The main application configuration.
+            face_landmarker: The MediaPipe Face Landmarker instance.
+            face_bbox: The bounding box of the face to analyze.
+            metrics_to_compute: A dictionary specifying which metrics to compute.
+        """
         try:
             if metrics_to_compute is None:
                 metrics_to_compute = {k: True for k in ['eyes_open', 'yaw', 'pitch', 'sharpness', 'edge_strength', 'contrast', 'brightness', 'entropy', 'quality']}
@@ -1180,17 +1733,18 @@ class Frame:
 
 @dataclass
 class Scene:
+    """Represents a single continuous shot or scene in the video."""
     shot_id: int
     start_frame: int
     end_frame: int
     status: str = "pending"
-    best_frame: int | None = None
+    best_frame: Optional[int] = None
     seed_metrics: dict = field(default_factory=dict)
-    seed_frame_idx: int | None = None
+    seed_frame_idx: Optional[int] = None
     seed_config: dict = field(default_factory=dict)
-    seed_type: str | None = None
+    seed_type: Optional[str] = None
     seed_result: dict = field(default_factory=dict)
-    preview_path: str | None = None
+    preview_path: Optional[str] = None
     manual_status_change: bool = False
     is_overridden: bool = False
     initial_bbox: Optional[list] = None
@@ -1199,6 +1753,7 @@ class Scene:
 
 @dataclass
 class AnalysisParameters:
+    """A container for all parameters related to an analysis run."""
     source_path: str = ""
     method: str = ""
     interval: float = 0.0
@@ -1245,12 +1800,27 @@ class AnalysisParameters:
     compute_phash: bool = True
 
     def __post_init__(self):
+        """Post-initialization hook for the dataclass."""
         # This post_init is now less critical as config is passed on creation,
         # but can be used for validation or complex defaults.
         pass
 
     @classmethod
-    def from_ui(cls, logger: 'AppLogger', config: 'Config', **kwargs):
+    def from_ui(cls, logger: 'AppLogger', config: 'Config', **kwargs) -> 'AnalysisParameters':
+        """
+        Creates an AnalysisParameters instance from UI component values.
+
+        This method handles type coercion and validation of the raw inputs
+        from the Gradio user interface.
+
+        Args:
+            logger: The application logger.
+            config: The main application configuration.
+            **kwargs: A dictionary of UI values.
+
+        Returns:
+            A populated and validated AnalysisParameters instance.
+        """
         if 'face_ref_img_path' in kwargs or 'video_path' in kwargs:
             sanitized_face_ref, face_filter_enabled = _sanitize_face_ref(kwargs, logger)
             kwargs['face_ref_img_path'] = sanitized_face_ref
@@ -1306,6 +1876,15 @@ class AnalysisParameters:
         return instance
 
     def _get_config_hash(self, output_dir: Path) -> str:
+        """
+        Generates a hash representing the current analysis configuration.
+
+        Args:
+            output_dir: The output directory, used to include scene seeds in the hash.
+
+        Returns:
+            A SHA256 hash string.
+        """
         data_to_hash = json.dumps(_to_json_safe(asdict(self)), sort_keys=True)
         scene_seeds_path = output_dir / "scene_seeds.json"
         if scene_seeds_path.exists(): data_to_hash += scene_seeds_path.read_text(encoding='utf-8')
@@ -1313,19 +1892,31 @@ class AnalysisParameters:
 
 @dataclass
 class MaskingResult:
-    mask_path: str | None = None
-    shot_id: int | None = None
-    seed_type: str | None = None
-    seed_face_sim: float | None = None
-    mask_area_pct: float | None = None
+    """Contains the results of a masking operation for a single frame."""
+    mask_path: Optional[str] = None
+    shot_id: Optional[int] = None
+    seed_type: Optional[str] = None
+    seed_face_sim: Optional[float] = None
+    mask_area_pct: Optional[float] = None
     mask_empty: bool = True
-    error: str | None = None
+    error: Optional[str] = None
 
 # --- BASE PIPELINE ---
 
 class Pipeline:
+    """Base class for all processing pipelines."""
     def __init__(self, config: 'Config', logger: 'AppLogger', params: 'AnalysisParameters',
                  progress_queue: Queue, cancel_event: threading.Event):
+        """
+        Initializes the Pipeline.
+
+        Args:
+            config: The application configuration.
+            logger: The application logger.
+            params: The parameters for the analysis run.
+            progress_queue: A queue to send progress updates to the UI.
+            cancel_event: An event to signal cancellation of the task.
+        """
         self.config = config
         self.logger = logger
         self.params = params
@@ -1335,14 +1926,39 @@ class Pipeline:
 # --- CACHING & OPTIMIZATION ---
 
 class ThumbnailManager:
-    def __init__(self, logger, config: 'Config'):
+    """Manages an in-memory cache for thumbnail images.
+
+    This class uses an OrderedDict to implement a simple LRU (Least Recently Used)
+    cache, which helps to avoid re-reading thumbnail files from disk repeatedly.
+    """
+    def __init__(self, logger: 'AppLogger', config: 'Config'):
+        """
+        Initializes the ThumbnailManager.
+
+        Args:
+            logger: The application logger.
+            config: The application configuration.
+        """
         self.logger = logger
         self.config = config
         self.cache = OrderedDict()
         self.max_size = self.config.cache.size
         self.logger.info(f"ThumbnailManager initialized with cache size {self.max_size}")
 
-    def get(self, thumb_path: Path):
+    def get(self, thumb_path: Path) -> Optional[np.ndarray]:
+        """
+        Retrieves a thumbnail from the cache or loads it from disk.
+
+        If the thumbnail is in the cache, it's returned directly. Otherwise, it's
+        loaded from the given path, added to the cache, and then returned.
+
+        Args:
+            thumb_path: The file path of the thumbnail to retrieve.
+
+        Returns:
+            The thumbnail image as a NumPy array in RGB format, or None if the
+            file does not exist or cannot be loaded.
+        """
         if not isinstance(thumb_path, Path): thumb_path = Path(thumb_path)
         if thumb_path in self.cache:
             self.cache.move_to_end(thumb_path)
@@ -1366,12 +1982,12 @@ class ThumbnailManager:
             return None
 
     def clear_cache(self):
-        """Force clear the thumbnail cache to free memory"""
+        """Forces the cache to be cleared to free up memory."""
         self.cache.clear()
         gc.collect()
 
     def _cleanup_old_entries(self):
-        """Clean up a percentage of the cache to make room for new entries."""
+        """Removes a percentage of the oldest entries from the cache."""
         num_to_remove = int(self.max_size * self.config.cache.eviction_factor)
         for _ in range(num_to_remove):
             if not self.cache:
@@ -1382,14 +1998,40 @@ class ThumbnailManager:
 # --- MODEL LOADING & MANAGEMENT ---
 
 def _compute_sha256(path: Path) -> str:
-    """Computes the SHA256 hash of a file."""
+    """
+    Computes the SHA256 hash of a file.
+
+    Args:
+        path: The path to the file.
+
+    Returns:
+        The hexadecimal SHA256 hash string.
+    """
     h = hashlib.sha256()
     with open(path, 'rb') as f:
         while chunk := f.read(8192):
             h.update(chunk)
     return h.hexdigest()
 
-def download_model(url, dest_path, description, logger, error_handler: ErrorHandler, user_agent: str, min_size=1_000_000, expected_sha256: Optional[str] = None):
+def download_model(url: str, dest_path: Union[str, Path], description: str, logger: 'AppLogger',
+                   error_handler: 'ErrorHandler', user_agent: str, min_size: int = 1_000_000,
+                   expected_sha256: Optional[str] = None):
+    """
+    Downloads a model file, with caching, retry, and checksum verification.
+
+    Args:
+        url: The URL to download the model from.
+        dest_path: The local destination path to save the file.
+        description: A description of the model for logging purposes.
+        logger: The application logger.
+        error_handler: The error handler for retry logic.
+        user_agent: The user agent string for the download request.
+        min_size: The minimum acceptable file size in bytes.
+        expected_sha256: The expected SHA256 checksum for the file.
+
+    Raises:
+        RuntimeError: If the download fails after all retries or if verification fails.
+    """
     dest_path = Path(dest_path)
     dest_path.parent.mkdir(parents=True, exist_ok=True)
     if dest_path.is_file():
@@ -1437,8 +2079,22 @@ def download_model(url, dest_path, description, logger, error_handler: ErrorHand
 # Thread-local storage for non-thread-safe models
 thread_local = threading.local()
 
-def get_face_landmarker(model_path: str, logger: 'AppLogger'):
+def get_face_landmarker(model_path: str, logger: 'AppLogger') -> vision.FaceLandmarker:
+    """
+    Initializes and returns a thread-local instance of the MediaPipe FaceLandmarker.
 
+    This is necessary because the FaceLandmarker object is not thread-safe.
+
+    Args:
+        model_path: The path to the Face Landmarker model file.
+        logger: The application logger.
+
+    Returns:
+        An initialized FaceLandmarker instance.
+
+    Raises:
+        RuntimeError: If the model cannot be initialized.
+    """
 
     # Check if a landmarker instance already exists for this thread
     if hasattr(thread_local, 'face_landmarker_instance'):
@@ -1467,7 +2123,25 @@ def get_face_landmarker(model_path: str, logger: 'AppLogger'):
         raise RuntimeError("Could not initialize MediaPipe face landmarker model.") from e
 
 @lru_cache(maxsize=None)
-def get_face_analyzer(model_name: str, models_path: str, det_size_tuple: tuple, logger: 'AppLogger'):
+def get_face_analyzer(model_name: str, models_path: str, det_size_tuple: tuple, logger: 'AppLogger') -> 'FaceAnalysis':
+    """
+    Loads and caches an InsightFace FaceAnalysis model.
+
+    This function is decorated with `lru_cache` to ensure that a model with
+    the same parameters is only loaded once.
+
+    Args:
+        model_name: The name of the InsightFace model (e.g., "buffalo_l").
+        models_path: The root directory for storing models.
+        det_size_tuple: A tuple specifying the detection size (width, height).
+        logger: The application logger.
+
+    Returns:
+        An initialized FaceAnalysis instance.
+
+    Raises:
+        RuntimeError: If the model fails to initialize, even with a CPU fallback.
+    """
     from insightface.app import FaceAnalysis
     logger.info(f"Loading or getting cached face model: {model_name}")
     try:
@@ -1492,7 +2166,18 @@ def get_face_analyzer(model_name: str, models_path: str, det_size_tuple: tuple, 
         raise RuntimeError(f"Could not initialize face analysis model. Error: {e}") from e
 
 class PersonDetector:
-    def __init__(self, logger: 'AppLogger', model_path: Path | str, imgsz: int, conf: float, device: str = 'cuda'):
+    """A wrapper for the YOLO person detection model."""
+    def __init__(self, logger: 'AppLogger', model_path: Union[Path, str], imgsz: int, conf: float, device: str = 'cuda'):
+        """
+        Initializes the PersonDetector.
+
+        Args:
+            logger: The application logger.
+            model_path: The path to the YOLO model file.
+            imgsz: The image size for inference.
+            conf: The confidence threshold for detection.
+            device: The device to run the model on ('cuda' or 'cpu').
+        """
         from ultralytics import YOLO
         self.logger = logger
         self.device = device if torch.cuda.is_available() else 'cpu'
@@ -1519,7 +2204,17 @@ class PersonDetector:
             self.logger.error("Failed to load YOLO model", component="person_detector", exc_info=True)
             raise e
 
-    def detect_boxes(self, img_rgb):
+    def detect_boxes(self, img_rgb: np.ndarray) -> List[dict]:
+        """
+        Detects people in an image.
+
+        Args:
+            img_rgb: The input image as a NumPy array in RGB format.
+
+        Returns:
+            A list of dictionaries, where each dictionary represents a detected
+            person and contains 'bbox', 'conf', and 'type' keys.
+        """
         res = self.model.predict(img_rgb, imgsz=self.imgsz, conf=self.conf, classes=[0], verbose=False)
         out = []
         for r in res:
@@ -1531,8 +2226,23 @@ class PersonDetector:
                 out.append({"bbox": [x1, y1, x2, y2], "conf": conf, "type": "yolo"})
         return out
 
-def get_person_detector(model_path_str: str, device: str, imgsz: int, conf: float, logger: 'AppLogger'):
-    """Load YOLO model on first use, cache for reuse."""
+def get_person_detector(model_path_str: str, device: str, imgsz: int, conf: float, logger: 'AppLogger') -> 'PersonDetector':
+    """
+    Loads a YOLO model for person detection, caching it for reuse.
+
+    This function uses a global cache (`_yolo_model_cache`) to store and
+    retrieve initialized PersonDetector instances.
+
+    Args:
+        model_path_str: The path to the YOLO model file.
+        device: The device to run on ('cuda' or 'cpu').
+        imgsz: The image size for inference.
+        conf: The confidence threshold for detection.
+        logger: The application logger.
+
+    Returns:
+        An initialized PersonDetector instance.
+    """
     global _yolo_model_cache
     if model_path_str not in _yolo_model_cache:
         try:
@@ -1548,7 +2258,18 @@ def get_person_detector(model_path_str: str, device: str, imgsz: int, conf: floa
 
 
 def resolve_grounding_dino_config(config_path: str) -> str:
-    """Resolve GroundingDINO config path via importlib.resources."""
+    """
+    Resolves the path to the GroundingDINO config file within its package.
+
+    Args:
+        config_path: The filename of the config file.
+
+    Returns:
+        The absolute path to the config file.
+
+    Raises:
+        RuntimeError: If the config file cannot be found.
+    """
     try:
         import importlib.resources as pkg_resources
         from groundingdino import config as gdino_config_module
@@ -1560,8 +2281,28 @@ def resolve_grounding_dino_config(config_path: str) -> str:
             "Ensure the 'groundingdino-py' package is installed correctly and the config file exists within it."
         )
 
-def get_grounding_dino_model(gdino_config_path: str, gdino_checkpoint_path: str, models_path: str, grounding_dino_url: str, user_agent: str, retry_params: tuple, device="cuda", logger: 'AppLogger' = None):
-    """Load GroundingDINO model only when needed."""
+def get_grounding_dino_model(gdino_config_path: str, gdino_checkpoint_path: str, models_path: str,
+                             grounding_dino_url: str, user_agent: str, retry_params: tuple,
+                             device: str = "cuda", logger: 'AppLogger' = None) -> Optional[torch.nn.Module]:
+    """
+    Loads and caches the GroundingDINO model.
+
+    This function handles the download and initialization of the model on its first use,
+    storing it in a global cache (`_dino_model_cache`).
+
+    Args:
+        gdino_config_path: Path to the model's configuration file.
+        gdino_checkpoint_path: Path to the model's checkpoint file.
+        models_path: The root directory for storing models.
+        grounding_dino_url: The URL to download the model from.
+        user_agent: The user agent for the download request.
+        retry_params: A tuple of (max_attempts, backoff_seconds) for retries.
+        device: The device to run the model on.
+        logger: The application logger.
+
+    Returns:
+        The initialized GroundingDINO model, or None if loading fails.
+    """
     global _dino_model_cache
     if _dino_model_cache is None:
 
@@ -1596,14 +2337,46 @@ def get_grounding_dino_model(gdino_config_path: str, gdino_checkpoint_path: str,
         return None
     return _dino_model_cache
 
-def predict_grounding_dino(model, image_tensor, caption, box_threshold, text_threshold, device="cuda"):
+def predict_grounding_dino(model: torch.nn.Module, image_tensor: torch.Tensor, caption: str,
+                           box_threshold: float, text_threshold: float, device: str = "cuda") -> tuple:
+    """
+    Runs inference with the GroundingDINO model.
+
+    Args:
+        model: The initialized GroundingDINO model.
+        image_tensor: The preprocessed input image tensor.
+        caption: The text prompt for detection.
+        box_threshold: The object detection confidence threshold.
+        text_threshold: The text matching confidence threshold.
+        device: The device to run inference on.
+
+    Returns:
+        A tuple containing the detected boxes, confidences, and labels.
+    """
 
     with torch.no_grad(), torch.amp.autocast('cuda', enabled=(device == 'cuda')):
         return gdino_predict(model=model, image=image_tensor.to(device), caption=caption,
                              box_threshold=float(box_threshold), text_threshold=float(text_threshold))
 
-def get_dam4sam_tracker(model_name: str, models_path: str, model_urls_tuple: tuple, user_agent: str, retry_params: tuple, logger: 'AppLogger'):
-    """Load DAM4SAM model on first use."""
+def get_dam4sam_tracker(model_name: str, models_path: str, model_urls_tuple: tuple, user_agent: str,
+                        retry_params: tuple, logger: 'AppLogger') -> Optional['DAM4SAMTracker']:
+    """
+    Loads and caches a DAM4SAM tracker model.
+
+    This function handles the download and initialization of the tracker on its first use,
+    storing it in a global cache (`_dam4sam_model_cache`).
+
+    Args:
+        model_name: The name of the DAM4SAM model to load.
+        models_path: The root directory for storing models.
+        model_urls_tuple: A tuple of (name, url) pairs for DAM4SAM models.
+        user_agent: The user agent for download requests.
+        retry_params: A tuple of (max_attempts, backoff_seconds) for retries.
+        logger: The application logger.
+
+    Returns:
+        An initialized DAM4SAMTracker instance, or None if loading fails.
+    """
     global _dam4sam_model_cache
     model_urls = dict(model_urls_tuple)
     selected_name = (model_name or Config().ui_defaults.dam4sam_model_name or next(iter(model_urls.keys())))
@@ -1649,14 +2422,39 @@ def get_dam4sam_tracker(model_name: str, models_path: str, model_urls_tuple: tup
     return _dam4sam_model_cache.get(selected_name)
 
 
-def get_lpips_metric(model_name='alex', device='cuda'):
+def get_lpips_metric(model_name: str = 'alex', device: str = 'cuda') -> torch.nn.Module:
+    """
+    Loads and caches an LPIPS model for perceptual similarity.
+
+    Args:
+        model_name: The name of the LPIPS model backbone (e.g., 'alex').
+        device: The device to run the model on.
+
+    Returns:
+        An initialized LPIPS model instance.
+    """
     global _lpips_model_cache
     device = device if torch.cuda.is_available() else 'cpu'
     if model_name not in _lpips_model_cache:
         _lpips_model_cache[model_name] = lpips.LPIPS(net=model_name).to(device)
     return _lpips_model_cache[model_name]
 
-def initialize_analysis_models(params: AnalysisParameters, config: Config, logger: AppLogger, cuda_available: bool):
+def initialize_analysis_models(params: 'AnalysisParameters', config: 'Config', logger: 'AppLogger', cuda_available: bool) -> dict:
+    """
+    Initializes and returns all models required for a specific analysis run.
+
+    This function selectively loads models based on the provided analysis parameters
+    to avoid unnecessary memory usage.
+
+    Args:
+        params: The parameters for the analysis run.
+        config: The main application configuration.
+        logger: The application logger.
+        cuda_available: A boolean indicating if a CUDA device is available.
+
+    Returns:
+        A dictionary containing the initialized models.
+    """
     device = "cuda" if cuda_available else "cpu"
     face_analyzer, ref_emb, person_detector, face_landmarker = None, None, None, None
 
@@ -1716,13 +2514,37 @@ def initialize_analysis_models(params: AnalysisParameters, config: Config, logge
 # --- VIDEO & FRAME PROCESSING ---
 
 class VideoManager:
+    """Handles video downloading from YouTube and local file validation."""
     def __init__(self, source_path: str, config: 'Config', max_resolution: Optional[str] = None):
+        """
+        Initializes the VideoManager.
+
+        Args:
+            source_path: The URL or local path of the video.
+            config: The application configuration.
+            max_resolution: The maximum resolution to download for YouTube videos.
+        """
         self.source_path = source_path
         self.config = config
         self.max_resolution = max_resolution or self.config.ui_defaults.max_resolution
         self.is_youtube = ("youtube.com/" in source_path or "youtu.be/" in source_path)
 
     def prepare_video(self, logger: 'AppLogger') -> str:
+        """
+        Ensures the video is available locally.
+
+        If the source is a YouTube URL, it downloads the video. If it's a
+        local path, it validates the file.
+
+        Args:
+            logger: The application logger.
+
+        Returns:
+            The local path to the prepared video file.
+
+        Raises:
+            RuntimeError: If a YouTube download fails.
+        """
         if self.is_youtube:
 
             logger.info("Downloading video", component="video", user_context={'source': self.source_path})
@@ -1753,7 +2575,16 @@ class VideoManager:
         return str(local_path)
 
     @staticmethod
-    def get_video_info(video_path):
+    def get_video_info(video_path: str) -> dict:
+        """
+        Retrieves metadata from a video file using OpenCV.
+
+        Args:
+            video_path: The path to the video file.
+
+        Returns:
+            A dictionary containing the video's width, height, FPS, and frame count.
+        """
         cap = cv2.VideoCapture(str(video_path))
         if not cap.isOpened(): raise IOError(f"Could not open video: {video_path}")
         fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
@@ -1764,7 +2595,19 @@ class VideoManager:
         cap.release()
         return info
 
-def run_scene_detection(video_path, output_dir, logger=None):
+def run_scene_detection(video_path: str, output_dir: Path, logger: Optional['AppLogger'] = None) -> list:
+    """
+    Detects scene changes in a video file using PySceneDetect.
+
+    Args:
+        video_path: The path to the video file.
+        output_dir: The directory to save the `scenes.json` file in.
+        logger: The application logger.
+
+    Returns:
+        A list of tuples, where each tuple contains the start and end frame
+        numbers of a detected scene.
+    """
 
     logger = logger or AppLogger(config=Config())
     logger.info("Detecting scenes...", component="video")
@@ -1778,7 +2621,22 @@ def run_scene_detection(video_path, output_dir, logger=None):
         logger.error("Scene detection failed.", component="video", exc_info=True)
         return []
 
-def make_photo_thumbs(image_paths: list[Path], out_dir: Path, params: AnalysisParameters, cfg: Config, logger: AppLogger, tracker: 'AdvancedProgressTracker' = None):
+def make_photo_thumbs(image_paths: list[Path], out_dir: Path, params: 'AnalysisParameters', cfg: 'Config',
+                      logger: 'AppLogger', tracker: Optional['AdvancedProgressTracker'] = None) -> dict:
+    """
+    Generates thumbnails for a list of image files.
+
+    Args:
+        image_paths: A list of paths to the source images.
+        out_dir: The output directory to save thumbnails and manifests.
+        params: The analysis parameters, used for thumbnail resolution.
+        cfg: The application configuration.
+        logger: The application logger.
+        tracker: An optional progress tracker.
+
+    Returns:
+        A dictionary mapping frame numbers to thumbnail filenames.
+    """
     thumbs_dir = out_dir / "thumbs"
     thumbs_dir.mkdir(parents=True, exist_ok=True)
     target_area = params.thumb_megapixels * 1_000_000
@@ -1821,7 +2679,26 @@ def make_photo_thumbs(image_paths: list[Path], out_dir: Path, params: AnalysisPa
     return frame_map
 
 
-def run_ffmpeg_extraction(video_path, output_dir, video_info, params, progress_queue, cancel_event, logger: 'AppLogger', config: 'Config', tracker: 'AdvancedProgressTracker' = None):
+def run_ffmpeg_extraction(video_path: str, output_dir: Path, video_info: dict, params: 'AnalysisParameters',
+                          progress_queue: Queue, cancel_event: threading.Event, logger: 'AppLogger',
+                          config: 'Config', tracker: Optional['AdvancedProgressTracker'] = None):
+    """
+    Runs FFmpeg to extract frames from a video.
+
+    Args:
+        video_path: The path to the source video file.
+        output_dir: The directory to save the extracted frames.
+        video_info: A dictionary with video metadata.
+        params: The analysis parameters for the extraction.
+        progress_queue: The queue for UI progress updates.
+        cancel_event: The event to signal cancellation.
+        logger: The application logger.
+        config: The main application configuration.
+        tracker: An optional progress tracker.
+
+    Raises:
+        RuntimeError: If the FFmpeg process fails.
+    """
     log_file_path = output_dir / "ffmpeg_log.txt"
     cmd_base = ['ffmpeg', '-y', '-i', str(video_path), '-hide_banner']
 
@@ -1899,8 +2776,16 @@ def run_ffmpeg_extraction(video_path, output_dir, video_info, params, progress_q
     if process.returncode not in [0, -9] and not cancel_event.is_set(): # -9 is SIGKILL, can happen on cancel
         raise RuntimeError(f"FFmpeg failed with code {process.returncode}.")
 
-def _process_ffmpeg_stream(stream, tracker, desc, total_duration_s: float):
-    """Helper to process FFmpeg's native '-progress pipe:1' output."""
+def _process_ffmpeg_stream(stream, tracker: Optional['AdvancedProgressTracker'], desc: str, total_duration_s: float):
+    """
+    Parses FFmpeg's native progress output from a stream.
+
+    Args:
+        stream: The stdout stream of the FFmpeg process.
+        tracker: The progress tracker to update.
+        desc: The description for the progress stage.
+        total_duration_s: The total duration of the video in seconds.
+    """
     progress_data = {}
     for line in iter(stream.readline, ''):
         try:
@@ -1929,8 +2814,16 @@ def _process_ffmpeg_stream(stream, tracker, desc, total_duration_s: float):
             pass  # Ignore malformed lines
     stream.close()
 
-def _process_ffmpeg_showinfo(stream):
-    """Helper to extract frame numbers from showinfo output."""
+def _process_ffmpeg_showinfo(stream) -> list:
+    """
+    Extracts frame numbers from FFmpeg's `showinfo` filter output.
+
+    Args:
+        stream: The stderr stream of the FFmpeg process.
+
+    Returns:
+        A list of integer frame numbers.
+    """
     frame_numbers = []
     for line in iter(stream.readline, ''):
         match = re.search(r' n:\s*(\d+)', line)
@@ -1940,6 +2833,18 @@ def _process_ffmpeg_showinfo(stream):
     return frame_numbers
 
 def postprocess_mask(mask: np.ndarray, config: 'Config', fill_holes: bool = True, keep_largest_only: bool = True) -> np.ndarray:
+    """
+    Cleans up a binary mask using morphological operations.
+
+    Args:
+        mask: The input mask as a NumPy array.
+        config: The application configuration.
+        fill_holes: Whether to perform a closing operation to fill small holes.
+        keep_largest_only: Whether to keep only the largest connected component.
+
+    Returns:
+        The post-processed binary mask.
+    """
     if mask is None or mask.size == 0: return mask
     binary_mask = (mask > 128).astype(np.uint8)
     if fill_holes:
@@ -1953,6 +2858,18 @@ def postprocess_mask(mask: np.ndarray, config: 'Config', fill_holes: bool = True
     return (binary_mask * 255).astype(np.uint8)
 
 def render_mask_overlay(frame_rgb: np.ndarray, mask_gray: np.ndarray, alpha: float, logger: 'AppLogger') -> np.ndarray:
+    """
+    Renders a semi-transparent red overlay onto an image based on a mask.
+
+    Args:
+        frame_rgb: The source image in RGB format.
+        mask_gray: The grayscale mask to use for the overlay.
+        alpha: The transparency of the overlay.
+        logger: The application logger.
+
+    Returns:
+        The image with the mask rendered as an overlay.
+    """
     if mask_gray is None or frame_rgb is None:
         return frame_rgb if frame_rgb is not None else np.array([])
     h, w = frame_rgb.shape[:2]
@@ -1968,10 +2885,33 @@ def render_mask_overlay(frame_rgb: np.ndarray, mask_gray: np.ndarray, alpha: flo
     return np.where(m, blended, frame_rgb)
 
 def rgb_to_pil(image_rgb: np.ndarray) -> Image.Image:
+    """
+    Converts a NumPy array in RGB format to a Pillow Image.
+
+    Args:
+        image_rgb: The input image as an RGB NumPy array.
+
+    Returns:
+        The converted Pillow Image object.
+    """
 
     return Image.fromarray(image_rgb)
 
-def create_frame_map(output_dir: Path, logger: 'AppLogger', ext: str = ".webp"):
+def create_frame_map(output_dir: Path, logger: 'AppLogger', ext: str = ".webp") -> dict:
+    """
+    Loads and reconstructs the frame map from `frame_map.json`.
+
+    This map links original video frame numbers to the sequentially named
+    extracted frame image files.
+
+    Args:
+        output_dir: The output directory where `frame_map.json` is located.
+        logger: The application logger.
+        ext: The file extension of the thumbnail images.
+
+    Returns:
+        A dictionary mapping original frame numbers to thumbnail filenames.
+    """
     logger.info("Loading frame map...", component="frames")
     frame_map_path = output_dir / "frame_map.json"
     try:
@@ -1986,7 +2926,20 @@ def create_frame_map(output_dir: Path, logger: 'AppLogger', ext: str = ".webp"):
 # --- MASKING & PROPAGATION ---
 
 class MaskPropagator:
-    def __init__(self, params, dam_tracker, cancel_event, progress_queue, config: 'Config', logger=None):
+    """Handles the propagation of a subject mask across a sequence of frames."""
+    def __init__(self, params: 'AnalysisParameters', dam_tracker: 'DAM4SAMTracker', cancel_event: threading.Event,
+                 progress_queue: Queue, config: 'Config', logger: Optional['AppLogger'] = None):
+        """
+        Initializes the MaskPropagator.
+
+        Args:
+            params: The analysis parameters.
+            dam_tracker: An initialized DAM4SAMTracker instance.
+            cancel_event: An event to signal cancellation.
+            progress_queue: A queue for sending progress updates.
+            config: The main application configuration.
+            logger: The application logger.
+        """
         self.params = params
         self.dam_tracker = dam_tracker
         self.cancel_event = cancel_event
@@ -1995,7 +2948,26 @@ class MaskPropagator:
         self.logger = logger or AppLogger(config=Config())
         self._device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    def propagate(self, shot_frames_rgb, seed_idx, bbox_xywh, tracker: 'AdvancedProgressTracker' = None):
+    def propagate(self, shot_frames_rgb: list[np.ndarray], seed_idx: int, bbox_xywh: list[int],
+                  tracker: Optional['AdvancedProgressTracker'] = None) -> tuple[list, list, list, list]:
+        """
+        Propagates a mask from a seed frame to all other frames in a shot.
+
+        The propagation is done both forwards and backwards from the seed frame.
+
+        Args:
+            shot_frames_rgb: A list of frames (as RGB NumPy arrays) in the shot.
+            seed_idx: The index of the seed frame within the `shot_frames_rgb` list.
+            bbox_xywh: The initial bounding box [x, y, width, height] on the seed frame.
+            tracker: An optional progress tracker.
+
+        Returns:
+            A tuple containing four lists:
+            - The propagated masks (as NumPy arrays).
+            - The mask area percentages.
+            - Booleans indicating if a mask is considered empty.
+            - Error messages for each frame, if any.
+        """
         if not self.dam_tracker or not shot_frames_rgb:
             err_msg = "Tracker not initialized" if not self.dam_tracker else "No frames"
             shape = shot_frames_rgb[0].shape[:2] if shot_frames_rgb else (100, 100)
@@ -2052,7 +3024,23 @@ class MaskPropagator:
             return ([np.zeros((h, w), np.uint8)] * num_frames, [0.0] * num_frames, [True] * num_frames, [error_msg] * num_frames)
 
 class SeedSelector:
-    def __init__(self, params, config: 'Config', face_analyzer, reference_embedding, person_detector, tracker, gdino_model, logger=None):
+    """Orchestrates the selection of the initial seed bounding box for tracking."""
+    def __init__(self, params: 'AnalysisParameters', config: 'Config', face_analyzer: 'FaceAnalysis',
+                 reference_embedding: np.ndarray, person_detector: 'PersonDetector', tracker: 'DAM4SAMTracker',
+                 gdino_model: torch.nn.Module, logger: Optional['AppLogger'] = None):
+        """
+        Initializes the SeedSelector.
+
+        Args:
+            params: The analysis parameters.
+            config: The main application configuration.
+            face_analyzer: The InsightFace face analysis model.
+            reference_embedding: The embedding of the reference face image.
+            person_detector: The YOLO person detector model.
+            tracker: The DAM4SAM tracker instance.
+            gdino_model: The GroundingDINO model.
+            logger: The application logger.
+        """
         self.params = params
         self.config = config
         self.face_analyzer = face_analyzer
@@ -2063,13 +3051,36 @@ class SeedSelector:
         self._device = "cuda" if torch.cuda.is_available() else "cpu"
         self.logger = logger or AppLogger(config=Config())
 
-    def _get_param(self, source, key, default=None):
-        """Safely gets a parameter from a source that can be a dict or an object."""
+    def _get_param(self, source: Union[dict, object], key: str, default: Any = None) -> Any:
+        """
+        Safely gets a parameter from a source that can be a dict or an object.
+
+        Args:
+            source: The dictionary or object to get the parameter from.
+            key: The key or attribute name.
+            default: The default value to return if the key is not found.
+
+        Returns:
+            The value of the parameter.
+        """
         if isinstance(source, dict):
             return source.get(key, default)
         return getattr(source, key, default)
 
-    def select_seed(self, frame_rgb, current_params=None, scene=None):
+    def select_seed(self, frame_rgb: np.ndarray, current_params: Optional[dict] = None,
+                    scene: Optional['Scene'] = None) -> tuple[Optional[list], dict]:
+        """
+        Selects the best seed bounding box based on the configured strategy.
+
+        Args:
+            frame_rgb: The RGB image of the frame to analyze.
+            current_params: Optional dictionary of parameters to override instance defaults.
+            scene: The scene object, which may contain pre-computed detections.
+
+        Returns:
+            A tuple containing the selected bounding box [x, y, w, h] and a
+            dictionary with details about the selection process.
+        """
         params_source = current_params if current_params is not None else self.params
         p = params_source  # Keep for passing to other methods
 
@@ -2093,7 +3104,19 @@ class SeedSelector:
             self.logger.info("Starting 'Automatic' seeding.")
             return self._choose_person_by_strategy(frame_rgb, p, scene)
 
-    def _face_with_text_fallback_seed(self, frame_rgb, params, scene=None):
+    def _face_with_text_fallback_seed(self, frame_rgb: np.ndarray, params: Union[dict, 'AnalysisParameters'],
+                                      scene: Optional['Scene'] = None) -> tuple[Optional[list], dict]:
+        """
+        Attempts face-based seeding, falling back to text-based seeding on failure.
+
+        Args:
+            frame_rgb: The RGB image of the frame.
+            params: The analysis parameters.
+            scene: The current scene object.
+
+        Returns:
+            The result of either the identity-first or object-first seeding strategy.
+        """
         # If no reference embedding is available, go straight to text fallback.
         if self.reference_embedding is None:
             self.logger.warning("No reference face for face-first strategy, falling back to text prompt.", extra={'reason': 'no_ref_emb'})
@@ -2111,7 +3134,20 @@ class SeedSelector:
         self.logger.warning("Face detection failed or no match found, falling back to text prompt strategy.", extra=details)
         return self._object_first_seed(frame_rgb, params, scene)
 
-    def _identity_first_seed(self, frame_rgb, params, scene=None):
+    def _identity_first_seed(self, frame_rgb: np.ndarray, params: Union[dict, 'AnalysisParameters'],
+                             scene: Optional['Scene'] = None) -> tuple[Optional[list], dict]:
+        """
+        Finds a seed box by first identifying the target face, then finding the best
+        enclosing body box from YOLO and GroundingDINO detections.
+
+        Args:
+            frame_rgb: The RGB image of the frame.
+            params: The analysis parameters.
+            scene: The current scene object.
+
+        Returns:
+            A tuple containing the selected bounding box and details about the selection.
+        """
         target_face, details = self._find_target_face(frame_rgb)
         if not target_face:
             self.logger.warning("Target face not found in scene.", extra=details)
@@ -2125,7 +3161,20 @@ class SeedSelector:
         expanded_box = self._expand_face_to_body(target_face['bbox'], frame_rgb.shape)
         return expanded_box, {"type": "expanded_box_from_face", "seed_face_sim": details.get('seed_face_sim', 0)}
 
-    def _object_first_seed(self, frame_rgb, params, scene=None):
+    def _object_first_seed(self, frame_rgb: np.ndarray, params: Union[dict, 'AnalysisParameters'],
+                             scene: Optional['Scene'] = None) -> tuple[Optional[list], dict]:
+        """
+        Finds a seed box by first running GroundingDINO with a text prompt, then
+        validating the result with YOLO detections.
+
+        Args:
+            frame_rgb: The RGB image of the frame.
+            params: The analysis parameters.
+            scene: The current scene object.
+
+        Returns:
+            A tuple containing the selected bounding box and details about the selection.
+        """
         dino_boxes, dino_details = self._get_dino_boxes(frame_rgb, params)
         if dino_boxes:
             yolo_boxes = self._get_yolo_boxes(frame_rgb, scene)
@@ -2145,7 +3194,18 @@ class SeedSelector:
         self.logger.info("No DINO results, falling back to YOLO-only strategy.")
         return self._choose_person_by_strategy(frame_rgb, params, scene)
 
-    def _find_target_face(self, frame_rgb):
+    def _find_target_face(self, frame_rgb: np.ndarray) -> tuple[Optional[dict], dict]:
+        """
+        Finds the face in an image that best matches the reference embedding.
+
+        Args:
+            frame_rgb: The RGB image of the frame.
+
+        Returns:
+            A tuple containing a dictionary with the best matching face's bbox
+            and embedding, and a dictionary with details of the match. Returns
+            None for the face if no suitable match is found.
+        """
         frame_bgr = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
         try: faces = self.face_analyzer.get(frame_bgr)
         except Exception as e:
@@ -2160,7 +3220,20 @@ class SeedSelector:
             return {'bbox': best_face.bbox.astype(int), 'embedding': best_face.normed_embedding}, {'type': 'face_match', 'seed_face_sim': best_sim}
         return None, {'error': 'no_matching_face', 'best_sim': best_sim}
 
-    def _get_yolo_boxes(self, frame_rgb, scene=None):
+    def _get_yolo_boxes(self, frame_rgb: np.ndarray, scene: Optional['Scene'] = None) -> list[dict]:
+        """
+        Gets person detections from YOLO.
+
+        Prioritizes using pre-computed detections stored on the scene object
+        before running the model as a fallback.
+
+        Args:
+            frame_rgb: The RGB image of the frame.
+            scene: The current scene object.
+
+        Returns:
+            A list of detected person bounding boxes.
+        """
         if scene and getattr(scene, 'yolo_detections', None):
             return scene.yolo_detections
         # use any saved bbox to synthesize a detection
@@ -2178,7 +3251,18 @@ class SeedSelector:
             self.logger.warning("YOLO person detector failed.", exc_info=True)
             return []
 
-    def _get_dino_boxes(self, frame_rgb, params):
+    def _get_dino_boxes(self, frame_rgb: np.ndarray, params: Union[dict, 'AnalysisParameters']) -> tuple[list[dict], dict]:
+        """
+        Gets object detections from GroundingDINO based on a text prompt.
+
+        Args:
+            frame_rgb: The RGB image of the frame.
+            params: The analysis parameters containing the text prompt.
+
+        Returns:
+            A tuple containing a list of detected object boxes and details
+            about the highest-confidence detection.
+        """
         prompt = self._get_param(params, "text_prompt", "").strip()
         if not self._gdino or not prompt:
             return [], {}
@@ -2201,7 +3285,22 @@ class SeedSelector:
         results.sort(key=lambda x: x['conf'], reverse=True)
         return results, {**results[0], "all_boxes_count": len(results)}
 
-    def _score_and_select_candidate(self, target_face, yolo_boxes, dino_boxes):
+    def _score_and_select_candidate(self, target_face: dict, yolo_boxes: list[dict], dino_boxes: list[dict]) -> tuple[Optional[list], dict]:
+        """
+        Scores candidate body boxes based on heuristics and selects the best one.
+
+        Scoring is based on whether the box contains the target face, its
+        original detection confidence, and whether it has a high IoU with a
+        detection from the other model.
+
+        Args:
+            target_face: The dictionary for the target face.
+            yolo_boxes: A list of candidate boxes from YOLO.
+            dino_boxes: A list of candidate boxes from GroundingDINO.
+
+        Returns:
+            A tuple containing the best bounding box and details about the scoring.
+        """
         candidates = yolo_boxes + dino_boxes
         if not candidates: return None, {}
         scored_candidates = []
@@ -2226,7 +3325,21 @@ class SeedSelector:
         winner = max(scored_candidates, key=lambda x: x['score'])
         return self._xyxy_to_xywh(winner['box']), {'type': 'evidence_based_selection', 'final_score': winner['score'], **winner['details']}
 
-    def _choose_person_by_strategy(self, frame_rgb, params, scene=None):
+    def _choose_person_by_strategy(self, frame_rgb: np.ndarray, params: Union[dict, 'AnalysisParameters'],
+                                     scene: Optional['Scene'] = None) -> tuple[list, dict]:
+        """
+        Selects a person from YOLO detections based on a chosen scoring strategy.
+
+        This is the fallback or automatic method when face/text identity is not used.
+
+        Args:
+            frame_rgb: The RGB image of the frame.
+            params: The analysis parameters containing the scoring strategy.
+            scene: The current scene object.
+
+        Returns:
+            A tuple containing the selected person's bounding box and details.
+        """
         boxes = self._get_yolo_boxes(frame_rgb, scene)  # This now uses pre-computed results
         if not boxes:
             self.logger.warning(f"No people detected in scene - using fallback region")
@@ -2311,13 +3424,32 @@ class SeedSelector:
 
         return self._xyxy_to_xywh(best_person['bbox']), {'type': f'person_{strategy.lower().replace(" ", "_")}', 'conf': best_person['conf']}
 
-    def _load_image_from_array(self, image_rgb: np.ndarray):
+    def _load_image_from_array(self, image_rgb: np.ndarray) -> tuple[np.ndarray, torch.Tensor]:
+        """
+        Prepares a NumPy image array for model inference.
+
+        Args:
+            image_rgb: The input image as an RGB NumPy array.
+
+        Returns:
+            A tuple containing the original image and the transformed image tensor.
+        """
         from torchvision import transforms
         transform = transforms.Compose([transforms.ToPILImage(), transforms.ToTensor(),
                                         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
         return image_rgb, transform(image_rgb)
 
-    def _calculate_iou(self, box1, box2):
+    def _calculate_iou(self, box1: list, box2: list) -> float:
+        """
+        Calculates the Intersection over Union (IoU) of two bounding boxes.
+
+        Args:
+            box1: The first bounding box [x1, y1, x2, y2].
+            box2: The second bounding box [x1, y1, x2, y2].
+
+        Returns:
+            The IoU value.
+        """
         x1, y1, x2, y2 = box1
         x1_p, y1_p, x2_p, y2_p = box2
         inter_x1, inter_y1, inter_x2, inter_y2 = max(x1, x1_p), max(y1, y1_p), min(x2, x2_p), min(y2, y2_p)
@@ -2325,8 +3457,20 @@ class SeedSelector:
         union_area = (x2 - x1) * (y2 - y1) + (x2_p - x1_p) * (y2_p - y1_p) - inter_area
         return inter_area / (union_area + 1e-6)
 
-    def _box_contains(self, cb, ib): return cb[0] <= ib[0] and cb[1] <= ib[1] and cb[2] >= ib[2] and cb[3] >= ib[3]
-    def _expand_face_to_body(self, face_bbox, img_shape):
+    def _box_contains(self, cb: list, ib: list) -> bool:
+        """Checks if the containing box `cb` fully contains the inner box `ib`."""
+        return cb[0] <= ib[0] and cb[1] <= ib[1] and cb[2] >= ib[2] and cb[3] >= ib[3]
+    def _expand_face_to_body(self, face_bbox: list, img_shape: tuple) -> list[int]:
+        """
+        Expands a face bounding box to an estimated body bounding box.
+
+        Args:
+            face_bbox: The input face bounding box [x1, y1, x2, y2].
+            img_shape: The shape of the image (h, w).
+
+        Returns:
+            The expanded body bounding box [x, y, w, h].
+        """
         H, W, (x1, y1, x2, y2) = *img_shape[:2], *face_bbox
         w, h, cx = x2 - x1, y2 - y1, x1 + w / 2
         expansion_factors = self.config.seeding_defaults.face_to_body_expansion_factors
@@ -2334,13 +3478,26 @@ class SeedSelector:
         new_x1, new_y1 = max(0, cx - new_w / 2), max(0, y1 - h * expansion_factors[2])
         return [int(v) for v in [new_x1, new_y1, min(W, new_x1 + new_w) - new_x1, min(H, new_y1 + new_h) - new_y1]]
 
-    def _final_fallback_box(self, img_shape):
+    def _final_fallback_box(self, img_shape: tuple) -> list[int]:
+        """Returns a default fallback bounding box if no detections are found."""
         h, w, _ = img_shape
         fallback_box = self.config.seeding_defaults.final_fallback_box
         return [int(w * fallback_box[0]), int(h * fallback_box[1]), int(w * fallback_box[2]), int(h * fallback_box[3])]
-    def _xyxy_to_xywh(self, box): x1, y1, x2, y2 = box; return [int(x1), int(y1), int(x2 - x1), int(y2 - y1)]
+    def _xyxy_to_xywh(self, box: list) -> list[int]:
+        """Converts a bounding box from [x1, y1, x2, y2] to [x, y, w, h] format."""
+        x1, y1, x2, y2 = box; return [int(x1), int(y1), int(x2 - x1), int(y2 - y1)]
 
-    def _sam2_mask_for_bbox(self, frame_rgb_small, bbox_xywh):
+    def _sam2_mask_for_bbox(self, frame_rgb_small: np.ndarray, bbox_xywh: list) -> Optional[np.ndarray]:
+        """
+        Generates a mask for a given bounding box using the SAM2 model.
+
+        Args:
+            frame_rgb_small: The (thumbnail) RGB image.
+            bbox_xywh: The bounding box in [x, y, w, h] format.
+
+        Returns:
+            The generated mask as a NumPy array, or None on failure.
+        """
         if not self.tracker or bbox_xywh is None:
             return None
         try:
@@ -2358,8 +3515,29 @@ class SeedSelector:
             return None
 
 class SubjectMasker:
-    def __init__(self, params, progress_queue, cancel_event, config: 'Config', frame_map=None, face_analyzer=None,
-                 reference_embedding=None, person_detector=None, thumbnail_manager=None, niqe_metric=None, logger=None, face_landmarker=None):
+    """Orchestrates the entire process of finding a subject and propagating their mask."""
+    def __init__(self, params: 'AnalysisParameters', progress_queue: Queue, cancel_event: threading.Event, config: 'Config',
+                 frame_map: Optional[dict] = None, face_analyzer: Optional['FaceAnalysis'] = None,
+                 reference_embedding: Optional[np.ndarray] = None, person_detector: Optional['PersonDetector'] = None,
+                 thumbnail_manager: Optional['ThumbnailManager'] = None, niqe_metric: Optional[Callable] = None,
+                 logger: Optional['AppLogger'] = None, face_landmarker: Optional['FaceLandmarker'] = None):
+        """
+        Initializes the SubjectMasker.
+
+        Args:
+            params: The analysis parameters.
+            progress_queue: The queue for UI updates.
+            cancel_event: The event to signal cancellation.
+            config: The main application configuration.
+            frame_map: A map of original frame numbers to thumbnail filenames.
+            face_analyzer: An initialized InsightFace FaceAnalysis model.
+            reference_embedding: The embedding of the reference face.
+            person_detector: An initialized YOLO PersonDetector.
+            thumbnail_manager: The manager for the thumbnail cache.
+            niqe_metric: An initialized NIQE metric model.
+            logger: The application logger.
+            face_landmarker: An initialized MediaPipe FaceLandmarker.
+        """
         self.params, self.config, self.progress_queue, self.cancel_event = params, config, progress_queue, cancel_event
         self.logger = logger or AppLogger(config=Config())
         self.frame_map = frame_map
@@ -2383,6 +3561,7 @@ class SubjectMasker:
         self.mask_propagator = MaskPropagator(params, self.dam_tracker, cancel_event, progress_queue, config=self.config, logger=self.logger)
 
     def initialize_models(self):
+        """Initializes the necessary AI models based on the current parameters."""
         primary_strategy = self.params.primary_seed_strategy
         if primary_strategy == "🧑‍🤝‍🧑 Find Prominent Person":
             self.logger.info("YOLO-only mode enabled for 'Find Prominent Person' strategy. Skipping other model loads.")
@@ -2448,7 +3627,19 @@ class SubjectMasker:
             self.logger.error(f"Exception during DAM4SAM tracker initialization: {e}", exc_info=True)
             return False
 
-    def run_propagation(self, frames_dir: str, scenes_to_process, tracker: 'AdvancedProgressTracker' = None) -> dict:
+    def run_propagation(self, frames_dir: str, scenes_to_process: list['Scene'],
+                        tracker: Optional['AdvancedProgressTracker'] = None) -> dict:
+        """
+        Runs the full mask propagation pipeline for a list of scenes.
+
+        Args:
+            frames_dir: The directory containing the extracted frames.
+            scenes_to_process: A list of Scene objects to process.
+            tracker: An optional progress tracker.
+
+        Returns:
+            A dictionary containing metadata about the generated masks.
+        """
         self.mask_dir = Path(frames_dir) / "masks"
         self.mask_dir.mkdir(exist_ok=True)
         self.logger.info("Starting subject mask propagation...")
@@ -2552,7 +3743,18 @@ class SubjectMasker:
         scene.best_frame = candidates[best_local_idx][0]
         scene.seed_metrics = {'reason': 'pre-analysis complete', 'score': max(scores), 'best_niqe': niqe_score, 'best_face_sim': face_sim}
 
-    def get_seed_for_frame(self, frame_rgb: np.ndarray, seed_config=dict, scene=None):
+    def get_seed_for_frame(self, frame_rgb: np.ndarray, seed_config: dict = None, scene: Optional['Scene'] = None) -> tuple[Optional[list], dict]:
+        """
+        Gets a seed bounding box for a single frame.
+
+        Args:
+            frame_rgb: The RGB image of the frame.
+            seed_config: Optional dictionary of seed configuration overrides.
+            scene: The scene object.
+
+        Returns:
+            A tuple containing the seed bounding box and details about the selection.
+        """
         if isinstance(seed_config, dict) and seed_config.get('manual_bbox_xywh'):
             return seed_config['manual_bbox_xywh'], {'type': seed_config.get('seed_type', 'manual')}
 
@@ -2567,8 +3769,33 @@ class SubjectMasker:
 
         self._initialize_tracker()
         return self.seed_selector.select_seed(frame_rgb, current_params=seed_config, scene=scene)
-    def get_mask_for_bbox(self, frame_rgb_small, bbox_xywh): return self.seed_selector._sam2_mask_for_bbox(frame_rgb_small, bbox_xywh)
-    def draw_bbox(self, img_rgb, xywh, color=None, thickness=None, label=None):
+    def get_mask_for_bbox(self, frame_rgb_small: np.ndarray, bbox_xywh: list) -> Optional[np.ndarray]:
+        """
+        Gets a mask for a specific bounding box on a frame.
+
+        Args:
+            frame_rgb_small: The (thumbnail) RGB image.
+            bbox_xywh: The bounding box in [x, y, w, h] format.
+
+        Returns:
+            The generated mask as a NumPy array.
+        """
+        return self.seed_selector._sam2_mask_for_bbox(frame_rgb_small, bbox_xywh)
+    def draw_bbox(self, img_rgb: np.ndarray, xywh: list, color: Optional[tuple] = None,
+                  thickness: Optional[int] = None, label: Optional[str] = None) -> np.ndarray:
+        """
+        Draws a bounding box on an image.
+
+        Args:
+            img_rgb: The input RGB image.
+            xywh: The bounding box in [x, y, w, h] format.
+            color: The color of the box (B, G, R).
+            thickness: The thickness of the box lines.
+            label: An optional text label to draw.
+
+        Returns:
+            The image with the bounding box drawn on it.
+        """
         color = color or tuple(self.config.visualization.bbox_color)
         thickness = thickness or self.config.visualization.bbox_thickness
         x, y, w, h = map(int, xywh or [0, 0, 0, 0])
@@ -2589,7 +3816,21 @@ class SubjectMasker:
 # --- PIPELINES ---
 
 class ExtractionPipeline(Pipeline):
-    def run(self, tracker: 'AdvancedProgressTracker' = None):
+    """Pipeline for extracting frames or thumbnails from a video or image folder."""
+    def run(self, tracker: Optional['AdvancedProgressTracker'] = None) -> dict:
+        """
+        Executes the extraction process.
+
+        This method handles both video files and folders of images. For videos,
+        it downloads from YouTube if necessary, runs scene detection, and then
+        uses FFmpeg to extract frames. For image folders, it generates thumbnails directly.
+
+        Args:
+            tracker: An optional progress tracker.
+
+        Returns:
+            A dictionary containing the output directory path and other metadata.
+        """
         source_p = Path(self.params.source_path)
         is_folder = is_image_folder(source_p)
 
@@ -2657,21 +3898,47 @@ class ExtractionPipeline(Pipeline):
             self.logger.success("Extraction complete.")
             return {"done": True, "output_dir": str(output_dir), "video_path": str(video_path)}
 
-    def _run_scene_detection(self, video_path, output_dir): return run_scene_detection(video_path, output_dir, self.logger)
-    def _run_ffmpeg(self, video_path, output_dir, video_info, tracker=None):
+    def _run_scene_detection(self, video_path: str, output_dir: Path) -> list:
+        """Wrapper for the `run_scene_detection` utility function."""
+        return run_scene_detection(video_path, output_dir, self.logger)
+    def _run_ffmpeg(self, video_path: str, output_dir: Path, video_info: dict, tracker: Optional['AdvancedProgressTracker'] = None):
+        """Wrapper for the `run_ffmpeg_extraction` utility function."""
         return run_ffmpeg_extraction(video_path, output_dir, video_info, self.params, self.progress_queue, self.cancel_event, self.logger, self.config, tracker=tracker)
 
 class EnhancedExtractionPipeline(ExtractionPipeline):
+    """An `ExtractionPipeline` subclass that includes retry logic."""
     def __init__(self, config: 'Config', logger: 'AppLogger', params: 'AnalysisParameters',
                  progress_queue: Queue, cancel_event: threading.Event):
+        """
+        Initializes the EnhancedExtractionPipeline.
+
+        Args:
+            config: The application configuration.
+            logger: The application logger.
+            params: The parameters for the analysis run.
+            progress_queue: The queue for UI progress updates.
+            cancel_event: The event to signal cancellation.
+        """
         super().__init__(config, logger, params, progress_queue, cancel_event)
         self.error_handler = ErrorHandler(self.logger, self.config.retry.max_attempts, self.config.retry.backoff_seconds)
         self.run = self.error_handler.with_retry()(self.run)
 
 class AnalysisPipeline(Pipeline):
+    """Pipeline for running the main analysis, from propagation to metric calculation."""
     def __init__(self, config: 'Config', logger: 'AppLogger', params: 'AnalysisParameters',
                  progress_queue: Queue, cancel_event: threading.Event,
                  thumbnail_manager: 'ThumbnailManager'):
+        """
+        Initializes the AnalysisPipeline.
+
+        Args:
+            config: The application configuration.
+            logger: The application logger.
+            params: The parameters for the analysis run.
+            progress_queue: The queue for UI progress updates.
+            cancel_event: The event to signal cancellation.
+            thumbnail_manager: The manager for the thumbnail cache.
+        """
         super().__init__(config, logger, params, progress_queue, cancel_event)
         self.output_dir = Path(self.params.output_folder)
         self.thumb_dir = self.output_dir / "thumbs"
@@ -2684,6 +3951,7 @@ class AnalysisPipeline(Pipeline):
         self.thumbnail_manager = thumbnail_manager
 
     def _initialize_niqe_metric(self):
+        """Initializes the NIQE metric model if available."""
         if self.niqe_metric is None:
             try:
                 import pyiqa
@@ -2694,7 +3962,17 @@ class AnalysisPipeline(Pipeline):
             except Exception as e:
                 self.logger.warning("Failed to initialize NIQE metric", extra={'error': e})
 
-    def run_full_analysis(self, scenes_to_process, tracker: 'AdvancedProgressTracker' = None):
+    def run_full_analysis(self, scenes_to_process: list['Scene'], tracker: Optional['AdvancedProgressTracker'] = None) -> dict:
+        """
+        Runs the mask propagation stage of the analysis.
+
+        Args:
+            scenes_to_process: A list of Scene objects to process.
+            tracker: An optional progress tracker.
+
+        Returns:
+            A dictionary indicating the result and output directory.
+        """
         is_folder_mode = not self.params.video_path
 
         if is_folder_mode:
@@ -2750,7 +4028,19 @@ class AnalysisPipeline(Pipeline):
                 self.logger.error("Propagation pipeline failed", component="analysis", exc_info=True, extra={'error': str(e)})
                 return {"error": str(e), "done": False}
 
-    def run_analysis_only(self, scenes_to_process, tracker: 'AdvancedProgressTracker' = None):
+    def run_analysis_only(self, scenes_to_process: list['Scene'], tracker: Optional['AdvancedProgressTracker'] = None) -> dict:
+        """
+        Runs the frame-by-frame metric calculation stage of the analysis.
+
+        This assumes that mask propagation (if enabled) has already completed.
+
+        Args:
+            scenes_to_process: A list of Scene objects to process.
+            tracker: An optional progress tracker.
+
+        Returns:
+            A dictionary indicating the result and paths to output files.
+        """
         try:
             if not self.metadata_path.exists():
                 with open(self.metadata_path, 'w', encoding='utf-8') as f:
@@ -2776,15 +4066,18 @@ class AnalysisPipeline(Pipeline):
             self.logger.error("Analysis pipeline failed", exc_info=True, extra={'error': str(e)})
             return {"error": str(e), "done": False}
 
-    def _create_frame_map(self):
+    def _create_frame_map(self) -> dict:
+        """Helper to create the frame map with the correct file extension."""
         ext = ".webp" if self.params.thumbnails_only else ".png"
         return create_frame_map(self.output_dir, self.logger, ext=ext)
 
-    def _filter_completed_scenes(self, scenes, progress_data):
+    def _filter_completed_scenes(self, scenes: list['Scene'], progress_data: dict) -> list['Scene']:
+        """Filters out scenes that have already been processed in a previous run."""
         completed_scenes = progress_data.get("completed_scenes", [])
         return [s for s in scenes if s.shot_id not in completed_scenes]
 
-    def _save_progress(self, current_scene, progress_file):
+    def _save_progress(self, current_scene: 'Scene', progress_file: Path):
+        """Saves the ID of the most recently completed scene to a progress file."""
         progress_data = {"completed_scenes": []}
         if progress_file.exists():
             with open(progress_file) as f:
@@ -2793,6 +4086,7 @@ class AnalysisPipeline(Pipeline):
         with open(progress_file, 'w') as f:
             json.dump(progress_data, f)
     def _process_reference_face(self):
+        """Loads and processes the reference face image to get its embedding."""
         if not self.face_analyzer: return
         ref_path = Path(self.params.face_ref_img_path)
         if not ref_path.is_file(): raise FileNotFoundError(f"Reference face image not found: {ref_path}")
@@ -2804,7 +4098,8 @@ class AnalysisPipeline(Pipeline):
         self.reference_embedding = max(ref_faces, key=lambda x: x.det_score).normed_embedding
         self.logger.success("Reference face processed.")
 
-    def _run_image_folder_analysis(self, tracker: 'AdvancedProgressTracker' = None):
+    def _run_image_folder_analysis(self, tracker: Optional['AdvancedProgressTracker'] = None) -> dict:
+        """Placeholder for the image folder analysis logic."""
         self.logger.info("Starting image folder analysis...")
 
         # Stage 1: Pre-filter on thumbnails
@@ -2818,7 +4113,10 @@ class AnalysisPipeline(Pipeline):
         self.logger.success("Image folder analysis complete.")
         return {"done": True, "metadata_path": str(self.metadata_path), "output_dir": str(self.output_dir)}
 
-    def _run_analysis_loop(self, scenes_to_process, tracker: 'AdvancedProgressTracker' = None):
+    def _run_analysis_loop(self, scenes_to_process: list['Scene'], tracker: Optional['AdvancedProgressTracker'] = None):
+        """
+        Orchestrates the parallel processing of frames for metric calculation.
+        """
         frame_map = self._create_frame_map()
         all_frame_nums_to_process = {fn for scene in scenes_to_process for fn in range(scene.start_frame, scene.end_frame) if fn in frame_map}
         image_files_to_process = [self.thumb_dir / frame_map[fn] for fn in sorted(list(all_frame_nums_to_process)) if frame_map.get(fn)]
@@ -2840,12 +4138,14 @@ class AnalysisPipeline(Pipeline):
                 except Exception as e:
                     self.logger.error(f"Error processing batch future: {e}")
 
-    def _process_batch(self, batch_paths):
+    def _process_batch(self, batch_paths: list[Path]) -> int:
+        """Processes a batch of frames in a single thread."""
         for path in batch_paths:
             self._process_single_frame(path)
         return len(batch_paths)
 
-    def _process_single_frame(self, thumb_path):
+    def _process_single_frame(self, thumb_path: Path):
+        """Calculates and records all metrics for a single frame."""
         if self.cancel_event.is_set(): return
         if not (frame_num_match := re.search(r'frame_(\d+)', thumb_path.name)): return
         log_context = {'file': thumb_path.name}
@@ -2947,7 +4247,23 @@ class AnalysisPipeline(Pipeline):
 
 # --- FILTERING & SCENE LOGIC ---
 
-def load_and_prep_filter_data(metadata_path, get_all_filter_keys, config):
+def load_and_prep_filter_data(metadata_path: str, get_all_filter_keys: Callable, config: 'Config') -> tuple[list, dict]:
+    """
+    Loads frame metadata from a JSONL file and prepares it for the filtering UI.
+
+    This function reads the metadata, extracts all metric values, and generates
+    histogram data for each metric.
+
+    Args:
+        metadata_path: The path to the `metadata.jsonl` file.
+        get_all_filter_keys: A function that returns a list of all metric keys to process.
+        config: The main application configuration.
+
+    Returns:
+        A tuple containing:
+        - A list of all frame data dictionaries.
+        - A dictionary containing lists of values and histogram data for each metric.
+    """
     if not metadata_path or not Path(metadata_path).exists():
         return [], {}
 
@@ -3002,13 +4318,35 @@ def load_and_prep_filter_data(metadata_path, get_all_filter_keys, config):
 
     return all_frames, metric_values
 
-def build_all_metric_svgs(per_metric_values, get_all_filter_keys, logger):
+def build_all_metric_svgs(per_metric_values: dict, get_all_filter_keys: Callable, logger: 'AppLogger') -> dict:
+    """
+    Generates SVG histograms for all available metrics.
+
+    Args:
+        per_metric_values: The dictionary of metric data from `load_and_prep_filter_data`.
+        get_all_filter_keys: A function that returns a list of all metric keys.
+        logger: The application logger.
+
+    Returns:
+        A dictionary mapping metric names to their SVG histogram strings.
+    """
     svgs = {}
     for k in get_all_filter_keys:
         if (h := per_metric_values.get(f"{k}_hist")): svgs[k] = histogram_svg(h, title="", logger=logger)
     return svgs
 
-def histogram_svg(hist_data, title="", logger=None):
+def histogram_svg(hist_data: tuple, title: str = "", logger: Optional['AppLogger'] = None) -> str:
+    """
+    Creates an SVG histogram from histogram data using Matplotlib.
+
+    Args:
+        hist_data: A tuple of (counts, bins) from `np.histogram`.
+        title: An optional title for the plot.
+        logger: The application logger.
+
+    Returns:
+        A string containing the SVG data for the histogram plot.
+    """
     if not plt:
         return """<svg width="100" height="20" xmlns="http://www.w3.org/2000/svg"><text x="5" y="15" font-family="sans-serif" font-size="10" fill="orange">Matplotlib missing</text></svg>"""
     if not hist_data: return ""
@@ -3030,8 +4368,20 @@ def histogram_svg(hist_data, title="", logger=None):
         if logger: logger.error("Failed to generate histogram SVG.", exc_info=True)
         return """<svg width="100" height="20" xmlns="http://www.w3.org/2000/svg"><text x="5" y="15" font-family="sans-serif" font-size="10" fill="red">Plotting failed</text></svg>"""
 
-def _extract_metric_arrays(all_frames_data, config: 'Config'):
-    """Extracts metric data into NumPy arrays for vectorized operations."""
+def _extract_metric_arrays(all_frames_data: list[dict], config: 'Config') -> dict:
+    """
+    Extracts metric data from a list of frame dictionaries into NumPy arrays.
+
+    This function is a performance optimization, allowing for fast, vectorized
+    filtering operations instead of iterating through dictionaries in a loop.
+
+    Args:
+        all_frames_data: A list of frame metadata dictionaries.
+        config: The main application configuration.
+
+    Returns:
+        A dictionary mapping metric names to their corresponding NumPy arrays.
+    """
     metric_sources = {
         **{k: ("metrics", f"{k}_score") for k in asdict(config.quality_weights).keys()},
         "quality_score": ("metrics", "quality_score"),
@@ -3050,8 +4400,21 @@ def _extract_metric_arrays(all_frames_data, config: 'Config'):
     return metric_arrays
 
 
-def _apply_deduplication_filter(all_frames_data, filters, thumbnail_manager, config: 'Config'):
-    """Applies deduplication filters and returns a mask and reasons."""
+def _apply_deduplication_filter(all_frames_data: list[dict], filters: dict, thumbnail_manager: 'ThumbnailManager',
+                                config: 'Config') -> tuple[np.ndarray, defaultdict]:
+    """
+    Applies deduplication filters based on perceptual hash (pHash).
+
+    Args:
+        all_frames_data: A list of frame metadata dictionaries.
+        filters: A dictionary of active filter settings.
+        thumbnail_manager: The thumbnail cache manager.
+        config: The main application configuration.
+
+    Returns:
+        A tuple containing a boolean NumPy array (the mask of frames to keep)
+        and a dictionary of rejection reasons.
+    """
     num_frames = len(all_frames_data)
     filenames = [f['filename'] for f in all_frames_data]
     dedup_mask = np.ones(num_frames, dtype=bool)
@@ -3079,8 +4442,21 @@ def _apply_deduplication_filter(all_frames_data, filters, thumbnail_manager, con
             dedup_mask, reasons = apply_lpips_dedup(all_frames_data, filters, dedup_mask, reasons, thumbnail_manager, config)
     return dedup_mask, reasons
 
-def _apply_metric_filters(all_frames_data, metric_arrays, filters, config: 'Config'):
-    """Applies metric-based filters and returns a mask and reasons."""
+def _apply_metric_filters(all_frames_data: list[dict], metric_arrays: dict, filters: dict,
+                          config: 'Config') -> tuple[np.ndarray, defaultdict]:
+    """
+    Applies filters based on numeric metric thresholds.
+
+    Args:
+        all_frames_data: A list of frame metadata dictionaries.
+        metric_arrays: A dictionary of metric data as NumPy arrays.
+        filters: A dictionary of active filter settings from the UI.
+        config: The main application configuration.
+
+    Returns:
+        A tuple containing a boolean NumPy array (the mask of frames to keep)
+        and a dictionary of rejection reasons.
+    """
     num_frames = len(all_frames_data)
     filenames = [f['filename'] for f in all_frames_data]
     reasons = defaultdict(list)
@@ -3156,7 +4532,27 @@ def _apply_metric_filters(all_frames_data, metric_arrays, filters, config: 'Conf
 
     return metric_filter_mask, reasons
 
-def apply_all_filters_vectorized(all_frames_data, filters, config: 'Config', thumbnail_manager=None):
+def apply_all_filters_vectorized(all_frames_data: list[dict], filters: dict, config: 'Config',
+                                 thumbnail_manager: Optional['ThumbnailManager'] = None) -> tuple[list, list, Counter, dict]:
+    """
+    Applies all filtering logic to a list of frames.
+
+    This function orchestrates the extraction of metrics, deduplication, and
+    threshold-based filtering in an efficient, vectorized manner.
+
+    Args:
+        all_frames_data: A list of frame metadata dictionaries.
+        filters: A dictionary of active filter settings from the UI.
+        config: The main application configuration.
+        thumbnail_manager: The thumbnail cache manager, required for SSIM/LPIPS dedup.
+
+    Returns:
+        A tuple containing:
+        - A list of 'kept' frame dictionaries.
+        - A list of 'rejected' frame dictionaries.
+        - A Counter of all rejection reasons.
+        - A dictionary mapping filenames to their specific rejection reasons.
+    """
     if not all_frames_data:
         return [], [], Counter(), {}
 
@@ -3188,7 +4584,22 @@ def apply_all_filters_vectorized(all_frames_data, filters, config: 'Config', thu
 
     return kept, rejected, total_reasons, reasons
 
-def apply_ssim_dedup(all_frames_data, filters, dedup_mask, reasons, thumbnail_manager, config):
+def apply_ssim_dedup(all_frames_data: list[dict], filters: dict, dedup_mask: np.ndarray, reasons: defaultdict,
+                     thumbnail_manager: 'ThumbnailManager', config: 'Config') -> tuple[np.ndarray, defaultdict]:
+    """
+    Applies deduplication using Structural Similarity Index (SSIM).
+
+    Args:
+        all_frames_data: A list of frame metadata dictionaries.
+        filters: A dictionary of active filter settings.
+        dedup_mask: The current deduplication mask to be updated.
+        reasons: A dictionary to store rejection reasons.
+        thumbnail_manager: The thumbnail cache manager.
+        config: The main application configuration.
+
+    Returns:
+        A tuple of the updated deduplication mask and reasons dictionary.
+    """
     threshold = filters.get("ssim_threshold", 0.95)
     num_frames = len(all_frames_data)
     sorted_indices = sorted(range(num_frames), key=lambda i: all_frames_data[i]['filename'])
@@ -3223,7 +4634,22 @@ def apply_ssim_dedup(all_frames_data, filters, dedup_mask, reasons, thumbnail_ma
                     dedup_mask[c_idx] = False
     return dedup_mask, reasons
 
-def apply_lpips_dedup(all_frames_data, filters, dedup_mask, reasons, thumbnail_manager, config):
+def apply_lpips_dedup(all_frames_data: list[dict], filters: dict, dedup_mask: np.ndarray, reasons: defaultdict,
+                      thumbnail_manager: 'ThumbnailManager', config: 'Config') -> tuple[np.ndarray, defaultdict]:
+    """
+    Applies deduplication using Learned Perceptual Image Patch Similarity (LPIPS).
+
+    Args:
+        all_frames_data: A list of frame metadata dictionaries.
+        filters: A dictionary of active filter settings.
+        dedup_mask: The current deduplication mask to be updated.
+        reasons: A dictionary to store rejection reasons.
+        thumbnail_manager: The thumbnail cache manager.
+        config: The main application configuration.
+
+    Returns:
+        A tuple of the updated deduplication mask and reasons dictionary.
+    """
     threshold = filters.get("lpips_threshold", 0.1)
     loss_fn = get_lpips_metric()
     num_frames = len(all_frames_data)
@@ -3264,7 +4690,20 @@ def apply_lpips_dedup(all_frames_data, filters, dedup_mask, reasons, thumbnail_m
     return dedup_mask, reasons
 
 
-def on_filters_changed(event: FilterEvent, thumbnail_manager, config: 'Config', logger=None):
+def on_filters_changed(event: 'FilterEvent', thumbnail_manager: 'ThumbnailManager',
+                       config: 'Config', logger: Optional['AppLogger'] = None) -> dict:
+    """
+    Gradio event handler for when any filter control is changed.
+
+    Args:
+        event: A FilterEvent object containing all relevant data.
+        thumbnail_manager: The thumbnail cache manager.
+        config: The main application configuration.
+        logger: The application logger.
+
+    Returns:
+        A dictionary of Gradio updates for the status text and results gallery.
+    """
     logger = logger or AppLogger(config=Config())
     if not event.all_frames_data: return {"filter_status_text": "Run analysis to see results.", "results_gallery": []}
     filters = event.slider_values.copy()
@@ -3277,7 +4716,27 @@ def on_filters_changed(event: FilterEvent, thumbnail_manager, config: 'Config', 
                                                   event.show_overlay, event.overlay_alpha, thumbnail_manager, config, logger)
     return {"filter_status_text": status_text, "results_gallery": gallery_update}
 
-def _update_gallery(all_frames_data, filters, output_dir, gallery_view, show_overlay, overlay_alpha, thumbnail_manager, config: 'Config', logger):
+def _update_gallery(all_frames_data: list[dict], filters: dict, output_dir: str, gallery_view: str,
+                    show_overlay: bool, overlay_alpha: float, thumbnail_manager: 'ThumbnailManager',
+                    config: 'Config', logger: 'AppLogger') -> tuple[str, gr.update]:
+    """
+    Helper function to re-apply filters and update the results gallery.
+
+    Args:
+        all_frames_data: A list of all frame metadata.
+        filters: A dictionary of the current filter settings.
+        output_dir: The main output directory for the run.
+        gallery_view: The current view ("Kept Frames" or "Rejected Frames").
+        show_overlay: Whether to display the mask overlay.
+        overlay_alpha: The transparency of the mask overlay.
+        thumbnail_manager: The thumbnail cache manager.
+        config: The main application configuration.
+        logger: The application logger.
+
+    Returns:
+        A tuple containing the updated status text and a Gradio update object
+        for the gallery.
+    """
     kept, rejected, counts, per_frame_reasons = apply_all_filters_vectorized(all_frames_data, filters or {}, config, thumbnail_manager)
     status_parts = [f"**Kept:** {len(kept)}/{len(all_frames_data)}"]
     if counts:
@@ -3302,7 +4761,19 @@ def _update_gallery(all_frames_data, filters, output_dir, gallery_view, show_ove
     return status_text, gr.update(value=preview_images, rows=1 if gallery_view == "Rejected Frames" else 2)
 
 
-def auto_set_thresholds(per_metric_values, p, slider_keys, selected_metrics):
+def auto_set_thresholds(per_metric_values: dict, p: int, slider_keys: list[str], selected_metrics: list[str]) -> dict:
+    """
+    Calculates percentile-based thresholds for sliders.
+
+    Args:
+        per_metric_values: A dictionary of metric values.
+        p: The percentile to calculate.
+        slider_keys: A list of all slider keys in the UI.
+        selected_metrics: A list of metric names to apply the auto-threshold to.
+
+    Returns:
+        A dictionary of Gradio update objects for the sliders.
+    """
     updates = {}
     if not per_metric_values: return {f'slider_{key}': gr.update() for key in slider_keys}
     # Calculate percentile values only for the selected metrics
@@ -3321,7 +4792,15 @@ def auto_set_thresholds(per_metric_values, p, slider_keys, selected_metrics):
             updates[f'slider_{key}'] = gr.update()
     return updates
 
-def save_scene_seeds(scenes_list, output_dir_str, logger):
+def save_scene_seeds(scenes_list: list[dict], output_dir_str: str, logger: 'AppLogger'):
+    """
+    Saves the current state of scenes to `scene_seeds.json`.
+
+    Args:
+        scenes_list: A list of scene dictionaries.
+        output_dir_str: The path to the output directory.
+        logger: The application logger.
+    """
     if not scenes_list or not output_dir_str: return
     scene_seeds = {}
     for s in scenes_list:
@@ -3339,7 +4818,16 @@ def save_scene_seeds(scenes_list, output_dir_str, logger):
         logger.info("Saved scene_seeds.json")
     except Exception as e: logger.error("Failed to save scene_seeds.json", exc_info=True)
 
-def get_scene_status_text(scenes_list):
+def get_scene_status_text(scenes_list: list[dict]) -> tuple[str, gr.update]:
+    """
+    Generates a status summary text and updates the propagation button.
+
+    Args:
+        scenes_list: A list of scene dictionaries.
+
+    Returns:
+        A tuple containing the status string and a Gradio update object for the button.
+    """
     if not scenes_list:
         return "No scenes loaded.", gr.update(interactive=False)
 
@@ -3362,14 +4850,40 @@ def get_scene_status_text(scenes_list):
     button_text = f"🔬 Propagate Masks on {included_count} Kept Scenes"
     return status_text, gr.update(value=button_text, interactive=included_count > 0)
 
-def draw_boxes_preview(img, boxes_xyxy, cfg):
+def draw_boxes_preview(img: np.ndarray, boxes_xyxy: list[list[int]], cfg: 'Config') -> np.ndarray:
+    """
+    Draws multiple bounding boxes on an image for preview.
+
+    Args:
+        img: The input image as a NumPy array.
+        boxes_xyxy: A list of bounding boxes in [x1, y1, x2, y2] format.
+        cfg: The application configuration for visualization settings.
+
+    Returns:
+        The image with bounding boxes drawn on it.
+    """
     img = img.copy()
     for x1,y1,x2,y2 in boxes_xyxy:
         cv2.rectangle(img, (int(x1),int(y1)), (int(x2),int(y2)),
                       cfg.visualization.bbox_color, cfg.visualization.bbox_thickness)
     return img
 
-def toggle_scene_status(scenes_list, selected_shot_id, new_status, output_folder, logger):
+def toggle_scene_status(scenes_list: list[dict], selected_shot_id: int, new_status: str,
+                        output_folder: str, logger: 'AppLogger') -> tuple[list, str, str, gr.update]:
+    """
+    Updates the status of a selected scene.
+
+    Args:
+        scenes_list: The list of all scene dictionaries.
+        selected_shot_id: The ID of the scene to update.
+        new_status: The new status to set ("included" or "excluded").
+        output_folder: The output directory for saving the updated scene data.
+        logger: The application logger.
+
+    Returns:
+        A tuple containing the updated scenes list, status text, a confirmation
+        message, and a Gradio update object for the propagation button.
+    """
     if selected_shot_id is None or not scenes_list:
         status_text, button_update = get_scene_status_text(scenes_list)
         return scenes_list, status_text, "No scene selected.", button_update
@@ -3388,10 +4902,29 @@ def toggle_scene_status(scenes_list, selected_shot_id, new_status, output_folder
 
 # --- Cleaned Scene Recomputation Workflow ---
 
-def _create_analysis_context(config, logger, thumbnail_manager, cuda_available, ana_ui_map_keys, ana_input_components) -> SubjectMasker:
+def _create_analysis_context(config: 'Config', logger: 'AppLogger', thumbnail_manager: 'ThumbnailManager',
+                             cuda_available: bool, ana_ui_map_keys: list[str], ana_input_components: list) -> 'SubjectMasker':
     """
     Factory function to create a fully initialized SubjectMasker from UI state.
-    This centralizes context creation and ensures robustness.
+
+    This function centralizes the creation of the analysis context, ensuring
+    all necessary models and parameters are correctly initialized based on the
+    current state of the Gradio UI.
+
+    Args:
+        config: The main application configuration.
+        logger: The application logger.
+        thumbnail_manager: The thumbnail cache manager.
+        cuda_available: Boolean indicating if CUDA is available.
+        ana_ui_map_keys: A list of keys for the analysis UI components.
+        ana_input_components: A list of the analysis UI component values.
+
+    Returns:
+        A fully configured SubjectMasker instance.
+
+    Raises:
+        FileNotFoundError: If the specified output folder is invalid or does not exist.
+        RuntimeError: If the frame map cannot be created.
     """
     ui_args = dict(zip(ana_ui_map_keys, ana_input_components))
 
@@ -3429,10 +4962,21 @@ def _create_analysis_context(config, logger, thumbnail_manager, cuda_available, 
         face_landmarker=models["face_landmarker"]
     )
 
-def _recompute_single_preview(scene: dict, masker: SubjectMasker, overrides: dict, thumbnail_manager, logger):
+def _recompute_single_preview(scene: dict, masker: 'SubjectMasker', overrides: dict,
+                              thumbnail_manager: 'ThumbnailManager', logger: 'AppLogger'):
     """
-    Recomputes the best frame for a single scene using a pre-built masker and specific overrides.
-    Updates the scene dictionary in-place.
+    Recomputes the seed and preview for a single scene.
+
+    This function takes an existing `SubjectMasker` context and applies user-defined
+    overrides (e.g., a new text prompt) to generate a new seed and preview image.
+    The scene dictionary is updated in-place.
+
+    Args:
+        scene: The dictionary of the scene to recompute.
+        masker: The initialized SubjectMasker context.
+        overrides: A dictionary of parameters to override for this computation.
+        thumbnail_manager: The thumbnail cache manager.
+        logger: The application logger.
     """
     out_dir = Path(masker.params.output_folder)
     best_frame_num = scene.get('best_frame') or scene.get('start_frame')
@@ -3482,10 +5026,33 @@ def _recompute_single_preview(scene: dict, masker: SubjectMasker, overrides: dic
     except Exception:
         logger.error(f"Failed to save preview for scene {scene['shot_id']}", exc_info=True)
 
-def _wire_recompute_handler(config, logger, thumbnail_manager, scenes, shot_id, outdir, text_prompt, box_thresh, text_thresh,
-                            view, ana_ui_map_keys, ana_input_components, cuda_available):
+def _wire_recompute_handler(config: 'Config', logger: 'AppLogger', thumbnail_manager: 'ThumbnailManager',
+                            scenes: list[dict], shot_id: int, outdir: str, text_prompt: str,
+                            box_thresh: float, text_thresh: float, view: str, ana_ui_map_keys: list[str],
+                            ana_input_components: list, cuda_available: bool) -> tuple:
     """
-    Orchestrator for the 'Recompute Preview' button. Cleanly builds context and executes logic.
+    Orchestrator for the 'Recompute Preview' button event in the UI.
+
+    This function wires together the context creation, recomputation logic,
+    and UI update generation for the scene editor.
+
+    Args:
+        config: The main application configuration.
+        logger: The application logger.
+        thumbnail_manager: The thumbnail cache manager.
+        scenes: The list of all scene dictionaries.
+        shot_id: The ID of the currently selected scene.
+        outdir: The path to the output directory.
+        text_prompt: The text prompt from the UI.
+        box_thresh: The box threshold from the UI.
+        text_thresh: The text threshold from the UI.
+        view: The current gallery view ("Kept", "Rejected", "All").
+        ana_ui_map_keys: Keys for the analysis UI components.
+        ana_input_components: Values from the analysis UI components.
+        cuda_available: Boolean indicating if CUDA is available.
+
+    Returns:
+        A tuple of Gradio update objects for the UI.
     """
     try:
         # If the DINO text prompt is empty, do nothing.
@@ -3524,7 +5091,24 @@ def _wire_recompute_handler(config, logger, thumbnail_manager, scenes, shot_id, 
 # --- PIPELINE LOGIC ---
 
 @handle_common_errors
-def execute_extraction(event: ExtractionEvent, progress_queue: Queue, cancel_event: threading.Event, logger: AppLogger, config: Config, thumbnail_manager=None, cuda_available=None, progress=None):
+def execute_extraction(event: 'ExtractionEvent', progress_queue: Queue, cancel_event: threading.Event,
+                       logger: 'AppLogger', config: 'Config', thumbnail_manager: Optional['ThumbnailManager'] = None,
+                       cuda_available: Optional[bool] = None, progress: Optional[Callable] = None) -> Generator[dict, None, None]:
+    """
+    Executes the frame extraction pipeline.
+
+    This function is a generator that yields progress updates to the UI.
+
+    Args:
+        event: The ExtractionEvent from the UI.
+        progress_queue: The queue for UI updates.
+        cancel_event: The event to signal cancellation.
+        logger: The application logger.
+        config: The main application configuration.
+        thumbnail_manager: The thumbnail manager (unused in this pipeline).
+        cuda_available: Flag for CUDA availability (unused in this pipeline).
+        progress: The Gradio progress object.
+    """
     try:
         params_dict = asdict(event)
         if event.upload_video:
@@ -3552,8 +5136,24 @@ def execute_extraction(event: ExtractionEvent, progress_queue: Queue, cancel_eve
         yield {"log": f"[ERROR] Extraction failed unexpectedly: {e}", "done": False}
 
 @handle_common_errors
-def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue, cancel_event: threading.Event, logger: AppLogger,
-                         config: Config, thumbnail_manager, cuda_available, progress=None):
+def execute_pre_analysis(event: 'PreAnalysisEvent', progress_queue: Queue, cancel_event: threading.Event,
+                         logger: 'AppLogger', config: 'Config', thumbnail_manager: 'ThumbnailManager',
+                         cuda_available: bool, progress: Optional[Callable] = None) -> Generator[dict, None, None]:
+    """
+    Executes the pre-analysis pipeline (seed selection and preview generation).
+
+    This function is a generator that yields progress updates to the UI.
+
+    Args:
+        event: The PreAnalysisEvent from the UI.
+        progress_queue: The queue for UI updates.
+        cancel_event: The event to signal cancellation.
+        logger: The application logger.
+        config: The main application configuration.
+        thumbnail_manager: The thumbnail manager.
+        cuda_available: Flag for CUDA availability.
+        progress: The Gradio progress object.
+    """
     try:
         yield {"unified_log": "", "unified_status": "Starting Pre-Analysis..."}
         tracker = AdvancedProgressTracker(progress, progress_queue, logger, ui_stage_name="Pre-Analysis")
@@ -3699,7 +5299,16 @@ def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue, cancel_
         logger.error("Pre-analysis execution failed", exc_info=True)
         yield {"log": f"[ERROR] Pre-analysis failed unexpectedly: {e}", "done": False}
 
-def validate_session_dir(path: str | Path) -> tuple[Path | None, str | None]:
+def validate_session_dir(path: Union[str, Path]) -> tuple[Optional[Path], Optional[str]]:
+    """
+    Validates that a path is an existing directory.
+
+    Args:
+        path: The path to validate.
+
+    Returns:
+        A tuple of (Path, None) if valid, or (None, error_message) if invalid.
+    """
     try:
         p = Path(path).expanduser().resolve()
         return (p if p.exists() and p.is_dir() else None,
@@ -3709,12 +5318,25 @@ def validate_session_dir(path: str | Path) -> tuple[Path | None, str | None]:
 
 
 def execute_session_load(
-    app_ui,
-    event: SessionLoadEvent,
-    logger: AppLogger,
-    config: Config,
-    thumbnail_manager,
-):
+    app_ui: 'AppUI',
+    event: 'SessionLoadEvent',
+    logger: 'AppLogger',
+    config: 'Config',
+    thumbnail_manager: 'ThumbnailManager',
+) -> Generator[dict, None, None]:
+    """
+    Executes the session loading process.
+
+    This function is a generator that yields UI updates as it loads a
+    previous session's configuration, scenes, and results.
+
+    Args:
+        app_ui: The main AppUI instance.
+        event: The SessionLoadEvent from the UI.
+        logger: The application logger.
+        config: The main application configuration.
+        thumbnail_manager: The thumbnail manager.
+    """
     if not event.session_path or not event.session_path.strip():
         logger.error("No session path provided.", component="session_loader")
         yield {"log": "[ERROR] Please enter a path to a session directory.", "status": "Session load failed."}
@@ -3987,6 +5609,16 @@ def execute_analysis(event: PropagationEvent, progress_queue: Queue, cancel_even
 
 # --- Scene gallery helpers (module-level) ---
 def scene_matches_view(scene: dict, view: str) -> bool:
+    """
+    Checks if a scene's status matches the current gallery view.
+
+    Args:
+        scene: The scene dictionary.
+        view: The current view ("All", "Kept", "Rejected").
+
+    Returns:
+        True if the scene should be visible, False otherwise.
+    """
     status = scene.get('status', 'pending')
     if view == "All":
         return status in ("included", "excluded", "pending")
@@ -3997,6 +5629,15 @@ def scene_matches_view(scene: dict, view: str) -> bool:
     return False
 
 def scene_caption(s: dict) -> str:
+    """
+    Generates a descriptive caption for a scene thumbnail in the gallery.
+
+    Args:
+        s: The scene dictionary.
+
+    Returns:
+        A formatted caption string.
+    """
     shot = s.get('shot_id', '?')
     start_f = s.get('start_frame', '?')
     end_f = s.get('end_frame', '?')
@@ -4014,7 +5655,17 @@ def scene_caption(s: dict) -> str:
     if mask is not None: bits.append(f"mask {mask:.1f}%")
     return " | ".join(bits)
 
-def scene_thumb(s: dict, output_dir: str) -> str | None:
+def scene_thumb(s: dict, output_dir: str) -> Optional[str]:
+    """
+    Finds the path to the preview thumbnail for a scene.
+
+    Args:
+        s: The scene dictionary.
+        output_dir: The main output directory.
+
+    Returns:
+        The path to the thumbnail image, or None if not found.
+    """
     p = s.get('preview_path')
     if p and os.path.isfile(p):
         return p
@@ -4025,7 +5676,20 @@ def scene_thumb(s: dict, output_dir: str) -> str | None:
             return candidate
     return None
 
-def build_scene_gallery_items(scenes: list[dict], view: str, output_dir: str):
+def build_scene_gallery_items(scenes: list[dict], view: str, output_dir: str) -> tuple[list[tuple], list[int]]:
+    """
+    Builds the list of items to display in the Gradio scene gallery.
+
+    Args:
+        scenes: The list of all scene dictionaries.
+        view: The current gallery view ("Kept", "Rejected", "All").
+        output_dir: The main output directory.
+
+    Returns:
+        A tuple containing:
+        - A list of (image_path, caption) tuples for the gallery.
+        - An index map linking the gallery item index to the original scene list index.
+    """
     items: list[tuple[str | None, str]] = []
     index_map: list[int] = []
     if not scenes:
@@ -4058,8 +5722,18 @@ def build_scene_gallery_items(scenes: list[dict], view: str, output_dir: str):
         index_map.append(i)
 
     return items, index_map
-def create_scene_thumbnail_with_badge(scene_img, scene_index, is_overridden):
-    """Add visual indicator to scene thumbnail if manually overridden."""
+def create_scene_thumbnail_with_badge(scene_img: np.ndarray, scene_index: int, is_overridden: bool) -> np.ndarray:
+    """
+    Adds a visual indicator badge to a scene thumbnail image.
+
+    Args:
+        scene_img: The scene thumbnail image as a NumPy array.
+        scene_index: The index of the scene (unused in current implementation).
+        is_overridden: Boolean indicating if the scene has been manually changed.
+
+    Returns:
+        The thumbnail image with the badge drawn on it.
+    """
     thumb = scene_img.copy()
     h, w = thumb.shape[:2]
 
@@ -4087,8 +5761,19 @@ def create_scene_thumbnail_with_badge(scene_img, scene_index, is_overridden):
 # --- UI ---
 
 class AppUI:
+    """Handles the construction and event handling of the Gradio user interface."""
     def __init__(self, config: 'Config', logger: 'AppLogger', progress_queue: Queue,
                  cancel_event: threading.Event, thumbnail_manager: 'ThumbnailManager'):
+        """
+        Initializes the AppUI class.
+
+        Args:
+            config: The main application configuration.
+            logger: The application logger.
+            progress_queue: A queue for sending progress updates to the UI.
+            cancel_event: An event to signal cancellation of long-running tasks.
+            thumbnail_manager: The manager for the thumbnail cache.
+        """
         self.config = config
         self.logger = logger
         self.progress_queue = progress_queue
@@ -4117,7 +5802,13 @@ class AppUI:
                                   'scene_filter_status', 'scene_face_sim_min_input', 'filtering_tab',
                                   'scene_gallery', 'scene_gallery_index_map_state']
 
-    def build_ui(self):
+    def build_ui(self) -> gr.Blocks:
+        """
+        Constructs the entire Gradio UI layout.
+
+        Returns:
+            The main `gr.Blocks` instance for the application.
+        """
         css = """.gradio-gallery { overflow-y: hidden !important; }
                  .gradio-gallery img {
                     width: 100%;
@@ -4140,16 +5831,29 @@ class AppUI:
             self._create_event_handlers()
         return demo
 
-    def _get_comp(self, name):
+    def _get_comp(self, name: str) -> Optional[gr.components.Component]:
+        """Safely retrieves a component from the internal components dictionary."""
         return self.components.get(name)
 
-    def _create_component(self, name, comp_type, kwargs):
+    def _create_component(self, name: str, comp_type: str, kwargs: dict) -> gr.components.Component:
+        """
+        Creates a Gradio component, stores it, and returns it.
+
+        Args:
+            name: The key to store the component under.
+            comp_type: The type of Gradio component to create (e.g., 'button', 'textbox').
+            kwargs: A dictionary of arguments to pass to the component's constructor.
+
+        Returns:
+            The created Gradio component.
+        """
         comp_map = {'button': gr.Button, 'textbox': gr.Textbox, 'dropdown': gr.Dropdown, 'slider': gr.Slider, 'checkbox': gr.Checkbox,
                     'file': gr.File, 'radio': gr.Radio, 'gallery': gr.Gallery, 'plot': gr.Plot, 'markdown': gr.Markdown, 'html': gr.HTML, 'number': gr.Number, 'cbg': gr.CheckboxGroup, 'image': gr.Image}
         self.components[name] = comp_map[comp_type](**kwargs)
         return self.components[name]
 
     def _build_header(self):
+        """Builds the header section of the UI."""
         gr.Markdown("# 🎬 Frame Extractor & Analyzer v2.0")
         status_color = "🟢" if self.cuda_available else "🟡"
         status_text = "GPU Accelerated" if self.cuda_available else "CPU Mode (Slower)"
@@ -4158,6 +5862,7 @@ class AppUI:
             gr.Markdown("⚠️ **CPU Mode** — GPU-dependent features are disabled or will be slow.")
 
     def _build_main_tabs(self):
+        """Builds the main tabbed interface for the workflow."""
         with gr.Tabs() as main_tabs:
             self.components['main_tabs'] = main_tabs
             with gr.Tab("📹 1. Frame Extraction", id=0):
@@ -4176,12 +5881,14 @@ class AppUI:
                 self._create_filtering_tab()
 
     def _build_footer(self):
+        """Builds the footer section containing logs and status."""
         with gr.Row():
             with gr.Column(scale=2): self._create_component('unified_log', 'textbox', {'label': "📋 Processing Log", 'lines': 10, 'interactive': False, 'autoscroll': True})
             with gr.Column(scale=1):
                 self._create_component('unified_status', 'textbox', {'label': "📊 Status Summary", 'lines': 2, 'interactive': False})
 
     def _create_extraction_tab(self):
+        """Builds the UI components for the 'Frame Extraction' tab."""
         gr.Markdown("### Step 1: Provide a Video Source")
         with gr.Row():
             with gr.Column(scale=2): self._create_component('source_input', 'textbox', {'label': "Video URL or Local Path", 'placeholder': "Enter YouTube URL or local video file path", 'info': "The application can download videos directly from YouTube or use a video file you have on your computer."})
@@ -4232,6 +5939,7 @@ class AppUI:
         self.components.update({'start_extraction_button': gr.Button("🚀 Start Extraction", variant="primary")})
 
     def _create_define_subject_tab(self):
+        """Builds the UI components for the 'Define Subject' tab."""
         with gr.Row():
             with gr.Column(scale=1):
                 gr.Markdown("### 🎯 Step 1: Choose Your Seeding Strategy")
@@ -4287,6 +5995,7 @@ class AppUI:
                     self.components['propagation_group'] = propagation_group
 
     def _create_scene_selection_tab(self):
+        """Builds the UI components for the 'Scene Selection' tab."""
         with gr.Column(scale=2, visible=False) as seeding_results_column:
             self.components['seeding_results_column'] = seeding_results_column
             gr.Markdown("""### 🎭 Step 2: Review & Refine Scene Selection
@@ -4329,6 +6038,7 @@ Review the automatically detected subjects and refine the selection if needed. E
             self._create_component('propagate_masks_button', 'button', {'value': '🔬 Propagate Masks on Kept Scenes', 'variant': 'primary', 'interactive': False})
 
     def _create_metrics_tab(self):
+        """Builds the UI components for the 'Metrics' tab."""
         gr.Markdown("### Step 4: Select Metrics to Compute")
         gr.Markdown("Choose which metrics to calculate during the analysis phase. More metrics provide more filtering options but may increase processing time.")
 
@@ -4354,9 +6064,11 @@ Review the automatically detected subjects and refine the selection if needed. E
 
 
     def _create_analysis_tab(self):
+        """Placeholder for a potential, more detailed analysis tab."""
         pass
 
     def _create_filtering_tab(self):
+        """Builds the UI components for the 'Filtering & Export' tab."""
         with gr.Row():
             with gr.Column(scale=1):
                 gr.Markdown("### 🎛️ Filter Controls")
@@ -4421,10 +6133,20 @@ Review the automatically detected subjects and refine the selection if needed. E
                             self._create_component('crop_padding_input', 'slider', {'label': "Padding %", 'value': self.config.export_options.crop_padding})
                         self._create_component('crop_ar_input', 'textbox', {'label': "Crop ARs", 'value': self.config.export_options.crop_ars, 'info': "Comma-separated list (e.g., 16:9, 1:1). The best-fitting AR for each subject's mask will be chosen automatically."})
 
-    def get_all_filter_keys(self):
+    def get_all_filter_keys(self) -> list[str]:
+        """Returns a list of all available metric keys for filtering."""
         return list(asdict(self.config.quality_weights).keys()) + ["quality_score", "face_sim", "mask_area_pct", "eyes_open", "yaw", "pitch"]
 
-    def get_metric_description(self, metric_name):
+    def get_metric_description(self, metric_name: str) -> str:
+        """
+        Provides a user-friendly description for a given metric name.
+
+        Args:
+            metric_name: The internal name of the metric.
+
+        Returns:
+            A string containing the description.
+        """
         descriptions = {
             "quality_score": "A weighted average of all other quality metrics, providing an overall 'goodness' score for the frame.",
             "niqe": "Natural Image Quality Evaluator. A no-reference, opinion-unaware quality score. Lower is generally better, but it's scaled here so higher is better (like other metrics). Tends to favor clean, natural-looking images.",
@@ -4442,6 +6164,7 @@ Review the automatically detected subjects and refine the selection if needed. E
         return descriptions.get(metric_name, "No description available.")
 
     def _create_event_handlers(self):
+        """Initializes all Gradio event handlers and state variables."""
         self.components.update({'extracted_video_path_state': gr.State(""), 'extracted_frames_dir_state': gr.State(""),
                                 'analysis_output_dir_state': gr.State(""), 'analysis_metadata_path_state': gr.State(""),
                                 'all_frames_data_state': gr.State([]), 'per_metric_values_state': gr.State({}),
@@ -4458,14 +6181,25 @@ Review the automatically detected subjects and refine the selection if needed. E
 
 
 class EnhancedAppUI(AppUI):
+    """Extends the base AppUI with an enhanced footer and progress handling."""
     def __init__(self, config: 'Config', logger: 'AppLogger', progress_queue: Queue,
                  cancel_event: threading.Event, thumbnail_manager: 'ThumbnailManager'):
+        """Initializes the EnhancedAppUI.
+
+        Args:
+            config: The main application configuration.
+            logger: The application logger.
+            progress_queue: A queue for sending progress updates to the UI.
+            cancel_event: An event to signal cancellation of long-running tasks.
+            thumbnail_manager: The manager for the thumbnail cache.
+        """
         super().__init__(config, logger, progress_queue, cancel_event, thumbnail_manager)
         self.app_logger = logger
         self.performance_metrics, self.log_filter_level, self.all_logs = {}, "INFO", []
         self.last_run_args = None
 
     def _build_footer(self):
+        """Builds the enhanced footer with more detailed logs and progress controls."""
         with gr.Row():
             with gr.Column(scale=3):
                 self._create_component('unified_log', 'textbox', {'label': '📋 Enhanced Processing Log', 'lines': 15, 'interactive': False, 'autoscroll': True, 'elem_classes': ['log-container']})
@@ -4481,10 +6215,45 @@ class EnhancedAppUI(AppUI):
                     self._create_component('pause_button', 'button', {'value': '⏸️ Pause', 'interactive': False})
                     self._create_component('cancel_button', 'button', {'value': '⏹️ Cancel', 'interactive': False})
 
-    def _format_metric_card(self, label: str, value: str) -> str: return f"""<div class="metric-card"><div class="metric-value">{value}</div><div class="metric-label">{label}</div></div>"""
-    def _format_status_display(self, op: str, prog: float, stage: str) -> str: return f"""<div style="margin: 10px 0;"><h4>{op}</h4><div style="background: #e0e0e0; border-radius: 4px; height: 20px; margin: 5px 0;"><div style="background: #007bff; height: 100%; width: {int(prog*100)}%; border-radius: 4px; transition: width 0.3s ease;"></div></div><div style="font-size: 12px; color: #666;">{stage} - {prog:.1%}</div></div>"""
+    def _format_metric_card(self, label: str, value: str) -> str:
+        """Formats a simple HTML card for displaying a metric.
 
-    def _run_task_with_progress(self, task_func, output_components, progress, *args):
+        Args:
+            label: The label for the metric.
+            value: The value of the metric.
+
+        Returns:
+            An HTML string representing the metric card.
+        """
+        return f"""<div class="metric-card"><div class="metric-value">{value}</div><div class="metric-label">{label}</div></div>"""
+    def _format_status_display(self, op: str, prog: float, stage: str) -> str:
+        """Formats an HTML block for displaying the current operation status.
+
+        Args:
+            op: The name of the current operation.
+            prog: The progress of the operation (0.0 to 1.0).
+            stage: The current stage of the operation.
+
+        Returns:
+            An HTML string representing the status display.
+        """
+        return f"""<div style="margin: 10px 0;"><h4>{op}</h4><div style="background: #e0e0e0; border-radius: 4px; height: 20px; margin: 5px 0;"><div style="background: #007bff; height: 100%; width: {int(prog*100)}%; border-radius: 4px; transition: width 0.3s ease;"></div></div><div style="font-size: 12px; color: #666;">{stage} - {prog:.1%}</div></div>"""
+
+    def _run_task_with_progress(self, task_func: Callable, output_components: list, progress: Callable, *args) -> Generator[dict, None, None]:
+        """A generic wrapper to run a pipeline function in a background thread.
+
+        This function handles starting the task, polling a queue for progress
+        updates, handling cancellation and pausing, and yielding UI updates.
+
+        Args:
+            task_func: The pipeline function to execute.
+            output_components: A list of Gradio components to update.
+            progress: The Gradio progress object.
+            *args: Arguments to pass to the task function.
+
+        Yields:
+            A dictionary of Gradio component updates.
+        """
         self.last_run_args = args
         self.cancel_event.clear()
         # Find the tracker instance passed in args
@@ -4566,7 +6335,17 @@ class EnhancedAppUI(AppUI):
         final_updates_with_comps[self.components['cancel_button']], final_updates_with_comps[self.components['pause_button']] = gr.update(interactive=False), gr.update(interactive=False)
         yield final_updates_with_comps
 
-    def _scale_xywh(self, xywh, src_hw, dst_hw):
+    def _scale_xywh(self, xywh: list[int], src_hw: tuple[int, int], dst_hw: tuple[int, int]) -> list[int]:
+        """Scales a bounding box from a source resolution to a destination resolution.
+
+        Args:
+            xywh: The source bounding box [x, y, width, height].
+            src_hw: A tuple of the source (height, width).
+            dst_hw: A tuple of the destination (height, width).
+
+        Returns:
+            The scaled bounding box.
+        """
         x, y, w, h = map(int, xywh)
         src_h, src_w = src_hw
         dst_h, dst_w = dst_hw
@@ -4576,6 +6355,23 @@ class EnhancedAppUI(AppUI):
                 int(round(w * sx)), int(round(h * sy))]
 
     def on_select_yolo_subject_wrapper(self, subject_id, scenes, shot_id, outdir, view, *ana_args):
+        """Wrapper for handling the selection of a YOLO subject in the UI.
+
+        This method is triggered when a user selects a different person from the
+        auto-detected list in the scene editor. It recomputes the preview and
+        updates the scene state accordingly.
+
+        Args:
+            subject_id: The ID of the selected subject.
+            scenes: The list of all scene dictionaries.
+            shot_id: The ID of the currently selected scene.
+            outdir: The output directory path.
+            view: The current scene gallery view.
+            *ana_args: Additional analysis arguments from the UI.
+
+        Returns:
+            A tuple of Gradio updates for the UI.
+        """
         try:
             if not subject_id:
                 return scenes, gr.update(), gr.update(), "Please select a Subject ID."
@@ -4633,6 +6429,7 @@ class EnhancedAppUI(AppUI):
             return scenes, gr.update(value=gallery_items), gr.update(value=index_map), f"Error: {e}"
 
     def _setup_bulk_scene_handlers(self):
+        """Sets up Gradio event handlers for the scene selection and editing tab."""
         c = self.components
 
         def _refresh_scene_gallery(scenes, view, output_dir):
@@ -4736,6 +6533,22 @@ class EnhancedAppUI(AppUI):
             comp.release(self.on_apply_bulk_scene_filters_extended, bulk_filter_inputs, bulk_action_outputs)
 
     def on_reset_scene_wrapper(self, scenes, shot_id, outdir, view, *ana_args):
+        """Resets a scene to its original, auto-detected state.
+
+        This method is triggered by the 'Reset Scene' button in the UI. It
+        clears any manual overrides, re-runs the initial seed selection,
+        and updates the UI.
+
+        Args:
+            scenes: The list of all scene dictionaries.
+            shot_id: The ID of the scene to reset.
+            outdir: The output directory path.
+            view: The current scene gallery view.
+            *ana_args: Additional analysis arguments from the UI.
+
+        Returns:
+            A tuple of Gradio updates for the UI.
+        """
         try:
             scene = next((s for s in scenes if s['shot_id'] == shot_id), None)
             if not scene:
@@ -4767,6 +6580,7 @@ class EnhancedAppUI(AppUI):
             return scenes, gr.update(value=gallery_items), gr.update(value=index_map), f"Error resetting scene: {e}"
 
     def _empty_selection_response(self, scenes, indexmap):
+        """Returns a standard set of UI updates for when no scene is selected."""
         status_text, button_update = get_scene_status_text(scenes)
         return (scenes, status_text, gr.update(), indexmap,
                 None, "Select a scene to edit.", "",
@@ -4776,6 +6590,24 @@ class EnhancedAppUI(AppUI):
                 button_update, {})
 
     def on_select_for_edit(self, scenes, view, indexmap, outputdir, yoloresultsstate, event: Optional[gr.EventData] = None, request: Optional[gr.Request] = None):
+        """Handles the selection of a scene in the gallery for editing.
+
+        This method is triggered when a user clicks on a scene thumbnail. It
+        populates the scene editor accordion with the data from the selected
+        scene.
+
+        Args:
+            scenes: The list of all scene dictionaries.
+            view: The current scene gallery view.
+            indexmap: A map from the gallery index to the scene list index.
+            outputdir: The output directory path.
+            yoloresultsstate: The state object for YOLO results.
+            event: The Gradio event data, containing the selection index.
+            request: The Gradio request object.
+
+        Returns:
+            A tuple of Gradio updates to populate the scene editor.
+        """
         sel_idx = getattr(event, "index", None) if event else None
         if sel_idx is None:
             return self._empty_selection_response(scenes, indexmap)
@@ -4832,11 +6664,31 @@ class EnhancedAppUI(AppUI):
         )
 
     def on_editor_toggle(self, scenes, selected_shotid, outputfolder, view, new_status):
+        """Toggles the status of a scene from the scene editor.
+
+        Args:
+            scenes: The list of all scene dictionaries.
+            selected_shotid: The ID of the currently selected scene.
+            outputfolder: The path to the output directory.
+            view: The current scene gallery view.
+            new_status: The new status to set for the scene.
+
+        Returns:
+            A tuple of Gradio updates for the UI.
+        """
         scenes, status_text, _, button_update = toggle_scene_status(scenes, selected_shotid, new_status, outputfolder, self.logger)
         items, index_map = build_scene_gallery_items(scenes, view, outputfolder)
         return scenes, status_text, gr.update(value=items), gr.update(value=index_map), button_update
 
     def _toggle_pause(self, tracker):
+        """Toggles the pause state of a running task.
+
+        Args:
+            tracker: The AdvancedProgressTracker instance for the task.
+
+        Returns:
+            The new label for the pause/resume button.
+        """
         if tracker.pause_event.is_set():
             tracker.pause_event.clear()
             return "⏸️ Paused"
@@ -4845,6 +6697,7 @@ class EnhancedAppUI(AppUI):
             return "▶️ Resume"
 
     def _create_event_handlers(self):
+        """Initializes all Gradio event handlers for the enhanced UI."""
         print("Creating event handlers...")
         super()._create_event_handlers()
         c = self.components
@@ -4884,7 +6737,16 @@ class EnhancedAppUI(AppUI):
             outputs=[c['unified_log']]
         )
 
-    def run_system_diagnostics(self):
+    def run_system_diagnostics(self) -> Generator[str, None, None]:
+        """Runs a series of checks to diagnose system and dependency issues.
+
+        This method checks Python version, PyTorch/CUDA, core dependencies,
+        file paths, and simulates the end-to-end processing pipeline to ensure
+        the application is correctly configured.
+
+        Yields:
+            A string containing the final diagnostics report.
+        """
         self.logger.info("Starting system diagnostics...")
         report = ["\n\n--- System Diagnostics Report ---"]
 
@@ -5080,7 +6942,20 @@ class EnhancedAppUI(AppUI):
         self.logger.info(final_report)
         yield final_report
 
-    def _create_pre_analysis_event(self, *args):
+    def _create_pre_analysis_event(self, *args: Any) -> 'PreAnalysisEvent':
+        """Creates a PreAnalysisEvent from UI arguments.
+
+        This helper function takes the raw values from the Gradio UI components,
+        maps them to the `PreAnalysisEvent` fields, and performs necessary
+        coercion and conditional logic based on the selected strategy.
+
+        Args:
+            *args: A list of arguments from the Gradio UI, corresponding to
+                   `self.ana_ui_map_keys`.
+
+        Returns:
+            A populated and validated PreAnalysisEvent instance.
+        """
         ui_args = dict(zip(self.ana_ui_map_keys, args))
         strategy = ui_args.get('primary_seed_strategy', '🧑‍🤝‍🧑 Find Prominent Person')
         if strategy == "👤 By Face": ui_args.update({'enable_face_filter': True, 'text_prompt': ""})
@@ -5100,6 +6975,18 @@ class EnhancedAppUI(AppUI):
         return PreAnalysisEvent(**ui_args)
 
     def _run_pipeline(self, pipeline_func, event, progress, success_callback=None, *args):
+        """Generic wrapper for running a pipeline function and handling its lifecycle.
+
+        Args:
+            pipeline_func: The pipeline function to execute.
+            event: The event data for the pipeline.
+            progress: The Gradio progress object.
+            success_callback: An optional function to call upon successful completion.
+            *args: Additional arguments for the pipeline function.
+
+        Yields:
+            A dictionary of Gradio UI updates.
+        """
         try:
             for result in pipeline_func(event, self.progress_queue, self.cancel_event, self.app_logger, self.config, self.thumbnail_manager, self.cuda_available, progress=progress):
                 if isinstance(result, dict):
@@ -5116,6 +7003,15 @@ class EnhancedAppUI(AppUI):
             yield {"unified_log": f"[ERROR] {pipeline_func.__name__} failed unexpectedly: {e}"}
 
     def run_extraction_wrapper(self, *args, progress=gr.Progress(track_tqdm=True)):
+        """Wrapper for the frame extraction pipeline.
+
+        Args:
+            *args: Arguments from the Gradio UI.
+            progress: The Gradio progress object.
+
+        Yields:
+            UI updates from the pipeline execution.
+        """
         ui_args = dict(zip(self.ext_ui_map_keys, args))
         ui_args['thumbnails_only'] = True
         
@@ -5126,6 +7022,14 @@ class EnhancedAppUI(AppUI):
         yield from self._run_pipeline(execute_extraction, event, progress, self._on_extraction_success)
 
     def _on_extraction_success(self, result):
+        """Callback for successful completion of the extraction pipeline.
+
+        Args:
+            result: The result dictionary from the pipeline.
+
+        Returns:
+            A dictionary of Gradio UI updates.
+        """
         return {
             "unified_log": result.get("log", "✅ Extraction completed successfully."),
             "extracted_video_path_state": result.get("video_path", "") or result.get("extracted_video_path_state", ""),
@@ -5133,6 +7037,14 @@ class EnhancedAppUI(AppUI):
         }
 
     def _on_pre_analysis_success(self, result):
+        """Callback for successful completion of the pre-analysis pipeline.
+
+        Args:
+            result: The result dictionary from the pipeline.
+
+        Returns:
+            A dictionary of Gradio UI updates.
+        """
         scenes = result.get('scenes', [])
         if scenes:
             save_scene_seeds(scenes, result['output_dir'], self.app_logger)
@@ -5157,26 +7069,71 @@ class EnhancedAppUI(AppUI):
         return updates
 
     def run_pre_analysis_wrapper(self, *args, progress=gr.Progress(track_tqdm=True)):
+        """Wrapper for the pre-analysis pipeline.
+
+        Args:
+            *args: Arguments from the Gradio UI.
+            progress: The Gradio progress object.
+
+        Yields:
+            UI updates from the pipeline execution.
+        """
         event = self._create_pre_analysis_event(*args)
         yield from self._run_pipeline(execute_pre_analysis, event, progress, self._on_pre_analysis_success)
 
     def run_propagation_wrapper(self, scenes, *args, progress=gr.Progress(track_tqdm=True)):
+        """Wrapper for the mask propagation pipeline.
+
+        Args:
+            scenes: The list of scene dictionaries.
+            *args: Arguments from the Gradio UI.
+            progress: The Gradio progress object.
+
+        Yields:
+            UI updates from the pipeline execution.
+        """
         event = PropagationEvent(output_folder=self._create_pre_analysis_event(*args).output_folder, video_path=self._create_pre_analysis_event(*args).video_path,
                                  scenes=scenes, analysis_params=self._create_pre_analysis_event(*args))
         yield from self._run_pipeline(execute_propagation, event, progress, self._on_propagation_success)
 
     def _on_propagation_success(self, result):
+        """Callback for successful completion of the propagation pipeline.
+
+        Args:
+            result: The result dictionary from the pipeline.
+
+        Returns:
+            A dictionary of Gradio UI updates.
+        """
         return {
             "unified_log": result.get("log", "✅ Propagation completed successfully."),
             "analysis_output_dir_state": result.get('output_dir', "")
         }
 
     def run_analysis_wrapper(self, scenes, *args, progress=gr.Progress(track_tqdm=True)):
+        """Wrapper for the analysis pipeline.
+
+        Args:
+            scenes: The list of scene dictionaries.
+            *args: Arguments from the Gradio UI.
+            progress: The Gradio progress object.
+
+        Yields:
+            UI updates from the pipeline execution.
+        """
         event = PropagationEvent(output_folder=self._create_pre_analysis_event(*args).output_folder, video_path=self._create_pre_analysis_event(*args).video_path,
                                  scenes=scenes, analysis_params=self._create_pre_analysis_event(*args))
         yield from self._run_pipeline(execute_analysis, event, progress, self._on_analysis_success)
 
     def _on_analysis_success(self, result):
+        """Callback for successful completion of the analysis pipeline.
+
+        Args:
+            result: The result dictionary from the pipeline.
+
+        Returns:
+            A dictionary of Gradio UI updates.
+        """
         return {
             "unified_log": result.get("log", "✅ Analysis completed successfully."),
             "analysis_output_dir_state": result.get('output_dir', ""),
@@ -5185,6 +7142,14 @@ class EnhancedAppUI(AppUI):
         }
 
     def run_session_load_wrapper(self, session_path):
+        """Wrapper for the session loading pipeline.
+
+        Args:
+            session_path: The path to the session directory to load.
+
+        Returns:
+            A dictionary of Gradio UI updates.
+        """
         try:
             final_result = {}
             for result in execute_session_load(self, SessionLoadEvent(session_path=session_path), self.app_logger, self.config, self.thumbnail_manager):
@@ -5195,7 +7160,14 @@ class EnhancedAppUI(AppUI):
         except Exception as e: raise
 
     def _fix_strategy_visibility(self, strategy: str) -> dict:
-        """Centralized handler for controlling UI visibility based on the selected seeding strategy."""
+        """Centralized handler for controlling UI visibility based on the selected seeding strategy.
+
+        Args:
+            strategy: The selected seeding strategy from the UI.
+
+        Returns:
+            A dictionary of Gradio updates to control component visibility.
+        """
         is_face = "By Face" in strategy or "Fallback" in strategy
         is_text = "By Text" in strategy or "Fallback" in strategy
         is_auto = "Prominent Person" in strategy
@@ -5207,6 +7179,7 @@ class EnhancedAppUI(AppUI):
         }
 
     def _setup_visibility_toggles(self):
+        """Sets up Gradio event handlers for dynamically showing/hiding UI components."""
         c = self.components
 
         def handle_source_change(path):
@@ -5255,6 +7228,7 @@ class EnhancedAppUI(AppUI):
 
 
     def _setup_pipeline_handlers(self):
+        """Sets up the Gradio event handlers for the main processing pipelines."""
         c = self.components
         all_outputs = [v for v in c.values() if hasattr(v, "_id")]
         
@@ -5281,6 +7255,7 @@ class EnhancedAppUI(AppUI):
             )
 
         def analysis_handler(scenes, *args, progress: gr.Progress):
+            """Handler for the analysis pipeline."""
             # Mirror the other handlers so Gradio gets consistent multi-output updates
             yield from self._run_task_with_progress(self.run_analysis_wrapper, all_outputs, progress, scenes, *args)
 
@@ -6133,6 +8108,12 @@ class EnhancedAppUI(AppUI):
 
 # --- COMPOSITION & MAIN ---
 def cleanup_models():
+    """Clears all global model caches and releases GPU memory.
+
+    This function is crucial for ensuring a clean state, especially during
+    application shutdown or when re-initializing models, to prevent memory
+    leaks and unexpected behavior from stale cached objects.
+    """
     global _yolo_model_cache, _dino_model_cache, _dam4sam_model_cache, _lpips_model_cache
     _yolo_model_cache.clear()
     _dino_model_cache = None
@@ -6144,7 +8125,14 @@ def cleanup_models():
 
 
 class CompositionRoot:
+    """Manages the application's object graph and lifecycle.
+
+    This class acts as a central point for creating and accessing the core
+    components of the application, such as configuration, logging, and the UI.
+    It follows the Composition Root pattern to handle dependency injection.
+    """
     def __init__(self):
+        """Initializes the CompositionRoot and creates core services."""
         self.config = Config(config_path="config.json")
         self.logger = AppLogger(config=self.config)
         self.thumbnail_manager = ThumbnailManager(self.logger, self.config)
@@ -6153,16 +8141,35 @@ class CompositionRoot:
         self.logger.set_progress_queue(self.progress_queue)
         self._app_ui = None
 
-    def get_app_ui(self):
+    def get_app_ui(self) -> 'EnhancedAppUI':
+        """Lazily initializes and returns the main application UI instance.
+
+        Returns:
+            The singleton instance of the `EnhancedAppUI`.
+        """
         if self._app_ui is None:
             self._app_ui = EnhancedAppUI(config=self.config, logger=self.logger, progress_queue=self.progress_queue,
                                          cancel_event=self.cancel_event, thumbnail_manager=self.get_thumbnail_manager())
         return self._app_ui
 
-    def get_config(self): return self.config
-    def get_logger(self): return self.logger
-    def get_thumbnail_manager(self): return self.thumbnail_manager
+    def get_config(self) -> 'Config':
+        """Returns the application configuration object."""
+        return self.config
+
+    def get_logger(self) -> 'AppLogger':
+        """Returns the application logger instance."""
+        return self.logger
+
+    def get_thumbnail_manager(self) -> 'ThumbnailManager':
+        """Returns the thumbnail manager instance."""
+        return self.thumbnail_manager
+
     def cleanup(self):
+        """Performs cleanup of all application resources.
+
+        This method should be called on application shutdown to ensure graceful
+        termination, clearing caches, and stopping background threads.
+        """
         cleanup_models()
         self.thumbnail_manager.clear_cache()
         if hasattr(self, '_app_ui'):
@@ -6171,6 +8178,11 @@ class CompositionRoot:
 
 
 def main():
+    """The main entry point for the application.
+
+    This function initializes the `CompositionRoot`, builds the Gradio UI,
+    launches the application, and handles cleanup on exit.
+    """
     try:
         composition = CompositionRoot()
         demo = composition.get_app_ui().build_ui()
