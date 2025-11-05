@@ -46,7 +46,7 @@ project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 sys.path.insert(0, str(project_root / 'DAM4SAM'))
 
-from collections import Counter, OrderedDict, defaultdict
+from collections import Counter, OrderedDict, defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, asdict, field, fields, is_dataclass
 from enum import Enum
@@ -4608,7 +4608,14 @@ class EnhancedAppUI(AppUI):
                 if tracker_instance:
                     tracker_instance.done_stage(final_label)
             else:
-                result_dict = future.result() or {}
+                result_gen = future.result()
+                if result_gen:
+                    try:
+                        result_dict = deque(result_gen, maxlen=1)[0]
+                    except IndexError:
+                        result_dict = {} # Generator was empty
+                else:
+                    result_dict = {}
                 final_msg, final_updates = result_dict.get("unified_log", final_msg), result_dict
         except Exception as e:
             self.app_logger.error("Task execution failed in UI runner", exc_info=True)
