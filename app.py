@@ -4034,9 +4034,7 @@ def build_scene_gallery_items(scenes: list[dict], view: str, output_dir: str):
     previews_dir = Path(output_dir) / "previews"
     previews_dir.mkdir(parents=True, exist_ok=True)
 
-    indexed_scenes = sorted(list(enumerate(scenes)), key=lambda x: x[1].get('shot_id', 0))
-
-    for original_index, s in indexed_scenes:
+    for i, s in enumerate(scenes):
         if not scene_matches_view(s, view):
             continue
 
@@ -4047,17 +4045,17 @@ def build_scene_gallery_items(scenes: list[dict], view: str, output_dir: str):
         if s.get('is_overridden', False):
             thumb_img_np = cv2.imread(img_path)
             if thumb_img_np is not None:
-                badged_thumb = create_scene_thumbnail_with_badge(thumb_img_np, original_index, True)
+                badged_thumb = create_scene_thumbnail_with_badge(thumb_img_np, i, True)
 
                 # Save the modified thumbnail to a new file
-                shot_id = s.get('shot_id', original_index)
+                shot_id = s.get('shot_id', i)
                 override_preview_path = previews_dir / f"scene_{shot_id:05d}_override.jpg"
                 cv2.imwrite(str(override_preview_path), badged_thumb)
                 img_path = str(override_preview_path)
 
         cap = scene_caption(s)
         items.append((img_path, cap))
-        index_map.append(original_index)
+        index_map.append(i)
 
     return items, index_map
 def create_scene_thumbnail_with_badge(scene_img, scene_index, is_overridden):
@@ -4237,11 +4235,13 @@ class AppUI:
         with gr.Row():
             with gr.Column(scale=1):
                 gr.Markdown("### 🎯 Step 1: Choose Your Seeding Strategy")
-                gr.Markdown(""" This step analyzes each scene to find the best frame and automatically detects people using YOLO.  The system will: 1. Find the highest quality frame in each scene 2. Detect all people in that frame   3. Select the best subject based on your chosen strategy 4. Generate a preview with the subject highlighted """)
+                gr.Markdown("""This step analyzes each scene to find the best frame and automatically detects people using YOLO. The system will: 1. Find the highest quality frame in each scene 2. Detect all people in that frame 3. Select the best subject based on your chosen strategy 4. Generate a preview with the subject highlighted""")
                 self._create_component('primary_seed_strategy_input', 'radio', {'choices': self.config.choices.primary_seed_strategy, 'value': self.config.ui_defaults.primary_seed_strategy, 'label': "Primary Best-Frame Selection Strategy", 'info': "Select the main method for identifying the subject in each scene. This initial identification is called the 'best-frame selection'."})
+
                 with gr.Group(visible="By Face" in self.config.ui_defaults.primary_seed_strategy or "Fallback" in self.config.ui_defaults.primary_seed_strategy) as face_seeding_group:
                     self.components['face_seeding_group'] = face_seeding_group
-                    gr.Markdown("#### 👤 Configure Face Selection"); gr.Markdown("This strategy prioritizes finding a specific person. Upload a clear, frontal photo of the person you want to track. The system will analyze each scene to find the frame where this person is most clearly visible and use it as the starting point (the 'best frame').")
+                    gr.Markdown("#### 👤 Configure Face Selection")
+                    gr.Markdown("This strategy prioritizes finding a specific person. Upload a clear, frontal photo of the person you want to track. The system will analyze each scene to find the frame where this person is most clearly visible and use it as the starting point (the 'best frame').")
                     with gr.Row():
                         self._create_component('face_ref_img_upload_input', 'file', {'label': "Upload Face Reference Image", 'type': "filepath"})
                         self._create_component('face_ref_image', 'image', {'label': "Reference Image", 'interactive': False})
@@ -4253,20 +4253,26 @@ class AppUI:
                         self.components['discovered_people_group'] = discovered_people_group
                         self._create_component('discovered_faces_gallery', 'gallery', {'label': "Discovered People", 'columns': 8, 'height': 'auto'})
                         self._create_component('identity_confidence_slider', 'slider', {'label': "Identity Confidence", 'minimum': 0.0, 'maximum': 1.0, 'step': 0.05, 'value': 0.5})
+
                 with gr.Group(visible="By Text" in self.config.ui_defaults.primary_seed_strategy or "Fallback" in self.config.ui_defaults.primary_seed_strategy) as text_seeding_group:
                     self.components['text_seeding_group'] = text_seeding_group
-                    gr.Markdown("#### 📝 Configure Text Selection"); gr.Markdown("This strategy uses a text description to find the subject. It's useful for identifying objects, or people described by their clothing or appearance when a reference photo isn't available.")
+                    gr.Markdown("#### 📝 Configure Text Selection")
+                    gr.Markdown("This strategy uses a text description to find the subject. It's useful for identifying objects, or people described by their clothing or appearance when a reference photo isn't available.")
                     with gr.Accordion("🔬 Advanced Detection (GroundingDINO)", open=True):
                         gr.Markdown("Use GroundingDINO for text-based object detection with custom prompts.")
                         self._create_component('text_prompt_input', 'textbox', {'label': "Text Prompt", 'placeholder': "e.g., 'a woman in a red dress'", 'value': self.config.ui_defaults.text_prompt, 'info': "Describe the main subject to find the best frame (e.g., 'player wearing number 10', 'person in the green shirt')."})
                         with gr.Row():
                             self._create_component('box_threshold', 'slider', {'minimum': 0.0, 'maximum': 1.0, 'value': self.config.grounding_dino_params.box_threshold, 'label': "Box Threshold"})
                             self._create_component('text_threshold', 'slider', {'minimum': 0.0, 'maximum': 1.0, 'value': self.config.grounding_dino_params.text_threshold, 'label': "Text Threshold"})
+
                 with gr.Group(visible="Prominent Person" in self.config.ui_defaults.primary_seed_strategy) as auto_seeding_group:
                     self.components['auto_seeding_group'] = auto_seeding_group
-                    gr.Markdown("#### 🧑‍🤝‍🧑 Configure Prominent Person Selection"); gr.Markdown("This is a simple, fully automatic mode. It uses an object detector (YOLO) to find all people in the scene and then selects one based on a simple rule, like who is largest or most central. It's fast but less precise, as it doesn't use face identity or text descriptions.")
+                    gr.Markdown("#### 🧑‍🤝‍🧑 Configure Prominent Person Selection")
+                    gr.Markdown("This is a simple, fully automatic mode. It uses an object detector (YOLO) to find all people in the scene and then selects one based on a simple rule, like who is largest or most central. It's fast but less precise, as it doesn't use face identity or text descriptions.")
                     self._create_component('best_frame_strategy_input', 'dropdown', {'choices': self.config.choices.seed_strategy, 'value': "Largest Person", 'label': "Selection Method", 'info': "'Largest' picks the person with the biggest bounding box. 'Center-most' picks the person closest to the center. 'Highest Confidence' selects the person with the highest detection confidence. 'Tallest Person' prefers subjects that are standing. 'Area x Confidence' balances size and confidence. 'Rule-of-Thirds' prefers subjects near the thirds lines. 'Edge-avoiding' avoids subjects near the frame's edge. 'Balanced' provides a good mix of area, confidence, and edge-avoidance. 'Best Face' selects the person with the highest quality face detection."})
+
                 self._create_component('person_radio', 'radio', {'label': "Select Person", 'choices': [], 'visible': False})
+
                 with gr.Accordion("Advanced Settings", open=False):
                     gr.Markdown("These settings control the underlying models and analysis parameters. Adjust them only if you understand their effect.")
                     self._create_component('pre_analysis_enabled_input', 'checkbox', {'label': 'Enable Pre-Analysis to find best frame', 'value': self.config.ui_defaults.pre_analysis_enabled, 'info': "Analyzes a subset of frames in each scene to automatically find the highest quality frame to use as the 'best frame' for masking. Highly recommended."})
@@ -4274,67 +4280,53 @@ class AppUI:
                     self._create_component('person_detector_model_input', 'dropdown', {'choices': self.config.choices.person_detector_model, 'value': self.config.ui_defaults.person_detector_model, 'label': "Person Detector Model", 'info': "YOLO Model for finding people. 'x' (large) is more accurate but slower; 's' (small) is much faster but may miss people."})
                     self._create_component('face_model_name_input', 'dropdown', {'choices': self.config.choices.face_model_name, 'value': self.config.ui_defaults.face_model_name, 'label': "Face Recognition Model", 'info': "InsightFace model for face matching. 'l' (large) is more accurate; 's' (small) is faster and uses less memory."})
                     self._create_component('dam4sam_model_name_input', 'dropdown', {'choices': self.config.choices.dam4sam_model_name, 'value': self.config.ui_defaults.dam4sam_model_name, 'label': "Mask Tracking Model", 'info': "The Segment Anything 2 model used for tracking the subject mask across frames. Larger models (L) are more robust but use more VRAM; smaller models (T) are faster."})
+
                 self._create_component('start_pre_analysis_button', 'button', {'value': '🌱 Find & Preview Best Frames', 'variant': 'primary'})
+
                 with gr.Group(visible=False) as propagation_group:
                     self.components['propagation_group'] = propagation_group
 
     def _create_scene_selection_tab(self):
         with gr.Column(scale=2, visible=False) as seeding_results_column:
-                self.components['seeding_results_column'] = seeding_results_column
-                gr.Markdown(""" ### 🎭 Step 2: Review & Refine Scene Selection Review the automatically detected subjects and refine the selection if needed. Each scene shows the best frame with the selected subject highlighted. """)
-                with gr.Accordion("Scene Filtering", open=True):
-                    self._create_component('scene_filter_status', 'markdown', {'value': 'No scenes loaded.'})
-                    with gr.Row():
-                        self._create_component('scene_mask_area_min_input', 'slider', {'label': "Min Best Frame Mask Area %", 'minimum': 0.0, 'maximum': 100.0, 'value': self.config.min_mask_area_pct, 'step': 0.1})
-                        self._create_component('scene_face_sim_min_input', 'slider', {'label': "Min Best Frame Face Sim", 'minimum': 0.0, 'maximum': 1.0, 'value': 0.0, 'step': 0.05, 'visible': False})
-                        self._create_component('scene_confidence_min_input', 'slider', {'label': "Min Best Frame Confidence", 'minimum': 0.0, 'maximum': 1.0, 'value': 0.0, 'step': 0.05})
+            self.components['seeding_results_column'] = seeding_results_column
+            gr.Markdown("""### 🎭 Step 2: Review & Refine Scene Selection
+Review the automatically detected subjects and refine the selection if needed. Each scene shows the best frame with the selected subject highlighted.""")
 
+            with gr.Accordion("Scene Filtering", open=True):
+                self._create_component('scene_filter_status', 'markdown', {'value': 'No scenes loaded.'})
+                with gr.Row():
+                    self._create_component('scene_mask_area_min_input', 'slider', {'label': "Min Best Frame Mask Area %", 'minimum': 0.0, 'maximum': 100.0, 'value': self.config.min_mask_area_pct, 'step': 0.1})
+                    self._create_component('scene_face_sim_min_input', 'slider', {'label': "Min Best Frame Face Sim", 'minimum': 0.0, 'maximum': 1.0, 'value': 0.0, 'step': 0.05, 'visible': False})
+                    self._create_component('scene_confidence_min_input', 'slider', {'label': "Min Best Frame Confidence", 'minimum': 0.0, 'maximum': 1.0, 'value': 0.0, 'step': 0.05})
 
-                with gr.Accordion("Scene Gallery", open=True):
-                    self._create_component(
-                        'scene_gallery_view_toggle',
-                        'radio',
-                        {
-                            'label': "Show",
-                            'choices': ["Kept", "Rejected", "All"],
-                            'value': "Kept"
-                        }
-                    )
-                    # A gallery to visualize scenes by status
-                    self.components['scene_gallery'] = gr.Gallery(
-                        label="Scenes",
-                        columns=[99999],
-                        rows=1,
-                        height=560,
-                        show_label=True,
-                        allow_preview=True,
-                        container=True
-                    )
-                with gr.Accordion("Scene Editor", open=False, elem_classes="scene-editor") as sceneeditoraccordion:
-                    self.components["sceneeditoraccordion"] = sceneeditoraccordion
-                    self._create_component("sceneeditorstatusmd", "markdown", {"value": "Select a scene to edit."})
+            with gr.Accordion("Scene Gallery", open=True):
+                self._create_component('scene_gallery_view_toggle', 'radio', {'label': "Show", 'choices': ["Kept", "Rejected", "All"], 'value': "Kept"})
+                self.components['scene_gallery'] = gr.Gallery(label="Scenes", columns=[99999], rows=1, height=560, show_label=True, allow_preview=True, container=True)
 
-                    # YOLO controls are now the primary method
-                    with gr.Group() as yolo_seed_group:
-                        self.components['yolo_seed_group'] = yolo_seed_group
-                        with gr.Row():
-                            self._create_component('scene_editor_yolo_subject_id', 'radio', {'label': "Subject ID", 'info': "Select the auto-detected subject to use for seeding.", 'interactive': True})
-                        with gr.Column():
-                            with gr.Accordion("Advanced Seeding (optional)", open=False):
-                                gr.Markdown("Use a text prompt for seeding. This will override the YOLO detection above.")
-                                self._create_component("sceneeditorpromptinput", "textbox", {"label": "DINO Text Prompt", "info": "e.g., 'person in a red shirt'"})
-                                info_box = "Confidence for detecting an object's bounding box. Higher = fewer, more confident detections."
-                                self._create_component("sceneeditorboxthreshinput", "slider", {"label": "Box Thresh", "minimum": 0.0, "maximum": 1.0, "step": 0.05, "info": info_box, "value": self.config.grounding_dino_params.box_threshold})
-                                info_text = "Confidence for matching the prompt to an object. Higher = stricter text match."
-                                self._create_component("sceneeditortextthreshinput", "slider", {"label": "Text Thresh", "minimum": 0.0, "maximum": 1.0, "step": 0.05, "info": info_text, "value": self.config.grounding_dino_params.text_threshold})
-                    with gr.Row():
-                        self._create_component("scenerecomputebutton", "button", {"value": "▶️Recompute Preview"})
-                        self._create_component("sceneincludebutton", "button", {"value": "✅keep scene"})
-                        self._create_component("sceneexcludebutton", "button", {"value": "❌reject scene"})
-                        self._create_component("sceneresetbutton", "button", {"value": "🔄 Reset Scene"})
+            with gr.Accordion("Scene Editor", open=False, elem_classes="scene-editor") as sceneeditoraccordion:
+                self.components["sceneeditoraccordion"] = sceneeditoraccordion
+                self._create_component("sceneeditorstatusmd", "markdown", {"value": "Select a scene to edit."})
 
-                gr.Markdown("---"); gr.Markdown("### 🔬 Step 3: Propagate Masks"); gr.Markdown("Once you are satisfied with the seeds, propagate the masks to the rest of the frames in the selected scenes.")
-                self._create_component('propagate_masks_button', 'button', {'value': '🔬 Propagate Masks on Kept Scenes', 'variant': 'primary', 'interactive': False})
+                with gr.Group() as yolo_seed_group:
+                    self.components['yolo_seed_group'] = yolo_seed_group
+                    self._create_component('scene_editor_yolo_subject_id', 'radio', {'label': "Detected Subjects", 'info': "Select the auto-detected subject to use for seeding.", 'interactive': True, 'choices': [], 'visible': False})
+
+                with gr.Accordion("Advanced Seeding (optional)", open=False):
+                    gr.Markdown("Use a text prompt for seeding. This will override the YOLO detection above.")
+                    self._create_component("sceneeditorpromptinput", "textbox", {"label": "DINO Text Prompt", "info": "e.g., 'person in a red shirt'"})
+                    info_box = "Confidence for detecting an object's bounding box. Higher = fewer, more confident detections."
+                    self._create_component("sceneeditorboxthreshinput", "slider", {"label": "Box Thresh", "minimum": 0.0, "maximum": 1.0, "step": 0.05, "info": info_box, "value": self.config.grounding_dino_params.box_threshold})
+                    info_text = "Confidence for matching the prompt to an object. Higher = stricter text match."
+                    self._create_component("sceneeditortextthreshinput", "slider", {"label": "Text Thresh", "minimum": 0.0, "maximum": 1.0, "step": 0.05, "info": info_text, "value": self.config.grounding_dino_params.text_threshold})
+
+                with gr.Row():
+                    self._create_component("scenerecomputebutton", "button", {"value": "▶️ Recompute Preview"})
+                    self._create_component("sceneincludebutton", "button", {"value": "✅ Keep Scene"})
+                    self._create_component("sceneexcludebutton", "button", {"value": "❌ Reject Scene"})
+                    self._create_component("sceneresetbutton", "button", {"value": "🔄 Reset Scene"})
+
+            gr.Markdown("---"); gr.Markdown("### 🔬 Step 3: Propagate Masks"); gr.Markdown("Once you are satisfied with the seeds, propagate the masks to the rest of the frames in the selected scenes.")
+            self._create_component('propagate_masks_button', 'button', {'value': '🔬 Propagate Masks on Kept Scenes', 'variant': 'primary', 'interactive': False})
 
     def _create_metrics_tab(self):
         gr.Markdown("### Step 4: Select Metrics to Compute")
@@ -4641,17 +4633,107 @@ class EnhancedAppUI(AppUI):
             return scenes, gr.update(value=gallery_items), gr.update(value=index_map), f"Error: {e}"
 
     def _setup_bulk_scene_handlers(self):
-        super()._setup_bulk_scene_handlers()
         c = self.components
+
+        def _refresh_scene_gallery(scenes, view, output_dir):
+            items, index_map = build_scene_gallery_items(scenes, view, output_dir)
+            return gr.update(value=items), index_map
+
+        # On view toggle change
+        c['scene_gallery_view_toggle'].change(
+            _refresh_scene_gallery,
+            [c['scenes_state'], c['scene_gallery_view_toggle'], c['extracted_frames_dir_state']],
+            [c['scene_gallery'], c['scene_gallery_index_map_state']]
+        )
 
         c['scene_gallery'].select(
             self.on_select_for_edit,
             inputs=[c['scenes_state'], c['scene_gallery_view_toggle'], c['scene_gallery_index_map_state'], c['extracted_frames_dir_state'], c['yolo_results_state']],
-            outputs=[c['scenes_state'], c['scene_filter_status'], c['scene_gallery'], c['scene_gallery_index_map_state'], c['selected_scene_id_state'],
-                     c['sceneeditorstatusmd'], c['sceneeditorboxthreshinput'], c['sceneeditortextthreshinput'],
-                     c['sceneeditoraccordion'], c['gallery_image_state'], c['gallery_shape_state'], c['scene_editor_yolo_subject_id'],
-                     c['propagate_masks_button'], c['yolo_results_state']],
-)
+            outputs=[
+                c['scenes_state'], c['scene_filter_status'], c['scene_gallery'], c['scene_gallery_index_map_state'],
+                c['selected_scene_id_state'],
+                c['sceneeditorstatusmd'], c['sceneeditorpromptinput'], c['sceneeditorboxthreshinput'], c['sceneeditortextthreshinput'],
+                c['sceneeditoraccordion'],
+                c['gallery_image_state'],
+                c['gallery_shape_state'],
+                c['scene_editor_yolo_subject_id'],
+                c['propagate_masks_button'],
+                c['yolo_results_state'],
+            ]
+        )
+
+        # Wire recompute to use current editor controls and state
+        c['scenerecomputebutton'].click(
+            fn=lambda scenes, shot_id, outdir, view, txt, bth, tth, subject_id, *ana_args:
+                _wire_recompute_handler(
+                    self.config, self.app_logger, self.thumbnail_manager, scenes, shot_id, outdir, txt, bth, tth, view,
+                    self.ana_ui_map_keys, ana_args, self.cuda_available
+                ) if (txt and txt.strip()) else self.on_select_yolo_subject_wrapper(
+                    subject_id, scenes, shot_id, outdir, view, *ana_args
+                ),
+            inputs=[
+                c['scenes_state'],
+                c['selected_scene_id_state'],
+                c['analysis_output_dir_state'],
+                c['scene_gallery_view_toggle'],
+                c['sceneeditorpromptinput'], c['sceneeditorboxthreshinput'], c['sceneeditortextthreshinput'],
+                c['scene_editor_yolo_subject_id'],
+                *self.ana_input_components
+            ],
+            outputs=[
+                c['scenes_state'],
+                c['scene_gallery'],
+                c['scene_gallery_index_map_state'],
+                c['sceneeditorstatusmd'],
+            ],
+        )
+
+        c['sceneresetbutton'].click(
+            self.on_reset_scene_wrapper,
+            inputs=[
+                c['scenes_state'],
+                c['selected_scene_id_state'],
+                c['analysis_output_dir_state'],
+                c['scene_gallery_view_toggle']
+            ] + self.ana_input_components,
+            outputs=[
+                c['scenes_state'],
+                c['scene_gallery'],
+                c['scene_gallery_index_map_state'],
+                c['sceneeditorstatusmd']
+            ]
+        )
+
+        c['sceneincludebutton'].click(
+            lambda s, sid, out, v: self.on_editor_toggle(s, sid, out, v, "included"),
+            inputs=[c['scenes_state'], c['selected_scene_id_state'], c['extracted_frames_dir_state'], c['scene_gallery_view_toggle']],
+            outputs=[c['scenes_state'], c['scene_filter_status'], c['scene_gallery'], c['scene_gallery_index_map_state'], c['propagate_masks_button']],
+        )
+        c['sceneexcludebutton'].click(
+            lambda s, sid, out, v: self.on_editor_toggle(s, sid, out, v, "excluded"),
+            inputs=[c['scenes_state'], c['selected_scene_id_state'], c['extracted_frames_dir_state'], c['scene_gallery_view_toggle']],
+            outputs=[c['scenes_state'], c['scene_filter_status'], c['scene_gallery'], c['scene_gallery_index_map_state'], c['propagate_masks_button']],
+        )
+
+        def init_scene_gallery(scenes, view, outdir):
+            if not scenes:
+                return gr.update(value=[]), []
+            gallery_items, index_map = build_scene_gallery_items(scenes, view, outdir)
+            return gr.update(value=gallery_items), index_map
+
+        c['scenes_state'].change(
+            init_scene_gallery,
+            [c['scenes_state'], c['scene_gallery_view_toggle'], c['extracted_frames_dir_state']],
+            [c['scene_gallery'], c['scene_gallery_index_map_state']]
+        )
+
+        bulk_action_outputs = [c['scenes_state'], c['scene_filter_status'], c['scene_gallery'], c['scene_gallery_index_map_state'], c['propagate_masks_button']]
+
+        bulk_filter_inputs = [c['scenes_state'], c['scene_mask_area_min_input'], c['scene_face_sim_min_input'],
+                              c['scene_confidence_min_input'], c['enable_face_filter_input'], c['extracted_frames_dir_state'], c['scene_gallery_view_toggle']]
+
+        for comp in [c['scene_mask_area_min_input'], c['scene_face_sim_min_input'], c['scene_confidence_min_input']]:
+            comp.release(self.on_apply_bulk_scene_filters_extended, bulk_filter_inputs, bulk_action_outputs)
 
     def on_reset_scene_wrapper(self, scenes, shot_id, outdir, view, *ana_args):
         try:
@@ -4684,24 +4766,30 @@ class EnhancedAppUI(AppUI):
             gallery_items, index_map = build_scene_gallery_items(scenes, view, outdir)
             return scenes, gr.update(value=gallery_items), gr.update(value=index_map), f"Error resetting scene: {e}"
 
+    def _empty_selection_response(self, scenes, indexmap):
+        status_text, button_update = get_scene_status_text(scenes)
+        return (scenes, status_text, gr.update(), indexmap,
+                None, "Select a scene to edit.", "",
+                self.config.grounding_dino_params.box_threshold,
+                self.config.grounding_dino_params.text_threshold,
+                gr.update(open=False), None, None, gr.update(visible=False, choices=[], value=None),
+                button_update, {})
+
     def on_select_for_edit(self, scenes, view, indexmap, outputdir, yoloresultsstate, event: Optional[gr.EventData] = None, request: Optional[gr.Request] = None):
         sel_idx = getattr(event, "index", None) if event else None
         if sel_idx is None:
-            return scenes, gr.update(), gr.update(), indexmap, None, gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), None, None, gr.update(visible=False), gr.update(), yoloresultsstate
+            return self._empty_selection_response(scenes, indexmap)
 
         status_text, button_update = get_scene_status_text(scenes)
         # validate selection
-        if not scenes or not indexmap:
-            return (scenes, status_text, gr.update(), indexmap,
-                    None, gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), None, None, gr.update(visible=False), button_update, yoloresultsstate)
-        if not (0 <= sel_idx < len(indexmap)):
-            return (scenes, status_text, gr.update(), indexmap,
-                    None, gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), None, None, gr.update(visible=False), button_update, yoloresultsstate)
+        if not scenes or not indexmap or not (0 <= sel_idx < len(indexmap)):
+            self.logger.error(f"Invalid gallery index: {sel_idx}, max: {len(indexmap)-1}")
+            return self._empty_selection_response(scenes, indexmap)
 
         scene_idx_in_state = indexmap[sel_idx]
         if not (0 <= scene_idx_in_state < len(scenes)):
-            return (scenes, status_text, gr.update(), indexmap,
-                    None, gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), None, None, gr.update(visible=False), button_update, yoloresultsstate)
+            self.logger.error(f"Invalid scene index from map: {scene_idx_in_state}, max: {len(scenes)-1}")
+            return self._empty_selection_response(scenes, indexmap)
 
         scene = scenes[scene_idx_in_state]
         cfg = scene.get("seed_config") or {}
@@ -5106,6 +5194,18 @@ class EnhancedAppUI(AppUI):
             return final_result
         except Exception as e: raise
 
+    def _fix_strategy_visibility(self, strategy: str) -> dict:
+        """Centralized handler for controlling UI visibility based on the selected seeding strategy."""
+        is_face = "By Face" in strategy or "Fallback" in strategy
+        is_text = "By Text" in strategy or "Fallback" in strategy
+        is_auto = "Prominent Person" in strategy
+        return {
+            self.components['face_seeding_group']: gr.update(visible=is_face),
+            self.components['text_seeding_group']: gr.update(visible=is_text),
+            self.components['auto_seeding_group']: gr.update(visible=is_auto),
+            self.components['enable_face_filter_input']: gr.update(value=is_face, visible=is_face),
+        }
+
     def _setup_visibility_toggles(self):
         c = self.components
 
@@ -5143,21 +5243,13 @@ class EnhancedAppUI(AppUI):
         )
 
         c['primary_seed_strategy_input'].change(
-            lambda s: {
-                c['face_seeding_group']: gr.update(visible="By Face" in s or "Fallback" in s),
-                c['text_seeding_group']: gr.update(visible="By Text" in s or "Fallback" in s),
-                c['auto_seeding_group']: gr.update(visible="Prominent Person" in s),
-                c['enable_face_filter_input']: gr.update(
-                    value="By Face" in s or "Fallback" in s,
-                    visible="By Face" in s or "Fallback" in s
-                )
-            },
-            [c['primary_seed_strategy_input']],
-            [
+            self._fix_strategy_visibility,
+            inputs=[c['primary_seed_strategy_input']],
+            outputs=[
                 c['face_seeding_group'],
                 c['text_seeding_group'],
                 c['auto_seeding_group'],
-                c['enable_face_filter_input']
+                c['enable_face_filter_input'],
             ]
         )
 
