@@ -1352,20 +1352,7 @@ class ThumbnailManager:
         if len(self.cache) > self.max_size * self.config.cache.cleanup_threshold:
             self._cleanup_old_entries()
 
-        if Image is None:
-            self.logger.warning("Pillow not available; attempting to load with OpenCV", extra={'path': str(thumb_path)})
-            if cv2 and thumb_path.suffix.lower() in {'.jpg','.jpeg','.png','.webp'}:
-                try:
-                    thumb_img_bgr = cv2.imread(str(thumb_path))
-                    if thumb_img_bgr is not None:
-                        thumb_img = cv2.cvtColor(thumb_img_bgr, cv2.COLOR_BGR2RGB)
-                        self.cache[thumb_path] = thumb_img
-                        while len(self.cache) > self.max_size:
-                            self.cache.popitem(last=False)
-                        return thumb_img
-                except Exception as e:
-                    self.logger.error("OpenCV failed to load thumbnail", extra={'path': str(thumb_path), 'error': e})
-            return None
+
 
         try:
             with Image.open(thumb_path) as pil_thumb:
@@ -1451,8 +1438,7 @@ def download_model(url, dest_path, description, logger, error_handler: ErrorHand
 thread_local = threading.local()
 
 def get_face_landmarker(model_path: str, logger: 'AppLogger'):
-    if not vision:
-        raise ImportError("MediaPipe vision components are not installed.")
+
 
     # Check if a landmarker instance already exists for this thread
     if hasattr(thread_local, 'face_landmarker_instance'):
@@ -1578,7 +1564,7 @@ def get_grounding_dino_model(gdino_config_path: str, gdino_checkpoint_path: str,
     """Load GroundingDINO model only when needed."""
     global _dino_model_cache
     if _dino_model_cache is None:
-        if not gdino_load_model: raise ImportError("GroundingDINO is not installed.")
+
         if logger is None:
             logger = AppLogger(config=Config())
         logger.info("Loading GroundingDINO model (first use)...", component="grounding")
@@ -1611,7 +1597,7 @@ def get_grounding_dino_model(gdino_config_path: str, gdino_checkpoint_path: str,
     return _dino_model_cache
 
 def predict_grounding_dino(model, image_tensor, caption, box_threshold, text_threshold, device="cuda"):
-    if not gdino_predict: raise ImportError("GroundingDINO is not installed.")
+
     with torch.no_grad(), torch.amp.autocast('cuda', enabled=(device == 'cuda')):
         return gdino_predict(model=model, image=image_tensor.to(device), caption=caption,
                              box_threshold=float(box_threshold), text_threshold=float(text_threshold))
@@ -1623,11 +1609,11 @@ def get_dam4sam_tracker(model_name: str, models_path: str, model_urls_tuple: tup
     selected_name = (model_name or Config().ui_defaults.dam4sam_model_name or next(iter(model_urls.keys())))
 
     if selected_name not in _dam4sam_model_cache:
-        if not DAM4SAMTracker or not dam_utils: raise ImportError("DAM4SAM is not installed.")
+
         logger.info(f"Loading DAM4SAM model: {selected_name} (first use)", component="dam4sam")
         error_handler = ErrorHandler(logger, *retry_params)
 
-        if not (DAM4SAMTracker and torch and torch.cuda.is_available()):
+        if not (torch and torch.cuda.is_available()):
             logger.error("DAM4SAM requires CUDA but it's not available.")
             _dam4sam_model_cache[selected_name] = "failed"
         else:
@@ -1738,8 +1724,7 @@ class VideoManager:
 
     def prepare_video(self, logger: 'AppLogger') -> str:
         if self.is_youtube:
-            if not ytdlp:
-                raise ImportError("yt-dlp not installed.")
+
             logger.info("Downloading video", component="video", user_context={'source': self.source_path})
             
             tmpl = self.config.youtube_dl.output_template
@@ -1780,7 +1765,7 @@ class VideoManager:
         return info
 
 def run_scene_detection(video_path, output_dir, logger=None):
-    if not detect: raise ImportError("scenedetect is not installed.")
+
     logger = logger or AppLogger(config=Config())
     logger.info("Detecting scenes...", component="video")
     try:
@@ -1820,10 +1805,7 @@ def make_photo_thumbs(image_paths: list[Path], out_dir: Path, params: AnalysisPa
             out_name = f"frame_{i:06d}.webp"
             out_path = thumbs_dir / out_name
 
-            if Image is not None:
-                Image.fromarray(rgb).save(out_path, format="WEBP", quality=cfg.ffmpeg.thumbnail_quality)
-            else:
-                cv2.imwrite(str(out_path), cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
+            Image.fromarray(rgb).save(out_path, format="WEBP", quality=cfg.ffmpeg.thumbnail_quality)
 
             frame_map[i] = out_name
             image_manifest[i] = str(img_path.resolve())
@@ -1986,7 +1968,7 @@ def render_mask_overlay(frame_rgb: np.ndarray, mask_gray: np.ndarray, alpha: flo
     return np.where(m, blended, frame_rgb)
 
 def rgb_to_pil(image_rgb: np.ndarray) -> Image.Image:
-    if not Image: raise ImportError("Pillow is not installed.")
+
     return Image.fromarray(image_rgb)
 
 def create_frame_map(output_dir: Path, logger: 'AppLogger', ext: str = ".webp"):
