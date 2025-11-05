@@ -162,7 +162,7 @@ class Config:
             "sam21pp-T": "7402e0d864fa82708a20fbd15bc84245c2f26dff0eb43a4b5b93452deb34be69",
             "sam21pp-S": "95949964d4e548409021d47b22712d5f1abf2564cc0c3c765ba599a24ac7dce3",
             "sam21pp-B+": "a2345aede8715ab1d5d31b4a509fb160c5a4af1970f199d9054ccfb746c004c5",
-            "sam21pp-L": "8b36b71d5cafc83a0975d14d0afae81c3915804e12cc896b0665eaabcc445d56",
+            "sam21pp-L": "2647878d5dfa5098f2f8649825738a9345572bae2d4350a2468587ece47dd318",
         })
         yolo: str = "https://huggingface.co/Ultralytics/YOLO11/resolve/main/"
 
