@@ -62,78 +62,38 @@ _dino_model_cache = None
 _dam4sam_model_cache = {}
 _lpips_model_cache = {}
 
-try:
-    from DAM4SAM.dam4sam_tracker import DAM4SAMTracker
-    from DAM4SAM.utils import utils as dam_utils
-except ImportError:
-    DAM4SAMTracker = None
-    dam_utils = None
+from DAM4SAM.dam4sam_tracker import DAM4SAMTracker
+from DAM4SAM.utils import utils as dam_utils
 
 
-try:
-    from groundingdino.util.inference import (
+from groundingdino.util.inference import (
         load_model as gdino_load_model,
         predict as gdino_predict
     )
-except ImportError:
-    gdino_load_model = None
-    gdino_predict = None
 
 
-try:
-    import mediapipe as mp
-    from mediapipe.tasks import python
-    from mediapipe.tasks.python import vision
-except ImportError:
-    mp = None
-    python = None
-    vision = None
+import mediapipe as mp
+from mediapipe.tasks import python
+from mediapipe.tasks.python import vision
 
-try:
-    from numba import njit
-except ImportError:
-    def njit(func):
-        return func
+from numba import njit
 
-try:
-    import matplotlib.pyplot as plt
-    import matplotlib.ticker as mticker
-except ImportError:
-    plt = None
-    mticker = None
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 
 
-try:
-    from PIL import Image
-except ImportError:
-    Image = None
+from PIL import Image
 
-try:
-    import pyiqa
-except ImportError:
-    pyiqa = None
+import pyiqa
 
-try:
-    from scenedetect import detect, ContentDetector
-except ImportError:
-    detect = None
-    ContentDetector = None
+from scenedetect import detect, ContentDetector
 
-try:
-    from sklearn.cluster import DBSCAN
-except ImportError:
-    DBSCAN = None
+from sklearn.cluster import DBSCAN
 
 
-try:
-    import yt_dlp as ytdlp
-except ImportError:
-    ytdlp = None
+import yt_dlp as ytdlp
 
-try:
-    from ultralytics import YOLO
-except ImportError:
-    YOLO = None
+from ultralytics import YOLO
 # --- CONFIGURATION ---
 @dataclass
 class Config:
@@ -149,7 +109,7 @@ class Config:
     class Models:
         user_agent: str = "Mozilla/5.0"
         grounding_dino: str = "https://github.com/IDEA-Research/GroundingDINO/releases/download/v0.1.0-alpha/groundingdino_swint_ogc.pth"
-        grounding_dino_sha256: str = "632890e5af9241ca1b7f1f946b5a9f8c505651504443df4e2593265745a18f13"
+        grounding_dino_sha256: str = "3b3ca2563c77c69f651d7bd133e97139c186df06231157a64c507099c52bc799"
         face_landmarker: str = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
         face_landmarker_sha256: Optional[str] = None # No official hash found
         dam4sam: Dict[str, str] = field(default_factory=lambda: {
@@ -160,7 +120,7 @@ class Config:
         })
         dam4sam_sha256: Dict[str, str] = field(default_factory=lambda: {
             "sam21pp-T": "7402e0d864fa82708a20fbd15bc84245c2f26dff0eb43a4b5b93452deb34be69",
-            "sam21pp-S": "95949964d4e548409021d47b22712d5f1abf2564cc0c3c765ba599a24ac7dce3",
+            "sam21pp-S": "6d1aa6f30de5c92224f8172114de081d104bbd23dd9dc5c58996f0cad5dc4d38",
             "sam21pp-B+": "a2345aede8715ab1d5d31b4a509fb160c5a4af1970f199d9054ccfb746c004c5",
             "sam21pp-L": "2647878d5dfa5098f2f8649825738a9345572bae2d4350a2468587ece47dd318",
         })
