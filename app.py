@@ -47,9 +47,10 @@ sys.path.insert(0, str(project_root / 'DAM4SAM'))
 
 from collections import Counter, OrderedDict, defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, asdict, field, fields, is_dataclass
 from enum import Enum
 from functools import lru_cache
+from pydantic import BaseModel, Field, model_validator, field_validator, ConfigDict
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from queue import Empty, Queue
 from typing import Any, Callable, Dict, Generator, List, Optional, Union
 
@@ -93,436 +94,246 @@ from sklearn.cluster import DBSCAN
 import yt_dlp as ytdlp
 
 from ultralytics import YOLO
+
 # --- CONFIGURATION ---
-@dataclass
-class Config:
-    """Manages the application's configuration settings.
-
-    This class centralizes all configuration parameters, loading them from a
-    JSON file and allowing overrides from environment variables. It's structured
-    with nested dataclasses for better organization.
-
-    Attributes:
-        paths: Configuration for file system paths.
-        models: Configuration for model URLs, checksums, and endpoints.
-        youtube_dl: Settings for yt-dlp.
-        ffmpeg: Parameters for FFmpeg operations.
-        cache: Configuration for in-memory caches.
-        retry: Default settings for retry logic.
-        quality_scaling: Factors for normalizing quality metrics.
-        masking: Parameters for image mask post-processing.
-        ui_defaults: Default values for Gradio UI components.
-        filter_defaults: Default settings for the filtering tab.
-        quality_weights: Weights for calculating the overall quality score.
-        choices: Predefined lists of choices for UI dropdowns and radios.
-        grounding_dino_params: Parameters for the GroundingDINO model.
-        person_detector: Configuration for the YOLO person detector model.
-        logging: Settings for the application logger.
-        sharpness_base_scale: A scaling factor for the sharpness metric.
-        edge_strength_base_scale: A scaling factor for the edge strength metric.
-        min_mask_area_pct: Minimum percentage of image area for a mask to be considered valid.
-        monitoring: Thresholds for system resource monitoring.
-        export_options: Settings for the final media export.
-        gradio_defaults: Default values specific to Gradio UI behavior.
-        seeding_defaults: Parameters for the seed selection logic.
-        utility_defaults: Miscellaneous utility parameters.
-        post_processing: Configuration for post-processing steps.
-        visualization: Settings for visual elements like bounding boxes.
-        analysis: Parameters for the analysis pipeline.
-        model_defaults: Default settings for various models.
-        config_path: The path to the JSON configuration file.
+def json_config_settings_source() -> Dict[str, Any]:
     """
-    @dataclass
-    class Paths:
-        """Configuration for file system paths.
+    A simple settings source that loads variables from a JSON file.
+    """
+    try:
+        config_path = "config.json" # Hardcoded as in the original logic
+        if Path(config_path).is_file():
+            with open(config_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        pass # Ignore if file not found or is invalid
+    return {}
+class Paths(BaseModel):
+    logs: str = "logs"
+    models: str = "models"
+    downloads: str = "downloads"
+    grounding_dino_config: str = "GroundingDINO_SwinT_OGC.py"
+    grounding_dino_checkpoint: str = "models/groundingdino_swint_ogc.pth"
 
-        Attributes:
-            logs: Directory to store log files.
-            models: Directory to store downloaded AI models.
-            downloads: Directory for downloaded videos and temporary files.
-            grounding_dino_config: Path to the GroundingDINO model config file.
-            grounding_dino_checkpoint: Path to the GroundingDINO model checkpoint file.
-        """
-        logs: str = "logs"
-        models: str = "models"
-        downloads: str = "downloads"
-        grounding_dino_config: str = "GroundingDINO_SwinT_OGC.py" # Will be resolved via importlib.resources
-        grounding_dino_checkpoint: str = "models/groundingdino_swint_ogc.pth"
+class Models(BaseModel):
+    user_agent: str = "Mozilla/5.0"
+    grounding_dino: str = "https://github.com/IDEA-Research/GroundingDINO/releases/download/v0.1.0-alpha/groundingdino_swint_ogc.pth"
+    grounding_dino_sha256: str = "3b3ca2563c77c69f651d7bd133e97139c186df06231157a64c507099c52bc799"
+    face_landmarker: str = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
+    face_landmarker_sha256: str = "9c899f78b8f2a0b1b117b3554b5f903e481b67f1390f7716e2a537f8842c0c7a"
+    dam4sam: Dict[str, str] = Field(default_factory=lambda: {
+        "sam21pp-T": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt",
+        "sam21pp-S": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_small.pt",
+        "sam21pp-B+": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_base_plus.pt",
+        "sam21pp-L": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt",
+    })
+    dam4sam_sha256: Dict[str, str] = Field(default_factory=lambda: {
+        "sam21pp-T": "7402e0d864fa82708a20fbd15bc84245c2f26dff0eb43a4b5b93452deb34be69",
+        "sam21pp-S": "6d1aa6f30de5c92224f8172114de081d104bbd23dd9dc5c58996f0cad5dc4d38",
+        "sam21pp-B+": "a2345aede8715ab1d5d31b4a509fb160c5a4af1970f199d9054ccfb746c004c5",
+        "sam21pp-L": "2647878d5dfa5098f2f8649825738a9345572bae2d4350a2468587ece47dd318",
+    })
+    yolo: str = "https://huggingface.co/Ultralytics/YOLO11/resolve/main/"
 
-    @dataclass
-    class Models:
-        """Configuration for model URLs, checksums, and endpoints.
+class YouTubeDL(BaseModel):
+    output_template: str = "%(id)s_%(title).40s_%(height)sp.%(ext)s"
+    format_string: str = "bestvideo[height<={max_res}][ext=mp4]+bestaudio[ext=m4a]/best[height<={max_res}][ext=mp4]/best"
 
-        Attributes:
-            user_agent: The user agent string to use for model downloads.
-            grounding_dino: URL for the GroundingDINO model weights.
-            grounding_dino_sha256: SHA256 checksum for the GroundingDINO model.
-            face_landmarker: URL for the MediaPipe Face Landmarker model.
-            face_landmarker_sha256: SHA256 checksum for the Face Landmarker model.
-            dam4sam: Dictionary of DAM4SAM model names to their download URLs.
-            dam4sam_sha256: Dictionary of DAM4SAM model names to their SHA256 checksums.
-            yolo: Base URL for YOLO model downloads.
-        """
-        user_agent: str = "Mozilla/5.0"
-        grounding_dino: str = "https://github.com/IDEA-Research/GroundingDINO/releases/download/v0.1.0-alpha/groundingdino_swint_ogc.pth"
-        grounding_dino_sha256: str = "3b3ca2563c77c69f651d7bd133e97139c186df06231157a64c507099c52bc799"
-        face_landmarker: str = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
-        face_landmarker_sha256: str = "9c899f78b8f2a0b1b117b3554b5f903e481b67f1390f7716e2a537f8842c0c7a"
-        dam4sam: Dict[str, str] = field(default_factory=lambda: {
-            "sam21pp-T": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt",
-            "sam21pp-S": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_small.pt",
-            "sam21pp-B+": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_base_plus.pt",
-            "sam21pp-L": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt",
-        })
-        dam4sam_sha256: Dict[str, str] = field(default_factory=lambda: {
-            "sam21pp-T": "7402e0d864fa82708a20fbd15bc84245c2f26dff0eb43a4b5b93452deb34be69",
-            "sam21pp-S": "6d1aa6f30de5c92224f8172114de081d104bbd23dd9dc5c58996f0cad5dc4d38",
-            "sam21pp-B+": "a2345aede8715ab1d5d31b4a509fb160c5a4af1970f199d9054ccfb746c004c5",
-            "sam21pp-L": "2647878d5dfa5098f2f8649825738a9345572bae2d4350a2468587ece47dd318",
-        })
-        yolo: str = "https://huggingface.co/Ultralytics/YOLO11/resolve/main/"
+class Ffmpeg(BaseModel):
+    log_level: str = "info"
+    thumbnail_quality: int = 80
+    scene_threshold: float = 0.4
 
-    @dataclass
-    class YouTubeDL:
-        """Settings for yt-dlp.
+class Cache(BaseModel):
+    size: int = 200
+    eviction_factor: float = 0.2
+    cleanup_threshold: float = 0.8
 
-        Attributes:
-            output_template: The template for naming downloaded video files.
-            format_string: The format selection string for yt-dlp.
-        """
-        output_template: str = "%(id)s_%(title).40s_%(height)sp.%(ext)s"
-        format_string: str = "bestvideo[height<={max_res}][ext=mp4]+bestaudio[ext=m4a]/best[height<={max_res}][ext=mp4]/best"
+class Retry(BaseModel):
+    max_attempts: int = 3
+    backoff_seconds: List[float] = Field(default_factory=lambda: [1, 5, 15])
 
-    @dataclass
-    class Ffmpeg:
-        """Parameters for FFmpeg operations.
+class QualityScaling(BaseModel):
+    entropy_normalization: float = 8.0
+    resolution_denominator: int = 500000
+    contrast_clamp: float = 2.0
+    niqe_offset: float = 10.0
+    niqe_scale_factor: float = 10.0
 
-        Attributes:
-            log_level: The log level for FFmpeg processes.
-            thumbnail_quality: The quality setting for WebP thumbnails (0-100).
-            scene_threshold: The threshold for the ContentDetector in PySceneDetect.
-        """
-        log_level: str = "info"
-        thumbnail_quality: int = 80
-        scene_threshold: float = 0.4
+class Masking(BaseModel):
+    keep_largest_only: bool = True
+    close_kernel_size: int = 5
+    open_kernel_size: int = 5
 
-    @dataclass
-    class Cache:
-        """Configuration for in-memory caches.
+class UIDefaults(BaseModel):
+    thumbnails_only: bool = True
+    thumb_megapixels: float = 0.5
+    scene_detect: bool = True
+    max_resolution: str = "maximum available"
+    pre_analysis_enabled: bool = True
+    pre_sample_nth: int = 5
+    enable_face_filter: bool = True
+    face_model_name: str = "buffalo_l"
+    enable_subject_mask: bool = True
+    dam4sam_model_name: str = "sam21pp-L"
+    person_detector_model: str = "yolo11x.pt"
+    primary_seed_strategy: str = "🤖 Automatic"
+    seed_strategy: str = "Largest Person"
+    text_prompt: str = "a person"
+    resume: bool = False
+    require_face_match: bool = False
+    enable_dedup: bool = True
+    dedup_thresh: int = 5
+    method: str = "all"
+    interval: float = 5.0
+    nth_frame: int = 5
+    disable_parallel: bool = False
 
-        Attributes:
-            size: The maximum number of items to store in the cache.
-            eviction_factor: The percentage of items to remove when the cache is full.
-            cleanup_threshold: The fullness percentage at which to trigger a cleanup.
-        """
-        size: int = 200
-        eviction_factor: float = 0.2
-        cleanup_threshold: float = 0.8
+class FilterDefaults(BaseModel):
+    quality_score: Dict[str, float] = Field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.5, 'default_min': 0.0, 'default_max': 100.0})
+    sharpness: Dict[str, float] = Field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.5, 'default_min': 0.0, 'default_max': 100.0})
+    edge_strength: Dict[str, float] = Field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.5, 'default_min': 0.0, 'default_max': 100.0})
+    contrast: Dict[str, float] = Field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.5, 'default_min': 0.0, 'default_max': 100.0})
+    brightness: Dict[str, float] = Field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.5, 'default_min': 0.0, 'default_max': 100.0})
+    entropy: Dict[str, float] = Field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.5, 'default_min': 0.0, 'default_max': 100.0})
+    niqe: Dict[str, float] = Field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.5, 'default_min': 0.0, 'default_max': 100.0})
+    face_sim: Dict[str, float] = Field(default_factory=lambda: {'min': 0.0, 'max': 1.0, 'step': 0.01, 'default_min': 0.0})
+    mask_area_pct: Dict[str, float] = Field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.1, 'default_min': 1.0})
+    dedup_thresh: Dict[str, int] = Field(default_factory=lambda: {'min': -1, 'max': 32, 'step': 1, 'default': -1})
+    eyes_open: Dict[str, float] = Field(default_factory=lambda: {'min': 0.0, 'max': 1.0, 'step': 0.01, 'default_min': 0.0})
+    yaw: Dict[str, float] = Field(default_factory=lambda: {'min': -180.0, 'max': 180.0, 'step': 1, 'default_min': -25, 'default_max': 25})
+    pitch: Dict[str, float] = Field(default_factory=lambda: {'min': -180.0, 'max': 180.0, 'step': 1, 'default_min': -25, 'default_max': 25})
 
-    @dataclass
-    class Retry:
-        """Default settings for retry logic.
+class QualityWeights(BaseModel):
+    sharpness: int = 25
+    edge_strength: int = 15
+    contrast: int = 15
+    brightness: int = 10
+    entropy: int = 15
+    niqe: int = 20
 
-        Attributes:
-            max_attempts: The maximum number of times to retry a failed operation.
-            backoff_seconds: A list of delays (in seconds) between retry attempts.
-        """
-        max_attempts: int = 3
-        backoff_seconds: List[float] = field(default_factory=lambda: [1, 5, 15])
+class Choices(BaseModel):
+    max_resolution: List[str] = Field(default_factory=lambda: ["maximum available", "2160", "1080", "720"])
+    extraction_method_toggle: List[str] = Field(default_factory=lambda: ["Recommended Thumbnails", "Legacy Full-Frame"])
+    method: List[str] = Field(default_factory=lambda: ["keyframes", "interval", "every_nth_frame", "nth_plus_keyframes", "all"])
+    primary_seed_strategy: List[str] = Field(default_factory=lambda: ["🤖 Automatic", "👤 By Face", "📝 By Text", "🔄 Face + Text Fallback", "🧑‍🤝‍🧑 Find Prominent Person"])
+    seed_strategy: List[str] = Field(default_factory=lambda: ["Largest Person", "Center-most Person", "Highest Confidence", "Tallest Person", "Area x Confidence", "Rule-of-Thirds", "Edge-avoiding", "Balanced", "Best Face"])
+    person_detector_model: List[str] = Field(default_factory=lambda: ['yolo11x.pt', 'yolo11s.pt'])
+    face_model_name: List[str] = Field(default_factory=lambda: ["buffalo_l", "buffalo_s"])
+    dam4sam_model_name: List[str] = Field(default_factory=lambda: ["sam21pp-T", "sam21pp-S", "sam21pp-B+", "sam21pp-L"])
+    gallery_view: List[str] = Field(default_factory=lambda: ["Kept", "Rejected"])
+    log_level: List[str] = Field(default_factory=lambda: ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'SUCCESS', 'CRITICAL'])
+    scene_gallery_view: List[str] = Field(default_factory=lambda: ["Kept", "Rejected", "All"])
 
-    @dataclass
-    class QualityScaling:
-        """Factors for normalizing quality metrics.
+class GroundingDinoParams(BaseModel):
+    box_threshold: float = 0.35
+    text_threshold: float = 0.25
 
-        These values are used to scale raw metric outputs into a normalized
-        0-1 range before they are weighted and combined into a final quality score.
+class PersonDetectorConfig(BaseModel):
+    model: str = "yolo11x.pt"
+    imgsz: int = 640
+    conf: float = 0.3
 
-        Attributes:
-            entropy_normalization: The expected maximum entropy value for normalization.
-            resolution_denominator: A denominator to adjust sharpness and edge strength
-                based on image resolution.
-            contrast_clamp: The maximum raw contrast value to consider.
-            niqe_offset: An offset to apply to the raw NIQE score.
-            niqe_scale_factor: A factor to scale the NIQE score.
-        """
-        entropy_normalization: float = 8.0
-        resolution_denominator: int = 500000
-        contrast_clamp: float = 2.0
-        niqe_offset: float = 10.0
-        niqe_scale_factor: float = 10.0
+class LoggingConfig(BaseModel):
+    log_level: str = "INFO"
+    log_format: str = '%(asctime)s | %(levelname)8s | %(name)s | %(message)s'
+    colored_logs: bool = True
+    structured_log_path: str = "structured_log.jsonl"
 
-    @dataclass
-    class Masking:
-        """Parameters for image mask post-processing.
+class Monitoring(BaseModel):
+    memory_warning_threshold_mb: int = 8192
+    memory_critical_threshold_mb: int = 16384
+    cpu_warning_threshold_percent: float = 90.0
+    gpu_memory_warning_threshold_percent: int = 90
+    memory_limit_mb: int = 8192
 
-        Attributes:
-            keep_largest_only: If True, only the largest contiguous region in a mask
-                will be kept.
-            close_kernel_size: The kernel size for the morphological closing operation
-                (used to fill small holes).
-            open_kernel_size: The kernel size for the morphological opening operation
-                (used to remove small noise).
-        """
-        keep_largest_only: bool = True
-        close_kernel_size: int = 5
-        open_kernel_size: int = 5
+class ExportOptions(BaseModel):
+    enable_crop: bool = True
+    crop_padding: int = 1
+    crop_ars: str = "16:9,1:1,9:16"
 
-    @dataclass
-    class UIDefaults:
-        """Default values for Gradio UI components.
+class GradioDefaults(BaseModel):
+    auto_pctl_input: int = 25
+    show_mask_overlay: bool = True
+    overlay_alpha: float = 0.6
 
-        This ensures a consistent starting state for the user interface.
-        """
-        thumbnails_only: bool = True
-        thumb_megapixels: float = 0.5
-        scene_detect: bool = True
-        max_resolution: str = "maximum available"
-        pre_analysis_enabled: bool = True
-        pre_sample_nth: int = 5
-        enable_face_filter: bool = True
-        face_model_name: str = "buffalo_l"
-        enable_subject_mask: bool = True
-        dam4sam_model_name: str = "sam21pp-L"
-        person_detector_model: str = "yolo11x.pt"
-        primary_seed_strategy: str = "🤖 Automatic"
-        seed_strategy: str = "Largest Person"
-        text_prompt: str = "a person"
-        resume: bool = False
-        require_face_match: bool = False
-        enable_dedup: bool = True
-        dedup_thresh: int = 5
-        method: str = "all"
-        interval: float = 5.0
-        nth_frame: int = 5
-        disable_parallel: bool = False
+class SeedingDefaults(BaseModel):
+    face_similarity_threshold: float = 0.4
+    yolo_iou_threshold: float = 0.3
+    face_contain_score: int = 100
+    confidence_score_multiplier: int = 20
+    iou_bonus: int = 50
+    face_to_body_expansion_factors: List[float] = Field(default_factory=lambda: [4.0, 7.0, 0.75])
+    final_fallback_box: List[float] = Field(default_factory=lambda: [0.25, 0.25, 0.5, 0.5])
+    balanced_score_weights: Dict[str, float] = Field(default_factory=lambda: {'area': 0.4, 'confidence': 0.4, 'edge': 0.2})
 
-    @dataclass
-    class FilterDefaults:
-        """Default settings for the filtering tab.
+class UtilityDefaults(BaseModel):
+    max_filename_length: int = 50
+    video_extensions: List[str] = Field(default_factory=lambda: ['.mp4','.mov','.mkv','.avi','.webm'])
+    image_extensions: List[str] = Field(default_factory=lambda: ['.png','.jpg','.jpeg','.webp','.bmp'])
 
-        Each attribute is a dictionary defining the min, max, step, and default
-        values for a UI slider corresponding to a quality metric.
-        """
-        quality_score: Dict[str, float] = field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.5, 'default_min': 0.0, 'default_max': 100.0})
-        sharpness: Dict[str, float] = field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.5, 'default_min': 0.0, 'default_max': 100.0})
-        edge_strength: Dict[str, float] = field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.5, 'default_min': 0.0, 'default_max': 100.0})
-        contrast: Dict[str, float] = field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.5, 'default_min': 0.0, 'default_max': 100.0})
-        brightness: Dict[str, float] = field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.5, 'default_min': 0.0, 'default_max': 100.0})
-        entropy: Dict[str, float] = field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.5, 'default_min': 0.0, 'default_max': 100.0})
-        niqe: Dict[str, float] = field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.5, 'default_min': 0.0, 'default_max': 100.0})
-        face_sim: Dict[str, float] = field(default_factory=lambda: {'min': 0.0, 'max': 1.0, 'step': 0.01, 'default_min': 0.0})
-        mask_area_pct: Dict[str, float] = field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.1, 'default_min': 1.0})
-        dedup_thresh: Dict[str, int] = field(default_factory=lambda: {'min': -1, 'max': 32, 'step': 1, 'default': -1})
-        eyes_open: Dict[str, float] = field(default_factory=lambda: {'min': 0.0, 'max': 1.0, 'step': 0.01, 'default_min': 0.0})
-        yaw: Dict[str, float] = field(default_factory=lambda: {'min': -180.0, 'max': 180.0, 'step': 1, 'default_min': -25, 'default_max': 25})
-        pitch: Dict[str, float] = field(default_factory=lambda: {'min': -180.0, 'max': 180.0, 'step': 1, 'default_min': -25, 'default_max': 25})
+class PostProcessing(BaseModel):
+    mask_fill_kernel_size: int = 5
 
-    @dataclass
-    class QualityWeights:
-        """Weights for calculating the overall quality score.
+class Visualization(BaseModel):
+    bbox_color: List[int] = Field(default_factory=lambda: [255, 0, 0])
+    bbox_thickness: int = 2
 
-        The final quality score is a weighted average of the normalized scores
-        for each of these metrics.
-        """
-        sharpness: int = 25
-        edge_strength: int = 15
-        contrast: int = 15
-        brightness: int = 10
-        entropy: int = 15
-        niqe: int = 20
+class Analysis(BaseModel):
+    default_batch_size: int = 32
+    default_workers: int = 4
 
-    @dataclass
-    class Choices:
-        """Predefined lists of choices for UI dropdowns and radios."""
-        max_resolution: List[str] = field(default_factory=lambda: ["maximum available", "2160", "1080", "720"])
-        extraction_method_toggle: List[str] = field(default_factory=lambda: ["Recommended Thumbnails", "Legacy Full-Frame"])
-        method: List[str] = field(default_factory=lambda: ["keyframes", "interval", "every_nth_frame", "nth_plus_keyframes", "all"])
-        primary_seed_strategy: List[str] = field(default_factory=lambda: ["🤖 Automatic", "👤 By Face", "📝 By Text", "🔄 Face + Text Fallback", "🧑‍🤝‍🧑 Find Prominent Person"])
-        seed_strategy: List[str] = field(default_factory=lambda: ["Largest Person", "Center-most Person", "Highest Confidence", "Tallest Person", "Area x Confidence", "Rule-of-Thirds", "Edge-avoiding", "Balanced", "Best Face"])
-        person_detector_model: List[str] = field(default_factory=lambda: ['yolo11x.pt', 'yolo11s.pt'])
-        face_model_name: List[str] = field(default_factory=lambda: ["buffalo_l", "buffalo_s"])
-        dam4sam_model_name: List[str] = field(default_factory=lambda: ["sam21pp-T", "sam21pp-S", "sam21pp-B+", "sam21pp-L"])
-        gallery_view: List[str] = field(default_factory=lambda: ["Kept", "Rejected"])
-        log_level: List[str] = field(default_factory=lambda: ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'SUCCESS', 'CRITICAL'])
-        scene_gallery_view: List[str] = field(default_factory=lambda: ["Kept", "Rejected", "All"])
+class ModelDefaults(BaseModel):
+    face_analyzer_det_size: List[int] = Field(default_factory=lambda: [640, 640])
 
-    @dataclass
-    class GroundingDinoParams:
-        """Parameters for the GroundingDINO model.
+class Config(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_prefix='APP_',
+        env_nested_delimiter='_',
+        case_sensitive=False
+    )
 
-        Attributes:
-            box_threshold: The confidence threshold for object detection boxes.
-            text_threshold: The confidence threshold for matching text prompts to objects.
-        """
-        box_threshold: float = 0.35
-        text_threshold: float = 0.25
-
-    @dataclass
-    class PersonDetector:
-        """Configuration for the YOLO person detector model.
-
-        Attributes:
-            model: The filename of the YOLO model to use.
-            imgsz: The image size for inference.
-            conf: The confidence threshold for person detection.
-        """
-        model: str = "yolo11x.pt"
-        imgsz: int = 640
-        conf: float = 0.3
-
-    @dataclass
-    class Logging:
-        """Settings for the application logger.
-
-        Attributes:
-            log_level: The minimum log level to output (e.g., "INFO", "DEBUG").
-            log_format: The format string for log messages.
-            colored_logs: Whether to use ANSI color codes in console output.
-            structured_log_path: The file path for structured JSONL logs.
-        """
-        log_level: str = "INFO"
-        log_format: str = '%(asctime)s | %(levelname)8s | %(name)s | %(message)s'
-        colored_logs: bool = True
-        structured_log_path: str = "structured_log.jsonl"
-
-    paths: Paths = field(default_factory=Paths)
-    models: Models = field(default_factory=Models)
-    youtube_dl: YouTubeDL = field(default_factory=YouTubeDL)
-    ffmpeg: Ffmpeg = field(default_factory=Ffmpeg)
-    cache: Cache = field(default_factory=Cache)
-    retry: Retry = field(default_factory=Retry)
-    quality_scaling: QualityScaling = field(default_factory=QualityScaling)
-    masking: Masking = field(default_factory=Masking)
-    ui_defaults: UIDefaults = field(default_factory=UIDefaults)
-    filter_defaults: FilterDefaults = field(default_factory=FilterDefaults)
-    quality_weights: QualityWeights = field(default_factory=QualityWeights)
-    choices: Choices = field(default_factory=Choices)
-    grounding_dino_params: GroundingDinoParams = field(default_factory=GroundingDinoParams)
-    person_detector: PersonDetector = field(default_factory=PersonDetector)
-    logging: Logging = field(default_factory=Logging)
+    paths: Paths = Field(default_factory=Paths)
+    models: Models = Field(default_factory=Models)
+    youtube_dl: YouTubeDL = Field(default_factory=YouTubeDL)
+    ffmpeg: Ffmpeg = Field(default_factory=Ffmpeg)
+    cache: Cache = Field(default_factory=Cache)
+    retry: Retry = Field(default_factory=Retry)
+    quality_scaling: QualityScaling = Field(default_factory=QualityScaling)
+    masking: Masking = Field(default_factory=Masking)
+    ui_defaults: UIDefaults = Field(default_factory=UIDefaults)
+    filter_defaults: FilterDefaults = Field(default_factory=FilterDefaults)
+    quality_weights: QualityWeights = Field(default_factory=QualityWeights)
+    choices: Choices = Field(default_factory=Choices)
+    grounding_dino_params: GroundingDinoParams = Field(default_factory=GroundingDinoParams)
+    person_detector: PersonDetectorConfig = Field(default_factory=PersonDetectorConfig)
+    logging: LoggingConfig = Field(default_factory=LoggingConfig)
     
     sharpness_base_scale: int = 2500
     edge_strength_base_scale: int = 100
     min_mask_area_pct: float = 1.0
     
-    @dataclass
-    class Monitoring:
-        """Thresholds for system resource monitoring."""
-        memory_warning_threshold_mb: int = 8192
-        memory_critical_threshold_mb: int = 16384
-        cpu_warning_threshold_percent: float = 90.0
-        gpu_memory_warning_threshold_percent: int = 90
-        memory_limit_mb: int = 8192
+    monitoring: Monitoring = Field(default_factory=Monitoring)
+    export_options: ExportOptions = Field(default_factory=ExportOptions)
+    gradio_defaults: GradioDefaults = Field(default_factory=GradioDefaults)
+    seeding_defaults: SeedingDefaults = Field(default_factory=SeedingDefaults)
+    utility_defaults: UtilityDefaults = Field(default_factory=UtilityDefaults)
+    post_processing: PostProcessing = Field(default_factory=PostProcessing)
+    visualization: Visualization = Field(default_factory=Visualization)
+    analysis: Analysis = Field(default_factory=Analysis)
+    model_defaults: ModelDefaults = Field(default_factory=ModelDefaults)
 
-    @dataclass
-    class ExportOptions:
-        """Settings for the final media export."""
-        enable_crop: bool = True
-        crop_padding: int = 1
-        crop_ars: str = "16:9,1:1,9:16"
-
-    @dataclass
-    class GradioDefaults:
-        """Default values specific to Gradio UI behavior."""
-        auto_pctl_input: int = 25
-        show_mask_overlay: bool = True
-        overlay_alpha: float = 0.6
-
-    @dataclass
-    class SeedingDefaults:
-        """Parameters for the seed selection logic."""
-        face_similarity_threshold: float = 0.4
-        yolo_iou_threshold: float = 0.3
-        face_contain_score: int = 100
-        confidence_score_multiplier: int = 20
-        iou_bonus: int = 50
-        face_to_body_expansion_factors: List[float] = field(default_factory=lambda: [4.0, 7.0, 0.75])
-        final_fallback_box: List[float] = field(default_factory=lambda: [0.25, 0.25, 0.5, 0.5])
-        balanced_score_weights: Dict[str, float] = field(default_factory=lambda: {'area': 0.4, 'confidence': 0.4, 'edge': 0.2})
-
-    @dataclass
-    class UtilityDefaults:
-        """Miscellaneous utility parameters."""
-        max_filename_length: int = 50
-        video_extensions: List[str] = field(default_factory=lambda: ['.mp4','.mov','.mkv','.avi','.webm'])
-        image_extensions: List[str] = field(default_factory=lambda: ['.png','.jpg','.jpeg','.webp','.bmp'])
-
-    @dataclass
-    class PostProcessing:
-        """Configuration for post-processing steps."""
-        mask_fill_kernel_size: int = 5
-
-    @dataclass
-    class Visualization:
-        """Settings for visual elements like bounding boxes."""
-        bbox_color: List[int] = field(default_factory=lambda: [255, 0, 0])
-        bbox_thickness: int = 2
-
-    @dataclass
-    class Analysis:
-        """Parameters for the analysis pipeline."""
-        default_batch_size: int = 32
-        default_workers: int = 4
-        
-    @dataclass
-    class ModelDefaults:
-        """Default settings for various models."""
-        face_analyzer_det_size: List[int] = field(default_factory=lambda: [640, 640])
-
-    monitoring: Monitoring = field(default_factory=Monitoring)
-    export_options: ExportOptions = field(default_factory=ExportOptions)
-    gradio_defaults: GradioDefaults = field(default_factory=GradioDefaults)
-    seeding_defaults: SeedingDefaults = field(default_factory=SeedingDefaults)
-    utility_defaults: UtilityDefaults = field(default_factory=UtilityDefaults)
-    post_processing: PostProcessing = field(default_factory=PostProcessing)
-    visualization: Visualization = field(default_factory=Visualization)
-    analysis: Analysis = field(default_factory=Analysis)
-    model_defaults: ModelDefaults = field(default_factory=ModelDefaults)
-    config_path: Optional[str] = "config.json"
-
-    def __post_init__(self):
-        """
-        Initializes the Config object after its creation.
-
-        This method orchestrates the loading of configuration from different
-        sources in the correct order of precedence:
-        1. Default values from the dataclass definition.
-        2. Values from the JSON configuration file (`config.json`).
-        3. Overrides from environment variables.
-        """
-        # Start from a snapshot of the initialized defaults
-        config_dict = asdict(self)
-
-        # 2. Override with file config
-        config_p = Path(self.config_path) if self.config_path else None
-        if config_p and config_p.exists():
-            try:
-                with open(config_p, 'r', encoding='utf-8') as f:
-                    file_config = json.load(f)
-                if file_config:
-                    self._merge_configs(config_dict, file_config)
-            except (json.JSONDecodeError, FileNotFoundError) as e:
-                # Log this instead of raising, so we can fall back to defaults
-                logging.warning(f"Could not load or parse {self.config_path}: {e}")
-
-        # 3. Override with environment variables
-        self._override_with_env_vars(config_dict)
-
-        # 4. Populate the dataclass from the final merged dictionary
-        self._from_dict(config_dict)
-
-        # 5. Create necessary directories
+    def model_post_init(self, __context: Any) -> None:
         self._validate_paths()
 
+    @model_validator(mode='after')
+    def _validate_config(self):
+        if sum(self.quality_weights.model_dump().values()) == 0:
+            raise ValueError("The sum of quality_weights cannot be zero.")
+        return self
+
     def _validate_paths(self):
-        """Validates that critical paths exist and are accessible.
-
-        Ensures that the directories specified in `self.paths` are created
-        and have write permissions.
-
-        Raises:
-            PermissionError: If a required directory is not writable.
-        """
         required_dirs = [self.paths.logs, self.paths.models, self.paths.downloads]
         for dir_path in required_dirs:
             path = Path(dir_path)
@@ -531,117 +342,26 @@ class Config:
             if not os.access(path, os.W_OK):
                 raise PermissionError(f"No write permission for: {path}")
 
-    def _merge_configs(self, base: dict, override: dict) -> dict:
-        """
-        Recursively merges two dictionaries.
-
-        The `override` dictionary's values take precedence over the `base`
-        dictionary's values.
-
-        Args:
-            base: The base dictionary.
-            override: The dictionary with values to override.
-
-        Returns:
-            The merged dictionary.
-        """
-        for key, value in override.items():
-            if isinstance(value, dict) and isinstance(base.get(key), dict):
-                base[key] = self._merge_configs(base.get(key, {}), value)
-            else:
-                base[key] = value
-        return base
-
-    def _override_with_env_vars(self, config_dict: dict, prefix: str = 'APP'):
-        """
-        Recursively overrides configuration with environment variables.
-
-        Args:
-            config_dict: The dictionary of configuration to override.
-            prefix: The current prefix for environment variable names.
-        """
-        for key, value in config_dict.items():
-            new_prefix = f"{prefix}_{key.upper()}"
-            if isinstance(value, dict):
-                self._override_with_env_vars(value, new_prefix)
-            else:
-                env_var = os.getenv(new_prefix)
-                if env_var is not None:
-                    config_dict[key] = self._coerce_type(env_var, value)
-
-    def _coerce_type(self, env_val: str, default_val: Any) -> Any:
-        """
-        Coerces an environment variable string to the type of a default value.
-
-        Args:
-            env_val: The environment variable value (as a string).
-            default_val: The default value to infer the type from.
-
-        Returns:
-            The coerced value.
-        """
-        if isinstance(default_val, bool):
-            return env_val.lower() in ['true', '1', 'yes']
-        if isinstance(default_val, int):
-            try:
-                # Handle cases like "5.0" from env var for an int field
-                return int(float(env_val))
-            except ValueError:
-                return int(env_val) # Fallback for non-float strings
-        if isinstance(default_val, float):
-            return float(env_val)
-        if isinstance(default_val, list):
-            if not env_val: # Check for empty string specifically
-                return []
-            parts = [p.strip() for p in env_val.split(',') if p.strip()]
-            # Ensure that if default_val is empty, we handle it gracefully.
-            # Coercing to string is a safe bet for elements in a list from env var.
-            element_default = default_val[0] if default_val else ""
-            return [self._coerce_type(p, element_default) for p in parts]
-        return env_val
-
-    def _from_dict(self, data: Dict[str, Any]):
-        """
-        Populates the dataclass fields from a dictionary.
-
-        Args:
-            data: The dictionary containing the configuration data.
-        """
-        for f in fields(self):
-            if f.name in data:
-                field_data = data[f.name]
-                # Check if the field is a dataclass and the data is a dict
-                if is_dataclass(f.type) and isinstance(field_data, dict):
-                    # Get the existing nested dataclass instance
-                    nested_instance = getattr(self, f.name)
-                    # Create a new dictionary from the nested instance
-                    nested_data = asdict(nested_instance)
-                    # Merge the new data into the existing data
-                    self._merge_configs(nested_data, field_data)
-                    # Create a new instance from the merged data
-                    setattr(self, f.name, f.type(**nested_data))
-                else:
-                    setattr(self, f.name, field_data)
-        self._validate_config()
-
-    def _validate_config(self):
-        """
-        Performs validation checks on the final configuration.
-
-        Raises:
-            ValueError: If the configuration is invalid.
-        """
-        if sum(asdict(self.quality_weights).values()) == 0:
-            raise ValueError("The sum of quality_weights cannot be zero.")
-
     def save_config(self, path: str):
-        """Saves the current (resolved) configuration to a JSON file.
-
-        Args:
-            path: The file path to save the configuration to.
-        """
         with open(path, 'w', encoding='utf-8') as f:
-            json.dump(_to_json_safe(asdict(self)), f, indent=2, ensure_ascii=False)
+            f.write(self.model_dump_json(indent=2))
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls,
+        init_settings,
+        env_settings,
+        dotenv_settings,
+        file_secret_settings,
+    ):
+        return (
+            init_settings,
+            env_settings,
+            dotenv_settings,
+            json_config_settings_source,
+            file_secret_settings,
+        )
 
 
 # --- LOGGING ---
@@ -649,8 +369,7 @@ class Config:
 SUCCESS_LEVEL_NUM = 25
 logging.addLevelName(SUCCESS_LEVEL_NUM, "SUCCESS")
 
-@dataclass
-class LogEvent:
+class LogEvent(BaseModel):
     """Represents a structured log entry.
 
     Attributes:
@@ -823,7 +542,7 @@ class AppLogger:
         self.logger.log(log_level, log_message)
 
         # Manual write to JSONL file
-        json_line = json.dumps(asdict(event), default=str, ensure_ascii=False)
+        json_line = json.dumps(event.model_dump(), default=str, ensure_ascii=False)
         with self._file_lock:
             with open(self.structured_log_file, 'a', encoding='utf-8') as f:
                 f.write(json_line + '\n')
@@ -1017,7 +736,7 @@ class AdvancedProgressTracker:
             eta_seconds=eta_s,
             eta_formatted=eta_str
         )
-        self.queue.put({"progress": asdict(progress_event)})
+        self.queue.put({"progress": progress_event.model_dump()})
 
     def _eta_seconds(self) -> Optional[float]:
         """
@@ -1160,8 +879,7 @@ class ErrorHandler:
 
 # --- EVENTS ---
 
-@dataclass
-class ProgressEvent:
+class ProgressEvent(BaseModel):
     """Represents a progress update for the UI."""
     stage: str
     substage: Optional[str] = None
@@ -1171,16 +889,19 @@ class ProgressEvent:
     eta_seconds: Optional[float] = None
     eta_formatted: str = "—"
 
-@dataclass
-class UIEvent:
+class UIEvent(BaseModel):
     """Base class for events originating from the UI."""
-    pass
+    model_config = ConfigDict(
+        validate_assignment=True,
+        extra='ignore',
+        str_strip_whitespace=True,
+        arbitrary_types_allowed=True
+    )
 
-@dataclass
 class ExtractionEvent(UIEvent):
     """Data for an extraction pipeline run."""
     source_path: str
-    upload_video: Optional[str]
+    upload_video: Optional[str] = None
     method: str
     interval: str
     nth_frame: str
@@ -1188,12 +909,33 @@ class ExtractionEvent(UIEvent):
     thumbnails_only: bool
     thumb_megapixels: float
     scene_detect: bool
+    output_folder: Optional[str] = None
 
-@dataclass
 class PreAnalysisEvent(UIEvent):
     """Data for a pre-analysis pipeline run."""
     output_folder: str
     video_path: str
+
+    @field_validator('face_ref_img_path')
+    @classmethod
+    def validate_face_ref(cls, v: str, info) -> str:
+        if not v:
+            return ""
+
+        # Get video_path from the validation context
+        video_path = info.data.get('video_path', '')
+
+        # Check if it's the video path itself
+        if v == video_path:
+            return ""
+
+        # Check file existence and extension
+        p = Path(v)
+        valid_exts = {'.png', '.jpg', '.jpeg', '.webp', '.bmp'}
+        if not p.is_file() or p.suffix.lower() not in valid_exts:
+            return ""
+
+        return v
     resume: bool
     enable_face_filter: bool
     face_ref_img_path: str
@@ -1229,7 +971,13 @@ class PreAnalysisEvent(UIEvent):
     compute_niqe: bool = True
     compute_phash: bool = True
 
-@dataclass
+    @model_validator(mode='after')
+    def validate_strategy_consistency(self) -> 'PreAnalysisEvent':
+        # Auto-disable face filter if no reference provided
+        if not self.face_ref_img_path and self.enable_face_filter:
+            self.enable_face_filter = False
+        return self
+
 class PropagationEvent(UIEvent):
     """Data for a mask propagation pipeline run."""
     output_folder: str
@@ -1237,7 +985,6 @@ class PropagationEvent(UIEvent):
     scenes: list[dict[str, Any]]
     analysis_params: PreAnalysisEvent
 
-@dataclass
 class FilterEvent(UIEvent):
     """Data for a filter change event."""
     all_frames_data: list[dict[str, Any]]
@@ -1251,7 +998,6 @@ class FilterEvent(UIEvent):
     slider_values: dict[str, float]
     dedup_method: str
 
-@dataclass
 class ExportEvent(UIEvent):
     """Data for an export event."""
     all_frames_data: list[dict[str, Any]]
@@ -1262,7 +1008,6 @@ class ExportEvent(UIEvent):
     crop_padding: int
     filter_args: dict[str, Any]
 
-@dataclass
 class SessionLoadEvent(UIEvent):
     """Data for a session load event."""
     session_path: str
@@ -1428,6 +1173,8 @@ def _to_json_safe(obj: Any) -> Any:
         return obj.tolist()
     if isinstance(obj, Path):
         return str(obj)
+    if isinstance(obj, BaseModel):
+        return obj.model_dump()
     return obj
 
 def _coerce(val: Any, to_type: type) -> Any:
@@ -1504,33 +1251,6 @@ def list_images(p: Union[str, Path], cfg: Config) -> list[Path]:
     exts = {e.lower() for e in cfg.utility_defaults.image_extensions}
     return sorted([f for f in p.iterdir() if f.suffix.lower() in exts and f.is_file()])
 
-def _sanitize_face_ref(runconfig: dict, logger: 'AppLogger') -> tuple[str, bool]:
-    """
-    Validates the face reference image path from a loaded session.
-
-    Args:
-        runconfig: The loaded run configuration dictionary.
-        logger: The application logger.
-
-    Returns:
-        A tuple containing the sanitized path and a boolean indicating if it's valid.
-    """
-    ref = (runconfig.get('face_ref_img_path') or '').strip()
-    vid = (runconfig.get('video_path') or '').strip()
-    if not ref:
-        logger.info("No face reference in session; face similarity disabled on load.", component="session_loader")
-        return "", False
-    bad_exts = set(logger.config.utility_defaults.video_extensions)
-    img_exts = set(logger.config.utility_defaults.image_extensions)
-    p = Path(ref)
-    if ref == vid or p.suffix.lower() in bad_exts:
-        logger.warning("Reference path appears to be a video or equals video_path; clearing safely.", component="session_loader")
-        return "", False
-    if p.suffix.lower() not in img_exts or not p.is_file():
-        logger.warning("Reference path is not a valid image on disk; clearing safely.", component="session_loader", extra={'path': ref})
-        return "", False
-    return ref, True
-
 # --- QUALITY ---
 
 @njit
@@ -1549,8 +1269,7 @@ def compute_entropy(hist: np.ndarray, entropy_norm: float) -> float:
     entropy = -np.sum(prob[prob > 0] * np.log2(prob[prob > 0]))
     return min(max(entropy / entropy_norm, 0), 1.0)
 
-@dataclass
-class QualityConfig:
+class QualityConfig(BaseModel):
     """Configuration for quality metric calculations."""
     sharpness_base_scale: float
     edge_strength_base_scale: float
@@ -1558,8 +1277,7 @@ class QualityConfig:
 
 # --- MODELS ---
 
-@dataclass
-class FrameMetrics:
+class FrameMetrics(BaseModel):
     """A container for all calculated metrics of a single frame."""
     quality_score: float = 0.0
     sharpness_score: float = 0.0
@@ -1574,15 +1292,16 @@ class FrameMetrics:
     pitch: float = 0.0
     roll: float = 0.0
 
-@dataclass
-class Frame:
+class Frame(BaseModel):
     """Represents a single video frame and its associated data."""
     image_data: np.ndarray
     frame_number: int
-    metrics: FrameMetrics = field(default_factory=FrameMetrics)
+    metrics: FrameMetrics = Field(default_factory=FrameMetrics)
     face_similarity_score: Optional[float] = None
     max_face_confidence: Optional[float] = None
     error: Optional[str] = None
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     def calculate_quality_metrics(self, thumb_image_rgb: np.ndarray, quality_config: 'QualityConfig', logger: 'AppLogger',
                                   mask: Optional[np.ndarray] = None, niqe_metric: Optional[Callable] = None,
@@ -1708,7 +1427,7 @@ class Frame:
                     if torch.cuda.is_available(): torch.cuda.empty_cache()
 
             if main_config and metrics_to_compute.get('quality'):
-                weights = asdict(main_config.quality_weights)
+                weights = main_config.quality_weights.model_dump()
                 quality_sum = sum(
                     scores_norm.get(k, 0) * (weights.get(k, 0) / 100.0)
                     for k in scores_norm.keys()
@@ -1718,28 +1437,26 @@ class Frame:
             self.error = f"Quality calc failed: {e}"
             logger.error("Frame quality calculation failed", exc_info=True, extra={'frame': self.frame_number})
 
-@dataclass
-class Scene:
+class Scene(BaseModel):
     """Represents a single continuous shot or scene in the video."""
     shot_id: int
     start_frame: int
     end_frame: int
     status: str = "pending"
     best_frame: Optional[int] = None
-    seed_metrics: dict = field(default_factory=dict)
+    seed_metrics: dict = Field(default_factory=dict)
     seed_frame_idx: Optional[int] = None
-    seed_config: dict = field(default_factory=dict)
+    seed_config: dict = Field(default_factory=dict)
     seed_type: Optional[str] = None
-    seed_result: dict = field(default_factory=dict)
+    seed_result: dict = Field(default_factory=dict)
     preview_path: Optional[str] = None
     manual_status_change: bool = False
     is_overridden: bool = False
     initial_bbox: Optional[list] = None
     selected_bbox: Optional[list] = None
-    yolo_detections: List[dict] = field(default_factory=list)
+    yolo_detections: List[dict] = Field(default_factory=list)
 
-@dataclass
-class AnalysisParameters:
+class AnalysisParameters(BaseModel):
     """A container for all parameters related to an analysis run."""
     source_path: str = ""
     method: str = ""
@@ -1785,12 +1502,8 @@ class AnalysisParameters:
     compute_subject_mask_area: bool = True
     compute_niqe: bool = True
     compute_phash: bool = True
+    need_masks_now: bool = False
 
-    def __post_init__(self):
-        """Post-initialization hook for the dataclass."""
-        # This post_init is now less critical as config is passed on creation,
-        # but can be used for validation or complex defaults.
-        pass
 
     @classmethod
     def from_ui(cls, logger: 'AppLogger', config: 'Config', **kwargs) -> 'AnalysisParameters':
@@ -1825,13 +1538,13 @@ class AnalysisParameters:
                 logger.warning(f"Invalid pre_sample_nth: {sample_nth}, using 1")
                 kwargs['pre_sample_nth'] = 1
 
-        valid_keys = {f.name for f in fields(cls)}
+        valid_keys = set(cls.model_fields.keys())
 
         # Start with all-False for compute flags, then selectively enable
-        defaults = {f.name: False for f in fields(cls) if f.name.startswith('compute_')}
+        defaults = {f: False for f in valid_keys if f.startswith('compute_')}
 
         # Merge UI defaults
-        ui_defaults = asdict(config.ui_defaults)
+        ui_defaults = config.ui_defaults.model_dump()
         for key in valid_keys:
             if key in ui_defaults:
                 defaults[key] = ui_defaults[key]
@@ -1862,8 +1575,7 @@ class AnalysisParameters:
 
         return instance
 
-@dataclass
-class MaskingResult:
+class MaskingResult(BaseModel):
     """Contains the results of a masking operation for a single frame."""
     mask_path: Optional[str] = None
     shot_id: Optional[int] = None
@@ -3643,7 +3355,7 @@ class SubjectMasker:
                 bbox, seed_details = scene.seed_result.get('bbox'), scene.seed_result.get('details', {})
                 if bbox is None:
                     for fn in frame_numbers:
-                        if (fname := self.frame_map.get(fn)): mask_metadata[fname] = asdict(MaskingResult(error="Subject not found", shot_id=scene.shot_id))
+                        if (fname := self.frame_map.get(fn)): mask_metadata[fname] = MaskingResult(error="Subject not found", shot_id=scene.shot_id).model_dump()
                     continue
 
                 masks, areas, empties, errors = self.mask_propagator.propagate(small_images, seed_idx_in_shot, bbox, tracker=tracker)
@@ -3658,9 +3370,9 @@ class SubjectMasker:
                         mask_full_res = cv2.resize(masks[j], (w, h), interpolation=cv2.INTER_NEAREST)
                         if mask_full_res.ndim == 3: mask_full_res = mask_full_res[:, :, 0]
                         cv2.imwrite(str(mask_path), mask_full_res)
-                        mask_metadata[frame_fname_png] = asdict(MaskingResult(mask_path=str(mask_path), **result_args))
+                        mask_metadata[frame_fname_png] = MaskingResult(mask_path=str(mask_path), **result_args).model_dump()
                     else:
-                        mask_metadata[frame_fname_png] = asdict(MaskingResult(mask_path=None, **result_args))
+                        mask_metadata[frame_fname_png] = MaskingResult(mask_path=None, **result_args).model_dump()
         self.logger.success("Subject masking complete.")
         try:
             with (self.mask_dir.parent / "mask_metadata.json").open('w', encoding='utf-8') as f:
@@ -3806,7 +3518,7 @@ class ExtractionPipeline(Pipeline):
             output_dir = Path(self.params.output_folder) if self.params.output_folder else Path(self.config.paths.downloads) / source_p.name
             output_dir.mkdir(exist_ok=True, parents=True)
 
-            params_dict = asdict(self.params)
+            params_dict = self.params.model_dump()
             params_dict['output_folder'] = str(output_dir)
             params_dict['video_path'] = "" # No video path for image folders
 
@@ -3840,7 +3552,7 @@ class ExtractionPipeline(Pipeline):
             output_dir = Path(self.params.output_folder) if self.params.output_folder else Path(self.config.paths.downloads) / video_path.stem
             output_dir.mkdir(exist_ok=True, parents=True)
 
-            params_dict = asdict(self.params)
+            params_dict = self.params.model_dump()
             params_dict['output_folder'] = str(output_dir)
             params_dict['video_path'] = str(video_path)
 
@@ -3966,7 +3678,7 @@ class AnalysisPipeline(Pipeline):
                     self.metadata_path.unlink()
 
                 with open(self.metadata_path, 'w', encoding='utf-8') as f:
-                    f.write(json.dumps(_to_json_safe({"params": asdict(self.params)})) + '\n')
+                    f.write(json.dumps(_to_json_safe({"params": self.params.model_dump()})) + '\n')
 
                 self.scene_map = {s.shot_id: s for s in scenes_to_process}
                 self.logger.info("Initializing Models")
@@ -4019,7 +3731,7 @@ class AnalysisPipeline(Pipeline):
         try:
             if not self.metadata_path.exists():
                 with open(self.metadata_path, 'w', encoding='utf-8') as f:
-                    f.write(json.dumps(_to_json_safe({"params": asdict(self.params)})) + '\n')
+                    f.write(json.dumps(_to_json_safe({"params": self.params.model_dump()})) + '\n')
             self.scene_map = {s.shot_id: s for s in scenes_to_process}
             self.logger.info("Initializing Models for Analysis")
             models = initialize_analysis_models(self.params, self.config, self.logger, self.device == 'cuda')
@@ -4161,7 +3873,7 @@ class AnalysisPipeline(Pipeline):
                     metrics_to_compute=metrics_to_compute
                 )
 
-            meta = {"filename": base_filename, "metrics": asdict(frame.metrics)}
+            meta = {"filename": base_filename, "metrics": frame.metrics.model_dump()}
             if self.params.compute_face_sim:
                 if frame.face_similarity_score is not None:
                     meta["face_sim"] = frame.face_similarity_score
@@ -4247,17 +3959,17 @@ def load_and_prep_filter_data(metadata_path: str, get_all_filter_keys: Callable,
     metric_values = {}
     metric_configs = {
         'quality_score': {'path': ("metrics", "quality_score"), 'range': (0, 100)},
-        'yaw': {'path': ("metrics", "yaw"), 'range': (config.filter_defaults.yaw.get('min', -45), config.filter_defaults.yaw.get('max', 45))},
-        'pitch': {'path': ("metrics", "pitch"), 'range': (config.filter_defaults.pitch.get('min', -45), config.filter_defaults.pitch.get('max', 45))},
+        'yaw': {'path': ("metrics", "yaw"), 'range': (config.filter_defaults.yaw['min'], config.filter_defaults.yaw['max'])},
+        'pitch': {'path': ("metrics", "pitch"), 'range': (config.filter_defaults.pitch['min'], config.filter_defaults.pitch['max'])},
         'eyes_open': {'path': ("metrics", "eyes_open"), 'range': (0, 1)},
         'face_sim': {'path': ("face_sim",), 'range': (0, 1)},
     }
     # Add other metrics with a default range
-    for k in get_all_filter_keys:
+    for k in get_all_filter_keys():
         if k not in metric_configs:
             metric_configs[k] = {'path': (k,), 'alt_path': ("metrics", f"{k}_score"), 'range': (0, 100)}
 
-    for k in get_all_filter_keys:
+    for k in get_all_filter_keys():
         config = metric_configs.get(k)
         if not config: continue
 
@@ -4353,7 +4065,7 @@ def _extract_metric_arrays(all_frames_data: list[dict], config: 'Config') -> dic
         A dictionary mapping metric names to their corresponding NumPy arrays.
     """
     metric_sources = {
-        **{k: ("metrics", f"{k}_score") for k in asdict(config.quality_weights).keys()},
+        **{k: ("metrics", f"{k}_score") for k in config.quality_weights.model_dump().keys()},
         "quality_score": ("metrics", "quality_score"),
         "face_sim": ("face_sim",),
         "mask_area_pct": ("mask_area_pct",),
@@ -4433,7 +4145,7 @@ def _apply_metric_filters(all_frames_data: list[dict], metric_arrays: dict, filt
     reasons = defaultdict(list)
 
     filter_definitions = [
-        *[{'key': k, 'type': 'range'} for k in asdict(config.quality_weights).keys()],
+        *[{'key': k, 'type': 'range'} for k in config.quality_weights.model_dump().keys()],
         {'key': 'quality_score', 'type': 'range'},
         {'key': 'face_sim', 'type': 'min', 'enabled_key': 'face_sim_enabled', 'reason_low': 'face_sim_low', 'reason_missing': 'face_missing'},
         {'key': 'mask_area_pct', 'type': 'min', 'enabled_key': 'mask_area_enabled', 'reason_low': 'mask_too_small'},
@@ -4966,7 +4678,7 @@ def _recompute_single_preview(scene: dict, masker: 'SubjectMasker', overrides: d
         raise FileNotFoundError(f"Thumbnail for frame {best_frame_num} not found on disk.")
 
     # Create a temporary config for this specific seed selection run
-    seed_config = {**asdict(masker.params), **overrides}
+    seed_config = {**masker.params.model_dump(), **overrides}
     
     # If the user provides a text prompt in the editor, it's a strong signal
     # to use the text-first seeding strategy for this specific re-computation.
@@ -5131,7 +4843,7 @@ def execute_pre_analysis(event: 'PreAnalysisEvent', progress_queue: Queue, cance
     try:
         yield {"unified_log": "", "unified_status": "Starting Pre-Analysis..."}
         tracker = AdvancedProgressTracker(progress, progress_queue, logger, ui_stage_name="Pre-Analysis")
-        params_dict = asdict(event)
+        params_dict = event.model_dump()
         is_folder_mode = not params_dict.get("video_path")
 
         # Handle face reference upload before initializing parameters
@@ -5494,7 +5206,7 @@ def execute_session_load(
 def execute_propagation(event: PropagationEvent, progress_queue: Queue, cancel_event: threading.Event, logger: AppLogger,
                         config: Config, thumbnail_manager, cuda_available, progress=None):
     try:
-        params = AnalysisParameters.from_ui(logger, config, **asdict(event.analysis_params))
+        params = AnalysisParameters.from_ui(logger, config, **event.analysis_params.model_dump())
         is_folder_mode = not params.video_path
 
         if is_folder_mode:
@@ -5560,7 +5272,7 @@ def execute_propagation(event: PropagationEvent, progress_queue: Queue, cancel_e
 def execute_analysis(event: PropagationEvent, progress_queue: Queue, cancel_event: threading.Event, logger: AppLogger,
                      config: Config, thumbnail_manager, cuda_available, progress=None):
     try:
-        params = AnalysisParameters.from_ui(logger, config, **asdict(event.analysis_params))
+        params = AnalysisParameters.from_ui(logger, config, **event.analysis_params.model_dump())
         scenes_to_process = [Scene(**{k: v for k, v in s.items() if k in {f.name for f in fields(Scene)}}) for s in event.scenes if s.get('status') == 'included']
         if not scenes_to_process:
             yield {"log": "No scenes to analyze.", "status": "Skipped."}
@@ -6109,7 +5821,7 @@ Review the automatically detected subjects and refine the selection if needed. E
 
     def get_all_filter_keys(self) -> list[str]:
         """Returns a list of all available metric keys for filtering."""
-        return list(asdict(self.config.quality_weights).keys()) + ["quality_score", "face_sim", "mask_area_pct", "eyes_open", "yaw", "pitch"]
+        return list(self.config.quality_weights.model_dump().keys()) + ["quality_score", "face_sim", "mask_area_pct", "eyes_open", "yaw", "pitch"]
 
     def get_metric_description(self, metric_name: str) -> str:
         """
@@ -6932,22 +6644,19 @@ class EnhancedAppUI(AppUI):
             A populated and validated PreAnalysisEvent instance.
         """
         ui_args = dict(zip(self.ana_ui_map_keys, args))
-        strategy = ui_args.get('primary_seed_strategy', '🧑‍🤝‍🧑 Find Prominent Person')
-        if strategy == "👤 By Face": ui_args.update({'enable_face_filter': True, 'text_prompt': ""})
-        elif strategy == "📝 By Text": ui_args.update({'enable_face_filter': False, 'face_ref_img_path': "", 'face_ref_img_upload': None})
-        elif strategy == "🔄 Face + Text Fallback": ui_args['enable_face_filter'] = True
-        elif strategy == "🧑‍🤝‍🧑 Find Prominent Person":
-            ui_args.update({
-                'enable_face_filter': False,
-                'text_prompt': "",
-                'face_ref_img_path': "",
-                'face_ref_img_upload': None,
-                'enable_subject_mask': False
-            })
-        for k, v_type, default in [('pre_sample_nth', int, 5), ('min_mask_area_pct', float, 0.0), ('sharpness_base_scale', float, 1.0), ('edge_strength_base_scale', float, 1.0)]:
-            try: ui_args[k] = v_type(ui_args.get(k)) if v_type != int or int(ui_args.get(k)) > 0 else default
-            except (TypeError, ValueError): ui_args[k] = default
-        return PreAnalysisEvent(**ui_args)
+
+        # Remove None values - let Pydantic use defaults
+        clean_args = {k: v for k, v in ui_args.items() if v is not None}
+
+        # Apply conditional logic based on strategy
+        strategy = clean_args.get('primary_seed_strategy', '🧑‍🤝‍🧑 Find Prominent Person')
+        if strategy == "👤 By Face":
+            clean_args.update({'enable_face_filter': True, 'text_prompt': ""})
+        elif strategy == "📝 By Text":
+            clean_args.update({'enable_face_filter': False, 'face_ref_img_path': ""})
+
+        # Let Pydantic handle validation and defaults
+        return PreAnalysisEvent.model_validate(clean_args)
 
     def _run_pipeline(self, pipeline_func, event, progress, success_callback=None, *args):
         """Generic wrapper for running a pipeline function and handling its lifecycle.
@@ -6987,13 +6696,14 @@ class EnhancedAppUI(AppUI):
         Yields:
             UI updates from the pipeline execution.
         """
-        import dataclasses
+
         ui_args = dict(zip(self.ext_ui_map_keys, args))
         ui_args['thumbnails_only'] = True
         
-        event_fields = [f.name for f in dataclasses.fields(ExtractionEvent)]
-        event_args = {k: v for k, v in ui_args.items() if k in event_fields}
-        event = ExtractionEvent(**event_args)
+        # Remove None values - let Pydantic use defaults
+        clean_args = {k: v for k, v in ui_args.items() if v is not None}
+
+        event = ExtractionEvent.model_validate(clean_args)
 
         yield from self._run_pipeline(execute_extraction, event, progress, self._on_extraction_success)
 
@@ -7245,19 +6955,19 @@ class EnhancedAppUI(AppUI):
                          'scene_detect': 'ext_scene_detect_input', **{k: f"{k}_input" for k in self.ext_ui_map_keys if k not in
                          ['source_path', 'upload_video', 'max_resolution', 'scene_detect']}}[k]] for k in self.ext_ui_map_keys]
         self.ana_input_components = [c.get(k, k) for k in [{'output_folder': 'extracted_frames_dir_state', 'video_path': 'extracted_video_path_state',
-                                                           'resume': gr.State(self.config.ui_defaults.resume), 'enable_face_filter': 'enable_face_filter_input',
+                                                           'resume': self.config.ui_defaults.resume, 'enable_face_filter': 'enable_face_filter_input',
                                                            'face_ref_img_path': 'face_ref_img_path_input', 'face_ref_img_upload': 'face_ref_img_upload_input',
-                                                           'face_model_name': 'face_model_name_input', 'enable_subject_mask': gr.State(self.config.ui_defaults.enable_subject_mask),
+                                                           'face_model_name': 'face_model_name_input', 'enable_subject_mask': self.config.ui_defaults.enable_subject_mask,
                                                            'dam4sam_model_name': 'dam4sam_model_name_input', 'person_detector_model': 'person_detector_model_input',
                                                                'best_frame_strategy': 'best_frame_strategy_input', 'scene_detect': 'ext_scene_detect_input',
                                                            'enable_dedup': 'enable_dedup_input', 'text_prompt': 'text_prompt_input',
-                                                           'box_threshold': gr.State(self.config.grounding_dino_params.box_threshold),
-                                                           'text_threshold': gr.State(self.config.grounding_dino_params.text_threshold),
-                                                           'min_mask_area_pct': gr.State(self.config.min_mask_area_pct),
-                                                           'sharpness_base_scale': gr.State(self.config.sharpness_base_scale),
-                                                           'edge_strength_base_scale': gr.State(self.config.edge_strength_base_scale),
-                                                           'gdino_config_path': gr.State(str(self.config.paths.grounding_dino_config)),
-                                                           'gdino_checkpoint_path': gr.State(str(self.config.paths.grounding_dino_checkpoint)),
+                                                           'box_threshold': self.config.grounding_dino_params.box_threshold,
+                                                           'text_threshold': self.config.grounding_dino_params.text_threshold,
+                                                           'min_mask_area_pct': self.config.min_mask_area_pct,
+                                                           'sharpness_base_scale': self.config.sharpness_base_scale,
+                                                           'edge_strength_base_scale': self.config.edge_strength_base_scale,
+                                                           'gdino_config_path': str(self.config.paths.grounding_dino_config),
+                                                           'gdino_checkpoint_path': str(self.config.paths.grounding_dino_checkpoint),
                                                            'pre_analysis_enabled': 'pre_analysis_enabled_input', 'pre_sample_nth': 'pre_sample_nth_input',
                                                            'primary_seed_strategy': 'primary_seed_strategy_input',
                                                            **{f'compute_{m}': f'compute_{m}' for m in [
@@ -7819,9 +7529,16 @@ class EnhancedAppUI(AppUI):
             slider_defaults_dict['enable_dedup'] = self.config.ui_defaults.enable_dedup
 
             filter_event = FilterEvent(
-                all_frames_data, per_metric_values, output_dir, "Kept",
-                self.config.gradio_defaults.show_mask_overlay, self.config.gradio_defaults.overlay_alpha,
-                face_match_default, dedup_default, self.components['dedup_method_input'].value, slider_defaults_dict
+                all_frames_data=all_frames_data,
+                per_metric_values=per_metric_values,
+                output_dir=output_dir,
+                gallery_view="Kept",
+                show_overlay=self.config.gradio_defaults.show_mask_overlay,
+                overlay_alpha=self.config.gradio_defaults.overlay_alpha,
+                require_face_match=face_match_default,
+                dedup_thresh=dedup_default,
+                dedup_method=self.components['dedup_method_input'].value,
+                slider_values=slider_defaults_dict
             )
             filter_updates = on_filters_changed(filter_event, self.thumbnail_manager, self.config)
             status_update = filter_updates['filter_status_text']
@@ -8110,7 +7827,7 @@ class CompositionRoot:
     """
     def __init__(self):
         """Initializes the CompositionRoot and creates core services."""
-        self.config = Config(config_path="config.json")
+        self.config = Config()
         self.logger = AppLogger(config=self.config)
         self.thumbnail_manager = ThumbnailManager(self.logger, self.config)
         self.progress_queue = Queue()

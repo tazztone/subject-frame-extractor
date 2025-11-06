@@ -21,3 +21,9 @@ imagehash
 groundingdino-py==0.4.0
 scikit-image
 lpips
+pydantic
+pydantic-settings
+gradio
+lpips
+numba
+scikit-learn
