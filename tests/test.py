@@ -12,6 +12,11 @@ import cv2
 import datetime
 from collections import deque
 
+# Add project root to the Python path to allow for submodule imports
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+# Add submodule paths for direct import
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'Grounded-SAM-2', 'grounding_dino')))
+
 # Mock heavy dependencies before they are imported by the app
 mock_torch = MagicMock(name='torch')
 mock_torch.__version__ = "2.0.0"
@@ -20,12 +25,21 @@ mock_torch.__spec__ = MagicMock()
 mock_torch.hub = MagicMock(name='torch.hub')
 mock_torch.cuda = MagicMock(name='torch.cuda')
 mock_torch.cuda.is_available.return_value = False
+mock_torch.distributed = MagicMock(name='torch.distributed')
+mock_torch.multiprocessing = MagicMock(name='torch.multiprocessing')
 
 mock_torch_autograd = MagicMock(name='torch.autograd')
 mock_torch_autograd.Variable = MagicMock(name='torch.autograd.Variable')
 
+
 mock_torch_nn = MagicMock(name='torch.nn')
 mock_torch_nn.__path__ = ['fake'] # Make it a package
+# Create a dummy class to act as torch.nn.Module to allow class inheritance in dependencies
+class MockNNModule:
+    def __init__(self, *args, **kwargs): pass
+    def __call__(self, *args, **kwargs): return MagicMock()
+mock_torch_nn.Module = MockNNModule
+
 mock_torch_nn_init = MagicMock(name='torch.nn.init')
 mock_torch_nn_functional = MagicMock(name='torch.nn.functional')
 mock_torch_optim = MagicMock(name='torch.optim')
@@ -38,6 +52,7 @@ mock_torchvision = MagicMock(name='torchvision')
 mock_torchvision.ops = MagicMock(name='torchvision.ops')
 mock_torchvision.transforms = MagicMock(name='torchvision.transforms')
 mock_torchvision.transforms.functional = MagicMock(name='torchvision.transforms.functional')
+mock_torchvision.utils = MagicMock(name='torchvision.utils')
 
 mock_insightface = MagicMock(name='insightface')
 mock_insightface.app = MagicMock(name='insightface.app')
@@ -52,9 +67,19 @@ mock_process.memory_info.return_value.rss = 100 * 1024 * 1024
 mock_process.cpu_percent.return_value = 10.0
 
 
+mock_matplotlib = MagicMock(name='matplotlib')
+mock_matplotlib.__path__ = ['fake']
+mock_matplotlib.ticker = MagicMock(name='matplotlib.ticker')
+mock_matplotlib.figure = MagicMock(name='matplotlib.figure')
+mock_matplotlib.backends = MagicMock(name='matplotlib.backends')
+mock_matplotlib.backends.backend_agg = MagicMock(name='matplotlib.backends.backend_agg')
+
+
 modules_to_mock = {
     'torch': mock_torch,
     'torch.hub': mock_torch.hub,
+    'torch.distributed': mock_torch.distributed,
+    'torch.multiprocessing': mock_torch.multiprocessing,
     'torch.autograd': mock_torch_autograd,
     'torch.nn': mock_torch_nn,
     'torch.nn.init': mock_torch_nn_init,
@@ -66,24 +91,28 @@ modules_to_mock = {
     'torchvision.ops': mock_torchvision.ops,
     'torchvision.transforms': mock_torchvision.transforms,
     'torchvision.transforms.functional': mock_torchvision.transforms.functional,
+    'torchvision.utils': mock_torchvision.utils,
     # 'cv2': MagicMock(name='cv2'), # cv2 is now used in tests, so we don't mock it globally
     'insightface': mock_insightface,
     'insightface.app': mock_insightface.app,
     'onnxruntime': MagicMock(name='onnxruntime'),
-    'grounding_dino': MagicMock(name='grounding_dino'),
-    'grounding_dino.groundingdino': MagicMock(),
-    'grounding_dino.groundingdino.util': MagicMock(),
-    'grounding_dino.groundingdino.util.inference': MagicMock(),
-    'DAM4SAM': MagicMock(name='DAM4SAM'),
+    'groundingdino.util': MagicMock(name='groundingdino.util'),
+    'groundingdino.util.inference': MagicMock(name='groundingdino.util.inference'),
+    'DAM4SAM.utils': MagicMock(name='DAM4SAM.utils'),
     'DAM4SAM.dam4sam_tracker': MagicMock(name='DAM4SAM.dam4sam_tracker'),
     'ultralytics': MagicMock(name='ultralytics'),
     'GPUtil': MagicMock(getGPUs=lambda: [MagicMock(memoryUtil=0.5)]),
     'imagehash': mock_imagehash,
     'psutil': mock_psutil,
-    'matplotlib': MagicMock(),
+    'matplotlib': mock_matplotlib,
+    'matplotlib.ticker': mock_matplotlib.ticker,
+    'matplotlib.figure': mock_matplotlib.figure,
+    'matplotlib.backends': mock_matplotlib.backends,
+    'matplotlib.backends.backend_agg': mock_matplotlib.backends.backend_agg,
     'matplotlib.pyplot': MagicMock(),
     'scenedetect': MagicMock(),
     'yt_dlp': MagicMock(),
+    'pyiqa': MagicMock(name='pyiqa'),
     'mediapipe': MagicMock(),
     'mediapipe.tasks': MagicMock(),
     'mediapipe.tasks.python': MagicMock(),
@@ -534,8 +563,11 @@ class TestVideo:
     @patch('pathlib.Path.stat', return_value=MagicMock(st_size=1, st_mode=0))
     @patch('cv2.VideoCapture')
     @patch('pathlib.Path.mkdir')
-    def test_extraction_pipeline_run(self, mock_mkdir, mock_videocapture, mock_stat, mock_exists, mock_is_file, mock_ffmpeg, mock_info, test_config):
-        params = app.AnalysisParameters.from_ui(MagicMock(), test_config, source_path='/fake.mp4')
+    def test_extraction_pipeline_run(self, mock_mkdir, mock_videocapture, mock_stat, mock_exists, mock_is_file, mock_ffmpeg, mock_info, test_config, tmp_path):
+        # Use tmp_path for a valid output directory
+        output_dir = tmp_path / "downloads" / "fake"
+        output_dir.mkdir(parents=True)
+        params = app.AnalysisParameters.from_ui(MagicMock(), test_config, source_path='/fake.mp4', output_folder=str(output_dir))
         logger = MagicMock()
         
         # Instantiate with all required arguments
