@@ -1078,15 +1078,16 @@ def handle_common_errors(func: Callable) -> Callable:
             return {"error": f"An unexpected error occurred: {e}"}
     return wrapper
 
-def monitor_memory_usage(logger: 'AppLogger', threshold_mb: int = 8000):
+def monitor_memory_usage(logger: 'AppLogger', device: str, threshold_mb: int = 8000):
     """
     Checks GPU memory usage and logs a warning if it exceeds a threshold.
 
     Args:
         logger: The application logger.
+        device: The device to check memory usage on.
         threshold_mb: The memory usage threshold in megabytes.
     """
-    if torch.cuda.is_available():
+    if device == 'cuda':
         allocated = torch.cuda.memory_allocated() / 1024**2
         if allocated > threshold_mb:
             logger.warning(f"High GPU memory usage: {allocated:.1f}MB")
@@ -1243,14 +1244,15 @@ def _coerce(val: Any, to_type: type) -> Any:
     return val
 
 @contextlib.contextmanager
-def safe_resource_cleanup():
+def safe_resource_cleanup(device: str):
     """
     A context manager to perform garbage collection and clear CUDA cache.
     """
     try: yield
     finally:
         gc.collect()
-        if torch.cuda.is_available(): torch.cuda.empty_cache()
+        if device == 'cuda':
+            torch.cuda.empty_cache()
 
 def is_image_folder(p: Union[str, Path]) -> bool:
     """
@@ -1453,14 +1455,15 @@ class Frame(BaseModel):
                         mask_3ch = (np.stack([active_mask_full] * 3, axis=-1))
                         rgb_image = np.where(mask_3ch, rgb_image, 0)
                     img_tensor = (torch.from_numpy(rgb_image).float().permute(2, 0, 1).unsqueeze(0) / 255.0)
-                    with (torch.no_grad(), torch.amp.autocast('cuda', enabled=torch.cuda.is_available())):
+                    with (torch.no_grad(), torch.amp.autocast('cuda', enabled=niqe_metric.device.type == 'cuda')):
                         niqe_raw = float(niqe_metric(img_tensor.to(niqe_metric.device)))
                         niqe_score = max(0, min(100, (main_config.quality_scaling.niqe_offset - niqe_raw) * main_config.quality_scaling.niqe_scale_factor))
                         scores_norm["niqe"] = niqe_score / 100.0
                         self.metrics.niqe_score = float(niqe_score)
                 except Exception as e:
                     logger.warning("NIQE calculation failed", extra={'frame': self.frame_number, 'error': e})
-                    if torch.cuda.is_available(): torch.cuda.empty_cache()
+                    if niqe_metric.device.type == 'cuda':
+                        torch.cuda.empty_cache()
 
             if main_config and metrics_to_compute.get('quality'):
                 weights = main_config.quality_weights.model_dump()
@@ -1843,7 +1846,7 @@ def get_face_landmarker(model_path: str, logger: 'AppLogger') -> vision.FaceLand
         raise RuntimeError("Could not initialize MediaPipe face landmarker model.") from e
 
 @lru_cache(maxsize=None)
-def get_face_analyzer(model_name: str, models_path: str, det_size_tuple: tuple, logger: 'AppLogger') -> 'FaceAnalysis':
+def get_face_analyzer(model_name: str, models_path: str, det_size_tuple: tuple, logger: 'AppLogger', device: str = 'cpu') -> 'FaceAnalysis':
     """
     Loads and caches an InsightFace FaceAnalysis model.
 
@@ -1855,6 +1858,7 @@ def get_face_analyzer(model_name: str, models_path: str, det_size_tuple: tuple, 
         models_path: The root directory for storing models.
         det_size_tuple: A tuple specifying the detection size (width, height).
         logger: The application logger.
+        device: The device to run the model on ('cuda' or 'cpu').
 
     Returns:
         An initialized FaceAnalysis instance.
@@ -1863,16 +1867,16 @@ def get_face_analyzer(model_name: str, models_path: str, det_size_tuple: tuple, 
         RuntimeError: If the model fails to initialize, even with a CPU fallback.
     """
     from insightface.app import FaceAnalysis
-    logger.info(f"Loading or getting cached face model: {model_name}")
+    logger.info(f"Loading or getting cached face model: {model_name} on device: {device}")
     try:
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        providers = (['CUDAExecutionProvider', 'CPUExecutionProvider'] if device == 'cuda' else ['CPUExecutionProvider'])
+        is_cuda = device == 'cuda'
+        providers = (['CUDAExecutionProvider', 'CPUExecutionProvider'] if is_cuda else ['CPUExecutionProvider'])
         analyzer = FaceAnalysis(name=model_name, root=models_path, providers=providers)
-        analyzer.prepare(ctx_id=0 if device == 'cuda' else -1, det_size=det_size_tuple)
-        logger.success(f"Face model loaded with {'CUDA' if device == 'cuda' else 'CPU'}.")
+        analyzer.prepare(ctx_id=0 if is_cuda else -1, det_size=det_size_tuple)
+        logger.success(f"Face model loaded with {'CUDA' if is_cuda else 'CPU'}.")
         return analyzer
     except Exception as e:
-        if "out of memory" in str(e) and torch.cuda.is_available():
+        if "out of memory" in str(e) and device == 'cuda':
             torch.cuda.empty_cache()
             logger.warning("CUDA OOM, retrying with CPU...")
             try:
@@ -1900,7 +1904,7 @@ class PersonDetector:
         """
         from ultralytics import YOLO
         self.logger = logger
-        self.device = device if torch.cuda.is_available() else 'cpu'
+        self.device = device
         model_p = Path(model_path)
         model_str = str(model_p)
 
@@ -2002,7 +2006,7 @@ def resolve_grounding_dino_config(config_path: str) -> str:
 
 def get_grounding_dino_model(gdino_config_path: str, gdino_checkpoint_path: str, models_path: str,
                              grounding_dino_url: str, user_agent: str, retry_params: tuple,
-                             device: str = "cuda", logger: 'AppLogger' = None) -> Optional[torch.nn.Module]:
+                             device: str, logger: Optional['AppLogger'] = None) -> Optional[torch.nn.Module]:
     """
     Factory and registry function for the GroundingDINO model.
     Uses the global model_registry to ensure lazy loading and caching.
@@ -2054,7 +2058,7 @@ def get_grounding_dino_model(gdino_config_path: str, gdino_checkpoint_path: str,
     return model_registry.get_or_create(registry_key, _factory)
 
 def predict_grounding_dino(model: torch.nn.Module, image_tensor: torch.Tensor, caption: str,
-                           box_threshold: float, text_threshold: float, device: str = "cuda") -> tuple:
+                           box_threshold: float, text_threshold: float, device: str) -> tuple:
     """
     Runs inference with the GroundingDINO model.
 
@@ -2075,7 +2079,7 @@ def predict_grounding_dino(model: torch.nn.Module, image_tensor: torch.Tensor, c
                              box_threshold=float(box_threshold), text_threshold=float(text_threshold))
 
 def get_dam4sam_tracker(model_name: str, models_path: str, model_urls_tuple: tuple, user_agent: str,
-                        retry_params: tuple, logger: 'AppLogger') -> Optional['DAM4SAMTracker']:
+                        retry_params: tuple, logger: 'AppLogger', device: str) -> Optional['DAM4SAMTracker']:
     """
     Factory and registry function for the DAM4SAM tracker model.
     Uses the global model_registry to ensure lazy loading and caching.
@@ -2087,6 +2091,7 @@ def get_dam4sam_tracker(model_name: str, models_path: str, model_urls_tuple: tup
         user_agent: The user agent for download requests.
         retry_params: A tuple of (max_attempts, backoff_seconds) for retries.
         logger: The application logger.
+        device: The device to run the model on.
 
     Returns:
         An initialized DAM4SAMTracker instance, or None if loading fails.
@@ -2097,7 +2102,9 @@ def get_dam4sam_tracker(model_name: str, models_path: str, model_urls_tuple: tup
 
     def _factory():
         logger.info(f"Loading DAM4SAM model: {selected_name} (first use)", component="dam4sam")
-        if not (torch and torch.cuda.is_available()):
+        error_handler = ErrorHandler(logger, *retry_params)
+
+        if device != 'cuda':
             logger.error("DAM4SAM requires CUDA but it's not available.")
             return None
 
@@ -2133,7 +2140,7 @@ def get_dam4sam_tracker(model_name: str, models_path: str, model_urls_tuple: tup
     return model_registry.get_or_create(registry_key, _factory)
 
 
-def get_lpips_metric(model_name: str = 'alex', device: str = 'cuda') -> torch.nn.Module:
+def get_lpips_metric(model_name: str = 'alex', device: str = 'cpu') -> torch.nn.Module:
     """
     Factory and registry function for the LPIPS model.
     Uses the global model_registry to ensure lazy loading and caching.
@@ -2145,15 +2152,12 @@ def get_lpips_metric(model_name: str = 'alex', device: str = 'cuda') -> torch.nn
     Returns:
         An initialized LPIPS model instance.
     """
-    registry_key = f"lpips_{model_name}"
-    _device = device if torch.cuda.is_available() else 'cpu'
+    global _lpips_model_cache
+    if model_name not in _lpips_model_cache or _lpips_model_cache[model_name].device.type != device:
+        _lpips_model_cache[model_name] = lpips.LPIPS(net=model_name).to(device)
+    return _lpips_model_cache[model_name]
 
-    def _factory():
-        return lpips.LPIPS(net=model_name).to(_device)
-
-    return model_registry.get_or_create(registry_key, _factory)
-
-def initialize_analysis_models(params: 'AnalysisParameters', config: 'Config', logger: 'AppLogger', cuda_available: bool) -> dict:
+def initialize_analysis_models(params: 'AnalysisParameters', config: 'Config', logger: 'AppLogger') -> dict:
     """
     Initializes and returns all models required for a specific analysis run.
 
@@ -2164,12 +2168,11 @@ def initialize_analysis_models(params: 'AnalysisParameters', config: 'Config', l
         params: The parameters for the analysis run.
         config: The main application configuration.
         logger: The application logger.
-        cuda_available: A boolean indicating if a CUDA device is available.
 
     Returns:
         A dictionary containing the initialized models.
     """
-    device = "cuda" if cuda_available else "cpu"
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     face_analyzer, ref_emb, person_detector, face_landmarker = None, None, None, None
 
     # For YOLO-only mode, only the person detector is needed.
@@ -2189,7 +2192,8 @@ def initialize_analysis_models(params: 'AnalysisParameters', config: 'Config', l
             model_name=params.face_model_name,
             models_path=str(config.paths.models),
             det_size_tuple=tuple(config.model_defaults.face_analyzer_det_size),
-            logger=logger
+            logger=logger,
+            device=device
         )
         if face_analyzer and params.face_ref_img_path:
             ref_path = Path(params.face_ref_img_path)
@@ -2637,7 +2641,7 @@ def create_frame_map(output_dir: Path, logger: 'AppLogger', ext: str = ".webp") 
 class MaskPropagator:
     """Handles the propagation of a subject mask across a sequence of frames."""
     def __init__(self, params: 'AnalysisParameters', dam_tracker: 'DAM4SAMTracker', cancel_event: threading.Event,
-                 progress_queue: Queue, config: 'Config', logger: Optional['AppLogger'] = None):
+                 progress_queue: Queue, config: 'Config', logger: Optional['AppLogger'] = None, device: str = "cpu"):
         """
         Initializes the MaskPropagator.
 
@@ -2648,6 +2652,7 @@ class MaskPropagator:
             progress_queue: A queue for sending progress updates.
             config: The main application configuration.
             logger: The application logger.
+            device: The compute device ('cpu' or 'cuda').
         """
         self.params = params
         self.dam_tracker = dam_tracker
@@ -2655,7 +2660,7 @@ class MaskPropagator:
         self.progress_queue = progress_queue
         self.config = config
         self.logger = logger or AppLogger(config=Config())
-        self._device = "cuda" if torch.cuda.is_available() else "cpu"
+        self._device = device
 
     def propagate(self, shot_frames_rgb: list[np.ndarray], seed_idx: int, bbox_xywh: list[int],
                   tracker: Optional['AdvancedProgressTracker'] = None) -> tuple[list, list, list, list]:
@@ -2736,7 +2741,7 @@ class SeedSelector:
     """Orchestrates the selection of the initial seed bounding box for tracking."""
     def __init__(self, params: 'AnalysisParameters', config: 'Config', face_analyzer: 'FaceAnalysis',
                  reference_embedding: np.ndarray, person_detector: 'PersonDetector', tracker: 'DAM4SAMTracker',
-                 gdino_model: torch.nn.Module, logger: Optional['AppLogger'] = None):
+                 gdino_model: torch.nn.Module, logger: Optional['AppLogger'] = None, device: str = "cpu"):
         """
         Initializes the SeedSelector.
 
@@ -2749,6 +2754,7 @@ class SeedSelector:
             tracker: The DAM4SAM tracker instance.
             gdino_model: The GroundingDINO model.
             logger: The application logger.
+            device: The compute device ('cpu' or 'cuda').
         """
         self.params = params
         self.config = config
@@ -2757,7 +2763,7 @@ class SeedSelector:
         self.person_detector = person_detector
         self.tracker = tracker
         self._gdino = gdino_model
-        self._device = "cuda" if torch.cuda.is_available() else "cpu"
+        self._device = device
         self.logger = logger or AppLogger(config=Config())
 
     def _get_param(self, source: Union[dict, object], key: str, default: Any = None) -> Any:
@@ -3229,7 +3235,8 @@ class SubjectMasker:
                  frame_map: Optional[dict] = None, face_analyzer: Optional['FaceAnalysis'] = None,
                  reference_embedding: Optional[np.ndarray] = None, person_detector: Optional['PersonDetector'] = None,
                  thumbnail_manager: Optional['ThumbnailManager'] = None, niqe_metric: Optional[Callable] = None,
-                 logger: Optional['AppLogger'] = None, face_landmarker: Optional['FaceLandmarker'] = None):
+                 logger: Optional['AppLogger'] = None, face_landmarker: Optional['FaceLandmarker'] = None,
+                 device: str = "cpu"):
         """
         Initializes the SubjectMasker.
 
@@ -3246,6 +3253,7 @@ class SubjectMasker:
             niqe_metric: An initialized NIQE metric model.
             logger: The application logger.
             face_landmarker: An initialized MediaPipe FaceLandmarker.
+            device: The compute device ('cpu' or 'cuda').
         """
         self.params, self.config, self.progress_queue, self.cancel_event = params, config, progress_queue, cancel_event
         self.logger = logger or AppLogger(config=Config())
@@ -3253,7 +3261,7 @@ class SubjectMasker:
         self.face_analyzer, self.reference_embedding, self.person_detector, self.face_landmarker = face_analyzer, reference_embedding, person_detector, face_landmarker
         self.dam_tracker, self.mask_dir, self.shots = None, None, []
         self._gdino, self._sam2_img = None, None
-        self._device = "cuda" if torch.cuda.is_available() else "cpu"
+        self._device = device
         self.thumbnail_manager = thumbnail_manager if thumbnail_manager is not None else ThumbnailManager(self.logger, self.config)
         self.niqe_metric = niqe_metric
         self.initialize_models()
@@ -3266,8 +3274,9 @@ class SubjectMasker:
             tracker=self.dam_tracker,
             gdino_model=self._gdino,
             logger=self.logger,
+            device=self._device
         )
-        self.mask_propagator = MaskPropagator(params, self.dam_tracker, cancel_event, progress_queue, config=self.config, logger=self.logger)
+        self.mask_propagator = MaskPropagator(params, self.dam_tracker, cancel_event, progress_queue, config=self.config, logger=self.logger, device=self._device)
 
     def initialize_models(self):
         """Initializes the necessary AI models based on the current parameters."""
@@ -3308,6 +3317,7 @@ class SubjectMasker:
             logger=self.logger
         )
         return self._gdino is not None
+
     def _initialize_tracker(self):
         if self.dam_tracker: return True
 
@@ -3322,7 +3332,8 @@ class SubjectMasker:
                 model_urls_tuple=model_urls_tuple,
                 user_agent=self.config.models.user_agent,
                 retry_params=retry_params,
-                logger=self.logger
+                logger=self.logger,
+                device=self._device
             )
 
             if self.dam_tracker is None or self.dam_tracker == "failed":
@@ -3712,7 +3723,7 @@ class AnalysisPipeline(Pipeline):
 
                 self.scene_map = {s.shot_id: s for s in scenes_to_process}
                 self.logger.info("Initializing Models")
-                models = initialize_analysis_models(self.params, self.config, self.logger, self.device == 'cuda')
+                models = initialize_analysis_models(self.params, self.config, self.logger)
                 self.face_analyzer = models['face_analyzer']
                 self.reference_embedding = models['ref_emb']
                 self.face_landmarker = models['face_landmarker']
@@ -3727,7 +3738,8 @@ class AnalysisPipeline(Pipeline):
                 ext = ".webp" if self.params.thumbnails_only else ".png"
                 masker = SubjectMasker(self.params, self.progress_queue, self.cancel_event, self.config, create_frame_map(self.output_dir, self.logger, ext=ext),
                                        self.face_analyzer, self.reference_embedding, person_detector, thumbnail_manager=self.thumbnail_manager,
-                                       niqe_metric=self.niqe_metric, logger=self.logger, face_landmarker=self.face_landmarker)
+                                       niqe_metric=self.niqe_metric, logger=self.logger, face_landmarker=self.face_landmarker,
+                                       device=models['device'])
                 for scene in scenes_to_process:
                     if self.cancel_event.is_set():
                         self.logger.info("Propagation cancelled by user.")
@@ -3764,7 +3776,7 @@ class AnalysisPipeline(Pipeline):
                     f.write(json.dumps(_to_json_safe({"params": self.params.model_dump()})) + '\n')
             self.scene_map = {s.shot_id: s for s in scenes_to_process}
             self.logger.info("Initializing Models for Analysis")
-            models = initialize_analysis_models(self.params, self.config, self.logger, self.device == 'cuda')
+            models = initialize_analysis_models(self.params, self.config, self.logger)
             self.face_analyzer = models['face_analyzer']
             self.reference_embedding = models['ref_emb']
             self.face_landmarker = models['face_landmarker']
@@ -4663,7 +4675,7 @@ def _create_analysis_context(config: 'Config', logger: 'AppLogger', thumbnail_ma
 
     # Create parameters and initialize all necessary models
     params = AnalysisParameters.from_ui(logger, config, **ui_args)
-    models = initialize_analysis_models(params, config, logger, cuda_available)
+    models = initialize_analysis_models(params, config, logger)
     frame_map = create_frame_map(resolved_outdir, logger)
     
     if not frame_map:
@@ -4675,7 +4687,7 @@ def _create_analysis_context(config: 'Config', logger: 'AppLogger', thumbnail_ma
         frame_map=frame_map, face_analyzer=models["face_analyzer"],
         reference_embedding=models["ref_emb"], person_detector=models["person_detector"],
         niqe_metric=None, thumbnail_manager=thumbnail_manager, logger=logger,
-        face_landmarker=models["face_landmarker"]
+        face_landmarker=models["face_landmarker"], device=models["device"]
     )
 
 def _recompute_single_preview(scene: dict, masker: 'SubjectMasker', overrides: dict,
@@ -4782,7 +4794,7 @@ def _wire_recompute_handler(config: 'Config', logger: 'AppLogger', thumbnail_man
         
         # The ana_input_components passed to this handler already contain the full UI state,
         # so we can create the masker directly from them.
-        masker = _create_analysis_context(config, logger, thumbnail_manager, cuda_available,
+        masker = _create_analysis_context(config, logger, thumbnail_manager,
                                           ana_ui_map_keys, ana_input_components)
 
         # 2. Find the target scene and apply overrides
@@ -4896,7 +4908,7 @@ def execute_pre_analysis(event: 'PreAnalysisEvent', progress_queue: Queue, cance
             logger.error(f"Failed to save run configuration: {e}", exc_info=True)
 
         logger.info("Loading Models")
-        models = initialize_analysis_models(params, config, logger, cuda_available)
+        models = initialize_analysis_models(params, config, logger)
         niqe_metric = None
         if not is_folder_mode and params.pre_analysis_enabled and pyiqa:
             # Skip NIQE for YOLO-only mode to save memory
@@ -4906,7 +4918,7 @@ def execute_pre_analysis(event: 'PreAnalysisEvent', progress_queue: Queue, cance
         masker = SubjectMasker(params, progress_queue, cancel_event, config, face_analyzer=models["face_analyzer"],
                                reference_embedding=models["ref_emb"], person_detector=models["person_detector"],
                                niqe_metric=niqe_metric, thumbnail_manager=thumbnail_manager, logger=logger,
-                               face_landmarker=models["face_landmarker"])
+                               face_landmarker=models["face_landmarker"], device=models["device"])
         masker.frame_map = masker._create_frame_map(str(output_dir))
 
         if is_folder_mode:
@@ -6102,7 +6114,7 @@ class EnhancedAppUI(AppUI):
             if not (0 <= subject_idx < len(yolo_boxes)):
                 return scenes, gr.update(), gr.update(), f"Invalid Subject ID. Please enter a number between 1 and {len(yolo_boxes)}."
 
-            masker = _create_analysis_context(self.config, self.logger, self.thumbnail_manager, self.cuda_available,
+            masker = _create_analysis_context(self.config, self.logger, self.thumbnail_manager,
                                               self.ana_ui_map_keys, ana_args)
 
             selected_box = yolo_boxes[subject_idx]
@@ -6279,7 +6291,7 @@ class EnhancedAppUI(AppUI):
             scene['is_overridden'] = False
             scene['selected_bbox'] = scene.get('initial_bbox')
 
-            masker = _create_analysis_context(self.config, self.logger, self.thumbnail_manager, self.cuda_available,
+            masker = _create_analysis_context(self.config, self.logger, self.thumbnail_manager,
                                               self.ana_ui_map_keys, ana_args)
 
             # Rerun the original seed selection
@@ -7127,7 +7139,7 @@ class EnhancedAppUI(AppUI):
             if not output_dir.exists():
                 return gr.update(visible=False), [], 0.5, []
 
-            models = initialize_analysis_models(params, self.config, self.logger, self.cuda_available)
+            models = initialize_analysis_models(params, self.config, self.logger)
             person_detector = models['person_detector']
             face_analyzer = models['face_analyzer']
 
@@ -7838,7 +7850,13 @@ def cleanup_models():
     application shutdown or when re-initializing models, to prevent memory
     leaks and unexpected behavior from stale cached objects.
     """
-    model_registry.clear()
+    global _yolo_model_cache, _dino_model_cache, _dam4sam_model_cache, _lpips_model_cache
+    _yolo_model_cache.clear()
+    _dino_model_cache = None
+    _dam4sam_model_cache.clear()
+    _lpips_model_cache.clear()
+    torch.cuda.empty_cache()
+    gc.collect()
 
 
 class CompositionRoot:

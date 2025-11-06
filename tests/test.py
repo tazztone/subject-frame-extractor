@@ -568,7 +568,7 @@ class TestUtils:
     @patch('app.torch')
     def test_safe_resource_cleanup(self, mock_torch, mock_gc):
         mock_torch.cuda.is_available.return_value = True
-        with app.safe_resource_cleanup(): pass
+        with app.safe_resource_cleanup(device='cuda'): pass
         mock_gc.assert_called_once()
         mock_torch.cuda.empty_cache.assert_called_once()
 
