@@ -167,7 +167,7 @@ class Config:
         grounding_dino: str = "https://github.com/IDEA-Research/GroundingDINO/releases/download/v0.1.0-alpha/groundingdino_swint_ogc.pth"
         grounding_dino_sha256: str = "3b3ca2563c77c69f651d7bd133e97139c186df06231157a64c507099c52bc799"
         face_landmarker: str = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
-        face_landmarker_sha256: Optional[str] = None # No official hash found
+        face_landmarker_sha256: str = "9c899f78b8f2a0b1b117b3554b5f903e481b67f1390f7716e2a537f8842c0c7a"
         dam4sam: Dict[str, str] = field(default_factory=lambda: {
             "sam21pp-T": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt",
             "sam21pp-S": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_small.pt",
@@ -337,12 +337,12 @@ class Config:
         max_resolution: List[str] = field(default_factory=lambda: ["maximum available", "2160", "1080", "720"])
         extraction_method_toggle: List[str] = field(default_factory=lambda: ["Recommended Thumbnails", "Legacy Full-Frame"])
         method: List[str] = field(default_factory=lambda: ["keyframes", "interval", "every_nth_frame", "nth_plus_keyframes", "all"])
-        primary_seed_strategy: List[str] = field(default_factory=lambda: ["👤 By Face", "📝 By Text", "🔄 Face + Text Fallback", "🧑‍🤝‍🧑 Find Prominent Person"])
+        primary_seed_strategy: List[str] = field(default_factory=lambda: ["🤖 Automatic", "👤 By Face", "📝 By Text", "🔄 Face + Text Fallback", "🧑‍🤝‍🧑 Find Prominent Person"])
         seed_strategy: List[str] = field(default_factory=lambda: ["Largest Person", "Center-most Person", "Highest Confidence", "Tallest Person", "Area x Confidence", "Rule-of-Thirds", "Edge-avoiding", "Balanced", "Best Face"])
         person_detector_model: List[str] = field(default_factory=lambda: ['yolo11x.pt', 'yolo11s.pt'])
         face_model_name: List[str] = field(default_factory=lambda: ["buffalo_l", "buffalo_s"])
         dam4sam_model_name: List[str] = field(default_factory=lambda: ["sam21pp-T", "sam21pp-S", "sam21pp-B+", "sam21pp-L"])
-        gallery_view: List[str] = field(default_factory=lambda: ["Kept Frames", "Rejected Frames"])
+        gallery_view: List[str] = field(default_factory=lambda: ["Kept", "Rejected"])
         log_level: List[str] = field(default_factory=lambda: ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'SUCCESS', 'CRITICAL'])
         scene_gallery_view: List[str] = field(default_factory=lambda: ["Kept", "Rejected", "All"])
 
@@ -369,7 +369,7 @@ class Config:
         model: str = "yolo11x.pt"
         imgsz: int = 640
         conf: float = 0.3
-    
+
     @dataclass
     class Logging:
         """Settings for the application logger.
@@ -633,25 +633,6 @@ class Config:
         """
         if sum(asdict(self.quality_weights).values()) == 0:
             raise ValueError("The sum of quality_weights cannot be zero.")
-
-    def _create_dirs(self):
-        """
-        Creates necessary directories based on the configuration.
-
-        Raises:
-            RuntimeError: If a directory cannot be created due to permissions.
-        """
-        dir_paths = [
-            self.paths.logs,
-            self.paths.models,
-            self.paths.downloads,
-        ]
-        for dir_path in dir_paths:
-            if isinstance(dir_path, str):
-                try:
-                    Path(dir_path).mkdir(exist_ok=True, parents=True)
-                except PermissionError as e:
-                    raise RuntimeError(f"Cannot create directory at {dir_path}. Check permissions.") from e
 
     def save_config(self, path: str):
         """Saves the current (resolved) configuration to a JSON file.
@@ -3689,10 +3670,11 @@ class SubjectMasker:
             self.logger.error("Failed to save mask metadata", exc_info=True)
         return mask_metadata
 
-    def _create_frame_map(self, frames_dir): return create_frame_map(Path(frames_dir), self.logger)
     def _load_shot_frames(self, frames_dir, start, end):
         frames = []
-        if not self.frame_map: self.frame_map = self._create_frame_map(frames_dir)
+        if not self.frame_map:
+            ext = ".webp" if self.params.thumbnails_only else ".png"
+            self.frame_map = create_frame_map(Path(frames_dir), self.logger, ext=ext)
         thumb_dir = Path(frames_dir) / "thumbs"
         for fn in sorted(fn for fn in self.frame_map if start <= fn < end):
             thumb_p, thumb_img = thumb_dir / f"{Path(self.frame_map[fn]).stem}.webp", self.thumbnail_manager.get(thumb_dir / f"{Path(self.frame_map[fn]).stem}.webp")
@@ -4000,7 +3982,8 @@ class AnalysisPipeline(Pipeline):
                 # When starting propagation, flip the flag on the params you pass into SubjectMasker
                 self.params.need_masks_now = True
                 self.params.enable_subject_mask = True
-                masker = SubjectMasker(self.params, self.progress_queue, self.cancel_event, self.config, self._create_frame_map(),
+                ext = ".webp" if self.params.thumbnails_only else ".png"
+                masker = SubjectMasker(self.params, self.progress_queue, self.cancel_event, self.config, create_frame_map(self.output_dir, self.logger, ext=ext),
                                        self.face_analyzer, self.reference_embedding, person_detector, thumbnail_manager=self.thumbnail_manager,
                                        niqe_metric=self.niqe_metric, logger=self.logger, face_landmarker=self.face_landmarker)
                 for scene in scenes_to_process:
@@ -4057,11 +4040,6 @@ class AnalysisPipeline(Pipeline):
         except Exception as e:
             self.logger.error("Analysis pipeline failed", exc_info=True, extra={'error': str(e)})
             return {"error": str(e), "done": False}
-
-    def _create_frame_map(self) -> dict:
-        """Helper to create the frame map with the correct file extension."""
-        ext = ".webp" if self.params.thumbnails_only else ".png"
-        return create_frame_map(self.output_dir, self.logger, ext=ext)
 
     def _filter_completed_scenes(self, scenes: list['Scene'], progress_data: dict) -> list['Scene']:
         """Filters out scenes that have already been processed in a previous run."""
@@ -4722,7 +4700,7 @@ def _update_gallery(all_frames_data: list[dict], filters: dict, output_dir: str,
         all_frames_data: A list of all frame metadata.
         filters: A dictionary of the current filter settings.
         output_dir: The main output directory for the run.
-        gallery_view: The current view ("Kept Frames" or "Rejected Frames").
+        gallery_view: The current view ("Kept" or "Rejected").
         show_overlay: Whether to display the mask overlay.
         overlay_alpha: The transparency of the mask overlay.
         thumbnail_manager: The thumbnail cache manager.
@@ -4739,12 +4717,12 @@ def _update_gallery(all_frames_data: list[dict], filters: dict, output_dir: str,
         rejection_reasons = ', '.join([f'{k}: {v}' for k, v in counts.most_common()])
         status_parts.append(f"**Rejections:** {rejection_reasons}")
 
-    status_text, frames_to_show, preview_images = " | ".join(status_parts), rejected if gallery_view == "Rejected Frames" else kept, []
+    status_text, frames_to_show, preview_images = " | ".join(status_parts), rejected if gallery_view == "Rejected" else kept, []
     if output_dir:
         output_path, thumb_dir, masks_dir = Path(output_dir), Path(output_dir) / "thumbs", Path(output_dir) / "masks"
         for f_meta in frames_to_show[:100]:
             thumb_path = thumb_dir / f"{Path(f_meta['filename']).stem}.webp"
-            caption = f"Reasons: {', '.join(per_frame_reasons.get(f_meta['filename'], []))}" if gallery_view == "Rejected Frames" else ""
+            caption = f"Reasons: {', '.join(per_frame_reasons.get(f_meta['filename'], []))}" if gallery_view == "Rejected" else ""
             thumb_rgb_np = thumbnail_manager.get(thumb_path)
             if thumb_rgb_np is None: continue
             if show_overlay and not f_meta.get("mask_empty", True) and (mask_name := f_meta.get("mask_path")):
@@ -6115,7 +6093,7 @@ Review the automatically detected subjects and refine the selection if needed. E
                     self.components['results_group'] = results_group
                     gr.Markdown("### 🖼️ Step 2: Review Results")
                     with gr.Row():
-                        self._create_component('gallery_view_toggle', 'radio', {'choices': self.config.choices.gallery_view, 'value': "Kept Frames", 'label': "Show in Gallery"})
+                        self._create_component('gallery_view_toggle', 'radio', {'choices': self.config.choices.gallery_view, 'value': "Kept", 'label': "Show in Gallery"})
                         self._create_component('show_mask_overlay_input', 'checkbox', {'label': "Show Mask Overlay", 'value': self.config.gradio_defaults.show_mask_overlay})
                         self._create_component('overlay_alpha_slider', 'slider', {'label': "Overlay Alpha", 'minimum': 0.0, 'maximum': 1.0, 'value': self.config.gradio_defaults.overlay_alpha, 'step': 0.1})
                     self._create_component('results_gallery', 'gallery', {'columns': [4, 6, 8], 'rows': 2, 'height': 'auto', 'preview': True, 'allow_preview': True, 'object_fit': 'contain'})
@@ -7841,7 +7819,7 @@ class EnhancedAppUI(AppUI):
             slider_defaults_dict['enable_dedup'] = self.config.ui_defaults.enable_dedup
 
             filter_event = FilterEvent(
-                all_frames_data, per_metric_values, output_dir, "Kept Frames",
+                all_frames_data, per_metric_values, output_dir, "Kept",
                 self.config.gradio_defaults.show_mask_overlay, self.config.gradio_defaults.overlay_alpha,
                 face_match_default, dedup_default, self.components['dedup_method_input'].value, slider_defaults_dict
             )
@@ -7932,7 +7910,8 @@ class EnhancedAppUI(AppUI):
             export_dir.mkdir(exist_ok=True, parents=True)
             cmd = ['ffmpeg', '-y', '-i', str(event.video_path), '-vf', select_filter, '-vsync', 'vfr', str(export_dir / "frame_%06d.png")]
             self.logger.info("Starting final export extraction...", extra={'command': ' '.join(cmd)})
-            subprocess.run(cmd, check=True, capture_output=True, text=True)
+            with open(os.devnull, 'w') as devnull:
+                subprocess.run(cmd, check=True, stdout=devnull, stderr=devnull)
 
             self.logger.info("Renaming extracted frames to match original filenames...")
             orig_to_filename_map = {v: k for k, v in fn_to_orig_map.items()}
