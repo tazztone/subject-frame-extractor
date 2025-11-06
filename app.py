@@ -462,7 +462,6 @@ class Config:
     @dataclass
     class Analysis:
         """Parameters for the analysis pipeline."""
-        max_workers: int = 8
         default_batch_size: int = 32
         default_workers: int = 4
         
@@ -1875,21 +1874,6 @@ class AnalysisParameters:
 
         return instance
 
-    def _get_config_hash(self, output_dir: Path) -> str:
-        """
-        Generates a hash representing the current analysis configuration.
-
-        Args:
-            output_dir: The output directory, used to include scene seeds in the hash.
-
-        Returns:
-            A SHA256 hash string.
-        """
-        data_to_hash = json.dumps(_to_json_safe(asdict(self)), sort_keys=True)
-        scene_seeds_path = output_dir / "scene_seeds.json"
-        if scene_seeds_path.exists(): data_to_hash += scene_seeds_path.read_text(encoding='utf-8')
-        return hashlib.sha256(data_to_hash.encode()).hexdigest()
-
 @dataclass
 class MaskingResult:
     """Contains the results of a masking operation for a single frame."""
@@ -2551,11 +2535,6 @@ class VideoManager:
             
             tmpl = self.config.youtube_dl.output_template
             max_h = None if self.max_resolution == "maximum available" else int(self.max_resolution)
-            fmt = (
-                "bestvideo[ext=mp4][height<={h}]+bestaudio[ext=m4a]/best[ext=mp4][height<={h}]/best".format(h=max_h)
-                if max_h else
-                "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best"
-            )
 
             ydl_opts = {
                 'outtmpl': str(Path(self.config.paths.downloads) / tmpl),
@@ -4401,7 +4380,7 @@ def _extract_metric_arrays(all_frames_data: list[dict], config: 'Config') -> dic
 
 
 def _apply_deduplication_filter(all_frames_data: list[dict], filters: dict, thumbnail_manager: 'ThumbnailManager',
-                                config: 'Config') -> tuple[np.ndarray, defaultdict]:
+                                config: 'Config', output_dir: str) -> tuple[np.ndarray, defaultdict]:
     """
     Applies deduplication filters based on perceptual hash (pHash).
 
@@ -4410,6 +4389,7 @@ def _apply_deduplication_filter(all_frames_data: list[dict], filters: dict, thum
         filters: A dictionary of active filter settings.
         thumbnail_manager: The thumbnail cache manager.
         config: The main application configuration.
+        output_dir: The session's output directory.
 
     Returns:
         A tuple containing a boolean NumPy array (the mask of frames to keep)
@@ -4437,9 +4417,9 @@ def _apply_deduplication_filter(all_frames_data: list[dict], filters: dict, thum
                             reasons[filenames[c_idx]].append('duplicate')
                         dedup_mask[c_idx] = False
         elif dedup_method == "SSIM" and thumbnail_manager:
-            dedup_mask, reasons = apply_ssim_dedup(all_frames_data, filters, dedup_mask, reasons, thumbnail_manager, config)
+            dedup_mask, reasons = apply_ssim_dedup(all_frames_data, filters, dedup_mask, reasons, thumbnail_manager, config, output_dir)
         elif dedup_method == "LPIPS" and thumbnail_manager:
-            dedup_mask, reasons = apply_lpips_dedup(all_frames_data, filters, dedup_mask, reasons, thumbnail_manager, config)
+            dedup_mask, reasons = apply_lpips_dedup(all_frames_data, filters, dedup_mask, reasons, thumbnail_manager, config, output_dir)
     return dedup_mask, reasons
 
 def _apply_metric_filters(all_frames_data: list[dict], metric_arrays: dict, filters: dict,
@@ -4533,7 +4513,7 @@ def _apply_metric_filters(all_frames_data: list[dict], metric_arrays: dict, filt
     return metric_filter_mask, reasons
 
 def apply_all_filters_vectorized(all_frames_data: list[dict], filters: dict, config: 'Config',
-                                 thumbnail_manager: Optional['ThumbnailManager'] = None) -> tuple[list, list, Counter, dict]:
+                                 thumbnail_manager: Optional['ThumbnailManager'] = None, output_dir: Optional[str] = None) -> tuple[list, list, Counter, dict]:
     """
     Applies all filtering logic to a list of frames.
 
@@ -4545,6 +4525,7 @@ def apply_all_filters_vectorized(all_frames_data: list[dict], filters: dict, con
         filters: A dictionary of active filter settings from the UI.
         config: The main application configuration.
         thumbnail_manager: The thumbnail cache manager, required for SSIM/LPIPS dedup.
+        output_dir: The session's output directory, required for SSIM/LPIPS dedup.
 
     Returns:
         A tuple containing:
@@ -4564,7 +4545,7 @@ def apply_all_filters_vectorized(all_frames_data: list[dict], filters: dict, con
 
     # 2. Handle deduplication
     dedup_mask, reasons = _apply_deduplication_filter(
-        all_frames_data, filters, thumbnail_manager, config
+        all_frames_data, filters, thumbnail_manager, config, output_dir
     )
 
     # 3. Apply metric-based filters
@@ -4585,7 +4566,7 @@ def apply_all_filters_vectorized(all_frames_data: list[dict], filters: dict, con
     return kept, rejected, total_reasons, reasons
 
 def apply_ssim_dedup(all_frames_data: list[dict], filters: dict, dedup_mask: np.ndarray, reasons: defaultdict,
-                     thumbnail_manager: 'ThumbnailManager', config: 'Config') -> tuple[np.ndarray, defaultdict]:
+                     thumbnail_manager: 'ThumbnailManager', config: 'Config', output_dir: str) -> tuple[np.ndarray, defaultdict]:
     """
     Applies deduplication using Structural Similarity Index (SSIM).
 
@@ -4596,6 +4577,7 @@ def apply_ssim_dedup(all_frames_data: list[dict], filters: dict, dedup_mask: np.
         reasons: A dictionary to store rejection reasons.
         thumbnail_manager: The thumbnail cache manager.
         config: The main application configuration.
+        output_dir: The session's output directory.
 
     Returns:
         A tuple of the updated deduplication mask and reasons dictionary.
@@ -4610,8 +4592,8 @@ def apply_ssim_dedup(all_frames_data: list[dict], filters: dict, dedup_mask: np.
         c_frame_data = all_frames_data[c_idx]
         p_frame_data = all_frames_data[p_idx]
 
-        c_thumb_path = Path(config.paths.downloads) / Path(p_frame_data['filename']).parent.name / "thumbs" / c_frame_data['filename']
-        p_thumb_path = Path(config.paths.downloads) / Path(p_frame_data['filename']).parent.name / "thumbs" / p_frame_data['filename']
+        c_thumb_path = Path(output_dir) / "thumbs" / c_frame_data['filename']
+        p_thumb_path = Path(output_dir) / "thumbs" / p_frame_data['filename']
 
         img1 = thumbnail_manager.get(p_thumb_path)
         img2 = thumbnail_manager.get(c_thumb_path)
@@ -4635,7 +4617,7 @@ def apply_ssim_dedup(all_frames_data: list[dict], filters: dict, dedup_mask: np.
     return dedup_mask, reasons
 
 def apply_lpips_dedup(all_frames_data: list[dict], filters: dict, dedup_mask: np.ndarray, reasons: defaultdict,
-                      thumbnail_manager: 'ThumbnailManager', config: 'Config') -> tuple[np.ndarray, defaultdict]:
+                      thumbnail_manager: 'ThumbnailManager', config: 'Config', output_dir: str) -> tuple[np.ndarray, defaultdict]:
     """
     Applies deduplication using Learned Perceptual Image Patch Similarity (LPIPS).
 
@@ -4646,6 +4628,7 @@ def apply_lpips_dedup(all_frames_data: list[dict], filters: dict, dedup_mask: np
         reasons: A dictionary to store rejection reasons.
         thumbnail_manager: The thumbnail cache manager.
         config: The main application configuration.
+        output_dir: The session's output directory.
 
     Returns:
         A tuple of the updated deduplication mask and reasons dictionary.
@@ -4666,8 +4649,8 @@ def apply_lpips_dedup(all_frames_data: list[dict], filters: dict, dedup_mask: np
         c_frame_data = all_frames_data[c_idx]
         p_frame_data = all_frames_data[p_idx]
 
-        c_thumb_path = Path(config.paths.downloads) / Path(p_frame_data['filename']).parent.name / "thumbs" / c_frame_data['filename']
-        p_thumb_path = Path(config.paths.downloads) / Path(p_frame_data['filename']).parent.name / "thumbs" / p_frame_data['filename']
+        c_thumb_path = Path(output_dir) / "thumbs" / c_frame_data['filename']
+        p_thumb_path = Path(output_dir) / "thumbs" / p_frame_data['filename']
 
         img1 = thumbnail_manager.get(p_thumb_path)
         img2 = thumbnail_manager.get(c_thumb_path)
@@ -4737,7 +4720,7 @@ def _update_gallery(all_frames_data: list[dict], filters: dict, output_dir: str,
         A tuple containing the updated status text and a Gradio update object
         for the gallery.
     """
-    kept, rejected, counts, per_frame_reasons = apply_all_filters_vectorized(all_frames_data, filters or {}, config, thumbnail_manager)
+    kept, rejected, counts, per_frame_reasons = apply_all_filters_vectorized(all_frames_data, filters or {}, config, thumbnail_manager, output_dir)
     status_parts = [f"**Kept:** {len(kept)}/{len(all_frames_data)}"]
     if counts:
         rejection_reasons = ', '.join([f'{k}: {v}' for k, v in counts.most_common()])
@@ -6846,11 +6829,11 @@ class EnhancedAppUI(AppUI):
                 output_folder=ext_result['extracted_frames_dir_state'],
                 video_path=ext_result['extracted_video_path_state'],
                 resume=False,
-                enable_face_filter=True,
-                face_ref_img_path="dry-run-assets/sample.jpg",
+                enable_face_filter=False,
+                face_ref_img_path="",
                 face_ref_img_upload=None,
                 face_model_name='buffalo_l',
-                enable_subject_mask=True,
+                enable_subject_mask=False,
                 dam4sam_model_name='sam21pp-T',
                 person_detector_model='yolo11x.pt',
                 best_frame_strategy='Largest Person',
@@ -6904,12 +6887,13 @@ class EnhancedAppUI(AppUI):
             report[-1] += " OK"
 
             metadata_path = ana_result['metadata_path']
-            all_frames, _ = load_and_prep_filter_data(metadata_path, self.get_all_filter_keys())
+            all_frames, _ = load_and_prep_filter_data(metadata_path, self.get_all_filter_keys(), self.config)
+
 
             # Filtering
             report.append("  - Stage 5: Filtering...")
             filters = {'require_face_match': False, 'dedup_thresh': -1}
-            kept, _, _, _ = apply_all_filters_vectorized(all_frames, filters, self.config)
+            kept, _, _, _ = apply_all_filters_vectorized(all_frames, filters, self.config, output_dir=ana_result['output_dir'])
             report[-1] += f" OK (kept {len(kept)} frames)"
 
             # Export
@@ -7903,7 +7887,7 @@ class EnhancedAppUI(AppUI):
                 "mask_area_enabled": any("mask_area_pct" in f for f in event.all_frames_data),
                 "enable_dedup": any('phash' in f for f in event.all_frames_data)
             })
-            kept, _, _, _ = apply_all_filters_vectorized(event.all_frames_data, filters, self.config)
+            kept, _, _, _ = apply_all_filters_vectorized(event.all_frames_data, filters, self.config, output_dir=event.output_dir)
             if not kept:
                 return "No frames kept after filtering. Nothing to export."
 
