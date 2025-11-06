@@ -4,7 +4,6 @@ Frame Extractor & Analyzer v2.0
 """
 import contextlib
 import cv2
-import dataclasses
 from datetime import datetime
 import functools
 import gc
@@ -25,11 +24,11 @@ import threading
 import time
 import torch
 import traceback
-import urllib.request
 from torchvision.ops import box_convert
 from skimage.metrics import structural_similarity as ssim
 import lpips
 from torchvision import transforms
+import urllib.request
 
 from pathlib import Path
 
@@ -52,7 +51,7 @@ from dataclasses import dataclass, asdict, field, fields, is_dataclass
 from enum import Enum
 from functools import lru_cache
 from queue import Empty, Queue
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, Generator, List, Optional, Union
 
 # --- DEPENDENCY IMPORTS (with error handling) ---
 
@@ -411,7 +410,7 @@ class Config:
         """Thresholds for system resource monitoring."""
         memory_warning_threshold_mb: int = 8192
         memory_critical_threshold_mb: int = 16384
-        cpu_warning_threshold_percent: int = 90
+        cpu_warning_threshold_percent: float = 90.0
         gpu_memory_warning_threshold_percent: int = 90
         memory_limit_mb: int = 8192
 
@@ -503,9 +502,9 @@ class Config:
                     file_config = json.load(f)
                 if file_config:
                     self._merge_configs(config_dict, file_config)
-            except Exception as e:
+            except (json.JSONDecodeError, FileNotFoundError) as e:
                 # Log this instead of raising, so we can fall back to defaults
-                print(f"Warning: Could not load or parse {self.config_path}: {e}") # Replace with logger later
+                logging.warning(f"Could not load or parse {self.config_path}: {e}")
 
         # 3. Override with environment variables
         self._override_with_env_vars(config_dict)
@@ -781,16 +780,17 @@ class AppLogger:
         self.info(f"Start {name}", component=component)
         try:
             yield
-            duration = (time.time() - t0) * 1000
-            if tracker:
-                tracker.done_stage(f"{name} complete")
-            self.success(f"Done {name} in {duration:.0f}ms", component=component)
         except Exception as e:
             if tracker:
                 # Freeze progress and show failure state
                 tracker.set_stage(f"{name}: Failed", substage=str(e))
             self.error(f"Failed {name}", component=component, stack_trace=traceback.format_exc())
             raise
+        finally:
+            duration = (time.time() - t0) * 1000
+            if tracker and not self.cancel_event.is_set():
+                tracker.done_stage(f"{name} complete")
+            self.success(f"Done {name} in {duration:.0f}ms", component=component)
 
     def _create_log_event(self, level: str, message: str, component: str, **kwargs) -> LogEvent:
         """
@@ -1159,13 +1159,18 @@ class ErrorHandler:
                     return func(*args, **kwargs)
                 except Exception as e:
                     self.logger.warning(
-                        f"Primary function {func.__name__} failed, using fallback: {str(e)}", component="error_handler",
-                        custom_fields={'primary_function': func.__name__, 'fallback_function': fallback_func.__name__, 'error': str(e)})
+                        f"Primary function {func.__name__} failed, using fallback: {str(e)}",
+                        component="error_handler",
+                        error_type=type(e).__name__,
+                        stack_trace=traceback.format_exc(),
+                        custom_fields={'primary_function': func.__name__, 'fallback_function': fallback_func.__name__})
                     try:
                         return fallback_func(*args, **kwargs)
                     except Exception as fallback_error:
                         self.logger.error(
-                            f"Both primary and fallback functions failed", component="error_handler", error_type=type(fallback_error).__name__,
+                            f"Both primary and fallback functions failed for {func.__name__}",
+                            component="error_handler",
+                            error_type=type(fallback_error).__name__,
                             stack_trace=traceback.format_exc(),
                             custom_fields={'primary_function': func.__name__, 'fallback_function': fallback_func.__name__,
                                            'primary_error': str(e), 'fallback_error': str(fallback_error)})
@@ -1283,7 +1288,6 @@ class SessionLoadEvent(UIEvent):
     session_path: str
 
 # --- UTILS ---
-import functools
 
 def handle_common_errors(func: Callable) -> Callable:
     """
@@ -1302,12 +1306,15 @@ def handle_common_errors(func: Callable) -> Callable:
             return func(*args, **kwargs)
         except FileNotFoundError as e:
             return {"error": f"File not found: {e}. Please check the path."}
+        except (ValueError, TypeError) as e:
+            return {"error": f"Invalid input: {e}. Please check your parameters."}
         except RuntimeError as e:
             if "CUDA out of memory" in str(e):
                 return {"error": "GPU memory full. Try reducing batch size or using CPU mode."}
             return {"error": f"Processing error: {e}"}
         except Exception as e:
-            return {"error": f"Unexpected error: {e}"}
+            # Catch any other unexpected errors
+            return {"error": f"An unexpected error occurred: {e}"}
     return wrapper
 
 def monitor_memory_usage(logger: 'AppLogger', threshold_mb: int = 8000):
@@ -3835,16 +3842,19 @@ class ExtractionPipeline(Pipeline):
         is_folder = is_image_folder(source_p)
 
         if is_folder:
-            output_dir = Path(self.config.paths.downloads) / source_p.name
+            output_dir = Path(self.params.output_folder) if self.params.output_folder else Path(self.config.paths.downloads) / source_p.name
             output_dir.mkdir(exist_ok=True, parents=True)
 
             params_dict = asdict(self.params)
             params_dict['output_folder'] = str(output_dir)
             params_dict['video_path'] = "" # No video path for image folders
 
-            output_dir = output_dir.resolve()
-            with (output_dir / "run_config.json").open('w', encoding='utf-8') as f:
-                json.dump(_to_json_safe(params_dict), f, indent=2)
+            run_cfg_path = output_dir / "run_config.json"
+            try:
+                with run_cfg_path.open('w', encoding='utf-8') as f:
+                    json.dump(_to_json_safe(params_dict), f, indent=2)
+            except OSError as e:
+                self.logger.warning(f"Could not write run config to {run_cfg_path}: {e}")
 
             self.logger.info(f"Processing image folder: {source_p.name}")
             images = list_images(source_p, self.config)
@@ -3866,16 +3876,19 @@ class ExtractionPipeline(Pipeline):
             self.logger.info("Preparing video source...")
             vid_manager = VideoManager(self.params.source_path, self.config, self.params.max_resolution)
             video_path = Path(vid_manager.prepare_video(self.logger))
-            output_dir = Path(self.config.paths.downloads) / video_path.stem
+            output_dir = Path(self.params.output_folder) if self.params.output_folder else Path(self.config.paths.downloads) / video_path.stem
             output_dir.mkdir(exist_ok=True, parents=True)
 
             params_dict = asdict(self.params)
             params_dict['output_folder'] = str(output_dir)
             params_dict['video_path'] = str(video_path)
-            output_dir = Path(output_dir).resolve()
-            output_dir.mkdir(parents=True, exist_ok=True)
-            with (output_dir / "run_config.json").open('w', encoding='utf-8') as f:
-                json.dump(_to_json_safe(params_dict), f, indent=2)
+
+            run_cfg_path = output_dir / "run_config.json"
+            try:
+                with run_cfg_path.open('w', encoding='utf-8') as f:
+                    json.dump(_to_json_safe(params_dict), f, indent=2)
+            except OSError as e:
+                self.logger.warning(f"Could not write run config to {run_cfg_path}: {e}")
 
             self.logger.info("Video ready", user_context={'path': sanitize_filename(video_path.name, self.config)})
             video_info = VideoManager.get_video_info(video_path)
@@ -3892,7 +3905,7 @@ class ExtractionPipeline(Pipeline):
             if self.cancel_event.is_set():
                 self.logger.info("Extraction cancelled by user.")
                 if tracker: tracker.done_stage("Extraction cancelled")
-                return
+                return {"done": False, "log": "Extraction cancelled"}
 
             if tracker: tracker.done_stage("Extraction complete")
             self.logger.success("Extraction complete.")
@@ -5197,7 +5210,7 @@ def execute_pre_analysis(event: 'PreAnalysisEvent', progress_queue: Queue, cance
             logger.info("Starting seed selection for image folder.")
             scenes_path = output_dir / "scenes.json"
             if not scenes_path.exists():
-                yield {"log": "[ERROR] scenes.json not found. Run extraction first."}
+                yield {"log": "[ERROR] scenes.json not found. Run extraction first.", "done": False}
                 return
 
             with scenes_path.open('r', encoding='utf-8') as f:
@@ -5244,57 +5257,57 @@ def execute_pre_analysis(event: 'PreAnalysisEvent', progress_queue: Queue, cance
                 "seeding_results_column": gr.update(visible=True),
                 "propagation_group": gr.update(visible=True),
             }
-            return
 
-        scenes_path = output_dir / "scenes.json"
-        if not scenes_path.exists():
-            yield {"log": "[ERROR] scenes.json not found. Run extraction with scene detection."}
-            return
-        with scenes_path.open('r', encoding='utf-8') as f: scenes = [Scene(shot_id=i, start_frame=s, end_frame=e) for i, (s, e) in enumerate(json.load(f))]
+        else:
+            scenes_path = output_dir / "scenes.json"
+            if not scenes_path.exists():
+                yield {"log": "[ERROR] scenes.json not found. Run extraction with scene detection.", "done": False}
+                return
+            with scenes_path.open('r', encoding='utf-8') as f: scenes = [Scene(shot_id=i, start_frame=s, end_frame=e) for i, (s, e) in enumerate(json.load(f))]
 
-        video_info = VideoManager.get_video_info(params.video_path)
-        totals = estimate_totals(params, video_info, scenes)
-        tracker.start(totals["pre_analysis"], desc="Analyzing scenes")
+            video_info = VideoManager.get_video_info(params.video_path)
+            totals = estimate_totals(params, video_info, scenes)
+            tracker.start(totals["pre_analysis"], desc="Analyzing scenes")
 
-        def pre_analysis_task():
-            logger.info(f"Pre-analyzing {len(scenes)} scenes")
-            previews_dir = output_dir / "previews"
-            previews_dir.mkdir(exist_ok=True)
-            for i, scene in enumerate(scenes):
-                if cancel_event.is_set(): break
-                tracker.step(1, desc=f"Scene {scene.shot_id}")
-                if not scene.best_frame: masker._select_best_frame_in_scene(scene, str(output_dir))
-                fname = masker.frame_map.get(scene.best_frame)
-                if not fname: continue
-                thumb_rgb = thumbnail_manager.get(output_dir / "thumbs" / f"{Path(fname).stem}.webp")
-                if thumb_rgb is None: continue
-                bbox, details = masker.get_seed_for_frame(thumb_rgb, seed_config=scene.seed_config or params, scene=scene)
-                scene.seed_result = {'bbox': bbox, 'details': details}
-                mask = masker.get_mask_for_bbox(thumb_rgb, bbox) if bbox else None
-                if mask is not None:
-                    h, w = mask.shape[:2]
-                    scene.seed_result['details']['mask_area_pct'] = (np.sum(mask > 0) / (h * w)) * 100 if h * w > 0 else 0.0
-                overlay_rgb = render_mask_overlay(thumb_rgb, mask, 0.6, logger=logger) if mask is not None else masker.draw_bbox(thumb_rgb, bbox)
+            def pre_analysis_task():
+                logger.info(f"Pre-analyzing {len(scenes)} scenes")
+                previews_dir = output_dir / "previews"
+                previews_dir.mkdir(exist_ok=True)
+                for i, scene in enumerate(scenes):
+                    if cancel_event.is_set(): break
+                    tracker.step(1, desc=f"Scene {scene.shot_id}")
+                    if not scene.best_frame: masker._select_best_frame_in_scene(scene, str(output_dir))
+                    fname = masker.frame_map.get(scene.best_frame)
+                    if not fname: continue
+                    thumb_rgb = thumbnail_manager.get(output_dir / "thumbs" / f"{Path(fname).stem}.webp")
+                    if thumb_rgb is None: continue
+                    bbox, details = masker.get_seed_for_frame(thumb_rgb, seed_config=scene.seed_config or params, scene=scene)
+                    scene.seed_result = {'bbox': bbox, 'details': details}
+                    mask = masker.get_mask_for_bbox(thumb_rgb, bbox) if bbox else None
+                    if mask is not None:
+                        h, w = mask.shape[:2]
+                        scene.seed_result['details']['mask_area_pct'] = (np.sum(mask > 0) / (h * w)) * 100 if h * w > 0 else 0.0
+                    overlay_rgb = render_mask_overlay(thumb_rgb, mask, 0.6, logger=logger) if mask is not None else masker.draw_bbox(thumb_rgb, bbox)
 
-                preview_path = previews_dir / f"scene_{scene.shot_id:05d}.jpg"
-                try:
-                    Image.fromarray(overlay_rgb).save(preview_path)
-                    scene.preview_path = str(preview_path)
-                except Exception as e:
-                    logger.error(f"Failed to save preview for scene {scene.shot_id}", exc_info=True)
+                    preview_path = previews_dir / f"scene_{scene.shot_id:05d}.jpg"
+                    try:
+                        Image.fromarray(overlay_rgb).save(preview_path)
+                        scene.preview_path = str(preview_path)
+                    except Exception as e:
+                        logger.error(f"Failed to save preview for scene {scene.shot_id}", exc_info=True)
 
-                if scene.status == 'pending': scene.status = 'included'
+                    if scene.status == 'pending': scene.status = 'included'
 
-            tracker.done_stage("Pre-analysis complete")
-            return {"done": True, "scenes": [asdict(s) for s in scenes]}
+                tracker.done_stage("Pre-analysis complete")
+                return {"done": True, "scenes": [asdict(s) for s in scenes]}
 
-        result = pre_analysis_task()
-        if result.get("done"):
-            final_yield = {"log": "Pre-analysis complete.", "status": f"{len(result['scenes'])} scenes found.",
-                   "scenes": result['scenes'], "output_dir": str(output_dir), "done": True}
-            if final_face_ref_path:
-                final_yield['final_face_ref_path'] = final_face_ref_path
-            yield final_yield
+            result = pre_analysis_task()
+            if result.get("done"):
+                final_yield = {"log": "Pre-analysis complete.", "status": f"{len(result['scenes'])} scenes found.",
+                       "scenes": result['scenes'], "output_dir": str(output_dir), "done": True}
+                if final_face_ref_path:
+                    final_yield['final_face_ref_path'] = final_face_ref_path
+                yield final_yield
     except Exception as e:
         logger.error("Pre-analysis execution failed", exc_info=True)
         yield {"log": f"[ERROR] Pre-analysis failed unexpectedly: {e}", "done": False}
@@ -5436,7 +5449,7 @@ def execute_session_load(
             except Exception as e:
                 logger.error(f"Failed to parse scenes.json: {e}", component="session_loader")
                 # Yield an error if base scene structure can't be loaded
-                yield {"log": f"[ERROR] Failed to read scenes.json: {e}", "status": "Session load failed."}
+                yield {"log": f"[ERROR] Failed to read scenes.json: {e}", "status": "Session load failed.", "done": False}
                 return
 
         if scene_seeds_path.exists():
@@ -6698,7 +6711,7 @@ class EnhancedAppUI(AppUI):
 
     def _create_event_handlers(self):
         """Initializes all Gradio event handlers for the enhanced UI."""
-        print("Creating event handlers...")
+        self.logger.info("Creating event handlers...")
         super()._create_event_handlers()
         c = self.components
         c['cancel_button'].click(lambda: self.cancel_event.set(), [], [])
@@ -7012,6 +7025,7 @@ class EnhancedAppUI(AppUI):
         Yields:
             UI updates from the pipeline execution.
         """
+        import dataclasses
         ui_args = dict(zip(self.ext_ui_map_keys, args))
         ui_args['thumbnails_only'] = True
         
@@ -8185,16 +8199,18 @@ def main():
     """
     try:
         composition = CompositionRoot()
+        logger = composition.get_logger()
         demo = composition.get_app_ui().build_ui()
-        print("Frame Extractor & Analyzer v2.0\nStarting application...")
+        logger.info("Frame Extractor & Analyzer v2.0\nStarting application...")
         demo.launch()
     except KeyboardInterrupt:
-        print("\nApplication stopped by user")
+        logger.info("\nApplication stopped by user")
     except Exception as e:
-        print(f"Error starting application: {e}")
+        logger.error(f"Error starting application: {e}", exc_info=True)
         sys.exit(1)
     finally:
-        if 'composition' in locals(): composition.cleanup()
+        if 'composition' in locals():
+            composition.cleanup()
 
 if __name__ == "__main__":
     main()
