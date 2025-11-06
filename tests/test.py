@@ -130,8 +130,7 @@ from app import Config, CompositionRoot
 @pytest.fixture
 def test_config():
     """Provides a clean, default Config object for each test."""
-    # We patch `_create_dirs` to avoid creating directories during tests
-    with patch('app.Config._create_dirs'):
+    with patch('app.Config._validate_paths'):
         yield app.Config(config_path=None)
 
 @pytest.fixture
@@ -194,33 +193,31 @@ class TestConfig:
     @patch('os.access', return_value=True)
     def test_file_override(self, mock_access, mock_exists, mock_file, test_config):
         """Verify that a config file overrides defaults."""
-        with patch('app.Config._create_dirs'):
-            config = app.Config(config_path="dummy_path.json")
-            assert config.paths.logs == "custom_logs"
-            assert config.quality_weights.sharpness == 50
-            # Check that a non-overridden value remains default
-            assert config.quality_weights.contrast == 15
+        config = app.Config(config_path="dummy_path.json")
+        assert config.paths.logs == "custom_logs"
+        assert config.quality_weights.sharpness == 50
+        # Check that a non-overridden value remains default
+        assert config.quality_weights.contrast == 15
 
     @patch.dict(os.environ, {"APP_PATHS_LOGS": "env_logs", "APP_QUALITY_WEIGHTS_SHARPNESS": "75"})
     def test_env_var_override(self, test_config):
         """Verify that environment variables override defaults and file configs."""
-        with patch('app.Config._create_dirs'):
-            config = app.Config(config_path=None) # Ensure no file is loaded
-            assert config.paths.logs == "env_logs"
-            assert config.quality_weights.sharpness == 75
-            assert isinstance(config.quality_weights.sharpness, int) # Type coercion
-            assert config.quality_weights.contrast == 15 # Default value
+        config = app.Config(config_path=None) # Ensure no file is loaded
+        assert config.paths.logs == "env_logs"
+        assert config.quality_weights.sharpness == 75
+        assert isinstance(config.quality_weights.sharpness, int) # Type coercion
+        assert config.quality_weights.contrast == 15 # Default value
 
     @patch('builtins.open', new_callable=mock_open, read_data="paths:\n  logs: 'file_logs'")
     @patch('pathlib.Path.exists', return_value=True)
     @patch.dict(os.environ, {"APP_PATHS_LOGS": "env_logs"})
     def test_precedence_env_over_file(self, mock_exists, mock_file, test_config):
         """Verify that environment variables have precedence over config files."""
-        with patch('app.Config._create_dirs'):
-            config = app.Config(config_path="dummy_path.yml")
-            assert config.paths.logs == "env_logs"
+        config = app.Config(config_path="dummy_path.yml")
+        assert config.paths.logs == "env_logs"
 
     @patch('app.Path.mkdir', MagicMock())
+    @patch('os.access', return_value=True)
     @patch.dict(os.environ, {
         'APP_PATHS_LOGS': 'env_logs',
         'APP_LOGGING_LOG_LEVEL': 'DEBUG',
@@ -231,7 +228,7 @@ class TestConfig:
         'APP_MONITORING_CPU_WARNING_THRESHOLD_PERCENT': '95.5',
         'APP_GRADIO_DEFAULTS_SHOW_MASK_OVERLAY': 'false'
     })
-    def test_env_vars_override_defaults(self):
+    def test_env_vars_override_defaults(self, mock_os_access):
         """Test that environment variables correctly override default config values."""
         with patch('app.open', mock_open(read_data='{}'), create=True):
             cfg = Config(config_path='nonexistent.json') # Ensure no file is read
@@ -954,11 +951,12 @@ class TestAnalysisPipeline:
 
         return pipeline
 
-    @patch('app.get_face_analyzer')
-    @patch('app.get_person_detector')
-    @patch('app.SubjectMasker')
     @patch('app.create_frame_map', return_value={1: "frame_1.webp"})
-    def test_run_full_analysis(self, mock_create_frame_map, mock_subject_masker, mock_get_person_detector, mock_get_face_analyzer, mock_analysis_pipeline):
+    @patch('app.SubjectMasker')
+    @patch('app.get_person_detector')
+    @patch('app.get_face_analyzer')
+    @patch('app.download_model', return_value='/fake/model.task')
+    def test_run_full_analysis(self, mock_download_model, mock_get_face_analyzer, mock_get_person_detector, mock_subject_masker, mock_create_frame_map, mock_analysis_pipeline):
         """Test the full analysis pipeline run."""
         pipeline = mock_analysis_pipeline
         pipeline.params.disable_parallel = True # Easier to test without threading
