@@ -467,7 +467,6 @@ class AppLogger:
         if log_to_file:
             self._setup_file_handlers()
         self._operation_stack: List[Dict[str, Any]] = []
-        self._file_lock = threading.Lock()
 
     def _setup_console_handler(self):
         """Sets up the console handler with colored output."""
@@ -479,16 +478,19 @@ class AppLogger:
 
     def _setup_file_handlers(self):
         """Sets up file handlers for both plain text and structured logs."""
+        # Handler for plain text session log
         file_handler = logging.FileHandler(self.session_log_file, encoding='utf-8')
         file_formatter = logging.Formatter(self.config.logging.log_format)
         file_handler.setFormatter(file_formatter)
         file_handler.setLevel(logging.DEBUG)
         self.logger.addHandler(file_handler)
-        # The structured handler is removed to prevent duplicate/mixed logging,
-        # as structured logs are written manually in _log_event.
-        # self.structured_handler = logging.FileHandler(self.structured_log_file, encoding='utf-8')
-        # self.structured_handler.setLevel(logging.DEBUG)
-        # self.logger.addHandler(self.structured_handler)
+
+        # Handler for structured JSONL log
+        structured_handler = logging.FileHandler(self.structured_log_file, encoding='utf-8')
+        structured_formatter = JsonFormatter()
+        structured_handler.setFormatter(structured_formatter)
+        structured_handler.setLevel(logging.DEBUG)
+        self.logger.addHandler(structured_handler)
 
     def set_progress_queue(self, queue: Queue):
         """
@@ -575,13 +577,10 @@ class AppLogger:
         log_message = f"{event.message}{extra_info}"
         if event.stack_trace:
             log_message += f"\n{event.stack_trace}"
-        self.logger.log(log_level, log_message)
 
-        # Manual write to JSONL file
-        json_line = json.dumps(event.model_dump(), default=str, ensure_ascii=False)
-        with self._file_lock:
-            with open(self.structured_log_file, 'a', encoding='utf-8') as f:
-                f.write(json_line + '\n')
+        # Pass the LogEvent object to the logger using the 'extra' kwarg.
+        # The custom JsonFormatter will know how to handle it.
+        self.logger.log(log_level, log_message, extra={'log_event': event})
 
         if self.progress_queue:
             ui_message = f"[{event.level}] {event.message}"
@@ -628,6 +627,38 @@ class ColoredFormatter(logging.Formatter):
             return super().format(record)
         finally:
             record.levelname = original_levelname
+
+class JsonFormatter(logging.Formatter):
+    """Formats log records as a JSON string."""
+    def format(self, record: logging.LogRecord) -> str:
+        """
+        Formats a log record into a JSON string.
+
+        If the record has a `log_event` attribute that is a `LogEvent` instance,
+        it will be serialized. Otherwise, a standard JSON log entry is created.
+
+        Args:
+            record: The log record to format.
+
+        Returns:
+            A JSON string representation of the log record.
+        """
+        log_event_obj = getattr(record, 'log_event', None)
+        if isinstance(log_event_obj, LogEvent):
+            # If a LogEvent is passed directly, use its model_dump
+            log_dict = log_event_obj.model_dump(exclude_none=True)
+        else:
+            # Fallback for standard log records
+            log_dict = {
+                'timestamp': self.formatTime(record, self.datefmt),
+                'level': record.levelname,
+                'message': record.getMessage(),
+                'component': record.name,
+            }
+            if record.exc_info:
+                log_dict['stack_trace'] = self.formatException(record.exc_info)
+
+        return json.dumps(log_dict, default=str, ensure_ascii=False)
 
 class AdvancedProgressTracker:
     """Manages and displays progress for long-running tasks in the UI."""
