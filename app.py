@@ -56,48 +56,6 @@ from typing import Any, Callable, Dict, Generator, List, Optional, Union
 
 # --- DEPENDENCY IMPORTS (with error handling) ---
 
-# --- UNIFIED MODEL REGISTRY ---
-class ModelRegistry:
-    """A thread-safe, lazy-loading registry for ML models."""
-    def __init__(self):
-        self._instance_cache = {}
-        self._lock = threading.Lock()
-
-    def get_or_create(self, key: str, factory: Callable, *args, **kwargs) -> Any:
-        """
-        Retrieves a model from the cache or creates it using a factory.
-
-        Args:
-            key: A unique string identifier for the model.
-            factory: A callable (function or class constructor) that creates the model.
-            *args: Positional arguments to pass to the factory.
-            **kwargs: Keyword arguments to pass to the factory.
-
-        Returns:
-            The cached or newly created model instance.
-        """
-        if key not in self._instance_cache:
-            with self._lock:
-                # Double-check locking to prevent race conditions during creation
-                if key not in self._instance_cache:
-                    self._instance_cache[key] = factory(*args, **kwargs)
-        return self._instance_cache[key]
-
-    def clear(self):
-        """Clears the cache and releases associated GPU memory."""
-        with self._lock:
-            # Properly dispose of models if they have a cleanup method
-            for model in self._instance_cache.values():
-                if hasattr(model, 'to') and hasattr(model, 'cpu'):
-                    model.cpu() # Move model to CPU to release VRAM
-            self._instance_cache.clear()
-            gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-
-# Global instance of the registry for all models
-model_registry = ModelRegistry()
-
 from DAM4SAM.dam4sam_tracker import DAM4SAMTracker
 from DAM4SAM.utils import utils as dam_utils
 
@@ -1876,7 +1834,7 @@ def get_face_landmarker(model_path: str, logger: 'AppLogger') -> vision.FaceLand
         logger.error(f"Could not initialize MediaPipe face landmarker model. Error: {e}", component="face_landmarker")
         raise RuntimeError("Could not initialize MediaPipe face landmarker model.") from e
 
-@lru_cache(maxsize=None)
+@lru_cache(maxsize=2)
 def get_face_analyzer(model_name: str, models_path: str, det_size_tuple: tuple, logger: 'AppLogger', device: str = 'cpu') -> 'FaceAnalysis':
     """
     Loads and caches an InsightFace FaceAnalysis model.
@@ -1981,6 +1939,7 @@ class PersonDetector:
                 out.append({"bbox": [x1, y1, x2, y2], "conf": conf, "type": "yolo"})
         return out
 
+@lru_cache(maxsize=4)
 def get_person_detector(model_path_str: str, device: str, imgsz: int, conf: float, logger: 'AppLogger') -> 'PersonDetector':
     """
     Factory and registry function for the YOLO person detector.
@@ -1996,19 +1955,13 @@ def get_person_detector(model_path_str: str, device: str, imgsz: int, conf: floa
     Returns:
         An initialized PersonDetector instance.
     """
-    registry_key = f"yolo_{Path(model_path_str).name}"
-
-    def _factory():
-        try:
-            logger.info(f"Loading YOLO model: {Path(model_path_str).name} (first use)", component="person_detector")
-            return PersonDetector(logger=logger, model_path=Path(model_path_str), imgsz=imgsz, conf=conf, device=device)
-        except Exception as e:
-            logger.warning(f"Primary YOLO detector '{model_path_str}' failed to load, attempting fallback to yolo11s.pt. Error: {e}", component="person_detector")
-            # Fallback to a smaller, more reliable model if the primary one fails
-            fallback_key = "yolo_yolo11s.pt"
-            return model_registry.get_or_create(fallback_key, PersonDetector, logger=logger, model_path=Path("yolo11s.pt"), imgsz=imgsz, conf=conf, device=device)
-
-    return model_registry.get_or_create(registry_key, _factory)
+    try:
+        logger.info(f"Loading YOLO model: {Path(model_path_str).name} (first use)", component="person_detector")
+        return PersonDetector(logger=logger, model_path=Path(model_path_str), imgsz=imgsz, conf=conf, device=device)
+    except Exception as e:
+        logger.warning(f"Primary YOLO detector '{model_path_str}' failed to load, attempting fallback to yolo11s.pt. Error: {e}", component="person_detector")
+        # Fallback to a smaller, more reliable model if the primary one fails
+        return get_person_detector(model_path_str="yolo11s.pt", device=device, imgsz=imgsz, conf=conf, logger=logger)
 
 
 def resolve_grounding_dino_config(config_path: str) -> str:
@@ -2035,6 +1988,7 @@ def resolve_grounding_dino_config(config_path: str) -> str:
             "Ensure the 'groundingdino-py' package is installed correctly and the config file exists within it."
         )
 
+@lru_cache(maxsize=2)
 def get_grounding_dino_model(gdino_config_path: str, gdino_checkpoint_path: str, models_path: str,
                              grounding_dino_url: str, user_agent: str, retry_params: tuple,
                              device: str, logger: Optional['AppLogger'] = None) -> Optional[torch.nn.Module]:
@@ -2055,38 +2009,33 @@ def get_grounding_dino_model(gdino_config_path: str, gdino_checkpoint_path: str,
     Returns:
         The initialized GroundingDINO model, or None if loading fails.
     """
-    registry_key = f"dino_{Path(gdino_checkpoint_path).name}"
+    _logger = logger or AppLogger(config=Config())
+    _logger.info("Loading GroundingDINO model (first use)...", component="grounding")
+    error_handler = ErrorHandler(_logger, *retry_params)
+    try:
+        models_dir = Path(models_path)
+        models_dir.mkdir(parents=True, exist_ok=True)
 
-    def _factory():
-        _logger = logger or AppLogger(config=Config())
-        _logger.info("Loading GroundingDINO model (first use)...", component="grounding")
-        error_handler = ErrorHandler(_logger, *retry_params)
-        try:
-            models_dir = Path(models_path)
-            models_dir.mkdir(parents=True, exist_ok=True)
+        config_file_path = gdino_config_path or Config().paths.grounding_dino_config
+        config_path = resolve_grounding_dino_config(config_file_path)
+        ckpt_path = Path(gdino_checkpoint_path)
+        if not ckpt_path.is_absolute():
+            ckpt_path = models_dir / ckpt_path.name
 
-            config_file_path = gdino_config_path or Config().paths.grounding_dino_config
-            config_path = resolve_grounding_dino_config(config_file_path)
-            ckpt_path = Path(gdino_checkpoint_path)
-            if not ckpt_path.is_absolute():
-                ckpt_path = models_dir / ckpt_path.name
+        download_model(grounding_dino_url, ckpt_path, "GroundingDINO Swin-T model",
+                       _logger, error_handler, user_agent,
+                       expected_sha256=Config().models.grounding_dino_sha256)
 
-            download_model(grounding_dino_url, ckpt_path, "GroundingDINO Swin-T model",
-                           _logger, error_handler, user_agent,
-                           expected_sha256=Config().models.grounding_dino_sha256)
-
-            model = gdino_load_model(
-                model_config_path=config_path,
-                model_checkpoint_path=str(ckpt_path),
-                device=device
-            )
-            _logger.success("GroundingDINO model loaded successfully", component="grounding", custom_fields={'model_path': str(ckpt_path)})
-            return model
-        except Exception as e:
-            _logger.error("Grounding DINO model loading failed.", component="grounding", exc_info=True)
-            return None # Return None on failure
-
-    return model_registry.get_or_create(registry_key, _factory)
+        model = gdino_load_model(
+            model_config_path=config_path,
+            model_checkpoint_path=str(ckpt_path),
+            device=device
+        )
+        _logger.success("GroundingDINO model loaded successfully", component="grounding", custom_fields={'model_path': str(ckpt_path)})
+        return model
+    except Exception as e:
+        _logger.error("Grounding DINO model loading failed.", component="grounding", exc_info=True)
+        return None # Return None on failure
 
 def predict_grounding_dino(model: torch.nn.Module, image_tensor: torch.Tensor, caption: str,
                            box_threshold: float, text_threshold: float, device: str) -> tuple:
@@ -2109,6 +2058,7 @@ def predict_grounding_dino(model: torch.nn.Module, image_tensor: torch.Tensor, c
         return gdino_predict(model=model, image=image_tensor.to(device), caption=caption,
                              box_threshold=float(box_threshold), text_threshold=float(text_threshold))
 
+@lru_cache(maxsize=4)
 def get_dam4sam_tracker(model_name: str, models_path: str, model_urls_tuple: tuple, user_agent: str,
                         retry_params: tuple, logger: 'AppLogger', device: str) -> Optional['DAM4SAMTracker']:
     """
@@ -2129,48 +2079,45 @@ def get_dam4sam_tracker(model_name: str, models_path: str, model_urls_tuple: tup
     """
     model_urls = dict(model_urls_tuple)
     selected_name = model_name or Config().ui_defaults.dam4sam_model_name or next(iter(model_urls.keys()))
-    registry_key = f"dam4sam_{selected_name}"
 
-    def _factory():
-        logger.info(f"Loading DAM4SAM model: {selected_name} (first use)", component="dam4sam")
-        error_handler = ErrorHandler(logger, *retry_params)
+    logger.info(f"Loading DAM4SAM model: {selected_name} (first use)", component="dam4sam")
+    error_handler = ErrorHandler(logger, *retry_params)
 
-        if device != 'cuda':
-            logger.error("DAM4SAM requires CUDA but it's not available.")
-            return None
+    if device != 'cuda':
+        logger.error("DAM4SAM requires CUDA but it's not available.")
+        return None
 
-        error_handler = ErrorHandler(logger, *retry_params)
-        try:
-            models_dir = Path(models_path)
-            models_dir.mkdir(parents=True, exist_ok=True)
-            if selected_name not in model_urls:
-                raise ValueError(f"Unknown DAM4SAM model: {selected_name}")
+    error_handler = ErrorHandler(logger, *retry_params)
+    try:
+        models_dir = Path(models_path)
+        models_dir.mkdir(parents=True, exist_ok=True)
+        if selected_name not in model_urls:
+            raise ValueError(f"Unknown DAM4SAM model: {selected_name}")
 
-            url = model_urls[selected_name]
-            expected_sha256 = Config().models.dam4sam_sha256.get(selected_name)
-            checkpoint_path = models_dir / Path(url).name
+        url = model_urls[selected_name]
+        expected_sha256 = Config().models.dam4sam_sha256.get(selected_name)
+        checkpoint_path = models_dir / Path(url).name
 
-            download_model(url, checkpoint_path, f"DAM4SAM {selected_name}", logger, error_handler, user_agent,
-                           expected_sha256=expected_sha256)
+        download_model(url, checkpoint_path, f"DAM4SAM {selected_name}", logger, error_handler, user_agent,
+                       expected_sha256=expected_sha256)
 
-            actual_path, _ = dam_utils.determine_tracker(selected_name)
-            if not Path(actual_path).exists():
-                Path(actual_path).parent.mkdir(exist_ok=True, parents=True)
-                shutil.copy(checkpoint_path, actual_path)
+        actual_path, _ = dam_utils.determine_tracker(selected_name)
+        if not Path(actual_path).exists():
+            Path(actual_path).parent.mkdir(exist_ok=True, parents=True)
+            shutil.copy(checkpoint_path, actual_path)
 
-            tracker = DAM4SAMTracker(selected_name)
-            logger.success(f"DAM4SAM tracker {selected_name} initialized.", component="dam4sam")
-            return tracker
-        except Exception as e:
-            logger.error(f"Failed to initialize DAM4SAM tracker {selected_name}: {str(e)}", exc_info=True)
-            if torch.cuda.is_available():
-                logger.error(f"CUDA memory: {torch.cuda.memory_allocated()/1024**3:.1f}GB allocated, {torch.cuda.memory_reserved()/1024**3:.1f}GB reserved")
-                torch.cuda.empty_cache()
-            return None
-
-    return model_registry.get_or_create(registry_key, _factory)
+        tracker = DAM4SAMTracker(selected_name)
+        logger.success(f"DAM4SAM tracker {selected_name} initialized.", component="dam4sam")
+        return tracker
+    except Exception as e:
+        logger.error(f"Failed to initialize DAM4SAM tracker {selected_name}: {str(e)}", exc_info=True)
+        if torch.cuda.is_available():
+            logger.error(f"CUDA memory: {torch.cuda.memory_allocated()/1024**3:.1f}GB allocated, {torch.cuda.memory_reserved()/1024**3:.1f}GB reserved")
+            torch.cuda.empty_cache()
+        return None
 
 
+@lru_cache(maxsize=2)
 def get_lpips_metric(model_name: str = 'alex', device: str = 'cpu') -> torch.nn.Module:
     """
     Factory and registry function for the LPIPS model.
@@ -2183,10 +2130,7 @@ def get_lpips_metric(model_name: str = 'alex', device: str = 'cpu') -> torch.nn.
     Returns:
         An initialized LPIPS model instance.
     """
-    global _lpips_model_cache
-    if model_name not in _lpips_model_cache or _lpips_model_cache[model_name].device.type != device:
-        _lpips_model_cache[model_name] = lpips.LPIPS(net=model_name).to(device)
-    return _lpips_model_cache[model_name]
+    return lpips.LPIPS(net=model_name).to(device)
 
 def initialize_analysis_models(params: 'AnalysisParameters', config: 'Config', logger: 'AppLogger') -> dict:
     """
@@ -7880,11 +7824,11 @@ def cleanup_models():
     application shutdown or when re-initializing models, to prevent memory
     leaks and unexpected behavior from stale cached objects.
     """
-    global _yolo_model_cache, _dino_model_cache, _dam4sam_model_cache, _lpips_model_cache
-    _yolo_model_cache.clear()
-    _dino_model_cache = None
-    _dam4sam_model_cache.clear()
-    _lpips_model_cache.clear()
+    get_face_analyzer.cache_clear()
+    get_person_detector.cache_clear()
+    get_grounding_dino_model.cache_clear()
+    get_dam4sam_tracker.cache_clear()
+    get_lpips_metric.cache_clear()
     torch.cuda.empty_cache()
     gc.collect()
 
