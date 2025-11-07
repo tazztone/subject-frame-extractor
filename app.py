@@ -3787,7 +3787,18 @@ class AnalysisPipeline(Pipeline):
             else: self.mask_metadata = {}
             if tracker: tracker.set_stage("Analyzing frames")
             self._initialize_niqe_metric()
-            self._run_analysis_loop(scenes_to_process, tracker=tracker)
+            metrics_to_compute = {
+                'quality': self.params.compute_quality_score,
+                'sharpness': self.params.compute_sharpness,
+                'edge_strength': self.params.compute_edge_strength,
+                'contrast': self.params.compute_contrast,
+                'brightness': self.params.compute_brightness,
+                'entropy': self.params.compute_entropy,
+                'eyes_open': self.params.compute_eyes_open,
+                'yaw': self.params.compute_yaw,
+                'pitch': self.params.compute_pitch,
+            }
+            self._run_analysis_loop(scenes_to_process, metrics_to_compute, tracker=tracker)
             if self.cancel_event.is_set(): return {"log": "Analysis cancelled.", "done": False}
             self.logger.success("Analysis complete.", extra={'output_dir': self.output_dir})
             return {"done": True, "metadata_path": str(self.metadata_path), "output_dir": str(self.output_dir)}
@@ -3837,7 +3848,7 @@ class AnalysisPipeline(Pipeline):
         self.logger.success("Image folder analysis complete.")
         return {"done": True, "metadata_path": str(self.metadata_path), "output_dir": str(self.output_dir)}
 
-    def _run_analysis_loop(self, scenes_to_process: list['Scene'], tracker: Optional['AdvancedProgressTracker'] = None):
+    def _run_analysis_loop(self, scenes_to_process: list['Scene'], metrics_to_compute: dict, tracker: Optional['AdvancedProgressTracker'] = None):
         """
         Orchestrates the parallel processing of frames for metric calculation.
         """
@@ -3849,7 +3860,7 @@ class AnalysisPipeline(Pipeline):
         batch_size = self.config.analysis.default_batch_size
         with ThreadPoolExecutor(max_workers=num_workers) as executor:
             batches = [image_files_to_process[i:i + batch_size] for i in range(0, len(image_files_to_process), batch_size)]
-            futures = [executor.submit(self._process_batch, batch) for batch in batches]
+            futures = [executor.submit(self._process_batch, batch, metrics_to_compute) for batch in batches]
             for future in as_completed(futures):
                 monitor_memory_usage(self.logger, self.config.monitoring.memory_warning_threshold_mb)
                 if self.cancel_event.is_set():
@@ -3862,13 +3873,13 @@ class AnalysisPipeline(Pipeline):
                 except Exception as e:
                     self.logger.error(f"Error processing batch future: {e}")
 
-    def _process_batch(self, batch_paths: list[Path]) -> int:
+    def _process_batch(self, batch_paths: list[Path], metrics_to_compute: dict) -> int:
         """Processes a batch of frames in a single thread."""
         for path in batch_paths:
-            self._process_single_frame(path)
+            self._process_single_frame(path, metrics_to_compute)
         return len(batch_paths)
 
-    def _process_single_frame(self, thumb_path: Path):
+    def _process_single_frame(self, thumb_path: Path, metrics_to_compute: dict):
         """Calculates and records all metrics for a single frame."""
         if self.cancel_event.is_set(): return
         if not (frame_num_match := re.search(r'frame_(\d+)', thumb_path.name)): return
@@ -3894,18 +3905,6 @@ class AnalysisPipeline(Pipeline):
             if self.params.compute_face_sim and self.face_analyzer:
                 face_bbox = self._analyze_face_similarity(frame, thumb_image_rgb)
 
-            # Create a dictionary to hold metrics that should be computed
-            metrics_to_compute = {
-                'quality': self.params.compute_quality_score,
-                'sharpness': self.params.compute_sharpness,
-                'edge_strength': self.params.compute_edge_strength,
-                'contrast': self.params.compute_contrast,
-                'brightness': self.params.compute_brightness,
-                'entropy': self.params.compute_entropy,
-                'eyes_open': self.params.compute_eyes_open,
-                'yaw': self.params.compute_yaw,
-                'pitch': self.params.compute_pitch,
-            }
             # Only call calculate_quality_metrics if at least one metric is requested
             if any(metrics_to_compute.values()) or self.params.compute_niqe:
                  frame.calculate_quality_metrics(
