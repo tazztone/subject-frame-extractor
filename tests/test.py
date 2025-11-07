@@ -129,7 +129,7 @@ patch.dict(sys.modules, modules_to_mock).start()
 
 # Now import the monolithic app
 import app
-from app import Config, CompositionRoot, Paths
+from app import Config, CompositionRoot
 
 # --- Mocks for Tests ---
 @pytest.fixture
@@ -225,69 +225,69 @@ class TestConfig:
         # Prevent file loading by ensuring no config file exists
         with patch('app.json_config_settings_source', return_value={}):
              config = app.Config()
-        assert config.paths.logs == "logs"
-        assert config.quality_weights.sharpness == 25
-        assert not config.ui_defaults.disable_parallel
+        assert config.logs_dir == "logs"
+        assert config.quality_weights_sharpness == 25
+        assert not config.default_disable_parallel
 
     @patch('app.Path.mkdir', MagicMock())
     @patch('os.access', return_value=True)
     def test_file_override(self, mock_access):
         """Verify that a config file overrides defaults."""
-        mock_config_data = {"paths": {"logs": "custom_logs"}, "quality_weights": {"sharpness": 50}}
+        mock_config_data = {"logs_dir": "custom_logs", "quality_weights_sharpness": 50}
         with patch('app.json_config_settings_source', return_value=mock_config_data):
             config = app.Config()
 
-        assert config.paths.logs == "custom_logs"
-        assert config.quality_weights.sharpness == 50
-        assert config.quality_weights.contrast == 15 # Check that a non-overridden value remains default
+        assert config.logs_dir == "custom_logs"
+        assert config.quality_weights_sharpness == 50
+        assert config.quality_weights_contrast == 15 # Check that a non-overridden value remains default
 
     @patch('app.Path.mkdir', MagicMock())
     @patch('os.access', return_value=True)
     def test_env_var_override(self, mock_access, monkeypatch):
         """Verify that environment variables override defaults."""
-        monkeypatch.setenv("APP_PATHS_LOGS", "env_logs")
+        monkeypatch.setenv("APP_LOGS_DIR", "env_logs")
         monkeypatch.setenv("APP_QUALITY_WEIGHTS_SHARPNESS", "75")
 
         with patch('app.json_config_settings_source', return_value={}):
             config = app.Config()
 
-        assert config.paths.logs == "env_logs"
-        assert config.quality_weights.sharpness == 75
-        assert isinstance(config.quality_weights.sharpness, int) # Type coercion
-        assert config.quality_weights.contrast == 15 # Default value
+        assert config.logs_dir == "env_logs"
+        assert config.quality_weights_sharpness == 75
+        assert isinstance(config.quality_weights_sharpness, int) # Type coercion
+        assert config.quality_weights_contrast == 15 # Default value
 
     @patch('app.Path.mkdir', MagicMock())
     @patch('os.access', return_value=True)
     def test_precedence_env_over_file(self, mock_access, monkeypatch):
         """Verify that environment variables have precedence over config files."""
-        monkeypatch.setenv("APP_PATHS_LOGS", "env_logs")
-        mock_config_data = {"paths": {"logs": "file_logs"}}
+        monkeypatch.setenv("APP_LOGS_DIR", "env_logs")
+        mock_config_data = {"logs_dir": "file_logs"}
 
         with patch('app.json_config_settings_source', return_value=mock_config_data):
             config = app.Config()
 
-        assert config.paths.logs == "env_logs"
+        assert config.logs_dir == "env_logs"
 
     @patch('app.Path.mkdir', MagicMock())
     @patch('os.access', return_value=True)
     def test_init_arg_override(self, mock_access, monkeypatch):
         """Verify that arguments passed to the constructor have the highest precedence."""
-        monkeypatch.setenv("APP_PATHS_LOGS", "env_logs")
-        mock_config_data = {"paths": {"logs": "file_logs"}}
+        monkeypatch.setenv("APP_LOGS_DIR", "env_logs")
+        mock_config_data = {"logs_dir": "file_logs"}
 
         with patch('app.json_config_settings_source', return_value=mock_config_data):
             # Pass an argument to the constructor
-            config = app.Config(paths=Paths(logs="init_logs"))
+            config = app.Config(logs_dir="init_logs")
 
-        assert config.paths.logs == "init_logs"
+        assert config.logs_dir == "init_logs"
 
     @patch('app.Path.mkdir', MagicMock())
     @patch('os.access', return_value=True)
     def test_validation_error(self, mock_access):
         """Test that a validation error is raised for invalid config."""
-        with pytest.raises(ValueError, match="The sum of quality_weights cannot be zero."):
+        with pytest.raises(ValidationError):
             # quality_weights sum cannot be zero
-            app.Config(quality_weights=app.QualityWeights(sharpness=0, edge_strength=0, contrast=0, brightness=0, entropy=0, niqe=0))
+            app.Config(quality_weights_sharpness=0, quality_weights_edge_strength=0, quality_weights_contrast=0, quality_weights_brightness=0, quality_weights_entropy=0, quality_weights_niqe=0)
 
 class TestAppLogger:
     def test_app_logger_instantiation(self):
@@ -391,8 +391,8 @@ class TestFilterLogic:
         # Unpack accordingly to fix the assertion error.
         slider_max_update, slider_min_update = result_tuple[0], result_tuple[1]
 
-        assert slider_min_update['value'] == test_config.filter_defaults.sharpness['default_min']
-        assert slider_max_update['value'] == test_config.filter_defaults.sharpness['default_max']
+        assert slider_min_update['value'] == test_config.filter_default_sharpness['default_min']
+        assert slider_max_update['value'] == test_config.filter_default_sharpness['default_max']
 
         # The original test asserted this was called, let's keep it to ensure behavior is preserved
         mock_on_filters_changed.assert_called_once()
@@ -417,12 +417,12 @@ class TestFilterLogic:
         )
 
         yaw_hist_bins = metric_values.get('yaw_hist', ([], []))[1]
-        assert yaw_hist_bins[0] == config.filter_defaults.yaw['min']
-        assert yaw_hist_bins[-1] == config.filter_defaults.yaw['max']
+        assert yaw_hist_bins[0] == config.filter_default_yaw['min']
+        assert yaw_hist_bins[-1] == config.filter_default_yaw['max']
 
         pitch_hist_bins = metric_values.get('pitch_hist', ([], []))[1]
-        assert pitch_hist_bins[0] == config.filter_defaults.pitch['min']
-        assert pitch_hist_bins[-1] == config.filter_defaults.pitch['max']
+        assert pitch_hist_bins[0] == config.filter_default_pitch['min']
+        assert pitch_hist_bins[-1] == config.filter_default_pitch['max']
 
 
     def test_deduplication_filter(self, sample_frames_data):
