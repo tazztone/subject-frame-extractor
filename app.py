@@ -1460,6 +1460,62 @@ class Scene(BaseModel):
     selected_bbox: Optional[list] = None
     yolo_detections: List[dict] = Field(default_factory=list)
 
+class SceneState:
+    def __init__(self, scene_dict: dict):
+        self._scene = scene_dict
+        # Set initial_bbox if it's not already set from the first seed result
+        if self._scene.get('initial_bbox') is None and self._scene.get('seed_result', {}).get('bbox'):
+            self._scene['initial_bbox'] = self._scene['seed_result']['bbox']
+            self._scene['selected_bbox'] = self._scene['seed_result']['bbox']
+
+
+    @property
+    def data(self) -> dict:
+        return self._scene
+
+    def set_manual_bbox(self, bbox: list[int], source: str):
+        """Sets a new bounding box, marking it as a manual override."""
+        self._scene['selected_bbox'] = bbox
+        # An override is only true if the new box is different from the initial one.
+        if self._scene.get('initial_bbox') and self._scene['initial_bbox'] != bbox:
+             self._scene['is_overridden'] = True
+        else:
+             self._scene['is_overridden'] = False # Not an override if it matches the original
+
+        self._scene.setdefault('seed_config', {})['override_source'] = source
+        self._scene['status'] = 'included' # A manual change implies inclusion
+        self._scene['manual_status_change'] = True
+
+
+    def reset(self):
+        """Resets the scene to its initial automatically-detected state."""
+        self._scene['selected_bbox'] = self._scene.get('initial_bbox')
+        self._scene['is_overridden'] = False
+        self._scene['seed_config'] = {}
+        self._scene['status'] = 'included'
+        self._scene['manual_status_change'] = False
+
+
+    def include(self):
+        """Marks the scene as included for propagation."""
+        self._scene['status'] = 'included'
+        self._scene['manual_status_change'] = True
+
+    def exclude(self):
+        """Marks the scene as excluded from propagation."""
+        self._scene['status'] = 'excluded'
+        self._scene['manual_status_change'] = True
+
+    def update_seed_result(self, bbox: Optional[list[int]], details: dict):
+        """Updates the scene with a new seed result after re-computation."""
+        self._scene['seed_result'] = {'bbox': bbox, 'details': details}
+        # If this is the *first* seed result, it becomes the initial state.
+        if self._scene.get('initial_bbox') is None:
+            self._scene['initial_bbox'] = bbox
+        # If not overridden, the selected bbox should follow the latest computation.
+        if not self._scene.get('is_overridden', False):
+            self._scene['selected_bbox'] = bbox
+
 class AnalysisParameters(BaseModel):
     """A container for all parameters related to an analysis run."""
     source_path: str = ""
@@ -4570,17 +4626,21 @@ def toggle_scene_status(scenes_list: list[dict], selected_shot_id: int, new_stat
         status_text, button_update = get_scene_status_text(scenes_list)
         return scenes_list, status_text, "No scene selected.", button_update
 
-    scene_found = False
-    for s in scenes_list:
-        if s['shot_id'] == selected_shot_id:
-            s['status'], s['manual_status_change'], scene_found = new_status, True, True
-            break
-    if scene_found:
+    scene_idx = next((i for i, s in enumerate(scenes_list) if s['shot_id'] == selected_shot_id), None)
+
+    if scene_idx is not None:
+        scene_state = SceneState(scenes_list[scene_idx])
+        if new_status == "included":
+            scene_state.include()
+        else:
+            scene_state.exclude()
         save_scene_seeds(scenes_list, output_folder, logger)
         status_text, button_update = get_scene_status_text(scenes_list)
         return (scenes_list, status_text, f"Scene {selected_shot_id} status set to {new_status}.", button_update)
+
     status_text, button_update = get_scene_status_text(scenes_list)
     return (scenes_list, status_text, f"Could not find scene {selected_shot_id}.", button_update)
+
 
 # --- Cleaned Scene Recomputation Workflow ---
 
@@ -4644,22 +4704,22 @@ def _create_analysis_context(config: 'Config', logger: 'AppLogger', thumbnail_ma
         face_landmarker=models["face_landmarker"], device=models["device"]
     )
 
-def _recompute_single_preview(scene: dict, masker: 'SubjectMasker', overrides: dict,
+def _recompute_single_preview(scene_state: 'SceneState', masker: 'SubjectMasker', overrides: dict,
                               thumbnail_manager: 'ThumbnailManager', logger: 'AppLogger'):
     """
-    Recomputes the seed and preview for a single scene.
+    Recomputes the seed and preview for a single scene using SceneState.
 
-    This function takes an existing `SubjectMasker` context and applies user-defined
-    overrides (e.g., a new text prompt) to generate a new seed and preview image.
-    The scene dictionary is updated in-place.
+    This function takes a SceneState object and applies user-defined
+    overrides to generate a new seed and preview image, updating the scene state.
 
     Args:
-        scene: The dictionary of the scene to recompute.
+        scene_state: The SceneState object for the scene to recompute.
         masker: The initialized SubjectMasker context.
         overrides: A dictionary of parameters to override for this computation.
         thumbnail_manager: The thumbnail cache manager.
         logger: The application logger.
     """
+    scene = scene_state.data
     out_dir = Path(masker.params.output_folder)
     best_frame_num = scene.get('best_frame') or scene.get('start_frame')
     if best_frame_num is None:
@@ -4684,8 +4744,8 @@ def _recompute_single_preview(scene: dict, masker: 'SubjectMasker', overrides: d
 
     # Recompute seed and update scene dictionary
     bbox, details = masker.get_seed_for_frame(thumb_rgb, seed_config=seed_config, scene=scene)
-    scene['seed_config'].update(overrides)
-    scene['seed_result'] = {'bbox': bbox, 'details': details}
+    scene_state.update_seed_result(bbox, details)
+    scene_state.data['seed_config'].update(overrides)
     
     # Update metrics that are displayed in the caption
     new_score = details.get('final_score') or details.get('conf') or details.get('dino_conf')
@@ -4696,7 +4756,7 @@ def _recompute_single_preview(scene: dict, masker: 'SubjectMasker', overrides: d
     mask = masker.get_mask_for_bbox(thumb_rgb, bbox) if bbox else None
     if mask is not None:
         h, w = mask.shape[:2]; area = (h * w)
-        scene['seed_result']['details']['mask_area_pct'] = (np.sum(mask > 0) / area * 100.0) if area > 0 else 0.0
+        scene.get('seed_result', {}).get('details', {})['mask_area_pct'] = (np.sum(mask > 0) / area * 100.0) if area > 0 else 0.0
 
     overlay_rgb = render_mask_overlay(thumb_rgb, mask, 0.6, logger=logger) if mask is not None else masker.draw_bbox(thumb_rgb, bbox)
     previews_dir = out_dir / "previews"
@@ -4707,6 +4767,7 @@ def _recompute_single_preview(scene: dict, masker: 'SubjectMasker', overrides: d
         scene['preview_path'] = str(preview_path)
     except Exception:
         logger.error(f"Failed to save preview for scene {scene['shot_id']}", exc_info=True)
+
 
 def _wire_recompute_handler(config: 'Config', logger: 'AppLogger', thumbnail_manager: 'ThumbnailManager',
                             scenes: list[dict], shot_id: int, outdir: str, text_prompt: str,
@@ -4757,7 +4818,8 @@ def _wire_recompute_handler(config: 'Config', logger: 'AppLogger', thumbnail_man
             return scenes, gr.update(), gr.update(), f"Error: Scene {shot_id} not found."
 
         overrides = {"text_prompt": text_prompt, "box_threshold": float(box_thresh), "text_threshold": float(text_thresh)}
-        _recompute_single_preview(scenes[scene_idx], masker, overrides, thumbnail_manager, logger)
+        scene_state = SceneState(scenes[scene_idx])
+        _recompute_single_preview(scene_state, masker, overrides, thumbnail_manager, logger)
 
         # 3. Persist the changes and update the UI
         save_scene_seeds(scenes, outdir, logger)
@@ -6071,10 +6133,11 @@ class EnhancedAppUI(AppUI):
                 return scenes, gr.update(), gr.update(), "Please select a Subject ID."
 
             subject_idx = int(subject_id) - 1
-            scene = next((s for s in scenes if s['shot_id'] == shot_id), None)
-            if not scene:
+            scene_idx = next((i for i, s in enumerate(scenes) if s['shot_id'] == shot_id), None)
+            if scene_idx is None:
                 return scenes, gr.update(), gr.update(), "Scene not found."
 
+            scene = scenes[scene_idx]
             yolo_boxes = scene.get('yolo_detections', [])
 
             if not (0 <= subject_idx < len(yolo_boxes)):
@@ -6086,24 +6149,10 @@ class EnhancedAppUI(AppUI):
             selected_box = yolo_boxes[subject_idx]
             selected_xywh = masker.seed_selector._xyxy_to_xywh(selected_box['bbox'])
 
-            overrides = {"manual_bbox_xywh": selected_xywh, "seedtype": "yolo_manual"}
+            scene_state = SceneState(scene)
+            scene_state.set_manual_bbox(selected_xywh, source="yolo_manual")
 
-            scene_idx = scenes.index(scene)
-
-            # Store initial bbox if it doesn't exist
-            if 'initial_bbox' not in scenes[scene_idx] or scenes[scene_idx]['initial_bbox'] is None:
-                scenes[scene_idx]['initial_bbox'] = selected_xywh
-
-            scenes[scene_idx]['selected_bbox'] = selected_xywh
-
-            # Check if selection differs from initial auto-detected bbox
-            initial_bbox = scenes[scene_idx].get('initial_bbox')
-            if initial_bbox is not None and selected_xywh != initial_bbox:
-                scenes[scene_idx]['is_overridden'] = True
-            else:
-                scenes[scene_idx]['is_overridden'] = False
-
-            _recompute_single_preview(scenes[scene_idx], masker, overrides, self.thumbnail_manager, self.logger)
+            _recompute_single_preview(scene_state, masker, {}, self.thumbnail_manager, self.logger)
 
             # Explicitly save the changes to persist the auto-save
             save_scene_seeds(scenes, outdir, self.logger)
@@ -6244,25 +6293,18 @@ class EnhancedAppUI(AppUI):
             A tuple of Gradio updates for the UI.
         """
         try:
-            scene = next((s for s in scenes if s['shot_id'] == shot_id), None)
-            if not scene:
+            scene_idx = next((i for i, s in enumerate(scenes) if s['shot_id'] == shot_id), None)
+            if scene_idx is None:
                 return scenes, gr.update(), gr.update(), "Scene not found."
 
-            # Clear all scene-specific overrides
-            scene['seed_config'] = {}
-            scene['seed_result'] = {}
-            scene['seed_metrics'] = {}
-            scene['manual_status_change'] = False
-            scene['status'] = 'included'
-            scene['is_overridden'] = False
-            scene['selected_bbox'] = scene.get('initial_bbox')
+            scene_state = SceneState(scenes[scene_idx])
+            scene_state.reset()
 
             masker = _create_analysis_context(self.config, self.logger, self.thumbnail_manager,
                                               self.ana_ui_map_keys, ana_args)
 
             # Rerun the original seed selection
-            scene_idx = scenes.index(scene)
-            _recompute_single_preview(scenes[scene_idx], masker, {}, self.thumbnail_manager, self.logger)
+            _recompute_single_preview(scene_state, masker, {}, self.thumbnail_manager, self.logger)
 
             save_scene_seeds(scenes, outdir, self.logger)
             gallery_items, index_map = build_scene_gallery_items(scenes, view, outdir)
