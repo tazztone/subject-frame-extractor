@@ -4103,21 +4103,96 @@ def _apply_deduplication_filter(all_frames_data: list[dict], filters: dict, thum
         if dedup_method == "pHash" and imagehash and filters.get("dedup_thresh", -1) != -1:
             sorted_indices = sorted(range(num_frames), key=lambda i: filenames[i])
             hashes = {i: imagehash.hex_to_hash(all_frames_data[i]['phash']) for i in range(num_frames) if 'phash' in all_frames_data[i]}
-            for i in range(1, len(sorted_indices)):
-                c_idx, p_idx = sorted_indices[i], sorted_indices[i - 1]
-                if p_idx in hashes and c_idx in hashes and (hashes[p_idx] - hashes[c_idx]) <= filters.get("dedup_thresh", 5):
-                    if all_frames_data[c_idx].get('metrics', {}).get('quality_score', 0) > all_frames_data[p_idx].get('metrics', {}).get('quality_score', 0):
-                        if dedup_mask[p_idx]:
-                            reasons[filenames[p_idx]].append('duplicate')
-                        dedup_mask[p_idx] = False
-                    else:
-                        if dedup_mask[c_idx]:
-                            reasons[filenames[c_idx]].append('duplicate')
-                        dedup_mask[c_idx] = False
+            kept_hashes = {}  # Store hashes of frames that are kept
+            for i in sorted_indices:
+                if i not in hashes:
+                    continue
+                is_duplicate = False
+                for kept_idx, kept_hash in kept_hashes.items():
+                    if (hashes[i] - kept_hash) <= filters.get("dedup_thresh", 5):
+                        is_duplicate = True
+                        # Compare quality scores to decide which to keep
+                        if all_frames_data[i].get('metrics', {}).get('quality_score', 0) > all_frames_data[kept_idx].get('metrics', {}).get('quality_score', 0):
+                            # Mark the previously kept frame as a duplicate
+                            if dedup_mask[kept_idx]:
+                                reasons[filenames[kept_idx]].append('duplicate')
+                            dedup_mask[kept_idx] = False
+                            # Replace with the current, higher-quality frame
+                            del kept_hashes[kept_idx]
+                            kept_hashes[i] = hashes[i]
+                        else:
+                            # Mark the current frame as a duplicate
+                            if dedup_mask[i]:
+                                reasons[filenames[i]].append('duplicate')
+                            dedup_mask[i] = False
+                        break  # Move to the next frame
+                if not is_duplicate:
+                    kept_hashes[i] = hashes[i]
         elif dedup_method == "SSIM" and thumbnail_manager:
             dedup_mask, reasons = apply_ssim_dedup(all_frames_data, filters, dedup_mask, reasons, thumbnail_manager, config, output_dir)
         elif dedup_method == "LPIPS" and thumbnail_manager:
             dedup_mask, reasons = apply_lpips_dedup(all_frames_data, filters, dedup_mask, reasons, thumbnail_manager, config, output_dir)
+        elif dedup_method == "pHash then LPIPS" and thumbnail_manager and imagehash:
+            # First pass: pHash
+            sorted_indices = sorted(range(num_frames), key=lambda i: filenames[i])
+            hashes = {i: imagehash.hex_to_hash(all_frames_data[i]['phash']) for i in range(num_frames) if 'phash' in all_frames_data[i]}
+            p_hash_duplicates = []
+            kept_hashes = {}  # Store hashes of frames that are kept
+            for i in sorted_indices:
+                if i not in hashes:
+                    continue
+                is_duplicate = False
+                for kept_idx, kept_hash in kept_hashes.items():
+                    if (hashes[i] - kept_hash) <= filters.get("dedup_thresh", 5):
+                        p_hash_duplicates.append((kept_idx, i))
+                        is_duplicate = True
+                        break # Move to the next frame
+                if not is_duplicate:
+                    kept_hashes[i] = hashes[i]
+
+            # Second pass: LPIPS on pHash duplicates
+            if p_hash_duplicates:
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+                loss_fn = get_lpips_metric(device=device)
+                transform = transforms.Compose([
+                    transforms.ToTensor(),
+                    transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+                ])
+
+                batch_size = 32
+                for i in range(0, len(p_hash_duplicates), batch_size):
+                    batch = p_hash_duplicates[i:i+batch_size]
+                    img1_batch = []
+                    img2_batch = []
+                    valid_indices = []
+
+                    for p_idx, c_idx in batch:
+                        img1 = thumbnail_manager.get(Path(output_dir) / "thumbs" / all_frames_data[p_idx]['filename'])
+                        img2 = thumbnail_manager.get(Path(output_dir) / "thumbs" / all_frames_data[c_idx]['filename'])
+                        if img1 is not None and img2 is not None:
+                            img1_batch.append(transform(img1))
+                            img2_batch.append(transform(img2))
+                            valid_indices.append((p_idx, c_idx))
+
+                    if not valid_indices:
+                        continue
+
+                    img1_t = torch.stack(img1_batch).to(device)
+                    img2_t = torch.stack(img2_batch).to(device)
+
+                    with torch.no_grad():
+                        distances = loss_fn.forward(img1_t, img2_t).squeeze().cpu().numpy()
+
+                    for j, (p_idx, c_idx) in enumerate(valid_indices):
+                        if distances[j] <= filters.get("lpips_threshold", 0.1):
+                            if all_frames_data[c_idx].get('metrics', {}).get('quality_score', 0) > all_frames_data[p_idx].get('metrics', {}).get('quality_score', 0):
+                                if dedup_mask[p_idx]:
+                                    reasons[filenames[p_idx]].append('duplicate')
+                                dedup_mask[p_idx] = False
+                            else:
+                                if dedup_mask[c_idx]:
+                                    reasons[filenames[c_idx]].append('duplicate')
+                                dedup_mask[c_idx] = False
     return dedup_mask, reasons
 
 def _apply_metric_filters(all_frames_data: list[dict], metric_arrays: dict, filters: dict,
@@ -5455,6 +5530,34 @@ class AppUI:
     GALLERY_VIEW_CHOICES: List[str] = ["Kept", "Rejected"]
     LOG_LEVEL_CHOICES: List[str] = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'SUCCESS', 'CRITICAL']
     SCENE_GALLERY_VIEW_CHOICES: List[str] = ["Kept", "Rejected", "All"]
+    FILTER_PRESETS: Dict[str, Dict[str, float]] = {
+        "Sharp Portraits": {
+            "sharpness_min": 60.0,
+            "sharpness_max": 100.0,
+            "edge_strength_min": 50.0,
+            "edge_strength_max": 100.0,
+            "face_sim_min": 0.5,
+            "mask_area_pct_min": 10.0,
+            "eyes_open_min": 0.8,
+            "yaw_min": -15.0,
+            "yaw_max": 15.0,
+            "pitch_min": -15.0,
+            "pitch_max": 15.0,
+        },
+        "Close-up Subject": {
+            "mask_area_pct_min": 25.0,
+            "mask_area_pct_max": 100.0,
+            "quality_score_min": 50.0,
+        },
+        "High Naturalness": {
+            "niqe_min": 0.0,
+            "niqe_max": 40.0,
+            "contrast_min": 20.0,
+            "contrast_max": 80.0,
+            "brightness_min": 30.0,
+            "brightness_max": 70.0,
+        }
+    }
 
     def __init__(self, config: 'Config', logger: 'AppLogger', progress_queue: Queue,
                  cancel_event: threading.Event, thumbnail_manager: 'ThumbnailManager'):
@@ -5767,6 +5870,7 @@ Review the automatically detected subjects and refine the selection if needed. E
             with gr.Column(scale=1):
                 gr.Markdown("### 🎛️ Filter Controls")
                 gr.Markdown("Use these controls to refine your selection of frames. You can set minimum and maximum thresholds for various quality metrics.")
+                self._create_component('filter_preset_dropdown', 'dropdown', {'label': "Filter Presets", 'choices': ["None"] + list(self.FILTER_PRESETS.keys())})
                 self._create_component('auto_pctl_input', 'slider', {'label': 'Auto-Threshold Percentile', 'minimum': 1, 'maximum': 99, 'value': self.config.gradio_auto_pctl_input, 'step': 1, 'info': "Quickly set all 'Min' sliders to a certain percentile of the data. For example, setting this to 75 and clicking 'Apply' will automatically reject the bottom 75% of frames for each metric."})
                 with gr.Row():
                     self._create_component('apply_auto_button', 'button', {'value': 'Apply Percentile to Mins'})
@@ -5780,8 +5884,7 @@ Review the automatically detected subjects and refine the selection if needed. E
                 with gr.Accordion("Deduplication", open=True, visible=True) as dedup_acc:
                     self.components['metric_accs']['dedup'] = dedup_acc
                     f_def = self.config.filter_default_dedup_thresh
-                    self._create_component('enable_dedup_input', 'checkbox', {'label': "Enable Deduplication", 'value': self.config.default_enable_dedup})
-                    self._create_component('dedup_method_input', 'dropdown', {'label': "Deduplication Method", 'choices': ["pHash", "SSIM", "LPIPS"], 'value': "pHash"})
+                    self._create_component('dedup_method_input', 'dropdown', {'label': "Deduplication Method", 'choices': ["None", "pHash", "SSIM", "LPIPS", "pHash then LPIPS"], 'value': "pHash"})
                     self._create_component('dedup_thresh_input', 'slider', {'label': "pHash Threshold", 'minimum': f_def['min'], 'maximum': f_def['max'], 'value': f_def['default'], 'step': f_def['step'], 'info': "Filters out visually similar frames. A lower value is stricter (more filtering). A value of 0 means only identical images will be removed. Set to -1 to disable."})
                     self._create_component('ssim_threshold_input', 'slider', {'label': "SSIM Threshold", 'minimum': 0.0, 'maximum': 1.0, 'value': 0.95, 'step': 0.01, 'visible': False})
                     self._create_component('lpips_threshold_input', 'slider', {'label': "LPIPS Threshold", 'minimum': 0.0, 'maximum': 1.0, 'value': 0.1, 'step': 0.01, 'visible': False})
@@ -7326,10 +7429,10 @@ class EnhancedAppUI(AppUI):
         slider_keys, slider_comps = sorted(c['metric_sliders'].keys()), [c['metric_sliders'][k] for k in sorted(c['metric_sliders'].keys())]
         fast_filter_inputs = [c['all_frames_data_state'], c['per_metric_values_state'], c['analysis_output_dir_state'],
                               c['gallery_view_toggle'], c['show_mask_overlay_input'], c['overlay_alpha_slider'],
-                              c['require_face_match_input'], c['dedup_thresh_input'], c['enable_dedup_input'], c['dedup_method_input']] + slider_comps
+                              c['require_face_match_input'], c['dedup_thresh_input'], c['dedup_method_input']] + slider_comps
         fast_filter_outputs = [c['filter_status_text'], c['results_gallery']]
         for control in (slider_comps + [c['dedup_thresh_input'], c['gallery_view_toggle'], c['show_mask_overlay_input'],
-                                       c['overlay_alpha_slider'], c['require_face_match_input'], c['enable_dedup_input'], c['dedup_method_input']]):
+                                       c['overlay_alpha_slider'], c['require_face_match_input'], c['dedup_method_input']]):
             (control.release if hasattr(control, 'release') else control.input if hasattr(control, 'input') else control.change)(self.on_filters_changed_wrapper, fast_filter_inputs, fast_filter_outputs)
 
         load_outputs = ([c['all_frames_data_state'], c['per_metric_values_state'], c['filter_status_text'], c['results_gallery'],
@@ -7390,13 +7493,13 @@ class EnhancedAppUI(AppUI):
         )
 
         export_inputs = [c['all_frames_data_state'], c['analysis_output_dir_state'], c['extracted_video_path_state'], c['enable_crop_input'],
-                         c['crop_ar_input'], c['crop_padding_input'], c['require_face_match_input'], c['dedup_thresh_input'], c['enable_dedup_input']] + slider_comps
+                         c['crop_ar_input'], c['crop_padding_input'], c['require_face_match_input'], c['dedup_thresh_input'], c['dedup_method_input']] + slider_comps
         c['export_button'].click(self.export_kept_frames_wrapper, export_inputs, c['unified_log'])
 
         reset_outputs_comps = (slider_comps + [c['dedup_thresh_input'], c['require_face_match_input'],
                                               c['filter_status_text'], c['results_gallery']] +
                                [c['metric_accs'][k] for k in sorted(c['metric_accs'].keys())] +
-                               [c['enable_dedup_input']]) # Add the checkbox to the outputs
+                               [c['dedup_method_input']]) # Add the dropdown to the outputs
 
         c['reset_filters_button'].click(self.on_reset_filters, [c['all_frames_data_state'], c['per_metric_values_state'], c['analysis_output_dir_state']], reset_outputs_comps)
 
@@ -7442,11 +7545,60 @@ class EnhancedAppUI(AppUI):
             [c['visual_diff_image']]
         )
 
-    def on_filters_changed_wrapper(self, all_frames_data, per_metric_values, output_dir, gallery_view, show_overlay, overlay_alpha, require_face_match, dedup_thresh, enable_dedup, dedup_method, *slider_values):
+        c['filter_preset_dropdown'].change(
+            self.on_preset_changed,
+            [c['filter_preset_dropdown']],
+            list(c['metric_sliders'].values())
+        ).then(
+            self.on_filters_changed_wrapper,
+            fast_filter_inputs,
+            fast_filter_outputs
+        )
+
+    def on_preset_changed(self, preset_name):
+        """
+        Applies a filter preset by updating the values of the metric sliders.
+
+        Args:
+            preset_name: The name of the selected preset.
+
+        Returns:
+            A dictionary of Gradio updates for the sliders.
+        """
+        updates = {}
+        slider_keys = sorted(self.components['metric_sliders'].keys())
+
+        if preset_name == "None" or preset_name not in self.FILTER_PRESETS:
+            # If "None" is selected, reset all sliders to their defaults.
+            for key in slider_keys:
+                metric_key = re.sub(r'_(min|max)$', '', key)
+                default_key = 'default_max' if key.endswith('_max') else 'default_min'
+                f_def = getattr(self.config, f"filter_default_{metric_key}", {})
+                default_val = f_def.get(default_key, 0)
+                updates[self.components['metric_sliders'][key]] = gr.update(value=default_val)
+            return updates
+
+        preset = self.FILTER_PRESETS[preset_name]
+        for key in slider_keys:
+            if key in preset:
+                updates[self.components['metric_sliders'][key]] = gr.update(value=preset[key])
+            else:
+                # If a slider is not in the preset, reset it to its default
+                metric_key = re.sub(r'_(min|max)$', '', key)
+                default_key = 'default_max' if key.endswith('_max') else 'default_min'
+                f_def = getattr(self.config, f"filter_default_{metric_key}", {})
+                default_val = f_def.get(default_key, 0)
+                updates[self.components['metric_sliders'][key]] = gr.update(value=default_val)
+
+        return updates
+
+
+    def on_filters_changed_wrapper(self, all_frames_data, per_metric_values, output_dir, gallery_view, show_overlay, overlay_alpha, require_face_match, dedup_thresh, dedup_method, *slider_values):
         slider_values_dict = {k: v for k, v in zip(sorted(self.components['metric_sliders'].keys()), slider_values)}
 
-        # Manually add enable_dedup to the dictionary passed to the event
-        # because it's not a slider and isn't included in slider_values
+        # "None" in the dropdown disables deduplication
+        enable_dedup = dedup_method != "None"
+
         event_filters = slider_values_dict
         event_filters['enable_dedup'] = enable_dedup
         event_filters['dedup_method'] = dedup_method
@@ -7533,8 +7685,8 @@ class EnhancedAppUI(AppUI):
         face_match_update = gr.update(value=face_match_default)
         if all_frames_data:
             slider_defaults_dict = {key: val for key, val in zip(slider_keys, slider_default_values)}
-            # Ensure the deduplication checkbox is also reset to its default state
-            slider_defaults_dict['enable_dedup'] = self.config.default_enable_dedup
+            # Reset the deduplication method to its default
+            slider_defaults_dict['dedup_method'] = "pHash"
 
             filter_event = FilterEvent(
                 all_frames_data=all_frames_data,
@@ -7545,7 +7697,7 @@ class EnhancedAppUI(AppUI):
                 overlay_alpha=self.config.gradio_overlay_alpha,
                 require_face_match=face_match_default,
                 dedup_thresh=dedup_default,
-                dedup_method=self.components['dedup_method_input'].value,
+                dedup_method="pHash",
                 slider_values=slider_defaults_dict
             )
             filter_updates = on_filters_changed(filter_event, self.thumbnail_manager, self.config)
@@ -7572,10 +7724,10 @@ class EnhancedAppUI(AppUI):
             else:
                 acc_updates.append(gr.update(visible=False))
 
-        # Add the update for the checkbox itself to the returned tuple
-        enable_dedup_update = gr.update(value=self.config.default_enable_dedup)
+        # Add the update for the dropdown itself to the returned tuple
+        dedup_method_update = gr.update(value="pHash")
 
-        return tuple(slider_updates + [dedup_update, face_match_update, status_update, gallery_update] + acc_updates + [enable_dedup_update])
+        return tuple(slider_updates + [dedup_update, face_match_update, status_update, gallery_update] + acc_updates + [dedup_method_update])
 
     def on_auto_set_thresholds(self, per_metric_values, p, *checkbox_values):
         slider_keys = sorted(self.components['metric_sliders'].keys())
@@ -7584,9 +7736,10 @@ class EnhancedAppUI(AppUI):
         updates = auto_set_thresholds(per_metric_values, p, slider_keys, selected_metrics)
         return [updates.get(f'slider_{key}', gr.update()) for key in slider_keys]
 
-    def export_kept_frames_wrapper(self, all_frames_data, output_dir, video_path, enable_crop, crop_ars, crop_padding, require_face_match, dedup_thresh, enable_dedup, *slider_values):
+    def export_kept_frames_wrapper(self, all_frames_data, output_dir, video_path, enable_crop, crop_ars, crop_padding, require_face_match, dedup_thresh, dedup_method, *slider_values):
         filter_args = {k: v for k, v in zip(sorted(self.components['metric_sliders'].keys()), slider_values)}
-        filter_args.update({"require_face_match": require_face_match, "dedup_thresh": dedup_thresh, "enable_dedup": enable_dedup})
+        enable_dedup = dedup_method != "None"
+        filter_args.update({"require_face_match": require_face_match, "dedup_thresh": dedup_thresh, "dedup_method": dedup_method, "enable_dedup": enable_dedup})
         return self.export_kept_frames(ExportEvent(all_frames_data, output_dir, video_path, enable_crop, crop_ars, crop_padding, filter_args))
 
     def export_kept_frames(self, event: ExportEvent):
