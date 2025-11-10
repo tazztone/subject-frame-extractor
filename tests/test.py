@@ -183,12 +183,13 @@ def sample_frames_data():
 @pytest.fixture
 def sample_scenes():
     # Add start_frame and end_frame to match the Scene dataclass structure
-    return [
+    scenes_data = [
         {'shot_id': 1, 'start_frame': 0, 'end_frame': 100, 'status': 'pending', 'seed_result': {'details': {'mask_area_pct': 50}}, 'seed_metrics': {'best_face_sim': 0.9, 'score': 0.95}},
         {'shot_id': 2, 'start_frame': 101, 'end_frame': 200, 'status': 'pending', 'seed_result': {'details': {'mask_area_pct': 5}}, 'seed_metrics': {'best_face_sim': 0.8, 'score': 0.9}},
         {'shot_id': 3, 'start_frame': 201, 'end_frame': 300, 'status': 'pending', 'seed_result': {'details': {'mask_area_pct': 60}}, 'seed_metrics': {'best_face_sim': 0.4, 'score': 0.8}},
         {'shot_id': 4, 'start_frame': 301, 'end_frame': 400, 'status': 'pending', 'seed_result': {'details': {'mask_area_pct': 70}}, 'seed_metrics': {'score': 0.7}},
     ]
+    return [app.Scene(**data) for data in scenes_data]
 
 # --- Test Classes ---
 
@@ -522,12 +523,12 @@ class TestQuality:
 class TestSceneLogic:
     def test_get_scene_status_text(self):
         assert app.get_scene_status_text([])[0] == "No scenes loaded."
-        assert app.get_scene_status_text([{'status': 'included'}, {'status': 'excluded'}])[0] == "1/2 scenes included for propagation."
+        assert app.get_scene_status_text([app.Scene(shot_id=1, start_frame=0, end_frame=0, status='included'), app.Scene(shot_id=2, start_frame=0, end_frame=0, status='excluded')])[0] == "1/2 scenes included for propagation."
 
     @patch('app.save_scene_seeds')
     def test_toggle_scene_status(self, mock_save, sample_scenes):
         scenes, _, _, _ = app.toggle_scene_status(sample_scenes, 2, 'included', '/fake/dir', MagicMock())
-        assert scenes[1]['status'] == 'included'
+        assert scenes[1].status == 'included'
         mock_save.assert_called_once()
 
     @patch('app.save_scene_seeds')
@@ -537,8 +538,8 @@ class TestSceneLogic:
         # Create a dummy preview file for the scene_thumb function to find
         (tmp_path / "previews").mkdir()
         for scene in sample_scenes:
-            scene['preview_path'] = str(tmp_path / "previews" / f"scene_{scene['shot_id']}.jpg")
-            with open(scene['preview_path'], 'w') as f:
+            scene.preview_path = str(tmp_path / "previews" / f"scene_{scene.shot_id}.jpg")
+            with open(scene.preview_path, 'w') as f:
                 f.write('') # Create an empty file
 
         ui = app.EnhancedAppUI(config=test_config, logger=MagicMock(), progress_queue=MagicMock(), cancel_event=MagicMock(), thumbnail_manager=MagicMock())
@@ -552,7 +553,7 @@ class TestSceneLogic:
             view="Kept"
         )
 
-        status_map = {s['shot_id']: s['status'] for s in scenes}
+        status_map = {s.shot_id: s.status for s in scenes}
         assert status_map[1] == 'included'
         assert status_map[2] == 'excluded' # Mask area too low
         assert status_map[3] == 'excluded' # Face sim too low

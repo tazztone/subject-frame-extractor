@@ -1459,6 +1459,7 @@ class Scene(BaseModel):
     initial_bbox: Optional[list] = None
     selected_bbox: Optional[list] = None
     yolo_detections: List[dict] = Field(default_factory=list)
+    rejection_reasons: Optional[list] = None
 
 class AnalysisParameters(BaseModel):
     """A container for all parameters related to an analysis run."""
@@ -2408,10 +2409,20 @@ def run_ffmpeg_extraction(video_path: str, output_dir: Path, video_info: dict, p
     frame_map_list = []
 
     # Live processing of both streams
+    stderr_output = ""
     with process.stdout, process.stderr:
         total_duration_s = video_info.get("frame_count", 0) / max(0.01, video_info.get("fps", 30))
         stdout_thread = threading.Thread(target=lambda: _process_ffmpeg_stream(process.stdout, tracker, "Extracting frames", total_duration_s))
-        stderr_thread = threading.Thread(target=lambda: frame_map_list.extend(_process_ffmpeg_showinfo(process.stderr)))
+
+        # We need a way to get the stderr back from the thread
+        stderr_results = {}
+        def process_stderr_and_store():
+            nonlocal stderr_results
+            frame_map, full_stderr = _process_ffmpeg_showinfo(process.stderr)
+            stderr_results['frame_map'] = frame_map
+            stderr_results['full_stderr'] = full_stderr
+
+        stderr_thread = threading.Thread(target=process_stderr_and_store)
         stdout_thread.start()
         stderr_thread.start()
 
@@ -2435,12 +2446,16 @@ def run_ffmpeg_extraction(video_path: str, output_dir: Path, video_info: dict, p
 
     process.wait()
 
+    frame_map_list = stderr_results.get('frame_map', [])
+    stderr_output = stderr_results.get('full_stderr', '')
+
     if frame_map_list:
         with open(output_dir / "frame_map.json", 'w', encoding='utf-8') as f:
             json.dump(sorted(frame_map_list), f)
 
     if process.returncode not in [0, -9] and not cancel_event.is_set(): # -9 is SIGKILL, can happen on cancel
-        raise RuntimeError(f"FFmpeg failed with code {process.returncode}.")
+        logger.error("FFmpeg extraction failed", extra={'returncode': process.returncode, 'stderr': stderr_output})
+        raise RuntimeError(f"FFmpeg failed with code {process.returncode}. Check logs for details.")
 
 def _process_ffmpeg_stream(stream, tracker: Optional['AdvancedProgressTracker'], desc: str, total_duration_s: float):
     """
@@ -2480,23 +2495,27 @@ def _process_ffmpeg_stream(stream, tracker: Optional['AdvancedProgressTracker'],
             pass  # Ignore malformed lines
     stream.close()
 
-def _process_ffmpeg_showinfo(stream) -> list:
+def _process_ffmpeg_showinfo(stream) -> tuple[list, str]:
     """
-    Extracts frame numbers from FFmpeg's `showinfo` filter output.
+    Extracts frame numbers from FFmpeg's `showinfo` filter output and captures the full stderr.
 
     Args:
         stream: The stderr stream of the FFmpeg process.
 
     Returns:
-        A list of integer frame numbers.
+        A tuple containing:
+        - A list of integer frame numbers.
+        - The full stderr output as a string.
     """
     frame_numbers = []
+    stderr_lines = []
     for line in iter(stream.readline, ''):
+        stderr_lines.append(line)
         match = re.search(r' n:\s*(\d+)', line)
         if match:
             frame_numbers.append(int(match.group(1)))
     stream.close()
-    return frame_numbers
+    return frame_numbers, "".join(stderr_lines)
 
 def postprocess_mask(mask: np.ndarray, config: 'Config', fill_holes: bool = True, keep_largest_only: bool = True) -> np.ndarray:
     """
@@ -4474,7 +4493,7 @@ def auto_set_thresholds(per_metric_values: dict, p: int, slider_keys: list[str],
             updates[f'slider_{key}'] = gr.update()
     return updates
 
-def save_scene_seeds(scenes_list: list[dict], output_dir_str: str, logger: 'AppLogger'):
+def save_scene_seeds(scenes_list: list['Scene'], output_dir_str: str, logger: 'AppLogger'):
     """
     Saves the current state of scenes to `scene_seeds.json`.
 
@@ -4487,20 +4506,20 @@ def save_scene_seeds(scenes_list: list[dict], output_dir_str: str, logger: 'AppL
     scene_seeds = {}
     for s in scenes_list:
         data = {
-            'best_frame': s.get('best_frame', s.get('best_seed_frame')),
-            'seed_frame_idx': s.get('seed_frame_idx'),
-            'seed_type': s.get('seed_result', {}).get('details', {}).get('type'),
-            'seed_config': s.get('seed_config', {}),
-            'status': s.get('status', 'pending'),
-            'seed_metrics': s.get('seed_metrics', {})
+            'best_frame': s.best_frame,
+            'seed_frame_idx': s.seed_frame_idx,
+            'seed_type': s.seed_type,
+            'seed_config': s.seed_config,
+            'status': s.status,
+            'seed_metrics': s.seed_metrics
         }
-        scene_seeds[str(s['shot_id'])] = data
+        scene_seeds[str(s.shot_id)] = data
     try:
         (Path(output_dir_str) / "scene_seeds.json").write_text(json.dumps(_to_json_safe(scene_seeds), indent=2), encoding='utf-8')
         logger.info("Saved scene_seeds.json")
     except Exception as e: logger.error("Failed to save scene_seeds.json", exc_info=True)
 
-def get_scene_status_text(scenes_list: list[dict]) -> tuple[str, gr.update]:
+def get_scene_status_text(scenes_list: list['Scene']) -> tuple[str, gr.update]:
     """
     Generates a status summary text and updates the propagation button.
 
@@ -4526,8 +4545,8 @@ def get_scene_status_text(scenes_list: list[dict]) -> tuple[str, gr.update]:
 
     rejection_counts = Counter()
     for scene in scenes_list:
-        if scene.get('status') == 'excluded':
-            reasons = scene.get('rejection_reasons')
+        if scene.status == 'excluded':
+            reasons = scene.rejection_reasons
             if reasons:
                 rejection_counts.update(reasons)
 
@@ -4558,7 +4577,7 @@ def draw_boxes_preview(img: np.ndarray, boxes_xyxy: list[list[int]], cfg: 'Confi
                       cfg.visualization.bbox_color, cfg.visualization.bbox_thickness)
     return img
 
-def toggle_scene_status(scenes_list: list[dict], selected_shot_id: int, new_status: str,
+def toggle_scene_status(scenes_list: list['Scene'], selected_shot_id: int, new_status: str,
                         output_folder: str, logger: 'AppLogger') -> tuple[list, str, str, gr.update]:
     """
     Updates the status of a selected scene.
@@ -4580,8 +4599,8 @@ def toggle_scene_status(scenes_list: list[dict], selected_shot_id: int, new_stat
 
     scene_found = False
     for s in scenes_list:
-        if s['shot_id'] == selected_shot_id:
-            s['status'], s['manual_status_change'], scene_found = new_status, True, True
+        if s.shot_id == selected_shot_id:
+            s.status, s.manual_status_change, scene_found = new_status, True, True
             break
     if scene_found:
         save_scene_seeds(scenes_list, output_folder, logger)
@@ -4717,7 +4736,7 @@ def _recompute_single_preview(scene: dict, masker: 'SubjectMasker', overrides: d
         logger.error(f"Failed to save preview for scene {scene['shot_id']}", exc_info=True)
 
 def _wire_recompute_handler(config: 'Config', logger: 'AppLogger', thumbnail_manager: 'ThumbnailManager',
-                            scenes: list[dict], shot_id: int, outdir: str, text_prompt: str,
+                            scenes: list['Scene'], shot_id: int, outdir: str, text_prompt: str,
                             box_thresh: float, text_thresh: float, view: str, ana_ui_map_keys: list[str],
                             ana_input_components: list, cuda_available: bool) -> tuple:
     """
@@ -5111,18 +5130,18 @@ def execute_session_load(
 
         # Stage 2: Load scenes
         logger.info("Load scenes")
-        scenes_as_dict: list[dict[str, Any]] = []
+        scenes: list['Scene'] = []
         scenes_json_path = session_path / "scenes.json"
 
         if scenes_json_path.exists():
             try:
                 with open(scenes_json_path, "r", encoding="utf-8") as f:
                     scene_ranges = json.load(f)
-                scenes_as_dict = [
-                    {"shot_id": i, "start_frame": s, "end_frame": e}
+                scenes = [
+                    Scene(**{"shot_id": i, "start_frame": s, "end_frame": e})
                     for i, (s, e) in enumerate(scene_ranges)
                 ]
-                logger.info(f"Loaded {len(scenes_as_dict)} scene ranges from scenes.json")
+                logger.info(f"Loaded {len(scenes)} scene ranges from scenes.json")
             except Exception as e:
                 logger.error(f"Failed to parse scenes.json: {e}", component="session_loader")
                 # Yield an error if base scene structure can't be loaded
@@ -5138,16 +5157,18 @@ def execute_session_load(
                 seeds_lookup = {int(k): v for k, v in scenes_from_file.items()}
                 
                 # Merge data into the scenes_as_dict
-                for scene in scenes_as_dict:
-                    shot_id = scene.get("shot_id")
+                for scene in scenes:
+                    shot_id = scene.shot_id
                     if shot_id in seeds_lookup:
                         rec = seeds_lookup[shot_id]
                         rec['best_frame'] = rec.get('best_frame', rec.get('best_seed_frame'))
-                        scene.update(rec)
+                        for key, value in rec.items():
+                            if hasattr(scene, key):
+                                setattr(scene, key, value)
 
                 # Auto-include missing scene statuses on load (set to "included" as approved)
-                for s in scenes_as_dict:
-                    s.setdefault("status", "included")
+                for s in scenes:
+                    s.status = s.status or "included"
 
                 logger.info(f"Merged data for {len(seeds_lookup)} scenes from {scene_seeds_path}", component="session_loader")
             except Exception as e:
@@ -5156,10 +5177,10 @@ def execute_session_load(
         # Stage 3: Load previews (with cap and fallback)
         logger.info("Load previews")
 
-        if scenes_as_dict and output_dir:
-            status_text, button_update = get_scene_status_text(scenes_as_dict)
+        if scenes and output_dir:
+            status_text, button_update = get_scene_status_text(scenes)
             updates.update({
-                "scenes_state": scenes_as_dict,
+                "scenes_state": scenes,
                 "propagate_masks_button": button_update,
                 "seeding_results_column": gr.update(visible=True),
                 "propagation_group": gr.update(visible=True),
@@ -5298,7 +5319,7 @@ def execute_analysis(event: PropagationEvent, progress_queue: Queue, cancel_even
         yield {"log": f"[ERROR] Analysis failed unexpectedly: {e}", "done": False}
 
 # --- Scene gallery helpers (module-level) ---
-def scene_matches_view(scene: dict, view: str) -> bool:
+def scene_matches_view(scene: 'Scene', view: str) -> bool:
     """
     Checks if a scene's status matches the current gallery view.
 
@@ -5309,7 +5330,7 @@ def scene_matches_view(scene: dict, view: str) -> bool:
     Returns:
         True if the scene should be visible, False otherwise.
     """
-    status = scene.get('status', 'pending')
+    status = scene.status
     if view == "All":
         return status in ("included", "excluded", "pending")
     if view == "Kept":
@@ -5318,7 +5339,7 @@ def scene_matches_view(scene: dict, view: str) -> bool:
         return status == "excluded"
     return False
 
-def scene_caption(s: dict) -> str:
+def scene_caption(s: 'Scene') -> str:
     """
     Generates a descriptive caption for a scene thumbnail in the gallery.
 
@@ -5328,15 +5349,15 @@ def scene_caption(s: dict) -> str:
     Returns:
         A formatted caption string.
     """
-    shot = s.get('shot_id', '?')
-    start_f = s.get('start_frame', '?')
-    end_f = s.get('end_frame', '?')
-    metrics = s.get('seed_metrics', {}) or {}
+    shot = s.shot_id
+    start_f = s.start_frame
+    end_f = s.end_frame
+    metrics = s.seed_metrics or {}
     face = metrics.get('best_face_sim')
     conf = metrics.get('score')
-    mask = (s.get('seed_result', {}).get('details', {}) or {}).get('mask_area_pct')
+    mask = (s.seed_result.get('details', {}) or {}).get('mask_area_pct')
     bits = [f"Scene {shot} [{start_f}-{end_f}]"]
-    if s.get('is_overridden', False):
+    if s.is_overridden:
         bits[0] += " ✏️"
     else:
         bits[0] += " 🤖"
@@ -5345,7 +5366,7 @@ def scene_caption(s: dict) -> str:
     if mask is not None: bits.append(f"mask {mask:.1f}%")
     return " | ".join(bits)
 
-def scene_thumb(s: dict, output_dir: str) -> Optional[str]:
+def scene_thumb(s: 'Scene', output_dir: str) -> Optional[str]:
     """
     Finds the path to the preview thumbnail for a scene.
 
@@ -5356,17 +5377,17 @@ def scene_thumb(s: dict, output_dir: str) -> Optional[str]:
     Returns:
         The path to the thumbnail image, or None if not found.
     """
-    p = s.get('preview_path')
+    p = s.preview_path
     if p and os.path.isfile(p):
         return p
-    shot_id = s.get('shot_id')
+    shot_id = s.shot_id
     if shot_id is not None:
         candidate = os.path.join(output_dir, "previews", f"scene_{int(shot_id):05d}.jpg")
         if os.path.isfile(candidate):
             return candidate
     return None
 
-def build_scene_gallery_items(scenes: list[dict], view: str, output_dir: str) -> tuple[list[tuple], list[int]]:
+def build_scene_gallery_items(scenes: list['Scene'], view: str, output_dir: str) -> tuple[list[tuple], list[int]]:
     """
     Builds the list of items to display in the Gradio scene gallery.
 
@@ -5396,13 +5417,13 @@ def build_scene_gallery_items(scenes: list[dict], view: str, output_dir: str) ->
         if img_path is None:
             continue
 
-        if s.get('is_overridden', False):
+        if s.is_overridden:
             thumb_img_np = cv2.imread(img_path)
             if thumb_img_np is not None:
                 badged_thumb = create_scene_thumbnail_with_badge(thumb_img_np, i, True)
 
                 # Save the modified thumbnail to a new file
-                shot_id = s.get('shot_id', i)
+                shot_id = s.shot_id
                 override_preview_path = previews_dir / f"scene_{shot_id:05d}_override.jpg"
                 cv2.imwrite(str(override_preview_path), badged_thumb)
                 img_path = str(override_preview_path)
@@ -5828,7 +5849,9 @@ Review the automatically detected subjects and refine the selection if needed. E
                 with gr.Group(visible=False) as export_group:
                     self.components['export_group'] = export_group
                     gr.Markdown("### 📤 Step 3: Export")
-                    self._create_component('export_button', 'button', {'value': "Export Kept Frames", 'variant': "primary"})
+                    with gr.Row():
+                        self._create_component('export_button', 'button', {'value': "Export Kept Frames", 'variant': "primary"})
+                        self._create_component('dry_run_button', 'button', {'value': "Dry Run Export"})
                     with gr.Accordion("Export Options", open=True):
                         with gr.Row():
                             self._create_component('enable_crop_input', 'checkbox', {'label': "✂️ Crop to Subject", 'value': self.config.export_enable_crop})
@@ -7203,13 +7226,13 @@ class EnhancedAppUI(AppUI):
         self.logger.info("Applying bulk scene filters", extra={"min_mask_area": min_mask_area, "min_face_sim": min_face_sim, "min_confidence": min_confidence, "enable_face_filter": enable_face_filter})
 
         for scene in scenes:
-            if scene.get('manual_status_change', False):
+            if scene.manual_status_change:
                 continue
 
             rejection_reasons = []
-            seed_result = scene.get('seed_result', {})
+            seed_result = scene.seed_result or {}
             details = seed_result.get('details', {})
-            seed_metrics = scene.get('seed_metrics', {})
+            seed_metrics = scene.seed_metrics or {}
 
             if details.get('mask_area_pct', 101.0) < min_mask_area:
                 rejection_reasons.append("Min Seed Mask Area")
@@ -7218,11 +7241,11 @@ class EnhancedAppUI(AppUI):
             if seed_metrics.get('score', 101.0) < min_confidence:
                 rejection_reasons.append("Min Seed Confidence")
 
-            scene['rejection_reasons'] = rejection_reasons
+            scene.rejection_reasons = rejection_reasons
             if rejection_reasons:
-                scene['status'] = 'excluded'
+                scene.status = 'excluded'
             else:
-                scene['status'] = 'included'
+                scene.status = 'included'
 
         save_scene_seeds(scenes, output_folder, self.logger)
         gallery_items, new_index_map = build_scene_gallery_items(scenes, view, output_folder)
@@ -7403,6 +7426,7 @@ class EnhancedAppUI(AppUI):
         export_inputs = [c['all_frames_data_state'], c['analysis_output_dir_state'], c['extracted_video_path_state'], c['enable_crop_input'],
                          c['crop_ar_input'], c['crop_padding_input'], c['require_face_match_input'], c['dedup_thresh_input'], c['enable_dedup_input']] + slider_comps
         c['export_button'].click(self.export_kept_frames_wrapper, export_inputs, c['unified_log'])
+        c['dry_run_button'].click(self.dry_run_export_wrapper, export_inputs, c['unified_log'])
 
         reset_outputs_comps = (slider_comps + [c['dedup_thresh_input'], c['require_face_match_input'],
                                               c['filter_status_text'], c['results_gallery']] +
@@ -7646,8 +7670,13 @@ class EnhancedAppUI(AppUI):
             export_dir.mkdir(exist_ok=True, parents=True)
             cmd = ['ffmpeg', '-y', '-i', str(event.video_path), '-vf', select_filter, '-vsync', 'vfr', str(export_dir / "frame_%06d.png")]
             self.logger.info("Starting final export extraction...", extra={'command': ' '.join(cmd)})
-            with open(os.devnull, 'w') as devnull:
-                subprocess.run(cmd, check=True, stdout=devnull, stderr=devnull)
+
+            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8')
+            stdout, stderr = process.communicate()
+
+            if process.returncode != 0:
+                self.logger.error("FFmpeg export failed", extra={'stderr': stderr})
+                return f"Error during export: FFmpeg failed. Check logs for details:\n{stderr}"
 
             self.logger.info("Renaming extracted frames to match original filenames...")
             orig_to_filename_map = {v: k for k, v in fn_to_orig_map.items()}
@@ -7818,6 +7847,61 @@ class EnhancedAppUI(AppUI):
         except Exception as e:
             self.logger.error("Error during export process", exc_info=True)
             return f"Error during export: {e}"
+
+    def dry_run_export_wrapper(self, all_frames_data, output_dir, video_path, enable_crop, crop_ars, crop_padding, require_face_match, dedup_thresh, enable_dedup, *slider_values):
+        filter_args = {k: v for k, v in zip(sorted(self.components['metric_sliders'].keys()), slider_values)}
+        filter_args.update({"require_face_match": require_face_match, "dedup_thresh": dedup_thresh, "enable_dedup": enable_dedup})
+        return self.dry_run_export(ExportEvent(all_frames_data=all_frames_data, output_dir=output_dir, video_path=video_path, enable_crop=enable_crop, crop_ars=crop_ars, crop_padding=crop_padding, filter_args=filter_args))
+
+    def dry_run_export(self, event: ExportEvent):
+        if not event.all_frames_data:
+            return "No metadata to export."
+        if not event.video_path or not Path(event.video_path).exists():
+            return "[ERROR] Original video path is required for export."
+
+        out_root = Path(event.output_dir)
+
+        try:
+            filters = event.filter_args.copy()
+            filters.update({
+                "face_sim_enabled": any("face_sim" in f for f in event.all_frames_data),
+                "mask_area_enabled": any("mask_area_pct" in f for f in event.all_frames_data),
+                "enable_dedup": any('phash' in f for f in event.all_frames_data)
+            })
+            kept, _, _, _ = apply_all_filters_vectorized(event.all_frames_data, filters, self.config, output_dir=event.output_dir)
+            if not kept:
+                return "No frames kept after filtering. Nothing to export."
+
+            frame_map_path = out_root / "frame_map.json"
+            if not frame_map_path.exists():
+                return "[ERROR] frame_map.json not found. Cannot export."
+            with frame_map_path.open('r', encoding='utf-8') as f:
+                frame_map_list = json.load(f)
+
+            sample_name = next((f['filename'] for f in kept if 'filename' in f), None)
+            analyzed_ext = Path(sample_name).suffix if sample_name else '.webp'
+
+            fn_to_orig_map = {
+                f"frame_{i+1:06d}{analyzed_ext}": orig
+                for i, orig in enumerate(sorted(frame_map_list))
+            }
+            frames_to_extract = sorted([
+                fn_to_orig_map.get(f['filename'])
+                for f in kept if f.get('filename') in fn_to_orig_map
+            ])
+            frames_to_extract = [n for n in frames_to_extract if n is not None]
+
+            if not frames_to_extract:
+                return "No frames to extract."
+
+            select_filter = f"select='{'+'.join([f'eq(n,{fn})' for fn in frames_to_extract])}'"
+            export_dir = out_root.parent / f"{out_root.name}_exported_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            cmd = ['ffmpeg', '-y', '-i', str(event.video_path), '-vf', select_filter, '-vsync', 'vfr', str(export_dir / "frame_%06d.png")]
+
+            return f"Dry Run: {len(frames_to_extract)} frames to be exported.\n\nFFmpeg command:\n{' '.join(cmd)}"
+        except Exception as e:
+            self.logger.error("Error during dry run process", exc_info=True)
+            return f"Error during dry run: {e}"
 
 # --- COMPOSITION & MAIN ---
 def cleanup_models():
