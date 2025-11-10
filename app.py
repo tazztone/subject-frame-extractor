@@ -1459,6 +1459,7 @@ class Scene(BaseModel):
     initial_bbox: Optional[list] = None
     selected_bbox: Optional[list] = None
     yolo_detections: List[dict] = Field(default_factory=list)
+    rejection_reasons: Optional[list] = None
 
 class AnalysisParameters(BaseModel):
     """A container for all parameters related to an analysis run."""
@@ -4474,7 +4475,7 @@ def auto_set_thresholds(per_metric_values: dict, p: int, slider_keys: list[str],
             updates[f'slider_{key}'] = gr.update()
     return updates
 
-def save_scene_seeds(scenes_list: list[dict], output_dir_str: str, logger: 'AppLogger'):
+def save_scene_seeds(scenes_list: list['Scene'], output_dir_str: str, logger: 'AppLogger'):
     """
     Saves the current state of scenes to `scene_seeds.json`.
 
@@ -4487,20 +4488,20 @@ def save_scene_seeds(scenes_list: list[dict], output_dir_str: str, logger: 'AppL
     scene_seeds = {}
     for s in scenes_list:
         data = {
-            'best_frame': s.get('best_frame', s.get('best_seed_frame')),
-            'seed_frame_idx': s.get('seed_frame_idx'),
-            'seed_type': s.get('seed_result', {}).get('details', {}).get('type'),
-            'seed_config': s.get('seed_config', {}),
-            'status': s.get('status', 'pending'),
-            'seed_metrics': s.get('seed_metrics', {})
+            'best_frame': s.best_frame,
+            'seed_frame_idx': s.seed_frame_idx,
+            'seed_type': s.seed_type,
+            'seed_config': s.seed_config,
+            'status': s.status,
+            'seed_metrics': s.seed_metrics
         }
-        scene_seeds[str(s['shot_id'])] = data
+        scene_seeds[str(s.shot_id)] = data
     try:
         (Path(output_dir_str) / "scene_seeds.json").write_text(json.dumps(_to_json_safe(scene_seeds), indent=2), encoding='utf-8')
         logger.info("Saved scene_seeds.json")
     except Exception as e: logger.error("Failed to save scene_seeds.json", exc_info=True)
 
-def get_scene_status_text(scenes_list: list[dict]) -> tuple[str, gr.update]:
+def get_scene_status_text(scenes_list: list['Scene']) -> tuple[str, gr.update]:
     """
     Generates a status summary text and updates the propagation button.
 
@@ -4513,13 +4514,13 @@ def get_scene_status_text(scenes_list: list[dict]) -> tuple[str, gr.update]:
     if not scenes_list:
         return "No scenes loaded.", gr.update(interactive=False)
 
-    included_count = sum(1 for s in scenes_list if s.get('status') == 'included')
+    included_count = sum(1 for s in scenes_list if s.status == 'included')
     total_count = len(scenes_list)
 
     rejection_counts = Counter()
     for scene in scenes_list:
-        if scene.get('status') == 'excluded':
-            reasons = scene.get('rejection_reasons')
+        if scene.status == 'excluded':
+            reasons = scene.rejection_reasons
             if reasons:
                 rejection_counts.update(reasons)
 
@@ -4550,7 +4551,7 @@ def draw_boxes_preview(img: np.ndarray, boxes_xyxy: list[list[int]], cfg: 'Confi
                       cfg.visualization.bbox_color, cfg.visualization.bbox_thickness)
     return img
 
-def toggle_scene_status(scenes_list: list[dict], selected_shot_id: int, new_status: str,
+def toggle_scene_status(scenes_list: list['Scene'], selected_shot_id: int, new_status: str,
                         output_folder: str, logger: 'AppLogger') -> tuple[list, str, str, gr.update]:
     """
     Updates the status of a selected scene.
@@ -4572,8 +4573,8 @@ def toggle_scene_status(scenes_list: list[dict], selected_shot_id: int, new_stat
 
     scene_found = False
     for s in scenes_list:
-        if s['shot_id'] == selected_shot_id:
-            s['status'], s['manual_status_change'], scene_found = new_status, True, True
+        if s.shot_id == selected_shot_id:
+            s.status, s.manual_status_change, scene_found = new_status, True, True
             break
     if scene_found:
         save_scene_seeds(scenes_list, output_folder, logger)
@@ -4709,7 +4710,7 @@ def _recompute_single_preview(scene: dict, masker: 'SubjectMasker', overrides: d
         logger.error(f"Failed to save preview for scene {scene['shot_id']}", exc_info=True)
 
 def _wire_recompute_handler(config: 'Config', logger: 'AppLogger', thumbnail_manager: 'ThumbnailManager',
-                            scenes: list[dict], shot_id: int, outdir: str, text_prompt: str,
+                            scenes: list['Scene'], shot_id: int, outdir: str, text_prompt: str,
                             box_thresh: float, text_thresh: float, view: str, ana_ui_map_keys: list[str],
                             ana_input_components: list, cuda_available: bool) -> tuple:
     """
@@ -5103,18 +5104,18 @@ def execute_session_load(
 
         # Stage 2: Load scenes
         logger.info("Load scenes")
-        scenes_as_dict: list[dict[str, Any]] = []
+        scenes: list['Scene'] = []
         scenes_json_path = session_path / "scenes.json"
 
         if scenes_json_path.exists():
             try:
                 with open(scenes_json_path, "r", encoding="utf-8") as f:
                     scene_ranges = json.load(f)
-                scenes_as_dict = [
-                    {"shot_id": i, "start_frame": s, "end_frame": e}
+                scenes = [
+                    Scene(**{"shot_id": i, "start_frame": s, "end_frame": e})
                     for i, (s, e) in enumerate(scene_ranges)
                 ]
-                logger.info(f"Loaded {len(scenes_as_dict)} scene ranges from scenes.json")
+                logger.info(f"Loaded {len(scenes)} scene ranges from scenes.json")
             except Exception as e:
                 logger.error(f"Failed to parse scenes.json: {e}", component="session_loader")
                 # Yield an error if base scene structure can't be loaded
@@ -5130,16 +5131,18 @@ def execute_session_load(
                 seeds_lookup = {int(k): v for k, v in scenes_from_file.items()}
                 
                 # Merge data into the scenes_as_dict
-                for scene in scenes_as_dict:
-                    shot_id = scene.get("shot_id")
+                for scene in scenes:
+                    shot_id = scene.shot_id
                     if shot_id in seeds_lookup:
                         rec = seeds_lookup[shot_id]
                         rec['best_frame'] = rec.get('best_frame', rec.get('best_seed_frame'))
-                        scene.update(rec)
+                        for key, value in rec.items():
+                            if hasattr(scene, key):
+                                setattr(scene, key, value)
 
                 # Auto-include missing scene statuses on load (set to "included" as approved)
-                for s in scenes_as_dict:
-                    s.setdefault("status", "included")
+                for s in scenes:
+                    s.status = s.status or "included"
 
                 logger.info(f"Merged data for {len(seeds_lookup)} scenes from {scene_seeds_path}", component="session_loader")
             except Exception as e:
@@ -5148,10 +5151,10 @@ def execute_session_load(
         # Stage 3: Load previews (with cap and fallback)
         logger.info("Load previews")
 
-        if scenes_as_dict and output_dir:
-            status_text, button_update = get_scene_status_text(scenes_as_dict)
+        if scenes and output_dir:
+            status_text, button_update = get_scene_status_text(scenes)
             updates.update({
-                "scenes_state": scenes_as_dict,
+                "scenes_state": scenes,
                 "propagate_masks_button": button_update,
                 "seeding_results_column": gr.update(visible=True),
                 "propagation_group": gr.update(visible=True),
@@ -5290,7 +5293,7 @@ def execute_analysis(event: PropagationEvent, progress_queue: Queue, cancel_even
         yield {"log": f"[ERROR] Analysis failed unexpectedly: {e}", "done": False}
 
 # --- Scene gallery helpers (module-level) ---
-def scene_matches_view(scene: dict, view: str) -> bool:
+def scene_matches_view(scene: 'Scene', view: str) -> bool:
     """
     Checks if a scene's status matches the current gallery view.
 
@@ -5301,7 +5304,7 @@ def scene_matches_view(scene: dict, view: str) -> bool:
     Returns:
         True if the scene should be visible, False otherwise.
     """
-    status = scene.get('status', 'pending')
+    status = scene.status
     if view == "All":
         return status in ("included", "excluded", "pending")
     if view == "Kept":
@@ -5310,7 +5313,7 @@ def scene_matches_view(scene: dict, view: str) -> bool:
         return status == "excluded"
     return False
 
-def scene_caption(s: dict) -> str:
+def scene_caption(s: 'Scene') -> str:
     """
     Generates a descriptive caption for a scene thumbnail in the gallery.
 
@@ -5320,15 +5323,15 @@ def scene_caption(s: dict) -> str:
     Returns:
         A formatted caption string.
     """
-    shot = s.get('shot_id', '?')
-    start_f = s.get('start_frame', '?')
-    end_f = s.get('end_frame', '?')
-    metrics = s.get('seed_metrics', {}) or {}
+    shot = s.shot_id
+    start_f = s.start_frame
+    end_f = s.end_frame
+    metrics = s.seed_metrics or {}
     face = metrics.get('best_face_sim')
     conf = metrics.get('score')
-    mask = (s.get('seed_result', {}).get('details', {}) or {}).get('mask_area_pct')
+    mask = (s.seed_result.get('details', {}) or {}).get('mask_area_pct')
     bits = [f"Scene {shot} [{start_f}-{end_f}]"]
-    if s.get('is_overridden', False):
+    if s.is_overridden:
         bits[0] += " ✏️"
     else:
         bits[0] += " 🤖"
@@ -5337,7 +5340,7 @@ def scene_caption(s: dict) -> str:
     if mask is not None: bits.append(f"mask {mask:.1f}%")
     return " | ".join(bits)
 
-def scene_thumb(s: dict, output_dir: str) -> Optional[str]:
+def scene_thumb(s: 'Scene', output_dir: str) -> Optional[str]:
     """
     Finds the path to the preview thumbnail for a scene.
 
@@ -5348,17 +5351,17 @@ def scene_thumb(s: dict, output_dir: str) -> Optional[str]:
     Returns:
         The path to the thumbnail image, or None if not found.
     """
-    p = s.get('preview_path')
+    p = s.preview_path
     if p and os.path.isfile(p):
         return p
-    shot_id = s.get('shot_id')
+    shot_id = s.shot_id
     if shot_id is not None:
         candidate = os.path.join(output_dir, "previews", f"scene_{int(shot_id):05d}.jpg")
         if os.path.isfile(candidate):
             return candidate
     return None
 
-def build_scene_gallery_items(scenes: list[dict], view: str, output_dir: str) -> tuple[list[tuple], list[int]]:
+def build_scene_gallery_items(scenes: list['Scene'], view: str, output_dir: str) -> tuple[list[tuple], list[int]]:
     """
     Builds the list of items to display in the Gradio scene gallery.
 
@@ -5388,13 +5391,13 @@ def build_scene_gallery_items(scenes: list[dict], view: str, output_dir: str) ->
         if img_path is None:
             continue
 
-        if s.get('is_overridden', False):
+        if s.is_overridden:
             thumb_img_np = cv2.imread(img_path)
             if thumb_img_np is not None:
                 badged_thumb = create_scene_thumbnail_with_badge(thumb_img_np, i, True)
 
                 # Save the modified thumbnail to a new file
-                shot_id = s.get('shot_id', i)
+                shot_id = s.shot_id
                 override_preview_path = previews_dir / f"scene_{shot_id:05d}_override.jpg"
                 cv2.imwrite(str(override_preview_path), badged_thumb)
                 img_path = str(override_preview_path)
@@ -7192,13 +7195,13 @@ class EnhancedAppUI(AppUI):
         self.logger.info("Applying bulk scene filters", extra={"min_mask_area": min_mask_area, "min_face_sim": min_face_sim, "min_confidence": min_confidence, "enable_face_filter": enable_face_filter})
 
         for scene in scenes:
-            if scene.get('manual_status_change', False):
+            if scene.manual_status_change:
                 continue
 
             rejection_reasons = []
-            seed_result = scene.get('seed_result', {})
+            seed_result = scene.seed_result or {}
             details = seed_result.get('details', {})
-            seed_metrics = scene.get('seed_metrics', {})
+            seed_metrics = scene.seed_metrics or {}
 
             if details.get('mask_area_pct', 101.0) < min_mask_area:
                 rejection_reasons.append("Min Seed Mask Area")
@@ -7207,11 +7210,11 @@ class EnhancedAppUI(AppUI):
             if seed_metrics.get('score', 101.0) < min_confidence:
                 rejection_reasons.append("Min Seed Confidence")
 
-            scene['rejection_reasons'] = rejection_reasons
+            scene.rejection_reasons = rejection_reasons
             if rejection_reasons:
-                scene['status'] = 'excluded'
+                scene.status = 'excluded'
             else:
-                scene['status'] = 'included'
+                scene.status = 'included'
 
         save_scene_seeds(scenes, output_folder, self.logger)
         gallery_items, new_index_map = build_scene_gallery_items(scenes, view, output_folder)
