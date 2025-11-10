@@ -284,7 +284,14 @@ class Config(BaseSettings):
 
     @model_validator(mode='after')
     def _validate_config(self):
-        quality_weights = {
+        if sum(self.quality_weights.values()) == 0:
+            raise ValueError("The sum of quality_weights cannot be zero.")
+        return self
+
+    @property
+    def quality_weights(self) -> Dict[str, int]:
+        """Returns a dictionary of all quality weight parameters."""
+        return {
             'sharpness': self.quality_weights_sharpness,
             'edge_strength': self.quality_weights_edge_strength,
             'contrast': self.quality_weights_contrast,
@@ -292,9 +299,6 @@ class Config(BaseSettings):
             'entropy': self.quality_weights_entropy,
             'niqe': self.quality_weights_niqe,
         }
-        if sum(quality_weights.values()) == 0:
-            raise ValueError("The sum of quality_weights cannot be zero.")
-        return self
 
     def _validate_paths(self):
         required_dirs = [self.logs_dir, self.models_dir, self.downloads_dir]
@@ -1485,6 +1489,63 @@ class Scene(BaseModel):
     initial_bbox: Optional[list] = None
     selected_bbox: Optional[list] = None
     yolo_detections: List[dict] = Field(default_factory=list)
+    rejection_reasons: Optional[list] = None
+
+class SceneState:
+    def __init__(self, scene_dict: dict):
+        self._scene = scene_dict
+        # Set initial_bbox if it's not already set from the first seed result
+        if self._scene.get('initial_bbox') is None and self._scene.get('seed_result', {}).get('bbox'):
+            self._scene['initial_bbox'] = self._scene['seed_result']['bbox']
+            self._scene['selected_bbox'] = self._scene['seed_result']['bbox']
+
+
+    @property
+    def data(self) -> dict:
+        return self._scene
+
+    def set_manual_bbox(self, bbox: list[int], source: str):
+        """Sets a new bounding box, marking it as a manual override."""
+        self._scene['selected_bbox'] = bbox
+        # An override is only true if the new box is different from the initial one.
+        if self._scene.get('initial_bbox') and self._scene['initial_bbox'] != bbox:
+             self._scene['is_overridden'] = True
+        else:
+             self._scene['is_overridden'] = False # Not an override if it matches the original
+
+        self._scene.setdefault('seed_config', {})['override_source'] = source
+        self._scene['status'] = 'included' # A manual change implies inclusion
+        self._scene['manual_status_change'] = True
+
+
+    def reset(self):
+        """Resets the scene to its initial automatically-detected state."""
+        self._scene['selected_bbox'] = self._scene.get('initial_bbox')
+        self._scene['is_overridden'] = False
+        self._scene['seed_config'] = {}
+        self._scene['status'] = 'included'
+        self._scene['manual_status_change'] = False
+
+
+    def include(self):
+        """Marks the scene as included for propagation."""
+        self._scene['status'] = 'included'
+        self._scene['manual_status_change'] = True
+
+    def exclude(self):
+        """Marks the scene as excluded from propagation."""
+        self._scene['status'] = 'excluded'
+        self._scene['manual_status_change'] = True
+
+    def update_seed_result(self, bbox: Optional[list[int]], details: dict):
+        """Updates the scene with a new seed result after re-computation."""
+        self._scene['seed_result'] = {'bbox': bbox, 'details': details}
+        # If this is the *first* seed result, it becomes the initial state.
+        if self._scene.get('initial_bbox') is None:
+            self._scene['initial_bbox'] = bbox
+        # If not overridden, the selected bbox should follow the latest computation.
+        if not self._scene.get('is_overridden', False):
+            self._scene['selected_bbox'] = bbox
 
 class AnalysisParameters(BaseModel):
     """A container for all parameters related to an analysis run."""
@@ -2434,10 +2495,20 @@ def run_ffmpeg_extraction(video_path: str, output_dir: Path, video_info: dict, p
     frame_map_list = []
 
     # Live processing of both streams
+    stderr_output = ""
     with process.stdout, process.stderr:
         total_duration_s = video_info.get("frame_count", 0) / max(0.01, video_info.get("fps", 30))
         stdout_thread = threading.Thread(target=lambda: _process_ffmpeg_stream(process.stdout, tracker, "Extracting frames", total_duration_s))
-        stderr_thread = threading.Thread(target=lambda: frame_map_list.extend(_process_ffmpeg_showinfo(process.stderr)))
+
+        # We need a way to get the stderr back from the thread
+        stderr_results = {}
+        def process_stderr_and_store():
+            nonlocal stderr_results
+            frame_map, full_stderr = _process_ffmpeg_showinfo(process.stderr)
+            stderr_results['frame_map'] = frame_map
+            stderr_results['full_stderr'] = full_stderr
+
+        stderr_thread = threading.Thread(target=process_stderr_and_store)
         stdout_thread.start()
         stderr_thread.start()
 
@@ -2461,12 +2532,16 @@ def run_ffmpeg_extraction(video_path: str, output_dir: Path, video_info: dict, p
 
     process.wait()
 
+    frame_map_list = stderr_results.get('frame_map', [])
+    stderr_output = stderr_results.get('full_stderr', '')
+
     if frame_map_list:
         with open(output_dir / "frame_map.json", 'w', encoding='utf-8') as f:
             json.dump(sorted(frame_map_list), f)
 
     if process.returncode not in [0, -9] and not cancel_event.is_set(): # -9 is SIGKILL, can happen on cancel
-        raise RuntimeError(f"FFmpeg failed with code {process.returncode}.")
+        logger.error("FFmpeg extraction failed", extra={'returncode': process.returncode, 'stderr': stderr_output})
+        raise RuntimeError(f"FFmpeg failed with code {process.returncode}. Check logs for details.")
 
 def _process_ffmpeg_stream(stream, tracker: Optional['AdvancedProgressTracker'], desc: str, total_duration_s: float):
     """
@@ -2506,23 +2581,27 @@ def _process_ffmpeg_stream(stream, tracker: Optional['AdvancedProgressTracker'],
             pass  # Ignore malformed lines
     stream.close()
 
-def _process_ffmpeg_showinfo(stream) -> list:
+def _process_ffmpeg_showinfo(stream) -> tuple[list, str]:
     """
-    Extracts frame numbers from FFmpeg's `showinfo` filter output.
+    Extracts frame numbers from FFmpeg's `showinfo` filter output and captures the full stderr.
 
     Args:
         stream: The stderr stream of the FFmpeg process.
 
     Returns:
-        A list of integer frame numbers.
+        A tuple containing:
+        - A list of integer frame numbers.
+        - The full stderr output as a string.
     """
     frame_numbers = []
+    stderr_lines = []
     for line in iter(stream.readline, ''):
+        stderr_lines.append(line)
         match = re.search(r' n:\s*(\d+)', line)
         if match:
             frame_numbers.append(int(match.group(1)))
     stream.close()
-    return frame_numbers
+    return frame_numbers, "".join(stderr_lines)
 
 def postprocess_mask(mask: np.ndarray, config: 'Config', fill_holes: bool = True, keep_largest_only: bool = True) -> np.ndarray:
     """
@@ -4500,7 +4579,7 @@ def auto_set_thresholds(per_metric_values: dict, p: int, slider_keys: list[str],
             updates[f'slider_{key}'] = gr.update()
     return updates
 
-def save_scene_seeds(scenes_list: list[dict], output_dir_str: str, logger: 'AppLogger'):
+def save_scene_seeds(scenes_list: list['Scene'], output_dir_str: str, logger: 'AppLogger'):
     """
     Saves the current state of scenes to `scene_seeds.json`.
 
@@ -4513,20 +4592,20 @@ def save_scene_seeds(scenes_list: list[dict], output_dir_str: str, logger: 'AppL
     scene_seeds = {}
     for s in scenes_list:
         data = {
-            'best_frame': s.get('best_frame', s.get('best_seed_frame')),
-            'seed_frame_idx': s.get('seed_frame_idx'),
-            'seed_type': s.get('seed_result', {}).get('details', {}).get('type'),
-            'seed_config': s.get('seed_config', {}),
-            'status': s.get('status', 'pending'),
-            'seed_metrics': s.get('seed_metrics', {})
+            'best_frame': s.best_frame,
+            'seed_frame_idx': s.seed_frame_idx,
+            'seed_type': s.seed_type,
+            'seed_config': s.seed_config,
+            'status': s.status,
+            'seed_metrics': s.seed_metrics
         }
-        scene_seeds[str(s['shot_id'])] = data
+        scene_seeds[str(s.shot_id)] = data
     try:
         (Path(output_dir_str) / "scene_seeds.json").write_text(json.dumps(_to_json_safe(scene_seeds), indent=2), encoding='utf-8')
         logger.info("Saved scene_seeds.json")
     except Exception as e: logger.error("Failed to save scene_seeds.json", exc_info=True)
 
-def get_scene_status_text(scenes_list: list[dict]) -> tuple[str, gr.update]:
+def get_scene_status_text(scenes_list: list['Scene']) -> tuple[str, gr.update]:
     """
     Generates a status summary text and updates the propagation button.
 
@@ -4539,13 +4618,21 @@ def get_scene_status_text(scenes_list: list[dict]) -> tuple[str, gr.update]:
     if not scenes_list:
         return "No scenes loaded.", gr.update(interactive=False)
 
-    included_count = sum(1 for s in scenes_list if s.get('status') == 'included')
+
+    included_scenes = [s for s in scenes_list if s.get('status') == 'included']
+    # A scene is ready if it's included AND has a valid seed result.
+    ready_for_propagation_count = sum(
+        1 for s in included_scenes if s.get('seed_result') and s['seed_result'].get('bbox')
+    )
+
     total_count = len(scenes_list)
+    included_count = len(included_scenes)
+
 
     rejection_counts = Counter()
     for scene in scenes_list:
-        if scene.get('status') == 'excluded':
-            reasons = scene.get('rejection_reasons')
+        if scene.status == 'excluded':
+            reasons = scene.rejection_reasons
             if reasons:
                 rejection_counts.update(reasons)
 
@@ -4555,8 +4642,8 @@ def get_scene_status_text(scenes_list: list[dict]) -> tuple[str, gr.update]:
         reasons_summary = ", ".join([f"{reason}: {count}" for reason, count in rejection_counts.items()])
         status_text += f" (Rejected: {reasons_summary})"
 
-    button_text = f"🔬 Propagate Masks on {included_count} Kept Scenes"
-    return status_text, gr.update(value=button_text, interactive=included_count > 0)
+    button_text = f"🔬 Propagate Masks on {ready_for_propagation_count} Ready Scenes"
+    return status_text, gr.update(value=button_text, interactive=ready_for_propagation_count > 0)
 
 def draw_boxes_preview(img: np.ndarray, boxes_xyxy: list[list[int]], cfg: 'Config') -> np.ndarray:
     """
@@ -4576,7 +4663,7 @@ def draw_boxes_preview(img: np.ndarray, boxes_xyxy: list[list[int]], cfg: 'Confi
                       cfg.visualization.bbox_color, cfg.visualization.bbox_thickness)
     return img
 
-def toggle_scene_status(scenes_list: list[dict], selected_shot_id: int, new_status: str,
+def toggle_scene_status(scenes_list: list['Scene'], selected_shot_id: int, new_status: str,
                         output_folder: str, logger: 'AppLogger') -> tuple[list, str, str, gr.update]:
     """
     Updates the status of a selected scene.
@@ -4596,17 +4683,21 @@ def toggle_scene_status(scenes_list: list[dict], selected_shot_id: int, new_stat
         status_text, button_update = get_scene_status_text(scenes_list)
         return scenes_list, status_text, "No scene selected.", button_update
 
-    scene_found = False
-    for s in scenes_list:
-        if s['shot_id'] == selected_shot_id:
-            s['status'], s['manual_status_change'], scene_found = new_status, True, True
-            break
-    if scene_found:
+    scene_idx = next((i for i, s in enumerate(scenes_list) if s['shot_id'] == selected_shot_id), None)
+
+    if scene_idx is not None:
+        scene_state = SceneState(scenes_list[scene_idx])
+        if new_status == "included":
+            scene_state.include()
+        else:
+            scene_state.exclude()
         save_scene_seeds(scenes_list, output_folder, logger)
         status_text, button_update = get_scene_status_text(scenes_list)
         return (scenes_list, status_text, f"Scene {selected_shot_id} status set to {new_status}.", button_update)
+
     status_text, button_update = get_scene_status_text(scenes_list)
     return (scenes_list, status_text, f"Could not find scene {selected_shot_id}.", button_update)
+
 
 # --- Cleaned Scene Recomputation Workflow ---
 
@@ -4670,22 +4761,22 @@ def _create_analysis_context(config: 'Config', logger: 'AppLogger', thumbnail_ma
         face_landmarker=models["face_landmarker"], device=models["device"]
     )
 
-def _recompute_single_preview(scene: dict, masker: 'SubjectMasker', overrides: dict,
+def _recompute_single_preview(scene_state: 'SceneState', masker: 'SubjectMasker', overrides: dict,
                               thumbnail_manager: 'ThumbnailManager', logger: 'AppLogger'):
     """
-    Recomputes the seed and preview for a single scene.
+    Recomputes the seed and preview for a single scene using SceneState.
 
-    This function takes an existing `SubjectMasker` context and applies user-defined
-    overrides (e.g., a new text prompt) to generate a new seed and preview image.
-    The scene dictionary is updated in-place.
+    This function takes a SceneState object and applies user-defined
+    overrides to generate a new seed and preview image, updating the scene state.
 
     Args:
-        scene: The dictionary of the scene to recompute.
+        scene_state: The SceneState object for the scene to recompute.
         masker: The initialized SubjectMasker context.
         overrides: A dictionary of parameters to override for this computation.
         thumbnail_manager: The thumbnail cache manager.
         logger: The application logger.
     """
+    scene = scene_state.data
     out_dir = Path(masker.params.output_folder)
     best_frame_num = scene.get('best_frame') or scene.get('start_frame')
     if best_frame_num is None:
@@ -4710,8 +4801,8 @@ def _recompute_single_preview(scene: dict, masker: 'SubjectMasker', overrides: d
 
     # Recompute seed and update scene dictionary
     bbox, details = masker.get_seed_for_frame(thumb_rgb, seed_config=seed_config, scene=scene)
-    scene['seed_config'].update(overrides)
-    scene['seed_result'] = {'bbox': bbox, 'details': details}
+    scene_state.update_seed_result(bbox, details)
+    scene_state.data['seed_config'].update(overrides)
     
     # Update metrics that are displayed in the caption
     new_score = details.get('final_score') or details.get('conf') or details.get('dino_conf')
@@ -4722,7 +4813,7 @@ def _recompute_single_preview(scene: dict, masker: 'SubjectMasker', overrides: d
     mask = masker.get_mask_for_bbox(thumb_rgb, bbox) if bbox else None
     if mask is not None:
         h, w = mask.shape[:2]; area = (h * w)
-        scene['seed_result']['details']['mask_area_pct'] = (np.sum(mask > 0) / area * 100.0) if area > 0 else 0.0
+        scene.get('seed_result', {}).get('details', {})['mask_area_pct'] = (np.sum(mask > 0) / area * 100.0) if area > 0 else 0.0
 
     overlay_rgb = render_mask_overlay(thumb_rgb, mask, 0.6, logger=logger) if mask is not None else masker.draw_bbox(thumb_rgb, bbox)
     previews_dir = out_dir / "previews"
@@ -4734,8 +4825,9 @@ def _recompute_single_preview(scene: dict, masker: 'SubjectMasker', overrides: d
     except Exception:
         logger.error(f"Failed to save preview for scene {scene['shot_id']}", exc_info=True)
 
+
 def _wire_recompute_handler(config: 'Config', logger: 'AppLogger', thumbnail_manager: 'ThumbnailManager',
-                            scenes: list[dict], shot_id: int, outdir: str, text_prompt: str,
+                            scenes: list['Scene'], shot_id: int, outdir: str, text_prompt: str,
                             box_thresh: float, text_thresh: float, view: str, ana_ui_map_keys: list[str],
                             ana_input_components: list, cuda_available: bool) -> tuple:
     """
@@ -4783,7 +4875,8 @@ def _wire_recompute_handler(config: 'Config', logger: 'AppLogger', thumbnail_man
             return scenes, gr.update(), gr.update(), f"Error: Scene {shot_id} not found."
 
         overrides = {"text_prompt": text_prompt, "box_threshold": float(box_thresh), "text_threshold": float(text_thresh)}
-        _recompute_single_preview(scenes[scene_idx], masker, overrides, thumbnail_manager, logger)
+        scene_state = SceneState(scenes[scene_idx])
+        _recompute_single_preview(scene_state, masker, overrides, thumbnail_manager, logger)
 
         # 3. Persist the changes and update the UI
         save_scene_seeds(scenes, outdir, logger)
@@ -5106,7 +5199,7 @@ def execute_analysis(event: PropagationEvent, progress_queue: Queue, cancel_even
         yield {"unified_log": f"[ERROR] Analysis failed unexpectedly: {e}", "done": False}
 
 # --- Scene gallery helpers (module-level) ---
-def scene_matches_view(scene: dict, view: str) -> bool:
+def scene_matches_view(scene: 'Scene', view: str) -> bool:
     """
     Checks if a scene's status matches the current gallery view.
 
@@ -5117,7 +5210,7 @@ def scene_matches_view(scene: dict, view: str) -> bool:
     Returns:
         True if the scene should be visible, False otherwise.
     """
-    status = scene.get('status', 'pending')
+    status = scene.status
     if view == "All":
         return status in ("included", "excluded", "pending")
     if view == "Kept":
@@ -5126,7 +5219,7 @@ def scene_matches_view(scene: dict, view: str) -> bool:
         return status == "excluded"
     return False
 
-def scene_caption(s: dict) -> str:
+def scene_caption(s: 'Scene') -> str:
     """
     Generates a descriptive caption for a scene thumbnail in the gallery.
 
@@ -5136,15 +5229,15 @@ def scene_caption(s: dict) -> str:
     Returns:
         A formatted caption string.
     """
-    shot = s.get('shot_id', '?')
-    start_f = s.get('start_frame', '?')
-    end_f = s.get('end_frame', '?')
-    metrics = s.get('seed_metrics', {}) or {}
+    shot = s.shot_id
+    start_f = s.start_frame
+    end_f = s.end_frame
+    metrics = s.seed_metrics or {}
     face = metrics.get('best_face_sim')
     conf = metrics.get('score')
-    mask = (s.get('seed_result', {}).get('details', {}) or {}).get('mask_area_pct')
+    mask = (s.seed_result.get('details', {}) or {}).get('mask_area_pct')
     bits = [f"Scene {shot} [{start_f}-{end_f}]"]
-    if s.get('is_overridden', False):
+    if s.is_overridden:
         bits[0] += " ✏️"
     else:
         bits[0] += " 🤖"
@@ -5153,7 +5246,7 @@ def scene_caption(s: dict) -> str:
     if mask is not None: bits.append(f"mask {mask:.1f}%")
     return " | ".join(bits)
 
-def scene_thumb(s: dict, output_dir: str) -> Optional[str]:
+def scene_thumb(s: 'Scene', output_dir: str) -> Optional[str]:
     """
     Finds the path to the preview thumbnail for a scene.
 
@@ -5164,53 +5257,61 @@ def scene_thumb(s: dict, output_dir: str) -> Optional[str]:
     Returns:
         The path to the thumbnail image, or None if not found.
     """
-    p = s.get('preview_path')
+    p = s.preview_path
     if p and os.path.isfile(p):
         return p
-    shot_id = s.get('shot_id')
+    shot_id = s.shot_id
     if shot_id is not None:
         candidate = os.path.join(output_dir, "previews", f"scene_{int(shot_id):05d}.jpg")
         if os.path.isfile(candidate):
             return candidate
     return None
 
-def build_scene_gallery_items(scenes: list[dict], view: str, output_dir: str) -> tuple[list[tuple], list[int]]:
+def build_scene_gallery_items(scenes: list[dict], view: str, output_dir: str, page_num: int = 1, page_size: int = 20) -> tuple[list[tuple], list[int], int]:
     """
-    Builds the list of items to display in the Gradio scene gallery.
+    Builds the list of items to display in the Gradio scene gallery with pagination.
 
     Args:
         scenes: The list of all scene dictionaries.
         view: The current gallery view ("Kept", "Rejected", "All").
         output_dir: The main output directory.
+        page_num: The current page number (1-indexed).
+        page_size: The number of items per page.
 
     Returns:
         A tuple containing:
         - A list of (image_path, caption) tuples for the gallery.
         - An index map linking the gallery item index to the original scene list index.
+        - The total number of pages.
     """
     items: list[tuple[str | None, str]] = []
     index_map: list[int] = []
     if not scenes:
-        return [], []
+        return [], [], 1
 
     previews_dir = Path(output_dir) / "previews"
     previews_dir.mkdir(parents=True, exist_ok=True)
 
-    for i, s in enumerate(scenes):
-        if not scene_matches_view(s, view):
-            continue
+    filtered_scenes = [(i, s) for i, s in enumerate(scenes) if scene_matches_view(s, view)]
+    total_pages = max(1, (len(filtered_scenes) + page_size - 1) // page_size)
+    page_num = max(1, min(page_num, total_pages))
+    start_index = (page_num - 1) * page_size
+    end_index = start_index + page_size
+    paginated_scenes = filtered_scenes[start_index:end_index]
 
+
+    for i, s in paginated_scenes:
         img_path = scene_thumb(s, output_dir)
         if img_path is None:
             continue
 
-        if s.get('is_overridden', False):
+        if s.is_overridden:
             thumb_img_np = cv2.imread(img_path)
             if thumb_img_np is not None:
                 badged_thumb = create_scene_thumbnail_with_badge(thumb_img_np, i, True)
 
                 # Save the modified thumbnail to a new file
-                shot_id = s.get('shot_id', i)
+                shot_id = s.shot_id
                 override_preview_path = previews_dir / f"scene_{shot_id:05d}_override.jpg"
                 cv2.imwrite(str(override_preview_path), badged_thumb)
                 img_path = str(override_preview_path)
@@ -5219,7 +5320,7 @@ def build_scene_gallery_items(scenes: list[dict], view: str, output_dir: str) ->
         items.append((img_path, cap))
         index_map.append(i)
 
-    return items, index_map
+    return items, index_map, total_pages
 def create_scene_thumbnail_with_badge(scene_img: np.ndarray, scene_index: int, is_overridden: bool) -> np.ndarray:
     """
     Adds a visual indicator badge to a scene thumbnail image.
@@ -5516,7 +5617,12 @@ Review the automatically detected subjects and refine the selection if needed. E
 
             with gr.Accordion("Scene Gallery", open=True):
                 self._create_component('scene_gallery_view_toggle', 'radio', {'label': "Show", 'choices': ["Kept", "Rejected", "All"], 'value': "Kept"})
-                self.components['scene_gallery'] = gr.Gallery(label="Scenes", columns=[99999], rows=1, height=560, show_label=True, allow_preview=True, container=True)
+                with gr.Row(elem_id="pagination_row"):
+                    self._create_component('prev_page_button', 'button', {'value': '⬅️ Previous'})
+                    self._create_component('page_number_input', 'number', {'label': 'Page', 'value': 1, 'precision': 0})
+                    self._create_component('total_pages_label', 'markdown', {'value': '/ 1 pages'})
+                    self._create_component('next_page_button', 'button', {'value': 'Next ➡️'})
+                self.components['scene_gallery'] = gr.Gallery(label="Scenes", columns=10, rows=2, height=560, show_label=True, allow_preview=True, container=True)
 
             with gr.Accordion("Scene Editor", open=False, elem_classes="scene-editor") as sceneeditoraccordion:
                 self.components["sceneeditoraccordion"] = sceneeditoraccordion
@@ -5632,7 +5738,9 @@ Review the automatically detected subjects and refine the selection if needed. E
                 with gr.Group(visible=False) as export_group:
                     self.components['export_group'] = export_group
                     gr.Markdown("### 📤 Step 3: Export")
-                    self._create_component('export_button', 'button', {'value': "Export Kept Frames", 'variant': "primary"})
+                    with gr.Row():
+                        self._create_component('export_button', 'button', {'value': "Export Kept Frames", 'variant': "primary"})
+                        self._create_component('dry_run_button', 'button', {'value': "Dry Run Export"})
                     with gr.Accordion("Export Options", open=True):
                         with gr.Row():
                             self._create_component('enable_crop_input', 'checkbox', {'label': "✂️ Crop to Subject", 'value': self.config.export_enable_crop})
@@ -5679,7 +5787,15 @@ Review the automatically detected subjects and refine the selection if needed. E
                             'gallery_image_state': gr.State(None),
                             'gallery_shape_state': gr.State(None),
                             'yolo_results_state': gr.State({}),
-                            'discovered_faces_state': gr.State([])})
+                            'discovered_faces_state': gr.State([]),
+                            'resume_state': gr.State(False),
+                            'enable_subject_mask_state': gr.State(True),
+                            'min_mask_area_pct_state': gr.State(1.0),
+                            'sharpness_base_scale_state': gr.State(2500.0),
+                            'edge_strength_base_scale_state': gr.State(100.0),
+                            'gdino_config_path_state': gr.State("GroundingDINO_SwinT_OGC.py"),
+                            'gdino_checkpoint_path_state': gr.State("models/groundingdino_swint_ogc.pth"),
+                            })
         self._setup_visibility_toggles(); self._setup_pipeline_handlers(); self._setup_filtering_handlers(); self._setup_bulk_scene_handlers()
         self.components['save_config_button'].click(
             lambda: self.config.save_config('config_dump.json'), [], []
@@ -5865,16 +5981,41 @@ class EnhancedAppUI(AppUI):
         """Sets up Gradio event handlers for the scene selection and editing tab."""
         c = self.components
 
+        def on_page_change(scenes, view, output_dir, page_num):
+            page_num = int(page_num)
+            items, index_map, total_pages = build_scene_gallery_items(scenes, view, output_dir, page_num=page_num)
+            return gr.update(value=items), index_map, f"/ {total_pages} pages", page_num
+
         def _refresh_scene_gallery(scenes, view, output_dir):
-            items, index_map = build_scene_gallery_items(scenes, view, output_dir)
-            return gr.update(value=items), index_map
+            items, index_map, total_pages = build_scene_gallery_items(scenes, view, output_dir, page_num=1)
+            return gr.update(value=items), index_map, f"/ {total_pages} pages", 1
 
         # On view toggle change
         c['scene_gallery_view_toggle'].change(
             _refresh_scene_gallery,
             [c['scenes_state'], c['scene_gallery_view_toggle'], c['extracted_frames_dir_state']],
-            [c['scene_gallery'], c['scene_gallery_index_map_state']]
+            [c['scene_gallery'], c['scene_gallery_index_map_state'], c['total_pages_label'], c['page_number_input']]
         )
+
+        # Pagination controls
+        c['next_page_button'].click(
+            lambda scenes, view, output_dir, page_num: on_page_change(scenes, view, output_dir, page_num + 1),
+            [c['scenes_state'], c['scene_gallery_view_toggle'], c['extracted_frames_dir_state'], c['page_number_input']],
+            [c['scene_gallery'], c['scene_gallery_index_map_state'], c['total_pages_label'], c['page_number_input']]
+        )
+
+        c['prev_page_button'].click(
+            lambda scenes, view, output_dir, page_num: on_page_change(scenes, view, output_dir, page_num - 1),
+            [c['scenes_state'], c['scene_gallery_view_toggle'], c['extracted_frames_dir_state'], c['page_number_input']],
+            [c['scene_gallery'], c['scene_gallery_index_map_state'], c['total_pages_label'], c['page_number_input']]
+        )
+
+        c['page_number_input'].submit(
+            on_page_change,
+            [c['scenes_state'], c['scene_gallery_view_toggle'], c['extracted_frames_dir_state'], c['page_number_input']],
+            [c['scene_gallery'], c['scene_gallery_index_map_state'], c['total_pages_label'], c['page_number_input']]
+        )
+
 
         c['scene_gallery'].select(
             self.on_select_for_edit,
@@ -5915,6 +6056,8 @@ class EnhancedAppUI(AppUI):
                 c['scene_gallery'],
                 c['scene_gallery_index_map_state'],
                 c['sceneeditorstatusmd'],
+                c['total_pages_label'],
+                c['page_number_input']
             ],
         )
 
@@ -5967,8 +6110,8 @@ class EnhancedAppUI(AppUI):
 
     def on_reset_scene_wrapper(self, scenes, shot_id, outdir, view, *ana_args):
         try:
-            scene = next((s for s in scenes if s['shot_id'] == shot_id), None)
-            if not scene:
+            scene_idx = next((i for i, s in enumerate(scenes) if s['shot_id'] == shot_id), None)
+            if scene_idx is None:
                 return scenes, gr.update(), gr.update(), "Scene not found."
             scene.update({'seed_config': {}, 'seed_result': {}, 'seed_metrics': {}, 'manual_status_change': False, 'status': 'included', 'is_overridden': False, 'selected_bbox': scene.get('initial_bbox')})
             masker = _create_analysis_context(self.config, self.logger, self.thumbnail_manager,
@@ -5993,6 +6136,8 @@ class EnhancedAppUI(AppUI):
 
     def on_select_for_edit(self, scenes, view, indexmap, outputdir, yoloresultsstate, event: Optional[gr.EventData] = None, request: Optional[gr.Request] = None):
         sel_idx = getattr(event, "index", None) if event else None
+        status_text, button_update = get_scene_status_text(scenes)
+
         if sel_idx is None:
             return self._empty_selection_response(scenes, indexmap)
 
@@ -6557,13 +6702,13 @@ class EnhancedAppUI(AppUI):
         self.logger.info("Applying bulk scene filters", extra={"min_mask_area": min_mask_area, "min_face_sim": min_face_sim, "min_confidence": min_confidence, "enable_face_filter": enable_face_filter})
 
         for scene in scenes:
-            if scene.get('manual_status_change', False):
+            if scene.manual_status_change:
                 continue
 
             rejection_reasons = []
-            seed_result = scene.get('seed_result', {})
+            seed_result = scene.seed_result or {}
             details = seed_result.get('details', {})
-            seed_metrics = scene.get('seed_metrics', {})
+            seed_metrics = scene.seed_metrics or {}
 
             if details.get('mask_area_pct', 101.0) < min_mask_area:
                 rejection_reasons.append("Min Seed Mask Area")
@@ -6572,11 +6717,11 @@ class EnhancedAppUI(AppUI):
             if seed_metrics.get('score', 101.0) < min_confidence:
                 rejection_reasons.append("Min Seed Confidence")
 
-            scene['rejection_reasons'] = rejection_reasons
+            scene.rejection_reasons = rejection_reasons
             if rejection_reasons:
-                scene['status'] = 'excluded'
+                scene.status = 'excluded'
             else:
-                scene['status'] = 'included'
+                scene.status = 'included'
 
         save_scene_seeds(scenes, output_folder, self.logger)
         gallery_items, new_index_map = build_scene_gallery_items(scenes, view, output_folder)
@@ -6651,38 +6796,40 @@ class EnhancedAppUI(AppUI):
                 c['scenes_state'],
                 c['scene_gallery'],
                 c['scene_gallery_index_map_state'],
-                c['sceneeditorstatusmd']
+                c['sceneeditorstatusmd'],
+                c['total_pages_label'],
+                c['page_number_input']
             ]
         )
 
         c['sceneincludebutton'].click(
             lambda s, sid, out, v: self.on_editor_toggle(s, sid, out, v, "included"),
             inputs=[c['scenes_state'], c['selected_scene_id_state'], c['extracted_frames_dir_state'], c['scene_gallery_view_toggle']],
-            outputs=[c['scenes_state'], c['scene_filter_status'], c['scene_gallery'], c['scene_gallery_index_map_state'], c['propagate_masks_button']],
+            outputs=[c['scenes_state'], c['scene_filter_status'], c['scene_gallery'], c['scene_gallery_index_map_state'], c['propagate_masks_button'], c['total_pages_label'], c['page_number_input']],
         )
         c['sceneexcludebutton'].click(
             lambda s, sid, out, v: self.on_editor_toggle(s, sid, out, v, "excluded"),
             inputs=[c['scenes_state'], c['selected_scene_id_state'], c['extracted_frames_dir_state'], c['scene_gallery_view_toggle']],
-            outputs=[c['scenes_state'], c['scene_filter_status'], c['scene_gallery'], c['scene_gallery_index_map_state'], c['propagate_masks_button']],
+            outputs=[c['scenes_state'], c['scene_filter_status'], c['scene_gallery'], c['scene_gallery_index_map_state'], c['propagate_masks_button'], c['total_pages_label'], c['page_number_input']],
         )
 
         def init_scene_gallery(scenes, view, outdir):
             if not scenes:
-                return gr.update(value=[]), []
-            gallery_items, index_map = build_scene_gallery_items(scenes, view, outdir)
-            return gr.update(value=gallery_items), index_map
+                return gr.update(value=[]), [], "/ 1 pages", 1
+            gallery_items, index_map, total_pages = build_scene_gallery_items(scenes, view, outdir)
+            return gr.update(value=gallery_items), index_map, f"/ {total_pages} pages", 1
 
         c['scenes_state'].change(
             init_scene_gallery,
             [c['scenes_state'], c['scene_gallery_view_toggle'], c['extracted_frames_dir_state']],
-            [c['scene_gallery'], c['scene_gallery_index_map_state']]
+            [c['scene_gallery'], c['scene_gallery_index_map_state'], c['total_pages_label'], c['page_number_input']]
         )
 
-        bulk_action_outputs = [c['scenes_state'], c['scene_filter_status'], c['scene_gallery'], c['scene_gallery_index_map_state'], c['propagate_masks_button']]
+        bulk_action_outputs = [c['scenes_state'], c['scene_filter_status'], c['scene_gallery'], c['scene_gallery_index_map_state'], c['propagate_masks_button'], c['total_pages_label'], c['page_number_input']]
 
         bulk_filter_inputs = [c['scenes_state'], c['scene_mask_area_min_input'], c['scene_face_sim_min_input'],
                               c['scene_confidence_min_input'], c['enable_face_filter_input'], c['extracted_frames_dir_state'], c['scene_gallery_view_toggle']]
-        
+
         for comp in [c['scene_mask_area_min_input'], c['scene_face_sim_min_input'], c['scene_confidence_min_input']]:
             comp.release(self.on_apply_bulk_scene_filters_extended, bulk_filter_inputs, bulk_action_outputs)
 
@@ -6757,6 +6904,7 @@ class EnhancedAppUI(AppUI):
         export_inputs = [c['all_frames_data_state'], c['analysis_output_dir_state'], c['extracted_video_path_state'], c['enable_crop_input'],
                          c['crop_ar_input'], c['crop_padding_input'], c['require_face_match_input'], c['dedup_thresh_input'], c['enable_dedup_input']] + slider_comps
         c['export_button'].click(self.export_kept_frames_wrapper, export_inputs, c['unified_log'])
+        c['dry_run_button'].click(self.dry_run_export_wrapper, export_inputs, c['unified_log'])
 
         reset_outputs_comps = (slider_comps + [c['dedup_thresh_input'], c['require_face_match_input'],
                                               c['filter_status_text'], c['results_gallery']] +
@@ -7000,8 +7148,13 @@ class EnhancedAppUI(AppUI):
             export_dir.mkdir(exist_ok=True, parents=True)
             cmd = ['ffmpeg', '-y', '-i', str(event.video_path), '-vf', select_filter, '-vsync', 'vfr', str(export_dir / "frame_%06d.png")]
             self.logger.info("Starting final export extraction...", extra={'command': ' '.join(cmd)})
-            with open(os.devnull, 'w') as devnull:
-                subprocess.run(cmd, check=True, stdout=devnull, stderr=devnull)
+
+            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8')
+            stdout, stderr = process.communicate()
+
+            if process.returncode != 0:
+                self.logger.error("FFmpeg export failed", extra={'stderr': stderr})
+                return f"Error during export: FFmpeg failed. Check logs for details:\n{stderr}"
 
             self.logger.info("Renaming extracted frames to match original filenames...")
             orig_to_filename_map = {v: k for k, v in fn_to_orig_map.items()}
@@ -7172,6 +7325,61 @@ class EnhancedAppUI(AppUI):
         except Exception as e:
             self.logger.error("Error during export process", exc_info=True)
             return f"Error during export: {e}"
+
+    def dry_run_export_wrapper(self, all_frames_data, output_dir, video_path, enable_crop, crop_ars, crop_padding, require_face_match, dedup_thresh, enable_dedup, *slider_values):
+        filter_args = {k: v for k, v in zip(sorted(self.components['metric_sliders'].keys()), slider_values)}
+        filter_args.update({"require_face_match": require_face_match, "dedup_thresh": dedup_thresh, "enable_dedup": enable_dedup})
+        return self.dry_run_export(ExportEvent(all_frames_data=all_frames_data, output_dir=output_dir, video_path=video_path, enable_crop=enable_crop, crop_ars=crop_ars, crop_padding=crop_padding, filter_args=filter_args))
+
+    def dry_run_export(self, event: ExportEvent):
+        if not event.all_frames_data:
+            return "No metadata to export."
+        if not event.video_path or not Path(event.video_path).exists():
+            return "[ERROR] Original video path is required for export."
+
+        out_root = Path(event.output_dir)
+
+        try:
+            filters = event.filter_args.copy()
+            filters.update({
+                "face_sim_enabled": any("face_sim" in f for f in event.all_frames_data),
+                "mask_area_enabled": any("mask_area_pct" in f for f in event.all_frames_data),
+                "enable_dedup": any('phash' in f for f in event.all_frames_data)
+            })
+            kept, _, _, _ = apply_all_filters_vectorized(event.all_frames_data, filters, self.config, output_dir=event.output_dir)
+            if not kept:
+                return "No frames kept after filtering. Nothing to export."
+
+            frame_map_path = out_root / "frame_map.json"
+            if not frame_map_path.exists():
+                return "[ERROR] frame_map.json not found. Cannot export."
+            with frame_map_path.open('r', encoding='utf-8') as f:
+                frame_map_list = json.load(f)
+
+            sample_name = next((f['filename'] for f in kept if 'filename' in f), None)
+            analyzed_ext = Path(sample_name).suffix if sample_name else '.webp'
+
+            fn_to_orig_map = {
+                f"frame_{i+1:06d}{analyzed_ext}": orig
+                for i, orig in enumerate(sorted(frame_map_list))
+            }
+            frames_to_extract = sorted([
+                fn_to_orig_map.get(f['filename'])
+                for f in kept if f.get('filename') in fn_to_orig_map
+            ])
+            frames_to_extract = [n for n in frames_to_extract if n is not None]
+
+            if not frames_to_extract:
+                return "No frames to extract."
+
+            select_filter = f"select='{'+'.join([f'eq(n,{fn})' for fn in frames_to_extract])}'"
+            export_dir = out_root.parent / f"{out_root.name}_exported_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            cmd = ['ffmpeg', '-y', '-i', str(event.video_path), '-vf', select_filter, '-vsync', 'vfr', str(export_dir / "frame_%06d.png")]
+
+            return f"Dry Run: {len(frames_to_extract)} frames to be exported.\n\nFFmpeg command:\n{' '.join(cmd)}"
+        except Exception as e:
+            self.logger.error("Error during dry run process", exc_info=True)
+            return f"Error during dry run: {e}"
 
 # --- COMPOSITION & MAIN ---
 def cleanup_models():
