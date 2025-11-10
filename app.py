@@ -2409,10 +2409,20 @@ def run_ffmpeg_extraction(video_path: str, output_dir: Path, video_info: dict, p
     frame_map_list = []
 
     # Live processing of both streams
+    stderr_output = ""
     with process.stdout, process.stderr:
         total_duration_s = video_info.get("frame_count", 0) / max(0.01, video_info.get("fps", 30))
         stdout_thread = threading.Thread(target=lambda: _process_ffmpeg_stream(process.stdout, tracker, "Extracting frames", total_duration_s))
-        stderr_thread = threading.Thread(target=lambda: frame_map_list.extend(_process_ffmpeg_showinfo(process.stderr)))
+
+        # We need a way to get the stderr back from the thread
+        stderr_results = {}
+        def process_stderr_and_store():
+            nonlocal stderr_results
+            frame_map, full_stderr = _process_ffmpeg_showinfo(process.stderr)
+            stderr_results['frame_map'] = frame_map
+            stderr_results['full_stderr'] = full_stderr
+
+        stderr_thread = threading.Thread(target=process_stderr_and_store)
         stdout_thread.start()
         stderr_thread.start()
 
@@ -2436,12 +2446,16 @@ def run_ffmpeg_extraction(video_path: str, output_dir: Path, video_info: dict, p
 
     process.wait()
 
+    frame_map_list = stderr_results.get('frame_map', [])
+    stderr_output = stderr_results.get('full_stderr', '')
+
     if frame_map_list:
         with open(output_dir / "frame_map.json", 'w', encoding='utf-8') as f:
             json.dump(sorted(frame_map_list), f)
 
     if process.returncode not in [0, -9] and not cancel_event.is_set(): # -9 is SIGKILL, can happen on cancel
-        raise RuntimeError(f"FFmpeg failed with code {process.returncode}.")
+        logger.error("FFmpeg extraction failed", extra={'returncode': process.returncode, 'stderr': stderr_output})
+        raise RuntimeError(f"FFmpeg failed with code {process.returncode}. Check logs for details.")
 
 def _process_ffmpeg_stream(stream, tracker: Optional['AdvancedProgressTracker'], desc: str, total_duration_s: float):
     """
@@ -2481,23 +2495,27 @@ def _process_ffmpeg_stream(stream, tracker: Optional['AdvancedProgressTracker'],
             pass  # Ignore malformed lines
     stream.close()
 
-def _process_ffmpeg_showinfo(stream) -> list:
+def _process_ffmpeg_showinfo(stream) -> tuple[list, str]:
     """
-    Extracts frame numbers from FFmpeg's `showinfo` filter output.
+    Extracts frame numbers from FFmpeg's `showinfo` filter output and captures the full stderr.
 
     Args:
         stream: The stderr stream of the FFmpeg process.
 
     Returns:
-        A list of integer frame numbers.
+        A tuple containing:
+        - A list of integer frame numbers.
+        - The full stderr output as a string.
     """
     frame_numbers = []
+    stderr_lines = []
     for line in iter(stream.readline, ''):
+        stderr_lines.append(line)
         match = re.search(r' n:\s*(\d+)', line)
         if match:
             frame_numbers.append(int(match.group(1)))
     stream.close()
-    return frame_numbers
+    return frame_numbers, "".join(stderr_lines)
 
 def postprocess_mask(mask: np.ndarray, config: 'Config', fill_holes: bool = True, keep_largest_only: bool = True) -> np.ndarray:
     """
@@ -5823,7 +5841,9 @@ Review the automatically detected subjects and refine the selection if needed. E
                 with gr.Group(visible=False) as export_group:
                     self.components['export_group'] = export_group
                     gr.Markdown("### 📤 Step 3: Export")
-                    self._create_component('export_button', 'button', {'value': "Export Kept Frames", 'variant': "primary"})
+                    with gr.Row():
+                        self._create_component('export_button', 'button', {'value': "Export Kept Frames", 'variant': "primary"})
+                        self._create_component('dry_run_button', 'button', {'value': "Dry Run Export"})
                     with gr.Accordion("Export Options", open=True):
                         with gr.Row():
                             self._create_component('enable_crop_input', 'checkbox', {'label': "✂️ Crop to Subject", 'value': self.config.export_enable_crop})
@@ -7395,6 +7415,7 @@ class EnhancedAppUI(AppUI):
         export_inputs = [c['all_frames_data_state'], c['analysis_output_dir_state'], c['extracted_video_path_state'], c['enable_crop_input'],
                          c['crop_ar_input'], c['crop_padding_input'], c['require_face_match_input'], c['dedup_thresh_input'], c['enable_dedup_input']] + slider_comps
         c['export_button'].click(self.export_kept_frames_wrapper, export_inputs, c['unified_log'])
+        c['dry_run_button'].click(self.dry_run_export_wrapper, export_inputs, c['unified_log'])
 
         reset_outputs_comps = (slider_comps + [c['dedup_thresh_input'], c['require_face_match_input'],
                                               c['filter_status_text'], c['results_gallery']] +
@@ -7638,8 +7659,13 @@ class EnhancedAppUI(AppUI):
             export_dir.mkdir(exist_ok=True, parents=True)
             cmd = ['ffmpeg', '-y', '-i', str(event.video_path), '-vf', select_filter, '-vsync', 'vfr', str(export_dir / "frame_%06d.png")]
             self.logger.info("Starting final export extraction...", extra={'command': ' '.join(cmd)})
-            with open(os.devnull, 'w') as devnull:
-                subprocess.run(cmd, check=True, stdout=devnull, stderr=devnull)
+
+            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8')
+            stdout, stderr = process.communicate()
+
+            if process.returncode != 0:
+                self.logger.error("FFmpeg export failed", extra={'stderr': stderr})
+                return f"Error during export: FFmpeg failed. Check logs for details:\n{stderr}"
 
             self.logger.info("Renaming extracted frames to match original filenames...")
             orig_to_filename_map = {v: k for k, v in fn_to_orig_map.items()}
@@ -7810,6 +7836,61 @@ class EnhancedAppUI(AppUI):
         except Exception as e:
             self.logger.error("Error during export process", exc_info=True)
             return f"Error during export: {e}"
+
+    def dry_run_export_wrapper(self, all_frames_data, output_dir, video_path, enable_crop, crop_ars, crop_padding, require_face_match, dedup_thresh, enable_dedup, *slider_values):
+        filter_args = {k: v for k, v in zip(sorted(self.components['metric_sliders'].keys()), slider_values)}
+        filter_args.update({"require_face_match": require_face_match, "dedup_thresh": dedup_thresh, "enable_dedup": enable_dedup})
+        return self.dry_run_export(ExportEvent(all_frames_data=all_frames_data, output_dir=output_dir, video_path=video_path, enable_crop=enable_crop, crop_ars=crop_ars, crop_padding=crop_padding, filter_args=filter_args))
+
+    def dry_run_export(self, event: ExportEvent):
+        if not event.all_frames_data:
+            return "No metadata to export."
+        if not event.video_path or not Path(event.video_path).exists():
+            return "[ERROR] Original video path is required for export."
+
+        out_root = Path(event.output_dir)
+
+        try:
+            filters = event.filter_args.copy()
+            filters.update({
+                "face_sim_enabled": any("face_sim" in f for f in event.all_frames_data),
+                "mask_area_enabled": any("mask_area_pct" in f for f in event.all_frames_data),
+                "enable_dedup": any('phash' in f for f in event.all_frames_data)
+            })
+            kept, _, _, _ = apply_all_filters_vectorized(event.all_frames_data, filters, self.config, output_dir=event.output_dir)
+            if not kept:
+                return "No frames kept after filtering. Nothing to export."
+
+            frame_map_path = out_root / "frame_map.json"
+            if not frame_map_path.exists():
+                return "[ERROR] frame_map.json not found. Cannot export."
+            with frame_map_path.open('r', encoding='utf-8') as f:
+                frame_map_list = json.load(f)
+
+            sample_name = next((f['filename'] for f in kept if 'filename' in f), None)
+            analyzed_ext = Path(sample_name).suffix if sample_name else '.webp'
+
+            fn_to_orig_map = {
+                f"frame_{i+1:06d}{analyzed_ext}": orig
+                for i, orig in enumerate(sorted(frame_map_list))
+            }
+            frames_to_extract = sorted([
+                fn_to_orig_map.get(f['filename'])
+                for f in kept if f.get('filename') in fn_to_orig_map
+            ])
+            frames_to_extract = [n for n in frames_to_extract if n is not None]
+
+            if not frames_to_extract:
+                return "No frames to extract."
+
+            select_filter = f"select='{'+'.join([f'eq(n,{fn})' for fn in frames_to_extract])}'"
+            export_dir = out_root.parent / f"{out_root.name}_exported_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            cmd = ['ffmpeg', '-y', '-i', str(event.video_path), '-vf', select_filter, '-vsync', 'vfr', str(export_dir / "frame_%06d.png")]
+
+            return f"Dry Run: {len(frames_to_extract)} frames to be exported.\n\nFFmpeg command:\n{' '.join(cmd)}"
+        except Exception as e:
+            self.logger.error("Error during dry run process", exc_info=True)
+            return f"Error during dry run: {e}"
 
 # --- COMPOSITION & MAIN ---
 def cleanup_models():
