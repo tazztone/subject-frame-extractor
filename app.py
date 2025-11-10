@@ -1014,30 +1014,56 @@ class SessionLoadEvent(UIEvent):
 
 def handle_common_errors(func: Callable) -> Callable:
     """
-    A decorator to catch and format common exceptions for UI display.
+    A decorator to catch, format, and standardize common exceptions for UI display.
 
     Args:
         func: The function to wrap.
 
     Returns:
-        A wrapped function that returns a dictionary with an 'error' key
-        if a handled exception occurs.
+        A wrapped function that returns a standardized dictionary on error,
+        containing detailed information for the user and for logging.
     """
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         try:
+            # Attempt to execute the wrapped function
             return func(*args, **kwargs)
         except FileNotFoundError as e:
-            return {"error": f"File not found: {e}. Please check the path."}
+            return {
+                "log": f"[ERROR] File not found: {e}. Please verify file paths and permissions.",
+                "status_message": "A required file was not found.",
+                "error_message": str(e),
+                "remediation_hint": "Please check that the file path is correct and the file exists."
+            }
         except (ValueError, TypeError) as e:
-            return {"error": f"Invalid input: {e}. Please check your parameters."}
+            return {
+                "log": f"[ERROR] Invalid input provided: {e}. Check function arguments.",
+                "status_message": "Invalid input detected.",
+                "error_message": str(e),
+                "remediation_hint": "Review the parameters you've provided. The type or value may be incorrect."
+            }
         except RuntimeError as e:
             if "CUDA out of memory" in str(e):
-                return {"error": "GPU memory full. Try reducing batch size or using CPU mode."}
-            return {"error": f"Processing error: {e}"}
+                return {
+                    "log": "[ERROR] CUDA out of memory. The GPU does not have enough memory to complete the task.",
+                    "status_message": "GPU memory error.",
+                    "error_message": "CUDA out of memory.",
+                    "remediation_hint": "Try reducing the model size, processing resolution, or batch size. Closing other GPU-intensive applications may also help."
+                }
+            return {
+                "log": f"[ERROR] A runtime processing error occurred: {e}",
+                "status_message": "A processing error occurred.",
+                "error_message": str(e),
+                "remediation_hint": "This may be a temporary issue. If it persists, please check the logs for more details."
+            }
         except Exception as e:
-            # Catch any other unexpected errors
-            return {"error": f"An unexpected error occurred: {e}"}
+            # Catch any other unexpected exceptions to prevent crashes
+            return {
+                "log": f"[CRITICAL] An unexpected error occurred: {e}\n{traceback.format_exc()}",
+                "status_message": "An unexpected critical error occurred.",
+                "error_message": str(e),
+                "remediation_hint": "Please report this issue. Check the detailed logs for a stack trace."
+            }
     return wrapper
 
 def monitor_memory_usage(logger: 'AppLogger', device: str, threshold_mb: int = 8000):
@@ -4895,20 +4921,24 @@ def execute_extraction(event: 'ExtractionEvent', progress_queue: Queue, cancel_e
         tracker = AdvancedProgressTracker(progress, progress_queue, logger, ui_stage_name="Extracting")
         pipeline = EnhancedExtractionPipeline(config, logger, params, progress_queue, cancel_event)
 
-        # The run method now accepts the tracker
         result = pipeline.run(tracker=tracker)
 
         if result and result.get("done"):
             yield {
-                "log": "Extraction complete.",
-                "status": f"Output: {result['output_dir']}",
+                "unified_log": "Extraction complete. You can now proceed to the next step.",
                 "extracted_video_path_state": result.get("video_path", ""),
                 "extracted_frames_dir_state": result["output_dir"],
                 "done": True
             }
+        else:
+            yield {
+                "unified_log": f"Extraction failed. Reason: {result.get('log', 'Unknown error')}",
+                "done": False
+            }
     except Exception as e:
         logger.error("Extraction execution failed", exc_info=True)
-        yield {"log": f"[ERROR] Extraction failed unexpectedly: {e}", "done": False}
+        yield {"unified_log": f"[ERROR] Extraction failed unexpectedly: {e}", "done": False}
+
 
 @handle_common_errors
 def execute_pre_analysis(event: 'PreAnalysisEvent', progress_queue: Queue, cancel_event: threading.Event,
@@ -4930,149 +4960,62 @@ def execute_pre_analysis(event: 'PreAnalysisEvent', progress_queue: Queue, cance
         progress: The Gradio progress object.
     """
     try:
-        yield {"unified_log": "", "unified_status": "Starting Pre-Analysis..."}
         tracker = AdvancedProgressTracker(progress, progress_queue, logger, ui_stage_name="Pre-Analysis")
         params_dict = event.model_dump()
         is_folder_mode = not params_dict.get("video_path")
-
-        # Handle face reference upload before initializing parameters
-        final_face_ref_path = params_dict.get('face_ref_img_path')
         if event.face_ref_img_upload:
-            ref_upload, dest = params_dict.pop('face_ref_img_upload'), Path(config.paths.downloads) / Path(event.face_ref_img_upload).name
+            ref_upload, dest = params_dict.pop('face_ref_img_upload'), Path(config.downloads_dir) / Path(event.face_ref_img_upload).name
             shutil.copy2(ref_upload, dest)
             params_dict['face_ref_img_path'] = str(dest)
-            final_face_ref_path = str(dest)
-
         params = AnalysisParameters.from_ui(logger, config, **params_dict)
         output_dir = Path(params.output_folder)
-
-        # Save the final resolved config (including the copied face ref path)
-        try:
-            with (output_dir / "run_config.json").open('w', encoding='utf-8') as f:
-                # Use the latest params_dict which has the correct face_ref_img_path
-                json.dump({k: v for k, v in params_dict.items() if k != 'face_ref_img_upload'}, f, indent=4)
-        except Exception as e:
-            logger.error(f"Failed to save run configuration: {e}", exc_info=True)
-
-        logger.info("Loading Models")
+        (output_dir / "run_config.json").write_text(json.dumps({k: v for k, v in params_dict.items() if k != 'face_ref_img_upload'}, indent=4))
         models = initialize_analysis_models(params, config, logger)
-        niqe_metric = None
-        if not is_folder_mode and params.pre_analysis_enabled and pyiqa:
-            # Skip NIQE for YOLO-only mode to save memory
-            if params.primary_seed_strategy != "🧑‍🤝‍🧑 Find Prominent Person":
-                niqe_metric = pyiqa.create_metric('niqe', device=models['device'])
-
+        niqe_metric = pyiqa.create_metric('niqe', device=models['device']) if not is_folder_mode and params.pre_analysis_enabled and pyiqa and params.primary_seed_strategy != "🧑‍🤝‍🧑 Find Prominent Person" else None
         masker = SubjectMasker(params, progress_queue, cancel_event, config, face_analyzer=models["face_analyzer"],
                                reference_embedding=models["ref_emb"], person_detector=models["person_detector"],
                                niqe_metric=niqe_metric, thumbnail_manager=thumbnail_manager, logger=logger,
                                face_landmarker=models["face_landmarker"], device=models["device"])
         masker.frame_map = masker._create_frame_map(str(output_dir))
-
-        if is_folder_mode:
-            logger.info("Starting seed selection for image folder.")
-            scenes_path = output_dir / "scenes.json"
-            if not scenes_path.exists():
-                yield {"log": "[ERROR] scenes.json not found. Run extraction first.", "done": False}
-                return
-
-            with scenes_path.open('r', encoding='utf-8') as f:
-                scenes = [Scene(shot_id=i, start_frame=s, end_frame=e) for i, (s, e) in enumerate(json.load(f))]
-
-            tracker.start(len(scenes), desc="Selecting seeds for images")
-            previews_dir = output_dir / "previews"
-            previews_dir.mkdir(exist_ok=True)
-
-            for scene in scenes:
-                if cancel_event.is_set(): break
-                tracker.step(1, desc=f"Image {scene.shot_id}")
-
-                scene.best_frame = scene.start_frame
-                fname = masker.frame_map.get(scene.best_frame)
-                if not fname: continue
-
-                thumb_rgb = thumbnail_manager.get(output_dir / "thumbs" / f"{Path(fname).stem}.webp")
-                if thumb_rgb is None: continue
-
-                bbox, details = masker.get_seed_for_frame(thumb_rgb, seed_config=params)
-                scene.seed_result = {'bbox': bbox, 'details': details}
-
-                mask = masker.get_mask_for_bbox(thumb_rgb, bbox) if (bbox and params.enable_subject_mask) else None
-                if mask is not None:
-                    h, w = mask.shape[:2]
-                    scene.seed_result['details']['mask_area_pct'] = (np.sum(mask > 0) / (h * w)) * 100 if h * w > 0 else 0.0
-
-                overlay_rgb = render_mask_overlay(thumb_rgb, mask, 0.6, logger=logger) if mask is not None else masker.draw_bbox(thumb_rgb, bbox)
-
-                preview_path = previews_dir / f"scene_{scene.shot_id:05d}.jpg"
-                Image.fromarray(overlay_rgb).save(preview_path)
-                scene.preview_path = str(preview_path)
-                scene.status = 'included'
-
-            save_scene_seeds([asdict(s) for s in scenes], str(output_dir), logger)
-            tracker.done_stage("Seed selection complete")
-
-            yield {
-                "log": "Seed selection for image folder complete.",
-                "scenes": [asdict(s) for s in scenes],
-                "output_dir": str(output_dir),
-                "done": True,
-                "seeding_results_column": gr.update(visible=True),
-                "propagation_group": gr.update(visible=True),
-            }
-
-        else:
-            scenes_path = output_dir / "scenes.json"
-            if not scenes_path.exists():
-                yield {"log": "[ERROR] scenes.json not found. Run extraction with scene detection.", "done": False}
-                return
-            with scenes_path.open('r', encoding='utf-8') as f: scenes = [Scene(shot_id=i, start_frame=s, end_frame=e) for i, (s, e) in enumerate(json.load(f))]
-
-            video_info = VideoManager.get_video_info(params.video_path)
-            totals = estimate_totals(params, video_info, scenes)
-            tracker.start(totals["pre_analysis"], desc="Analyzing scenes")
-
-            def pre_analysis_task():
-                logger.info(f"Pre-analyzing {len(scenes)} scenes")
-                previews_dir = output_dir / "previews"
-                previews_dir.mkdir(exist_ok=True)
-                for i, scene in enumerate(scenes):
-                    if cancel_event.is_set(): break
-                    tracker.step(1, desc=f"Scene {scene.shot_id}")
-                    if not scene.best_frame: masker._select_best_frame_in_scene(scene, str(output_dir))
-                    fname = masker.frame_map.get(scene.best_frame)
-                    if not fname: continue
-                    thumb_rgb = thumbnail_manager.get(output_dir / "thumbs" / f"{Path(fname).stem}.webp")
-                    if thumb_rgb is None: continue
-                    bbox, details = masker.get_seed_for_frame(thumb_rgb, seed_config=scene.seed_config or params, scene=scene)
-                    scene.seed_result = {'bbox': bbox, 'details': details}
-                    mask = masker.get_mask_for_bbox(thumb_rgb, bbox) if bbox else None
-                    if mask is not None:
-                        h, w = mask.shape[:2]
-                        scene.seed_result['details']['mask_area_pct'] = (np.sum(mask > 0) / (h * w)) * 100 if h * w > 0 else 0.0
-                    overlay_rgb = render_mask_overlay(thumb_rgb, mask, 0.6, logger=logger) if mask is not None else masker.draw_bbox(thumb_rgb, bbox)
-
-                    preview_path = previews_dir / f"scene_{scene.shot_id:05d}.jpg"
-                    try:
-                        Image.fromarray(overlay_rgb).save(preview_path)
-                        scene.preview_path = str(preview_path)
-                    except Exception as e:
-                        logger.error(f"Failed to save preview for scene {scene.shot_id}", exc_info=True)
-
-                    if scene.status == 'pending': scene.status = 'included'
-
-                tracker.done_stage("Pre-analysis complete")
-                return {"done": True, "scenes": [asdict(s) for s in scenes]}
-
-            result = pre_analysis_task()
-            if result.get("done"):
-                final_yield = {"log": "Pre-analysis complete.", "status": f"{len(result['scenes'])} scenes found.",
-                       "scenes": result['scenes'], "output_dir": str(output_dir), "done": True}
-                if final_face_ref_path:
-                    final_yield['final_face_ref_path'] = final_face_ref_path
-                yield final_yield
+        scenes_path = output_dir / "scenes.json"
+        if not scenes_path.exists():
+            yield {"unified_log": "[ERROR] scenes.json not found. Run extraction first.", "done": False}
+            return
+        scenes = [Scene(shot_id=i, start_frame=s, end_frame=e) for i, (s, e) in enumerate(json.load(scenes_path.open('r', encoding='utf-8')))]
+        tracker.start(len(scenes), desc="Analyzing Scenes" if is_folder_mode else "Pre-analyzing Scenes")
+        previews_dir = output_dir / "previews"; previews_dir.mkdir(exist_ok=True)
+        for scene in scenes:
+            if cancel_event.is_set(): break
+            tracker.step(1, desc=f"Scene {scene.shot_id}")
+            if is_folder_mode: scene.best_frame = scene.start_frame
+            elif not scene.best_frame: masker._select_best_frame_in_scene(scene, str(output_dir))
+            fname = masker.frame_map.get(scene.best_frame)
+            if not fname: continue
+            thumb_rgb = thumbnail_manager.get(output_dir / "thumbs" / f"{Path(fname).stem}.webp")
+            if thumb_rgb is None: continue
+            bbox, details = masker.get_seed_for_frame(thumb_rgb, seed_config=scene.seed_config or params, scene=scene)
+            scene.seed_result = {'bbox': bbox, 'details': details}
+            mask = masker.get_mask_for_bbox(thumb_rgb, bbox) if bbox and params.enable_subject_mask else None
+            if mask is not None and mask.size > 0:
+                h, w = mask.shape[:2]; area = h * w
+                scene.seed_result['details']['mask_area_pct'] = (np.sum(mask > 0) / area * 100) if area > 0 else 0.0
+            overlay_rgb = render_mask_overlay(thumb_rgb, mask, 0.6, logger=logger) if mask is not None else masker.draw_bbox(thumb_rgb, bbox)
+            preview_path = previews_dir / f"scene_{scene.shot_id:05d}.jpg"
+            Image.fromarray(overlay_rgb).save(preview_path)
+            scene.preview_path, scene.status = str(preview_path), 'included'
+        save_scene_seeds([s.model_dump() for s in scenes], str(output_dir), logger)
+        tracker.done_stage("Pre-analysis complete")
+        final_yield = {
+            "unified_log": "Pre-analysis complete. Review scenes in the next tab.",
+            "scenes": [s.model_dump() for s in scenes], "output_dir": str(output_dir), "done": True,
+            "seeding_results_column": gr.update(visible=True), "propagation_group": gr.update(visible=True)
+        }
+        if params.face_ref_img_path:
+            final_yield['final_face_ref_path'] = params.face_ref_img_path
+        yield final_yield
     except Exception as e:
         logger.error("Pre-analysis execution failed", exc_info=True)
-        yield {"log": f"[ERROR] Pre-analysis failed unexpectedly: {e}", "done": False}
+        yield {"unified_log": f"[ERROR] Pre-analysis failed unexpectedly: {e}", "done": False}
 
 def validate_session_dir(path: Union[str, Path]) -> tuple[Optional[Path], Optional[str]]:
     """
@@ -5114,13 +5057,13 @@ def execute_session_load(
     """
     if not event.session_path or not event.session_path.strip():
         logger.error("No session path provided.", component="session_loader")
-        yield {"log": "[ERROR] Please enter a path to a session directory.", "status": "Session load failed."}
+        yield {"unified_log": "[ERROR] Please enter a path to a session directory."}
         return
 
     session_path, error = validate_session_dir(event.session_path)
     if error:
         logger.error(f"Invalid session path provided: {event.session_path}", component="session_loader")
-        yield {"log": f"[ERROR] {error}", "status": "Session load failed."}
+        yield {"unified_log": f"[ERROR] {error}"}
         return
 
     config_path = session_path / "run_config.json"
@@ -5128,50 +5071,23 @@ def execute_session_load(
     metadata_path = session_path / "metadata.jsonl"
 
     def _resolve_output_dir(base: Path, output_folder: str | None) -> Path | None:
-        if not output_folder:
-            return None
-        try:
-            p = Path(output_folder)
-            # If the given path already exists (absolute or relative to CWD), use it as-is.
-            if p.exists():
-                return p.resolve()
-            # Otherwise, resolve relative to the session directory.
-            if not p.is_absolute():
-                resolved = (base / p).resolve()
-                return resolved
-            return p
-        except Exception:
-            return None
+        if not output_folder: return None
+        p = Path(output_folder)
+        if p.exists(): return p.resolve()
+        if not p.is_absolute(): return (base / p).resolve()
+        return p
 
     with logger.operation("Load Session", component="session_loader"):
-        # Stage 1: Load config
-        logger.info("Loading config")
         if not config_path.exists():
-            msg = f"Session load failed: run_config.json not found in {session_path}"
-            logger.error(msg, component="session_loader")
-            yield {
-                "log": f"[ERROR] Could not find 'run_config.json' in the specified directory: {session_path}",
-                "status": "Session load failed."
-            }
+            yield {"unified_log": f"[ERROR] Could not find 'run_config.json' in {session_path}."}
             return
-
         try:
-            with open(config_path, "r", encoding="utf-8") as f:
-                run_config = json.load(f)
+            run_config = json.loads(config_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as e:
-            msg = f"run_config.json is invalid JSON: {e}"
-            logger.error(msg, component="session_loader", error_type=type(e).__name__)
-            yield {"log": f"[ERROR] {msg}", "status": "Session load failed."}
+            yield {"unified_log": f"[ERROR] run_config.json is invalid: {e}"}
             return
 
-        output_dir = _resolve_output_dir(session_path, run_config.get("output_folder"))
-        # If resolution failed or points to a non-existent place, trust the session directory the user entered.
-        if output_dir is None or not output_dir.exists():
-            output_dir = session_path
-            logger.warning("Output folder missing or invalid; defaulting to session directory.", component="session_loader")
-
-
-        # Prepare initial UI updates from config
+        output_dir = _resolve_output_dir(session_path, run_config.get("output_folder")) or session_path
         updates = {
             "source_input": gr.update(value=run_config.get("source_path", "")),
             "max_resolution": gr.update(value=run_config.get("max_resolution", "1080")),
@@ -5190,184 +5106,74 @@ def execute_session_load(
             "enable_dedup_input": gr.update(value=run_config.get("enable_dedup", False)),
             "extracted_video_path_state": run_config.get("video_path", ""),
             "extracted_frames_dir_state": str(output_dir),
-            # Ensure the state carries an absolute, normalized path for downstream steps
-            "analysis_output_dir_state": str(Path(str(output_dir)).resolve()),
+            "analysis_output_dir_state": str(output_dir.resolve()),
         }
-
-        # Stage 2: Load scenes
-        logger.info("Load scenes")
-        scenes: list['Scene'] = []
+        scenes_as_dict = []
         scenes_json_path = session_path / "scenes.json"
-
         if scenes_json_path.exists():
             try:
-                with open(scenes_json_path, "r", encoding="utf-8") as f:
-                    scene_ranges = json.load(f)
-                scenes = [
-                    Scene(**{"shot_id": i, "start_frame": s, "end_frame": e})
-                    for i, (s, e) in enumerate(scene_ranges)
-                ]
-                logger.info(f"Loaded {len(scenes)} scene ranges from scenes.json")
+                scenes_as_dict = [{"shot_id": i, "start_frame": s, "end_frame": e} for i, (s, e) in enumerate(json.loads(scenes_json_path.read_text(encoding="utf-8")))]
             except Exception as e:
-                logger.error(f"Failed to parse scenes.json: {e}", component="session_loader")
-                # Yield an error if base scene structure can't be loaded
-                yield {"log": f"[ERROR] Failed to read scenes.json: {e}", "status": "Session load failed.", "done": False}
-                return
-
+                yield {"unified_log": f"[ERROR] Failed to read scenes.json: {e}", "done": False}; return
         if scene_seeds_path.exists():
             try:
-                with open(scene_seeds_path, "r", encoding="utf-8") as f:
-                    scenes_from_file = json.load(f)
-                
-                # Create a lookup for faster merging
-                seeds_lookup = {int(k): v for k, v in scenes_from_file.items()}
-                
-                # Merge data into the scenes_as_dict
-                for scene in scenes:
-                    shot_id = scene.shot_id
-                    if shot_id in seeds_lookup:
+                seeds_lookup = {int(k): v for k, v in json.loads(scene_seeds_path.read_text(encoding="utf-8")).items()}
+                for scene in scenes_as_dict:
+                    if (shot_id := scene.get("shot_id")) in seeds_lookup:
                         rec = seeds_lookup[shot_id]
                         rec['best_frame'] = rec.get('best_frame', rec.get('best_seed_frame'))
-                        for key, value in rec.items():
-                            if hasattr(scene, key):
-                                setattr(scene, key, value)
-
-                # Auto-include missing scene statuses on load (set to "included" as approved)
-                for s in scenes:
-                    s.status = s.status or "included"
-
-                logger.info(f"Merged data for {len(seeds_lookup)} scenes from {scene_seeds_path}", component="session_loader")
-            except Exception as e:
-                logger.warning(f"Failed to parse or merge scene_seeds.json: {e}", component="session_loader", error_type=type(e).__name__)
-
-        # Stage 3: Load previews (with cap and fallback)
-        logger.info("Load previews")
-
-        if scenes and output_dir:
-            status_text, button_update = get_scene_status_text(scenes)
-            updates.update({
-                "scenes_state": scenes,
-                "propagate_masks_button": button_update,
-                "seeding_results_column": gr.update(visible=True),
-                "propagation_group": gr.update(visible=True),
-                "scene_filter_status": status_text,
-                "scene_face_sim_min_input": gr.update(
-                    visible=any((s.get("seed_metrics") or {}).get("best_face_sim") is not None for s in (scenes_as_dict or []))
-                ),
-            })
-
-            # Initialize scene gallery for loaded session
+                        scene.update(rec)
+                    scene.setdefault("status", "included")
+            except Exception as e: logger.warning(f"Failed to parse scene_seeds.json: {e}")
+        if scenes_as_dict and output_dir:
+            status_text, button_update = get_scene_status_text(scenes_as_dict)
             gallery_items, index_map = build_scene_gallery_items(scenes_as_dict, "Kept", str(output_dir))
             updates.update({
-                "scene_gallery": gr.update(value=gallery_items),
-                "scene_gallery_index_map_state": index_map
+                "scenes_state": scenes_as_dict, "propagate_masks_button": button_update,
+                "seeding_results_column": gr.update(visible=True), "propagation_group": gr.update(visible=True),
+                "scene_filter_status": status_text,
+                "scene_face_sim_min_input": gr.update(visible=any((s.get("seed_metrics") or {}).get("best_face_sim") is not None for s in (scenes_as_dict or []))),
+                "scene_gallery": gr.update(value=gallery_items), "scene_gallery_index_map_state": index_map
             })
-
-        # Enable filtering if metadata exists
-        if metadata_path.exists():
-            updates.update({
-                "analysis_metadata_path_state": str(metadata_path),
-                "filtering_tab": gr.update(interactive=True),
-            })
-            logger.info(
-                f"Found analysis metadata at {metadata_path}. Filtering tab enabled.",
-                component="session_loader",
-            )
-
-        # Always finalize successfully if we got here
-        # Add metric compute flags to the updates dictionary
+        if metadata_path.exists(): updates.update({"analysis_metadata_path_state": str(metadata_path), "filtering_tab": gr.update(interactive=True)})
         for metric in app_ui.ana_ui_map_keys:
-            if metric.startswith('compute_'):
-                updates[metric] = gr.update(value=run_config.get(metric, True))
-
-        updates.update({
-            "log": f"Successfully loaded session from: {session_path}",
-            "status": "... Session loaded. You can now proceed from where you left off.",
-            "main_tabs": gr.update(selected=3)
-        })
+            if metric.startswith('compute_'): updates[metric] = gr.update(value=run_config.get(metric, True))
+        updates.update({"unified_log": f"Successfully loaded session from: {session_path}", "main_tabs": gr.update(selected=3)})
         yield updates
-
-        # Follow-up gallery initialization
         if scenes_as_dict and output_dir:
-            gallery_items, index_map, total_pages = build_scene_gallery_items(scenes_as_dict, "Kept", str(output_dir))
-            updates.update({
-                "scene_gallery": gr.update(value=gallery_items),
-                "scene_gallery_index_map_state": index_map,
-                "total_pages_label": gr.update(value=f"/ {total_pages} pages"),
-                "page_number_input": gr.update(value=1)
-            })
-
-            yield {
-                "scene_gallery": gr.update(value=gallery_items),
-                "scene_gallery_index_map_state": index_map,
-                "total_pages_label": gr.update(value=f"/ {total_pages} pages"),
-                "page_number_input": gr.update(value=1)
-            }
+            gallery_items, index_map = build_scene_gallery_items(scenes_as_dict, "Kept", str(output_dir))
+            yield {"scene_gallery": gr.update(value=gallery_items), "scene_gallery_index_map_state": index_map}
 
 def execute_propagation(event: PropagationEvent, progress_queue: Queue, cancel_event: threading.Event, logger: AppLogger,
                         config: Config, thumbnail_manager, cuda_available, progress=None):
     try:
         params = AnalysisParameters.from_ui(logger, config, **event.analysis_params.model_dump())
         is_folder_mode = not params.video_path
-
-        if is_folder_mode:
-            # In folder mode, "propagation" is actually the full analysis step.
-            scenes_to_process = [Scene(**{k: v for k, v in s.items() if k in {f.name for f in fields(Scene)}}) for s in event.scenes]
-        else:
-            # In video mode, we filter for included scenes.
-            scene_fields = {f.name for f in fields(Scene)}
-            scenes_to_process = [
-                Scene(**{k: v for k, v in s.items() if k in scene_fields})
-                for s in event.scenes if s.get('status') == 'included'
-            ]
-
+        scene_fields = {f.name for f in fields(Scene)}
+        scenes_to_process = [Scene(**{k: v for k, v in s.items() if k in scene_fields}) for s in event.scenes if is_folder_mode or s.get('status') == 'included']
         if not scenes_to_process:
-            yield {"log": "No scenes were included for processing.", "status": "Skipped."}
-            return
-
+            yield {"unified_log": "No scenes were included for processing. Nothing to do."}; return
         tracker = AdvancedProgressTracker(progress, progress_queue, logger, ui_stage_name="Analysis")
-
         if is_folder_mode:
-            # The number of steps is just the number of images to analyze.
             tracker.start(len(scenes_to_process), desc="Analyzing Images")
         else:
             video_info = VideoManager.get_video_info(params.video_path)
             totals = estimate_totals(params, video_info, scenes_to_process)
-            total_steps = totals.get("propagation", 0) + len(scenes_to_process) # Propagation + analysis
-            tracker.start(total_steps, desc="Propagating Masks & Analyzing")
-
-        pipeline = AnalysisPipeline(
-            config=config,
-            logger=logger,
-            params=params,
-            progress_queue=progress_queue,
-            cancel_event=cancel_event,
-            thumbnail_manager=thumbnail_manager
-        )
-
+            tracker.start(totals.get("propagation", 0) + len(scenes_to_process), desc="Propagating Masks & Analyzing")
+        pipeline = AnalysisPipeline(config, logger, params, progress_queue, cancel_event, thumbnail_manager)
         result = pipeline.run_full_analysis(scenes_to_process, tracker=tracker)
-
         if result and result.get("done"):
-            # Verify that masks were actually created
             masks_dir = Path(result['output_dir']) / "masks"
             mask_files = list(masks_dir.glob("*.png")) if masks_dir.exists() else []
-
             if not mask_files:
-                yield {"log": "❌ Propagation failed - no masks were generated. Check DAM4SAM initialization.",
-                        "status": "Failed", "done": False}
-                return
-
-            yield {"log": f"✅ Propagation complete. Generated {len(mask_files)} masks.",
-                    "status": f"Output at {result['output_dir']}", "output_dir": result['output_dir'], "done": True}
+                yield {"unified_log": "❌ Propagation failed - no masks were generated. Check DAM4SAM model logs.", "done": False}; return
+            yield {"unified_log": f"✅ Propagation complete. Generated {len(mask_files)} masks.", "output_dir": result['output_dir'], "done": True}
         else:
-            yield {"log": "❌ Propagation failed - pipeline returned no results.",
-                    "status": "Failed", "done": False}
-    except torch.cuda.OutOfMemoryError:
-        logger.error("CUDA out of memory during propagation")
-        yield {"log": "[ERROR] GPU memory exhausted. Try smaller model or batch size.", "done": False}
+            yield {"unified_log": f"❌ Propagation failed. Reason: {result.get('error', 'Unknown error')}", "done": False}
     except Exception as e:
         logger.error("Propagation execution failed", exc_info=True)
-        yield {"log": f"[ERROR] Propagation failed unexpectedly: {e}", "done": False}
+        yield {"unified_log": f"[ERROR] Propagation failed unexpectedly: {e}", "done": False}
+
 
 @handle_common_errors
 def execute_analysis(event: PropagationEvent, progress_queue: Queue, cancel_event: threading.Event, logger: AppLogger,
@@ -5376,23 +5182,21 @@ def execute_analysis(event: PropagationEvent, progress_queue: Queue, cancel_even
         params = AnalysisParameters.from_ui(logger, config, **event.analysis_params.model_dump())
         scenes_to_process = [Scene(**{k: v for k, v in s.items() if k in {f.name for f in fields(Scene)}}) for s in event.scenes if s.get('status') == 'included']
         if not scenes_to_process:
-            yield {"log": "No scenes to analyze.", "status": "Skipped."}
-            return
-
+            yield {"unified_log": "No scenes to analyze. Nothing to do."}; return
         video_info = VideoManager.get_video_info(params.video_path)
         totals = estimate_totals(params, video_info, scenes_to_process)
         tracker = AdvancedProgressTracker(progress, progress_queue, logger, ui_stage_name="Analyzing")
         tracker.start(sum(s.end_frame - s.start_frame for s in scenes_to_process), desc="Analyzing Frames")
-
         pipeline = AnalysisPipeline(config, logger, params, progress_queue, cancel_event, thumbnail_manager)
         result = pipeline.run_analysis_only(scenes_to_process, tracker=tracker)
-
         if result and result.get("done"):
-            yield {"log": "Analysis complete.", "status": f"Metadata saved to {result['metadata_path']}",
+            yield {"unified_log": "Analysis complete. You can now proceed to the Filtering & Export tab.",
                    "output_dir": result['output_dir'], "metadata_path": result['metadata_path'], "done": True}
+        else:
+            yield {"unified_log": f"❌ Analysis failed. Reason: {result.get('error', 'Unknown error')}", "done": False}
     except Exception as e:
         logger.error("Analysis execution failed", exc_info=True)
-        yield {"log": f"[ERROR] Analysis failed unexpectedly: {e}", "done": False}
+        yield {"unified_log": f"[ERROR] Analysis failed unexpectedly: {e}", "done": False}
 
 # --- Scene gallery helpers (module-level) ---
 def scene_matches_view(scene: 'Scene', view: str) -> bool:
@@ -5643,17 +5447,6 @@ class AppUI:
         return self.components.get(name)
 
     def _create_component(self, name: str, comp_type: str, kwargs: dict) -> gr.components.Component:
-        """
-        Creates a Gradio component, stores it, and returns it.
-
-        Args:
-            name: The key to store the component under.
-            comp_type: The type of Gradio component to create (e.g., 'button', 'textbox').
-            kwargs: A dictionary of arguments to pass to the component's constructor.
-
-        Returns:
-            The created Gradio component.
-        """
         comp_map = {'button': gr.Button, 'textbox': gr.Textbox, 'dropdown': gr.Dropdown, 'slider': gr.Slider, 'checkbox': gr.Checkbox,
                     'file': gr.File, 'radio': gr.Radio, 'gallery': gr.Gallery, 'plot': gr.Plot, 'markdown': gr.Markdown, 'html': gr.HTML, 'number': gr.Number, 'cbg': gr.CheckboxGroup, 'image': gr.Image}
         self.components[name] = comp_map[comp_type](**kwargs)
@@ -5777,8 +5570,8 @@ class AppUI:
                         gr.Markdown("Use GroundingDINO for text-based object detection with custom prompts.")
                         self._create_component('text_prompt_input', 'textbox', {'label': "Text Prompt", 'placeholder': "e.g., 'a woman in a red dress'", 'value': self.config.default_text_prompt, 'info': "Describe the main subject to find the best frame (e.g., 'player wearing number 10', 'person in the green shirt')."})
                         with gr.Row():
-                            self._create_component('box_threshold', 'slider', {'minimum': 0.0, 'maximum': 1.0, 'value': self.config.gdino_box_threshold, 'label': "Box Threshold"})
-                            self._create_component('text_threshold', 'slider', {'minimum': 0.0, 'maximum': 1.0, 'value': self.config.gdino_text_threshold, 'label': "Text Threshold"})
+                            self._create_component('box_threshold', 'slider', {'minimum': 0.0, 'maximum': 1.0, 'value': self.config.gdino_box_threshold, 'label': "Box Threshold", 'interactive': True})
+                            self._create_component('text_threshold', 'slider', {'minimum': 0.0, 'maximum': 1.0, 'value': self.config.gdino_text_threshold, 'label': "Text Threshold", 'interactive': True})
 
                 with gr.Group(visible="Prominent Person" in self.config.default_primary_seed_strategy) as auto_seeding_group:
                     self.components['auto_seeding_group'] = auto_seeding_group
@@ -5795,6 +5588,13 @@ class AppUI:
                     self._create_component('person_detector_model_input', 'dropdown', {'choices': self.PERSON_DETECTOR_MODEL_CHOICES, 'value': self.config.default_person_detector_model, 'label': "Person Detector Model", 'info': "YOLO Model for finding people. 'x' (large) is more accurate but slower; 's' (small) is much faster but may miss people."})
                     self._create_component('face_model_name_input', 'dropdown', {'choices': self.FACE_MODEL_NAME_CHOICES, 'value': self.config.default_face_model_name, 'label': "Face Recognition Model", 'info': "InsightFace model for face matching. 'l' (large) is more accurate; 's' (small) is faster and uses less memory."})
                     self._create_component('dam4sam_model_name_input', 'dropdown', {'choices': self.DAM4SAM_MODEL_NAME_CHOICES, 'value': self.config.default_dam4sam_model_name, 'label': "Mask Tracking Model", 'info': "The Segment Anything 2 model used for tracking the subject mask across frames. Larger models (L) are more robust but use more VRAM; smaller models (T) are faster."})
+                    self._create_component('resume_input', 'checkbox', {'label': 'Resume', 'value': self.config.default_resume, 'interactive': True, 'visible': False})
+                    self._create_component('enable_subject_mask_input', 'checkbox', {'label': 'Enable Subject Mask', 'value': self.config.default_enable_subject_mask, 'interactive': True, 'visible': False})
+                    self._create_component('min_mask_area_pct_input', 'slider', {'label': 'Min Mask Area Pct', 'value': self.config.min_mask_area_pct, 'interactive': True, 'visible': False})
+                    self._create_component('sharpness_base_scale_input', 'slider', {'label': 'Sharpness Base Scale', 'value': self.config.sharpness_base_scale, 'interactive': True, 'visible': False})
+                    self._create_component('edge_strength_base_scale_input', 'slider', {'label': 'Edge Strength Base Scale', 'value': self.config.edge_strength_base_scale, 'interactive': True, 'visible': False})
+                    self._create_component('gdino_config_path_input', 'textbox', {'label': 'GroundingDINO Config Path', 'value': self.config.grounding_dino_config_path, 'interactive': True, 'visible': False})
+                    self._create_component('gdino_checkpoint_path_input', 'textbox', {'label': 'GroundingDINO Checkpoint Path', 'value': self.config.grounding_dino_checkpoint_path, 'interactive': True, 'visible': False})
 
                 self._create_component('start_pre_analysis_button', 'button', {'value': '🌱 Find & Preview Best Frames', 'variant': 'primary'})
 
@@ -6021,21 +5821,22 @@ class EnhancedAppUI(AppUI):
         self.last_run_args = None
 
     def _build_footer(self):
-        """Builds the enhanced footer with more detailed logs and progress controls."""
+        """Builds the enhanced footer with a unified status panel and detailed logs."""
         with gr.Row():
-            with gr.Column(scale=3):
-                self._create_component('unified_log', 'textbox', {'label': '📋 Enhanced Processing Log', 'lines': 15, 'interactive': False, 'autoscroll': True, 'elem_classes': ['log-container']})
-                with gr.Row():
-                    self._create_component('log_level_filter', 'dropdown', {'choices': self.LOG_LEVEL_CHOICES, 'value': 'DEBUG', 'label': 'Log Level Filter', 'scale': 1})
-                    self._create_component('clear_logs_button', 'button', {'value': '🗑️ Clear Logs', 'scale': 1})
-                    self._create_component('export_logs_button', 'button', {'value': '📥 Export Logs', 'scale': 1})
-            with gr.Column(scale=1):
-                self._create_component('unified_status', 'html', {'value': self._format_status_display('Idle', 0, 'Ready'),})
+            with gr.Column(scale=2):
+                self._create_component('unified_status', 'markdown', {'label': "📊 Status & Messages", 'value': "Welcome! Ready to start."})
                 self.components['progress_bar'] = gr.Progress()
                 self._create_component('progress_details', 'html', {'value': '', 'elem_classes': ['progress-details']})
                 with gr.Row():
                     self._create_component('pause_button', 'button', {'value': '⏸️ Pause', 'interactive': False})
                     self._create_component('cancel_button', 'button', {'value': '⏹️ Cancel', 'interactive': False})
+            with gr.Column(scale=3):
+                with gr.Accordion("📋 Verbose Processing Log (for debugging)", open=False):
+                    self._create_component('unified_log', 'textbox', {'lines': 15, 'interactive': False, 'autoscroll': True, 'elem_classes': ['log-container']})
+                    with gr.Row():
+                        self._create_component('log_level_filter', 'dropdown', {'choices': self.LOG_LEVEL_CHOICES, 'value': 'INFO', 'label': 'Log Level', 'scale': 1})
+                        self._create_component('clear_logs_button', 'button', {'value': '🗑️ Clear', 'scale': 1})
+                        self._create_component('export_logs_button', 'button', {'value': '📥 Export', 'scale': 1})
 
     def _format_metric_card(self, label: str, value: str) -> str:
         """Formats a simple HTML card for displaying a metric.
@@ -6048,43 +5849,20 @@ class EnhancedAppUI(AppUI):
             An HTML string representing the metric card.
         """
         return f"""<div class="metric-card"><div class="metric-value">{value}</div><div class="metric-label">{label}</div></div>"""
-    def _format_status_display(self, op: str, prog: float, stage: str) -> str:
-        """Formats an HTML block for displaying the current operation status.
-
-        Args:
-            op: The name of the current operation.
-            prog: The progress of the operation (0.0 to 1.0).
-            stage: The current stage of the operation.
-
-        Returns:
-            An HTML string representing the status display.
-        """
-        return f"""<div style="margin: 10px 0;"><h4>{op}</h4><div style="background: #e0e0e0; border-radius: 4px; height: 20px; margin: 5px 0;"><div style="background: #007bff; height: 100%; width: {int(prog*100)}%; border-radius: 4px; transition: width 0.3s ease;"></div></div><div style="font-size: 12px; color: #666;">{stage} - {prog:.1%}</div></div>"""
 
     def _run_task_with_progress(self, task_func: Callable, output_components: list, progress: Callable, *args) -> Generator[dict, None, None]:
-        """A generic wrapper to run a pipeline function in a background thread.
-
-        This function handles starting the task, polling a queue for progress
-        updates, handling cancellation and pausing, and yielding UI updates.
-
-        Args:
-            task_func: The pipeline function to execute.
-            output_components: A list of Gradio components to update.
-            progress: The Gradio progress object.
-            *args: Arguments to pass to the task function.
-
-        Yields:
-            A dictionary of Gradio component updates.
-        """
         self.last_run_args = args
         self.cancel_event.clear()
-        # Find the tracker instance passed in args
         tracker_instance = next((arg for arg in args if isinstance(arg, AdvancedProgressTracker)), None)
         if tracker_instance:
-            tracker_instance.pause_event.set() # Start in a non-paused state
+            tracker_instance.pause_event.set()
 
-        yield {self.components['cancel_button']: gr.update(interactive=True), self.components['pause_button']: gr.update(interactive=True)}
-        op_name = getattr(task_func, '__name__', 'Unknown Task').replace('_wrapper', '')
+        op_name = getattr(task_func, '__name__', 'Unknown Task').replace('_wrapper', '').replace('_', ' ').title()
+        yield {
+            self.components['cancel_button']: gr.update(interactive=True),
+            self.components['pause_button']: gr.update(interactive=True),
+            self.components['unified_status']: f"🚀 **Starting: {op_name}...**"
+        }
 
         with ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(task_func, *args)
@@ -6095,12 +5873,11 @@ class EnhancedAppUI(AppUI):
                     self.cancel_event.set()
                     future.cancel()
                     break
-
                 if self.cancel_event.is_set():
                     future.cancel()
                     break
-
                 if tracker_instance and not tracker_instance.pause_event.is_set():
+                    yield {self.components['unified_status']: f"⏸️ **Paused: {op_name}**"}
                     time.sleep(0.2)
                     continue
 
@@ -6108,66 +5885,60 @@ class EnhancedAppUI(AppUI):
                     msg, update_dict = self.progress_queue.get(timeout=0.1), {}
                     if "log" in msg:
                         self.all_logs.append(msg['log'])
-                        if self.log_filter_level.upper() == "DEBUG" or f"[{self.log_filter_level.upper()}]" in msg['log']:
-                            update_dict[self.components['unified_log']] = gr.update(value="\n".join([l for l in self.all_logs if self.log_filter_level.upper() == "DEBUG" or f"[{self.log_filter_level.upper()}]" in l][-1000:]))
+                        log_level_map = {level: i for i, level in enumerate(self.LOG_LEVEL_CHOICES)}
+                        current_filter_level = log_level_map.get(self.log_filter_level.upper(), 1)
+                        filtered_logs = [
+                            l for l in self.all_logs
+                            if any(f"[{level}]" in l for level in self.LOG_LEVEL_CHOICES[current_filter_level:])
+                        ]
+                        update_dict[self.components['unified_log']] = "\n".join(filtered_logs[-1000:])
                     if "progress" in msg:
                         p = ProgressEvent(**msg["progress"])
                         progress(p.fraction, desc=f"{p.stage} ({p.done}/{p.total}) • {p.eta_formatted}")
-                        status_html = f"<b>{p.stage}</b>: {p.done}/{p.total} • ETA {p.eta_formatted}"
-                        if p.substage:
-                            status_html += f"<br><small>{p.substage}</small>"
-                        if tracker_instance and not tracker_instance.pause_event.is_set():
-                             status_html = "<b>Paused</b>"
-                        details_html = f"{int(p.fraction*100)}% complete"
-                        update_dict[self.components['unified_status']] = gr.update(value=status_html)
-                        update_dict[self.components['progress_details']] = gr.update(value=details_html)
-
+                        status_md = f"**Running: {op_name}**\n- Stage: {p.stage} ({p.done}/{p.total})\n- ETA: {p.eta_formatted}"
+                        if p.substage: status_md += f"\n- Step: {p.substage}"
+                        update_dict[self.components['unified_status']] = status_md
                     if update_dict: yield update_dict
                 except Empty:
                     pass
                 time.sleep(0.05)
-        final_updates, final_msg, final_label = {}, "✅ Task completed successfully.", "Complete"
+
+        final_updates, final_status, final_label, final_icon = {}, "Task completed successfully.", "Complete", "✅"
         try:
             if self.cancel_event.is_set():
-                final_msg, final_label = "⏹️ Task cancelled by user.", "Cancelled"
-                if tracker_instance:
-                    tracker_instance.done_stage(final_label)
+                final_status, final_label, final_icon = "Task cancelled by user.", "Cancelled", "⏹️"
+                if tracker_instance: tracker_instance.done_stage(final_label)
             else:
                 result_gen = future.result()
-                if result_gen:
-                    try:
-                        result_dict = deque(result_gen, maxlen=1)[0]
-                    except IndexError:
-                        result_dict = {} # Generator was empty
-                else:
-                    result_dict = {}
-                final_msg, final_updates = result_dict.get("unified_log", final_msg), result_dict
+                result_dict = deque(result_gen, maxlen=1)[0] if result_gen else {}
+                final_status = result_dict.get("unified_log", final_status)
+                final_updates = result_dict
         except Exception as e:
             self.app_logger.error("Task execution failed in UI runner", exc_info=True)
-            final_msg, final_label = f"❌ Task failed: {e}", "Failed"
-            if tracker_instance:
-                tracker_instance.set_stage(final_label, substage=str(e))
-        self.all_logs.append(f"[{final_label.upper()}] {final_msg}")
+            final_status, final_label, final_icon = f"Task failed: {e}", "Failed", "❌"
+            if tracker_instance: tracker_instance.set_stage(final_label, substage=str(e))
+
+        status_message = final_updates.pop("status_message", f"{op_name} {final_label.lower()}.")
+        error_message = final_updates.pop("error_message", None)
+        remediation_hint = final_updates.pop("remediation_hint", None)
+
+        final_markdown = f"{final_icon} **{final_label}: {status_message}**"
+        if error_message:
+            final_markdown += f"\n- **Details:** `{error_message}`"
+        if remediation_hint:
+            final_markdown += f"\n- **Suggestion:** {remediation_hint}"
+
+        self.all_logs.append(f"[{final_label.upper()}] {final_status}")
         filtered_logs = [l for l in self.all_logs if self.log_filter_level.upper() == "DEBUG" or f"[{self.log_filter_level.upper()}]" in l]
         final_updates_with_comps = {self.components.get(k): v for k, v in final_updates.items() if self.components.get(k)}
         final_updates_with_comps[self.components['unified_log']] = "\n".join(filtered_logs[-1000:])
         progress(1.0, final_label)
-        final_updates_with_comps[self.components['unified_status']] = self._format_status_display(op_name, 1.0, final_label)
+        final_updates_with_comps[self.components['unified_status']] = final_markdown
         final_updates_with_comps[self.components['progress_details']] = ""
         final_updates_with_comps[self.components['cancel_button']], final_updates_with_comps[self.components['pause_button']] = gr.update(interactive=False), gr.update(interactive=False)
         yield final_updates_with_comps
 
     def _scale_xywh(self, xywh: list[int], src_hw: tuple[int, int], dst_hw: tuple[int, int]) -> list[int]:
-        """Scales a bounding box from a source resolution to a destination resolution.
-
-        Args:
-            xywh: The source bounding box [x, y, width, height].
-            src_hw: A tuple of the source (height, width).
-            dst_hw: A tuple of the destination (height, width).
-
-        Returns:
-            The scaled bounding box.
-        """
         x, y, w, h = map(int, xywh)
         src_h, src_w = src_hw
         dst_h, dst_w = dst_hw
@@ -6177,58 +5948,27 @@ class EnhancedAppUI(AppUI):
                 int(round(w * sx)), int(round(h * sy))]
 
     def on_select_yolo_subject_wrapper(self, subject_id, scenes, shot_id, outdir, view, *ana_args):
-        """Wrapper for handling the selection of a YOLO subject in the UI.
-
-        This method is triggered when a user selects a different person from the
-        auto-detected list in the scene editor. It recomputes the preview and
-        updates the scene state accordingly.
-
-        Args:
-            subject_id: The ID of the selected subject.
-            scenes: The list of all scene dictionaries.
-            shot_id: The ID of the currently selected scene.
-            outdir: The output directory path.
-            view: The current scene gallery view.
-            *ana_args: Additional analysis arguments from the UI.
-
-        Returns:
-            A tuple of Gradio updates for the UI.
-        """
         try:
-            if not subject_id:
-                return scenes, gr.update(), gr.update(), "Please select a Subject ID."
-
+            if not subject_id: return scenes, gr.update(), gr.update(), "Please select a Subject ID."
             subject_idx = int(subject_id) - 1
-            scene_idx = next((i for i, s in enumerate(scenes) if s['shot_id'] == shot_id), None)
-            if scene_idx is None:
-                return scenes, gr.update(), gr.update(), "Scene not found."
-
-            scene = scenes[scene_idx]
+            scene = next((s for s in scenes if s['shot_id'] == shot_id), None)
+            if not scene: return scenes, gr.update(), gr.update(), "Scene not found."
             yolo_boxes = scene.get('yolo_detections', [])
-
-            if not (0 <= subject_idx < len(yolo_boxes)):
-                return scenes, gr.update(), gr.update(), f"Invalid Subject ID. Please enter a number between 1 and {len(yolo_boxes)}."
-
-            masker = _create_analysis_context(self.config, self.logger, self.thumbnail_manager,
-                                              self.ana_ui_map_keys, ana_args)
-
+            if not (0 <= subject_idx < len(yolo_boxes)): return scenes, gr.update(), gr.update(), f"Invalid Subject ID. Please enter a number between 1 and {len(yolo_boxes)}."
+            masker = _create_analysis_context(self.config, self.logger, self.thumbnail_manager, self.ana_ui_map_keys, ana_args)
             selected_box = yolo_boxes[subject_idx]
             selected_xywh = masker.seed_selector._xyxy_to_xywh(selected_box['bbox'])
-
-            scene_state = SceneState(scene)
-            scene_state.set_manual_bbox(selected_xywh, source="yolo_manual")
-
-            _recompute_single_preview(scene_state, masker, {}, self.thumbnail_manager, self.logger)
-
-            # Explicitly save the changes to persist the auto-save
+            overrides = {"manual_bbox_xywh": selected_xywh, "seedtype": "yolo_manual"}
+            scene_idx = scenes.index(scene)
+            if 'initial_bbox' not in scenes[scene_idx] or scenes[scene_idx]['initial_bbox'] is None:
+                scenes[scene_idx]['initial_bbox'] = selected_xywh
+            scenes[scene_idx]['selected_bbox'] = selected_xywh
+            initial_bbox = scenes[scene_idx].get('initial_bbox')
+            scenes[scene_idx]['is_overridden'] = initial_bbox is not None and selected_xywh != initial_bbox
+            _recompute_single_preview(scenes[scene_idx], masker, overrides, self.thumbnail_manager, self.logger)
             save_scene_seeds(scenes, outdir, self.logger)
-
-            # Refresh gallery with new badge
             gallery_items, index_map = build_scene_gallery_items(scenes, view, outdir)
-
-
             return scenes, gr.update(value=gallery_items), gr.update(value=index_map), f"Subject {subject_id} selected and preview recomputed."
-
         except (ValueError, TypeError):
             gallery_items, index_map = build_scene_gallery_items(scenes, view, outdir)
             return scenes, gr.update(value=gallery_items), gr.update(value=index_map), "Invalid Subject ID. Please enter a number."
@@ -6369,131 +6109,59 @@ class EnhancedAppUI(AppUI):
             comp.release(self.on_apply_bulk_scene_filters_extended, bulk_filter_inputs, bulk_action_outputs)
 
     def on_reset_scene_wrapper(self, scenes, shot_id, outdir, view, *ana_args):
-        """Resets a scene to its original, auto-detected state.
-
-        This method is triggered by the 'Reset Scene' button in the UI. It
-        clears any manual overrides, re-runs the initial seed selection,
-        and updates the UI.
-
-        Args:
-            scenes: The list of all scene dictionaries.
-            shot_id: The ID of the scene to reset.
-            outdir: The output directory path.
-            view: The current scene gallery view.
-            *ana_args: Additional analysis arguments from the UI.
-
-        Returns:
-            A tuple of Gradio updates for the UI.
-        """
         try:
             scene_idx = next((i for i, s in enumerate(scenes) if s['shot_id'] == shot_id), None)
             if scene_idx is None:
                 return scenes, gr.update(), gr.update(), "Scene not found."
-
-            scene_state = SceneState(scenes[scene_idx])
-            scene_state.reset()
-
+            scene.update({'seed_config': {}, 'seed_result': {}, 'seed_metrics': {}, 'manual_status_change': False, 'status': 'included', 'is_overridden': False, 'selected_bbox': scene.get('initial_bbox')})
             masker = _create_analysis_context(self.config, self.logger, self.thumbnail_manager,
                                               self.ana_ui_map_keys, ana_args)
-
-            # Rerun the original seed selection
-            _recompute_single_preview(scene_state, masker, {}, self.thumbnail_manager, self.logger)
-
+            scene_idx = scenes.index(scene)
+            _recompute_single_preview(scenes[scene_idx], masker, {}, self.thumbnail_manager, self.logger)
             save_scene_seeds(scenes, outdir, self.logger)
             gallery_items, index_map = build_scene_gallery_items(scenes, view, outdir)
-
-            return scenes, gr.update(value=gallery_items), gr.update(value=index_map), f"Scene {shot_id} has been reset."
+            return scenes, gr.update(value=gallery_items), gr.update(value=index_map), f"Scene {shot_id} has been reset to its original state."
         except Exception as e:
             self.logger.error(f"Failed to reset scene {shot_id}", exc_info=True)
             gallery_items, index_map = build_scene_gallery_items(scenes, view, outdir)
             return scenes, gr.update(value=gallery_items), gr.update(value=index_map), f"Error resetting scene: {e}"
 
     def _empty_selection_response(self, scenes, indexmap):
-        """Returns a standard set of UI updates for when no scene is selected."""
         status_text, button_update = get_scene_status_text(scenes)
         return (scenes, status_text, gr.update(), indexmap,
-                None, "Select a scene to edit.", "",
-                self.config.grounding_dino_params.box_threshold,
-                self.config.grounding_dino_params.text_threshold,
+                None, "Select a scene from the gallery to edit its properties.", "",
+                self.config.gdino_box_threshold, self.config.gdino_text_threshold,
                 gr.update(open=False), None, None, gr.update(visible=False, choices=[], value=None),
                 button_update, {})
 
     def on_select_for_edit(self, scenes, view, indexmap, outputdir, yoloresultsstate, event: Optional[gr.EventData] = None, request: Optional[gr.Request] = None):
-        """Handles the selection of a scene in the gallery for editing.
-
-        This method is triggered when a user clicks on a scene thumbnail. It
-        populates the scene editor accordion with the data from the selected
-        scene.
-
-        Args:
-            scenes: The list of all scene dictionaries.
-            view: The current scene gallery view.
-            indexmap: A map from the gallery index to the scene list index.
-            outputdir: The output directory path.
-            yoloresultsstate: The state object for YOLO results.
-            event: The Gradio event data, containing the selection index.
-            request: The Gradio request object.
-
-        Returns:
-            A tuple of Gradio updates to populate the scene editor.
-        """
         sel_idx = getattr(event, "index", None) if event else None
         status_text, button_update = get_scene_status_text(scenes)
 
         if sel_idx is None:
             return self._empty_selection_response(scenes, indexmap)
 
-        # Validate selection to prevent index errors and handle empty states gracefully.
-        # This ensures that a selection in any gallery view ("Kept", "Rejected", "All")
-        # correctly maps to a valid scene.
-        if not (scenes and indexmap and 0 <= sel_idx < len(indexmap)):
-            self.logger.warning(f"Invalid gallery selection. Index: {sel_idx}, Map size: {len(indexmap) if indexmap else 'N/A'}")
-            return self._empty_selection_response(scenes, indexmap)
-
-        scene_idx_in_state = indexmap[sel_idx]
-        if not (0 <= scene_idx_in_state < len(scenes)):
-            self.logger.error(f"Scene index map is out of sync. Mapped index {scene_idx_in_state} is out of bounds for scenes list (size {len(scenes)}).")
+        status_text, button_update = get_scene_status_text(scenes)
+        if not scenes or not indexmap or not (0 <= sel_idx < len(indexmap)) or not (0 <= (scene_idx_in_state := indexmap[sel_idx]) < len(scenes)):
+            self.logger.error(f"Invalid gallery or scene index on selection: gallery_idx={sel_idx}, scene_idx={scene_idx_in_state}")
             return self._empty_selection_response(scenes, indexmap)
 
         scene = scenes[scene_idx_in_state]
         cfg = scene.get("seed_config") or {}
         shotid = scene.get("shot_id")
-
-        # Load the selected image into state for reuse
         thumb_path_str = scene_thumb(scene, outputdir)
         gallery_image = self.thumbnail_manager.get(Path(thumb_path_str)) if thumb_path_str else None
         gallery_shape = gallery_image.shape[:2] if gallery_image is not None else None
-
-        # Editor status text
-        if scene.get("start_frame") is not None and scene.get("end_frame") is not None:
-            status_md = f"Editing Scene {shotid}  •  Frames {scene['start_frame']}-{scene['end_frame']}"
-        else:
-            status_md = f"Editing Scene {shotid}"
-        # Prefill values with scene seedconfig or defaults
+        status_md = f"**Editing Scene {shotid}** (Frames {scene.get('start_frame', '?')}-{scene.get('end_frame', '?')})"
         prompt = cfg.get("text_prompt", "")
-        boxth = cfg.get("box_threshold", self.config.grounding_dino_params.box_threshold)
-        textth = cfg.get("text_threshold", self.config.grounding_dino_params.text_threshold)
-
-        subject_choices = [f"{i+1}" for i, det in enumerate(scene.get('yolo_detections', []))]
+        boxth = cfg.get("box_threshold", self.config.gdino_box_threshold)
+        textth = cfg.get("text_threshold", self.config.gdino_text_threshold)
+        subject_choices = [f"{i+1}" for i in range(len(scene.get('yolo_detections', [])))]
         subject_id_update = gr.update(choices=subject_choices, value=None, visible=bool(subject_choices))
 
-        return (
-            scenes,
-            status_text,
-            gr.update(),
-            indexmap,
-            shotid,
-            gr.update(value=status_md),
-            gr.update(value=prompt),
-            gr.update(value=boxth),
-            gr.update(value=textth),
-            gr.update(open=True),
-            gallery_image,
-            gallery_shape,
-            subject_id_update,
-            button_update,
-            yoloresultsstate
-        )
+        return (scenes, status_text, gr.update(), indexmap, shotid,
+                gr.update(value=status_md), gr.update(value=prompt), gr.update(value=boxth), gr.update(value=textth),
+                gr.update(open=True), gallery_image, gallery_shape, subject_id_update, button_update, yoloresultsstate)
 
     def on_editor_toggle(self, scenes, selected_shotid, outputfolder, view, new_status):
         """Toggles the status of a scene from the scene editor.
@@ -6513,14 +6181,6 @@ class EnhancedAppUI(AppUI):
         return scenes, status_text, gr.update(value=items), gr.update(value=index_map), button_update
 
     def _toggle_pause(self, tracker):
-        """Toggles the pause state of a running task.
-
-        Args:
-            tracker: The AdvancedProgressTracker instance for the task.
-
-        Returns:
-            The new label for the pause/resume button.
-        """
         if tracker.pause_event.is_set():
             tracker.pause_event.clear()
             return "⏸️ Paused"
@@ -6529,467 +6189,182 @@ class EnhancedAppUI(AppUI):
             return "▶️ Resume"
 
     def _create_event_handlers(self):
-        """Initializes all Gradio event handlers for the enhanced UI."""
-        self.logger.info("Creating event handlers...")
+        self.logger.info("Initializing Gradio event handlers...")
         super()._create_event_handlers()
         c = self.components
         c['cancel_button'].click(lambda: self.cancel_event.set(), [], [])
-
-        # This is a bit of a hack to get the tracker instance.
-        # A better solution would be to manage trackers more explicitly.
         c['pause_button'].click(
             self._toggle_pause,
             inputs=[gr.State(lambda: next((arg for arg in self.last_run_args if isinstance(arg, AdvancedProgressTracker)), None) if self.last_run_args else None)],
             outputs=c['pause_button']
         )
-
         c['clear_logs_button'].click(lambda: (self.all_logs.clear(), "")[1], [], c['unified_log'])
         c['log_level_filter'].change(lambda level: (setattr(self, 'log_filter_level', level), "\n".join([l for l in self.all_logs if self.log_filter_level.upper() == "DEBUG" or f"[{level.upper()}]" in l][-1000:]))[1], c['log_level_filter'], c['unified_log'])
-
         c['scene_editor_yolo_subject_id'].change(
             self.on_select_yolo_subject_wrapper,
-            inputs=[
-                c['scene_editor_yolo_subject_id'],
-                c['scenes_state'],
-                c['selected_scene_id_state'],
-                c['extracted_frames_dir_state'],
-                c['scene_gallery_view_toggle'],
-            ] + self.ana_input_components,
-            outputs=[
-                c['scenes_state'],
-                c['scene_gallery'],
-                c['scene_gallery_index_map_state'],
-                c['sceneeditorstatusmd']
-            ]
+            inputs=[c['scene_editor_yolo_subject_id'], c['scenes_state'], c['selected_scene_id_state'], c['extracted_frames_dir_state'], c['scene_gallery_view_toggle']] + self.ana_input_components,
+            outputs=[c['scenes_state'], c['scene_gallery'], c['scene_gallery_index_map_state'], c['sceneeditorstatusmd']]
         )
-
-        c['run_diagnostics_button'].click(
-            self.run_system_diagnostics,
-            inputs=[],
-            outputs=[c['unified_log']]
-        )
+        c['run_diagnostics_button'].click(self.run_system_diagnostics, inputs=[], outputs=[c['unified_log']])
 
     def run_system_diagnostics(self) -> Generator[str, None, None]:
-        """Runs a series of checks to diagnose system and dependency issues.
-
-        This method checks Python version, PyTorch/CUDA, core dependencies,
-        file paths, and simulates the end-to-end processing pipeline to ensure
-        the application is correctly configured.
-
-        Yields:
-            A string containing the final diagnostics report.
-        """
         self.logger.info("Starting system diagnostics...")
-        report = ["\n\n--- System Diagnostics Report ---"]
-
-        # 1. System Information
-        report.append("\n[SECTION 1: System & Environment]")
+        report = ["\n\n--- System Diagnostics Report ---", "\n[SECTION 1: System & Environment]"]
+        try: report.append(f"  - Python Version: OK ({sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro})")
+        except Exception as e: report.append(f"  - Python Version: FAILED ({e})")
         try:
-            python_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
-            report.append(f"  - Python Version: OK ({python_version})")
-        except Exception as e:
-            report.append(f"  - Python Version: FAILED ({e})")
-
-        try:
-            torch_version = torch.__version__
-            cuda_available = torch.cuda.is_available()
-            report.append(f"  - PyTorch Version: OK ({torch_version})")
-            if cuda_available:
-                cuda_version = torch.version.cuda
-                gpu_name = torch.cuda.get_device_name(0)
-                report.append(f"  - CUDA: OK (Version: {cuda_version}, GPU: {gpu_name})")
-            else:
-                report.append("  - CUDA: NOT AVAILABLE (Running in CPU mode)")
-        except Exception as e:
-            report.append(f"  - PyTorch/CUDA Check: FAILED ({e})")
-
-        # 2. Dependency Checks
+            report.append(f"  - PyTorch Version: OK ({torch.__version__})")
+            if torch.cuda.is_available(): report.append(f"  - CUDA: OK (Version: {torch.version.cuda}, GPU: {torch.cuda.get_device_name(0)})")
+            else: report.append("  - CUDA: NOT AVAILABLE (Running in CPU mode)")
+        except Exception as e: report.append(f"  - PyTorch/CUDA Check: FAILED ({e})")
         report.append("\n[SECTION 2: Core Dependencies]")
-        dependencies = ["cv2", "gradio", "imagehash", "mediapipe", "ultralytics", "groundingdino", "DAM4SAM"]
-        for dep in dependencies:
-            try:
-                __import__(dep.split('.')[0])
-                report.append(f"  - {dep}: OK")
-            except ImportError:
-                report.append(f"  - {dep}: FAILED (Not Installed)")
-
-
-        # 3. Path and File Checks
+        for dep in ["cv2", "gradio", "imagehash", "mediapipe", "ultralytics", "groundingdino", "DAM4SAM"]:
+            try: __import__(dep.split('.')[0]); report.append(f"  - {dep}: OK")
+            except ImportError: report.append(f"  - {dep}: FAILED (Not Installed)")
         report.append("\n[SECTION 3: Paths & Assets]")
-        paths_to_check = {
-            "Models Directory": Path(self.config.models_dir),
-            "Dry Run Assets": Path("dry-run-assets"),
-            "Sample Video": Path("dry-run-assets/sample.mp4"),
-            "Sample Image": Path("dry-run-assets/sample.jpg")
-        }
-        for name, path in paths_to_check.items():
-            if path.exists():
-                report.append(f"  - {name}: OK (Path: {path})")
-            else:
-                report.append(f"  - {name}: FAILED (Path not found: {path})")
-
-
-        # 4. Model Loading Simulation
+        for name, path in {"Models Directory": Path(self.config.models_dir), "Dry Run Assets": Path("dry-run-assets"),
+                           "Sample Video": Path("dry-run-assets/sample.mp4"), "Sample Image": Path("dry-run-assets/sample.jpg")}.items():
+            report.append(f"  - {name}: {'OK' if path.exists() else 'FAILED'} (Path: {path})")
         report.append("\n[SECTION 4: Model Loading Simulation]")
         try:
-            self.logger.info("Simulating YOLO model load...")
-            get_person_detector(
-                model_path_str=str(Path(self.config.models_dir) / self.config.default_person_detector_model),
-                device="cuda" if self.cuda_available else "cpu",
-                imgsz=self.config.person_detector_imgsz,
-                conf=self.config.person_detector_conf,
-                logger=self.logger
-            )
+            get_person_detector(model_path_str=str(Path(self.config.models_dir) / self.config.default_person_detector_model),
+                                device="cuda" if self.cuda_available else "cpu", imgsz=self.config.person_detector_imgsz,
+                                conf=self.config.person_detector_conf, logger=self.logger)
             report.append("  - YOLO Model: OK")
-        except Exception as e:
-            report.append(f"  - YOLO Model: FAILED ({e})")
-
-        # 5. Pipeline Simulation
+        except Exception as e: report.append(f"  - YOLO Model: FAILED ({e})")
         report.append("\n[SECTION 5: E2E Pipeline Simulation]")
         temp_output_dir = Path(self.config.downloads_dir) / "dry_run_output"
-        shutil.rmtree(temp_output_dir, ignore_errors=True)
-        temp_output_dir.mkdir(parents=True, exist_ok=True)
-
+        shutil.rmtree(temp_output_dir, ignore_errors=True); temp_output_dir.mkdir(parents=True, exist_ok=True)
         try:
-            # Extraction
             report.append("  - Stage 1: Frame Extraction...")
-            ext_event = ExtractionEvent(
-                source_path="dry-run-assets/sample.mp4",
-                upload_video=None,
-                method='interval',
-                interval='1.0',
-                nth_frame='5',
-                max_resolution="720",
-                thumbnails_only=True,
-                thumb_megapixels=0.2,
-                scene_detect=True
-            )
-            ext_result = None
-            for ev in execute_extraction(ext_event, self.progress_queue, self.cancel_event, self.logger, self.config):
-                if isinstance(ev, dict) and ("done" in ev or "output_dir" in ev):
-                    ext_result = ev
-            if not ext_result or not ext_result.get("done"):
-                raise RuntimeError("Extraction failed")
+            ext_event = ExtractionEvent(source_path="dry-run-assets/sample.mp4", method='interval', interval='1.0', max_resolution="720", thumbnails_only=True, thumb_megapixels=0.2, scene_detect=True)
+            ext_result = deque(execute_extraction(ext_event, self.progress_queue, self.cancel_event, self.logger, self.config), maxlen=1)[0]
+            if not ext_result.get("done"): raise RuntimeError("Extraction failed")
             report[-1] += " OK"
-
-            # Pre-analysis
             report.append("  - Stage 2: Pre-analysis...")
-            pre_ana_event = PreAnalysisEvent(
-                output_folder=ext_result['extracted_frames_dir_state'],
-                video_path=ext_result['extracted_video_path_state'],
-                resume=False,
-                enable_face_filter=False,
-                face_ref_img_path="",
-                face_ref_img_upload=None,
-                face_model_name='buffalo_l',
-                enable_subject_mask=False,
-                dam4sam_model_name='sam21pp-T',
-                person_detector_model='yolo11x.pt',
-                best_frame_strategy='Largest Person',
-                scene_detect=True,
-                text_prompt="",
-                box_threshold=0.35,
-                text_threshold=0.25,
-                min_mask_area_pct=1.0,
-                sharpness_base_scale=2500.0,
-                edge_strength_base_scale=100.0,
-                gdino_config_path=self.config.grounding_dino_config_path,
-                gdino_checkpoint_path=self.config.grounding_dino_checkpoint_path,
-                pre_analysis_enabled=True,
-                pre_sample_nth=1,
-                primary_seed_strategy="🧑‍🤝‍🧑 Find Prominent Person"
-            )
-            pre_ana_result = None
-            for ev in execute_pre_analysis(pre_ana_event, self.progress_queue, self.cancel_event, self.logger, self.config, self.thumbnail_manager, self.cuda_available):
-                if isinstance(ev, dict) and ("done" in ev or "output_dir" in ev):
-                    pre_ana_result = ev
-            if not pre_ana_result or not pre_ana_result.get("done"):
-                raise RuntimeError(f"Pre-analysis failed: {pre_ana_result}")
+            pre_ana_event = PreAnalysisEvent(output_folder=ext_result['extracted_frames_dir_state'], video_path=ext_result['extracted_video_path_state'], scene_detect=True,
+                                             pre_analysis_enabled=True, pre_sample_nth=1, primary_seed_strategy="🧑‍🤝‍🧑 Find Prominent Person")
+            pre_ana_result = deque(execute_pre_analysis(pre_ana_event, self.progress_queue, self.cancel_event, self.logger, self.config, self.thumbnail_manager, self.cuda_available), maxlen=1)[0]
+            if not pre_ana_result.get("done"): raise RuntimeError(f"Pre-analysis failed: {pre_ana_result}")
             report[-1] += " OK"
-
             scenes = pre_ana_result['scenes']
-
-            # Propagation
             report.append("  - Stage 3: Mask Propagation...")
-            prop_event = PropagationEvent(
-                output_folder=pre_ana_result['output_dir'],
-                video_path=ext_result['extracted_video_path_state'],
-                scenes=scenes,
-                analysis_params=pre_ana_event
-            )
-            prop_result = None
-            for ev in execute_propagation(prop_event, self.progress_queue, self.cancel_event, self.logger, self.config, self.thumbnail_manager, self.cuda_available):
-                if isinstance(ev, dict) and ("done" in ev or "output_dir" in ev):
-                    prop_result = ev
-            if not prop_result or not prop_result.get("done"):
-                raise RuntimeError("Propagation failed")
+            prop_event = PropagationEvent(output_folder=pre_ana_result['output_dir'], video_path=ext_result['extracted_video_path_state'], scenes=scenes, analysis_params=pre_ana_event)
+            prop_result = deque(execute_propagation(prop_event, self.progress_queue, self.cancel_event, self.logger, self.config, self.thumbnail_manager, self.cuda_available), maxlen=1)[0]
+            if not prop_result.get("done"): raise RuntimeError("Propagation failed")
             report[-1] += " OK"
-
-            # Analysis
             report.append("  - Stage 4: Frame Analysis...")
-            ana_result = None
-            for ev in execute_analysis(prop_event, self.progress_queue, self.cancel_event, self.logger, self.config, self.thumbnail_manager, self.cuda_available):
-                if isinstance(ev, dict) and ("done" in ev or "output_dir" in ev):
-                    ana_result = ev
-            if not ana_result or not ana_result.get("done"):
-                raise RuntimeError("Analysis failed")
+            ana_result = deque(execute_analysis(prop_event, self.progress_queue, self.cancel_event, self.logger, self.config, self.thumbnail_manager, self.cuda_available), maxlen=1)[0]
+            if not ana_result.get("done"): raise RuntimeError("Analysis failed")
             report[-1] += " OK"
-
             metadata_path = ana_result['metadata_path']
             all_frames, _ = load_and_prep_filter_data(metadata_path, self.get_all_filter_keys(), self.config)
-
-
-            # Filtering
             report.append("  - Stage 5: Filtering...")
-            filters = {'require_face_match': False, 'dedup_thresh': -1}
-            kept, _, _, _ = apply_all_filters_vectorized(all_frames, filters, self.config, output_dir=ana_result['output_dir'])
+            kept, _, _, _ = apply_all_filters_vectorized(all_frames, {'require_face_match': False, 'dedup_thresh': -1}, self.config, output_dir=ana_result['output_dir'])
             report[-1] += f" OK (kept {len(kept)} frames)"
-
-            # Export
             report.append("  - Stage 6: Export...")
-            export_event = ExportEvent(
-                all_frames_data=all_frames,
-                output_dir=ana_result['output_dir'],
-                video_path=ext_result['extracted_video_path_state'],
-                enable_crop=False,
-                crop_ars="",
-                crop_padding=0,
-                filter_args=filters
-            )
+            export_event = ExportEvent(all_frames_data=all_frames, output_dir=ana_result['output_dir'], video_path=ext_result['extracted_video_path_state'], enable_crop=False, filter_args={'require_face_match': False, 'dedup_thresh': -1})
             export_msg = self.export_kept_frames(export_event)
-            if "Error" in export_msg:
-                 raise RuntimeError(f"Export failed: {export_msg}")
+            if "Error" in export_msg: raise RuntimeError(f"Export failed: {export_msg}")
             report[-1] += " OK"
-
         except Exception as e:
             error_message = f"FAILED ({e})"
-            if len(report) > 0 and "..." in report[-1]:
-                report[-1] += error_message
-            else:
-                report.append(f"  - Pipeline Simulation: {error_message}")
+            if "..." in report[-1]: report[-1] += error_message
+            else: report.append(f"  - Pipeline Simulation: {error_message}")
             self.logger.error("Dry run pipeline failed", exc_info=True)
-
-
-        # Log the final report
         final_report = "\n".join(report)
         self.logger.info(final_report)
         yield final_report
 
     def _create_pre_analysis_event(self, *args: Any) -> 'PreAnalysisEvent':
-        """Creates a PreAnalysisEvent from UI arguments.
-
-        This helper function takes the raw values from the Gradio UI components,
-        maps them to the `PreAnalysisEvent` fields, and performs necessary
-        coercion and conditional logic based on the selected strategy.
-
-        Args:
-            *args: A list of arguments from the Gradio UI, corresponding to
-                   `self.ana_ui_map_keys`.
-
-        Returns:
-            A populated and validated PreAnalysisEvent instance.
-        """
         ui_args = dict(zip(self.ana_ui_map_keys, args))
-
-        # Remove None values - let Pydantic use defaults
         clean_args = {k: v for k, v in ui_args.items() if v is not None}
-
-        # Apply conditional logic based on strategy
-        strategy = clean_args.get('primary_seed_strategy', '🧑‍🤝‍🧑 Find Prominent Person')
+        strategy = clean_args.get('primary_seed_strategy', self.config.default_primary_seed_strategy)
         if strategy == "👤 By Face":
             clean_args.update({'enable_face_filter': True, 'text_prompt': ""})
         elif strategy == "📝 By Text":
             clean_args.update({'enable_face_filter': False, 'face_ref_img_path': ""})
-
-        # Let Pydantic handle validation and defaults
         return PreAnalysisEvent.model_validate(clean_args)
 
     def _run_pipeline(self, pipeline_func, event, progress, success_callback=None, *args):
-        """Generic wrapper for running a pipeline function and handling its lifecycle.
-
-        Args:
-            pipeline_func: The pipeline function to execute.
-            event: The event data for the pipeline.
-            progress: The Gradio progress object.
-            success_callback: An optional function to call upon successful completion.
-            *args: Additional arguments for the pipeline function.
-
-        Yields:
-            A dictionary of Gradio UI updates.
-        """
         try:
             for result in pipeline_func(event, self.progress_queue, self.cancel_event, self.app_logger, self.config, self.thumbnail_manager, self.cuda_available, progress=progress):
                 if isinstance(result, dict):
                     if self.cancel_event.is_set():
-                        yield {"unified_log": f"{pipeline_func.__name__} cancelled."}
-                        return
+                        yield {"unified_log": f"{pipeline_func.__name__} cancelled."}; return
                     if result.get("done"):
-                        if success_callback:
-                            yield success_callback(result)
+                        if success_callback: yield success_callback(result)
                         return
-            yield {"unified_log": f"❌ {pipeline_func.__name__} failed."}
+            yield {"unified_log": f"❌ {pipeline_func.__name__} did not complete successfully."}
         except Exception as e:
             self.app_logger.error(f"{pipeline_func.__name__} execution failed", exc_info=True)
-            yield {"unified_log": f"[ERROR] {pipeline_func.__name__} failed unexpectedly: {e}"}
+            yield {"unified_log": f"[ERROR] An unexpected error occurred in {pipeline_func.__name__}: {e}"}
 
     def run_extraction_wrapper(self, *args, progress=gr.Progress(track_tqdm=True)):
-        """Wrapper for the frame extraction pipeline.
-
-        Args:
-            *args: Arguments from the Gradio UI.
-            progress: The Gradio progress object.
-
-        Yields:
-            UI updates from the pipeline execution.
-        """
-
         ui_args = dict(zip(self.ext_ui_map_keys, args))
         ui_args['thumbnails_only'] = True
-        
-        # Remove None values - let Pydantic use defaults
         clean_args = {k: v for k, v in ui_args.items() if v is not None}
-
         event = ExtractionEvent.model_validate(clean_args)
-
         yield from self._run_pipeline(execute_extraction, event, progress, self._on_extraction_success)
 
     def _on_extraction_success(self, result):
-        """Callback for successful completion of the extraction pipeline.
-
-        Args:
-            result: The result dictionary from the pipeline.
-
-        Returns:
-            A dictionary of Gradio UI updates.
-        """
         return {
-            "unified_log": result.get("log", "✅ Extraction completed successfully."),
+            "unified_log": result.get("unified_log", "✅ Extraction completed."),
             "extracted_video_path_state": result.get("video_path", "") or result.get("extracted_video_path_state", ""),
             "extracted_frames_dir_state": result.get("output_dir", "") or result.get("extracted_frames_dir_state", "")
         }
 
     def _on_pre_analysis_success(self, result):
-        """Callback for successful completion of the pre-analysis pipeline.
-
-        Args:
-            result: The result dictionary from the pipeline.
-
-        Returns:
-            A dictionary of Gradio UI updates.
-        """
         scenes = result.get('scenes', [])
-        if scenes:
-            save_scene_seeds(scenes, result['output_dir'], self.app_logger)
+        if scenes: save_scene_seeds(scenes, result['output_dir'], self.app_logger)
         status_text, button_update = get_scene_status_text(scenes)
-        log_message = result.get("log", "✅ Pre-analysis completed successfully.") + "\nSwitching to Scene Selection tab."
+        log_message = result.get("unified_log", "✅ Pre-analysis completed.") + "\nContinue to the next tab to review scenes."
         updates = {
-            "unified_log": log_message,
-            "scenes_state": scenes,
-            "propagate_masks_button": button_update,
+            "unified_log": log_message, "scenes_state": scenes, "propagate_masks_button": button_update,
             "scene_filter_status": status_text,
             "scene_face_sim_min_input": gr.update(visible=any((s.get("seed_metrics") or {}).get("best_face_sim") is not None for s in (scenes or []))),
-            "seeding_results_column": gr.update(visible=True),
-            "main_tabs": gr.update(selected=2)
+            "seeding_results_column": gr.update(visible=True), "main_tabs": gr.update(selected=2)
         }
-        gallery_items, index_map, total_pages = build_scene_gallery_items(scenes, "Kept", result.get('output_dir', ''))
-        updates.update({
-            "scene_gallery": gr.update(value=gallery_items),
-            "scene_gallery_index_map_state": index_map,
-            "total_pages_label": gr.update(value=f"/ {total_pages} pages"),
-            "page_number_input": gr.update(value=1)
-        })
-        if result.get("final_face_ref_path"):
-            updates["face_ref_img_path_input"] = result["final_face_ref_path"]
+        gallery_items, index_map = build_scene_gallery_items(scenes, "Kept", result.get('output_dir', ''))
+        updates.update({"scene_gallery": gr.update(value=gallery_items), "scene_gallery_index_map_state": index_map})
+        if result.get("final_face_ref_path"): updates["face_ref_img_path_input"] = result["final_face_ref_path"]
         return updates
 
     def run_pre_analysis_wrapper(self, *args, progress=gr.Progress(track_tqdm=True)):
-        """Wrapper for the pre-analysis pipeline.
-
-        Args:
-            *args: Arguments from the Gradio UI.
-            progress: The Gradio progress object.
-
-        Yields:
-            UI updates from the pipeline execution.
-        """
         event = self._create_pre_analysis_event(*args)
         yield from self._run_pipeline(execute_pre_analysis, event, progress, self._on_pre_analysis_success)
 
     def run_propagation_wrapper(self, scenes, *args, progress=gr.Progress(track_tqdm=True)):
-        """Wrapper for the mask propagation pipeline.
-
-        Args:
-            scenes: The list of scene dictionaries.
-            *args: Arguments from the Gradio UI.
-            progress: The Gradio progress object.
-
-        Yields:
-            UI updates from the pipeline execution.
-        """
         event = PropagationEvent(output_folder=self._create_pre_analysis_event(*args).output_folder, video_path=self._create_pre_analysis_event(*args).video_path,
                                  scenes=scenes, analysis_params=self._create_pre_analysis_event(*args))
         yield from self._run_pipeline(execute_propagation, event, progress, self._on_propagation_success)
 
     def _on_propagation_success(self, result):
-        """Callback for successful completion of the propagation pipeline.
-
-        Args:
-            result: The result dictionary from the pipeline.
-
-        Returns:
-            A dictionary of Gradio UI updates.
-        """
         return {
-            "unified_log": result.get("log", "✅ Propagation completed successfully."),
+            "unified_log": result.get("unified_log", "✅ Mask propagation completed."),
             "analysis_output_dir_state": result.get('output_dir', "")
         }
 
     def run_analysis_wrapper(self, scenes, *args, progress=gr.Progress(track_tqdm=True)):
-        """Wrapper for the analysis pipeline.
-
-        Args:
-            scenes: The list of scene dictionaries.
-            *args: Arguments from the Gradio UI.
-            progress: The Gradio progress object.
-
-        Yields:
-            UI updates from the pipeline execution.
-        """
         event = PropagationEvent(output_folder=self._create_pre_analysis_event(*args).output_folder, video_path=self._create_pre_analysis_event(*args).video_path,
                                  scenes=scenes, analysis_params=self._create_pre_analysis_event(*args))
         yield from self._run_pipeline(execute_analysis, event, progress, self._on_analysis_success)
 
     def _on_analysis_success(self, result):
-        """Callback for successful completion of the analysis pipeline.
-
-        Args:
-            result: The result dictionary from the pipeline.
-
-        Returns:
-            A dictionary of Gradio UI updates.
-        """
         return {
-            "unified_log": result.get("log", "✅ Analysis completed successfully."),
+            "unified_log": result.get("unified_log", "✅ Analysis complete. You can now filter and export."),
             "analysis_output_dir_state": result.get('output_dir', ""),
             "analysis_metadata_path_state": result.get('metadata_path', ""),
             "filtering_tab": gr.update(interactive=True)
         }
 
     def run_session_load_wrapper(self, session_path):
-        """Wrapper for the session loading pipeline.
-
-        Args:
-            session_path: The path to the session directory to load.
-
-        Returns:
-            A dictionary of Gradio UI updates.
-        """
         try:
             final_result = {}
             for result in execute_session_load(self, SessionLoadEvent(session_path=session_path), self.app_logger, self.config, self.thumbnail_manager):
                 if isinstance(result, dict):
-                    if 'log' in result: result['unified_log'] = result.pop('log')
-                    final_result.update(result)
+                    if 'unified_log' in result: final_result.update(result)
+                    else: final_result.update(result)
             return final_result
         except Exception as e: raise
 
@@ -7051,13 +6426,8 @@ class EnhancedAppUI(AppUI):
 
         c['primary_seed_strategy_input'].change(
             self._fix_strategy_visibility,
-            inputs=[c['primary_seed_strategy_input']],
-            outputs=[
-                c['face_seeding_group'],
-                c['text_seeding_group'],
-                c['auto_seeding_group'],
-                c['enable_face_filter_input'],
-            ]
+            inputs=c['primary_seed_strategy_input'],
+            outputs=[c['face_seeding_group'], c['text_seeding_group'], c['auto_seeding_group'], c['enable_face_filter_input']]
         )
 
 
@@ -7102,19 +6472,27 @@ class EnhancedAppUI(AppUI):
         ext_inputs = [c[{'source_path': 'source_input', 'upload_video': 'upload_video_input', 'max_resolution': 'max_resolution',
                          'scene_detect': 'ext_scene_detect_input', **{k: f"{k}_input" for k in self.ext_ui_map_keys if k not in
                          ['source_path', 'upload_video', 'max_resolution', 'scene_detect']}}[k]] for k in self.ext_ui_map_keys]
-        self.ana_input_components = [c.get(k) for k in ['extracted_frames_dir_state', 'extracted_video_path_state', 'resume_state',
-                                                              'enable_face_filter_input', 'face_ref_img_path_input', 'face_ref_img_upload_input',
-                                                              'face_model_name_input', 'enable_subject_mask_state', 'dam4sam_model_name_input',
-                                                              'person_detector_model_input', 'best_frame_strategy_input', 'ext_scene_detect_input',
-                                                              'text_prompt_input', 'box_threshold', 'text_threshold', 'min_mask_area_pct_state',
-                                                              'sharpness_base_scale_state', 'edge_strength_base_scale_state', 'gdino_config_path_state',
-                                                              'gdino_checkpoint_path_state', 'pre_analysis_enabled_input', 'pre_sample_nth_input',
-                                                              'primary_seed_strategy_input',
-                                                              'compute_quality_score', 'compute_sharpness', 'compute_edge_strength',
-                                                              'compute_contrast', 'compute_brightness', 'compute_entropy',
-                                                              'compute_eyes_open', 'compute_yaw', 'compute_pitch',
-                                                              'compute_face_sim', 'compute_subject_mask_area', 'compute_niqe',
-                                                              'compute_phash']]
+        self.ana_input_components = [c.get(k) for k in [{'output_folder': 'extracted_frames_dir_state', 'video_path': 'extracted_video_path_state',
+                                                           'resume': 'resume_input', 'enable_face_filter': 'enable_face_filter_input',
+                                                           'face_ref_img_path': 'face_ref_img_path_input', 'face_ref_img_upload': 'face_ref_img_upload_input',
+                                                               'face_model_name': 'face_model_name_input', 'enable_subject_mask': 'enable_subject_mask_input',
+                                                           'dam4sam_model_name': 'dam4sam_model_name_input', 'person_detector_model': 'person_detector_model_input',
+                                                               'best_frame_strategy': 'best_frame_strategy_input', 'scene_detect': 'ext_scene_detect_input',
+                                                           'enable_dedup': 'enable_dedup_input', 'text_prompt': 'text_prompt_input',
+                                                               'box_threshold': 'box_threshold',
+                                                               'text_threshold': 'text_threshold',
+                                                           'min_mask_area_pct': 'min_mask_area_pct_input',
+                                                           'sharpness_base_scale': 'sharpness_base_scale_input',
+                                                           'edge_strength_base_scale': 'edge_strength_base_scale_input',
+                                                               'gdino_config_path': 'gdino_config_path_input',
+                                                               'gdino_checkpoint_path': 'gdino_checkpoint_path_input',
+                                                           'pre_analysis_enabled': 'pre_analysis_enabled_input', 'pre_sample_nth': 'pre_sample_nth_input',
+                                                           'primary_seed_strategy': 'primary_seed_strategy_input',
+                                                           **{f'compute_{m}': f'compute_{m}' for m in [
+                                                               'quality_score', 'sharpness', 'edge_strength', 'contrast', 'brightness', 'entropy',
+                                                               'eyes_open', 'yaw', 'pitch', 'face_sim', 'subject_mask_area', 'niqe', 'phash'
+                                                           ]}
+                                                          }[k] for k in self.ana_ui_map_keys]]
         prop_inputs = [c['scenes_state']] + self.ana_input_components
         c['start_extraction_button'].click(fn=extraction_handler,
                                          inputs=ext_inputs, outputs=all_outputs, show_progress="hidden").then(lambda d: gr.update(selected=1) if d else gr.update(), c['extracted_frames_dir_state'], c['main_tabs'])
