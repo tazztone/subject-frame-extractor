@@ -129,7 +129,7 @@ patch.dict(sys.modules, modules_to_mock).start()
 
 # Now import the monolithic app
 import app
-from app import Config, CompositionRoot
+from app import Config, CompositionRoot, Database
 
 # --- Mocks for Tests ---
 @pytest.fixture
@@ -403,16 +403,16 @@ class TestFilterLogic:
         """
         Verify that histogram ranges for yaw and pitch are taken from the config.
         """
-        metadata_content = (
-            json.dumps({"params": {}}) + '\n' +
-            json.dumps({"filename": "f1", "metrics": {"yaw": -150, "pitch": 150}}) + '\n'
-        )
-        metadata_path = tmp_path / "metadata.jsonl"
-        metadata_path.write_text(metadata_content)
+        db_path = tmp_path / "metadata.db"
+        db = Database(db_path)
+        db.connect()
+        db.create_tables()
+        db.insert_metadata({"filename": "f1", "metrics": {"yaw": -150, "pitch": 150}})
+        db.close()
 
         config = Config() # Use default config which has wide ranges
         _, metric_values = app.load_and_prep_filter_data(
-            str(metadata_path),
+            str(tmp_path),
             get_all_filter_keys=lambda: ['yaw', 'pitch'],
             config=config
         )

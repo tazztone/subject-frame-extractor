@@ -47,6 +47,7 @@ sys.path.insert(0, str(project_root / 'DAM4SAM'))
 
 from collections import Counter, OrderedDict, defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from database import Database
 from enum import Enum
 from functools import lru_cache
 from pydantic import BaseModel, Field, model_validator, field_validator, ConfigDict
@@ -3773,9 +3774,9 @@ class AnalysisPipeline(Pipeline):
         """
         super().__init__(config, logger, params, progress_queue, cancel_event)
         self.output_dir = Path(self.params.output_folder)
+        self.db = Database(self.output_dir / "metadata.db")
         self.thumb_dir = self.output_dir / "thumbs"
         self.masks_dir = self.output_dir / "masks"
-        self.metadata_path = self.output_dir / "metadata.jsonl"
         self.processing_lock = threading.Lock()
         self.face_analyzer, self.reference_embedding, self.mask_metadata, self.face_landmarker = None, None, {}, None
         self.scene_map, self.niqe_metric = {}, None
@@ -3819,12 +3820,11 @@ class AnalysisPipeline(Pipeline):
                         progress_data = json.load(f)
                     # Resume from last completed scene
                     scenes_to_process = self._filter_completed_scenes(scenes_to_process, progress_data)
-                # Ensure metadata file is properly handled
-                if self.metadata_path.exists() and not self.params.resume:
-                    self.metadata_path.unlink()
-
-                with open(self.metadata_path, 'w', encoding='utf-8') as f:
-                    f.write(json.dumps(_to_json_safe({"params": self.params.model_dump()})) + '\n')
+                # Connect to the database and create tables
+                self.db.connect()
+                self.db.create_tables()
+                if not self.params.resume:
+                    self.db.clear_metadata()
 
                 self.scene_map = {s.shot_id: s for s in scenes_to_process}
                 self.logger.info("Initializing Models")
@@ -3876,9 +3876,10 @@ class AnalysisPipeline(Pipeline):
             A dictionary indicating the result and paths to output files.
         """
         try:
-            if not self.metadata_path.exists():
-                with open(self.metadata_path, 'w', encoding='utf-8') as f:
-                    f.write(json.dumps(_to_json_safe({"params": self.params.model_dump()})) + '\n')
+            self.db.connect()
+            self.db.create_tables()
+            if not self.params.resume:
+                self.db.clear_metadata()
             self.scene_map = {s.shot_id: s for s in scenes_to_process}
             self.logger.info("Initializing Models for Analysis")
             models = initialize_analysis_models(self.params, self.config, self.logger)
@@ -3906,7 +3907,7 @@ class AnalysisPipeline(Pipeline):
             self._run_analysis_loop(scenes_to_process, metrics_to_compute, tracker=tracker)
             if self.cancel_event.is_set(): return {"log": "Analysis cancelled.", "done": False}
             self.logger.success("Analysis complete.", extra={'output_dir': self.output_dir})
-            return {"done": True, "metadata_path": str(self.metadata_path), "output_dir": str(self.output_dir)}
+            return {"done": True, "output_dir": str(self.output_dir)}
         except Exception as e:
             self.logger.error("Analysis pipeline failed", exc_info=True, extra={'error': str(e)})
             return {"error": str(e), "done": False}
@@ -4045,15 +4046,10 @@ class AnalysisPipeline(Pipeline):
             # Sanitize the dictionary to ensure all values are JSON-serializable
             meta = _to_json_safe(meta)
 
-            with self.processing_lock:
-                with self.metadata_path.open('a', encoding='utf-8') as f:
-                    f.write(json.dumps(meta) + '\n')
+            self.db.insert_metadata(meta)
         except Exception as e:
             self.logger.critical("Error processing frame", exc_info=True, extra={**log_context, 'error': e})
-            with self.processing_lock:
-                with self.metadata_path.open('a', encoding='utf-8') as f:
-                    json.dump({"filename": thumb_path.name, "error": f"processing_failed: {e}"}, f)
-                    f.write('\n')
+            self.db.insert_metadata({"filename": thumb_path.name, "error": f"processing_failed: {e}"})
 
     def _analyze_face_similarity(self, frame, image_rgb):
         face_bbox = None
@@ -4075,15 +4071,15 @@ class AnalysisPipeline(Pipeline):
 
 # --- FILTERING & SCENE LOGIC ---
 
-def load_and_prep_filter_data(metadata_path: str, get_all_filter_keys: Callable, config: 'Config') -> tuple[list, dict]:
+def load_and_prep_filter_data(output_dir: str, get_all_filter_keys: Callable, config: 'Config') -> tuple[list, dict]:
     """
-    Loads frame metadata from a JSONL file and prepares it for the filtering UI.
+    Loads frame metadata from a SQLite database and prepares it for the filtering UI.
 
     This function reads the metadata, extracts all metric values, and generates
     histogram data for each metric.
 
     Args:
-        metadata_path: The path to the `metadata.jsonl` file.
+        output_dir: The path to the output directory containing the database.
         get_all_filter_keys: A function that returns a list of all metric keys to process.
         config: The main application configuration.
 
@@ -4092,15 +4088,13 @@ def load_and_prep_filter_data(metadata_path: str, get_all_filter_keys: Callable,
         - A list of all frame data dictionaries.
         - A dictionary containing lists of values and histogram data for each metric.
     """
-    if not metadata_path or not Path(metadata_path).exists():
+    db_path = Path(output_dir) / "metadata.db"
+    if not db_path.exists():
         return [], {}
 
-    with Path(metadata_path).open('r', encoding='utf-8') as f:
-        try:
-            next(f)  # Skip the header line
-        except StopIteration:
-            return [], {}
-        all_frames = [json.loads(line) for line in f if line.strip()]
+    db = Database(db_path)
+    all_frames = db.load_all_metadata()
+    db.close()
 
     metric_values = {}
     metric_configs = {
@@ -5187,7 +5181,7 @@ def execute_session_load(
 
     config_path = session_path / "run_config.json"
     scene_seeds_path = session_path / "scene_seeds.json"
-    metadata_path = session_path / "metadata.jsonl"
+    metadata_path = session_path / "metadata.db"
 
     def _resolve_output_dir(base: Path, output_folder: str | None) -> Path | None:
         if not output_folder: return None
@@ -5254,7 +5248,7 @@ def execute_session_load(
                 "scene_face_sim_min_input": gr.update(visible=any((s.get("seed_metrics") or {}).get("best_face_sim") is not None for s in (scenes_as_dict or []))),
                 "scene_gallery": gr.update(value=gallery_items), "scene_gallery_index_map_state": index_map
             })
-        if metadata_path.exists(): updates.update({"analysis_metadata_path_state": str(metadata_path), "filtering_tab": gr.update(interactive=True)})
+        if metadata_path.exists(): updates.update({"analysis_output_dir_state": str(session_path), "filtering_tab": gr.update(interactive=True)})
         for metric in app_ui.ana_ui_map_keys:
             if metric.startswith('compute_'): updates[metric] = gr.update(value=run_config.get(metric, True))
         updates.update({"unified_log": f"Successfully loaded session from: {session_path}", "main_tabs": gr.update(selected=3)})
@@ -5310,7 +5304,7 @@ def execute_analysis(event: PropagationEvent, progress_queue: Queue, cancel_even
         result = pipeline.run_analysis_only(scenes_to_process, tracker=tracker)
         if result and result.get("done"):
             yield {"unified_log": "Analysis complete. You can now proceed to the Filtering & Export tab.",
-                   "output_dir": result['output_dir'], "metadata_path": result['metadata_path'], "done": True}
+                   "output_dir": result['output_dir'], "done": True}
         else:
             yield {"unified_log": f"❌ Analysis failed. Reason: {result.get('error', 'Unknown error')}", "done": False}
     except Exception as e:
@@ -6404,8 +6398,8 @@ class EnhancedAppUI(AppUI):
             ana_result = deque(execute_analysis(prop_event, self.progress_queue, self.cancel_event, self.logger, self.config, self.thumbnail_manager, self.cuda_available), maxlen=1)[0]
             if not ana_result.get("done"): raise RuntimeError("Analysis failed")
             report[-1] += " OK"
-            metadata_path = ana_result['metadata_path']
-            all_frames, _ = load_and_prep_filter_data(metadata_path, self.get_all_filter_keys(), self.config)
+            output_dir = ana_result['output_dir']
+            all_frames, _ = load_and_prep_filter_data(output_dir, self.get_all_filter_keys(), self.config)
             report.append("  - Stage 5: Filtering...")
             kept, _, _, _ = apply_all_filters_vectorized(all_frames, {'require_face_match': False, 'dedup_thresh': -1}, self.config, output_dir=ana_result['output_dir'])
             report[-1] += f" OK (kept {len(kept)} frames)"
@@ -6996,11 +6990,11 @@ class EnhancedAppUI(AppUI):
                         slider_comps + [c['require_face_match_input']] +
                         [c['metric_accs'].get(k) for k in sorted(c['metric_accs'].keys()) if c['metric_accs'].get(k)])
 
-        def load_and_trigger_update(metadata_path, output_dir):
-            if not metadata_path or not output_dir:
+        def load_and_trigger_update(output_dir):
+            if not output_dir:
                 # Return an update for every component in load_outputs to avoid errors
                 return [gr.update()] * len(load_outputs)
-            all_frames, metric_values = load_and_prep_filter_data(metadata_path, self.get_all_filter_keys(), self.config)
+            all_frames, metric_values = load_and_prep_filter_data(output_dir, self.get_all_filter_keys(), self.config)
             svgs = build_all_metric_svgs(metric_values, self.get_all_filter_keys(), self.logger)
 
             updates = {
@@ -7043,7 +7037,7 @@ class EnhancedAppUI(AppUI):
 
         c['filtering_tab'].select(
             load_and_trigger_update,
-            [c['analysis_metadata_path_state'], c['analysis_output_dir_state']],
+            [c['analysis_output_dir_state']],
             load_outputs
         )
 
