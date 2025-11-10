@@ -284,7 +284,14 @@ class Config(BaseSettings):
 
     @model_validator(mode='after')
     def _validate_config(self):
-        quality_weights = {
+        if sum(self.quality_weights.values()) == 0:
+            raise ValueError("The sum of quality_weights cannot be zero.")
+        return self
+
+    @property
+    def quality_weights(self) -> Dict[str, int]:
+        """Returns a dictionary of all quality weight parameters."""
+        return {
             'sharpness': self.quality_weights_sharpness,
             'edge_strength': self.quality_weights_edge_strength,
             'contrast': self.quality_weights_contrast,
@@ -292,9 +299,6 @@ class Config(BaseSettings):
             'entropy': self.quality_weights_entropy,
             'niqe': self.quality_weights_niqe,
         }
-        if sum(quality_weights.values()) == 0:
-            raise ValueError("The sum of quality_weights cannot be zero.")
-        return self
 
     def _validate_paths(self):
         required_dirs = [self.logs_dir, self.models_dir, self.downloads_dir]
@@ -5194,9 +5198,19 @@ def execute_session_load(
 
         # Follow-up gallery initialization
         if scenes_as_dict and output_dir:
+            gallery_items, index_map, total_pages = build_scene_gallery_items(scenes_as_dict, "Kept", str(output_dir))
+            updates.update({
+                "scene_gallery": gr.update(value=gallery_items),
+                "scene_gallery_index_map_state": index_map,
+                "total_pages_label": gr.update(value=f"/ {total_pages} pages"),
+                "page_number_input": gr.update(value=1)
+            })
+
             yield {
                 "scene_gallery": gr.update(value=gallery_items),
-                "scene_gallery_index_map_state": index_map
+                "scene_gallery_index_map_state": index_map,
+                "total_pages_label": gr.update(value=f"/ {total_pages} pages"),
+                "page_number_input": gr.update(value=1)
             }
 
 def execute_propagation(event: PropagationEvent, progress_queue: Queue, cancel_event: threading.Event, logger: AppLogger,
@@ -5358,32 +5372,40 @@ def scene_thumb(s: dict, output_dir: str) -> Optional[str]:
             return candidate
     return None
 
-def build_scene_gallery_items(scenes: list[dict], view: str, output_dir: str) -> tuple[list[tuple], list[int]]:
+def build_scene_gallery_items(scenes: list[dict], view: str, output_dir: str, page_num: int = 1, page_size: int = 20) -> tuple[list[tuple], list[int], int]:
     """
-    Builds the list of items to display in the Gradio scene gallery.
+    Builds the list of items to display in the Gradio scene gallery with pagination.
 
     Args:
         scenes: The list of all scene dictionaries.
         view: The current gallery view ("Kept", "Rejected", "All").
         output_dir: The main output directory.
+        page_num: The current page number (1-indexed).
+        page_size: The number of items per page.
 
     Returns:
         A tuple containing:
         - A list of (image_path, caption) tuples for the gallery.
         - An index map linking the gallery item index to the original scene list index.
+        - The total number of pages.
     """
     items: list[tuple[str | None, str]] = []
     index_map: list[int] = []
     if not scenes:
-        return [], []
+        return [], [], 1
 
     previews_dir = Path(output_dir) / "previews"
     previews_dir.mkdir(parents=True, exist_ok=True)
 
-    for i, s in enumerate(scenes):
-        if not scene_matches_view(s, view):
-            continue
+    filtered_scenes = [(i, s) for i, s in enumerate(scenes) if scene_matches_view(s, view)]
+    total_pages = max(1, (len(filtered_scenes) + page_size - 1) // page_size)
+    page_num = max(1, min(page_num, total_pages))
+    start_index = (page_num - 1) * page_size
+    end_index = start_index + page_size
+    paginated_scenes = filtered_scenes[start_index:end_index]
 
+
+    for i, s in paginated_scenes:
         img_path = scene_thumb(s, output_dir)
         if img_path is None:
             continue
@@ -5403,7 +5425,7 @@ def build_scene_gallery_items(scenes: list[dict], view: str, output_dir: str) ->
         items.append((img_path, cap))
         index_map.append(i)
 
-    return items, index_map
+    return items, index_map, total_pages
 def create_scene_thumbnail_with_badge(scene_img: np.ndarray, scene_index: int, is_overridden: bool) -> np.ndarray:
     """
     Adds a visual indicator badge to a scene thumbnail image.
@@ -5704,7 +5726,12 @@ Review the automatically detected subjects and refine the selection if needed. E
 
             with gr.Accordion("Scene Gallery", open=True):
                 self._create_component('scene_gallery_view_toggle', 'radio', {'label': "Show", 'choices': ["Kept", "Rejected", "All"], 'value': "Kept"})
-                self.components['scene_gallery'] = gr.Gallery(label="Scenes", columns=[99999], rows=1, height=560, show_label=True, allow_preview=True, container=True)
+                with gr.Row(elem_id="pagination_row"):
+                    self._create_component('prev_page_button', 'button', {'value': '⬅️ Previous'})
+                    self._create_component('page_number_input', 'number', {'label': 'Page', 'value': 1, 'precision': 0})
+                    self._create_component('total_pages_label', 'markdown', {'value': '/ 1 pages'})
+                    self._create_component('next_page_button', 'button', {'value': 'Next ➡️'})
+                self.components['scene_gallery'] = gr.Gallery(label="Scenes", columns=10, rows=2, height=560, show_label=True, allow_preview=True, container=True)
 
             with gr.Accordion("Scene Editor", open=False, elem_classes="scene-editor") as sceneeditoraccordion:
                 self.components["sceneeditoraccordion"] = sceneeditoraccordion
@@ -5867,7 +5894,15 @@ Review the automatically detected subjects and refine the selection if needed. E
                             'gallery_image_state': gr.State(None),
                             'gallery_shape_state': gr.State(None),
                             'yolo_results_state': gr.State({}),
-                            'discovered_faces_state': gr.State([])})
+                            'discovered_faces_state': gr.State([]),
+                            'resume_state': gr.State(False),
+                            'enable_subject_mask_state': gr.State(True),
+                            'min_mask_area_pct_state': gr.State(1.0),
+                            'sharpness_base_scale_state': gr.State(2500.0),
+                            'edge_strength_base_scale_state': gr.State(100.0),
+                            'gdino_config_path_state': gr.State("GroundingDINO_SwinT_OGC.py"),
+                            'gdino_checkpoint_path_state': gr.State("models/groundingdino_swint_ogc.pth"),
+                            })
         self._setup_visibility_toggles(); self._setup_pipeline_handlers(); self._setup_filtering_handlers(); self._setup_bulk_scene_handlers()
         self.components['save_config_button'].click(
             lambda: self.config.save_config('config_dump.json'), [], []
@@ -6126,16 +6161,41 @@ class EnhancedAppUI(AppUI):
         """Sets up Gradio event handlers for the scene selection and editing tab."""
         c = self.components
 
+        def on_page_change(scenes, view, output_dir, page_num):
+            page_num = int(page_num)
+            items, index_map, total_pages = build_scene_gallery_items(scenes, view, output_dir, page_num=page_num)
+            return gr.update(value=items), index_map, f"/ {total_pages} pages", page_num
+
         def _refresh_scene_gallery(scenes, view, output_dir):
-            items, index_map = build_scene_gallery_items(scenes, view, output_dir)
-            return gr.update(value=items), index_map
+            items, index_map, total_pages = build_scene_gallery_items(scenes, view, output_dir, page_num=1)
+            return gr.update(value=items), index_map, f"/ {total_pages} pages", 1
 
         # On view toggle change
         c['scene_gallery_view_toggle'].change(
             _refresh_scene_gallery,
             [c['scenes_state'], c['scene_gallery_view_toggle'], c['extracted_frames_dir_state']],
-            [c['scene_gallery'], c['scene_gallery_index_map_state']]
+            [c['scene_gallery'], c['scene_gallery_index_map_state'], c['total_pages_label'], c['page_number_input']]
         )
+
+        # Pagination controls
+        c['next_page_button'].click(
+            lambda scenes, view, output_dir, page_num: on_page_change(scenes, view, output_dir, page_num + 1),
+            [c['scenes_state'], c['scene_gallery_view_toggle'], c['extracted_frames_dir_state'], c['page_number_input']],
+            [c['scene_gallery'], c['scene_gallery_index_map_state'], c['total_pages_label'], c['page_number_input']]
+        )
+
+        c['prev_page_button'].click(
+            lambda scenes, view, output_dir, page_num: on_page_change(scenes, view, output_dir, page_num - 1),
+            [c['scenes_state'], c['scene_gallery_view_toggle'], c['extracted_frames_dir_state'], c['page_number_input']],
+            [c['scene_gallery'], c['scene_gallery_index_map_state'], c['total_pages_label'], c['page_number_input']]
+        )
+
+        c['page_number_input'].submit(
+            on_page_change,
+            [c['scenes_state'], c['scene_gallery_view_toggle'], c['extracted_frames_dir_state'], c['page_number_input']],
+            [c['scene_gallery'], c['scene_gallery_index_map_state'], c['total_pages_label'], c['page_number_input']]
+        )
+
 
         c['scene_gallery'].select(
             self.on_select_for_edit,
@@ -6176,6 +6236,8 @@ class EnhancedAppUI(AppUI):
                 c['scene_gallery'],
                 c['scene_gallery_index_map_state'],
                 c['sceneeditorstatusmd'],
+                c['total_pages_label'],
+                c['page_number_input']
             ],
         )
 
@@ -6753,10 +6815,12 @@ class EnhancedAppUI(AppUI):
             "seeding_results_column": gr.update(visible=True),
             "main_tabs": gr.update(selected=2)
         }
-        gallery_items, index_map = build_scene_gallery_items(scenes, "Kept", result.get('output_dir', ''))
+        gallery_items, index_map, total_pages = build_scene_gallery_items(scenes, "Kept", result.get('output_dir', ''))
         updates.update({
             "scene_gallery": gr.update(value=gallery_items),
-            "scene_gallery_index_map_state": index_map
+            "scene_gallery_index_map_state": index_map,
+            "total_pages_label": gr.update(value=f"/ {total_pages} pages"),
+            "page_number_input": gr.update(value=1)
         })
         if result.get("final_face_ref_path"):
             updates["face_ref_img_path_input"] = result["final_face_ref_path"]
@@ -6962,27 +7026,19 @@ class EnhancedAppUI(AppUI):
         ext_inputs = [c[{'source_path': 'source_input', 'upload_video': 'upload_video_input', 'max_resolution': 'max_resolution',
                          'scene_detect': 'ext_scene_detect_input', **{k: f"{k}_input" for k in self.ext_ui_map_keys if k not in
                          ['source_path', 'upload_video', 'max_resolution', 'scene_detect']}}[k]] for k in self.ext_ui_map_keys]
-        self.ana_input_components = [c.get(k, k) for k in [{'output_folder': 'extracted_frames_dir_state', 'video_path': 'extracted_video_path_state',
-                                                           'resume': self.config.default_resume, 'enable_face_filter': 'enable_face_filter_input',
-                                                           'face_ref_img_path': 'face_ref_img_path_input', 'face_ref_img_upload': 'face_ref_img_upload_input',
-                                                               'face_model_name': 'face_model_name_input', 'enable_subject_mask': self.config.default_enable_subject_mask,
-                                                           'dam4sam_model_name': 'dam4sam_model_name_input', 'person_detector_model': 'person_detector_model_input',
-                                                               'best_frame_strategy': 'best_frame_strategy_input', 'scene_detect': 'ext_scene_detect_input',
-                                                           'enable_dedup': 'enable_dedup_input', 'text_prompt': 'text_prompt_input',
-                                                               'box_threshold': self.config.gdino_box_threshold,
-                                                               'text_threshold': self.config.gdino_text_threshold,
-                                                           'min_mask_area_pct': self.config.min_mask_area_pct,
-                                                           'sharpness_base_scale': self.config.sharpness_base_scale,
-                                                           'edge_strength_base_scale': self.config.edge_strength_base_scale,
-                                                               'gdino_config_path': str(self.config.grounding_dino_config_path),
-                                                               'gdino_checkpoint_path': str(self.config.grounding_dino_checkpoint_path),
-                                                           'pre_analysis_enabled': 'pre_analysis_enabled_input', 'pre_sample_nth': 'pre_sample_nth_input',
-                                                           'primary_seed_strategy': 'primary_seed_strategy_input',
-                                                           **{f'compute_{m}': f'compute_{m}' for m in [
-                                                               'quality_score', 'sharpness', 'edge_strength', 'contrast', 'brightness', 'entropy',
-                                                               'eyes_open', 'yaw', 'pitch', 'face_sim', 'subject_mask_area', 'niqe', 'phash'
-                                                           ]}
-                                                          }[k] for k in self.ana_ui_map_keys]]
+        self.ana_input_components = [c.get(k) for k in ['extracted_frames_dir_state', 'extracted_video_path_state', 'resume_state',
+                                                              'enable_face_filter_input', 'face_ref_img_path_input', 'face_ref_img_upload_input',
+                                                              'face_model_name_input', 'enable_subject_mask_state', 'dam4sam_model_name_input',
+                                                              'person_detector_model_input', 'best_frame_strategy_input', 'ext_scene_detect_input',
+                                                              'text_prompt_input', 'box_threshold', 'text_threshold', 'min_mask_area_pct_state',
+                                                              'sharpness_base_scale_state', 'edge_strength_base_scale_state', 'gdino_config_path_state',
+                                                              'gdino_checkpoint_path_state', 'pre_analysis_enabled_input', 'pre_sample_nth_input',
+                                                              'primary_seed_strategy_input',
+                                                              'compute_quality_score', 'compute_sharpness', 'compute_edge_strength',
+                                                              'compute_contrast', 'compute_brightness', 'compute_entropy',
+                                                              'compute_eyes_open', 'compute_yaw', 'compute_pitch',
+                                                              'compute_face_sim', 'compute_subject_mask_area', 'compute_niqe',
+                                                              'compute_phash']]
         prop_inputs = [c['scenes_state']] + self.ana_input_components
         c['start_extraction_button'].click(fn=extraction_handler,
                                          inputs=ext_inputs, outputs=all_outputs, show_progress="hidden").then(lambda d: gr.update(selected=1) if d else gr.update(), c['extracted_frames_dir_state'], c['main_tabs'])
@@ -7286,38 +7342,40 @@ class EnhancedAppUI(AppUI):
                 c['scenes_state'],
                 c['scene_gallery'],
                 c['scene_gallery_index_map_state'],
-                c['sceneeditorstatusmd']
+                c['sceneeditorstatusmd'],
+                c['total_pages_label'],
+                c['page_number_input']
             ]
         )
 
         c['sceneincludebutton'].click(
             lambda s, sid, out, v: self.on_editor_toggle(s, sid, out, v, "included"),
             inputs=[c['scenes_state'], c['selected_scene_id_state'], c['extracted_frames_dir_state'], c['scene_gallery_view_toggle']],
-            outputs=[c['scenes_state'], c['scene_filter_status'], c['scene_gallery'], c['scene_gallery_index_map_state'], c['propagate_masks_button']],
+            outputs=[c['scenes_state'], c['scene_filter_status'], c['scene_gallery'], c['scene_gallery_index_map_state'], c['propagate_masks_button'], c['total_pages_label'], c['page_number_input']],
         )
         c['sceneexcludebutton'].click(
             lambda s, sid, out, v: self.on_editor_toggle(s, sid, out, v, "excluded"),
             inputs=[c['scenes_state'], c['selected_scene_id_state'], c['extracted_frames_dir_state'], c['scene_gallery_view_toggle']],
-            outputs=[c['scenes_state'], c['scene_filter_status'], c['scene_gallery'], c['scene_gallery_index_map_state'], c['propagate_masks_button']],
+            outputs=[c['scenes_state'], c['scene_filter_status'], c['scene_gallery'], c['scene_gallery_index_map_state'], c['propagate_masks_button'], c['total_pages_label'], c['page_number_input']],
         )
 
         def init_scene_gallery(scenes, view, outdir):
             if not scenes:
-                return gr.update(value=[]), []
-            gallery_items, index_map = build_scene_gallery_items(scenes, view, outdir)
-            return gr.update(value=gallery_items), index_map
+                return gr.update(value=[]), [], "/ 1 pages", 1
+            gallery_items, index_map, total_pages = build_scene_gallery_items(scenes, view, outdir)
+            return gr.update(value=gallery_items), index_map, f"/ {total_pages} pages", 1
 
         c['scenes_state'].change(
             init_scene_gallery,
             [c['scenes_state'], c['scene_gallery_view_toggle'], c['extracted_frames_dir_state']],
-            [c['scene_gallery'], c['scene_gallery_index_map_state']]
+            [c['scene_gallery'], c['scene_gallery_index_map_state'], c['total_pages_label'], c['page_number_input']]
         )
 
-        bulk_action_outputs = [c['scenes_state'], c['scene_filter_status'], c['scene_gallery'], c['scene_gallery_index_map_state'], c['propagate_masks_button']]
+        bulk_action_outputs = [c['scenes_state'], c['scene_filter_status'], c['scene_gallery'], c['scene_gallery_index_map_state'], c['propagate_masks_button'], c['total_pages_label'], c['page_number_input']]
 
         bulk_filter_inputs = [c['scenes_state'], c['scene_mask_area_min_input'], c['scene_face_sim_min_input'],
                               c['scene_confidence_min_input'], c['enable_face_filter_input'], c['extracted_frames_dir_state'], c['scene_gallery_view_toggle']]
-        
+
         for comp in [c['scene_mask_area_min_input'], c['scene_face_sim_min_input'], c['scene_confidence_min_input']]:
             comp.release(self.on_apply_bulk_scene_filters_extended, bulk_filter_inputs, bulk_action_outputs)
 
