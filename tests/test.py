@@ -543,7 +543,7 @@ class TestSceneLogic:
                 f.write('') # Create an empty file
 
         ui = app.EnhancedAppUI(config=test_config, logger=MagicMock(), progress_queue=MagicMock(), cancel_event=MagicMock(), thumbnail_manager=MagicMock())
-        scenes, _, _, _, _ = ui.on_apply_bulk_scene_filters_extended(
+        scenes, _, _, _, _, _, _ = ui.on_apply_bulk_scene_filters_extended(
             scenes=sample_scenes,
             min_mask_area=10.0,
             min_face_sim=0.5,
@@ -641,32 +641,76 @@ class TestVideo:
 class TestModels:
     def setup_method(self):
         self.logger = MagicMock()
+        # Create a mock registry for testing purposes.
+        # In a real scenario, the CompositionRoot would create this.
+        self.mock_registry = app.ModelRegistry(logger=self.logger)
+        app.model_registry = self.mock_registry # Inject mock registry
+
     @patch('app.download_model')
     @patch('app.gdino_load_model')
     @patch('app.resolve_grounding_dino_config')
-    def test_get_grounding_dino_model_uses_resolver(self, mock_resolve_config, mock_gdino_load_model, mock_download):
+    def test_get_grounding_dino_model_with_registry(self, mock_resolve_config, mock_gdino_load_model, mock_download):
         """
-        Tests that get_grounding_dino_model uses the path returned by the resolver.
+        Tests that get_grounding_dino_model uses the model registry and the path resolver.
         """
-        app._dino_model_cache = None
         fake_resolved_path = "/resolved/path/to/config.py"
         mock_resolve_config.return_value = fake_resolved_path
+        mock_model = MagicMock()
+        mock_gdino_load_model.return_value = mock_model
 
-        app.get_grounding_dino_model(
-            gdino_config_path="some_config.py",
-            gdino_checkpoint_path="models/groundingdino_swint_ogc.pth",
-            models_path="models",
-            grounding_dino_url="http://fake.url/model.pth",
-            user_agent="test-agent",
-            retry_params=(3, (1, 2, 3)),
-            device="cpu",
-            logger=self.logger
-        )
+        # Spy on the registry's get_or_load method
+        with patch.object(self.mock_registry, 'get_or_load', side_effect=self.mock_registry.get_or_load) as mock_get_or_load:
+            # First call - should trigger loading
+            model1 = app.get_grounding_dino_model(
+                gdino_config_path="some_config.py",
+                gdino_checkpoint_path="models/groundingdino_swint_ogc.pth",
+                models_path="models",
+                grounding_dino_url="http://fake.url/model.pth",
+                user_agent="test-agent",
+                retry_params=(3, (1, 2, 3)),
+                device="cpu",
+                logger=self.logger
+            )
+            # Second call - should be cached
+            model2 = app.get_grounding_dino_model(
+                gdino_config_path="some_config.py",
+                gdino_checkpoint_path="models/groundingdino_swint_ogc.pth",
+                models_path="models",
+                grounding_dino_url="http://fake.url/model.pth",
+                user_agent="test-agent",
+                retry_params=(3, (1, 2, 3)),
+                device="cpu",
+                logger=self.logger
+            )
 
-        mock_resolve_config.assert_called_once_with("some_config.py")
-        mock_gdino_load_model.assert_called_once()
-        passed_config_path = mock_gdino_load_model.call_args.kwargs['model_config_path']
-        assert passed_config_path == fake_resolved_path
+            assert model1 is mock_model
+            assert model2 is mock_model # Should be the same instance
+            # get_or_load should be called, but the loader inside it should only run once.
+            assert mock_get_or_load.call_count == 2
+            mock_resolve_config.assert_called_once_with("some_config.py")
+            mock_gdino_load_model.assert_called_once() # Loader function called only once
+            passed_config_path = mock_gdino_load_model.call_args.kwargs['model_config_path']
+            assert passed_config_path == fake_resolved_path
+
+    def test_get_person_detector_with_registry(self):
+        """
+        Tests that get_person_detector uses the model registry for caching.
+        """
+        mock_detector_instance = MagicMock(spec=app.PersonDetector)
+
+        with patch('app.PersonDetector', return_value=mock_detector_instance) as mock_person_detector_class:
+            with patch.object(self.mock_registry, 'get_or_load', side_effect=self.mock_registry.get_or_load) as mock_get_or_load:
+                # First call
+                detector1 = app.get_person_detector("yolo.pt", "cpu", 640, 0.5, self.logger)
+                # Second call
+                detector2 = app.get_person_detector("yolo.pt", "cpu", 640, 0.5, self.logger)
+
+                assert detector1 is mock_detector_instance
+                assert detector2 is mock_detector_instance
+                # The loader function (and thus the class constructor) should only be called once.
+                mock_person_detector_class.assert_called_once()
+                # get_or_load is called twice, but the loader fn within it only executes on the first call.
+                assert mock_get_or_load.call_count == 2
 
 class TestVideoManager:
     @patch('app.ytdlp')

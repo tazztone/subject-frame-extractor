@@ -1774,6 +1774,50 @@ class ThumbnailManager:
 
 # --- MODEL LOADING & MANAGEMENT ---
 
+class ModelRegistry:
+    """A thread-safe, lazy-loading registry for ML models."""
+    def __init__(self, logger: Optional['AppLogger'] = None):
+        """Initializes the ModelRegistry.
+
+        Args:
+            logger: An optional logger instance.
+        """
+        self._models: Dict[str, Any] = {}
+        self._locks: Dict[str, threading.Lock] = defaultdict(threading.Lock)
+        self.logger = logger or logging.getLogger(__name__) # Fallback to standard logger
+
+    def get_or_load(self, key: str, loader_fn: Callable[[], Any]) -> Any:
+        """
+        Retrieves a model from the registry, loading it if it's the first time.
+
+        This method ensures that the loader function is called only once per key,
+        even if multiple threads request the same model concurrently.
+
+        Args:
+            key: A unique identifier for the model.
+            loader_fn: A zero-argument function that loads and returns the model.
+
+        Returns:
+            The loaded model instance.
+        """
+        # Double-checked locking for thread-safe lazy initialization
+        if key not in self._models:
+            with self._locks[key]:
+                if key not in self._models:
+                    if self.logger:
+                        self.logger.info(f"Loading model '{key}' for the first time...")
+                    self._models[key] = loader_fn()
+                    if self.logger:
+                        self.logger.success(f"Model '{key}' loaded successfully.")
+        return self._models[key]
+
+    def clear(self):
+        """Removes all cached models from the registry."""
+        if self.logger:
+            self.logger.info("Clearing all models from the registry.")
+        self._models.clear()
+        # The locks in defaultdict don't need explicit clearing.
+
 def _compute_sha256(path: Path) -> str:
     """
     Computes the SHA256 hash of a file.
@@ -1899,49 +1943,50 @@ def get_face_landmarker(model_path: str, logger: 'AppLogger') -> vision.FaceLand
         logger.error(f"Could not initialize MediaPipe face landmarker model. Error: {e}", component="face_landmarker")
         raise RuntimeError("Could not initialize MediaPipe face landmarker model.") from e
 
-@lru_cache(maxsize=2)
 def get_face_analyzer(model_name: str, models_path: str, det_size_tuple: tuple, logger: 'AppLogger', device: str = 'cpu') -> 'FaceAnalysis':
     """
-    Loads and caches an InsightFace FaceAnalysis model.
-
+    Loads and caches an InsightFace FaceAnalysis model using the model registry.
     This function is decorated with `lru_cache` to ensure that a model with
     the same parameters is only loaded once.
-
     Args:
         model_name: The name of the InsightFace model (e.g., "buffalo_l").
         models_path: The root directory for storing models.
         det_size_tuple: A tuple specifying the detection size (width, height).
         logger: The application logger.
         device: The device to run the model on ('cuda' or 'cpu').
-
     Returns:
         An initialized FaceAnalysis instance.
-
     Raises:
         RuntimeError: If the model fails to initialize, even with a CPU fallback.
     """
     from insightface.app import FaceAnalysis
-    logger.info(f"Loading or getting cached face model: {model_name} on device: {device}")
-    try:
-        is_cuda = device == 'cuda'
-        providers = (['CUDAExecutionProvider', 'CPUExecutionProvider'] if is_cuda else ['CPUExecutionProvider'])
-        analyzer = FaceAnalysis(name=model_name, root=models_path, providers=providers)
-        analyzer.prepare(ctx_id=0 if is_cuda else -1, det_size=det_size_tuple)
-        logger.success(f"Face model loaded with {'CUDA' if is_cuda else 'CPU'}.")
-        return analyzer
-    except Exception as e:
-        if "out of memory" in str(e) and device == 'cuda':
-            torch.cuda.empty_cache()
-            logger.warning("CUDA OOM, retrying with CPU...")
-            try:
-                # Retry with CPU
-                analyzer = FaceAnalysis(name=model_name, root=models_path,
-                                      providers=['CPUExecutionProvider'])
-                analyzer.prepare(ctx_id=-1, det_size=det_size_tuple)
-                return analyzer
-            except Exception as cpu_e:
-                logger.error(f"CPU fallback also failed: {cpu_e}")
-        raise RuntimeError(f"Could not initialize face analysis model. Error: {e}") from e
+    # The key includes all parameters that affect the loaded model.
+    model_key = f"face_analyzer_{model_name}_{device}_{det_size_tuple}"
+
+    def _loader():
+        logger.info(f"Loading face model: {model_name} on device: {device}")
+        try:
+            is_cuda = device == 'cuda'
+            providers = (['CUDAExecutionProvider', 'CPUExecutionProvider'] if is_cuda else ['CPUExecutionProvider'])
+            analyzer = FaceAnalysis(name=model_name, root=models_path, providers=providers)
+            analyzer.prepare(ctx_id=0 if is_cuda else -1, det_size=det_size_tuple)
+            logger.success(f"Face model loaded with {'CUDA' if is_cuda else 'CPU'}.")
+            return analyzer
+        except Exception as e:
+            if "out of memory" in str(e) and device == 'cuda':
+                torch.cuda.empty_cache()
+                logger.warning("CUDA OOM, retrying with CPU...")
+                try:
+                    # Retry with CPU
+                    analyzer = FaceAnalysis(name=model_name, root=models_path,
+                                          providers=['CPUExecutionProvider'])
+                    analyzer.prepare(ctx_id=-1, det_size=det_size_tuple)
+                    return analyzer
+                except Exception as cpu_e:
+                    logger.error(f"CPU fallback also failed: {cpu_e}")
+            raise RuntimeError(f"Could not initialize face analysis model. Error: {e}") from e
+
+    return model_registry.get_or_load(model_key, _loader)
 
 class PersonDetector:
     """A wrapper for the YOLO person detection model."""
@@ -2004,7 +2049,6 @@ class PersonDetector:
                 out.append({"bbox": [x1, y1, x2, y2], "conf": conf, "type": "yolo"})
         return out
 
-@lru_cache(maxsize=4)
 def get_person_detector(model_path_str: str, device: str, imgsz: int, conf: float, logger: 'AppLogger') -> 'PersonDetector':
     """
     Factory and registry function for the YOLO person detector.
@@ -2020,13 +2064,17 @@ def get_person_detector(model_path_str: str, device: str, imgsz: int, conf: floa
     Returns:
         An initialized PersonDetector instance.
     """
-    try:
-        logger.info(f"Loading YOLO model: {Path(model_path_str).name} (first use)", component="person_detector")
-        return PersonDetector(logger=logger, model_path=Path(model_path_str), imgsz=imgsz, conf=conf, device=device)
-    except Exception as e:
-        logger.warning(f"Primary YOLO detector '{model_path_str}' failed to load, attempting fallback to yolo11s.pt. Error: {e}", component="person_detector")
-        # Fallback to a smaller, more reliable model if the primary one fails
-        return get_person_detector(model_path_str="yolo11s.pt", device=device, imgsz=imgsz, conf=conf, logger=logger)
+    model_key = f"person_detector_{Path(model_path_str).name}_{device}_{imgsz}_{conf}"
+
+    def _loader():
+        try:
+            return PersonDetector(logger=logger, model_path=Path(model_path_str), imgsz=imgsz, conf=conf, device=device)
+        except Exception as e:
+            logger.warning(f"Primary YOLO detector '{model_path_str}' failed to load, attempting fallback to yolo11s.pt. Error: {e}", component="person_detector")
+            # Fallback to a smaller, more reliable model if the primary one fails
+            return get_person_detector(model_path_str="yolo11s.pt", device=device, imgsz=imgsz, conf=conf, logger=logger)
+
+    return model_registry.get_or_load(model_key, _loader)
 
 
 def resolve_grounding_dino_config(config_path: str) -> str:
@@ -2053,14 +2101,12 @@ def resolve_grounding_dino_config(config_path: str) -> str:
             "Ensure the 'groundingdino-py' package is installed correctly and the config file exists within it."
         )
 
-@lru_cache(maxsize=2)
 def get_grounding_dino_model(gdino_config_path: str, gdino_checkpoint_path: str, models_path: str,
                              grounding_dino_url: str, user_agent: str, retry_params: tuple,
                              device: str, logger: Optional['AppLogger'] = None) -> Optional[torch.nn.Module]:
     """
     Factory and registry function for the GroundingDINO model.
     Uses the global model_registry to ensure lazy loading and caching.
-
     Args:
         gdino_config_path: Path to the model's configuration file.
         gdino_checkpoint_path: Path to the model's checkpoint file.
@@ -2070,37 +2116,39 @@ def get_grounding_dino_model(gdino_config_path: str, gdino_checkpoint_path: str,
         retry_params: A tuple of (max_attempts, backoff_seconds) for retries.
         device: The device to run the model on.
         logger: The application logger.
-
     Returns:
         The initialized GroundingDINO model, or None if loading fails.
     """
-    _logger = logger or AppLogger(config=Config())
-    _logger.info("Loading GroundingDINO model (first use)...", component="grounding")
-    error_handler = ErrorHandler(_logger, *retry_params)
-    try:
-        models_dir = Path(models_path)
-        models_dir.mkdir(parents=True, exist_ok=True)
+    model_key = f"grounding_dino_{Path(gdino_checkpoint_path).name}_{device}"
 
-        config_file_path = gdino_config_path or Config().paths.grounding_dino_config
-        config_path = resolve_grounding_dino_config(config_file_path)
-        ckpt_path = Path(gdino_checkpoint_path)
-        if not ckpt_path.is_absolute():
-            ckpt_path = models_dir / ckpt_path.name
+    def _loader():
+        _logger = logger or AppLogger(config=Config())
+        error_handler = ErrorHandler(_logger, *retry_params)
+        try:
+            models_dir = Path(models_path)
+            models_dir.mkdir(parents=True, exist_ok=True)
 
-        download_model(grounding_dino_url, ckpt_path, "GroundingDINO Swin-T model",
-                       _logger, error_handler, user_agent,
-                       expected_sha256=Config().grounding_dino_sha256)
+            config_file_path = gdino_config_path or Config().paths.grounding_dino_config
+            config_path = resolve_grounding_dino_config(config_file_path)
+            ckpt_path = Path(gdino_checkpoint_path)
+            if not ckpt_path.is_absolute():
+                ckpt_path = models_dir / ckpt_path.name
 
-        model = gdino_load_model(
-            model_config_path=config_path,
-            model_checkpoint_path=str(ckpt_path),
-            device=device
-        )
-        _logger.success("GroundingDINO model loaded successfully", component="grounding", custom_fields={'model_path': str(ckpt_path)})
-        return model
-    except Exception as e:
-        _logger.error("Grounding DINO model loading failed.", component="grounding", exc_info=True)
-        return None # Return None on failure
+            download_model(grounding_dino_url, ckpt_path, "GroundingDINO Swin-T model",
+                           _logger, error_handler, user_agent,
+                           expected_sha256=Config().grounding_dino_sha256)
+
+            model = gdino_load_model(
+                model_config_path=config_path,
+                model_checkpoint_path=str(ckpt_path),
+                device=device
+            )
+            return model
+        except Exception as e:
+            _logger.error("Grounding DINO model loading failed.", component="grounding", exc_info=True)
+            return None # Return None on failure
+
+    return model_registry.get_or_load(model_key, _loader)
 
 def predict_grounding_dino(model: torch.nn.Module, image_tensor: torch.Tensor, caption: str,
                            box_threshold: float, text_threshold: float, device: str) -> tuple:
@@ -2123,7 +2171,6 @@ def predict_grounding_dino(model: torch.nn.Module, image_tensor: torch.Tensor, c
         return gdino_predict(model=model, image=image_tensor.to(device), caption=caption,
                              box_threshold=float(box_threshold), text_threshold=float(text_threshold))
 
-@lru_cache(maxsize=4)
 def get_dam4sam_tracker(model_name: str, models_path: str, model_urls_tuple: tuple, user_agent: str,
                         retry_params: tuple, logger: 'AppLogger', device: str) -> Optional['DAM4SAMTracker']:
     """
@@ -2144,45 +2191,45 @@ def get_dam4sam_tracker(model_name: str, models_path: str, model_urls_tuple: tup
     """
     model_urls = dict(model_urls_tuple)
     selected_name = model_name or Config().default_dam4sam_model_name or next(iter(model_urls.keys()))
+    model_key = f"dam4sam_tracker_{selected_name}_{device}"
 
-    logger.info(f"Loading DAM4SAM model: {selected_name} (first use)", component="dam4sam")
-    error_handler = ErrorHandler(logger, *retry_params)
+    def _loader():
+        error_handler = ErrorHandler(logger, *retry_params)
 
-    if device != 'cuda':
-        logger.error("DAM4SAM requires CUDA but it's not available.")
-        return None
+        if device != 'cuda':
+            logger.error("DAM4SAM requires CUDA but it's not available.")
+            return None
 
-    error_handler = ErrorHandler(logger, *retry_params)
-    try:
-        models_dir = Path(models_path)
-        models_dir.mkdir(parents=True, exist_ok=True)
-        if selected_name not in model_urls:
-            raise ValueError(f"Unknown DAM4SAM model: {selected_name}")
+        try:
+            models_dir = Path(models_path)
+            models_dir.mkdir(parents=True, exist_ok=True)
+            if selected_name not in model_urls:
+                raise ValueError(f"Unknown DAM4SAM model: {selected_name}")
 
-        url = model_urls[selected_name]
-        expected_sha256 = Config().dam4sam_sha256.get(selected_name)
-        checkpoint_path = models_dir / Path(url).name
+            url = model_urls[selected_name]
+            expected_sha256 = Config().dam4sam_sha256.get(selected_name)
+            checkpoint_path = models_dir / Path(url).name
 
-        download_model(url, checkpoint_path, f"DAM4SAM {selected_name}", logger, error_handler, user_agent,
-                       expected_sha256=expected_sha256)
+            download_model(url, checkpoint_path, f"DAM4SAM {selected_name}", logger, error_handler, user_agent,
+                           expected_sha256=expected_sha256)
 
-        actual_path, _ = dam_utils.determine_tracker(selected_name)
-        if not Path(actual_path).exists():
-            Path(actual_path).parent.mkdir(exist_ok=True, parents=True)
-            shutil.copy(checkpoint_path, actual_path)
+            actual_path, _ = dam_utils.determine_tracker(selected_name)
+            if not Path(actual_path).exists():
+                Path(actual_path).parent.mkdir(exist_ok=True, parents=True)
+                shutil.copy(checkpoint_path, actual_path)
 
-        tracker = DAM4SAMTracker(selected_name)
-        logger.success(f"DAM4SAM tracker {selected_name} initialized.", component="dam4sam")
-        return tracker
-    except Exception as e:
-        logger.error(f"Failed to initialize DAM4SAM tracker {selected_name}: {str(e)}", exc_info=True)
-        if torch.cuda.is_available():
-            logger.error(f"CUDA memory: {torch.cuda.memory_allocated()/1024**3:.1f}GB allocated, {torch.cuda.memory_reserved()/1024**3:.1f}GB reserved")
-            torch.cuda.empty_cache()
-        return None
+            tracker = DAM4SAMTracker(selected_name)
+            return tracker
+        except Exception as e:
+            logger.error(f"Failed to initialize DAM4SAM tracker {selected_name}: {str(e)}", exc_info=True)
+            if torch.cuda.is_available():
+                logger.error(f"CUDA memory: {torch.cuda.memory_allocated()/1024**3:.1f}GB allocated, {torch.cuda.memory_reserved()/1024**3:.1f}GB reserved")
+                torch.cuda.empty_cache()
+            return None
+
+    return model_registry.get_or_load(model_key, _loader)
 
 
-@lru_cache(maxsize=2)
 def get_lpips_metric(model_name: str = 'alex', device: str = 'cpu') -> torch.nn.Module:
     """
     Factory and registry function for the LPIPS model.
@@ -4694,10 +4741,10 @@ def get_scene_status_text(scenes_list: list['Scene']) -> tuple[str, gr.update]:
         return "No scenes loaded.", gr.update(interactive=False)
 
 
-    included_scenes = [s for s in scenes_list if s.get('status') == 'included']
+    included_scenes = [s for s in scenes_list if s.status == 'included']
     # A scene is ready if it's included AND has a valid seed result.
     ready_for_propagation_count = sum(
-        1 for s in included_scenes if s.get('seed_result') and s['seed_result'].get('bbox')
+        1 for s in included_scenes if s.seed_result and s.seed_result.get('bbox')
     )
 
     total_count = len(scenes_list)
@@ -4706,7 +4753,7 @@ def get_scene_status_text(scenes_list: list['Scene']) -> tuple[str, gr.update]:
 
     rejection_counts = Counter()
     for scene in scenes_list:
-        if scene.status == 'excluded':
+        if scene.status == 'excluded' and scene.rejection_reasons:
             reasons = scene.rejection_reasons
             if reasons:
                 rejection_counts.update(reasons)
@@ -4758,14 +4805,11 @@ def toggle_scene_status(scenes_list: list['Scene'], selected_shot_id: int, new_s
         status_text, button_update = get_scene_status_text(scenes_list)
         return scenes_list, status_text, "No scene selected.", button_update
 
-    scene_idx = next((i for i, s in enumerate(scenes_list) if s['shot_id'] == selected_shot_id), None)
+    scene_to_update = next((s for s in scenes_list if s.shot_id == selected_shot_id), None)
 
-    if scene_idx is not None:
-        scene_state = SceneState(scenes_list[scene_idx])
-        if new_status == "included":
-            scene_state.include()
-        else:
-            scene_state.exclude()
+    if scene_to_update:
+        scene_to_update.status = new_status
+        scene_to_update.manual_status_change = True
         save_scene_seeds(scenes_list, output_folder, logger)
         status_text, button_update = get_scene_status_text(scenes_list)
         return (scenes_list, status_text, f"Scene {selected_shot_id} status set to {new_status}.", button_update)
@@ -6799,8 +6843,7 @@ class EnhancedAppUI(AppUI):
     def on_apply_bulk_scene_filters_extended(self, scenes, min_mask_area, min_face_sim, min_confidence, enable_face_filter, output_folder, view):
         if not scenes:
             status_text, button_update = get_scene_status_text(scenes)
-            return [], status_text, gr.update(), [], button_update
-
+            return [], status_text, gr.update(), [], button_update, "/ 1 pages", 1
 
         self.logger.info("Applying bulk scene filters", extra={"min_mask_area": min_mask_area, "min_face_sim": min_face_sim, "min_confidence": min_confidence, "enable_face_filter": enable_face_filter})
 
@@ -6827,9 +6870,9 @@ class EnhancedAppUI(AppUI):
                 scene.status = 'included'
 
         save_scene_seeds(scenes, output_folder, self.logger)
-        gallery_items, new_index_map = build_scene_gallery_items(scenes, view, output_folder)
+        gallery_items, new_index_map, total_pages = build_scene_gallery_items(scenes, view, output_folder, page_num=1)
         status_text, button_update = get_scene_status_text(scenes)
-        return scenes, status_text, gr.update(value=gallery_items), new_index_map, button_update
+        return scenes, status_text, gr.update(value=gallery_items), new_index_map, button_update, f"/ {total_pages} pages", 1
 
     def _setup_bulk_scene_handlers(self):
         c = self.components
@@ -7198,8 +7241,6 @@ class EnhancedAppUI(AppUI):
         face_match_update = gr.update(value=face_match_default)
         if all_frames_data:
             slider_defaults_dict = {key: val for key, val in zip(slider_keys, slider_default_values)}
-            # Reset the deduplication method to its default
-            slider_defaults_dict['dedup_method'] = "pHash"
 
             filter_event = FilterEvent(
                 all_frames_data=all_frames_data,
@@ -7535,6 +7576,10 @@ class EnhancedAppUI(AppUI):
             return f"Error during dry run: {e}"
 
 # --- COMPOSITION & MAIN ---
+
+# Global instance of the model registry, initialized by CompositionRoot.
+model_registry: Optional['ModelRegistry'] = None
+
 def cleanup_models():
     """Clears all global model caches and releases GPU memory.
 
@@ -7542,11 +7587,10 @@ def cleanup_models():
     application shutdown or when re-initializing models, to prevent memory
     leaks and unexpected behavior from stale cached objects.
     """
-    get_face_analyzer.cache_clear()
-    get_person_detector.cache_clear()
-    get_grounding_dino_model.cache_clear()
-    get_dam4sam_tracker.cache_clear()
-    get_lpips_metric.cache_clear()
+    global model_registry
+    if model_registry:
+        model_registry.clear()
+
     torch.cuda.empty_cache()
     gc.collect()
 
@@ -7560,8 +7604,11 @@ class CompositionRoot:
     """
     def __init__(self):
         """Initializes the CompositionRoot and creates core services."""
+        global model_registry
         self.config = Config()
         self.logger = AppLogger(config=self.config)
+        self.model_registry = ModelRegistry(logger=self.logger)
+        model_registry = self.model_registry # Assign to global instance
         self.thumbnail_manager = ThumbnailManager(self.logger, self.config)
         self.progress_queue = Queue()
         self.cancel_event = threading.Event()
