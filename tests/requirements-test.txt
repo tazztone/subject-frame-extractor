@@ -4,3 +4,6 @@ numpy
 Pillow
 scikit-image
 pytest
+opencv-python
+lpips
+imagehash

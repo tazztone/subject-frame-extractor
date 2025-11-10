@@ -1,0 +1,104 @@
+# Bug Fixes for Frame Extractor
+
+## Issue 1: "🔬 Propagate Masks" Button Not Starting
+**Problem:** The `run_propagation_wrapper` function returns only 1 value but UI expects 156 output values.
+
+**Root Cause:** The function doesn't return the proper dictionary structure expected by Gradio's output components.
+
+**Fix:** Update the return statement in `run_propagation_wrapper` (around line 3500):
+
+```python
+# BEFORE (line ~3500):
+def run_propagation_wrapper(self, scenes, *args, progress=gr.Progress(track_tqdm=True)):
+    # ... existing code ...
+    try:
+        for result in execute_propagation(event, self.progress_queue, self.cancel_event, self.app_logger, self.config, self.thumbnail_manager, self.cuda_available, progress=progress):
+            if isinstance(result, dict):
+                if self.cancel_event.is_set():
+                    return {"unified_log": "Propagation cancelled."}
+                if result.get("done"):
+                    return {"unified_log": result.get("log", "✅ Propagation completed successfully."),
+                            "analysis_output_dir_state": result.get('output_dir', "")}
+        return {"unified_log": "❌ Propagation failed."}
+    except Exception as e: raise
+
+# AFTER (Fixed):
+def run_propagation_wrapper(self, scenes, *args, progress=gr.Progress(track_tqdm=True)):
+    # ... existing code ...
+    try:
+        for result in execute_propagation(event, self.progress_queue, self.cancel_event, self.app_logger, self.config, self.thumbnail_manager, self.cuda_available, progress=progress):
+            if isinstance(result, dict):
+                if self.cancel_event.is_set():
+                    return {"unified_log": "Propagation cancelled."}
+                if result.get("done"):
+                    # Return proper dictionary with all required keys
+                    return {
+                        "unified_log": result.get("log", "✅ Propagation completed successfully."),
+                        "analysis_output_dir_state": result.get('output_dir', ""),
+                        "analysis_metadata_path_state": str(Path(result.get('output_dir', "")) / "metadata.jsonl"),
+                        "filtering_tab": gr.update(interactive=True),
+                        "main_tabs": gr.update(selected=4)  # Switch to filtering tab
+                    }
+        return {"unified_log": "❌ Propagation failed."}
+    except Exception as e: raise
+```
+
+## Issue 2: "No pre-computed YOLO boxes found" Warning
+**Problem:** YOLO detections aren't being stored on scenes during pre-analysis, causing fallback detection runs.
+
+**Root Cause:** The pre-analysis phase doesn't persist YOLO detection results to the scene objects.
+
+**Fix:** Update the `_recompute_single_preview` function (around line 2550) to store YOLO results:
+
+```python
+# Add this after line ~2580 in _recompute_single_preview:
+def _recompute_single_preview(scene: dict, masker: SubjectMasker, overrides: dict, thumbnail_manager, logger):
+    # ... existing code until bbox, details = masker.get_seed_for_frame(...) ...
+    
+    bbox, details = masker.get_seed_for_frame(thumb_rgb, seed_config=seed_config, scene=scene)
+    
+    # NEW: Store YOLO detections on the scene to avoid re-computation
+    if hasattr(masker.seed_selector, 'person_detector') and masker.seed_selector.person_detector:
+        if not scene.get('yolo_detections'):
+            try:
+                yolo_boxes = masker.seed_selector.person_detector.detect_boxes(thumb_rgb)
+                scene['yolo_detections'] = yolo_boxes
+                logger.info(f"Stored {len(yolo_boxes)} YOLO detections for scene {scene.get('shot_id')}")
+            except Exception as e:
+                logger.warning(f"Failed to pre-compute YOLO boxes for scene {scene.get('shot_id')}: {e}")
+    
+    # ... rest of existing code ...
+```
+
+## Additional Improvements
+
+1. **Better Error Handling in UI Returns:**
+```python
+# In run_propagation_wrapper, add error handling:
+except Exception as e:
+    self.app_logger.error("Propagation failed", exc_info=True)
+    return {
+        "unified_log": f"❌ Propagation failed: {str(e)}",
+        "analysis_output_dir_state": "",
+    }
+```
+
+2. **Pre-populate YOLO Results in Pre-Analysis:**
+Update the pre-analysis pipeline to store YOLO detections immediately:
+
+```python
+# In execute_pre_analysis (around line 2990), after masker.get_seed_for_frame:
+bbox, details = masker.get_seed_for_frame(thumb_rgb, seed_config=scene.seed_config or params, scene=scene)
+
+# Store the YOLO detections that were computed during seeding
+if hasattr(masker.seed_selector, '_last_yolo_boxes'):
+    scene['yolo_detections'] = masker.seed_selector._last_yolo_boxes
+```
+
+## Testing the Fixes
+
+1. **For Issue 1:** Click "🔬 Propagate Masks" - it should now start properly and switch to the filtering tab when complete.
+
+2. **For Issue 2:** The warning should appear much less frequently, only on first analysis of scenes. Subsequent operations should use cached YOLO results.
+
+These fixes address both the immediate crash and the performance issue with repeated YOLO detection runs.
