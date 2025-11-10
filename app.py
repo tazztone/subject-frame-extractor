@@ -4532,8 +4532,16 @@ def get_scene_status_text(scenes_list: list['Scene']) -> tuple[str, gr.update]:
     if not scenes_list:
         return "No scenes loaded.", gr.update(interactive=False)
 
-    included_count = sum(1 for s in scenes_list if s.status == 'included')
+
+    included_scenes = [s for s in scenes_list if s.get('status') == 'included']
+    # A scene is ready if it's included AND has a valid seed result.
+    ready_for_propagation_count = sum(
+        1 for s in included_scenes if s.get('seed_result') and s['seed_result'].get('bbox')
+    )
+
     total_count = len(scenes_list)
+    included_count = len(included_scenes)
+
 
     rejection_counts = Counter()
     for scene in scenes_list:
@@ -4548,8 +4556,8 @@ def get_scene_status_text(scenes_list: list['Scene']) -> tuple[str, gr.update]:
         reasons_summary = ", ".join([f"{reason}: {count}" for reason, count in rejection_counts.items()])
         status_text += f" (Rejected: {reasons_summary})"
 
-    button_text = f"🔬 Propagate Masks on {included_count} Kept Scenes"
-    return status_text, gr.update(value=button_text, interactive=included_count > 0)
+    button_text = f"🔬 Propagate Masks on {ready_for_propagation_count} Ready Scenes"
+    return status_text, gr.update(value=button_text, interactive=ready_for_propagation_count > 0)
 
 def draw_boxes_preview(img: np.ndarray, boxes_xyxy: list[list[int]], cfg: 'Config') -> np.ndarray:
     """
@@ -6326,18 +6334,21 @@ class EnhancedAppUI(AppUI):
             A tuple of Gradio updates to populate the scene editor.
         """
         sel_idx = getattr(event, "index", None) if event else None
+        status_text, button_update = get_scene_status_text(scenes)
+
         if sel_idx is None:
             return self._empty_selection_response(scenes, indexmap)
 
-        status_text, button_update = get_scene_status_text(scenes)
-        # validate selection
-        if not scenes or not indexmap or not (0 <= sel_idx < len(indexmap)):
-            self.logger.error(f"Invalid gallery index: {sel_idx}, max: {len(indexmap)-1}")
+        # Validate selection to prevent index errors and handle empty states gracefully.
+        # This ensures that a selection in any gallery view ("Kept", "Rejected", "All")
+        # correctly maps to a valid scene.
+        if not (scenes and indexmap and 0 <= sel_idx < len(indexmap)):
+            self.logger.warning(f"Invalid gallery selection. Index: {sel_idx}, Map size: {len(indexmap) if indexmap else 'N/A'}")
             return self._empty_selection_response(scenes, indexmap)
 
         scene_idx_in_state = indexmap[sel_idx]
         if not (0 <= scene_idx_in_state < len(scenes)):
-            self.logger.error(f"Invalid scene index from map: {scene_idx_in_state}, max: {len(scenes)-1}")
+            self.logger.error(f"Scene index map is out of sync. Mapped index {scene_idx_in_state} is out of bounds for scenes list (size {len(scenes)}).")
             return self._empty_selection_response(scenes, indexmap)
 
         scene = scenes[scene_idx_in_state]
