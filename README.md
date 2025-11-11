@@ -77,18 +77,18 @@ Before installation, ensure you have:
 
 ## 💻 Installation
 
-1. **Clone the repository and submodules:**
-   ```bash
-   git clone --recurse-submodules https://github.com/tazztone/subject-frame-extractor.git
-   cd subject-frame-extractor
-   ```
-2. **Install Python dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
-3. **Run the application:**
+1.  **Clone the repository:**
     ```bash
-    python app.py
+    git clone https://github.com/tazztone/subject-frame-extractor.git
+    cd subject-frame-extractor
+    ```
+2.  **Initialize Submodules:**
+    ```bash
+    git submodule update --init --recursive
+    ```
+3.  **Install Dependencies:**
+    ```bash
+    pip install -r requirements.txt
     ```
 
 ## 📖 How to Use
@@ -284,15 +284,10 @@ This project builds upon several excellent open-source projects:
 
 - 🐛 **Bug Reports**: [Open an issue](https://github.com/tazztone/subject-frame-extractor/issues)
 - 💡 **Feature Requests**: [Start a discussion](https://github.com/tazztone/subject-frame-extractor/discussions)
-- 💡 **Feature Requests**: [Start a discussion](https://github.com/tazztone/subject-frame-extractor/discussions)
-
-## 📜 Documentation
-
-For a detailed explanation of the `app.py` script, including its classes, methods, and configuration, please see the [Technical Documentation](TECHNICAL_DOCUMENTATION.md).
+- 📖 **Documentation**: For a deep dive into the technical implementation, see the [Technical Documentation](TECHNICAL_DOCUMENTATION.md).
 
 ---
 
 <p align="center">
   <strong>Built with ❤️ for the computer vision community.</strong>
 </p>
-
