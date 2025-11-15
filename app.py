@@ -311,7 +311,6 @@ class Config(BaseSettings):
         self._validate_paths()
 
     @model_validator(mode='after')
-    @model_validator(mode='after')
     def _validate_config(self) -> 'Config':
         """Validates the entire model after initialization.
 
@@ -541,7 +540,7 @@ class AppLogger:
             raise
         finally:
             duration = (time.time() - t0) * 1000
-            if tracker and not self.cancel_event.is_set():
+            if tracker and not getattr(self, "cancel_event", threading.Event()).is_set():
                 tracker.done_stage(f"{name} complete")
             self.success(f"Done {name} in {duration:.0f}ms", component=component)
 
@@ -1743,11 +1742,18 @@ class SceneState:
 
 
     def reset(self):
-        """Resets the scene to its initial automatically-detected state."""
+        """Resets the scene's bounding box and overrides to their initial state.
+
+        This method reverts any manual changes to the bounding box (`selected_bbox`)
+        back to the automatically detected `initial_bbox`. It also clears any
+        override flags and seeding configurations. The scene's inclusion `status`
+        is intentionally not changed, preserving any explicit inclusion or
+        exclusion choices.
+        """
         self._scene['selected_bbox'] = self._scene.get('initial_bbox')
         self._scene['is_overridden'] = False
         self._scene['seed_config'] = {}
-        self._scene['status'] = 'included'
+        # The 'status' is NOT reset, to preserve any explicit include/exclude action.
         self._scene['manual_status_change'] = False
 
 
@@ -2832,7 +2838,6 @@ def run_ffmpeg_extraction(video_path: str, output_dir: Path, video_info: dict, p
     Raises:
         RuntimeError: If the FFmpeg process fails.
     """
-    log_file_path = output_dir / "ffmpeg_log.txt"
     cmd_base = ['ffmpeg', '-y', '-i', str(video_path), '-hide_banner']
 
     # Use native progress reporting for better performance and reliability
@@ -4562,7 +4567,8 @@ class AnalysisPipeline(Pipeline):
         # TODO: Implement full analysis logic here.
 
         self.logger.success("Image folder analysis complete.")
-        return {"done": True, "metadata_path": str(self.metadata_path), "output_dir": str(self.output_dir)}
+        metadata_path = self.output_dir / "metadata.db"
+        return {"done": True, "metadata_path": str(metadata_path), "output_dir": str(self.output_dir)}
 
     def _run_analysis_loop(self, scenes_to_process: list['Scene'], metrics_to_compute: dict, tracker: Optional['AdvancedProgressTracker'] = None):
         """Orchestrates the parallel processing of frames for metric calculation.
@@ -4736,8 +4742,8 @@ def load_and_prep_filter_data(output_dir: str, get_all_filter_keys: Callable, co
     """
     Loads frame metadata from a SQLite database and prepares it for the filtering UI.
 
-    This function reads the `metadata.jsonl` file line by line, parsing each
-    JSON object into a dictionary. It then extracts the values for each
+    This function connects to the `metadata.db` SQLite database, loads all
+    frame metadata, and then processes it. It extracts the values for each
     filterable metric, calculates histogram data for visualization, and
     returns all the data in a structured format.
 
