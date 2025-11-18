@@ -6346,6 +6346,7 @@ class AppUI:
         self.cancel_event = cancel_event
         self.thumbnail_manager = thumbnail_manager
         self.components, self.cuda_available = {}, torch.cuda.is_available()
+        self.ui_registry = {}
         self.ext_ui_map_keys = ['source_path', 'upload_video', 'method', 'interval', 'nth_frame',
                                 'max_resolution', 'thumb_megapixels', 'scene_detect']
         self.ana_ui_map_keys = [
@@ -6409,6 +6410,10 @@ class AppUI:
         """
         return self.components.get(name)
 
+    def _reg(self, key: str, component: gr.components.Component) -> gr.components.Component:
+        self.ui_registry[key] = component
+        return component
+
     def _create_component(self, name: str, comp_type: str, kwargs: dict) -> gr.components.Component:
         """Creates a Gradio component, stores it, and returns it.
 
@@ -6470,26 +6475,26 @@ class AppUI:
         """Builds the UI components for the 'Frame Extraction' tab."""
         gr.Markdown("### Step 1: Provide a Video Source")
         with gr.Row():
-            with gr.Column(scale=2): self._create_component('source_input', 'textbox', {'label': "Video URL or Local Path", 'placeholder': "Enter YouTube URL or local video file path", 'info': "The application can download videos directly from YouTube or use a video file you have on your computer."})
-            with gr.Column(scale=1): self._create_component('max_resolution', 'dropdown', {'choices': self.MAX_RESOLUTION_CHOICES, 'value': self.config.default_max_resolution, 'label': "Max Download Resolution", 'info': "For YouTube videos, select the maximum resolution to download. 'Maximum available' will get the best quality possible."})
-        self._create_component('upload_video_input', 'file', {'label': "Or Upload a Video File", 'file_types': ["video"], 'type': "filepath"})
+            with gr.Column(scale=2): self._reg('source_path', self._create_component('source_input', 'textbox', {'label': "Video URL or Local Path", 'placeholder': "Enter YouTube URL or local video file path", 'info': "The application can download videos directly from YouTube or use a video file you have on your computer."}))
+            with gr.Column(scale=1): self._reg('max_resolution', self._create_component('max_resolution', 'dropdown', {'choices': self.MAX_RESOLUTION_CHOICES, 'value': self.config.default_max_resolution, 'label': "Max Download Resolution", 'info': "For YouTube videos, select the maximum resolution to download. 'Maximum available' will get the best quality possible."}))
+        self._reg('upload_video', self._create_component('upload_video_input', 'file', {'label': "Or Upload a Video File", 'file_types': ["video"], 'type': "filepath"}))
         gr.Markdown("---"); gr.Markdown("### Step 2: Configure Extraction Method")
 
         with gr.Group(visible=True) as thumbnail_group:
             self.components['thumbnail_group'] = thumbnail_group
             gr.Markdown("**Thumbnail Extraction:** This is the fastest and most efficient way to process your video. It quickly extracts low-resolution, lightweight thumbnails for every frame. This allows you to perform scene analysis, find the best shots, and select your desired frames *before* extracting the final, full-resolution images. This workflow saves significant time and disk space.")
             with gr.Accordion("Advanced Settings", open=False):
-                self._create_component('thumb_megapixels_input', 'slider', {
+                self._reg('thumb_megapixels', self._create_component('thumb_megapixels_input', 'slider', {
                     'label': "Thumbnail Size (MP)", 'minimum': 0.1, 'maximum': 2.0, 'step': 0.1,
                     'value': self.config.default_thumb_megapixels,
                     'info': "Controls the resolution of the extracted thumbnails. Higher values create larger, more detailed thumbnails but increase extraction time and disk usage. 0.5 MP is a good balance for most videos."
-                })
-                self._create_component('ext_scene_detect_input', 'checkbox', {
+                }))
+                self._reg('scene_detect', self._create_component('ext_scene_detect_input', 'checkbox', {
                     'label': "Use Scene Detection",
                     'value': self.config.default_scene_detect,
                     'info': "Automatically detects scene changes in the video. This is highly recommended as it groups frames into logical shots, making it much easier to find the best content in the next step."
-                })
-                self._create_component('method_input', 'dropdown', {
+                }))
+                self._reg('method', self._create_component('method_input', 'dropdown', {
                     'choices': self.METHOD_CHOICES,
                     'value': self.config.default_method,
                     'label': "Frame Selection Method",
@@ -6499,21 +6504,21 @@ class AppUI:
                         - **Every Nth Frame:** Extracts one frame every N decoded frames.
                         - **Nth + Keyframes:** Keeps keyframes plus frames at a regular cadence.
                         - **All:** Extracts every single frame. (Warning: massive disk usage and time)."""
-                })
-                self._create_component('interval_input', 'number', {
+                }))
+                self._reg('interval', self._create_component('interval_input', 'number', {
                     'label': "Interval (seconds)",
                     'value': self.config.default_interval,
                     'minimum': 0.1,
                     'step': 0.1,
                     'visible': self.config.default_method == 'interval'
-                })
-                self._create_component('nth_frame_input', 'number', {
+                }))
+                self._reg('nth_frame', self._create_component('nth_frame_input', 'number', {
                     'label': "N-th Frame Value",
                     'value': self.config.default_nth_frame,
                     'minimum': 1,
                     'step': 1,
                     'visible': self.config.default_method in ['every_nth_frame', 'nth_plus_keyframes']
-                })
+                }))
         gr.Markdown("---"); gr.Markdown("### Step 3: Start Extraction")
         self.components.update({'start_extraction_button': gr.Button("🚀 Start Extraction", variant="primary")})
 
@@ -6523,18 +6528,18 @@ class AppUI:
             with gr.Column(scale=1):
                 gr.Markdown("### 🎯 Step 1: Choose Your Seeding Strategy")
                 gr.Markdown("""This step analyzes each scene to find the best frame and automatically detects people using YOLO. The system will: 1. Find the highest quality frame in each scene 2. Detect all people in that frame 3. Select the best subject based on your chosen strategy 4. Generate a preview with the subject highlighted""")
-                self._create_component('primary_seed_strategy_input', 'radio', {'choices': self.PRIMARY_SEED_STRATEGY_CHOICES, 'value': self.config.default_primary_seed_strategy, 'label': "Primary Best-Frame Selection Strategy", 'info': "Select the main method for identifying the subject in each scene. This initial identification is called the 'best-frame selection'."})
+                self._reg('primary_seed_strategy', self._create_component('primary_seed_strategy_input', 'radio', {'choices': self.PRIMARY_SEED_STRATEGY_CHOICES, 'value': self.config.default_primary_seed_strategy, 'label': "Primary Best-Frame Selection Strategy", 'info': "Select the main method for identifying the subject in each scene. This initial identification is called the 'best-frame selection'."}))
 
                 with gr.Group(visible="By Face" in self.config.default_primary_seed_strategy or "Fallback" in self.config.default_primary_seed_strategy) as face_seeding_group:
                     self.components['face_seeding_group'] = face_seeding_group
                     gr.Markdown("#### 👤 Configure Face Selection")
                     gr.Markdown("This strategy prioritizes finding a specific person. Upload a clear, frontal photo of the person you want to track. The system will analyze each scene to find the frame where this person is most clearly visible and use it as the starting point (the 'best frame').")
                     with gr.Row():
-                        self._create_component('face_ref_img_upload_input', 'file', {'label': "Upload Face Reference Image", 'type': "filepath"})
+                        self._reg('face_ref_img_upload', self._create_component('face_ref_img_upload_input', 'file', {'label': "Upload Face Reference Image", 'type': "filepath"}))
                         self._create_component('face_ref_image', 'image', {'label': "Reference Image", 'interactive': False})
                         with gr.Column():
-                            self._create_component('face_ref_img_path_input', 'textbox', {'label': "Or provide a local file path"})
-                            self._create_component('enable_face_filter_input', 'checkbox', {'label': "Enable Face Similarity (must be checked for face selection)", 'value': self.config.default_enable_face_filter, 'interactive': True, 'visible': "By Face" in self.config.default_primary_seed_strategy or "Fallback" in self.config.default_primary_seed_strategy})
+                            self._reg('face_ref_img_path', self._create_component('face_ref_img_path_input', 'textbox', {'label': "Or provide a local file path"}))
+                            self._reg('enable_face_filter', self._create_component('enable_face_filter_input', 'checkbox', {'label': "Enable Face Similarity (must be checked for face selection)", 'value': self.config.default_enable_face_filter, 'interactive': True, 'visible': "By Face" in self.config.default_primary_seed_strategy or "Fallback" in self.config.default_primary_seed_strategy}))
                     self._create_component('find_people_button', 'button', {'value': "Find People From Video"})
                     with gr.Group(visible=False) as discovered_people_group:
                         self.components['discovered_people_group'] = discovered_people_group
@@ -6547,33 +6552,33 @@ class AppUI:
                     gr.Markdown("This strategy uses a text description to find the subject. It's useful for identifying objects, or people described by their clothing or appearance when a reference photo isn't available.")
                     with gr.Accordion("🔬 Advanced Detection (GroundingDINO)", open=True):
                         gr.Markdown("Use GroundingDINO for text-based object detection with custom prompts.")
-                        self._create_component('text_prompt_input', 'textbox', {'label': "Text Prompt", 'placeholder': "e.g., 'a woman in a red dress'", 'value': self.config.default_text_prompt, 'info': "Describe the main subject to find the best frame (e.g., 'player wearing number 10', 'person in the green shirt')."})
+                        self._reg('text_prompt', self._create_component('text_prompt_input', 'textbox', {'label': "Text Prompt", 'placeholder': "e.g., 'a woman in a red dress'", 'value': self.config.default_text_prompt, 'info': "Describe the main subject to find the best frame (e.g., 'player wearing number 10', 'person in the green shirt')."}))
                         with gr.Row():
-                            self._create_component('box_threshold', 'slider', {'minimum': 0.0, 'maximum': 1.0, 'value': self.config.gdino_box_threshold, 'label': "Box Threshold", 'interactive': True})
-                            self._create_component('text_threshold', 'slider', {'minimum': 0.0, 'maximum': 1.0, 'value': self.config.gdino_text_threshold, 'label': "Text Threshold", 'interactive': True})
+                            self._reg('box_threshold', self._create_component('box_threshold', 'slider', {'minimum': 0.0, 'maximum': 1.0, 'value': self.config.gdino_box_threshold, 'label': "Box Threshold", 'interactive': True}))
+                            self._reg('text_threshold', self._create_component('text_threshold', 'slider', {'minimum': 0.0, 'maximum': 1.0, 'value': self.config.gdino_text_threshold, 'label': "Text Threshold", 'interactive': True}))
 
                 with gr.Group(visible="Prominent Person" in self.config.default_primary_seed_strategy) as auto_seeding_group:
                     self.components['auto_seeding_group'] = auto_seeding_group
                     gr.Markdown("#### 🧑‍🤝‍🧑 Configure Prominent Person Selection")
                     gr.Markdown("This is a simple, fully automatic mode. It uses an object detector (YOLO) to find all people in the scene and then selects one based on a simple rule, like who is largest or most central. It's fast but less precise, as it doesn't use face identity or text descriptions.")
-                    self._create_component('best_frame_strategy_input', 'dropdown', {'choices': self.SEED_STRATEGY_CHOICES, 'value': "Largest Person", 'label': "Selection Method", 'info': "'Largest' picks the person with the biggest bounding box. 'Center-most' picks the person closest to the center. 'Highest Confidence' selects the person with the highest detection confidence. 'Tallest Person' prefers subjects that are standing. 'Area x Confidence' balances size and confidence. 'Rule-of-Thirds' prefers subjects near the thirds lines. 'Edge-avoiding' avoids subjects near the frame's edge. 'Balanced' provides a good mix of area, confidence, and edge-avoidance. 'Best Face' selects the person with the highest quality face detection."})
+                    self._reg('best_frame_strategy', self._create_component('best_frame_strategy_input', 'dropdown', {'choices': self.SEED_STRATEGY_CHOICES, 'value': "Largest Person", 'label': "Selection Method", 'info': "'Largest' picks the person with the biggest bounding box. 'Center-most' picks the person closest to the center. 'Highest Confidence' selects the person with the highest detection confidence. 'Tallest Person' prefers subjects that are standing. 'Area x Confidence' balances size and confidence. 'Rule-of-Thirds' prefers subjects near the thirds lines. 'Edge-avoiding' avoids subjects near the frame's edge. 'Balanced' provides a good mix of area, confidence, and edge-avoidance. 'Best Face' selects the person with the highest quality face detection."}))
 
                 self._create_component('person_radio', 'radio', {'label': "Select Person", 'choices': [], 'visible': False})
 
                 with gr.Accordion("Advanced Settings", open=False):
                     gr.Markdown("These settings control the underlying models and analysis parameters. Adjust them only if you understand their effect.")
-                    self._create_component('pre_analysis_enabled_input', 'checkbox', {'label': 'Enable Pre-Analysis to find best frame', 'value': self.config.default_pre_analysis_enabled, 'info': "Analyzes a subset of frames in each scene to automatically find the highest quality frame to use as the 'best frame' for masking. Highly recommended."})
-                    self._create_component('pre_sample_nth_input', 'number', {'label': 'Sample every Nth thumbnail for pre-analysis', 'value': self.config.default_pre_sample_nth, 'interactive': True, 'info': "For faster pre-analysis, check every Nth frame in a scene instead of all of them. A value of 5 is a good starting point."})
-                    self._create_component('person_detector_model_input', 'dropdown', {'choices': self.PERSON_DETECTOR_MODEL_CHOICES, 'value': self.config.default_person_detector_model, 'label': "Person Detector Model", 'info': "YOLO Model for finding people. 'x' (large) is more accurate but slower; 's' (small) is much faster but may miss people."})
-                    self._create_component('face_model_name_input', 'dropdown', {'choices': self.FACE_MODEL_NAME_CHOICES, 'value': self.config.default_face_model_name, 'label': "Face Recognition Model", 'info': "InsightFace model for face matching. 'l' (large) is more accurate; 's' (small) is faster and uses less memory."})
-                    self._create_component('dam4sam_model_name_input', 'dropdown', {'choices': self.DAM4SAM_MODEL_NAME_CHOICES, 'value': self.config.default_dam4sam_model_name, 'label': "Mask Tracking Model", 'info': "The Segment Anything 2 model used for tracking the subject mask across frames. Larger models (L) are more robust but use more VRAM; smaller models (T) are faster."})
-                    self._create_component('resume_input', 'checkbox', {'label': 'Resume', 'value': self.config.default_resume, 'interactive': True, 'visible': False})
-                    self._create_component('enable_subject_mask_input', 'checkbox', {'label': 'Enable Subject Mask', 'value': self.config.default_enable_subject_mask, 'interactive': True, 'visible': False})
-                    self._create_component('min_mask_area_pct_input', 'slider', {'label': 'Min Mask Area Pct', 'value': self.config.min_mask_area_pct, 'interactive': True, 'visible': False})
-                    self._create_component('sharpness_base_scale_input', 'slider', {'label': 'Sharpness Base Scale', 'value': self.config.sharpness_base_scale, 'interactive': True, 'visible': False})
-                    self._create_component('edge_strength_base_scale_input', 'slider', {'label': 'Edge Strength Base Scale', 'value': self.config.edge_strength_base_scale, 'interactive': True, 'visible': False})
-                    self._create_component('gdino_config_path_input', 'textbox', {'label': 'GroundingDINO Config Path', 'value': self.config.grounding_dino_config_path, 'interactive': True, 'visible': False})
-                    self._create_component('gdino_checkpoint_path_input', 'textbox', {'label': 'GroundingDINO Checkpoint Path', 'value': self.config.grounding_dino_checkpoint_path, 'interactive': True, 'visible': False})
+                    self._reg('pre_analysis_enabled', self._create_component('pre_analysis_enabled_input', 'checkbox', {'label': 'Enable Pre-Analysis to find best frame', 'value': self.config.default_pre_analysis_enabled, 'info': "Analyzes a subset of frames in each scene to automatically find the highest quality frame to use as the 'best frame' for masking. Highly recommended."}))
+                    self._reg('pre_sample_nth', self._create_component('pre_sample_nth_input', 'number', {'label': 'Sample every Nth thumbnail for pre-analysis', 'value': self.config.default_pre_sample_nth, 'interactive': True, 'info': "For faster pre-analysis, check every Nth frame in a scene instead of all of them. A value of 5 is a good starting point."}))
+                    self._reg('person_detector_model', self._create_component('person_detector_model_input', 'dropdown', {'choices': self.PERSON_DETECTOR_MODEL_CHOICES, 'value': self.config.default_person_detector_model, 'label': "Person Detector Model", 'info': "YOLO Model for finding people. 'x' (large) is more accurate but slower; 's' (small) is much faster but may miss people."}))
+                    self._reg('face_model_name', self._create_component('face_model_name_input', 'dropdown', {'choices': self.FACE_MODEL_NAME_CHOICES, 'value': self.config.default_face_model_name, 'label': "Face Recognition Model", 'info': "InsightFace model for face matching. 'l' (large) is more accurate; 's' (small) is faster and uses less memory."}))
+                    self._reg('dam4sam_model_name', self._create_component('dam4sam_model_name_input', 'dropdown', {'choices': self.DAM4SAM_MODEL_NAME_CHOICES, 'value': self.config.default_dam4sam_model_name, 'label': "Mask Tracking Model", 'info': "The Segment Anything 2 model used for tracking the subject mask across frames. Larger models (L) are more robust but use more VRAM; smaller models (T) are faster."}))
+                    self._reg('resume', self._create_component('resume_input', 'checkbox', {'label': 'Resume', 'value': self.config.default_resume, 'interactive': True, 'visible': False}))
+                    self._reg('enable_subject_mask', self._create_component('enable_subject_mask_input', 'checkbox', {'label': 'Enable Subject Mask', 'value': self.config.default_enable_subject_mask, 'interactive': True, 'visible': False}))
+                    self._reg('min_mask_area_pct', self._create_component('min_mask_area_pct_input', 'slider', {'label': 'Min Mask Area Pct', 'value': self.config.min_mask_area_pct, 'interactive': True, 'visible': False}))
+                    self._reg('sharpness_base_scale', self._create_component('sharpness_base_scale_input', 'slider', {'label': 'Sharpness Base Scale', 'value': self.config.sharpness_base_scale, 'interactive': True, 'visible': False}))
+                    self._reg('edge_strength_base_scale', self._create_component('edge_strength_base_scale_input', 'slider', {'label': 'Edge Strength Base Scale', 'value': self.config.edge_strength_base_scale, 'interactive': True, 'visible': False}))
+                    self._reg('gdino_config_path', self._create_component('gdino_config_path_input', 'textbox', {'label': 'GroundingDINO Config Path', 'value': self.config.grounding_dino_config_path, 'interactive': True, 'visible': False}))
+                    self._reg('gdino_checkpoint_path', self._create_component('gdino_checkpoint_path_input', 'textbox', {'label': 'GroundingDINO Checkpoint Path', 'value': self.config.grounding_dino_checkpoint_path, 'interactive': True, 'visible': False}))
 
                 self._create_component('start_pre_analysis_button', 'button', {'value': '🌱 Find & Preview Best Frames', 'variant': 'primary'})
 
@@ -6635,22 +6640,22 @@ Review the automatically detected subjects and refine the selection if needed. E
 
         with gr.Row():
             with gr.Column():
-                self._create_component('compute_quality_score', 'checkbox', {'label': "Quality Score", 'value': True})
-                self._create_component('compute_sharpness', 'checkbox', {'label': "Sharpness", 'value': True})
-                self._create_component('compute_edge_strength', 'checkbox', {'label': "Edge Strength", 'value': True})
-                self._create_component('compute_contrast', 'checkbox', {'label': "Contrast", 'value': True})
-                self._create_component('compute_brightness', 'checkbox', {'label': "Brightness", 'value': True})
-                self._create_component('compute_entropy', 'checkbox', {'label': "Entropy", 'value': True})
+                self._reg('compute_quality_score', self._create_component('compute_quality_score', 'checkbox', {'label': "Quality Score", 'value': True}))
+                self._reg('compute_sharpness', self._create_component('compute_sharpness', 'checkbox', {'label': "Sharpness", 'value': True}))
+                self._reg('compute_edge_strength', self._create_component('compute_edge_strength', 'checkbox', {'label': "Edge Strength", 'value': True}))
+                self._reg('compute_contrast', self._create_component('compute_contrast', 'checkbox', {'label': "Contrast", 'value': True}))
+                self._reg('compute_brightness', self._create_component('compute_brightness', 'checkbox', {'label': "Brightness", 'value': True}))
+                self._reg('compute_entropy', self._create_component('compute_entropy', 'checkbox', {'label': "Entropy", 'value': True}))
             with gr.Column():
-                self._create_component('compute_eyes_open', 'checkbox', {'label': "Eyes Open", 'value': True})
-                self._create_component('compute_yaw', 'checkbox', {'label': "Yaw", 'value': True})
-                self._create_component('compute_pitch', 'checkbox', {'label': "Pitch", 'value': True})
-                self._create_component('compute_face_sim', 'checkbox', {'label': "Face Similarity", 'value': True})
-                self._create_component('compute_subject_mask_area', 'checkbox', {'label': "Subject Mask Area", 'value': True})
-                self._create_component('compute_niqe', 'checkbox', {'label': "NIQE", 'value': pyiqa is not None, 'interactive': pyiqa is not None, 'info': "Requires 'pyiqa' to be installed."})
+                self._reg('compute_eyes_open', self._create_component('compute_eyes_open', 'checkbox', {'label': "Eyes Open", 'value': True}))
+                self._reg('compute_yaw', self._create_component('compute_yaw', 'checkbox', {'label': "Yaw", 'value': True}))
+                self._reg('compute_pitch', self._create_component('compute_pitch', 'checkbox', {'label': "Pitch", 'value': True}))
+                self._reg('compute_face_sim', self._create_component('compute_face_sim', 'checkbox', {'label': "Face Similarity", 'value': True}))
+                self._reg('compute_subject_mask_area', self._create_component('compute_subject_mask_area', 'checkbox', {'label': "Subject Mask Area", 'value': True}))
+                self._reg('compute_niqe', self._create_component('compute_niqe', 'checkbox', {'label': "NIQE", 'value': pyiqa is not None, 'interactive': pyiqa is not None, 'info': "Requires 'pyiqa' to be installed."}))
 
         with gr.Accordion("Deduplication Settings", open=True):
-            self._create_component('compute_phash', 'checkbox', {'label': "Compute p-hash for Deduplication", 'value': True})
+            self._reg('compute_phash', self._create_component('compute_phash', 'checkbox', {'label': "Compute p-hash for Deduplication", 'value': True}))
         self.components['start_analysis_button'] = gr.Button("Analyze Selected Frames", variant="primary")
 
 
@@ -7591,6 +7596,9 @@ class EnhancedAppUI(AppUI):
         )
 
 
+    def get_inputs(self, keys: list[str]) -> list[gr.components.Component]:
+        return [self.ui_registry[k] for k in keys if k in self.ui_registry]
+
     def _setup_pipeline_handlers(self):
         """Sets up the Gradio event handlers for the main processing pipelines."""
         c = self.components
@@ -7629,30 +7637,12 @@ class EnhancedAppUI(AppUI):
             outputs=all_outputs,
             show_progress="hidden"
         )
-        ext_inputs = [c[{'source_path': 'source_input', 'upload_video': 'upload_video_input', 'max_resolution': 'max_resolution',
-                         'scene_detect': 'ext_scene_detect_input', **{k: f"{k}_input" for k in self.ext_ui_map_keys if k not in
-                         ['source_path', 'upload_video', 'max_resolution', 'scene_detect']}}[k]] for k in self.ext_ui_map_keys]
-        self.ana_input_components = [c.get(k) for k in [{'output_folder': 'extracted_frames_dir_state', 'video_path': 'extracted_video_path_state',
-                                                           'resume': 'resume_input', 'enable_face_filter': 'enable_face_filter_input',
-                                                           'face_ref_img_path': 'face_ref_img_path_input', 'face_ref_img_upload': 'face_ref_img_upload_input',
-                                                               'face_model_name': 'face_model_name_input', 'enable_subject_mask': 'enable_subject_mask_input',
-                                                           'dam4sam_model_name': 'dam4sam_model_name_input', 'person_detector_model': 'person_detector_model_input',
-                                                               'best_frame_strategy': 'best_frame_strategy_input', 'scene_detect': 'ext_scene_detect_input',
-                                                           'enable_dedup': 'enable_dedup_input', 'text_prompt': 'text_prompt_input',
-                                                               'box_threshold': 'box_threshold',
-                                                               'text_threshold': 'text_threshold',
-                                                           'min_mask_area_pct': 'min_mask_area_pct_input',
-                                                           'sharpness_base_scale': 'sharpness_base_scale_input',
-                                                           'edge_strength_base_scale': 'edge_strength_base_scale_input',
-                                                               'gdino_config_path': 'gdino_config_path_input',
-                                                               'gdino_checkpoint_path': 'gdino_checkpoint_path_input',
-                                                           'pre_analysis_enabled': 'pre_analysis_enabled_input', 'pre_sample_nth': 'pre_sample_nth_input',
-                                                           'primary_seed_strategy': 'primary_seed_strategy_input',
-                                                           **{f'compute_{m}': f'compute_{m}' for m in [
-                                                               'quality_score', 'sharpness', 'edge_strength', 'contrast', 'brightness', 'entropy',
-                                                               'eyes_open', 'yaw', 'pitch', 'face_sim', 'subject_mask_area', 'niqe', 'phash'
-                                                           ]}
-                                                          }[k] for k in self.ana_ui_map_keys]]
+        ext_inputs = self.get_inputs(self.ext_ui_map_keys)
+        self.ana_input_components = [
+            c['extracted_frames_dir_state'],
+            c['extracted_video_path_state'],
+        ]
+        self.ana_input_components.extend(self.get_inputs(self.ana_ui_map_keys))
         prop_inputs = [c['scenes_state']] + self.ana_input_components
         c['start_extraction_button'].click(fn=extraction_handler,
                                          inputs=ext_inputs, outputs=all_outputs, show_progress="hidden").then(lambda d: gr.update(selected=1) if d else gr.update(), c['extracted_frames_dir_state'], c['main_tabs'])
