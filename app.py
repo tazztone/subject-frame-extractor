@@ -3984,7 +3984,8 @@ class SubjectMasker:
             self.logger.error("DAM4SAM tracker could not be initialized; mask propagation failed.")
             # Return error structure instead of empty dict
             return {"error": "DAM4SAM tracker initialization failed", "completed": False}
-        self.frame_map = self.frame_map or self._create_frame_map(frames_dir)
+
+        thumb_dir = Path(frames_dir) / "thumbs"
         mask_metadata, total_scenes = {}, len(scenes_to_process)
         progress_file = self.mask_dir.parent / "progress.json"
         for i, scene in enumerate(scenes_to_process):
@@ -3993,7 +3994,7 @@ class SubjectMasker:
                 if self.cancel_event.is_set(): break
                 self.logger.info(f"Masking scene {i+1}/{total_scenes}", user_context={'shot_id': scene.shot_id, 'start_frame': scene.start_frame, 'end_frame': scene.end_frame})
 
-                shot_frames_data = self._load_shot_frames(frames_dir, scene.start_frame, scene.end_frame)
+                shot_frames_data = self._load_shot_frames(frames_dir, thumb_dir, scene.start_frame, scene.end_frame)
                 if not shot_frames_data: continue
 
                 if tracker:
@@ -4038,11 +4039,12 @@ class SubjectMasker:
             self.logger.error("Failed to save mask metadata", exc_info=True)
         return mask_metadata
 
-    def _load_shot_frames(self, frames_dir: str, start: int, end: int) -> list[tuple[int, np.ndarray, tuple[int, int]]]:
+    def _load_shot_frames(self, frames_dir: str, thumb_dir: Path, start: int, end: int) -> list[tuple[int, np.ndarray, tuple[int, int]]]:
         """Loads all thumbnail images for a given frame range (a shot).
 
         Args:
             frames_dir (str): The root directory of the extracted frames.
+            thumb_dir (Path): The pre-calculated path to the thumbnails directory.
             start (int): The starting frame number of the shot.
             end (int): The ending frame number of the shot.
 
@@ -4056,9 +4058,10 @@ class SubjectMasker:
         if not self.frame_map:
             ext = ".webp" if self.params.thumbnails_only else ".png"
             self.frame_map = create_frame_map(Path(frames_dir), self.logger, ext=ext)
-        thumb_dir = Path(frames_dir) / "thumbs"
+
         for fn in sorted(fn for fn in self.frame_map if start <= fn < end):
-            thumb_p, thumb_img = thumb_dir / f"{Path(self.frame_map[fn]).stem}.webp", self.thumbnail_manager.get(thumb_dir / f"{Path(self.frame_map[fn]).stem}.webp")
+            thumb_path = thumb_dir / f"{Path(self.frame_map[fn]).stem}.webp"
+            thumb_img = self.thumbnail_manager.get(thumb_path)
             if thumb_img is None: continue
             frames.append((fn, thumb_img, thumb_img.shape[:2]))
         return frames
@@ -4078,7 +4081,9 @@ class SubjectMasker:
         if not self.params.pre_analysis_enabled:
             scene.best_frame, scene.seed_metrics = scene.start_frame, {'reason': 'pre-analysis disabled'}
             return
-        shot_frames = self._load_shot_frames(frames_dir, scene.start_frame, scene.end_frame)
+
+        thumb_dir = Path(frames_dir) / "thumbs"
+        shot_frames = self._load_shot_frames(frames_dir, thumb_dir, scene.start_frame, scene.end_frame)
         if not shot_frames:
             scene.best_frame, scene.seed_metrics = scene.start_frame, {'reason': 'no frames loaded'}
             return
