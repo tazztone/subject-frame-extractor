@@ -54,6 +54,7 @@ from pydantic import BaseModel, Field, model_validator, field_validator, ConfigD
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from queue import Empty, Queue
 from typing import Any, Callable, Dict, Generator, List, Optional, Union
+from typing import Callable
 
 # --- DEPENDENCY IMPORTS (with error handling) ---
 
@@ -5175,28 +5176,23 @@ def apply_all_filters_vectorized(all_frames_data: list[dict], filters: dict, con
 
     return kept, rejected, total_reasons, reasons
 
-def apply_ssim_dedup(all_frames_data: list[dict], filters: dict, dedup_mask: np.ndarray, reasons: defaultdict,
-                     thumbnail_manager: 'ThumbnailManager', config: 'Config', output_dir: str) -> tuple[np.ndarray, defaultdict]:
-    """Applies deduplication using Structural Similarity Index (SSIM).
-
-    This function compares adjacent frames (sorted by filename) and calculates
-    their SSIM. If the similarity is above a threshold, the frame with the
-    lower quality score is marked for rejection.
+def _generic_dedup(all_frames_data: list[dict], dedup_mask: np.ndarray, reasons: defaultdict,
+                     thumbnail_manager: 'ThumbnailManager', output_dir: str,
+                     compare_fn: Callable[[np.ndarray, np.ndarray], bool]) -> tuple[np.ndarray, defaultdict]:
+    """
+    Generic deduplication function.
 
     Args:
-        all_frames_data (list[dict]): A list of frame metadata dictionaries.
-        filters (dict): A dictionary of active filter settings.
-        dedup_mask (np.ndarray): The current deduplication mask to be updated.
-        reasons (defaultdict): A dictionary to store rejection reasons.
-        thumbnail_manager (ThumbnailManager): The thumbnail cache manager.
-        config (Config): The main application configuration.
-        output_dir (str): The session's output directory.
+        all_frames_data: A list of frame metadata dictionaries.
+        dedup_mask: The current deduplication mask to be updated.
+        reasons: A dictionary to store rejection reasons.
+        thumbnail_manager: The thumbnail cache manager.
+        output_dir: The session's output directory.
+        compare_fn: A function that takes two images and returns True if they are duplicates.
 
     Returns:
-        tuple[np.ndarray, defaultdict]: A tuple of the updated deduplication
-        mask and reasons dictionary.
+        A tuple of the updated deduplication mask and reasons dictionary.
     """
-    threshold = filters.get("ssim_threshold", 0.95)
     num_frames = len(all_frames_data)
     sorted_indices = sorted(range(num_frames), key=lambda i: all_frames_data[i]['filename'])
 
@@ -5213,12 +5209,7 @@ def apply_ssim_dedup(all_frames_data: list[dict], filters: dict, dedup_mask: np.
         img2 = thumbnail_manager.get(c_thumb_path)
 
         if img1 is not None and img2 is not None:
-            img1_gray = cv2.cvtColor(img1, cv2.COLOR_RGB2GRAY)
-            img2_gray = cv2.cvtColor(img2, cv2.COLOR_RGB2GRAY)
-
-            similarity = ssim(img1_gray, img2_gray)
-
-            if similarity >= threshold:
+            if compare_fn(img1, img2):
                 # Keep the one with the higher quality score
                 if all_frames_data[c_idx].get('metrics', {}).get('quality_score', 0) > all_frames_data[p_idx].get('metrics', {}).get('quality_score', 0):
                     if dedup_mask[p_idx]:
@@ -5230,65 +5221,40 @@ def apply_ssim_dedup(all_frames_data: list[dict], filters: dict, dedup_mask: np.
                     dedup_mask[c_idx] = False
     return dedup_mask, reasons
 
-def apply_lpips_dedup(all_frames_data: list[dict], filters: dict, dedup_mask: np.ndarray, reasons: defaultdict,
-                      thumbnail_manager: 'ThumbnailManager', config: 'Config', output_dir: str) -> tuple[np.ndarray, defaultdict]:
-    """Applies deduplication using Learned Perceptual Image Patch Similarity (LPIPS).
 
-    This function compares adjacent frames (sorted by filename) and calculates
-    their LPIPS distance. If the distance is below a threshold, the frame with
-    the lower quality score is marked for rejection.
+def _ssim_compare(img1: np.ndarray, img2: np.ndarray, threshold: float) -> bool:
+    """Compares two images using SSIM."""
+    gray1 = cv2.cvtColor(img1, cv2.COLOR_RGB2GRAY)
+    gray2 = cv2.cvtColor(img2, cv2.COLOR_RGB2GRAY)
+    return ssim(gray1, gray2) >= threshold
 
-    Args:
-        all_frames_data (list[dict]): A list of frame metadata dictionaries.
-        filters (dict): A dictionary of active filter settings.
-        dedup_mask (np.ndarray): The current deduplication mask to be updated.
-        reasons (defaultdict): A dictionary to store rejection reasons.
-        thumbnail_manager (ThumbnailManager): The thumbnail cache manager.
-        config (Config): The main application configuration.
-        output_dir (str): The session's output directory.
 
-    Returns:
-        tuple[np.ndarray, defaultdict]: A tuple of the updated deduplication
-        mask and reasons dictionary.
-    """
-    threshold = filters.get("lpips_threshold", 0.1)
-    loss_fn = get_lpips_metric()
-    num_frames = len(all_frames_data)
-    sorted_indices = sorted(range(num_frames), key=lambda i: all_frames_data[i]['filename'])
-
+def _lpips_compare(img1: np.ndarray, img2: np.ndarray, threshold: float, loss_fn: Callable) -> bool:
+    """Compares two images using LPIPS."""
     transform = transforms.Compose([
         transforms.ToTensor(),
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
     ])
+    img1_t = transform(img1).unsqueeze(0)
+    img2_t = transform(img2).unsqueeze(0)
+    distance = loss_fn.forward(img1_t, img2_t).item()
+    return distance <= threshold
 
-    for i in range(1, len(sorted_indices)):
-        c_idx, p_idx = sorted_indices[i], sorted_indices[i - 1]
 
-        c_frame_data = all_frames_data[c_idx]
-        p_frame_data = all_frames_data[p_idx]
+def apply_ssim_dedup(all_frames_data: list[dict], filters: dict, dedup_mask: np.ndarray, reasons: defaultdict,
+                     thumbnail_manager: 'ThumbnailManager', config: 'Config', output_dir: str) -> tuple[np.ndarray, defaultdict]:
+    """Applies deduplication using Structural Similarity Index (SSIM)."""
+    threshold = filters.get("ssim_threshold", 0.95)
+    compare_fn = lambda img1, img2: _ssim_compare(img1, img2, threshold)
+    return _generic_dedup(all_frames_data, dedup_mask, reasons, thumbnail_manager, output_dir, compare_fn)
 
-        c_thumb_path = Path(output_dir) / "thumbs" / c_frame_data['filename']
-        p_thumb_path = Path(output_dir) / "thumbs" / p_frame_data['filename']
-
-        img1 = thumbnail_manager.get(p_thumb_path)
-        img2 = thumbnail_manager.get(c_thumb_path)
-
-        if img1 is not None and img2 is not None:
-            img1_t = transform(img1).unsqueeze(0)
-            img2_t = transform(img2).unsqueeze(0)
-
-            distance = loss_fn.forward(img1_t, img2_t).item()
-
-            if distance <= threshold:
-                if all_frames_data[c_idx].get('metrics', {}).get('quality_score', 0) > all_frames_data[p_idx].get('metrics', {}).get('quality_score', 0):
-                    if dedup_mask[p_idx]:
-                        reasons[all_frames_data[p_idx]['filename']].append('duplicate')
-                    dedup_mask[p_idx] = False
-                else:
-                    if dedup_mask[c_idx]:
-                        reasons[all_frames_data[c_idx]['filename']].append('duplicate')
-                    dedup_mask[c_idx] = False
-    return dedup_mask, reasons
+def apply_lpips_dedup(all_frames_data: list[dict], filters: dict, dedup_mask: np.ndarray, reasons: defaultdict,
+                      thumbnail_manager: 'ThumbnailManager', config: 'Config', output_dir: str) -> tuple[np.ndarray, defaultdict]:
+    """Applies deduplication using Learned Perceptual Image Patch Similarity (LPIPS)."""
+    threshold = filters.get("lpips_threshold", 0.1)
+    loss_fn = get_lpips_metric()
+    compare_fn = lambda img1, img2: _lpips_compare(img1, img2, threshold, loss_fn)
+    return _generic_dedup(all_frames_data, dedup_mask, reasons, thumbnail_manager, output_dir, compare_fn)
 
 
 def on_filters_changed(event: 'FilterEvent', thumbnail_manager: 'ThumbnailManager',
