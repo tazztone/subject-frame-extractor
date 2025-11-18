@@ -2897,20 +2897,11 @@ def run_ffmpeg_extraction(video_path: str, output_dir: Path, video_info: dict, p
         stdout_thread.start()
         stderr_thread.start()
 
-        while True:
+        while process.poll() is None:
             if cancel_event.is_set():
                 process.terminate()
                 break
-
-            # Non-blocking check for process completion
-            if process.poll() is not None:
-                break
-
-            # Wait for a short period before checking again
-            try:
-                process.wait(timeout=0.1)
-            except subprocess.TimeoutExpired:
-                continue
+            time.sleep(0.1)
 
         stdout_thread.join()
         stderr_thread.join()
