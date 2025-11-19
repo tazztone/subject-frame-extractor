@@ -1,4 +1,4 @@
-# 🎬 Subject Frame Extractor
+# 🎬 Subject Frame Extractor v2.0
 
 An intelligent AI-powered tool for extracting, analyzing, and filtering high-quality frames from videos or YouTube URLs. Designed for content creators, dataset builders, and anyone needing precise video frame analysis with advanced subject detection and quality metrics.
 
@@ -13,11 +13,11 @@ This application revolutionizes video frame extraction by combining traditional 
 
 - **Extract frames intelligently** from any video using multiple extraction strategies
 - **Analyze frame quality** using comprehensive metrics (sharpness, contrast, entropy, NIQE)
-- **Detect and track subjects** automatically using state-of-the-art segmentation models
+- **Detect and track subjects** automatically using state-of-the-art segmentation models (SAM 2.1)
 - **Filter by face similarity** to find frames of specific people
 - **Export curated datasets** with smart cropping and aspect ratio options
 
-Perfect for creating training datasets, finding thumbnail candidates, or analyzing video content at scale.
+Perfect for creating training datasets (LoRA/Dreambooth), finding thumbnail candidates, or analyzing video content at scale.
 
 ## 🚀 Key Features
 
@@ -28,11 +28,11 @@ Perfect for creating training datasets, finding thumbnail candidates, or analyzi
 - **Flexible timing**: Custom intervals or N-th frame extraction
 
 ### 🧠 Advanced AI Analysis
-- **Subject Segmentation**: Uses DAM4SAM (SAM 2.1) for precise subject tracking and masking
-- **Face Recognition**: InsightFace-powered similarity matching with reference photos
-- **Quality Assessment**: Multi-metric scoring including NIQE perceptual quality
-- **Person Detection**: YOLO-based human detection for seeding subject tracking
-- **Text-to-Object**: Use text prompts with Grounded-DINO to identify subjects.
+- **Subject Segmentation**: Uses **DAM4SAM (SAM 2.1)** for precise subject tracking and masking
+- **Face Recognition**: **InsightFace**-powered similarity matching with reference photos
+- **Quality Assessment**: Multi-metric scoring including **NIQE** perceptual quality
+- **Person Detection**: **YOLOv11**-based human detection for seeding subject tracking
+- **Text-to-Object**: Use text prompts with **Grounded-DINO** to identify subjects
 
 ### 🔍 Powerful Filtering System
 - **Real-time filtering**: Interactive sliders for all quality metrics
@@ -54,11 +54,10 @@ Perfect for creating training datasets, finding thumbnail candidates, or analyzi
 | **Computer Vision** | OpenCV, PyTorch | Image processing |
 | **Subject Tracking** | DAM4SAM + SAM 2.1 | Zero-shot object segmentation |
 | **Face Recognition** | InsightFace | High-accuracy face detection/matching |
-| **Object Detection** | YOLO | Person detection for tracking seed |
+| **Object Detection** | YOLOv11 | Person detection for tracking seed |
 | **Text-to-Object** | Grounded-DINO | Grounding subjects with text prompts |
 | **Video Processing** | FFmpeg, yt-dlp | Frame extraction and video handling |
 | **Quality Assessment** | PyIQA (NIQE) | Perceptual image quality metrics |
-| **Performance** | Numba, CUDA | Optimized computation |
 
 ## 📋 Prerequisites
 
@@ -66,225 +65,144 @@ Before installation, ensure you have:
 
 1. **Python 3.10 or newer**
 2. **Git** (for cloning submodules)
-3. **NVIDIA GPU** (recommended for full functionality)
+3. **NVIDIA GPU** (Highly recommended for full functionality)
 4. **CUDA toolkit** (for GPU acceleration)
 5. **FFmpeg** installed and in system PATH
 
 ### FFmpeg Installation
-- **Windows**: Download from [ffmpeg.org](https://ffmpeg.org/download.html)
+- **Windows**: Download from [ffmpeg.org](https://ffmpeg.org/download.html) and add to PATH.
 - **macOS**: `brew install ffmpeg`
 - **Ubuntu/Debian**: `sudo apt install ffmpeg`
 
 ## 💻 Installation
+
+### 🪟 Windows (Automated Method)
+
+We provide batch scripts to automate the setup process.
+
+1.  **Install / Update**:
+    Run `windows_STANDALONE_install.bat` to clone the repo and set up the environment automatically.
+    *Note: This script is designed to be run from a parent folder to create a new installation.*
+
+2.  **Run the App**:
+    Double-click `windows_run_app.bat`. This will activate the virtual environment and launch the UI in your browser.
+
+3.  **Update**:
+    Run `windows_update.bat` to pull the latest changes and update dependencies.
+
+### 🐧 Linux / macOS / Manual Windows
 
 1.  **Clone the repository:**
     ```bash
     git clone https://github.com/tazztone/subject-frame-extractor.git
     cd subject-frame-extractor
     ```
+
 2.  **Initialize Submodules:**
     ```bash
     git submodule update --init --recursive
     ```
-3.  **Install Dependencies:**
+
+3.  **Create Virtual Environment:**
+    ```bash
+    python -m venv venv
+    source venv/bin/activate  # On Windows: venv\Scripts\activate
+    ```
+
+4.  **Install PyTorch (CUDA support):**
+    *Visit [pytorch.org](https://pytorch.org/get-started/locally/) for your specific command.*
+    ```bash
+    # Example for CUDA 11.8
+    pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+    ```
+
+5.  **Install Dependencies:**
     ```bash
     pip install -r requirements.txt
     ```
 
+6.  **Install DAM4SAM (SAM 2.1):**
+    *Note: On Windows, you may need to set `SAM2_BUILD_CUDA=0` to avoid compilation errors if you lack build tools.*
+    ```bash
+    cd DAM4SAM
+    # Windows: set SAM2_BUILD_CUDA=0 && pip install -e .
+    # Linux/Mac: pip install -e .
+    cd ..
+    ```
+
 ## 📖 How to Use
 
-The application provides a guided, five-tab workflow. Each tab represents a clear step in the process, with options progressively revealed to keep the UI clean and intuitive. During long-running tasks like extraction and analysis, a progress bar will appear to provide real-time feedback on the status and ETA. The application will also automatically switch you to the next tab after a major step is complete.
+The application provides a guided, five-tab workflow.
 
 ### Tab 1: 📹 Frame Extraction
-
-This tab is for getting frames from your video source.
-
-1.  **Provide a Video Source**: Paste a YouTube URL, enter a local file path, or upload a video file directly.
-2.  **Configure Extraction Method**:
-    -   **Recommended Method (Default)**: Use the "Thumbnail Extraction" for a fast and efficient pre-analysis workflow. This extracts lightweight thumbnails that are used in Tab 2 to find the best scenes *before* you commit to extracting full-resolution frames.
-    -   **Advanced Method**: If you have specific needs, you can uncheck the "Recommended" option to access legacy full-frame extraction methods like `keyframes`, `interval`, or `every_nth_frame`. This is slower and not recommended for most workflows.
-3.  **Start Extraction**: Click the "Start Extraction" button to begin. The results will be saved to the `downloads/` folder and will be automatically available for the next step.
+**Get frames from your video source.**
+1.  **Source**: Paste a YouTube URL or upload a video file.
+2.  **Method**: Use "Thumbnail Extraction" (Recommended) for fast pre-analysis, or legacy methods for full extraction.
+3.  **Start**: Results are saved to `downloads/` and auto-loaded for the next step.
 
 ### Tab 2: 👩🏼‍🦰 Define Subject
-
-This tab is for identifying your subject within the extracted scenes.
-
-1.  **Choose Your Seeding Strategy**: First, decide *how* you want the AI to find your subject. The UI dynamically shows only the relevant options for your choice:
-    -   **👤 By Face**: The most precise method. Upload a reference photo, and the system will find that specific person.
-    -   **📝 By Text**: Describe your subject using a text prompt (e.g., "a man in a blue shirt").
-    -   **🤖 Automatic**: Let the AI find the most prominent person in each scene automatically. This is a great general-purpose starting point.
-2.  **Find & Preview Scene Seeds**: Click the **"Find & Preview Best Frames"** button. The app runs a pre-analysis to find the best "seed frame" in each scene—the single frame where your subject is clearest.
+**Identify your subject within the scenes.**
+1.  **Strategy**:
+    -   **👤 By Face**: Upload a reference photo.
+    -   **📝 By Text**: Describe the subject (e.g., "man in red shirt").
+    -   **🤖 Automatic**: Finds the most prominent person.
+2.  **Find Seeds**: Click **"Find & Preview Best Frames"** to identify the best "seed frame" per scene.
 
 ### Tab 3: 🎞️ Scene Selection
-
-This tab becomes active after you complete the subject definition. It allows you to refine your selection before the heavy processing begins.
-
-1.  **Review & Refine Seeds**: A gallery of these seed frames will appear, along with controls to:
-    -   Quickly include or exclude entire scenes.
-    -   Use the **Scene Editor** to fine-tune the detection for a specific scene. You can select a different person from the YOLO detections or provide a text prompt to override the initial seed.
-    -   Apply **Bulk Filters** to remove scenes that don't meet a minimum quality standard.
-2.  **Propagate Masks**: Once you're happy with your seeds, click **"Propagate Masks on Kept Scenes"**. The AI uses the seed frame to track the subject through all other frames in each selected scene.
+**Refine selection before heavy processing.**
+1.  **Review**: Check the gallery of seed frames.
+2.  **Edit**: Override detections (change person, use text) or exclude scenes.
+3.  **Propagate**: Click **"Propagate Masks"** to track the subject through all frames in selected scenes using SAM 2.1.
 
 ### Tab 4: 📝 Metrics
-
-Choose which metrics to calculate during the analysis phase. More metrics provide more filtering options but may increase processing time.
+**Configure analysis.**
+Choose which metrics to calculate (Sharpness, NIQE, Face Similarity, etc.).
 
 ### Tab 5: 📊 Filtering & Export
-
-This tab becomes active after you complete mask propagation. It allows you to refine your selection and export the final frames.
-
-1.  **Load Analysis & View Metrics**: When you select this tab, it automatically loads the results from the previous step. You can now use the **Filter Controls** to:
-    -   Adjust sliders for quality metrics like `sharpness`, `contrast`, and `NIQE`.
-    -   Set a `deduplication` threshold to remove visually similar frames.
-    -   View histograms to understand the distribution of each metric.
-2.  **Review Results**: As you adjust the filters, the **Results Gallery** updates in real-time. You can toggle between viewing "Kept" and "Rejected" frames to see the impact of your changes.
-3.  **Export**: Once you are satisfied with your filtered selection, you can configure the **Export Options**:
-    -   Enable **"Crop to Subject"** for automatic, intelligent cropping.
-    -   Define a list of desired **Aspect Ratios** (e.g., `16:9, 1:1`).
-    -   Click the **"Export Kept Frames"** button to save your final, curated dataset.
+**Curate and save.**
+1.  **Filter**: Use sliders to filter by quality metrics.
+2.  **Deduplicate**: Remove similar frames using pHash/SSIM.
+3.  **Export**: Enable **"Crop to Subject"**, set aspect ratios (e.g., `1:1, 9:16`), and save your dataset.
 
 ## ⚙️ Configuration
 
-The application uses a `config.json` file for fine-tuning, which can be saved from the UI.
+The application uses a `config.json` file for fine-tuning. Key settings include:
 
-### Quality Metric Weights
-```json
-"quality_weights": {
-  "sharpness": 25,
-  "edge_strength": 15,
-  "contrast": 15,
-  "brightness": 10,
-  "entropy": 15,
-  "niqe": 20
-}
-```
-
-### UI Defaults
-```json
-"ui_defaults": {
-  "enable_face_filter": true,
-  "enable_subject_mask": true,
-  "dam4sam_model_name": "sam21pp-L",
-  "person_detector_model": "yolo11x.pt",
-  "face_model_name": "buffalo_l"
-}
-```
-
-## 🔧 Advanced Usage
-
-### Custom Text Prompts
-Ground subjects using natural language with Grounded-DINO:
-```
-"a person wearing a red jacket"
-"the main speaker on stage"  
-"woman with long hair"
-```
-
-### Batch Processing
-Process multiple videos by running the analysis pipeline programmatically. Note that the `app.py` is not structured as a library, so this requires refactoring.
-```python
-from app import AnalysisPipeline, PreAnalysisEvent # Fictional import
-
-params = PreAnalysisEvent(
-    output_folder="path/to/frames",
-    video_path="video.mp4",
-    enable_subject_mask=True,
-    enable_face_filter=True,
-    face_ref_img_path="reference.jpg"
-)
-
-# This is a conceptual example; direct import is not supported.
-pipeline = AnalysisPipeline(params, queue, cancel_event)
-result = pipeline.run_full_analysis(scenes_to_process)
-```
-
-### Model Selection
-Choose models based on your hardware and accuracy needs:
-
-| Model | Size | Speed | Accuracy | GPU Memory |
-|-------|------|-------|----------|------------|
-| sam21pp-T | Tiny | Fast | Good | 2GB |
-| sam21pp-S | Small | Medium | Better | 4GB |
-| sam21pp-L | Large | Slow | Best | 8GB+ |
+-   **Quality Weights**: Adjust the importance of sharpness, contrast, etc. in the global score.
+-   **Model Selection**: Choose between `sam21pp-T` (Tiny/Fast), `sam21pp-S` (Small), or `sam21pp-L` (Large/Best) based on your VRAM.
 
 ## 📁 Project Structure
 
 ```
 subject-frame-extractor/
-├── app.py                     # Main application
+├── app.py                     # Main application entry point
 ├── requirements.txt           # Python dependencies
-├── DAM4SAM/                   # Subject tracking submodule
-├── Grounded-SAM-2/            # Grounding/segmentation submodule
-├── downloads/                 # Output directory (created at runtime)
+├── DAM4SAM/                   # Subject tracking submodule (SAM 2.1)
+├── downloads/                 # Output directory
 │   └── [video_name]/
 │       ├── frame_000001.png
 │       ├── metadata.jsonl     # Analysis results
 │       ├── masks/             # Subject masks
 │       └── thumbs/            # Preview thumbnails
 ├── models/                    # Cached AI models
-└── logs/                      # Application logs
+├── logs/                      # Application logs
+├── windows_run_app.bat        # Launcher for Windows
+└── windows_update.bat         # Updater for Windows
 ```
 
 ## 🔍 Troubleshooting
 
-### Common Issues
-
-**"FFmpeg not found"**
-- Ensure FFmpeg is installed and added to system PATH
-- Windows: Add FFmpeg bin directory to environment variables
-
-**"CUDA out of memory"**
-- Reduce DAM4SAM model size (`sam21pp-S` or `sam21pp-T`)
-- Enable "Disable Parallelism" option
-- Process fewer frames at once
-
-**"No faces found in reference image"**
-- Ensure reference photo shows clear, well-lit face
-- Try different reference image with frontal view
-- Check face model compatibility
-
-**Slow performance**
-- Enable GPU acceleration (CUDA)
-- Use smaller AI models
-- Reduce video resolution for processing
-- Enable parallel processing
-
-### Performance Tips
-
-1. **For large videos**: Use scene detection to focus on unique shots
-2. **For face filtering**: Use high-quality, well-lit reference photos  
-3. **For quality analysis**: Process at lower resolution first, then refine
-4. **For GPU memory**: Start with smaller models and scale up as needed
+-   **FFmpeg not found**: Ensure it's in your system PATH.
+-   **CUDA OOM**: Switch to a smaller SAM model (`sam21pp-T`) or process fewer frames.
+-   **Installation Issues**: Try the `windows_STANDALONE_install.bat` for a clean setup.
 
 ## 🤝 Contributing
 
-Contributions welcome! This project combines multiple cutting-edge AI models and would benefit from:
-
-- Additional quality metrics
-- More efficient processing pipelines  
-- Better UI/UX improvements
-- Support for additional video formats
-- Performance optimizations
+Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-This project builds upon several excellent open-source projects:
-
-- **[DAM4SAM](https://github.com/jovanavidenovic/DAM4SAM)**: Dynamic object tracking
-- **[Grounded-SAM-2](https://github.com/IDEA-Research/Grounded-SAM-2)**: Text-grounded segmentation
-- **[InsightFace](https://github.com/deepinsight/insightface)**: Face recognition models
-- **[Ultralytics YOLO](https://github.com/ultralytics/ultralytics)**: Object detection
-- **[PyIQA](https://github.com/chaofengc/IQA-PyTorch)**: Image quality assessment
-
-## 📞 Support
-
-- 🐛 **Bug Reports**: [Open an issue](https://github.com/tazztone/subject-frame-extractor/issues)
-- 💡 **Feature Requests**: [Start a discussion](https://github.com/tazztone/subject-frame-extractor/discussions)
-- 📖 **Documentation**: For a deep dive into the technical implementation, see the [Technical Documentation](TECHNICAL_DOCUMENTATION.md).
 
 ---
 
