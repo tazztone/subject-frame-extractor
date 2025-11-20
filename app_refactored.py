@@ -171,6 +171,13 @@ class Config(BaseSettings):
     filter_default_contrast: Dict[str, float] = Field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.5, 'default_min': 0.0, 'default_max': 100.0})
     filter_default_brightness: Dict[str, float] = Field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.5, 'default_min': 0.0, 'default_max': 100.0})
     filter_default_entropy: Dict[str, float] = Field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.5, 'default_min': 0.0, 'default_max': 100.0})
+    
+    # Missing Defaults
+    default_min_mask_area_pct: float = 1.0
+    default_sharpness_base_scale: float = 2500.0
+    default_edge_strength_base_scale: float = 100.0
+    gdino_box_threshold: float = 0.35
+    gdino_text_threshold: float = 0.25
     filter_default_niqe: Dict[str, float] = Field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.5, 'default_min': 0.0, 'default_max': 100.0})
     filter_default_face_sim: Dict[str, float] = Field(default_factory=lambda: {'min': 0.0, 'max': 1.0, 'step': 0.01, 'default_min': 0.0})
     filter_default_mask_area_pct: Dict[str, float] = Field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.1, 'default_min': 1.0})
@@ -3610,9 +3617,9 @@ class AppUI:
                     self._reg('dam4sam_model_name', self._create_component('dam4sam_model_name_input', 'dropdown', {'choices': self.DAM4SAM_MODEL_NAME_CHOICES, 'value': self.config.default_dam4sam_model_name, 'label': "Mask Tracking Model", 'info': "The Segment Anything 2 model used for tracking the subject mask across frames. Larger models (L) are more robust but use more VRAM; smaller models (T) are faster."}))
                     self._reg('resume', self._create_component('resume_input', 'checkbox', {'label': 'Resume', 'value': self.config.default_resume, 'interactive': True, 'visible': False}))
                     self._reg('enable_subject_mask', self._create_component('enable_subject_mask_input', 'checkbox', {'label': 'Enable Subject Mask', 'value': self.config.default_enable_subject_mask, 'interactive': True, 'visible': False}))
-                    self._reg('min_mask_area_pct', self._create_component('min_mask_area_pct_input', 'slider', {'label': 'Min Mask Area Pct', 'value': self.config.min_mask_area_pct, 'interactive': True, 'visible': False}))
-                    self._reg('sharpness_base_scale', self._create_component('sharpness_base_scale_input', 'slider', {'label': 'Sharpness Base Scale', 'value': self.config.sharpness_base_scale, 'interactive': True, 'visible': False}))
-                    self._reg('edge_strength_base_scale', self._create_component('edge_strength_base_scale_input', 'slider', {'label': 'Edge Strength Base Scale', 'value': self.config.edge_strength_base_scale, 'interactive': True, 'visible': False}))
+                    self._reg('min_mask_area_pct', self._create_component('min_mask_area_pct_input', 'slider', {'label': 'Min Mask Area Pct', 'value': self.config.default_min_mask_area_pct, 'interactive': True, 'visible': False}))
+                    self._reg('sharpness_base_scale', self._create_component('sharpness_base_scale_input', 'slider', {'label': 'Sharpness Base Scale', 'value': self.config.default_sharpness_base_scale, 'interactive': True, 'visible': False}))
+                    self._reg('edge_strength_base_scale', self._create_component('edge_strength_base_scale_input', 'slider', {'label': 'Edge Strength Base Scale', 'value': self.config.default_edge_strength_base_scale, 'interactive': True, 'visible': False}))
                     self._reg('gdino_config_path', self._create_component('gdino_config_path_input', 'textbox', {'label': 'GroundingDINO Config Path', 'value': self.config.grounding_dino_config_path, 'interactive': True, 'visible': False}))
                     self._reg('gdino_checkpoint_path', self._create_component('gdino_checkpoint_path_input', 'textbox', {'label': 'GroundingDINO Checkpoint Path', 'value': self.config.grounding_dino_checkpoint_path, 'interactive': True, 'visible': False}))
                 self._create_component('start_pre_analysis_button', 'button', {'value': '🌱 Find & Preview Best Frames', 'variant': 'primary'})
@@ -3625,7 +3632,7 @@ class AppUI:
             with gr.Accordion("Scene Filtering", open=True):
                 self._create_component('scene_filter_status', 'markdown', {'value': 'No scenes loaded.'})
                 with gr.Row():
-                    self._create_component('scene_mask_area_min_input', 'slider', {'label': "Min Best Frame Mask Area %", 'minimum': 0.0, 'maximum': 100.0, 'value': self.config.min_mask_area_pct, 'step': 0.1})
+                    self._create_component('scene_mask_area_min_input', 'slider', {'label': "Min Best Frame Mask Area %", 'minimum': 0.0, 'maximum': 100.0, 'value': self.config.default_min_mask_area_pct, 'step': 0.1})
                     self._create_component('scene_face_sim_min_input', 'slider', {'label': "Min Best Frame Face Sim", 'minimum': 0.0, 'maximum': 1.0, 'value': 0.0, 'step': 0.05, 'visible': False})
                     self._create_component('scene_confidence_min_input', 'slider', {'label': "Min Best Frame Confidence", 'minimum': 0.0, 'maximum': 1.0, 'value': 0.0, 'step': 0.05})
             with gr.Accordion("Scene Gallery", open=True):
@@ -3740,7 +3747,7 @@ class AppUI:
                             self._create_component('crop_padding_input', 'slider', {'label': "Padding %", 'value': self.config.export_crop_padding})
                         self._create_component('crop_ar_input', 'textbox', {'label': "Crop ARs", 'value': self.config.export_crop_ars, 'info': "Comma-separated list (e.g., 16:9, 1:1). The best-fitting AR for each subject's mask will be chosen automatically."})
 
-    def get_all_filter_keys(self) -> list[str]: return list(self.config.quality_weights.model_dump().keys()) + ["quality_score", "face_sim", "mask_area_pct", "eyes_open", "yaw", "pitch"]
+    def get_all_filter_keys(self) -> list[str]: return list(self.config.quality_weights.keys()) + ["quality_score", "face_sim", "mask_area_pct", "eyes_open", "yaw", "pitch"]
 
     def get_metric_description(self, metric_name: str) -> str:
         descriptions = {
