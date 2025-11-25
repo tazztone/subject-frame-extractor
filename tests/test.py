@@ -78,6 +78,11 @@ mock_matplotlib.figure = MagicMock(name='matplotlib.figure')
 mock_matplotlib.backends = MagicMock(name='matplotlib.backends')
 mock_matplotlib.backends.backend_agg = MagicMock(name='matplotlib.backends.backend_agg')
 
+mock_sam3 = MagicMock(name='sam3')
+mock_sam3.__path__ = ['fake']
+mock_sam3.__spec__ = MagicMock()
+mock_sam3.model_builder = MagicMock(name='sam3.model_builder')
+
 
 modules_to_mock = {
     'torch': mock_torch,
@@ -107,6 +112,8 @@ modules_to_mock = {
     'DAM4SAM': MagicMock(name='DAM4SAM'),
     'DAM4SAM.utils': MagicMock(name='DAM4SAM.utils'),
     'DAM4SAM.dam4sam_tracker': MagicMock(name='DAM4SAM.dam4sam_tracker'),
+    'sam3': mock_sam3,
+    'sam3.model_builder': mock_sam3.model_builder,
     'ultralytics': MagicMock(name='ultralytics'),
     'GPUtil': MagicMock(getGPUs=lambda: [MagicMock(memoryUtil=0.5)]),
     'imagehash': mock_imagehash,
@@ -139,8 +146,8 @@ modules_to_mock['pydantic_settings'] = mock_pydantic_settings
 patch.dict(sys.modules, modules_to_mock).start()
 
 # Now import the monolithic app
-import app_refactored as app
-from app_refactored import Config, Database
+import app as app
+from app import Config, Database
 
 # --- Mocks for Tests ---
 @pytest.fixture
@@ -164,7 +171,7 @@ def mock_ui_state():
         'face_ref_img_upload': None,
         'face_model_name': 'buffalo_l',
         'enable_subject_mask': False,
-        'dam4sam_model_name': 'sam21pp-T',
+        'sam3_model_name': 'sam3_hiera_large',
         'person_detector_model': 'yolo11x.pt',
         'best_frame_strategy': 'Largest Person',
         'text_prompt': '',
@@ -230,7 +237,7 @@ class TestUtils:
             app._coerce("not-a-float", float)
 
         mock_config_data = {}
-        with patch('app_refactored.json_config_settings_source', return_value=mock_config_data):
+        with patch('app.json_config_settings_source', return_value=mock_config_data):
             # Pass an argument to the constructor
             config = app.Config(logs_dir="init_logs")
 
@@ -294,7 +301,7 @@ class TestAppLogger:
         )
         
         # Mock torch.from_numpy chain
-        with patch('app_refactored.torch.from_numpy') as mock_torch_from_numpy:
+        with patch('app.torch.from_numpy') as mock_torch_from_numpy:
             mock_tensor = MagicMock()
             mock_tensor.to.return_value = mock_tensor
             mock_torch_from_numpy.return_value.float.return_value.permute.return_value.unsqueeze.return_value = mock_tensor

@@ -96,18 +96,13 @@ class Config(BaseSettings):
     grounding_dino_sha256: str = "3b3ca2563c77c69f651d7bd133e97139c186df06231157a64c507099c52bc799"
     face_landmarker_url: str = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
     face_landmarker_sha256: str = "9c899f78b8f2a0b1b117b3554b5f903e481b67f1390f7716e2a537f8842c0c7a"
-    dam4sam_model_urls: Dict[str, str] = Field(default_factory=lambda: {
-        "sam21pp-T": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt",
-        "sam21pp-S": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_small.pt",
-        "sam21pp-B+": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_base_plus.pt",
-        "sam21pp-L": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt",
+    sam3_model_urls: Dict[str, str] = Field(default_factory=lambda: {
+        "sam3_hiera_large": "https://huggingface.co/facebook/sam3/resolve/main/sam3_hiera_large.pt",
+        "sam3_hiera_base": "https://huggingface.co/facebook/sam3/resolve/main/sam3_hiera_base.pt",
+        "sam3_hiera_small": "https://huggingface.co/facebook/sam3/resolve/main/sam3_hiera_small.pt",
+        "sam3_hiera_tiny": "https://huggingface.co/facebook/sam3/resolve/main/sam3_hiera_tiny.pt",
     })
-    dam4sam_sha256: Dict[str, str] = Field(default_factory=lambda: {
-        "sam21pp-T": "7402e0d864fa82708a20fbd15bc84245c2f26dff0eb43a4b5b93452deb34be69",
-        "sam21pp-S": "6d1aa6f30de5c92224f8172114de081d104bbd23dd9dc5c58996f0cad5dc4d38",
-        "sam21pp-B+": "a2345aede8715ab1d5d31b4a509fb160c5a4af1970f199d9054ccfb746c004c5",
-        "sam21pp-L": "2647878d5dfa5098f2f8649825738a9345572bae2d4350a2468587ece47dd318",
-    })
+    sam3_sha256: Dict[str, str] = Field(default_factory=lambda: {})
     yolo_url: str = "https://huggingface.co/Ultralytics/YOLOv5/resolve/main/"
 
     # YouTube-DL
@@ -150,7 +145,7 @@ class Config(BaseSettings):
     default_enable_face_filter: bool = True
     default_face_model_name: str = "buffalo_l"
     default_enable_subject_mask: bool = True
-    default_dam4sam_model_name: str = "sam21pp-L"
+    default_sam3_model_type: str = "sam3_hiera_large"
     default_person_detector_model: str = "yolo11x.pt"
     default_primary_seed_strategy: str = "🤖 Automatic"
     default_seed_strategy: str = "Largest Person"
@@ -605,7 +600,7 @@ class PreAnalysisEvent(UIEvent):
     face_ref_img_upload: Optional[str]
     face_model_name: str
     enable_subject_mask: bool
-    dam4sam_model_name: str
+    sam3_model_name: str
     person_detector_model: str
     best_frame_strategy: str
     scene_detect: bool
@@ -1018,7 +1013,7 @@ class AnalysisParameters(BaseModel):
     face_ref_img_path: str = ""
     face_model_name: str = ""
     enable_subject_mask: bool = False
-    dam4sam_model_name: str = ""
+    sam3_model_name: str = ""
     person_detector_model: str = ""
     seed_strategy: str = ""
     scene_detect: bool = False
@@ -1350,40 +1345,34 @@ def predict_grounding_dino(model: torch.nn.Module, image_tensor: torch.Tensor, c
         return gdino_predict(model=model, image=image_tensor.to(device), caption=caption,
                              box_threshold=float(box_threshold), text_threshold=float(text_threshold))
 
-def get_dam4sam_tracker(model_name: str, models_path: str, model_urls_tuple: tuple, user_agent: str,
-                        retry_params: tuple, logger: 'AppLogger', device: str) -> Optional['DAM4SAMTracker']:
+def get_sam3_tracker(model_name: str, models_path: str, model_urls_tuple: tuple, user_agent: str,
+                     retry_params: tuple, logger: 'AppLogger', device: str) -> Optional[Any]:
     model_urls = dict(model_urls_tuple)
-    selected_name = model_name or Config().default_dam4sam_model_name or next(iter(model_urls.keys()))
-    model_key = f"dam4sam_tracker_{selected_name}_{device}"
+    selected_name = model_name or Config().default_sam3_model_type or next(iter(model_urls.keys()))
+    model_key = f"sam3_tracker_{selected_name}_{device}"
 
     def _loader():
         error_handler = ErrorHandler(logger, *retry_params)
         if device != 'cuda':
-            logger.error("DAM4SAM requires CUDA but it's not available.")
-            return None
+            logger.warning("SAM 3 is optimized for CUDA and may not run on CPU.")
         try:
             models_dir = Path(models_path)
             models_dir.mkdir(parents=True, exist_ok=True)
-            if selected_name not in model_urls: raise ValueError(f"Unknown DAM4SAM model: {selected_name}")
+            if selected_name not in model_urls: raise ValueError(f"Unknown SAM 3 model: {selected_name}")
 
             url = model_urls[selected_name]
-            expected_sha256 = Config().dam4sam_sha256.get(selected_name)
+            expected_sha256 = Config().sam3_sha256.get(selected_name)
             checkpoint_path = models_dir / Path(url).name
 
-            download_model(url, checkpoint_path, f"DAM4SAM {selected_name}", logger, error_handler, user_agent, expected_sha256=expected_sha256)
+            download_model(url, checkpoint_path, f"SAM 3 {selected_name}", logger, error_handler, user_agent, expected_sha256=expected_sha256)
 
-            actual_path, _ = dam_utils.determine_tracker(selected_name)
-            if not Path(actual_path).exists():
-                Path(actual_path).parent.mkdir(exist_ok=True, parents=True)
-                shutil.copy(checkpoint_path, actual_path)
-
-            tracker = DAM4SAMTracker(selected_name)
-            return tracker
+            logger.info(f"Loading SAM 3 model '{selected_name}' from {checkpoint_path}...")
+            predictor = build_sam3_video_predictor(checkpoint=str(checkpoint_path), device=device)
+            return predictor
         except Exception as e:
-            logger.error(f"Failed to initialize DAM4SAM tracker {selected_name}: {str(e)}", exc_info=True)
+            logger.error(f"Failed to initialize SAM 3 tracker {selected_name}: {str(e)}", exc_info=True)
             if torch.cuda.is_available(): torch.cuda.empty_cache()
             return None
-
     return model_registry.get_or_load(model_key, _loader)
 
 def get_lpips_metric(model_name: str = 'alex', device: str = 'cpu') -> torch.nn.Module:
@@ -1701,10 +1690,10 @@ def create_frame_map(output_dir: Path, logger: 'AppLogger', ext: str = ".webp") 
 # --- MASKING & PROPAGATION ---
 
 class MaskPropagator:
-    def __init__(self, params: 'AnalysisParameters', dam_tracker: 'DAM4SAMTracker', cancel_event: threading.Event,
+    def __init__(self, params: 'AnalysisParameters', sam3_tracker: Any, cancel_event: threading.Event,
                  progress_queue: Queue, config: 'Config', logger: Optional['AppLogger'] = None, device: str = "cpu"):
         self.params = params
-        self.dam_tracker = dam_tracker
+        self.sam3_tracker = sam3_tracker
         self.cancel_event = cancel_event
         self.progress_queue = progress_queue
         self.config = config
@@ -1713,50 +1702,79 @@ class MaskPropagator:
 
     def propagate(self, shot_frames_rgb: list[np.ndarray], seed_idx: int, bbox_xywh: list[int],
                   tracker: Optional['AdvancedProgressTracker'] = None) -> tuple[list, list, list, list]:
-        if not self.dam_tracker or not shot_frames_rgb:
-            err_msg = "Tracker not initialized" if not self.dam_tracker else "No frames"
+
+        if not self.sam3_tracker or not shot_frames_rgb:
+            err_msg = "Tracker not initialized" if not self.sam3_tracker else "No frames"
             shape = shot_frames_rgb[0].shape[:2] if shot_frames_rgb else (100, 100)
             num_frames = len(shot_frames_rgb)
             return ([np.zeros(shape, np.uint8)] * num_frames, [0.0] * num_frames, [True] * num_frames, [err_msg] * num_frames)
-        self.logger.info("Propagating masks", component="propagator", user_context={'num_frames': len(shot_frames_rgb), 'seed_index': seed_idx})
-        masks = [None] * len(shot_frames_rgb)
 
-        if tracker: tracker.set_stage(f"Propagating masks for {len(shot_frames_rgb)} frames")
+        self.logger.info("Propagating masks with SAM 3", component="propagator")
 
-        def _propagate_direction(start_idx, end_idx, step, desc):
-            for i in range(start_idx, end_idx, step):
-                if self.cancel_event.is_set(): break
-                outputs = self.dam_tracker.track(rgb_to_pil(shot_frames_rgb[i]))
-                mask = outputs.get('pred_mask')
-                if mask is not None: mask = postprocess_mask((mask * 255).astype(np.uint8), config=self.config, fill_holes=True, keep_largest_only=True)
-                masks[i] = mask if mask is not None else np.zeros_like(shot_frames_rgb[i], dtype=np.uint8)[:, :, 0]
-                if tracker: tracker.step(1, desc=desc)
         try:
-            with torch.amp.autocast('cuda', enabled=self._device == 'cuda'):
-                outputs = self.dam_tracker.initialize(rgb_to_pil(shot_frames_rgb[seed_idx]), None, bbox=bbox_xywh)
-                mask = outputs.get('pred_mask')
-                if mask is not None: mask = postprocess_mask((mask * 255).astype(np.uint8), config=self.config, fill_holes=True, keep_largest_only=True)
-                masks[seed_idx] = mask if mask is not None else np.zeros_like(shot_frames_rgb[seed_idx], dtype=np.uint8)[:, :, 0]
-                if tracker: tracker.step(1, desc="Propagation (seed)")
+            response = self.sam3_tracker.handle_request(
+                request=dict(
+                    type="start_session",
+                    video_path=None,
+                    images=shot_frames_rgb
+                )
+            )
+            session_id = response["session_id"]
 
-                _propagate_direction(seed_idx + 1, len(shot_frames_rgb), 1, "Propagation (→)")
-                self.dam_tracker.initialize(rgb_to_pil(shot_frames_rgb[seed_idx]), None, bbox=bbox_xywh)
-                _propagate_direction(seed_idx - 1, -1, -1, "Propagation (←)")
+            x, y, w, h = bbox_xywh
+            box_prompt = [x, y, x + w, y + h]
 
-            h, w = shot_frames_rgb[0].shape[:2]
+            self.sam3_tracker.handle_request(
+                request=dict(
+                    type="add_prompt",
+                    session_id=session_id,
+                    frame_index=seed_idx,
+                    box=box_prompt,
+                    prompt_type="box"
+                )
+            )
+
+            if tracker: tracker.set_stage(f"Propagating...")
+
+            prop_response = self.sam3_tracker.handle_request(
+                request=dict(
+                    type="propagate_in_video",
+                    session_id=session_id
+                )
+            )
+
+            video_masks = prop_response["masks"]
+
             final_results = []
-            for i, mask in enumerate(masks):
-                if self.cancel_event.is_set() or mask is None: mask = np.zeros((h, w), dtype=np.uint8)
+            h, w = shot_frames_rgb[0].shape[:2]
+
+            for i in range(len(shot_frames_rgb)):
+                if self.cancel_event.is_set(): break
+
+                raw_mask = video_masks.get(i)
+
+                if raw_mask is not None:
+                    if hasattr(raw_mask, 'cpu'): raw_mask = raw_mask.cpu().numpy()
+                    mask = postprocess_mask((raw_mask * 255).astype(np.uint8),
+                                          config=self.config)
+                else:
+                    mask = np.zeros((h, w), dtype=np.uint8)
+
                 img_area = h * w
                 area_pct = (np.sum(mask > 0) / img_area) * 100 if img_area > 0 else 0.0
                 is_empty = area_pct < self.params.min_mask_area_pct
                 error = "Empty mask" if is_empty else None
+
                 final_results.append((mask, float(area_pct), bool(is_empty), error))
+
+            self.sam3_tracker.handle_request(dict(type="close_session", session_id=session_id))
+
             if not final_results: return ([], [], [], [])
             masks, areas, empties, errors = map(list, zip(*final_results))
             return masks, areas, empties, errors
+
         except Exception as e:
-            self.logger.critical("DAM4SAM propagation failed", component="propagator", exc_info=True)
+            self.logger.critical(f"SAM 3 propagation failed: {e}", exc_info=True)
             h, w = shot_frames_rgb[0].shape[:2]
             error_msg = f"Propagation failed: {e}"
             num_frames = len(shot_frames_rgb)
@@ -2054,7 +2072,7 @@ class SubjectMasker:
         self.logger = logger or AppLogger(config=Config())
         self.frame_map = frame_map
         self.face_analyzer, self.reference_embedding, self.person_detector, self.face_landmarker = face_analyzer, reference_embedding, person_detector, face_landmarker
-        self.dam_tracker, self.mask_dir, self.shots = None, None, []
+        self.sam3_tracker, self.mask_dir, self.shots = None, None, []
         self._gdino, self._sam2_img = None, None
         self._device = device
         self.thumbnail_manager = thumbnail_manager if thumbnail_manager is not None else ThumbnailManager(self.logger, self.config)
@@ -2066,12 +2084,12 @@ class SubjectMasker:
             face_analyzer=face_analyzer,
             reference_embedding=reference_embedding,
             person_detector=person_detector,
-            tracker=self.dam_tracker,
+            tracker=self.sam3_tracker,
             gdino_model=self._gdino,
             logger=self.logger,
             device=self._device
         )
-        self.mask_propagator = MaskPropagator(params, self.dam_tracker, cancel_event, progress_queue, config=self.config, logger=self.logger, device=self._device)
+        self.mask_propagator = MaskPropagator(params, self.sam3_tracker, cancel_event, progress_queue, config=self.config, logger=self.logger, device=self._device)
 
     def initialize_models(self):
         primary_strategy = self.params.primary_seed_strategy
@@ -2106,13 +2124,13 @@ class SubjectMasker:
         return self._gdino is not None
 
     def _initialize_tracker(self) -> bool:
-        if self.dam_tracker: return True
+        if self.sam3_tracker: return True
         try:
-            model_urls_tuple = tuple(self.config.dam4sam_model_urls.items())
+            model_urls_tuple = tuple(self.config.sam3_model_urls.items())
             retry_params = (self.config.retry_max_attempts, tuple(self.config.retry_backoff_seconds))
-            self.logger.info(f"Initializing DAM4SAM tracker: {self.params.dam4sam_model_name}")
-            self.dam_tracker = get_dam4sam_tracker(
-                model_name=self.params.dam4sam_model_name,
+            self.logger.info(f"Initializing SAM 3 tracker: {self.params.sam3_model_name}")
+            self.sam3_tracker = get_sam3_tracker(
+                model_name=self.params.sam3_model_name,
                 models_path=str(self.config.models_dir),
                 model_urls_tuple=model_urls_tuple,
                 user_agent=self.config.user_agent,
@@ -2120,13 +2138,13 @@ class SubjectMasker:
                 logger=self.logger,
                 device=self._device
             )
-            if self.dam_tracker is None or self.dam_tracker == "failed":
-                self.logger.error("DAM4SAM tracker initialization returned None/failed")
+            if self.sam3_tracker is None or self.sam3_tracker == "failed":
+                self.logger.error("SAM 3 tracker initialization returned None/failed")
                 return False
-            self.logger.success("DAM4SAM tracker initialized successfully")
+            self.logger.success("SAM 3 tracker initialized successfully")
             return True
         except Exception as e:
-            self.logger.error(f"Exception during DAM4SAM tracker initialization: {e}", exc_info=True)
+            self.logger.error(f"Exception during SAM 3 tracker initialization: {e}", exc_info=True)
             return False
 
     def run_propagation(self, frames_dir: str, scenes_to_process: list['Scene'],
@@ -3307,7 +3325,7 @@ def execute_session_load(app_ui: 'AppUI', event: 'SessionLoadEvent', logger: 'Ap
             "text_prompt_input": gr.update(value=run_config.get("text_prompt", "")),
             "seed_strategy_input": gr.update(value=run_config.get("seed_strategy", "Largest Person")),
             "person_detector_model_input": gr.update(value=run_config.get("person_detector_model", "yolo11x.pt")),
-            "dam4sam_model_name_input": gr.update(value=run_config.get("dam4sam_model_name", "sam21pp-T")),
+            "sam3_model_name_input": gr.update(value=run_config.get("sam3_model_name", "sam3_hiera_large")),
             "enable_dedup_input": gr.update(value=run_config.get("enable_dedup", False)),
             "extracted_video_path_state": run_config.get("video_path", ""),
             "extracted_frames_dir_state": str(output_dir),
@@ -3471,7 +3489,7 @@ class AppUI:
     SEED_STRATEGY_CHOICES: List[str] = ["Largest Person", "Center-most Person", "Highest Confidence", "Tallest Person", "Area x Confidence", "Rule-of-Thirds", "Edge-avoiding", "Balanced", "Best Face"]
     PERSON_DETECTOR_MODEL_CHOICES: List[str] = ['yolo11x.pt', 'yolo11s.pt']
     FACE_MODEL_NAME_CHOICES: List[str] = ["buffalo_l", "buffalo_s"]
-    DAM4SAM_MODEL_NAME_CHOICES: List[str] = ["sam21pp-T", "sam21pp-S", "sam21pp-B+", "sam21pp-L"]
+    SAM3_MODEL_CHOICES: List[str] = ["sam3_hiera_large", "sam3_hiera_base", "sam3_hiera_small", "sam3_hiera_tiny"]
     GALLERY_VIEW_CHOICES: List[str] = ["Kept", "Rejected"]
     LOG_LEVEL_CHOICES: List[str] = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'SUCCESS', 'CRITICAL']
     SCENE_GALLERY_VIEW_CHOICES: List[str] = ["Kept", "Rejected", "All"]
@@ -3493,8 +3511,8 @@ class AppUI:
         self.performance_metrics, self.log_filter_level, self.all_logs = {}, "INFO", []
         self.last_run_args = None
         self.ext_ui_map_keys = ['source_path', 'upload_video', 'method', 'interval', 'nth_frame', 'max_resolution', 'thumb_megapixels', 'scene_detect']
-        self.ana_ui_map_keys = ['output_folder', 'video_path', 'resume', 'enable_face_filter', 'face_ref_img_path', 'face_ref_img_upload', 'face_model_name', 'enable_subject_mask', 'dam4sam_model_name', 'person_detector_model', 'best_frame_strategy', 'scene_detect', 'text_prompt', 'box_threshold', 'text_threshold', 'min_mask_area_pct', 'sharpness_base_scale', 'edge_strength_base_scale', 'gdino_config_path', 'gdino_checkpoint_path', 'pre_analysis_enabled', 'pre_sample_nth', 'primary_seed_strategy', 'compute_quality_score', 'compute_sharpness', 'compute_edge_strength', 'compute_contrast', 'compute_brightness', 'compute_entropy', 'compute_eyes_open', 'compute_yaw', 'compute_pitch', 'compute_face_sim', 'compute_subject_mask_area', 'compute_niqe', 'compute_phash']
-        self.session_load_keys = ['unified_log', 'unified_status', 'progress_details', 'cancel_button', 'pause_button', 'source_input', 'max_resolution', 'thumb_megapixels_input', 'ext_scene_detect_input', 'method_input', 'pre_analysis_enabled_input', 'pre_sample_nth_input', 'enable_face_filter_input', 'face_ref_img_path_input', 'text_prompt_input', 'best_frame_strategy_input', 'person_detector_model_input', 'dam4sam_model_name_input', 'extracted_video_path_state', 'extracted_frames_dir_state', 'analysis_output_dir_state', 'analysis_metadata_path_state', 'scenes_state', 'propagate_masks_button', 'seeding_results_column', 'propagation_group', 'scene_filter_status', 'scene_face_sim_min_input', 'filtering_tab', 'scene_gallery', 'scene_gallery_index_map_state']
+        self.ana_ui_map_keys = ['output_folder', 'video_path', 'resume', 'enable_face_filter', 'face_ref_img_path', 'face_ref_img_upload', 'face_model_name', 'enable_subject_mask', 'sam3_model_name', 'person_detector_model', 'best_frame_strategy', 'scene_detect', 'text_prompt', 'box_threshold', 'text_threshold', 'min_mask_area_pct', 'sharpness_base_scale', 'edge_strength_base_scale', 'gdino_config_path', 'gdino_checkpoint_path', 'pre_analysis_enabled', 'pre_sample_nth', 'primary_seed_strategy', 'compute_quality_score', 'compute_sharpness', 'compute_edge_strength', 'compute_contrast', 'compute_brightness', 'compute_entropy', 'compute_eyes_open', 'compute_yaw', 'compute_pitch', 'compute_face_sim', 'compute_subject_mask_area', 'compute_niqe', 'compute_phash']
+        self.session_load_keys = ['unified_log', 'unified_status', 'progress_details', 'cancel_button', 'pause_button', 'source_input', 'max_resolution', 'thumb_megapixels_input', 'ext_scene_detect_input', 'method_input', 'pre_analysis_enabled_input', 'pre_sample_nth_input', 'enable_face_filter_input', 'face_ref_img_path_input', 'text_prompt_input', 'best_frame_strategy_input', 'person_detector_model_input', 'sam3_model_name_input', 'extracted_video_path_state', 'extracted_frames_dir_state', 'analysis_output_dir_state', 'analysis_metadata_path_state', 'scenes_state', 'propagate_masks_button', 'seeding_results_column', 'propagation_group', 'scene_filter_status', 'scene_face_sim_min_input', 'filtering_tab', 'scene_gallery', 'scene_gallery_index_map_state']
 
     def build_ui(self) -> gr.Blocks:
         css = """.gradio-gallery { overflow-y: hidden !important; } .gradio-gallery img { width: 100%; height: 100%; object-fit: scale-down; object-position: top left; } .plot-and-slider-column { max-width: 560px !important; margin: auto; } .scene-editor { border: 1px solid #444; padding: 10px; border-radius: 5px; } .log-container > .gr-utils-error { display: none !important; } .progress-details { font-size: 1rem !important; color: #333 !important; font-weight: 500; padding: 8px 0; } .gr-progress .progress { height: 28px !important; }"""
@@ -3614,7 +3632,7 @@ class AppUI:
                     self._reg('pre_sample_nth', self._create_component('pre_sample_nth_input', 'number', {'label': 'Sample every Nth thumbnail for pre-analysis', 'value': self.config.default_pre_sample_nth, 'interactive': True, 'info': "For faster pre-analysis, check every Nth frame in a scene instead of all of them. A value of 5 is a good starting point."}))
                     self._reg('person_detector_model', self._create_component('person_detector_model_input', 'dropdown', {'choices': self.PERSON_DETECTOR_MODEL_CHOICES, 'value': self.config.default_person_detector_model, 'label': "Person Detector Model", 'info': "YOLO Model for finding people. 'x' (large) is more accurate but slower; 's' (small) is much faster but may miss people."}))
                     self._reg('face_model_name', self._create_component('face_model_name_input', 'dropdown', {'choices': self.FACE_MODEL_NAME_CHOICES, 'value': self.config.default_face_model_name, 'label': "Face Recognition Model", 'info': "InsightFace model for face matching. 'l' (large) is more accurate; 's' (small) is faster and uses less memory."}))
-                    self._reg('dam4sam_model_name', self._create_component('dam4sam_model_name_input', 'dropdown', {'choices': self.DAM4SAM_MODEL_NAME_CHOICES, 'value': self.config.default_dam4sam_model_name, 'label': "Mask Tracking Model", 'info': "The Segment Anything 2 model used for tracking the subject mask across frames. Larger models (L) are more robust but use more VRAM; smaller models (T) are faster."}))
+                    self._reg('sam3_model_name', self._create_component('sam3_model_name_input', 'dropdown', {'choices': self.SAM3_MODEL_CHOICES, 'value': self.config.default_sam3_model_type, 'label': "SAM 3 Model", 'info': "The SAM 3 model used for tracking the subject mask across frames."}))
                     self._reg('resume', self._create_component('resume_input', 'checkbox', {'label': 'Resume', 'value': self.config.default_resume, 'interactive': True, 'visible': False}))
                     self._reg('enable_subject_mask', self._create_component('enable_subject_mask_input', 'checkbox', {'label': 'Enable Subject Mask', 'value': self.config.default_enable_subject_mask, 'interactive': True, 'visible': False}))
                     self._reg('min_mask_area_pct', self._create_component('min_mask_area_pct_input', 'slider', {'label': 'Min Mask Area Pct', 'value': self.config.default_min_mask_area_pct, 'interactive': True, 'visible': False}))
