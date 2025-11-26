@@ -12,51 +12,74 @@ The application follows a **Composition Root** design pattern, ensuring loose co
 
 ```mermaid
 graph TD
-    UI[Gradio UI Layer] <-->|Events & Updates| Controller[EnhancedAppUI]
-    Controller -->|Configures| Pipelines
-    
+    subgraph UI
+        Gradio[Gradio UI Layer]
+    end
+
+    subgraph Application_Logic
+        App[app.py]
+    end
+
+    subgraph Core_Modules
+        Config[config.py]
+        Logger[logger.py]
+        Events[events.py]
+        ErrorHandling[error_handling.py]
+        Progress[progress.py]
+    end
+
     subgraph Pipelines
         Extraction[Extraction Pipeline]
         Seeding[Seed Selection]
         Propagation[Mask Propagation]
         Analysis[Metric Analysis]
     end
-    
-    subgraph Core_Services
-        Config[Configuration]
-        Logger[AppLogger]
-        Registry[Model Registry]
-        Thumbs[Thumbnail Manager]
+
+    subgraph External_Libraries
+        SAM3[SAM3]
+        GroundedDINO[Grounded-DINO]
+        YOLO[YOLO]
     end
-    
-    Pipelines --> Core_Services
+
+    UI -->|Triggers| App
+    App -->|Uses| Pipelines
+    App -->|Uses| Core_Modules
+    Pipelines -->|Uses| Core_Modules
+    Pipelines -->|Uses| External_Libraries
 ```
 
 ## 3. Core Infrastructure
 
-### 3.1 Configuration Management
+### 3.1 Configuration Management (`config.py`)
 *   **Class:** `Config` (Pydantic `BaseSettings`)
 *   **Function:** Centralizes all application settings, including model URLs, file paths, default thresholds, and hardware preferences.
 *   **Sources:** Loads from environment variables (`.env`), a local `config.json`, and defaults.
 *   **Validation:** Ensures critical paths exist and quality weights sum to non-zero values.
 
-### 3.2 Logging & Telemetry
+### 3.2 Logging & Telemetry (`logger.py`)
 *   **Class:** `AppLogger`
 *   **Features:**
     *   **Dual Output:** Writes human-readable colored logs to the console and structured JSONL logs to disk for auditing.
     *   **UI Streaming:** Pushes log events to a `Queue` to display real-time status in the application footer.
     *   **Context Managers:** The `operation()` context manager automatically tracks execution time and success/failure states of blocks of code.
 
-### 3.3 Resource Management
-*   **`ModelRegistry`:** A thread-safe singleton that handles the lazy loading of large ML models (e.g., SAM2, GroundingDINO). It ensures models are only loaded when needed and manages GPU device placement.
-*   **`ThumbnailManager`:** Implements an LRU (Least Recently Used) cache for image thumbnails to minimize disk I/O latency during UI interactions (e.g., scrolling through the scene gallery).
-*   **`safe_resource_cleanup`:** A context manager that forces Python garbage collection and clears the CUDA cache to prevent VRAM leaks between pipeline stages.
+### 3.3 Event-Driven Communication (`events.py`)
+*   **Pydantic Models:** Defines typed data structures for communication between the UI and backend pipelines (e.g., `ExtractionEvent`, `PreAnalysisEvent`). This ensures data integrity and clarity.
 
-### 3.4 Error Handling
+### 3.4 Error Handling (`error_handling.py`)
 *   **Class:** `ErrorHandler`
 *   **Decorators:**
     *   `@with_retry`: Automatically retries transient failures (like network timeouts) with exponential backoff.
     *   `@with_fallback`: Executes a secondary function if the primary one fails (e.g., falling back to CPU if GPU inference fails).
+
+### 3.5 Progress Tracking (`progress.py`)
+*   **Classes:** `ProgressTracker`, `AdvancedProgressTracker`
+*   **Function:** Provides a structured way to report progress from long-running backend tasks to the UI, including support for nested, multi-stage operations.
+
+### 3.6 Resource Management
+*   **`ModelRegistry`:** A thread-safe singleton that handles the lazy loading of large ML models (e.g., SAM2, GroundingDINO). It ensures models are only loaded when needed and manages GPU device placement.
+*   **`ThumbnailManager`:** Implements an LRU (Least Recently Used) cache for image thumbnails to minimize disk I/O latency during UI interactions (e.g., scrolling through the scene gallery).
+*   **`safe_resource_cleanup`:** A context manager that forces Python garbage collection and clears the CUDA cache to prevent VRAM leaks between pipeline stages.
 
 ## 4. Data Model
 
