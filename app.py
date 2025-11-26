@@ -50,6 +50,57 @@ from database import Database
 # from DAM4SAM.utils import utils as dam_utils # Removed
 from sam3.model_builder import build_sam3_video_predictor
 from sam3.model.sam3_video_predictor import Sam3VideoPredictor
+
+# Monkey patch SAM3 for Windows compatibility (Triton not available on Windows)
+try:
+    import triton
+except ImportError:
+    # Triton not available - monkey patch the EDT and connected components functions
+    import sam3.model.edt as edt_module
+    import sam3.perflib.connected_components as cc_module
+    
+    def edt_triton_fallback(data):
+        """OpenCV-based fallback for Euclidean Distance Transform when Triton unavailable"""
+        import cv2
+        import numpy as np
+        assert data.dim() == 3
+        device = data.device
+        data_cpu = data.cpu().numpy().astype(np.uint8)
+        B, H, W = data_cpu.shape
+        output = np.zeros_like(data_cpu, dtype=np.float32)
+        for b in range(B):
+            dist = cv2.distanceTransform(data_cpu[b], cv2.DIST_L2, 0)
+            output[b] = dist
+        return torch.from_numpy(output).to(device)
+    
+    def connected_components_fallback(input_tensor):
+        """CPU-based fallback for connected components when Triton unavailable"""
+        from skimage.measure import label as sk_label
+        if input_tensor.dim() == 3:
+            input_tensor = input_tensor.unsqueeze(1)
+        assert input_tensor.dim() == 4 and input_tensor.shape[1] == 1
+        
+        device = input_tensor.device
+        data_cpu = input_tensor.squeeze(1).cpu().numpy().astype(np.uint8)
+        B, H, W = data_cpu.shape
+        
+        labels_list, counts_list = [], []
+        for b in range(B):
+            labels, num = sk_label(data_cpu[b], return_num=True)
+            counts = np.zeros_like(labels)
+            for i in range(1, num + 1):
+                cur_mask = labels == i
+                counts[cur_mask] = cur_mask.sum()
+            labels_list.append(labels)
+            counts_list.append(counts)
+        
+        labels_tensor = torch.from_numpy(np.stack(labels_list)).unsqueeze(1).to(device)
+        counts_tensor = torch.from_numpy(np.stack(counts_list)).unsqueeze(1).to(device)
+        return labels_tensor, counts_tensor
+    
+    # Apply monkey patches
+    edt_module.edt_triton = edt_triton_fallback
+    cc_module.connected_components = connected_components_fallback
 from groundingdino.util.inference import load_model as gdino_load_model, predict as gdino_predict
 import mediapipe as mp
 from mediapipe.tasks import python
@@ -144,7 +195,7 @@ class Config(BaseSettings):
     default_enable_face_filter: bool = True
     default_face_model_name: str = "buffalo_l"
     default_enable_subject_mask: bool = True
-    default_dam4sam_model_name: str = "sam3"
+    default_tracker_model_name: str = "sam3"
     default_person_detector_model: str = "yolo11x.pt"
     default_primary_seed_strategy: str = "🤖 Automatic"
     default_seed_strategy: str = "Largest Person"
@@ -599,7 +650,7 @@ class PreAnalysisEvent(UIEvent):
     face_ref_img_upload: Optional[str]
     face_model_name: str
     enable_subject_mask: bool
-    dam4sam_model_name: str
+    tracker_model_name: str
     person_detector_model: str
     best_frame_strategy: str
     scene_detect: bool
@@ -1012,7 +1063,7 @@ class AnalysisParameters(BaseModel):
     face_ref_img_path: str = ""
     face_model_name: str = ""
     enable_subject_mask: bool = False
-    dam4sam_model_name: str = ""
+    tracker_model_name: str = ""
     person_detector_model: str = ""
     seed_strategy: str = ""
     scene_detect: bool = False
@@ -1735,7 +1786,7 @@ def create_frame_map(output_dir: Path, logger: 'AppLogger', ext: str = ".webp") 
 # --- MASKING & PROPAGATION ---
 
 class MaskPropagator:
-    def __init__(self, params: 'AnalysisParameters', dam_tracker: 'DAM4SAMTracker', cancel_event: threading.Event,
+    def __init__(self, params: 'AnalysisParameters', dam_tracker: 'SAM3Wrapper', cancel_event: threading.Event,
                  progress_queue: Queue, config: 'Config', logger: Optional['AppLogger'] = None, device: str = "cpu"):
         self.params = params
         self.dam_tracker = dam_tracker
@@ -1828,7 +1879,7 @@ class MaskPropagator:
 
 class SeedSelector:
     def __init__(self, params: 'AnalysisParameters', config: 'Config', face_analyzer: 'FaceAnalysis',
-                 reference_embedding: np.ndarray, person_detector: 'PersonDetector', tracker: 'DAM4SAMTracker',
+                 reference_embedding: np.ndarray, person_detector: 'PersonDetector', tracker: 'SAM3Wrapper',
                  gdino_model: torch.nn.Module, logger: Optional['AppLogger'] = None, device: str = "cpu"):
         self.params = params
         self.config = config
@@ -2174,9 +2225,9 @@ class SubjectMasker:
         if self.dam_tracker: return True
         try:
             retry_params = (self.config.retry_max_attempts, tuple(self.config.retry_backoff_seconds))
-            self.logger.info(f"Initializing SAM3 tracker: {self.params.dam4sam_model_name}")
+            self.logger.info(f"Initializing SAM3 tracker: {self.params.tracker_model_name}")
             self.dam_tracker = get_tracker(
-                model_name=self.params.dam4sam_model_name,
+                model_name=self.params.tracker_model_name,
                 models_path=str(self.config.models_dir),
                 user_agent=self.config.user_agent,
                 retry_params=retry_params,
@@ -2195,7 +2246,7 @@ class SubjectMasker:
             self.logger.success("SAM3 tracker initialized successfully")
             return True
         except Exception as e:
-            self.logger.error(f"Exception during DAM4SAM tracker initialization: {e}", exc_info=True)
+            self.logger.error(f"Exception during SAM3 tracker initialization: {e}", exc_info=True)
             return False
 
     def run_propagation(self, frames_dir: str, scenes_to_process: list['Scene'],
@@ -2204,8 +2255,8 @@ class SubjectMasker:
         self.mask_dir.mkdir(exist_ok=True)
         self.logger.info("Starting subject mask propagation...")
         if not self._initialize_tracker():
-            self.logger.error("DAM4SAM tracker could not be initialized; mask propagation failed.")
-            return {"error": "DAM4SAM tracker initialization failed", "completed": False}
+            self.logger.error("SAM3 tracker could not be initialized; mask propagation failed.")
+            return {"error": "SAM3 tracker initialization failed", "completed": False}
 
         thumb_dir = Path(frames_dir) / "thumbs"
         mask_metadata, total_scenes = {}, len(scenes_to_process)
@@ -3376,7 +3427,7 @@ def execute_session_load(app_ui: 'AppUI', event: 'SessionLoadEvent', logger: 'Ap
             "text_prompt_input": gr.update(value=run_config.get("text_prompt", "")),
             "seed_strategy_input": gr.update(value=run_config.get("seed_strategy", "Largest Person")),
             "person_detector_model_input": gr.update(value=run_config.get("person_detector_model", "yolo11x.pt")),
-            "dam4sam_model_name_input": gr.update(value=run_config.get("dam4sam_model_name", "sam21pp-T")),
+            "tracker_model_name_input": gr.update(value=run_config.get("tracker_model_name", "sam3")),
             "enable_dedup_input": gr.update(value=run_config.get("enable_dedup", False)),
             "extracted_video_path_state": run_config.get("video_path", ""),
             "extracted_frames_dir_state": str(output_dir),
@@ -3442,7 +3493,7 @@ def execute_propagation(event: PropagationEvent, progress_queue: Queue, cancel_e
         if result and result.get("done"):
             masks_dir = Path(result['output_dir']) / "masks"
             mask_files = list(masks_dir.glob("*.png")) if masks_dir.exists() else []
-            if not mask_files: yield {"unified_log": "❌ Propagation failed - no masks were generated. Check DAM4SAM model logs.", "done": False}; return
+            if not mask_files: yield {"unified_log": "❌ Propagation failed - no masks were generated. Check SAM3 model logs.", "done": False}; return
             yield {"unified_log": f"✅ Propagation complete. Generated {len(mask_files)} masks.", "output_dir": result['output_dir'], "done": True}
         else: yield {"unified_log": f"❌ Propagation failed. Reason: {result.get('error', 'Unknown error')}", "done": False}
     except Exception as e:
@@ -3540,7 +3591,7 @@ class AppUI:
     SEED_STRATEGY_CHOICES: List[str] = ["Largest Person", "Center-most Person", "Highest Confidence", "Tallest Person", "Area x Confidence", "Rule-of-Thirds", "Edge-avoiding", "Balanced", "Best Face"]
     PERSON_DETECTOR_MODEL_CHOICES: List[str] = ['yolo11x.pt', 'yolo11s.pt']
     FACE_MODEL_NAME_CHOICES: List[str] = ["buffalo_l", "buffalo_s"]
-    DAM4SAM_MODEL_NAME_CHOICES: List[str] = ["sam21pp-T", "sam21pp-S", "sam21pp-B+", "sam21pp-L"]
+    TRACKER_MODEL_CHOICES: List[str] = ["sam3"]  # SAM3 model
     GALLERY_VIEW_CHOICES: List[str] = ["Kept", "Rejected"]
     LOG_LEVEL_CHOICES: List[str] = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'SUCCESS', 'CRITICAL']
     SCENE_GALLERY_VIEW_CHOICES: List[str] = ["Kept", "Rejected", "All"]
@@ -3562,8 +3613,8 @@ class AppUI:
         self.performance_metrics, self.log_filter_level, self.all_logs = {}, "INFO", []
         self.last_run_args = None
         self.ext_ui_map_keys = ['source_path', 'upload_video', 'method', 'interval', 'nth_frame', 'max_resolution', 'thumb_megapixels', 'scene_detect']
-        self.ana_ui_map_keys = ['output_folder', 'video_path', 'resume', 'enable_face_filter', 'face_ref_img_path', 'face_ref_img_upload', 'face_model_name', 'enable_subject_mask', 'dam4sam_model_name', 'person_detector_model', 'best_frame_strategy', 'scene_detect', 'text_prompt', 'box_threshold', 'text_threshold', 'min_mask_area_pct', 'sharpness_base_scale', 'edge_strength_base_scale', 'gdino_config_path', 'gdino_checkpoint_path', 'pre_analysis_enabled', 'pre_sample_nth', 'primary_seed_strategy', 'compute_quality_score', 'compute_sharpness', 'compute_edge_strength', 'compute_contrast', 'compute_brightness', 'compute_entropy', 'compute_eyes_open', 'compute_yaw', 'compute_pitch', 'compute_face_sim', 'compute_subject_mask_area', 'compute_niqe', 'compute_phash']
-        self.session_load_keys = ['unified_log', 'unified_status', 'progress_details', 'cancel_button', 'pause_button', 'source_input', 'max_resolution', 'thumb_megapixels_input', 'ext_scene_detect_input', 'method_input', 'pre_analysis_enabled_input', 'pre_sample_nth_input', 'enable_face_filter_input', 'face_ref_img_path_input', 'text_prompt_input', 'best_frame_strategy_input', 'person_detector_model_input', 'dam4sam_model_name_input', 'extracted_video_path_state', 'extracted_frames_dir_state', 'analysis_output_dir_state', 'analysis_metadata_path_state', 'scenes_state', 'propagate_masks_button', 'seeding_results_column', 'propagation_group', 'scene_filter_status', 'scene_face_sim_min_input', 'filtering_tab', 'scene_gallery', 'scene_gallery_index_map_state']
+        self.ana_ui_map_keys = ['output_folder', 'video_path', 'resume', 'enable_face_filter', 'face_ref_img_path', 'face_ref_img_upload', 'face_model_name', 'enable_subject_mask', 'tracker_model_name', 'person_detector_model', 'best_frame_strategy', 'scene_detect', 'text_prompt', 'box_threshold', 'text_threshold', 'min_mask_area_pct', 'sharpness_base_scale', 'edge_strength_base_scale', 'gdino_config_path', 'gdino_checkpoint_path', 'pre_analysis_enabled', 'pre_sample_nth', 'primary_seed_strategy', 'compute_quality_score', 'compute_sharpness', 'compute_edge_strength', 'compute_contrast', 'compute_brightness', 'compute_entropy', 'compute_eyes_open', 'compute_yaw', 'compute_pitch', 'compute_face_sim', 'compute_subject_mask_area', 'compute_niqe', 'compute_phash']
+        self.session_load_keys = ['unified_log', 'unified_status', 'progress_details', 'cancel_button', 'pause_button', 'source_input', 'max_resolution', 'thumb_megapixels_input', 'ext_scene_detect_input', 'method_input', 'pre_analysis_enabled_input', 'pre_sample_nth_input', 'enable_face_filter_input', 'face_ref_img_path_input', 'text_prompt_input', 'best_frame_strategy_input', 'person_detector_model_input', 'tracker_model_name_input', 'extracted_video_path_state', 'extracted_frames_dir_state', 'analysis_output_dir_state', 'analysis_metadata_path_state', 'scenes_state', 'propagate_masks_button', 'seeding_results_column', 'propagation_group', 'scene_filter_status', 'scene_face_sim_min_input', 'filtering_tab', 'scene_gallery', 'scene_gallery_index_map_state']
 
     def build_ui(self) -> gr.Blocks:
         css = """.gradio-gallery { overflow-y: hidden !important; } .gradio-gallery img { width: 100%; height: 100%; object-fit: scale-down; object-position: top left; } .plot-and-slider-column { max-width: 560px !important; margin: auto; } .scene-editor { border: 1px solid #444; padding: 10px; border-radius: 5px; } .log-container > .gr-utils-error { display: none !important; } .progress-details { font-size: 1rem !important; color: #333 !important; font-weight: 500; padding: 8px 0; } .gr-progress .progress { height: 28px !important; }"""
@@ -3683,7 +3734,7 @@ class AppUI:
                     self._reg('pre_sample_nth', self._create_component('pre_sample_nth_input', 'number', {'label': 'Sample every Nth thumbnail for pre-analysis', 'value': self.config.default_pre_sample_nth, 'interactive': True, 'info': "For faster pre-analysis, check every Nth frame in a scene instead of all of them. A value of 5 is a good starting point."}))
                     self._reg('person_detector_model', self._create_component('person_detector_model_input', 'dropdown', {'choices': self.PERSON_DETECTOR_MODEL_CHOICES, 'value': self.config.default_person_detector_model, 'label': "Person Detector Model", 'info': "YOLO Model for finding people. 'x' (large) is more accurate but slower; 's' (small) is much faster but may miss people."}))
                     self._reg('face_model_name', self._create_component('face_model_name_input', 'dropdown', {'choices': self.FACE_MODEL_NAME_CHOICES, 'value': self.config.default_face_model_name, 'label': "Face Recognition Model", 'info': "InsightFace model for face matching. 'l' (large) is more accurate; 's' (small) is faster and uses less memory."}))
-                    self._reg('dam4sam_model_name', self._create_component('dam4sam_model_name_input', 'dropdown', {'choices': self.DAM4SAM_MODEL_NAME_CHOICES, 'value': self.config.default_dam4sam_model_name, 'label': "Mask Tracking Model", 'info': "The Segment Anything 2 model used for tracking the subject mask across frames. Larger models (L) are more robust but use more VRAM; smaller models (T) are faster."}))
+                    self._reg('tracker_model_name', self._create_component('tracker_model_name_input', 'dropdown', {'choices': self.TRACKER_MODEL_CHOICES, 'value': self.config.default_tracker_model_name, 'label': "Mask Tracking Model", 'info': "The SAM3 model used for tracking the subject mask across frames."}))
                     self._reg('resume', self._create_component('resume_input', 'checkbox', {'label': 'Resume', 'value': self.config.default_resume, 'interactive': True, 'visible': False}))
                     self._reg('enable_subject_mask', self._create_component('enable_subject_mask_input', 'checkbox', {'label': 'Enable Subject Mask', 'value': self.config.default_enable_subject_mask, 'interactive': True, 'visible': False}))
                     self._reg('min_mask_area_pct', self._create_component('min_mask_area_pct_input', 'slider', {'label': 'Min Mask Area Pct', 'value': self.config.default_min_mask_area_pct, 'interactive': True, 'visible': False}))
@@ -4036,7 +4087,7 @@ class AppUI:
             else: report.append("  - CUDA: NOT AVAILABLE (Running in CPU mode)")
         except Exception as e: report.append(f"  - PyTorch/CUDA Check: FAILED ({e})")
         report.append("\n[SECTION 2: Core Dependencies]")
-        for dep in ["cv2", "gradio", "imagehash", "mediapipe", "ultralytics", "groundingdino", "DAM4SAM"]:
+        for dep in ["cv2", "gradio", "imagehash", "mediapipe", "ultralytics", "groundingdino", "sam3"]:
             try: __import__(dep.split('.')[0]); report.append(f"  - {dep}: OK")
             except ImportError: report.append(f"  - {dep}: FAILED (Not Installed)")
         report.append("\n[SECTION 3: Paths & Assets]")
