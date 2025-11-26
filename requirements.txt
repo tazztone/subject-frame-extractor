@@ -1,7 +1,7 @@
 gradio
 insightface
 numba
-numpy
+numpy<2
 onnxruntime-gpu
 opencv-python
 Pillow
@@ -27,3 +27,8 @@ gradio
 lpips
 numba
 scikit-learn
+timm>=1.0.17
+ftfy
+regex
+iopath
+decord

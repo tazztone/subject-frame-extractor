@@ -43,11 +43,13 @@ from typing import Any, Callable, Dict, Generator, List, Optional, Union
 # Ensure project root is in path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
-sys.path.insert(0, str(project_root / 'DAM4SAM'))
+sys.path.insert(0, str(project_root / 'SAM3_repo'))
 
 from database import Database
-from DAM4SAM.dam4sam_tracker import DAM4SAMTracker
-from DAM4SAM.utils import utils as dam_utils
+# from DAM4SAM.dam4sam_tracker import DAM4SAMTracker # Removed
+# from DAM4SAM.utils import utils as dam_utils # Removed
+from sam3.model_builder import build_sam3_video_predictor
+from sam3.model.sam3_video_predictor import Sam3VideoPredictor
 from groundingdino.util.inference import load_model as gdino_load_model, predict as gdino_predict
 import mediapipe as mp
 from mediapipe.tasks import python
@@ -96,18 +98,10 @@ class Config(BaseSettings):
     grounding_dino_sha256: str = "3b3ca2563c77c69f651d7bd133e97139c186df06231157a64c507099c52bc799"
     face_landmarker_url: str = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
     face_landmarker_sha256: str = "9c899f78b8f2a0b1b117b3554b5f903e481b67f1390f7716e2a537f8842c0c7a"
-    dam4sam_model_urls: Dict[str, str] = Field(default_factory=lambda: {
-        "sam21pp-T": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt",
-        "sam21pp-S": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_small.pt",
-        "sam21pp-B+": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_base_plus.pt",
-        "sam21pp-L": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt",
-    })
-    dam4sam_sha256: Dict[str, str] = Field(default_factory=lambda: {
-        "sam21pp-T": "7402e0d864fa82708a20fbd15bc84245c2f26dff0eb43a4b5b93452deb34be69",
-        "sam21pp-S": "6d1aa6f30de5c92224f8172114de081d104bbd23dd9dc5c58996f0cad5dc4d38",
-        "sam21pp-B+": "a2345aede8715ab1d5d31b4a509fb160c5a4af1970f199d9054ccfb746c004c5",
-        "sam21pp-L": "2647878d5dfa5098f2f8649825738a9345572bae2d4350a2468587ece47dd318",
-    })
+    sam3_checkpoint_url: str = "https://huggingface.co/facebook/sam3/resolve/main/sam3.pt"
+    sam3_checkpoint_sha256: str = "7402e0d864fa82708a20fbd15bc84245c2f26dff0eb43a4b5b93452deb34be69" # Placeholder, update if known or remove check
+    # dam4sam_model_urls removed
+    # dam4sam_sha256 removed
     yolo_url: str = "https://huggingface.co/Ultralytics/YOLOv5/resolve/main/"
 
     # YouTube-DL
@@ -150,7 +144,7 @@ class Config(BaseSettings):
     default_enable_face_filter: bool = True
     default_face_model_name: str = "buffalo_l"
     default_enable_subject_mask: bool = True
-    default_dam4sam_model_name: str = "sam21pp-L"
+    default_dam4sam_model_name: str = "sam3"
     default_person_detector_model: str = "yolo11x.pt"
     default_primary_seed_strategy: str = "🤖 Automatic"
     default_seed_strategy: str = "Largest Person"
@@ -1350,41 +1344,81 @@ def predict_grounding_dino(model: torch.nn.Module, image_tensor: torch.Tensor, c
         return gdino_predict(model=model, image=image_tensor.to(device), caption=caption,
                              box_threshold=float(box_threshold), text_threshold=float(text_threshold))
 
-def get_dam4sam_tracker(model_name: str, models_path: str, model_urls_tuple: tuple, user_agent: str,
-                        retry_params: tuple, logger: 'AppLogger', device: str) -> Optional['DAM4SAMTracker']:
-    model_urls = dict(model_urls_tuple)
-    selected_name = model_name or Config().default_dam4sam_model_name or next(iter(model_urls.keys()))
-    model_key = f"dam4sam_tracker_{selected_name}_{device}"
+class SAM3Wrapper:
+    def __init__(self, checkpoint_path, device="cuda"):
+        self.device = device
+        self.predictor = build_sam3_video_predictor(
+            ckpt_path=checkpoint_path,
+            device=device
+        )
+        self.session_id = None
 
-    def _loader():
-        error_handler = ErrorHandler(logger, *retry_params)
-        if device != 'cuda':
-            logger.error("DAM4SAM requires CUDA but it's not available.")
-            return None
+    def initialize(self, images, init_mask=None, bbox=None, prompt_frame_idx=0):
+        """
+        Initialize session with images and optional prompt.
+        images: List of PIL Images.
+        bbox: [x, y, w, h]
+        prompt_frame_idx: Index of the frame to apply the prompt to.
+        """
+        if self.session_id is not None:
+            try:
+                self.predictor.close_session(self.session_id)
+            except Exception:
+                pass
+        
+        self.session_id = self.predictor.start_session(images)
+        
+        if bbox is not None:
+            # Convert xywh to xyxy
+            x, y, w, h = bbox
+            xyxy = [x, y, x + w, y + h]
+            self.predictor.add_prompt(self.session_id, frame_idx=prompt_frame_idx, bounding_boxes=[xyxy])
+            
+        # Return mask for the prompt frame
+        gen = self.predictor.propagate_in_video(self.session_id, start_frame_idx=prompt_frame_idx, max_frame_num_to_track=1)
         try:
-            models_dir = Path(models_path)
-            models_dir.mkdir(parents=True, exist_ok=True)
-            if selected_name not in model_urls: raise ValueError(f"Unknown DAM4SAM model: {selected_name}")
+            _, out = next(gen)
+            if out and 'obj_id_to_mask' in out and len(out['obj_id_to_mask']) > 0:
+                pred_mask = list(out['obj_id_to_mask'].values())[0]
+                if isinstance(pred_mask, torch.Tensor):
+                    pred_mask = pred_mask.cpu().numpy().astype(bool)
+                    if pred_mask.ndim == 3: pred_mask = pred_mask[0]
+                return {'pred_mask': pred_mask}
+        except StopIteration:
+            pass
+        return {'pred_mask': None}
 
-            url = model_urls[selected_name]
-            expected_sha256 = Config().dam4sam_sha256.get(selected_name)
-            checkpoint_path = models_dir / Path(url).name
+    def propagate_from(self, start_idx, direction="forward"):
+        """
+        Yields results starting from start_idx in the given direction.
+        """
+        return self.predictor.propagate_in_video(self.session_id, start_frame_idx=start_idx, propagation_direction=direction)
 
-            download_model(url, checkpoint_path, f"DAM4SAM {selected_name}", logger, error_handler, user_agent, expected_sha256=expected_sha256)
-
-            actual_path, _ = dam_utils.determine_tracker(selected_name)
-            if not Path(actual_path).exists():
-                Path(actual_path).parent.mkdir(exist_ok=True, parents=True)
-                shutil.copy(checkpoint_path, actual_path)
-
-            tracker = DAM4SAMTracker(selected_name)
-            return tracker
-        except Exception as e:
-            logger.error(f"Failed to initialize DAM4SAM tracker {selected_name}: {str(e)}", exc_info=True)
-            if torch.cuda.is_available(): torch.cuda.empty_cache()
-            return None
-
-    return model_registry.get_or_load(model_key, _loader)
+def get_tracker(model_name: str, models_path: str, user_agent: str,
+                retry_params: tuple, logger: 'AppLogger', device: str, config: 'Config') -> Optional['SAM3Wrapper']:
+    try:
+        if device == 'cuda' and not torch.cuda.is_available():
+            logger.warning("CUDA not available, SAM3 requires CUDA. Attempting to run on CPU (might be slow/fail).", component="tracker")
+        
+        checkpoint_path = Path(models_path) / "sam3.pt"
+        if not checkpoint_path.exists():
+            logger.info(f"Downloading SAM3 model to {checkpoint_path}...", component="tracker")
+            download_model(
+                url=config.sam3_checkpoint_url,
+                dest_path=checkpoint_path,
+                description="SAM3 Model",
+                logger=logger,
+                error_handler=ErrorHandler(logger, *retry_params),
+                user_agent=user_agent,
+                expected_sha256=config.sam3_checkpoint_sha256
+            )
+        
+        logger.info("Loading SAM3 model...", component="tracker")
+        tracker = SAM3Wrapper(str(checkpoint_path), device=device)
+        return tracker
+    except Exception as e:
+        logger.error(f"Failed to initialize SAM3 tracker: {e}", component="tracker", exc_info=True)
+        return None
 
 def get_lpips_metric(model_name: str = 'alex', device: str = 'cpu') -> torch.nn.Module:
     return lpips.LPIPS(net=model_name).to(device)
@@ -1718,30 +1752,60 @@ class MaskPropagator:
             shape = shot_frames_rgb[0].shape[:2] if shot_frames_rgb else (100, 100)
             num_frames = len(shot_frames_rgb)
             return ([np.zeros(shape, np.uint8)] * num_frames, [0.0] * num_frames, [True] * num_frames, [err_msg] * num_frames)
-        self.logger.info("Propagating masks", component="propagator", user_context={'num_frames': len(shot_frames_rgb), 'seed_index': seed_idx})
+        self.logger.info("Propagating masks with SAM3", component="propagator", user_context={'num_frames': len(shot_frames_rgb), 'seed_index': seed_idx})
         masks = [None] * len(shot_frames_rgb)
 
         if tracker: tracker.set_stage(f"Propagating masks for {len(shot_frames_rgb)} frames")
 
-        def _propagate_direction(start_idx, end_idx, step, desc):
-            for i in range(start_idx, end_idx, step):
-                if self.cancel_event.is_set(): break
-                outputs = self.dam_tracker.track(rgb_to_pil(shot_frames_rgb[i]))
-                mask = outputs.get('pred_mask')
-                if mask is not None: mask = postprocess_mask((mask * 255).astype(np.uint8), config=self.config, fill_holes=True, keep_largest_only=True)
-                masks[i] = mask if mask is not None else np.zeros_like(shot_frames_rgb[i], dtype=np.uint8)[:, :, 0]
-                if tracker: tracker.step(1, desc=desc)
         try:
-            with torch.amp.autocast('cuda', enabled=self._device == 'cuda'):
-                outputs = self.dam_tracker.initialize(rgb_to_pil(shot_frames_rgb[seed_idx]), None, bbox=bbox_xywh)
-                mask = outputs.get('pred_mask')
-                if mask is not None: mask = postprocess_mask((mask * 255).astype(np.uint8), config=self.config, fill_holes=True, keep_largest_only=True)
-                masks[seed_idx] = mask if mask is not None else np.zeros_like(shot_frames_rgb[seed_idx], dtype=np.uint8)[:, :, 0]
-                if tracker: tracker.step(1, desc="Propagation (seed)")
+            pil_images = [rgb_to_pil(img) for img in shot_frames_rgb]
+            
+            # Initialize session with all frames and prompt at seed_idx
+            outputs = self.dam_tracker.initialize(pil_images, bbox=bbox_xywh, prompt_frame_idx=seed_idx)
+            mask = outputs.get('pred_mask')
+            if mask is not None: mask = postprocess_mask((mask * 255).astype(np.uint8), config=self.config, fill_holes=True, keep_largest_only=True)
+            masks[seed_idx] = mask if mask is not None else np.zeros_like(shot_frames_rgb[seed_idx], dtype=np.uint8)[:, :, 0]
+            if tracker: tracker.step(1, desc="Propagation (seed)")
 
-                _propagate_direction(seed_idx + 1, len(shot_frames_rgb), 1, "Propagation (→)")
-                self.dam_tracker.initialize(rgb_to_pil(shot_frames_rgb[seed_idx]), None, bbox=bbox_xywh)
-                _propagate_direction(seed_idx - 1, -1, -1, "Propagation (←)")
+            # Forward propagation
+            for out in self.dam_tracker.propagate_from(seed_idx, direction="forward"):
+                frame_idx = out['frame_index']
+                if frame_idx == seed_idx: continue
+                if frame_idx >= len(shot_frames_rgb): break
+                
+                if out['outputs'] and 'obj_id_to_mask' in out['outputs'] and len(out['outputs']['obj_id_to_mask']) > 0:
+                    pred_mask = list(out['outputs']['obj_id_to_mask'].values())[0]
+                    if isinstance(pred_mask, torch.Tensor):
+                        pred_mask = pred_mask.cpu().numpy().astype(bool)
+                        if pred_mask.ndim == 3: pred_mask = pred_mask[0]
+                    
+                    mask = (pred_mask * 255).astype(np.uint8)
+                    mask = postprocess_mask(mask, config=self.config, fill_holes=True, keep_largest_only=True)
+                    masks[frame_idx] = mask
+                else:
+                    masks[frame_idx] = np.zeros_like(shot_frames_rgb[frame_idx], dtype=np.uint8)[:, :, 0]
+                
+                if tracker: tracker.step(1, desc="Propagation (→)")
+
+            # Backward propagation
+            for out in self.dam_tracker.propagate_from(seed_idx, direction="backward"):
+                frame_idx = out['frame_index']
+                if frame_idx == seed_idx: continue
+                if frame_idx < 0: break
+                
+                if out['outputs'] and 'obj_id_to_mask' in out['outputs'] and len(out['outputs']['obj_id_to_mask']) > 0:
+                    pred_mask = list(out['outputs']['obj_id_to_mask'].values())[0]
+                    if isinstance(pred_mask, torch.Tensor):
+                        pred_mask = pred_mask.cpu().numpy().astype(bool)
+                        if pred_mask.ndim == 3: pred_mask = pred_mask[0]
+
+                    mask = (pred_mask * 255).astype(np.uint8)
+                    mask = postprocess_mask(mask, config=self.config, fill_holes=True, keep_largest_only=True)
+                    masks[frame_idx] = mask
+                else:
+                    masks[frame_idx] = np.zeros_like(shot_frames_rgb[frame_idx], dtype=np.uint8)[:, :, 0]
+                
+                if tracker: tracker.step(1, desc="Propagation (←)")
 
             h, w = shot_frames_rgb[0].shape[:2]
             final_results = []
@@ -1756,7 +1820,7 @@ class MaskPropagator:
             masks, areas, empties, errors = map(list, zip(*final_results))
             return masks, areas, empties, errors
         except Exception as e:
-            self.logger.critical("DAM4SAM propagation failed", component="propagator", exc_info=True)
+            self.logger.critical("SAM3 propagation failed", component="propagator", exc_info=True)
             h, w = shot_frames_rgb[0].shape[:2]
             error_msg = f"Propagation failed: {e}"
             num_frames = len(shot_frames_rgb)
@@ -2031,7 +2095,8 @@ class SeedSelector:
     def _sam2_mask_for_bbox(self, frame_rgb_small: np.ndarray, bbox_xywh: list) -> Optional[np.ndarray]:
         if not self.tracker or bbox_xywh is None: return None
         try:
-            outputs = self.tracker.initialize(rgb_to_pil(frame_rgb_small), None, bbox=bbox_xywh)
+            pil_img = rgb_to_pil(frame_rgb_small)
+            outputs = self.tracker.initialize([pil_img], None, bbox=bbox_xywh, prompt_frame_idx=0)
             mask = outputs.get('pred_mask')
             if mask is not None: mask = postprocess_mask((mask * 255).astype(np.uint8), config=self.config, fill_holes=True, keep_largest_only=True)
             return mask
@@ -2108,22 +2173,26 @@ class SubjectMasker:
     def _initialize_tracker(self) -> bool:
         if self.dam_tracker: return True
         try:
-            model_urls_tuple = tuple(self.config.dam4sam_model_urls.items())
             retry_params = (self.config.retry_max_attempts, tuple(self.config.retry_backoff_seconds))
-            self.logger.info(f"Initializing DAM4SAM tracker: {self.params.dam4sam_model_name}")
-            self.dam_tracker = get_dam4sam_tracker(
+            self.logger.info(f"Initializing SAM3 tracker: {self.params.dam4sam_model_name}")
+            self.dam_tracker = get_tracker(
                 model_name=self.params.dam4sam_model_name,
                 models_path=str(self.config.models_dir),
-                model_urls_tuple=model_urls_tuple,
                 user_agent=self.config.user_agent,
                 retry_params=retry_params,
                 logger=self.logger,
-                device=self._device
+                device=self._device,
+                config=self.config
             )
-            if self.dam_tracker is None or self.dam_tracker == "failed":
-                self.logger.error("DAM4SAM tracker initialization returned None/failed")
+            if self.dam_tracker is None:
+                self.logger.error("SAM3 tracker initialization returned None/failed")
                 return False
-            self.logger.success("DAM4SAM tracker initialized successfully")
+            
+            # Update child components with the new tracker
+            if self.seed_selector: self.seed_selector.tracker = self.dam_tracker
+            if self.mask_propagator: self.mask_propagator.dam_tracker = self.dam_tracker
+            
+            self.logger.success("SAM3 tracker initialized successfully")
             return True
         except Exception as e:
             self.logger.error(f"Exception during DAM4SAM tracker initialization: {e}", exc_info=True)
