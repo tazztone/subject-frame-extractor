@@ -145,7 +145,13 @@ The application uses a `config.json` file for fine-tuning. Key settings include:
 
 ```
 subject-frame-extractor/
-├── app.py                     # Main application entry point
+├── app.py                     # Main application UI and logic
+├── config.py                  # Configuration management
+├── logger.py                  # Logging setup
+├── error_handling.py          # Error handling utilities
+├── events.py                  # Event definitions
+├── progress.py                # Progress tracking
+├── sam3_patches.py            # Patches for SAM3 library
 ├── requirements.txt           # Python dependencies
 ├── SAM3_repo/                 # Subject tracking (SAM3)
 ├── downloads/                 # Output directory
