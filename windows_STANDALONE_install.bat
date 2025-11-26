@@ -33,7 +33,7 @@ if not exist subject-frame-extractor (
 
 pushd subject-frame-extractor
 
-REM 2) Submodules (DAM4SAM only)
+REM 2) Submodules (SAM3_repo)
 echo [2/6] Initializing git submodules...
 git submodule update --init --recursive || goto :end
 
@@ -53,15 +53,7 @@ if exist requirements.txt (
   uv pip install -r requirements.txt || goto :end
 )
 
-REM 5) Install DAM4SAM (preferred SAM2) without optional CUDA extension
-echo [5/6] Installing DAM4SAM (preferred sam2)...
-pushd DAM4SAM
-if exist requirements.txt (
-  uv pip install -r requirements.txt || echo Warning: Continuing despite DAM4SAM extra-deps issues...
-)
-set "SAM2_BUILD_CUDA=0"
-pip install -e . || goto :end
-popd
+
 
 echo.
 echo --- Installation Complete! ---

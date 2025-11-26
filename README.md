@@ -28,7 +28,7 @@ Perfect for creating training datasets (LoRA/Dreambooth), finding thumbnail cand
 - **Flexible timing**: Custom intervals or N-th frame extraction
 
 ### 🧠 Advanced AI Analysis
-- **Subject Segmentation**: Uses **DAM4SAM (SAM 2.1)** for precise subject tracking and masking
+- **Subject Segmentation**: Uses **SAM3** for precise subject tracking and masking
 - **Face Recognition**: **InsightFace**-powered similarity matching with reference photos
 - **Quality Assessment**: Multi-metric scoring including **NIQE** perceptual quality
 - **Person Detection**: **YOLOv11**-based human detection for seeding subject tracking
@@ -52,7 +52,7 @@ Perfect for creating training datasets (LoRA/Dreambooth), finding thumbnail cand
 |-----------|------------|---------|
 | **UI Framework** | Gradio | Web-based interface |
 | **Computer Vision** | OpenCV, PyTorch | Image processing |
-| **Subject Tracking** | DAM4SAM + SAM 2.1 | Zero-shot object segmentation |
+| **Subject Tracking** | SAM3 | Zero-shot object segmentation |
 | **Face Recognition** | InsightFace | High-accuracy face detection/matching |
 | **Object Detection** | YOLOv11 | Person detection for tracking seed |
 | **Text-to-Object** | Grounded-DINO | Grounding subjects with text prompts |
@@ -98,37 +98,7 @@ We provide batch scripts to automate the setup process.
     cd subject-frame-extractor
     ```
 
-2.  **Initialize Submodules:**
-    ```bash
-    git submodule update --init --recursive
-    ```
 
-3.  **Create Virtual Environment:**
-    ```bash
-    python -m venv venv
-    source venv/bin/activate  # On Windows: venv\Scripts\activate
-    ```
-
-4.  **Install PyTorch (CUDA support):**
-    *Visit [pytorch.org](https://pytorch.org/get-started/locally/) for your specific command.*
-    ```bash
-    # Example for CUDA 11.8
-    pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
-    ```
-
-5.  **Install Dependencies:**
-    ```bash
-    pip install -r requirements.txt
-    ```
-
-6.  **Install DAM4SAM (SAM 2.1):**
-    *Note: On Windows, you may need to set `SAM2_BUILD_CUDA=0` to avoid compilation errors if you lack build tools.*
-    ```bash
-    cd DAM4SAM
-    # Windows: set SAM2_BUILD_CUDA=0 && pip install -e .
-    # Linux/Mac: pip install -e .
-    cd ..
-    ```
 
 ## 📖 How to Use
 
@@ -152,7 +122,7 @@ The application provides a guided, five-tab workflow.
 **Refine selection before heavy processing.**
 1.  **Review**: Check the gallery of seed frames.
 2.  **Edit**: Override detections (change person, use text) or exclude scenes.
-3.  **Propagate**: Click **"Propagate Masks"** to track the subject through all frames in selected scenes using SAM 2.1.
+3.  **Propagate**: Click **"Propagate Masks"** to track the subject through all frames in selected scenes using SAM3.
 
 ### Tab 4: 📝 Metrics
 **Configure analysis.**
@@ -169,7 +139,7 @@ Choose which metrics to calculate (Sharpness, NIQE, Face Similarity, etc.).
 The application uses a `config.json` file for fine-tuning. Key settings include:
 
 -   **Quality Weights**: Adjust the importance of sharpness, contrast, etc. in the global score.
--   **Model Selection**: Choose between `sam21pp-T` (Tiny/Fast), `sam21pp-S` (Small), or `sam21pp-L` (Large/Best) based on your VRAM.
+-   **Model Selection**: SAM3 is the default and only tracking model.
 
 ## 📁 Project Structure
 
@@ -177,7 +147,7 @@ The application uses a `config.json` file for fine-tuning. Key settings include:
 subject-frame-extractor/
 ├── app.py                     # Main application entry point
 ├── requirements.txt           # Python dependencies
-├── DAM4SAM/                   # Subject tracking submodule (SAM 2.1)
+├── SAM3_repo/                 # Subject tracking (SAM3)
 ├── downloads/                 # Output directory
 │   └── [video_name]/
 │       ├── frame_000001.png
@@ -193,7 +163,7 @@ subject-frame-extractor/
 ## 🔍 Troubleshooting
 
 -   **FFmpeg not found**: Ensure it's in your system PATH.
--   **CUDA OOM**: Switch to a smaller SAM model (`sam21pp-T`) or process fewer frames.
+-   **CUDA OOM**: Process fewer frames or reduce video resolution. SAM3 is memory-intensive.
 -   **Installation Issues**: Try the `windows_STANDALONE_install.bat` for a clean setup.
 
 ## 🤝 Contributing

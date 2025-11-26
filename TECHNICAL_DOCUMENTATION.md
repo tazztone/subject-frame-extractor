@@ -129,5 +129,5 @@ Removes redundant frames using configurable methods:
 ## 8. Dependencies
 
 *   **Core:** `gradio`, `pydantic`, `numpy`, `opencv-python`
-*   **ML/Vision:** `torch`, `torchvision`, `ultralytics` (YOLO), `mediapipe`, `insightface`, `groundingdino`, `segment-anything-2-realtime` (DAM4SAM), `pyiqa`
+*   **ML/Vision:** `torch`, `torchvision`, `ultralytics` (YOLO), `mediapipe`, `insightface`, `groundingdino`, `SAM3`, `pyiqa`
 *   **Utilities:** `ffmpeg-python`, `yt-dlp`, `scenedetect`
