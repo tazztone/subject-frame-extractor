@@ -1,0 +1,226 @@
+"""
+Configuration Management for Frame Extractor & Analyzer
+"""
+import json
+import os
+from pathlib import Path
+from typing import Any, Dict, List
+
+from pydantic import Field, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def json_config_settings_source() -> Dict[str, Any]:
+    """Loads settings from a JSON file for Pydantic settings."""
+    try:
+        config_path = "config.json"
+        if Path(config_path).is_file():
+            with open(config_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        pass
+    return {}
+
+
+class Config(BaseSettings):
+    """Manages the application's configuration settings."""
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_prefix='APP_',
+        env_nested_delimiter='_',
+        case_sensitive=False
+    )
+
+    # Paths
+    logs_dir: str = "logs"
+    models_dir: str = "models"
+    downloads_dir: str = "downloads"
+    grounding_dino_config_path: str = "GroundingDINO_SwinT_OGC.py"
+    grounding_dino_checkpoint_path: str = "models/groundingdino_swint_ogc.pth"
+
+    # Models
+    user_agent: str = "Mozilla/5.0"
+    grounding_dino_url: str = "https://github.com/IDEA-Research/GroundingDINO/releases/download/v0.1.0-alpha/groundingdino_swint_ogc.pth"
+    grounding_dino_sha256: str = "3b3ca2563c77c69f651d7bd133e97139c186df06231157a64c507099c52bc799"
+    face_landmarker_url: str = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
+    face_landmarker_sha256: str = "9c899f78b8f2a0b1b117b3554b5f903e481b67f1390f7716e2a537f8842c0c7a"
+    sam3_checkpoint_url: str = "https://huggingface.co/facebook/sam3/resolve/main/sam3.pt"
+    sam3_checkpoint_sha256: str = "7402e0d864fa82708a20fbd15bc84245c2f26dff0eb43a4b5b93452deb34be69"  # Placeholder, update if known or remove check
+    yolo_url: str = "https://huggingface.co/Ultralytics/YOLOv5/resolve/main/"
+
+    # YouTube-DL
+    ytdl_output_template: str = "%(id)s_%(title).40s_%(height)sp.%(ext)s"
+    ytdl_format_string: str = "bestvideo[height<={max_res}][ext=mp4]+bestaudio[ext=m4a]/best[height<={max_res}][ext=mp4]/best"
+
+    # FFmpeg
+    ffmpeg_log_level: str = "info"
+    ffmpeg_thumbnail_quality: int = 80
+    ffmpeg_scene_threshold: float = 0.4
+
+    # Cache
+    cache_size: int = 200
+    cache_eviction_factor: float = 0.2
+    cache_cleanup_threshold: float = 0.8
+
+    # Retry
+    retry_max_attempts: int = 3
+    retry_backoff_seconds: List[float] = Field(default_factory=lambda: [1, 5, 15])
+
+    # Quality Scaling
+    quality_entropy_normalization: float = 8.0
+    quality_resolution_denominator: int = 500000
+    quality_contrast_clamp: float = 2.0
+    quality_niqe_offset: float = 10.0
+    quality_niqe_scale_factor: float = 10.0
+
+    # Masking
+    masking_keep_largest_only: bool = True
+    masking_close_kernel_size: int = 5
+    masking_open_kernel_size: int = 5
+
+    # UI Defaults
+    default_thumbnails_only: bool = True
+    default_thumb_megapixels: float = 0.5
+    default_scene_detect: bool = True
+    default_max_resolution: str = "maximum available"
+    default_pre_analysis_enabled: bool = True
+    default_pre_sample_nth: int = 5
+    default_enable_face_filter: bool = True
+    default_face_model_name: str = "buffalo_l"
+    default_enable_subject_mask: bool = True
+    default_tracker_model_name: str = "sam3"
+    default_person_detector_model: str = "yolo11x.pt"
+    default_primary_seed_strategy: str = "🤖 Automatic"
+    default_seed_strategy: str = "Largest Person"
+    default_text_prompt: str = "a person"
+    default_resume: bool = False
+    default_require_face_match: bool = False
+    default_enable_dedup: bool = True
+    default_dedup_thresh: int = 5
+    default_method: str = "all"
+    default_interval: float = 5.0
+    default_nth_frame: int = 5
+    default_disable_parallel: bool = False
+
+    # Filter Defaults
+    filter_default_quality_score: Dict[str, float] = Field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.5, 'default_min': 0.0, 'default_max': 100.0})
+    filter_default_sharpness: Dict[str, float] = Field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.5, 'default_min': 0.0, 'default_max': 100.0})
+    filter_default_edge_strength: Dict[str, float] = Field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.5, 'default_min': 0.0, 'default_max': 100.0})
+    filter_default_contrast: Dict[str, float] = Field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.5, 'default_min': 0.0, 'default_max': 100.0})
+    filter_default_brightness: Dict[str, float] = Field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.5, 'default_min': 0.0, 'default_max': 100.0})
+    filter_default_entropy: Dict[str, float] = Field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.5, 'default_min': 0.0, 'default_max': 100.0})
+    
+    # Missing Defaults
+    default_min_mask_area_pct: float = 1.0
+    default_sharpness_base_scale: float = 2500.0
+    default_edge_strength_base_scale: float = 100.0
+    gdino_box_threshold: float = 0.35
+    gdino_text_threshold: float = 0.25
+    filter_default_niqe: Dict[str, float] = Field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.5, 'default_min': 0.0, 'default_max': 100.0})
+    filter_default_face_sim: Dict[str, float] = Field(default_factory=lambda: {'min': 0.0, 'max': 1.0, 'step': 0.01, 'default_min': 0.0})
+    filter_default_mask_area_pct: Dict[str, float] = Field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.1, 'default_min': 1.0})
+    filter_default_dedup_thresh: Dict[str, int] = Field(default_factory=lambda: {'min': -1, 'max': 32, 'step': 1, 'default': -1})
+    filter_default_eyes_open: Dict[str, float] = Field(default_factory=lambda: {'min': 0.0, 'max': 1.0, 'step': 0.01, 'default_min': 0.0})
+    filter_default_yaw: Dict[str, float] = Field(default_factory=lambda: {'min': -180.0, 'max': 180.0, 'step': 1, 'default_min': -25, 'default_max': 25})
+    filter_default_pitch: Dict[str, float] = Field(default_factory=lambda: {'min': -180.0, 'max': 180.0, 'step': 1, 'default_min': -25, 'default_max': 25})
+
+    # Quality Weights
+    quality_weights_sharpness: int = 25
+    quality_weights_edge_strength: int = 15
+    quality_weights_contrast: int = 15
+    quality_weights_brightness: int = 10
+    quality_weights_entropy: int = 15
+    quality_weights_niqe: int = 20
+
+    # GroundingDINO Params
+    gdino_box_threshold: float = 0.35
+    gdino_text_threshold: float = 0.25
+
+    # Person Detector Config
+    person_detector_model: str = "yolo11x.pt"
+    person_detector_imgsz: int = 640
+    person_detector_conf: float = 0.3
+
+    # Logging Config
+    log_level: str = "INFO"
+    log_format: str = '%(asctime)s | %(levelname)8s | %(name)s | %(message)s'
+    log_colored: bool = True
+    log_structured_path: str = "structured_log.jsonl"
+
+    # Monitoring
+    monitoring_memory_warning_threshold_mb: int = 8192
+    monitoring_memory_critical_threshold_mb: int = 16384
+    monitoring_cpu_warning_threshold_percent: float = 90.0
+    monitoring_gpu_memory_warning_threshold_percent: int = 90
+    monitoring_memory_limit_mb: int = 8192
+
+    # Export Options
+    export_enable_crop: bool = True
+    export_crop_padding: int = 1
+    export_crop_ars: str = "16:9,1:1,9:16"
+
+    # Gradio Defaults
+    gradio_auto_pctl_input: int = 25
+    gradio_show_mask_overlay: bool = True
+    gradio_overlay_alpha: float = 0.6
+
+    # Seeding Defaults
+    seeding_face_similarity_threshold: float = 0.4
+    seeding_yolo_iou_threshold: float = 0.3
+    seeding_face_contain_score: int = 100
+    seeding_confidence_score_multiplier: int = 20
+    seeding_iou_bonus: int = 50
+    seeding_face_to_body_expansion_factors: List[float] = Field(default_factory=lambda: [4.0, 7.0, 0.75])
+    seeding_final_fallback_box: List[float] = Field(default_factory=lambda: [0.25, 0.25, 0.5, 0.5])
+    seeding_balanced_score_weights: Dict[str, float] = Field(default_factory=lambda: {'area': 0.4, 'confidence': 0.4, 'edge': 0.2})
+
+    # Utility Defaults
+    utility_max_filename_length: int = 50
+    utility_video_extensions: List[str] = Field(default_factory=lambda: ['.mp4','.mov','.mkv','.avi','.webm'])
+    utility_image_extensions: List[str] = Field(default_factory=lambda: ['.png','.jpg','.jpeg','.webp','.bmp'])
+
+    # PostProcessing
+    postprocessing_mask_fill_kernel_size: int = 5
+
+    # Visualization
+    visualization_bbox_color: List[int] = Field(default_factory=lambda: [255, 0, 0])
+    visualization_bbox_thickness: int = 2
+
+    # Analysis
+    analysis_default_batch_size: int = 32
+    analysis_default_workers: int = 4
+
+    # Model Defaults
+    model_face_analyzer_det_size: List[int] = Field(default_factory=lambda: [640, 640])
+
+    sharpness_base_scale: int = 2500
+    edge_strength_base_scale: int = 100
+
+    def model_post_init(self, __context: Any) -> None:
+        self._validate_paths()
+
+    def _validate_paths(self):
+        """Ensures critical directories exist."""
+        for p in [self.logs_dir, self.models_dir, self.downloads_dir]:
+            Path(p).mkdir(parents=True, exist_ok=True)
+            if not os.access(p, os.W_OK):
+                print(f"WARNING: Directory {p} is not writable.")
+
+    @model_validator(mode='after')
+    def _validate_config(self) -> 'Config':
+        if sum([self.quality_weights_sharpness, self.quality_weights_edge_strength,
+                self.quality_weights_contrast, self.quality_weights_brightness,
+                self.quality_weights_entropy, self.quality_weights_niqe]) == 0:
+            raise ValueError("The sum of quality_weights cannot be zero.")
+        return self
+
+    @property
+    def quality_weights(self) -> Dict[str, int]:
+        return {
+            'sharpness': self.quality_weights_sharpness,
+            'edge_strength': self.quality_weights_edge_strength,
+            'contrast': self.quality_weights_contrast,
+            'brightness': self.quality_weights_brightness,
+            'entropy': self.quality_weights_entropy,
+            'niqe': self.quality_weights_niqe
+        }
