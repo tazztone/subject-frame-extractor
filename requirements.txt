@@ -9,7 +9,6 @@ PyYAML
 scenedetect
 vot-toolkit
 yt-dlp
-ultralytics
 huggingface_hub
 pytest
 pyiqa
@@ -17,16 +16,10 @@ matplotlib
 imagehash
 mediapipe
 scikit-learn
-imagehash
-groundingdino-py==0.4.0
 scikit-image
 lpips
 pydantic
 pydantic-settings
-gradio
-lpips
-numba
-scikit-learn
 timm>=1.0.17
 ftfy
 regex
