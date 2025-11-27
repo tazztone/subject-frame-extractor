@@ -2,7 +2,7 @@
 
 ## 1. Executive Summary
 
-The **Frame Extractor & Analyzer** is a sophisticated, monolithic desktop application built with Python and Gradio. It is designed to automate the creation of high-quality image datasets from video sources. The system leverages state-of-the-art computer vision models (SAM2, GroundingDINO, YOLOv11, InsightFace) to perform intelligent subject tracking, segmentation, and aesthetic quality assessment.
+The **Frame Extractor & Analyzer** is a sophisticated, monolithic desktop application built with Python and Gradio. It is designed to automate the creation of high-quality image datasets from video sources. The system leverages state-of-the-art computer vision models (SAM3, InsightFace) to perform intelligent subject tracking, segmentation, and aesthetic quality assessment.
 
 ## 2. System Architecture
 
@@ -37,8 +37,6 @@ graph TD
 
     subgraph External_Libraries
         SAM3[SAM3]
-        GroundedDINO[Grounded-DINO]
-        YOLO[YOLO]
     end
 
     UI -->|Triggers| App
@@ -77,7 +75,7 @@ graph TD
 *   **Function:** Provides a structured way to report progress from long-running backend tasks to the UI, including support for nested, multi-stage operations.
 
 ### 3.6 Resource Management
-*   **`ModelRegistry`:** A thread-safe singleton that handles the lazy loading of large ML models (e.g., SAM2, GroundingDINO). It ensures models are only loaded when needed and manages GPU device placement.
+*   **`ModelRegistry`:** A thread-safe singleton that handles the lazy loading of large ML models. It ensures models are only loaded when needed and manages GPU device placement.
 *   **`ThumbnailManager`:** Implements an LRU (Least Recently Used) cache for image thumbnails to minimize disk I/O latency during UI interactions (e.g., scrolling through the scene gallery).
 *   **`safe_resource_cleanup`:** A context manager that forces Python garbage collection and clears the CUDA cache to prevent VRAM leaks between pipeline stages.
 
@@ -92,7 +90,7 @@ graph TD
 Communication between the UI and backend is strictly typed using Pydantic models:
 *   `ExtractionEvent`: Parameters for video ingestion and frame extraction.
 *   `PreAnalysisEvent`: Configuration for subject detection and seed selection.
-*   `PropagationEvent`: Settings for the SAM2 mask propagation process.
+*   `PropagationEvent`: Settings for the SAM3 mask propagation process.
 *   `FilterEvent`: Criteria for the post-processing filtering stage.
 
 ## 5. Processing Pipelines
@@ -108,13 +106,13 @@ Communication between the UI and backend is strictly typed using Pydantic models
 **Class:** `SeedSelector`
 Determines *what* to track in each scene using one of four strategies:
 1.  **Identity-First:** Uses **InsightFace** to find a face matching a reference image.
-2.  **Text-Prompt:** Uses **GroundingDINO** to find objects matching a text description (e.g., "a red car").
-3.  **Automatic:** Uses **YOLOv11** to find the most prominent person (based on size, centrality, and confidence).
+2.  **Text-Prompt:** Uses **SAM3** to find objects matching a text description (e.g., "a red car").
+3.  **Automatic:** Uses **SAM3** (with prompt "person") to find the most prominent person (based on size, centrality, and confidence).
 4.  **Hybrid:** Tries Identity matching first, falling back to Text or Automatic methods.
 
 ### 5.3 Stage III: Propagation
 **Class:** `MaskPropagator`
-1.  **Initialization:** Loads the **SAM2 (Segment Anything Model 2)** tracker.
+1.  **Initialization:** Loads the **SAM3** tracker.
 2.  **Seeding:** Initializes the tracker with the bounding box found in Stage II.
 3.  **Bi-Directional Tracking:** Propagates the mask forward and backward from the seed frame to cover the entire scene.
 4.  **Refinement:** Applies morphological operations (closing/opening) to clean up the generated masks.
@@ -152,5 +150,5 @@ Removes redundant frames using configurable methods:
 ## 8. Dependencies
 
 *   **Core:** `gradio`, `pydantic`, `numpy`, `opencv-python`
-*   **ML/Vision:** `torch`, `torchvision`, `ultralytics` (YOLO), `mediapipe`, `insightface`, `groundingdino`, `SAM3`, `pyiqa`
+*   **ML/Vision:** `torch`, `torchvision`, `mediapipe`, `insightface`, `SAM3`, `pyiqa`
 *   **Utilities:** `ffmpeg-python`, `yt-dlp`, `scenedetect`

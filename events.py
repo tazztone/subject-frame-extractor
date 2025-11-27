@@ -36,17 +36,12 @@ class PreAnalysisEvent(UIEvent):
     face_model_name: str
     enable_subject_mask: bool
     tracker_model_name: str
-    person_detector_model: str
     best_frame_strategy: str
     scene_detect: bool
     text_prompt: str
-    box_threshold: float
-    text_threshold: float
     min_mask_area_pct: float
     sharpness_base_scale: float
     edge_strength_base_scale: float
-    gdino_config_path: str
-    gdino_checkpoint_path: str
     pre_analysis_enabled: bool
     pre_sample_nth: int
     primary_seed_strategy: str

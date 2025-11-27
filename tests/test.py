@@ -16,8 +16,6 @@ import pydantic
 
 # Add project root to the Python path to allow for submodule imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-# Add submodule paths for direct import
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'Grounded-SAM-2', 'grounding_dino')))
 
 # Mock heavy dependencies before they are imported by the app
 mock_torch = MagicMock(name='torch')
@@ -43,6 +41,7 @@ class MockNNModule:
     def __init__(self, *args, **kwargs): pass
     def __call__(self, *args, **kwargs): return MagicMock()
 mock_torch_nn.Module = MockNNModule
+mock_torch_nn.attention = MagicMock(name='torch.nn.attention')
 
 mock_torch_nn_init = MagicMock(name='torch.nn.init')
 mock_torch_nn_functional = MagicMock(name='torch.nn.functional')
@@ -50,10 +49,16 @@ mock_torch_optim = MagicMock(name='torch.optim')
 mock_torch_utils = MagicMock(name='torch.utils')
 mock_torch_utils.__path__ = ['fake']
 mock_torch_utils_data = MagicMock(name='torch.utils.data')
+mock_torch_utils_checkpoint = MagicMock(name='torch.utils.checkpoint')
+mock_torch_utils_pytree = MagicMock(name='torch.utils._pytree')
 
 
 mock_torchvision = MagicMock(name='torchvision')
 mock_torchvision.ops = MagicMock(name='torchvision.ops')
+mock_torchvision.ops.roi_align = MagicMock(name='torchvision.ops.roi_align')
+mock_torchvision.ops.misc = MagicMock(name='torchvision.ops.misc')
+mock_torchvision.datasets = MagicMock(name='torchvision.datasets')
+mock_torchvision.datasets.vision = MagicMock(name='torchvision.datasets.vision')
 mock_torchvision.transforms = MagicMock(name='torchvision.transforms')
 mock_torchvision.transforms.functional = MagicMock(name='torchvision.transforms.functional')
 mock_torchvision.utils = MagicMock(name='torchvision.utils')
@@ -61,7 +66,14 @@ mock_torchvision.utils = MagicMock(name='torchvision.utils')
 mock_insightface = MagicMock(name='insightface')
 mock_insightface.app = MagicMock(name='insightface.app')
 
+mock_timm = MagicMock(name='timm')
+mock_timm.models = MagicMock(name='timm.models')
+mock_timm.models.layers = MagicMock(name='timm.models.layers')
+
 mock_imagehash = MagicMock()
+mock_pycocotools = MagicMock(name='pycocotools')
+mock_pycocotools.mask = MagicMock(name='pycocotools.mask')
+
 mock_psutil = MagicMock(name='psutil')
 mock_psutil.cpu_percent.return_value = 50.0
 mock_psutil.virtual_memory.return_value = MagicMock(percent=50.0, available=1024*1024*1024)
@@ -86,30 +98,37 @@ modules_to_mock = {
     'torch.multiprocessing': mock_torch.multiprocessing,
     'torch.autograd': mock_torch_autograd,
     'torch.nn': mock_torch_nn,
+    'torch.nn.attention': mock_torch_nn.attention,
     'torch.nn.init': mock_torch_nn_init,
     'torch.nn.functional': mock_torch_nn_functional,
     'torch.optim': mock_torch_optim,
     'torch.utils': mock_torch_utils,
     'torch.utils.data': mock_torch_utils_data,
+    'torch.utils.checkpoint': mock_torch_utils_checkpoint,
+    'torch.utils._pytree': mock_torch_utils_pytree,
     'torchvision': mock_torchvision,
     'torchvision.ops': mock_torchvision.ops,
+    'torchvision.ops.roi_align': mock_torchvision.ops.roi_align,
+    'torchvision.ops.misc': mock_torchvision.ops.misc,
+    'torchvision.datasets': mock_torchvision.datasets,
+    'torchvision.datasets.vision': mock_torchvision.datasets.vision,
     'torchvision.transforms': mock_torchvision.transforms,
     'torchvision.transforms.functional': mock_torchvision.transforms.functional,
     'torchvision.utils': mock_torchvision.utils,
     # 'cv2': MagicMock(name='cv2'), # cv2 is now used in tests, so we don't mock it globally
     'insightface': mock_insightface,
     'insightface.app': mock_insightface.app,
+    'timm': mock_timm,
+    'timm.models': mock_timm.models,
+    'timm.models.layers': mock_timm.models.layers,
     'onnxruntime': MagicMock(name='onnxruntime'),
-    'groundingdino': MagicMock(name='groundingdino'),
-    'groundingdino.util': MagicMock(name='groundingdino.util'),
-    'groundingdino.util.inference': MagicMock(name='groundingdino.util.inference'),
-    'groundingdino.config': MagicMock(name='groundingdino.config'),
     'DAM4SAM': MagicMock(name='DAM4SAM'),
     'DAM4SAM.utils': MagicMock(name='DAM4SAM.utils'),
     'DAM4SAM.dam4sam_tracker': MagicMock(name='DAM4SAM.dam4sam_tracker'),
-    'ultralytics': MagicMock(name='ultralytics'),
     'GPUtil': MagicMock(getGPUs=lambda: [MagicMock(memoryUtil=0.5)]),
     'imagehash': mock_imagehash,
+    'pycocotools': mock_pycocotools,
+    'pycocotools.mask': mock_pycocotools.mask,
     'psutil': mock_psutil,
     'matplotlib': mock_matplotlib,
     'matplotlib.ticker': mock_matplotlib.ticker,
@@ -139,8 +158,8 @@ modules_to_mock['pydantic_settings'] = mock_pydantic_settings
 patch.dict(sys.modules, modules_to_mock).start()
 
 # Now import the monolithic app
-import app_refactored as app
-from app_refactored import Config, Database
+import app as app
+from app import Config, Database
 
 # --- Mocks for Tests ---
 @pytest.fixture
@@ -164,17 +183,12 @@ def mock_ui_state():
         'face_ref_img_upload': None,
         'face_model_name': 'buffalo_l',
         'enable_subject_mask': False,
-        'dam4sam_model_name': 'sam21pp-T',
-        'person_detector_model': 'yolo11x.pt',
+        'tracker_model_name': 'sam3',
         'best_frame_strategy': 'Largest Person',
         'text_prompt': '',
-        'box_threshold': 0.35,
-        'text_threshold': 0.25,
         'min_mask_area_pct': 1.0,
         'sharpness_base_scale': 2500.0,
         'edge_strength_base_scale': 100.0,
-        'gdino_config_path': 'GroundingDINO_SwinT_OGC.py',
-        'gdino_checkpoint_path': 'models/groundingdino_swint_ogc.pth',
         'pre_analysis_enabled': True,
         'pre_sample_nth': 1,
         'primary_seed_strategy': '🧑‍🤝‍🧑 Find Prominent Person',
@@ -230,7 +244,7 @@ class TestUtils:
             app._coerce("not-a-float", float)
 
         mock_config_data = {}
-        with patch('app_refactored.json_config_settings_source', return_value=mock_config_data):
+        with patch('app.json_config_settings_source', return_value=mock_config_data):
             # Pass an argument to the constructor
             config = app.Config(logs_dir="init_logs")
 
@@ -294,7 +308,7 @@ class TestAppLogger:
         )
         
         # Mock torch.from_numpy chain
-        with patch('app_refactored.torch.from_numpy') as mock_torch_from_numpy:
+        with patch('app.torch.from_numpy') as mock_torch_from_numpy:
             mock_tensor = MagicMock()
             mock_tensor.to.return_value = mock_tensor
             mock_torch_from_numpy.return_value.float.return_value.permute.return_value.unsqueeze.return_value = mock_tensor
