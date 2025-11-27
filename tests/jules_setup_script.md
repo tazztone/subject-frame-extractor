@@ -18,12 +18,13 @@ source venv/bin/activate
 # 3. Install only test dependencies (no heavy ML packages)
 echo "[3/3] Installing test dependencies..."
 python -m pip install --upgrade pip
+pip install uv
 
 # Install test requirements - these are the only packages tests need unmocked
-pip install -r tests/requirements-test.txt
+uv pip install -r tests/requirements-test.txt
 
 # Add OpenCV headless since tests import cv2 directly (not mocked)
-pip install opencv-python-headless
+uv pip install opencv-python-headless
 
 echo "--- Jules Test Environment Complete ---"
 
