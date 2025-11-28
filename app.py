@@ -61,7 +61,6 @@ from sam3.model.sam3_video_predictor import Sam3VideoPredictor
 
 # Apply SAM3 compatibility patches for Windows (Triton fallback)
 sam3_patches.apply_patches()
-from groundingdino.util.inference import load_model as gdino_load_model, predict as gdino_predict
 import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
@@ -73,7 +72,6 @@ import pyiqa
 from scenedetect import detect, ContentDetector
 from sklearn.cluster import DBSCAN
 import yt_dlp as ytdlp
-from ultralytics import YOLO
 
 
 
@@ -415,7 +413,6 @@ class AnalysisParameters(BaseModel):
     face_model_name: str = ""
     enable_subject_mask: bool = False
     tracker_model_name: str = ""
-    person_detector_model: str = ""
     seed_strategy: str = ""
     scene_detect: bool = False
     nth_frame: int = 0
@@ -426,10 +423,6 @@ class AnalysisParameters(BaseModel):
     pre_analysis_enabled: bool = False
     pre_sample_nth: int = 1
     primary_seed_strategy: str = "🤖 Automatic"
-    gdino_config_path: str = ""
-    gdino_checkpoint_path: str = ""
-    box_threshold: float = 0.35
-    text_threshold: float = 0.25
     min_mask_area_pct: float = 1.0
     sharpness_base_scale: float = 2500.0
     edge_strength_base_scale: float = 100.0
@@ -663,89 +656,6 @@ def get_face_analyzer(model_name: str, models_path: str, det_size_tuple: tuple, 
 
     return model_registry.get_or_load(model_key, _loader)
 
-class PersonDetector:
-    def __init__(self, logger: 'AppLogger', model_path: Union[Path, str], imgsz: int, conf: float, device: str = 'cuda'):
-        from ultralytics import YOLO
-        self.logger = logger
-        self.device = device
-        model_p = Path(model_path)
-        model_str = str(model_p)
-
-        if not model_p.exists():
-            model_str_for_yolo = model_p.name
-            self.logger.info(f"Local YOLO model not found at '{model_str}'. Attempting to load by name for auto-download.", component="person_detector", extra={'model_name': model_str_for_yolo})
-        else:
-            model_str_for_yolo = model_str
-
-        try:
-            self.model = YOLO(model_str_for_yolo)
-            self.model.to(self.device)
-            self.imgsz = imgsz
-            self.conf = conf
-            self.logger.info("YOLO person detector loaded", component="person_detector", custom_fields={'device': self.device, 'model': model_str_for_yolo})
-        except Exception as e:
-            self.logger.error("Failed to load YOLO model", component="person_detector", exc_info=True)
-            raise e
-
-    def detect_boxes(self, img_rgb: np.ndarray) -> List[dict]:
-        res = self.model.predict(img_rgb, imgsz=self.imgsz, conf=self.conf, classes=[0], verbose=False)
-        out = []
-        for r in res:
-            if getattr(r, "boxes", None) is None: continue
-            for b in r.boxes.cpu():
-                x1, y1, x2, y2 = map(int, b.xyxy[0].tolist())
-                conf = float(b.conf[0])
-                out.append({"bbox": [x1, y1, x2, y2], "conf": conf, "type": "yolo"})
-        return out
-
-def get_person_detector(model_path_str: str, device: str, imgsz: int, conf: float, logger: 'AppLogger') -> 'PersonDetector':
-    model_key = f"person_detector_{Path(model_path_str).name}_{device}_{imgsz}_{conf}"
-    def _loader():
-        try:
-            return PersonDetector(logger=logger, model_path=Path(model_path_str), imgsz=imgsz, conf=conf, device=device)
-        except Exception as e:
-            logger.warning(f"Primary YOLO detector '{model_path_str}' failed to load, attempting fallback to yolo11s.pt. Error: {e}", component="person_detector")
-            return get_person_detector(model_path_str="yolo11s.pt", device=device, imgsz=imgsz, conf=conf, logger=logger)
-    return model_registry.get_or_load(model_key, _loader)
-
-def resolve_grounding_dino_config(config_path: str) -> str:
-    try:
-        import importlib.resources as pkg_resources
-        from groundingdino import config as gdino_config_module
-        with pkg_resources.path(gdino_config_module, config_path) as config_file:
-            return str(config_file)
-    except (ImportError, ModuleNotFoundError, FileNotFoundError):
-        raise RuntimeError(f"Could not resolve GroundingDINO config '{config_path}'. Ensure 'groundingdino-py' is installed.")
-
-def get_grounding_dino_model(gdino_config_path: str, gdino_checkpoint_path: str, models_path: str,
-                             grounding_dino_url: str, user_agent: str, retry_params: tuple,
-                             device: str, logger: Optional['AppLogger'] = None) -> Optional[torch.nn.Module]:
-    model_key = f"grounding_dino_{Path(gdino_checkpoint_path).name}_{device}"
-    def _loader():
-        _logger = logger or AppLogger(config=Config())
-        error_handler = ErrorHandler(_logger, *retry_params)
-        try:
-            models_dir = Path(models_path)
-            models_dir.mkdir(parents=True, exist_ok=True)
-            config_file_path = gdino_config_path or Config().paths.grounding_dino_config
-            config_path = resolve_grounding_dino_config(config_file_path)
-            ckpt_path = Path(gdino_checkpoint_path)
-            if not ckpt_path.is_absolute(): ckpt_path = models_dir / ckpt_path.name
-
-            download_model(grounding_dino_url, ckpt_path, "GroundingDINO Swin-T model", _logger, error_handler, user_agent, expected_sha256=Config().grounding_dino_sha256)
-            model = gdino_load_model(model_config_path=config_path, model_checkpoint_path=str(ckpt_path), device=device)
-            return model
-        except Exception as e:
-            _logger.error("Grounding DINO model loading failed.", component="grounding", exc_info=True)
-            return None
-    return model_registry.get_or_load(model_key, _loader)
-
-def predict_grounding_dino(model: torch.nn.Module, image_tensor: torch.Tensor, caption: str,
-                           box_threshold: float, text_threshold: float, device: str) -> tuple:
-    with torch.no_grad(), torch.amp.autocast('cuda', enabled=(device == 'cuda')):
-        return gdino_predict(model=model, image=image_tensor.to(device), caption=caption,
-                             box_threshold=float(box_threshold), text_threshold=float(text_threshold))
-
 class SAM3Wrapper:
     def __init__(self, checkpoint_path, device="cuda"):
         self.device = device
@@ -796,6 +706,43 @@ class SAM3Wrapper:
         """
         return self.predictor.propagate_in_video(self.session_id, start_frame_idx=start_idx, propagation_direction=direction)
 
+    def detect_objects(self, image_rgb: np.ndarray, text_prompt: str) -> List[dict]:
+        if self.session_id is not None:
+            try: self.predictor.close_session(self.session_id)
+            except Exception: pass
+
+        pil_img = Image.fromarray(image_rgb)
+        self.session_id = self.predictor.start_session([pil_img])
+
+        res = self.predictor.add_prompt(self.session_id, frame_idx=0, text=text_prompt)
+        outputs = res.get('outputs', {})
+
+        results = []
+        if outputs and 'obj_id_to_mask' in outputs:
+            scores = outputs.get('obj_id_to_score', {})
+            for obj_id, mask in outputs['obj_id_to_mask'].items():
+                if isinstance(mask, torch.Tensor):
+                    mask = mask.cpu().numpy()
+
+                mask_bool = mask > 0
+                if mask_bool.ndim == 3: mask_bool = mask_bool[0]
+
+                if not np.any(mask_bool): continue
+
+                x, y, w, h = cv2.boundingRect(mask_bool.astype(np.uint8))
+                score = float(scores.get(obj_id, 1.0))
+                if hasattr(score, 'item'): score = score.item()
+
+                results.append({
+                    'bbox': [x, y, x + w, y + h],
+                    'conf': score,
+                    'label': text_prompt,
+                    'type': 'sam3_text'
+                })
+
+        results.sort(key=lambda x: x['conf'], reverse=True)
+        return results
+
 def get_tracker(model_name: str, models_path: str, user_agent: str,
                 retry_params: tuple, logger: 'AppLogger', device: str, config: 'Config') -> Optional['SAM3Wrapper']:
     try:
@@ -827,12 +774,7 @@ def get_lpips_metric(model_name: str = 'alex', device: str = 'cpu') -> torch.nn.
 
 def initialize_analysis_models(params: 'AnalysisParameters', config: 'Config', logger: 'AppLogger') -> dict:
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    face_analyzer, ref_emb, person_detector, face_landmarker = None, None, None, None
-
-    if params.primary_seed_strategy == "🧑‍🤝‍🧑 Find Prominent Person":
-        model_path = Path(config.models_dir) / params.person_detector_model
-        person_detector = get_person_detector(model_path_str=str(model_path), device=device, imgsz=config.person_detector_imgsz, conf=config.person_detector_conf, logger=logger)
-        return {"face_analyzer": None, "ref_emb": None, "person_detector": person_detector, "face_landmarker": None, "device": device}
+    face_analyzer, ref_emb, face_landmarker = None, None, None
 
     if params.enable_face_filter:
         face_analyzer = get_face_analyzer(model_name=params.face_model_name, models_path=str(config.models_dir), det_size_tuple=tuple(config.model_face_analyzer_det_size), logger=logger, device=device)
@@ -851,16 +793,13 @@ def initialize_analysis_models(params: 'AnalysisParameters', config: 'Config', l
                 except Exception as e: logger.error("Failed to process reference face image.", exc_info=True)
             else: logger.warning("Reference face image path does not exist.", extra={'path': ref_path})
 
-    model_path = Path(config.models_dir) / params.person_detector_model
-    person_detector = get_person_detector(model_path_str=str(model_path), device=device, imgsz=config.person_detector_imgsz, conf=config.person_detector_conf, logger=logger)
-
     landmarker_path = Path(config.models_dir) / Path(config.face_landmarker_url).name
     error_handler = ErrorHandler(logger, config.retry_max_attempts, config.retry_backoff_seconds)
     download_model(config.face_landmarker_url, landmarker_path, "MediaPipe Face Landmarker", logger, error_handler, config.user_agent, expected_sha256=config.face_landmarker_sha256)
     if landmarker_path.exists():
         face_landmarker = get_face_landmarker(str(landmarker_path), logger)
 
-    return {"face_analyzer": face_analyzer, "ref_emb": ref_emb, "person_detector": person_detector, "face_landmarker": face_landmarker, "device": device}
+    return {"face_analyzer": face_analyzer, "ref_emb": ref_emb, "face_landmarker": face_landmarker, "device": device}
 
 # --- VIDEO & FRAME PROCESSING ---
 
@@ -1230,15 +1169,12 @@ class MaskPropagator:
 
 class SeedSelector:
     def __init__(self, params: 'AnalysisParameters', config: 'Config', face_analyzer: 'FaceAnalysis',
-                 reference_embedding: np.ndarray, person_detector: 'PersonDetector', tracker: 'SAM3Wrapper',
-                 gdino_model: torch.nn.Module, logger: Optional['AppLogger'] = None, device: str = "cpu"):
+                 reference_embedding: np.ndarray, tracker: 'SAM3Wrapper', logger: Optional['AppLogger'] = None, device: str = "cpu"):
         self.params = params
         self.config = config
         self.face_analyzer = face_analyzer
         self.reference_embedding = reference_embedding
-        self.person_detector = person_detector
         self.tracker = tracker
-        self._gdino = gdino_model
         self._device = device
         self.logger = logger or AppLogger(config=Config())
 
@@ -1288,8 +1224,8 @@ class SeedSelector:
         if not target_face:
             self.logger.warning("Target face not found in scene.", extra=details)
             return None, {"type": "no_subject_found"}
-        yolo_boxes, dino_boxes = self._get_yolo_boxes(frame_rgb, scene), self._get_dino_boxes(frame_rgb, params)[0]
-        best_box, best_details = self._score_and_select_candidate(target_face, yolo_boxes, dino_boxes)
+        person_boxes, text_boxes = self._get_person_boxes(frame_rgb, scene), self._get_text_prompt_boxes(frame_rgb, params)[0]
+        best_box, best_details = self._score_and_select_candidate(target_face, person_boxes, text_boxes)
         if best_box:
             self.logger.success("Evidence-based seed selected.", extra=best_details)
             return best_box, best_details
@@ -1299,23 +1235,23 @@ class SeedSelector:
 
     def _object_first_seed(self, frame_rgb: np.ndarray, params: Union[dict, 'AnalysisParameters'],
                              scene: Optional['Scene'] = None) -> tuple[Optional[list], dict]:
-        dino_boxes, dino_details = self._get_dino_boxes(frame_rgb, params)
-        if dino_boxes:
-            yolo_boxes = self._get_yolo_boxes(frame_rgb, scene)
-            if yolo_boxes:
+        text_boxes, text_details = self._get_text_prompt_boxes(frame_rgb, params)
+        if text_boxes:
+            person_boxes = self._get_person_boxes(frame_rgb, scene)
+            if person_boxes:
                 best_iou, best_match = -1, None
-                for d_box in dino_boxes:
-                    for y_box in yolo_boxes:
+                for d_box in text_boxes:
+                    for y_box in person_boxes:
                         iou = self._calculate_iou(d_box['bbox'], y_box['bbox'])
                         if iou > best_iou:
-                            best_iou, best_match = iou, {'bbox': d_box['bbox'], 'type': 'dino_yolo_intersect', 'iou': iou,
-                                                         'dino_conf': d_box['conf'], 'yolo_conf': y_box['conf']}
+                            best_iou, best_match = iou, {'bbox': d_box['bbox'], 'type': 'sam3_intersect', 'iou': iou,
+                                                         'text_conf': d_box['conf'], 'person_conf': y_box['conf']}
                 if best_match and best_match['iou'] > self.config.seeding_yolo_iou_threshold:
-                    self.logger.info("Found high-confidence DINO+YOLO intersection.", extra=best_match)
+                    self.logger.info("Found high-confidence intersection.", extra=best_match)
                     return self._xyxy_to_xywh(best_match['bbox']), best_match
-            self.logger.info("Using best DINO box without YOLO validation.", extra=dino_details)
-            return self._xyxy_to_xywh(dino_boxes[0]['bbox']), dino_details
-        self.logger.info("No DINO results, falling back to YOLO-only strategy.")
+            self.logger.info("Using best text box without validation.", extra=text_details)
+            return self._xyxy_to_xywh(text_boxes[0]['bbox']), text_details
+        self.logger.info("No text results, falling back to person-only strategy.")
         return self._choose_person_by_strategy(frame_rgb, params, scene)
 
     def _find_target_face(self, frame_rgb: np.ndarray) -> tuple[Optional[dict], dict]:
@@ -1333,44 +1269,35 @@ class SeedSelector:
             return {'bbox': best_face.bbox.astype(int), 'embedding': best_face.normed_embedding}, {'type': 'face_match', 'seed_face_sim': best_sim}
         return None, {'error': 'no_matching_face', 'best_sim': best_sim}
 
-    def _get_yolo_boxes(self, frame_rgb: np.ndarray, scene: Optional['Scene'] = None) -> list[dict]:
+    def _get_person_boxes(self, frame_rgb: np.ndarray, scene: Optional['Scene'] = None) -> list[dict]:
         if scene and getattr(scene, 'yolo_detections', None): return scene.yolo_detections
         if scene and (scene.selected_bbox or scene.initial_bbox):
             xywh = scene.selected_bbox or scene.initial_bbox
             x, y, w, h = xywh
             xyxy = [x, y, x + w, y + h]
             return [{'bbox': xyxy, 'conf': 1.0, 'type': 'selected'}]
-        if not self.person_detector: return []
+        if not self.tracker: return []
         try:
-            self.logger.warning("No pre-computed YOLO boxes found, running detection as a fallback.", component="system")
-            return self.person_detector.detect_boxes(frame_rgb)
+            return self.tracker.detect_objects(frame_rgb, "person")
         except Exception as e:
-            self.logger.warning("YOLO person detector failed.", exc_info=True)
+            self.logger.warning("Person detection failed.", exc_info=True)
             return []
 
-    def _get_dino_boxes(self, frame_rgb: np.ndarray, params: Union[dict, 'AnalysisParameters']) -> tuple[list[dict], dict]:
+    def _get_text_prompt_boxes(self, frame_rgb: np.ndarray, params: Union[dict, 'AnalysisParameters']) -> tuple[list[dict], dict]:
         prompt = self._get_param(params, "text_prompt", "").strip()
-        if not self._gdino or not prompt: return [], {}
-        box_th = self._get_param(params, "box_threshold", self.params.box_threshold)
-        text_th = self._get_param(params, "text_threshold", self.params.text_threshold)
-        image_source, image_tensor = self._load_image_from_array(frame_rgb)
-        h, w = image_source.shape[:2]
+        if not self.tracker or not prompt: return [], {}
+
         try:
-            boxes_norm, confs, labels = predict_grounding_dino(model=self._gdino, image_tensor=image_tensor, caption=prompt,
-                                                               box_threshold=float(box_th), text_threshold=float(text_th), device=self._device)
+            results = self.tracker.detect_objects(frame_rgb, prompt)
         except Exception as e:
-            self.logger.error("Grounding DINO prediction failed.", exc_info=True)
-            if "out of memory" in str(e) and torch.cuda.is_available(): torch.cuda.empty_cache()
+            self.logger.error("Text prompt prediction failed.", exc_info=True)
             return [], {"error": str(e)}
-        if boxes_norm is None or len(boxes_norm) == 0: return [], {"type": "text_prompt", "error": "no_boxes"}
-        scale = torch.tensor([w, h, w, h], device=boxes_norm.device, dtype=boxes_norm.dtype)
-        xyxy_boxes = box_convert(boxes=(boxes_norm * scale).cpu(), in_fmt="cxcywh", out_fmt="xyxy").numpy()
-        results = [{'bbox': box.astype(int), 'conf': confs[i].item(), 'label': labels[i], 'type': 'dino'} for i, box in enumerate(xyxy_boxes)]
-        results.sort(key=lambda x: x['conf'], reverse=True)
+
+        if not results: return [], {"type": "text_prompt", "error": "no_boxes"}
         return results, {**results[0], "all_boxes_count": len(results)}
 
-    def _score_and_select_candidate(self, target_face: dict, yolo_boxes: list[dict], dino_boxes: list[dict]) -> tuple[Optional[list], dict]:
-        candidates = yolo_boxes + dino_boxes
+    def _score_and_select_candidate(self, target_face: dict, person_boxes: list[dict], text_boxes: list[dict]) -> tuple[Optional[list], dict]:
+        candidates = person_boxes + text_boxes
         if not candidates: return None, {}
         scored_candidates = []
         for cand in candidates:
@@ -1381,8 +1308,8 @@ class SeedSelector:
             score += cand['conf'] * self.config.seeding_confidence_score_multiplier
             scored_candidates.append({'score': score, 'box': cand['bbox'], 'details': details})
         best_iou, best_pair = -1, None
-        for y_box in yolo_boxes:
-            for d_box in dino_boxes:
+        for y_box in person_boxes:
+            for d_box in text_boxes:
                 iou = self._calculate_iou(y_box['bbox'], d_box['bbox'])
                 if iou > best_iou: best_iou, best_pair = iou, (y_box, d_box)
         if best_iou > self.config.seeding_yolo_iou_threshold:
@@ -1396,7 +1323,7 @@ class SeedSelector:
 
     def _choose_person_by_strategy(self, frame_rgb: np.ndarray, params: Union[dict, 'AnalysisParameters'],
                                      scene: Optional['Scene'] = None) -> tuple[list, dict]:
-        boxes = self._get_yolo_boxes(frame_rgb, scene)
+        boxes = self._get_person_boxes(frame_rgb, scene)
         if not boxes:
             self.logger.warning(f"No people detected in scene - using fallback region")
             fallback_box = self._final_fallback_box(frame_rgb.shape)
@@ -1513,16 +1440,15 @@ class SeedSelector:
 class SubjectMasker:
     def __init__(self, params: 'AnalysisParameters', progress_queue: Queue, cancel_event: threading.Event, config: 'Config',
                  frame_map: Optional[dict] = None, face_analyzer: Optional['FaceAnalysis'] = None,
-                 reference_embedding: Optional[np.ndarray] = None, person_detector: Optional['PersonDetector'] = None,
+                 reference_embedding: Optional[np.ndarray] = None,
                  thumbnail_manager: Optional['ThumbnailManager'] = None, niqe_metric: Optional[Callable] = None,
                  logger: Optional['AppLogger'] = None, face_landmarker: Optional['FaceLandmarker'] = None,
                  device: str = "cpu"):
         self.params, self.config, self.progress_queue, self.cancel_event = params, config, progress_queue, cancel_event
         self.logger = logger or AppLogger(config=Config())
         self.frame_map = frame_map
-        self.face_analyzer, self.reference_embedding, self.person_detector, self.face_landmarker = face_analyzer, reference_embedding, person_detector, face_landmarker
+        self.face_analyzer, self.reference_embedding, self.face_landmarker = face_analyzer, reference_embedding, face_landmarker
         self.dam_tracker, self.mask_dir, self.shots = None, None, []
-        self._gdino, self._sam2_img = None, None
         self._device = device
         self.thumbnail_manager = thumbnail_manager if thumbnail_manager is not None else ThumbnailManager(self.logger, self.config)
         self.niqe_metric = niqe_metric
@@ -1532,45 +1458,18 @@ class SubjectMasker:
             config=self.config,
             face_analyzer=face_analyzer,
             reference_embedding=reference_embedding,
-            person_detector=person_detector,
             tracker=self.dam_tracker,
-            gdino_model=self._gdino,
             logger=self.logger,
             device=self._device
         )
         self.mask_propagator = MaskPropagator(params, self.dam_tracker, cancel_event, progress_queue, config=self.config, logger=self.logger, device=self._device)
 
     def initialize_models(self):
-        primary_strategy = self.params.primary_seed_strategy
-        if primary_strategy == "🧑‍🤝‍🧑 Find Prominent Person":
-            self.logger.info("YOLO-only mode enabled for 'Find Prominent Person' strategy. Skipping other model loads.")
-            self._gdino = None
-            return
-
         if self.params.enable_face_filter and self.face_analyzer is None:
             self.logger.warning("Face analyzer is not available but face filter is enabled.")
 
-        if not getattr(self.params, "need_masks_now", False): return
-        if self.params.enable_subject_mask: self._initialize_tracker()
-
-        text_based_seeding = ("📝 By Text" in primary_strategy or "Fallback" in primary_strategy)
-        if text_based_seeding: self._init_grounder()
-
-    def _init_grounder(self) -> bool:
-        if self._gdino is not None: return True
-        if self.params.primary_seed_strategy == "🧑‍🤝‍🧑 Find Prominent Person": return False
-        retry_params = (self.config.retry_max_attempts, tuple(self.config.retry_backoff_seconds))
-        self._gdino = get_grounding_dino_model(
-            gdino_config_path=self.params.gdino_config_path,
-            gdino_checkpoint_path=self.params.gdino_checkpoint_path,
-            models_path=str(self.config.models_dir),
-            grounding_dino_url=self.config.grounding_dino_url,
-            user_agent=self.config.user_agent,
-            retry_params=retry_params,
-            device=self._device,
-            logger=self.logger
-        )
-        return self._gdino is not None
+        if getattr(self.params, "need_masks_now", False) or self.params.enable_subject_mask:
+            self._initialize_tracker()
 
     def _initialize_tracker(self) -> bool:
         if self.dam_tracker: return True
@@ -1708,13 +1607,11 @@ class SubjectMasker:
         if isinstance(seed_config, dict) and seed_config.get('manual_bbox_xywh'):
             return seed_config['manual_bbox_xywh'], {'type': seed_config.get('seed_type', 'manual')}
 
-        primary_strategy = getattr(self.params, 'primary_seed_strategy', 'Automatic')
-        if primary_strategy != "🧑‍🤝‍🧑 Find Prominent Person": self._init_grounder()
-
-        if scene is not None and self.seed_selector.person_detector:
-            scene.yolo_detections = self.seed_selector._get_yolo_boxes(frame_rgb, scene=None)
-
         self._initialize_tracker()
+
+        if scene is not None:
+            scene.yolo_detections = self.seed_selector._get_person_boxes(frame_rgb, scene=None)
+
         return self.seed_selector.select_seed(frame_rgb, current_params=seed_config, scene=scene)
 
     def get_mask_for_bbox(self, frame_rgb_small: np.ndarray, bbox_xywh: list) -> Optional[np.ndarray]:
@@ -2628,7 +2525,7 @@ def _recompute_single_preview(scene_state: 'SceneState', masker: 'SubjectMasker'
 
 def _wire_recompute_handler(config: 'Config', logger: 'AppLogger', thumbnail_manager: 'ThumbnailManager',
                             scenes: list['Scene'], shot_id: int, outdir: str, text_prompt: str,
-                            box_thresh: float, text_thresh: float, view: str, ana_ui_map_keys: list[str],
+                            view: str, ana_ui_map_keys: list[str],
                             ana_input_components: list, cuda_available: bool) -> tuple:
     try:
         if not text_prompt or not text_prompt.strip(): return scenes, gr.update(), gr.update(), "Enter a text prompt to use advanced seeding."
@@ -2637,7 +2534,7 @@ def _wire_recompute_handler(config: 'Config', logger: 'AppLogger', thumbnail_man
         masker = _create_analysis_context(config, logger, thumbnail_manager, ana_ui_map_keys, ana_input_components)
         scene_idx = next((i for i, s in enumerate(scenes) if s.get('shot_id') == shot_id), None)
         if scene_idx is None: return scenes, gr.update(), gr.update(), f"Error: Scene {shot_id} not found."
-        overrides = {"text_prompt": text_prompt, "box_threshold": float(box_thresh), "text_threshold": float(text_thresh)}
+        overrides = {"text_prompt": text_prompt}
         scene_state = SceneState(scenes[scene_idx])
         _recompute_single_preview(scene_state, masker, overrides, thumbnail_manager, logger)
         save_scene_seeds(scenes, outdir, logger)
@@ -2654,7 +2551,7 @@ def execute_extraction(event: 'ExtractionEvent', progress_queue: Queue, cancel_e
                        logger: 'AppLogger', config: 'Config', thumbnail_manager: Optional['ThumbnailManager'] = None,
                        cuda_available: Optional[bool] = None, progress: Optional[Callable] = None) -> Generator[dict, None, None]:
     try:
-        params_dict = asdict(event)
+        params_dict = event.model_dump()
         if event.upload_video:
             source, dest = params_dict.pop('upload_video'), str(Path(config.paths.downloads) / Path(event.upload_video).name)
             shutil.copy2(source, dest)
@@ -2779,7 +2676,6 @@ def execute_session_load(app_ui: 'AppUI', event: 'SessionLoadEvent', logger: 'Ap
             "seed_strategy_input": gr.update(value=run_config.get("seed_strategy", "Largest Person")),
             "person_detector_model_input": gr.update(value=run_config.get("person_detector_model", "yolo11x.pt")),
             "tracker_model_name_input": gr.update(value=run_config.get("tracker_model_name", "sam3")),
-            "enable_dedup_input": gr.update(value=run_config.get("enable_dedup", False)),
             "extracted_video_path_state": run_config.get("video_path", ""),
             "extracted_frames_dir_state": str(output_dir),
             "analysis_output_dir_state": str(output_dir.resolve() if output_dir else ""),
@@ -2906,9 +2802,11 @@ def build_scene_gallery_items(scenes: list[dict], view: str, output_dir: str, pa
     items: list[tuple[str | None, str]] = []
     index_map: list[int] = []
     if not scenes: return [], [], 1
+    # Ensure scenes are Scene objects
+    scenes_objs = [Scene(**s) if isinstance(s, dict) else s for s in scenes]
     previews_dir = Path(output_dir) / "previews"
     previews_dir.mkdir(parents=True, exist_ok=True)
-    filtered_scenes = [(i, s) for i, s in enumerate(scenes) if scene_matches_view(s, view)]
+    filtered_scenes = [(i, s) for i, s in enumerate(scenes_objs) if scene_matches_view(s, view)]
     total_pages = max(1, (len(filtered_scenes) + page_size - 1) // page_size)
     start_idx = (page_num - 1) * page_size
     end_idx = start_idx + page_size
@@ -2917,18 +2815,17 @@ def build_scene_gallery_items(scenes: list[dict], view: str, output_dir: str, pa
     for i, s in page_scenes:
         thumb_path = previews_dir / f"scene_{s.shot_id}_preview.jpg"
         if not thumb_path.exists():
-             items.append((None, scene_caption(s)))
+             continue # Skip if no preview
         else:
             try:
                 thumb_img_np = cv2.imread(str(thumb_path))
                 if thumb_img_np is None:
-                     items.append((None, scene_caption(s)))
                      continue
                 thumb_img_np = cv2.cvtColor(thumb_img_np, cv2.COLOR_BGR2RGB)
                 badged_thumb = create_scene_thumbnail_with_badge(thumb_img_np, i, s.status == 'excluded')
                 items.append((badged_thumb, scene_caption(s)))
             except Exception:
-                items.append((None, scene_caption(s)))
+                continue
         index_map.append(i)
     return items, index_map, total_pages
 
@@ -2964,12 +2861,13 @@ class AppUI:
         self.performance_metrics, self.log_filter_level, self.all_logs = {}, "INFO", []
         self.last_run_args = None
         self.ext_ui_map_keys = ['source_path', 'upload_video', 'method', 'interval', 'nth_frame', 'max_resolution', 'thumb_megapixels', 'scene_detect']
-        self.ana_ui_map_keys = ['output_folder', 'video_path', 'resume', 'enable_face_filter', 'face_ref_img_path', 'face_ref_img_upload', 'face_model_name', 'enable_subject_mask', 'tracker_model_name', 'person_detector_model', 'best_frame_strategy', 'scene_detect', 'text_prompt', 'box_threshold', 'text_threshold', 'min_mask_area_pct', 'sharpness_base_scale', 'edge_strength_base_scale', 'gdino_config_path', 'gdino_checkpoint_path', 'pre_analysis_enabled', 'pre_sample_nth', 'primary_seed_strategy', 'compute_quality_score', 'compute_sharpness', 'compute_edge_strength', 'compute_contrast', 'compute_brightness', 'compute_entropy', 'compute_eyes_open', 'compute_yaw', 'compute_pitch', 'compute_face_sim', 'compute_subject_mask_area', 'compute_niqe', 'compute_phash']
-        self.session_load_keys = ['unified_log', 'unified_status', 'progress_details', 'cancel_button', 'pause_button', 'source_input', 'max_resolution', 'thumb_megapixels_input', 'ext_scene_detect_input', 'method_input', 'pre_analysis_enabled_input', 'pre_sample_nth_input', 'enable_face_filter_input', 'face_ref_img_path_input', 'text_prompt_input', 'best_frame_strategy_input', 'person_detector_model_input', 'tracker_model_name_input', 'extracted_video_path_state', 'extracted_frames_dir_state', 'analysis_output_dir_state', 'analysis_metadata_path_state', 'scenes_state', 'propagate_masks_button', 'seeding_results_column', 'propagation_group', 'scene_filter_status', 'scene_face_sim_min_input', 'filtering_tab', 'scene_gallery', 'scene_gallery_index_map_state']
+        self.ana_ui_map_keys = ['output_folder', 'video_path', 'resume', 'enable_face_filter', 'face_ref_img_path', 'face_ref_img_upload', 'face_model_name', 'enable_subject_mask', 'tracker_model_name', 'best_frame_strategy', 'scene_detect', 'text_prompt', 'min_mask_area_pct', 'sharpness_base_scale', 'edge_strength_base_scale', 'pre_analysis_enabled', 'pre_sample_nth', 'primary_seed_strategy', 'compute_quality_score', 'compute_sharpness', 'compute_edge_strength', 'compute_contrast', 'compute_brightness', 'compute_entropy', 'compute_eyes_open', 'compute_yaw', 'compute_pitch', 'compute_face_sim', 'compute_subject_mask_area', 'compute_niqe', 'compute_phash']
+        self.session_load_keys = ['unified_log', 'unified_status', 'progress_details', 'cancel_button', 'pause_button', 'source_input', 'max_resolution', 'thumb_megapixels_input', 'ext_scene_detect_input', 'method_input', 'pre_analysis_enabled_input', 'pre_sample_nth_input', 'enable_face_filter_input', 'face_ref_img_path_input', 'text_prompt_input', 'best_frame_strategy_input', 'tracker_model_name_input', 'extracted_video_path_state', 'extracted_frames_dir_state', 'analysis_output_dir_state', 'analysis_metadata_path_state', 'scenes_state', 'propagate_masks_button', 'seeding_results_column', 'propagation_group', 'scene_filter_status', 'scene_face_sim_min_input', 'filtering_tab', 'scene_gallery', 'scene_gallery_index_map_state']
 
     def build_ui(self) -> gr.Blocks:
+        # css argument is deprecated in Gradio 5+
         css = """.gradio-gallery { overflow-y: hidden !important; } .gradio-gallery img { width: 100%; height: 100%; object-fit: scale-down; object-position: top left; } .plot-and-slider-column { max-width: 560px !important; margin: auto; } .scene-editor { border: 1px solid #444; padding: 10px; border-radius: 5px; } .log-container > .gr-utils-error { display: none !important; } .progress-details { font-size: 1rem !important; color: #333 !important; font-weight: 500; padding: 8px 0; } .gr-progress .progress { height: 28px !important; }"""
-        with gr.Blocks(theme=gr.themes.Default(), css=css) as demo:
+        with gr.Blocks() as demo:
             self._build_header()
             with gr.Accordion("🔄 resume previous Session", open=False):
                 with gr.Row():
@@ -3067,32 +2965,26 @@ class AppUI:
                     self.components['text_seeding_group'] = text_seeding_group
                     gr.Markdown("#### 📝 Configure Text Selection")
                     gr.Markdown("This strategy uses a text description to find the subject. It's useful for identifying objects, or people described by their clothing or appearance when a reference photo isn't available.")
-                    with gr.Accordion("🔬 Advanced Detection (GroundingDINO)", open=True):
-                        gr.Markdown("Use GroundingDINO for text-based object detection with custom prompts.")
+                    with gr.Accordion("Text Prompt Settings", open=True):
+                        gr.Markdown("Use SAM3 for text-based object detection with custom prompts.")
                         self._reg('text_prompt', self._create_component('text_prompt_input', 'textbox', {'label': "Text Prompt", 'placeholder': "e.g., 'a woman in a red dress'", 'value': self.config.default_text_prompt, 'info': "Describe the main subject to find the best frame (e.g., 'player wearing number 10', 'person in the green shirt')."}))
-                        with gr.Row():
-                            self._reg('box_threshold', self._create_component('box_threshold', 'slider', {'minimum': 0.0, 'maximum': 1.0, 'value': self.config.gdino_box_threshold, 'label': "Box Threshold", 'interactive': True}))
-                            self._reg('text_threshold', self._create_component('text_threshold', 'slider', {'minimum': 0.0, 'maximum': 1.0, 'value': self.config.gdino_text_threshold, 'label': "Text Threshold", 'interactive': True}))
                 with gr.Group(visible="Prominent Person" in self.config.default_primary_seed_strategy) as auto_seeding_group:
                     self.components['auto_seeding_group'] = auto_seeding_group
                     gr.Markdown("#### 🧑‍🤝‍🧑 Configure Prominent Person Selection")
-                    gr.Markdown("This is a simple, fully automatic mode. It uses an object detector (YOLO) to find all people in the scene and then selects one based on a simple rule, like who is largest or most central. It's fast but less precise, as it doesn't use face identity or text descriptions.")
+                    gr.Markdown("This is a simple, fully automatic mode. It uses SAM3 (with prompt 'person') to find all people in the scene and then selects one based on a simple rule, like who is largest or most central.")
                     self._reg('best_frame_strategy', self._create_component('best_frame_strategy_input', 'dropdown', {'choices': self.SEED_STRATEGY_CHOICES, 'value': "Largest Person", 'label': "Selection Method", 'info': "'Largest' picks the person with the biggest bounding box. 'Center-most' picks the person closest to the center. 'Highest Confidence' selects the person with the highest detection confidence. 'Tallest Person' prefers subjects that are standing. 'Area x Confidence' balances size and confidence. 'Rule-of-Thirds' prefers subjects near the thirds lines. 'Edge-avoiding' avoids subjects near the frame's edge. 'Balanced' provides a good mix of area, confidence, and edge-avoidance. 'Best Face' selects the person with the highest quality face detection."}))
                 self._create_component('person_radio', 'radio', {'label': "Select Person", 'choices': [], 'visible': False})
                 with gr.Accordion("Advanced Settings", open=False):
                     gr.Markdown("These settings control the underlying models and analysis parameters. Adjust them only if you understand their effect.")
                     self._reg('pre_analysis_enabled', self._create_component('pre_analysis_enabled_input', 'checkbox', {'label': 'Enable Pre-Analysis to find best frame', 'value': self.config.default_pre_analysis_enabled, 'info': "Analyzes a subset of frames in each scene to automatically find the highest quality frame to use as the 'best frame' for masking. Highly recommended."}))
                     self._reg('pre_sample_nth', self._create_component('pre_sample_nth_input', 'number', {'label': 'Sample every Nth thumbnail for pre-analysis', 'value': self.config.default_pre_sample_nth, 'interactive': True, 'info': "For faster pre-analysis, check every Nth frame in a scene instead of all of them. A value of 5 is a good starting point."}))
-                    self._reg('person_detector_model', self._create_component('person_detector_model_input', 'dropdown', {'choices': self.PERSON_DETECTOR_MODEL_CHOICES, 'value': self.config.default_person_detector_model, 'label': "Person Detector Model", 'info': "YOLO Model for finding people. 'x' (large) is more accurate but slower; 's' (small) is much faster but may miss people."}))
                     self._reg('face_model_name', self._create_component('face_model_name_input', 'dropdown', {'choices': self.FACE_MODEL_NAME_CHOICES, 'value': self.config.default_face_model_name, 'label': "Face Recognition Model", 'info': "InsightFace model for face matching. 'l' (large) is more accurate; 's' (small) is faster and uses less memory."}))
                     self._reg('tracker_model_name', self._create_component('tracker_model_name_input', 'dropdown', {'choices': self.TRACKER_MODEL_CHOICES, 'value': self.config.default_tracker_model_name, 'label': "Mask Tracking Model", 'info': "The SAM3 model used for tracking the subject mask across frames."}))
                     self._reg('resume', self._create_component('resume_input', 'checkbox', {'label': 'Resume', 'value': self.config.default_resume, 'interactive': True, 'visible': False}))
                     self._reg('enable_subject_mask', self._create_component('enable_subject_mask_input', 'checkbox', {'label': 'Enable Subject Mask', 'value': self.config.default_enable_subject_mask, 'interactive': True, 'visible': False}))
                     self._reg('min_mask_area_pct', self._create_component('min_mask_area_pct_input', 'slider', {'label': 'Min Mask Area Pct', 'value': self.config.default_min_mask_area_pct, 'interactive': True, 'visible': False}))
-                    self._reg('sharpness_base_scale', self._create_component('sharpness_base_scale_input', 'slider', {'label': 'Sharpness Base Scale', 'value': self.config.default_sharpness_base_scale, 'interactive': True, 'visible': False}))
-                    self._reg('edge_strength_base_scale', self._create_component('edge_strength_base_scale_input', 'slider', {'label': 'Edge Strength Base Scale', 'value': self.config.default_edge_strength_base_scale, 'interactive': True, 'visible': False}))
-                    self._reg('gdino_config_path', self._create_component('gdino_config_path_input', 'textbox', {'label': 'GroundingDINO Config Path', 'value': self.config.grounding_dino_config_path, 'interactive': True, 'visible': False}))
-                    self._reg('gdino_checkpoint_path', self._create_component('gdino_checkpoint_path_input', 'textbox', {'label': 'GroundingDINO Checkpoint Path', 'value': self.config.grounding_dino_checkpoint_path, 'interactive': True, 'visible': False}))
+                    self._reg('sharpness_base_scale', self._create_component('sharpness_base_scale_input', 'slider', {'label': 'Sharpness Base Scale', 'value': self.config.default_sharpness_base_scale, 'minimum': 1, 'maximum': 10000, 'interactive': True, 'visible': False}))
+                    self._reg('edge_strength_base_scale', self._create_component('edge_strength_base_scale_input', 'slider', {'label': 'Edge Strength Base Scale', 'value': self.config.default_edge_strength_base_scale, 'minimum': 1, 'maximum': 10000, 'interactive': True, 'visible': False}))
                 self._create_component('start_pre_analysis_button', 'button', {'value': '🌱 Find & Preview Best Frames', 'variant': 'primary'})
                 with gr.Group(visible=False) as propagation_group: self.components['propagation_group'] = propagation_group
 
@@ -3121,12 +3013,8 @@ class AppUI:
                     self.components['yolo_seed_group'] = yolo_seed_group
                     self._create_component('scene_editor_yolo_subject_id', 'radio', {'label': "Detected Subjects", 'info': "Select the auto-detected subject to use for seeding.", 'interactive': True, 'choices': [], 'visible': False})
                 with gr.Accordion("Advanced Seeding (optional)", open=False):
-                    gr.Markdown("Use a text prompt for seeding. This will override the YOLO detection above.")
-                    self._create_component("sceneeditorpromptinput", "textbox", {"label": "DINO Text Prompt", "info": "e.g., 'person in a red shirt'"})
-                    info_box = "Confidence for detecting an object's bounding box. Higher = fewer, more confident detections."
-                    self._create_component("sceneeditorboxthreshinput", "slider", {"label": "Box Thresh", "minimum": 0.0, "maximum": 1.0, "step": 0.05, "info": info_box, "value": self.config.gdino_box_threshold})
-                    info_text = "Confidence for matching the prompt to an object. Higher = stricter text match."
-                    self._create_component("sceneeditortextthreshinput", "slider", {"label": "Text Thresh", "minimum": 0.0, "maximum": 1.0, "step": 0.05, "info": info_text, "value": self.config.gdino_text_threshold})
+                    gr.Markdown("Use a text prompt for seeding. This will override the automatic detection above.")
+                    self._create_component("sceneeditorpromptinput", "textbox", {"label": "Text Prompt", "info": "e.g., 'person in a red shirt'"})
                 with gr.Row():
                     self._create_component("scenerecomputebutton", "button", {"value": "▶️ Recompute Preview"})
                     self._create_component("sceneincludebutton", "button", {"value": "✅ Keep Scene"})
@@ -3239,7 +3127,7 @@ class AppUI:
 
     def _create_event_handlers(self):
         self.logger.info("Initializing Gradio event handlers...")
-        self.components.update({'extracted_video_path_state': gr.State(""), 'extracted_frames_dir_state': gr.State(""), 'analysis_output_dir_state': gr.State(""), 'analysis_metadata_path_state': gr.State(""), 'all_frames_data_state': gr.State([]), 'per_metric_values_state': gr.State({}), 'scenes_state': gr.State([]), 'selected_scene_id_state': gr.State(None), 'scene_gallery_index_map_state': gr.State([]), 'gallery_image_state': gr.State(None), 'gallery_shape_state': gr.State(None), 'yolo_results_state': gr.State({}), 'discovered_faces_state': gr.State([]), 'resume_state': gr.State(False), 'enable_subject_mask_state': gr.State(True), 'min_mask_area_pct_state': gr.State(1.0), 'sharpness_base_scale_state': gr.State(2500.0), 'edge_strength_base_scale_state': gr.State(100.0), 'gdino_config_path_state': gr.State("GroundingDINO_SwinT_OGC.py"), 'gdino_checkpoint_path_state': gr.State("models/groundingdino_swint_ogc.pth")})
+        self.components.update({'extracted_video_path_state': gr.State(""), 'extracted_frames_dir_state': gr.State(""), 'analysis_output_dir_state': gr.State(""), 'analysis_metadata_path_state': gr.State(""), 'all_frames_data_state': gr.State([]), 'per_metric_values_state': gr.State({}), 'scenes_state': gr.State([]), 'selected_scene_id_state': gr.State(None), 'scene_gallery_index_map_state': gr.State([]), 'gallery_image_state': gr.State(None), 'gallery_shape_state': gr.State(None), 'yolo_results_state': gr.State({}), 'discovered_faces_state': gr.State([]), 'resume_state': gr.State(False), 'enable_subject_mask_state': gr.State(True), 'min_mask_area_pct_state': gr.State(1.0), 'sharpness_base_scale_state': gr.State(2500.0), 'edge_strength_base_scale_state': gr.State(100.0)})
         self._setup_visibility_toggles(); self._setup_pipeline_handlers(); self._setup_filtering_handlers(); self._setup_bulk_scene_handlers()
         self.components['save_config_button'].click(lambda: self.config.save_config('config_dump.json'), [], []).then(lambda: "Configuration saved to config_dump.json", [], self.components['unified_log'])
 
@@ -3270,8 +3158,21 @@ class AppUI:
         if tracker_instance: tracker_instance.pause_event.set()
         op_name = getattr(task_func, '__name__', 'Unknown Task').replace('_wrapper', '').replace('_', ' ').title()
         yield {self.components['cancel_button']: gr.update(interactive=True), self.components['pause_button']: gr.update(interactive=True), self.components['unified_status']: f"🚀 **Starting: {op_name}...**"}
+
+        def run_and_capture():
+            try:
+                res = task_func(*args)
+                if hasattr(res, '__iter__') and not isinstance(res, (dict, list, tuple, str)):
+                    for item in res:
+                        self.progress_queue.put({"ui_update": item})
+                else:
+                    self.progress_queue.put({"ui_update": res})
+            except Exception as e:
+                self.app_logger.error(f"Task failed: {e}", exc_info=True)
+                self.progress_queue.put({"ui_update": {"unified_log": f"[CRITICAL] Task failed: {e}"}})
+
         with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(task_func, *args)
+            future = executor.submit(run_and_capture)
             start_time = time.time()
             while future.running():
                 if time.time() - start_time > 3600: self.app_logger.error("Task timed out after 1 hour"); self.cancel_event.set(); future.cancel(); break
@@ -3279,6 +3180,8 @@ class AppUI:
                 if tracker_instance and not tracker_instance.pause_event.is_set(): yield {self.components['unified_status']: f"⏸️ **Paused: {op_name}**"}; time.sleep(0.2); continue
                 try:
                     msg, update_dict = self.progress_queue.get(timeout=0.1), {}
+                    if "ui_update" in msg:
+                        update_dict.update(msg["ui_update"])
                     if "log" in msg:
                         self.all_logs.append(msg['log'])
                         log_level_map = {level: i for i, level in enumerate(self.LOG_LEVEL_CHOICES)}
@@ -3294,6 +3197,21 @@ class AppUI:
                     if update_dict: yield update_dict
                 except Empty: pass
                 time.sleep(0.05)
+
+            # Drain remaining items from queue
+            while not self.progress_queue.empty():
+                try:
+                    msg, update_dict = self.progress_queue.get_nowait(), {}
+                    if "ui_update" in msg:
+                        update_dict.update(msg["ui_update"])
+                    if "log" in msg:
+                        self.all_logs.append(msg['log'])
+                        log_level_map = {level: i for i, level in enumerate(self.LOG_LEVEL_CHOICES)}
+                        current_filter_level = log_level_map.get(self.log_filter_level.upper(), 1)
+                        filtered_logs = [l for l in self.all_logs if any(f"[{level}]" in l for level in self.LOG_LEVEL_CHOICES[current_filter_level:])]
+                        update_dict[self.components['unified_log']] = "\n".join(filtered_logs[-1000:])
+                    if update_dict: yield update_dict
+                except Empty: break
 
     def _scale_xywh(self, xywh: list[int], src_hw: tuple[int, int], dst_hw: tuple[int, int]) -> list[int]:
         """Scales a bounding box from a source to a destination resolution."""
@@ -3353,9 +3271,9 @@ class AppUI:
         c['prev_page_button'].click(lambda scenes, view, output_dir, page_num: on_page_change(scenes, view, output_dir, page_num - 1), [c['scenes_state'], c['scene_gallery_view_toggle'], c['extracted_frames_dir_state'], c['page_number_input']], [c['scene_gallery'], c['scene_gallery_index_map_state'], c['total_pages_label'], c['page_number_input']])
         c['page_number_input'].submit(on_page_change, [c['scenes_state'], c['scene_gallery_view_toggle'], c['extracted_frames_dir_state'], c['page_number_input']], [c['scene_gallery'], c['scene_gallery_index_map_state'], c['total_pages_label'], c['page_number_input']])
 
-        c['scene_gallery'].select(self.on_select_for_edit, inputs=[c['scenes_state'], c['scene_gallery_view_toggle'], c['scene_gallery_index_map_state'], c['extracted_frames_dir_state'], c['yolo_results_state']], outputs=[c['scenes_state'], c['scene_filter_status'], c['scene_gallery'], c['scene_gallery_index_map_state'], c['selected_scene_id_state'], c['sceneeditorstatusmd'], c['sceneeditorpromptinput'], c['sceneeditorboxthreshinput'], c['sceneeditortextthreshinput'], c['sceneeditoraccordion'], c['gallery_image_state'], c['gallery_shape_state'], c['scene_editor_yolo_subject_id'], c['propagate_masks_button'], c['yolo_results_state']])
+        c['scene_gallery'].select(self.on_select_for_edit, inputs=[c['scenes_state'], c['scene_gallery_view_toggle'], c['scene_gallery_index_map_state'], c['extracted_frames_dir_state'], c['yolo_results_state']], outputs=[c['scenes_state'], c['scene_filter_status'], c['scene_gallery'], c['scene_gallery_index_map_state'], c['selected_scene_id_state'], c['sceneeditorstatusmd'], c['sceneeditorpromptinput'], c['sceneeditoraccordion'], c['gallery_image_state'], c['gallery_shape_state'], c['scene_editor_yolo_subject_id'], c['propagate_masks_button'], c['yolo_results_state']])
 
-        c['scenerecomputebutton'].click(fn=lambda scenes, shot_id, outdir, view, txt, bth, tth, subject_id, *ana_args: _wire_recompute_handler(self.config, self.app_logger, self.thumbnail_manager, scenes, shot_id, outdir, txt, bth, tth, view, self.ana_ui_map_keys, ana_args, self.cuda_available) if (txt and txt.strip()) else self.on_select_yolo_subject_wrapper(subject_id, scenes, shot_id, outdir, view, *ana_args), inputs=[c['scenes_state'], c['selected_scene_id_state'], c['analysis_output_dir_state'], c['scene_gallery_view_toggle'], c['sceneeditorpromptinput'], c['sceneeditorboxthreshinput'], c['sceneeditortextthreshinput'], c['scene_editor_yolo_subject_id'], *self.ana_input_components], outputs=[c['scenes_state'], c['scene_gallery'], c['scene_gallery_index_map_state'], c['sceneeditorstatusmd'], c['total_pages_label'], c['page_number_input']])
+        c['scenerecomputebutton'].click(fn=lambda scenes, shot_id, outdir, view, txt, subject_id, *ana_args: _wire_recompute_handler(self.config, self.app_logger, self.thumbnail_manager, scenes, shot_id, outdir, txt, view, self.ana_ui_map_keys, ana_args, self.cuda_available) if (txt and txt.strip()) else self.on_select_yolo_subject_wrapper(subject_id, scenes, shot_id, outdir, view, *ana_args), inputs=[c['scenes_state'], c['selected_scene_id_state'], c['analysis_output_dir_state'], c['scene_gallery_view_toggle'], c['sceneeditorpromptinput'], c['scene_editor_yolo_subject_id'], *self.ana_input_components], outputs=[c['scenes_state'], c['scene_gallery'], c['scene_gallery_index_map_state'], c['sceneeditorstatusmd'], c['total_pages_label'], c['page_number_input']])
 
         c['sceneresetbutton'].click(self.on_reset_scene_wrapper, inputs=[c['scenes_state'], c['selected_scene_id_state'], c['analysis_output_dir_state'], c['scene_gallery_view_toggle']] + self.ana_input_components, outputs=[c['scenes_state'], c['scene_gallery'], c['scene_gallery_index_map_state'], c['sceneeditorstatusmd']])
 
@@ -3364,7 +3282,7 @@ class AppUI:
 
         def init_scene_gallery(scenes, view, outdir):
             if not scenes: return gr.update(value=[]), []
-            gallery_items, index_map = build_scene_gallery_items(scenes, view, outdir)
+            gallery_items, index_map, _ = build_scene_gallery_items(scenes, view, outdir)
             return gr.update(value=gallery_items), index_map
 
         c['scenes_state'].change(init_scene_gallery, [c['scenes_state'], c['scene_gallery_view_toggle'], c['extracted_frames_dir_state']], [c['scene_gallery'], c['scene_gallery_index_map_state']])
@@ -3392,7 +3310,7 @@ class AppUI:
 
     def _empty_selection_response(self, scenes, indexmap):
         status_text, button_update = get_scene_status_text(scenes)
-        return (scenes, status_text, gr.update(), indexmap, None, "Select a scene from the gallery to edit its properties.", "", self.config.gdino_box_threshold, self.config.gdino_text_threshold, gr.update(open=False), None, None, gr.update(visible=False, choices=[], value=None), button_update, {})
+        return (scenes, status_text, gr.update(), indexmap, None, "Select a scene from the gallery to edit its properties.", "", gr.update(open=False), None, None, gr.update(visible=False, choices=[], value=None), button_update, {})
 
     def on_select_for_edit(self, scenes, view, indexmap, outputdir, yoloresultsstate, event: Optional[gr.EventData] = None, request: Optional[gr.Request] = None):
         sel_idx = getattr(event, "index", None) if event else None
@@ -3408,12 +3326,10 @@ class AppUI:
         gallery_shape = gallery_image.shape[:2] if gallery_image is not None else None
         status_md = f"**Editing Scene {shotid}** (Frames {scene.get('start_frame', '?')}-{scene.get('end_frame', '?')})"
         prompt = cfg.get("text_prompt", "")
-        boxth = cfg.get("box_threshold", self.config.gdino_box_threshold)
-        textth = cfg.get("text_threshold", self.config.gdino_text_threshold)
         subject_choices = [f"{i+1}" for i in range(len(scene.get('yolo_detections', [])))]
         subject_id_update = gr.update(choices=subject_choices, value=None, visible=bool(subject_choices))
         _, button_update = get_scene_status_text(scenes)
-        return (scenes, get_scene_status_text(scenes)[0], gr.update(), indexmap, shotid, gr.update(value=status_md), gr.update(value=prompt), gr.update(value=boxth), gr.update(value=textth), gr.update(open=True), gallery_image, gallery_shape, subject_id_update, button_update, yoloresultsstate)
+        return (scenes, get_scene_status_text(scenes)[0], gr.update(), indexmap, shotid, gr.update(value=status_md), gr.update(value=prompt), gr.update(open=True), gallery_image, gallery_shape, subject_id_update, button_update, yoloresultsstate)
 
     def on_editor_toggle(self, scenes, selected_shotid, outputfolder, view, new_status):
         """Toggles the status of a scene from the scene editor."""
@@ -3438,17 +3354,14 @@ class AppUI:
             else: report.append("  - CUDA: NOT AVAILABLE (Running in CPU mode)")
         except Exception as e: report.append(f"  - PyTorch/CUDA Check: FAILED ({e})")
         report.append("\n[SECTION 2: Core Dependencies]")
-        for dep in ["cv2", "gradio", "imagehash", "mediapipe", "ultralytics", "groundingdino", "sam3"]:
+        for dep in ["cv2", "gradio", "imagehash", "mediapipe", "sam3"]:
             try: __import__(dep.split('.')[0]); report.append(f"  - {dep}: OK")
             except ImportError: report.append(f"  - {dep}: FAILED (Not Installed)")
         report.append("\n[SECTION 3: Paths & Assets]")
         for name, path in {"Models Directory": Path(self.config.models_dir), "Dry Run Assets": Path("dry-run-assets"), "Sample Video": Path("dry-run-assets/sample.mp4"), "Sample Image": Path("dry-run-assets/sample.jpg")}.items():
             report.append(f"  - {name}: {'OK' if path.exists() else 'FAILED'} (Path: {path})")
         report.append("\n[SECTION 4: Model Loading Simulation]")
-        try:
-            get_person_detector(model_path_str=str(Path(self.config.models_dir) / self.config.default_person_detector_model), device="cuda" if self.cuda_available else "cpu", imgsz=self.config.person_detector_imgsz, conf=self.config.person_detector_conf, logger=self.logger)
-            report.append("  - YOLO Model: OK")
-        except Exception as e: report.append(f"  - YOLO Model: FAILED ({e})")
+        report.append("  - Skipping Model Loading Simulation (Models loaded on demand)")
         report.append("\n[SECTION 5: E2E Pipeline Simulation]")
         temp_output_dir = Path(self.config.downloads_dir) / "dry_run_output"
         shutil.rmtree(temp_output_dir, ignore_errors=True); temp_output_dir.mkdir(parents=True, exist_ok=True)
@@ -3532,10 +3445,16 @@ class AppUI:
 
     def _on_pre_analysis_success(self, result: dict) -> dict:
         """Callback for successful pre-analysis."""
+        scenes_objs = [Scene(**s) for s in result['scenes']]
+        status_text, button_update = get_scene_status_text(scenes_objs)
         return {
             self.components['scenes_state']: result['scenes'],
             self.components['analysis_output_dir_state']: result['output_dir'],
-            self.components['unified_log']: f"Pre-analysis complete. Found {len(result['scenes'])} scenes."
+            self.components['unified_log']: f"Pre-analysis complete. Found {len(result['scenes'])} scenes.",
+            self.components['seeding_results_column']: result.get('seeding_results_column', gr.update(visible=True)),
+            self.components['propagation_group']: result.get('propagation_group', gr.update(visible=True)),
+            self.components['propagate_masks_button']: button_update,
+            self.components['scene_filter_status']: status_text
         }
 
     def run_pre_analysis_wrapper(self, *args):
@@ -3622,7 +3541,7 @@ class AppUI:
         def extraction_handler(*args, progress=gr.Progress()): yield from self._run_task_with_progress(self.run_extraction_wrapper, all_outputs, progress, *args)
         def pre_analysis_handler(*args, progress=gr.Progress()): yield from self._run_task_with_progress(self.run_pre_analysis_wrapper, all_outputs, progress, *args)
         def propagation_handler(scenes, *args, progress=gr.Progress()): yield from self._run_task_with_progress(self.run_propagation_wrapper, all_outputs, progress, scenes, *args)
-        def analysis_handler(scenes, *args, progress: gr.Progress): yield from self._run_task_with_progress(self.run_analysis_wrapper, all_outputs, progress, scenes, *args)
+        def analysis_handler(scenes, *args, progress=gr.Progress()): yield from self._run_task_with_progress(self.run_analysis_wrapper, all_outputs, progress, scenes, *args)
 
         c['load_session_button'].click(fn=session_load_handler, inputs=[c['session_path_input']], outputs=all_outputs, show_progress="hidden")
         ext_inputs = self.get_inputs(self.ext_ui_map_keys)
@@ -3787,8 +3706,8 @@ class AppUI:
                 if acc: updates[acc] = gr.update(visible=has_data)
                 if plot_comp and has_data: updates[plot_comp] = gr.update(value=svgs.get(k, ""))
             slider_values_dict = {key: c['metric_sliders'][key].value for key in slider_keys}
-            slider_values_dict['enable_dedup'] = c['enable_dedup_input'].value
-            filter_event = FilterEvent(all_frames_data=all_frames, per_metric_values=metric_values, output_dir=output_dir, gallery_view="Kept Frames", show_overlay=self.config.gradio_show_mask_overlay, overlay_alpha=self.config.gradio_overlay_alpha, require_face_match=c['require_face_match_input'].value, dedup_thresh=c['dedup_thresh_input'].value, slider_values=slider_values_dict)
+            slider_values_dict['enable_dedup'] = (c['dedup_method_input'].value != "None")
+            filter_event = FilterEvent(all_frames_data=all_frames, per_metric_values=metric_values, output_dir=output_dir, gallery_view="Kept Frames", show_overlay=self.config.gradio_show_mask_overlay, overlay_alpha=self.config.gradio_overlay_alpha, require_face_match=c['require_face_match_input'].value, dedup_thresh=c['dedup_thresh_input'].value, slider_values=slider_values_dict, dedup_method=c['dedup_method_input'].value)
             filter_updates = on_filters_changed(filter_event, self.thumbnail_manager, self.config, self.logger)
             updates.update({c['filter_status_text']: filter_updates['filter_status_text'], c['results_gallery']: filter_updates['results_gallery']})
             final_updates_list = [updates.get(comp, gr.update()) for comp in load_outputs]

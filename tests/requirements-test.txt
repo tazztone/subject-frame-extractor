@@ -7,3 +7,17 @@ pytest
 opencv-python
 lpips
 imagehash
+iopath
+ftfy
+regex
+decord
+timm>=1.0.17
+pydantic
+pydantic-settings
+einops
+hydra-core
+omegaconf
+ruff
+mypy
+playwright
+pytest-playwright
