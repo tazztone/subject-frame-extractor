@@ -17,3 +17,7 @@ pydantic-settings
 einops
 hydra-core
 omegaconf
+ruff
+mypy
+playwright
+pytest-playwright

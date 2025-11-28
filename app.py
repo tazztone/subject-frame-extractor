@@ -2551,7 +2551,7 @@ def execute_extraction(event: 'ExtractionEvent', progress_queue: Queue, cancel_e
                        logger: 'AppLogger', config: 'Config', thumbnail_manager: Optional['ThumbnailManager'] = None,
                        cuda_available: Optional[bool] = None, progress: Optional[Callable] = None) -> Generator[dict, None, None]:
     try:
-        params_dict = asdict(event)
+        params_dict = event.model_dump()
         if event.upload_video:
             source, dest = params_dict.pop('upload_video'), str(Path(config.paths.downloads) / Path(event.upload_video).name)
             shutil.copy2(source, dest)
@@ -2676,7 +2676,6 @@ def execute_session_load(app_ui: 'AppUI', event: 'SessionLoadEvent', logger: 'Ap
             "seed_strategy_input": gr.update(value=run_config.get("seed_strategy", "Largest Person")),
             "person_detector_model_input": gr.update(value=run_config.get("person_detector_model", "yolo11x.pt")),
             "tracker_model_name_input": gr.update(value=run_config.get("tracker_model_name", "sam3")),
-            "enable_dedup_input": gr.update(value=run_config.get("enable_dedup", False)),
             "extracted_video_path_state": run_config.get("video_path", ""),
             "extracted_frames_dir_state": str(output_dir),
             "analysis_output_dir_state": str(output_dir.resolve() if output_dir else ""),
@@ -2803,9 +2802,11 @@ def build_scene_gallery_items(scenes: list[dict], view: str, output_dir: str, pa
     items: list[tuple[str | None, str]] = []
     index_map: list[int] = []
     if not scenes: return [], [], 1
+    # Ensure scenes are Scene objects
+    scenes_objs = [Scene(**s) if isinstance(s, dict) else s for s in scenes]
     previews_dir = Path(output_dir) / "previews"
     previews_dir.mkdir(parents=True, exist_ok=True)
-    filtered_scenes = [(i, s) for i, s in enumerate(scenes) if scene_matches_view(s, view)]
+    filtered_scenes = [(i, s) for i, s in enumerate(scenes_objs) if scene_matches_view(s, view)]
     total_pages = max(1, (len(filtered_scenes) + page_size - 1) // page_size)
     start_idx = (page_num - 1) * page_size
     end_idx = start_idx + page_size
@@ -2814,18 +2815,17 @@ def build_scene_gallery_items(scenes: list[dict], view: str, output_dir: str, pa
     for i, s in page_scenes:
         thumb_path = previews_dir / f"scene_{s.shot_id}_preview.jpg"
         if not thumb_path.exists():
-             items.append((None, scene_caption(s)))
+             continue # Skip if no preview
         else:
             try:
                 thumb_img_np = cv2.imread(str(thumb_path))
                 if thumb_img_np is None:
-                     items.append((None, scene_caption(s)))
                      continue
                 thumb_img_np = cv2.cvtColor(thumb_img_np, cv2.COLOR_BGR2RGB)
                 badged_thumb = create_scene_thumbnail_with_badge(thumb_img_np, i, s.status == 'excluded')
                 items.append((badged_thumb, scene_caption(s)))
             except Exception:
-                items.append((None, scene_caption(s)))
+                continue
         index_map.append(i)
     return items, index_map, total_pages
 
@@ -2865,8 +2865,9 @@ class AppUI:
         self.session_load_keys = ['unified_log', 'unified_status', 'progress_details', 'cancel_button', 'pause_button', 'source_input', 'max_resolution', 'thumb_megapixels_input', 'ext_scene_detect_input', 'method_input', 'pre_analysis_enabled_input', 'pre_sample_nth_input', 'enable_face_filter_input', 'face_ref_img_path_input', 'text_prompt_input', 'best_frame_strategy_input', 'tracker_model_name_input', 'extracted_video_path_state', 'extracted_frames_dir_state', 'analysis_output_dir_state', 'analysis_metadata_path_state', 'scenes_state', 'propagate_masks_button', 'seeding_results_column', 'propagation_group', 'scene_filter_status', 'scene_face_sim_min_input', 'filtering_tab', 'scene_gallery', 'scene_gallery_index_map_state']
 
     def build_ui(self) -> gr.Blocks:
+        # css argument is deprecated in Gradio 5+
         css = """.gradio-gallery { overflow-y: hidden !important; } .gradio-gallery img { width: 100%; height: 100%; object-fit: scale-down; object-position: top left; } .plot-and-slider-column { max-width: 560px !important; margin: auto; } .scene-editor { border: 1px solid #444; padding: 10px; border-radius: 5px; } .log-container > .gr-utils-error { display: none !important; } .progress-details { font-size: 1rem !important; color: #333 !important; font-weight: 500; padding: 8px 0; } .gr-progress .progress { height: 28px !important; }"""
-        with gr.Blocks(theme=gr.themes.Default(), css=css) as demo:
+        with gr.Blocks() as demo:
             self._build_header()
             with gr.Accordion("🔄 resume previous Session", open=False):
                 with gr.Row():
@@ -2982,8 +2983,8 @@ class AppUI:
                     self._reg('resume', self._create_component('resume_input', 'checkbox', {'label': 'Resume', 'value': self.config.default_resume, 'interactive': True, 'visible': False}))
                     self._reg('enable_subject_mask', self._create_component('enable_subject_mask_input', 'checkbox', {'label': 'Enable Subject Mask', 'value': self.config.default_enable_subject_mask, 'interactive': True, 'visible': False}))
                     self._reg('min_mask_area_pct', self._create_component('min_mask_area_pct_input', 'slider', {'label': 'Min Mask Area Pct', 'value': self.config.default_min_mask_area_pct, 'interactive': True, 'visible': False}))
-                    self._reg('sharpness_base_scale', self._create_component('sharpness_base_scale_input', 'slider', {'label': 'Sharpness Base Scale', 'value': self.config.default_sharpness_base_scale, 'interactive': True, 'visible': False}))
-                    self._reg('edge_strength_base_scale', self._create_component('edge_strength_base_scale_input', 'slider', {'label': 'Edge Strength Base Scale', 'value': self.config.default_edge_strength_base_scale, 'interactive': True, 'visible': False}))
+                    self._reg('sharpness_base_scale', self._create_component('sharpness_base_scale_input', 'slider', {'label': 'Sharpness Base Scale', 'value': self.config.default_sharpness_base_scale, 'minimum': 1, 'maximum': 10000, 'interactive': True, 'visible': False}))
+                    self._reg('edge_strength_base_scale', self._create_component('edge_strength_base_scale_input', 'slider', {'label': 'Edge Strength Base Scale', 'value': self.config.default_edge_strength_base_scale, 'minimum': 1, 'maximum': 10000, 'interactive': True, 'visible': False}))
                 self._create_component('start_pre_analysis_button', 'button', {'value': '🌱 Find & Preview Best Frames', 'variant': 'primary'})
                 with gr.Group(visible=False) as propagation_group: self.components['propagation_group'] = propagation_group
 
@@ -3157,8 +3158,21 @@ class AppUI:
         if tracker_instance: tracker_instance.pause_event.set()
         op_name = getattr(task_func, '__name__', 'Unknown Task').replace('_wrapper', '').replace('_', ' ').title()
         yield {self.components['cancel_button']: gr.update(interactive=True), self.components['pause_button']: gr.update(interactive=True), self.components['unified_status']: f"🚀 **Starting: {op_name}...**"}
+
+        def run_and_capture():
+            try:
+                res = task_func(*args)
+                if hasattr(res, '__iter__') and not isinstance(res, (dict, list, tuple, str)):
+                    for item in res:
+                        self.progress_queue.put({"ui_update": item})
+                else:
+                    self.progress_queue.put({"ui_update": res})
+            except Exception as e:
+                self.app_logger.error(f"Task failed: {e}", exc_info=True)
+                self.progress_queue.put({"ui_update": {"unified_log": f"[CRITICAL] Task failed: {e}"}})
+
         with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(task_func, *args)
+            future = executor.submit(run_and_capture)
             start_time = time.time()
             while future.running():
                 if time.time() - start_time > 3600: self.app_logger.error("Task timed out after 1 hour"); self.cancel_event.set(); future.cancel(); break
@@ -3166,6 +3180,8 @@ class AppUI:
                 if tracker_instance and not tracker_instance.pause_event.is_set(): yield {self.components['unified_status']: f"⏸️ **Paused: {op_name}**"}; time.sleep(0.2); continue
                 try:
                     msg, update_dict = self.progress_queue.get(timeout=0.1), {}
+                    if "ui_update" in msg:
+                        update_dict.update(msg["ui_update"])
                     if "log" in msg:
                         self.all_logs.append(msg['log'])
                         log_level_map = {level: i for i, level in enumerate(self.LOG_LEVEL_CHOICES)}
@@ -3181,6 +3197,21 @@ class AppUI:
                     if update_dict: yield update_dict
                 except Empty: pass
                 time.sleep(0.05)
+
+            # Drain remaining items from queue
+            while not self.progress_queue.empty():
+                try:
+                    msg, update_dict = self.progress_queue.get_nowait(), {}
+                    if "ui_update" in msg:
+                        update_dict.update(msg["ui_update"])
+                    if "log" in msg:
+                        self.all_logs.append(msg['log'])
+                        log_level_map = {level: i for i, level in enumerate(self.LOG_LEVEL_CHOICES)}
+                        current_filter_level = log_level_map.get(self.log_filter_level.upper(), 1)
+                        filtered_logs = [l for l in self.all_logs if any(f"[{level}]" in l for level in self.LOG_LEVEL_CHOICES[current_filter_level:])]
+                        update_dict[self.components['unified_log']] = "\n".join(filtered_logs[-1000:])
+                    if update_dict: yield update_dict
+                except Empty: break
 
     def _scale_xywh(self, xywh: list[int], src_hw: tuple[int, int], dst_hw: tuple[int, int]) -> list[int]:
         """Scales a bounding box from a source to a destination resolution."""
@@ -3251,7 +3282,7 @@ class AppUI:
 
         def init_scene_gallery(scenes, view, outdir):
             if not scenes: return gr.update(value=[]), []
-            gallery_items, index_map = build_scene_gallery_items(scenes, view, outdir)
+            gallery_items, index_map, _ = build_scene_gallery_items(scenes, view, outdir)
             return gr.update(value=gallery_items), index_map
 
         c['scenes_state'].change(init_scene_gallery, [c['scenes_state'], c['scene_gallery_view_toggle'], c['extracted_frames_dir_state']], [c['scene_gallery'], c['scene_gallery_index_map_state']])
@@ -3414,10 +3445,16 @@ class AppUI:
 
     def _on_pre_analysis_success(self, result: dict) -> dict:
         """Callback for successful pre-analysis."""
+        scenes_objs = [Scene(**s) for s in result['scenes']]
+        status_text, button_update = get_scene_status_text(scenes_objs)
         return {
             self.components['scenes_state']: result['scenes'],
             self.components['analysis_output_dir_state']: result['output_dir'],
-            self.components['unified_log']: f"Pre-analysis complete. Found {len(result['scenes'])} scenes."
+            self.components['unified_log']: f"Pre-analysis complete. Found {len(result['scenes'])} scenes.",
+            self.components['seeding_results_column']: result.get('seeding_results_column', gr.update(visible=True)),
+            self.components['propagation_group']: result.get('propagation_group', gr.update(visible=True)),
+            self.components['propagate_masks_button']: button_update,
+            self.components['scene_filter_status']: status_text
         }
 
     def run_pre_analysis_wrapper(self, *args):
@@ -3504,7 +3541,7 @@ class AppUI:
         def extraction_handler(*args, progress=gr.Progress()): yield from self._run_task_with_progress(self.run_extraction_wrapper, all_outputs, progress, *args)
         def pre_analysis_handler(*args, progress=gr.Progress()): yield from self._run_task_with_progress(self.run_pre_analysis_wrapper, all_outputs, progress, *args)
         def propagation_handler(scenes, *args, progress=gr.Progress()): yield from self._run_task_with_progress(self.run_propagation_wrapper, all_outputs, progress, scenes, *args)
-        def analysis_handler(scenes, *args, progress: gr.Progress): yield from self._run_task_with_progress(self.run_analysis_wrapper, all_outputs, progress, scenes, *args)
+        def analysis_handler(scenes, *args, progress=gr.Progress()): yield from self._run_task_with_progress(self.run_analysis_wrapper, all_outputs, progress, scenes, *args)
 
         c['load_session_button'].click(fn=session_load_handler, inputs=[c['session_path_input']], outputs=all_outputs, show_progress="hidden")
         ext_inputs = self.get_inputs(self.ext_ui_map_keys)
@@ -3669,8 +3706,8 @@ class AppUI:
                 if acc: updates[acc] = gr.update(visible=has_data)
                 if plot_comp and has_data: updates[plot_comp] = gr.update(value=svgs.get(k, ""))
             slider_values_dict = {key: c['metric_sliders'][key].value for key in slider_keys}
-            slider_values_dict['enable_dedup'] = c['enable_dedup_input'].value
-            filter_event = FilterEvent(all_frames_data=all_frames, per_metric_values=metric_values, output_dir=output_dir, gallery_view="Kept Frames", show_overlay=self.config.gradio_show_mask_overlay, overlay_alpha=self.config.gradio_overlay_alpha, require_face_match=c['require_face_match_input'].value, dedup_thresh=c['dedup_thresh_input'].value, slider_values=slider_values_dict)
+            slider_values_dict['enable_dedup'] = (c['dedup_method_input'].value != "None")
+            filter_event = FilterEvent(all_frames_data=all_frames, per_metric_values=metric_values, output_dir=output_dir, gallery_view="Kept Frames", show_overlay=self.config.gradio_show_mask_overlay, overlay_alpha=self.config.gradio_overlay_alpha, require_face_match=c['require_face_match_input'].value, dedup_thresh=c['dedup_thresh_input'].value, slider_values=slider_values_dict, dedup_method=c['dedup_method_input'].value)
             filter_updates = on_filters_changed(filter_event, self.thumbnail_manager, self.config, self.logger)
             updates.update({c['filter_status_text']: filter_updates['filter_status_text'], c['results_gallery']: filter_updates['results_gallery']})
             final_updates_list = [updates.get(comp, gr.update()) for comp in load_outputs]
