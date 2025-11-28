@@ -17,10 +17,10 @@ class ExtractionEvent(UIEvent):
     source_path: str
     upload_video: Optional[str] = None
     method: str
-    interval: str
-    nth_frame: str
+    interval: Any
+    nth_frame: Any
     max_resolution: str
-    thumbnails_only: bool
+    thumbnails_only: bool = True
     thumb_megapixels: float
     scene_detect: bool
     output_folder: Optional[str] = None
@@ -29,26 +29,21 @@ class ExtractionEvent(UIEvent):
 class PreAnalysisEvent(UIEvent):
     output_folder: str
     video_path: str
-    resume: bool
-    enable_face_filter: bool
-    face_ref_img_path: str
-    face_ref_img_upload: Optional[str]
+    resume: bool = False
+    enable_face_filter: bool = False
+    face_ref_img_path: str = ""
+    face_ref_img_upload: Optional[str] = None
     face_model_name: str
-    enable_subject_mask: bool
+    enable_subject_mask: bool = False
     tracker_model_name: str
-    person_detector_model: str
     best_frame_strategy: str
-    scene_detect: bool
-    text_prompt: str
-    box_threshold: float
-    text_threshold: float
+    scene_detect: bool = True
+    text_prompt: str = ""
     min_mask_area_pct: float
     sharpness_base_scale: float
     edge_strength_base_scale: float
-    gdino_config_path: str
-    gdino_checkpoint_path: str
-    pre_analysis_enabled: bool
-    pre_sample_nth: int
+    pre_analysis_enabled: bool = True
+    pre_sample_nth: int = 1
     primary_seed_strategy: str
     compute_quality_score: bool = True
     compute_sharpness: bool = True

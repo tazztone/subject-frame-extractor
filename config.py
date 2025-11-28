@@ -35,18 +35,13 @@ class Config(BaseSettings):
     logs_dir: str = "logs"
     models_dir: str = "models"
     downloads_dir: str = "downloads"
-    grounding_dino_config_path: str = "GroundingDINO_SwinT_OGC.py"
-    grounding_dino_checkpoint_path: str = "models/groundingdino_swint_ogc.pth"
 
     # Models
     user_agent: str = "Mozilla/5.0"
-    grounding_dino_url: str = "https://github.com/IDEA-Research/GroundingDINO/releases/download/v0.1.0-alpha/groundingdino_swint_ogc.pth"
-    grounding_dino_sha256: str = "3b3ca2563c77c69f651d7bd133e97139c186df06231157a64c507099c52bc799"
     face_landmarker_url: str = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
     face_landmarker_sha256: str = "9c899f78b8f2a0b1b117b3554b5f903e481b67f1390f7716e2a537f8842c0c7a"
     sam3_checkpoint_url: str = "https://huggingface.co/facebook/sam3/resolve/main/sam3.pt"
     sam3_checkpoint_sha256: str = "7402e0d864fa82708a20fbd15bc84245c2f26dff0eb43a4b5b93452deb34be69"  # Placeholder, update if known or remove check
-    yolo_url: str = "https://huggingface.co/Ultralytics/YOLOv5/resolve/main/"
 
     # YouTube-DL
     ytdl_output_template: str = "%(id)s_%(title).40s_%(height)sp.%(ext)s"
@@ -89,7 +84,6 @@ class Config(BaseSettings):
     default_face_model_name: str = "buffalo_l"
     default_enable_subject_mask: bool = True
     default_tracker_model_name: str = "sam3"
-    default_person_detector_model: str = "yolo11x.pt"
     default_primary_seed_strategy: str = "🤖 Automatic"
     default_seed_strategy: str = "Largest Person"
     default_text_prompt: str = "a person"
@@ -114,8 +108,6 @@ class Config(BaseSettings):
     default_min_mask_area_pct: float = 1.0
     default_sharpness_base_scale: float = 2500.0
     default_edge_strength_base_scale: float = 100.0
-    gdino_box_threshold: float = 0.35
-    gdino_text_threshold: float = 0.25
     filter_default_niqe: Dict[str, float] = Field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.5, 'default_min': 0.0, 'default_max': 100.0})
     filter_default_face_sim: Dict[str, float] = Field(default_factory=lambda: {'min': 0.0, 'max': 1.0, 'step': 0.01, 'default_min': 0.0})
     filter_default_mask_area_pct: Dict[str, float] = Field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.1, 'default_min': 1.0})
@@ -131,15 +123,6 @@ class Config(BaseSettings):
     quality_weights_brightness: int = 10
     quality_weights_entropy: int = 15
     quality_weights_niqe: int = 20
-
-    # GroundingDINO Params
-    gdino_box_threshold: float = 0.35
-    gdino_text_threshold: float = 0.25
-
-    # Person Detector Config
-    person_detector_model: str = "yolo11x.pt"
-    person_detector_imgsz: int = 640
-    person_detector_conf: float = 0.3
 
     # Logging Config
     log_level: str = "INFO"
@@ -166,10 +149,8 @@ class Config(BaseSettings):
 
     # Seeding Defaults
     seeding_face_similarity_threshold: float = 0.4
-    seeding_yolo_iou_threshold: float = 0.3
     seeding_face_contain_score: int = 100
     seeding_confidence_score_multiplier: int = 20
-    seeding_iou_bonus: int = 50
     seeding_face_to_body_expansion_factors: List[float] = Field(default_factory=lambda: [4.0, 7.0, 0.75])
     seeding_final_fallback_box: List[float] = Field(default_factory=lambda: [0.25, 0.25, 0.5, 0.5])
     seeding_balanced_score_weights: Dict[str, float] = Field(default_factory=lambda: {'area': 0.4, 'confidence': 0.4, 'edge': 0.2})
