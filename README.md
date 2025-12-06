@@ -46,34 +46,6 @@ Perfect for creating training datasets (LoRA/Dreambooth), finding thumbnail cand
 - **Batch processing**: Export hundreds of frames with consistent formatting
 - **Resume capability**: Pause and resume analysis without losing progress
 
-## 🛠️ Technical Stack
-
-| Component | Technology | Purpose |
-|-----------|------------|---------|
-| **UI Framework** | Gradio | Web-based interface |
-| **Computer Vision** | OpenCV, PyTorch | Image processing |
-| **Subject Tracking** | SAM3 | Zero-shot object segmentation |
-| **Face Recognition** | InsightFace | High-accuracy face detection/matching |
-| **Object Detection** | YOLOv11 | Person detection for tracking seed |
-| **Text-to-Object** | Grounded-DINO | Grounding subjects with text prompts |
-| **Video Processing** | FFmpeg, yt-dlp | Frame extraction and video handling |
-| **Quality Assessment** | PyIQA (NIQE) | Perceptual image quality metrics |
-
-## 📋 Prerequisites
-
-Before installation, ensure you have:
-
-1. **Python 3.10 or newer**
-2. **Git** (for cloning submodules)
-3. **NVIDIA GPU** (Highly recommended for full functionality)
-4. **CUDA toolkit** (for GPU acceleration)
-5. **FFmpeg** installed and in system PATH
-
-### FFmpeg Installation
-- **Windows**: Download from [ffmpeg.org](https://ffmpeg.org/download.html) and add to PATH.
-- **macOS**: `brew install ffmpeg`
-- **Ubuntu/Debian**: `sudo apt install ffmpeg`
-
 ## 💻 Installation
 
 ### 🪟 Windows (Automated Method)
@@ -94,11 +66,28 @@ We provide batch scripts to automate the setup process.
 
 1.  **Clone the repository:**
     ```bash
-    git clone https://github.com/tazztone/subject-frame-extractor.git
+    git clone --recursive https://github.com/tazztone/subject-frame-extractor.git
     cd subject-frame-extractor
     ```
+    *Note: The `--recursive` flag is critical to fetch the SAM3 submodule.*
 
+2.  **Create a virtual environment:**
+    ```bash
+    python3 -m venv venv
+    source venv/bin/activate  # On Windows: venv\Scripts\activate
+    ```
 
+3.  **Install dependencies:**
+    ```bash
+    pip install -r requirements.txt
+    # Install SAM3 directly from the submodule or source if not covered by requirements
+    pip install git+https://github.com/facebookresearch/sam3.git
+    ```
+
+4.  **Install FFmpeg:**
+    Ensure FFmpeg is installed and in your system PATH.
+    - **Ubuntu/Debian**: `sudo apt install ffmpeg`
+    - **macOS**: `brew install ffmpeg`
 
 ## 📖 How to Use
 
@@ -134,43 +123,93 @@ Choose which metrics to calculate (Sharpness, NIQE, Face Similarity, etc.).
 2.  **Deduplicate**: Remove similar frames using pHash/SSIM.
 3.  **Export**: Enable **"Crop to Subject"**, set aspect ratios (e.g., `1:1, 9:16`), and save your dataset.
 
-## ⚙️ Configuration
+## 🏗️ Technical Architecture
 
-The application uses a `config.json` file for fine-tuning. Key settings include:
+The application is built as a monolithic desktop app using **Python** and **Gradio**. It follows an event-driven architecture where the UI triggers backend pipelines via typed events.
 
--   **Quality Weights**: Adjust the importance of sharpness, contrast, etc. in the global score.
--   **Model Selection**: SAM3 is the default and only tracking model.
+### System Diagram
 
-## 📁 Project Structure
+```mermaid
+graph TD
+    subgraph UI
+        Gradio[Gradio UI Layer]
+    end
+
+    subgraph Application_Logic
+        App[app.py]
+    end
+
+    subgraph Core_Modules
+        Config[config.py]
+        Logger[logger.py]
+        Events[events.py]
+        ErrorHandling[error_handling.py]
+        Progress[progress.py]
+        Database[database.py]
+    end
+
+    subgraph Pipelines
+        Extraction[ExtractionPipeline]
+        Seeding[SeedSelector]
+        Propagation[MaskPropagator]
+        Analysis[AnalysisPipeline]
+    end
+
+    UI -->|Triggers| App
+    App -->|Uses| Pipelines
+    App -->|Uses| Core_Modules
+    Pipelines -->|Uses| Core_Modules
+```
+
+### Core Infrastructure
+
+*   **`config.py`**: Central configuration using Pydantic `BaseSettings`. Loads from `.env` and `config.json`.
+*   **`logger.py`**: Structured logging (`AppLogger`) that writes to console (colored) and disk (JSONL), and streams to the UI.
+*   **`error_handling.py`**: Robust error handling with decorators like `@with_retry` and `@handle_common_errors`.
+*   **`database.py`**: SQLite database for efficient frame metadata storage and retrieval.
+*   **`ModelRegistry`**: A thread-safe singleton in `app.py` for lazy-loading and managing heavy ML models (SAM3, InsightFace).
+
+### Processing Pipelines
+
+1.  **Extraction (`ExtractionPipeline`)**: Handles video ingestion, validation, scene detection (PySceneDetect), and frame extraction (FFmpeg).
+2.  **Seeding (`SeedSelector`)**: Determines the subject to track in each scene using strategies like Face Recognition (InsightFace), Text Prompts (Grounded-DINO/SAM3), or Automatic detection.
+3.  **Propagation (`MaskPropagator`)**: Uses **SAM3** to propagate the subject mask from the seed frame forward and backward through the scene.
+4.  **Analysis (`AnalysisPipeline`)**: Computes quality metrics (NIQE, Sharpness, Contrast) and content metrics (Face Similarity) for every frame.
+
+### Data Model
+
+*   **`Frame`**: Pydantic model representing a single video frame and its metrics.
+*   **`Scene`**: Represents a continuous video shot.
+*   **Events**: Typed Pydantic models (e.g., `ExtractionEvent`, `PreAnalysisEvent`) used for UI-Backend communication.
+
+## 👨‍💻 Developer Guide
+
+### Project Structure
 
 ```
 subject-frame-extractor/
 ├── app.py                     # Main application UI and logic
-├── config.py                  # Configuration management
-├── logger.py                  # Logging setup
-├── error_handling.py          # Error handling utilities
-├── events.py                  # Event definitions
-├── progress.py                # Progress tracking
-├── sam3_patches.py            # Patches for SAM3 library
-├── requirements.txt           # Python dependencies
-├── SAM3_repo/                 # Subject tracking (SAM3)
-├── downloads/                 # Output directory
-│   └── [video_name]/
-│       ├── frame_000001.png
-│       ├── metadata.jsonl     # Analysis results
-│       ├── masks/             # Subject masks
-│       └── thumbs/            # Preview thumbnails
-├── models/                    # Cached AI models
-├── logs/                      # Application logs
-├── windows_run_app.bat        # Launcher for Windows
-└── windows_update.bat         # Updater for Windows
+├── config.py                  # Configuration
+├── logger.py                  # Logging
+├── events.py                  # Event models
+├── database.py                # Database layer
+├── SAM3_repo/                 # SAM3 Submodule
+├── tests/                     # Test suite
+└── AGENTS.md                  # Detailed developer notes & patterns
 ```
+
+### Testing
+
+*   **Backend**: `python -m pytest tests/`
+*   **Frontend**: `pytest tests/e2e/` (Requires Playwright)
+
+For more detailed developer instructions, coding standards, and common pitfalls, please refer to **[AGENTS.md](AGENTS.md)**.
 
 ## 🔍 Troubleshooting
 
 -   **FFmpeg not found**: Ensure it's in your system PATH.
 -   **CUDA OOM**: Process fewer frames or reduce video resolution. SAM3 is memory-intensive.
--   **Installation Issues**: Try the `windows_STANDALONE_install.bat` for a clean setup.
+-   **Installation Issues**: Ensure git submodules are updated (`git submodule update --init --recursive`).
 
 ## 🤝 Contributing
 
@@ -179,9 +218,3 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-<p align="center">
-  <strong>Built with ❤️ for the computer vision community.</strong>
-</p>
