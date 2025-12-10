@@ -132,8 +132,6 @@ def sanitize_filename(name: str, config: 'Config', max_length: Optional[int] = N
     return re.sub(r'[^\w\-_.]', '_', name)[:max_length]
 
 def _to_json_safe(obj: Any) -> Any:
-    import numpy as np
-    from pathlib import Path
     if isinstance(obj, dict): return {k: _to_json_safe(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)): return [_to_json_safe(v) for v in obj]
     if isinstance(obj, (np.integer,)): return int(obj)
@@ -2053,23 +2051,44 @@ def _apply_deduplication_filter(all_frames_data: list[dict], filters: dict, thum
         if dedup_method == "pHash" and imagehash and filters.get("dedup_thresh", -1) != -1:
             sorted_indices = sorted(range(num_frames), key=lambda i: filenames[i])
             hashes = {i: imagehash.hex_to_hash(all_frames_data[i]['phash']) for i in range(num_frames) if 'phash' in all_frames_data[i]}
-            kept_hashes = {}
+
+            hash_size = 64
+            if hashes:
+                hash_size = next(iter(hashes.values())).hash.size
+            kept_hash_matrix = np.zeros((num_frames, hash_size), dtype=bool)
+            kept_indices = np.zeros(num_frames, dtype=int)
+            kept_count = 0
+            thresh = filters.get("dedup_thresh", 5)
+
             for i in sorted_indices:
                 if i not in hashes: continue
+                curr_hash_flat = hashes[i].hash.flatten()
                 is_duplicate = False
-                for kept_idx, kept_hash in kept_hashes.items():
-                    if (hashes[i] - kept_hash) <= filters.get("dedup_thresh", 5):
+
+                if kept_count > 0:
+                    valid_hashes = kept_hash_matrix[:kept_count]
+                    diffs = np.bitwise_xor(valid_hashes, curr_hash_flat).sum(axis=1)
+                    matches = np.where(diffs <= thresh)[0]
+
+                    if len(matches) > 0:
                         is_duplicate = True
+                        match_pos = matches[0]
+                        kept_idx = kept_indices[match_pos]
+
                         if all_frames_data[i].get('metrics', {}).get('quality_score', 0) > all_frames_data[kept_idx].get('metrics', {}).get('quality_score', 0):
                             if dedup_mask[kept_idx]: reasons[filenames[kept_idx]].append('duplicate')
                             dedup_mask[kept_idx] = False
-                            del kept_hashes[kept_idx]
-                            kept_hashes[i] = hashes[i]
+                            kept_hash_matrix[match_pos] = curr_hash_flat
+                            kept_indices[match_pos] = i
                         else:
                             if dedup_mask[i]: reasons[filenames[i]].append('duplicate')
                             dedup_mask[i] = False
-                        break
-                if not is_duplicate: kept_hashes[i] = hashes[i]
+
+                if not is_duplicate:
+                    kept_hash_matrix[kept_count] = curr_hash_flat
+                    kept_indices[kept_count] = i
+                    kept_count += 1
+
         elif dedup_method == "SSIM" and thumbnail_manager:
             dedup_mask, reasons = apply_ssim_dedup(all_frames_data, filters, dedup_mask, reasons, thumbnail_manager, config, output_dir)
         elif dedup_method == "LPIPS" and thumbnail_manager:
@@ -2078,16 +2097,35 @@ def _apply_deduplication_filter(all_frames_data: list[dict], filters: dict, thum
             sorted_indices = sorted(range(num_frames), key=lambda i: filenames[i])
             hashes = {i: imagehash.hex_to_hash(all_frames_data[i]['phash']) for i in range(num_frames) if 'phash' in all_frames_data[i]}
             p_hash_duplicates = []
-            kept_hashes = {}
+
+            hash_size = 64
+            if hashes:
+                hash_size = next(iter(hashes.values())).hash.size
+            kept_hash_matrix = np.zeros((num_frames, hash_size), dtype=bool)
+            kept_indices = np.zeros(num_frames, dtype=int)
+            kept_count = 0
+            thresh = filters.get("dedup_thresh", 5)
+
             for i in sorted_indices:
                 if i not in hashes: continue
+                curr_hash_flat = hashes[i].hash.flatten()
                 is_duplicate = False
-                for kept_idx, kept_hash in kept_hashes.items():
-                    if (hashes[i] - kept_hash) <= filters.get("dedup_thresh", 5):
-                        p_hash_duplicates.append((kept_idx, i))
+
+                if kept_count > 0:
+                    valid_hashes = kept_hash_matrix[:kept_count]
+                    diffs = np.bitwise_xor(valid_hashes, curr_hash_flat).sum(axis=1)
+                    matches = np.where(diffs <= thresh)[0]
+
+                    if len(matches) > 0:
                         is_duplicate = True
-                        break
-                if not is_duplicate: kept_hashes[i] = hashes[i]
+                        match_pos = matches[0]
+                        kept_idx = kept_indices[match_pos]
+                        p_hash_duplicates.append((kept_idx, i))
+
+                if not is_duplicate:
+                    kept_hash_matrix[kept_count] = curr_hash_flat
+                    kept_indices[kept_count] = i
+                    kept_count += 1
 
             if p_hash_duplicates:
                 device = "cuda" if torch.cuda.is_available() else "cpu"
