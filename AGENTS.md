@@ -1,64 +1,111 @@
 # Developer Guidelines & Agent Memory
 
-This file serves as a guide for developers and AI agents working on this repository. It contains architectural insights, coding standards, and recurring patterns/gotchas.
+This file is the **primary source of truth** for developers and AI agents working on this repository. It consolidates architectural knowledge, coding standards, testing protocols, and lessons learned ("memories") from previous development cycles.
 
-## 🏗️ Architecture
+**⚠️ CRITICAL INSTRUCTION**: Before starting any task, read this file to avoid repeating past mistakes.
 
-The application is a **Gradio-based desktop application** for video processing.
+## 🏗️ Architecture & Design Patterns
 
-*   **Monolithic Core**: `app.py` contains the main application logic, UI definition (`AppUI`), and pipeline orchestration.
-*   **Modules**:
-    *   `config.py`: Configuration management (`Config` class, Pydantic `BaseSettings`).
-    *   `logger.py`: Structured logging (`AppLogger`, `JsonFormatter`).
-    *   `error_handling.py`: Error handling decorators (`@with_retry`, `@handle_common_errors`) and utilities.
-    *   `events.py`: Pydantic models for UI-to-backend communication (`*Event` classes).
-    *   `progress.py`: Progress tracking (`AdvancedProgressTracker`).
-    *   `database.py`: SQLite storage for frame metadata.
-*   **Data Models**: Pydantic `BaseModel` is preferred over `dataclasses`.
+The application is a **Gradio-based desktop application** for video processing, currently transitioning from a monolithic script to a modular architecture.
+
+### Core Structure
+*   **Monolithic Entry Point**: `app.py` contains the main `AppUI` class, `AnalysisPipeline` orchestration, and legacy logic.
+*   **Modular Components**:
+    *   **Core Logic**: The `core/` directory contains business logic decoupled from the UI (e.g., `core/filtering.py`, `core/batch_manager.py`).
+    *   **Configuration**: `config.py` uses Pydantic `BaseSettings`. It is a flat configuration model (preferred over nested).
+    *   **Logging**: `logger.py` implements structured JSONL logging via `AppLogger`.
+    *   **Error Handling**: `error_handling.py` provides decorators like `@with_retry` and `@handle_common_errors`.
+    *   **Data Models**: `events.py` defines Pydantic `BaseModel` classes for UI-Backend communication (e.g., `ExtractionEvent`).
+    *   **Persistence**: `database.py` manages SQLite storage for frame metadata.
+    *   **Progress**: `progress.py` handles multi-stage progress tracking.
+
+### Key Patterns
+*   **Model Management**: heavy ML models (SAM3, InsightFace) are managed by the **`ModelRegistry`** singleton in `app.py`.
+    *   *Rule*: Never use `@lru_cache` for model loaders that take the full `Config` object (it is unhashable). Use `model_registry.get_or_load()`.
+    *   *Rule*: Models should be lazy-loaded.
 *   **State Management**:
-    *   **Gradio State**: `gr.State` components store session data (file paths, scene lists).
-    *   **Model Registry**: `ModelRegistry` (in `app.py`) is a thread-safe singleton for lazy-loading heavy ML models (SAM3, InsightFace).
+    *   **Gradio State**: Use `gr.State` for session-specific data (paths, scene lists).
+    *   **Global State**: Avoid global variables. Use the `Config` singleton or `ModelRegistry`.
+*   **Concurrency**:
+    *   **Batch Processing**: `core/batch_manager.py` handles queueing and parallel execution.
+    *   **Thread Safety**: `Database` uses a buffering mechanism with explicit `flush()`. `ModelRegistry` is thread-safe.
+*   **Frontend/Backend Decoupling**:
+    *   The UI (`AppUI`) should only handle presentation and event triggering.
+    *   Business logic resides in pipeline classes (`ExtractionPipeline`, `AnalysisPipeline`) and `core/` modules.
+    *   Communication is done via typed events (`events.py`) and standardized return payloads.
+
+## 📝 Coding Standards
+
+*   **Data Classes**: Prefer **Pydantic `BaseModel`** over Python `dataclasses` for better validation and serialization.
+*   **Path Handling**: Use **`pathlib.Path`** exclusively. Avoid `os.path`.
+*   **Type Hinting**: Fully type-hint all new functions and classes.
+*   **Docstrings**: Use **Google Style** Python docstrings.
+*   **Refactoring**:
+    *   **Simplify**: Remove unused code and wrappers. Flatten nested structures.
+    *   **Standardize**: Replace custom implementations with standard library features where possible.
+    *   **Defensive Coding**: Use `getattr` for optional attributes. Validate inputs early.
 
 ## 🧪 Testing & Verification
 
-*   **Backend Tests**: `python -m pytest tests/`
-    *   Use `unittest.mock` extensively.
-    *   Note: `tests/requirements-test.txt` may be incomplete. Ensure `pydantic-settings`, `numba`, `scikit-learn` are installed.
-*   **Frontend Tests**: E2E tests using **Playwright**.
-    *   Located in `tests/e2e/`.
-    *   Run with `pytest tests/e2e/`.
-    *   Requires `playwright install`.
-*   **Mocking**:
-    *   **Files**: Patch `io.open` or `pathlib.Path.open`. Mock `pathlib.Path.exists` and `is_file`.
-    *   **Models**: Mock `sam3`, `timm`, `pycocotools` if needed. Use `autospec=True` for instance methods.
-    *   **Gradio**: Tests for event handlers must strictly match return value counts.
-
-## 🚨 Common Pitfalls (Gotchas)
-
-### Gradio
-*   **Return Values**: Event handlers must return **exactly** the number of values expected by the `outputs` list. Mismatches cause silent failures or crashes.
-*   **Component Order**: The `inputs` list in `gr.on(...)` must match the function signature **exactly**.
-*   **State**: `gr.State` initial values must be deep-copyable. Avoid storing complex objects (locks, file handles).
-*   **Updates**: When returning `gr.update()`, use dictionary keys (e.g., `res['value']`) in tests, not attributes.
-
-### ML & Resources
-*   **Model Loading**: Use `model_registry.get_or_load()`. Do not use `@lru_cache` on methods taking the full `Config` object (it's unhashable).
-*   **Submodules**: **DO NOT EDIT** files in `SAM3_repo` or `Grounded-SAM-2`. They are git submodules.
-*   **Memory**: Large models (SAM3) are memory-intensive.
-
-### Coding Patterns
-*   **Error Handling**: Return structured error payloads (dict with `status_message`, `error_message`) from UI handlers. Do not return empty dicts on failure.
-*   **File I/O**: Use `pathlib`.
-*   **Logging**: Use `AppLogger`.
-
-## 🛠️ Development Setup
-
-1.  **Submodules**: `git submodule update --init --recursive`
-2.  **Environment**:
+### Test Suite Structure
+*   **Backend Tests**: `tests/` (e.g., `test.py`, `test_utils.py`). Run with:
     ```bash
-    python3 -m venv venv
-    source venv/bin/activate
-    pip install -r requirements.txt
-    pip install -r tests/requirements-test.txt
-    pip install git+https://github.com/facebookresearch/sam3.git
+    python -m pytest tests/
     ```
+*   **Frontend (E2E) Tests**: `tests/e2e/` using **Playwright**. Run with:
+    ```bash
+    pytest tests/e2e/
+    ```
+
+### Mocking Guidelines (Crucial)
+*   **File I/O**:
+    *   Patch `io.open` (or `app.io.open` if imported) instead of `builtins.open`.
+    *   Mock `pathlib.Path.exists`, `is_file`, `stat` (for size), and `os.access` (for permissions).
+*   **External Libraries**:
+    *   **SAM3 / ML**: Mock deep dependencies (`timm`, `pycocotools`, `torchvision`) to avoid import errors.
+    *   **Submodules**: When mocking packages like `sam3.model_builder`, mock the parent package first and set `__path__` and `__spec__`.
+*   **Instance Methods**: Use `autospec=True` when patching class methods to ensure `self` is handled correctly.
+*   **Comparisons**: `MagicMock` objects are not comparable. Implement `__lt__` on mocks if they are sorted in the code.
+
+### Pre-Commit Checklist
+1.  **Run Backend Tests**: Ensure all logic changes are verified.
+2.  **Skip Frontend Verification**: Unless you touched the UI layout.
+3.  **Review**: Self-review for "Common Pitfalls" below.
+
+## 🚨 Common Pitfalls (The "Do Not Do" List)
+
+### Gradio Specifics
+*   **Return Mismatch**: Event handlers MUST return exactly the number of values expected by `outputs`. Mismatches cause silent crashes.
+*   **Input Order**: The `inputs` list in `gr.on()` MUST match the function arguments exactly.
+*   **State Initialization**: Do NOT initialize `gr.State` with non-picklable objects (locks, file handles).
+*   **Component Visibility**: `gr.Gallery` does not accept `None`. `Radio` components crash if set to a value not in `choices`.
+*   **CSS**: The `css` argument in `gr.Blocks` is deprecated in Gradio 6.x.
+
+### ML & Performance
+*   **Memory Leaks**: SAM3 is memory-intensive. Ensure `cleanup_models()` is called.
+*   **Thread Safety**: MediaPipe objects are not thread-safe; create one instance per thread.
+*   **Vectors**: Use NumPy for heavy lifting (deduplication, filtering). Avoid Python loops for pixel operations.
+
+### Git & Environment
+*   **Submodules**: **NEVER** edit files in `SAM3_repo` or `Grounded-SAM-2`. Treat them as read-only libraries.
+*   **Dependencies**: Install `requirements.txt` AND `tests/requirements-test.txt`.
+*   **Validation**: Verify model downloads with **SHA256 checksums**, not just file size.
+
+## 🧠 Workflows
+
+*   **Deep Planning**: Before coding, analyze the request and codebase. Ask clarifying questions. Create a detailed plan using `set_plan`.
+*   **Bug Fixing**:
+    1.  Reproduce with a test case.
+    2.  Fix the root cause (don't just patch the symptom).
+    3.  Verify with the test.
+    4.  Ensure no regressions.
+*   **New Features**:
+    1.  Update `Config` and `Events`.
+    2.  Add UI components (in `AppUI`).
+    3.  Implement backend logic.
+    4.  Wire them up.
+
+## 📂 File System
+*   **`config_dump.json`**: Where configuration is saved. Do not use YAML.
+*   **`structured_log.jsonl`**: Machine-readable logs.
+*   **`metadata.db`**: SQLite database for frame data.
