@@ -157,9 +157,14 @@ modules_to_mock['pydantic_settings'] = mock_pydantic_settings
 
 patch.dict(sys.modules, modules_to_mock).start()
 
-# Now import the monolithic app
-import app as app
-from app import Config, Database
+# Imports from refactored modules
+from config import Config
+from database import Database
+from logger import AppLogger
+from core.models import Scene, Frame, QualityConfig, _coerce
+from core.filtering import apply_all_filters_vectorized
+from ui.gallery_utils import auto_set_thresholds
+from events import PreAnalysisEvent
 
 # --- Mocks for Tests ---
 @pytest.fixture
@@ -214,7 +219,7 @@ def sample_scenes():
         {'shot_id': 3, 'start_frame': 201, 'end_frame': 300, 'status': 'pending', 'seed_result': {'details': {'mask_area_pct': 60}}, 'seed_metrics': {'best_face_sim': 0.4, 'score': 0.8}},
         {'shot_id': 4, 'start_frame': 301, 'end_frame': 400, 'status': 'pending', 'seed_result': {'details': {'mask_area_pct': 70}}, 'seed_metrics': {'score': 0.7}},
     ]
-    return [app.Scene(**data) for data in scenes_data]
+    return [Scene(**data) for data in scenes_data]
 
 # --- Test Classes ---
 
@@ -235,42 +240,43 @@ class TestUtils:
         ("string", str, "string"),
     ])
     def test_coerce(self, value, to_type, expected):
-        assert app._coerce(value, to_type) == expected
+        assert _coerce(value, to_type) == expected
 
     def test_coerce_invalid_raises(self):
         with pytest.raises(ValueError):
-            app._coerce("not-a-number", int)
+            _coerce("not-a-number", int)
         with pytest.raises(ValueError):
-            app._coerce("not-a-float", float)
+            _coerce("not-a-float", float)
 
+    def test_config_init(self):
         mock_config_data = {}
-        with patch('app.json_config_settings_source', return_value=mock_config_data):
+        with patch('config.json_config_settings_source', return_value=mock_config_data):
             # Pass an argument to the constructor
-            config = app.Config(logs_dir="init_logs")
+            config = Config(logs_dir="init_logs")
 
         assert config.logs_dir == "init_logs"
 
-    @patch('app.Path.mkdir', MagicMock())
+    @patch('pathlib.Path.mkdir', MagicMock())
     @patch('os.access', return_value=True)
     def test_validation_error(self, mock_access):
         """Test that a validation error is raised for invalid config."""
         with pytest.raises(ValidationError):
             # quality_weights sum cannot be zero
-            app.Config(quality_weights_sharpness=0, quality_weights_edge_strength=0, quality_weights_contrast=0, quality_weights_brightness=0, quality_weights_entropy=0, quality_weights_niqe=0)
+            Config(quality_weights_sharpness=0, quality_weights_edge_strength=0, quality_weights_contrast=0, quality_weights_brightness=0, quality_weights_entropy=0, quality_weights_niqe=0)
 
 class TestAppLogger:
     def test_app_logger_instantiation(self):
         """Tests that the logger can be instantiated with a valid config."""
         try:
             config = Config()
-            app.AppLogger(config=config, log_to_console=False, log_to_file=False)
+            AppLogger(config=config, log_to_console=False, log_to_file=False)
         except Exception as e:
             pytest.fail(f"Logger instantiation with a config object failed: {e}")
     def test_auto_set_thresholds(self):
         per_metric_values = {'sharpness': list(range(10, 101, 10)), 'contrast': [1, 2, 3, 4, 5]}
         slider_keys = ['sharpness_min', 'sharpness_max', 'contrast_min']
         selected_metrics = list(per_metric_values.keys())
-        updates = app.auto_set_thresholds(per_metric_values, 75, slider_keys, selected_metrics)
+        updates = auto_set_thresholds(per_metric_values, 75, slider_keys, selected_metrics)
         assert updates['slider_sharpness_min']['value'] == 77.5
         assert updates['slider_contrast_min']['value'] == 4.0
 
@@ -282,7 +288,7 @@ class TestAppLogger:
             "mask_area_enabled": True,
             "mask_area_pct_min": 10.0,
         }
-        kept, rejected, _, _ = app.apply_all_filters_vectorized(sample_frames_data, filters, Config())
+        kept, rejected, _, _ = apply_all_filters_vectorized(sample_frames_data, filters, Config())
 
         kept_filenames = {f['filename'] for f in kept}
         rejected_filenames = {f['filename'] for f in rejected}
@@ -299,16 +305,16 @@ class TestAppLogger:
         mock_niqe_metric.return_value = 5.0 # Raw NIQE score (float is fine for mock)
 
         image_data = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
-        frame = app.Frame(image_data=image_data, frame_number=1)
+        frame = Frame(image_data=image_data, frame_number=1)
 
-        quality_config = app.QualityConfig(
+        quality_config = QualityConfig(
             sharpness_base_scale=test_config.sharpness_base_scale,
             edge_strength_base_scale=test_config.edge_strength_base_scale,
             enable_niqe=True
         )
         
         # Mock torch.from_numpy chain
-        with patch('app.torch.from_numpy') as mock_torch_from_numpy:
+        with patch('core.models.torch.from_numpy') as mock_torch_from_numpy:
             mock_tensor = MagicMock()
             mock_tensor.to.return_value = mock_tensor
             mock_torch_from_numpy.return_value.float.return_value.permute.return_value.unsqueeze.return_value = mock_tensor
@@ -330,29 +336,29 @@ class TestPreAnalysisEvent:
         valid_img = tmp_path / "face.jpg"
         valid_img.touch()
         mock_ui_state['face_ref_img_path'] = str(valid_img)
-        event = app.PreAnalysisEvent.model_validate(mock_ui_state)
+        event = PreAnalysisEvent.model_validate(mock_ui_state)
         assert event.face_ref_img_path == str(valid_img)
 
         # Path is the same as the video
         mock_ui_state['face_ref_img_path'] = str(video_path)
-        event = app.PreAnalysisEvent.model_validate(mock_ui_state)
+        event = PreAnalysisEvent.model_validate(mock_ui_state)
         assert event.face_ref_img_path == ""
 
         # Path does not exist
         mock_ui_state['face_ref_img_path'] = "/non/existent.png"
-        event = app.PreAnalysisEvent.model_validate(mock_ui_state)
+        event = PreAnalysisEvent.model_validate(mock_ui_state)
         assert event.face_ref_img_path == ""
 
         # Path has invalid extension
         invalid_ext = tmp_path / "face.txt"
         invalid_ext.touch()
         mock_ui_state['face_ref_img_path'] = str(invalid_ext)
-        event = app.PreAnalysisEvent.model_validate(mock_ui_state)
+        event = PreAnalysisEvent.model_validate(mock_ui_state)
         assert event.face_ref_img_path == ""
 
         # Path is empty
         mock_ui_state['face_ref_img_path'] = ""
-        event = app.PreAnalysisEvent.model_validate(mock_ui_state)
+        event = PreAnalysisEvent.model_validate(mock_ui_state)
         assert event.face_ref_img_path == ""
 
 
