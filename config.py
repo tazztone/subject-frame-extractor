@@ -168,7 +168,7 @@ class Config(BaseSettings):
     visualization_bbox_thickness: int = 2
 
     # Analysis
-    analysis_default_batch_size: int = 32
+    analysis_default_batch_size: int = 25
     analysis_default_workers: int = 4
 
     # Model Defaults
