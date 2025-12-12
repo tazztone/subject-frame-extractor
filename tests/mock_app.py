@@ -46,9 +46,13 @@ patch.dict(sys.modules, modules_to_mock).start()
 # Add project root to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-# --- 2. Import App ---
+# --- 2. Import App and Core Modules ---
 import app
 from app import Config, AppLogger, ThumbnailManager
+import core.pipelines
+import core.utils
+import core.managers
+from core.models import Scene
 
 # --- 3. Patch Pipeline Logic for E2E Speed ---
 
@@ -76,10 +80,9 @@ def mock_extraction_run(self, tracker=None):
 
     return {"done": True, "output_dir": output_dir, "video_path": "mock_video.mp4"}
 
-def mock_pre_analysis_execution(event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress=None):
+def mock_pre_analysis_execution(event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress=None, model_registry=None):
     """Mocks execute_pre_analysis generator."""
     print("[Mock] Running Pre-Analysis...")
-    from app import Scene
 
     scenes = [
         Scene(shot_id=1, start_frame=0, end_frame=50, status="included", seed_result={'bbox': [10, 10, 100, 100], 'details': {'type': 'mock'}}).model_dump(),
@@ -97,7 +100,7 @@ def mock_pre_analysis_execution(event, progress_queue, cancel_event, logger, con
         # Omit UI updates to let app.py use defaults (gr.update)
     }
 
-def mock_propagation_execution(event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress=None):
+def mock_propagation_execution(event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress=None, model_registry=None):
     print("[Mock] Running Propagation...")
     yield {
         "unified_log": "Propagation complete (MOCKED).",
@@ -106,7 +109,7 @@ def mock_propagation_execution(event, progress_queue, cancel_event, logger, conf
         "scenes": event.scenes # Pass back scenes
     }
 
-def mock_analysis_execution(event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress=None):
+def mock_analysis_execution(event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress=None, model_registry=None):
     print("[Mock] Running Analysis...")
     output_dir = event.output_folder
     metadata_path = os.path.join(output_dir, "metadata.db")
@@ -118,13 +121,14 @@ def mock_analysis_execution(event, progress_queue, cancel_event, logger, config,
     }
 
 # Apply patches
-app.ExtractionPipeline.run = mock_extraction_run
+core.pipelines.ExtractionPipeline._run_impl = mock_extraction_run
 # We mock the `execute_*` functions directly as they are what the UI calls via `_run_pipeline`
-app.execute_pre_analysis = mock_pre_analysis_execution
-app.execute_propagation = mock_propagation_execution
-app.execute_analysis = mock_analysis_execution
+core.pipelines.execute_pre_analysis = mock_pre_analysis_execution
+core.pipelines.execute_propagation = mock_propagation_execution
+core.pipelines.execute_analysis = mock_analysis_execution
 # Patch download_model to avoid network calls
-app.download_model = MagicMock()
+core.utils.download_model = MagicMock()
+core.managers.download_model = MagicMock()
 
 
 # --- 4. Launch App ---

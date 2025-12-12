@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 from queue import Queue, Empty
 from concurrent.futures import ThreadPoolExecutor
-from typing import Optional, List, Dict, Any, Callable, Deque
+from typing import Optional, List, Dict, Any, Callable, Deque, Generator
 from collections import deque
 import gradio as gr
 import torch
@@ -119,7 +119,7 @@ class AppUI:
     def _get_comp(self, name: str) -> Optional[gr.components.Component]: return self.components.get(name)
     def _reg(self, key: str, component: gr.components.Component) -> gr.components.Component: self.ui_registry[key] = component; return component
     def _create_component(self, name: str, comp_type: str, kwargs: dict) -> gr.components.Component:
-        comp_map = {'button': gr.Button, 'textbox': gr.Textbox, 'dropdown': gr.Dropdown, 'slider': gr.Slider, 'checkbox': gr.Checkbox, 'file': gr.File, 'radio': gr.Radio, 'gallery': gr.Gallery, 'plot': gr.Plot, 'markdown': gr.Markdown, 'html': gr.HTML, 'number': gr.Number, 'cbg': gr.CheckboxGroup, 'image': gr.Image}
+        comp_map = {'button': gr.Button, 'textbox': gr.Textbox, 'dropdown': gr.Dropdown, 'slider': gr.Slider, 'checkbox': gr.Checkbox, 'file': gr.File, 'radio': gr.Radio, 'gallery': gr.Gallery, 'plot': gr.Plot, 'markdown': gr.Markdown, 'html': gr.HTML, 'number': gr.Number, 'cbg': gr.CheckboxGroup, 'image': gr.Image, 'dataframe': gr.Dataframe}
         self.components[name] = comp_map[comp_type](**kwargs)
         return self.components[name]
 
@@ -154,7 +154,7 @@ class AppUI:
                     self._create_component('cancel_button', 'button', {'value': '⏹️ Cancel', 'interactive': False})
             with gr.Column(scale=3):
                 with gr.Accordion("📋 Verbose Processing Log (for debugging)", open=False):
-                    self._create_component('unified_log', 'textbox', {'lines': 15, 'interactive': False, 'autoscroll': True, 'elem_classes': ['log-container']})
+                    self._create_component('unified_log', 'textbox', {'lines': 15, 'interactive': False, 'autoscroll': True, 'elem_classes': ['log-container'], 'elem_id': 'unified_log'})
                     with gr.Row():
                         self._create_component('log_level_filter', 'dropdown', {'choices': self.LOG_LEVEL_CHOICES, 'value': 'INFO', 'label': 'Log Level', 'scale': 1})
                         self._create_component('clear_logs_button', 'button', {'value': '🗑️ Clear', 'scale': 1})
