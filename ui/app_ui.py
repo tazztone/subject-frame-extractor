@@ -32,6 +32,8 @@ from ui.gallery_utils import (
     _update_gallery, scene_caption, create_scene_thumbnail_with_badge
 )
 from events import ExtractionEvent, PreAnalysisEvent, PropagationEvent, SessionLoadEvent, FilterEvent, ExportEvent
+from core.batch_manager import BatchManager, BatchStatus, BatchItem
+import uuid
 
 class AppUI:
     MAX_RESOLUTION_CHOICES: List[str] = ["maximum available", "2160", "1080", "720"]
@@ -59,6 +61,7 @@ class AppUI:
         self.cancel_event = cancel_event
         self.thumbnail_manager = thumbnail_manager
         self.model_registry = model_registry
+        self.batch_manager = BatchManager()
         self.components, self.cuda_available = {}, torch.cuda.is_available()
         self.ui_registry = {}
         self.performance_metrics, self.log_filter_level, self.all_logs = {}, "INFO", []
@@ -160,9 +163,9 @@ class AppUI:
     def _create_extraction_tab(self):
         gr.Markdown("### Step 1: Provide a Video Source")
         with gr.Row():
-            with gr.Column(scale=2): self._reg('source_path', self._create_component('source_input', 'textbox', {'label': "Video URL or Local Path", 'placeholder': "Enter YouTube URL or local video file path", 'info': "The application can download videos directly from YouTube or use a video file you have on your computer."}))
+            with gr.Column(scale=2): self._reg('source_path', self._create_component('source_input', 'textbox', {'label': "Video URL or Local Path", 'placeholder': "Enter YouTube URL or local video file path (or folder of videos)", 'info': "The application can download videos directly from YouTube or use a video file you have on your computer."}))
             with gr.Column(scale=1): self._reg('max_resolution', self._create_component('max_resolution', 'dropdown', {'choices': self.MAX_RESOLUTION_CHOICES, 'value': self.config.default_max_resolution, 'label': "Max Download Resolution", 'info': "For YouTube videos, select the maximum resolution to download. 'Maximum available' will get the best quality possible."}))
-        self._reg('upload_video', self._create_component('upload_video_input', 'file', {'label': "Or Upload a Video File", 'file_types': ["video"], 'type': "filepath"}))
+        self._reg('upload_video', self._create_component('upload_video_input', 'file', {'label': "Or Upload Video File(s)", 'file_count': "multiple", 'file_types': ["video"], 'type': "filepath"}))
         gr.Markdown("---"); gr.Markdown("### Step 2: Configure Extraction Method")
         with gr.Group(visible=True) as thumbnail_group:
             self.components['thumbnail_group'] = thumbnail_group
@@ -173,8 +176,19 @@ class AppUI:
                 self._reg('method', self._create_component('method_input', 'dropdown', {'choices': self.METHOD_CHOICES, 'value': self.config.default_method, 'label': "Frame Selection Method", 'info': "- **Keyframes:** Extracts only the keyframes (I-frames). Good for a quick summary.\n- **Interval:** Extracts one frame every X seconds.\n- **Every Nth Frame:** Extracts one frame every N decoded frames.\n- **Nth + Keyframes:** Keeps keyframes plus frames at a regular cadence.\n- **All:** Extracts every single frame. (Warning: massive disk usage and time)."}))
                 self._reg('interval', self._create_component('interval_input', 'number', {'label': "Interval (seconds)", 'value': self.config.default_interval, 'minimum': 0.1, 'step': 0.1, 'visible': self.config.default_method == 'interval'}))
                 self._reg('nth_frame', self._create_component('nth_frame_input', 'number', {'label': "N-th Frame Value", 'value': self.config.default_nth_frame, 'minimum': 1, 'step': 1, 'visible': self.config.default_method in ['every_nth_frame', 'nth_plus_keyframes']}))
-        gr.Markdown("---"); gr.Markdown("### Step 3: Start Extraction")
-        self.components.update({'start_extraction_button': gr.Button("🚀 Start Extraction", variant="primary")})
+        gr.Markdown("---"); gr.Markdown("### Step 3: Start Processing")
+        with gr.Row():
+             self.components['start_extraction_button'] = gr.Button("🚀 Start Single Extraction", variant="secondary")
+             self._create_component('add_to_queue_button', 'button', {'value': "➕ Add to Batch Queue", 'variant': 'primary'})
+
+        with gr.Accordion("📚 Batch Processing Queue", open=True) as batch_accordion:
+             self.components['batch_accordion'] = batch_accordion
+             self._create_component('batch_queue_dataframe', 'dataframe', {'headers': ["Path", "Status", "Progress", "Message"], 'datatype': ["str", "str", "number", "str"], 'interactive': False, 'value': []})
+             with gr.Row():
+                 self._create_component('start_batch_button', 'button', {'value': "▶️ Start Batch Processing", 'variant': "primary"})
+                 self._create_component('stop_batch_button', 'button', {'value': "⏹️ Stop Batch", 'variant': "stop"})
+                 self._create_component('clear_queue_button', 'button', {'value': "🗑️ Clear Queue"})
+             self._create_component('batch_workers_slider', 'slider', {'label': "Max Parallel Workers", 'minimum': 1, 'maximum': 4, 'value': 1, 'step': 1, 'info': "Increase only if you have sufficient memory (CPU/RAM). GPU is usually single-threaded."})
 
     def _create_define_subject_tab(self):
         with gr.Row():
@@ -719,9 +733,61 @@ class AppUI:
     def run_extraction_wrapper(self, *args):
         """Wrapper for the extraction pipeline."""
         ui_args = dict(zip(self.ext_ui_map_keys, args))
+        if isinstance(ui_args.get('upload_video'), list):
+             if ui_args['upload_video']: ui_args['upload_video'] = ui_args['upload_video'][0]
+             else: ui_args['upload_video'] = None
         clean_args = {k: v for k, v in ui_args.items() if v is not None}
         event = ExtractionEvent.model_validate(clean_args)
         yield from self._run_pipeline(execute_extraction, event, gr.Progress(), self._on_extraction_success)
+
+    def add_to_queue_handler(self, *args):
+        ui_args = dict(zip(self.ext_ui_map_keys, args))
+        source_path = ui_args.get('source_path')
+        upload_video = ui_args.get('upload_video')
+        paths = []
+        if upload_video:
+             if isinstance(upload_video, str): upload_video = [upload_video]
+             if isinstance(upload_video, list): paths.extend(upload_video)
+        if source_path:
+             path = Path(source_path)
+             if path.is_dir():
+                 video_exts = {'.mp4', '.mkv', '.avi', '.mov', '.webm', '.flv', '.wmv', '.m4v'}
+                 for p in path.iterdir():
+                     if p.is_file() and p.suffix.lower() in video_exts: paths.append(str(p))
+             else: paths.append(str(path))
+        if not paths: return gr.update(value=self.batch_manager.get_status_list())
+        clean_args = {k: v for k, v in ui_args.items() if v is not None}
+        clean_args.pop('source_path', None); clean_args.pop('upload_video', None)
+        with self.batch_manager.lock:
+             for p in paths:
+                 item = BatchItem(id=str(uuid.uuid4()), path=str(p), params=clean_args.copy())
+                 self.batch_manager.queue.append(item)
+        return gr.update(value=self.batch_manager.get_status_list())
+
+    def clear_queue_handler(self):
+        self.batch_manager.clear_all()
+        return gr.update(value=self.batch_manager.get_status_list())
+
+    def _batch_processor(self, item: BatchItem, progress_callback: Callable):
+        params = item.params.copy(); params['source_path'] = item.path; params['upload_video'] = None
+        event = ExtractionEvent.model_validate(params)
+        gen = execute_extraction(event, self.progress_queue, self.batch_manager.stop_event, self.logger, self.config, progress=progress_callback)
+        result = {}
+        for update in gen: result = update
+        if not result.get('done'): raise RuntimeError(result.get('unified_log', 'Unknown failure'))
+        return result
+
+    def start_batch_wrapper(self, workers: float):
+        if not self.batch_manager.queue: yield self.batch_manager.get_status_list(); return
+        self.batch_manager.start_processing(self._batch_processor, max_workers=int(workers))
+        while self.batch_manager.is_running:
+             yield self.batch_manager.get_status_list()
+             time.sleep(1.0)
+        yield self.batch_manager.get_status_list()
+
+    def stop_batch_handler(self):
+        self.batch_manager.stop_processing()
+        return "Stopping..."
 
     def _on_extraction_success(self, result: dict) -> dict:
         """Callback for successful extraction."""
@@ -837,6 +903,12 @@ class AppUI:
         self.ana_input_components.extend(self.get_inputs(self.ana_ui_map_keys))
         prop_inputs = [c['scenes_state']] + self.ana_input_components
         c['start_extraction_button'].click(fn=extraction_handler, inputs=ext_inputs, outputs=all_outputs, show_progress="hidden").then(lambda d: gr.update(selected=1) if d else gr.update(), c['extracted_frames_dir_state'], c['main_tabs'])
+
+        c['add_to_queue_button'].click(self.add_to_queue_handler, inputs=ext_inputs, outputs=[c['batch_queue_dataframe']])
+        c['clear_queue_button'].click(self.clear_queue_handler, inputs=[], outputs=[c['batch_queue_dataframe']])
+        c['start_batch_button'].click(self.start_batch_wrapper, inputs=[c['batch_workers_slider']], outputs=[c['batch_queue_dataframe']])
+        c['stop_batch_button'].click(self.stop_batch_handler, inputs=[], outputs=[])
+
         c['start_pre_analysis_button'].click(fn=pre_analysis_handler, inputs=self.ana_input_components, outputs=all_outputs, show_progress="hidden")
         c['propagate_masks_button'].click(fn=propagation_handler, inputs=prop_inputs, outputs=all_outputs, show_progress="hidden").then(lambda p: gr.update(selected=3) if p else gr.update(), c['analysis_output_dir_state'], c['main_tabs'])
         analysis_inputs = [c['scenes_state']] + self.ana_input_components
