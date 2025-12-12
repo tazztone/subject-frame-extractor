@@ -536,6 +536,7 @@ class ModelRegistry:
         self._models: Dict[str, Any] = {}
         self._locks: Dict[str, threading.Lock] = defaultdict(threading.Lock)
         self.logger = logger or logging.getLogger(__name__)
+        self.runtime_device_override: Optional[str] = None
 
     def get_or_load(self, key: str, loader_fn: Callable[[], Any]) -> Any:
         if key not in self._models:
@@ -555,6 +556,49 @@ class ModelRegistry:
     def clear(self):
         if self.logger: self.logger.info("Clearing all models from the registry.")
         self._models.clear()
+
+    def get_tracker(self, model_name: str, models_path: str, user_agent: str,
+                    retry_params: tuple, config: 'Config') -> Optional['SAM3Wrapper']:
+        key = f"tracker_{model_name}"
+
+        def _loader():
+            device = self.runtime_device_override or ("cuda" if torch.cuda.is_available() else "cpu")
+            try:
+                return self._load_tracker_impl(model_name, models_path, user_agent, retry_params, device, config)
+            except RuntimeError as e:
+                if "out of memory" in str(e) and device == 'cuda':
+                    self.logger.warning("CUDA OOM during tracker init. Switching to CPU for this session.")
+                    torch.cuda.empty_cache()
+                    self.runtime_device_override = 'cpu'
+                    return self._load_tracker_impl(model_name, models_path, user_agent, retry_params, 'cpu', config)
+                raise e
+
+        try:
+            return self.get_or_load(key, _loader)
+        except Exception as e:
+            self.logger.error(f"Failed to initialize tracker: {e}", exc_info=True)
+            return None
+
+    def _load_tracker_impl(self, model_name: str, models_path: str, user_agent: str,
+                           retry_params: tuple, device: str, config: 'Config') -> 'SAM3Wrapper':
+        if device == 'cuda' and not torch.cuda.is_available():
+            self.logger.warning("CUDA not available, SAM3 requires CUDA. Attempting to run on CPU (might be slow/fail).", component="tracker")
+
+        checkpoint_path = Path(models_path) / "sam3.pt"
+        if not checkpoint_path.exists():
+            self.logger.info(f"Downloading SAM3 model to {checkpoint_path}...", component="tracker")
+            download_model(
+                url=config.sam3_checkpoint_url,
+                dest_path=checkpoint_path,
+                description="SAM3 Model",
+                logger=self.logger,
+                error_handler=ErrorHandler(self.logger, *retry_params),
+                user_agent=user_agent,
+                expected_sha256=config.sam3_checkpoint_sha256
+            )
+
+        self.logger.info(f"Loading SAM3 model on {device}...", component="tracker")
+        return SAM3Wrapper(str(checkpoint_path), device=device)
 
 def _compute_sha256(path: Path) -> str:
     h = hashlib.sha256()
@@ -741,31 +785,6 @@ class SAM3Wrapper:
         results.sort(key=lambda x: x['conf'], reverse=True)
         return results
 
-def get_tracker(model_name: str, models_path: str, user_agent: str,
-                retry_params: tuple, logger: 'AppLogger', device: str, config: 'Config') -> Optional['SAM3Wrapper']:
-    try:
-        if device == 'cuda' and not torch.cuda.is_available():
-            logger.warning("CUDA not available, SAM3 requires CUDA. Attempting to run on CPU (might be slow/fail).", component="tracker")
-        
-        checkpoint_path = Path(models_path) / "sam3.pt"
-        if not checkpoint_path.exists():
-            logger.info(f"Downloading SAM3 model to {checkpoint_path}...", component="tracker")
-            download_model(
-                url=config.sam3_checkpoint_url,
-                dest_path=checkpoint_path,
-                description="SAM3 Model",
-                logger=logger,
-                error_handler=ErrorHandler(logger, *retry_params),
-                user_agent=user_agent,
-                expected_sha256=config.sam3_checkpoint_sha256
-            )
-        
-        logger.info("Loading SAM3 model...", component="tracker")
-        tracker = SAM3Wrapper(str(checkpoint_path), device=device)
-        return tracker
-    except Exception as e:
-        logger.error(f"Failed to initialize SAM3 tracker: {e}", component="tracker", exc_info=True)
-        return None
 
 def get_lpips_metric(model_name: str = 'alex', device: str = 'cpu') -> torch.nn.Module:
     return lpips.LPIPS(net=model_name).to(device)
@@ -1474,13 +1493,11 @@ class SubjectMasker:
         try:
             retry_params = (self.config.retry_max_attempts, tuple(self.config.retry_backoff_seconds))
             self.logger.info(f"Initializing SAM3 tracker: {self.params.tracker_model_name}")
-            self.dam_tracker = get_tracker(
+            self.dam_tracker = model_registry.get_tracker(
                 model_name=self.params.tracker_model_name,
                 models_path=str(self.config.models_dir),
                 user_agent=self.config.user_agent,
                 retry_params=retry_params,
-                logger=self.logger,
-                device=self._device,
                 config=self.config
             )
             if self.dam_tracker is None:
@@ -1820,9 +1837,20 @@ class AnalysisPipeline(Pipeline):
                 'pitch': self.params.compute_pitch,
             }
             self._run_analysis_loop(scenes_to_process, metrics_to_compute, tracker=tracker)
+            self.db.flush()
+
+            error_count = self.db.count_errors()
+
             if self.cancel_event.is_set(): return {"log": "Analysis cancelled.", "done": False}
-            self.logger.success("Analysis complete.", extra={'output_dir': self.output_dir})
-            return {"done": True, "output_dir": str(self.output_dir)}
+
+            msg = "Analysis complete."
+            if error_count > 0:
+                msg += f" (⚠️ {error_count} frames failed)"
+                self.logger.warning(f"Analysis completed with {error_count} errors.")
+            else:
+                self.logger.success(msg, extra={'output_dir': self.output_dir})
+
+            return {"done": True, "output_dir": str(self.output_dir), "unified_log": msg}
         except Exception as e:
             self.logger.error("Analysis pipeline failed", exc_info=True, extra={'error': str(e)})
             return {"error": str(e), "done": False}
@@ -1936,8 +1964,13 @@ class AnalysisPipeline(Pipeline):
             meta = _to_json_safe(meta)
             self.db.insert_metadata(meta)
         except Exception as e:
-            self.logger.critical("Error processing frame", exc_info=True, extra={**log_context, 'error': e})
-            self.db.insert_metadata({"filename": thumb_path.name, "error": f"processing_failed: {e}"})
+            severity = "CRITICAL" if isinstance(e, (RuntimeError, MemoryError)) else "ERROR"
+            self.logger.error(f"Error processing frame [{severity}]", exc_info=True, extra={**log_context, 'error': e})
+            self.db.insert_metadata({
+                "filename": thumb_path.name,
+                "error": f"processing_failed: {e}",
+                "error_severity": severity
+            })
 
     def _analyze_face_similarity(self, frame: 'Frame', image_rgb: np.ndarray) -> Optional[list[int]]:
         face_bbox = None
