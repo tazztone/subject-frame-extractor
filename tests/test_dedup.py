@@ -37,7 +37,9 @@ modules_to_mock = {
 patcher = patch.dict(sys.modules, modules_to_mock)
 patcher.start()
 
-from app import _apply_deduplication_filter, Config, ThumbnailManager
+from core.filtering import _apply_deduplication_filter
+from config import Config
+from core.managers import ThumbnailManager
 
 @pytest.fixture
 def mock_thumbnail_manager():
