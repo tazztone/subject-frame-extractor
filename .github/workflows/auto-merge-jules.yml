@@ -17,11 +17,10 @@ jobs:
       - name: Enable Auto-merge
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
         run: |
           # 1. Approve the PR (optional, remove if not needed)
           gh pr review --approve "$PR_URL"
           
-          # 2. Enable auto-merge (merges immediately if no checks are required, or waits for checks to pass)
+          # 2. Enable auto-merge
           gh pr merge --auto --merge --delete-branch "$PR_URL"
-        env:
-          PR_URL: ${{ github.event.pull_request.html_url }}
