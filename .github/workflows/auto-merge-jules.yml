@@ -4,23 +4,27 @@ on:
     types:
       - opened
       - synchronize
+      - ready_for_review  # Added this so it triggers when you click "Ready for review"
 
 jobs:
   approve-and-merge:
     runs-on: ubuntu-latest
-    # Only run if the PR author is the specific user
-    if: github.actor == 'google-labs-jules' 
+    # Run for Jules OR yourself (for testing)
+    if: github.actor == 'google-labs-jules' || github.actor == 'tazztone'
     permissions:
       contents: write
       pull-requests: write
     steps:
-      - name: Enable Auto-merge
+      - name: Auto-manage PR
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
         run: |
-          # 1. Approve the PR (optional, remove if not needed)
+          # 1. Mark as ready for review (if it is a draft)
+          gh pr ready "$PR_URL" || true
+          
+          # 2. Approve the PR
           gh pr review --approve "$PR_URL"
           
-          # 2. Enable auto-merge
+          # 3. Merge immediately
           gh pr merge --auto --merge --delete-branch "$PR_URL"
