@@ -13,8 +13,8 @@ import torch
 import numpy as np
 import cv2
 
-from config import Config
-from logger import AppLogger
+from core.config import Config
+from core.logger import AppLogger
 from core.managers import ThumbnailManager, ModelRegistry
 from core.models import Scene, SceneState, AnalysisParameters
 from core.utils import is_image_folder
@@ -31,7 +31,7 @@ from ui.gallery_utils import (
     build_scene_gallery_items, on_filters_changed, auto_set_thresholds,
     _update_gallery, scene_caption, create_scene_thumbnail_with_badge
 )
-from events import ExtractionEvent, PreAnalysisEvent, PropagationEvent, SessionLoadEvent, FilterEvent, ExportEvent
+from core.events import ExtractionEvent, PreAnalysisEvent, PropagationEvent, SessionLoadEvent, FilterEvent, ExportEvent
 from core.batch_manager import BatchManager, BatchStatus, BatchItem
 import uuid
 
@@ -473,7 +473,7 @@ class AppUI:
                         filtered_logs = [l for l in self.all_logs if any(f"[{level}]" in l for level in self.LOG_LEVEL_CHOICES[current_filter_level:])]
                         update_dict[self.components['unified_log']] = "\n".join(filtered_logs[-1000:])
                     if "progress" in msg:
-                        from progress import ProgressEvent # Local import to avoid circular dependency
+                        from core.progress import ProgressEvent # Local import to avoid circular dependency
                         p = ProgressEvent(**msg["progress"])
                         progress(p.fraction, desc=f"{p.stage} ({p.done}/{p.total}) • {p.eta_formatted}")
                         status_md = f"**Running: {op_name}**\n- Stage: {p.stage} ({p.done}/{p.total})\n- ETA: {p.eta_formatted}"

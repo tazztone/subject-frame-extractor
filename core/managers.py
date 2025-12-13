@@ -23,7 +23,7 @@ from mediapipe.tasks.python import vision
 # Since we are in core/, we might need to adjust path if not already handled by app entry point.
 # Assuming app.py handles sys.path setup for SAM3_repo.
 try:
-    import sam3_patches
+    from core import sam3_patches
     from sam3.model_builder import build_sam3_video_predictor
     from sam3.model.sam3_video_predictor import Sam3VideoPredictor
     sam3_patches.apply_patches()
@@ -32,12 +32,12 @@ except ImportError:
     pass
 
 if TYPE_CHECKING:
-    from config import Config
-    from logger import AppLogger
+    from core.config import Config
+    from core.logger import AppLogger
     from core.models import AnalysisParameters
 
 from core.utils import download_model, validate_video_file, safe_resource_cleanup
-from error_handling import ErrorHandler
+from core.error_handling import ErrorHandler
 
 class ThumbnailManager:
     def __init__(self, logger: 'AppLogger', config: 'Config'):

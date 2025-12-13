@@ -12,15 +12,15 @@ The application is a **Gradio-based desktop application** for video processing, 
 *   **Monolithic Entry Point**: `app.py` contains the main `AppUI` class, `AnalysisPipeline` orchestration, and legacy logic.
 *   **Modular Components**:
     *   **Core Logic**: The `core/` directory contains business logic decoupled from the UI (e.g., `core/filtering.py`, `core/batch_manager.py`).
-    *   **Configuration**: `config.py` uses Pydantic `BaseSettings`. It is a flat configuration model (preferred over nested).
-    *   **Logging**: `logger.py` implements structured JSONL logging via `AppLogger`.
-    *   **Error Handling**: `error_handling.py` provides decorators like `@with_retry` and `@handle_common_errors`.
-    *   **Data Models**: `events.py` defines Pydantic `BaseModel` classes for UI-Backend communication (e.g., `ExtractionEvent`).
-    *   **Persistence**: `database.py` manages SQLite storage for frame metadata.
-    *   **Progress**: `progress.py` handles multi-stage progress tracking.
+    *   **Configuration**: `core/config.py` uses Pydantic `BaseSettings`. It is a flat configuration model (preferred over nested).
+    *   **Logging**: `core/logger.py` implements structured JSONL logging via `AppLogger`.
+    *   **Error Handling**: `core/error_handling.py` provides decorators like `@with_retry` and `@handle_common_errors`.
+    *   **Data Models**: `core/events.py` defines Pydantic `BaseModel` classes for UI-Backend communication (e.g., `ExtractionEvent`).
+    *   **Persistence**: `core/database.py` manages SQLite storage for frame metadata.
+    *   **Progress**: `core/progress.py` handles multi-stage progress tracking.
 
 ### Key Patterns
-*   **Model Management**: heavy ML models (SAM3, InsightFace) are managed by the **`ModelRegistry`** singleton in `app.py`.
+*   **Model Management**: heavy ML models (SAM3, InsightFace) are managed by the **`ModelRegistry`** singleton in `core/managers.py` (instantiated in `app.py`).
     *   *Rule*: Never use `@lru_cache` for model loaders that take the full `Config` object (it is unhashable). Use `model_registry.get_or_load()`.
     *   *Rule*: Models should be lazy-loaded.
 *   **State Management**:
@@ -32,7 +32,7 @@ The application is a **Gradio-based desktop application** for video processing, 
 *   **Frontend/Backend Decoupling**:
     *   The UI (`AppUI`) should only handle presentation and event triggering.
     *   Business logic resides in pipeline classes (`ExtractionPipeline`, `AnalysisPipeline`) and `core/` modules.
-    *   Communication is done via typed events (`events.py`) and standardized return payloads.
+    *   Communication is done via typed events (`core/events.py`) and standardized return payloads.
 
 ## 📝 Coding Standards
 
