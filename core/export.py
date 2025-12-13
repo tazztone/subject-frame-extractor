@@ -9,11 +9,11 @@ from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from config import Config
-    from logger import AppLogger
+    from core.config import Config
+    from core.logger import AppLogger
 
 from core.filtering import apply_all_filters_vectorized
-from events import ExportEvent
+from core.events import ExportEvent
 
 def _perform_ffmpeg_export(video_path: str, frames_to_extract: list, export_dir: Path, logger: 'AppLogger') -> tuple[bool, Optional[str]]:
     select_filter = f"select='{'+'.join([f'eq(n,{fn})' for fn in frames_to_extract])}'"

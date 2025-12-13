@@ -12,8 +12,8 @@ from PIL import Image
 from scenedetect import detect, ContentDetector
 
 if TYPE_CHECKING:
-    from config import Config
-    from logger import AppLogger
+    from core.config import Config
+    from core.logger import AppLogger
     from core.models import AnalysisParameters, Scene, SceneState
     from core.managers import SAM3Wrapper, ThumbnailManager, ModelRegistry
     from core.pipelines import AdvancedProgressTracker

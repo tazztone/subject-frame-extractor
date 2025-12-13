@@ -14,8 +14,8 @@ from queue import Queue
 import torch
 import gc
 
-from config import Config
-from logger import AppLogger
+from core.config import Config
+from core.logger import AppLogger
 from core.managers import ModelRegistry, ThumbnailManager
 from ui.app_ui import AppUI
 
