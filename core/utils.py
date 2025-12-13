@@ -126,7 +126,7 @@ def _compute_sha256(path: Path) -> str:
 
 def download_model(url: str, dest_path: Union[str, Path], description: str, logger: 'AppLogger',
                    error_handler: 'ErrorHandler', user_agent: str, min_size: int = 1_000_000,
-                   expected_sha256: Optional[str] = None):
+                   expected_sha256: Optional[str] = None, token: Optional[str] = None):
     dest_path = Path(dest_path)
     dest_path.parent.mkdir(parents=True, exist_ok=True)
     if dest_path.is_file():
@@ -145,7 +145,10 @@ def download_model(url: str, dest_path: Union[str, Path], description: str, logg
     @error_handler.with_retry(recoverable_exceptions=(urllib.error.URLError, TimeoutError, RuntimeError))
     def download_func():
         logger.info(f"Downloading {description}", extra={'url': url, 'dest': dest_path})
-        req = urllib.request.Request(url, headers={"User-Agent": user_agent})
+        headers = {"User-Agent": user_agent}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        req = urllib.request.Request(url, headers=headers)
         with urllib.request.urlopen(req, timeout=180) as resp, open(dest_path, "wb") as out:
             shutil.copyfileobj(resp, out)
 

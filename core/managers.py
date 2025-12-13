@@ -139,7 +139,8 @@ class ModelRegistry:
                 logger=self.logger,
                 error_handler=ErrorHandler(self.logger, *retry_params),
                 user_agent=user_agent,
-                expected_sha256=config.sam3_checkpoint_sha256
+                expected_sha256=config.sam3_checkpoint_sha256,
+                token=config.huggingface_token
             )
 
         self.logger.info(f"Loading SAM3 model on {device}...", component="tracker")
