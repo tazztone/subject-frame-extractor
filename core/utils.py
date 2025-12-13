@@ -22,10 +22,10 @@ from pydantic import BaseModel
 from PIL import Image
 
 if TYPE_CHECKING:
-    from config import Config
-    from logger import AppLogger
+    from core.config import Config
+    from core.logger import AppLogger
     from core.models import AnalysisParameters, Scene
-    from error_handling import ErrorHandler
+    from core.error_handling import ErrorHandler
 
 def handle_common_errors(func: Callable) -> Callable:
     @functools.wraps(func)

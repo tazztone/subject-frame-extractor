@@ -15,8 +15,8 @@ from typing import Optional, List, Dict, Any, Generator, Callable, TYPE_CHECKING
 from dataclasses import fields
 
 if TYPE_CHECKING:
-    from config import Config
-    from logger import AppLogger
+    from core.config import Config
+    from core.logger import AppLogger
     from core.managers import ThumbnailManager, ModelRegistry
     from ui.app_ui import AppUI
 
@@ -25,10 +25,10 @@ from core.utils import handle_common_errors, estimate_totals, sanitize_filename,
 from core.managers import VideoManager, initialize_analysis_models
 from core.scene_utils import SubjectMasker, save_scene_seeds, get_scene_status_text, run_scene_detection, make_photo_thumbs
 from core.filtering import load_and_prep_filter_data, apply_all_filters_vectorized
-from database import Database
-from events import ExtractionEvent, PreAnalysisEvent, PropagationEvent, SessionLoadEvent, ExportEvent
-from error_handling import ErrorHandler
-from progress import AdvancedProgressTracker
+from core.database import Database
+from core.events import ExtractionEvent, PreAnalysisEvent, PropagationEvent, SessionLoadEvent, ExportEvent
+from core.error_handling import ErrorHandler
+from core.progress import AdvancedProgressTracker
 from ui.gallery_utils import build_scene_gallery_items
 
 import gradio as gr # Needed for execute_session_load updates

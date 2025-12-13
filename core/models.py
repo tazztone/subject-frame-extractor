@@ -11,8 +11,8 @@ from mediapipe.tasks.python import vision
 from pathlib import Path
 
 if TYPE_CHECKING:
-    from config import Config
-    from logger import AppLogger
+    from core.config import Config
+    from core.logger import AppLogger
 
 def _coerce(val: Any, to_type: type) -> Any:
     if to_type is bool:

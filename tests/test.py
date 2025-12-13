@@ -158,13 +158,13 @@ modules_to_mock['pydantic_settings'] = mock_pydantic_settings
 patch.dict(sys.modules, modules_to_mock).start()
 
 # Imports from refactored modules
-from config import Config
-from database import Database
-from logger import AppLogger
+from core.config import Config
+from core.database import Database
+from core.logger import AppLogger
 from core.models import Scene, Frame, QualityConfig, _coerce
 from core.filtering import apply_all_filters_vectorized
 from ui.gallery_utils import auto_set_thresholds
-from events import PreAnalysisEvent
+from core.events import PreAnalysisEvent
 
 # --- Mocks for Tests ---
 @pytest.fixture
@@ -250,7 +250,7 @@ class TestUtils:
 
     def test_config_init(self):
         mock_config_data = {}
-        with patch('config.json_config_settings_source', return_value=mock_config_data):
+        with patch('core.config.json_config_settings_source', return_value=mock_config_data):
             # Pass an argument to the constructor
             config = Config(logs_dir="init_logs")
 
