@@ -72,6 +72,18 @@ Perfect for creating training datasets (LoRA/Dreambooth), finding thumbnail cand
     - **macOS**: `brew install ffmpeg`
     - **Windows**: Download from [ffmpeg.org](https://ffmpeg.org/download.html) and add to PATH.
 
+5.  **Configure Environment Variables (Optional but Recommended)**
+    To download gated models (like SAM3) automatically, you need to set up your Hugging Face token:
+    
+    1.  Copy the example environment file:
+        ```bash
+        cp .env.example .env
+        ```
+    2.  Edit `.env` and add your Hugging Face token:
+        ```bash
+        APP_HUGGINGFACE_TOKEN=your_token_here
+        ```
+
 ## 📖 Usage
 
 Run the application:
