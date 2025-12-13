@@ -48,9 +48,12 @@ class AppUI:
     LOG_LEVEL_CHOICES: List[str] = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'SUCCESS', 'CRITICAL']
     SCENE_GALLERY_VIEW_CHOICES: List[str] = ["Kept", "Rejected", "All"]
     FILTER_PRESETS: Dict[str, Dict[str, float]] = {
-        "Sharp Portraits": {"sharpness_min": 60.0, "sharpness_max": 100.0, "edge_strength_min": 50.0, "edge_strength_max": 100.0, "face_sim_min": 0.5, "mask_area_pct_min": 10.0, "eyes_open_min": 0.8, "yaw_min": -15.0, "yaw_max": 15.0, "pitch_min": -15.0, "pitch_max": 15.0},
-        "Close-up Subject": {"mask_area_pct_min": 25.0, "mask_area_pct_max": 100.0, "quality_score_min": 50.0},
-        "High Naturalness": {"niqe_min": 0.0, "niqe_max": 40.0, "contrast_min": 20.0, "contrast_max": 80.0, "brightness_min": 30.0, "brightness_max": 70.0}
+        "Portrait/Selfie": {"sharpness_min": 60.0, "face_sim_min": 50.0, "eyes_open_min": 60.0, "yaw_min": -15.0, "yaw_max": 15.0, "pitch_min": -15.0, "pitch_max": 15.0},
+        "Action/Sports": {"sharpness_min": 10.0, "edge_strength_min": 60.0, "mask_area_pct_min": 20.0},
+        "Training Dataset": {"quality_score_min": 80.0, "face_sim_min": 80.0},
+        "High Quality": {"quality_score_min": 75.0, "sharpness_min": 75.0},
+        "Frontal Faces": {"yaw_min": -10.0, "yaw_max": 10.0, "pitch_min": -10.0, "pitch_max": 10.0, "eyes_open_min": 70.0},
+        "Close-up Subject": {"mask_area_pct_min": 60.0, "quality_score_min": 40.0}
     }
 
     def __init__(self, config: 'Config', logger: 'AppLogger', progress_queue: Queue, cancel_event: threading.Event, thumbnail_manager: 'ThumbnailManager', model_registry: 'ModelRegistry'):
@@ -305,6 +308,7 @@ class AppUI:
                 gr.Markdown("### 🎛️ Filter Controls")
                 gr.Markdown("Use these controls to refine your selection of frames. You can set minimum and maximum thresholds for various quality metrics.")
                 self._create_component('filter_preset_dropdown', 'dropdown', {'label': "Filter Presets", 'choices': ["None"] + list(self.FILTER_PRESETS.keys())})
+                self._create_component('smart_filter_checkbox', 'checkbox', {'label': "Enable Smart Filtering (Percentile Mode)", 'value': False, 'info': "When enabled, sliders use 0-100% scale representing percentiles. Example: 'Min: 10%' filters out the bottom 10% of frames."})
                 self._create_component('auto_pctl_input', 'slider', {'label': 'Auto-Threshold Percentile', 'minimum': 1, 'maximum': 99, 'value': self.config.gradio_auto_pctl_input, 'step': 1, 'info': "Quickly set all 'Min' sliders to a certain percentile of the data. For example, setting this to 75 and clicking 'Apply' will automatically reject the bottom 75% of frames for each metric."})
                 with gr.Row():
                     self._create_component('apply_auto_button', 'button', {'value': 'Apply Percentile to Mins'})
@@ -383,6 +387,8 @@ class AppUI:
 
         # Undo/Redo State
         self.components['scene_history_state'] = gr.State(deque(maxlen=self.history_depth))
+        # Smart Filter State
+        self.components['smart_filter_state'] = gr.State(False)
 
         self._setup_visibility_toggles(); self._setup_pipeline_handlers(); self._setup_filtering_handlers(); self._setup_bulk_scene_handlers()
         self.components['save_config_button'].click(lambda: self.config.save_config('config_dump.json'), [], []).then(lambda: "Configuration saved to config_dump.json", [], self.components['unified_log'])
@@ -1053,11 +1059,45 @@ class AppUI:
         status_text, button_update = get_scene_status_text(scenes_objs)
         return scenes_dicts, status_text, gr.update(value=gallery_items), new_index_map, button_update, f"/ {total_pages} pages", 1
 
+    def _get_smart_mode_updates(self, is_enabled: bool) -> list[gr.update]:
+        """Returns updates for all metric sliders based on Smart Mode state."""
+        updates = []
+        slider_keys = sorted(self.components['metric_sliders'].keys())
+        for key in slider_keys:
+            # Exclude Yaw/Pitch from Smart Mode
+            if "yaw" in key or "pitch" in key:
+                updates.append(gr.update())
+                continue
+
+            if is_enabled:
+                updates.append(gr.update(minimum=0.0, maximum=100.0, step=1.0, label=f"{self.components['metric_sliders'][key].label.split('(')[0].strip()} (%)"))
+            else:
+                metric_key = re.sub(r'_(min|max)$', '', key)
+                default_key = 'default_max' if key.endswith('_max') else 'default_min'
+                f_def = getattr(self.config, f"filter_default_{metric_key}", {})
+                min_val = f_def.get('min', 0.0)
+                max_val = f_def.get('max', 100.0)
+                step = f_def.get('step', 0.5)
+                # Remove (%) from label if present
+                label = self.components['metric_sliders'][key].label.replace(' (%)', '')
+                updates.append(gr.update(minimum=min_val, maximum=max_val, step=step, label=label))
+        return updates
+
+    def on_smart_mode_toggle(self, is_enabled: bool) -> tuple:
+        """Handler for toggling Smart Filtering mode."""
+        updates = self._get_smart_mode_updates(is_enabled)
+        status_msg = "Smart Filtering Enabled (Percentile Mode)" if is_enabled else "Smart Filtering Disabled (Absolute Mode)"
+        return tuple([is_enabled] + updates + [status_msg])
+
     def _setup_filtering_handlers(self):
         c = self.components
         slider_keys, slider_comps = sorted(c['metric_sliders'].keys()), [c['metric_sliders'][k] for k in sorted(c['metric_sliders'].keys())]
-        fast_filter_inputs = [c['all_frames_data_state'], c['per_metric_values_state'], c['analysis_output_dir_state'], c['gallery_view_toggle'], c['show_mask_overlay_input'], c['overlay_alpha_slider'], c['require_face_match_input'], c['dedup_thresh_input'], c['dedup_method_input']] + slider_comps
+        fast_filter_inputs = [c['all_frames_data_state'], c['per_metric_values_state'], c['analysis_output_dir_state'], c['gallery_view_toggle'], c['show_mask_overlay_input'], c['overlay_alpha_slider'], c['require_face_match_input'], c['dedup_thresh_input'], c['dedup_method_input'], c['smart_filter_state']] + slider_comps
         fast_filter_outputs = [c['filter_status_text'], c['results_gallery']]
+
+        # Smart Mode Toggle
+        c['smart_filter_checkbox'].change(self.on_smart_mode_toggle, inputs=[c['smart_filter_checkbox']], outputs=[c['smart_filter_state']] + slider_comps + [c['filter_status_text']])
+
         for control in (slider_comps + [c['dedup_thresh_input'], c['gallery_view_toggle'], c['show_mask_overlay_input'], c['overlay_alpha_slider'], c['require_face_match_input'], c['dedup_method_input']]):
             (control.release if hasattr(control, 'release') else control.input if hasattr(control, 'input') else control.change)(self.on_filters_changed_wrapper, fast_filter_inputs, fast_filter_outputs)
 
@@ -1102,34 +1142,88 @@ class AppUI:
         c['dedup_method_input'].change(lambda method: {c['dedup_thresh_input']: gr.update(visible=method == 'pHash', label=f"{method} Threshold"), c['ssim_threshold_input']: gr.update(visible=method == 'SSIM'), c['lpips_threshold_input']: gr.update(visible=method == 'LPIPS')}, c['dedup_method_input'], [c['dedup_thresh_input'], c['ssim_threshold_input'], c['lpips_threshold_input']])
         c['dedup_visual_diff_input'].change(lambda x: {c['visual_diff_image']: gr.update(visible=x), c['calculate_diff_button']: gr.update(visible=x)}, c['dedup_visual_diff_input'], [c['visual_diff_image'], c['calculate_diff_button']])
         c['calculate_diff_button'].click(self.calculate_visual_diff, [c['results_gallery'], c['all_frames_data_state'], c['dedup_method_input'], c['dedup_thresh_input'], c['ssim_threshold_input'], c['lpips_threshold_input']], [c['visual_diff_image']])
-        c['filter_preset_dropdown'].change(self.on_preset_changed, [c['filter_preset_dropdown']], list(c['metric_sliders'].values())).then(self.on_filters_changed_wrapper, fast_filter_inputs, fast_filter_outputs)
 
-    def on_preset_changed(self, preset_name: str) -> dict:
-        """Applies a filter preset by updating the values of the metric sliders."""
-        updates = {}
+        # Updated Preset Handler with State Sync
+        c['filter_preset_dropdown'].change(
+            self.on_preset_changed,
+            [c['filter_preset_dropdown']],
+            [c['smart_filter_state']] + list(c['metric_sliders'].values()) + [c['smart_filter_checkbox']]
+        ).then(self.on_filters_changed_wrapper, fast_filter_inputs, fast_filter_outputs)
+
+    def on_preset_changed(self, preset_name: str) -> list[Any]:
+        """Applies a filter preset, updates slider ranges/values, and enables Smart Mode."""
+        is_preset_active = preset_name != "None" and preset_name in self.FILTER_PRESETS
+
+        final_updates = []
         slider_keys = sorted(self.components['metric_sliders'].keys())
-        if preset_name == "None" or preset_name not in self.FILTER_PRESETS:
-            for key in slider_keys:
-                metric_key = re.sub(r'_(min|max)$', '', key)
-                default_key = 'default_max' if key.endswith('_max') else 'default_min'
-                f_def = getattr(self.config, f"filter_default_{metric_key}", {})
-                default_val = f_def.get(default_key, 0)
-                updates[self.components['metric_sliders'][key]] = gr.update(value=default_val)
-            return updates
-        preset = self.FILTER_PRESETS[preset_name]
-        for key in slider_keys:
-            if key in preset: updates[self.components['metric_sliders'][key]] = gr.update(value=preset[key])
-            else:
-                metric_key = re.sub(r'_(min|max)$', '', key)
-                default_key = 'default_max' if key.endswith('_max') else 'default_min'
-                f_def = getattr(self.config, f"filter_default_{metric_key}", {})
-                default_val = f_def.get(default_key, 0)
-                updates[self.components['metric_sliders'][key]] = gr.update(value=default_val)
-        return updates
+        preset_values = self.FILTER_PRESETS.get(preset_name, {})
 
-    def on_filters_changed_wrapper(self, all_frames_data: list, per_metric_values: dict, output_dir: str, gallery_view: str, show_overlay: bool, overlay_alpha: float, require_face_match: bool, dedup_thresh: int, dedup_method: str, *slider_values: float) -> tuple[str, gr.update]:
-        """Wrapper for the `on_filters_changed` event handler."""
+        for key in slider_keys:
+            # Determine new value
+            if is_preset_active:
+                if key in preset_values:
+                    new_val = preset_values[key]
+                else:
+                    # Default for unspecifed sliders in Smart Mode
+                    if "min" in key: new_val = 0.0
+                    elif "max" in key: new_val = 100.0
+                    # Exception: Yaw/Pitch are absolute, use config defaults
+                    if "yaw" in key or "pitch" in key:
+                         f_def = getattr(self.config, f"filter_default_{re.sub(r'_(min|max)$', '', key)}", {})
+                         default_key = 'default_max' if key.endswith('_max') else 'default_min'
+                         new_val = f_def.get(default_key, 0)
+            else:
+                # Reset to absolute defaults
+                metric_key = re.sub(r'_(min|max)$', '', key)
+                default_key = 'default_max' if key.endswith('_max') else 'default_min'
+                f_def = getattr(self.config, f"filter_default_{metric_key}", {})
+                new_val = f_def.get(default_key, 0)
+
+            # Create Update Object
+            if "yaw" in key or "pitch" in key:
+                 # Angle sliders: Always absolute.
+                 update = gr.update(value=new_val)
+            elif is_preset_active:
+                 # Smart Mode: 0-100
+                 label = f"{self.components['metric_sliders'][key].label.split('(')[0].strip()} (%)"
+                 update = gr.update(minimum=0.0, maximum=100.0, step=1.0, label=label, value=new_val)
+            else:
+                 # Absolute Mode
+                 metric_key = re.sub(r'_(min|max)$', '', key)
+                 f_def = getattr(self.config, f"filter_default_{metric_key}", {})
+                 min_val = f_def.get('min', 0.0)
+                 max_val = f_def.get('max', 100.0)
+                 step = f_def.get('step', 0.5)
+                 label = self.components['metric_sliders'][key].label.replace(' (%)', '')
+                 update = gr.update(minimum=min_val, maximum=max_val, step=step, label=label, value=new_val)
+
+            final_updates.append(update)
+
+        # Return: [State] + [Sliders...] + [Checkbox]
+        return [is_preset_active] + final_updates + [gr.update(value=is_preset_active)]
+
+    def on_filters_changed_wrapper(self, all_frames_data: list, per_metric_values: dict, output_dir: str, gallery_view: str, show_overlay: bool, overlay_alpha: float, require_face_match: bool, dedup_thresh: int, dedup_method: str, smart_mode_enabled: bool, *slider_values: float) -> tuple[str, gr.update]:
+        """Wrapper for the `on_filters_changed` event handler with Smart Mode support."""
         slider_values_dict = {k: v for k, v in zip(sorted(self.components['metric_sliders'].keys()), slider_values)}
+
+        # Smart Mode Conversion
+        if smart_mode_enabled and per_metric_values:
+            for key, val in slider_values_dict.items():
+                if "yaw" in key or "pitch" in key: continue # Skip angles
+
+                metric_name = re.sub(r'_(min|max)$', '', key)
+                metric_data = per_metric_values.get(metric_name)
+
+                if metric_data:
+                    # Conversion: Percentile -> Absolute Value
+                    # Min Slider at 10% -> 10th percentile value (keep top 90%)
+                    # Max Slider at 90% -> 90th percentile value (keep bottom 90%)
+                    try:
+                        abs_val = float(np.percentile(np.array(metric_data), val))
+                        slider_values_dict[key] = abs_val
+                    except Exception as e:
+                        self.logger.warning(f"Failed to convert percentile for {key}: {e}")
+
         enable_dedup = dedup_method != "None"
         event_filters = slider_values_dict
         event_filters['enable_dedup'] = enable_dedup
