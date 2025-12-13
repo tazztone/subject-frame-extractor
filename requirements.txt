@@ -25,3 +25,4 @@ ftfy
 regex
 iopath
 decord
+python-dotenv
