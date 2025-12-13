@@ -37,8 +37,8 @@ modules_to_mock = {
 patcher = patch.dict(sys.modules, modules_to_mock)
 patcher.start()
 
-from core.filtering import _apply_deduplication_filter
-from config import Config
+from core.filtering import _apply_deduplication_filter, _run_batched_lpips
+from core.config import Config
 from core.managers import ThumbnailManager
 
 @pytest.fixture
@@ -120,3 +120,46 @@ def test_dedup_threshold(sample_frames_for_dedup, mock_thumbnail_manager):
     assert mask[1]
     assert mask[2]
     assert mask[3], "f4 should be kept because thresh is 0 and it has distance 1"
+
+def test_run_batched_lpips(mock_thumbnail_manager):
+    # Setup mocks
+    mock_tm = mock_thumbnail_manager
+    mock_tm.get.return_value = np.zeros((10, 10, 3), dtype=np.uint8)
+
+    # Mock torch behavior
+    mock_torch = modules_to_mock['torch']
+    mock_loss_fn = MagicMock()
+
+    mock_tensor = MagicMock()
+    mock_tensor.ndim = 1
+    mock_tensor.squeeze.return_value = mock_tensor
+
+    mock_cpu_tensor = MagicMock()
+    mock_cpu_tensor.numpy.return_value = np.array([0.05, 0.2])
+    mock_tensor.cpu.return_value = mock_cpu_tensor
+
+    mock_loss_fn.forward.return_value = mock_tensor
+
+    with patch('core.filtering.get_lpips_metric', return_value=mock_loss_fn):
+        all_frames = [
+            {'filename': 'f1.jpg', 'metrics': {'quality_score': 10}},
+            {'filename': 'f2.jpg', 'metrics': {'quality_score': 20}},
+            {'filename': 'f3.jpg', 'metrics': {'quality_score': 10}},
+            {'filename': 'f4.jpg', 'metrics': {'quality_score': 5}},
+        ]
+        pairs = [(0, 1), (2, 3)]
+        dedup_mask = np.array([True, True, True, True])
+        reasons = MagicMock()
+        reasons.__getitem__.return_value = [] # list append
+
+        # Run
+        _run_batched_lpips(pairs, all_frames, dedup_mask, reasons, mock_tm, "/tmp", threshold=0.1)
+
+        # Verify
+        # Pair 0 (f1, f2): dist 0.05 <= 0.1. f2 (20) > f1 (10). f1 rejected.
+        assert not dedup_mask[0]
+        assert dedup_mask[1]
+
+        # Pair 1 (f3, f4): dist 0.2 > 0.1. No rejection.
+        assert dedup_mask[2]
+        assert dedup_mask[3]
