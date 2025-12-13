@@ -7,6 +7,7 @@ import re
 import os
 import shutil
 import json
+import torch
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
