@@ -485,7 +485,7 @@ def execute_extraction(event: 'ExtractionEvent', progress_queue: Queue, cancel_e
     try:
         params_dict = event.model_dump()
         if event.upload_video:
-            source, dest = params_dict.pop('upload_video'), str(Path(config.paths.downloads) / Path(event.upload_video).name)
+            source, dest = params_dict.pop('upload_video'), str(Path(config.downloads_dir) / Path(event.upload_video).name)
             shutil.copy2(source, dest)
             params_dict['source_path'] = dest
         params = AnalysisParameters.from_ui(logger, config, **params_dict)

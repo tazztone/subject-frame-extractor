@@ -42,7 +42,7 @@ class Config(BaseSettings):
     face_landmarker_url: str = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
     face_landmarker_sha256: str = "9c899f78b8f2a0b1b117b3554b5f903e481b67f1390f7716e2a537f8842c0c7a"
     sam3_checkpoint_url: str = "https://huggingface.co/facebook/sam3/resolve/main/sam3.pt"
-    sam3_checkpoint_sha256: str = "7402e0d864fa82708a20fbd15bc84245c2f26dff0eb43a4b5b93452deb34be69"  # Placeholder, update if known or remove check
+    sam3_checkpoint_sha256: str = "9999e2341ceef5e136daa386eecb55cb414446a00ac2b55eb2dfd2f7c3cf8c9e"  # Placeholder, update if known or remove check
 
     # YouTube-DL
     ytdl_output_template: str = "%(id)s_%(title).40s_%(height)sp.%(ext)s"
