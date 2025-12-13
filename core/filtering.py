@@ -104,6 +104,55 @@ def _extract_metric_arrays(all_frames_data: list[dict], config: 'Config') -> dic
         else: metric_arrays[key] = np.array([f.get(path[0], {}).get(path[1], np.nan) for f in all_frames_data], dtype=np.float32)
     return metric_arrays
 
+def _run_batched_lpips(pairs: list[tuple[int, int]], all_frames_data: list[dict], dedup_mask: np.ndarray,
+                       reasons: defaultdict, thumbnail_manager: 'ThumbnailManager',
+                       output_dir: str, threshold: float, device: str = "cpu"):
+    """
+    Runs LPIPS deduplication on a list of pairs in batches using GPU if available.
+    """
+    if not pairs: return
+    loss_fn = get_lpips_metric(device=device)
+    transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+    batch_size = 32
+
+    for i in range(0, len(pairs), batch_size):
+        batch = pairs[i:i+batch_size]
+        img1_batch, img2_batch, valid_indices = [], [], []
+
+        for p_idx, c_idx in batch:
+            p_path = Path(output_dir) / "thumbs" / all_frames_data[p_idx]['filename']
+            c_path = Path(output_dir) / "thumbs" / all_frames_data[c_idx]['filename']
+            img1 = thumbnail_manager.get(p_path)
+            img2 = thumbnail_manager.get(c_path)
+
+            if img1 is not None and img2 is not None:
+                img1_batch.append(transform(img1))
+                img2_batch.append(transform(img2))
+                valid_indices.append((p_idx, c_idx))
+
+        if not valid_indices: continue
+
+        img1_t = torch.stack(img1_batch).to(device)
+        img2_t = torch.stack(img2_batch).to(device)
+
+        with torch.no_grad():
+            distances = loss_fn.forward(img1_t, img2_t).squeeze()
+            if distances.ndim == 0: distances = distances.unsqueeze(0)
+            distances = distances.cpu().numpy()
+
+        for j, (p_idx, c_idx) in enumerate(valid_indices):
+            dist = float(distances[j])
+            if dist <= threshold:
+                p_score = all_frames_data[p_idx].get('metrics', {}).get('quality_score', 0)
+                c_score = all_frames_data[c_idx].get('metrics', {}).get('quality_score', 0)
+
+                if c_score > p_score:
+                    if dedup_mask[p_idx]: reasons[all_frames_data[p_idx]['filename']].append('duplicate')
+                    dedup_mask[p_idx] = False
+                else:
+                    if dedup_mask[c_idx]: reasons[all_frames_data[c_idx]['filename']].append('duplicate')
+                    dedup_mask[c_idx] = False
+
 def _apply_deduplication_filter(all_frames_data: list[dict], filters: dict, thumbnail_manager: 'ThumbnailManager',
                                 config: 'Config', output_dir: str) -> tuple[np.ndarray, defaultdict]:
     import imagehash # Lazy import or assume available
@@ -195,30 +244,8 @@ def _apply_deduplication_filter(all_frames_data: list[dict], filters: dict, thum
 
             if p_hash_duplicates:
                 device = "cuda" if torch.cuda.is_available() else "cpu"
-                loss_fn = get_lpips_metric(device=device)
-                transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
-                batch_size = 32
-                for i in range(0, len(p_hash_duplicates), batch_size):
-                    batch = p_hash_duplicates[i:i+batch_size]
-                    img1_batch, img2_batch, valid_indices = [], [], []
-                    for p_idx, c_idx in batch:
-                        img1 = thumbnail_manager.get(Path(output_dir) / "thumbs" / all_frames_data[p_idx]['filename'])
-                        img2 = thumbnail_manager.get(Path(output_dir) / "thumbs" / all_frames_data[c_idx]['filename'])
-                        if img1 is not None and img2 is not None:
-                            img1_batch.append(transform(img1))
-                            img2_batch.append(transform(img2))
-                            valid_indices.append((p_idx, c_idx))
-                    if not valid_indices: continue
-                    img1_t, img2_t = torch.stack(img1_batch).to(device), torch.stack(img2_batch).to(device)
-                    with torch.no_grad(): distances = loss_fn.forward(img1_t, img2_t).squeeze().cpu().numpy()
-                    for j, (p_idx, c_idx) in enumerate(valid_indices):
-                        if distances[j] <= filters.get("lpips_threshold", 0.1):
-                            if all_frames_data[c_idx].get('metrics', {}).get('quality_score', 0) > all_frames_data[p_idx].get('metrics', {}).get('quality_score', 0):
-                                if dedup_mask[p_idx]: reasons[filenames[p_idx]].append('duplicate')
-                                dedup_mask[p_idx] = False
-                            else:
-                                if dedup_mask[c_idx]: reasons[filenames[c_idx]].append('duplicate')
-                                dedup_mask[c_idx] = False
+                _run_batched_lpips(p_hash_duplicates, all_frames_data, dedup_mask, reasons, thumbnail_manager,
+                                   output_dir, filters.get("lpips_threshold", 0.1), device=device)
     return dedup_mask, reasons
 
 def _apply_metric_filters(all_frames_data: list[dict], metric_arrays: dict, filters: dict,
@@ -322,12 +349,6 @@ def _ssim_compare(img1: np.ndarray, img2: np.ndarray, threshold: float) -> bool:
     gray1, gray2 = cv2.cvtColor(img1, cv2.COLOR_RGB2GRAY), cv2.cvtColor(img2, cv2.COLOR_RGB2GRAY)
     return ssim(gray1, gray2) >= threshold
 
-def _lpips_compare(img1: np.ndarray, img2: np.ndarray, threshold: float, loss_fn: Callable) -> bool:
-    transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
-    img1_t, img2_t = transform(img1).unsqueeze(0), transform(img2).unsqueeze(0)
-    distance = loss_fn.forward(img1_t, img2_t).item()
-    return distance <= threshold
-
 def apply_ssim_dedup(all_frames_data: list[dict], filters: dict, dedup_mask: np.ndarray, reasons: defaultdict,
                      thumbnail_manager: 'ThumbnailManager', config: 'Config', output_dir: str) -> tuple[np.ndarray, defaultdict]:
     threshold = filters.get("ssim_threshold", 0.95)
@@ -336,7 +357,14 @@ def apply_ssim_dedup(all_frames_data: list[dict], filters: dict, dedup_mask: np.
 
 def apply_lpips_dedup(all_frames_data: list[dict], filters: dict, dedup_mask: np.ndarray, reasons: defaultdict,
                       thumbnail_manager: 'ThumbnailManager', config: 'Config', output_dir: str) -> tuple[np.ndarray, defaultdict]:
-    threshold = filters.get("lpips_threshold", 0.1)
-    loss_fn = get_lpips_metric()
-    compare_fn = lambda img1, img2: _lpips_compare(img1, img2, threshold, loss_fn)
-    return _generic_dedup(all_frames_data, dedup_mask, reasons, thumbnail_manager, output_dir, compare_fn)
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    num_frames = len(all_frames_data)
+    sorted_indices = sorted(range(num_frames), key=lambda i: all_frames_data[i]['filename'])
+
+    # Compare adjacent frames
+    pairs = [(sorted_indices[i-1], sorted_indices[i]) for i in range(1, len(sorted_indices))]
+
+    _run_batched_lpips(pairs, all_frames_data, dedup_mask, reasons, thumbnail_manager,
+                       output_dir, filters.get("lpips_threshold", 0.1), device=device)
+
+    return dedup_mask, reasons
