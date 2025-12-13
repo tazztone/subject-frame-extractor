@@ -11,7 +11,7 @@ from collections import Counter
 from core.models import Scene
 from core.filtering import apply_all_filters_vectorized
 from core.utils import render_mask_overlay
-from events import FilterEvent
+from core.events import FilterEvent
 
 def scene_matches_view(scene: Scene, view: str) -> bool:
     status = scene.status

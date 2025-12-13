@@ -15,11 +15,11 @@ import lpips
 from torchvision import transforms
 
 if TYPE_CHECKING:
-    from config import Config
-    from logger import AppLogger
+    from core.config import Config
+    from core.logger import AppLogger
     from core.managers import ThumbnailManager
 
-from database import Database
+from core.database import Database
 from core.managers import get_lpips_metric
 
 def load_and_prep_filter_data(output_dir: str, get_all_filter_keys: Callable, config: 'Config') -> tuple[list, dict]:
