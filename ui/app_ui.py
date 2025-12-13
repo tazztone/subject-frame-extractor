@@ -1249,8 +1249,8 @@ class AppUI:
                 hash2 = imagehash.hex_to_hash(frame_data['phash'])
                 if hash1 - hash2 <= dedup_thresh: duplicate_frame_data = frame_data; break
             elif dedup_method == "SSIM":
-                img1 = self.thumbnail_manager.get(Path(self.config.paths.downloads) / Path(selected_frame_data['filename']).parent.name / "thumbs" / selected_frame_data['filename'])
-                img2 = self.thumbnail_manager.get(Path(self.config.paths.downloads) / Path(frame_data['filename']).parent.name / "thumbs" / frame_data['filename'])
+                img1 = self.thumbnail_manager.get(Path(self.config.downloads_dir) / Path(selected_frame_data['filename']).parent.name / "thumbs" / selected_frame_data['filename'])
+                img2 = self.thumbnail_manager.get(Path(self.config.downloads_dir) / Path(frame_data['filename']).parent.name / "thumbs" / frame_data['filename'])
                 if img1 is not None and img2 is not None:
                     img1_gray = cv2.cvtColor(img1, cv2.COLOR_RGB2GRAY)
                     img2_gray = cv2.cvtColor(img2, cv2.COLOR_RGB2GRAY)
@@ -1259,16 +1259,16 @@ class AppUI:
             elif dedup_method == "LPIPS":
                 loss_fn = lpips.LPIPS(net='alex')
                 transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
-                img1 = self.thumbnail_manager.get(Path(self.config.paths.downloads) / Path(selected_frame_data['filename']).parent.name / "thumbs" / selected_frame_data['filename'])
-                img2 = self.thumbnail_manager.get(Path(self.config.paths.downloads) / Path(frame_data['filename']).parent.name / "thumbs" / frame_data['filename'])
+                img1 = self.thumbnail_manager.get(Path(self.config.downloads_dir) / Path(selected_frame_data['filename']).parent.name / "thumbs" / selected_frame_data['filename'])
+                img2 = self.thumbnail_manager.get(Path(self.config.downloads_dir) / Path(frame_data['filename']).parent.name / "thumbs" / frame_data['filename'])
                 if img1 is not None and img2 is not None:
                     img1_t = transform(img1).unsqueeze(0)
                     img2_t = transform(img2).unsqueeze(0)
                     distance = loss_fn.forward(img1_t, img2_t).item()
                     if distance <= lpips_thresh: duplicate_frame_data = frame_data; break
         if duplicate_frame_data:
-            img1 = self.thumbnail_manager.get(Path(self.config.paths.downloads) / Path(selected_frame_data['filename']).parent.name / "thumbs" / selected_frame_data['filename'])
-            img2 = self.thumbnail_manager.get(Path(self.config.paths.downloads) / Path(duplicate_frame_data['filename']).parent.name / "thumbs" / duplicate_frame_data['filename'])
+            img1 = self.thumbnail_manager.get(Path(self.config.downloads_dir) / Path(selected_frame_data['filename']).parent.name / "thumbs" / selected_frame_data['filename'])
+            img2 = self.thumbnail_manager.get(Path(self.config.downloads_dir) / Path(duplicate_frame_data['filename']).parent.name / "thumbs" / duplicate_frame_data['filename'])
             if img1 is not None and img2 is not None:
                 h, w, _ = img1.shape
                 comparison_image = np.zeros((h, w * 2, 3), dtype=np.uint8)
