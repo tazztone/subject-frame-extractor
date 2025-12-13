@@ -15,27 +15,13 @@ echo "[2/3] Creating Python virtual environment..."
 python3 -m venv venv
 source venv/bin/activate
 
-# 3. Install only test dependencies (no heavy ML packages)
+# 3. Install dependencies 
 echo "[3/3] Installing test dependencies..."
 python -m pip install --upgrade pip
 pip install uv
 
-# Install test requirements - these are the only packages tests need unmocked
+# Install requirements 
 uv pip install -r requirements.txt
 
-echo "--- Jules Test Environment Complete ---"
+echo "--- Jules Environment Complete ---"
 
-# Verify core test imports work
-echo "Verifying test dependencies..."
-python -c "
-import numpy
-import cv2  
-import pytest
-import gradio
-from PIL import Image
-import yaml
-from skimage import io
-print('✓ All test dependencies verified')
-"
-
-echo "Environment ready for testing!"
