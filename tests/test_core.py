@@ -70,7 +70,7 @@ mock_timm = MagicMock(name='timm')
 mock_timm.models = MagicMock(name='timm.models')
 mock_timm.models.layers = MagicMock(name='timm.models.layers')
 
-mock_imagehash = MagicMock()
+# mock_imagehash = MagicMock() # Don't mock imagehash as it's a light dependency and needed for dedup tests
 mock_pycocotools = MagicMock(name='pycocotools')
 mock_pycocotools.mask = MagicMock(name='pycocotools.mask')
 
@@ -126,7 +126,7 @@ modules_to_mock = {
     'DAM4SAM.utils': MagicMock(name='DAM4SAM.utils'),
     'DAM4SAM.dam4sam_tracker': MagicMock(name='DAM4SAM.dam4sam_tracker'),
     'GPUtil': MagicMock(getGPUs=lambda: [MagicMock(memoryUtil=0.5)]),
-    'imagehash': mock_imagehash,
+    # 'imagehash': mock_imagehash,
     'pycocotools': mock_pycocotools,
     'pycocotools.mask': mock_pycocotools.mask,
     'psutil': mock_psutil,
