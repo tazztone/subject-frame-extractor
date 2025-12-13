@@ -21,10 +21,7 @@ python -m pip install --upgrade pip
 pip install uv
 
 # Install test requirements - these are the only packages tests need unmocked
-uv pip install -r tests/requirements-test.txt
-
-# Add OpenCV headless since tests import cv2 directly (not mocked)
-uv pip install opencv-python-headless
+uv pip install -r requirements.txt
 
 echo "--- Jules Test Environment Complete ---"
 
