@@ -4,7 +4,7 @@ Configuration Management for Frame Extractor & Analyzer
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -38,6 +38,7 @@ class Config(BaseSettings):
 
     # Models
     user_agent: str = "Mozilla/5.0"
+    huggingface_token: Optional[str] = None
     face_landmarker_url: str = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
     face_landmarker_sha256: str = "9c899f78b8f2a0b1b117b3554b5f903e481b67f1390f7716e2a537f8842c0c7a"
     sam3_checkpoint_url: str = "https://huggingface.co/facebook/sam3/resolve/main/sam3.pt"
