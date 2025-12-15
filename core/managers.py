@@ -22,14 +22,17 @@ from mediapipe.tasks.python import vision
 # Ensure project root is in path or SAM3_repo is in path.
 # Since we are in core/, we might need to adjust path if not already handled by app entry point.
 # Assuming app.py handles sys.path setup for SAM3_repo.
+build_sam3_video_predictor = None
+Sam3VideoPredictor = None
+
 try:
     from core import sam3_patches
     from sam3.model_builder import build_sam3_video_predictor
     from sam3.model.sam3_video_predictor import Sam3VideoPredictor
     sam3_patches.apply_patches()
-except ImportError:
-    # This might fail if run in isolation without path setup
-    pass
+except ImportError as e:
+    # This might fail if run in isolation without path setup or missing dependencies
+    logging.getLogger(__name__).warning(f"Failed to import SAM3 dependencies: {e}")
 
 if TYPE_CHECKING:
     from core.config import Config
@@ -148,6 +151,8 @@ class ModelRegistry:
 
 class SAM3Wrapper:
     def __init__(self, checkpoint_path, device="cuda"):
+        if build_sam3_video_predictor is None:
+            raise RuntimeError("SAM3 could not be imported. Please check dependencies (e.g., pycocotools) and paths.")
         self.device = device
         self.predictor = build_sam3_video_predictor(
             ckpt_path=checkpoint_path,
