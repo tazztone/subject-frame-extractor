@@ -19,20 +19,17 @@ if TYPE_CHECKING:
     from core.config import Config
     from core.logger import AppLogger
     from core.managers import ThumbnailManager, ModelRegistry
-    from ui.app_ui import AppUI
 
 from core.models import AnalysisParameters, Scene, Frame
 from core.utils import handle_common_errors, estimate_totals, sanitize_filename, _to_json_safe, monitor_memory_usage, validate_video_file, safe_resource_cleanup, create_frame_map
 from core.managers import VideoManager, initialize_analysis_models
-from core.scene_utils_pkg import SubjectMasker, save_scene_seeds, get_scene_status_text, run_scene_detection, make_photo_thumbs
+from core.scene_utils import SubjectMasker, save_scene_seeds, get_scene_status_text, run_scene_detection, make_photo_thumbs
 from core.filtering import load_and_prep_filter_data, apply_all_filters_vectorized
 from core.database import Database
 from core.events import ExtractionEvent, PreAnalysisEvent, PropagationEvent, SessionLoadEvent, ExportEvent
 from core.error_handling import ErrorHandler
 from core.progress import AdvancedProgressTracker
-from core.shared import build_scene_gallery_items
 
-import gradio as gr # Needed for execute_session_load updates
 
 def _process_ffmpeg_stream(stream, tracker: Optional['AdvancedProgressTracker'], desc: str, total_duration_s: float):
     progress_data = {}
@@ -580,89 +577,60 @@ def validate_session_dir(path: Union[str, Path]) -> tuple[Optional[Path], Option
         return (p if p.exists() and p.is_dir() else None, None if p.exists() and p.is_dir() else f"Session directory does not exist: {p}")
     except Exception as e: return None, f"Invalid session path: {e}"
 
-def execute_session_load(app_ui: 'AppUI', event: 'SessionLoadEvent', logger: 'AppLogger', config: 'Config', thumbnail_manager: 'ThumbnailManager', model_registry: Optional['ModelRegistry'] = None) -> Generator[dict, None, None]:
+def execute_session_load(event: 'SessionLoadEvent', logger: 'AppLogger') -> dict:
     if not event.session_path or not event.session_path.strip():
         logger.error("No session path provided.", component="session_loader")
-        yield {"unified_log": "[ERROR] Please enter a path to a session directory."}; return
+        return {"error": "Please enter a path to a session directory."}
     session_path, error = validate_session_dir(event.session_path)
     if error:
         logger.error(f"Invalid session path provided: {event.session_path}", component="session_loader")
-        yield {"unified_log": f"[ERROR] {error}"}; return
-    config_path, scene_seeds_path, metadata_path = session_path / "run_config.json", session_path / "scene_seeds.json", session_path / "metadata.db"
-    def _resolve_output_dir(base: Path, output_folder: str | None) -> Path | None:
-        if not output_folder: return None
-        p = Path(output_folder)
-        if p.exists(): return p.resolve()
-        if not p.is_absolute(): return (base / p).resolve()
-        return p
+        return {"error": error}
+
+    config_path = session_path / "run_config.json"
+    scene_seeds_path = session_path / "scene_seeds.json"
+    metadata_path = session_path / "metadata.db"
+
     logger.info("Start Load Session", component="session_loader")
     try:
         if not config_path.exists():
-            yield {"unified_log": f"[ERROR] Could not find 'run_config.json' in {session_path}."}; return
-        try: run_config = json.loads(config_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as e: yield {"unified_log": f"[ERROR] run_config.json is invalid: {e}"}; return
-        output_dir = _resolve_output_dir(session_path, run_config.get("output_folder")) or session_path
+            return {"error": f"Could not find 'run_config.json' in {session_path}."}
+        try:
+            run_config = json.loads(config_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as e:
+            return {"error": f"run_config.json is invalid: {e}"}
 
-        updates = {
-            "source_input": gr.update(value=run_config.get("source_path", "")),
-            "max_resolution": gr.update(value=run_config.get("max_resolution", "1080")),
-            "thumb_megapixels_input": gr.update(value=run_config.get("thumb_megapixels", 0.5)),
-            "ext_scene_detect_input": gr.update(value=run_config.get("scene_detect", True)),
-            "method_input": gr.update(value=run_config.get("method", "scene")),
-            "pre_analysis_enabled_input": gr.update(value=run_config.get("pre_analysis_enabled", True)),
-            "pre_sample_nth_input": gr.update(value=run_config.get("pre_sample_nth", 1)),
-            "enable_face_filter_input": gr.update(value=run_config.get("enable_face_filter", False)),
-            "face_model_name_input": gr.update(value=run_config.get("face_model_name", "buffalo_l")),
-            "face_ref_img_path_input": gr.update(value=run_config.get("face_ref_img_path", "")),
-            "text_prompt_input": gr.update(value=run_config.get("text_prompt", "")),
-            "seed_strategy_input": gr.update(value=run_config.get("seed_strategy", "Largest Person")),
-            "person_detector_model_input": gr.update(value=run_config.get("person_detector_model", "yolo11x.pt")),
-            "tracker_model_name_input": gr.update(value=run_config.get("tracker_model_name", "sam3")),
-            "extracted_video_path_state": run_config.get("video_path", ""),
-            "extracted_frames_dir_state": str(output_dir),
-            "analysis_output_dir_state": str(output_dir.resolve() if output_dir else ""),
-        }
-
-        scenes_as_dict = []
+        scenes_data = []
         scenes_json_path = session_path / "scenes.json"
         if scenes_json_path.exists():
-            try: scenes_as_dict = [{"shot_id": i, "start_frame": s, "end_frame": e} for i, (s, e) in enumerate(json.loads(scenes_json_path.read_text(encoding="utf-8")))]
-            except Exception as e: yield {"unified_log": f"[ERROR] Failed to read scenes.json: {e}", "done": False}; return
+            try:
+                scenes_data = [{"shot_id": i, "start_frame": s, "end_frame": e} for i, (s, e) in enumerate(json.loads(scenes_json_path.read_text(encoding="utf-8")))]
+            except Exception as e:
+                return {"error": f"Failed to read scenes.json: {e}"}
 
         if scene_seeds_path.exists():
             try:
                 seeds_lookup = {int(k): v for k, v in json.loads(scene_seeds_path.read_text(encoding="utf-8")).items()}
-                for scene in scenes_as_dict:
+                for scene in scenes_data:
                     if (shot_id := scene.get("shot_id")) in seeds_lookup:
                         rec = seeds_lookup[shot_id]
                         rec['best_frame'] = rec.get('best_frame', rec.get('best_seed_frame'))
                         scene.update(rec)
                     scene.setdefault("status", "included")
-            except Exception as e: logger.warning(f"Failed to parse scene_seeds.json: {e}")
+            except Exception as e:
+                logger.warning(f"Failed to parse scene_seeds.json: {e}")
 
-        if scenes_as_dict and output_dir:
-            scenes = [Scene(**s) for s in scenes_as_dict]
-            status_text, button_update = get_scene_status_text(scenes)
-            gallery_items, index_map, _ = build_scene_gallery_items(scenes, "Kept", str(output_dir))
-            updates.update({
-                "scenes_state": [s.model_dump() for s in scenes], "propagate_masks_button": button_update,
-                "seeding_results_column": gr.update(visible=True), "propagation_group": gr.update(visible=True),
-                "scene_filter_status": status_text,
-                "scene_face_sim_min_input": gr.update(visible=any((s.seed_metrics or {}).get("best_face_sim") is not None for s in scenes)),
-                "scene_gallery": gr.update(value=gallery_items), "scene_gallery_index_map_state": index_map
-            })
-
-        if metadata_path.exists(): updates.update({"analysis_output_dir_state": str(session_path), "filtering_tab": gr.update(interactive=True)})
-        for metric in app_ui.ana_ui_map_keys:
-            if metric.startswith('compute_'): updates[metric] = gr.update(value=run_config.get(metric, True))
-
-        updates.update({"unified_log": f"Successfully loaded session from: {session_path}", "main_tabs": gr.update(selected=3)})
-        yield updates
         logger.success("Session loaded successfully", component="session_loader")
+        return {
+            "success": True,
+            "session_path": str(session_path),
+            "run_config": run_config,
+            "scenes": scenes_data,
+            "metadata_exists": metadata_path.exists()
+        }
 
     except Exception as e:
         logger.error(f"Failed to load session: {e}", component="session_loader", exc_info=True)
-        yield {"unified_log": f"[ERROR] Failed to load session: {e}"}
+        return {"error": f"Failed to load session: {e}"}
 
 def execute_propagation(event: PropagationEvent, progress_queue: Queue, cancel_event: threading.Event, logger: AppLogger,
                         config: Config, thumbnail_manager, cuda_available, progress=None,
