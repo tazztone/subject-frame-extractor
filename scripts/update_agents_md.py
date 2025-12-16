@@ -50,20 +50,24 @@ CRITICAL_RULES = """
 ## 2. Critical Rules
 
 ### 🔴 CRITICAL (Must Follow)
-- **NEVER** edit files in `SAM3_repo` or `Grounded-SAM-2`. Treat as external libraries.
+- **NEVER** edit files in `SAM3_repo`. Treat as an external library.
+- **NEVER** import from `ui/` in `core/` modules. Use callbacks or `core/shared.py` for shared functionality.
 - **ALWAYS** match Gradio event handler return values count to the `outputs` list. Mismatches crash the app silently.
 - **NEVER** use `@lru_cache` on functions taking the `Config` object (it's unhashable). Use `model_registry.get_or_load`.
-- **ALWAYS** use `pathlib.Path`, never `os.path`.
+- **ALWAYS** use `pathlib.Path`, never `os.path` or `os.access`.
 - **ALWAYS** mock external dependencies (SAM3, Torch) in unit tests.
+- **ALWAYS** use `tests/conftest.py` fixtures for mock objects in tests.
 
 ### 🟡 WARNING (Potential Bugs)
 - **Check Masks**: Verify masks exist on disk before export/processing.
 - **Thread Safety**: MediaPipe objects are not thread-safe. Use thread-local storage or one instance per thread.
 - **Gradio State**: Do not store locks or file handles in `gr.State`.
+- **Circular Imports**: If you need UI functions in core, add them to `core/shared.py`.
 
 ### 🟢 BEST PRACTICE
 - **Refactoring**: Move logic from `app.py` to `core/`.
 - **Typing**: Use Pydantic models (`core/events.py`) instead of untyped dicts.
+- **Testing**: Add fixtures to `tests/conftest.py` for reuse across test files.
 """
 
 ARCHITECTURE = """
@@ -189,6 +193,48 @@ GIT_DEPLOY = """
 - **Submodules**: Always update recursive.
 - **Requirements**: `requirements.txt` is root.
 - **Validation**: Verify model downloads with SHA256.
+"""
+
+CONTRIBUTION = """
+## 12. Contribution Guidelines
+
+### Code Style
+- **Formatting**: Use `black` formatter with default settings
+- **Imports**: Sort with `isort`, group: stdlib → third-party → local
+- **Naming**: snake_case for functions/variables, PascalCase for classes
+- **Line Length**: 100 characters max
+- **Docstrings**: Use Google-style docstrings for public APIs
+
+### Pull Request Process
+1. Create feature branch from `main`
+2. Run `python -m pytest tests/` before committing
+3. Update AGENTS.md if adding new modules: `python scripts/update_agents_md.py`
+4. Request review from maintainers
+
+### Adding New Modules
+- Place business logic in `core/`
+- Place UI components in `ui/`
+- Update imports in `__init__.py` files
+- Add test fixtures to `tests/conftest.py`
+"""
+
+SECURITY = """
+## 13. Security Considerations
+
+### Model Downloads
+- All model downloads are verified via SHA256 hash
+- Never disable hash verification in production
+- Use `core/utils.download_model()` which has built-in retry and validation
+
+### User Inputs
+- Video paths are validated via `validate_video_file()`
+- Text prompts are sanitized before use with external models
+- File exports use `sanitize_filename()` to prevent path traversal
+- Never construct paths from user input without validation
+
+### Session Data
+- Session directories are validated before loading (`validate_session_dir()`)
+- JSON files are parsed with error handling to prevent injection
 """
 
 # --- AST Parser for Section 4 ---
@@ -325,7 +371,9 @@ def main():
         TROUBLESHOOTING,
         PERFORMANCE,
         API_REF,
-        GIT_DEPLOY
+        GIT_DEPLOY,
+        CONTRIBUTION,
+        SECURITY,
     ]
 
     # Write AGENTS.md

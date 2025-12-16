@@ -1,0 +1,364 @@
+"""
+Centralized pytest fixtures for Frame Extractor & Analyzer tests.
+
+This module provides reusable mock fixtures for testing, avoiding duplication
+across test files and improving test maintainability.
+"""
+import sys
+import os
+import pytest
+from unittest.mock import MagicMock, patch
+from pathlib import Path
+import numpy as np
+import pydantic
+
+# Add project root to the Python path to allow for submodule imports
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+
+# =============================================================================
+# MODULE-LEVEL MOCK SETUP
+# =============================================================================
+
+# --- Create mock modules for heavy dependencies ---
+
+def _create_mock_torch():
+    """Create a comprehensive mock for torch and its submodules."""
+    mock_torch = MagicMock(name='torch')
+    mock_torch.__version__ = "2.0.0"
+    mock_torch.__path__ = ['fake']
+    mock_torch.__spec__ = MagicMock()
+    mock_torch.hub = MagicMock(name='torch.hub')
+    mock_torch.cuda = MagicMock(name='torch.cuda')
+    mock_torch.cuda.is_available.return_value = False
+    mock_torch.distributed = MagicMock(name='torch.distributed')
+    mock_torch.multiprocessing = MagicMock(name='torch.multiprocessing')
+    mock_torch.amp = MagicMock(name='torch.amp')
+    return mock_torch
+
+
+def _create_mock_torch_submodules(mock_torch):
+    """Create mocks for torch submodules like nn, optim, utils."""
+    mock_torch_autograd = MagicMock(name='torch.autograd')
+    mock_torch_autograd.Variable = MagicMock(name='torch.autograd.Variable')
+
+    mock_torch_nn = MagicMock(name='torch.nn')
+    mock_torch_nn.__path__ = ['fake']
+    
+    class MockNNModule:
+        """Mock for torch.nn.Module to allow class inheritance."""
+        def __init__(self, *args, **kwargs):
+            pass
+        def __call__(self, *args, **kwargs):
+            return MagicMock()
+    
+    mock_torch_nn.Module = MockNNModule
+    mock_torch_nn.attention = MagicMock(name='torch.nn.attention')
+    
+    mock_torch_nn_init = MagicMock(name='torch.nn.init')
+    mock_torch_nn_functional = MagicMock(name='torch.nn.functional')
+    mock_torch_optim = MagicMock(name='torch.optim')
+    
+    mock_torch_utils = MagicMock(name='torch.utils')
+    mock_torch_utils.__path__ = ['fake']
+    mock_torch_utils_data = MagicMock(name='torch.utils.data')
+    mock_torch_utils_checkpoint = MagicMock(name='torch.utils.checkpoint')
+    mock_torch_utils_pytree = MagicMock(name='torch.utils._pytree')
+    
+    return {
+        'torch.autograd': mock_torch_autograd,
+        'torch.nn': mock_torch_nn,
+        'torch.nn.attention': mock_torch_nn.attention,
+        'torch.nn.init': mock_torch_nn_init,
+        'torch.nn.functional': mock_torch_nn_functional,
+        'torch.optim': mock_torch_optim,
+        'torch.utils': mock_torch_utils,
+        'torch.utils.data': mock_torch_utils_data,
+        'torch.utils.checkpoint': mock_torch_utils_checkpoint,
+        'torch.utils._pytree': mock_torch_utils_pytree,
+    }
+
+
+def _create_mock_torchvision():
+    """Create a mock for torchvision."""
+    mock = MagicMock(name='torchvision')
+    mock.ops = MagicMock(name='torchvision.ops')
+    mock.ops.roi_align = MagicMock(name='torchvision.ops.roi_align')
+    mock.ops.misc = MagicMock(name='torchvision.ops.misc')
+    mock.datasets = MagicMock(name='torchvision.datasets')
+    mock.datasets.vision = MagicMock(name='torchvision.datasets.vision')
+    mock.transforms = MagicMock(name='torchvision.transforms')
+    mock.transforms.functional = MagicMock(name='torchvision.transforms.functional')
+    mock.utils = MagicMock(name='torchvision.utils')
+    return mock
+
+
+def _create_mock_psutil():
+    """Create a mock for psutil with expected return values."""
+    mock = MagicMock(name='psutil')
+    mock.cpu_percent.return_value = 50.0
+    mock.virtual_memory.return_value = MagicMock(percent=50.0, available=1024*1024*1024)
+    mock.disk_usage.return_value = MagicMock(percent=50.0)
+    mock_process = mock.Process.return_value
+    mock_process.memory_info.return_value.rss = 100 * 1024 * 1024
+    mock_process.cpu_percent.return_value = 10.0
+    return mock
+
+
+def _create_mock_matplotlib():
+    """Create a mock for matplotlib."""
+    mock = MagicMock(name='matplotlib')
+    mock.__path__ = ['fake']
+    mock.ticker = MagicMock(name='matplotlib.ticker')
+    mock.figure = MagicMock(name='matplotlib.figure')
+    mock.backends = MagicMock(name='matplotlib.backends')
+    mock.backends.backend_agg = MagicMock(name='matplotlib.backends.backend_agg')
+    return mock
+
+
+def build_modules_to_mock():
+    """Build the complete dictionary of modules to mock."""
+    mock_torch = _create_mock_torch()
+    torch_submodules = _create_mock_torch_submodules(mock_torch)
+    mock_torchvision = _create_mock_torchvision()
+    mock_psutil = _create_mock_psutil()
+    mock_matplotlib = _create_mock_matplotlib()
+    
+    mock_insightface = MagicMock(name='insightface')
+    mock_insightface.app = MagicMock(name='insightface.app')
+    
+    mock_timm = MagicMock(name='timm')
+    mock_timm.models = MagicMock(name='timm.models')
+    mock_timm.models.layers = MagicMock(name='timm.models.layers')
+    
+    mock_pycocotools = MagicMock(name='pycocotools')
+    mock_pycocotools.mask = MagicMock(name='pycocotools.mask')
+    
+    # Mock pydantic_settings if not available
+    mock_pydantic_settings = MagicMock(name='pydantic_settings')
+    mock_pydantic_settings.BaseSettings = pydantic.BaseModel
+    mock_pydantic_settings.SettingsConfigDict = dict
+    
+    modules = {
+        # Torch
+        'torch': mock_torch,
+        'torch.hub': mock_torch.hub,
+        'torch.distributed': mock_torch.distributed,
+        'torch.multiprocessing': mock_torch.multiprocessing,
+        **torch_submodules,
+        # Torchvision
+        'torchvision': mock_torchvision,
+        'torchvision.ops': mock_torchvision.ops,
+        'torchvision.ops.roi_align': mock_torchvision.ops.roi_align,
+        'torchvision.ops.misc': mock_torchvision.ops.misc,
+        'torchvision.datasets': mock_torchvision.datasets,
+        'torchvision.datasets.vision': mock_torchvision.datasets.vision,
+        'torchvision.transforms': mock_torchvision.transforms,
+        'torchvision.transforms.functional': mock_torchvision.transforms.functional,
+        'torchvision.utils': mock_torchvision.utils,
+        # Other ML/Vision libs
+        'insightface': mock_insightface,
+        'insightface.app': mock_insightface.app,
+        'timm': mock_timm,
+        'timm.models': mock_timm.models,
+        'timm.models.layers': mock_timm.models.layers,
+        'onnxruntime': MagicMock(name='onnxruntime'),
+        # Legacy DAM4SAM mocks (kept for backward compat)
+        'DAM4SAM': MagicMock(name='DAM4SAM'),
+        'DAM4SAM.utils': MagicMock(name='DAM4SAM.utils'),
+        'DAM4SAM.dam4sam_tracker': MagicMock(name='DAM4SAM.dam4sam_tracker'),
+        # SAM3 mocks
+        'sam3': MagicMock(name='sam3'),
+        'sam3.model_builder': MagicMock(name='sam3.model_builder'),
+        'sam3.model.sam3_video_predictor': MagicMock(name='sam3.model.sam3_video_predictor'),
+        # Utils
+        'GPUtil': MagicMock(getGPUs=lambda: [MagicMock(memoryUtil=0.5)]),
+        'pycocotools': mock_pycocotools,
+        'pycocotools.mask': mock_pycocotools.mask,
+        'psutil': mock_psutil,
+        # Matplotlib
+        'matplotlib': mock_matplotlib,
+        'matplotlib.ticker': mock_matplotlib.ticker,
+        'matplotlib.figure': mock_matplotlib.figure,
+        'matplotlib.backends': mock_matplotlib.backends,
+        'matplotlib.backends.backend_agg': mock_matplotlib.backends.backend_agg,
+        'matplotlib.pyplot': MagicMock(),
+        # Other dependencies
+        'scenedetect': MagicMock(),
+        'yt_dlp': MagicMock(),
+        'pyiqa': MagicMock(name='pyiqa'),
+        'mediapipe': MagicMock(),
+        'mediapipe.tasks': MagicMock(),
+        'mediapipe.tasks.python': MagicMock(),
+        'mediapipe.tasks.python.vision': MagicMock(),
+        'lpips': MagicMock(name='lpips'),
+        'numba': MagicMock(name='numba'),
+        'skimage': MagicMock(name='skimage'),
+        'skimage.metrics': MagicMock(name='skimage.metrics'),
+        'pydantic_settings': mock_pydantic_settings,
+    }
+    return modules
+
+
+# Apply module mocks at import time
+MODULES_TO_MOCK = build_modules_to_mock()
+patch.dict(sys.modules, MODULES_TO_MOCK).start()
+
+
+# =============================================================================
+# PYTEST FIXTURES
+# =============================================================================
+
+@pytest.fixture(scope="session")
+def mock_torch():
+    """Session-scoped mock for torch module."""
+    return MODULES_TO_MOCK['torch']
+
+
+@pytest.fixture
+def mock_config(tmp_path):
+    """
+    Provides a test Config with temporary directories.
+    
+    Use this for tests that need a valid Config object
+    with writable paths.
+    """
+    from core.config import Config
+    config = Config(
+        logs_dir=str(tmp_path / "logs"),
+        models_dir=str(tmp_path / "models"),
+        downloads_dir=str(tmp_path / "downloads"),
+    )
+    return config
+
+
+@pytest.fixture
+def mock_logger(mock_config):
+    """Provides a mock AppLogger for testing."""
+    from core.logger import AppLogger
+    return AppLogger(config=mock_config, log_to_console=False, log_to_file=False)
+
+
+@pytest.fixture
+def mock_thumbnail_manager(mock_logger, mock_config):
+    """Provides a mock ThumbnailManager."""
+    mock = MagicMock()
+    mock.get.return_value = np.zeros((100, 100, 3), dtype=np.uint8)
+    mock.clear_cache = MagicMock()
+    return mock
+
+
+@pytest.fixture
+def mock_model_registry(mock_logger):
+    """Provides a mock ModelRegistry."""
+    mock = MagicMock()
+    mock.get_or_load = MagicMock(return_value=MagicMock())
+    mock.get_tracker = MagicMock(return_value=MagicMock())
+    mock.clear = MagicMock()
+    return mock
+
+
+@pytest.fixture
+def mock_progress_queue():
+    """Provides a mock progress queue."""
+    from queue import Queue
+    return Queue()
+
+
+@pytest.fixture
+def mock_cancel_event():
+    """Provides a mock cancel event."""
+    import threading
+    return threading.Event()
+
+
+@pytest.fixture
+def mock_ui_state():
+    """
+    Provides a dictionary with default values for UI-related event models.
+    
+    Useful for testing event validation and pipeline execution.
+    """
+    return {
+        'source_path': 'test.mp4',
+        'upload_video': None,
+        'method': 'interval',
+        'interval': '1.0',
+        'nth_frame': '5',
+        'max_resolution': "720",
+        'thumbnails_only': True,
+        'thumb_megapixels': 0.2,
+        'scene_detect': True,
+        'output_folder': '/fake/output',
+        'video_path': '/fake/video.mp4',
+        'resume': False,
+        'enable_face_filter': False,
+        'face_ref_img_path': '',
+        'face_ref_img_upload': None,
+        'face_model_name': 'buffalo_l',
+        'enable_subject_mask': False,
+        'tracker_model_name': 'sam3',
+        'best_frame_strategy': 'Largest Person',
+        'text_prompt': '',
+        'min_mask_area_pct': 1.0,
+        'sharpness_base_scale': 2500.0,
+        'edge_strength_base_scale': 100.0,
+        'pre_analysis_enabled': True,
+        'pre_sample_nth': 1,
+        'primary_seed_strategy': '🧑‍🤝‍🧑 Find Prominent Person',
+    }
+
+
+@pytest.fixture
+def sample_frames_data():
+    """
+    Provides sample frame metadata for filtering tests.
+    
+    Includes a mix of good and bad frames to test various filters.
+    """
+    return [
+        {'filename': 'frame_01.png', 'phash': 'a'*16, 'metrics': {'sharpness_score': 50, 'contrast_score': 50}, 'face_sim': 0.8, 'mask_area_pct': 20},
+        {'filename': 'frame_02.png', 'phash': 'a'*16, 'metrics': {'sharpness_score': 50, 'contrast_score': 50}, 'face_sim': 0.8, 'mask_area_pct': 20},  # Duplicate of frame_01
+        {'filename': 'frame_03.png', 'phash': 'b'*16, 'metrics': {'sharpness_score': 5, 'contrast_score': 50}, 'face_sim': 0.8, 'mask_area_pct': 20},   # Low sharpness
+        {'filename': 'frame_04.png', 'phash': 'c'*16, 'metrics': {'sharpness_score': 50, 'contrast_score': 50}, 'face_sim': 0.2, 'mask_area_pct': 20},  # Low face_sim
+        {'filename': 'frame_05.png', 'phash': 'd'*16, 'metrics': {'sharpness_score': 50, 'contrast_score': 50}, 'face_sim': 0.8, 'mask_area_pct': 2},   # Low mask_area
+        {'filename': 'frame_06.png', 'phash': 'e'*16, 'metrics': {'sharpness_score': 50, 'contrast_score': 50}, 'mask_area_pct': 20},  # No face_sim
+    ]
+
+
+@pytest.fixture
+def sample_scenes():
+    """
+    Provides sample Scene objects for scene-related tests.
+    """
+    from core.models import Scene
+    
+    scenes_data = [
+        {'shot_id': 1, 'start_frame': 0, 'end_frame': 100, 'status': 'pending', 
+         'seed_result': {'details': {'mask_area_pct': 50}}, 
+         'seed_metrics': {'best_face_sim': 0.9, 'score': 0.95}},
+        {'shot_id': 2, 'start_frame': 101, 'end_frame': 200, 'status': 'pending', 
+         'seed_result': {'details': {'mask_area_pct': 5}},  # Low mask area
+         'seed_metrics': {'best_face_sim': 0.8, 'score': 0.9}},
+        {'shot_id': 3, 'start_frame': 201, 'end_frame': 300, 'status': 'pending', 
+         'seed_result': {'details': {'mask_area_pct': 60}}, 
+         'seed_metrics': {'best_face_sim': 0.4, 'score': 0.8}},  # Low face_sim
+        {'shot_id': 4, 'start_frame': 301, 'end_frame': 400, 'status': 'pending', 
+         'seed_result': {'details': {'mask_area_pct': 70}}, 
+         'seed_metrics': {'score': 0.7}},  # No face_sim
+    ]
+    return [Scene(**data) for data in scenes_data]
+
+
+@pytest.fixture
+def sample_image_rgb():
+    """Provides a sample RGB image for testing."""
+    return np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
+
+
+@pytest.fixture
+def sample_mask():
+    """Provides a sample binary mask for testing."""
+    mask = np.zeros((100, 100), dtype=np.uint8)
+    mask[25:75, 25:75] = 255  # Simple square mask
+    return mask

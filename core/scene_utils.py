@@ -764,7 +764,7 @@ def _wire_recompute_handler(config: 'Config', logger: 'AppLogger', thumbnail_man
         _recompute_single_preview(scene_state, masker, overrides, thumbnail_manager, logger)
         save_scene_seeds(scenes, outdir, logger)
         # build_scene_gallery_items requires implementation
-        from ui.gallery_utils import build_scene_gallery_items
+        from core.shared import build_scene_gallery_items
         gallery_items, index_map, _ = build_scene_gallery_items(scenes, view, outdir)
         msg = f"Scene {shot_id} preview recomputed successfully."
         return scenes, gr.update(value=gallery_items), gr.update(value=index_map), msg
@@ -773,6 +773,6 @@ def _wire_recompute_handler(config: 'Config', logger: 'AppLogger', thumbnail_man
         # We need build_scene_gallery_items. Ideally passed or imported.
         # It's circular dependency if in app_ui.
         # I'll create `ui/gallery_utils.py` next.
-        from ui.gallery_utils import build_scene_gallery_items
+        from core.shared import build_scene_gallery_items
         gallery_items, index_map, _ = build_scene_gallery_items(scenes, view, outdir)
         return scenes, gr.update(value=gallery_items), gr.update(value=index_map), f"[ERROR] Recompute failed: {str(e)}"

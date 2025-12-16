@@ -2,7 +2,6 @@
 Configuration Management for Frame Extractor & Analyzer
 """
 import json
-import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -182,10 +181,16 @@ class Config(BaseSettings):
         self._validate_paths()
 
     def _validate_paths(self):
-        """Ensures critical directories exist."""
+        """Ensures critical directories exist and are writable."""
         for p in [self.logs_dir, self.models_dir, self.downloads_dir]:
-            Path(p).mkdir(parents=True, exist_ok=True)
-            if not os.access(p, os.W_OK):
+            path = Path(p)
+            path.mkdir(parents=True, exist_ok=True)
+            # Test writability using pathlib (per project guidelines: never use os.path)
+            try:
+                test_file = path / ".write_test"
+                test_file.touch()
+                test_file.unlink()
+            except (PermissionError, OSError):
                 print(f"WARNING: Directory {p} is not writable.")
 
     @model_validator(mode='after')

@@ -257,8 +257,9 @@ class TestUtils:
         assert config.logs_dir == "init_logs"
 
     @patch('pathlib.Path.mkdir', MagicMock())
-    @patch('os.access', return_value=True)
-    def test_validation_error(self, mock_access):
+    @patch('pathlib.Path.touch', MagicMock())
+    @patch('pathlib.Path.unlink', MagicMock())
+    def test_validation_error(self):
         """Test that a validation error is raised for invalid config."""
         with pytest.raises(ValidationError):
             # quality_weights sum cannot be zero
