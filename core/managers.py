@@ -192,72 +192,113 @@ class ModelRegistry:
         return SAM3Wrapper(str(checkpoint_path), device=device)
 
 class SAM3Wrapper:
+    """
+    Wrapper for SAM3 video predictor using the official handle_request API.
+    
+    See: https://huggingface.co/facebook/sam3
+    """
+    
     def __init__(self, checkpoint_path, device="cuda"):
-        if build_sam3_video_model is None:
-            raise RuntimeError("SAM3 could not be imported. Please check dependencies (e.g., pycocotools) and paths.")
+        # Import build_sam3_video_predictor (uses handle_request pattern)
+        from sam3.model_builder import build_sam3_video_predictor
+        
         self.device = device
-        # Use build_sam3_video_model with checkpoint_path (not ckpt_path)
-        self.predictor = build_sam3_video_model(
-            checkpoint_path=checkpoint_path,
-            device=device,
-            load_from_HF=False,  # We're providing local checkpoint
-        )
-        self.inference_state = None
+        # build_sam3_video_predictor creates a predictor with handle_request interface
+        self.predictor = build_sam3_video_predictor()
+        self.session_id = None
+        self._checkpoint_path = checkpoint_path
+        
+        # Load checkpoint if the predictor supports it
+        # Note: The predictor may auto-download from HuggingFace if no local checkpoint
 
     def initialize(self, images, init_mask=None, bbox=None, prompt_frame_idx=0):
         """
         Initialize session with images and optional prompt.
-        images: List of PIL Images or path to video.
-        bbox: [x, y, w, h]
-        prompt_frame_idx: Index of the frame to apply the prompt to.
+        
+        Args:
+            images: List of PIL Images or numpy arrays
+            bbox: [x, y, w, h] bounding box
+            prompt_frame_idx: Index of the frame to apply the prompt to
+            
+        Returns:
+            dict with 'pred_mask' key
         """
         import tempfile
         import os
         
-        # SAM3 expects a video path or directory of images
-        # Create temp directory with images
+        # SAM3 expects a video path (directory of images or MP4)
         temp_dir = tempfile.mkdtemp()
         for i, img in enumerate(images):
             if isinstance(img, np.ndarray):
                 img = Image.fromarray(img)
             img.save(os.path.join(temp_dir, f"{i:05d}.jpg"))
         
-        # Initialize state from the temp directory
-        self.inference_state = self.predictor.init_state(resource_path=temp_dir)
         self._temp_dir = temp_dir
         
-        if bbox is not None:
-            # Convert xywh to xywh format expected by add_prompt
-            x, y, w, h = bbox
-            result = self.predictor.add_prompt(
-                self.inference_state, 
-                frame_idx=prompt_frame_idx, 
-                boxes_xywh=[[x, y, w, h]]
+        # Start session using handle_request
+        response = self.predictor.handle_request(
+            request=dict(
+                type="start_session",
+                resource_path=temp_dir,
             )
-            # Return mask for the prompt frame
-            if result and 'obj_id_to_mask' in result:
-                for obj_id, mask in result['obj_id_to_mask'].items():
+        )
+        self.session_id = response.get("session_id")
+        
+        if bbox is not None and self.session_id:
+            # Convert xywh to xyxy for add_prompt
+            x, y, w, h = bbox
+            xyxy = [x, y, x + w, y + h]
+            
+            response = self.predictor.handle_request(
+                request=dict(
+                    type="add_prompt",
+                    session_id=self.session_id,
+                    frame_index=prompt_frame_idx,
+                    bounding_boxes=[xyxy],
+                )
+            )
+            
+            outputs = response.get("outputs", {})
+            if outputs and "obj_id_to_mask" in outputs:
+                for obj_id, mask in outputs["obj_id_to_mask"].items():
                     if isinstance(mask, torch.Tensor):
                         mask = mask.cpu().numpy().astype(bool)
                         if mask.ndim == 3:
                             mask = mask[0]
-                    return {'pred_mask': mask}
-        return {'pred_mask': None}
+                    return {"pred_mask": mask}
+        
+        return {"pred_mask": None}
 
     def propagate_from(self, start_idx, direction="forward"):
         """
         Yields results starting from start_idx in the given direction.
         """
-        reverse = (direction == "backward")
-        return self.predictor.propagate_in_video(
-            self.inference_state, 
-            start_frame_idx=start_idx, 
-            reverse=reverse
+        if not self.session_id:
+            return
+        
+        response = self.predictor.handle_request(
+            request=dict(
+                type="propagate",
+                session_id=self.session_id,
+                start_frame_index=start_idx,
+                direction=direction,
+            )
         )
+        
+        # Return mask outputs
+        outputs = response.get("outputs", {})
+        yield start_idx, outputs
 
     def detect_objects(self, image_rgb: np.ndarray, text_prompt: str) -> List[dict]:
         """
         Detect objects in an image using text prompt.
+        
+        Args:
+            image_rgb: RGB numpy array
+            text_prompt: Text description of object to find
+            
+        Returns:
+            List of detection dicts with bbox, conf, label, type
         """
         import tempfile
         import os
@@ -265,21 +306,36 @@ class SAM3Wrapper:
         # Create temp directory with single image
         temp_dir = tempfile.mkdtemp()
         Image.fromarray(image_rgb).save(os.path.join(temp_dir, "00000.jpg"))
-        
-        self.inference_state = self.predictor.init_state(resource_path=temp_dir)
         self._temp_dir = temp_dir
         
+        # Start session
+        response = self.predictor.handle_request(
+            request=dict(
+                type="start_session",
+                resource_path=temp_dir,
+            )
+        )
+        self.session_id = response.get("session_id")
+        
+        if not self.session_id:
+            return []
+        
         # Add text prompt
-        result = self.predictor.add_prompt(
-            self.inference_state,
-            frame_idx=0,
-            text_str=text_prompt
+        response = self.predictor.handle_request(
+            request=dict(
+                type="add_prompt",
+                session_id=self.session_id,
+                frame_index=0,
+                text=text_prompt,
+            )
         )
         
+        outputs = response.get("outputs", {})
         results = []
-        if result and 'obj_id_to_mask' in result:
-            scores = result.get('obj_id_to_score', {})
-            for obj_id, mask in result['obj_id_to_mask'].items():
+        
+        if outputs and "obj_id_to_mask" in outputs:
+            scores = outputs.get("obj_id_to_score", {})
+            for obj_id, mask in outputs["obj_id_to_mask"].items():
                 if isinstance(mask, torch.Tensor):
                     mask = mask.cpu().numpy()
 
@@ -292,28 +348,41 @@ class SAM3Wrapper:
 
                 x, y, w, h = cv2.boundingRect(mask_bool.astype(np.uint8))
                 score = float(scores.get(obj_id, 1.0))
-                if hasattr(score, 'item'):
+                if hasattr(score, "item"):
                     score = score.item()
 
                 results.append({
-                    'bbox': [x, y, x + w, y + h],
-                    'conf': score,
-                    'label': text_prompt,
-                    'type': 'sam3_text'
+                    "bbox": [x, y, x + w, y + h],
+                    "conf": score,
+                    "label": text_prompt,
+                    "type": "sam3_text"
                 })
 
-        results.sort(key=lambda x: x['conf'], reverse=True)
+        results.sort(key=lambda x: x["conf"], reverse=True)
         return results
-    
+
     def cleanup(self):
         """Clean up temporary resources."""
         import shutil
-        if hasattr(self, '_temp_dir') and self._temp_dir:
+        if hasattr(self, "_temp_dir") and self._temp_dir:
             try:
                 shutil.rmtree(self._temp_dir)
             except Exception:
                 pass
             self._temp_dir = None
+        
+        # Close session if open
+        if self.session_id:
+            try:
+                self.predictor.handle_request(
+                    request=dict(
+                        type="close_session",
+                        session_id=self.session_id,
+                    )
+                )
+            except Exception:
+                pass
+            self.session_id = None
 
 thread_local = threading.local()
 

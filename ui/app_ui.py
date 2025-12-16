@@ -774,12 +774,12 @@ class AppUI:
             self.app_logger.error("Pipeline failed", exc_info=True)
             yield {"unified_log": f"[ERROR] {e}"}
 
-    def run_extraction_wrapper(self, *args):
+    def run_extraction_wrapper(self, *args, progress=None):
         ui_args = dict(zip(self.ext_ui_map_keys, args))
         if isinstance(ui_args.get('upload_video'), list): ui_args['upload_video'] = ui_args['upload_video'][0] if ui_args['upload_video'] else None
         clean_args = {k: v for k, v in ui_args.items() if v is not None}
         event = ExtractionEvent.model_validate(clean_args)
-        yield from self._run_pipeline(execute_extraction, event, gr.Progress(), self._on_extraction_success)
+        yield from self._run_pipeline(execute_extraction, event, progress or gr.Progress(), self._on_extraction_success)
 
     def add_to_queue_handler(self, *args):
         # ... (keep existing logic)
@@ -836,15 +836,15 @@ class AppUI:
             self.components['stepper']: self._get_stepper_html(2)
         }
 
-    def run_pre_analysis_wrapper(self, *args):
+    def run_pre_analysis_wrapper(self, *args, progress=None):
         event = self._create_pre_analysis_event(*args)
-        yield from self._run_pipeline(execute_pre_analysis, event, gr.Progress(), self._on_pre_analysis_success)
+        yield from self._run_pipeline(execute_pre_analysis, event, progress or gr.Progress(), self._on_pre_analysis_success)
 
-    def run_propagation_wrapper(self, scenes, *args):
+    def run_propagation_wrapper(self, scenes, *args, progress=None):
         if not scenes: yield {"unified_log": "No scenes."}; return
         params = self._create_pre_analysis_event(*args)
         event = PropagationEvent(output_folder=params.output_folder, video_path=params.video_path, scenes=scenes, analysis_params=params)
-        yield from self._run_pipeline(execute_propagation, event, gr.Progress(), self._on_propagation_success)
+        yield from self._run_pipeline(execute_propagation, event, progress or gr.Progress(), self._on_propagation_success)
 
     def _on_propagation_success(self, result: dict) -> dict:
         msg = f"""<div class="success-card">
@@ -859,11 +859,11 @@ class AppUI:
             self.components['stepper']: self._get_stepper_html(3)
         }
 
-    def run_analysis_wrapper(self, scenes, *args):
+    def run_analysis_wrapper(self, scenes, *args, progress=None):
         if not scenes: yield {"unified_log": "No scenes."}; return
         params = self._create_pre_analysis_event(*args)
         event = PropagationEvent(output_folder=params.output_folder, video_path=params.video_path, scenes=scenes, analysis_params=params)
-        yield from self._run_pipeline(execute_analysis, event, gr.Progress(), self._on_analysis_success)
+        yield from self._run_pipeline(execute_analysis, event, progress or gr.Progress(), self._on_analysis_success)
 
     def _on_analysis_success(self, result: dict) -> dict:
         msg = f"""<div class="success-card">
