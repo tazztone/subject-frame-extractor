@@ -67,8 +67,7 @@ _triton_mocked = _setup_triton_mock()
 
 try:
     from core import sam3_patches
-    from sam3.model_builder import build_sam3_video_predictor
-    from sam3.model.sam3_video_predictor import Sam3VideoPredictor
+    from sam3.model_builder import build_sam3_video_model
     
     # Apply patches to replace triton functions with CPU fallbacks
     if _triton_mocked:
@@ -194,82 +193,107 @@ class ModelRegistry:
 
 class SAM3Wrapper:
     def __init__(self, checkpoint_path, device="cuda"):
-        if build_sam3_video_predictor is None:
+        if build_sam3_video_model is None:
             raise RuntimeError("SAM3 could not be imported. Please check dependencies (e.g., pycocotools) and paths.")
         self.device = device
-        self.predictor = build_sam3_video_predictor(
-            ckpt_path=checkpoint_path,
-            device=device
+        # Use build_sam3_video_model with checkpoint_path (not ckpt_path)
+        self.predictor = build_sam3_video_model(
+            checkpoint_path=checkpoint_path,
+            device=device,
+            load_from_HF=False,  # We're providing local checkpoint
         )
-        self.session_id = None
+        self.inference_state = None
 
     def initialize(self, images, init_mask=None, bbox=None, prompt_frame_idx=0):
         """
         Initialize session with images and optional prompt.
-        images: List of PIL Images.
+        images: List of PIL Images or path to video.
         bbox: [x, y, w, h]
         prompt_frame_idx: Index of the frame to apply the prompt to.
         """
-        if self.session_id is not None:
-            try:
-                self.predictor.close_session(self.session_id)
-            except Exception:
-                pass
-
-        self.session_id = self.predictor.start_session(images)
-
+        import tempfile
+        import os
+        
+        # SAM3 expects a video path or directory of images
+        # Create temp directory with images
+        temp_dir = tempfile.mkdtemp()
+        for i, img in enumerate(images):
+            if isinstance(img, np.ndarray):
+                img = Image.fromarray(img)
+            img.save(os.path.join(temp_dir, f"{i:05d}.jpg"))
+        
+        # Initialize state from the temp directory
+        self.inference_state = self.predictor.init_state(resource_path=temp_dir)
+        self._temp_dir = temp_dir
+        
         if bbox is not None:
-            # Convert xywh to xyxy
+            # Convert xywh to xywh format expected by add_prompt
             x, y, w, h = bbox
-            xyxy = [x, y, x + w, y + h]
-            self.predictor.add_prompt(self.session_id, frame_idx=prompt_frame_idx, bounding_boxes=[xyxy])
-
-        # Return mask for the prompt frame
-        gen = self.predictor.propagate_in_video(self.session_id, start_frame_idx=prompt_frame_idx, max_frame_num_to_track=1)
-        try:
-            _, out = next(gen)
-            if out and 'obj_id_to_mask' in out and len(out['obj_id_to_mask']) > 0:
-                pred_mask = list(out['obj_id_to_mask'].values())[0]
-                if isinstance(pred_mask, torch.Tensor):
-                    pred_mask = pred_mask.cpu().numpy().astype(bool)
-                    if pred_mask.ndim == 3: pred_mask = pred_mask[0]
-                return {'pred_mask': pred_mask}
-        except StopIteration:
-            pass
+            result = self.predictor.add_prompt(
+                self.inference_state, 
+                frame_idx=prompt_frame_idx, 
+                boxes_xywh=[[x, y, w, h]]
+            )
+            # Return mask for the prompt frame
+            if result and 'obj_id_to_mask' in result:
+                for obj_id, mask in result['obj_id_to_mask'].items():
+                    if isinstance(mask, torch.Tensor):
+                        mask = mask.cpu().numpy().astype(bool)
+                        if mask.ndim == 3:
+                            mask = mask[0]
+                    return {'pred_mask': mask}
         return {'pred_mask': None}
 
     def propagate_from(self, start_idx, direction="forward"):
         """
         Yields results starting from start_idx in the given direction.
         """
-        return self.predictor.propagate_in_video(self.session_id, start_frame_idx=start_idx, propagation_direction=direction)
+        reverse = (direction == "backward")
+        return self.predictor.propagate_in_video(
+            self.inference_state, 
+            start_frame_idx=start_idx, 
+            reverse=reverse
+        )
 
     def detect_objects(self, image_rgb: np.ndarray, text_prompt: str) -> List[dict]:
-        if self.session_id is not None:
-            try: self.predictor.close_session(self.session_id)
-            except Exception: pass
-
-        pil_img = Image.fromarray(image_rgb)
-        self.session_id = self.predictor.start_session([pil_img])
-
-        res = self.predictor.add_prompt(self.session_id, frame_idx=0, text=text_prompt)
-        outputs = res.get('outputs', {})
-
+        """
+        Detect objects in an image using text prompt.
+        """
+        import tempfile
+        import os
+        
+        # Create temp directory with single image
+        temp_dir = tempfile.mkdtemp()
+        Image.fromarray(image_rgb).save(os.path.join(temp_dir, "00000.jpg"))
+        
+        self.inference_state = self.predictor.init_state(resource_path=temp_dir)
+        self._temp_dir = temp_dir
+        
+        # Add text prompt
+        result = self.predictor.add_prompt(
+            self.inference_state,
+            frame_idx=0,
+            text_str=text_prompt
+        )
+        
         results = []
-        if outputs and 'obj_id_to_mask' in outputs:
-            scores = outputs.get('obj_id_to_score', {})
-            for obj_id, mask in outputs['obj_id_to_mask'].items():
+        if result and 'obj_id_to_mask' in result:
+            scores = result.get('obj_id_to_score', {})
+            for obj_id, mask in result['obj_id_to_mask'].items():
                 if isinstance(mask, torch.Tensor):
                     mask = mask.cpu().numpy()
 
                 mask_bool = mask > 0
-                if mask_bool.ndim == 3: mask_bool = mask_bool[0]
+                if mask_bool.ndim == 3:
+                    mask_bool = mask_bool[0]
 
-                if not np.any(mask_bool): continue
+                if not np.any(mask_bool):
+                    continue
 
                 x, y, w, h = cv2.boundingRect(mask_bool.astype(np.uint8))
                 score = float(scores.get(obj_id, 1.0))
-                if hasattr(score, 'item'): score = score.item()
+                if hasattr(score, 'item'):
+                    score = score.item()
 
                 results.append({
                     'bbox': [x, y, x + w, y + h],
@@ -280,6 +304,16 @@ class SAM3Wrapper:
 
         results.sort(key=lambda x: x['conf'], reverse=True)
         return results
+    
+    def cleanup(self):
+        """Clean up temporary resources."""
+        import shutil
+        if hasattr(self, '_temp_dir') and self._temp_dir:
+            try:
+                shutil.rmtree(self._temp_dir)
+            except Exception:
+                pass
+            self._temp_dir = None
 
 thread_local = threading.local()
 
