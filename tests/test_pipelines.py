@@ -1,7 +1,6 @@
 import pytest
 from unittest.mock import MagicMock, patch, ANY, mock_open
 import sys
-import os
 from pathlib import Path
 from queue import Queue
 import threading
@@ -9,7 +8,7 @@ import json
 import numpy as np
 
 # Add project root to path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, str(Path(__file__).parent.parent.resolve()))
 
 from core.config import Config
 from core.models import AnalysisParameters, Scene

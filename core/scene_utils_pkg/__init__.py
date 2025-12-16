@@ -28,6 +28,9 @@ from core.scene_utils_pkg.helpers import (
     save_scene_seeds,
     get_scene_status_text,
     toggle_scene_status,
+    _create_analysis_context,
+    _recompute_single_preview,
+    _wire_recompute_handler,
 )
 
 __all__ = [
@@ -43,4 +46,7 @@ __all__ = [
     'save_scene_seeds',
     'get_scene_status_text',
     'toggle_scene_status',
+    '_create_analysis_context',
+    '_recompute_single_preview',
+    '_wire_recompute_handler',
 ]

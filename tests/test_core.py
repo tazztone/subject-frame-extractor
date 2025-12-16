@@ -4,7 +4,6 @@ import sys
 import unittest
 from unittest.mock import MagicMock, patch, mock_open
 from pathlib import Path
-import os
 import json
 import time
 import numpy as np
@@ -15,7 +14,7 @@ from collections import deque
 import pydantic
 
 # Add project root to the Python path to allow for submodule imports
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, str(Path(__file__).parent.parent.resolve()))
 
 # Mock heavy dependencies before they are imported by the app
 mock_torch = MagicMock(name='torch')
@@ -99,7 +98,7 @@ modules_to_mock = {
     'torch.autograd': mock_torch_autograd,
     'torch.nn': mock_torch_nn,
     'torch.nn.attention': mock_torch_nn.attention,
-    'torch.nn.init': mock_torch_nn_init,
+    'torch.nn.init': mock_torch_nn.init,
     'torch.nn.functional': mock_torch_nn_functional,
     'torch.optim': mock_torch_optim,
     'torch.utils': mock_torch_utils,
