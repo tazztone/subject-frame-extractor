@@ -924,11 +924,11 @@ class AppUI:
         self.ana_input_components = [c['extracted_frames_dir_state'], c['extracted_video_path_state']] + self.get_inputs(self.ana_ui_map_keys)
         prop_inputs = [c['scenes_state']] + self.ana_input_components
 
-        # Pipeline Handlers
-        c['start_extraction_button'].click(fn=lambda *a, pg=gr.Progress(): self.run_extraction_wrapper(*a, progress=pg), inputs=ext_inputs, outputs=all_outputs, show_progress="hidden")
-        c['start_pre_analysis_button'].click(fn=lambda *a, pg=gr.Progress(): self.run_pre_analysis_wrapper(*a, progress=pg), inputs=self.ana_input_components, outputs=all_outputs, show_progress="hidden")
-        c['propagate_masks_button'].click(fn=lambda *a, pg=gr.Progress(): self.run_propagation_wrapper(*a, progress=pg), inputs=prop_inputs, outputs=all_outputs, show_progress="hidden")
-        c['start_analysis_button'].click(fn=lambda *a, pg=gr.Progress(): self.run_analysis_wrapper(*a, progress=pg), inputs=[c['scenes_state']] + self.ana_input_components, outputs=all_outputs, show_progress="hidden")
+        # Pipeline Handlers - use direct method references for generators
+        c['start_extraction_button'].click(fn=self.run_extraction_wrapper, inputs=ext_inputs, outputs=all_outputs, show_progress="hidden")
+        c['start_pre_analysis_button'].click(fn=self.run_pre_analysis_wrapper, inputs=self.ana_input_components, outputs=all_outputs, show_progress="hidden")
+        c['propagate_masks_button'].click(fn=self.run_propagation_wrapper, inputs=prop_inputs, outputs=all_outputs, show_progress="hidden")
+        c['start_analysis_button'].click(fn=self.run_analysis_wrapper, inputs=[c['scenes_state']] + self.ana_input_components, outputs=all_outputs, show_progress="hidden")
 
         # Helper Handlers
         c['add_to_queue_button'].click(self.add_to_queue_handler, inputs=ext_inputs, outputs=[c['batch_queue_dataframe']])
