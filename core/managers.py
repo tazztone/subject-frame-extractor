@@ -19,17 +19,41 @@ from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
 # SAM3 imports
-# Ensure project root is in path or SAM3_repo is in path.
-# Since we are in core/, we might need to adjust path if not already handled by app entry point.
-# Assuming app.py handles sys.path setup for SAM3_repo.
+# On Windows, Triton is not available. We need to mock it BEFORE importing SAM3
+# because sam3/model/edt.py imports triton at module level.
 build_sam3_video_predictor = None
 Sam3VideoPredictor = None
+
+def _setup_triton_mock():
+    """Create a mock triton module if triton is not available (Windows)."""
+    import sys
+    try:
+        import triton
+        return False  # Triton is available, no mock needed
+    except ImportError:
+        pass
+    
+    # Create mock triton module
+    from unittest.mock import MagicMock
+    mock_triton = MagicMock()
+    mock_triton.language = MagicMock()
+    mock_triton.jit = lambda fn: fn  # Decorator that returns function unchanged
+    
+    sys.modules['triton'] = mock_triton
+    sys.modules['triton.language'] = mock_triton.language
+    return True
+
+# Apply triton mock before SAM3 import
+_triton_mocked = _setup_triton_mock()
 
 try:
     from core import sam3_patches
     from sam3.model_builder import build_sam3_video_predictor
     from sam3.model.sam3_video_predictor import Sam3VideoPredictor
-    sam3_patches.apply_patches()
+    
+    # Apply patches to replace triton functions with CPU fallbacks
+    if _triton_mocked:
+        sam3_patches.apply_patches()
 except ImportError as e:
     # This might fail if run in isolation without path setup or missing dependencies
     logging.getLogger(__name__).warning(f"Failed to import SAM3 dependencies: {e}")
