@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
 from core.utils import create_frame_map, render_mask_overlay, draw_bbox, _to_json_safe
 from core.managers import initialize_analysis_models
-from core.scene_utils_pkg.subject_masker import SubjectMasker
+from core.scene_utils.subject_masker import SubjectMasker
 from core.shared import build_scene_gallery_items
 
 

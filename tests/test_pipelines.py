@@ -191,3 +191,36 @@ class TestAnalysisPipeline:
 
                 assert result['done'] is True
                 mock_process_batch.assert_called()
+
+class TestSessionLoad:
+    @patch('core.pipelines.validate_session_dir')
+    def test_execute_session_load_success(self, mock_validate, mock_logger, tmp_path):
+        from core.pipelines import execute_session_load
+        from core.events import SessionLoadEvent
+
+        session_path = tmp_path / "session"
+        session_path.mkdir()
+        (session_path / "run_config.json").write_text('{"source_path": "foo"}', encoding='utf-8')
+        (session_path / "scenes.json").write_text('[]', encoding='utf-8')
+
+        mock_validate.return_value = (session_path, None)
+        event = SessionLoadEvent(session_path=str(session_path))
+
+        result = execute_session_load(event, mock_logger)
+
+        assert result['success'] is True
+        assert result['run_config']['source_path'] == "foo"
+        assert result['metadata_exists'] is False
+
+    @patch('core.pipelines.validate_session_dir')
+    def test_execute_session_load_fail_validate(self, mock_validate, mock_logger):
+        from core.pipelines import execute_session_load
+        from core.events import SessionLoadEvent
+
+        mock_validate.return_value = (None, "Invalid path")
+        event = SessionLoadEvent(session_path="bad")
+
+        result = execute_session_load(event, mock_logger)
+
+        assert "error" in result
+        assert result["error"] == "Invalid path"

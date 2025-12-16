@@ -21,8 +21,8 @@ if TYPE_CHECKING:
     from mediapipe.tasks.python.vision import FaceLandmarker
 
 from core.utils import create_frame_map, draw_bbox
-from core.scene_utils_pkg.mask_propagator import MaskPropagator
-from core.scene_utils_pkg.seed_selector import SeedSelector
+from core.scene_utils.mask_propagator import MaskPropagator
+from core.scene_utils.seed_selector import SeedSelector
 
 
 class SubjectMasker:
