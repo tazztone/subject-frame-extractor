@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 import json
 from pathlib import Path
-from typing import Optional, List, Dict, Tuple, Any
+from typing import Optional, List, Dict, Tuple, Any, Union
 import gradio as gr
 from collections import Counter
 
@@ -13,67 +13,13 @@ from core.filtering import apply_all_filters_vectorized
 from core.utils import render_mask_overlay
 from core.events import FilterEvent
 
-def scene_matches_view(scene: Scene, view: str) -> bool:
-    status = scene.status
-    if view == "All": return status in ("included", "excluded", "pending")
-    if view == "Kept": return status == "included"
-    if view == "Rejected": return status == "excluded"
-    return False
-
-def create_scene_thumbnail_with_badge(thumb_img: np.ndarray, scene_idx: int, is_excluded: bool) -> np.ndarray:
-    thumb = thumb_img.copy()
-    h, w = thumb.shape[:2]
-    if is_excluded:
-        border_color = (33, 128, 141)
-        cv2.rectangle(thumb, (0, 0), (w-1, h-1), border_color, 4)
-        badge_size = int(min(w, h) * 0.15)
-        badge_pos = (w - badge_size - 5, 5)
-        cv2.circle(thumb, (badge_pos[0] + badge_size//2, badge_pos[1] + badge_size//2), badge_size//2, (255, 255, 255), -1)
-        font = cv2.FONT_HERSHEY_SIMPLEX
-        cv2.putText(thumb, "E", badge_pos, font, 0.5, border_color, 2)
-    return thumb
-
-def scene_caption(s: Scene) -> str:
-    shot = s.shot_id
-    start, end = s.start_frame, s.end_frame
-    status_icon = "✅" if s.status == "included" else "❌"
-    caption = f"Scene {shot} [{start}-{end}] {status_icon}"
-    if s.status == 'excluded' and s.rejection_reasons:
-        caption += f"\n({', '.join(s.rejection_reasons)})"
-    if s.seed_type:
-        caption += f"\nSeed: {s.seed_type}"
-    return caption
-
-def build_scene_gallery_items(scenes: list[Union[dict, Scene]], view: str, output_dir: str, page_num: int = 1, page_size: int = 20) -> tuple[list[tuple], list[int], int]:
-    items: list[tuple[Optional[str], str]] = []
-    index_map: list[int] = []
-    if not scenes: return [], [], 1
-    # Ensure scenes are Scene objects
-    scenes_objs = [Scene(**s) if isinstance(s, dict) else s for s in scenes]
-    previews_dir = Path(output_dir) / "previews"
-    previews_dir.mkdir(parents=True, exist_ok=True)
-    filtered_scenes = [(i, s) for i, s in enumerate(scenes_objs) if scene_matches_view(s, view)]
-    total_pages = max(1, (len(filtered_scenes) + page_size - 1) // page_size)
-    start_idx = (page_num - 1) * page_size
-    end_idx = start_idx + page_size
-    page_scenes = filtered_scenes[start_idx:end_idx]
-
-    for i, s in page_scenes:
-        thumb_path = previews_dir / f"scene_{s.shot_id:05d}.jpg"
-        if not thumb_path.exists():
-             continue # Skip if no preview
-        else:
-            try:
-                thumb_img_np = cv2.imread(str(thumb_path))
-                if thumb_img_np is None:
-                     continue
-                thumb_img_np = cv2.cvtColor(thumb_img_np, cv2.COLOR_BGR2RGB)
-                badged_thumb = create_scene_thumbnail_with_badge(thumb_img_np, i, s.status == 'excluded')
-                items.append((badged_thumb, scene_caption(s)))
-            except Exception:
-                continue
-        index_map.append(i)
-    return items, index_map, total_pages
+# Re-export from core.shared for backward compatibility
+from core.shared import (
+    scene_matches_view,
+    create_scene_thumbnail_with_badge,
+    scene_caption,
+    build_scene_gallery_items
+)
 
 def _update_gallery(all_frames_data: list[dict], filters: dict, output_dir: str, gallery_view: str,
                     show_overlay: bool, overlay_alpha: float, thumbnail_manager: Any,

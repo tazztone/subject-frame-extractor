@@ -41,20 +41,24 @@ SAM3: Via submodule
 ## 2. Critical Rules
 
 ### 🔴 CRITICAL (Must Follow)
-- **NEVER** edit files in `SAM3_repo` or `Grounded-SAM-2`. Treat as external libraries.
+- **NEVER** edit files in `SAM3_repo`. Treat as an external library.
+- **NEVER** import from `ui/` in `core/` modules. Use callbacks or `core/shared.py` for shared functionality.
 - **ALWAYS** match Gradio event handler return values count to the `outputs` list. Mismatches crash the app silently.
 - **NEVER** use `@lru_cache` on functions taking the `Config` object (it's unhashable). Use `model_registry.get_or_load`.
-- **ALWAYS** use `pathlib.Path`, never `os.path`.
+- **ALWAYS** use `pathlib.Path`, never `os.path` or `os.access`.
 - **ALWAYS** mock external dependencies (SAM3, Torch) in unit tests.
+- **ALWAYS** use `tests/conftest.py` fixtures for mock objects in tests.
 
 ### 🟡 WARNING (Potential Bugs)
 - **Check Masks**: Verify masks exist on disk before export/processing.
 - **Thread Safety**: MediaPipe objects are not thread-safe. Use thread-local storage or one instance per thread.
 - **Gradio State**: Do not store locks or file handles in `gr.State`.
+- **Circular Imports**: If you need UI functions in core, add them to `core/shared.py`.
 
 ### 🟢 BEST PRACTICE
 - **Refactoring**: Move logic from `app.py` to `core/`.
 - **Typing**: Use Pydantic models (`core/events.py`) instead of untyped dicts.
+- **Testing**: Add fixtures to `tests/conftest.py` for reuse across test files.
 
 
 ## 3. Architecture Overview
@@ -109,13 +113,13 @@ def main():
 
 ```
 
-### `📄 core/__init__.py`
+### `📄 core\__init__.py`
 
 ```python
 
 ```
 
-### `📄 core/batch_manager.py`
+### `📄 core\batch_manager.py`
 
 ```python
 import threading
@@ -163,7 +167,7 @@ class BatchManager:
 
 ```
 
-### `📄 core/config.py`
+### `📄 core\config.py`
 
 ```python
 """
@@ -171,7 +175,6 @@ Configuration Management for Frame Extractor & Analyzer
 """
 
 import json
-import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from pydantic import Field, model_validator
@@ -192,7 +195,7 @@ class Config(BaseSettings):
         ...
     def _validate_paths(self):
         """
-        Ensures critical directories exist.
+        Ensures critical directories exist and are writable.
         """
         ...
     @model_validator(mode='after')
@@ -204,7 +207,7 @@ class Config(BaseSettings):
 
 ```
 
-### `📄 core/database.py`
+### `📄 core\database.py`
 
 ```python
 import sqlite3
@@ -261,7 +264,7 @@ class Database:
 
 ```
 
-### `📄 core/error_handling.py`
+### `📄 core\error_handling.py`
 
 ```python
 """
@@ -296,7 +299,7 @@ class ErrorHandler:
 
 ```
 
-### `📄 core/events.py`
+### `📄 core\events.py`
 
 ```python
 """
@@ -338,7 +341,7 @@ class SessionLoadEvent(UIEvent):
 
 ```
 
-### `📄 core/export.py`
+### `📄 core\export.py`
 
 ```python
 from __future__ import annotations
@@ -370,7 +373,7 @@ def dry_run_export(event: ExportEvent, config: 'Config') -> str:
 
 ```
 
-### `📄 core/filtering.py`
+### `📄 core\filtering.py`
 
 ```python
 from __future__ import annotations
@@ -432,7 +435,7 @@ def apply_lpips_dedup(all_frames_data: list[dict], filters: dict, dedup_mask: np
 
 ```
 
-### `📄 core/logger.py`
+### `📄 core\logger.py`
 
 ```python
 """
@@ -495,7 +498,7 @@ class AppLogger:
 
 ```
 
-### `📄 core/managers.py`
+### `📄 core\managers.py`
 
 ```python
 from __future__ import annotations
@@ -587,7 +590,7 @@ class VideoManager:
 
 ```
 
-### `📄 core/models.py`
+### `📄 core\models.py`
 
 ```python
 from __future__ import annotations
@@ -652,7 +655,7 @@ class MaskingResult(BaseModel):
 
 ```
 
-### `📄 core/pipelines.py`
+### `📄 core\pipelines.py`
 
 ```python
 from __future__ import annotations
@@ -680,7 +683,7 @@ from core.database import Database
 from core.events import ExtractionEvent, PreAnalysisEvent, PropagationEvent, SessionLoadEvent, ExportEvent
 from core.error_handling import ErrorHandler
 from core.progress import AdvancedProgressTracker
-from ui.gallery_utils import build_scene_gallery_items
+from core.shared import build_scene_gallery_items
 import gradio as gr
 
 def _process_ffmpeg_stream(stream, tracker: Optional['AdvancedProgressTracker'], desc: str, total_duration_s: float):
@@ -751,7 +754,7 @@ def execute_analysis(event: PropagationEvent, progress_queue: Queue, cancel_even
 
 ```
 
-### `📄 core/progress.py`
+### `📄 core\progress.py`
 
 ```python
 """
@@ -790,7 +793,7 @@ class AdvancedProgressTracker:
 
 ```
 
-### `📄 core/sam3_patches.py`
+### `📄 core\sam3_patches.py`
 
 ```python
 """
@@ -824,7 +827,7 @@ def apply_patches():
 
 ```
 
-### `📄 core/scene_utils.py`
+### `📄 core\scene_utils.py`
 
 ```python
 from __future__ import annotations
@@ -937,7 +940,83 @@ def _wire_recompute_handler(config: 'Config', logger: 'AppLogger', thumbnail_man
 
 ```
 
-### `📄 core/utils.py`
+### `📄 core\shared.py`
+
+```python
+"""
+Shared utilities for Frame Extractor & Analyzer
+
+This module contains pure functions that are shared between core and UI modules,
+resolving circular import issues.
+"""
+
+from __future__ import annotations
+import cv2
+import numpy as np
+from pathlib import Path
+from typing import TYPE_CHECKING, Optional, Union, List, Tuple, Any
+
+def scene_matches_view(scene: 'Scene', view: str) -> bool:
+    """
+    Check if a scene matches the specified view filter.
+    
+    Args:
+    scene: Scene object to check
+    view: One of "All", "Kept", or "Rejected"
+    
+    Returns:
+    True if the scene matches the view filter
+    """
+    ...
+
+def create_scene_thumbnail_with_badge(thumb_img: np.ndarray, scene_idx: int, is_excluded: bool) -> np.ndarray:
+    """
+    Create a scene thumbnail with a visual badge indicating exclusion status.
+    
+    Args:
+    thumb_img: RGB thumbnail image
+    scene_idx: Index of the scene
+    is_excluded: Whether the scene is excluded
+    
+    Returns:
+    Thumbnail with badge overlay
+    """
+    ...
+
+def scene_caption(scene: Union[dict, 'Scene']) -> str:
+    """
+    Generate a caption string for a scene.
+    
+    Args:
+    scene: Scene object or dict
+    
+    Returns:
+    Caption string with scene ID, frame range, and status
+    """
+    ...
+
+def build_scene_gallery_items(scenes: List[Union[dict, 'Scene']], view: str, output_dir: str, page_num: int=1, page_size: int=20) -> Tuple[List[Tuple], List[int], int]:
+    """
+    Build gallery items for scene display.
+    
+    This function is moved from ui/gallery_utils.py to break the circular
+    import between core/pipelines.py and ui/gallery_utils.py.
+    
+    Args:
+    scenes: List of Scene objects or dicts
+    view: View filter ("All", "Kept", "Rejected")
+    output_dir: Path to output directory
+    page_num: Current page number (1-indexed)
+    page_size: Items per page
+    
+    Returns:
+    Tuple of (gallery_items, index_map, total_pages)
+    """
+    ...
+
+```
+
+### `📄 core\utils.py`
 
 ```python
 from __future__ import annotations
@@ -1018,7 +1097,155 @@ def draw_bbox(img_rgb: np.ndarray, xywh: list, config: 'Config', color: Optional
 
 ```
 
-### `📄 tests/e2e/test_app_flow.py`
+### `📄 tests\conftest.py`
+
+```python
+"""
+Centralized pytest fixtures for Frame Extractor & Analyzer tests.
+
+This module provides reusable mock fixtures for testing, avoiding duplication
+across test files and improving test maintainability.
+"""
+
+import sys
+import os
+import pytest
+from unittest.mock import MagicMock, patch
+from pathlib import Path
+import numpy as np
+import pydantic
+
+def _create_mock_torch():
+    """
+    Create a comprehensive mock for torch and its submodules.
+    """
+    ...
+
+def _create_mock_torch_submodules(mock_torch):
+    """
+    Create mocks for torch submodules like nn, optim, utils.
+    """
+    ...
+
+def _create_mock_torchvision():
+    """
+    Create a mock for torchvision.
+    """
+    ...
+
+def _create_mock_psutil():
+    """
+    Create a mock for psutil with expected return values.
+    """
+    ...
+
+def _create_mock_matplotlib():
+    """
+    Create a mock for matplotlib.
+    """
+    ...
+
+def build_modules_to_mock():
+    """
+    Build the complete dictionary of modules to mock.
+    """
+    ...
+
+MODULES_TO_MOCK = build_modules_to_mock()
+@pytest.fixture(scope='session')
+def mock_torch():
+    """
+    Session-scoped mock for torch module.
+    """
+    ...
+
+@pytest.fixture
+def mock_config(tmp_path):
+    """
+    Provides a test Config with temporary directories.
+    
+    Use this for tests that need a valid Config object
+    with writable paths.
+    """
+    ...
+
+@pytest.fixture
+def mock_logger(mock_config):
+    """
+    Provides a mock AppLogger for testing.
+    """
+    ...
+
+@pytest.fixture
+def mock_thumbnail_manager(mock_logger, mock_config):
+    """
+    Provides a mock ThumbnailManager.
+    """
+    ...
+
+@pytest.fixture
+def mock_model_registry(mock_logger):
+    """
+    Provides a mock ModelRegistry.
+    """
+    ...
+
+@pytest.fixture
+def mock_progress_queue():
+    """
+    Provides a mock progress queue.
+    """
+    ...
+
+@pytest.fixture
+def mock_cancel_event():
+    """
+    Provides a mock cancel event.
+    """
+    ...
+
+@pytest.fixture
+def mock_ui_state():
+    """
+    Provides a dictionary with default values for UI-related event models.
+    
+    Useful for testing event validation and pipeline execution.
+    """
+    ...
+
+@pytest.fixture
+def sample_frames_data():
+    """
+    Provides sample frame metadata for filtering tests.
+    
+    Includes a mix of good and bad frames to test various filters.
+    """
+    ...
+
+@pytest.fixture
+def sample_scenes():
+    """
+    Provides sample Scene objects for scene-related tests.
+    """
+    ...
+
+@pytest.fixture
+def sample_image_rgb():
+    """
+    Provides a sample RGB image for testing.
+    """
+    ...
+
+@pytest.fixture
+def sample_mask():
+    """
+    Provides a sample binary mask for testing.
+    """
+    ...
+
+```
+
+### `📄 tests\e2e\test_app_flow.py`
 
 ```python
 import pytest
@@ -1047,7 +1274,7 @@ def test_full_user_flow(page: Page, app_server):
 
 ```
 
-### `📄 tests/mock_app.py`
+### `📄 tests\mock_app.py`
 
 ```python
 import sys
@@ -1096,7 +1323,7 @@ core.utils.download_model = MagicMock()
 core.managers.download_model = MagicMock()
 ```
 
-### `📄 tests/test_batch_manager.py`
+### `📄 tests\test_batch_manager.py`
 
 ```python
 import time
@@ -1114,7 +1341,7 @@ def test_batch_manager_failure():
 
 ```
 
-### `📄 tests/test_core.py`
+### `📄 tests\test_core.py`
 
 ```python
 import pytest
@@ -1199,7 +1426,7 @@ mock_matplotlib.ticker = MagicMock(name='matplotlib.ticker')
 mock_matplotlib.figure = MagicMock(name='matplotlib.figure')
 mock_matplotlib.backends = MagicMock(name='matplotlib.backends')
 mock_matplotlib.backends.backend_agg = MagicMock(name='matplotlib.backends.backend_agg')
-modules_to_mock = {'torch': mock_torch, 'torch.hub': mock_torch.hub, 'torch.distributed': mock_torch.distributed, 'torch.multiprocessing': mock_torch.multiprocessing, 'torch.autograd': mock_torch_autograd, 'torch.nn': mock_torch_nn, 'torch.nn.attention': mock_torch_nn.attention, 'torch.nn.init': mock_torch_nn_init, 'torch.nn.functional': mock_torch_nn_functional, 'torch.optim': mock_torch_optim, 'torch.utils': mock_torch_utils, 'torch.utils.data': mock_torch_utils_data, 'torch.utils.checkpoint': mock_torch_utils_checkpoint, 'torch.utils._pytree': mock_torch_utils_pytree, 'torchvision': mock_torchvision, 'torchvision.ops': mock_torchvision.ops, 'torchvision.ops.roi_align': mock_torchvision.ops.roi_align, 'torchvision.ops.misc': mock_torchvision.ops.misc, 'torchvision.datasets': mock_torchvision.datasets, 'torchvision.datasets.vision': mock_torchvision.datasets.vision, 'torchvision.transforms': mock_torchvision.transforms, 'torchvision.transforms.functional': mock_torchvision.transforms.functional, 'torchvision.utils': mock_torchvision.utils, 'insightface': mock_insightface, 'insightface.app': mock_insightface.app, 'timm': mock_timm, 'timm.models': mock_timm.models, 'timm.models.layers': mock_timm.models.layers, 'onnxruntime': MagicMock(name='onnxruntime'), 'DAM4SAM': MagicMock(name='DAM4SAM'), 'DAM4SAM.utils': MagicMock(name='DAM4SAM.utils'), 'DAM4SAM.dam4sam_tracker': MagicMock(name='DAM4SAM.dam4sam_tracker'), 'GPUtil': MagicMock(getGPUs=lambda: [MagicMock(memoryUtil=0.5)]), 'pycocotools': mock_pycocotools, 'pycocotools.mask': mock_pycocotools.mask, 'psutil': mock_psutil, 'matplotlib': mock_matplotlib, 'matplotlib.ticker': mock_matplotlib.ticker, 'matplotlib.figure': mock_matplotlib.figure, 'matplotlib.backends': mock_matplotlib.backends, 'matplotlib.backends.backend_agg': mock_matplotlib.backends.backend_agg, 'matplotlib.pyplot': MagicMock(), 'scenedetect': MagicMock(), 'yt_dlp': MagicMock(), 'pyiqa': MagicMock(name='pyiqa'), 'mediapipe': MagicMock(), 'mediapipe.tasks': MagicMock(), 'mediapipe.tasks.python': MagicMock(), 'mediapipe.tasks.python.vision': MagicMock(), 'lpips': MagicMock(name='lpips'), 'numba': MagicMock(name='numba'), 'skimage': MagicMock(name='skimage'), 'skimage.metrics': MagicMock(name='skimage.metrics')}
+modules_to_mock = {'torch': mock_torch, 'torch.hub': mock_torch.hub, 'torch.distributed': mock_torch.distributed, 'torch.multiprocessing': mock_torch.multiprocessing, 'torch.autograd': mock_torch_autograd, 'torch.nn': mock_torch_nn, 'torch.nn.attention': mock_torch_nn.attention, 'torch.nn.init': mock_torch_nn_init, 'torch.nn.functional': mock_torch_nn_functional, 'torch.optim': mock_torch_optim, 'torch.utils': mock_torch_utils, 'torch.utils.data': mock_torch_utils_data, 'torch.utils.checkpoint': mock_torch_utils_checkpoint, 'torch.utils._pytree': mock_torch_utils_pytree, 'torchvision': mock_torchvision, 'torchvision.ops': mock_torchvision.ops, 'torchvision.ops.roi_align': mock_torchvision.ops.roi_align, 'torchvision.ops.misc': mock_torchvision.ops.misc, 'torchvision.datasets': mock_torchvision.datasets, 'torchvision.datasets.vision': mock_torchvision.datasets.vision, 'torchvision.transforms': mock_torchvision.transforms, 'torchvision.transforms.functional': mock_torchvision.transforms.functional, 'torchvision.utils': mock_torchvision.utils, 'insightface': mock_insightface, 'insightface.app': mock_insightface.app, 'timm': mock_timm, 'timm.models': mock_timm.models, 'timm.models.layers': mock_timm.models.layers, 'onnxruntime': MagicMock(name='onnxruntime'), 'DAM4SAM': MagicMock(name='DAM4SAM'), 'DAM4SAM.utils': MagicMock(name='DAM4SAM.utils'), 'DAM4SAM.dam4sam_tracker': MagicMock(name='DAM4SAM.dam4sam_tracker'), 'GPUtil': MagicMock(getGPUs=lambda : [MagicMock(memoryUtil=0.5)]), 'pycocotools': mock_pycocotools, 'pycocotools.mask': mock_pycocotools.mask, 'psutil': mock_psutil, 'matplotlib': mock_matplotlib, 'matplotlib.ticker': mock_matplotlib.ticker, 'matplotlib.figure': mock_matplotlib.figure, 'matplotlib.backends': mock_matplotlib.backends, 'matplotlib.backends.backend_agg': mock_matplotlib.backends.backend_agg, 'matplotlib.pyplot': MagicMock(), 'scenedetect': MagicMock(), 'yt_dlp': MagicMock(), 'pyiqa': MagicMock(name='pyiqa'), 'mediapipe': MagicMock(), 'mediapipe.tasks': MagicMock(), 'mediapipe.tasks.python': MagicMock(), 'mediapipe.tasks.python.vision': MagicMock(), 'lpips': MagicMock(name='lpips'), 'numba': MagicMock(name='numba'), 'skimage': MagicMock(name='skimage'), 'skimage.metrics': MagicMock(name='skimage.metrics')}
 mock_pydantic_settings = MagicMock(name='pydantic_settings')
 mock_pydantic_settings.BaseSettings = pydantic.BaseModel
 mock_pydantic_settings.SettingsConfigDict = dict
@@ -1228,8 +1455,9 @@ class TestUtils:
     def test_config_init(self):
         ...
     @patch('pathlib.Path.mkdir', MagicMock())
-    @patch('os.access', return_value=True)
-    def test_validation_error(self, mock_access):
+    @patch('pathlib.Path.touch', MagicMock())
+    @patch('pathlib.Path.unlink', MagicMock())
+    def test_validation_error(self):
         """
         Test that a validation error is raised for invalid config.
         """
@@ -1263,7 +1491,7 @@ class TestPreAnalysisEvent:
 
 ```
 
-### `📄 tests/test_dedup.py`
+### `📄 tests\test_dedup.py`
 
 ```python
 import pytest
@@ -1303,7 +1531,7 @@ def test_run_batched_lpips(mock_thumbnail_manager):
 
 ```
 
-### `📄 tests/test_export.py`
+### `📄 tests\test_export.py`
 
 ```python
 import pytest
@@ -1330,7 +1558,7 @@ def test_export_kept_frames(mock_filter, mock_popen, mock_config, mock_logger, t
 
 ```
 
-### `📄 tests/test_pipelines.py`
+### `📄 tests\test_pipelines.py`
 
 ```python
 import pytest
@@ -1409,7 +1637,7 @@ class TestAnalysisPipeline:
 
 ```
 
-### `📄 tests/test_scene_utils.py`
+### `📄 tests\test_scene_utils.py`
 
 ```python
 import pytest
@@ -1456,7 +1684,7 @@ class TestSubjectMasker:
 
 ```
 
-### `📄 tests/test_ui.py`
+### `📄 tests\test_ui.py`
 
 ```python
 import asyncio
@@ -1467,7 +1695,7 @@ async def main():
 
 ```
 
-### `📄 ui/app_ui.py`
+### `📄 ui\app_ui.py`
 
 ```python
 from __future__ import annotations
@@ -1635,7 +1863,7 @@ class AppUI:
 
 ```
 
-### `📄 ui/gallery_utils.py`
+### `📄 ui\gallery_utils.py`
 
 ```python
 from __future__ import annotations
@@ -1644,25 +1872,14 @@ import cv2
 import numpy as np
 import json
 from pathlib import Path
-from typing import Optional, List, Dict, Tuple, Any
+from typing import Optional, List, Dict, Tuple, Any, Union
 import gradio as gr
 from collections import Counter
 from core.models import Scene
 from core.filtering import apply_all_filters_vectorized
 from core.utils import render_mask_overlay
 from core.events import FilterEvent
-
-def scene_matches_view(scene: Scene, view: str) -> bool:
-    ...
-
-def create_scene_thumbnail_with_badge(thumb_img: np.ndarray, scene_idx: int, is_excluded: bool) -> np.ndarray:
-    ...
-
-def scene_caption(s: Scene) -> str:
-    ...
-
-def build_scene_gallery_items(scenes: list[Union[dict, Scene]], view: str, output_dir: str, page_num: int=1, page_size: int=20) -> tuple[list[tuple], list[int], int]:
-    ...
+from core.shared import scene_matches_view, create_scene_thumbnail_with_badge, scene_caption, build_scene_gallery_items
 
 def _update_gallery(all_frames_data: list[dict], filters: dict, output_dir: str, gallery_view: str, show_overlay: bool, overlay_alpha: float, thumbnail_manager: Any, config: Any, logger: Any) -> tuple[str, gr.update]:
     ...
@@ -1767,3 +1984,43 @@ See `core/config.py` for full list.
 - **Submodules**: Always update recursive.
 - **Requirements**: `requirements.txt` is root.
 - **Validation**: Verify model downloads with SHA256.
+
+
+## 12. Contribution Guidelines
+
+### Code Style
+- **Formatting**: Use `black` formatter with default settings
+- **Imports**: Sort with `isort`, group: stdlib → third-party → local
+- **Naming**: snake_case for functions/variables, PascalCase for classes
+- **Line Length**: 100 characters max
+- **Docstrings**: Use Google-style docstrings for public APIs
+
+### Pull Request Process
+1. Create feature branch from `main`
+2. Run `python -m pytest tests/` before committing
+3. Update AGENTS.md if adding new modules: `python scripts/update_agents_md.py`
+4. Request review from maintainers
+
+### Adding New Modules
+- Place business logic in `core/`
+- Place UI components in `ui/`
+- Update imports in `__init__.py` files
+- Add test fixtures to `tests/conftest.py`
+
+
+## 13. Security Considerations
+
+### Model Downloads
+- All model downloads are verified via SHA256 hash
+- Never disable hash verification in production
+- Use `core/utils.download_model()` which has built-in retry and validation
+
+### User Inputs
+- Video paths are validated via `validate_video_file()`
+- Text prompts are sanitized before use with external models
+- File exports use `sanitize_filename()` to prevent path traversal
+- Never construct paths from user input without validation
+
+### Session Data
+- Session directories are validated before loading (`validate_session_dir()`)
+- JSON files are parsed with error handling to prevent injection

@@ -30,7 +30,7 @@ from core.database import Database
 from core.events import ExtractionEvent, PreAnalysisEvent, PropagationEvent, SessionLoadEvent, ExportEvent
 from core.error_handling import ErrorHandler
 from core.progress import AdvancedProgressTracker
-from ui.gallery_utils import build_scene_gallery_items
+from core.shared import build_scene_gallery_items
 
 import gradio as gr # Needed for execute_session_load updates
 
