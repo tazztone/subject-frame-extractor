@@ -33,11 +33,30 @@ def _setup_triton_mock():
     except ImportError:
         pass
     
-    # Create mock triton module
+    # Create mock triton module with proper __spec__ for PyTorch compatibility
     from unittest.mock import MagicMock
-    mock_triton = MagicMock()
-    mock_triton.language = MagicMock()
+    from importlib.machinery import ModuleSpec
+    import types
+    
+    # Create a proper module object (not just MagicMock)
+    mock_triton = types.ModuleType('triton')
+    mock_triton.__spec__ = ModuleSpec('triton', None)
+    mock_triton.__path__ = []
+    mock_triton.__file__ = '<mock>'
+    mock_triton.language = types.ModuleType('triton.language')
+    mock_triton.language.__spec__ = ModuleSpec('triton.language', None)
     mock_triton.jit = lambda fn: fn  # Decorator that returns function unchanged
+    
+    # Create a mock for tl (triton.language) attributes
+    class MockTL:
+        constexpr = lambda x: x
+        program_id = MagicMock(return_value=0)
+        load = MagicMock(return_value=0)
+        store = MagicMock()
+    
+    for attr in dir(MockTL):
+        if not attr.startswith('_'):
+            setattr(mock_triton.language, attr, getattr(MockTL, attr))
     
     sys.modules['triton'] = mock_triton
     sys.modules['triton.language'] = mock_triton.language
