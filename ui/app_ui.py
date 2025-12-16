@@ -20,7 +20,7 @@ from core.logger import AppLogger
 from core.managers import ThumbnailManager, ModelRegistry
 from core.models import Scene, SceneState, AnalysisParameters
 from core.utils import is_image_folder
-from core.scene_utils import (
+from core.scene_utils_pkg import (
     toggle_scene_status, save_scene_seeds, _recompute_single_preview,
     _create_analysis_context, _wire_recompute_handler, get_scene_status_text
 )

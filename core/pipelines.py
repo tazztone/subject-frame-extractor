@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 from core.models import AnalysisParameters, Scene, Frame
 from core.utils import handle_common_errors, estimate_totals, sanitize_filename, _to_json_safe, monitor_memory_usage, validate_video_file, safe_resource_cleanup, create_frame_map
 from core.managers import VideoManager, initialize_analysis_models
-from core.scene_utils import SubjectMasker, save_scene_seeds, get_scene_status_text, run_scene_detection, make_photo_thumbs
+from core.scene_utils_pkg import SubjectMasker, save_scene_seeds, get_scene_status_text, run_scene_detection, make_photo_thumbs
 from core.filtering import load_and_prep_filter_data, apply_all_filters_vectorized
 from core.database import Database
 from core.events import ExtractionEvent, PreAnalysisEvent, PropagationEvent, SessionLoadEvent, ExportEvent
