@@ -2,9 +2,10 @@ import pytest
 from playwright.sync_api import Page, expect
 import subprocess
 import time
-import os
 import signal
 import sys
+from pathlib import Path
+from os import environ
 
 # Define the port globally
 PORT = 7860
@@ -16,7 +17,7 @@ def app_server():
     print(f"Starting mock app on port {PORT}...")
 
     # Path to the mock_app.py script
-    mock_app_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'mock_app.py'))
+    mock_app_path = str(Path(__file__).parent.parent / 'mock_app.py')
 
     # Start the process
     # Redirect output to file for debugging
@@ -25,7 +26,7 @@ def app_server():
         [sys.executable, mock_app_path],
         stdout=log_file,
         stderr=subprocess.STDOUT,
-        env={**os.environ, "GRADIO_SERVER_PORT": str(PORT), "PYTHONUNBUFFERED": "1"}
+        env={**environ, "GRADIO_SERVER_PORT": str(PORT), "PYTHONUNBUFFERED": "1"}
     )
 
     # Wait for the server to be ready
@@ -48,7 +49,7 @@ def app_server():
 
     # Cleanup
     print("Stopping mock app...")
-    os.kill(process.pid, signal.SIGTERM)
+    process.terminate()
     process.wait()
 
 def test_full_user_flow(page: Page, app_server):
@@ -131,4 +132,4 @@ def test_full_user_flow(page: Page, app_server):
     # Let's just check the log updates.
     # expect(page.locator(".log-container textarea")).to_contain_text("Exported", timeout=10000)
 
-    print("E2E Flow Test Complete!")
+    print("E2E Flow Passed (Simulated)")

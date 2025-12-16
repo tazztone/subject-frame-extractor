@@ -2,11 +2,11 @@ import pytest
 import numpy as np
 import imagehash
 import sys
-import os
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 # Add project root to path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, str(Path(__file__).parent.parent.resolve()))
 
 # Extensive mocking to survive app.py import
 modules_to_mock = {
