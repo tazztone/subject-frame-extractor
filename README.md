@@ -13,7 +13,7 @@ This application revolutionizes video frame extraction by combining traditional 
 
 - **Extract frames intelligently** from any video using multiple extraction strategies.
 - **Analyze frame quality** using comprehensive metrics (sharpness, contrast, entropy, NIQE).
-- **Detect and track subjects** automatically using state-of-the-art segmentation models (**SAM 2.1**).
+- **Detect and track subjects** automatically using state-of-the-art segmentation models (**SAM 3**).
 - **Filter by face similarity** to find frames of specific people.
 - **Export curated datasets** with smart cropping and aspect ratio options.
 
@@ -27,14 +27,14 @@ Perfect for creating training datasets (LoRA/Dreambooth), finding thumbnail cand
 - **Smart Scene Detection**: Automatically identifies unique shots and transitions.
 
 ### 🧠 Advanced AI Analysis
-- **Subject Segmentation**: Uses **SAM3** for precise subject tracking and masking.
+- **Subject Segmentation**: Uses **SAM 3** for precise subject tracking and masking.
 - **Face Recognition**: **InsightFace**-powered similarity matching.
 - **Quality Assessment**: Multi-metric scoring including **NIQE** perceptual quality.
-- **Text-to-Object**: Use text prompts with **Grounded-DINO** to identify subjects.
+- **Text-to-Object**: Use text prompts with **Grounded-DINO** (via SAM 3) to identify subjects.
 
 ### 🔍 Powerful Filtering & Export
 - **Real-time Filtering**: Interactive sliders for all quality metrics.
-- **Deduplication**: Perceptual hash (pHash) and SSIM-based near-duplicate removal.
+- **Deduplication**: Perceptual hash (pHash) and LPIPS-based near-duplicate removal.
 - **Smart Cropping**: Automatic subject-centered cropping with padding.
 - **Aspect Ratios**: Export in 16:9, 1:1, 9:16, or custom ratios.
 
@@ -43,7 +43,7 @@ Perfect for creating training datasets (LoRA/Dreambooth), finding thumbnail cand
 ### Prerequisites
 - Python 3.10+
 - FFmpeg installed and in your system PATH.
-- CUDA-capable GPU (recommended for AI features).
+- CUDA-capable GPU (highly recommended for AI features).
 
 ### Setup Guide
 
@@ -62,9 +62,11 @@ Perfect for creating training datasets (LoRA/Dreambooth), finding thumbnail cand
 
 3.  **Install Dependencies**
     ```bash
+    # Install main dependencies
     pip install -r requirements.txt
-    # Install SAM3 directly from the submodule
-    pip install git+https://github.com/facebookresearch/sam3.git
+
+    # Install SAM3 from the local submodule
+    pip install -e SAM3_repo
     ```
 
 4.  **Install FFmpeg**
@@ -77,7 +79,7 @@ Perfect for creating training datasets (LoRA/Dreambooth), finding thumbnail cand
     
     1.  Copy the example environment file:
         ```bash
-        cp .env.example .env
+        cp .env_example .env
         ```
     2.  Edit `.env` and add your Hugging Face token:
         ```bash
@@ -100,28 +102,32 @@ Open your browser to the URL displayed (usually `http://127.0.0.1:7860`).
     -   **By Face**: Upload a reference photo.
     -   **By Text**: Describe the subject (e.g., "cat", "man in suit").
     -   **Auto**: Let the AI find the most prominent subject.
-4.  **Refine**: Review scene seeds, adjust selections, and run **Propagation** (SAM3) to track the subject.
+4.  **Refine**: Review scene seeds, adjust selections, and run **Propagation** (SAM 3) to track the subject.
 5.  **Filter & Export**: Use sliders to filter by quality, remove duplicates, and export your final dataset.
 
 ## 🏗️ Architecture
 
 The application is built on a modular architecture:
 
-*   **UI Layer**: Built with **Gradio**, separating presentation from logic.
-*   **Core Logic**: `app.py` orchestrates the workflow.
-*   **Configuration**: `config.py` handles settings via Pydantic.
-*   **Data Storage**: SQLite (`database.py`) for frame metadata; JSONL for logs.
+*   **UI Layer**: `ui/` (Gradio components), separating presentation from logic.
+*   **Core Logic**: `core/` contains business logic, pipelines, and managers.
+*   **Configuration**: `core/config.py` handles settings via Pydantic.
+*   **Data Storage**: SQLite (`core/database.py`) for frame metadata; JSONL for logs.
 *   **AI Models**: Managed by a thread-safe `ModelRegistry` for lazy loading.
 
 ### Directory Structure
 ```
 subject-frame-extractor/
 ├── app.py                     # Main entry point
-├── config.py                  # Configuration management
-├── logger.py                  # Structured logging
-├── database.py                # SQLite database interface
-├── events.py                  # Event data models
-├── SAM3_repo/                 # SAM3 Submodule (Do not edit)
+├── requirements.txt           # Python dependencies
+├── core/                      # Core business logic
+│   ├── config.py              # Configuration
+│   ├── pipelines.py           # Processing pipelines
+│   ├── database.py            # Database interface
+│   ├── managers.py            # Model & Resource managers
+│   └── events.py              # Pydantic event models
+├── ui/                        # Gradio UI components
+├── SAM3_repo/                 # SAM3 Submodule (Read-only)
 ├── tests/                     # Unit and E2E tests
 └── AGENTS.md                  # Developer documentation
 ```
