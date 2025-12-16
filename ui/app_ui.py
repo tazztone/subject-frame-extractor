@@ -20,7 +20,7 @@ from core.logger import AppLogger
 from core.managers import ThumbnailManager, ModelRegistry
 from core.models import Scene, SceneState, AnalysisParameters
 from core.utils import is_image_folder
-from core.scene_utils_pkg import (
+from core.scene_utils import (
     toggle_scene_status, save_scene_seeds, _recompute_single_preview,
     _create_analysis_context, _wire_recompute_handler, get_scene_status_text
 )
@@ -879,15 +879,87 @@ class AppUI:
 
     def run_session_load_wrapper(self, session_path: str):
         event = SessionLoadEvent(session_path=session_path)
-        yield from self._run_pipeline(execute_session_load, event, gr.Progress(), lambda res: {
-            self.components['extracted_video_path_state']: res['extracted_video_path_state'],
-            self.components['extracted_frames_dir_state']: res['extracted_frames_dir_state'],
-            self.components['analysis_output_dir_state']: res['analysis_output_dir_state'],
-            self.components['analysis_metadata_path_state']: res['analysis_metadata_path_state'],
-            self.components['scenes_state']: res['scenes'],
-            self.components['unified_log']: f"Session loaded.",
+        yield {self.components['unified_status']: "🔄 Loading Session..."}
+
+        # Call core function directly
+        result = execute_session_load(event, self.logger)
+
+        if result.get("error"):
+             yield {self.components['unified_log']: f"[ERROR] {result['error']}"}
+             return
+
+        run_config = result["run_config"]
+        session_path = Path(result["session_path"])
+        scenes_data = result["scenes"]
+        metadata_exists = result["metadata_exists"]
+
+        def _resolve_output_dir(base: Path, output_folder: str | None) -> Path | None:
+            if not output_folder: return None
+            p = Path(output_folder)
+            if p.exists(): return p.resolve()
+            if not p.is_absolute(): return (base / p).resolve()
+            return p
+
+        output_dir = _resolve_output_dir(session_path, run_config.get("output_folder")) or session_path
+
+        updates = {
+            self.components['source_input']: gr.update(value=run_config.get("source_path", "")),
+            self.components['max_resolution']: gr.update(value=run_config.get("max_resolution", "1080")),
+            self.components['thumb_megapixels_input']: gr.update(value=run_config.get("thumb_megapixels", 0.5)),
+            self.components['ext_scene_detect_input']: gr.update(value=run_config.get("scene_detect", True)),
+            self.components['method_input']: gr.update(value=run_config.get("method", "scene")),
+            self.components['pre_analysis_enabled_input']: gr.update(value=run_config.get("pre_analysis_enabled", True)),
+            self.components['pre_sample_nth_input']: gr.update(value=run_config.get("pre_sample_nth", 1)),
+            self.components['enable_face_filter_input']: gr.update(value=run_config.get("enable_face_filter", False)),
+            self.components['face_model_name_input']: gr.update(value=run_config.get("face_model_name", "buffalo_l")),
+            self.components['face_ref_img_path_input']: gr.update(value=run_config.get("face_ref_img_path", "")),
+            self.components['text_prompt_input']: gr.update(value=run_config.get("text_prompt", "")),
+            self.components['best_frame_strategy_input']: gr.update(value=run_config.get("best_frame_strategy", "Largest Person")),
+            self.components['person_detector_model_input']: gr.update(value=run_config.get("person_detector_model", "yolo11x.pt")),
+            self.components['tracker_model_name_input']: gr.update(value=run_config.get("tracker_model_name", "sam3")),
+            self.components['extracted_video_path_state']: run_config.get("video_path", ""),
+            self.components['extracted_frames_dir_state']: str(output_dir),
+            self.components['analysis_output_dir_state']: str(output_dir.resolve() if output_dir else ""),
+        }
+
+        # Handle Seed Strategy mismatch (UI vs Config key)
+        if 'seed_strategy' in run_config:
+             updates[self.components['best_frame_strategy_input']] = gr.update(value=run_config['seed_strategy'])
+        if 'primary_seed_strategy' in run_config:
+             updates[self.components['primary_seed_strategy_input']] = gr.update(value=run_config['primary_seed_strategy'])
+
+        if scenes_data and output_dir:
+            scenes = [Scene(**s) for s in scenes_data]
+            status_text, button_update = get_scene_status_text(scenes)
+            gallery_items, index_map, _ = build_scene_gallery_items(scenes, "Kept", str(output_dir))
+            updates.update({
+                self.components['scenes_state']: [s.model_dump() for s in scenes],
+                self.components['propagate_masks_button']: button_update,
+                self.components['seeding_results_column']: gr.update(visible=True),
+                self.components['propagation_group']: gr.update(visible=True),
+                self.components['scene_filter_status']: status_text,
+                self.components['scene_face_sim_min_input']: gr.update(visible=any((s.seed_metrics or {}).get("best_face_sim") is not None for s in scenes)),
+                self.components['scene_gallery']: gr.update(value=gallery_items),
+                self.components['scene_gallery_index_map_state']: index_map
+            })
+
+        if metadata_exists:
+             updates.update({
+                 self.components['analysis_output_dir_state']: str(session_path),
+                 self.components['filtering_tab']: gr.update(interactive=True),
+                 self.components['analysis_metadata_path_state']: str(session_path / "metadata.db")
+             })
+
+        for metric in self.ana_ui_map_keys:
+            if metric.startswith('compute_') and metric in self.components:
+                 updates[self.components[metric]] = gr.update(value=run_config.get(metric, True))
+
+        updates.update({
+            self.components['unified_log']: f"Successfully loaded session from: {session_path}",
+            self.components['main_tabs']: gr.update(selected=3),
             self.components['unified_status']: "✅ Session Loaded."
         })
+        yield updates
 
     def _fix_strategy_visibility(self, strategy: str) -> dict:
         is_face = "By Face" in strategy or "Fallback" in strategy

@@ -10,7 +10,7 @@ import torch
 
 from core.config import Config
 from core.models import AnalysisParameters, Scene
-from core.scene_utils_pkg import SeedSelector, MaskPropagator, SubjectMasker, run_scene_detection
+from core.scene_utils import SeedSelector, MaskPropagator, SubjectMasker, run_scene_detection
 
 @pytest.fixture
 def mock_config(tmp_path):
@@ -85,7 +85,7 @@ class TestSeedSelector:
         assert details['type'] == 'cat'
 
 class TestMaskPropagator:
-    @patch('core.scene_utils_pkg.mask_propagator.postprocess_mask', side_effect=lambda x, **k: x)
+    @patch('core.scene_utils.mask_propagator.postprocess_mask', side_effect=lambda x, **k: x)
     def test_propagate_success(self, mock_post, mock_config, mock_logger, mock_params):
         tracker = MagicMock()
         # Mock initialize
@@ -105,14 +105,14 @@ class TestMaskPropagator:
         assert errors[0] is None
 
 class TestSubjectMasker:
-    @patch('core.scene_utils_pkg.subject_masker.create_frame_map', return_value={0: 'frame_0.png'})
+    @patch('core.scene_utils.subject_masker.create_frame_map', return_value={0: 'frame_0.png'})
     def test_run_propagation(self, mock_create_map, mock_config, mock_logger, mock_params, tmp_path):
         mock_model_registry = MagicMock()
         mock_tracker = MagicMock()
         mock_model_registry.get_tracker.return_value = mock_tracker
 
         # Mock propagator
-        with patch('core.scene_utils_pkg.subject_masker.MaskPropagator') as MockPropagator:
+        with patch('core.scene_utils.subject_masker.MaskPropagator') as MockPropagator:
             instance = MockPropagator.return_value
             # return masks, areas, empties, errors
             instance.propagate.return_value = ([np.ones((10, 10), dtype=np.uint8)], [100.0], [False], [None])
@@ -124,7 +124,7 @@ class TestSubjectMasker:
             scene = Scene(shot_id=1, start_frame=0, end_frame=1, best_frame=0, seed_result={'bbox': [0,0,10,10], 'details': {}})
 
             # Setup disk mocks
-            with patch('core.scene_utils_pkg.subject_masker.SubjectMasker._load_shot_frames') as mock_load:
+            with patch('core.scene_utils.subject_masker.SubjectMasker._load_shot_frames') as mock_load:
                 mock_load.return_value = [(0, np.zeros((10,10,3), dtype=np.uint8), (10,10))]
 
                 frames_dir = tmp_path / "frames"
