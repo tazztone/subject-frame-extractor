@@ -137,10 +137,12 @@ subject-frame-extractor/
 See **[AGENTS.md](AGENTS.md)** for detailed developer guidelines, testing instructions, and architectural insights.
 
 ### Running Tests
-### Running Tests
 ```bash
-# Backend unit tests (fast)
-python -m pytest tests/ --ignore=tests/e2e/
+# Backend unit tests (fast, uses mocks)
+python -m pytest tests/
+
+# Integration tests (no mocks, requires GPU)
+python -m pytest tests/test_integration.py -m integration
 
 # Frontend E2E tests (requires App running + Playwright)
 python -m pytest tests/e2e/
