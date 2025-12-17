@@ -204,11 +204,11 @@ def build_modules_to_mock():
 # Check if running integration tests by looking at command line args
 
 def _should_apply_mocks():
-    """Check if we should apply mocks (skip for integration/smoke/signature tests)."""
+    """Check if we should apply mocks (skip for integration/smoke/signature/gpu_e2e tests)."""
     import sys
     # Tests that should NOT use mocks
-    no_mock_tests = ['test_integration', 'test_smoke', 'test_signatures']
-    no_mock_markers = ['integration', 'smoke', 'signature']
+    no_mock_tests = ['test_integration', 'test_smoke', 'test_signatures', 'test_gpu_e2e']
+    no_mock_markers = ['integration', 'smoke', 'signature', 'gpu_e2e']
     
     # Check if running specific test files
     if any(test in arg for arg in sys.argv for test in no_mock_tests):
