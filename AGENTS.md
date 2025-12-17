@@ -26,8 +26,8 @@ SAM3: Via submodule
 4. **Run App**: `python app.py`
 
 ### Essential Commands
-- **Test Backend**: `python -m pytest tests/`
-- **Test E2E**: `pytest tests/e2e/` (Requires Playwright)
+- **Test Backend**: `python -m pytest tests/ --ignore=tests/e2e/` (Unit tests)
+- **Test E2E**: `python -m pytest tests/e2e/` (Requires Mock App + Playwright)
 - **Lint/Check**: `.claude/commands/validate.md` (if available)
 
 ### Directory Structure

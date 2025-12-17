@@ -1,22 +1,15 @@
+"""
+Tests for export functionality.
+
+Uses fixtures from conftest.py for mock setup.
+"""
 import pytest
 from unittest.mock import MagicMock, patch
-import sys
 from pathlib import Path
-import json
-
-# Add project root to path
-sys.path.insert(0, str(Path(__file__).parent.parent.resolve()))
 
 from core.events import ExportEvent
 from core.export import export_kept_frames
 
-@pytest.fixture
-def mock_config():
-    return MagicMock()
-
-@pytest.fixture
-def mock_logger():
-    return MagicMock()
 
 @patch('subprocess.Popen')
 @patch('core.export.apply_all_filters_vectorized')
