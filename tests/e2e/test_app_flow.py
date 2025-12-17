@@ -71,8 +71,6 @@ def test_full_user_flow(page: Page, app_server):
     page.get_by_role("button", name="🚀 Start Single Extraction").click()
 
     # Wait for success message in log
-    # Use regex to match partial text in value
-    import re
     # Check for success message in status or log
     expect(page.get_by_text("Extraction complete")).to_be_visible(timeout=20000)
     time.sleep(2) # Wait a bit for state to settle
@@ -101,7 +99,7 @@ def test_full_user_flow(page: Page, app_server):
     page.get_by_role("button", name="🌱 Find & Preview Best Frames").click()
 
     # Wait for success
-    # expect(page.locator("#unified_log textarea")).to_have_value(re.compile("Pre-analysis complete"), timeout=10000)
+    expect(page.locator("#unified_log")).to_contain_text("Pre-analysis complete", timeout=10000)
     time.sleep(2)
 
     # 3. Scene Selection & Propagation
@@ -114,7 +112,7 @@ def test_full_user_flow(page: Page, app_server):
     page.get_by_role("button", name="🔬 Propagate Masks").click()
 
     # Wait for propagation success
-    # expect(page.locator("#unified_log textarea")).to_have_value(re.compile("Propagation complete"), timeout=10000)
+    expect(page.locator("#unified_log")).to_contain_text("Propagation complete", timeout=10000)
     time.sleep(2)
 
     # 4. Analysis
@@ -125,7 +123,7 @@ def test_full_user_flow(page: Page, app_server):
     page.get_by_role("button", name="Analyze Selected Frames").click()
 
     # Wait for analysis complete
-    # expect(page.locator("#unified_log textarea")).to_have_value(re.compile("Analysis complete"), timeout=10000)
+    expect(page.locator("#unified_log")).to_contain_text("Analysis complete", timeout=10000)
     time.sleep(2)
 
     # 5. Filtering & Export
