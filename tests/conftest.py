@@ -200,9 +200,30 @@ def build_modules_to_mock():
     return modules
 
 
-# Apply module mocks at import time
-MODULES_TO_MOCK = build_modules_to_mock()
-patch.dict(sys.modules, MODULES_TO_MOCK).start()
+# Apply module mocks at import time - SKIP for integration tests
+# Check if running integration tests by looking at command line args
+
+def _should_apply_mocks():
+    """Check if we should apply mocks (skip for integration tests)."""
+    import sys
+    # Check if running integration tests specifically
+    if any('test_integration' in arg for arg in sys.argv):
+        return False
+    # Check if -m integration marker is specified
+    if '-m' in sys.argv:
+        try:
+            idx = sys.argv.index('-m')
+            if idx + 1 < len(sys.argv) and 'integration' in sys.argv[idx + 1]:
+                return False
+        except ValueError:
+            pass
+    return True
+
+if _should_apply_mocks():
+    MODULES_TO_MOCK = build_modules_to_mock()
+    patch.dict(sys.modules, MODULES_TO_MOCK).start()
+else:
+    MODULES_TO_MOCK = {}
 
 
 # =============================================================================
