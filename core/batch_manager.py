@@ -15,6 +15,7 @@ class BatchStatus(Enum):
 
 @dataclass
 class BatchItem:
+    """Represents a single item in the batch processing queue."""
     id: str
     path: str
     params: Dict = field(default_factory=dict)
@@ -25,7 +26,9 @@ class BatchItem:
     error: str = ""
 
 class BatchManager:
+    """Manages a queue of batch processing tasks."""
     def __init__(self):
+        """Initializes the BatchManager."""
         self.queue: List[BatchItem] = []
         self.lock = threading.Lock()
         self.stop_event = threading.Event()
@@ -34,28 +37,34 @@ class BatchManager:
         self.active_items: Dict[str, BatchItem] = {}
 
     def add_paths(self, paths: List[str]):
+        """Adds a list of file paths to the batch queue."""
         with self.lock:
             for p in paths:
                 item = BatchItem(id=str(uuid.uuid4()), path=p)
                 self.queue.append(item)
 
     def get_queue_snapshot(self) -> List[BatchItem]:
+        """Returns a thread-safe snapshot of the current queue."""
         with self.lock:
             return list(self.queue)
 
     def get_status_list(self) -> List[List]:
+        """Returns a simplified list of status data for the UI."""
         with self.lock:
             return [[item.path, item.status.value, item.progress, item.message] for item in self.queue]
 
     def clear_completed(self):
+        """Removes completed, failed, and cancelled items from the queue."""
         with self.lock:
             self.queue = [item for item in self.queue if item.status not in (BatchStatus.COMPLETED, BatchStatus.FAILED, BatchStatus.CANCELLED)]
 
     def clear_all(self):
+        """Clears all items from the queue."""
         with self.lock:
             self.queue = []
 
     def update_progress(self, item_id: str, fraction: float, message: Optional[str] = None):
+        """Updates the progress of a specific batch item."""
         with self.lock:
             for item in self.queue:
                 if item.id == item_id:
@@ -65,6 +74,7 @@ class BatchManager:
                     break
 
     def set_status(self, item_id: str, status: BatchStatus, message: Optional[str] = None):
+        """Updates the status and message of a specific batch item."""
         with self.lock:
             for item in self.queue:
                 if item.id == item_id:
@@ -74,6 +84,13 @@ class BatchManager:
                     break
 
     def start_processing(self, processor_func: Callable, max_workers: int = 1):
+        """
+        Starts processing the batch queue in a background thread.
+
+        Args:
+            processor_func: Function to process each item.
+            max_workers: Number of concurrent worker threads.
+        """
         self.stop_event.clear()
         self.is_running = True
 
@@ -145,4 +162,5 @@ class BatchManager:
             self.is_running = False
 
     def stop_processing(self):
+        """Signals the scheduler to stop processing."""
         self.stop_event.set()

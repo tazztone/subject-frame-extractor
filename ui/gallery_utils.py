@@ -24,6 +24,12 @@ from core.shared import (
 def _update_gallery(all_frames_data: list[dict], filters: dict, output_dir: str, gallery_view: str,
                     show_overlay: bool, overlay_alpha: float, thumbnail_manager: Any,
                     config: Any, logger: Any) -> tuple[str, gr.update]:
+    """
+    Updates the Gradio gallery based on applied filters.
+
+    Returns:
+        A tuple containing the status text and a Gradio update object for the gallery.
+    """
     kept, rejected, counts, per_frame_reasons = apply_all_filters_vectorized(all_frames_data, filters or {}, config, thumbnail_manager, output_dir)
     status_parts = [f"**Kept:** {len(kept)}/{len(all_frames_data)}"]
     if counts:
@@ -49,6 +55,11 @@ def _update_gallery(all_frames_data: list[dict], filters: dict, output_dir: str,
 
 def on_filters_changed(event: FilterEvent, thumbnail_manager: Any,
                        config: Any, logger: Any) -> dict:
+    """
+    Event handler for when filter settings are modified.
+
+    Re-filters data and updates the gallery view.
+    """
     if not event.all_frames_data: return {"filter_status_text": "Run analysis to see results.", "results_gallery": []}
     filters = event.slider_values.copy()
     filters.update({"require_face_match": event.require_face_match, "dedup_thresh": event.dedup_thresh,
@@ -61,6 +72,18 @@ def on_filters_changed(event: FilterEvent, thumbnail_manager: Any,
     return {"filter_status_text": status_text, "results_gallery": gallery_update}
 
 def auto_set_thresholds(per_metric_values: dict, p: int, slider_keys: list[str], selected_metrics: list[str]) -> dict:
+    """
+    Calculates threshold values based on data percentiles.
+
+    Args:
+        per_metric_values: Dictionary of metric values.
+        p: Percentile value.
+        slider_keys: List of slider component keys.
+        selected_metrics: List of metrics to auto-tune.
+
+    Returns:
+        Dictionary of updates for the sliders.
+    """
     updates = {}
     if not per_metric_values: return {f'slider_{key}': gr.update() for key in slider_keys}
     pmap = {

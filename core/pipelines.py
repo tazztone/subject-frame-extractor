@@ -32,6 +32,7 @@ from core.progress import AdvancedProgressTracker
 
 
 def _process_ffmpeg_stream(stream, tracker: Optional['AdvancedProgressTracker'], desc: str, total_duration_s: float):
+    """Parses FFmpeg progress stream and updates the tracker."""
     progress_data = {}
     for line in iter(stream.readline, ''):
         try:
@@ -51,6 +52,7 @@ def _process_ffmpeg_stream(stream, tracker: Optional['AdvancedProgressTracker'],
     stream.close()
 
 def _process_ffmpeg_showinfo(stream) -> tuple[list, str]:
+    """Parses FFmpeg stderr for 'showinfo' frame numbers."""
     frame_numbers = []
     stderr_lines = []
     for line in iter(stream.readline, ''):
@@ -63,6 +65,11 @@ def _process_ffmpeg_showinfo(stream) -> tuple[list, str]:
 def run_ffmpeg_extraction(video_path: str, output_dir: Path, video_info: dict, params: 'AnalysisParameters',
                           progress_queue: Queue, cancel_event: threading.Event, logger: 'AppLogger',
                           config: 'Config', tracker: Optional['AdvancedProgressTracker'] = None):
+    """
+    Executes FFmpeg command to extract frames/thumbnails.
+
+    Constructs complex filter chains based on extraction method (interval, keyframes, etc.).
+    """
     cmd_base = ['ffmpeg', '-y', '-i', str(video_path), '-hide_banner']
     progress_args = ['-progress', 'pipe:1', '-nostats', '-loglevel', 'info']
     cmd_base.extend(progress_args)
@@ -139,6 +146,7 @@ def run_ffmpeg_extraction(video_path: str, output_dir: Path, video_info: dict, p
         raise RuntimeError(f"FFmpeg failed with code {process.returncode}. Check logs for details.")
 
 class Pipeline:
+    """Base class for processing pipelines."""
     def __init__(self, config: 'Config', logger: 'AppLogger', params: 'AnalysisParameters',
                  progress_queue: Queue, cancel_event: threading.Event):
         self.config = config
@@ -148,6 +156,7 @@ class Pipeline:
         self.cancel_event = cancel_event
 
 class ExtractionPipeline(Pipeline):
+    """Pipeline for extracting frames from video or processing image folders."""
     def __init__(self, config: 'Config', logger: 'AppLogger', params: 'AnalysisParameters',
                  progress_queue: Queue, cancel_event: threading.Event):
         super().__init__(config, logger, params, progress_queue, cancel_event)
@@ -155,6 +164,7 @@ class ExtractionPipeline(Pipeline):
         self.run = self.error_handler.with_retry()(self._run_impl)
 
     def _run_impl(self, tracker: Optional['AdvancedProgressTracker'] = None) -> dict:
+        """Internal execution logic for extraction."""
         source_p = Path(self.params.source_path)
         from core.utils import is_image_folder, list_images
         is_folder = is_image_folder(source_p)
@@ -218,6 +228,7 @@ class ExtractionPipeline(Pipeline):
             return {"done": True, "output_dir": str(output_dir), "video_path": str(video_path)}
 
 class AnalysisPipeline(Pipeline):
+    """Pipeline for analyzing frames (pre-analysis, propagation, full analysis)."""
     def __init__(self, config: 'Config', logger: 'AppLogger', params: 'AnalysisParameters',
                  progress_queue: Queue, cancel_event: threading.Event,
                  thumbnail_manager: 'ThumbnailManager', model_registry: 'ModelRegistry'):
@@ -234,6 +245,7 @@ class AnalysisPipeline(Pipeline):
         self.model_registry = model_registry
 
     def _initialize_niqe_metric(self):
+        """Lazy initialization of the NIQE metric model."""
         if self.niqe_metric is None:
             try:
                 import pyiqa
@@ -243,6 +255,12 @@ class AnalysisPipeline(Pipeline):
             except Exception as e: self.logger.warning("Failed to initialize NIQE metric", extra={'error': e})
 
     def run_full_analysis(self, scenes_to_process: list['Scene'], tracker: Optional['AdvancedProgressTracker'] = None) -> dict:
+        """
+        Runs the mask propagation phase.
+
+        Despite the name, this currently focuses on propagation (subject masking) for video,
+        or full processing for image folders.
+        """
         is_folder_mode = not self.params.video_path
         if is_folder_mode: return self._run_image_folder_analysis(tracker=tracker)
         else:
@@ -291,6 +309,11 @@ class AnalysisPipeline(Pipeline):
                 return {"error": str(e), "done": False}
 
     def run_analysis_only(self, scenes_to_process: list['Scene'], tracker: Optional['AdvancedProgressTracker'] = None) -> dict:
+        """
+        Runs the frame analysis phase (calculating quality metrics).
+
+        This phase consumes the masks generated in the propagation phase.
+        """
         try:
             self.db.connect()
             self.db.create_tables()
@@ -339,10 +362,12 @@ class AnalysisPipeline(Pipeline):
             return {"error": str(e), "done": False}
 
     def _filter_completed_scenes(self, scenes: list['Scene'], progress_data: dict) -> list['Scene']:
+        """Removes scenes that have already been processed when resuming."""
         completed_scenes = progress_data.get("completed_scenes", [])
         return [s for s in scenes if s.shot_id not in completed_scenes]
 
     def _save_progress(self, current_scene: 'Scene', progress_file: Path):
+        """Updates the progress file with the completed scene ID."""
         progress_data = {"completed_scenes": []}
         if progress_file.exists():
             with open(progress_file) as f: progress_data = json.load(f)
@@ -350,6 +375,7 @@ class AnalysisPipeline(Pipeline):
         with open(progress_file, 'w') as f: json.dump(progress_data, f)
 
     def _process_reference_face(self):
+        """Computes the embedding for the reference face image."""
         if not self.face_analyzer: return
         ref_path = Path(self.params.face_ref_img_path)
         if not ref_path.is_file(): raise FileNotFoundError(f"Reference face image not found: {ref_path}")
@@ -362,6 +388,7 @@ class AnalysisPipeline(Pipeline):
         self.logger.success("Reference face processed.")
 
     def _run_image_folder_analysis(self, tracker: Optional['AdvancedProgressTracker'] = None) -> dict:
+        """Specialized execution path for image folder inputs."""
         self.logger.info("Starting image folder analysis...")
         self.logger.info("Running pre-filter on thumbnails...")
         self.logger.info("Running full analysis on kept images...")
@@ -370,6 +397,7 @@ class AnalysisPipeline(Pipeline):
         return {"done": True, "metadata_path": str(metadata_path), "output_dir": str(self.output_dir)}
 
     def _run_analysis_loop(self, scenes_to_process: list['Scene'], metrics_to_compute: dict, tracker: Optional['AdvancedProgressTracker'] = None):
+        """Orchestrates the parallel processing of frames for metric calculation."""
         frame_map = create_frame_map(self.thumb_dir.parent, self.logger)
         all_frame_nums_to_process = {fn for scene in scenes_to_process for fn in range(scene.start_frame, scene.end_frame) if fn in frame_map}
         image_files_to_process = [self.thumb_dir / frame_map[fn] for fn in sorted(list(all_frame_nums_to_process)) if frame_map.get(fn)]
@@ -390,10 +418,14 @@ class AnalysisPipeline(Pipeline):
                 except Exception as e: self.logger.error(f"Error processing batch future: {e}")
 
     def _process_batch(self, batch_paths: list[Path], metrics_to_compute: dict) -> int:
+        """Processes a batch of frame files."""
         for path in batch_paths: self._process_single_frame(path, metrics_to_compute)
         return len(batch_paths)
 
     def _process_single_frame(self, thumb_path: Path, metrics_to_compute: dict):
+        """
+        Analyzes a single frame: computes metrics, face similarity, and stores metadata.
+        """
         if self.cancel_event.is_set(): return
         if not (frame_num_match := re.search(r'frame_(\d+)', thumb_path.name)): return
         log_context = {'file': thumb_path.name}
@@ -460,6 +492,7 @@ class AnalysisPipeline(Pipeline):
             })
 
     def _analyze_face_similarity(self, frame: 'Frame', image_rgb: np.ndarray) -> Optional[list[int]]:
+        """Computes face similarity and confidence against the reference face."""
         face_bbox = None
         try:
             image_bgr = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR)
@@ -480,6 +513,11 @@ def execute_extraction(event: 'ExtractionEvent', progress_queue: Queue, cancel_e
                        logger: 'AppLogger', config: 'Config', thumbnail_manager: Optional['ThumbnailManager'] = None,
                        cuda_available: Optional[bool] = None, progress: Optional[Callable] = None,
                        model_registry: Optional['ModelRegistry'] = None) -> Generator[dict, None, None]:
+    """
+    Orchestrates the frame extraction process.
+
+    Handlers file uploads, parameter validation, and running the extraction pipeline.
+    """
     try:
         params_dict = event.model_dump()
         if event.upload_video:
@@ -507,6 +545,9 @@ def execute_pre_analysis(event: 'PreAnalysisEvent', progress_queue: Queue, cance
                          logger: 'AppLogger', config: 'Config', thumbnail_manager: 'ThumbnailManager',
                          cuda_available: bool, progress: Optional[Callable] = None,
                          model_registry: 'ModelRegistry' = None) -> Generator[dict, None, None]:
+    """
+    Orchestrates the pre-analysis phase (scene detection, subject seeding).
+    """
     try:
         tracker = AdvancedProgressTracker(progress, progress_queue, logger, ui_stage_name="Pre-Analysis")
         params_dict = event.model_dump()
@@ -572,12 +613,18 @@ def execute_pre_analysis(event: 'PreAnalysisEvent', progress_queue: Queue, cance
         yield {"unified_log": f"[ERROR] Pre-analysis failed unexpectedly: {e}", "done": False}
 
 def validate_session_dir(path: Union[str, Path]) -> tuple[Optional[Path], Optional[str]]:
+    """Checks if the provided path is a valid session directory."""
     try:
         p = Path(path).expanduser().resolve()
         return (p if p.exists() and p.is_dir() else None, None if p.exists() and p.is_dir() else f"Session directory does not exist: {p}")
     except Exception as e: return None, f"Invalid session path: {e}"
 
 def execute_session_load(event: 'SessionLoadEvent', logger: 'AppLogger') -> dict:
+    """
+    Loads session state from disk.
+
+    Verifies the directory structure and loads configuration, scenes, and metadata.
+    """
     if not event.session_path or not event.session_path.strip():
         logger.error("No session path provided.", component="session_loader")
         return {"error": "Please enter a path to a session directory."}
@@ -635,6 +682,7 @@ def execute_session_load(event: 'SessionLoadEvent', logger: 'AppLogger') -> dict
 def execute_propagation(event: PropagationEvent, progress_queue: Queue, cancel_event: threading.Event, logger: AppLogger,
                         config: Config, thumbnail_manager, cuda_available, progress=None,
                         model_registry: 'ModelRegistry' = None) -> Generator[dict, None, None]:
+    """Orchestrates the mask propagation stage."""
     try:
         params = AnalysisParameters.from_ui(logger, config, **event.analysis_params.model_dump())
         is_folder_mode = not params.video_path
@@ -663,6 +711,7 @@ def execute_propagation(event: PropagationEvent, progress_queue: Queue, cancel_e
 def execute_analysis(event: PropagationEvent, progress_queue: Queue, cancel_event: threading.Event, logger: AppLogger,
                      config: Config, thumbnail_manager, cuda_available, progress=None,
                      model_registry: 'ModelRegistry' = None) -> Generator[dict, None, None]:
+    """Orchestrates the frame analysis stage."""
     try:
         params = AnalysisParameters.from_ui(logger, config, **event.analysis_params.model_dump())
         scenes_to_process = [Scene(**{k: v for k, v in s.items() if k in {f.name for f in fields(Scene)}}) for s in event.scenes if s.get('status') == 'included']
