@@ -215,6 +215,15 @@ class SAM3Wrapper:
         from sam3.model_builder import build_sam3_video_predictor
         
         self.device = device
+        
+        # Disable bfloat16 autocast to fix dtype mismatch with PyTorch 2.9+
+        # Error: "Input type (struct c10::BFloat16) and bias type (float) should be the same"
+        if torch.cuda.is_available():
+            torch.set_float32_matmul_precision('high')
+            # Disable automatic mixed precision that causes dtype conflicts
+            if hasattr(torch, 'set_default_dtype'):
+                torch.set_default_dtype(torch.float32)
+        
         # build_sam3_video_predictor creates a predictor with handle_request interface
         self.predictor = build_sam3_video_predictor()
         self.session_id = None
