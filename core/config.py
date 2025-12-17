@@ -178,6 +178,7 @@ class Config(BaseSettings):
     edge_strength_base_scale: int = 100
 
     def model_post_init(self, __context: Any) -> None:
+        """Post-initialization hook to validate paths."""
         self._validate_paths()
 
     def _validate_paths(self):
@@ -195,6 +196,7 @@ class Config(BaseSettings):
 
     @model_validator(mode='after')
     def _validate_config(self) -> 'Config':
+        """Validates that at least one quality weight is non-zero."""
         if sum([self.quality_weights_sharpness, self.quality_weights_edge_strength,
                 self.quality_weights_contrast, self.quality_weights_brightness,
                 self.quality_weights_entropy, self.quality_weights_niqe]) == 0:
@@ -203,6 +205,7 @@ class Config(BaseSettings):
 
     @property
     def quality_weights(self) -> Dict[str, int]:
+        """Returns a dictionary of quality metric weights."""
         return {
             'sharpness': self.quality_weights_sharpness,
             'edge_strength': self.quality_weights_edge_strength,

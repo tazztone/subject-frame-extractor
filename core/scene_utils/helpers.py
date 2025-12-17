@@ -175,6 +175,7 @@ def toggle_scene_status(
 def _create_analysis_context(config: 'Config', logger: 'AppLogger', thumbnail_manager: 'ThumbnailManager',
                              cuda_available: bool, ana_ui_map_keys: list[str], ana_input_components: list,
                              model_registry: 'ModelRegistry') -> 'SubjectMasker':
+    """Helper to initialize a SubjectMasker from UI arguments."""
     from core.models import AnalysisParameters
     ui_args = dict(zip(ana_ui_map_keys, ana_input_components))
     if 'outputfolder' in ui_args and 'output_folder' not in ui_args: ui_args['output_folder'] = ui_args.pop('outputfolder')
@@ -201,6 +202,7 @@ def _create_analysis_context(config: 'Config', logger: 'AppLogger', thumbnail_ma
 
 def _recompute_single_preview(scene_state: 'SceneState', masker: 'SubjectMasker', overrides: dict,
                               thumbnail_manager: 'ThumbnailManager', logger: 'AppLogger'):
+    """Re-runs the seeding process for a single scene and updates its preview image."""
     scene = scene_state.scene # Use .scene property if using refactored SceneState
     out_dir = Path(masker.params.output_folder)
     best_frame_num = scene.best_frame or scene.start_frame
@@ -238,6 +240,7 @@ def _wire_recompute_handler(config: 'Config', logger: 'AppLogger', thumbnail_man
                             scenes: list['Scene'], shot_id: int, outdir: str, text_prompt: str,
                             view: str, ana_ui_map_keys: list[str],
                             ana_input_components: list, cuda_available: bool, model_registry: 'ModelRegistry') -> tuple:
+    """Gradio event handler for the 'Recompute' button in the scene editor."""
     import gradio as gr
     from core.models import SceneState
     try:

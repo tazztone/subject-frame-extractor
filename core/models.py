@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from core.logger import AppLogger
 
 def _coerce(val: Any, to_type: type) -> Any:
+    """Helper to strictly coerce values to the target type."""
     if to_type is bool:
         if isinstance(val, bool): return val
         return str(val).strip().lower() in {"1", "true", "yes", "on"}
@@ -24,6 +25,7 @@ def _coerce(val: Any, to_type: type) -> Any:
     return val
 
 def _sanitize_face_ref(kwargs: dict, logger: 'AppLogger') -> tuple[str, bool]:
+    """Validates the face reference image path."""
     ref_path = kwargs.get('face_ref_img_path', '')
     video_path = kwargs.get('video_path', '')
 
@@ -42,11 +44,13 @@ def _sanitize_face_ref(kwargs: dict, logger: 'AppLogger') -> tuple[str, bool]:
     return str(p), True
 
 class QualityConfig(BaseModel):
+    """Configuration for quality metric normalization."""
     sharpness_base_scale: float
     edge_strength_base_scale: float
     enable_niqe: bool = True
 
 class FrameMetrics(BaseModel):
+    """Container for calculated quality scores for a frame."""
     quality_score: float = 0.0
     sharpness_score: float = 0.0
     edge_strength_score: float = 0.0
@@ -61,6 +65,7 @@ class FrameMetrics(BaseModel):
     roll: float = 0.0
 
 class Frame(BaseModel):
+    """Represents a single video frame and its associated metadata."""
     image_data: np.ndarray
     frame_number: int
     metrics: FrameMetrics = Field(default_factory=FrameMetrics)
@@ -74,6 +79,20 @@ class Frame(BaseModel):
                                   main_config: Optional['Config'] = None, face_landmarker: Optional[Callable] = None,
                                   face_bbox: Optional[List[int]] = None,
                                   metrics_to_compute: Optional[Dict[str, bool]] = None):
+        """
+        Computes various image quality metrics (sharpness, contrast, NIQE, etc.) for the frame.
+
+        Args:
+            thumb_image_rgb: RGB image data.
+            quality_config: Configuration for metric calculation.
+            logger: Application logger.
+            mask: Optional boolean mask to restrict calculation to the subject.
+            niqe_metric: Optional PyTorch NIQE model.
+            main_config: Global app configuration.
+            face_landmarker: Optional MediaPipe FaceLandmarker instance.
+            face_bbox: Optional bounding box of the face.
+            metrics_to_compute: Dictionary flagging which metrics to calculate.
+        """
         try:
             if metrics_to_compute is None:
                 metrics_to_compute = {k: True for k in ['eyes_open', 'yaw', 'pitch', 'sharpness', 'edge_strength', 'contrast', 'brightness', 'entropy', 'quality']}
@@ -196,6 +215,7 @@ class Frame(BaseModel):
             logger.error("Frame quality calculation failed", exc_info=True, extra={'frame': self.frame_number})
 
 class Scene(BaseModel):
+    """Represents a detected scene or shot in the video."""
     shot_id: int
     start_frame: int
     end_frame: int
@@ -215,6 +235,7 @@ class Scene(BaseModel):
     rejection_reasons: Optional[list] = None
 
 class SceneState:
+    """Wrapper to manage state transitions and updates for a Scene object."""
     def __init__(self, scene_data: Union[dict, Scene]):
         if isinstance(scene_data, dict):
             self._scene = Scene(**scene_data)
@@ -228,13 +249,16 @@ class SceneState:
 
     @property
     def data(self) -> dict:
+        """Returns the scene data as a dictionary."""
         return self._scene.model_dump()
 
     @property
     def scene(self) -> Scene:
+        """Returns the underlying Scene object."""
         return self._scene
 
     def set_manual_bbox(self, bbox: list[int], source: str):
+        """Overrides the automatically selected subject bounding box."""
         self._scene.selected_bbox = bbox
         if self._scene.initial_bbox and self._scene.initial_bbox != bbox:
              self._scene.is_overridden = True
@@ -247,20 +271,24 @@ class SceneState:
         self._scene.manual_status_change = True
 
     def reset(self):
+        """Resets the scene to its initial state (undoes manual overrides)."""
         self._scene.selected_bbox = self._scene.initial_bbox
         self._scene.is_overridden = False
         self._scene.seed_config = {}
         self._scene.manual_status_change = False
 
     def include(self):
+        """Marks the scene as included."""
         self._scene.status = 'included'
         self._scene.manual_status_change = True
 
     def exclude(self):
+        """Marks the scene as excluded."""
         self._scene.status = 'excluded'
         self._scene.manual_status_change = True
 
     def update_seed_result(self, bbox: Optional[list[int]], details: dict):
+        """Updates the seeding result (detected subject) for the scene."""
         self._scene.seed_result = {'bbox': bbox, 'details': details}
         if self._scene.initial_bbox is None:
             self._scene.initial_bbox = bbox
@@ -268,6 +296,7 @@ class SceneState:
             self._scene.selected_bbox = bbox
 
 class AnalysisParameters(BaseModel):
+    """Aggregates all parameters for the analysis pipeline."""
     source_path: str = ""
     method: str = ""
     interval: float = 0.0
@@ -311,6 +340,7 @@ class AnalysisParameters(BaseModel):
 
     @classmethod
     def from_ui(cls, logger: 'AppLogger', config: 'Config', **kwargs) -> 'AnalysisParameters':
+        """Factory method to create parameters from UI arguments, handling validation and defaults."""
         if 'face_ref_img_path' in kwargs or 'video_path' in kwargs:
             sanitized_face_ref, face_filter_enabled = _sanitize_face_ref(kwargs, logger)
             kwargs['face_ref_img_path'] = sanitized_face_ref
@@ -352,6 +382,7 @@ class AnalysisParameters(BaseModel):
         return instance
 
 class MaskingResult(BaseModel):
+    """Result of the mask propagation process for a frame."""
     mask_path: Optional[str] = None
     shot_id: Optional[int] = None
     seed_type: Optional[str] = None

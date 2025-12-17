@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from core.error_handling import ErrorHandler
 
 def handle_common_errors(func: Callable) -> Callable:
+    """Decorator to catch common exceptions and return a standardized error dictionary."""
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         try:
@@ -45,6 +46,7 @@ def handle_common_errors(func: Callable) -> Callable:
     return wrapper
 
 def monitor_memory_usage(logger: 'AppLogger', device: str, threshold_mb: int = 8000):
+    """Logs a warning and clears cache if GPU memory usage exceeds threshold."""
     if device == 'cuda' and torch.cuda.is_available():
         allocated = torch.cuda.memory_allocated() / 1024**2
         if allocated > threshold_mb:
@@ -52,6 +54,7 @@ def monitor_memory_usage(logger: 'AppLogger', device: str, threshold_mb: int = 8
             torch.cuda.empty_cache()
 
 def validate_video_file(video_path: str):
+    """Checks if the video file exists, is not empty, and can be opened by OpenCV."""
     path = Path(video_path)
     if not path.exists(): raise FileNotFoundError(f"Video file not found: {video_path}")
     if path.stat().st_size == 0: raise ValueError(f"Video file is empty: {video_path}")
@@ -62,6 +65,7 @@ def validate_video_file(video_path: str):
     except Exception as e: raise ValueError(f"Invalid video file: {e}")
 
 def estimate_totals(params: 'AnalysisParameters', video_info: dict, scenes: Optional[list['Scene']]) -> dict:
+    """Estimates the total work items for each pipeline stage."""
     fps = max(1, int(video_info.get("fps") or 30))
     total_frames = int(video_info.get("frame_count") or 0)
     method = params.method
@@ -78,10 +82,12 @@ def estimate_totals(params: 'AnalysisParameters', video_info: dict, scenes: Opti
     return {"extraction": extraction_total, "pre_analysis": pre_analysis_total, "propagation": propagation_total}
 
 def sanitize_filename(name: str, config: 'Config', max_length: Optional[int] = None) -> str:
+    """Sanitizes a string to be safe for use as a filename."""
     max_length = max_length or config.utility_max_filename_length
     return re.sub(r'[^\w\-_.]', '_', name)[:max_length]
 
 def _to_json_safe(obj: Any) -> Any:
+    """Recursively converts objects (NumPy types, Path, etc.) to JSON-serializable types."""
     if isinstance(obj, dict): return {k: _to_json_safe(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)): return [_to_json_safe(v) for v in obj]
     if isinstance(obj, (np.integer,)): return int(obj)
@@ -94,12 +100,14 @@ def _to_json_safe(obj: Any) -> Any:
 
 @contextlib.contextmanager
 def safe_resource_cleanup(device: str = 'cpu'):
+    """Context manager to ensure garbage collection and CUDA cache clearing."""
     try: yield
     finally:
         gc.collect()
         if device == 'cuda' and torch.cuda.is_available(): torch.cuda.empty_cache()
 
 def is_image_folder(p: Union[str, Path]) -> bool:
+    """Checks if the path points to a directory."""
     if not p: return False
     try:
         if not isinstance(p, (str, Path)): p = str(p)
@@ -108,17 +116,20 @@ def is_image_folder(p: Union[str, Path]) -> bool:
     except (TypeError, ValueError): return False
 
 def list_images(p: Union[str, Path], cfg: Config) -> list[Path]:
+    """Lists all valid image files in a directory."""
     p = Path(p)
     exts = {e.lower() for e in cfg.utility_image_extensions}
     return sorted([f for f in p.iterdir() if f.suffix.lower() in exts and f.is_file()])
 
 @njit
 def compute_entropy(hist: np.ndarray, entropy_norm: float) -> float:
+    """Computes normalized entropy from a histogram using Numba."""
     prob = hist / (np.sum(hist) + 1e-7)
     entropy = -np.sum(prob[prob > 0] * np.log2(prob[prob > 0]))
     return min(max(entropy / entropy_norm, 0), 1.0)
 
 def _compute_sha256(path: Path) -> str:
+    """Computes SHA256 hash of a file."""
     h = hashlib.sha256()
     with open(path, 'rb') as f:
         while chunk := f.read(8192): h.update(chunk)
@@ -127,6 +138,9 @@ def _compute_sha256(path: Path) -> str:
 def download_model(url: str, dest_path: Union[str, Path], description: str, logger: 'AppLogger',
                    error_handler: 'ErrorHandler', user_agent: str, min_size: int = 1_000_000,
                    expected_sha256: Optional[str] = None, token: Optional[str] = None):
+    """
+    Downloads a file from a URL with retries, validation, and progress logging.
+    """
     dest_path = Path(dest_path)
     dest_path.parent.mkdir(parents=True, exist_ok=True)
     if dest_path.is_file():
@@ -170,6 +184,7 @@ def download_model(url: str, dest_path: Union[str, Path], description: str, logg
         raise RuntimeError(f"Failed to download required model: {description}") from e
 
 def postprocess_mask(mask: np.ndarray, config: 'Config', fill_holes: bool = True, keep_largest_only: bool = True) -> np.ndarray:
+    """Cleans up binary masks using morphological operations and connected components."""
     if mask is None or mask.size == 0: return mask
     binary_mask = (mask > 128).astype(np.uint8)
     if fill_holes:
@@ -183,6 +198,7 @@ def postprocess_mask(mask: np.ndarray, config: 'Config', fill_holes: bool = True
     return (binary_mask * 255).astype(np.uint8)
 
 def render_mask_overlay(frame_rgb: np.ndarray, mask_gray: np.ndarray, alpha: float, logger: 'AppLogger') -> np.ndarray:
+    """ overlays a semi-transparent red mask on the image."""
     if mask_gray is None or frame_rgb is None: return frame_rgb if frame_rgb is not None else np.array([])
     h, w = frame_rgb.shape[:2]
     if mask_gray.shape[:2] != (h, w): mask_gray = cv2.resize(mask_gray, (w, h), interpolation=cv2.INTER_NEAREST)
@@ -197,9 +213,11 @@ def render_mask_overlay(frame_rgb: np.ndarray, mask_gray: np.ndarray, alpha: flo
     return np.where(m, blended, frame_rgb)
 
 def rgb_to_pil(image_rgb: np.ndarray) -> Image.Image:
+    """Converts a NumPy RGB array to a PIL Image."""
     return Image.fromarray(image_rgb)
 
 def create_frame_map(output_dir: Path, logger: 'AppLogger', ext: str = ".webp") -> dict:
+    """Creates a mapping from original frame numbers to extracted filenames."""
     logger.info("Loading frame map...", component="frames")
     frame_map_path = output_dir / "frame_map.json"
     try:
@@ -212,6 +230,7 @@ def create_frame_map(output_dir: Path, logger: 'AppLogger', ext: str = ".webp") 
 
 def draw_bbox(img_rgb: np.ndarray, xywh: list, config: 'Config', color: Optional[tuple] = None,
               thickness: Optional[int] = None, label: Optional[str] = None) -> np.ndarray:
+    """Draws a bounding box and optional label on an image."""
     color = color or tuple(config.visualization_bbox_color)
     thickness = thickness or config.visualization_bbox_thickness
     x, y, w, h = map(int, xywh or [0, 0, 0, 0])
