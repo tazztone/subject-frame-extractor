@@ -20,12 +20,23 @@ from core.managers import ModelRegistry, ThumbnailManager
 from ui.app_ui import AppUI
 
 def cleanup_models(model_registry):
+    """
+    Clears the model registry and performs garbage collection.
+
+    Args:
+        model_registry: The ModelRegistry instance to clear.
+    """
     if model_registry:
         model_registry.clear()
     torch.cuda.empty_cache()
     gc.collect()
 
 def main():
+    """
+    Main entry point for the application.
+
+    Initializes configuration, logging, managers, and the Gradio UI.
+    """
     model_registry = None
     try:
         config = Config()
