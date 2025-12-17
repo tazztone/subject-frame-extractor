@@ -362,3 +362,63 @@ def sample_mask():
     mask = np.zeros((100, 100), dtype=np.uint8)
     mask[25:75, 25:75] = 255  # Simple square mask
     return mask
+
+
+@pytest.fixture
+def mock_params(tmp_path):
+    """Provides mock AnalysisParameters for pipeline tests."""
+    from core.models import AnalysisParameters
+    
+    # Create output directory so database tests don't fail
+    output_folder = tmp_path / "output"
+    output_folder.mkdir(exist_ok=True)
+    
+    return AnalysisParameters(
+        source_path="test_video.mp4",
+        video_path="test_video.mp4",
+        output_folder=str(output_folder),
+        thumbnails_only=True,
+        tracker_model_name="sam3",
+    )
+
+
+@pytest.fixture
+def mock_config_simple(tmp_path):
+    """Provides a MagicMock config for tests needing attribute flexibility."""
+    mock = MagicMock()
+    
+    # Create directories so database tests don't fail
+    downloads_dir = tmp_path / "downloads"
+    models_dir = tmp_path / "models"
+    logs_dir = tmp_path / "logs"
+    downloads_dir.mkdir(exist_ok=True)
+    models_dir.mkdir(exist_ok=True)
+    logs_dir.mkdir(exist_ok=True)
+    
+    mock.downloads_dir = downloads_dir
+    mock.models_dir = models_dir
+    mock.logs_dir = logs_dir
+    mock.ffmpeg_thumbnail_quality = 80
+    mock.retry_max_attempts = 1
+    mock.retry_backoff_seconds = (0.1,)
+    mock.monitoring_memory_warning_threshold_mb = 1000
+    mock.analysis_default_workers = 1
+    mock.analysis_default_batch_size = 1
+    mock.sharpness_base_scale = 1.0
+    mock.edge_strength_base_scale = 1.0
+    mock.utility_max_filename_length = 255
+    mock.cache_size = 10
+    mock.cache_cleanup_threshold = 0.8
+    mock.cache_eviction_factor = 0.5
+    mock.default_max_resolution = "1080"
+    mock.seeding_yolo_iou_threshold = 0.5
+    mock.seeding_face_contain_score = 10
+    mock.seeding_confidence_score_multiplier = 1
+    mock.seeding_iou_bonus = 5
+    mock.seeding_balanced_score_weights = {'area': 1, 'confidence': 1, 'edge': 1}
+    mock.seeding_face_to_body_expansion_factors = [1.5, 3.0, 1.0]
+    mock.seeding_final_fallback_box = [0.25, 0.25, 0.75, 0.75]
+    mock.visualization_bbox_color = (0, 255, 0)
+    mock.visualization_bbox_thickness = 2
+    return mock
+
