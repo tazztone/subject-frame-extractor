@@ -26,15 +26,26 @@ SAM3: Via submodule
 4. **Run App**: `python app.py`
 
 ### Essential Commands
-- **Test Backend**: `python -m pytest tests/ --ignore=tests/e2e/` (Unit tests)
-- **Test E2E**: `python -m pytest tests/e2e/` (Requires Mock App + Playwright)
-- **Lint/Check**: `.claude/commands/validate.md` (if available)
+- **Unit Tests**: `python -m pytest tests/` (Fast, uses mocks)
+- **Smoke Tests**: `python -m pytest tests/test_smoke.py` (No mocks, catches import errors)
+- **Signature Tests**: `python -m pytest tests/test_signatures.py` (Validates function interfaces)
+- **Integration Tests**: `python -m pytest tests/test_integration.py -m integration` (GPU required)
+- **E2E Tests**: `python -m pytest tests/e2e/` (Requires App running + Playwright)
+
+### Test Strategy
+| Test Type | File | Purpose | GPU? |
+|-----------|------|---------|------|
+| Unit | `test_*.py` | Logic with mocks | No |
+| Smoke | `test_smoke.py` | Import validation | No |
+| Signature | `test_signatures.py` | Function interfaces | No |
+| Integration | `test_integration.py` | Real dependencies | Yes |
+| E2E | `tests/e2e/` | Full app flow | Yes |
 
 ### Directory Structure
 - `app.py`: Entry point.
 - `core/`: Business logic (pipelines, config, db).
 - `ui/`: Gradio interface components.
-- `tests/`: Unit and E2E tests.
+- `tests/`: Unit, smoke, signature, integration, and E2E tests.
 - `SAM3_repo/`: **Read-only** submodule.
 
 
