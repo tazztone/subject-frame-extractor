@@ -15,6 +15,7 @@ from queue import Queue, Empty
 from typing import Optional, List, Dict, Any, Generator, Callable, TYPE_CHECKING
 from dataclasses import fields
 from PIL import Image
+import gradio as gr
 
 if TYPE_CHECKING:
     from core.config import Config

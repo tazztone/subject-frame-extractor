@@ -48,6 +48,18 @@ class TestImportSmoke:
         import torch
         assert torch is not None
 
+    def test_import_gradio(self):
+        """Test Gradio is available (was missing in pipelines.py)."""
+        import gradio as gr
+        assert gr is not None
+
+    def test_pipelines_has_all_imports(self):
+        """Verify pipelines.py has all required imports at module level."""
+        from core import pipelines
+        # These were missing and caused runtime errors
+        assert hasattr(pipelines, 'Image')  # PIL.Image
+        assert hasattr(pipelines, 'gr')     # gradio
+
 
 class TestGPUIntegration:
     """Tests that require GPU hardware."""
