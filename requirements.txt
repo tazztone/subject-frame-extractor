@@ -27,3 +27,4 @@ iopath
 decord
 python-dotenv
 pycocotools
+triton-windows

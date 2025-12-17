@@ -30,16 +30,18 @@ SAM3: Via submodule
 - **Smoke Tests**: `python -m pytest tests/test_smoke.py` (No mocks, catches import errors)
 - **Signature Tests**: `python -m pytest tests/test_signatures.py` (Validates function interfaces)
 - **Integration Tests**: `python -m pytest tests/test_integration.py -m integration` (GPU required)
+- **GPU E2E Tests**: `python -m pytest tests/test_gpu_e2e.py -m gpu_e2e` (Real GPU inference)
 - **E2E Tests**: `python -m pytest tests/e2e/` (Requires App running + Playwright)
 
 ### Test Strategy
-| Test Type | File | Purpose | GPU? |
-|-----------|------|---------|------|
-| Unit | `test_*.py` | Logic with mocks | No |
-| Smoke | `test_smoke.py` | Import validation | No |
-| Signature | `test_signatures.py` | Function interfaces | No |
-| Integration | `test_integration.py` | Real dependencies | Yes |
-| E2E | `tests/e2e/` | Full app flow | Yes |
+| Test Type | File | Purpose | GPU? | Catches |
+|-----------|------|---------|------|---------|
+| Unit | `test_*.py` | Logic with mocks | No | Logic bugs |
+| Smoke | `test_smoke.py` | Import validation | No | Missing imports |
+| Signature | `test_signatures.py` | Function interfaces | No | API changes |
+| Integration | `test_integration.py` | Real dependencies | Yes | Initialization errors |
+| GPU E2E | `test_gpu_e2e.py` | Real GPU inference | Yes | Runtime errors (dtype, CUDA) |
+| E2E | `tests/e2e/` | Full app flow | Yes | UI flow bugs |
 
 ### Directory Structure
 - `app.py`: Entry point.
