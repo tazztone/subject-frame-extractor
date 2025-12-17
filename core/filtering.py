@@ -23,6 +23,7 @@ from core.database import Database
 from core.managers import get_lpips_metric
 
 def load_and_prep_filter_data(output_dir: str, get_all_filter_keys: Callable, config: 'Config') -> tuple[list, dict]:
+    """Loads metadata from the database and prepares histograms for the UI."""
     db_path = Path(output_dir) / "metadata.db"
     if not db_path.exists(): return [], {}
     db = Database(db_path)
@@ -65,6 +66,7 @@ def load_and_prep_filter_data(output_dir: str, get_all_filter_keys: Callable, co
     return all_frames, metric_values
 
 def histogram_svg(hist_data: tuple, title: str = "", logger: Optional['AppLogger'] = None) -> str:
+    """Generates an SVG string of a histogram plot."""
     if not plt: return """<svg width="100" height="20" xmlns="http://www.w3.org/2000/svg"><text x="5" y="15" font-family="sans-serif" font-size="10" fill="orange">Matplotlib missing</text></svg>"""
     if not hist_data: return ""
     try:
@@ -86,12 +88,14 @@ def histogram_svg(hist_data: tuple, title: str = "", logger: Optional['AppLogger
         return """<svg width="100" height="20" xmlns="http://www.w3.org/2000/svg"><text x="5" y="15" font-family="sans-serif" font-size="10" fill="red">Plotting failed</text></svg>"""
 
 def build_all_metric_svgs(per_metric_values: dict, get_all_filter_keys: Callable, logger: 'AppLogger') -> dict:
+    """Builds histogram SVGs for all available metrics."""
     svgs = {}
     for k in get_all_filter_keys():
         if (h := per_metric_values.get(f"{k}_hist")): svgs[k] = histogram_svg(h, title="", logger=logger)
     return svgs
 
 def _extract_metric_arrays(all_frames_data: list[dict], config: 'Config') -> dict:
+    """Extracts numerical arrays for each metric from the list of frame data dicts."""
     quality_weights_keys = [k.replace('quality_weights_', '') for k in config.model_dump().keys() if k.startswith('quality_weights_')]
     metric_sources = {
         **{k: ("metrics", f"{k}_score") for k in quality_weights_keys},
@@ -155,6 +159,7 @@ def _run_batched_lpips(pairs: list[tuple[int, int]], all_frames_data: list[dict]
 
 def _apply_deduplication_filter(all_frames_data: list[dict], filters: dict, thumbnail_manager: 'ThumbnailManager',
                                 config: 'Config', output_dir: str) -> tuple[np.ndarray, defaultdict]:
+    """Applies deduplication logic (pHash, SSIM, or LPIPS) to filter out similar frames."""
     import imagehash # Lazy import or assume available
     num_frames = len(all_frames_data)
     filenames = [f['filename'] for f in all_frames_data]
@@ -250,6 +255,7 @@ def _apply_deduplication_filter(all_frames_data: list[dict], filters: dict, thum
 
 def _apply_metric_filters(all_frames_data: list[dict], metric_arrays: dict, filters: dict,
                           config: 'Config') -> tuple[np.ndarray, defaultdict]:
+    """Applies threshold-based filtering on scalar metrics."""
     num_frames = len(all_frames_data)
     filenames = [f['filename'] for f in all_frames_data]
     reasons = defaultdict(list)
@@ -311,6 +317,12 @@ def _apply_metric_filters(all_frames_data: list[dict], metric_arrays: dict, filt
 
 def apply_all_filters_vectorized(all_frames_data: list[dict], filters: dict, config: 'Config',
                                  thumbnail_manager: Optional['ThumbnailManager'] = None, output_dir: Optional[str] = None) -> tuple[list, list, Counter, dict]:
+    """
+    Main entry point for filtering frames based on deduplication and metric thresholds.
+
+    Returns:
+        Tuple of (kept_frames, rejected_frames, rejection_counts, rejection_reasons)
+    """
     if not all_frames_data: return [], [], Counter(), {}
     num_frames = len(all_frames_data)
     filenames = [f['filename'] for f in all_frames_data]
@@ -327,6 +339,7 @@ def apply_all_filters_vectorized(all_frames_data: list[dict], filters: dict, con
 def _generic_dedup(all_frames_data: list[dict], dedup_mask: np.ndarray, reasons: defaultdict,
                      thumbnail_manager: 'ThumbnailManager', output_dir: str,
                      compare_fn: Callable[[np.ndarray, np.ndarray], bool]) -> tuple[np.ndarray, defaultdict]:
+    """Generic deduplication helper that compares adjacent frames using a custom function."""
     num_frames = len(all_frames_data)
     sorted_indices = sorted(range(num_frames), key=lambda i: all_frames_data[i]['filename'])
     for i in range(1, len(sorted_indices)):
@@ -346,17 +359,20 @@ def _generic_dedup(all_frames_data: list[dict], dedup_mask: np.ndarray, reasons:
     return dedup_mask, reasons
 
 def _ssim_compare(img1: np.ndarray, img2: np.ndarray, threshold: float) -> bool:
+    """Compares two images using SSIM."""
     gray1, gray2 = cv2.cvtColor(img1, cv2.COLOR_RGB2GRAY), cv2.cvtColor(img2, cv2.COLOR_RGB2GRAY)
     return ssim(gray1, gray2) >= threshold
 
 def apply_ssim_dedup(all_frames_data: list[dict], filters: dict, dedup_mask: np.ndarray, reasons: defaultdict,
                      thumbnail_manager: 'ThumbnailManager', config: 'Config', output_dir: str) -> tuple[np.ndarray, defaultdict]:
+    """Applies SSIM-based deduplication."""
     threshold = filters.get("ssim_threshold", 0.95)
     compare_fn = lambda img1, img2: _ssim_compare(img1, img2, threshold)
     return _generic_dedup(all_frames_data, dedup_mask, reasons, thumbnail_manager, output_dir, compare_fn)
 
 def apply_lpips_dedup(all_frames_data: list[dict], filters: dict, dedup_mask: np.ndarray, reasons: defaultdict,
                       thumbnail_manager: 'ThumbnailManager', config: 'Config', output_dir: str) -> tuple[np.ndarray, defaultdict]:
+    """Applies LPIPS-based deduplication."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
     num_frames = len(all_frames_data)
     sorted_indices = sorted(range(num_frames), key=lambda i: all_frames_data[i]['filename'])

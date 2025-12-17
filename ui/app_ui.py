@@ -37,6 +37,11 @@ from core.events import ExtractionEvent, PreAnalysisEvent, PropagationEvent, Ses
 from core.batch_manager import BatchManager, BatchStatus, BatchItem
 
 class AppUI:
+    """
+    Main UI class for the Frame Extractor & Analyzer application.
+
+    Manages the Gradio interface, event handlers, and interaction with backend pipelines.
+    """
     MAX_RESOLUTION_CHOICES: List[str] = ["maximum available", "2160", "1080", "720"]
     EXTRACTION_METHOD_TOGGLE_CHOICES: List[str] = ["Recommended Thumbnails", "Legacy Full-Frame"]
     METHOD_CHOICES: List[str] = ["keyframes", "interval", "every_nth_frame", "nth_plus_keyframes", "all"]
@@ -58,6 +63,17 @@ class AppUI:
     }
 
     def __init__(self, config: 'Config', logger: 'AppLogger', progress_queue: Queue, cancel_event: threading.Event, thumbnail_manager: 'ThumbnailManager', model_registry: 'ModelRegistry'):
+        """
+        Initialize the AppUI.
+
+        Args:
+            config: Application configuration.
+            logger: Application logger.
+            progress_queue: Queue for progress updates.
+            cancel_event: Event to signal task cancellation.
+            thumbnail_manager: Manager for thumbnail caching.
+            model_registry: Registry for ML models.
+        """
         self.config = config
         self.logger = logger
         self.app_logger = logger
@@ -78,7 +94,9 @@ class AppUI:
         self.history_depth = 10
 
     def preload_models(self):
-        """Asynchronously preloads heavy models."""
+        """
+        Asynchronously preloads heavy models (SAM3) in a background thread.
+        """
         self.logger.info("Starting async model preloading...")
         def _load():
             try:
@@ -100,6 +118,15 @@ class AppUI:
         threading.Thread(target=_load, daemon=True).start()
 
     def _get_stepper_html(self, current_step: int = 0) -> str:
+        """
+        Generates the HTML for the workflow progress stepper.
+
+        Args:
+            current_step: The index of the current active step (0-based).
+
+        Returns:
+            HTML string for the stepper component.
+        """
         steps = ["Source", "Subject", "Scenes", "Metrics", "Export"]
         html = '<div style="display: flex; justify-content: space-around; align_items: center; margin-bottom: 10px; padding: 10px; background: #f9f9f9; border-radius: 8px; font-family: sans-serif; font-size: 0.9rem;">'
         for i, step in enumerate(steps):
@@ -121,6 +148,12 @@ class AppUI:
         return html
 
     def build_ui(self) -> gr.Blocks:
+        """
+        Constructs the entire Gradio UI layout.
+
+        Returns:
+            The Gradio Blocks instance containing the application UI.
+        """
         # css argument is deprecated in Gradio 5+
         css = """.gradio-gallery { overflow-y: hidden !important; } .gradio-gallery img { width: 100%; height: 100%; object-fit: scale-down; object-position: top left; } .plot-and-slider-column { max-width: 560px !important; margin: auto; } .scene-editor { border: 1px solid #444; padding: 10px; border-radius: 5px; } .log-container > .gr-utils-error { display: none !important; } .progress-details { font-size: 1rem !important; color: #333 !important; font-weight: 500; padding: 8px 0; } .gr-progress .progress { height: 28px !important; } .success-card { background-color: #e8f5e9; padding: 15px; border-radius: 8px; border-left: 5px solid #2ecc71; margin-bottom: 10px; }"""
         with gr.Blocks() as demo:
@@ -142,14 +175,32 @@ class AppUI:
 
         return demo
 
-    def _get_comp(self, name: str) -> Optional[gr.components.Component]: return self.components.get(name)
-    def _reg(self, key: str, component: gr.components.Component) -> gr.components.Component: self.ui_registry[key] = component; return component
+    def _get_comp(self, name: str) -> Optional[gr.components.Component]:
+        """Retrieves a component by name from the internal registry."""
+        return self.components.get(name)
+
+    def _reg(self, key: str, component: gr.components.Component) -> gr.components.Component:
+        """Registers a component for later retrieval by UI mapping key."""
+        self.ui_registry[key] = component; return component
+
     def _create_component(self, name: str, comp_type: str, kwargs: dict) -> gr.components.Component:
+        """
+        Helper to create and register a Gradio component.
+
+        Args:
+            name: Unique name for the component.
+            comp_type: String identifier for the component type (e.g., 'button', 'textbox').
+            kwargs: Arguments to pass to the component constructor.
+
+        Returns:
+            The created Gradio component.
+        """
         comp_map = {'button': gr.Button, 'textbox': gr.Textbox, 'dropdown': gr.Dropdown, 'slider': gr.Slider, 'checkbox': gr.Checkbox, 'file': gr.File, 'radio': gr.Radio, 'gallery': gr.Gallery, 'plot': gr.Plot, 'markdown': gr.Markdown, 'html': gr.HTML, 'number': gr.Number, 'cbg': gr.CheckboxGroup, 'image': gr.Image, 'dataframe': gr.Dataframe}
         self.components[name] = comp_map[comp_type](**kwargs)
         return self.components[name]
 
     def _build_header(self):
+        """Builds the UI header section with title and status indicators."""
         with gr.Row():
             with gr.Column(scale=3):
                 gr.Markdown("# 🎬 Frame Extractor & Analyzer v2.0")
@@ -171,6 +222,7 @@ class AppUI:
         if not self.cuda_available: gr.Markdown("⚠️ **CPU Mode** — GPU-dependent features are disabled or will be slow.")
 
     def _build_main_tabs(self):
+        """Constructs the main tabbed interface."""
         with gr.Tabs() as main_tabs:
             self.components['main_tabs'] = main_tabs
             with gr.Tab("Source", id=0): self._create_extraction_tab()
@@ -180,6 +232,7 @@ class AppUI:
             with gr.Tab("Export", id=4) as filtering_tab: self.components['filtering_tab'] = filtering_tab; self._create_filtering_tab()
 
     def _build_footer(self):
+        """Builds the footer with status bar, logs, and help section."""
         with gr.Row():
             with gr.Column(scale=2):
                 self._create_component('unified_status', 'markdown', {'label': "📊 Status", 'value': "Welcome! Ready to start."})
@@ -200,6 +253,7 @@ class AppUI:
             self._create_component('run_diagnostics_button', 'button', {'value': "Run System Diagnostics"})
 
     def _create_extraction_tab(self):
+        """Creates the content for the 'Source' tab."""
         gr.Markdown("### Step 1: Provide a Video Source")
         with gr.Row():
             with gr.Column(scale=2): self._reg('source_path', self._create_component('source_input', 'textbox', {'label': "Video URL or Local Path", 'placeholder': "Enter YouTube URL or local video file path (or folder of videos)"}))
@@ -229,6 +283,7 @@ class AppUI:
              self._create_component('batch_workers_slider', 'slider', {'label': "Max Parallel Workers", 'minimum': 1, 'maximum': 4, 'value': 1, 'step': 1})
 
     def _create_define_subject_tab(self):
+        """Creates the content for the 'Subject' tab."""
         with gr.Row():
             with gr.Column(scale=1):
                 gr.Markdown("### 🎯 Step 2: Define Subject")
@@ -281,6 +336,7 @@ class AppUI:
                 with gr.Group(visible=False) as propagation_group: self.components['propagation_group'] = propagation_group
 
     def _create_scene_selection_tab(self):
+        """Creates the content for the 'Scenes' tab."""
         with gr.Column(scale=2, visible=False) as seeding_results_column:
             self.components['seeding_results_column'] = seeding_results_column
             gr.Markdown("""### 🎭 Step 3: Review Scenes & Propagate""")
@@ -328,6 +384,7 @@ class AppUI:
             self._create_component('propagate_masks_button', 'button', {'value': '🔬 Propagate Masks', 'variant': 'primary', 'interactive': False})
 
     def _create_metrics_tab(self):
+        """Creates the content for the 'Metrics' tab."""
         gr.Markdown("### Step 4: Metrics")
         with gr.Row():
             with gr.Column():
@@ -352,6 +409,7 @@ class AppUI:
         self.components['start_analysis_button'] = gr.Button("Analyze Selected Frames", variant="primary")
 
     def _create_filtering_tab(self):
+        """Creates the content for the 'Export' tab."""
         with gr.Row():
             with gr.Column(scale=1):
                 gr.Markdown("### 🎛️ Step 5: Filter & Export")
@@ -418,9 +476,12 @@ class AppUI:
                             self._create_component('crop_padding_input', 'slider', {'label': "Padding %", 'value': self.config.export_crop_padding})
                         self._create_component('crop_ar_input', 'textbox', {'label': "Crop ARs", 'value': self.config.export_crop_ars})
 
-    def get_all_filter_keys(self) -> list[str]: return list(self.config.quality_weights.keys()) + ["quality_score", "face_sim", "mask_area_pct", "eyes_open", "yaw", "pitch"]
+    def get_all_filter_keys(self) -> list[str]:
+        """Returns a list of all available filter metric keys."""
+        return list(self.config.quality_weights.keys()) + ["quality_score", "face_sim", "mask_area_pct", "eyes_open", "yaw", "pitch"]
 
     def get_metric_description(self, metric_name: str) -> str:
+        """Returns a user-friendly description for a given metric."""
         descriptions = {
             "quality_score": "Overall 'goodness' score.",
             "niqe": "Natural Image Quality Evaluator. Lower is better, but scaled here so higher is better.",
@@ -438,6 +499,7 @@ class AppUI:
         return descriptions.get(metric_name, "")
 
     def _create_event_handlers(self):
+        """Sets up all global event listeners and state management."""
         self.logger.info("Initializing Gradio event handlers...")
         self.components.update({'extracted_video_path_state': gr.State(""), 'extracted_frames_dir_state': gr.State(""), 'analysis_output_dir_state': gr.State(""), 'analysis_metadata_path_state': gr.State(""), 'all_frames_data_state': gr.State([]), 'per_metric_values_state': gr.State({}), 'scenes_state': gr.State([]), 'selected_scene_id_state': gr.State(None), 'scene_gallery_index_map_state': gr.State([]), 'gallery_image_state': gr.State(None), 'gallery_shape_state': gr.State(None), 'yolo_results_state': gr.State({}), 'discovered_faces_state': gr.State([]), 'resume_state': gr.State(False), 'enable_subject_mask_state': gr.State(True), 'min_mask_area_pct_state': gr.State(1.0), 'sharpness_base_scale_state': gr.State(2500.0), 'edge_strength_base_scale_state': gr.State(100.0)})
 
@@ -481,14 +543,17 @@ class AppUI:
         c['run_diagnostics_button'].click(self.run_system_diagnostics, inputs=[], outputs=[c['unified_log']])
 
     def update_stepper(self, evt: gr.SelectData):
+        """Updates the stepper HTML when a tab is selected."""
         return self._get_stepper_html(evt.index)
 
     def _push_history(self, scenes: List[Dict], history: Deque) -> Deque:
+        """Pushes the current scene state to the history stack for undo support."""
         import copy
         history.append(copy.deepcopy(scenes))
         return history
 
     def _undo_last_action(self, scenes: List[Dict], history: Deque, output_dir: str, view: str) -> tuple:
+        """Reverts the last action by popping from the history stack."""
         if not history:
             return scenes, gr.update(), gr.update(), "Nothing to undo.", history
 
@@ -500,6 +565,18 @@ class AppUI:
         return prev_scenes, gr.update(value=gallery_items), gr.update(value=index_map), "Undid last action.", history
 
     def _run_task_with_progress(self, task_func: Callable, output_components: list, progress: Callable, *args) -> Generator[dict, None, None]:
+        """
+        Executes a background task while streaming progress updates to the UI.
+
+        Args:
+            task_func: The function to execute.
+            output_components: List of components to update (deprecated).
+            progress: Gradio progress callback.
+            args: Arguments for the task function.
+
+        Yields:
+            Dictionary of UI updates.
+        """
         self.last_run_args = args
         self.cancel_event.clear()
         tracker_instance = next((arg for arg in args if isinstance(arg, AdvancedProgressTracker)), None)
@@ -559,7 +636,11 @@ class AppUI:
                 except Empty: break
 
     def on_select_yolo_subject_wrapper(self, subject_id: str, scenes: list, shot_id: int, outdir: str, view: str, history: Deque, *ana_args) -> tuple:
-        """Wrapper for handling subject selection from the YOLO radio buttons (now Gallery)."""
+        """
+        Wrapper for handling subject selection from the discovery gallery.
+
+        Updates the selected subject for a scene and recomputes the preview.
+        """
         try:
             if not subject_id: return scenes, gr.update(), gr.update(), "Please select a Subject.", history, gr.update()
             history = self._push_history(scenes, history)
@@ -599,6 +680,7 @@ class AppUI:
             return scenes, gr.update(value=gallery_items), gr.update(value=index_map), f"Error: {e}", history, gr.update()
 
     def _setup_bulk_scene_handlers(self):
+        """Configures event handlers for the scene selection tab (pagination, bulk actions)."""
         c = self.components
         def on_page_change(scenes, view, output_dir, page_num):
             items, index_map, total_pages = build_scene_gallery_items(scenes, view, output_dir, page_num=int(page_num))
@@ -630,6 +712,7 @@ class AppUI:
             comp.release(self.on_apply_bulk_scene_filters_extended, [c['scenes_state'], c['scene_mask_area_min_input'], c['scene_face_sim_min_input'], c['scene_confidence_min_input'], c['enable_face_filter_input'], c['extracted_frames_dir_state'], c['scene_gallery_view_toggle']], [c['scenes_state'], c['scene_filter_status'], c['scene_gallery'], c['scene_gallery_index_map_state'], c['propagate_masks_button']])
 
     def on_reset_scene_wrapper(self, scenes, shot_id, outdir, view, history, *ana_args):
+        """Resets a scene's manual overrides to its initial state."""
         try:
             history = self._push_history(scenes, history)
             scene_idx = next((i for i, s in enumerate(scenes) if s['shot_id'] == shot_id), None)
@@ -648,6 +731,7 @@ class AppUI:
             return scenes, gr.update(), gr.update(), f"Error: {e}", history
 
     def on_select_for_edit(self, scenes, view, indexmap, outputdir, yoloresultsstate, event: Optional[gr.EventData] = None):
+        """Handles selection of a scene from the gallery for editing."""
         sel_idx = getattr(event, "index", None) if event else None
         if sel_idx is None or not scenes: return (scenes, "Status", gr.update(), indexmap, None, "Select a scene.", "", gr.update(visible=False), None, None, gr.update(value=[]), gr.update(), {})
 
@@ -677,6 +761,7 @@ class AppUI:
         return (scenes, get_scene_status_text([Scene(**s) for s in scenes])[0], gr.update(), indexmap, shotid, gr.update(value=status_md), gr.update(value=prompt), gr.update(visible=True), gallery_image, gallery_shape, gr.update(value=subject_crops), get_scene_status_text([Scene(**s) for s in scenes])[1], yoloresultsstate, gr.update(value=gallery_image))
 
     def on_editor_toggle(self, scenes, selected_shotid, outputfolder, view, new_status, history):
+        """Toggles the included/excluded status of a scene."""
         history = self._push_history(scenes, history)
         scenes_objs = [Scene(**s) for s in scenes]
         scenes_objs, status_text, _, button_update = toggle_scene_status(scenes_objs, selected_shotid, new_status, outputfolder, self.logger)
@@ -685,6 +770,7 @@ class AppUI:
         return scenes, status_text, gr.update(value=items), gr.update(value=index_map), button_update, history
 
     def _toggle_pause(self, tracker: 'AdvancedProgressTracker') -> str:
+        """Toggles the pause state of the current running task."""
         if tracker.pause_event.is_set(): tracker.pause_event.clear(); return "⏸️ Paused"
         else: tracker.pause_event.set(); return "▶️ Resume"
 
@@ -753,6 +839,7 @@ class AppUI:
         yield final_report
 
     def _create_pre_analysis_event(self, *args: Any) -> 'PreAnalysisEvent':
+        """Helper to construct a PreAnalysisEvent from UI arguments."""
         ui_args = dict(zip(self.ana_ui_map_keys, args))
         clean_args = {k: v for k, v in ui_args.items() if v is not None}
         strategy = clean_args.get('primary_seed_strategy', self.config.default_primary_seed_strategy)
@@ -761,6 +848,15 @@ class AppUI:
         return PreAnalysisEvent.model_validate(clean_args)
 
     def _run_pipeline(self, pipeline_func: Callable, event: Any, progress: Callable, success_callback: Optional[Callable] = None, *args):
+        """
+        Generic wrapper to run a pipeline function and handle progress/errors.
+
+        Args:
+            pipeline_func: The pipeline generator function to run.
+            event: The event object to pass to the pipeline.
+            progress: Gradio progress callback.
+            success_callback: Optional callback to run on successful completion.
+        """
         try:
             for result in pipeline_func(event, self.progress_queue, self.cancel_event, self.app_logger, self.config, self.thumbnail_manager, self.cuda_available, progress=progress, model_registry=self.model_registry):
                 if isinstance(result, dict):
@@ -775,6 +871,7 @@ class AppUI:
             yield {"unified_log": f"[ERROR] {e}"}
 
     def run_extraction_wrapper(self, *args, progress=None):
+        """Wrapper to execute the extraction pipeline."""
         ui_args = dict(zip(self.ext_ui_map_keys, args))
         if isinstance(ui_args.get('upload_video'), list): ui_args['upload_video'] = ui_args['upload_video'][0] if ui_args['upload_video'] else None
         clean_args = {k: v for k, v in ui_args.items() if v is not None}
@@ -782,12 +879,16 @@ class AppUI:
         yield from self._run_pipeline(execute_extraction, event, progress or gr.Progress(), self._on_extraction_success)
 
     def add_to_queue_handler(self, *args):
+        """Adds a job to the batch processing queue."""
         # ... (keep existing logic)
         return gr.update(value=self.batch_manager.get_status_list())
 
-    def clear_queue_handler(self): self.batch_manager.clear_all(); return gr.update(value=self.batch_manager.get_status_list())
+    def clear_queue_handler(self):
+        """Clears all items from the batch queue."""
+        self.batch_manager.clear_all(); return gr.update(value=self.batch_manager.get_status_list())
 
     def _batch_processor(self, item: BatchItem, progress_callback: Callable):
+        """Callback to process a single item in the batch queue."""
         params = item.params.copy(); params['source_path'] = item.path; params['upload_video'] = None
         event = ExtractionEvent.model_validate(params)
         gen = execute_extraction(event, self.progress_queue, self.batch_manager.stop_event, self.logger, self.config, progress=progress_callback)
@@ -796,13 +897,17 @@ class AppUI:
         return result
 
     def start_batch_wrapper(self, workers: float):
+        """Starts processing the batch queue with specified number of workers."""
         self.batch_manager.start_processing(self._batch_processor, max_workers=int(workers))
         while self.batch_manager.is_running: yield self.batch_manager.get_status_list(); time.sleep(1.0)
         yield self.batch_manager.get_status_list()
 
-    def stop_batch_handler(self): self.batch_manager.stop_processing(); return "Stopping..."
+    def stop_batch_handler(self):
+        """Stops the batch processing."""
+        self.batch_manager.stop_processing(); return "Stopping..."
 
     def _on_extraction_success(self, result: dict) -> dict:
+        """Callback for successful extraction."""
         msg = f"""<div class="success-card">
         <h3>✅ Frame Extraction Complete</h3>
         <p>Frames have been saved to <code>{result['extracted_frames_dir_state']}</code></p>
@@ -817,6 +922,7 @@ class AppUI:
         }
 
     def _on_pre_analysis_success(self, result: dict) -> dict:
+        """Callback for successful pre-analysis."""
         scenes_objs = [Scene(**s) for s in result['scenes']]
         status_text, button_update = get_scene_status_text(scenes_objs)
         msg = f"""<div class="success-card">
@@ -837,16 +943,19 @@ class AppUI:
         }
 
     def run_pre_analysis_wrapper(self, *args, progress=None):
+        """Wrapper to execute the pre-analysis pipeline."""
         event = self._create_pre_analysis_event(*args)
         yield from self._run_pipeline(execute_pre_analysis, event, progress or gr.Progress(), self._on_pre_analysis_success)
 
     def run_propagation_wrapper(self, scenes, *args, progress=None):
+        """Wrapper to execute the mask propagation pipeline."""
         if not scenes: yield {"unified_log": "No scenes."}; return
         params = self._create_pre_analysis_event(*args)
         event = PropagationEvent(output_folder=params.output_folder, video_path=params.video_path, scenes=scenes, analysis_params=params)
         yield from self._run_pipeline(execute_propagation, event, progress or gr.Progress(), self._on_propagation_success)
 
     def _on_propagation_success(self, result: dict) -> dict:
+        """Callback for successful propagation."""
         msg = f"""<div class="success-card">
         <h3>✅ Mask Propagation Complete</h3>
         <p>Masks have been propagated to all frames in kept scenes.</p>
@@ -860,12 +969,14 @@ class AppUI:
         }
 
     def run_analysis_wrapper(self, scenes, *args, progress=None):
+        """Wrapper to execute the full analysis pipeline."""
         if not scenes: yield {"unified_log": "No scenes."}; return
         params = self._create_pre_analysis_event(*args)
         event = PropagationEvent(output_folder=params.output_folder, video_path=params.video_path, scenes=scenes, analysis_params=params)
         yield from self._run_pipeline(execute_analysis, event, progress or gr.Progress(), self._on_analysis_success)
 
     def _on_analysis_success(self, result: dict) -> dict:
+        """Callback for successful analysis."""
         msg = f"""<div class="success-card">
         <h3>✅ Analysis Complete</h3>
         <p>Metadata saved. You can now filter and export.</p>
@@ -878,6 +989,7 @@ class AppUI:
         }
 
     def run_session_load_wrapper(self, session_path: str):
+        """Loads a previous session and updates the UI state."""
         event = SessionLoadEvent(session_path=session_path)
         yield {self.components['unified_status']: "🔄 Loading Session..."}
 
@@ -962,6 +1074,7 @@ class AppUI:
         yield updates
 
     def _fix_strategy_visibility(self, strategy: str) -> dict:
+        """Adjusts UI component visibility based on the selected seed strategy."""
         is_face = "By Face" in strategy or "Fallback" in strategy
         is_text = "By Text" in strategy or "Fallback" in strategy
         is_auto = "Prominent Person" in strategy
@@ -973,6 +1086,7 @@ class AppUI:
         }
 
     def _setup_visibility_toggles(self):
+        """Configures dynamic visibility logic for UI components."""
         c = self.components
         def handle_source_change(path):
             is_folder = is_image_folder(path)
@@ -983,9 +1097,11 @@ class AppUI:
         c['primary_seed_strategy_input'].change(self._fix_strategy_visibility, inputs=c['primary_seed_strategy_input'], outputs=[c['face_seeding_group'], c['text_seeding_group'], c['auto_seeding_group'], c['enable_face_filter_input']])
 
     def get_inputs(self, keys: list[str]) -> list[gr.components.Component]:
+        """Retrieves a list of UI components based on their registry keys."""
         return [self.ui_registry[k] for k in keys if k in self.ui_registry]
 
     def _setup_pipeline_handlers(self):
+        """Configures event handlers for starting main processing pipelines."""
         c = self.components
         all_outputs = [v for v in c.values() if hasattr(v, "_id")]
 
@@ -1012,6 +1128,7 @@ class AppUI:
         c['discovered_faces_gallery'].select(self.on_discovered_face_select, inputs=[c['discovered_faces_state'], c['identity_confidence_slider']] + self.ana_input_components, outputs=[c['face_ref_img_path_input'], c['face_ref_image']])
 
     def on_identity_confidence_change(self, confidence: float, all_faces: list) -> gr.update:
+        """Updates the face discovery gallery based on clustering confidence."""
         if not all_faces: return []
         from sklearn.cluster import DBSCAN
         embeddings = np.array([face['embedding'] for face in all_faces])
@@ -1032,6 +1149,7 @@ class AppUI:
         return gr.update(value=gallery_items)
 
     def on_discovered_face_select(self, all_faces: list, confidence: float, *args, evt: gr.EventData = None) -> tuple[str, Optional[np.ndarray]]:
+        """Handles selection of a face cluster from the discovery gallery."""
         if not all_faces or evt is None or evt.index is None: return "", None
         selected_label = self.gallery_to_cluster_map.get(evt.index)
         if selected_label is None: return "", None
@@ -1059,6 +1177,7 @@ class AppUI:
         return str(face_crop_path), face_crop
 
     def on_find_people_from_video(self, *args) -> tuple[gr.update, list, float, list]:
+        """Scans the video for faces to populate the discovery gallery."""
         try:
             params = self._create_pre_analysis_event(*args)
             output_dir = Path(params.output_folder)
@@ -1085,6 +1204,7 @@ class AppUI:
             return gr.update(visible=False), [], 0.5, []
 
     def on_apply_bulk_scene_filters_extended(self, scenes: list, min_mask_area: float, min_face_sim: float, min_confidence: float, enable_face_filter: bool, output_folder: str, view: str) -> tuple:
+        """Applies filters to all scenes and updates their status."""
         if not scenes: return [], "No scenes", gr.update(), [], gr.update()
         scenes_objs = [Scene(**s) for s in scenes]
         for scene in scenes_objs:
@@ -1104,6 +1224,7 @@ class AppUI:
         return scenes_dicts, get_scene_status_text(scenes_objs)[0], gr.update(value=items), index_map, get_scene_status_text(scenes_objs)[1]
 
     def _get_smart_mode_updates(self, is_enabled: bool) -> list[gr.update]:
+        """Calculates slider updates when toggling 'Smart Mode'."""
         updates = []
         slider_keys = sorted(self.components['metric_sliders'].keys())
         for key in slider_keys:
@@ -1119,6 +1240,7 @@ class AppUI:
         return updates
 
     def _setup_filtering_handlers(self):
+        """Configures event handlers for the filtering and export tab."""
         c = self.components
         slider_keys, slider_comps = sorted(c['metric_sliders'].keys()), [c['metric_sliders'][k] for k in sorted(c['metric_sliders'].keys())]
         fast_filter_inputs = [c['all_frames_data_state'], c['per_metric_values_state'], c['analysis_output_dir_state'], c['gallery_view_toggle'], c['show_mask_overlay_input'], c['overlay_alpha_slider'], c['require_face_match_input'], c['dedup_thresh_input'], c['dedup_method_input'], c['smart_filter_state']] + slider_comps
@@ -1168,6 +1290,7 @@ class AppUI:
         c['calculate_diff_button'].click(self.calculate_visual_diff, [c['results_gallery'], c['all_frames_data_state'], c['dedup_method_input'], c['dedup_thresh_input'], c['ssim_threshold_input'], c['lpips_threshold_input']], [c['visual_diff_image']]).then(lambda: gr.update(visible=True), None, c['visual_diff_image'])
 
     def on_preset_changed(self, preset_name: str) -> list[Any]:
+        """Updates filter sliders when a preset is selected."""
         is_preset_active = preset_name != "None" and preset_name in self.FILTER_PRESETS
         final_updates = []
         slider_keys = sorted(self.components['metric_sliders'].keys())
@@ -1192,6 +1315,11 @@ class AppUI:
         return [is_preset_active] + final_updates + [gr.update(value=is_preset_active)]
 
     def on_filters_changed_wrapper(self, all_frames_data: list, per_metric_values: dict, output_dir: str, gallery_view: str, show_overlay: bool, overlay_alpha: float, require_face_match: bool, dedup_thresh: int, dedup_method_ui: str, smart_mode_enabled: bool, *slider_values: float) -> tuple[str, gr.update]:
+        """
+        Updates the results gallery when filters change.
+
+        Handles smart mode percentile conversion if enabled.
+        """
         slider_values_dict = {k: v for k, v in zip(sorted(self.components['metric_sliders'].keys()), slider_values)}
         if smart_mode_enabled and per_metric_values:
             for key, val in slider_values_dict.items():
@@ -1206,6 +1334,9 @@ class AppUI:
         return result['filter_status_text'], result['results_gallery']
 
     def calculate_visual_diff(self, gallery: gr.Gallery, all_frames_data: list, dedup_method_ui: str, dedup_thresh: int, ssim_thresh: float, lpips_thresh: float) -> Optional[np.ndarray]:
+        """
+        Computes a side-by-side comparison image for duplicate inspection.
+        """
         if not gallery or not gallery.selection: return None
         dedup_method = "pHash" if dedup_method_ui == "Fast (pHash)" else "pHash then LPIPS" if dedup_method_ui == "Accurate (LPIPS)" else "None"
         # Reuse existing logic...
@@ -1234,6 +1365,7 @@ class AppUI:
         return None
 
     def on_reset_filters(self, all_frames_data: list, per_metric_values: dict, output_dir: str) -> tuple:
+        """Resets all filter settings to their defaults."""
         c = self.components
         slider_keys = sorted(c['metric_sliders'].keys())
         slider_updates = []
@@ -1254,6 +1386,7 @@ class AppUI:
         return tuple([False] + slider_updates + [5, False, "Filters Reset.", gr.update(), "Fast (pHash)"] + acc_updates + [False])
 
     def on_auto_set_thresholds(self, per_metric_values: dict, p: int, *checkbox_values: bool) -> list[gr.update]:
+        """Automatically sets filter thresholds based on data percentiles."""
         slider_keys = sorted(self.components['metric_sliders'].keys())
         auto_threshold_cbs_keys = sorted(self.components['metric_auto_threshold_cbs'].keys())
         selected_metrics = [metric_name for metric_name, is_selected in zip(auto_threshold_cbs_keys, checkbox_values) if is_selected]
@@ -1261,6 +1394,7 @@ class AppUI:
         return [updates.get(f'slider_{key}', gr.update()) for key in slider_keys]
 
     def export_kept_frames_wrapper(self, all_frames_data: list, output_dir: str, video_path: str, enable_crop: bool, crop_ars: str, crop_padding: int, require_face_match: bool, dedup_thresh: int, dedup_method_ui: str, *slider_values: float) -> str:
+        """Wrapper to execute the final frame export."""
         slider_values_dict = {k: v for k, v in zip(sorted(self.components['metric_sliders'].keys()), slider_values)}
         dedup_method = "pHash" if dedup_method_ui == "Fast (pHash)" else "pHash then LPIPS" if dedup_method_ui == "Accurate (LPIPS)" else "None"
         filter_args = slider_values_dict
@@ -1268,6 +1402,7 @@ class AppUI:
         return export_kept_frames(ExportEvent(all_frames_data=all_frames_data, output_dir=output_dir, video_path=video_path, enable_crop=enable_crop, crop_ars=crop_ars, crop_padding=crop_padding, filter_args=filter_args), self.config, self.logger, self.thumbnail_manager, self.cancel_event)
 
     def dry_run_export_wrapper(self, all_frames_data: list, output_dir: str, video_path: str, enable_crop: bool, crop_ars: str, crop_padding: int, require_face_match: bool, dedup_thresh: int, dedup_method_ui: str, *slider_values: float) -> str:
+        """Wrapper to perform a dry run of the export."""
         slider_values_dict = {k: v for k, v in zip(sorted(self.components['metric_sliders'].keys()), slider_values)}
         dedup_method = "pHash" if dedup_method_ui == "Fast (pHash)" else "pHash then LPIPS" if dedup_method_ui == "Accurate (LPIPS)" else "None"
         filter_args = slider_values_dict

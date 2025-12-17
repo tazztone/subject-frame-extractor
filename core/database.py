@@ -6,6 +6,13 @@ from typing import List, Dict, Any
 
 class Database:
     def __init__(self, db_path: Path, batch_size: int = 50):
+        """
+        Initializes the Database manager.
+
+        Args:
+            db_path: Path to the SQLite database file.
+            batch_size: Number of records to buffer before writing.
+        """
         self.db_path = db_path
         self.conn = None
         self.buffer = []
@@ -98,6 +105,7 @@ class Database:
             self._flush_buffer()
 
     def _flush_buffer(self):
+        """Internal method to write buffered records to the database."""
         if not self.buffer:
             return
 

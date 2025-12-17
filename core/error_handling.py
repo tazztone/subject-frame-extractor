@@ -24,11 +24,30 @@ class RecoveryStrategy(Enum):
 
 class ErrorHandler:
     def __init__(self, logger: 'AppLogger', max_attempts: int, backoff_seconds: list):
+        """
+        Initializes the ErrorHandler.
+
+        Args:
+            logger: Application logger.
+            max_attempts: Default maximum retry attempts.
+            backoff_seconds: List of backoff delays in seconds.
+        """
         self.logger = logger
         self.max_attempts = max_attempts
         self.backoff_seconds = backoff_seconds
 
     def with_retry(self, max_attempts: Optional[int] = None, backoff_seconds: Optional[list] = None, recoverable_exceptions: tuple = (Exception,)):
+        """
+        Decorator that retries the function call upon failure.
+
+        Args:
+            max_attempts: Maximum number of attempts.
+            backoff_seconds: List of backoff times between retries.
+            recoverable_exceptions: Tuple of exceptions to catch and retry.
+
+        Returns:
+            Decorated function.
+        """
         max_attempts = max_attempts or self.max_attempts
         backoff_seconds = backoff_seconds or self.backoff_seconds
         def decorator(func: Callable) -> Callable:
@@ -51,6 +70,15 @@ class ErrorHandler:
         return decorator
 
     def with_fallback(self, fallback_func: Callable):
+        """
+        Decorator that executes a fallback function if the primary function fails.
+
+        Args:
+            fallback_func: Function to call on failure.
+
+        Returns:
+            Decorated function.
+        """
         def decorator(func: Callable) -> Callable:
             @functools.wraps(func)
             def wrapper(*args, **kwargs) -> Any:

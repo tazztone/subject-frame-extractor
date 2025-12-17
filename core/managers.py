@@ -85,7 +85,9 @@ from core.utils import download_model, validate_video_file, safe_resource_cleanu
 from core.error_handling import ErrorHandler
 
 class ThumbnailManager:
+    """Manages an in-memory LRU cache for image thumbnails."""
     def __init__(self, logger: 'AppLogger', config: 'Config'):
+        """Initializes the manager with a configurable cache size."""
         self.logger = logger
         self.config = config
         self.cache = OrderedDict()
@@ -93,6 +95,7 @@ class ThumbnailManager:
         self.logger.info(f"ThumbnailManager initialized with cache size {self.max_size}")
 
     def get(self, thumb_path: Path) -> Optional[np.ndarray]:
+        """Retrieves a thumbnail from cache or loads it from disk."""
         if not isinstance(thumb_path, Path): thumb_path = Path(thumb_path)
         if thumb_path in self.cache:
             self.cache.move_to_end(thumb_path)
@@ -112,6 +115,7 @@ class ThumbnailManager:
             return None
 
     def clear_cache(self):
+        """Clears the thumbnail cache and triggers garbage collection."""
         self.cache.clear()
         gc.collect()
 
@@ -122,6 +126,9 @@ class ThumbnailManager:
             self.cache.popitem(last=False)
 
 class ModelRegistry:
+    """
+    Thread-safe registry for lazy loading and caching of heavy ML models.
+    """
     def __init__(self, logger: Optional['AppLogger'] = None):
         self._models: Dict[str, Any] = {}
         self._locks: Dict[str, threading.Lock] = defaultdict(threading.Lock)
@@ -129,6 +136,7 @@ class ModelRegistry:
         self.runtime_device_override: Optional[str] = None
 
     def get_or_load(self, key: str, loader_fn: Callable[[], Any]) -> Any:
+        """Retrieves a model by key, loading it via loader_fn if not present."""
         if key not in self._models:
             with self._locks[key]:
                 if key not in self._models:
@@ -144,11 +152,15 @@ class ModelRegistry:
         return self._models[key]
 
     def clear(self):
+        """Clears all loaded models from the registry."""
         if self.logger: self.logger.info("Clearing all models from the registry.")
         self._models.clear()
 
     def get_tracker(self, model_name: str, models_path: str, user_agent: str,
                     retry_params: tuple, config: 'Config') -> Optional['SAM3Wrapper']:
+        """
+        Gets or loads the SAM3 tracker, handling CPU fallback on CUDA OOM.
+        """
         key = f"tracker_{model_name}"
 
         def _loader():
@@ -387,6 +399,9 @@ class SAM3Wrapper:
 thread_local = threading.local()
 
 def get_face_landmarker(model_path: str, logger: 'AppLogger') -> vision.FaceLandmarker:
+    """
+    Returns a thread-local MediaPipe FaceLandmarker instance.
+    """
     if hasattr(thread_local, 'face_landmarker_instance'): return thread_local.face_landmarker_instance
     logger.info("Initializing MediaPipe FaceLandmarker for new thread.", component="face_landmarker")
     try:
@@ -414,6 +429,9 @@ def get_face_landmarker(model_path: str, logger: 'AppLogger') -> vision.FaceLand
 
 def get_face_analyzer(model_name: str, models_path: str, det_size_tuple: tuple, logger: 'AppLogger',
                       model_registry: 'ModelRegistry', device: str = 'cpu') -> 'FaceAnalysis':
+    """
+    Gets or loads the InsightFace FaceAnalysis app, with OOM handling.
+    """
     from insightface.app import FaceAnalysis
     model_key = f"face_analyzer_{model_name}_{device}_{det_size_tuple}"
 
@@ -441,10 +459,17 @@ def get_face_analyzer(model_name: str, models_path: str, det_size_tuple: tuple, 
     return model_registry.get_or_load(model_key, _loader)
 
 def get_lpips_metric(model_name: str = 'alex', device: str = 'cpu') -> torch.nn.Module:
+    """Returns the LPIPS metric model."""
     return lpips.LPIPS(net=model_name).to(device)
 
 def initialize_analysis_models(params: 'AnalysisParameters', config: 'Config', logger: 'AppLogger',
                                model_registry: 'ModelRegistry') -> dict:
+    """
+    Initializes all necessary analysis models based on parameters.
+
+    Returns:
+        Dictionary of initialized models (face_analyzer, ref_emb, etc.).
+    """
     device = "cuda" if torch.cuda.is_available() else "cpu"
     face_analyzer, ref_emb, face_landmarker = None, None, None
 
@@ -483,6 +508,7 @@ def initialize_analysis_models(params: 'AnalysisParameters', config: 'Config', l
     return {"face_analyzer": face_analyzer, "ref_emb": ref_emb, "face_landmarker": face_landmarker, "device": device}
 
 class VideoManager:
+    """Handles video preparation and metadata extraction."""
     def __init__(self, source_path: str, config: 'Config', max_resolution: Optional[str] = None):
         self.source_path = source_path
         self.config = config
@@ -490,6 +516,11 @@ class VideoManager:
         self.is_youtube = ("youtube.com/" in source_path or "youtu.be/" in source_path)
 
     def prepare_video(self, logger: 'AppLogger') -> str:
+        """
+        Prepares the video for processing.
+
+        Downloads it if it's a YouTube URL, or validates the local path.
+        """
         if self.is_youtube:
             logger.info("Downloading video", component="video", user_context={'source': self.source_path})
             tmpl = self.config.ytdl_output_template
@@ -513,6 +544,7 @@ class VideoManager:
 
     @staticmethod
     def get_video_info(video_path: str) -> dict:
+        """Extracts metadata (FPS, dimensions, frame count) from the video file."""
         cap = cv2.VideoCapture(str(video_path))
         if not cap.isOpened(): raise IOError(f"Could not open video: {video_path}")
         fps = cap.get(cv2.CAP_PROP_FPS) or 30.0

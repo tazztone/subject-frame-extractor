@@ -38,10 +38,12 @@ class LogEvent(BaseModel):
 # --- FORMATTERS ---
 
 class ColoredFormatter(logging.Formatter):
+    """Custom formatter that adds colors to log levels."""
     COLORS = {'DEBUG': '\033[36m', 'INFO': '\033[37m', 'WARNING': '\033[33m',
               'ERROR': '\033[31m', 'CRITICAL': '\033[35m', 'SUCCESS': '\033[32m', 'RESET': '\033[0m'}
 
     def format(self, record: logging.LogRecord) -> str:
+        """Formats the log record with color codes."""
         original_levelname = record.levelname
         try:
             color = self.COLORS.get(original_levelname, self.COLORS['RESET'])
@@ -52,7 +54,9 @@ class ColoredFormatter(logging.Formatter):
 
 
 class JsonFormatter(logging.Formatter):
+    """Formatter that outputs logs as JSON strings."""
     def format(self, record: logging.LogRecord) -> str:
+        """Formats the log record as a JSON string."""
         log_event_obj = getattr(record, 'log_event', None)
         if isinstance(log_event_obj, LogEvent):
             log_dict = log_event_obj.model_dump(exclude_none=True)
@@ -75,6 +79,15 @@ class AppLogger:
     def __init__(self, config: 'Config', log_dir: Optional[Path] = None,
                  log_to_file: bool = True,
                  log_to_console: bool = True):
+        """
+        Initializes the AppLogger.
+
+        Args:
+            config: Application configuration.
+            log_dir: Directory to store log files.
+            log_to_file: Whether to write logs to files.
+            log_to_console: Whether to print logs to the console.
+        """
         self.config = config
         self.log_dir = log_dir or Path(self.config.logs_dir)
         self.log_dir.mkdir(exist_ok=True, parents=True)
@@ -92,6 +105,7 @@ class AppLogger:
             self._setup_file_handlers()
 
     def _setup_console_handler(self):
+        """Configures the console logging handler."""
         console_handler = logging.StreamHandler()
         console_formatter = ColoredFormatter(self.config.log_format)
         console_handler.setFormatter(console_formatter)
@@ -99,6 +113,7 @@ class AppLogger:
         self.logger.addHandler(console_handler)
 
     def _setup_file_handlers(self):
+        """Configures file logging handlers (plain text and JSONL)."""
         file_handler = logging.FileHandler(self.session_log_file, encoding='utf-8')
         file_formatter = logging.Formatter(self.config.log_format)
         file_handler.setFormatter(file_formatter)
@@ -112,9 +127,11 @@ class AppLogger:
         self.logger.addHandler(structured_handler)
 
     def set_progress_queue(self, queue: Queue):
+        """Sets the queue used for sending logs to the UI."""
         self.progress_queue = queue
 
     def _create_log_event(self, level: str, message: str, component: str, **kwargs) -> LogEvent:
+        """Helper to create a structured LogEvent object."""
         exc_info = kwargs.pop('exc_info', None)
         extra = kwargs.pop('extra', None)
         if 'stacktrace' in kwargs:
@@ -126,6 +143,7 @@ class AppLogger:
         return LogEvent(timestamp=datetime.now().isoformat(), level=level, message=message, component=component, **kwargs)
 
     def _log_event(self, event: LogEvent):
+        """Dispatches the LogEvent to standard logging and the UI queue."""
         log_level_name = event.level.upper()
         log_level = getattr(logging, log_level_name, logging.INFO)
         if log_level_name == "SUCCESS":
@@ -147,14 +165,25 @@ class AppLogger:
             self.progress_queue.put({"log": ui_message})
 
     def debug(self, message: str, component: str = "system", **kwargs):
+        """Logs a debug message."""
         self._log_event(self._create_log_event("DEBUG", message, component, **kwargs))
+
     def info(self, message: str, component: str = "system", **kwargs):
+        """Logs an info message."""
         self._log_event(self._create_log_event("INFO", message, component, **kwargs))
+
     def warning(self, message: str, component: str = "system", **kwargs):
+        """Logs a warning message."""
         self._log_event(self._create_log_event("WARNING", message, component, **kwargs))
+
     def error(self, message: str, component: str = "system", **kwargs):
+        """Logs an error message."""
         self._log_event(self._create_log_event("ERROR", message, component, **kwargs))
+
     def success(self, message: str, component: str = "system", **kwargs):
+        """Logs a success message."""
         self._log_event(self._create_log_event("SUCCESS", message, component, **kwargs))
+
     def critical(self, message: str, component: str = "system", **kwargs):
+        """Logs a critical error message."""
         self._log_event(self._create_log_event("CRITICAL", message, component, **kwargs))
