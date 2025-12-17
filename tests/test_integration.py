@@ -49,23 +49,26 @@ class TestImportSmoke:
         assert torch is not None
 
 
-@pytest.mark.skipif(not pytest.importorskip("torch").cuda.is_available(), reason="CUDA not available")
 class TestGPUIntegration:
     """Tests that require GPU hardware."""
 
     def test_cuda_available(self):
         """Verify CUDA is available and working."""
         import torch
-        assert torch.cuda.is_available()
+        if not torch.cuda.is_available():
+            pytest.skip("CUDA not available")
         assert torch.cuda.device_count() > 0
 
     def test_sam3_import(self):
-        """Test SAM3 can be imported (Windows triton mock may be needed)."""
+        """Test SAM3 can be imported (requires: pip install -e SAM3_repo)."""
+        import torch
+        if not torch.cuda.is_available():
+            pytest.skip("CUDA not available")
         try:
-            from sam3 import build_sam3_video_predictor
+            from sam3.model_builder import build_sam3_video_predictor
             assert build_sam3_video_predictor is not None
         except ImportError as e:
-            pytest.skip(f"SAM3 not installed: {e}")
+            pytest.skip(f"SAM3 not installed. Run: pip install -e SAM3_repo. Error: {e}")
 
     def test_insightface_import(self):
         """Test InsightFace can be imported."""
@@ -104,9 +107,11 @@ class TestConfigIntegration:
 class TestModelLoadingIntegration:
     """Tests that model loading works correctly."""
 
-    @pytest.mark.skipif(not pytest.importorskip("torch").cuda.is_available(), reason="CUDA not available")
     def test_model_registry_initialization(self):
         """Test ModelRegistry can be initialized."""
+        import torch
+        if not torch.cuda.is_available():
+            pytest.skip("CUDA not available")
         from core.managers import ModelRegistry
         registry = ModelRegistry()
         assert registry is not None
@@ -142,9 +147,11 @@ class TestPipelineIntegration:
         pipeline = ExtractionPipeline(config, logger, params, Queue(), threading.Event())
         assert pipeline is not None
 
-    @pytest.mark.skipif(not pytest.importorskip("torch").cuda.is_available(), reason="CUDA not available")
     def test_analysis_pipeline_init(self, tmp_path):
         """Test AnalysisPipeline can be initialized."""
+        import torch
+        if not torch.cuda.is_available():
+            pytest.skip("CUDA not available")
         import threading
         from queue import Queue
         from core.config import Config
