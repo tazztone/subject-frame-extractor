@@ -329,8 +329,8 @@ class AppUI:
                     self._reg('resume', self._create_component('resume_input', 'checkbox', {'label': 'Resume', 'value': self.config.default_resume, 'visible': False}))
                     self._reg('enable_subject_mask', self._create_component('enable_subject_mask_input', 'checkbox', {'label': 'Enable Subject Mask', 'value': self.config.default_enable_subject_mask, 'visible': False}))
                     self._reg('min_mask_area_pct', self._create_component('min_mask_area_pct_input', 'slider', {'label': 'Min Mask Area Pct', 'value': self.config.default_min_mask_area_pct, 'visible': False}))
-                    self._reg('sharpness_base_scale', self._create_component('sharpness_base_scale_input', 'slider', {'label': 'Sharpness Base Scale', 'value': self.config.default_sharpness_base_scale, 'visible': False}))
-                    self._reg('edge_strength_base_scale', self._create_component('edge_strength_base_scale_input', 'slider', {'label': 'Edge Strength Base Scale', 'value': self.config.default_edge_strength_base_scale, 'visible': False}))
+                    self._reg('sharpness_base_scale', self._create_component('sharpness_base_scale_input', 'slider', {'label': 'Sharpness Base Scale', 'minimum': 0, 'maximum': 5000, 'step': 100, 'value': self.config.default_sharpness_base_scale, 'visible': False}))
+                    self._reg('edge_strength_base_scale', self._create_component('edge_strength_base_scale_input', 'slider', {'label': 'Edge Strength Base Scale', 'minimum': 0, 'maximum': 1000, 'step': 10, 'value': self.config.default_edge_strength_base_scale, 'visible': False}))
 
                 self._create_component('start_pre_analysis_button', 'button', {'value': '🌱 Find & Preview Best Frames', 'variant': 'primary'})
                 with gr.Group(visible=False) as propagation_group: self.components['propagation_group'] = propagation_group
