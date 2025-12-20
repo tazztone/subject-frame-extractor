@@ -50,13 +50,13 @@ def main():
 
 ```
 
-### `📄 core\__init__.py`
+### `📄 core/__init__.py`
 
 ```python
 
 ```
 
-### `📄 core\batch_manager.py`
+### `📄 core/batch_manager.py`
 
 ```python
 import threading
@@ -144,7 +144,7 @@ class BatchManager:
 
 ```
 
-### `📄 core\config.py`
+### `📄 core/config.py`
 
 ```python
 """
@@ -193,7 +193,7 @@ class Config(BaseSettings):
 
 ```
 
-### `📄 core\database.py`
+### `📄 core/database.py`
 
 ```python
 import sqlite3
@@ -260,7 +260,7 @@ class Database:
 
 ```
 
-### `📄 core\error_handling.py`
+### `📄 core/error_handling.py`
 
 ```python
 """
@@ -323,7 +323,7 @@ class ErrorHandler:
 
 ```
 
-### `📄 core\events.py`
+### `📄 core/events.py`
 
 ```python
 """
@@ -392,7 +392,7 @@ class SessionLoadEvent(UIEvent):
 
 ```
 
-### `📄 core\export.py`
+### `📄 core/export.py`
 
 ```python
 from __future__ import annotations
@@ -424,7 +424,7 @@ def dry_run_export(event: ExportEvent, config: 'Config') -> str:
 
 ```
 
-### `📄 core\filtering.py`
+### `📄 core/filtering.py`
 
 ```python
 from __future__ import annotations
@@ -522,7 +522,7 @@ def apply_lpips_dedup(all_frames_data: list[dict], filters: dict, dedup_mask: np
 
 ```
 
-### `📄 core\logger.py`
+### `📄 core/logger.py`
 
 ```python
 """
@@ -639,7 +639,7 @@ class AppLogger:
 
 ```
 
-### `📄 core\managers.py`
+### `📄 core/managers.py`
 
 ```python
 from __future__ import annotations
@@ -875,7 +875,7 @@ class VideoManager:
 
 ```
 
-### `📄 core\models.py`
+### `📄 core/models.py`
 
 ```python
 from __future__ import annotations
@@ -1005,7 +1005,7 @@ class MaskingResult(BaseModel):
 
 ```
 
-### `📄 core\pipelines.py`
+### `📄 core/pipelines.py`
 
 ```python
 from __future__ import annotations
@@ -1187,7 +1187,7 @@ def execute_analysis(event: PropagationEvent, progress_queue: Queue, cancel_even
 
 ```
 
-### `📄 core\progress.py`
+### `📄 core/progress.py`
 
 ```python
 """
@@ -1269,7 +1269,7 @@ class AdvancedProgressTracker:
 
 ```
 
-### `📄 core\sam3_patches.py`
+### `📄 core/sam3_patches.py`
 
 ```python
 """
@@ -1303,7 +1303,7 @@ def apply_patches():
 
 ```
 
-### `📄 core\scene_utils\__init__.py`
+### `📄 core/scene_utils/__init__.py`
 
 ```python
 """
@@ -1328,7 +1328,7 @@ from core.scene_utils.helpers import draw_boxes_preview, save_scene_seeds, get_s
 __all__ = ['run_scene_detection', 'make_photo_thumbs', 'MaskPropagator', 'SeedSelector', 'SubjectMasker', 'draw_boxes_preview', 'save_scene_seeds', 'get_scene_status_text', 'toggle_scene_status', '_create_analysis_context', '_recompute_single_preview', '_wire_recompute_handler']
 ```
 
-### `📄 core\scene_utils\detection.py`
+### `📄 core/scene_utils/detection.py`
 
 ```python
 """
@@ -1378,7 +1378,7 @@ def make_photo_thumbs(image_paths: list[Path], out_dir: Path, params: 'AnalysisP
 
 ```
 
-### `📄 core\scene_utils\helpers.py`
+### `📄 core/scene_utils/helpers.py`
 
 ```python
 """
@@ -1472,7 +1472,7 @@ def _wire_recompute_handler(config: 'Config', logger: 'AppLogger', thumbnail_man
 
 ```
 
-### `📄 core\scene_utils\mask_propagator.py`
+### `📄 core/scene_utils/mask_propagator.py`
 
 ```python
 """
@@ -1525,7 +1525,7 @@ class MaskPropagator:
 
 ```
 
-### `📄 core\scene_utils\seed_selector.py`
+### `📄 core/scene_utils/seed_selector.py`
 
 ```python
 """
@@ -1660,7 +1660,7 @@ class SeedSelector:
 
 ```
 
-### `📄 core\scene_utils\subject_masker.py`
+### `📄 core/scene_utils/subject_masker.py`
 
 ```python
 """
@@ -1799,7 +1799,7 @@ class SubjectMasker:
 
 ```
 
-### `📄 core\shared.py`
+### `📄 core/shared.py`
 
 ```python
 """
@@ -1875,7 +1875,7 @@ def build_scene_gallery_items(scenes: List[Union[dict, 'Scene']], view: str, out
 
 ```
 
-### `📄 core\utils.py`
+### `📄 core/utils.py`
 
 ```python
 from __future__ import annotations
@@ -2007,7 +2007,7 @@ def draw_bbox(img_rgb: np.ndarray, xywh: list, config: 'Config', color: Optional
 
 ```
 
-### `📄 scripts\take_screenshot.py`
+### `📄 scripts/take_screenshot.py`
 
 ```python
 import asyncio
@@ -2018,7 +2018,7 @@ async def main():
 
 ```
 
-### `📄 tests\conftest.py`
+### `📄 tests/conftest.py`
 
 ```python
 """
@@ -2185,7 +2185,7 @@ def mock_config_simple(tmp_path):
 
 ```
 
-### `📄 tests\e2e\test_app_flow.py`
+### `📄 tests/e2e/test_app_flow.py`
 
 ```python
 import pytest
@@ -2215,7 +2215,7 @@ def test_full_user_flow(page: Page, app_server):
 
 ```
 
-### `📄 tests\mock_app.py`
+### `📄 tests/mock_app.py`
 
 ```python
 import sys
@@ -2237,6 +2237,7 @@ mock_torch.nn.Module = MagicMock
 mock_torch.Tensor = MagicMock
 mock_sam3 = MagicMock(name='sam3')
 mock_sam3.model_builder = MagicMock()
+modules_to_mock = {'torch': mock_torch, 'torchvision': MagicMock(), 'torchvision.ops': MagicMock(), 'torchvision.transforms': MagicMock(), 'insightface': MagicMock(), 'insightface.app': MagicMock(), 'sam3': mock_sam3, 'sam3.model_builder': mock_sam3.model_builder, 'sam3.model.sam3_video_predictor': MagicMock(), 'mediapipe': MagicMock(), 'mediapipe.tasks': MagicMock(), 'mediapipe.tasks.python': MagicMock(), 'mediapipe.tasks.python.vision': MagicMock(), 'pyiqa': MagicMock(), 'scenedetect': MagicMock(), 'yt_dlp': MagicMock(), 'numba': MagicMock(), 'lpips': MagicMock()}
 modules_to_mock = {'torch': mock_torch, 'torchvision': MagicMock(), 'torchvision.ops': MagicMock(), 'torchvision.transforms': MagicMock(), 'insightface': MagicMock(), 'insightface.app': MagicMock(), 'sam3': mock_sam3, 'sam3.model_builder': mock_sam3.model_builder, 'sam3.model.sam3_video_predictor': MagicMock(), 'mediapipe': MagicMock(), 'mediapipe.tasks': MagicMock(), 'mediapipe.tasks.python': MagicMock(), 'mediapipe.tasks.python.vision': MagicMock(), 'pyiqa': MagicMock(), 'scenedetect': MagicMock(), 'yt_dlp': MagicMock(), 'numba': MagicMock(), 'lpips': MagicMock()}
 def mock_extraction_run(self, tracker=None):
     """
@@ -2264,7 +2265,7 @@ core.utils.download_model = MagicMock()
 core.managers.download_model = MagicMock()
 ```
 
-### `📄 tests\test_batch_manager.py`
+### `📄 tests/test_batch_manager.py`
 
 ```python
 import time
@@ -2282,7 +2283,7 @@ def test_batch_manager_failure():
 
 ```
 
-### `📄 tests\test_core.py`
+### `📄 tests/test_core.py`
 
 ```python
 """
@@ -2349,7 +2350,7 @@ class TestPreAnalysisEvent:
 
 ```
 
-### `📄 tests\test_database.py`
+### `📄 tests/test_database.py`
 
 ```python
 import pytest
@@ -2392,7 +2393,7 @@ def test_mask_empty_conversion(db):
 
 ```
 
-### `📄 tests\test_dedup.py`
+### `📄 tests/test_dedup.py`
 
 ```python
 """
@@ -2433,7 +2434,7 @@ def test_run_batched_lpips(mock_thumbnail_manager):
 
 ```
 
-### `📄 tests\test_error_handling.py`
+### `📄 tests/test_error_handling.py`
 
 ```python
 """
@@ -2572,7 +2573,7 @@ class TestQualityConfigEdgeCases:
 
 ```
 
-### `📄 tests\test_export.py`
+### `📄 tests/test_export.py`
 
 ```python
 """
@@ -2594,7 +2595,7 @@ def test_export_kept_frames(mock_filter, mock_popen, mock_config, mock_logger, t
 
 ```
 
-### `📄 tests\test_gallery_utils.py`
+### `📄 tests/test_gallery_utils.py`
 
 ```python
 import pytest
@@ -2617,7 +2618,7 @@ def test_create_scene_thumbnail_included():
 
 ```
 
-### `📄 tests\test_gpu_e2e.py`
+### `📄 tests/test_gpu_e2e.py`
 
 ```python
 """
@@ -2853,7 +2854,7 @@ class TestQualityMetricsE2E:
 
 ```
 
-### `📄 tests\test_integration.py`
+### `📄 tests/test_integration.py`
 
 ```python
 """
@@ -2988,7 +2989,7 @@ class TestPipelineIntegration:
 
 ```
 
-### `📄 tests\test_managers.py`
+### `📄 tests/test_managers.py`
 
 ```python
 import pytest
@@ -3035,7 +3036,7 @@ class TestVideoManager:
 
 ```
 
-### `📄 tests\test_pipelines.py`
+### `📄 tests/test_pipelines.py`
 
 ```python
 """
@@ -3096,7 +3097,7 @@ class TestSessionLoad:
 
 ```
 
-### `📄 tests\test_progress.py`
+### `📄 tests/test_progress.py`
 
 ```python
 import pytest
@@ -3109,7 +3110,7 @@ def test_progress_tracker():
 
 ```
 
-### `📄 tests\test_scene_utils.py`
+### `📄 tests/test_scene_utils.py`
 
 ```python
 """
@@ -3146,7 +3147,7 @@ class TestSubjectMasker:
 
 ```
 
-### `📄 tests\test_signatures.py`
+### `📄 tests/test_signatures.py`
 
 ```python
 """
@@ -3233,7 +3234,7 @@ class TestManagerClasses:
 
 ```
 
-### `📄 tests\test_smoke.py`
+### `📄 tests/test_smoke.py`
 
 ```python
 """
@@ -3323,7 +3324,7 @@ class TestDependencyImports:
 
 ```
 
-### `📄 tests\test_ui_unit.py`
+### `📄 tests/test_ui_unit.py`
 
 ```python
 import pytest
@@ -3354,7 +3355,7 @@ def test_get_metric_description(app_ui):
 
 ```
 
-### `📄 ui\app_ui.py`
+### `📄 ui/app_ui.py`
 
 ```python
 from __future__ import annotations
@@ -3545,6 +3546,7 @@ class AppUI:
         Resets a scene's manual overrides to its initial state.
         """
         ...
+    def on_select_for_edit(self, scenes, view, indexmap, outputdir, event: Optional[gr.EventData]=None):
     def on_select_for_edit(self, scenes, view, indexmap, outputdir, event: Optional[gr.EventData]=None):
         """
         Handles selection of a scene from the gallery for editing.
@@ -3741,7 +3743,7 @@ class AppUI:
 
 ```
 
-### `📄 ui\gallery_utils.py`
+### `📄 ui/gallery_utils.py`
 
 ```python
 from __future__ import annotations
@@ -3793,7 +3795,7 @@ def auto_set_thresholds(per_metric_values: dict, p: int, slider_keys: list[str],
 
 ```
 
-### `📄 ui\handlers\__init__.py`
+### `📄 ui/handlers/__init__.py`
 
 ```python
 """
@@ -3811,7 +3813,7 @@ from ui.handlers.filtering_handler import FilteringHandler
 __all__ = ['ExtractionHandler', 'AnalysisHandler', 'FilteringHandler']
 ```
 
-### `📄 ui\handlers\analysis_handler.py`
+### `📄 ui/handlers/analysis_handler.py`
 
 ```python
 """
@@ -3917,7 +3919,7 @@ class AnalysisHandler:
 
 ```
 
-### `📄 ui\handlers\extraction_handler.py`
+### `📄 ui/handlers/extraction_handler.py`
 
 ```python
 """
@@ -3986,7 +3988,7 @@ class ExtractionHandler:
 
 ```
 
-### `📄 ui\handlers\filtering_handler.py`
+### `📄 ui/handlers/filtering_handler.py`
 
 ```python
 """
