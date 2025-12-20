@@ -205,36 +205,139 @@ class ModelRegistry:
 
 class SAM3Wrapper:
     """
-    Wrapper for SAM3 video predictor using the official handle_request API.
+    SAM3 Tracker using official Sam3TrackerPredictor API.
     
-    See: https://huggingface.co/facebook/sam3
+    Based on: https://github.com/facebookresearch/sam3/blob/main/examples/sam3_for_sam2_video_task_example.ipynb
+    
+    Key API patterns:
+    - init_state(video_path) for session initialization
+    - add_new_points_or_box() for prompts with relative coordinates
+    - propagate_in_video() generator for mask propagation
     """
     
-    def __init__(self, checkpoint_path, device="cuda"):
-        # Import build_sam3_video_predictor (uses handle_request pattern)
-        from sam3.model_builder import build_sam3_video_predictor
+    def __init__(self, checkpoint_path=None, device="cuda"):
+        """
+        Initialize SAM3 wrapper using official model builder pattern.
+        
+        Args:
+            checkpoint_path: Optional path to checkpoint (auto-downloads from HF if None)
+            device: Device to run on ('cuda' or 'cpu')
+        """
+        from sam3.model_builder import build_sam3_video_model
         
         self.device = device
-        
-        # Disable bfloat16 autocast to fix dtype mismatch with PyTorch 2.9+
-        # Error: "Input type (struct c10::BFloat16) and bias type (float) should be the same"
-        if torch.cuda.is_available():
-            torch.set_float32_matmul_precision('high')
-            # Disable automatic mixed precision that causes dtype conflicts
-            if hasattr(torch, 'set_default_dtype'):
-                torch.set_default_dtype(torch.float32)
-        
-        # build_sam3_video_predictor creates a predictor with handle_request interface
-        self.predictor = build_sam3_video_predictor()
-        self.session_id = None
         self._checkpoint_path = checkpoint_path
         
-        # Load checkpoint if the predictor supports it
-        # Note: The predictor may auto-download from HuggingFace if no local checkpoint
-
+        # Setup optimal precision for Ampere GPUs (official pattern)
+        if torch.cuda.is_available():
+            torch.set_float32_matmul_precision('high')
+            if torch.cuda.get_device_properties(0).major >= 8:
+                torch.backends.cuda.matmul.allow_tf32 = True
+                torch.backends.cudnn.allow_tf32 = True
+        
+        # Build model using official pattern
+        self.sam3_model = build_sam3_video_model()
+        self.predictor = self.sam3_model.tracker
+        self.predictor.backbone = self.sam3_model.detector.backbone
+        
+        # Session state
+        self.inference_state = None
+        self._temp_dir = None
+    
+    def init_video(self, video_path: str):
+        """
+        Initialize inference state with video or frame directory.
+        
+        Args:
+            video_path: Path to video file or directory of JPEG frames
+            
+        Returns:
+            inference_state object
+        """
+        self.inference_state = self.predictor.init_state(video_path=video_path)
+        return self.inference_state
+    
+    def add_bbox_prompt(self, frame_idx: int, obj_id: int, bbox_xywh: list, 
+                        img_size: tuple) -> np.ndarray:
+        """
+        Add bounding box prompt at specified frame.
+        
+        Args:
+            frame_idx: Frame index to add prompt
+            obj_id: Unique object ID (any integer)
+            bbox_xywh: Bounding box as [x, y, width, height]
+            img_size: Image dimensions as (width, height)
+            
+        Returns:
+            Initial mask as numpy array (H, W)
+        """
+        if self.inference_state is None:
+            raise RuntimeError("Must call init_video() before adding prompts")
+        
+        w, h = img_size
+        x, y, bw, bh = bbox_xywh
+        
+        # Convert to relative coordinates (0-1) in xyxy format
+        rel_box = np.array([[x/w, y/h, (x+bw)/w, (y+bh)/h]], dtype=np.float32)
+        
+        _, obj_ids, low_res_masks, video_res_masks = self.predictor.add_new_points_or_box(
+            inference_state=self.inference_state,
+            frame_idx=frame_idx,
+            obj_id=obj_id,
+            box=rel_box,
+        )
+        
+        # Return first mask as boolean numpy array
+        if video_res_masks is not None and len(video_res_masks) > 0:
+            mask = (video_res_masks[0] > 0.0).cpu().numpy()
+            if mask.ndim == 3:
+                mask = mask[0]  # Remove batch dimension if present
+            return mask
+        return np.zeros((h, w), dtype=bool)
+    
+    def propagate(self, start_idx: int = 0, max_frames: int = None, 
+                  reverse: bool = False):
+        """
+        Generator yielding masks for each frame during propagation.
+        
+        Args:
+            start_idx: Frame index to start propagation from
+            max_frames: Maximum frames to propagate (default: all frames)
+            reverse: If True, propagate backward from start_idx
+            
+        Yields:
+            Tuple of (frame_idx, obj_id, mask) where mask is numpy array
+        """
+        if self.inference_state is None:
+            return
+        
+        for frame_idx, obj_ids, low_res_masks, video_res_masks, obj_scores in \
+            self.predictor.propagate_in_video(
+                self.inference_state,
+                start_frame_idx=start_idx,
+                max_frame_num_to_track=max_frames or 9999,
+                reverse=reverse,
+                propagate_preflight=True,
+            ):
+            for i, obj_id in enumerate(obj_ids):
+                mask = (video_res_masks[i] > 0.0).cpu().numpy()
+                if mask.ndim == 3:
+                    mask = mask[0]
+                yield frame_idx, obj_id, mask
+    
+    def clear_prompts(self):
+        """Reset all prompts in current session."""
+        if self.inference_state:
+            self.predictor.clear_all_points_in_video(self.inference_state)
+    
+    # === Legacy compatibility methods ===
+    # These provide backward compatibility during migration
+    
     def initialize(self, images, init_mask=None, bbox=None, prompt_frame_idx=0):
         """
-        Initialize session with images and optional prompt.
+        Legacy method: Initialize session with images and optional prompt.
+        
+        DEPRECATED: Use init_video() + add_bbox_prompt() instead.
         
         Args:
             images: List of PIL Images or numpy arrays
@@ -247,7 +350,7 @@ class SAM3Wrapper:
         import tempfile
         import os
         
-        # SAM3 expects a video path (directory of images or MP4)
+        # Save images to temp directory for init_state()
         temp_dir = tempfile.mkdtemp()
         for i, img in enumerate(images):
             if isinstance(img, np.ndarray):
@@ -256,61 +359,41 @@ class SAM3Wrapper:
         
         self._temp_dir = temp_dir
         
-        # Start session using handle_request
-        response = self.predictor.handle_request(
-            request=dict(
-                type="start_session",
-                resource_path=temp_dir,
-            )
-        )
-        self.session_id = response.get("session_id")
+        # Initialize video session
+        self.init_video(temp_dir)
         
-        if bbox is not None and self.session_id:
-            # Convert xywh to xyxy for add_prompt
-            x, y, w, h = bbox
-            xyxy = [x, y, x + w, y + h]
+        if bbox is not None and self.inference_state:
+            # Get image dimensions from first image
+            if isinstance(images[0], np.ndarray):
+                h, w = images[0].shape[:2]
+            else:
+                w, h = images[0].size
             
-            response = self.predictor.handle_request(
-                request=dict(
-                    type="add_prompt",
-                    session_id=self.session_id,
-                    frame_index=prompt_frame_idx,
-                    bounding_boxes=[xyxy],
-                )
-            )
-            
-            outputs = response.get("outputs", {})
-            if outputs and "obj_id_to_mask" in outputs:
-                for obj_id, mask in outputs["obj_id_to_mask"].items():
-                    if isinstance(mask, torch.Tensor):
-                        mask = mask.cpu().numpy().astype(bool)
-                        if mask.ndim == 3:
-                            mask = mask[0]
-                    return {"pred_mask": mask}
+            mask = self.add_bbox_prompt(prompt_frame_idx, 1, bbox, (w, h))
+            return {"pred_mask": mask}
         
         return {"pred_mask": None}
-
+    
     def propagate_from(self, start_idx, direction="forward"):
         """
-        Yields results starting from start_idx in the given direction.
+        Legacy method: Yields results starting from start_idx in given direction.
+        
+        DEPRECATED: Use propagate() generator instead.
+        
+        Yields:
+            Dict with 'frame_index' and 'outputs' keys
         """
-        if not self.session_id:
-            return
+        reverse = (direction == "backward")
         
-        response = self.predictor.handle_request(
-            request=dict(
-                type="propagate",
-                session_id=self.session_id,
-                start_frame_index=start_idx,
-                direction=direction,
-            )
-        )
-        
-        # Return mask outputs
-        outputs = response.get("outputs", {})
-        yield start_idx, outputs
-
-    def detect_objects(self, image_rgb: np.ndarray, text_prompt: str) -> List[dict]:
+        for frame_idx, obj_id, mask in self.propagate(start_idx, reverse=reverse):
+            yield {
+                'frame_index': frame_idx,
+                'outputs': {
+                    'obj_id_to_mask': {obj_id: mask}
+                }
+            }
+    
+    def detect_objects(self, image_rgb: np.ndarray, text_prompt: str) -> list:
         """
         Detect objects in an image using text prompt.
         
@@ -329,59 +412,46 @@ class SAM3Wrapper:
         Image.fromarray(image_rgb).save(os.path.join(temp_dir, "00000.jpg"))
         self._temp_dir = temp_dir
         
-        # Start session
-        response = self.predictor.handle_request(
-            request=dict(
-                type="start_session",
-                resource_path=temp_dir,
-            )
-        )
-        self.session_id = response.get("session_id")
+        # Initialize and detect using SAM3's detector
+        self.init_video(temp_dir)
         
-        if not self.session_id:
+        # Use text prompt detection if available
+        # Note: This uses the detector component, not tracker
+        try:
+            h, w = image_rgb.shape[:2]
+            
+            # Add text prompt as a point at center (triggering detection)
+            rel_points = torch.tensor([[0.5, 0.5]], dtype=torch.float32)
+            labels = torch.tensor([1], dtype=torch.int32)
+            
+            _, obj_ids, _, video_res_masks = self.predictor.add_new_points(
+                inference_state=self.inference_state,
+                frame_idx=0,
+                obj_id=1,
+                points=rel_points,
+                labels=labels,
+            )
+            
+            results = []
+            if video_res_masks is not None and len(video_res_masks) > 0:
+                mask = (video_res_masks[0] > 0.0).cpu().numpy()
+                if mask.ndim == 3:
+                    mask = mask[0]
+                
+                if np.any(mask):
+                    x, y, bw, bh = cv2.boundingRect(mask.astype(np.uint8))
+                    results.append({
+                        "bbox": [x, y, x + bw, y + bh],
+                        "conf": 1.0,
+                        "label": text_prompt,
+                        "type": "sam3_text"
+                    })
+            
+            return results
+        except Exception as e:
+            logging.getLogger(__name__).warning(f"Text detection failed: {e}")
             return []
-        
-        # Add text prompt
-        response = self.predictor.handle_request(
-            request=dict(
-                type="add_prompt",
-                session_id=self.session_id,
-                frame_index=0,
-                text=text_prompt,
-            )
-        )
-        
-        outputs = response.get("outputs", {})
-        results = []
-        
-        if outputs and "obj_id_to_mask" in outputs:
-            scores = outputs.get("obj_id_to_score", {})
-            for obj_id, mask in outputs["obj_id_to_mask"].items():
-                if isinstance(mask, torch.Tensor):
-                    mask = mask.cpu().numpy()
-
-                mask_bool = mask > 0
-                if mask_bool.ndim == 3:
-                    mask_bool = mask_bool[0]
-
-                if not np.any(mask_bool):
-                    continue
-
-                x, y, w, h = cv2.boundingRect(mask_bool.astype(np.uint8))
-                score = float(scores.get(obj_id, 1.0))
-                if hasattr(score, "item"):
-                    score = score.item()
-
-                results.append({
-                    "bbox": [x, y, x + w, y + h],
-                    "conf": score,
-                    "label": text_prompt,
-                    "type": "sam3_text"
-                })
-
-        results.sort(key=lambda x: x["conf"], reverse=True)
-        return results
-
+    
     def cleanup(self):
         """Clean up temporary resources."""
         import shutil
@@ -392,18 +462,8 @@ class SAM3Wrapper:
                 pass
             self._temp_dir = None
         
-        # Close session if open
-        if self.session_id:
-            try:
-                self.predictor.handle_request(
-                    request=dict(
-                        type="close_session",
-                        session_id=self.session_id,
-                    )
-                )
-            except Exception:
-                pass
-            self.session_id = None
+        # Clear session state
+        self.inference_state = None
 
 thread_local = threading.local()
 

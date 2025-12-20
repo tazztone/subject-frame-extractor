@@ -111,7 +111,7 @@ class TestSAM3Inference:
             wrapper.cleanup()
 
     def test_sam3_bbox_initialization(self, test_image, tmp_path):
-        """SAM3 can initialize session with bounding box."""
+        """SAM3 can initialize session with bounding box (legacy API)."""
         import torch
         if not torch.cuda.is_available():
             pytest.skip("CUDA not available")
@@ -121,7 +121,7 @@ class TestSAM3Inference:
         wrapper = SAM3Wrapper(str(tmp_path / "sam3.pt"), device="cuda")
         
         try:
-            # Provide a bounding box in the test image
+            # Provide a bounding box in the test image (legacy API)
             result = wrapper.initialize(
                 images=[test_image],
                 bbox=[80, 50, 100, 150],  # x, y, w, h
@@ -129,6 +129,114 @@ class TestSAM3Inference:
             )
             assert isinstance(result, dict)
             # pred_mask may be None if detection fails, but no error should occur
+        finally:
+            wrapper.cleanup()
+
+    def test_sam3_new_api_init_video(self, tmp_path):
+        """SAM3 can initialize with new init_video() API."""
+        import torch
+        import os
+        from PIL import Image
+        if not torch.cuda.is_available():
+            pytest.skip("CUDA not available")
+        
+        from core.managers import SAM3Wrapper
+        
+        # Create a directory with test frames
+        frames_dir = tmp_path / "test_frames"
+        frames_dir.mkdir()
+        
+        # Create 3 test frames
+        for i in range(3):
+            img = _create_test_image()
+            Image.fromarray(img).save(frames_dir / f"{i:05d}.jpg")
+        
+        wrapper = SAM3Wrapper(device="cuda")
+        
+        try:
+            # Test new API: init_video
+            inference_state = wrapper.init_video(str(frames_dir))
+            assert inference_state is not None
+            assert wrapper.inference_state is not None
+        finally:
+            wrapper.cleanup()
+
+    def test_sam3_new_api_add_bbox_prompt(self, tmp_path):
+        """SAM3 can add bbox prompt with new add_bbox_prompt() API."""
+        import torch
+        import os
+        from PIL import Image
+        if not torch.cuda.is_available():
+            pytest.skip("CUDA not available")
+        
+        from core.managers import SAM3Wrapper
+        
+        # Create a directory with test frames
+        frames_dir = tmp_path / "test_frames"
+        frames_dir.mkdir()
+        
+        # Create 3 test frames with clear object
+        for i in range(3):
+            img = _create_test_image()
+            Image.fromarray(img).save(frames_dir / f"{i:05d}.jpg")
+        
+        wrapper = SAM3Wrapper(device="cuda")
+        
+        try:
+            wrapper.init_video(str(frames_dir))
+            
+            # Test new API: add_bbox_prompt
+            mask = wrapper.add_bbox_prompt(
+                frame_idx=0,
+                obj_id=1,
+                bbox_xywh=[80, 50, 100, 150],  # x, y, w, h
+                img_size=(256, 256)  # w, h
+            )
+            
+            assert mask is not None
+            assert isinstance(mask, np.ndarray)
+            assert mask.ndim == 2  # Should be 2D mask
+        finally:
+            wrapper.cleanup()
+
+    def test_sam3_new_api_propagation(self, tmp_path):
+        """SAM3 propagate() generator works correctly."""
+        import torch
+        from PIL import Image
+        if not torch.cuda.is_available():
+            pytest.skip("CUDA not available")
+        
+        from core.managers import SAM3Wrapper
+        
+        # Create a directory with test frames
+        frames_dir = tmp_path / "test_frames"
+        frames_dir.mkdir()
+        
+        # Create 5 test frames
+        for i in range(5):
+            img = _create_test_image()
+            Image.fromarray(img).save(frames_dir / f"{i:05d}.jpg")
+        
+        wrapper = SAM3Wrapper(device="cuda")
+        
+        try:
+            wrapper.init_video(str(frames_dir))
+            wrapper.add_bbox_prompt(
+                frame_idx=2,  # Start from middle frame
+                obj_id=1,
+                bbox_xywh=[80, 50, 100, 150],
+                img_size=(256, 256)
+            )
+            
+            # Test new API: propagate generator
+            propagated_frames = list(wrapper.propagate(start_idx=2, reverse=False))
+            
+            assert len(propagated_frames) > 0
+            # Each result should be (frame_idx, obj_id, mask)
+            for frame_idx, obj_id, mask in propagated_frames:
+                assert isinstance(frame_idx, int)
+                assert isinstance(obj_id, int)
+                assert isinstance(mask, np.ndarray)
         finally:
             wrapper.cleanup()
 

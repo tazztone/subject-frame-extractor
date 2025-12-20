@@ -445,9 +445,28 @@ class SeedSelector:
         if not self.tracker or bbox_xywh is None:
             return None
         try:
+            import tempfile
+            import os
+            
+            # Save frame to temp directory for SAM3 init_state
+            temp_dir = tempfile.mkdtemp()
             pil_img = rgb_to_pil(frame_rgb_small)
-            outputs = self.tracker.initialize([pil_img], None, bbox=bbox_xywh, prompt_frame_idx=0)
-            mask = outputs.get('pred_mask')
+            pil_img.save(os.path.join(temp_dir, "00000.jpg"))
+            
+            # Use new SAM3 API
+            h, w = frame_rgb_small.shape[:2]
+            self.tracker.init_video(temp_dir)
+            mask = self.tracker.add_bbox_prompt(
+                frame_idx=0, obj_id=1, bbox_xywh=bbox_xywh, img_size=(w, h)
+            )
+            
+            # Cleanup temp directory
+            import shutil
+            try:
+                shutil.rmtree(temp_dir)
+            except Exception:
+                pass
+            
             if mask is not None:
                 mask = postprocess_mask(
                     (mask * 255).astype(np.uint8),

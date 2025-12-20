@@ -91,93 +91,105 @@ class MaskPropagator:
             component="propagator",
             user_context={'num_frames': len(shot_frames_rgb), 'seed_index': seed_idx}
         )
+        h, w = shot_frames_rgb[0].shape[:2]
         masks = [None] * len(shot_frames_rgb)
 
         if tracker:
             tracker.set_stage(f"Propagating masks for {len(shot_frames_rgb)} frames")
 
         try:
-            pil_images = [rgb_to_pil(img) for img in shot_frames_rgb]
-
-            # Initialize with seed frame
-            outputs = self.dam_tracker.initialize(
-                pil_images, bbox=bbox_xywh, prompt_frame_idx=seed_idx
+            # Save frames to temp directory for SAM3
+            import tempfile
+            import os
+            temp_dir = tempfile.mkdtemp()
+            for i, img in enumerate(shot_frames_rgb):
+                pil_img = rgb_to_pil(img)
+                pil_img.save(os.path.join(temp_dir, f"{i:05d}.jpg"))
+            
+            # Initialize video session with new API
+            self.dam_tracker.init_video(temp_dir)
+            
+            # Add bbox prompt on seed frame
+            seed_mask = self.dam_tracker.add_bbox_prompt(
+                frame_idx=seed_idx,
+                obj_id=1,
+                bbox_xywh=bbox_xywh,
+                img_size=(w, h)
             )
-            mask = outputs.get('pred_mask')
-            if mask is not None:
+            
+            # Process seed mask
+            if seed_mask is not None:
                 mask = postprocess_mask(
-                    (mask * 255).astype(np.uint8),
+                    (seed_mask * 255).astype(np.uint8),
                     config=self.config,
                     fill_holes=True,
                     keep_largest_only=True
                 )
-            masks[seed_idx] = (
-                mask if mask is not None 
-                else np.zeros_like(shot_frames_rgb[seed_idx], dtype=np.uint8)[:, :, 0]
-            )
+            else:
+                mask = np.zeros((h, w), dtype=np.uint8)
+            masks[seed_idx] = mask
+            
             if tracker:
                 tracker.step(1, desc="Propagation (seed)")
 
-            # Propagate forward
-            for out in self.dam_tracker.propagate_from(seed_idx, direction="forward"):
-                frame_idx = out['frame_index']
+            # Propagate forward using new generator API
+            for frame_idx, obj_id, pred_mask in self.dam_tracker.propagate(
+                start_idx=seed_idx, reverse=False
+            ):
                 if frame_idx == seed_idx:
                     continue
                 if frame_idx >= len(shot_frames_rgb):
                     break
-
-                if (out['outputs'] and 'obj_id_to_mask' in out['outputs'] 
-                        and len(out['outputs']['obj_id_to_mask']) > 0):
-                    pred_mask = list(out['outputs']['obj_id_to_mask'].values())[0]
-                    if isinstance(pred_mask, torch.Tensor):
-                        pred_mask = pred_mask.cpu().numpy().astype(bool)
-                        if pred_mask.ndim == 3:
-                            pred_mask = pred_mask[0]
-
-                    mask = (pred_mask * 255).astype(np.uint8)
+                if self.cancel_event.is_set():
+                    break
+                
+                if pred_mask is not None and np.any(pred_mask):
                     mask = postprocess_mask(
-                        mask, config=self.config, fill_holes=True, keep_largest_only=True
+                        (pred_mask * 255).astype(np.uint8),
+                        config=self.config,
+                        fill_holes=True,
+                        keep_largest_only=True
                     )
                     masks[frame_idx] = mask
                 else:
-                    masks[frame_idx] = np.zeros_like(
-                        shot_frames_rgb[frame_idx], dtype=np.uint8
-                    )[:, :, 0]
+                    masks[frame_idx] = np.zeros((h, w), dtype=np.uint8)
 
                 if tracker:
                     tracker.step(1, desc="Propagation (→)")
 
-            # Propagate backward
-            for out in self.dam_tracker.propagate_from(seed_idx, direction="backward"):
-                frame_idx = out['frame_index']
+            # Propagate backward using new generator API
+            for frame_idx, obj_id, pred_mask in self.dam_tracker.propagate(
+                start_idx=seed_idx, reverse=True
+            ):
                 if frame_idx == seed_idx:
                     continue
                 if frame_idx < 0:
                     break
+                if self.cancel_event.is_set():
+                    break
 
-                if (out['outputs'] and 'obj_id_to_mask' in out['outputs'] 
-                        and len(out['outputs']['obj_id_to_mask']) > 0):
-                    pred_mask = list(out['outputs']['obj_id_to_mask'].values())[0]
-                    if isinstance(pred_mask, torch.Tensor):
-                        pred_mask = pred_mask.cpu().numpy().astype(bool)
-                        if pred_mask.ndim == 3:
-                            pred_mask = pred_mask[0]
-
-                    mask = (pred_mask * 255).astype(np.uint8)
+                if pred_mask is not None and np.any(pred_mask):
                     mask = postprocess_mask(
-                        mask, config=self.config, fill_holes=True, keep_largest_only=True
+                        (pred_mask * 255).astype(np.uint8),
+                        config=self.config,
+                        fill_holes=True,
+                        keep_largest_only=True
                     )
                     masks[frame_idx] = mask
                 else:
-                    masks[frame_idx] = np.zeros_like(
-                        shot_frames_rgb[frame_idx], dtype=np.uint8
-                    )[:, :, 0]
+                    masks[frame_idx] = np.zeros((h, w), dtype=np.uint8)
 
                 if tracker:
                     tracker.step(1, desc="Propagation (←)")
+            
+            # Cleanup temp directory
+            import shutil
+            try:
+                shutil.rmtree(temp_dir)
+            except Exception:
+                pass
 
             # Compute final results
-            h, w = shot_frames_rgb[0].shape[:2]
             final_results = []
             for i, mask in enumerate(masks):
                 if self.cancel_event.is_set() or mask is None:
