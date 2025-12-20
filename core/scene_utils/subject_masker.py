@@ -390,7 +390,7 @@ class SubjectMasker:
         self._initialize_tracker()
 
         if scene is not None:
-            scene.yolo_detections = self.seed_selector._get_person_boxes(frame_rgb, scene=None)
+            scene.person_detections = self.seed_selector._get_person_boxes(frame_rgb, scene=None)
 
         return self.seed_selector.select_seed(frame_rgb, current_params=seed_config, scene=scene)
 

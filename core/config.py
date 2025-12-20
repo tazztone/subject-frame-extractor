@@ -151,6 +151,8 @@ class Config(BaseSettings):
     seeding_face_similarity_threshold: float = 0.4
     seeding_face_contain_score: int = 100
     seeding_confidence_score_multiplier: int = 20
+    seeding_iou_threshold: float = 0.5  # IOU threshold for person/text box intersection
+    seeding_iou_bonus: float = 50.0  # Bonus score for high IOU matches
     seeding_face_to_body_expansion_factors: List[float] = Field(default_factory=lambda: [4.0, 7.0, 0.75])
     seeding_final_fallback_box: List[float] = Field(default_factory=lambda: [0.25, 0.25, 0.5, 0.5])
     seeding_balanced_score_weights: Dict[str, float] = Field(default_factory=lambda: {'area': 0.4, 'confidence': 0.4, 'edge': 0.2})
