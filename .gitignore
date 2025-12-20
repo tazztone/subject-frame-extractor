@@ -319,8 +319,6 @@ example-code/
 masks/
 logs/
 downloads/
-Grounded-SAM-2/
-DAM4SAM/
 .kilocode/rules/
 .kilocode/rules/rule.md
 subject-frame-extractor
@@ -332,7 +330,6 @@ run_config.json
 CHANGELOG.md
 test_model_fixes.py
 from_json_mock/
-Grounded-SAM-2/
 jules-scratch/
 mock.jsonl
 pytest.ini
