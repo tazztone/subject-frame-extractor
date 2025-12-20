@@ -53,6 +53,10 @@ if exist requirements.txt (
   uv pip install -r requirements.txt || goto :end
 )
 
+REM 5) Install SAM3 in editable mode
+echo [5/6] Installing SAM3 in editable mode...
+uv pip install -e SAM3_repo || goto :end
+
 
 
 echo.
