@@ -163,10 +163,6 @@ def build_modules_to_mock():
         'timm.models': mock_timm.models,
         'timm.models.layers': mock_timm.models.layers,
         'onnxruntime': MagicMock(name='onnxruntime'),
-        # Legacy DAM4SAM mocks (kept for backward compat)
-        'DAM4SAM': MagicMock(name='DAM4SAM'),
-        'DAM4SAM.utils': MagicMock(name='DAM4SAM.utils'),
-        'DAM4SAM.dam4sam_tracker': MagicMock(name='DAM4SAM.dam4sam_tracker'),
         # SAM3 mocks
         'sam3': MagicMock(name='sam3'),
         'sam3.model_builder': MagicMock(name='sam3.model_builder'),
