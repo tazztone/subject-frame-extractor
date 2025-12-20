@@ -22,6 +22,7 @@ pip install uv
 
 # Install requirements 
 uv pip install -r requirements.txt
+uv pip install -e SAM3_repo
 
 echo "--- Jules Environment Complete ---"
 
