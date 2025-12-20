@@ -47,7 +47,6 @@ class AppUI:
     METHOD_CHOICES: List[str] = ["keyframes", "interval", "every_nth_frame", "nth_plus_keyframes", "all"]
     PRIMARY_SEED_STRATEGY_CHOICES: List[str] = ["🤖 Automatic", "👤 By Face", "📝 By Text", "🔄 Face + Text Fallback", "🧑‍🤝‍🧑 Find Prominent Person"]
     SEED_STRATEGY_CHOICES: List[str] = ["Largest Person", "Center-most Person", "Highest Confidence", "Tallest Person", "Area x Confidence", "Rule-of-Thirds", "Edge-avoiding", "Balanced", "Best Face"]
-    PERSON_DETECTOR_MODEL_CHOICES: List[str] = ['yolo11x.pt', 'yolo11s.pt']
     FACE_MODEL_NAME_CHOICES: List[str] = ["buffalo_l", "buffalo_s"]
     TRACKER_MODEL_CHOICES: List[str] = ["sam3"]  # SAM3 model
     GALLERY_VIEW_CHOICES: List[str] = ["Kept", "Rejected"]
@@ -359,7 +358,7 @@ class AppUI:
                          with gr.Accordion("Advanced Override", open=False):
                              self._create_component("sceneeditorpromptinput", "textbox", {"label": "Manual Text Prompt"})
                              self._create_component("scenerecomputebutton", "button", {"value": "▶️ Recompute"})
-                             self._create_component("scene_editor_yolo_subject_id", "textbox", {"visible": False, "value": ""}) # Hidden state holder
+                             self._create_component("scene_editor_subject_id", "textbox", {"visible": False, "value": ""}) # Hidden state holder
                 gr.Markdown("---")
 
             with gr.Accordion("Scene Filtering", open=False):
@@ -501,7 +500,7 @@ class AppUI:
     def _create_event_handlers(self):
         """Sets up all global event listeners and state management."""
         self.logger.info("Initializing Gradio event handlers...")
-        self.components.update({'extracted_video_path_state': gr.State(""), 'extracted_frames_dir_state': gr.State(""), 'analysis_output_dir_state': gr.State(""), 'analysis_metadata_path_state': gr.State(""), 'all_frames_data_state': gr.State([]), 'per_metric_values_state': gr.State({}), 'scenes_state': gr.State([]), 'selected_scene_id_state': gr.State(None), 'scene_gallery_index_map_state': gr.State([]), 'gallery_image_state': gr.State(None), 'gallery_shape_state': gr.State(None), 'yolo_results_state': gr.State({}), 'discovered_faces_state': gr.State([]), 'resume_state': gr.State(False), 'enable_subject_mask_state': gr.State(True), 'min_mask_area_pct_state': gr.State(1.0), 'sharpness_base_scale_state': gr.State(2500.0), 'edge_strength_base_scale_state': gr.State(100.0)})
+        self.components.update({'extracted_video_path_state': gr.State(""), 'extracted_frames_dir_state': gr.State(""), 'analysis_output_dir_state': gr.State(""), 'analysis_metadata_path_state': gr.State(""), 'all_frames_data_state': gr.State([]), 'per_metric_values_state': gr.State({}), 'scenes_state': gr.State([]), 'selected_scene_id_state': gr.State(None), 'scene_gallery_index_map_state': gr.State([]), 'gallery_image_state': gr.State(None), 'gallery_shape_state': gr.State(None), 'discovered_faces_state': gr.State([]), 'resume_state': gr.State(False), 'enable_subject_mask_state': gr.State(True), 'min_mask_area_pct_state': gr.State(1.0), 'sharpness_base_scale_state': gr.State(2500.0), 'edge_strength_base_scale_state': gr.State(100.0)})
 
         # Undo/Redo State
         self.components['scene_history_state'] = gr.State(deque(maxlen=self.history_depth))
@@ -535,9 +534,9 @@ class AppUI:
         c['main_tabs'].select(self.update_stepper, None, c['stepper'])
 
         # Hidden radio for scene editor state compatibility
-        c['scene_editor_yolo_subject_id'].change(
-            self.on_select_yolo_subject_wrapper,
-            inputs=[c['scene_editor_yolo_subject_id'], c['scenes_state'], c['selected_scene_id_state'], c['extracted_frames_dir_state'], c['scene_gallery_view_toggle'], c['scene_history_state']] + self.ana_input_components,
+        c['scene_editor_subject_id'].change(
+            self.on_select_detected_subject_wrapper,
+            inputs=[c['scene_editor_subject_id'], c['scenes_state'], c['selected_scene_id_state'], c['extracted_frames_dir_state'], c['scene_gallery_view_toggle'], c['scene_history_state']] + self.ana_input_components,
             outputs=[c['scenes_state'], c['scene_gallery'], c['scene_gallery_index_map_state'], c['sceneeditorstatusmd'], c['scene_history_state'], c['gallery_image_preview']]
         )
         c['run_diagnostics_button'].click(self.run_system_diagnostics, inputs=[], outputs=[c['unified_log']])
@@ -635,7 +634,7 @@ class AppUI:
                     if update_dict: yield update_dict
                 except Empty: break
 
-    def on_select_yolo_subject_wrapper(self, subject_id: str, scenes: list, shot_id: int, outdir: str, view: str, history: Deque, *ana_args) -> tuple:
+    def on_select_detected_subject_wrapper(self, subject_id: str, scenes: list, shot_id: int, outdir: str, view: str, history: Deque, *ana_args) -> tuple:
         """
         Wrapper for handling subject selection from the discovery gallery.
 
@@ -675,7 +674,7 @@ class AppUI:
 
             return scenes, gr.update(value=gallery_items), gr.update(value=index_map), f"Subject {subject_id} selected.", history, gr.update(value=preview_img)
         except Exception as e:
-            self.logger.error("Failed to select YOLO subject", exc_info=True)
+            self.logger.error("Failed to select detected subject", exc_info=True)
             gallery_items, index_map, _ = build_scene_gallery_items(scenes, view, outdir)
             return scenes, gr.update(value=gallery_items), gr.update(value=index_map), f"Error: {e}", history, gr.update()
 
@@ -690,9 +689,9 @@ class AppUI:
         c['next_page_button'].click(lambda s, v, o, p: on_page_change(s, v, o, p + 1), [c['scenes_state'], c['scene_gallery_view_toggle'], c['extracted_frames_dir_state'], c['page_number_input']], [c['scene_gallery'], c['scene_gallery_index_map_state'], c['total_pages_label'], c['page_number_input']])
         c['prev_page_button'].click(lambda s, v, o, p: on_page_change(s, v, o, p - 1), [c['scenes_state'], c['scene_gallery_view_toggle'], c['extracted_frames_dir_state'], c['page_number_input']], [c['scene_gallery'], c['scene_gallery_index_map_state'], c['total_pages_label'], c['page_number_input']])
 
-        c['scene_gallery'].select(self.on_select_for_edit, inputs=[c['scenes_state'], c['scene_gallery_view_toggle'], c['scene_gallery_index_map_state'], c['extracted_frames_dir_state'], c['yolo_results_state']], outputs=[c['scenes_state'], c['scene_filter_status'], c['scene_gallery'], c['scene_gallery_index_map_state'], c['selected_scene_id_state'], c['sceneeditorstatusmd'], c['sceneeditorpromptinput'], c['scene_editor_group'], c['gallery_image_state'], c['gallery_shape_state'], c['subject_selection_gallery'], c['propagate_masks_button'], c['yolo_results_state'], c['gallery_image_preview']])
+        c['scene_gallery'].select(self.on_select_for_edit, inputs=[c['scenes_state'], c['scene_gallery_view_toggle'], c['scene_gallery_index_map_state'], c['extracted_frames_dir_state']], outputs=[c['scenes_state'], c['scene_filter_status'], c['scene_gallery'], c['scene_gallery_index_map_state'], c['selected_scene_id_state'], c['sceneeditorstatusmd'], c['sceneeditorpromptinput'], c['scene_editor_group'], c['gallery_image_state'], c['gallery_shape_state'], c['subject_selection_gallery'], c['propagate_masks_button'], c['gallery_image_preview']])
 
-        c['scenerecomputebutton'].click(fn=lambda scenes, shot_id, outdir, view, txt, subject_id, history, *ana_args: _wire_recompute_handler(self.config, self.app_logger, self.thumbnail_manager, [Scene(**s) for s in scenes], shot_id, outdir, txt, view, self.ana_ui_map_keys, list(ana_args), self.cuda_available, self.model_registry) if (txt and txt.strip()) else self.on_select_yolo_subject_wrapper(subject_id, scenes, shot_id, outdir, view, history, *ana_args), inputs=[c['scenes_state'], c['selected_scene_id_state'], c['analysis_output_dir_state'], c['scene_gallery_view_toggle'], c['sceneeditorpromptinput'], c['scene_editor_yolo_subject_id'], c['scene_history_state'], *self.ana_input_components], outputs=[c['scenes_state'], c['scene_gallery'], c['scene_gallery_index_map_state'], c['sceneeditorstatusmd'], c['scene_history_state']])
+        c['scenerecomputebutton'].click(fn=lambda scenes, shot_id, outdir, view, txt, subject_id, history, *ana_args: _wire_recompute_handler(self.config, self.app_logger, self.thumbnail_manager, [Scene(**s) for s in scenes], shot_id, outdir, txt, view, self.ana_ui_map_keys, list(ana_args), self.cuda_available, self.model_registry) if (txt and txt.strip()) else self.on_select_detected_subject_wrapper(subject_id, scenes, shot_id, outdir, view, history, *ana_args), inputs=[c['scenes_state'], c['selected_scene_id_state'], c['analysis_output_dir_state'], c['scene_gallery_view_toggle'], c['sceneeditorpromptinput'], c['scene_editor_subject_id'], c['scene_history_state'], *self.ana_input_components], outputs=[c['scenes_state'], c['scene_gallery'], c['scene_gallery_index_map_state'], c['sceneeditorstatusmd'], c['scene_history_state']])
 
         c['sceneresetbutton'].click(self.on_reset_scene_wrapper, inputs=[c['scenes_state'], c['selected_scene_id_state'], c['analysis_output_dir_state'], c['scene_gallery_view_toggle'], c['scene_history_state']] + self.ana_input_components, outputs=[c['scenes_state'], c['scene_gallery'], c['scene_gallery_index_map_state'], c['sceneeditorstatusmd'], c['scene_history_state']])
 
@@ -706,7 +705,7 @@ class AppUI:
         def on_subject_gallery_select(evt: gr.SelectData):
             # Map index to radio value (index + 1 as string) and trigger the hidden radio change
             return str(evt.index + 1)
-        c['subject_selection_gallery'].select(on_subject_gallery_select, None, c['scene_editor_yolo_subject_id'])
+        c['subject_selection_gallery'].select(on_subject_gallery_select, None, c['scene_editor_subject_id'])
 
         for comp in [c['scene_mask_area_min_input'], c['scene_face_sim_min_input'], c['scene_confidence_min_input']]:
             comp.release(self.on_apply_bulk_scene_filters_extended, [c['scenes_state'], c['scene_mask_area_min_input'], c['scene_face_sim_min_input'], c['scene_confidence_min_input'], c['enable_face_filter_input'], c['extracted_frames_dir_state'], c['scene_gallery_view_toggle']], [c['scenes_state'], c['scene_filter_status'], c['scene_gallery'], c['scene_gallery_index_map_state'], c['propagate_masks_button']])
@@ -730,10 +729,10 @@ class AppUI:
             self.logger.error(f"Failed to reset scene {shot_id}", exc_info=True)
             return scenes, gr.update(), gr.update(), f"Error: {e}", history
 
-    def on_select_for_edit(self, scenes, view, indexmap, outputdir, yoloresultsstate, event: Optional[gr.EventData] = None):
+    def on_select_for_edit(self, scenes, view, indexmap, outputdir, event: Optional[gr.EventData] = None):
         """Handles selection of a scene from the gallery for editing."""
         sel_idx = getattr(event, "index", None) if event else None
-        if sel_idx is None or not scenes: return (scenes, "Status", gr.update(), indexmap, None, "Select a scene.", "", gr.update(visible=False), None, None, gr.update(value=[]), gr.update(), {})
+        if sel_idx is None or not scenes: return (scenes, "Status", gr.update(), indexmap, None, "Select a scene.", "", gr.update(visible=False), None, None, gr.update(value=[]), gr.update(), gr.update())
 
         scene_idx_in_state = indexmap[sel_idx]
         scene = scenes[scene_idx_in_state]
@@ -758,7 +757,7 @@ class AppUI:
                  crop = gallery_image[y1:y2, x1:x2]
                  subject_crops.append((crop, f"Subject {i+1}"))
 
-        return (scenes, get_scene_status_text([Scene(**s) for s in scenes])[0], gr.update(), indexmap, shotid, gr.update(value=status_md), gr.update(value=prompt), gr.update(visible=True), gallery_image, gallery_shape, gr.update(value=subject_crops), get_scene_status_text([Scene(**s) for s in scenes])[1], yoloresultsstate, gr.update(value=gallery_image))
+        return (scenes, get_scene_status_text([Scene(**s) for s in scenes])[0], gr.update(), indexmap, shotid, gr.update(value=status_md), gr.update(value=prompt), gr.update(visible=True), gallery_image, gallery_shape, gr.update(value=subject_crops), get_scene_status_text([Scene(**s) for s in scenes])[1], gr.update(value=gallery_image))
 
     def on_editor_toggle(self, scenes, selected_shotid, outputfolder, view, new_status, history):
         """Toggles the included/excluded status of a scene."""
@@ -1027,7 +1026,6 @@ class AppUI:
             self.components['face_ref_img_path_input']: gr.update(value=run_config.get("face_ref_img_path", "")),
             self.components['text_prompt_input']: gr.update(value=run_config.get("text_prompt", "")),
             self.components['best_frame_strategy_input']: gr.update(value=run_config.get("best_frame_strategy", "Largest Person")),
-            self.components['person_detector_model_input']: gr.update(value=run_config.get("person_detector_model", "yolo11x.pt")),
             self.components['tracker_model_name_input']: gr.update(value=run_config.get("tracker_model_name", "sam3")),
             self.components['extracted_video_path_state']: run_config.get("video_path", ""),
             self.components['extracted_frames_dir_state']: str(output_dir),
