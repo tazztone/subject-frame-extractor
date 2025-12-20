@@ -172,7 +172,7 @@ class SeedSelector:
                                 'text_conf': d_box['conf'],
                                 'person_conf': y_box['conf']
                             }
-                if best_match and best_match['iou'] > self.config.seeding_yolo_iou_threshold:
+                if best_match and best_match['iou'] > self.config.seeding_iou_threshold:
                     self.logger.info("Found high-confidence intersection.", extra=best_match)
                     return self._xyxy_to_xywh(best_match['bbox']), best_match
             self.logger.info("Using best text box without validation.", extra=text_details)
@@ -208,8 +208,8 @@ class SeedSelector:
         scene: Optional['Scene'] = None
     ) -> list[dict]:
         """Get person bounding boxes from scene cache or detection."""
-        if scene and getattr(scene, 'yolo_detections', None):
-            return scene.yolo_detections
+        if scene and getattr(scene, 'person_detections', None):
+            return scene.person_detections
         if scene and (scene.selected_bbox or scene.initial_bbox):
             xywh = scene.selected_bbox or scene.initial_bbox
             x, y, w, h = xywh
@@ -268,7 +268,7 @@ class SeedSelector:
                 iou = self._calculate_iou(y_box['bbox'], d_box['bbox'])
                 if iou > best_iou:
                     best_iou, best_pair = iou, (y_box, d_box)
-        if best_iou > self.config.seeding_yolo_iou_threshold:
+        if best_iou > self.config.seeding_iou_threshold:
             for cand in scored_candidates:
                 if (np.array_equal(cand['box'], best_pair[0]['bbox']) or 
                         np.array_equal(cand['box'], best_pair[1]['bbox'])):
@@ -347,12 +347,12 @@ class SeedSelector:
         def best_face_score(b):
             if not all_faces:
                 return 0.0
-            yolo_bbox = b['bbox']
+            person_bbox = b['bbox']
             faces_in_box = []
             for face in all_faces:
                 face_cx = face.bbox[0] + face.bbox[2] / 2
                 face_cy = face.bbox[1] + face.bbox[3] / 2
-                if yolo_bbox[0] <= face_cx < yolo_bbox[2] and yolo_bbox[1] <= face_cy < yolo_bbox[3]:
+                if person_bbox[0] <= face_cx < person_bbox[2] and person_bbox[1] <= face_cy < person_bbox[3]:
                     faces_in_box.append(face)
             if not faces_in_box:
                 return 0.0

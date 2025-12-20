@@ -647,13 +647,13 @@ class AppUI:
             subject_idx = int(subject_id) - 1
             scene = next((s for s in scenes if s['shot_id'] == shot_id), None)
             if not scene: return scenes, gr.update(), gr.update(), "Scene not found.", history, gr.update()
-            yolo_boxes = scene.get('yolo_detections', [])
-            if not (0 <= subject_idx < len(yolo_boxes)): return scenes, gr.update(), gr.update(), f"Invalid Subject.", history, gr.update()
+            person_boxes = scene.get('person_detections', [])
+            if not (0 <= subject_idx < len(person_boxes)): return scenes, gr.update(), gr.update(), f"Invalid Subject.", history, gr.update()
 
             masker = _create_analysis_context(self.config, self.logger, self.thumbnail_manager, self.cuda_available, self.ana_ui_map_keys, list(ana_args), self.model_registry)
-            selected_box = yolo_boxes[subject_idx]
+            selected_box = person_boxes[subject_idx]
             selected_xywh = masker.seed_selector._xyxy_to_xywh(selected_box['bbox'])
-            overrides = {"manual_bbox_xywh": selected_xywh, "seedtype": "yolo_manual"}
+            overrides = {"manual_bbox_xywh": selected_xywh, "seedtype": "manual_selection"}
             scene_idx = scenes.index(scene)
             if 'initial_bbox' not in scenes[scene_idx] or scenes[scene_idx]['initial_bbox'] is None:
                 scenes[scene_idx]['initial_bbox'] = selected_xywh
@@ -749,7 +749,7 @@ class AppUI:
         # Create Subject Crops for Mini-Gallery
         subject_crops = []
         if gallery_image is not None:
-             detections = scene.get('yolo_detections', [])
+             detections = scene.get('person_detections', [])
              h, w, _ = gallery_image.shape
              for i, det in enumerate(detections):
                  bbox = det['bbox']

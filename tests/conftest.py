@@ -439,7 +439,7 @@ def mock_config_simple(tmp_path):
     mock.cache_cleanup_threshold = 0.8
     mock.cache_eviction_factor = 0.5
     mock.default_max_resolution = "1080"
-    mock.seeding_yolo_iou_threshold = 0.5
+    mock.seeding_iou_threshold = 0.5
     mock.seeding_face_contain_score = 10
     mock.seeding_confidence_score_multiplier = 1
     mock.seeding_iou_bonus = 5

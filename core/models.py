@@ -231,7 +231,7 @@ class Scene(BaseModel):
     is_overridden: bool = False
     initial_bbox: Optional[list] = None
     selected_bbox: Optional[list] = None
-    yolo_detections: List[dict] = Field(default_factory=list)
+    person_detections: List[dict] = Field(default_factory=list)
     rejection_reasons: Optional[list] = None
 
 class SceneState:
