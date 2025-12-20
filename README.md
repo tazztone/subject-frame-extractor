@@ -30,7 +30,7 @@ Perfect for creating training datasets (LoRA/Dreambooth), finding thumbnail cand
 - **Subject Segmentation**: Uses **SAM 3** for precise subject tracking and masking.
 - **Face Recognition**: **InsightFace**-powered similarity matching.
 - **Quality Assessment**: Multi-metric scoring including **NIQE** perceptual quality.
-- **Text-to-Object**: Use text prompts with **Grounded-DINO** (via SAM 3) to identify subjects.
+- **Text-to-Object**: Use text prompts with **SAM 3** to identify subjects.
 
 ### 🔍 Powerful Filtering & Export
 - **Real-time Filtering**: Interactive sliders for all quality metrics.
