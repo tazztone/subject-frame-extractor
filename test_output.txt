@@ -1,0 +1,9 @@
+============================= test session starts =============================
+platform win32 -- Python 3.10.11, pytest-8.4.1, pluggy-1.6.0 -- C:\Program Files\Python310\python.exe
+cachedir: .pytest_cache
+rootdir: C:\_coding\subject-frame-extractor2
+configfile: setup.cfg
+plugins: anyio-3.7.1, typeguard-4.4.4
+collecting ... collected 1 item / 1 deselected / 0 selected
+
+============================ 1 deselected in 0.02s ============================

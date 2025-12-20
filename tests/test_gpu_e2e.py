@@ -45,6 +45,41 @@ def _create_test_image_with_face(width=256, height=256):
     return img
 
 
+def _create_test_frames_dir(tmp_path, num_frames=5, width=256, height=256):
+    """Create a directory with test frames for SAM3 video processing."""
+    from PIL import Image
+    
+    frames_dir = tmp_path / "test_frames"
+    frames_dir.mkdir(exist_ok=True)
+    
+    for i in range(num_frames):
+        # Create frame with moving object
+        img = np.zeros((height, width, 3), dtype=np.uint8)
+        img[:, :] = [100, 150, 200]  # Light blue background
+        # Moving rectangle (simulates person)
+        x = 50 + i * 15
+        img[50:200, x:x+80] = [200, 100, 100]  # Red rectangle
+        Image.fromarray(img).save(frames_dir / f"{i:05d}.jpg")
+    
+    return frames_dir
+
+
+def _is_sam3_available():
+    """Check if SAM3 is properly installed and can be imported."""
+    try:
+        from sam3.model_builder import build_sam3_video_model
+        return True
+    except ImportError:
+        return False
+
+
+# Skip decorator for tests requiring SAM3
+requires_sam3 = pytest.mark.skipif(
+    not _is_sam3_available(),
+    reason="SAM3 not installed (pip install -e SAM3_repo)"
+)
+
+
 @pytest.fixture
 def test_image():
     """Provides a simple test image."""
@@ -55,6 +90,12 @@ def test_image():
 def test_image_with_face():
     """Provides a test image with face-like features."""
     return _create_test_image_with_face()
+
+
+@pytest.fixture
+def test_frames_dir(tmp_path):
+    """Provides a directory with test frames for video processing."""
+    return _create_test_frames_dir(tmp_path)
 
 
 class TestCUDAAvailability:
@@ -79,6 +120,7 @@ class TestCUDAAvailability:
 class TestSAM3Inference:
     """Real SAM3 inference tests - catches BFloat16 and other runtime errors."""
 
+    @requires_sam3
     def test_sam3_wrapper_initialization(self, tmp_path):
         """SAM3Wrapper can be initialized without errors."""
         import torch
@@ -87,156 +129,227 @@ class TestSAM3Inference:
         
         from core.managers import SAM3Wrapper
         
-        # This tests the dtype fix we added
-        wrapper = SAM3Wrapper(str(tmp_path / "sam3.pt"), device="cuda")
+        wrapper = SAM3Wrapper(device="cuda")
         assert wrapper is not None
         assert wrapper.predictor is not None
+        assert wrapper.sam3_model is not None
+        wrapper.cleanup()
 
-    def test_sam3_text_detection(self, test_image, tmp_path):
-        """SAM3 can detect objects using text prompt - catches BFloat16 errors."""
+    @requires_sam3
+    def test_sam3_init_video(self, test_frames_dir):
+        """SAM3 init_video() initializes inference state correctly."""
         import torch
         if not torch.cuda.is_available():
             pytest.skip("CUDA not available")
         
         from core.managers import SAM3Wrapper
         
-        wrapper = SAM3Wrapper(str(tmp_path / "sam3.pt"), device="cuda")
+        wrapper = SAM3Wrapper(device="cuda")
         
         try:
-            # This is where the BFloat16 error occurred
-            results = wrapper.detect_objects(test_image, "object")
-            # Results may be empty but no error should occur
-            assert isinstance(results, list)
+            inference_state = wrapper.init_video(str(test_frames_dir))
+            assert inference_state is not None
+            assert wrapper.inference_state is not None
         finally:
             wrapper.cleanup()
 
-    def test_sam3_bbox_initialization(self, test_image, tmp_path):
-        """SAM3 can initialize session with bounding box (legacy API)."""
+    @requires_sam3
+    def test_sam3_add_bbox_prompt(self, test_frames_dir):
+        """SAM3 add_bbox_prompt() returns valid mask."""
         import torch
         if not torch.cuda.is_available():
             pytest.skip("CUDA not available")
         
         from core.managers import SAM3Wrapper
         
-        wrapper = SAM3Wrapper(str(tmp_path / "sam3.pt"), device="cuda")
+        wrapper = SAM3Wrapper(device="cuda")
         
         try:
-            # Provide a bounding box in the test image (legacy API)
+            wrapper.init_video(str(test_frames_dir))
+            
+            # Add bbox prompt covering the object in test image
+            mask = wrapper.add_bbox_prompt(
+                frame_idx=0,
+                obj_id=1,
+                bbox_xywh=[50, 50, 80, 150],  # x, y, w, h
+                img_size=(256, 256)  # w, h
+            )
+            
+            assert mask is not None
+            assert isinstance(mask, np.ndarray)
+            assert mask.ndim == 2  # Should be 2D (H, W) mask
+            assert mask.shape == (256, 256)
+        finally:
+            wrapper.cleanup()
+
+    @requires_sam3
+    def test_sam3_propagate_forward(self, test_frames_dir):
+        """SAM3 propagate() forward generator yields valid results."""
+        import torch
+        if not torch.cuda.is_available():
+            pytest.skip("CUDA not available")
+        
+        from core.managers import SAM3Wrapper
+        
+        wrapper = SAM3Wrapper(device="cuda")
+        
+        try:
+            wrapper.init_video(str(test_frames_dir))
+            wrapper.add_bbox_prompt(
+                frame_idx=0,
+                obj_id=1,
+                bbox_xywh=[50, 50, 80, 150],
+                img_size=(256, 256)
+            )
+            
+            # Propagate forward
+            propagated = list(wrapper.propagate(start_idx=0, reverse=False))
+            
+            assert len(propagated) > 0
+            for frame_idx, obj_id, mask in propagated:
+                assert isinstance(frame_idx, int)
+                assert frame_idx >= 0
+                assert isinstance(obj_id, int)
+                assert isinstance(mask, np.ndarray)
+                assert mask.ndim == 2
+        finally:
+            wrapper.cleanup()
+
+    @requires_sam3
+    def test_sam3_propagate_bidirectional(self, tmp_path):
+        """SAM3 propagate() works bidirectionally from middle frame."""
+        import torch
+        if not torch.cuda.is_available():
+            pytest.skip("CUDA not available")
+        
+        from core.managers import SAM3Wrapper
+        
+        # Create 10 frames for bidirectional test
+        frames_dir = _create_test_frames_dir(tmp_path, num_frames=10)
+        wrapper = SAM3Wrapper(device="cuda")
+        
+        try:
+            wrapper.init_video(str(frames_dir))
+            
+            # Start from middle frame
+            seed_frame = 5
+            wrapper.add_bbox_prompt(
+                frame_idx=seed_frame,
+                obj_id=1,
+                bbox_xywh=[100, 50, 80, 150],
+                img_size=(256, 256)
+            )
+            
+            # Propagate forward
+            forward = list(wrapper.propagate(start_idx=seed_frame, reverse=False))
+            forward_indices = [f[0] for f in forward]
+            
+            # Forward should include frames >= seed_frame
+            assert all(idx >= seed_frame for idx in forward_indices), f"Forward indices: {forward_indices}"
+            
+            # Propagate backward
+            backward = list(wrapper.propagate(start_idx=seed_frame, reverse=True))
+            backward_indices = [f[0] for f in backward]
+            
+            # Backward should include frames <= seed_frame
+            assert all(idx <= seed_frame for idx in backward_indices), f"Backward indices: {backward_indices}"
+        finally:
+            wrapper.cleanup()
+
+    @requires_sam3
+    def test_sam3_clear_prompts(self, test_frames_dir):
+        """SAM3 clear_prompts() resets session state."""
+        import torch
+        if not torch.cuda.is_available():
+            pytest.skip("CUDA not available")
+        
+        from core.managers import SAM3Wrapper
+        
+        wrapper = SAM3Wrapper(device="cuda")
+        
+        try:
+            wrapper.init_video(str(test_frames_dir))
+            wrapper.add_bbox_prompt(0, 1, [50, 50, 80, 150], (256, 256))
+            
+            # Clear prompts should not raise error
+            wrapper.clear_prompts()
+            
+            # Should be able to add new prompt after clearing
+            mask = wrapper.add_bbox_prompt(0, 2, [60, 60, 70, 140], (256, 256))
+            assert mask is not None
+        finally:
+            wrapper.cleanup()
+
+    @requires_sam3
+    def test_sam3_legacy_initialize_api(self, test_image, tmp_path):
+        """SAM3 legacy initialize() API still works for backward compatibility."""
+        import torch
+        if not torch.cuda.is_available():
+            pytest.skip("CUDA not available")
+        
+        from core.managers import SAM3Wrapper
+        
+        wrapper = SAM3Wrapper(device="cuda")
+        
+        try:
             result = wrapper.initialize(
                 images=[test_image],
                 bbox=[80, 50, 100, 150],  # x, y, w, h
                 prompt_frame_idx=0
             )
             assert isinstance(result, dict)
+            assert 'pred_mask' in result
             # pred_mask may be None if detection fails, but no error should occur
         finally:
             wrapper.cleanup()
 
-    def test_sam3_new_api_init_video(self, tmp_path):
-        """SAM3 can initialize with new init_video() API."""
+    @requires_sam3
+    def test_sam3_legacy_propagate_from_api(self, test_image, tmp_path):
+        """SAM3 legacy propagate_from() API still works for backward compatibility."""
         import torch
-        import os
-        from PIL import Image
         if not torch.cuda.is_available():
             pytest.skip("CUDA not available")
         
         from core.managers import SAM3Wrapper
         
-        # Create a directory with test frames
-        frames_dir = tmp_path / "test_frames"
-        frames_dir.mkdir()
-        
-        # Create 3 test frames
-        for i in range(3):
-            img = _create_test_image()
-            Image.fromarray(img).save(frames_dir / f"{i:05d}.jpg")
-        
         wrapper = SAM3Wrapper(device="cuda")
         
         try:
-            # Test new API: init_video
-            inference_state = wrapper.init_video(str(frames_dir))
-            assert inference_state is not None
-            assert wrapper.inference_state is not None
+            wrapper.initialize(
+                images=[test_image, test_image, test_image],
+                bbox=[80, 50, 100, 150],
+                prompt_frame_idx=0
+            )
+            
+            # Legacy API yields dicts
+            for result in wrapper.propagate_from(0, direction="forward"):
+                assert isinstance(result, dict)
+                assert 'frame_index' in result
+                assert 'outputs' in result
+                break  # Just test first result
         finally:
             wrapper.cleanup()
 
-    def test_sam3_new_api_add_bbox_prompt(self, tmp_path):
-        """SAM3 can add bbox prompt with new add_bbox_prompt() API."""
+    @requires_sam3
+    def test_sam3_detect_objects(self, test_image):
+        """SAM3 detect_objects() returns valid detection list."""
         import torch
-        import os
-        from PIL import Image
         if not torch.cuda.is_available():
             pytest.skip("CUDA not available")
         
         from core.managers import SAM3Wrapper
         
-        # Create a directory with test frames
-        frames_dir = tmp_path / "test_frames"
-        frames_dir.mkdir()
-        
-        # Create 3 test frames with clear object
-        for i in range(3):
-            img = _create_test_image()
-            Image.fromarray(img).save(frames_dir / f"{i:05d}.jpg")
-        
         wrapper = SAM3Wrapper(device="cuda")
         
         try:
-            wrapper.init_video(str(frames_dir))
+            results = wrapper.detect_objects(test_image, "object")
             
-            # Test new API: add_bbox_prompt
-            mask = wrapper.add_bbox_prompt(
-                frame_idx=0,
-                obj_id=1,
-                bbox_xywh=[80, 50, 100, 150],  # x, y, w, h
-                img_size=(256, 256)  # w, h
-            )
-            
-            assert mask is not None
-            assert isinstance(mask, np.ndarray)
-            assert mask.ndim == 2  # Should be 2D mask
-        finally:
-            wrapper.cleanup()
-
-    def test_sam3_new_api_propagation(self, tmp_path):
-        """SAM3 propagate() generator works correctly."""
-        import torch
-        from PIL import Image
-        if not torch.cuda.is_available():
-            pytest.skip("CUDA not available")
-        
-        from core.managers import SAM3Wrapper
-        
-        # Create a directory with test frames
-        frames_dir = tmp_path / "test_frames"
-        frames_dir.mkdir()
-        
-        # Create 5 test frames
-        for i in range(5):
-            img = _create_test_image()
-            Image.fromarray(img).save(frames_dir / f"{i:05d}.jpg")
-        
-        wrapper = SAM3Wrapper(device="cuda")
-        
-        try:
-            wrapper.init_video(str(frames_dir))
-            wrapper.add_bbox_prompt(
-                frame_idx=2,  # Start from middle frame
-                obj_id=1,
-                bbox_xywh=[80, 50, 100, 150],
-                img_size=(256, 256)
-            )
-            
-            # Test new API: propagate generator
-            propagated_frames = list(wrapper.propagate(start_idx=2, reverse=False))
-            
-            assert len(propagated_frames) > 0
-            # Each result should be (frame_idx, obj_id, mask)
-            for frame_idx, obj_id, mask in propagated_frames:
-                assert isinstance(frame_idx, int)
-                assert isinstance(obj_id, int)
-                assert isinstance(mask, np.ndarray)
+            assert isinstance(results, list)
+            # Results may be empty, but structure should be correct
+            for det in results:
+                assert 'bbox' in det
+                assert 'conf' in det
+                assert 'label' in det
         finally:
             wrapper.cleanup()
 
@@ -516,6 +629,132 @@ class TestVideoE2E:
         )
         
         assert masker is not None
+
+
+class TestMaskPropagatorE2E:
+    """Tests for MaskPropagator with real SAM3 inference."""
+
+    @requires_sam3
+    def test_mask_propagator_propagate(self, tmp_path):
+        """MaskPropagator.propagate() works with new SAM3 API."""
+        import torch
+        import threading
+        from queue import Queue
+        if not torch.cuda.is_available():
+            pytest.skip("CUDA not available")
+        
+        from core.config import Config
+        from core.logger import AppLogger
+        from core.models import AnalysisParameters
+        from core.managers import SAM3Wrapper
+        from core.scene_utils.mask_propagator import MaskPropagator
+        
+        config = Config(logs_dir=str(tmp_path / "logs"))
+        logger = AppLogger(config, log_to_console=False, log_to_file=False)
+        
+        params = AnalysisParameters(
+            source_path="test.mp4",
+            output_folder=str(tmp_path),
+            min_mask_area_pct=0.01
+        )
+        
+        wrapper = SAM3Wrapper(device="cuda")
+        
+        try:
+            propagator = MaskPropagator(
+                params=params,
+                dam_tracker=wrapper,
+                cancel_event=threading.Event(),
+                progress_queue=Queue(),
+                config=config,
+                logger=logger,
+                device="cuda"
+            )
+            
+            # Create test frames
+            frames_rgb = [_create_test_image() for _ in range(5)]
+            
+            # Run propagation
+            masks, areas, empties, errors = propagator.propagate(
+                shot_frames_rgb=frames_rgb,
+                seed_idx=0,
+                bbox_xywh=[50, 50, 80, 150]
+            )
+            
+            assert len(masks) == 5
+            assert len(areas) == 5
+            assert len(empties) == 5
+            assert len(errors) == 5
+            
+            # At least seed frame should have a mask
+            assert masks[0] is not None
+            assert isinstance(masks[0], np.ndarray)
+        finally:
+            wrapper.cleanup()
+
+    @requires_sam3
+    def test_mask_propagator_bidirectional(self, tmp_path):
+        """MaskPropagator.propagate() works bidirectionally from middle frame."""
+        import torch
+        import threading
+        from queue import Queue
+        if not torch.cuda.is_available():
+            pytest.skip("CUDA not available")
+        
+        from core.config import Config
+        from core.logger import AppLogger
+        from core.models import AnalysisParameters
+        from core.managers import SAM3Wrapper
+        from core.scene_utils.mask_propagator import MaskPropagator
+        
+        config = Config(logs_dir=str(tmp_path / "logs"))
+        logger = AppLogger(config, log_to_console=False, log_to_file=False)
+        
+        params = AnalysisParameters(
+            source_path="test.mp4",
+            output_folder=str(tmp_path),
+            min_mask_area_pct=0.01
+        )
+        
+        wrapper = SAM3Wrapper(device="cuda")
+        
+        try:
+            propagator = MaskPropagator(
+                params=params,
+                dam_tracker=wrapper,
+                cancel_event=threading.Event(),
+                progress_queue=Queue(),
+                config=config,
+                logger=logger,
+                device="cuda"
+            )
+            
+            # Create 10 test frames with moving object
+            frames_rgb = []
+            for i in range(10):
+                img = np.zeros((256, 256, 3), dtype=np.uint8)
+                img[:, :] = [100, 150, 200]
+                x = 30 + i * 15
+                img[50:200, x:x+80] = [200, 100, 100]
+                frames_rgb.append(img)
+            
+            # Start from middle frame
+            seed_idx = 5
+            x_at_seed = 30 + seed_idx * 15
+            
+            masks, areas, empties, errors = propagator.propagate(
+                shot_frames_rgb=frames_rgb,
+                seed_idx=seed_idx,
+                bbox_xywh=[x_at_seed, 50, 80, 150]
+            )
+            
+            assert len(masks) == 10
+            # All frames should have masks (either from forward or backward propagation)
+            for i, mask in enumerate(masks):
+                assert mask is not None, f"Frame {i} has no mask"
+                assert isinstance(mask, np.ndarray)
+        finally:
+            wrapper.cleanup()
 
 
 class TestQualityMetricsE2E:
