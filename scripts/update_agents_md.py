@@ -104,7 +104,7 @@ def generate_skeleton_section(root_dir):
     output = ["## Code Skeleton Reference\n"]
 
     exclude_dirs = {
-        '.git', 'venv', '__pycache__', 'SAM3_repo', 'Grounded-SAM-2',
+        '.git', 'venv', '__pycache__', 'SAM3_repo',
         '.claude', '.jules', 'dry-run-assets', 'logs', 'downloads',
         'models', 'node_modules', '.github', 'init_logs'
     }

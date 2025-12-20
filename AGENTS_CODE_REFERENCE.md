@@ -2237,7 +2237,7 @@ mock_torch.nn.Module = MagicMock
 mock_torch.Tensor = MagicMock
 mock_sam3 = MagicMock(name='sam3')
 mock_sam3.model_builder = MagicMock()
-modules_to_mock = {'torch': mock_torch, 'torchvision': MagicMock(), 'torchvision.ops': MagicMock(), 'torchvision.transforms': MagicMock(), 'insightface': MagicMock(), 'insightface.app': MagicMock(), 'sam3': mock_sam3, 'sam3.model_builder': mock_sam3.model_builder, 'sam3.model.sam3_video_predictor': MagicMock(), 'mediapipe': MagicMock(), 'mediapipe.tasks': MagicMock(), 'mediapipe.tasks.python': MagicMock(), 'mediapipe.tasks.python.vision': MagicMock(), 'pyiqa': MagicMock(), 'scenedetect': MagicMock(), 'yt_dlp': MagicMock(), 'ultralytics': MagicMock(), 'groundingdino': MagicMock(), 'numba': MagicMock(), 'lpips': MagicMock()}
+modules_to_mock = {'torch': mock_torch, 'torchvision': MagicMock(), 'torchvision.ops': MagicMock(), 'torchvision.transforms': MagicMock(), 'insightface': MagicMock(), 'insightface.app': MagicMock(), 'sam3': mock_sam3, 'sam3.model_builder': mock_sam3.model_builder, 'sam3.model.sam3_video_predictor': MagicMock(), 'mediapipe': MagicMock(), 'mediapipe.tasks': MagicMock(), 'mediapipe.tasks.python': MagicMock(), 'mediapipe.tasks.python.vision': MagicMock(), 'pyiqa': MagicMock(), 'scenedetect': MagicMock(), 'yt_dlp': MagicMock(), 'numba': MagicMock(), 'lpips': MagicMock()}
 def mock_extraction_run(self, tracker=None):
     """
     Mocks the extraction process.
@@ -3535,13 +3535,6 @@ class AppUI:
         Dictionary of UI updates.
         """
         ...
-    def on_select_yolo_subject_wrapper(self, subject_id: str, scenes: list, shot_id: int, outdir: str, view: str, history: Deque, *ana_args) -> tuple:
-        """
-        Wrapper for handling subject selection from the discovery gallery.
-        
-        Updates the selected subject for a scene and recomputes the preview.
-        """
-        ...
     def _setup_bulk_scene_handlers(self):
         """
         Configures event handlers for the scene selection tab (pagination, bulk actions).
@@ -3552,7 +3545,7 @@ class AppUI:
         Resets a scene's manual overrides to its initial state.
         """
         ...
-    def on_select_for_edit(self, scenes, view, indexmap, outputdir, yoloresultsstate, event: Optional[gr.EventData]=None):
+    def on_select_for_edit(self, scenes, view, indexmap, outputdir, event: Optional[gr.EventData]=None):
         """
         Handles selection of a scene from the gallery for editing.
         """

@@ -48,7 +48,7 @@ python -m pip install -U pip || goto :end
 pip install -U uv || goto :end
 uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128 || goto :end
 
-REM Install project requirements (includes groundingdino-py)
+REM Install project requirements
 if exist requirements.txt (
   uv pip install -r requirements.txt || goto :end
 )

@@ -61,10 +61,10 @@ class TestMaskPropagator:
     @patch('core.scene_utils.mask_propagator.postprocess_mask', side_effect=lambda x, **k: x)
     def test_propagate_success(self, mock_post, mock_config_simple, mock_logger, mock_params):
         tracker = MagicMock()
-        # Mock initialize
-        tracker.initialize.return_value = {'pred_mask': np.ones((100, 100), dtype=float)}
-        # Mock propagate_from
-        tracker.propagate_from.return_value = []  # No propagation for simplicity
+        # Mock new SAM3 API
+        tracker.init_video.return_value = None
+        tracker.add_bbox_prompt.return_value = np.ones((100, 100), dtype=bool)
+        tracker.propagate.return_value = [] # Yields nothing for simplicity
 
         propagator = MaskPropagator(mock_params, tracker, threading.Event(), Queue(), mock_config_simple, mock_logger)
 
