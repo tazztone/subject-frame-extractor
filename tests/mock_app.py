@@ -34,8 +34,6 @@ modules_to_mock = {
     'pyiqa': MagicMock(),
     'scenedetect': MagicMock(),
     'yt_dlp': MagicMock(),
-    'ultralytics': MagicMock(),
-    'groundingdino': MagicMock(),
     'numba': MagicMock(),
     'lpips': MagicMock(),
 }
