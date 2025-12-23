@@ -9,7 +9,7 @@
 
 ```bash
 # Activate virtual environment first
-. venv/Scripts/activate.ps1   # Windows
+.\venv\Scripts\activate.ps1   # Windows
 source venv/bin/activate       # Linux/Mac
 
 # Run all unit tests (fast, ~30s)
@@ -24,6 +24,9 @@ python -m pytest tests/test_gpu_e2e.py -v -m ""
 # Run Playwright E2E tests (requires mock app)
 python tests/mock_app.py &
 python -m pytest tests/e2e/ -v
+
+# Run full UX audit suite
+python scripts/run_ux_audit.py
 ```
 
 > **⚠️ Note**: GPU E2E tests require `-m ""` to override the default marker filter in `setup.cfg`.
@@ -38,6 +41,10 @@ python -m pytest tests/e2e/ -v
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │     ┌─────────────┐                                             │
+│     │   UX Tests  │  ← Visual regression, accessibility, AI    │
+│     └──────┬──────┘                                             │
+│            │                                                    │
+│     ┌──────▼──────┐                                             │
 │     │  E2E Tests  │  ← Playwright (browser-based, uses mock)   │
 │     └──────┬──────┘                                             │
 │            │                                                    │
@@ -72,11 +79,18 @@ python -m pytest tests/e2e/ -v
 | `integration` | `test_integration.py` | Yes | No | `pytest -m integration` |
 | `gpu_e2e` | `test_gpu_e2e.py` | Yes | No | `pytest tests/test_gpu_e2e.py -m ""` |
 | `e2e` | `tests/e2e/` | No | Yes | `pytest tests/e2e/` |
+| `component` | `test_component_verification.py` | No | Yes | `pytest -m component` |
+| `visual` | `test_visual_regression.py` | No | Yes | `pytest -m visual` |
+| `accessibility` | `test_accessibility.py` | No | Yes | `pytest -m accessibility` |
+| `ux_audit` | `test_ai_ux_audit.py` | No | Yes | `pytest -m ux_audit` |
 
-### Unit Tests
+---
+
+## Unit Tests
+
 Fast, isolated tests using mocked dependencies. These run on every commit.
 
-**Files**: `test_core.py`, `test_pipelines.py`, `test_database.py`, `test_filtering.py`, etc.
+**Files**: `test_core.py`, `test_pipelines.py`, `test_database.py`, `test_filtering.py`, `test_ui_unit.py`, etc.
 
 **Mocks Applied**: torch, torchvision, sam3, insightface, mediapipe, pyiqa
 
@@ -86,23 +100,32 @@ python -m pytest tests/ -v
 
 # Run specific test class
 python -m pytest tests/test_core.py::TestUtils -v
+
+# Run UI unit tests (Phase 0 fixes)
+python -m pytest tests/test_ui_unit.py -v
 ```
 
-### Smoke Tests
+### Key UI Unit Tests
+
+| Test Class | Purpose |
+|------------|---------|
+| `TestMinConfidenceFilter` | Verifies min_confidence slider filters correctly |
+| `TestTextStrategyWarning` | Verifies TEXT strategy shows warning label |
+
+---
+
+## Smoke Tests
+
 Validate that all modules import without errors. These catch missing imports before runtime.
 
 ```bash
 python -m pytest tests/test_smoke.py -v
 ```
 
-### Integration Tests
-Run without mocks to catch real integration issues. Require GPU and all dependencies.
+---
 
-```bash
-python -m pytest tests/test_integration.py -v -m integration
-```
+## GPU E2E Tests
 
-### GPU E2E Tests
 Real model inference tests. Catch dtype mismatches, CUDA OOM, and model loading failures.
 
 ```bash
@@ -111,27 +134,142 @@ python -m pytest tests/test_gpu_e2e.py -v -m ""
 
 # Single test class
 python -m pytest tests/test_gpu_e2e.py::TestSAM3Inference -v -m ""
-
-# Single test
-python -m pytest tests/test_gpu_e2e.py::TestSAM3Inference::test_sam3_wrapper_initialization -v -m ""
 ```
 
-### Playwright E2E Tests
+---
+
+## Playwright E2E Tests
+
 Browser-based tests using a mock application server.
 
 ```bash
 # Start mock server
 python tests/mock_app.py &
 
-# Run Playwright tests
+# Run all Playwright tests
 python -m pytest tests/e2e/ -v -s
 ```
+
+### E2E Test Files
+
+| File | Purpose |
+|------|---------|
+| `test_app_flow.py` | Main workflow from extraction to export |
+| `test_export_flow.py` | Export workflow and options |
+| `test_session_lifecycle.py` | Session management and state |
+
+---
+
+## UX Testing Framework
+
+A comprehensive suite of tests to catch UI/UX issues automatically.
+
+### Visual Regression Tests
+
+Capture screenshots and compare against baselines using perceptual hashing.
+
+```bash
+# Run visual regression tests
+python -m pytest tests/e2e/test_visual_regression.py -v
+
+# Update baselines (after intentional UI changes)
+python -m pytest tests/e2e/test_visual_regression.py -v --update-baselines
+```
+
+**Key Files**:
+- `tests/e2e/visual_test_utils.py` - Screenshot capture and comparison utilities
+- `tests/e2e/test_visual_regression.py` - Visual regression test cases
+- `tests/e2e/baselines/` - Reference screenshots (auto-created on first run)
+
+**States Captured**:
+- Initial app load
+- Each tab (Source, Subject, Scenes, Metrics, Export)
+- Expanded accordions
+- Active workflows
+
+### Component Verification Tests
+
+Verify that each UI component actually works, not just renders.
+
+```bash
+python -m pytest tests/e2e/test_component_verification.py -v
+```
+
+**Test Classes**:
+
+| Class | What It Tests |
+|-------|---------------|
+| `TestSliderFunctionality` | Sliders change values when interacted |
+| `TestDropdownFunctionality` | Dropdowns can be opened and selected |
+| `TestFiltersFunctionality` | View toggles change displayed content |
+| `TestLogsFunctionality` | Logs are visible and have content |
+| `TestPaginationFunctionality` | Page dropdown and prev/next buttons work |
+| `TestButtonsFunctionality` | Critical buttons are visible and clickable |
+| `TestStrategyVisibility` | Strategy selection shows correct UI groups |
+
+### AI-Powered UX Analysis
+
+Uses vision AI to analyze screenshots against a UX checklist.
+
+```bash
+# Without AI (uses heuristic checks)
+python -m pytest tests/e2e/test_ai_ux_audit.py -v
+
+# With AI (requires OpenAI API key)
+OPENAI_API_KEY=sk-xxx python -m pytest tests/e2e/test_ai_ux_audit.py -v
+```
+
+**Key Files**:
+- `tests/e2e/ai_ux_analyzer.py` - UX analysis engine and checklist
+- `tests/e2e/test_ai_ux_audit.py` - AI-powered audit tests
+
+**UX Checklist Categories**:
+- Layout & alignment
+- Usability (interactive elements, state visibility)
+- Feedback (loading states, error messages)
+- Controls (sliders, dropdowns, buttons)
+- Accessibility (contrast, labels)
+- Consistency (icons, terminology)
+
+### Accessibility Audits
+
+Automated accessibility testing using axe-core.
+
+```bash
+python -m pytest tests/e2e/test_accessibility.py -v
+```
+
+**What It Checks**:
+- WCAG 2.0 AA compliance
+- Color contrast
+- Form labels
+- Keyboard navigation
+- ARIA roles and attributes
+
+---
+
+## Running the Full UX Audit
+
+Use the audit runner script to execute all UX tests and generate a report:
+
+```bash
+# Full audit with report
+python scripts/run_ux_audit.py
+
+# Quick check (component tests only)
+python scripts/run_ux_audit.py --quick-check
+
+# Update visual baselines
+python scripts/run_ux_audit.py --update-baselines
+```
+
+**Output**: `ux_reports/ux_audit_YYYYMMDD_HHMMSS.md`
 
 ---
 
 ## Fixtures Reference
 
-All fixtures are defined in `tests/conftest.py`. Use these for consistent test setup.
+All fixtures are defined in `tests/conftest.py` and `tests/e2e/conftest.py`.
 
 ### Configuration Fixtures
 
@@ -141,14 +279,12 @@ All fixtures are defined in `tests/conftest.py`. Use these for consistent test s
 | `mock_config_simple` | function | MagicMock config for flexibility |
 | `mock_logger` | function | AppLogger for testing |
 
-### Manager Fixtures
+### E2E Fixtures
 
 | Fixture | Scope | Description |
 |---------|-------|-------------|
-| `mock_thumbnail_manager` | function | ThumbnailManager mock |
-| `mock_model_registry` | function | ModelRegistry mock |
-| `mock_progress_queue` | function | Queue for progress updates |
-| `mock_cancel_event` | function | Threading Event for cancellation |
+| `app_server` | module | Starts/stops mock Gradio server |
+| `page` | function | Playwright page instance |
 
 ### Data Fixtures
 
@@ -157,17 +293,6 @@ All fixtures are defined in `tests/conftest.py`. Use these for consistent test s
 | `sample_frames_data` | function | Frame metadata for filtering tests |
 | `sample_scenes` | function | Scene objects for scene tests |
 | `sample_image_rgb` | function | 100x100 RGB numpy array |
-| `sample_mask` | function | Binary mask array |
-| `mock_ui_state` | function | Default UI state dict |
-| `mock_params` | function | AnalysisParameters for pipelines |
-
-### GPU E2E Fixtures
-
-| Fixture | Scope | Description |
-|---------|-------|-------------|
-| `test_image` | function | 256x256 test image with object |
-| `test_image_with_face` | function | Image with face-like pattern |
-| `test_frames_dir` | function | Directory with test frames |
 
 ---
 
@@ -198,113 +323,36 @@ def test_tracker(mock_get, app_ui):
     # ...
 
 # Skip if dependency unavailable
-import pytest
-
 @pytest.mark.skipif(not _is_sam3_available(), reason="SAM3 not installed")
 def test_sam3_feature(...):
     # ...
-
-# Using conftest fixtures
-def test_filtering(sample_frames_data, mock_config):
-    kept, rejected, _, _ = apply_all_filters_vectorized(
-        sample_frames_data, filters, mock_config
-    )
-    assert len(kept) > 0
-```
-
----
-
-## Adding New Tests
-
-### 1. Unit Test
-```python
-# tests/test_my_feature.py
-import pytest
-from core.my_module import my_function
-
-class TestMyFeature:
-    def test_basic_case(self, mock_config):
-        result = my_function(mock_config)
-        assert result is not None
-```
-
-### 2. GPU E2E Test
-```python
-# In tests/test_gpu_e2e.py
-@requires_sam3
-def test_new_sam3_feature(self, test_frames_dir):
-    import torch
-    if not torch.cuda.is_available():
-        pytest.skip("CUDA not available")
-    
-    from core.managers import SAM3Wrapper
-    wrapper = SAM3Wrapper(device="cuda")
-    try:
-        # Test implementation
-        pass
-    finally:
-        wrapper.cleanup()
-```
-
-### 3. Playwright E2E Test
-```python
-# tests/e2e/test_my_flow.py
-def test_my_flow(page, app_server):
-    page.goto(BASE_URL)
-    page.get_by_role("button", name="My Button").click()
-    expect(page.locator("#result")).to_contain_text("Success")
 ```
 
 ---
 
 ## CI/CD Integration
 
-### GitHub Actions Example
+### GitHub Actions Workflows
 
+**Unit Tests** (`.github/workflows/tests.yml`):
 ```yaml
-name: Tests
-
-on: [push, pull_request]
-
-jobs:
-  unit-tests:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-      
-      - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
-          pip install pytest pytest-cov
-      
-      - name: Run unit tests
-        run: python -m pytest tests/ -v --cov=core --cov=ui
-
-  smoke-tests:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-      
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-      
-      - name: Run smoke tests
-        run: python -m pytest tests/test_smoke.py -v
+- name: Run unit tests
+  run: python -m pytest tests/ -v --cov=core --cov=ui
 ```
+
+**UX Tests** (`.github/workflows/ux-testing.yml`):
+```yaml
+- name: Run visual regression
+  run: python -m pytest tests/e2e/test_visual_regression.py -v
+
+- name: Run accessibility
+  run: python -m pytest tests/e2e/test_accessibility.py -v
+```
+
+The UX testing workflow:
+- Runs on PRs touching `ui/**` or `tests/e2e/**`
+- Captures and stores visual baselines as artifacts
+- Generates UX audit reports
 
 ---
 
@@ -315,9 +363,11 @@ jobs:
 | Error | Cause | Fix |
 |-------|-------|-----|
 | `ModuleNotFoundError: sam3` | Submodule not installed | `pip install -e SAM3_repo` |
-| `CUDA OOM` | Insufficient GPU memory | Set `device="cpu"` or cleanup models |
+| `CUDA OOM` | Insufficient GPU memory | Set `device="cpu"` or cleanup |
 | `Marker 'gpu_e2e' not found` | Default marker filter | Use `-m ""` flag |
-| Playwright timeout | Mock app not running | Start `python tests/mock_app.py` first |
+| Playwright timeout | Mock app not running | Start `python tests/mock_app.py` |
+| `ImportError: relative import` | Package structure | Add `__init__.py` to e2e/ |
+| `axe-core not found` | CDN issue | Check network connectivity |
 
 ### Debugging Tests
 
@@ -335,17 +385,6 @@ python -m pytest tests/test_core.py --tb=long
 python -m pytest tests/ -k "test_config"
 ```
 
-### GPU Memory Issues
-
-```python
-# In test cleanup
-import torch
-torch.cuda.empty_cache()
-
-# Or use wrapper.cleanup() for SAM3
-wrapper.cleanup()
-```
-
 ---
 
 ## File Structure
@@ -356,43 +395,45 @@ tests/
 ├── mock_app.py              # Mock server for Playwright E2E
 ├── assets/                  # Test assets (images, videos)
 │
-├── test_batch_manager.py    # BatchManager unit tests
 ├── test_core.py             # Config, Logger, Filtering tests
-├── test_database.py         # Database CRUD tests
-├── test_dedup.py            # Deduplication tests
-├── test_error_handling.py   # ErrorHandler tests
-├── test_export.py           # Export functionality tests
-├── test_gallery_utils.py    # Gallery utility tests
-├── test_integration.py      # Integration tests (GPU)
-├── test_managers.py         # ModelRegistry, ThumbnailManager tests
 ├── test_pipelines.py        # Pipeline execution tests
-├── test_progress.py         # Progress tracking tests
-├── test_scene_utils.py      # Scene processing tests
-├── test_signatures.py       # Function signature validation
+├── test_ui_unit.py          # UI component unit tests
 ├── test_smoke.py            # Import smoke tests
-├── test_ui_unit.py          # UI component tests
-│
 ├── test_gpu_e2e.py          # GPU E2E tests (SAM3, InsightFace)
 │
 └── e2e/                     # Playwright E2E tests
-    ├── test_app_flow.py     # Main workflow test
-    ├── test_export_flow.py  # Export workflow tests
-    └── test_session_lifecycle.py  # Session management tests
+    ├── __init__.py          # Package init
+    ├── conftest.py          # E2E fixtures (app_server, BASE_URL)
+    │
+    ├── test_app_flow.py           # Main workflow tests
+    ├── test_export_flow.py        # Export workflow tests
+    ├── test_session_lifecycle.py  # Session management tests
+    │
+    ├── test_component_verification.py  # Component functionality tests
+    ├── test_visual_regression.py       # Visual regression tests
+    ├── test_ai_ux_audit.py             # AI-powered UX analysis
+    ├── test_accessibility.py           # axe-core accessibility audits
+    │
+    ├── visual_test_utils.py       # Screenshot utilities
+    ├── ai_ux_analyzer.py          # UX analysis engine
+    └── baselines/                 # Visual regression baselines
 ```
 
 ---
 
 ## Coverage Targets
 
-| Category | Target | Current |
-|----------|--------|---------|
-| Core modules | 80% | ~70% |
-| UI handlers | 60% | ~50% |
-| Pipeline execution | 70% | ~65% |
-| Error paths | 50% | ~40% |
+| Category | Target | Notes |
+|----------|--------|-------|
+| Core modules | 80% | Business logic |
+| UI handlers | 60% | Event handlers |
+| Pipeline execution | 70% | Workflow logic |
+| Error paths | 50% | Exception handling |
+| UX regression | 100% | All tabs covered |
 
 Run coverage report:
 ```bash
 python -m pytest tests/ --cov=core --cov=ui --cov-report=html
 open htmlcov/index.html
 ```
+
