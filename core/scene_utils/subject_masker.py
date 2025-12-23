@@ -87,28 +87,29 @@ class SubjectMasker:
         self.niqe_metric = niqe_metric
         self.model_registry = model_registry
         
-        # Initialize models if needed
-        self.initialize_models()
-        
-        # Create child components
+        # Initialize child components BEFORE calling initialize_models()
+        # because _initialize_tracker() may try to access self.seed_selector
         self.seed_selector = SeedSelector(
             params=params,
             config=self.config,
             face_analyzer=face_analyzer,
             reference_embedding=reference_embedding,
-            tracker=self.dam_tracker,
+            tracker=self.dam_tracker,  # Will be None at this point, updated later
             logger=self.logger,
             device=self._device
         )
         self.mask_propagator = MaskPropagator(
             params,
-            self.dam_tracker,
+            self.dam_tracker,  # Will be None at this point, updated later
             cancel_event,
             progress_queue,
             config=self.config,
             logger=self.logger,
             device=self._device
         )
+        
+        # Now initialize models (may update tracker in child components)
+        self.initialize_models()
 
     def initialize_models(self) -> None:
         """Initialize required models based on parameters."""
