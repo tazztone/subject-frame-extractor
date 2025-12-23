@@ -124,6 +124,8 @@ python -m pytest tests/test_gpu_e2e.py::TestSAM3Inference -v -m ""
 |-----------|------|------|----------|
 | Unit | `test_*.py` | No | `pytest tests/` |
 | Smoke | `test_smoke.py` | No | `pytest tests/test_smoke.py` |
+| UI Handlers | `test_handlers.py` | No | `pytest tests/test_handlers.py` |
+| Scene Detection | `test_scene_detection.py` | No | `pytest tests/test_scene_detection.py` |
 | Signature | `test_signatures.py` | No | `pytest tests/test_signatures.py` |
 | Integration | `test_integration.py` | Yes | `pytest -m integration` |
 | **GPU E2E** | `test_gpu_e2e.py` | Yes | `pytest tests/test_gpu_e2e.py -v -m ""` |
@@ -154,6 +156,12 @@ def test_tracker(mock_get, app_ui):
 @pytest.mark.skipif(not _is_sam3_available(), reason="SAM3 not installed")
 def test_sam3_feature(...):
     ...
+
+### Common Testing Pitfalls (Found Dec 2024)
+- **Patching Targets**: Always patch the module where the function/class is *imported*, not where it is defined. For example, if `ui/handlers/filtering_handler.py` imports `on_filters_changed` from `ui.gallery_utils`, you must patch `ui.gallery_utils.on_filters_changed`.
+- **Private vs Public Attributes**: Some managers (e.g., `ModelRegistry`, `ThumbnailManager`) use public attributes for `logger` and `cache` instead of private ones. Check the `__init__` before asserting on `self._logger`!
+- **Mocking Loggers**: `AppLogger` instances are often real objects in tests, not `MagicMock`s. Don't use `.assert_called()` on them; instead, use `@patch` if you need to verify logging calls.
+- **JSON Structure**: When verifying saved state (like `scene_seeds.json`), remember it might be a dictionary keyed by IDs, not a list.
 ```
 
 ### E2E vs Unit
