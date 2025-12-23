@@ -7,6 +7,8 @@
 
 ## Quick Start
 
+> **🔴 CRITICAL**: Always activate the virtual environment before running commands! Use `uv pip` for faster installs.
+
 ```bash
 # Activate virtual environment first
 .\venv\Scripts\activate.ps1   # Windows
@@ -397,6 +399,8 @@ tests/
 │
 ├── test_core.py             # Config, Logger, Filtering tests
 ├── test_pipelines.py        # Pipeline execution tests
+├── test_handlers.py         # UI handler tests (Analysis, Extraction, Filtering)
+├── test_scene_detection.py  # Scene detection and management tests
 ├── test_ui_unit.py          # UI component unit tests
 ├── test_smoke.py            # Import smoke tests
 ├── test_gpu_e2e.py          # GPU E2E tests (SAM3, InsightFace)
@@ -423,13 +427,14 @@ tests/
 
 ## Coverage Targets
 
-| Category | Target | Notes |
-|----------|--------|-------|
-| Core modules | 80% | Business logic |
-| UI handlers | 60% | Event handlers |
-| Pipeline execution | 70% | Workflow logic |
-| Error paths | 50% | Exception handling |
-| UX regression | 100% | All tabs covered |
+| Category | Target | Current (Dec 2024) |
+|----------|--------|--------------------|
+| Total Project| 80%   | **50%** (Up from 46%) |
+| Core modules | 80%   | ~60-70% |
+| UI handlers  | 60%   | **75%** (Was 0%) |
+| Pipeline execution | 70% | ~50% |
+| Error paths  | 50%   | ~30% |
+| UX regression | 100% | 100% (All tabs covered) |
 
 Run coverage report:
 ```bash
