@@ -45,7 +45,7 @@ class AppUI:
     MAX_RESOLUTION_CHOICES: List[str] = ["maximum available", "2160", "1080", "720"]
     EXTRACTION_METHOD_TOGGLE_CHOICES: List[str] = ["Recommended Thumbnails", "Legacy Full-Frame"]
     METHOD_CHOICES: List[str] = ["keyframes", "interval", "every_nth_frame", "nth_plus_keyframes", "all"]
-    PRIMARY_SEED_STRATEGY_CHOICES: List[str] = ["🤖 Automatic", "👤 By Face", "📝 By Text", "🔄 Face + Text Fallback", "🧑‍🤝‍🧑 Find Prominent Person"]
+    PRIMARY_SEED_STRATEGY_CHOICES: List[str] = ["🤖 Automatic", "👤 By Face", "📝 By Text (⚠️ Limited)", "🔄 Face + Text Fallback", "🧑‍🤝‍🧑 Find Prominent Person"]
     SEED_STRATEGY_CHOICES: List[str] = ["Largest Person", "Center-most Person", "Highest Confidence", "Tallest Person", "Area x Confidence", "Rule-of-Thirds", "Edge-avoiding", "Balanced", "Best Face"]
     FACE_MODEL_NAME_CHOICES: List[str] = ["buffalo_l", "buffalo_s"]
     TRACKER_MODEL_CHOICES: List[str] = ["sam3"]  # SAM3 model
@@ -242,7 +242,7 @@ class AppUI:
                     self._create_component('cancel_button', 'button', {'value': '⏹️ Cancel', 'interactive': False})
             with gr.Column(scale=3):
                 with gr.Accordion("📋 System Logs", open=False):
-                    self._create_component('unified_log', 'textbox', {'lines': 15, 'interactive': False, 'autoscroll': True, 'elem_classes': ['log-container'], 'elem_id': 'unified_log'})
+                    self._create_component('unified_log', 'textbox', {'lines': 15, 'interactive': False, 'autoscroll': True, 'elem_classes': ['log-container'], 'elem_id': 'unified_log', 'value': 'Ready. Operations will be logged here.'})
                     with gr.Row():
                         self._create_component('show_debug_logs', 'checkbox', {'label': 'Show Debug Logs', 'value': False})
                         self._create_component('clear_logs_button', 'button', {'value': '🗑️ Clear', 'scale': 1})
@@ -309,6 +309,7 @@ class AppUI:
                 with gr.Group(visible=False) as text_seeding_group:
                     self.components['text_seeding_group'] = text_seeding_group
                     gr.Markdown("**2. Text Description (Required for Text Strategy)**")
+                    gr.Markdown("⚠️ *Note: Text-based detection has limited accuracy. For best results, use Face or Automatic strategy.*")
                     self._reg('text_prompt', self._create_component('text_prompt_input', 'textbox', {'label': "Text Prompt", 'placeholder': "e.g., 'a woman in a red dress'", 'value': self.config.default_text_prompt}))
 
                 # 4. Auto Options
@@ -372,7 +373,7 @@ class AppUI:
             self._create_component('scene_gallery_view_toggle', 'radio', {'label': "View", 'choices': ["Kept", "Rejected", "All"], 'value': "Kept"})
             with gr.Row(elem_id="pagination_row"):
                 self._create_component('prev_page_button', 'button', {'value': '⬅️ Previous'})
-                self._create_component('page_number_input', 'number', {'label': 'Page', 'value': 1, 'precision': 0})
+                self._create_component('page_number_input', 'dropdown', {'label': 'Page', 'value': '1', 'choices': ['1'], 'interactive': True, 'scale': 1})
                 self._create_component('total_pages_label', 'markdown', {'value': '/ 1 pages'})
                 self._create_component('next_page_button', 'button', {'value': 'Next ➡️'})
 
@@ -633,13 +634,45 @@ class AppUI:
     def _setup_bulk_scene_handlers(self):
         """Configures event handlers for the scene selection tab (pagination, bulk actions)."""
         c = self.components
+        
         def on_page_change(scenes, view, output_dir, page_num):
-            items, index_map, total_pages = build_scene_gallery_items(scenes, view, output_dir, page_num=int(page_num))
-            return gr.update(value=items), index_map, f"/ {total_pages} pages", int(page_num)
+            """Handle page change - returns gallery items and dropdown update with choices."""
+            try:
+                current_page = int(page_num) if page_num else 1
+            except (ValueError, TypeError):
+                current_page = 1
+            items, index_map, total_pages = build_scene_gallery_items(scenes, view, output_dir, page_num=current_page)
+            # Generate page choices for dropdown
+            page_choices = [str(i) for i in range(1, total_pages + 1)] if total_pages > 0 else ['1']
+            return gr.update(value=items), index_map, f"/ {total_pages} pages", gr.update(choices=page_choices, value=str(current_page))
 
-        c['scene_gallery_view_toggle'].change(lambda s, v, o: (build_scene_gallery_items(s, v, o, page_num=1)[0], build_scene_gallery_items(s, v, o, page_num=1)[1], f"/ {build_scene_gallery_items(s, v, o, page_num=1)[2]} pages", 1), [c['scenes_state'], c['scene_gallery_view_toggle'], c['extracted_frames_dir_state']], [c['scene_gallery'], c['scene_gallery_index_map_state'], c['total_pages_label'], c['page_number_input']])
-        c['next_page_button'].click(lambda s, v, o, p: on_page_change(s, v, o, p + 1), [c['scenes_state'], c['scene_gallery_view_toggle'], c['extracted_frames_dir_state'], c['page_number_input']], [c['scene_gallery'], c['scene_gallery_index_map_state'], c['total_pages_label'], c['page_number_input']])
-        c['prev_page_button'].click(lambda s, v, o, p: on_page_change(s, v, o, p - 1), [c['scenes_state'], c['scene_gallery_view_toggle'], c['extracted_frames_dir_state'], c['page_number_input']], [c['scene_gallery'], c['scene_gallery_index_map_state'], c['total_pages_label'], c['page_number_input']])
+        def on_view_change(scenes, view, output_dir):
+            """Handle view filter change - reset to page 1 and update dropdown choices."""
+            items, index_map, total_pages = build_scene_gallery_items(scenes, view, output_dir, page_num=1)
+            page_choices = [str(i) for i in range(1, total_pages + 1)] if total_pages > 0 else ['1']
+            return items, index_map, f"/ {total_pages} pages", gr.update(choices=page_choices, value='1')
+
+        def on_next_page(scenes, view, output_dir, page_num):
+            """Go to next page."""
+            try:
+                current = int(page_num) if page_num else 1
+            except (ValueError, TypeError):
+                current = 1
+            return on_page_change(scenes, view, output_dir, current + 1)
+
+        def on_prev_page(scenes, view, output_dir, page_num):
+            """Go to previous page."""
+            try:
+                current = int(page_num) if page_num else 1
+            except (ValueError, TypeError):
+                current = 1
+            return on_page_change(scenes, view, output_dir, max(1, current - 1))
+
+        c['scene_gallery_view_toggle'].change(on_view_change, [c['scenes_state'], c['scene_gallery_view_toggle'], c['extracted_frames_dir_state']], [c['scene_gallery'], c['scene_gallery_index_map_state'], c['total_pages_label'], c['page_number_input']])
+        c['next_page_button'].click(on_next_page, [c['scenes_state'], c['scene_gallery_view_toggle'], c['extracted_frames_dir_state'], c['page_number_input']], [c['scene_gallery'], c['scene_gallery_index_map_state'], c['total_pages_label'], c['page_number_input']])
+        c['prev_page_button'].click(on_prev_page, [c['scenes_state'], c['scene_gallery_view_toggle'], c['extracted_frames_dir_state'], c['page_number_input']], [c['scene_gallery'], c['scene_gallery_index_map_state'], c['total_pages_label'], c['page_number_input']])
+        c['page_number_input'].change(on_page_change, [c['scenes_state'], c['scene_gallery_view_toggle'], c['extracted_frames_dir_state'], c['page_number_input']], [c['scene_gallery'], c['scene_gallery_index_map_state'], c['total_pages_label'], c['page_number_input']])
+
 
         c['scene_gallery'].select(self.on_select_for_edit, inputs=[c['scenes_state'], c['scene_gallery_view_toggle'], c['scene_gallery_index_map_state'], c['extracted_frames_dir_state']], outputs=[c['scenes_state'], c['scene_filter_status'], c['scene_gallery'], c['scene_gallery_index_map_state'], c['selected_scene_id_state'], c['sceneeditorstatusmd'], c['sceneeditorpromptinput'], c['scene_editor_group'], c['gallery_image_state'], c['gallery_shape_state'], c['subject_selection_gallery'], c['propagate_masks_button'], c['gallery_image_preview']])
 
@@ -1164,7 +1197,8 @@ class AppUI:
             details = scene.seed_result.get('details', {}) if scene.seed_result else {}
             if details.get('mask_area_pct', 100) < min_mask_area: rejection_reasons.append("Area")
             if enable_face_filter and seed_metrics.get('best_face_sim', 1.0) < min_face_sim: rejection_reasons.append("FaceSim")
-            if seed_metrics.get('score', 100) < min_confidence: rejection_reasons.append("Conf")
+            # Score defaults to 0 when missing (conservative - filters unscored scenes if threshold > 0)
+            if seed_metrics.get('score', 0.0) < min_confidence: rejection_reasons.append("Conf")
             scene.rejection_reasons = rejection_reasons
             scene.status = 'excluded' if rejection_reasons else 'included'
 

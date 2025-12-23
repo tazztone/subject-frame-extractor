@@ -1,0 +1,136 @@
+# UX Testing Workflow
+# Runs visual regression, component verification, and accessibility tests
+
+name: UX Testing
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'ui/**'
+      - 'tests/e2e/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'ui/**'
+      - 'tests/e2e/**'
+  workflow_dispatch:
+    inputs:
+      update_baselines:
+        description: 'Update visual regression baselines'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  ux-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install gradio pytest playwright imagehash pillow
+          playwright install chromium
+      
+      - name: Install project (dev mode)
+        run: |
+          pip install -e ".[test]" || pip install -e .
+      
+      - name: Download baselines artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: visual-baselines
+          path: tests/e2e/baselines
+        continue-on-error: true  # First run won't have baselines
+      
+      - name: Start mock app
+        run: |
+          python tests/mock_app.py &
+          sleep 5
+        env:
+          GRADIO_SERVER_PORT: 7860
+      
+      - name: Run Component Verification
+        run: |
+          python -m pytest tests/e2e/test_component_verification.py -v --tb=short
+        continue-on-error: true
+      
+      - name: Run Visual Regression Tests
+        run: |
+          if [ "${{ github.event.inputs.update_baselines }}" == "true" ]; then
+            python -m pytest tests/e2e/test_visual_regression.py -v --update-baselines
+          else
+            python -m pytest tests/e2e/test_visual_regression.py -v
+          fi
+        continue-on-error: true
+      
+      - name: Run Accessibility Tests
+        run: |
+          python -m pytest tests/e2e/test_accessibility.py -v --tb=short
+        continue-on-error: true
+      
+      - name: Upload baselines artifact
+        if: github.event.inputs.update_baselines == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-baselines
+          path: tests/e2e/baselines
+          retention-days: 90
+      
+      - name: Upload test screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ux-test-screenshots
+          path: |
+            tests/e2e/screenshots
+            tests/e2e/diffs
+          retention-days: 30
+      
+      - name: Generate UX Report
+        if: always()
+        run: |
+          python scripts/run_ux_audit.py --quick-check || true
+      
+      - name: Upload UX Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ux-audit-report
+          path: reports/ux_audit_*.md
+          retention-days: 30
+
+  accessibility-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      
+      - name: Install dependencies
+        run: |
+          pip install gradio pytest playwright
+          playwright install chromium
+      
+      - name: Run Accessibility Audit
+        run: |
+          python tests/mock_app.py &
+          sleep 5
+          python -m pytest tests/e2e/test_accessibility.py -v
+        env:
+          GRADIO_SERVER_PORT: 7860

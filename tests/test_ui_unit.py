@@ -52,3 +52,132 @@ def test_fix_strategy_visibility_text(app_ui):
 def test_get_metric_description(app_ui):
     desc = app_ui.get_metric_description("quality_score")
     assert "score" in desc
+
+
+# ============================================================================
+# Phase 0 Tests: Min Confidence Filter, Text Strategy Warning
+# ============================================================================
+
+class TestMinConfidenceFilter:
+    """Tests for the Min Confidence filter fix (Issue #1)."""
+    
+    def test_scene_without_score_is_filtered_when_threshold_positive(self, app_ui):
+        """Scenes without score should be filtered when min_confidence > 0.
+        
+        This tests the fix where score defaults to 0 instead of 100.
+        """
+        from core.models import Scene
+        
+        # Create scene with no score in seed_metrics
+        scenes = [{
+            'shot_id': 1,
+            'start_frame': 0,
+            'end_frame': 50,
+            'seed_metrics': {},  # No score!
+            'seed_result': {'details': {'mask_area_pct': 50}},
+            'status': 'included',
+            'manual_status_change': False,
+            'rejection_reasons': []
+        }]
+        
+        # Mock logger and other dependencies
+        app_ui.logger = MagicMock()
+        
+        with patch('ui.app_ui.save_scene_seeds'):
+            with patch('ui.app_ui.build_scene_gallery_items', return_value=([], [], 1)):
+                with patch('ui.app_ui.get_scene_status_text', return_value=("Status", MagicMock())):
+                    result = app_ui.on_apply_bulk_scene_filters_extended(
+                        scenes=scenes,
+                        min_mask_area=0.0,
+                        min_face_sim=0.0,
+                        min_confidence=0.5,  # Set threshold > 0
+                        enable_face_filter=False,
+                        output_folder="/tmp/test",
+                        view="All"
+                    )
+        
+        # Scene should be excluded because score defaults to 0, which is < 0.5
+        updated_scenes = result[0]
+        assert updated_scenes[0]['status'] == 'excluded', \
+            "Scene without score should be excluded when min_confidence > 0"
+        assert "Conf" in updated_scenes[0]['rejection_reasons'], \
+            "Rejection reason should include 'Conf'"
+    
+    def test_scene_with_high_score_is_kept(self, app_ui):
+        """Scenes with score >= threshold should be kept."""
+        from core.models import Scene
+        
+        scenes = [{
+            'shot_id': 1,
+            'start_frame': 0,
+            'end_frame': 50,
+            'seed_metrics': {'score': 0.8},  # High score
+            'seed_result': {'details': {'mask_area_pct': 50}},
+            'status': 'included',
+            'manual_status_change': False,
+            'rejection_reasons': []
+        }]
+        
+        app_ui.logger = MagicMock()
+        
+        with patch('ui.app_ui.save_scene_seeds'):
+            with patch('ui.app_ui.build_scene_gallery_items', return_value=([], [], 1)):
+                with patch('ui.app_ui.get_scene_status_text', return_value=("Status", MagicMock())):
+                    result = app_ui.on_apply_bulk_scene_filters_extended(
+                        scenes=scenes,
+                        min_mask_area=0.0,
+                        min_face_sim=0.0,
+                        min_confidence=0.5,
+                        enable_face_filter=False,
+                        output_folder="/tmp/test",
+                        view="All"
+                    )
+        
+        updated_scenes = result[0]
+        assert updated_scenes[0]['status'] == 'included', \
+            "Scene with score >= threshold should be kept"
+    
+    def test_manual_override_not_affected_by_filters(self, app_ui):
+        """Scenes with manual_status_change should not be auto-filtered."""
+        scenes = [{
+            'shot_id': 1,
+            'start_frame': 0,
+            'end_frame': 50,
+            'seed_metrics': {},  # No score
+            'seed_result': {},
+            'status': 'included',
+            'manual_status_change': True,  # Manual override
+            'rejection_reasons': []
+        }]
+        
+        app_ui.logger = MagicMock()
+        
+        with patch('ui.app_ui.save_scene_seeds'):
+            with patch('ui.app_ui.build_scene_gallery_items', return_value=([], [], 1)):
+                with patch('ui.app_ui.get_scene_status_text', return_value=("Status", MagicMock())):
+                    result = app_ui.on_apply_bulk_scene_filters_extended(
+                        scenes=scenes,
+                        min_mask_area=0.0,
+                        min_face_sim=0.0,
+                        min_confidence=0.9,  # High threshold
+                        enable_face_filter=False,
+                        output_folder="/tmp/test",
+                        view="All"
+                    )
+        
+        updated_scenes = result[0]
+        assert updated_scenes[0]['status'] == 'included', \
+            "Manual override scenes should not be auto-filtered"
+
+
+class TestTextStrategyWarning:
+    """Tests for TEXT strategy warning label (Issue #3)."""
+    
+    def test_text_strategy_has_warning_in_choices(self, app_ui):
+        """TEXT strategy choice should include warning indicator."""
+        choices = app_ui.PRIMARY_SEED_STRATEGY_CHOICES
+        text_choice = [c for c in choices if "Text" in c][0]
+        
+        assert "⚠️" in text_choice or "Limited" in text_choice, \
+            "TEXT strategy should have warning indicator"
+
