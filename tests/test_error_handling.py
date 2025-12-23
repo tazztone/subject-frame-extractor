@@ -192,5 +192,163 @@ class TestQualityConfigEdgeCases:
         assert config.edge_strength_base_scale == 200.0
 
 
+class TestErrorHandlerDecorators:
+    """Tests for ErrorHandler.with_retry and with_fallback decorators."""
+
+    def test_with_retry_success_first_try(self, mock_logger):
+        """Test with_retry when function succeeds on first try."""
+        from core.error_handling import ErrorHandler
+
+        handler = ErrorHandler(mock_logger, max_attempts=3, backoff_seconds=[0.01, 0.02])
+
+        call_count = 0
+
+        @handler.with_retry()
+        def always_succeeds():
+            nonlocal call_count
+            call_count += 1
+            return "success"
+
+        result = always_succeeds()
+
+        assert result == "success"
+        assert call_count == 1
+
+    def test_with_retry_success_after_failures(self, mock_logger):
+        """Test with_retry when function succeeds after initial failures."""
+        from core.error_handling import ErrorHandler
+
+        handler = ErrorHandler(mock_logger, max_attempts=3, backoff_seconds=[0.01, 0.02])
+
+        call_count = 0
+
+        @handler.with_retry()
+        def fails_twice_then_succeeds():
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                raise ValueError("Temporary failure")
+            return "success"
+
+        result = fails_twice_then_succeeds()
+
+        assert result == "success"
+        assert call_count == 3
+
+    def test_with_retry_all_attempts_fail(self, mock_logger):
+        """Test with_retry raises exception when all attempts fail."""
+        from core.error_handling import ErrorHandler
+
+        handler = ErrorHandler(mock_logger, max_attempts=2, backoff_seconds=[0.01])
+
+        @handler.with_retry()
+        def always_fails():
+            raise ValueError("Always fails")
+
+        with pytest.raises(ValueError) as exc_info:
+            always_fails()
+
+        assert "Always fails" in str(exc_info.value)
+
+    def test_with_retry_custom_exceptions(self, mock_logger):
+        """Test with_retry only catches specified exceptions."""
+        from core.error_handling import ErrorHandler
+
+        handler = ErrorHandler(mock_logger, max_attempts=3, backoff_seconds=[0.01])
+
+        call_count = 0
+
+        @handler.with_retry(recoverable_exceptions=(ValueError,))
+        def raises_type_error():
+            nonlocal call_count
+            call_count += 1
+            raise TypeError("Not recoverable")
+
+        with pytest.raises(TypeError):
+            raises_type_error()
+
+        # Should only be called once since TypeError is not recoverable
+        assert call_count == 1
+
+    def test_with_fallback_primary_succeeds(self, mock_logger):
+        """Test with_fallback when primary function succeeds."""
+        from core.error_handling import ErrorHandler
+
+        handler = ErrorHandler(mock_logger, max_attempts=3, backoff_seconds=[0.01])
+
+        fallback_called = False
+
+        def fallback_func(*args, **kwargs):
+            nonlocal fallback_called
+            fallback_called = True
+            return "fallback"
+
+        @handler.with_fallback(fallback_func)
+        def primary():
+            return "primary"
+
+        result = primary()
+
+        assert result == "primary"
+        assert fallback_called is False
+
+    def test_with_fallback_primary_fails(self, mock_logger):
+        """Test with_fallback when primary function fails."""
+        from core.error_handling import ErrorHandler
+
+        handler = ErrorHandler(mock_logger, max_attempts=3, backoff_seconds=[0.01])
+
+        def fallback_func(*args, **kwargs):
+            return "fallback"
+
+        @handler.with_fallback(fallback_func)
+        def primary():
+            raise ValueError("Primary failed")
+
+        result = primary()
+
+        assert result == "fallback"
+
+    def test_with_fallback_both_fail(self, mock_logger):
+        """Test with_fallback when both primary and fallback fail."""
+        from core.error_handling import ErrorHandler
+
+        handler = ErrorHandler(mock_logger, max_attempts=3, backoff_seconds=[0.01])
+
+        def fallback_func(*args, **kwargs):
+            raise RuntimeError("Fallback failed")
+
+        @handler.with_fallback(fallback_func)
+        def primary():
+            raise ValueError("Primary failed")
+
+        with pytest.raises(RuntimeError) as exc_info:
+            primary()
+
+        assert "Fallback failed" in str(exc_info.value)
+
+
+class TestErrorSeverityAndRecoveryStrategy:
+    """Tests for ErrorSeverity and RecoveryStrategy enums."""
+
+    def test_error_severity_values(self):
+        """Test ErrorSeverity enum values exist."""
+        from core.error_handling import ErrorSeverity
+
+        assert ErrorSeverity.LOW.value == "low"
+        assert ErrorSeverity.MEDIUM.value == "medium"
+        assert ErrorSeverity.HIGH.value == "high"
+        assert ErrorSeverity.CRITICAL.value == "critical"
+
+    def test_recovery_strategy_values(self):
+        """Test RecoveryStrategy enum values exist."""
+        from core.error_handling import RecoveryStrategy
+
+        assert RecoveryStrategy.RETRY.value == "retry"
+        assert RecoveryStrategy.FALLBACK.value == "fallback"
+        assert RecoveryStrategy.SKIP.value == "skip"
+        assert RecoveryStrategy.ABORT.value == "abort"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
