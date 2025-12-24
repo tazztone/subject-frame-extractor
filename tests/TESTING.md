@@ -1,6 +1,6 @@
 # Testing Guide
 
-**Last Updated**: 2025-12-23  
+**Last Updated**: 2025-02-12
 **Python**: 3.10+ | **Pytest**: 7.x+ | **Playwright**: 1.40+
 
 ---
@@ -14,8 +14,11 @@
 .\venv\Scripts\activate.ps1   # Windows
 source venv/bin/activate       # Linux/Mac
 
-# Run all unit tests (fast, ~30s)
-python -m pytest tests/
+# Run unit tests (fast, ~30s, mocks heavy dependencies)
+python -m pytest tests/ -k "not integration"
+
+# Run integration tests (slower, requires real dependencies/imports)
+python -m pytest tests/test_integration*
 
 # Run smoke tests only (import validation)
 python -m pytest tests/test_smoke.py -v
@@ -71,14 +74,33 @@ python scripts/run_ux_audit.py
 
 ---
 
+## Execution Strategy: Unit vs Integration
+
+The test suite is divided into **Unit Tests** and **Integration Tests** to handle heavy dependencies (Torch, CUDA, SAM3) efficiently.
+
+### Unit Tests
+- **Files**: `test_core.py`, `test_managers.py`, `test_pipelines_extended.py`, `test_filtering.py`, etc.
+- **Behavior**: Aggressively mock heavy libraries (`torch`, `sam3`, `insightface`) via `tests/conftest.py`.
+- **Command**: `python -m pytest tests/ -k "not integration"`
+- **Why**: Allows fast feedback loops without loading GBs of models.
+
+### Integration Tests
+- **Files**: `test_integration.py`, `test_integration_sam3_patches.py`, `test_integration_sam3_patches_unit.py`.
+- **Behavior**: Bypass global mocks to use real libraries. Essential for testing tensor operations, file I/O, and model fallback logic.
+- **Command**: `python -m pytest tests/test_integration*`
+
+> **Note**: Running `pytest tests/` blindly may fail because integration tests might receive mocked dependencies. Use the split commands above.
+
+---
+
 ## Test Categories
 
 | Marker | File Pattern | GPU? | Mock? | Run Command |
 |--------|-------------|------|-------|-------------|
-| `unit` | `test_*.py` | No | Yes | `pytest tests/` |
+| `unit` | `test_*.py` | No | Yes | `pytest tests/ -k "not integration"` |
+| `integration` | `test_integration*.py` | Yes | No | `pytest tests/test_integration*` |
 | `smoke` | `test_smoke.py` | No | No | `pytest tests/test_smoke.py` |
 | `signature` | `test_signatures.py` | No | No | `pytest tests/test_signatures.py` |
-| `integration` | `test_integration.py` | Yes | No | `pytest -m integration` |
 | `gpu_e2e` | `test_gpu_e2e.py` | Yes | No | `pytest tests/test_gpu_e2e.py -m ""` |
 | `e2e` | `tests/e2e/` | No | Yes | `pytest tests/e2e/` |
 | `component` | `test_component_verification.py` | No | Yes | `pytest -m component` |
@@ -92,13 +114,13 @@ python scripts/run_ux_audit.py
 
 Fast, isolated tests using mocked dependencies. These run on every commit.
 
-**Files**: `test_core.py`, `test_pipelines.py`, `test_database.py`, `test_filtering.py`, `test_ui_unit.py`, etc.
+**Files**: `test_core.py`, `test_pipelines.py`, `test_database.py`, `test_filtering.py`, `test_ui_unit.py`, `test_managers.py`.
 
 **Mocks Applied**: torch, torchvision, sam3, insightface, mediapipe, pyiqa
 
 ```bash
 # Run all unit tests
-python -m pytest tests/ -v
+python -m pytest tests/ -k "not integration" -v
 
 # Run specific test class
 python -m pytest tests/test_core.py::TestUtils -v
@@ -113,6 +135,16 @@ python -m pytest tests/test_ui_unit.py -v
 |------------|---------|
 | `TestMinConfidenceFilter` | Verifies min_confidence slider filters correctly |
 | `TestTextStrategyWarning` | Verifies TEXT strategy shows warning label |
+
+---
+
+## Integration Tests
+
+Tests that verify interaction with real libraries or file systems, bypassing the global mocks.
+
+**Files**:
+- `tests/test_integration_sam3_patches.py`: Verifies patching logic for SAM3 on non-Triton systems.
+- `tests/test_integration_sam3_patches_unit.py`: Unit-style tests for SAM3 patch logic using real Torch tensors.
 
 ---
 
@@ -339,7 +371,7 @@ def test_sam3_feature(...):
 **Unit Tests** (`.github/workflows/tests.yml`):
 ```yaml
 - name: Run unit tests
-  run: python -m pytest tests/ -v --cov=core --cov=ui
+  run: python -m pytest tests/ -k "not integration" -v --cov=core --cov=ui
 ```
 
 **UX Tests** (`.github/workflows/ux-testing.yml`):
@@ -370,6 +402,7 @@ The UX testing workflow:
 | Playwright timeout | Mock app not running | Start `python tests/mock_app.py` |
 | `ImportError: relative import` | Package structure | Add `__init__.py` to e2e/ |
 | `axe-core not found` | CDN issue | Check network connectivity |
+| `AttributeError: MagicMock object has no attribute 'dim'` | Unit test running with mocked torch | Ensure test file starts with `test_integration` |
 
 ### Debugging Tests
 
@@ -398,12 +431,16 @@ tests/
 ├── assets/                  # Test assets (images, videos)
 │
 ├── test_core.py             # Config, Logger, Filtering tests
-├── test_pipelines.py        # Pipeline execution tests
+├── test_pipelines.py        # Pipeline execution tests (Basic)
+├── test_pipelines_extended.py # Pipeline execution tests (Detailed)
 ├── test_handlers.py         # UI handler tests (Analysis, Extraction, Filtering)
+├── test_managers.py         # Model and Resource Manager tests
 ├── test_scene_detection.py  # Scene detection and management tests
 ├── test_ui_unit.py          # UI component unit tests
 ├── test_smoke.py            # Import smoke tests
 ├── test_gpu_e2e.py          # GPU E2E tests (SAM3, InsightFace)
+├── test_integration_sam3_patches.py # Integration tests for SAM3 patching
+├── test_integration_sam3_patches_unit.py # Unit-style tests for SAM3 patches using real torch
 │
 └── e2e/                     # Playwright E2E tests
     ├── __init__.py          # Package init
@@ -427,18 +464,17 @@ tests/
 
 ## Coverage Targets
 
-| Category | Target | Current (Dec 2024) |
+| Category | Target | Current (Feb 2025) |
 |----------|--------|--------------------|
-| Total Project| 80%   | **50%** (Up from 46%) |
-| Core modules | 80%   | ~60-70% |
-| UI handlers  | 60%   | **75%** (Was 0%) |
-| Pipeline execution | 70% | ~50% |
-| Error paths  | 50%   | ~30% |
+| Total Project| 80%   | **61%** (Up from 50%) |
+| Core modules | 80%   | **60-80%** |
+| UI handlers  | 60%   | **75%** |
+| Pipeline execution | 70% | **70%** (Improved with extended tests) |
+| Error paths  | 50%   | **50%** (Managers & Pipelines) |
 | UX regression | 100% | 100% (All tabs covered) |
 
 Run coverage report:
 ```bash
-python -m pytest tests/ --cov=core --cov=ui --cov-report=html
+python -m pytest tests/ -k "not integration" --cov=core --cov=ui --cov-report=html
 open htmlcov/index.html
 ```
-
