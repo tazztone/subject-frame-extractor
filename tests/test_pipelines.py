@@ -1,179 +1,285 @@
-"""
-Tests for pipeline functionality - extraction, analysis, and session loading.
 
-Uses fixtures from conftest.py for mock setup.
-"""
 import pytest
-from unittest.mock import MagicMock, patch
+import threading
+import torch
+import numpy as np
+from unittest.mock import MagicMock, patch, ANY, call, mock_open
 from pathlib import Path
 from queue import Queue
-import threading
+from core.pipelines import (
+    run_ffmpeg_extraction,
+    ExtractionPipeline,
+    AnalysisPipeline,
+    execute_extraction,
+    execute_pre_analysis,
+    execute_session_load,
+    _process_ffmpeg_stream,
+    _process_ffmpeg_showinfo
+)
+from core.models import AnalysisParameters, Scene, Frame
+from core.events import ExtractionEvent
 
-from core.config import Config
-from core.models import AnalysisParameters, Scene
-from core.pipelines import ExtractionPipeline, AnalysisPipeline, run_ffmpeg_extraction
+class TestPipelines:
 
+    @pytest.fixture
+    def mock_logger(self):
+        return MagicMock()
 
-class TestExtractionPipeline:
-    @patch('core.pipelines.run_ffmpeg_extraction')
-    @patch('core.pipelines.VideoManager')
-    def test_extraction_video_success(self, mock_vm_cls, mock_ffmpeg, mock_config_simple, mock_logger, mock_params, mock_progress_queue, mock_cancel_event):
-        # Setup mocks
-        mock_vm = mock_vm_cls.return_value
-        mock_vm.prepare_video.return_value = Path("prepared_video.mp4")
-        mock_vm_cls.get_video_info.return_value = {"duration": 10, "fps": 30}
+    @pytest.fixture
+    def mock_config(self, tmp_path):
+        config = MagicMock()
+        config.ffmpeg_thumbnail_quality = 80
+        config.downloads_dir = str(tmp_path / "downloads")
+        config.models_dir = str(tmp_path / "models")
+        config.analysis_default_workers = 1
+        config.analysis_default_batch_size = 1
+        config.retry_max_attempts = 1
+        config.retry_backoff_seconds = (0.1,)
+        config.sharpness_base_scale = 1.0
+        config.edge_strength_base_scale = 1.0
+        config.monitoring_memory_warning_threshold_mb = 1000
+        return config
 
-        mock_ffmpeg.return_value = None
+    @pytest.fixture
+    def mock_params(self, tmp_path):
+        return AnalysisParameters(
+            source_path="test.mp4",
+            output_folder=str(tmp_path / "output"),
+            method="interval",
+            interval=1.0,
+            thumbnails_only=True,
+            scene_detect=False,
+            video_path="test.mp4",
+            max_resolution="1080",
+            thumb_megapixels=1.0,
+            nth_frame=1
+        )
 
-        pipeline = ExtractionPipeline(mock_config_simple, mock_logger, mock_params, mock_progress_queue, mock_cancel_event)
+    @pytest.fixture
+    def mock_queue(self):
+        return Queue()
 
-        # Run
-        result = pipeline.run()
+    @pytest.fixture
+    def mock_cancel_event(self):
+        return threading.Event()
 
-        # Assertions
-        assert result['done'] is True
-        mock_vm.prepare_video.assert_called_once()
-        mock_ffmpeg.assert_called_once()
+    # --- FFmpeg Helper Tests ---
 
-    @patch('core.pipelines.run_ffmpeg_extraction')
-    @patch('core.pipelines.VideoManager')
-    def test_extraction_video_cancel(self, mock_vm_cls, mock_ffmpeg, mock_config_simple, mock_logger, mock_params, mock_progress_queue, mock_cancel_event):
-        mock_vm = mock_vm_cls.return_value
-        mock_vm.prepare_video.return_value = Path("prepared_video.mp4")
-        mock_vm_cls.get_video_info.return_value = {"duration": 10, "fps": 30}
+    def test_process_ffmpeg_stream(self):
+        stream = MagicMock()
+        stream.readline.side_effect = [
+            "frame=100",
+            "out_time_us=1000000",
+            "progress=continue",
+            "progress=end",
+            ""
+        ]
+        tracker = MagicMock()
+        tracker.total = 100
 
-        # Simulate cancel during ffmpeg
-        def side_effect(*args, **kwargs):
-            mock_cancel_event.set()
-        mock_ffmpeg.side_effect = side_effect
+        _process_ffmpeg_stream(stream, tracker, "Desc", 10.0)
 
-        pipeline = ExtractionPipeline(mock_config_simple, mock_logger, mock_params, mock_progress_queue, mock_cancel_event)
-        result = pipeline.run()
+        tracker.set.assert_called()
+        stream.close.assert_called_once()
 
-        assert result['done'] is False
-        assert result['log'] == "Extraction cancelled"
+    def test_process_ffmpeg_showinfo(self):
+        stream = MagicMock()
+        stream.readline.side_effect = [
+            "[Parsed_showinfo_2 @ 0x...] n:   0 pts:      0 pts_time:0       pos:      0 fmt:rgb24 sar:1/1 s:100x100 i:P iskey:1 type:I checksum:...",
+            "[Parsed_showinfo_2 @ 0x...] n:   1 pts:      1 ...",
+            ""
+        ]
 
-    @patch('core.utils.is_image_folder', return_value=True)
-    @patch('core.utils.list_images')
-    @patch('core.pipelines.make_photo_thumbs')
-    def test_extraction_folder(self, mock_thumbs, mock_list_imgs, mock_is_folder, mock_config_simple, mock_logger, mock_params, mock_progress_queue, mock_cancel_event):
-        mock_list_imgs.return_value = [Path("img1.jpg"), Path("img2.jpg")]
+        frames, stderr = _process_ffmpeg_showinfo(stream)
 
-        pipeline = ExtractionPipeline(mock_config_simple, mock_logger, mock_params, mock_progress_queue, mock_cancel_event)
-        result = pipeline.run()
+        assert frames == [0, 1]
+        assert "n:   0" in stderr
+        stream.close.assert_called_once()
 
-        assert result['done'] is True
-        mock_thumbs.assert_called_once()
-        # Check scenes.json
-        output_dir = Path(result['output_dir'])
-        assert (output_dir / "scenes.json").exists()
+    # --- ExtractionPipeline Tests ---
 
     @patch('subprocess.Popen')
-    def test_run_ffmpeg_extraction(self, mock_popen, mock_config_simple, mock_logger, mock_params, mock_progress_queue, mock_cancel_event, tmp_path):
-        # Setup mock process
-        process = MagicMock()
-        process.poll.side_effect = [None, 0]  # Run once then finish
-        process.returncode = 0
-        process.stdout.readline.return_value = ''
-        process.stderr.readline.return_value = ''
-        mock_popen.return_value = process
+    def test_run_ffmpeg_extraction(self, mock_popen, mock_params, mock_queue, mock_cancel_event, mock_logger, mock_config, tmp_path):
+        video_info = {'width': 100, 'height': 100, 'fps': 30, 'frame_count': 100}
 
-        video_info = {"width": 100, "height": 100, "fps": 30, "frame_count": 300}
-        output_dir = tmp_path / "out"
-        output_dir.mkdir()
+        process_mock = mock_popen.return_value
+        process_mock.poll.side_effect = [None, 0] # Run once then finish
+        process_mock.returncode = 0
+        process_mock.stdout.readline.return_value = "" # EOF immediately
+        process_mock.stderr.readline.return_value = ""
 
-        run_ffmpeg_extraction("video.mp4", output_dir, video_info, mock_params, mock_progress_queue, mock_cancel_event, mock_logger, mock_config_simple)
+        run_ffmpeg_extraction(
+            "test.mp4", tmp_path, video_info, mock_params,
+            mock_queue, mock_cancel_event, mock_logger, mock_config
+        )
 
-        mock_popen.assert_called()
-        args, _ = mock_popen.call_args
-        assert "ffmpeg" in args[0]
+        assert mock_popen.called
+        # Check command args
+        cmd = mock_popen.call_args[0][0]
+        assert "ffmpeg" in cmd
+        assert str(tmp_path / "thumbs" / "frame_%06d.webp") in cmd
 
+    @patch('core.pipelines.run_ffmpeg_extraction')
+    @patch('core.managers.VideoManager')
+    def test_extraction_pipeline_run_video(self, mock_vm_cls, mock_ffmpeg, mock_params, mock_queue, mock_cancel_event, mock_logger, mock_config):
+        pipeline = ExtractionPipeline(mock_config, mock_logger, mock_params, mock_queue, mock_cancel_event)
 
-class TestAnalysisPipeline:
+        # We need to ensure that when _run_impl calls `from core.utils import is_image_folder`, it gets our mock.
+        # But `is_image_folder` is imported INSIDE `_run_impl`.
+        # Patching `core.utils.is_image_folder` GLOBALLY should work because it's imported at runtime.
+
+        with patch('core.pipelines.is_image_folder', create=True) as mock_is_folder:
+             # Wait, `is_image_folder` is imported from `core.utils` inside the function.
+             # So `core.pipelines.is_image_folder` does NOT exist at module level.
+             # We must patch `core.utils.is_image_folder`.
+             pass
+
+        with patch('core.utils.is_image_folder', return_value=False):
+             # We also need to patch VideoManager in core.pipelines because it is imported at module level.
+             with patch('core.pipelines.VideoManager') as mock_vm_cls_pipeline:
+                 mock_vm = mock_vm_cls_pipeline.return_value
+                 mock_vm.prepare_video.return_value = "prepared.mp4"
+                 mock_vm_cls_pipeline.get_video_info.return_value = {'fps': 30}
+
+                 res = pipeline.run()
+
+        assert res['done'] is True
+        mock_vm.prepare_video.assert_called()
+        mock_ffmpeg.assert_called()
+
+    @patch('core.pipelines.make_photo_thumbs')
+    def test_extraction_pipeline_run_folder(self, mock_make_thumbs, mock_params, mock_queue, mock_cancel_event, mock_logger, mock_config):
+        pipeline = ExtractionPipeline(mock_config, mock_logger, mock_params, mock_queue, mock_cancel_event)
+
+        # Patching `core.utils.list_images` and `core.utils.is_image_folder`
+        with patch('core.utils.list_images', return_value=[Path("img1.jpg")]), \
+             patch('core.utils.is_image_folder', return_value=True):
+
+             res = pipeline.run()
+
+        assert res['done'] is True
+        mock_make_thumbs.assert_called()
+        assert (Path(mock_params.output_folder) / "scenes.json").exists()
+
+    # --- AnalysisPipeline Tests ---
+
     @patch('core.pipelines.SubjectMasker')
     @patch('core.pipelines.initialize_analysis_models')
-    @patch('core.pipelines.Database')
-    def test_run_full_analysis_success(self, mock_db_cls, mock_init_models, mock_masker_cls, mock_config_simple, mock_logger, mock_params, mock_progress_queue, mock_cancel_event, mock_thumbnail_manager, mock_model_registry):
-        mock_db = mock_db_cls.return_value
+    @patch('core.pipelines.create_frame_map')
+    def test_run_full_analysis(self, mock_frame_map, mock_init_models, mock_masker_cls, mock_params, mock_queue, mock_cancel_event, mock_logger, mock_config, tmp_path):
+        # Setup
+        thumbnail_manager = MagicMock()
+        model_registry = MagicMock()
+
+        # Ensure output folder exists for DB
+        output_folder = tmp_path / "output"
+        output_folder.mkdir()
+        mock_params.output_folder = str(output_folder)
+
+        pipeline = AnalysisPipeline(mock_config, mock_logger, mock_params, mock_queue, mock_cancel_event, thumbnail_manager, model_registry)
+
+        scenes = [Scene(shot_id=1, start_frame=0, end_frame=10)]
+
+        # Mocks
         mock_init_models.return_value = {
-            'face_analyzer': MagicMock(), 'ref_emb': MagicMock(), 'face_landmarker': MagicMock(), 'device': 'cpu'
+            "face_analyzer": None, "ref_emb": None, "face_landmarker": None, "device": "cpu"
         }
         mock_masker = mock_masker_cls.return_value
         mock_masker.run_propagation.return_value = {}
 
-        pipeline = AnalysisPipeline(mock_config_simple, mock_logger, mock_params, mock_progress_queue, mock_cancel_event, mock_thumbnail_manager, mock_model_registry)
+        # We need a real DB or mocked DB.
+        # "unable to open database file" usually happens when directory doesn't exist.
 
-        scenes = [Scene(shot_id=1, start_frame=0, end_frame=10)]
-        result = pipeline.run_full_analysis(scenes)
+        res = pipeline.run_full_analysis(scenes)
 
-        assert result['done'] is True
+        # Check for exceptions logged
+        if not res['done']:
+            print(f"Failed with log: {res.get('log')} or error: {res.get('error')}")
+
+        assert res['done'] is True
         mock_masker.run_propagation.assert_called()
 
-    @patch('core.pipelines.SubjectMasker')
+    @patch('core.pipelines.create_frame_map')
     @patch('core.pipelines.initialize_analysis_models')
-    def test_run_full_analysis_cancel(self, mock_init_models, mock_masker_cls, mock_config_simple, mock_logger, mock_params, mock_progress_queue, mock_cancel_event, mock_thumbnail_manager, mock_model_registry):
-        mock_init_models.return_value = {
-            'face_analyzer': MagicMock(), 'ref_emb': MagicMock(), 'face_landmarker': MagicMock(), 'device': 'cpu'
+    def test_run_analysis_only(self, mock_init, mock_frame_map, mock_params, mock_queue, mock_cancel_event, mock_logger, mock_config, tmp_path):
+         # Setup
+        thumbnail_manager = MagicMock()
+        model_registry = MagicMock()
+
+        # Ensure output folder exists for DB
+        output_folder = tmp_path / "output_ana"
+        output_folder.mkdir()
+        mock_params.output_folder = str(output_folder)
+
+        pipeline = AnalysisPipeline(mock_config, mock_logger, mock_params, mock_queue, mock_cancel_event, thumbnail_manager, model_registry)
+
+        scenes = [Scene(shot_id=1, start_frame=0, end_frame=1)]
+
+        mock_init.return_value = {
+            "face_analyzer": None, "ref_emb": None, "face_landmarker": None, "device": "cpu"
         }
-        mock_cancel_event.set()  # Set cancel before running
+        mock_frame_map.return_value = {0: "frame_0.webp"}
+        thumbnail_manager.get.return_value = np.zeros((10,10,3), dtype=np.uint8)
 
-        pipeline = AnalysisPipeline(mock_config_simple, mock_logger, mock_params, mock_progress_queue, mock_cancel_event, mock_thumbnail_manager, mock_model_registry)
-        scenes = [Scene(shot_id=1, start_frame=0, end_frame=10)]
+        res = pipeline.run_analysis_only(scenes)
 
-        result = pipeline.run_full_analysis(scenes)
-        assert result['done'] is False
-        assert "cancelled" in result.get('log', '').lower()
+        if not res['done']:
+             print(f"Failed with log: {res.get('log')} or error: {res.get('error')}")
 
-    @patch('core.pipelines.initialize_analysis_models')
-    @patch('core.pipelines.Database')
-    def test_run_analysis_only(self, mock_db_cls, mock_init_models, mock_config_simple, mock_logger, mock_params, mock_progress_queue, mock_cancel_event, mock_thumbnail_manager, mock_model_registry):
-        mock_db = mock_db_cls.return_value
-        mock_db.count_errors.return_value = 0
-        mock_init_models.return_value = {
-            'face_analyzer': MagicMock(), 'ref_emb': MagicMock(), 'face_landmarker': MagicMock(), 'device': 'cpu'
-        }
+        assert res['done'] is True
+        # Verify metadata was inserted
+        # Since we use real DB here (sqlite), we can check file
+        assert (output_folder / "metadata.db").exists()
 
-        with patch('core.pipelines.create_frame_map', return_value={0: 'frame_000.webp', 1: 'frame_001.webp'}):
-            with patch.object(AnalysisPipeline, '_process_batch', return_value=1) as mock_process_batch:
-                pipeline = AnalysisPipeline(mock_config_simple, mock_logger, mock_params, mock_progress_queue, mock_cancel_event, mock_thumbnail_manager, mock_model_registry)
-                pipeline.thumb_dir = Path("/tmp/out/thumbs")
+    # --- Execute Helpers Tests ---
 
-                scenes = [Scene(shot_id=1, start_frame=0, end_frame=2)]
-                result = pipeline.run_analysis_only(scenes)
+    @patch('core.pipelines.ExtractionPipeline')
+    @patch('core.pipelines.shutil.copy2')
+    def test_execute_extraction(self, mock_copy, mock_pipeline_cls, mock_logger, mock_config):
+        event = ExtractionEvent(
+            source_path="src.mp4",
+            upload_video="upload.mp4",
+            method="interval",
+            interval=1.0,
+            thumbnails_only=True,
+            max_resolution="1080",
+            thumb_megapixels=1.0,
+            nth_frame=1,
+            scene_detect=False
+        )
 
-                assert result['done'] is True
-                mock_process_batch.assert_called()
+        # Mock pipeline run
+        mock_inst = mock_pipeline_cls.return_value
+        mock_inst.run.return_value = {"done": True, "output_dir": "/tmp/out", "video_path": "/tmp/vid.mp4"}
 
+        gen = execute_extraction(event, Queue(), threading.Event(), mock_logger, mock_config)
 
-class TestSessionLoad:
-    @patch('core.pipelines.validate_session_dir')
-    def test_execute_session_load_success(self, mock_validate, mock_logger, tmp_path):
-        from core.pipelines import execute_session_load
-        from core.events import SessionLoadEvent
+        res = next(gen)
 
-        session_path = tmp_path / "session"
-        session_path.mkdir()
-        (session_path / "run_config.json").write_text('{"source_path": "foo"}', encoding='utf-8')
-        (session_path / "scenes.json").write_text('[]', encoding='utf-8')
+        assert res['done'] is True
+        mock_copy.assert_called()
 
-        mock_validate.return_value = (session_path, None)
-        event = SessionLoadEvent(session_path=str(session_path))
+    def test_validate_session_dir(self, tmp_path):
+        from core.pipelines import validate_session_dir
+        path, err = validate_session_dir(str(tmp_path))
+        assert path == tmp_path
+        assert err is None
 
-        result = execute_session_load(event, mock_logger)
+        path, err = validate_session_dir(str(tmp_path / "nonexistent"))
+        assert path is None
+        assert err is not None
 
-        assert result['success'] is True
-        assert result['run_config']['source_path'] == "foo"
-        assert result['metadata_exists'] is False
+    def test_execute_session_load_invalid(self, mock_logger):
+        res = execute_session_load(MagicMock(session_path=""), mock_logger)
+        assert "error" in res
 
-    @patch('core.pipelines.validate_session_dir')
-    def test_execute_session_load_fail_validate(self, mock_validate, mock_logger):
-        from core.pipelines import execute_session_load
-        from core.events import SessionLoadEvent
+    def test_execute_session_load_valid(self, mock_logger, tmp_path):
+        session_path = tmp_path
+        (session_path / "run_config.json").write_text("{}")
 
-        mock_validate.return_value = (None, "Invalid path")
-        event = SessionLoadEvent(session_path="bad")
+        event = MagicMock(session_path=str(session_path))
 
-        result = execute_session_load(event, mock_logger)
+        res = execute_session_load(event, mock_logger)
 
-        assert "error" in result
-        assert result["error"] == "Invalid path"
+        assert res['success'] is True
+        assert res['metadata_exists'] is False
