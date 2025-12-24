@@ -28,6 +28,7 @@ def test_edt_triton_fallback():
     # The function expects a tensor
     output = edt_triton_fallback(data)
 
+    assert output.dim() == 3
     assert output.shape == (B, H, W)
     assert output.dtype == torch.float32
 
@@ -167,13 +168,28 @@ def test_apply_patches_triton_missing():
                 raise ImportError("No triton")
             return real_import(name, globals, locals, fromlist, level)
 
+        # We need to construct a package hierarchy for sam3 so that imports work.
+        mock_sam3 = MagicMock()
+        mock_sam3_model = MagicMock()
+        mock_sam3_perflib = MagicMock()
+
+        # Link them up
+        mock_sam3.model = mock_sam3_model
+        mock_sam3.perflib = mock_sam3_perflib
+        mock_sam3_model.edt = mock_edt
+        mock_sam3_perflib.connected_components = mock_cc
+
         with patch('builtins.__import__', side_effect=mock_import):
             with patch.dict(sys.modules, {
+                'sam3': mock_sam3,
+                'sam3.model': mock_sam3_model,
+                'sam3.perflib': mock_sam3_perflib,
                 'sam3.model.edt': mock_edt,
                 'sam3.perflib.connected_components': mock_cc
             }):
                 apply_patches()
 
+                # Check if the attribute was set to the function
                 assert mock_edt.edt_triton == edt_triton_fallback
                 assert mock_cc.connected_components == connected_components_fallback
 

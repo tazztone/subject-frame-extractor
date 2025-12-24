@@ -126,8 +126,8 @@ class TestFiltering:
         # Check Path logic: `Path(output_dir) / "thumbs" / filename`.
         # Path("/tmp/out") / "thumbs" / "frame_001.png"
 
-        assert dedup_mask[0] is False
-        assert dedup_mask[1] is True
+        assert dedup_mask[0] == False
+        assert dedup_mask[1] == True
         assert 'duplicate' in reasons['frame_001.png']
 
     # --- Deduplication ---
@@ -137,9 +137,9 @@ class TestFiltering:
 
         mask, reasons = _apply_deduplication_filter(sample_frames, filters, None, mock_config, "/tmp/out")
 
-        assert mask[0] is True
-        assert mask[1] is True
-        assert mask[2] is False
+        assert mask[0] == True
+        assert mask[1] == True
+        assert mask[2] == False
         assert 'duplicate' in reasons['frame_003.png']
 
     @patch('core.filtering._run_batched_lpips')
@@ -158,9 +158,9 @@ class TestFiltering:
 
         mask, reasons = _apply_metric_filters(sample_frames, arrays, filters, mock_config)
 
-        assert mask[0] is False
-        assert mask[1] is True
-        assert mask[2] is False
+        assert mask[0] == False
+        assert mask[1] == True
+        assert mask[2] == False
         assert 'quality_score_low' in reasons['frame_001.png']
 
     # --- Full Pipeline ---
