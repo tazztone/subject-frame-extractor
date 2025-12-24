@@ -1,6 +1,6 @@
 # Testing Guide
 
-**Last Updated**: 2025-12-23  
+**Last Updated**: 2025-01-20
 **Python**: 3.10+ | **Pytest**: 7.x+ | **Playwright**: 1.40+
 
 ---
@@ -78,7 +78,7 @@ python scripts/run_ux_audit.py
 | `unit` | `test_*.py` | No | Yes | `pytest tests/` |
 | `smoke` | `test_smoke.py` | No | No | `pytest tests/test_smoke.py` |
 | `signature` | `test_signatures.py` | No | No | `pytest tests/test_signatures.py` |
-| `integration` | `test_integration.py` | Yes | No | `pytest -m integration` |
+| `integration` | `test_integration*.py` | Yes | No | `pytest -m integration` |
 | `gpu_e2e` | `test_gpu_e2e.py` | Yes | No | `pytest tests/test_gpu_e2e.py -m ""` |
 | `e2e` | `tests/e2e/` | No | Yes | `pytest tests/e2e/` |
 | `component` | `test_component_verification.py` | No | Yes | `pytest -m component` |
@@ -92,7 +92,13 @@ python scripts/run_ux_audit.py
 
 Fast, isolated tests using mocked dependencies. These run on every commit.
 
-**Files**: `test_core.py`, `test_pipelines.py`, `test_database.py`, `test_filtering.py`, `test_ui_unit.py`, etc.
+**Key Files**:
+- `test_pipelines.py`: Extraction and Analysis pipeline logic
+- `test_filtering.py`: Vectorized filtering and deduplication logic
+- `test_managers.py`: Resource managers (Thumbnail, Models, Video)
+- `test_app_ui_logic.py`: Core UI class logic (independent of browser)
+- `test_gallery_utils.py`: Gallery update helpers
+- `test_scene_utils_helpers.py`: Scene management utilities
 
 **Mocks Applied**: torch, torchvision, sam3, insightface, mediapipe, pyiqa
 
@@ -101,18 +107,8 @@ Fast, isolated tests using mocked dependencies. These run on every commit.
 python -m pytest tests/ -v
 
 # Run specific test class
-python -m pytest tests/test_core.py::TestUtils -v
-
-# Run UI unit tests (Phase 0 fixes)
-python -m pytest tests/test_ui_unit.py -v
+python -m pytest tests/test_filtering.py::TestFiltering -v
 ```
-
-### Key UI Unit Tests
-
-| Test Class | Purpose |
-|------------|---------|
-| `TestMinConfidenceFilter` | Verifies min_confidence slider filters correctly |
-| `TestTextStrategyWarning` | Verifies TEXT strategy shows warning label |
 
 ---
 
@@ -140,6 +136,15 @@ python -m pytest tests/test_gpu_e2e.py::TestSAM3Inference -v -m ""
 
 ---
 
+## Integration Tests
+
+Tests that require real module interactions or specific system states (e.g., `sys.modules` patching) but not necessarily full GPU execution.
+
+**Key Files**:
+- `test_integration_sam3_patches.py`: Verifies SAM3 fallbacks on systems without Triton.
+
+---
+
 ## Playwright E2E Tests
 
 Browser-based tests using a mock application server.
@@ -151,14 +156,6 @@ python tests/mock_app.py &
 # Run all Playwright tests
 python -m pytest tests/e2e/ -v -s
 ```
-
-### E2E Test Files
-
-| File | Purpose |
-|------|---------|
-| `test_app_flow.py` | Main workflow from extraction to export |
-| `test_export_flow.py` | Export workflow and options |
-| `test_session_lifecycle.py` | Session management and state |
 
 ---
 
@@ -197,18 +194,6 @@ Verify that each UI component actually works, not just renders.
 python -m pytest tests/e2e/test_component_verification.py -v
 ```
 
-**Test Classes**:
-
-| Class | What It Tests |
-|-------|---------------|
-| `TestSliderFunctionality` | Sliders change values when interacted |
-| `TestDropdownFunctionality` | Dropdowns can be opened and selected |
-| `TestFiltersFunctionality` | View toggles change displayed content |
-| `TestLogsFunctionality` | Logs are visible and have content |
-| `TestPaginationFunctionality` | Page dropdown and prev/next buttons work |
-| `TestButtonsFunctionality` | Critical buttons are visible and clickable |
-| `TestStrategyVisibility` | Strategy selection shows correct UI groups |
-
 ### AI-Powered UX Analysis
 
 Uses vision AI to analyze screenshots against a UX checklist.
@@ -221,18 +206,6 @@ python -m pytest tests/e2e/test_ai_ux_audit.py -v
 OPENAI_API_KEY=sk-xxx python -m pytest tests/e2e/test_ai_ux_audit.py -v
 ```
 
-**Key Files**:
-- `tests/e2e/ai_ux_analyzer.py` - UX analysis engine and checklist
-- `tests/e2e/test_ai_ux_audit.py` - AI-powered audit tests
-
-**UX Checklist Categories**:
-- Layout & alignment
-- Usability (interactive elements, state visibility)
-- Feedback (loading states, error messages)
-- Controls (sliders, dropdowns, buttons)
-- Accessibility (contrast, labels)
-- Consistency (icons, terminology)
-
 ### Accessibility Audits
 
 Automated accessibility testing using axe-core.
@@ -240,32 +213,6 @@ Automated accessibility testing using axe-core.
 ```bash
 python -m pytest tests/e2e/test_accessibility.py -v
 ```
-
-**What It Checks**:
-- WCAG 2.0 AA compliance
-- Color contrast
-- Form labels
-- Keyboard navigation
-- ARIA roles and attributes
-
----
-
-## Running the Full UX Audit
-
-Use the audit runner script to execute all UX tests and generate a report:
-
-```bash
-# Full audit with report
-python scripts/run_ux_audit.py
-
-# Quick check (component tests only)
-python scripts/run_ux_audit.py --quick-check
-
-# Update visual baselines
-python scripts/run_ux_audit.py --update-baselines
-```
-
-**Output**: `ux_reports/ux_audit_YYYYMMDD_HHMMSS.md`
 
 ---
 
@@ -332,32 +279,6 @@ def test_sam3_feature(...):
 
 ---
 
-## CI/CD Integration
-
-### GitHub Actions Workflows
-
-**Unit Tests** (`.github/workflows/tests.yml`):
-```yaml
-- name: Run unit tests
-  run: python -m pytest tests/ -v --cov=core --cov=ui
-```
-
-**UX Tests** (`.github/workflows/ux-testing.yml`):
-```yaml
-- name: Run visual regression
-  run: python -m pytest tests/e2e/test_visual_regression.py -v
-
-- name: Run accessibility
-  run: python -m pytest tests/e2e/test_accessibility.py -v
-```
-
-The UX testing workflow:
-- Runs on PRs touching `ui/**` or `tests/e2e/**`
-- Captures and stores visual baselines as artifacts
-- Generates UX audit reports
-
----
-
 ## Troubleshooting
 
 ### Common Errors
@@ -370,6 +291,7 @@ The UX testing workflow:
 | Playwright timeout | Mock app not running | Start `python tests/mock_app.py` |
 | `ImportError: relative import` | Package structure | Add `__init__.py` to e2e/ |
 | `axe-core not found` | CDN issue | Check network connectivity |
+| `np.nan_to_num` ValueError | Mock config mismatch | Ensure mocked config returns float/dict not MagicMock |
 
 ### Debugging Tests
 
@@ -397,11 +319,16 @@ tests/
 ├── mock_app.py              # Mock server for Playwright E2E
 ├── assets/                  # Test assets (images, videos)
 │
-├── test_core.py             # Config, Logger, Filtering tests
-├── test_pipelines.py        # Pipeline execution tests
-├── test_handlers.py         # UI handler tests (Analysis, Extraction, Filtering)
-├── test_scene_detection.py  # Scene detection and management tests
-├── test_ui_unit.py          # UI component unit tests
+├── test_core.py             # Config, Logger tests
+├── test_pipelines.py        # Pipeline execution tests (Extraction, Analysis)
+├── test_managers.py         # Resource manager tests (Models, Video, Thumbs)
+├── test_filtering.py        # Filtering & Deduplication logic tests
+├── test_app_ui_logic.py     # AppUI class logic tests
+├── test_gallery_utils.py    # Gallery helper tests
+├── test_scene_utils_helpers.py # Scene management utils
+├── test_integration_sam3_patches.py # SAM3 fallback integration tests
+├── test_handlers.py         # UI handler tests
+├── test_scene_detection.py  # Scene detection tests
 ├── test_smoke.py            # Import smoke tests
 ├── test_gpu_e2e.py          # GPU E2E tests (SAM3, InsightFace)
 │
@@ -427,13 +354,13 @@ tests/
 
 ## Coverage Targets
 
-| Category | Target | Current (Dec 2024) |
+| Category | Target | Current (Jan 2025) |
 |----------|--------|--------------------|
-| Total Project| 80%   | **50%** (Up from 46%) |
-| Core modules | 80%   | ~60-70% |
-| UI handlers  | 60%   | **75%** (Was 0%) |
-| Pipeline execution | 70% | ~50% |
-| Error paths  | 50%   | ~30% |
+| Total Project| 80%   | **~61%** (Up from 54%) |
+| Core modules | 80%   | ~70-90% |
+| UI logic     | 60%   | **~30%** (Testing definitions is hard) |
+| Pipeline execution | 70% | ~60% |
+| Error paths  | 50%   | ~50% |
 | UX regression | 100% | 100% (All tabs covered) |
 
 Run coverage report:
@@ -441,4 +368,3 @@ Run coverage report:
 python -m pytest tests/ --cov=core --cov=ui --cov-report=html
 open htmlcov/index.html
 ```
-
