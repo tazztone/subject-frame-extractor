@@ -103,6 +103,7 @@ The test suite is divided into **Unit Tests** and **Integration Tests** to handl
 | `signature` | `test_signatures.py` | No | No | `pytest tests/test_signatures.py` |
 | `gpu_e2e` | `test_gpu_e2e.py` | Yes | No | `pytest tests/test_gpu_e2e.py -m ""` |
 | `e2e` | `tests/e2e/` | No | Yes | `pytest tests/e2e/` |
+| `bug_regression` | `test_bug_regression.py` | No | Yes | `pytest tests/e2e/test_bug_regression.py` |
 | `component` | `test_component_verification.py` | No | Yes | `pytest -m component` |
 | `visual` | `test_visual_regression.py` | No | Yes | `pytest -m visual` |
 | `accessibility` | `test_accessibility.py` | No | Yes | `pytest -m accessibility` |
