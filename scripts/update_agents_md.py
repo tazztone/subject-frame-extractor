@@ -99,6 +99,68 @@ def parse_file_to_skeleton(file_path):
     return "\n".join(lines)
 
 
+def generate_file_tree(root_dir):
+    """Generate a visual file tree of the project."""
+    output = ["## Project Structure\n", "```text"]
+
+    exclude_dirs = {
+        '.git', 'venv', '__pycache__', 'SAM3_repo',
+        '.claude', '.jules', 'dry-run-assets', 'logs', 'downloads',
+        'models', 'node_modules', '.github', 'init_logs', 'ux_reports',
+        'test_results', '.pytest_cache', '__pycache__'
+    }
+
+    exclude_files = {
+        'AGENTS_CODE_REFERENCE.md', '.DS_Store', '.gitignore', '.gitmodules',
+        'test_output.txt', 'test_results.txt', 'LICENSE', 'setup.cfg', '.env_example'
+    }
+
+    tree_lines = []
+
+    def walk(directory, prefix=""):
+        try:
+            items = os.listdir(directory)
+        except OSError:
+            return
+
+        items.sort()
+
+        # Filter items
+        filtered_items = []
+        for item in items:
+            if item in exclude_files:
+                continue
+            if item.startswith('.'): # Skip dotfiles mostly
+                continue
+
+            path = os.path.join(directory, item)
+            if os.path.isdir(path):
+                if item not in exclude_dirs:
+                    filtered_items.append(item)
+            else:
+                # Include relevant source files
+                if item.endswith(('.py', '.md', '.json', '.txt', '.cfg', '.yml', '.yaml', '.sh')):
+                     filtered_items.append(item)
+
+        count = len(filtered_items)
+        for i, item in enumerate(filtered_items):
+            path = os.path.join(directory, item)
+            is_last = (i == count - 1)
+            connector = "└── " if is_last else "├── "
+
+            tree_lines.append(f"{prefix}{connector}{item}")
+
+            if os.path.isdir(path):
+                extension = "    " if is_last else "│   "
+                walk(path, prefix + extension)
+
+    output.append(".")
+    walk(root_dir)
+    output.extend(tree_lines)
+    output.append("```\n")
+    return "\n".join(output)
+
+
 def generate_skeleton_section(root_dir):
     """Generate code skeleton section for all Python files."""
     output = ["## Code Skeleton Reference\n"]
@@ -132,6 +194,9 @@ def generate_skeleton_section(root_dir):
 def main():
     current_date = datetime.date.today().isoformat()
 
+    print("Generating file tree...")
+    file_tree = generate_file_tree(".")
+
     print("Generating code skeletons...")
     skeleton_section = generate_skeleton_section(".")
 
@@ -148,6 +213,7 @@ Last Updated: {current_date}
 This file contains auto-generated code skeletons for quick reference.
 For developer guidelines, see [AGENTS.md](AGENTS.md).
 
+{file_tree}
 """
     
     content = header + skeleton_section
