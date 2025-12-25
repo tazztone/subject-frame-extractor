@@ -115,6 +115,10 @@ The application is built on a modular architecture:
 *   **Data Storage**: SQLite (`core/database.py`) for frame metadata; JSONL for logs.
 *   **AI Models**: Managed by a thread-safe `ModelRegistry` for lazy loading.
 
+### Performance Optimizations
+
+*   **Downscaled Video for SAM3**: During extraction, a `video_lowres.mp4` is created at thumbnail resolution. SAM3 reads this directly during propagation, eliminating per-scene temp JPEG I/O overhead.
+
 ### Directory Structure
 ```
 subject-frame-extractor/
