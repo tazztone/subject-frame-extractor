@@ -304,7 +304,7 @@ class AppUI:
                     gr.Markdown("---")
                     gr.Markdown("*Option B: Find people in the video and select one*")
                     self._create_component('find_people_button', 'button', {'value': "🔍 Scan Video for Faces", 'variant': 'secondary'})
-                    self._create_component('find_people_status', 'markdown', {'value': ""})
+                    self._create_component('find_people_status', 'markdown', {'value': "", 'elem_id': 'find_people_status'})
                     with gr.Group(visible=False) as discovered_people_group:
                         self.components['discovered_people_group'] = discovered_people_group
                         gr.Markdown("👆 **Click a face below to use as reference:**")
@@ -1230,7 +1230,7 @@ class AppUI:
             return f"✅ Found **{n_people} unique people** from {len(all_faces)} face detections.", gr.update(visible=True), gallery_items, 0.5, all_faces
         except Exception as e:
             self.logger.warning(f"Find people failed: {e}", exc_info=True)
-            return f"❌ **Error:** {str(e)[:100]}", gr.update(visible=False), [], 0.5, []
+            return f"❌ **Error:** {str(e)[:300]}", gr.update(visible=False), [], 0.5, []
 
     def on_apply_bulk_scene_filters_extended(self, scenes: list, min_mask_area: float, min_face_sim: float, min_quality_score: float, enable_face_filter: bool, output_folder: str, view: str) -> tuple:
         """Applies filters to all scenes and updates their status."""

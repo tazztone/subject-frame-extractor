@@ -53,7 +53,7 @@ def monitor_memory_usage(logger: 'AppLogger', device: str, threshold_mb: int = 8
             logger.warning(f"High GPU memory usage: {allocated:.1f}MB")
             torch.cuda.empty_cache()
 
-def validate_video_file(video_path: str):
+def validate_video_file(video_path: str) -> bool:
     """Checks if the video file exists, is not empty, and can be opened by OpenCV."""
     path = Path(video_path)
     if not path.exists(): raise FileNotFoundError(f"Video file not found: {video_path}")
@@ -63,6 +63,7 @@ def validate_video_file(video_path: str):
         if not cap.isOpened(): raise ValueError(f"Could not open video file: {video_path}")
         cap.release()
     except Exception as e: raise ValueError(f"Invalid video file: {e}")
+    return True
 
 def estimate_totals(params: 'AnalysisParameters', video_info: dict, scenes: Optional[list['Scene']]) -> dict:
     """Estimates the total work items for each pipeline stage."""
