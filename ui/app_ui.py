@@ -245,6 +245,7 @@ class AppUI:
                     self._create_component('unified_log', 'textbox', {'lines': 15, 'interactive': False, 'autoscroll': True, 'elem_classes': ['log-container'], 'elem_id': 'unified_log', 'value': 'Ready. Operations will be logged here.'})
                     with gr.Row():
                         self._create_component('show_debug_logs', 'checkbox', {'label': 'Show Debug Logs', 'value': False})
+                        self._create_component('refresh_logs_button', 'button', {'value': '🔄 Refresh', 'scale': 1})
                         self._create_component('clear_logs_button', 'button', {'value': '🗑️ Clear', 'scale': 1})
                         self._create_component('export_logs_button', 'button', {'value': '📥 Export', 'scale': 1})
 
@@ -525,6 +526,16 @@ class AppUI:
 
         # New Log Handlers
         def update_logs(filter_debug):
+            """Refreshes log display by draining queue and applying filter."""
+            # First drain any pending log messages from the queue
+            while not self.progress_queue.empty():
+                try:
+                    msg = self.progress_queue.get_nowait()
+                    if "log" in msg:
+                        self.all_logs.append(msg['log'])
+                except Exception:
+                    break
+            
             level = "DEBUG" if filter_debug else "INFO"
             setattr(self, 'log_filter_level', level)
             log_level_map = {l: i for i, l in enumerate(self.LOG_LEVEL_CHOICES)}
@@ -533,6 +544,7 @@ class AppUI:
             return "\n".join(filtered_logs[-1000:])
 
         c['show_debug_logs'].change(update_logs, inputs=[c['show_debug_logs']], outputs=[c['unified_log']])
+        c['refresh_logs_button'].click(update_logs, inputs=[c['show_debug_logs']], outputs=[c['unified_log']])
 
         # Stepper Handler
         c['main_tabs'].select(self.update_stepper, None, c['stepper'])
