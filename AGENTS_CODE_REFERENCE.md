@@ -1,5 +1,5 @@
 ---
-Last Updated: 2025-12-20
+Last Updated: 2025-12-25
 ---
 
 # Code Skeleton Reference
@@ -9,6 +9,100 @@ Last Updated: 2025-12-20
 
 This file contains auto-generated code skeletons for quick reference.
 For developer guidelines, see [AGENTS.md](AGENTS.md).
+
+## Project Structure
+
+```text
+.
+├── AGENTS.md
+├── README.md
+├── app.py
+├── core
+│   ├── __init__.py
+│   ├── batch_manager.py
+│   ├── config.py
+│   ├── database.py
+│   ├── error_handling.py
+│   ├── events.py
+│   ├── export.py
+│   ├── filtering.py
+│   ├── logger.py
+│   ├── managers.py
+│   ├── models.py
+│   ├── pipelines.py
+│   ├── progress.py
+│   ├── sam3_patches.py
+│   ├── scene_utils
+│   │   ├── __init__.py
+│   │   ├── detection.py
+│   │   ├── helpers.py
+│   │   ├── mask_propagator.py
+│   │   ├── seed_selector.py
+│   │   └── subject_masker.py
+│   ├── shared.py
+│   └── utils.py
+├── requirements.txt
+├── scripts
+│   ├── jules_setup_script.sh
+│   ├── run_ux_audit.py
+│   ├── take_screenshot.py
+│   └── update_agents_md.py
+├── tests
+│   ├── TESTING.md
+│   ├── assets
+│   ├── conftest.py
+│   ├── e2e
+│   │   ├── __init__.py
+│   │   ├── ai_ux_analyzer.py
+│   │   ├── conftest.py
+│   │   ├── test_accessibility.py
+│   │   ├── test_ai_ux_audit.py
+│   │   ├── test_app_flow.py
+│   │   ├── test_bug_regression.py
+│   │   ├── test_component_verification.py
+│   │   ├── test_export_flow.py
+│   │   ├── test_session_lifecycle.py
+│   │   ├── test_ui_interactions.py
+│   │   ├── test_visual_regression.py
+│   │   ├── test_with_sample_data.py
+│   │   └── visual_test_utils.py
+│   ├── mock_app.py
+│   ├── test_app_ui_logic.py
+│   ├── test_batch_manager.py
+│   ├── test_bug_fixes.py
+│   ├── test_core.py
+│   ├── test_database.py
+│   ├── test_dedup.py
+│   ├── test_error_handling.py
+│   ├── test_export.py
+│   ├── test_filtering.py
+│   ├── test_gallery_utils.py
+│   ├── test_gpu_e2e.py
+│   ├── test_handlers.py
+│   ├── test_integration.py
+│   ├── test_integration_sam3_patches.py
+│   ├── test_integration_sam3_patches_unit.py
+│   ├── test_managers.py
+│   ├── test_pipelines.py
+│   ├── test_pipelines_extended.py
+│   ├── test_progress.py
+│   ├── test_scene_detection.py
+│   ├── test_scene_utils.py
+│   ├── test_scene_utils_helpers.py
+│   ├── test_shared.py
+│   ├── test_signatures.py
+│   ├── test_smoke.py
+│   ├── test_ui_unit.py
+│   └── test_utils.py
+└── ui
+    ├── app_ui.py
+    ├── gallery_utils.py
+    └── handlers
+        ├── __init__.py
+        ├── analysis_handler.py
+        ├── extraction_handler.py
+        └── filtering_handler.py
+```
 
 ## Code Skeleton Reference
 
@@ -38,7 +132,6 @@ def cleanup_models(model_registry):
     Args:
     model_registry: The ModelRegistry instance to clear.
     """
-    ...
 
 def main():
     """
@@ -46,14 +139,6 @@ def main():
     
     Initializes configuration, logging, managers, and the Gradio UI.
     """
-    ...
-
-```
-
-### `📄 core/__init__.py`
-
-```python
-
 ```
 
 ### `📄 core/batch_manager.py`
@@ -79,7 +164,6 @@ class BatchItem:
     """
     Represents a single item in the batch processing queue.
     """
-    ...
 
 class BatchManager:
     """
@@ -89,42 +173,34 @@ class BatchManager:
         """
         Initializes the BatchManager.
         """
-        ...
     def add_paths(self, paths: List[str]):
         """
         Adds a list of file paths to the batch queue.
         """
-        ...
     def get_queue_snapshot(self) -> List[BatchItem]:
         """
         Returns a thread-safe snapshot of the current queue.
         """
-        ...
     def get_status_list(self) -> List[List]:
         """
         Returns a simplified list of status data for the UI.
         """
-        ...
     def clear_completed(self):
         """
         Removes completed, failed, and cancelled items from the queue.
         """
-        ...
     def clear_all(self):
         """
         Clears all items from the queue.
         """
-        ...
     def update_progress(self, item_id: str, fraction: float, message: Optional[str]=None):
         """
         Updates the progress of a specific batch item.
         """
-        ...
     def set_status(self, item_id: str, status: BatchStatus, message: Optional[str]=None):
         """
         Updates the status and message of a specific batch item.
         """
-        ...
     def start_processing(self, processor_func: Callable, max_workers: int=1):
         """
         Starts processing the batch queue in a background thread.
@@ -133,15 +209,11 @@ class BatchManager:
         processor_func: Function to process each item.
         max_workers: Number of concurrent worker threads.
         """
-        ...
-    def _run_scheduler(self, processor_func, max_workers):
-        ...
+    def _run_scheduler(self, processor_func, max_workers): ...
     def stop_processing(self):
         """
         Signals the scheduler to stop processing.
         """
-        ...
-
 ```
 
 ### `📄 core/config.py`
@@ -161,36 +233,30 @@ def json_config_settings_source() -> Dict[str, Any]:
     """
     Loads settings from a JSON file for Pydantic settings.
     """
-    ...
 
 class Config(BaseSettings):
     """
     Manages the application's configuration settings.
     """
-    model_config = SettingsConfigDict(env_file='.env', env_prefix='APP_', env_nested_delimiter='_', case_sensitive=False)
+    model_config = SettingsConfigDict(env_file='.env', env_prefix='APP_', env_nested_delimiter='_', c...
     def model_post_init(self, __context: Any) -> None:
         """
         Post-initialization hook to validate paths.
         """
-        ...
     def _validate_paths(self):
         """
         Ensures critical directories exist and are writable.
         """
-        ...
     @model_validator(mode='after')
     def _validate_config(self) -> 'Config':
         """
         Validates that at least one quality weight is non-zero.
         """
-        ...
     @property
     def quality_weights(self) -> Dict[str, int]:
         """
         Returns a dictionary of quality metric weights.
         """
-        ...
-
 ```
 
 ### `📄 core/database.py`
@@ -211,53 +277,42 @@ class Database:
         db_path: Path to the SQLite database file.
         batch_size: Number of records to buffer before writing.
         """
-        ...
     def connect(self):
         """
         Connects to the SQLite database.
         """
-        ...
     def close(self):
         """
         Closes the database connection.
         """
-        ...
     def create_tables(self):
         """
         Creates the necessary tables if they don't exist.
         """
-        ...
     def clear_metadata(self):
         """
         Deletes all records from the metadata table.
         """
-        ...
     def insert_metadata(self, metadata: Dict[str, Any]):
         """
         Inserts or replaces a metadata record.
         """
-        ...
     def flush(self):
         """
         Manually flush the buffer.
         """
-        ...
     def _flush_buffer(self):
         """
         Internal method to write buffered records to the database.
         """
-        ...
     def load_all_metadata(self) -> List[Dict[str, Any]]:
         """
         Loads all metadata from the database.
         """
-        ...
     def count_errors(self) -> int:
         """
         Counts the number of records with errors.
         """
-        ...
-
 ```
 
 ### `📄 core/error_handling.py`
@@ -295,7 +350,6 @@ class ErrorHandler:
         max_attempts: Default maximum retry attempts.
         backoff_seconds: List of backoff delays in seconds.
         """
-        ...
     def with_retry(self, max_attempts: Optional[int]=None, backoff_seconds: Optional[list]=None, recoverable_exceptions: tuple=(Exception,)):
         """
         Decorator that retries the function call upon failure.
@@ -308,7 +362,6 @@ class ErrorHandler:
         Returns:
         Decorated function.
         """
-        ...
     def with_fallback(self, fallback_func: Callable):
         """
         Decorator that executes a fallback function if the primary function fails.
@@ -319,8 +372,6 @@ class ErrorHandler:
         Returns:
         Decorated function.
         """
-        ...
-
 ```
 
 ### `📄 core/events.py`
@@ -340,13 +391,12 @@ class UIEvent(BaseModel):
     """
     Base class for all UI-triggered events.
     """
-    model_config = ConfigDict(validate_assignment=True, extra='ignore', str_strip_whitespace=True, arbitrary_types_allowed=True)
+    model_config = ConfigDict(validate_assignment=True, extra='ignore', str_strip_whitespace=True, ar...
 
 class ExtractionEvent(UIEvent):
     """
     Data model for frame extraction events.
     """
-    ...
 
 class PreAnalysisEvent(UIEvent):
     """
@@ -358,38 +408,31 @@ class PreAnalysisEvent(UIEvent):
         """
         Validates that the reference image path is a valid image file.
         """
-        ...
     @model_validator(mode='after')
     def validate_strategy_consistency(self) -> 'PreAnalysisEvent':
         """
         Ensures that dependent settings (like face filter) are consistent with available data.
         """
-        ...
 
 class PropagationEvent(UIEvent):
     """
     Data model for the mask propagation stage.
     """
-    ...
 
 class FilterEvent(UIEvent):
     """
     Data model for filtering and gallery update events.
     """
-    ...
 
 class ExportEvent(UIEvent):
     """
     Data model for exporting filtered frames.
     """
-    ...
 
 class SessionLoadEvent(UIEvent):
     """
     Data model for loading a previous session.
     """
-    ...
-
 ```
 
 ### `📄 core/export.py`
@@ -407,21 +450,15 @@ from typing import Optional, TYPE_CHECKING
 from core.filtering import apply_all_filters_vectorized
 from core.events import ExportEvent
 
-def _perform_ffmpeg_export(video_path: str, frames_to_extract: list, export_dir: Path, logger: 'AppLogger') -> tuple[bool, Optional[str]]:
-    ...
+def _perform_ffmpeg_export(video_path: str, frames_to_extract: list, export_dir: Path, logger: 'AppLogger') -> tuple[bool, Optional[str]]: ...
 
-def _rename_exported_frames(export_dir: Path, frames_to_extract: list, fn_to_orig_map: dict, logger: 'AppLogger'):
-    ...
+def _rename_exported_frames(export_dir: Path, frames_to_extract: list, fn_to_orig_map: dict, logger: 'AppLogger'): ...
 
-def _crop_exported_frames(kept_frames: list, export_dir: Path, crop_ars: str, crop_padding: int, masks_root: Path, logger: 'AppLogger', cancel_event) -> int:
-    ...
+def _crop_exported_frames(kept_frames: list, export_dir: Path, crop_ars: str, crop_padding: int, masks_root: Path, logger: 'AppLogger', cancel_event) -> int: ...
 
-def export_kept_frames(event: ExportEvent, config: 'Config', logger: 'AppLogger', thumbnail_manager, cancel_event) -> str:
-    ...
+def export_kept_frames(event: ExportEvent, config: 'Config', logger: 'AppLogger', thumbnail_manager, cancel_event) -> str: ...
 
-def dry_run_export(event: ExportEvent, config: 'Config') -> str:
-    ...
-
+def dry_run_export(event: ExportEvent, config: 'Config') -> str: ...
 ```
 
 ### `📄 core/filtering.py`
@@ -449,43 +486,36 @@ def load_and_prep_filter_data(output_dir: str, get_all_filter_keys: Callable, co
     """
     Loads metadata from the database and prepares histograms for the UI.
     """
-    ...
 
 def histogram_svg(hist_data: tuple, title: str='', logger: Optional['AppLogger']=None) -> str:
     """
     Generates an SVG string of a histogram plot.
     """
-    ...
 
 def build_all_metric_svgs(per_metric_values: dict, get_all_filter_keys: Callable, logger: 'AppLogger') -> dict:
     """
     Builds histogram SVGs for all available metrics.
     """
-    ...
 
 def _extract_metric_arrays(all_frames_data: list[dict], config: 'Config') -> dict:
     """
     Extracts numerical arrays for each metric from the list of frame data dicts.
     """
-    ...
 
 def _run_batched_lpips(pairs: list[tuple[int, int]], all_frames_data: list[dict], dedup_mask: np.ndarray, reasons: defaultdict, thumbnail_manager: 'ThumbnailManager', output_dir: str, threshold: float, device: str='cpu'):
     """
     Runs LPIPS deduplication on a list of pairs in batches using GPU if available.
     """
-    ...
 
 def _apply_deduplication_filter(all_frames_data: list[dict], filters: dict, thumbnail_manager: 'ThumbnailManager', config: 'Config', output_dir: str) -> tuple[np.ndarray, defaultdict]:
     """
     Applies deduplication logic (pHash, SSIM, or LPIPS) to filter out similar frames.
     """
-    ...
 
 def _apply_metric_filters(all_frames_data: list[dict], metric_arrays: dict, filters: dict, config: 'Config') -> tuple[np.ndarray, defaultdict]:
     """
     Applies threshold-based filtering on scalar metrics.
     """
-    ...
 
 def apply_all_filters_vectorized(all_frames_data: list[dict], filters: dict, config: 'Config', thumbnail_manager: Optional['ThumbnailManager']=None, output_dir: Optional[str]=None) -> tuple[list, list, Counter, dict]:
     """
@@ -494,32 +524,26 @@ def apply_all_filters_vectorized(all_frames_data: list[dict], filters: dict, con
     Returns:
     Tuple of (kept_frames, rejected_frames, rejection_counts, rejection_reasons)
     """
-    ...
 
 def _generic_dedup(all_frames_data: list[dict], dedup_mask: np.ndarray, reasons: defaultdict, thumbnail_manager: 'ThumbnailManager', output_dir: str, compare_fn: Callable[[np.ndarray, np.ndarray], bool]) -> tuple[np.ndarray, defaultdict]:
     """
     Generic deduplication helper that compares adjacent frames using a custom function.
     """
-    ...
 
 def _ssim_compare(img1: np.ndarray, img2: np.ndarray, threshold: float) -> bool:
     """
     Compares two images using SSIM.
     """
-    ...
 
 def apply_ssim_dedup(all_frames_data: list[dict], filters: dict, dedup_mask: np.ndarray, reasons: defaultdict, thumbnail_manager: 'ThumbnailManager', config: 'Config', output_dir: str) -> tuple[np.ndarray, defaultdict]:
     """
     Applies SSIM-based deduplication.
     """
-    ...
 
 def apply_lpips_dedup(all_frames_data: list[dict], filters: dict, dedup_mask: np.ndarray, reasons: defaultdict, thumbnail_manager: 'ThumbnailManager', config: 'Config', output_dir: str) -> tuple[np.ndarray, defaultdict]:
     """
     Applies LPIPS-based deduplication.
     """
-    ...
-
 ```
 
 ### `📄 core/logger.py`
@@ -543,18 +567,16 @@ class LogEvent(BaseModel):
     """
     Represents a structured log entry.
     """
-    ...
 
 class ColoredFormatter(logging.Formatter):
     """
     Custom formatter that adds colors to log levels.
     """
-    COLORS = {'DEBUG': '\x1b[36m', 'INFO': '\x1b[37m', 'WARNING': '\x1b[33m', 'ERROR': '\x1b[31m', 'CRITICAL': '\x1b[35m', 'SUCCESS': '\x1b[32m', 'RESET': '\x1b[0m'}
+    COLORS = {'DEBUG': '\x1b[36m', 'INFO': '\x1b[37m', 'WARNING': '\x1b[33m', 'ERROR': '\x1b[31m', 'C...
     def format(self, record: logging.LogRecord) -> str:
         """
         Formats the log record with color codes.
         """
-        ...
 
 class JsonFormatter(logging.Formatter):
     """
@@ -564,7 +586,6 @@ class JsonFormatter(logging.Formatter):
         """
         Formats the log record as a JSON string.
         """
-        ...
 
 class AppLogger:
     """
@@ -580,63 +601,50 @@ class AppLogger:
         log_to_file: Whether to write logs to files.
         log_to_console: Whether to print logs to the console.
         """
-        ...
     def _setup_console_handler(self):
         """
         Configures the console logging handler.
         """
-        ...
     def _setup_file_handlers(self):
         """
         Configures file logging handlers (plain text and JSONL).
         """
-        ...
     def set_progress_queue(self, queue: Queue):
         """
         Sets the queue used for sending logs to the UI.
         """
-        ...
     def _create_log_event(self, level: str, message: str, component: str, **kwargs) -> LogEvent:
         """
         Helper to create a structured LogEvent object.
         """
-        ...
     def _log_event(self, event: LogEvent):
         """
         Dispatches the LogEvent to standard logging and the UI queue.
         """
-        ...
     def debug(self, message: str, component: str='system', **kwargs):
         """
         Logs a debug message.
         """
-        ...
     def info(self, message: str, component: str='system', **kwargs):
         """
         Logs an info message.
         """
-        ...
     def warning(self, message: str, component: str='system', **kwargs):
         """
         Logs a warning message.
         """
-        ...
     def error(self, message: str, component: str='system', **kwargs):
         """
         Logs an error message.
         """
-        ...
     def success(self, message: str, component: str='system', **kwargs):
         """
         Logs a success message.
         """
-        ...
     def critical(self, message: str, component: str='system', **kwargs):
         """
         Logs a critical error message.
         """
-        ...
-
 ```
 
 ### `📄 core/managers.py`
@@ -670,7 +678,6 @@ def _setup_triton_mock():
     """
     Create a mock triton module if triton is not available (Windows).
     """
-    ...
 
 _triton_mocked = _setup_triton_mock()
 class ThumbnailManager:
@@ -681,43 +688,34 @@ class ThumbnailManager:
         """
         Initializes the manager with a configurable cache size.
         """
-        ...
     def get(self, thumb_path: Path) -> Optional[np.ndarray]:
         """
         Retrieves a thumbnail from cache or loads it from disk.
         """
-        ...
     def clear_cache(self):
         """
         Clears the thumbnail cache and triggers garbage collection.
         """
-        ...
-    def _cleanup_old_entries(self):
-        ...
+    def _cleanup_old_entries(self): ...
 
 class ModelRegistry:
     """
     Thread-safe registry for lazy loading and caching of heavy ML models.
     """
-    def __init__(self, logger: Optional['AppLogger']=None):
-        ...
+    def __init__(self, logger: Optional['AppLogger']=None): ...
     def get_or_load(self, key: str, loader_fn: Callable[[], Any]) -> Any:
         """
         Retrieves a model by key, loading it via loader_fn if not present.
         """
-        ...
     def clear(self):
         """
         Clears all loaded models from the registry.
         """
-        ...
     def get_tracker(self, model_name: str, models_path: str, user_agent: str, retry_params: tuple, config: 'Config') -> Optional['SAM3Wrapper']:
         """
         Gets or loads the SAM3 tracker, handling CPU fallback on CUDA OOM.
         """
-        ...
-    def _load_tracker_impl(self, model_name: str, models_path: str, user_agent: str, retry_params: tuple, device: str, config: 'Config') -> 'SAM3Wrapper':
-        ...
+    def _load_tracker_impl(self, model_name: str, models_path: str, user_agent: str, retry_params: tuple, device: str, config: 'Config') -> 'SAM3Wrapper': ...
 
 class SAM3Wrapper:
     """
@@ -738,7 +736,6 @@ class SAM3Wrapper:
         checkpoint_path: Optional path to checkpoint (auto-downloads from HF if None)
         device: Device to run on ('cuda' or 'cpu')
         """
-        ...
     def init_video(self, video_path: str):
         """
         Initialize inference state with video or frame directory.
@@ -749,7 +746,6 @@ class SAM3Wrapper:
         Returns:
         inference_state object
         """
-        ...
     def add_bbox_prompt(self, frame_idx: int, obj_id: int, bbox_xywh: list, img_size: tuple) -> np.ndarray:
         """
         Add bounding box prompt at specified frame.
@@ -763,7 +759,6 @@ class SAM3Wrapper:
         Returns:
         Initial mask as numpy array (H, W)
         """
-        ...
     def propagate(self, start_idx: int=0, max_frames: int=None, reverse: bool=False):
         """
         Generator yielding masks for each frame during propagation.
@@ -776,12 +771,10 @@ class SAM3Wrapper:
         Yields:
         Tuple of (frame_idx, obj_id, mask) where mask is numpy array
         """
-        ...
     def clear_prompts(self):
         """
         Reset all prompts in current session.
         """
-        ...
     def initialize(self, images, init_mask=None, bbox=None, prompt_frame_idx=0):
         """
         Legacy method: Initialize session with images and optional prompt.
@@ -796,7 +789,6 @@ class SAM3Wrapper:
         Returns:
         dict with 'pred_mask' key
         """
-        ...
     def propagate_from(self, start_idx, direction='forward'):
         """
         Legacy method: Yields results starting from start_idx in given direction.
@@ -806,7 +798,6 @@ class SAM3Wrapper:
         Yields:
         Dict with 'frame_index' and 'outputs' keys
         """
-        ...
     def detect_objects(self, image_rgb: np.ndarray, text_prompt: str) -> list:
         """
         Detect objects in an image using text prompt.
@@ -818,31 +809,26 @@ class SAM3Wrapper:
         Returns:
         List of detection dicts with bbox, conf, label, type
         """
-        ...
     def cleanup(self):
         """
         Clean up temporary resources.
         """
-        ...
 
 thread_local = threading.local()
 def get_face_landmarker(model_path: str, logger: 'AppLogger') -> vision.FaceLandmarker:
     """
     Returns a thread-local MediaPipe FaceLandmarker instance.
     """
-    ...
 
 def get_face_analyzer(model_name: str, models_path: str, det_size_tuple: tuple, logger: 'AppLogger', model_registry: 'ModelRegistry', device: str='cpu') -> 'FaceAnalysis':
     """
     Gets or loads the InsightFace FaceAnalysis app, with OOM handling.
     """
-    ...
 
 def get_lpips_metric(model_name: str='alex', device: str='cpu') -> torch.nn.Module:
     """
     Returns the LPIPS metric model.
     """
-    ...
 
 def initialize_analysis_models(params: 'AnalysisParameters', config: 'Config', logger: 'AppLogger', model_registry: 'ModelRegistry') -> dict:
     """
@@ -851,28 +837,23 @@ def initialize_analysis_models(params: 'AnalysisParameters', config: 'Config', l
     Returns:
     Dictionary of initialized models (face_analyzer, ref_emb, etc.).
     """
-    ...
 
 class VideoManager:
     """
     Handles video preparation and metadata extraction.
     """
-    def __init__(self, source_path: str, config: 'Config', max_resolution: Optional[str]=None):
-        ...
+    def __init__(self, source_path: str, config: 'Config', max_resolution: Optional[str]=None): ...
     def prepare_video(self, logger: 'AppLogger') -> str:
         """
         Prepares the video for processing.
         
         Downloads it if it's a YouTube URL, or validates the local path.
         """
-        ...
     @staticmethod
     def get_video_info(video_path: str) -> dict:
         """
         Extracts metadata (FPS, dimensions, frame count) from the video file.
         """
-        ...
-
 ```
 
 ### `📄 core/models.py`
@@ -894,25 +875,21 @@ def _coerce(val: Any, to_type: type) -> Any:
     """
     Helper to strictly coerce values to the target type.
     """
-    ...
 
 def _sanitize_face_ref(kwargs: dict, logger: 'AppLogger') -> tuple[str, bool]:
     """
     Validates the face reference image path.
     """
-    ...
 
 class QualityConfig(BaseModel):
     """
     Configuration for quality metric normalization.
     """
-    ...
 
 class FrameMetrics(BaseModel):
     """
     Container for calculated quality scores for a frame.
     """
-    ...
 
 class Frame(BaseModel):
     """
@@ -934,57 +911,47 @@ class Frame(BaseModel):
         face_bbox: Optional bounding box of the face.
         metrics_to_compute: Dictionary flagging which metrics to calculate.
         """
-        ...
 
 class Scene(BaseModel):
     """
     Represents a detected scene or shot in the video.
     """
-    ...
 
 class SceneState:
     """
     Wrapper to manage state transitions and updates for a Scene object.
     """
-    def __init__(self, scene_data: Union[dict, Scene]):
-        ...
+    def __init__(self, scene_data: Union[dict, Scene]): ...
     @property
     def data(self) -> dict:
         """
         Returns the scene data as a dictionary.
         """
-        ...
     @property
     def scene(self) -> Scene:
         """
         Returns the underlying Scene object.
         """
-        ...
     def set_manual_bbox(self, bbox: list[int], source: str):
         """
         Overrides the automatically selected subject bounding box.
         """
-        ...
     def reset(self):
         """
         Resets the scene to its initial state (undoes manual overrides).
         """
-        ...
     def include(self):
         """
         Marks the scene as included.
         """
-        ...
     def exclude(self):
         """
         Marks the scene as excluded.
         """
-        ...
     def update_seed_result(self, bbox: Optional[list[int]], details: dict):
         """
         Updates the seeding result (detected subject) for the scene.
         """
-        ...
 
 class AnalysisParameters(BaseModel):
     """
@@ -995,14 +962,11 @@ class AnalysisParameters(BaseModel):
         """
         Factory method to create parameters from UI arguments, handling validation and defaults.
         """
-        ...
 
 class MaskingResult(BaseModel):
     """
     Result of the mask propagation process for a frame.
     """
-    ...
-
 ```
 
 ### `📄 core/pipelines.py`
@@ -1017,13 +981,13 @@ import re
 import os
 import shutil
 import json
+import numpy as np
 import torch
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from queue import Queue, Empty
 from typing import Optional, List, Dict, Any, Generator, Callable, TYPE_CHECKING
-from dataclasses import fields
 from PIL import Image
 import gradio as gr
 from core.models import AnalysisParameters, Scene, Frame
@@ -1040,13 +1004,11 @@ def _process_ffmpeg_stream(stream, tracker: Optional['AdvancedProgressTracker'],
     """
     Parses FFmpeg progress stream and updates the tracker.
     """
-    ...
 
 def _process_ffmpeg_showinfo(stream) -> tuple[list, str]:
     """
     Parses FFmpeg stderr for 'showinfo' frame numbers.
     """
-    ...
 
 def run_ffmpeg_extraction(video_path: str, output_dir: Path, video_info: dict, params: 'AnalysisParameters', progress_queue: Queue, cancel_event: threading.Event, logger: 'AppLogger', config: 'Config', tracker: Optional['AdvancedProgressTracker']=None):
     """
@@ -1054,38 +1016,32 @@ def run_ffmpeg_extraction(video_path: str, output_dir: Path, video_info: dict, p
     
     Constructs complex filter chains based on extraction method (interval, keyframes, etc.).
     """
-    ...
 
 class Pipeline:
     """
     Base class for processing pipelines.
     """
-    def __init__(self, config: 'Config', logger: 'AppLogger', params: 'AnalysisParameters', progress_queue: Queue, cancel_event: threading.Event):
-        ...
+    def __init__(self, config: 'Config', logger: 'AppLogger', params: 'AnalysisParameters', progress_queue: Queue, cancel_event: threading.Event): ...
 
 class ExtractionPipeline(Pipeline):
     """
     Pipeline for extracting frames from video or processing image folders.
     """
-    def __init__(self, config: 'Config', logger: 'AppLogger', params: 'AnalysisParameters', progress_queue: Queue, cancel_event: threading.Event):
-        ...
+    def __init__(self, config: 'Config', logger: 'AppLogger', params: 'AnalysisParameters', progress_queue: Queue, cancel_event: threading.Event): ...
     def _run_impl(self, tracker: Optional['AdvancedProgressTracker']=None) -> dict:
         """
         Internal execution logic for extraction.
         """
-        ...
 
 class AnalysisPipeline(Pipeline):
     """
     Pipeline for analyzing frames (pre-analysis, propagation, full analysis).
     """
-    def __init__(self, config: 'Config', logger: 'AppLogger', params: 'AnalysisParameters', progress_queue: Queue, cancel_event: threading.Event, thumbnail_manager: 'ThumbnailManager', model_registry: 'ModelRegistry'):
-        ...
+    def __init__(self, config: 'Config', logger: 'AppLogger', params: 'AnalysisParameters', progress_queue: Queue, cancel_event: threading.Event, thumbnail_manager: 'ThumbnailManager', model_registry: 'ModelRegistry'): ...
     def _initialize_niqe_metric(self):
         """
         Lazy initialization of the NIQE metric model.
         """
-        ...
     def run_full_analysis(self, scenes_to_process: list['Scene'], tracker: Optional['AdvancedProgressTracker']=None) -> dict:
         """
         Runs the mask propagation phase.
@@ -1093,54 +1049,44 @@ class AnalysisPipeline(Pipeline):
         Despite the name, this currently focuses on propagation (subject masking) for video,
         or full processing for image folders.
         """
-        ...
     def run_analysis_only(self, scenes_to_process: list['Scene'], tracker: Optional['AdvancedProgressTracker']=None) -> dict:
         """
         Runs the frame analysis phase (calculating quality metrics).
         
         This phase consumes the masks generated in the propagation phase.
         """
-        ...
     def _filter_completed_scenes(self, scenes: list['Scene'], progress_data: dict) -> list['Scene']:
         """
         Removes scenes that have already been processed when resuming.
         """
-        ...
     def _save_progress(self, current_scene: 'Scene', progress_file: Path):
         """
         Updates the progress file with the completed scene ID.
         """
-        ...
     def _process_reference_face(self):
         """
         Computes the embedding for the reference face image.
         """
-        ...
     def _run_image_folder_analysis(self, tracker: Optional['AdvancedProgressTracker']=None) -> dict:
         """
         Specialized execution path for image folder inputs.
         """
-        ...
     def _run_analysis_loop(self, scenes_to_process: list['Scene'], metrics_to_compute: dict, tracker: Optional['AdvancedProgressTracker']=None):
         """
         Orchestrates the parallel processing of frames for metric calculation.
         """
-        ...
     def _process_batch(self, batch_paths: list[Path], metrics_to_compute: dict) -> int:
         """
         Processes a batch of frame files.
         """
-        ...
     def _process_single_frame(self, thumb_path: Path, metrics_to_compute: dict):
         """
         Analyzes a single frame: computes metrics, face similarity, and stores metadata.
         """
-        ...
     def _analyze_face_similarity(self, frame: 'Frame', image_rgb: np.ndarray) -> Optional[list[int]]:
         """
         Computes face similarity and confidence against the reference face.
         """
-        ...
 
 @handle_common_errors
 def execute_extraction(event: 'ExtractionEvent', progress_queue: Queue, cancel_event: threading.Event, logger: 'AppLogger', config: 'Config', thumbnail_manager: Optional['ThumbnailManager']=None, cuda_available: Optional[bool]=None, progress: Optional[Callable]=None, model_registry: Optional['ModelRegistry']=None) -> Generator[dict, None, None]:
@@ -1149,20 +1095,17 @@ def execute_extraction(event: 'ExtractionEvent', progress_queue: Queue, cancel_e
     
     Handlers file uploads, parameter validation, and running the extraction pipeline.
     """
-    ...
 
 @handle_common_errors
 def execute_pre_analysis(event: 'PreAnalysisEvent', progress_queue: Queue, cancel_event: threading.Event, logger: 'AppLogger', config: 'Config', thumbnail_manager: 'ThumbnailManager', cuda_available: bool, progress: Optional[Callable]=None, model_registry: 'ModelRegistry'=None) -> Generator[dict, None, None]:
     """
     Orchestrates the pre-analysis phase (scene detection, subject seeding).
     """
-    ...
 
 def validate_session_dir(path: Union[str, Path]) -> tuple[Optional[Path], Optional[str]]:
     """
     Checks if the provided path is a valid session directory.
     """
-    ...
 
 def execute_session_load(event: 'SessionLoadEvent', logger: 'AppLogger') -> dict:
     """
@@ -1170,21 +1113,17 @@ def execute_session_load(event: 'SessionLoadEvent', logger: 'AppLogger') -> dict
     
     Verifies the directory structure and loads configuration, scenes, and metadata.
     """
-    ...
 
 def execute_propagation(event: PropagationEvent, progress_queue: Queue, cancel_event: threading.Event, logger: AppLogger, config: Config, thumbnail_manager, cuda_available, progress=None, model_registry: 'ModelRegistry'=None) -> Generator[dict, None, None]:
     """
     Orchestrates the mask propagation stage.
     """
-    ...
 
 @handle_common_errors
 def execute_analysis(event: PropagationEvent, progress_queue: Queue, cancel_event: threading.Event, logger: AppLogger, config: Config, thumbnail_manager, cuda_available, progress=None, model_registry: 'ModelRegistry'=None) -> Generator[dict, None, None]:
     """
     Orchestrates the frame analysis stage.
     """
-    ...
-
 ```
 
 ### `📄 core/progress.py`
@@ -1200,8 +1139,7 @@ from queue import Queue
 from typing import Callable, Optional
 from pydantic import BaseModel
 
-class ProgressEvent(BaseModel):
-    ...
+class ProgressEvent(BaseModel): ...
 
 class AdvancedProgressTracker:
     """
@@ -1219,12 +1157,10 @@ class AdvancedProgressTracker:
         logger: Application logger.
         ui_stage_name: Initial stage name.
         """
-        ...
     def start(self, total_items: int, desc: Optional[str]=None):
         """
         Resets the tracker for a new operation.
         """
-        ...
     def step(self, n: int=1, desc: Optional[str]=None, substage: Optional[str]=None):
         """
         Increments progress by 'n' steps.
@@ -1234,39 +1170,31 @@ class AdvancedProgressTracker:
         desc: Optional stage description update.
         substage: Optional substage description update.
         """
-        ...
     def set(self, done: int, desc: Optional[str]=None, substage: Optional[str]=None):
         """
         Sets the absolute number of completed steps.
         """
-        ...
     def set_stage(self, stage: str, substage: Optional[str]=None):
         """
         Updates the current stage description without changing progress.
         """
-        ...
     def done_stage(self, final_text: Optional[str]=None):
         """
         Marks the current operation as complete.
         """
-        ...
     def _overlay(self, force: bool=False):
         """
         Emits a progress update if enough time has passed (throttling).
         """
-        ...
     def _eta_seconds(self) -> Optional[float]:
         """
         Calculates estimated seconds remaining based on EMA.
         """
-        ...
     @staticmethod
     def _fmt_eta(eta_s: Optional[float]) -> str:
         """
         Formats seconds into a human-readable string.
         """
-        ...
-
 ```
 
 ### `📄 core/sam3_patches.py`
@@ -1287,20 +1215,16 @@ def edt_triton_fallback(data):
     """
     OpenCV-based fallback for Euclidean Distance Transform when Triton unavailable
     """
-    ...
 
 def connected_components_fallback(input_tensor):
     """
     CPU-based fallback for connected components when Triton unavailable
     """
-    ...
 
 def apply_patches():
     """
     Apply monkey patches to SAM3 if Triton is not available
     """
-    ...
-
 ```
 
 ### `📄 core/scene_utils/__init__.py`
@@ -1325,7 +1249,7 @@ from core.scene_utils.seed_selector import SeedSelector
 from core.scene_utils.subject_masker import SubjectMasker
 from core.scene_utils.helpers import draw_boxes_preview, save_scene_seeds, get_scene_status_text, toggle_scene_status, _create_analysis_context, _recompute_single_preview, _wire_recompute_handler
 
-__all__ = ['run_scene_detection', 'make_photo_thumbs', 'MaskPropagator', 'SeedSelector', 'SubjectMasker', 'draw_boxes_preview', 'save_scene_seeds', 'get_scene_status_text', 'toggle_scene_status', '_create_analysis_context', '_recompute_single_preview', '_wire_recompute_handler']
+__all__ = ['run_scene_detection', 'make_photo_thumbs', 'MaskPropagator', 'SeedSelector', 'Subject...
 ```
 
 ### `📄 core/scene_utils/detection.py`
@@ -1357,7 +1281,6 @@ def run_scene_detection(video_path: str, output_dir: Path, logger: 'AppLogger') 
     Returns:
     List of (start_frame, end_frame) tuples for each scene
     """
-    ...
 
 def make_photo_thumbs(image_paths: list[Path], out_dir: Path, params: 'AnalysisParameters', cfg: 'Config', logger: 'AppLogger', tracker: Optional['AdvancedProgressTracker']=None) -> dict:
     """
@@ -1374,8 +1297,6 @@ def make_photo_thumbs(image_paths: list[Path], out_dir: Path, params: 'AnalysisP
     Returns:
     Dictionary mapping frame numbers to thumbnail filenames
     """
-    ...
-
 ```
 
 ### `📄 core/scene_utils/helpers.py`
@@ -1411,7 +1332,6 @@ def draw_boxes_preview(img: np.ndarray, boxes_xyxy: list[list[int]], cfg: 'Confi
     Returns:
     Image with boxes drawn
     """
-    ...
 
 def save_scene_seeds(scenes_list: list['Scene'], output_dir_str: str, logger: 'AppLogger') -> None:
     """
@@ -1422,7 +1342,6 @@ def save_scene_seeds(scenes_list: list['Scene'], output_dir_str: str, logger: 'A
     output_dir_str: Output directory path
     logger: Application logger
     """
-    ...
 
 def get_scene_status_text(scenes_list: list['Scene']) -> tuple[str, Any]:
     """
@@ -1434,7 +1353,6 @@ def get_scene_status_text(scenes_list: list['Scene']) -> tuple[str, Any]:
     Returns:
     Tuple of (status_text, gr.update for button)
     """
-    ...
 
 def toggle_scene_status(scenes_list: list['Scene'], selected_shot_id: int, new_status: str, output_folder: str, logger: 'AppLogger') -> tuple[list, str, str, Any]:
     """
@@ -1450,26 +1368,21 @@ def toggle_scene_status(scenes_list: list['Scene'], selected_shot_id: int, new_s
     Returns:
     Tuple of (updated_scenes, status_text, message, button_update)
     """
-    ...
 
 def _create_analysis_context(config: 'Config', logger: 'AppLogger', thumbnail_manager: 'ThumbnailManager', cuda_available: bool, ana_ui_map_keys: list[str], ana_input_components: list, model_registry: 'ModelRegistry') -> 'SubjectMasker':
     """
     Helper to initialize a SubjectMasker from UI arguments.
     """
-    ...
 
 def _recompute_single_preview(scene_state: 'SceneState', masker: 'SubjectMasker', overrides: dict, thumbnail_manager: 'ThumbnailManager', logger: 'AppLogger'):
     """
     Re-runs the seeding process for a single scene and updates its preview image.
     """
-    ...
 
 def _wire_recompute_handler(config: 'Config', logger: 'AppLogger', thumbnail_manager: 'ThumbnailManager', scenes: list['Scene'], shot_id: int, outdir: str, text_prompt: str, view: str, ana_ui_map_keys: list[str], ana_input_components: list, cuda_available: bool, model_registry: 'ModelRegistry') -> tuple:
     """
     Gradio event handler for the 'Recompute' button in the scene editor.
     """
-    ...
-
 ```
 
 ### `📄 core/scene_utils/mask_propagator.py`
@@ -1507,7 +1420,6 @@ class MaskPropagator:
         logger: Application logger
         device: Device to run on ('cpu' or 'cuda')
         """
-        ...
     def propagate(self, shot_frames_rgb: list[np.ndarray], seed_idx: int, bbox_xywh: list[int], tracker: Optional['AdvancedProgressTracker']=None) -> tuple[list, list, list, list]:
         """
         Propagate masks from a seed frame to all frames in a shot.
@@ -1521,8 +1433,6 @@ class MaskPropagator:
         Returns:
         Tuple of (masks, area_percentages, is_empty_flags, error_messages)
         """
-        ...
-
 ```
 
 ### `📄 core/scene_utils/seed_selector.py`
@@ -1563,12 +1473,10 @@ class SeedSelector:
         logger: Application logger
         device: Device to run on ('cpu' or 'cuda')
         """
-        ...
     def _get_param(self, source: Union[dict, object], key: str, default: Any=None) -> Any:
         """
         Get a parameter from either a dict or an object.
         """
-        ...
     def select_seed(self, frame_rgb: np.ndarray, current_params: Optional[dict]=None, scene: Optional['Scene']=None) -> tuple[Optional[list], dict]:
         """
         Select a seed bounding box for the given frame.
@@ -1581,83 +1489,66 @@ class SeedSelector:
         Returns:
         Tuple of (bbox_xywh, details_dict)
         """
-        ...
     def _face_with_text_fallback_seed(self, frame_rgb: np.ndarray, params: Union[dict, 'AnalysisParameters'], scene: Optional['Scene']=None) -> tuple[Optional[list], dict]:
         """
         Try face-first, fall back to text prompt if face not found.
         """
-        ...
     def _identity_first_seed(self, frame_rgb: np.ndarray, params: Union[dict, 'AnalysisParameters'], scene: Optional['Scene']=None) -> tuple[Optional[list], dict]:
         """
         Find subject by matching to reference face.
         """
-        ...
     def _object_first_seed(self, frame_rgb: np.ndarray, params: Union[dict, 'AnalysisParameters'], scene: Optional['Scene']=None) -> tuple[Optional[list], dict]:
         """
         Find subject using text prompt, validated by person detection.
         """
-        ...
     def _find_target_face(self, frame_rgb: np.ndarray) -> tuple[Optional[dict], dict]:
         """
         Find the target face in frame that matches reference embedding.
         """
-        ...
     def _get_person_boxes(self, frame_rgb: np.ndarray, scene: Optional['Scene']=None) -> list[dict]:
         """
         Get person bounding boxes from scene cache or detection.
         """
-        ...
     def _get_text_prompt_boxes(self, frame_rgb: np.ndarray, params: Union[dict, 'AnalysisParameters']) -> tuple[list[dict], dict]:
         """
         Get bounding boxes from text prompt detection.
         """
-        ...
     def _score_and_select_candidate(self, target_face: dict, person_boxes: list[dict], text_boxes: list[dict]) -> tuple[Optional[list], dict]:
         """
         Score and select the best candidate box that contains the target face.
         """
-        ...
     def _choose_person_by_strategy(self, frame_rgb: np.ndarray, params: Union[dict, 'AnalysisParameters'], scene: Optional['Scene']=None) -> tuple[list, dict]:
         """
         Select person using configurable strategy.
         """
-        ...
     def _load_image_from_array(self, image_rgb: np.ndarray) -> tuple[np.ndarray, torch.Tensor]:
         """
         Load image for model input.
         """
-        ...
     def _calculate_iou(self, box1: list, box2: list) -> float:
         """
         Calculate IoU between two boxes in xyxy format.
         """
-        ...
     def _box_contains(self, cb: list, ib: list) -> bool:
         """
         Check if container box (cb) contains inner box (ib).
         """
-        ...
     def _expand_face_to_body(self, face_bbox: list, img_shape: tuple) -> list[int]:
         """
         Expand a face bounding box to approximate body bounding box.
         """
-        ...
     def _final_fallback_box(self, img_shape: tuple) -> list[int]:
         """
         Return a fallback bounding box when no subject is found.
         """
-        ...
     def _xyxy_to_xywh(self, box: list) -> list[int]:
         """
         Convert box from xyxy to xywh format.
         """
-        ...
     def _sam2_mask_for_bbox(self, frame_rgb_small: np.ndarray, bbox_xywh: list) -> Optional[np.ndarray]:
         """
         Generate a mask for the given bounding box using SAM3.
         """
-        ...
-
 ```
 
 ### `📄 core/scene_utils/subject_masker.py`
@@ -1709,12 +1600,10 @@ class SubjectMasker:
         device: Device for computation ('cpu' or 'cuda')
         model_registry: Model registry for loading SAM3
         """
-        ...
     def initialize_models(self) -> None:
         """
         Initialize required models based on parameters.
         """
-        ...
     def _initialize_tracker(self) -> bool:
         """
         Initialize the SAM3 tracker.
@@ -1722,7 +1611,6 @@ class SubjectMasker:
         Returns:
         True if initialization successful, False otherwise
         """
-        ...
     def run_propagation(self, frames_dir: str, scenes_to_process: list['Scene'], tracker: Optional['AdvancedProgressTracker']=None) -> dict:
         """
         Run mask propagation for all scenes.
@@ -1735,7 +1623,6 @@ class SubjectMasker:
         Returns:
         Dictionary mapping frame filenames to mask metadata
         """
-        ...
     def _load_shot_frames(self, frames_dir: str, thumb_dir: Path, start: int, end: int) -> list[tuple[int, np.ndarray, tuple[int, int]]]:
         """
         Load frames for a shot from disk.
@@ -1749,7 +1636,6 @@ class SubjectMasker:
         Returns:
         List of (frame_number, thumbnail_rgb, (height, width)) tuples
         """
-        ...
     def _select_best_frame_in_scene(self, scene: 'Scene', frames_dir: str) -> None:
         """
         Select the best frame in a scene for seeding.
@@ -1760,7 +1646,6 @@ class SubjectMasker:
         scene: Scene to process
         frames_dir: Frames directory
         """
-        ...
     def get_seed_for_frame(self, frame_rgb: np.ndarray, seed_config: dict=None, scene: Optional['Scene']=None) -> tuple[Optional[list], dict]:
         """
         Get seed bounding box for a frame.
@@ -1773,7 +1658,6 @@ class SubjectMasker:
         Returns:
         Tuple of (bbox_xywh, details_dict)
         """
-        ...
     def get_mask_for_bbox(self, frame_rgb_small: np.ndarray, bbox_xywh: list) -> Optional[np.ndarray]:
         """
         Generate a mask for a bounding box.
@@ -1785,18 +1669,14 @@ class SubjectMasker:
         Returns:
         Mask as numpy array or None
         """
-        ...
     def draw_bbox(self, img_rgb: np.ndarray, xywh: list, color: Optional[tuple]=None, thickness: Optional[int]=None, label: Optional[str]=None) -> np.ndarray:
         """
         Draw a bounding box on an image.
         """
-        ...
     def _create_frame_map(self, output_dir: str) -> dict:
         """
         Create a frame map for the output directory.
         """
-        ...
-
 ```
 
 ### `📄 core/shared.py`
@@ -1826,7 +1706,6 @@ def scene_matches_view(scene: 'Scene', view: str) -> bool:
     Returns:
     True if the scene matches the view filter
     """
-    ...
 
 def create_scene_thumbnail_with_badge(thumb_img: np.ndarray, scene_idx: int, is_excluded: bool) -> np.ndarray:
     """
@@ -1840,7 +1719,6 @@ def create_scene_thumbnail_with_badge(thumb_img: np.ndarray, scene_idx: int, is_
     Returns:
     Thumbnail with badge overlay
     """
-    ...
 
 def scene_caption(scene: Union[dict, 'Scene']) -> str:
     """
@@ -1852,7 +1730,6 @@ def scene_caption(scene: Union[dict, 'Scene']) -> str:
     Returns:
     Caption string with scene ID, frame range, and status
     """
-    ...
 
 def build_scene_gallery_items(scenes: List[Union[dict, 'Scene']], view: str, output_dir: str, page_num: int=1, page_size: int=20) -> Tuple[List[Tuple], List[int], int]:
     """
@@ -1871,8 +1748,6 @@ def build_scene_gallery_items(scenes: List[Union[dict, 'Scene']], view: str, out
     Returns:
     Tuple of (gallery_items, index_map, total_pages)
     """
-    ...
-
 ```
 
 ### `📄 core/utils.py`
@@ -1905,106 +1780,122 @@ def handle_common_errors(func: Callable) -> Callable:
     """
     Decorator to catch common exceptions and return a standardized error dictionary.
     """
-    ...
 
 def monitor_memory_usage(logger: 'AppLogger', device: str, threshold_mb: int=8000):
     """
     Logs a warning and clears cache if GPU memory usage exceeds threshold.
     """
-    ...
 
-def validate_video_file(video_path: str):
+def validate_video_file(video_path: str) -> bool:
     """
     Checks if the video file exists, is not empty, and can be opened by OpenCV.
     """
-    ...
 
 def estimate_totals(params: 'AnalysisParameters', video_info: dict, scenes: Optional[list['Scene']]) -> dict:
     """
     Estimates the total work items for each pipeline stage.
     """
-    ...
 
 def sanitize_filename(name: str, config: 'Config', max_length: Optional[int]=None) -> str:
     """
     Sanitizes a string to be safe for use as a filename.
     """
-    ...
 
 def _to_json_safe(obj: Any) -> Any:
     """
     Recursively converts objects (NumPy types, Path, etc.) to JSON-serializable types.
     """
-    ...
 
 @contextlib.contextmanager
 def safe_resource_cleanup(device: str='cpu'):
     """
     Context manager to ensure garbage collection and CUDA cache clearing.
     """
-    ...
 
 def is_image_folder(p: Union[str, Path]) -> bool:
     """
     Checks if the path points to a directory.
     """
-    ...
 
 def list_images(p: Union[str, Path], cfg: Config) -> list[Path]:
     """
     Lists all valid image files in a directory.
     """
-    ...
 
 @njit
 def compute_entropy(hist: np.ndarray, entropy_norm: float) -> float:
     """
     Computes normalized entropy from a histogram using Numba.
     """
-    ...
 
 def _compute_sha256(path: Path) -> str:
     """
     Computes SHA256 hash of a file.
     """
-    ...
 
 def download_model(url: str, dest_path: Union[str, Path], description: str, logger: 'AppLogger', error_handler: 'ErrorHandler', user_agent: str, min_size: int=1000000, expected_sha256: Optional[str]=None, token: Optional[str]=None):
     """
     Downloads a file from a URL with retries, validation, and progress logging.
     """
-    ...
 
 def postprocess_mask(mask: np.ndarray, config: 'Config', fill_holes: bool=True, keep_largest_only: bool=True) -> np.ndarray:
     """
     Cleans up binary masks using morphological operations and connected components.
     """
-    ...
 
 def render_mask_overlay(frame_rgb: np.ndarray, mask_gray: np.ndarray, alpha: float, logger: 'AppLogger') -> np.ndarray:
     """
     overlays a semi-transparent red mask on the image.
     """
-    ...
 
 def rgb_to_pil(image_rgb: np.ndarray) -> Image.Image:
     """
     Converts a NumPy RGB array to a PIL Image.
     """
-    ...
 
 def create_frame_map(output_dir: Path, logger: 'AppLogger', ext: str='.webp') -> dict:
     """
     Creates a mapping from original frame numbers to extracted filenames.
     """
-    ...
 
 def draw_bbox(img_rgb: np.ndarray, xywh: list, config: 'Config', color: Optional[tuple]=None, thickness: Optional[int]=None, label: Optional[str]=None) -> np.ndarray:
     """
     Draws a bounding box and optional label on an image.
     """
-    ...
+```
 
+### `📄 scripts/run_ux_audit.py`
+
+```python
+"""
+Run comprehensive UX audit and generate report.
+
+This script runs all UI/UX tests and generates a markdown report
+with findings and recommendations.
+
+Usage:
+    python scripts/run_ux_audit.py                    # Run full audit
+    python scripts/run_ux_audit.py --update-baselines # Update visual baselines
+    python scripts/run_ux_audit.py --quick            # Quick component check only
+"""
+
+import subprocess
+import sys
+import argparse
+from pathlib import Path
+from datetime import datetime
+
+def run_tests(test_path: str, extra_args: list=None) -> tuple[int, str]:
+    """
+    Run pytest on specified test path and capture output.
+    """
+
+def generate_report(results: dict, output_path: Path) -> None:
+    """
+    Generate markdown report from test results.
+    """
+
+def main(): ...
 ```
 
 ### `📄 scripts/take_screenshot.py`
@@ -2013,9 +1904,7 @@ def draw_bbox(img_rgb: np.ndarray, xywh: list, config: 'Config', color: Optional
 import asyncio
 from playwright.async_api import async_playwright
 
-async def main():
-    ...
-
+async def main(): ...
 ```
 
 ### `📄 tests/conftest.py`
@@ -2040,50 +1929,42 @@ def _create_mock_torch():
     """
     Create a comprehensive mock for torch and its submodules.
     """
-    ...
 
 def _create_mock_torch_submodules(mock_torch):
     """
     Create mocks for torch submodules like nn, optim, utils.
     """
-    ...
 
 def _create_mock_torchvision():
     """
     Create a mock for torchvision.
     """
-    ...
 
 def _create_mock_psutil():
     """
     Create a mock for psutil with expected return values.
     """
-    ...
 
 def _create_mock_matplotlib():
     """
     Create a mock for matplotlib.
     """
-    ...
 
 def build_modules_to_mock():
     """
     Build the complete dictionary of modules to mock.
     """
-    ...
 
 def _should_apply_mocks():
     """
     Check if we should apply mocks (skip for integration/smoke/signature/gpu_e2e tests).
     """
-    ...
 
 @pytest.fixture(scope='session')
 def mock_torch():
     """
     Session-scoped mock for torch module.
     """
-    ...
 
 @pytest.fixture
 def mock_config(tmp_path):
@@ -2093,42 +1974,36 @@ def mock_config(tmp_path):
     Use this for tests that need a valid Config object
     with writable paths.
     """
-    ...
 
 @pytest.fixture
 def mock_logger(mock_config):
     """
     Provides a mock AppLogger for testing.
     """
-    ...
 
 @pytest.fixture
 def mock_thumbnail_manager(mock_logger, mock_config):
     """
     Provides a mock ThumbnailManager.
     """
-    ...
 
 @pytest.fixture
 def mock_model_registry(mock_logger):
     """
     Provides a mock ModelRegistry.
     """
-    ...
 
 @pytest.fixture
 def mock_progress_queue():
     """
     Provides a mock progress queue.
     """
-    ...
 
 @pytest.fixture
 def mock_cancel_event():
     """
     Provides a mock cancel event.
     """
-    ...
 
 @pytest.fixture
 def mock_ui_state():
@@ -2137,7 +2012,6 @@ def mock_ui_state():
     
     Useful for testing event validation and pipeline execution.
     """
-    ...
 
 @pytest.fixture
 def sample_frames_data():
@@ -2146,54 +2020,127 @@ def sample_frames_data():
     
     Includes a mix of good and bad frames to test various filters.
     """
-    ...
 
 @pytest.fixture
 def sample_scenes():
     """
     Provides sample Scene objects for scene-related tests.
     """
-    ...
 
 @pytest.fixture
 def sample_image_rgb():
     """
     Provides a sample RGB image for testing.
     """
-    ...
 
 @pytest.fixture
 def sample_mask():
     """
     Provides a sample binary mask for testing.
     """
-    ...
 
 @pytest.fixture
 def mock_params(tmp_path):
     """
     Provides mock AnalysisParameters for pipeline tests.
     """
-    ...
 
 @pytest.fixture
 def mock_config_simple(tmp_path):
     """
     Provides a MagicMock config for tests needing attribute flexibility.
     """
-    ...
-
 ```
 
-### `📄 tests/e2e/test_app_flow.py`
+### `📄 tests/e2e/ai_ux_analyzer.py`
 
 ```python
+"""
+AI-powered UX analysis using screenshot inspection.
+
+This module provides tools for analyzing UI screenshots against a UX checklist.
+It can be integrated with vision AI APIs (GPT-4V, Claude, etc.) for automated analysis.
+
+Usage:
+    from ai_ux_analyzer import analyze_screenshot, UX_CHECKLIST
+    issues = analyze_screenshot(screenshot_path)
+"""
+
+from pathlib import Path
+from dataclasses import dataclass, field
+from typing import List, Optional
+from enum import Enum
+
+class Severity(Enum):
+    CRITICAL = 'critical'
+    MAJOR = 'major'
+    MINOR = 'minor'
+    INFO = 'info'
+
+class Category(Enum):
+    LAYOUT = 'layout'
+    USABILITY = 'usability'
+    ACCESSIBILITY = 'accessibility'
+    FEEDBACK = 'feedback'
+    CONTROLS = 'controls'
+    CONSISTENCY = 'consistency'
+
+@dataclass
+class UXIssue:
+    """
+    Represents a detected UX issue.
+    """
+
+@dataclass
+class UXCheckItem:
+    """
+    A single item in the UX checklist.
+    """
+
+def analyze_screenshot_manual(screenshot_path: Path) -> List[UXIssue]:
+    """
+    Analyze screenshot for UX issues using rule-based checks.
+
+    This is a placeholder for manual/heuristic analysis.
+    For actual AI-powered analysis, use analyze_screenshot_with_ai().
+    """
+
+def analyze_screenshot_with_ai(screenshot_path: Path, api_key: Optional[str]=None, model: str='gpt-4-vision-preview') -> List[UXIssue]:
+    """
+    Analyze screenshot using vision AI API.
+
+    Args:
+    screenshot_path: Path to the screenshot image
+    api_key: API key for the vision service (or uses env var)
+    model: Model to use for analysis
+
+    Returns:
+    List of detected UX issues
+
+    Note:
+    This requires an API key for GPT-4V, Claude, or similar.
+    Set OPENAI_API_KEY environment variable or pass api_key.
+    """
+
+def generate_issue_report(issues: List[UXIssue], title: str='UX Analysis Report') -> str:
+    """
+    Generate markdown report of UX issues.
+    """
+```
+
+### `📄 tests/e2e/conftest.py`
+
+```python
+"""
+Shared fixtures for Playwright E2E tests.
+
+Provides the app_server fixture that starts/stops the mock Gradio server.
+"""
+
 import pytest
-from playwright.sync_api import Page, expect
 import subprocess
-import time
-import signal
 import sys
+import time
 from pathlib import Path
 from os import environ
 
@@ -2203,16 +2150,877 @@ BASE_URL = f'http://127.0.0.1:{PORT}'
 def app_server():
     """
     Starts the mock app server before tests and kills it after.
-    """
-    ...
 
-def test_full_user_flow(page: Page, app_server):
-    """
-    Tests the complete end-to-end workflow:
-    Extraction -> Pre-Analysis -> Scene Selection -> Propagation -> Analysis -> Export
-    """
-    ...
+    The mock app replaces heavy ML operations with fast stubs,
+    allowing E2E tests to run quickly without GPU.
 
+    If the real app is already running on port 7860, uses that instead.
+    """
+
+@pytest.fixture
+def extracted_session(page, app_server):
+    """
+    Fixture that provides a page with extraction already completed.
+
+    Useful for tests that need to start from a specific workflow stage.
+    """
+
+@pytest.fixture
+def analyzed_session(extracted_session):
+    """
+    Fixture that provides a page with pre-analysis completed.
+
+    Builds on extracted_session to provide further workflow progress.
+    """
+```
+
+### `📄 tests/e2e/test_accessibility.py`
+
+```python
+"""
+Accessibility audit tests using axe-core.
+
+Runs automated accessibility checks on all application tabs to detect:
+- Missing alt text
+- Color contrast issues
+- Keyboard navigation problems
+- ARIA violations
+- Form label issues
+
+Run with:
+    python -m pytest tests/e2e/test_accessibility.py -v -s
+
+Requires: playwright, axe-core (injected via CDN)
+"""
+
+import pytest
+from playwright.sync_api import Page, expect
+import json
+from .conftest import BASE_URL
+
+pytestmark = [pytest.mark.e2e, pytest.mark.accessibility]
+AXE_CORE_URL = 'https://cdnjs.cloudflare.com/ajax/libs/axe-core/4.8.2/axe.min.js'
+def inject_axe(page: Page) -> bool:
+    """
+    Inject axe-core into the page for accessibility testing.
+    """
+
+def run_axe_audit(page: Page, context: str=None) -> dict:
+    """
+    Run axe-core accessibility audit on current page.
+    """
+
+def filter_violations(violations: list, min_impact: str='serious') -> list:
+    """
+    Filter violations by minimum impact level.
+    """
+
+def format_violation(violation: dict) -> str:
+    """
+    Format a single violation for reporting.
+    """
+
+class TestAccessibilityAudit:
+    """
+    Accessibility tests for each application tab.
+    """
+    TABS = [('Source', None), ('Subject', 'Subject'), ('Scenes', 'Scenes'), ('Metrics', 'Metrics'), (...
+    @pytest.mark.parametrize('tab_name,click_tab', TABS)
+    def test_tab_accessibility(self, page: Page, app_server, tab_name, click_tab):
+        """
+        Run accessibility audit on each tab.
+        """
+    def test_keyboard_navigation(self, page: Page, app_server):
+        """
+        Test that main elements are keyboard accessible.
+        """
+    def test_color_contrast(self, page: Page, app_server):
+        """
+        Check for color contrast issues.
+        """
+    def test_form_labels(self, page: Page, app_server):
+        """
+        Check that form inputs have proper labels.
+        """
+
+class TestARIACompliance:
+    """
+    Test ARIA attribute usage.
+    """
+    def test_aria_roles(self, page: Page, app_server):
+        """
+        Check for proper ARIA role usage.
+        """
+```
+
+### `📄 tests/e2e/test_ai_ux_audit.py`
+
+```python
+"""
+AI-powered UX audit tests.
+
+Uses the ai_ux_analyzer module to detect UX issues in screenshots.
+Can run with or without AI API - manual mode uses heuristic checks.
+
+Run with:
+    python -m pytest tests/e2e/test_ai_ux_audit.py -v -s
+
+For AI-powered analysis:
+    OPENAI_API_KEY=sk-xxx python -m pytest tests/e2e/test_ai_ux_audit.py -v -s
+"""
+
+import pytest
+from playwright.sync_api import Page
+import os
+from .conftest import BASE_URL
+
+pytestmark = [pytest.mark.e2e, pytest.mark.ux_audit]
+@pytest.fixture
+def use_ai():
+    """
+    Check if AI analysis should be used (API key available).
+    """
+
+class TestUXAudit:
+    """
+    Run UX analysis on application states.
+    """
+    @pytest.mark.skipif(not HAS_ANALYZER, reason='ai_ux_analyzer not available')
+    def test_source_tab_ux(self, page: Page, app_server, use_ai, tmp_path):
+        """
+        Audit Source tab UX.
+        """
+    @pytest.mark.skipif(not HAS_ANALYZER, reason='ai_ux_analyzer not available')
+    def test_scenes_tab_ux(self, page: Page, app_server, use_ai, tmp_path):
+        """
+        Audit Scenes tab UX - where pagination issues were found.
+        """
+    @pytest.mark.skipif(not HAS_ANALYZER, reason='ai_ux_analyzer not available')
+    def test_export_tab_ux(self, page: Page, app_server, use_ai, tmp_path):
+        """
+        Audit Export tab UX - filter controls and results display.
+        """
+
+class TestFullAppAudit:
+    """
+    Run comprehensive audit across all tabs.
+    """
+    @pytest.mark.skipif(not HAS_ANALYZER, reason='ai_ux_analyzer not available')
+    def test_full_app_ux_audit(self, page: Page, app_server, use_ai, tmp_path):
+        """
+        Comprehensive UX audit of entire application.
+        """
+```
+
+### `📄 tests/e2e/test_app_flow.py`
+
+```python
+"""
+Playwright E2E Tests for main application workflow.
+
+These tests run against a mock Gradio server to validate:
+- Full workflow from extraction to export
+- Tab navigation and UI responsiveness
+- Error handling and display
+- Cancel operations
+
+Run with: python -m pytest tests/e2e/test_app_flow.py -v -s
+Requires: mock app running on port 7860
+"""
+
+import pytest
+from playwright.sync_api import Page, expect
+import time
+from .conftest import BASE_URL
+
+pytestmark = pytest.mark.e2e
+class TestMainWorkflow:
+    """
+    Complete end-to-end workflow tests.
+    """
+    def test_full_user_flow(self, page: Page, app_server):
+        """
+        Tests the complete end-to-end workflow:
+        Extraction -> Pre-Analysis -> Scene Selection -> Propagation -> Analysis -> Export
+        """
+
+class TestTabNavigation:
+    """
+    Tests for tab navigation and UI responsiveness.
+    """
+    def test_all_tabs_accessible(self, page: Page, app_server):
+        """
+        Verify all main tabs can be accessed and show expected content.
+        """
+    def test_tab_state_preserved(self, page: Page, app_server):
+        """
+        Verify tab state is preserved when switching tabs.
+        """
+
+class TestErrorHandling:
+    """
+    Tests for error display and recovery.
+    """
+    def test_empty_source_shows_message(self, page: Page, app_server):
+        """
+        Verify appropriate message when no source is provided.
+        """
+    def test_log_displays_updates(self, page: Page, app_server):
+        """
+        Verify log area displays status updates.
+        """
+
+class TestUIInteraction:
+    """
+    Tests for UI component interactions.
+    """
+    def test_slider_interaction(self, page: Page, app_server):
+        """
+        Test that sliders can be interacted with.
+        """
+    def test_dropdown_interaction(self, page: Page, app_server):
+        """
+        Test that dropdowns can be opened.
+        """
+```
+
+### `📄 tests/e2e/test_bug_regression.py`
+
+```python
+"""
+Playwright E2E Tests for Bug Regression Prevention.
+
+These tests verify that previously fixed bugs don't regress:
+- Pagination crash on single page (Bug 2)
+- Find People button functionality (Bug 3)
+- Filter slider ranges and behavior (Bug 4)
+- Gallery size controls (Bug 5)
+- System logs visibility (Bug 6)
+
+Run with: python -m pytest tests/e2e/test_bug_regression.py -v -s
+Requires: mock app running on port 7860
+"""
+
+import pytest
+from playwright.sync_api import Page, expect
+import time
+from .conftest import BASE_URL
+
+pytestmark = pytest.mark.e2e
+class TestPaginationBugRegression:
+    """
+    Tests to prevent pagination crash regression (Bug 2).
+    """
+    def test_next_button_on_empty_gallery_no_crash(self, page: Page, app_server):
+        """
+        Clicking Next on empty/single-page gallery should not crash.
+        """
+    def test_prev_button_on_page_one_no_crash(self, page: Page, app_server):
+        """
+        Clicking Previous on page 1 should not crash.
+        """
+
+class TestFindPeopleButtonRegression:
+    """
+    Tests to prevent Find People button regression (Bug 3).
+    """
+    def test_find_people_button_visible_in_face_strategy(self, page: Page, app_server):
+        """
+        Find People button should be visible when 'By Face' strategy selected.
+        """
+
+class TestFilterSlidersRegression:
+    """
+    Tests to prevent filter slider bugs (Bug 4).
+    """
+    def test_scenes_tab_has_filter_sliders(self, page: Page, app_server):
+        """
+        Scenes tab should have properly ranged filter sliders.
+        """
+    def test_export_tab_has_filter_sliders(self, page: Page, app_server):
+        """
+        Export tab filtering should have proper metric sliders.
+        """
+
+class TestGallerySizeControlsRegression:
+    """
+    Tests to prevent gallery sizing issues (Bug 5).
+    """
+    def test_gallery_size_controls_exist(self, page: Page, app_server):
+        """
+        Scene gallery should have columns and height controls.
+        """
+
+class TestSystemLogsRegression:
+    """
+    Tests to prevent system log visibility issues (Bug 6).
+    """
+    def test_logs_accordion_exists(self, page: Page, app_server):
+        """
+        System Logs accordion should be present.
+        """
+    def test_refresh_logs_button_exists(self, page: Page, app_server):
+        """
+        Refresh Logs button should be present for manual log updates.
+        """
+    def test_clear_logs_button_works(self, page: Page, app_server):
+        """
+        Clear Logs button should clear the log display.
+        """
+
+class TestPropagationErrorHandling:
+    """
+    Tests for propagation error handling (Bug 1).
+    """
+    def test_propagate_button_disabled_without_scenes(self, page: Page, app_server):
+        """
+        Propagate button should be disabled when no scenes are ready.
+        """
+```
+
+### `📄 tests/e2e/test_component_verification.py`
+
+```python
+"""
+Component-level verification tests.
+
+Tests that each UI component (sliders, dropdowns, filters, logs) actually functions
+correctly, not just renders. This catches "does nothing" type bugs.
+
+Run with:
+    python -m pytest tests/e2e/test_component_verification.py -v -s
+"""
+
+import pytest
+from playwright.sync_api import Page, expect
+import time
+from .conftest import BASE_URL
+
+pytestmark = [pytest.mark.e2e, pytest.mark.component]
+class TestSliderFunctionality:
+    """
+    Verify all sliders are functional and update values.
+    """
+    SLIDERS_BY_TAB = [('Source', 'Advanced Extraction', 'Thumbnail Size'), ('Scenes', 'Scene Filterin...
+    @pytest.mark.parametrize('tab,accordion,slider_label', SLIDERS_BY_TAB)
+    def test_slider_value_changes(self, page: Page, app_server, tab, accordion, slider_label):
+        """
+        Slider value changes when interacted with.
+        """
+
+class TestDropdownFunctionality:
+    """
+    Verify dropdowns can be opened and selections work.
+    """
+    DROPDOWNS_BY_TAB = [('Source', 'Max Download Resolution'), ('Source', 'Frame Selection Method'), ...
+    @pytest.mark.parametrize('tab,dropdown_label', DROPDOWNS_BY_TAB)
+    def test_dropdown_is_interactive(self, page: Page, app_server, tab, dropdown_label):
+        """
+        Dropdowns can be clicked and show options.
+        """
+
+class TestFiltersFunctionality:
+    """
+    Verify filter components actually filter content.
+    """
+    def test_scene_gallery_view_toggle(self, page: Page, app_server):
+        """
+        View toggle changes displayed scenes.
+        """
+
+class TestLogsFunctionality:
+    """
+    Verify logging system works correctly.
+    """
+    def test_logs_visible_in_accordion(self, page: Page, app_server):
+        """
+        System Logs accordion contains a textbox.
+        """
+    def test_logs_have_initial_content(self, page: Page, app_server):
+        """
+        Logs should show initial ready message.
+        """
+    def test_clear_logs_button(self, page: Page, app_server):
+        """
+        Clear button empties log content.
+        """
+
+class TestPaginationFunctionality:
+    """
+    Verify pagination controls work correctly.
+    """
+    def test_pagination_dropdown_exists(self, page: Page, app_server):
+        """
+        Page selector should be a dropdown (after Phase 0 fix).
+        """
+    def test_prev_next_buttons_exist(self, page: Page, app_server):
+        """
+        Previous and Next pagination buttons should exist.
+        """
+
+class TestButtonsFunctionality:
+    """
+    Verify buttons are clickable and perform actions.
+    """
+    CRITICAL_BUTTONS = [('Source', '🚀 Start Single Extraction'), ('Source', '➕ Add to Batch Queue'), ...
+    @pytest.mark.parametrize('tab,button_name', CRITICAL_BUTTONS)
+    def test_button_is_clickable(self, page: Page, app_server, tab, button_name):
+        """
+        Critical buttons should be visible and enabled.
+        """
+
+class TestStrategyVisibility:
+    """
+    Verify strategy selection shows/hides appropriate UI groups.
+    """
+    def test_face_strategy_shows_face_options(self, page: Page, app_server):
+        """
+        Selecting Face strategy should show face-specific options.
+        """
+    def test_text_strategy_shows_text_options(self, page: Page, app_server):
+        """
+        Selecting Text strategy should show text prompt and warning.
+        """
+```
+
+### `📄 tests/e2e/test_export_flow.py`
+
+```python
+"""
+Playwright E2E Tests for export workflow.
+
+Tests the export functionality including:
+- Dry run export
+- Filter application before export
+- Export format selection
+- Export completion verification
+
+Run with: python -m pytest tests/e2e/test_export_flow.py -v -s
+"""
+
+import pytest
+from playwright.sync_api import Page, expect
+import time
+from .conftest import BASE_URL
+
+pytestmark = pytest.mark.e2e
+class TestExportFlow:
+    """
+    Export workflow tests.
+    """
+    def test_export_tab_accessible(self, page: Page, app_server):
+        """
+        Verify export tab is accessible and shows expected elements.
+        """
+    def test_dry_run_export(self, page: Page, app_server):
+        """
+        Test dry run export mode (no files created).
+        """
+    def test_export_after_analysis(self, analyzed_session):
+        """
+        Test export after running full pre-analysis.
+        """
+
+class TestFilteringBeforeExport:
+    """
+    Tests for filtering controls in export tab.
+    """
+    def test_filter_sliders_visible(self, page: Page, app_server):
+        """
+        Verify filtering sliders are visible in export tab.
+        """
+    def test_filter_checkbox_toggle(self, page: Page, app_server):
+        """
+        Test that filter checkboxes can be toggled.
+        """
+
+class TestExportFormats:
+    """
+    Tests for export format options.
+    """
+    def test_export_settings_visible(self, page: Page, app_server):
+        """
+        Verify export settings are accessible.
+        """
+    def test_export_destination_input(self, page: Page, app_server):
+        """
+        Test export destination can be modified.
+        """
+```
+
+### `📄 tests/e2e/test_session_lifecycle.py`
+
+```python
+"""
+Playwright E2E Tests for session lifecycle.
+
+Tests session management including:
+- Session state persistence
+- Loading previous sessions
+- Session recovery after refresh
+
+Run with: python -m pytest tests/e2e/test_session_lifecycle.py -v -s
+"""
+
+import pytest
+from playwright.sync_api import Page, expect
+import time
+from .conftest import BASE_URL
+
+pytestmark = pytest.mark.e2e
+class TestSessionPersistence:
+    """
+    Tests for session state persistence.
+    """
+    def test_session_dropdown_visible(self, page: Page, app_server):
+        """
+        Verify session dropdown/selector is visible.
+        """
+    def test_output_folder_persists(self, page: Page, app_server):
+        """
+        Verify output folder path persists across tab switches.
+        """
+
+class TestSessionRecovery:
+    """
+    Tests for session recovery scenarios.
+    """
+    def test_app_loads_without_errors(self, page: Page, app_server):
+        """
+        Verify app loads cleanly without console errors.
+        """
+    def test_multiple_tab_switches(self, page: Page, app_server):
+        """
+        Test rapid tab switching doesn't cause errors.
+        """
+
+class TestWorkflowState:
+    """
+    Tests for workflow state management.
+    """
+    def test_extraction_enables_subject_tab(self, extracted_session):
+        """
+        Verify Subject tab becomes usable after extraction.
+        """
+    def test_workflow_progress_tracking(self, page: Page, app_server):
+        """
+        Verify workflow progress is tracked.
+        """
+
+class TestLoadPreviousSession:
+    """
+    Tests for loading previous sessions.
+    """
+    def test_session_loader_ui(self, page: Page, app_server):
+        """
+        Verify session loading UI is accessible.
+        """
+    def test_no_crash_on_fresh_start(self, page: Page, app_server):
+        """
+        Verify app starts cleanly with no previous session.
+        """
+```
+
+### `📄 tests/e2e/test_ui_interactions.py`
+
+```python
+"""
+Automated UI Interaction Tests using Playwright.
+
+These tests verify that UI interactions work correctly by:
+1. Clicking buttons and verifying log output appears
+2. Adjusting sliders and verifying UI updates
+3. Monitoring console/terminal for expected messages
+
+Run with:
+    python tests/mock_app.py &
+    python -m pytest tests/e2e/test_ui_interactions.py -v -s
+"""
+
+import pytest
+from playwright.sync_api import Page, expect, ConsoleMessage
+import time
+import re
+from .conftest import BASE_URL
+
+pytestmark = pytest.mark.e2e
+class TestFindPeopleButtonInteraction:
+    """
+    Tests for Find People in Video button - verifies button click works.
+    """
+    def test_find_people_button_clickable(self, page: Page, app_server):
+        """
+        Button should be clickable and not crash the app.
+        """
+    def test_find_people_graceful_error_handling(self, page: Page, app_server):
+        """
+        Verify graceful error handling when prerequisites are missing.
+        """
+
+class TestGallerySliderInteractions:
+    """
+    Tests for gallery size sliders - verifies sliders affect gallery.
+    """
+    def test_columns_slider_exists_and_interactive(self, page: Page, app_server):
+        """
+        Columns slider should exist and be draggable.
+        """
+    def test_height_slider_exists_and_interactive(self, page: Page, app_server):
+        """
+        Height slider should exist and be adjustable.
+        """
+
+class TestLogRefreshMechanism:
+    """
+    Tests for log display - verifies logs can be refreshed.
+    """
+    def test_refresh_button_updates_logs(self, page: Page, app_server):
+        """
+        Clicking Refresh should drain log queue and update display.
+        """
+
+class TestPropagationErrorHandling:
+    """
+    Tests for propagation - verifies graceful error handling.
+    """
+    def test_propagation_without_scenes_no_crash(self, page: Page, app_server):
+        """
+        Clicking propagate without scenes should not crash.
+        """
+
+class TestUIConsoleErrors:
+    """
+    Tests that monitor browser console for JavaScript errors.
+    """
+    def test_no_console_errors_on_load(self, page: Page, app_server):
+        """
+        Page should load without JavaScript errors.
+        """
+    def test_no_errors_during_tab_navigation(self, page: Page, app_server):
+        """
+        Navigating through tabs should not cause errors.
+        """
+```
+
+### `📄 tests/e2e/test_visual_regression.py`
+
+```python
+"""
+Visual regression tests - captures UI states and compares to baselines.
+
+These tests detect unintended visual changes by:
+1. Capturing screenshots at each UI state
+2. Comparing against baseline images using perceptual hashing
+3. Failing if visual changes exceed threshold
+
+Run with:
+    python -m pytest tests/e2e/test_visual_regression.py -v
+
+Update baselines:
+    python -m pytest tests/e2e/test_visual_regression.py -v --update-baselines
+"""
+
+import pytest
+from playwright.sync_api import Page, expect
+import time
+from .conftest import BASE_URL
+
+pytestmark = [pytest.mark.e2e, pytest.mark.visual]
+def pytest_addoption(parser):
+    """
+    Add --update-baselines option.
+    """
+
+@pytest.fixture(scope='module', autouse=True)
+def cleanup_before_run():
+    """
+    Clean up diff screenshots before test run.
+    """
+
+class TestVisualRegression:
+    """
+    Screenshot-based visual regression tests.
+    """
+    UI_STATES = [('01_source_tab_initial', None), ('02_source_tab_with_input', lambda p: p.get_by_lab...
+    @pytest.mark.skipif(not HAS_UTILS, reason='visual_test_utils dependencies not installed')
+    @pytest.mark.parametrize('state_name,action', UI_STATES)
+    def test_ui_state_visual(self, page: Page, app_server, state_name, action, request):
+        """
+        Capture and compare UI state screenshot.
+        """
+
+class TestUIStateConsistency:
+    """
+    Test that UI remains consistent across interactions.
+    """
+    @pytest.mark.skipif(not HAS_UTILS, reason='visual_test_utils dependencies not installed')
+    def test_tab_switching_preserves_state(self, page: Page, app_server):
+        """
+        Switching tabs and back should preserve visual state.
+        """
+
+def _click_strategy(page: Page, strategy_keyword: str):
+    """
+    Click a strategy radio button containing keyword.
+    """
+
+def _open_logs(page: Page):
+    """
+    Open the System Logs accordion.
+    """
+
+def _open_help(page: Page):
+    """
+    Open the Help accordion.
+    """
+```
+
+### `📄 tests/e2e/test_with_sample_data.py`
+
+```python
+"""
+E2E Tests with Sample Data - Full Integration Tests.
+
+These tests use the actual sample.mp4 file to:
+1. Run extraction
+2. Populate scenes
+3. Test gallery sliders with real data
+
+Run with:
+    ./venv/Scripts/python.exe app.py &
+    ./venv/Scripts/python.exe -m pytest tests/e2e/test_with_sample_data.py -v -s
+"""
+
+import pytest
+from playwright.sync_api import Page, expect
+import time
+from pathlib import Path
+from .conftest import BASE_URL
+
+pytestmark = pytest.mark.e2e
+SAMPLE_VIDEO = str(Path(__file__).parent.parent / 'assets' / 'sample.mp4')
+SAMPLE_IMAGE = str(Path(__file__).parent.parent / 'assets' / 'sample.jpg')
+@pytest.fixture
+def extracted_video_session(page: Page, app_server):
+    """
+    Fixture that extracts frames from sample.mp4 before tests.
+
+    This provides a page with:
+    - Video loaded
+    - Frames extracted
+    - Ready for pre-analysis or scene testing
+    """
+
+class TestGallerySlidersWithData:
+    """
+    Tests for gallery sliders after data is loaded.
+    """
+    def test_columns_slider_changes_gallery(self, extracted_video_session):
+        """
+        Columns slider should change gallery layout when scenes exist.
+        """
+    def test_height_slider_changes_gallery(self, extracted_video_session):
+        """
+        Height slider should change gallery height when scenes exist.
+        """
+
+class TestFindPeopleWithData:
+    """
+    Tests for Find People feature with actual video.
+    """
+    def test_scan_video_finds_faces(self, extracted_video_session):
+        """
+        Scan Video for Faces should detect people in sample video.
+        """
+    def test_upload_reference_face(self, extracted_video_session):
+        """
+        Upload sample.jpg as reference face for Face strategy.
+        """
+
+class TestFullWorkflowWithSampleVideo:
+    """
+    Complete workflow test using sample video.
+    """
+    def test_extract_to_scenes(self, page: Page, app_server):
+        """
+        Test extraction followed by scene detection.
+        """
+```
+
+### `📄 tests/e2e/visual_test_utils.py`
+
+```python
+"""
+Visual regression testing utilities.
+
+Provides screenshot capture and comparison against baselines using perceptual hashing.
+Used to detect unintended UI changes across development cycles.
+"""
+
+from pathlib import Path
+from typing import Optional
+import json
+import time
+
+BASELINE_DIR = Path(__file__).parent / 'baselines'
+DIFF_DIR = Path(__file__).parent / 'diffs'
+def capture_state_screenshot(page, name: str, wait_ms: int=500) -> Path:
+    """
+    Capture screenshot of current UI state.
+
+    Args:
+    page: Playwright page object
+    name: Name for the screenshot file
+    wait_ms: Time to wait before capture (for animations to settle)
+
+    Returns:
+    Path to the captured screenshot
+    """
+
+def compare_with_baseline(screenshot_path: Path, threshold: int=5) -> dict:
+    """
+    Compare screenshot against baseline using perceptual hash.
+
+    Args:
+    screenshot_path: Path to the current screenshot
+    threshold: Maximum hash distance to consider "same" (0-64 for phash)
+
+    Returns:
+    Dict with status, diff_score, and action recommendation
+    """
+
+def save_as_baseline(screenshot_path: Path) -> Path:
+    """
+    Promote current screenshot to baseline.
+
+    Args:
+    screenshot_path: Path to the screenshot to save as baseline
+
+    Returns:
+    Path to the saved baseline
+    """
+
+def generate_diff_image(current_path: Path, baseline_path: Path) -> Optional[Path]:
+    """
+    Generate a visual diff image highlighting differences.
+
+    Args:
+    current_path: Path to current screenshot
+    baseline_path: Path to baseline screenshot
+
+    Returns:
+    Path to diff image, or None if images are identical
+    """
+
+def list_baselines() -> list[str]:
+    """
+    List all available baseline screenshots.
+    """
+
+def cleanup_diffs():
+    """
+    Remove all temporary diff screenshots.
+    """
 ```
 
 ### `📄 tests/mock_app.py`
@@ -2237,25 +3045,20 @@ mock_torch.nn.Module = MagicMock
 mock_torch.Tensor = MagicMock
 mock_sam3 = MagicMock(name='sam3')
 mock_sam3.model_builder = MagicMock()
-modules_to_mock = {'torch': mock_torch, 'torchvision': MagicMock(), 'torchvision.ops': MagicMock(), 'torchvision.transforms': MagicMock(), 'insightface': MagicMock(), 'insightface.app': MagicMock(), 'sam3': mock_sam3, 'sam3.model_builder': mock_sam3.model_builder, 'sam3.model.sam3_video_predictor': MagicMock(), 'mediapipe': MagicMock(), 'mediapipe.tasks': MagicMock(), 'mediapipe.tasks.python': MagicMock(), 'mediapipe.tasks.python.vision': MagicMock(), 'pyiqa': MagicMock(), 'scenedetect': MagicMock(), 'yt_dlp': MagicMock(), 'numba': MagicMock(), 'lpips': MagicMock()}
-modules_to_mock = {'torch': mock_torch, 'torchvision': MagicMock(), 'torchvision.ops': MagicMock(), 'torchvision.transforms': MagicMock(), 'insightface': MagicMock(), 'insightface.app': MagicMock(), 'sam3': mock_sam3, 'sam3.model_builder': mock_sam3.model_builder, 'sam3.model.sam3_video_predictor': MagicMock(), 'mediapipe': MagicMock(), 'mediapipe.tasks': MagicMock(), 'mediapipe.tasks.python': MagicMock(), 'mediapipe.tasks.python.vision': MagicMock(), 'pyiqa': MagicMock(), 'scenedetect': MagicMock(), 'yt_dlp': MagicMock(), 'numba': MagicMock(), 'lpips': MagicMock()}
+modules_to_mock = {'torch': mock_torch, 'torchvision': MagicMock(), 'torchvision.ops': MagicMock(...
 def mock_extraction_run(self, tracker=None):
     """
     Mocks the extraction process.
     """
-    ...
 
 def mock_pre_analysis_execution(event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress=None, model_registry=None):
     """
     Mocks execute_pre_analysis generator.
     """
-    ...
 
-def mock_propagation_execution(event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress=None, model_registry=None):
-    ...
+def mock_propagation_execution(event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress=None, model_registry=None): ...
 
-def mock_analysis_execution(event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress=None, model_registry=None):
-    ...
+def mock_analysis_execution(event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress=None, model_registry=None): ...
 
 core.pipelines.ExtractionPipeline._run_impl = mock_extraction_run
 core.pipelines.execute_pre_analysis = mock_pre_analysis_execution
@@ -2265,6 +3068,52 @@ core.utils.download_model = MagicMock()
 core.managers.download_model = MagicMock()
 ```
 
+### `📄 tests/test_app_ui_logic.py`
+
+```python
+import pytest
+import numpy as np
+import threading
+from unittest.mock import MagicMock, patch, ANY, call
+from queue import Queue
+from collections import deque
+import gradio as gr
+from ui.app_ui import AppUI
+from core.models import Scene, SceneState
+
+class TestAppUI:
+    @pytest.fixture
+    def mock_config(self, tmp_path): ...
+    @pytest.fixture
+    def mock_logger(self): ...
+    @pytest.fixture
+    def mock_queue(self): ...
+    @pytest.fixture
+    def mock_cancel_event(self): ...
+    @pytest.fixture
+    def mock_thumbnail_manager(self): ...
+    @pytest.fixture
+    def mock_model_registry(self): ...
+    @pytest.fixture
+    def app_ui(self, mock_config, mock_logger, mock_queue, mock_cancel_event, mock_thumbnail_manager, mock_model_registry): ...
+    def test_init(self, app_ui): ...
+    def test_preload_models(self, app_ui): ...
+    def test_get_stepper_html(self, app_ui): ...
+    def test_fix_strategy_visibility(self, app_ui): ...
+    def test_run_extraction_wrapper(self, app_ui): ...
+    def test_run_pre_analysis_wrapper(self, app_ui): ...
+    def test_on_extraction_success(self, app_ui): ...
+    def test_on_pre_analysis_success(self, app_ui): ...
+    def test_push_history(self, app_ui): ...
+    def test_undo_last_action(self, app_ui): ...
+    def test_get_smart_mode_updates(self, app_ui): ...
+    def test_on_apply_bulk_scene_filters_extended(self, app_ui): ...
+    def test_on_reset_filters(self, app_ui): ...
+    def test_on_auto_set_thresholds(self, app_ui): ...
+    @patch('ui.app_ui.execute_session_load')
+    def test_run_session_load_wrapper(self, mock_load, app_ui): ...
+```
+
 ### `📄 tests/test_batch_manager.py`
 
 ```python
@@ -2272,15 +3121,57 @@ import time
 import pytest
 from core.batch_manager import BatchManager, BatchStatus, BatchItem
 
-def test_batch_manager_add():
-    ...
+def test_batch_manager_add(): ...
 
-def test_batch_manager_processing():
-    ...
+def test_batch_manager_processing(): ...
 
-def test_batch_manager_failure():
-    ...
+def test_batch_manager_failure(): ...
+```
 
+### `📄 tests/test_bug_fixes.py`
+
+```python
+"""
+E2E tests for bug fixes.
+
+These tests verify the bug fixes using Playwright to interact with the actual Gradio UI.
+"""
+
+import pytest
+from unittest.mock import MagicMock, patch
+from core.shared import build_scene_gallery_items
+from core.models import Scene
+
+class TestPaginationBugFixes:
+    """
+    Tests for pagination edge case fixes (Bug 2).
+    """
+    def test_build_scene_gallery_items_page_clamped_to_max(self):
+        """
+        Page number greater than total_pages should be clamped.
+        """
+    def test_build_scene_gallery_items_empty_scenes(self):
+        """
+        Empty scenes list should return page 1.
+        """
+
+class TestPipelinesSceneFieldsFix:
+    """
+    Tests for Scene.model_fields fix (Bug 1).
+    """
+    def test_scene_model_fields_accessible(self):
+        """
+        Scene.model_fields.keys() should work for Pydantic model.
+        """
+
+class TestFilterSlidersFix:
+    """
+    Tests for filter slider separation (Bug 4).
+    """
+    def test_seed_metrics_score_range(self):
+        """
+        Seed metrics score should be in 0-20 range (NIQE + face composite).
+        """
 ```
 
 ### `📄 tests/test_core.py`
@@ -2307,12 +3198,9 @@ from core.events import PreAnalysisEvent
 
 class TestUtils:
     @pytest.mark.parametrize('value, to_type, expected', [('True', bool, True), ('false', bool, False), ('1', bool, True), ('0', bool, False), ('yes', bool, True), ('no', bool, False), (True, bool, True), (False, bool, False), ('123', int, 123), (123, int, 123), ('123.45', float, 123.45), (123.45, float, 123.45), ('string', str, 'string')])
-    def test_coerce(self, value, to_type, expected):
-        ...
-    def test_coerce_invalid_raises(self):
-        ...
-    def test_config_init(self):
-        ...
+    def test_coerce(self, value, to_type, expected): ...
+    def test_coerce_invalid_raises(self): ...
+    def test_config_init(self): ...
     @patch('pathlib.Path.mkdir', MagicMock())
     @patch('pathlib.Path.touch', MagicMock())
     @patch('pathlib.Path.unlink', MagicMock())
@@ -2320,34 +3208,27 @@ class TestUtils:
         """
         Test that a validation error is raised for invalid config.
         """
-        ...
 
 class TestAppLogger:
     def test_app_logger_instantiation(self, mock_config):
         """
         Tests that the logger can be instantiated with a valid config.
         """
-        ...
-    def test_auto_set_thresholds(self):
-        ...
+    def test_auto_set_thresholds(self): ...
     def test_apply_all_filters_with_face_and_mask(self, sample_frames_data, mock_config):
         """
         Verify filtering by face similarity and mask area.
         """
-        ...
     def test_calculate_quality_metrics_with_niqe(self, mock_config):
         """
         Test quality metrics calculation including NIQE.
         """
-        ...
 
 class TestPreAnalysisEvent:
     def test_face_ref_validation(self, tmp_path, mock_ui_state):
         """
         Test the custom validator for face_ref_img_path.
         """
-        ...
-
 ```
 
 ### `📄 tests/test_database.py`
@@ -2360,37 +3241,26 @@ from pathlib import Path
 from core.database import Database
 
 @pytest.fixture
-def db_path(tmp_path):
-    ...
+def db_path(tmp_path): ...
 
 @pytest.fixture
-def db(db_path):
-    ...
+def db(db_path): ...
 
-def test_create_tables(db, db_path):
-    ...
+def test_create_tables(db, db_path): ...
 
-def test_insert_metadata_and_flush(db):
-    ...
+def test_insert_metadata_and_flush(db): ...
 
-def test_insert_metadata_batch_flush(db):
-    ...
+def test_insert_metadata_batch_flush(db): ...
 
-def test_clear_metadata(db):
-    ...
+def test_clear_metadata(db): ...
 
-def test_count_errors(db):
-    ...
+def test_count_errors(db): ...
 
-def test_migration_adds_column(tmp_path):
-    ...
+def test_migration_adds_column(tmp_path): ...
 
-def test_metrics_json_parsing(db):
-    ...
+def test_metrics_json_parsing(db): ...
 
-def test_mask_empty_conversion(db):
-    ...
-
+def test_mask_empty_conversion(db): ...
 ```
 
 ### `📄 tests/test_dedup.py`
@@ -2415,23 +3285,16 @@ def sample_frames_for_dedup():
     """
     Sample frames with phash values for deduplication testing.
     """
-    ...
 
-def test_dedup_phash_replacement(sample_frames_for_dedup, mock_thumbnail_manager, mock_config):
-    ...
+def test_dedup_phash_replacement(sample_frames_for_dedup, mock_thumbnail_manager, mock_config): ...
 
-def test_dedup_phash_no_replacement(sample_frames_for_dedup, mock_thumbnail_manager, mock_config):
-    ...
+def test_dedup_phash_no_replacement(sample_frames_for_dedup, mock_thumbnail_manager, mock_config): ...
 
-def test_dedup_disabled(sample_frames_for_dedup, mock_thumbnail_manager, mock_config):
-    ...
+def test_dedup_disabled(sample_frames_for_dedup, mock_thumbnail_manager, mock_config): ...
 
-def test_dedup_threshold(sample_frames_for_dedup, mock_thumbnail_manager, mock_config):
-    ...
+def test_dedup_threshold(sample_frames_for_dedup, mock_thumbnail_manager, mock_config): ...
 
-def test_run_batched_lpips(mock_thumbnail_manager):
-    ...
-
+def test_run_batched_lpips(mock_thumbnail_manager): ...
 ```
 
 ### `📄 tests/test_error_handling.py`
@@ -2461,17 +3324,14 @@ class TestConfigEdgeCases:
         """
         Test that Config has sensible defaults.
         """
-        ...
     def test_config_custom_values(self, tmp_path):
         """
         Test that Config accepts custom values.
         """
-        ...
     def test_config_path_creation(self, tmp_path):
         """
         Test that Config creates necessary directories.
         """
-        ...
     @patch('pathlib.Path.mkdir', MagicMock())
     @patch('pathlib.Path.touch', MagicMock())
     @patch('pathlib.Path.unlink', MagicMock())
@@ -2479,7 +3339,6 @@ class TestConfigEdgeCases:
         """
         Test that Config rejects invalid quality weights (sum cannot be zero).
         """
-        ...
 
 class TestSceneEdgeCases:
     """
@@ -2489,17 +3348,14 @@ class TestSceneEdgeCases:
         """
         Test Scene with minimal required fields.
         """
-        ...
     def test_scene_with_seed_result(self):
         """
         Test Scene with seed_result data.
         """
-        ...
     def test_scene_status_transitions(self):
         """
         Test Scene status can be changed.
         """
-        ...
 
 class TestFrameEdgeCases:
     """
@@ -2509,12 +3365,10 @@ class TestFrameEdgeCases:
         """
         Test Frame with None image data (some workflows don't need images).
         """
-        ...
     def test_frame_with_image_data(self, sample_image_rgb):
         """
         Test Frame stores image data correctly.
         """
-        ...
 
 class TestFilteringEdgeCases:
     """
@@ -2524,17 +3378,14 @@ class TestFilteringEdgeCases:
         """
         Test filtering handles empty frame list.
         """
-        ...
     def test_filter_all_frames_pass(self, sample_frames_data, mock_config):
         """
         Test filtering when all frames pass.
         """
-        ...
     def test_filter_strict_thresholds(self, sample_frames_data, mock_config):
         """
         Test filtering with very strict thresholds rejects most frames.
         """
-        ...
 
 class TestAnalysisParametersValidation:
     """
@@ -2544,12 +3395,10 @@ class TestAnalysisParametersValidation:
         """
         Test AnalysisParameters with minimal required fields.
         """
-        ...
     def test_params_full(self, tmp_path):
         """
         Test AnalysisParameters with all fields.
         """
-        ...
 
 class TestQualityConfigEdgeCases:
     """
@@ -2559,18 +3408,60 @@ class TestQualityConfigEdgeCases:
         """
         Test QualityConfig with required fields.
         """
-        ...
     def test_quality_config_niqe_disabled(self):
         """
         Test QualityConfig with NIQE disabled.
         """
-        ...
     def test_quality_config_custom_scales(self):
         """
         Test QualityConfig with custom scales.
         """
-        ...
 
+class TestErrorHandlerDecorators:
+    """
+    Tests for ErrorHandler.with_retry and with_fallback decorators.
+    """
+    def test_with_retry_success_first_try(self, mock_logger):
+        """
+        Test with_retry when function succeeds on first try.
+        """
+    def test_with_retry_success_after_failures(self, mock_logger):
+        """
+        Test with_retry when function succeeds after initial failures.
+        """
+    def test_with_retry_all_attempts_fail(self, mock_logger):
+        """
+        Test with_retry raises exception when all attempts fail.
+        """
+    def test_with_retry_custom_exceptions(self, mock_logger):
+        """
+        Test with_retry only catches specified exceptions.
+        """
+    def test_with_fallback_primary_succeeds(self, mock_logger):
+        """
+        Test with_fallback when primary function succeeds.
+        """
+    def test_with_fallback_primary_fails(self, mock_logger):
+        """
+        Test with_fallback when primary function fails.
+        """
+    def test_with_fallback_both_fail(self, mock_logger):
+        """
+        Test with_fallback when both primary and fallback fail.
+        """
+
+class TestErrorSeverityAndRecoveryStrategy:
+    """
+    Tests for ErrorSeverity and RecoveryStrategy enums.
+    """
+    def test_error_severity_values(self):
+        """
+        Test ErrorSeverity enum values exist.
+        """
+    def test_recovery_strategy_values(self):
+        """
+        Test RecoveryStrategy enum values exist.
+        """
 ```
 
 ### `📄 tests/test_export.py`
@@ -2579,43 +3470,166 @@ class TestQualityConfigEdgeCases:
 """
 Tests for export functionality.
 
-Uses fixtures from conftest.py for mock setup.
+Covers all functions in core/export.py:
+- export_kept_frames (main export function)
+- dry_run_export (preview export without writing)
+- _perform_ffmpeg_export (internal FFmpeg call)
+- _rename_exported_frames (rename to original names)
+- _crop_exported_frames (crop around mask)
 """
 
 import pytest
+import json
+import numpy as np
+import cv2
 from unittest.mock import MagicMock, patch
 from pathlib import Path
 from core.events import ExportEvent
-from core.export import export_kept_frames
+from core.export import export_kept_frames, dry_run_export
 
-@patch('subprocess.Popen')
-@patch('core.export.apply_all_filters_vectorized')
-def test_export_kept_frames(mock_filter, mock_popen, mock_config, mock_logger, tmp_path):
-    ...
+class TestExportKeptFrames:
+    """
+    Tests for the main export_kept_frames function.
+    """
+    @patch('subprocess.Popen')
+    @patch('core.export.apply_all_filters_vectorized')
+    def test_export_kept_frames_basic(self, mock_filter, mock_popen, mock_config, mock_logger, tmp_path):
+        """
+        Test basic export functionality.
+        """
+    @patch('subprocess.Popen')
+    @patch('core.export.apply_all_filters_vectorized')
+    def test_export_no_frames_kept(self, mock_filter, mock_popen, mock_config, mock_logger, tmp_path):
+        """
+        Test export when no frames pass filters.
+        """
+    @patch('subprocess.Popen')
+    @patch('core.export.apply_all_filters_vectorized')
+    def test_export_ffmpeg_failure(self, mock_filter, mock_popen, mock_config, mock_logger, tmp_path):
+        """
+        Test export handles FFmpeg failure gracefully.
+        """
 
+class TestDryRunExport:
+    """
+    Tests for dry_run_export function.
+    """
+    def test_dry_run_basic(self, mock_config, tmp_path):
+        """
+        Test basic dry run export returns expected format.
+        """
+    def test_dry_run_no_frames(self, mock_config, tmp_path):
+        """
+        Test dry run with no frames.
+        """
+
+class TestExportEvent:
+    """
+    Tests for ExportEvent validation.
+    """
+    def test_event_creation_minimal(self, tmp_path):
+        """
+        Test ExportEvent with minimal required fields.
+        """
+    def test_event_with_crop_settings(self, tmp_path):
+        """
+        Test ExportEvent with crop enabled.
+        """
+
+class TestExportCancellation:
+    """
+    Tests for export cancellation handling.
+    """
+    @patch('subprocess.Popen')
+    @patch('core.export.apply_all_filters_vectorized')
+    def test_export_with_cancel_event(self, mock_filter, mock_popen, mock_config, mock_logger, tmp_path):
+        """
+        Test export handles cancel event.
+        """
+
+class TestExportWithFilters:
+    """
+    Tests for export with various filter configurations.
+    """
+    @patch('subprocess.Popen')
+    @patch('core.export.apply_all_filters_vectorized')
+    def test_export_with_face_filter(self, mock_filter, mock_popen, mock_config, mock_logger, tmp_path):
+        """
+        Test export with face similarity filter.
+        """
+```
+
+### `📄 tests/test_filtering.py`
+
+```python
+import pytest
+import numpy as np
+import torch
+from unittest.mock import MagicMock, patch, ANY
+from collections import defaultdict, Counter
+from pathlib import Path
+from core.filtering import load_and_prep_filter_data, histogram_svg, build_all_metric_svgs, _extract_metric_arrays, _run_batched_lpips, _apply_deduplication_filter, _apply_metric_filters, apply_all_filters_vectorized, apply_ssim_dedup, apply_lpips_dedup
+
+class TestFiltering:
+    @pytest.fixture
+    def mock_logger(self): ...
+    @pytest.fixture
+    def mock_config(self): ...
+    @pytest.fixture
+    def mock_thumbnail_manager(self): ...
+    @pytest.fixture
+    def sample_frames(self): ...
+    @patch('core.filtering.Database')
+    @patch('pathlib.Path.exists', return_value=True)
+    def test_load_and_prep_filter_data(self, mock_exists, mock_db_cls, mock_config, sample_frames): ...
+    @patch('core.filtering.plt')
+    def test_histogram_svg(self, mock_plt, mock_logger): ...
+    def test_extract_metric_arrays(self, sample_frames, mock_config): ...
+    @patch('core.filtering.get_lpips_metric')
+    @patch('torch.stack')
+    def test_run_batched_lpips(self, mock_stack, mock_get_lpips, sample_frames, mock_thumbnail_manager): ...
+    def test_apply_deduplication_filter_phash(self, sample_frames, mock_config): ...
+    @patch('core.filtering._run_batched_lpips')
+    def test_apply_deduplication_filter_lpips(self, mock_run_lpips, sample_frames, mock_config, mock_thumbnail_manager): ...
+    def test_apply_metric_filters(self, sample_frames, mock_config): ...
+    def test_apply_all_filters_vectorized(self, sample_frames, mock_config): ...
 ```
 
 ### `📄 tests/test_gallery_utils.py`
 
 ```python
 import pytest
-from unittest.mock import MagicMock
-from ui.gallery_utils import scene_caption, create_scene_thumbnail_with_badge
-from core.models import Scene
 import numpy as np
+import cv2
+from unittest.mock import MagicMock, patch, ANY
+from pathlib import Path
+from ui.gallery_utils import _update_gallery, on_filters_changed, auto_set_thresholds
+from core.events import FilterEvent
 
-def test_scene_caption_dict():
-    ...
-
-def test_scene_caption_obj():
-    ...
-
-def test_create_scene_thumbnail_with_badge():
-    ...
-
-def test_create_scene_thumbnail_included():
-    ...
-
+class TestGalleryUtils:
+    @pytest.fixture
+    def mock_logger(self): ...
+    @pytest.fixture
+    def mock_config(self): ...
+    @pytest.fixture
+    def mock_thumbnail_manager(self): ...
+    @pytest.fixture
+    def sample_frames_data(self): ...
+    @patch('ui.gallery_utils.apply_all_filters_vectorized')
+    @patch('ui.gallery_utils.render_mask_overlay')
+    def test_update_gallery_kept(self, mock_render, mock_apply, sample_frames_data, mock_thumbnail_manager, mock_config, mock_logger): ...
+    @patch('ui.gallery_utils.apply_all_filters_vectorized')
+    def test_update_gallery_rejected(self, mock_apply, sample_frames_data, mock_thumbnail_manager, mock_config, mock_logger): ...
+    @patch('ui.gallery_utils.apply_all_filters_vectorized')
+    @patch('cv2.imread')
+    @patch('ui.gallery_utils.render_mask_overlay')
+    @patch('pathlib.Path.exists', return_value=True)
+    def test_update_gallery_overlay(self, mock_exists, mock_render, mock_imread, mock_apply, sample_frames_data, mock_thumbnail_manager, mock_config, mock_logger): ...
+    @patch('ui.gallery_utils._update_gallery')
+    def test_on_filters_changed(self, mock_update, sample_frames_data, mock_thumbnail_manager, mock_config, mock_logger): ...
+    def test_on_filters_changed_empty(self, mock_thumbnail_manager, mock_config, mock_logger): ...
+    def test_auto_set_thresholds(self): ...
+    def test_auto_set_thresholds_empty(self): ...
 ```
 
 ### `📄 tests/test_gpu_e2e.py`
@@ -2647,47 +3661,40 @@ def _create_test_image(width=256, height=256):
     """
     Create a simple test image with a rectangle (simulates an object).
     """
-    ...
 
 def _create_test_image_with_face(width=256, height=256):
     """
     Create a test image with a face-like pattern.
     """
-    ...
 
 def _create_test_frames_dir(tmp_path, num_frames=5, width=256, height=256):
     """
     Create a directory with test frames for SAM3 video processing.
     """
-    ...
 
 def _is_sam3_available():
     """
     Check if SAM3 is properly installed and can be imported.
     """
-    ...
 
-requires_sam3 = pytest.mark.skipif(not _is_sam3_available(), reason='SAM3 not installed (pip install -e SAM3_repo)')
+requires_sam3 = pytest.mark.skipif(not _is_sam3_available(), reason='SAM3 not installed (pip inst...
 @pytest.fixture
 def test_image():
     """
     Provides a simple test image.
     """
-    ...
 
 @pytest.fixture
 def test_image_with_face():
     """
     Provides a test image with face-like features.
     """
-    ...
 
 @pytest.fixture
 def test_frames_dir(tmp_path):
     """
     Provides a directory with test frames for video processing.
     """
-    ...
 
 class TestCUDAAvailability:
     """
@@ -2697,12 +3704,10 @@ class TestCUDAAvailability:
         """
         CUDA must be available for GPU E2E tests.
         """
-        ...
     def test_cuda_memory_available(self):
         """
         Verify sufficient GPU memory (~4GB needed).
         """
-        ...
 
 class TestSAM3Inference:
     """
@@ -2713,55 +3718,46 @@ class TestSAM3Inference:
         """
         SAM3Wrapper can be initialized without errors.
         """
-        ...
     @requires_sam3
     def test_sam3_init_video(self, test_frames_dir):
         """
         SAM3 init_video() initializes inference state correctly.
         """
-        ...
     @requires_sam3
     def test_sam3_add_bbox_prompt(self, test_frames_dir):
         """
         SAM3 add_bbox_prompt() returns valid mask.
         """
-        ...
     @requires_sam3
     def test_sam3_propagate_forward(self, test_frames_dir):
         """
         SAM3 propagate() forward generator yields valid results.
         """
-        ...
     @requires_sam3
     def test_sam3_propagate_bidirectional(self, tmp_path):
         """
         SAM3 propagate() works bidirectionally from middle frame.
         """
-        ...
     @requires_sam3
     def test_sam3_clear_prompts(self, test_frames_dir):
         """
         SAM3 clear_prompts() resets session state.
         """
-        ...
     @requires_sam3
     def test_sam3_legacy_initialize_api(self, test_image, tmp_path):
         """
         SAM3 legacy initialize() API still works for backward compatibility.
         """
-        ...
     @requires_sam3
     def test_sam3_legacy_propagate_from_api(self, test_image, tmp_path):
         """
         SAM3 legacy propagate_from() API still works for backward compatibility.
         """
-        ...
     @requires_sam3
     def test_sam3_detect_objects(self, test_image):
         """
         SAM3 detect_objects() returns valid detection list.
         """
-        ...
 
 class TestInsightFaceInference:
     """
@@ -2771,12 +3767,10 @@ class TestInsightFaceInference:
         """
         InsightFace can be initialized.
         """
-        ...
     def test_face_detection_on_image(self, test_image_with_face, tmp_path):
         """
         InsightFace can process an image without errors.
         """
-        ...
 
 class TestPipelineE2E:
     """
@@ -2786,12 +3780,10 @@ class TestPipelineE2E:
         """
         ExtractionPipeline initializes correctly with real config.
         """
-        ...
     def test_analysis_pipeline_initializes_with_real_managers(self, tmp_path):
         """
         AnalysisPipeline initializes with real ThumbnailManager and ModelRegistry.
         """
-        ...
 
 class TestVideoE2E:
     """
@@ -2802,23 +3794,19 @@ class TestVideoE2E:
         """
         Create a small test video (5 frames, 256x256).
         """
-        ...
     @pytest.fixture
     def test_frames_dir(self, tmp_path, test_video_path):
         """
         Create directory with extracted frames and required files.
         """
-        ...
     def test_extraction_pipeline_on_real_video(self, test_video_path, tmp_path):
         """
         ExtractionPipeline can process a real video file.
         """
-        ...
     def test_pre_analysis_with_sam3(self, test_frames_dir, tmp_path):
         """
         Pre-analysis can run SAM3 on extracted frames.
         """
-        ...
 
 class TestMaskPropagatorE2E:
     """
@@ -2829,13 +3817,11 @@ class TestMaskPropagatorE2E:
         """
         MaskPropagator.propagate() works with new SAM3 API.
         """
-        ...
     @requires_sam3
     def test_mask_propagator_bidirectional(self, tmp_path):
         """
         MaskPropagator.propagate() works bidirectionally from middle frame.
         """
-        ...
 
 class TestQualityMetricsE2E:
     """
@@ -2845,13 +3831,198 @@ class TestQualityMetricsE2E:
         """
         Frame quality metrics can be calculated on real image.
         """
-        ...
     def test_niqe_metric_calculation(self, test_image, tmp_path):
         """
         NIQE metric can be calculated (requires pyiqa).
         """
-        ...
 
+class TestExportE2E:
+    """
+    E2E tests for export pipeline.
+    """
+    def test_export_pipeline_initialization(self, tmp_path):
+        """
+        ExportPipeline can be initialized with real config.
+        """
+    def test_export_with_real_frames(self, tmp_path):
+        """
+        Export can process frames from a real directory.
+        """
+    def test_export_dry_run_mode(self, tmp_path):
+        """
+        Dry run export mode works without creating files.
+        """
+
+class TestCancellationE2E:
+    """
+    E2E tests for cancel operations during pipeline execution.
+    """
+    @requires_sam3
+    def test_propagation_with_cancel_event(self, tmp_path):
+        """
+        MaskPropagator handles cancel event during propagation.
+        """
+    def test_analysis_pipeline_cancel(self, tmp_path):
+        """
+        AnalysisPipeline handles cancel event gracefully.
+        """
+
+class TestMediaPipeLandmarkerE2E:
+    """
+    E2E tests for MediaPipe Face Landmarker.
+    """
+    def test_face_landmarker_import(self):
+        """
+        MediaPipe face landmarker can be imported.
+        """
+    def test_face_landmarker_model_download(self, tmp_path):
+        """
+        Face landmarker model can be downloaded.
+        """
+
+class TestLargeVideoE2E:
+    """
+    E2E tests for handling larger videos/frame sequences.
+    """
+    def test_many_frames_processing(self, tmp_path):
+        """
+        Test processing a larger number of frames.
+        """
+    @requires_sam3
+    def test_sam3_with_many_frames(self, tmp_path):
+        """
+        SAM3 can process a larger sequence.
+        """
+```
+
+### `📄 tests/test_handlers.py`
+
+```python
+"""
+Tests for UI handlers (analysis, extraction, filtering).
+
+These tests verify the handler classes work correctly in isolation,
+using mocked dependencies to avoid GPU requirements.
+"""
+
+import pytest
+from unittest.mock import MagicMock, patch, PropertyMock
+import gradio as gr
+
+class TestAnalysisHandler:
+    """
+    Tests for AnalysisHandler class.
+    """
+    @pytest.fixture
+    def mock_app_ui(self, mock_config, mock_logger, mock_thumbnail_manager, mock_model_registry):
+        """
+        Create a mock AppUI instance.
+        """
+    @pytest.fixture
+    def handler(self, mock_app_ui, mock_config, mock_logger, mock_thumbnail_manager, mock_model_registry):
+        """
+        Create an AnalysisHandler instance.
+        """
+    def test_init(self, handler, mock_app_ui, mock_config):
+        """
+        Test AnalysisHandler initialization.
+        """
+    def test_on_pre_analysis_success_basic(self, handler):
+        """
+        Test on_pre_analysis_success returns correct updates.
+        """
+    def test_on_pre_analysis_success_with_face_ref(self, handler):
+        """
+        Test on_pre_analysis_success includes face reference when present.
+        """
+    def test_on_pre_analysis_success_default_log(self, handler):
+        """
+        Test on_pre_analysis_success uses default log message.
+        """
+    def test_on_propagation_success(self, handler):
+        """
+        Test on_propagation_success returns correct updates.
+        """
+    def test_on_analysis_success(self, handler):
+        """
+        Test on_analysis_success returns correct updates.
+        """
+
+class TestExtractionHandler:
+    """
+    Tests for ExtractionHandler class.
+    """
+    @pytest.fixture
+    def mock_app_ui(self, mock_config, mock_logger, mock_thumbnail_manager, mock_model_registry):
+        """
+        Create a mock AppUI instance.
+        """
+    @pytest.fixture
+    def handler(self, mock_app_ui, mock_config, mock_logger, mock_thumbnail_manager, mock_model_registry):
+        """
+        Create an ExtractionHandler instance.
+        """
+    def test_init(self, handler, mock_app_ui, mock_config):
+        """
+        Test ExtractionHandler initialization.
+        """
+    def test_on_extraction_success(self, handler):
+        """
+        Test on_extraction_success returns correct updates.
+        """
+    def test_on_extraction_success_default_values(self, handler):
+        """
+        Test on_extraction_success uses defaults for missing values.
+        """
+
+class TestFilteringHandler:
+    """
+    Tests for FilteringHandler class.
+    """
+    @pytest.fixture
+    def mock_app_ui(self, mock_config, mock_logger, mock_thumbnail_manager):
+        """
+        Create a mock AppUI instance.
+        """
+    @pytest.fixture
+    def handler(self, mock_app_ui, mock_config, mock_logger, mock_thumbnail_manager):
+        """
+        Create a FilteringHandler instance.
+        """
+    def test_init(self, handler, mock_app_ui, mock_config):
+        """
+        Test FilteringHandler initialization.
+        """
+    def test_on_preset_changed_no_filters(self, handler):
+        """
+        Test on_preset_changed with 'No Filters' preset.
+        """
+    def test_on_preset_changed_quality_focus(self, handler):
+        """
+        Test on_preset_changed with 'Quality Focus' preset.
+        """
+    def test_on_preset_changed_face_priority(self, handler):
+        """
+        Test on_preset_changed with 'Face Priority' preset.
+        """
+    def test_on_preset_changed_balanced(self, handler):
+        """
+        Test on_preset_changed with 'Balanced' preset.
+        """
+    def test_on_preset_changed_unknown_preset(self, handler):
+        """
+        Test on_preset_changed with unknown preset uses defaults.
+        """
+    @patch('ui.gallery_utils.on_filters_changed')
+    def test_on_reset_filters(self, mock_on_filters, handler):
+        """
+        Test on_reset_filters resets all sliders.
+        """
+    @patch('ui.gallery_utils.auto_set_thresholds')
+    def test_on_auto_set_thresholds(self, mock_auto_set, handler):
+        """
+        Test on_auto_set_thresholds calls utility correctly.
+        """
 ```
 
 ### `📄 tests/test_integration.py`
@@ -2885,37 +4056,30 @@ class TestImportSmoke:
         """
         Test that all core modules can be imported.
         """
-        ...
     def test_import_ui_modules(self):
         """
         Test that all UI modules can be imported.
         """
-        ...
     def test_import_pil(self):
         """
         Test PIL is available (was missing in pipelines.py).
         """
-        ...
     def test_import_cv2(self):
         """
         Test OpenCV is available.
         """
-        ...
     def test_import_torch(self):
         """
         Test PyTorch is available.
         """
-        ...
     def test_import_gradio(self):
         """
         Test Gradio is available (was missing in pipelines.py).
         """
-        ...
     def test_pipelines_has_all_imports(self):
         """
         Verify pipelines.py has all required imports at module level.
         """
-        ...
 
 class TestGPUIntegration:
     """
@@ -2925,22 +4089,18 @@ class TestGPUIntegration:
         """
         Verify CUDA is available and working.
         """
-        ...
     def test_sam3_import(self):
         """
         Test SAM3 can be imported (requires: pip install -e SAM3_repo).
         """
-        ...
     def test_insightface_import(self):
         """
         Test InsightFace can be imported.
         """
-        ...
     def test_pyiqa_import(self):
         """
         Test PyIQA (NIQE) can be imported.
         """
-        ...
 
 class TestConfigIntegration:
     """
@@ -2950,12 +4110,10 @@ class TestConfigIntegration:
         """
         Test Config loads and creates directories.
         """
-        ...
     def test_config_quality_weights(self):
         """
         Test quality weights are valid.
         """
-        ...
 
 class TestModelLoadingIntegration:
     """
@@ -2965,12 +4123,10 @@ class TestModelLoadingIntegration:
         """
         Test ModelRegistry can be initialized.
         """
-        ...
     def test_thumbnail_manager_initialization(self, tmp_path):
         """
         Test ThumbnailManager can be initialized.
         """
-        ...
 
 class TestPipelineIntegration:
     """
@@ -2980,121 +4136,198 @@ class TestPipelineIntegration:
         """
         Test ExtractionPipeline can be initialized.
         """
-        ...
     def test_analysis_pipeline_init(self, tmp_path):
         """
         Test AnalysisPipeline can be initialized.
         """
-        ...
+```
 
+### `📄 tests/test_integration_sam3_patches.py`
+
+```python
+import pytest
+import numpy as np
+import torch
+import sys
+from unittest.mock import patch, MagicMock
+
+@pytest.fixture(autouse=True)
+def skip_if_mocked(): ...
+
+def test_edt_triton_fallback(): ...
+
+def test_connected_components_fallback(): ...
+
+def test_connected_components_fallback_3d_input(): ...
+
+@pytest.mark.skip(reason='Flaky due to global mocks in conftest.py')
+def test_apply_patches_triton_missing(): ...
+
+def test_apply_patches_triton_present(): ...
+```
+
+### `📄 tests/test_integration_sam3_patches_unit.py`
+
+```python
+import pytest
+import torch
+import numpy as np
+from unittest.mock import MagicMock, patch
+from core.sam3_patches import edt_triton_fallback, connected_components_fallback
+from unittest.mock import MagicMock
+
+class TestSam3Patches:
+    @pytest.fixture(autouse=True)
+    def skip_if_mocked(self): ...
+    def test_edt_triton_fallback_2d_batch(self): ...
+    def test_edt_triton_fallback_all_zeros(self): ...
+    def test_connected_components_fallback_simple(self): ...
+    def test_connected_components_fallback_complex(self): ...
+    def test_connected_components_fallback_3d_input_compat(self): ...
 ```
 
 ### `📄 tests/test_managers.py`
 
 ```python
 import pytest
-from unittest.mock import MagicMock, patch, ANY
-from pathlib import Path
 import numpy as np
-from core.managers import ThumbnailManager, ModelRegistry, VideoManager
-from PIL import Image
+import threading
+import torch
+import yt_dlp
+from unittest.mock import MagicMock, patch, ANY, call, create_autospec
+from pathlib import Path
+from core.managers import ThumbnailManager, ModelRegistry, VideoManager, get_face_landmarker, get_face_analyzer, initialize_analysis_models
 
-class TestThumbnailManager:
+class TestManagers:
     @pytest.fixture
-    def manager(self, mock_logger, mock_config, tmp_path):
-        ...
-    @patch('PIL.Image.open')
-    def test_get_existing(self, mock_open_img, manager, tmp_path):
-        ...
-    def test_get_missing(self, manager, tmp_path):
-        ...
-    def test_clear_cache(self, manager):
-        ...
-    @patch('PIL.Image.open')
-    def test_cleanup_old_entries(self, mock_open_img, manager, tmp_path):
-        ...
-
-class TestModelRegistry:
+    def mock_logger(self): ...
     @pytest.fixture
-    def registry(self, mock_logger):
-        ...
-    def test_get_or_load(self, registry):
-        ...
-    def test_clear(self, registry):
-        ...
-
-class TestVideoManager:
+    def mock_config(self): ...
+    def test_thumbnail_manager_init(self, mock_logger, mock_config): ...
+    @patch('core.managers.Image.open')
+    @patch('pathlib.Path.exists', return_value=True)
+    def test_thumbnail_manager_get_miss(self, mock_exists, mock_open, mock_logger, mock_config): ...
+    def test_thumbnail_manager_get_hit(self, mock_logger, mock_config): ...
+    @patch('pathlib.Path.exists', return_value=False)
+    def test_thumbnail_manager_get_not_exist(self, mock_exists, mock_logger, mock_config): ...
+    def test_thumbnail_manager_cleanup(self, mock_logger, mock_config): ...
+    def test_thumbnail_manager_eviction(self, mock_logger, mock_config): ...
+    def test_model_registry_get_or_load(self, mock_logger): ...
+    def test_model_registry_get_or_load_error(self, mock_logger): ...
+    def test_model_registry_clear(self, mock_logger): ...
+    @patch('core.managers.download_model')
+    @patch('core.managers.SAM3Wrapper')
+    @patch('torch.cuda.is_available', return_value=True)
+    def test_get_tracker_success(self, mock_cuda, mock_wrapper, mock_download, mock_logger, mock_config): ...
+    @patch('core.managers.SAM3Wrapper')
+    @patch('torch.cuda.is_available', return_value=True)
+    def test_get_tracker_oom_fallback(self, mock_cuda, mock_wrapper, mock_logger, mock_config): ...
+    def test_video_manager_prepare_local(self, mock_config): ...
+    @patch('core.managers.ytdlp.YoutubeDL')
+    def test_video_manager_prepare_youtube(self, mock_ytdl, mock_config, mock_logger): ...
+    def test_video_manager_invalid_inputs(self, mock_config, mock_logger): ...
+    @patch('core.managers.ytdlp')
+    def test_video_manager_youtube_error(self, mock_ytdlp_module, mock_config, mock_logger): ...
     @patch('cv2.VideoCapture')
-    def test_get_video_info(self, mock_cap_cls):
-        ...
-    @patch('cv2.VideoCapture')
-    def test_get_video_info_fail(self, mock_cap_cls):
-        ...
-    @patch('core.managers.validate_video_file')
-    def test_prepare_video(self, mock_validate, mock_config):
-        ...
-
+    def test_get_video_info(self, mock_cap): ...
+    @patch('core.managers.vision.FaceLandmarker')
+    @patch('core.managers.python.BaseOptions')
+    @patch('core.managers.vision.FaceLandmarkerOptions')
+    def test_get_face_landmarker(self, mock_opts, mock_base, mock_cls, mock_logger): ...
+    @patch('core.managers.get_face_analyzer')
+    @patch('core.managers.download_model')
+    @patch('pathlib.Path.exists', return_value=True)
+    @patch('pathlib.Path.is_file', return_value=True)
+    @patch('cv2.imread', return_value=np.zeros((100, 100, 3)))
+    def test_initialize_analysis_models(self, mock_imread, mock_isfile, mock_exists, mock_download, mock_get_analyzer, mock_config, mock_logger): ...
+    @patch('insightface.app.FaceAnalysis')
+    def test_get_face_analyzer_retry_logic(self, mock_face_analysis_cls, mock_logger): ...
+    @patch('core.managers.Image.open')
+    @patch('pathlib.Path.exists', return_value=True)
+    def test_thumbnail_manager_corrupt_file(self, mock_exists, mock_open, mock_logger, mock_config): ...
 ```
 
 ### `📄 tests/test_pipelines.py`
 
 ```python
-"""
-Tests for pipeline functionality - extraction, analysis, and session loading.
-
-Uses fixtures from conftest.py for mock setup.
-"""
-
 import pytest
-from unittest.mock import MagicMock, patch
+import threading
+import torch
+import numpy as np
+from unittest.mock import MagicMock, patch, ANY, call, mock_open
 from pathlib import Path
 from queue import Queue
-import threading
-from core.config import Config
-from core.models import AnalysisParameters, Scene
-from core.pipelines import ExtractionPipeline, AnalysisPipeline, run_ffmpeg_extraction
+from core.pipelines import run_ffmpeg_extraction, ExtractionPipeline, AnalysisPipeline, execute_extraction, execute_pre_analysis, execute_session_load, _process_ffmpeg_stream, _process_ffmpeg_showinfo
+from core.models import AnalysisParameters, Scene, Frame
+from core.events import ExtractionEvent
 
-class TestExtractionPipeline:
-    @patch('core.pipelines.run_ffmpeg_extraction')
-    @patch('core.pipelines.VideoManager')
-    def test_extraction_video_success(self, mock_vm_cls, mock_ffmpeg, mock_config_simple, mock_logger, mock_params, mock_progress_queue, mock_cancel_event):
-        ...
-    @patch('core.pipelines.run_ffmpeg_extraction')
-    @patch('core.pipelines.VideoManager')
-    def test_extraction_video_cancel(self, mock_vm_cls, mock_ffmpeg, mock_config_simple, mock_logger, mock_params, mock_progress_queue, mock_cancel_event):
-        ...
-    @patch('core.utils.is_image_folder', return_value=True)
-    @patch('core.utils.list_images')
-    @patch('core.pipelines.make_photo_thumbs')
-    def test_extraction_folder(self, mock_thumbs, mock_list_imgs, mock_is_folder, mock_config_simple, mock_logger, mock_params, mock_progress_queue, mock_cancel_event):
-        ...
+class TestPipelines:
+    @pytest.fixture
+    def mock_logger(self): ...
+    @pytest.fixture
+    def mock_config(self, tmp_path): ...
+    @pytest.fixture
+    def mock_params(self, tmp_path): ...
+    @pytest.fixture
+    def mock_queue(self): ...
+    @pytest.fixture
+    def mock_cancel_event(self): ...
+    def test_process_ffmpeg_stream(self): ...
+    def test_process_ffmpeg_showinfo(self): ...
     @patch('subprocess.Popen')
-    def test_run_ffmpeg_extraction(self, mock_popen, mock_config_simple, mock_logger, mock_params, mock_progress_queue, mock_cancel_event, tmp_path):
-        ...
-
-class TestAnalysisPipeline:
+    def test_run_ffmpeg_extraction(self, mock_popen, mock_params, mock_queue, mock_cancel_event, mock_logger, mock_config, tmp_path): ...
+    @patch('core.pipelines.run_ffmpeg_extraction')
+    @patch('core.managers.VideoManager')
+    def test_extraction_pipeline_run_video(self, mock_vm_cls, mock_ffmpeg, mock_params, mock_queue, mock_cancel_event, mock_logger, mock_config): ...
+    @patch('core.pipelines.make_photo_thumbs')
+    def test_extraction_pipeline_run_folder(self, mock_make_thumbs, mock_params, mock_queue, mock_cancel_event, mock_logger, mock_config): ...
     @patch('core.pipelines.SubjectMasker')
     @patch('core.pipelines.initialize_analysis_models')
-    @patch('core.pipelines.Database')
-    def test_run_full_analysis_success(self, mock_db_cls, mock_init_models, mock_masker_cls, mock_config_simple, mock_logger, mock_params, mock_progress_queue, mock_cancel_event, mock_thumbnail_manager, mock_model_registry):
-        ...
+    @patch('core.pipelines.create_frame_map')
+    def test_run_full_analysis(self, mock_frame_map, mock_init_models, mock_masker_cls, mock_params, mock_queue, mock_cancel_event, mock_logger, mock_config, tmp_path): ...
+    @patch('core.pipelines.create_frame_map')
+    @patch('core.pipelines.initialize_analysis_models')
+    def test_run_analysis_only(self, mock_init, mock_frame_map, mock_params, mock_queue, mock_cancel_event, mock_logger, mock_config, tmp_path): ...
+    @patch('core.pipelines.ExtractionPipeline')
+    @patch('core.pipelines.shutil.copy2')
+    def test_execute_extraction(self, mock_copy, mock_pipeline_cls, mock_logger, mock_config): ...
+    def test_validate_session_dir(self, tmp_path): ...
+    def test_execute_session_load_invalid(self, mock_logger): ...
+    def test_execute_session_load_valid(self, mock_logger, tmp_path): ...
+```
+
+### `📄 tests/test_pipelines_extended.py`
+
+```python
+import pytest
+import numpy as np
+import torch
+from pathlib import Path
+from unittest.mock import MagicMock, patch, ANY, call
+from core.pipelines import AnalysisPipeline, ExtractionPipeline
+from core.models import AnalysisParameters, Scene
+from core.events import ExtractionEvent
+from core.database import Database
+
+class TestPipelinesExtended:
+    @pytest.fixture
+    def mock_logger(self): ...
+    @pytest.fixture
+    def mock_config(self): ...
+    @pytest.fixture
+    def mock_db(self): ...
+    @pytest.fixture
+    def mock_params(self, tmp_path): ...
+    @pytest.fixture
+    def mock_thumbnail_manager(self): ...
+    @pytest.fixture
+    def pipeline(self, mock_params, mock_logger, mock_config, mock_db, mock_thumbnail_manager): ...
+    @patch('core.pipelines.initialize_analysis_models')
     @patch('core.pipelines.SubjectMasker')
+    def test_run_full_analysis_propagation(self, mock_masker_cls, mock_init_models, pipeline, mock_params): ...
     @patch('core.pipelines.initialize_analysis_models')
-    def test_run_full_analysis_cancel(self, mock_init_models, mock_masker_cls, mock_config_simple, mock_logger, mock_params, mock_progress_queue, mock_cancel_event, mock_thumbnail_manager, mock_model_registry):
-        ...
-    @patch('core.pipelines.initialize_analysis_models')
-    @patch('core.pipelines.Database')
-    def test_run_analysis_only(self, mock_db_cls, mock_init_models, mock_config_simple, mock_logger, mock_params, mock_progress_queue, mock_cancel_event, mock_thumbnail_manager, mock_model_registry):
-        ...
-
-class TestSessionLoad:
-    @patch('core.pipelines.validate_session_dir')
-    def test_execute_session_load_success(self, mock_validate, mock_logger, tmp_path):
-        ...
-    @patch('core.pipelines.validate_session_dir')
-    def test_execute_session_load_fail_validate(self, mock_validate, mock_logger):
-        ...
-
+    def test_run_analysis_only(self, mock_init_models, pipeline, mock_params): ...
+    def test_cancellation_in_propagation(self, pipeline, mock_params): ...
 ```
 
 ### `📄 tests/test_progress.py`
@@ -3105,9 +4338,134 @@ from unittest.mock import MagicMock
 from queue import Queue
 from core.progress import AdvancedProgressTracker
 
-def test_progress_tracker():
-    ...
+def test_progress_tracker(): ...
+```
 
+### `📄 tests/test_scene_detection.py`
+
+```python
+"""
+Tests for scene_utils modules (detection, helpers).
+
+These tests verify scene detection and helper functions work correctly.
+"""
+
+import pytest
+from unittest.mock import MagicMock, patch, mock_open
+from pathlib import Path
+import numpy as np
+import json
+
+class TestSceneDetection:
+    """
+    Tests for scene_utils/detection.py.
+    """
+    @patch('core.scene_utils.detection.detect')
+    def test_run_scene_detection_success(self, mock_detect, mock_logger, tmp_path):
+        """
+        Test run_scene_detection returns scene list.
+        """
+    @patch('core.scene_utils.detection.detect')
+    def test_run_scene_detection_empty(self, mock_detect, mock_logger, tmp_path):
+        """
+        Test run_scene_detection with no scenes detected.
+        """
+    @patch('core.scene_utils.detection.detect')
+    def test_run_scene_detection_exception(self, mock_detect, mock_logger, tmp_path):
+        """
+        Test run_scene_detection handles exceptions gracefully.
+        """
+    @patch('cv2.imread')
+    @patch('cv2.resize')
+    @patch('cv2.cvtColor')
+    def test_make_photo_thumbs(self, mock_cvtcolor, mock_resize, mock_imread, mock_logger, mock_config_simple, tmp_path):
+        """
+        Test make_photo_thumbs generates thumbnails.
+        """
+    @patch('cv2.imread')
+    def test_make_photo_thumbs_unreadable_image(self, mock_imread, mock_logger, mock_config_simple, tmp_path):
+        """
+        Test make_photo_thumbs handles unreadable images.
+        """
+
+class TestSceneHelpers:
+    """
+    Tests for scene_utils/helpers.py.
+    """
+    def test_draw_boxes_preview(self, mock_config_simple):
+        """
+        Test draw_boxes_preview draws bounding boxes.
+        """
+    def test_draw_boxes_preview_empty_boxes(self, mock_config_simple):
+        """
+        Test draw_boxes_preview with no boxes.
+        """
+    def test_save_scene_seeds(self, mock_logger, tmp_path, sample_scenes):
+        """
+        Test save_scene_seeds writes JSON file.
+        """
+    def test_get_scene_status_text_empty(self):
+        """
+        Test get_scene_status_text with empty list.
+        """
+    def test_get_scene_status_text_with_scenes(self, sample_scenes):
+        """
+        Test get_scene_status_text with scenes.
+        """
+    def test_toggle_scene_status_include(self, mock_logger, tmp_path, sample_scenes):
+        """
+        Test toggle_scene_status includes a scene.
+        """
+    def test_toggle_scene_status_exclude(self, mock_logger, tmp_path, sample_scenes):
+        """
+        Test toggle_scene_status excludes a scene.
+        """
+    def test_toggle_scene_status_invalid_id(self, mock_logger, tmp_path, sample_scenes):
+        """
+        Test toggle_scene_status with invalid shot_id.
+        """
+
+class TestManagersThumbnailManager:
+    """
+    Tests for ThumbnailManager in managers.py.
+    """
+    def test_thumbnail_manager_init(self, mock_logger, mock_config):
+        """
+        Test ThumbnailManager initialization.
+        """
+    def test_thumbnail_manager_get_from_cache(self, mock_logger, mock_config, tmp_path):
+        """
+        Test ThumbnailManager returns cached thumbnail.
+        """
+    def test_thumbnail_manager_get_missing_file(self, mock_logger, mock_config):
+        """
+        Test ThumbnailManager handles missing file.
+        """
+    def test_thumbnail_manager_clear_cache(self, mock_logger, mock_config, tmp_path):
+        """
+        Test ThumbnailManager cache clearing.
+        """
+
+class TestModelRegistry:
+    """
+    Tests for ModelRegistry in managers.py.
+    """
+    def test_model_registry_init(self, mock_logger):
+        """
+        Test ModelRegistry initialization.
+        """
+    def test_model_registry_get_or_load_new(self, mock_logger):
+        """
+        Test ModelRegistry loads new model.
+        """
+    def test_model_registry_get_or_load_cached(self, mock_logger):
+        """
+        Test ModelRegistry returns cached model.
+        """
+    def test_model_registry_clear(self, mock_logger):
+        """
+        Test ModelRegistry clear removes all models.
+        """
 ```
 
 ### `📄 tests/test_scene_utils.py`
@@ -3120,31 +4478,103 @@ Uses fixtures from conftest.py for mock setup.
 """
 
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, ANY
 from pathlib import Path
 from queue import Queue
 import threading
 import numpy as np
+import cv2
 from core.config import Config
 from core.models import AnalysisParameters, Scene
 from core.scene_utils import SeedSelector, MaskPropagator, SubjectMasker, run_scene_detection
 
+def create_tensor_mock(shape=(100, 100), val=1.0): ...
+
 class TestSeedSelector:
-    def test_select_seed_largest_person(self, mock_config_simple, mock_logger, mock_params):
-        ...
-    def test_select_seed_text_prompt(self, mock_config_simple, mock_logger, mock_params):
-        ...
+    @pytest.fixture
+    def selector(self, mock_config_simple, mock_logger, mock_params): ...
+    def test_select_seed_strategies(self, selector): ...
+    def test_identity_first_seed(self, selector): ...
+    def test_face_with_text_fallback_seed_success(self, selector): ...
+    def test_face_with_text_fallback_seed_fallback(self, selector): ...
+    @patch('core.scene_utils.seed_selector.postprocess_mask')
+    def test_sam2_mask_for_bbox_success(self, mock_post, selector, tmp_path): ...
+    def test_sam2_mask_for_bbox_error(self, selector): ...
 
 class TestMaskPropagator:
     @patch('core.scene_utils.mask_propagator.postprocess_mask', side_effect=lambda x, **k: x)
-    def test_propagate_success(self, mock_post, mock_config_simple, mock_logger, mock_params):
-        ...
+    def test_propagate_success(self, mock_post, mock_config_simple, mock_logger, mock_params): ...
+    def test_propagate_cancel(self, mock_config_simple, mock_logger, mock_params): ...
 
 class TestSubjectMasker:
     @patch('core.scene_utils.subject_masker.create_frame_map', return_value={0: 'frame_0.png'})
-    def test_run_propagation(self, mock_create_map, mock_config_simple, mock_logger, mock_params, tmp_path):
-        ...
+    def test_run_propagation(self, mock_create_map, mock_config_simple, mock_logger, mock_params, tmp_path): ...
+    def test_load_shot_frames(self, mock_config_simple, mock_logger, mock_params, tmp_path): ...
+```
 
+### `📄 tests/test_scene_utils_helpers.py`
+
+```python
+import pytest
+import numpy as np
+import cv2
+import json
+from unittest.mock import MagicMock, patch, ANY
+from pathlib import Path
+from core.scene_utils.helpers import draw_boxes_preview, save_scene_seeds, get_scene_status_text, toggle_scene_status, _create_analysis_context, _recompute_single_preview, _wire_recompute_handler
+from core.models import Scene, AnalysisParameters
+
+class TestSceneUtilsHelpers:
+    @pytest.fixture
+    def mock_scene(self): ...
+    @pytest.fixture
+    def mock_logger(self): ...
+    @pytest.fixture
+    def mock_config(self): ...
+    def test_draw_boxes_preview(self, mock_config): ...
+    def test_save_scene_seeds(self, mock_scene, mock_logger, tmp_path): ...
+    def test_save_scene_seeds_empty(self, mock_logger): ...
+    def test_save_scene_seeds_error(self, mock_scene, mock_logger): ...
+    def test_get_scene_status_text(self, mock_scene): ...
+    def test_get_scene_status_text_empty(self): ...
+    def test_get_scene_status_text_rejected(self): ...
+    def test_toggle_scene_status(self, mock_scene, mock_logger, tmp_path): ...
+    def test_toggle_scene_status_not_found(self, mock_scene, mock_logger, tmp_path): ...
+    @patch('core.scene_utils.helpers.initialize_analysis_models')
+    @patch('core.scene_utils.helpers.create_frame_map')
+    def test_create_analysis_context(self, mock_create_frame_map, mock_init_models, mock_config, mock_logger): ...
+    @patch('core.scene_utils.helpers.render_mask_overlay')
+    @patch('PIL.Image.fromarray')
+    def test_recompute_single_preview(self, mock_pil_fromarray, mock_render, mock_scene, mock_logger, mock_config): ...
+    @patch('core.scene_utils.helpers._create_analysis_context')
+    @patch('core.scene_utils.helpers._recompute_single_preview')
+    @patch('core.scene_utils.helpers.save_scene_seeds')
+    @patch('core.scene_utils.helpers.build_scene_gallery_items')
+    def test_wire_recompute_handler(self, mock_build_gallery, mock_save, mock_recompute, mock_create_context, mock_config, mock_logger, mock_scene): ...
+    def test_wire_recompute_handler_no_prompt(self, mock_logger): ...
+```
+
+### `📄 tests/test_shared.py`
+
+```python
+"""
+Tests for shared utilities in core/shared.py.
+"""
+
+import pytest
+from unittest.mock import MagicMock, patch, ANY
+import numpy as np
+import cv2
+from pathlib import Path
+from core.models import Scene
+from core.shared import scene_matches_view, create_scene_thumbnail_with_badge, scene_caption, build_scene_gallery_items
+
+class TestSharedUtils:
+    def test_scene_matches_view(self): ...
+    def test_create_scene_thumbnail_with_badge(self): ...
+    def test_scene_caption(self): ...
+    @patch('cv2.imread')
+    def test_build_scene_gallery_items(self, mock_imread, tmp_path): ...
 ```
 
 ### `📄 tests/test_signatures.py`
@@ -3172,40 +4602,31 @@ class TestPipelineSignatures:
         """
         execute_extraction should return a generator when called.
         """
-        ...
     def test_execute_pre_analysis_returns_generator(self):
         """
         execute_pre_analysis should return a generator when called.
         """
-        ...
     def test_execute_propagation_is_generator(self):
         """
         execute_propagation should be a generator function.
         """
-        ...
     def test_execute_analysis_returns_generator(self):
         """
         execute_analysis should return a generator when called.
         """
-        ...
     def test_execute_session_load_returns_dict(self):
         """
         execute_session_load returns dict, not generator.
         """
-        ...
 
 class TestEventModels:
     """
     Verify event models have required fields.
     """
-    def test_pre_analysis_event_has_required_fields(self):
-        ...
-    def test_extraction_event_exists(self):
-        ...
-    def test_propagation_event_exists(self):
-        ...
-    def test_export_event_exists(self):
-        ...
+    def test_pre_analysis_event_has_required_fields(self): ...
+    def test_extraction_event_exists(self): ...
+    def test_propagation_event_exists(self): ...
+    def test_export_event_exists(self): ...
 
 class TestModelClasses:
     """
@@ -3215,23 +4636,16 @@ class TestModelClasses:
         """
         AnalysisParameters should have from_ui factory method.
         """
-        ...
-    def test_scene_has_required_fields(self):
-        ...
-    def test_frame_has_metrics(self):
-        ...
+    def test_scene_has_required_fields(self): ...
+    def test_frame_has_metrics(self): ...
 
 class TestManagerClasses:
     """
     Verify manager classes have correct interface.
     """
-    def test_model_registry_has_get_or_load(self):
-        ...
-    def test_thumbnail_manager_has_get(self):
-        ...
-    def test_video_manager_has_get_video_info(self):
-        ...
-
+    def test_model_registry_has_get_or_load(self): ...
+    def test_thumbnail_manager_has_get(self): ...
+    def test_video_manager_has_get_video_info(self): ...
 ```
 
 ### `📄 tests/test_smoke.py`
@@ -3253,38 +4667,22 @@ class TestImportSmoke:
     """
     Verify all modules import correctly without mocks.
     """
-    def test_import_core_config(self):
-        ...
-    def test_import_core_database(self):
-        ...
-    def test_import_core_events(self):
-        ...
-    def test_import_core_export(self):
-        ...
-    def test_import_core_filtering(self):
-        ...
-    def test_import_core_logger(self):
-        ...
-    def test_import_core_models(self):
-        ...
-    def test_import_core_pipelines(self):
-        ...
-    def test_import_core_managers(self):
-        ...
-    def test_import_core_utils(self):
-        ...
-    def test_import_core_error_handling(self):
-        ...
-    def test_import_core_progress(self):
-        ...
-    def test_import_core_batch_manager(self):
-        ...
-    def test_import_core_scene_utils(self):
-        ...
-    def test_import_ui_app_ui(self):
-        ...
-    def test_import_ui_gallery_utils(self):
-        ...
+    def test_import_core_config(self): ...
+    def test_import_core_database(self): ...
+    def test_import_core_events(self): ...
+    def test_import_core_export(self): ...
+    def test_import_core_filtering(self): ...
+    def test_import_core_logger(self): ...
+    def test_import_core_models(self): ...
+    def test_import_core_pipelines(self): ...
+    def test_import_core_managers(self): ...
+    def test_import_core_utils(self): ...
+    def test_import_core_error_handling(self): ...
+    def test_import_core_progress(self): ...
+    def test_import_core_batch_manager(self): ...
+    def test_import_core_scene_utils(self): ...
+    def test_import_ui_app_ui(self): ...
+    def test_import_ui_gallery_utils(self): ...
 
 class TestCriticalSymbols:
     """
@@ -3294,34 +4692,23 @@ class TestCriticalSymbols:
         """
         PIL.Image was missing - caused NameError.
         """
-        ...
     def test_pipelines_has_gradio(self):
         """
         gradio was missing - caused NameError.
         """
-        ...
-    def test_pipelines_has_torch(self):
-        ...
-    def test_pipelines_has_json(self):
-        ...
-    def test_export_has_subprocess(self):
-        ...
+    def test_pipelines_has_torch(self): ...
+    def test_pipelines_has_json(self): ...
+    def test_export_has_subprocess(self): ...
 
 class TestDependencyImports:
     """
     Verify external dependencies are available.
     """
-    def test_pil_available(self):
-        ...
-    def test_cv2_available(self):
-        ...
-    def test_numpy_available(self):
-        ...
-    def test_gradio_available(self):
-        ...
-    def test_pydantic_available(self):
-        ...
-
+    def test_pil_available(self): ...
+    def test_cv2_available(self): ...
+    def test_numpy_available(self): ...
+    def test_gradio_available(self): ...
+    def test_pydantic_available(self): ...
 ```
 
 ### `📄 tests/test_ui_unit.py`
@@ -3335,24 +4722,244 @@ from core.events import ExtractionEvent
 from core.pipelines import execute_extraction
 
 @pytest.fixture
-def app_ui(mock_config, mock_logger, mock_progress_queue, mock_cancel_event, mock_thumbnail_manager, mock_model_registry):
-    ...
+def app_ui(mock_config, mock_logger, mock_progress_queue, mock_cancel_event, mock_thumbnail_manager, mock_model_registry): ...
 
-def test_stepper_html(app_ui):
-    ...
+def test_stepper_html(app_ui): ...
 
-def test_run_extraction_wrapper(app_ui):
-    ...
+def test_run_extraction_wrapper(app_ui): ...
 
-def test_fix_strategy_visibility_face_ref(app_ui):
-    ...
+def test_fix_strategy_visibility_face_ref(app_ui): ...
 
-def test_fix_strategy_visibility_text(app_ui):
-    ...
+def test_fix_strategy_visibility_text(app_ui): ...
 
-def test_get_metric_description(app_ui):
-    ...
+def test_get_metric_description(app_ui): ...
 
+class TestMinConfidenceFilter:
+    """
+    Tests for the Min Confidence filter fix (Issue #1).
+    """
+    def test_scene_without_score_is_filtered_when_threshold_positive(self, app_ui):
+        """
+        Scenes without score should be filtered when min_confidence > 0.
+
+        This tests the fix where score defaults to 0 instead of 100.
+        """
+    def test_scene_with_high_score_is_kept(self, app_ui):
+        """
+        Scenes with score >= threshold should be kept.
+        """
+    def test_manual_override_not_affected_by_filters(self, app_ui):
+        """
+        Scenes with manual_status_change should not be auto-filtered.
+        """
+
+class TestTextStrategyWarning:
+    """
+    Tests for TEXT strategy warning label (Issue #3).
+    """
+    def test_text_strategy_has_warning_in_choices(self, app_ui):
+        """
+        TEXT strategy choice should include warning indicator.
+        """
+```
+
+### `📄 tests/test_utils.py`
+
+```python
+"""
+Tests for core utility functions.
+
+Covers utilities in core/utils.py including:
+- Video validation
+- Filename sanitization
+- Image/mask processing
+- JSON serialization
+
+Note: Some tests require integration mode (no mocks) due to numba/opencv dependencies.
+"""
+
+import pytest
+import numpy as np
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+import json
+from core.utils import validate_video_file, sanitize_filename, is_image_folder, list_images, create_frame_map, postprocess_mask, render_mask_overlay, rgb_to_pil, draw_bbox, _to_json_safe
+
+pytestmark = pytest.mark.unit
+class TestValidateVideoFile:
+    """
+    Tests for validate_video_file function.
+    """
+    def test_nonexistent_file_raises(self):
+        """
+        Test validation raises FileNotFoundError for non-existent file.
+        """
+    def test_empty_file_raises(self, tmp_path):
+        """
+        Test validation raises ValueError for empty file.
+        """
+    @pytest.mark.integration
+    def test_valid_video_file(self, tmp_path):
+        """
+        Test validation of a valid video file (requires OpenCV).
+        """
+
+class TestSanitizeFilename:
+    """
+    Tests for sanitize_filename function.
+    """
+    def test_basic_sanitization(self, mock_config):
+        """
+        Test basic filename sanitization.
+        """
+    def test_special_characters(self, mock_config):
+        """
+        Test removal of special characters.
+        """
+    def test_max_length(self, mock_config):
+        """
+        Test filename truncation at max length.
+        """
+    def test_empty_string(self, mock_config):
+        """
+        Test sanitization of empty string.
+        """
+
+class TestIsImageFolder:
+    """
+    Tests for is_image_folder function.
+    """
+    def test_valid_directory(self, tmp_path):
+        """
+        Test detection of valid directory.
+        """
+    def test_file_not_folder(self, tmp_path):
+        """
+        Test returns False for file.
+        """
+    def test_nonexistent_path(self):
+        """
+        Test returns False for non-existent path.
+        """
+    def test_string_path(self, tmp_path):
+        """
+        Test works with string path.
+        """
+
+class TestListImages:
+    """
+    Tests for list_images function.
+    """
+    def test_lists_image_files(self, tmp_path, mock_config):
+        """
+        Test listing of image files in directory.
+        """
+    def test_empty_directory(self, tmp_path, mock_config):
+        """
+        Test returns empty list for empty directory.
+        """
+
+class TestCreateFrameMap:
+    """
+    Tests for create_frame_map function.
+    """
+    def test_creates_frame_map(self, tmp_path, mock_logger):
+        """
+        Test frame map creation from directory.
+        """
+    def test_empty_thumbs_directory(self, tmp_path, mock_logger):
+        """
+        Test returns empty dict for empty thumbs directory.
+        """
+
+class TestPostprocessMask:
+    """
+    Tests for postprocess_mask function.
+    """
+    def test_basic_mask_processing(self, mock_config):
+        """
+        Test basic mask postprocessing.
+        """
+    def test_empty_mask(self, mock_config):
+        """
+        Test processing of empty mask.
+        """
+    def test_full_mask(self, mock_config):
+        """
+        Test processing of full mask.
+        """
+
+class TestRenderMaskOverlay:
+    """
+    Tests for render_mask_overlay function.
+    """
+    def test_basic_overlay(self, mock_logger):
+        """
+        Test basic mask overlay on image.
+        """
+    def test_empty_mask_overlay(self, mock_logger):
+        """
+        Test overlay with empty mask doesn't crash.
+        """
+
+class TestRgbToPil:
+    """
+    Tests for rgb_to_pil function.
+    """
+    def test_basic_conversion(self):
+        """
+        Test basic RGB to PIL conversion.
+        """
+    def test_grayscale_raises(self):
+        """
+        Test that 2D array handling.
+        """
+
+class TestDrawBbox:
+    """
+    Tests for draw_bbox function.
+    """
+    def test_basic_bbox(self, mock_config):
+        """
+        Test basic bounding box drawing.
+        """
+    def test_bbox_with_label(self, mock_config):
+        """
+        Test bounding box with label.
+        """
+    def test_bbox_with_color(self, mock_config):
+        """
+        Test bounding box with custom color.
+        """
+
+class TestToJsonSafe:
+    """
+    Tests for _to_json_safe function.
+    """
+    def test_numpy_int(self):
+        """
+        Test conversion of numpy int.
+        """
+    def test_numpy_float(self):
+        """
+        Test conversion of numpy float.
+        """
+    def test_numpy_array(self):
+        """
+        Test conversion of numpy array.
+        """
+    def test_path_conversion(self):
+        """
+        Test conversion of Path objects.
+        """
+    def test_plain_dict(self):
+        """
+        Test plain dict passes through.
+        """
+    def test_nested_structures(self):
+        """
+        Test conversion of nested structures.
+        """
 ```
 
 ### `📄 ui/app_ui.py`
@@ -3404,12 +5011,10 @@ class AppUI:
         thumbnail_manager: Manager for thumbnail caching.
         model_registry: Registry for ML models.
         """
-        ...
     def preload_models(self):
         """
         Asynchronously preloads heavy models (SAM3) in a background thread.
         """
-        ...
     def _get_stepper_html(self, current_step: int=0) -> str:
         """
         Generates the HTML for the workflow progress stepper.
@@ -3420,7 +5025,6 @@ class AppUI:
         Returns:
         HTML string for the stepper component.
         """
-        ...
     def build_ui(self) -> gr.Blocks:
         """
         Constructs the entire Gradio UI layout.
@@ -3428,17 +5032,14 @@ class AppUI:
         Returns:
         The Gradio Blocks instance containing the application UI.
         """
-        ...
     def _get_comp(self, name: str) -> Optional[gr.components.Component]:
         """
         Retrieves a component by name from the internal registry.
         """
-        ...
     def _reg(self, key: str, component: gr.components.Component) -> gr.components.Component:
         """
         Registers a component for later retrieval by UI mapping key.
         """
-        ...
     def _create_component(self, name: str, comp_type: str, kwargs: dict) -> gr.components.Component:
         """
         Helper to create and register a Gradio component.
@@ -3451,77 +5052,62 @@ class AppUI:
         Returns:
         The created Gradio component.
         """
-        ...
     def _build_header(self):
         """
         Builds the UI header section with title and status indicators.
         """
-        ...
     def _build_main_tabs(self):
         """
         Constructs the main tabbed interface.
         """
-        ...
     def _build_footer(self):
         """
         Builds the footer with status bar, logs, and help section.
         """
-        ...
     def _create_extraction_tab(self):
         """
         Creates the content for the 'Source' tab.
         """
-        ...
     def _create_define_subject_tab(self):
         """
         Creates the content for the 'Subject' tab.
         """
-        ...
     def _create_scene_selection_tab(self):
         """
         Creates the content for the 'Scenes' tab.
         """
-        ...
     def _create_metrics_tab(self):
         """
         Creates the content for the 'Metrics' tab.
         """
-        ...
     def _create_filtering_tab(self):
         """
         Creates the content for the 'Export' tab.
         """
-        ...
     def get_all_filter_keys(self) -> list[str]:
         """
         Returns a list of all available filter metric keys.
         """
-        ...
     def get_metric_description(self, metric_name: str) -> str:
         """
         Returns a user-friendly description for a given metric.
         """
-        ...
     def _create_event_handlers(self):
         """
         Sets up all global event listeners and state management.
         """
-        ...
     def update_stepper(self, evt: gr.SelectData):
         """
         Updates the stepper HTML when a tab is selected.
         """
-        ...
     def _push_history(self, scenes: List[Dict], history: Deque) -> Deque:
         """
         Pushes the current scene state to the history stack for undo support.
         """
-        ...
     def _undo_last_action(self, scenes: List[Dict], history: Deque, output_dir: str, view: str) -> tuple:
         """
         Reverts the last action by popping from the history stack.
         """
-        ...
     def _run_task_with_progress(self, task_func: Callable, output_components: list, progress: Callable, *args) -> Generator[dict, None, None]:
         """
         Executes a background task while streaming progress updates to the UI.
@@ -3535,43 +5121,34 @@ class AppUI:
         Yields:
         Dictionary of UI updates.
         """
-        ...
     def _setup_bulk_scene_handlers(self):
         """
         Configures event handlers for the scene selection tab (pagination, bulk actions).
         """
-        ...
     def on_reset_scene_wrapper(self, scenes, shot_id, outdir, view, history, *ana_args):
         """
         Resets a scene's manual overrides to its initial state.
         """
-        ...
-    def on_select_for_edit(self, scenes, view, indexmap, outputdir, event: Optional[gr.EventData]=None):
     def on_select_for_edit(self, scenes, view, indexmap, outputdir, event: Optional[gr.EventData]=None):
         """
         Handles selection of a scene from the gallery for editing.
         """
-        ...
     def on_editor_toggle(self, scenes, selected_shotid, outputfolder, view, new_status, history):
         """
         Toggles the included/excluded status of a scene.
         """
-        ...
     def _toggle_pause(self, tracker: 'AdvancedProgressTracker') -> str:
         """
         Toggles the pause state of the current running task.
         """
-        ...
     def run_system_diagnostics(self) -> Generator[str, None, None]:
         """
         Runs a comprehensive suite of system checks and a dry run.
         """
-        ...
     def _create_pre_analysis_event(self, *args: Any) -> 'PreAnalysisEvent':
         """
         Helper to construct a PreAnalysisEvent from UI arguments.
         """
-        ...
     def _run_pipeline(self, pipeline_func: Callable, event: Any, progress: Callable, success_callback: Optional[Callable]=None, *args):
         """
         Generic wrapper to run a pipeline function and handle progress/errors.
@@ -3582,165 +5159,134 @@ class AppUI:
         progress: Gradio progress callback.
         success_callback: Optional callback to run on successful completion.
         """
-        ...
     def run_extraction_wrapper(self, *args, progress=None):
         """
         Wrapper to execute the extraction pipeline.
         """
-        ...
     def add_to_queue_handler(self, *args):
         """
         Adds a job to the batch processing queue.
         """
-        ...
     def clear_queue_handler(self):
         """
         Clears all items from the batch queue.
         """
-        ...
     def _batch_processor(self, item: BatchItem, progress_callback: Callable):
         """
         Callback to process a single item in the batch queue.
         """
-        ...
     def start_batch_wrapper(self, workers: float):
         """
         Starts processing the batch queue with specified number of workers.
         """
-        ...
     def stop_batch_handler(self):
         """
         Stops the batch processing.
         """
-        ...
     def _on_extraction_success(self, result: dict) -> dict:
         """
         Callback for successful extraction.
         """
-        ...
     def _on_pre_analysis_success(self, result: dict) -> dict:
         """
         Callback for successful pre-analysis.
         """
-        ...
     def run_pre_analysis_wrapper(self, *args, progress=None):
         """
         Wrapper to execute the pre-analysis pipeline.
         """
-        ...
     def run_propagation_wrapper(self, scenes, *args, progress=None):
         """
         Wrapper to execute the mask propagation pipeline.
         """
-        ...
     def _on_propagation_success(self, result: dict) -> dict:
         """
         Callback for successful propagation.
         """
-        ...
     def run_analysis_wrapper(self, scenes, *args, progress=None):
         """
         Wrapper to execute the full analysis pipeline.
         """
-        ...
     def _on_analysis_success(self, result: dict) -> dict:
         """
         Callback for successful analysis.
         """
-        ...
     def run_session_load_wrapper(self, session_path: str):
         """
         Loads a previous session and updates the UI state.
         """
-        ...
     def _fix_strategy_visibility(self, strategy: str) -> dict:
         """
         Adjusts UI component visibility based on the selected seed strategy.
         """
-        ...
     def _setup_visibility_toggles(self):
         """
         Configures dynamic visibility logic for UI components.
         """
-        ...
     def get_inputs(self, keys: list[str]) -> list[gr.components.Component]:
         """
         Retrieves a list of UI components based on their registry keys.
         """
-        ...
     def _setup_pipeline_handlers(self):
         """
         Configures event handlers for starting main processing pipelines.
         """
-        ...
     def on_identity_confidence_change(self, confidence: float, all_faces: list) -> gr.update:
         """
         Updates the face discovery gallery based on clustering confidence.
         """
-        ...
     def on_discovered_face_select(self, all_faces: list, confidence: float, *args, evt: gr.EventData=None) -> tuple[str, Optional[np.ndarray]]:
         """
         Handles selection of a face cluster from the discovery gallery.
         """
-        ...
-    def on_find_people_from_video(self, *args) -> tuple[gr.update, list, float, list]:
+    def on_find_people_from_video(self, *args) -> tuple[str, gr.update, gr.update, float, list]:
         """
         Scans the video for faces to populate the discovery gallery.
+
+        Returns: (status_message, group_visibility, gallery_update, slider_value, all_faces_state)
         """
-        ...
-    def on_apply_bulk_scene_filters_extended(self, scenes: list, min_mask_area: float, min_face_sim: float, min_confidence: float, enable_face_filter: bool, output_folder: str, view: str) -> tuple:
+    def on_apply_bulk_scene_filters_extended(self, scenes: list, min_mask_area: float, min_face_sim: float, min_quality_score: float, enable_face_filter: bool, output_folder: str, view: str) -> tuple:
         """
         Applies filters to all scenes and updates their status.
         """
-        ...
     def _get_smart_mode_updates(self, is_enabled: bool) -> list[gr.update]:
         """
         Calculates slider updates when toggling 'Smart Mode'.
         """
-        ...
     def _setup_filtering_handlers(self):
         """
         Configures event handlers for the filtering and export tab.
         """
-        ...
     def on_preset_changed(self, preset_name: str) -> list[Any]:
         """
         Updates filter sliders when a preset is selected.
         """
-        ...
     def on_filters_changed_wrapper(self, all_frames_data: list, per_metric_values: dict, output_dir: str, gallery_view: str, show_overlay: bool, overlay_alpha: float, require_face_match: bool, dedup_thresh: int, dedup_method_ui: str, smart_mode_enabled: bool, *slider_values: float) -> tuple[str, gr.update]:
         """
         Updates the results gallery when filters change.
         
         Handles smart mode percentile conversion if enabled.
         """
-        ...
     def calculate_visual_diff(self, gallery: gr.Gallery, all_frames_data: list, dedup_method_ui: str, dedup_thresh: int, ssim_thresh: float, lpips_thresh: float) -> Optional[np.ndarray]:
         """
         Computes a side-by-side comparison image for duplicate inspection.
         """
-        ...
     def on_reset_filters(self, all_frames_data: list, per_metric_values: dict, output_dir: str) -> tuple:
         """
         Resets all filter settings to their defaults.
         """
-        ...
     def on_auto_set_thresholds(self, per_metric_values: dict, p: int, *checkbox_values: bool) -> list[gr.update]:
         """
         Automatically sets filter thresholds based on data percentiles.
         """
-        ...
     def export_kept_frames_wrapper(self, all_frames_data: list, output_dir: str, video_path: str, enable_crop: bool, crop_ars: str, crop_padding: int, require_face_match: bool, dedup_thresh: int, dedup_method_ui: str, *slider_values: float) -> str:
         """
         Wrapper to execute the final frame export.
         """
-        ...
     def dry_run_export_wrapper(self, all_frames_data: list, output_dir: str, video_path: str, enable_crop: bool, crop_ars: str, crop_padding: int, require_face_match: bool, dedup_thresh: int, dedup_method_ui: str, *slider_values: float) -> str:
         """
         Wrapper to perform a dry run of the export.
         """
-        ...
-
 ```
 
 ### `📄 ui/gallery_utils.py`
@@ -3768,7 +5314,6 @@ def _update_gallery(all_frames_data: list[dict], filters: dict, output_dir: str,
     Returns:
     A tuple containing the status text and a Gradio update object for the gallery.
     """
-    ...
 
 def on_filters_changed(event: FilterEvent, thumbnail_manager: Any, config: Any, logger: Any) -> dict:
     """
@@ -3776,7 +5321,6 @@ def on_filters_changed(event: FilterEvent, thumbnail_manager: Any, config: Any, 
     
     Re-filters data and updates the gallery view.
     """
-    ...
 
 def auto_set_thresholds(per_metric_values: dict, p: int, slider_keys: list[str], selected_metrics: list[str]) -> dict:
     """
@@ -3791,8 +5335,6 @@ def auto_set_thresholds(per_metric_values: dict, p: int, slider_keys: list[str],
     Returns:
     Dictionary of updates for the sliders.
     """
-    ...
-
 ```
 
 ### `📄 ui/handlers/__init__.py`
@@ -3844,7 +5386,6 @@ class AnalysisHandler:
         thumbnail_manager: Thumbnail cache manager
         model_registry: Model registry
         """
-        ...
     def run_pre_analysis(self, progress: Callable, *args) -> Generator[dict, None, None]:
         """
         Run the pre-analysis pipeline.
@@ -3856,7 +5397,6 @@ class AnalysisHandler:
         Yields:
         Progress updates and final results
         """
-        ...
     def on_pre_analysis_success(self, result: dict) -> dict:
         """
         Handle successful pre-analysis completion.
@@ -3867,7 +5407,6 @@ class AnalysisHandler:
         Returns:
         Dictionary of component updates
         """
-        ...
     def run_propagation(self, scenes: list, progress: Callable, *args) -> Generator[dict, None, None]:
         """
         Run the mask propagation pipeline.
@@ -3880,7 +5419,6 @@ class AnalysisHandler:
         Yields:
         Progress updates and final results
         """
-        ...
     def on_propagation_success(self, result: dict) -> dict:
         """
         Handle successful propagation completion.
@@ -3891,7 +5429,6 @@ class AnalysisHandler:
         Returns:
         Dictionary of component updates
         """
-        ...
     def run_analysis(self, scenes: list, progress: Callable, *args) -> Generator[dict, None, None]:
         """
         Run the full analysis pipeline.
@@ -3904,7 +5441,6 @@ class AnalysisHandler:
         Yields:
         Progress updates and final results
         """
-        ...
     def on_analysis_success(self, result: dict) -> dict:
         """
         Handle successful analysis completion.
@@ -3915,8 +5451,6 @@ class AnalysisHandler:
         Returns:
         Dictionary of component updates
         """
-        ...
-
 ```
 
 ### `📄 ui/handlers/extraction_handler.py`
@@ -3950,7 +5484,6 @@ class ExtractionHandler:
         thumbnail_manager: Thumbnail cache manager
         model_registry: Model registry
         """
-        ...
     def run_extraction(self, progress: Callable, *args) -> Generator[dict, None, None]:
         """
         Run the extraction pipeline.
@@ -3962,7 +5495,6 @@ class ExtractionHandler:
         Yields:
         Progress updates and final results
         """
-        ...
     def on_extraction_success(self, result: dict) -> dict:
         """
         Handle successful extraction completion.
@@ -3973,7 +5505,6 @@ class ExtractionHandler:
         Returns:
         Dictionary of component updates
         """
-        ...
     def run_session_load(self, session_path: str) -> Generator[dict, None, None]:
         """
         Load a previous session.
@@ -3984,8 +5515,6 @@ class ExtractionHandler:
         Yields:
         Progress updates and component updates
         """
-        ...
-
 ```
 
 ### `📄 ui/handlers/filtering_handler.py`
@@ -4017,7 +5546,6 @@ class FilteringHandler:
         logger: Application logger
         thumbnail_manager: Thumbnail cache manager
         """
-        ...
     def on_filters_changed(self, all_frames_data: list, per_metric_values: dict, output_dir: str, gallery_view: str, show_overlay: bool, overlay_alpha: float, require_face_match: bool, dedup_thresh: int, dedup_method_ui: str, smart_mode_enabled: bool, *slider_values: float) -> dict:
         """
         Handle filter changes and update gallery.
@@ -4038,7 +5566,6 @@ class FilteringHandler:
         Returns:
         Dictionary of component updates
         """
-        ...
     def on_preset_changed(self, preset_name: str) -> dict:
         """
         Handle preset selection.
@@ -4049,7 +5576,6 @@ class FilteringHandler:
         Returns:
         Dictionary of slider updates
         """
-        ...
     def on_reset_filters(self, all_frames_data: list, per_metric_values: dict, output_dir: str) -> dict:
         """
         Reset all filters to default values.
@@ -4062,7 +5588,6 @@ class FilteringHandler:
         Returns:
         Dictionary of component updates
         """
-        ...
     def on_auto_set_thresholds(self, per_metric_values: dict, percentile: int, *checkbox_values: bool) -> dict:
         """
         Automatically set thresholds based on percentiles.
@@ -4075,6 +5600,4 @@ class FilteringHandler:
         Returns:
         Dictionary of slider updates
         """
-        ...
-
 ```
