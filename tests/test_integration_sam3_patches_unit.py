@@ -5,8 +5,14 @@ import numpy as np
 from unittest.mock import MagicMock, patch
 
 from core.sam3_patches import edt_triton_fallback, connected_components_fallback
+from unittest.mock import MagicMock
 
 class TestSam3Patches:
+
+    @pytest.fixture(autouse=True)
+    def skip_if_mocked(self):
+        if isinstance(torch, MagicMock) or hasattr(torch, 'reset_mock'):
+            pytest.skip("Skipping integration test because torch is mocked")
 
     def test_edt_triton_fallback_2d_batch(self):
         # Batch size 2, 10x10 image

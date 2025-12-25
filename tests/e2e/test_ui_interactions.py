@@ -52,28 +52,42 @@ class TestFindPeopleButtonInteraction:
             # App should still be responsive
             expect(page.locator("body")).to_be_visible()
             
-            # Check logs for button click message (open logs accordion)
-            logs_accordion = page.get_by_text("📋 System Logs")
-            if logs_accordion.is_visible():
-                logs_accordion.click()
-                time.sleep(0.5)
-                
-                # Click Refresh to pull latest logs
-                refresh_btn = page.get_by_role("button", name="🔄 Refresh")
-                if refresh_btn.is_visible():
-                    refresh_btn.click()
-                    time.sleep(0.5)
-                
-                # Look for our debug log message
-                log_area = page.locator("#unified_log textarea")
-                log_text = log_area.input_value() if log_area.count() > 0 else ""
-                
-                # We expect to see either the button clicked log or an error message
-                print(f"Log content (first 500 chars): {log_text[:500]}")
+            # Check status for error message (since we haven't extracted video)
+            status_text = page.locator("#find_people_status")
+            if status_text.is_visible():
+                # Allow for different error states (missing frames or missing model)
+                text = status_text.inner_text()
+                assert "Run extraction first" in text or "Face analyzer unavailable" in text or "No video frames" in text
             
             print("✓ Find People button clicked successfully")
         else:
             pytest.skip("Find People button not visible")
+
+    def test_find_people_graceful_error_handling(self, page: Page, app_server):
+        """Verify graceful error handling when prerequisites are missing."""
+        page.goto(BASE_URL)
+        time.sleep(2)
+
+        # Navigate to Subject tab
+        page.get_by_role("tab", name="Subject").click(force=True)
+        time.sleep(1)
+
+        # Select Face strategy
+        page.get_by_text("👤 By Face").click()
+        time.sleep(0.5)
+
+        # Click Scan Video for Faces without providing a video
+        page.get_by_role("button", name="Scan Video for Faces").click()
+        time.sleep(1)
+
+        # We expect a warning or error, not a crash
+        # The app logic returns a warning status if output dir doesn't exist
+        status = page.locator("#find_people_status")
+        expect(status).to_be_visible()
+
+        # Allow for different error states (missing frames or missing model)
+        text = status.inner_text()
+        assert "Run extraction first" in text or "Face analyzer unavailable" in text or "No video frames" in text
 
 
 class TestGallerySliderInteractions:
