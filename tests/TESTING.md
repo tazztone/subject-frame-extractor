@@ -74,12 +74,36 @@ python scripts/run_ux_audit.py
 
 ---
 
+## New Tests Added (Feb 2025)
+
+### SAM3 Video Pipeline Logic Tests
+We have added comprehensive logic tests for the SAM3 video pipeline that do not require a GPU. These tests mock the heavy `SAM3Wrapper` but verify the critical `MaskPropagator` orchestration logic.
+
+**File**: `tests/test_mask_propagator_logic.py`
+
+**Key scenarios covered:**
+- Bidirectional propagation (forward & backward loops)
+- Error handling (GPU OOM, runtime errors)
+- Empty mask handling
+- Progress tracking updates
+- Cancellation handling
+
+Run these specific tests:
+```bash
+python -m pytest tests/test_mask_propagator_logic.py -v
+```
+
+### Full Mocked E2E Workflow
+A new Playwright test `tests/e2e/test_full_workflow_mocked.py` simulates a complete user journey from video extraction to export using the mock application backend. This ensures the UI state machine transitions correctly through all tabs.
+
+---
+
 ## Execution Strategy: Unit vs Integration
 
 The test suite is divided into **Unit Tests** and **Integration Tests** to handle heavy dependencies (Torch, CUDA, SAM3) efficiently.
 
 ### Unit Tests
-- **Files**: `test_core.py`, `test_managers.py`, `test_pipelines_extended.py`, `test_filtering.py`, etc.
+- **Files**: `test_core.py`, `test_managers.py`, `test_pipelines_extended.py`, `test_filtering.py`, `test_mask_propagator_logic.py`, etc.
 - **Behavior**: Aggressively mock heavy libraries (`torch`, `sam3`, `insightface`) via `tests/conftest.py`.
 - **Command**: `python -m pytest tests/ -k "not integration"`
 - **Why**: Allows fast feedback loops without loading GBs of models.
@@ -214,6 +238,7 @@ playwright install chromium
 | `test_ui_interactions.py` | 7 | Button clicks, slider changes, log refresh, console errors |
 | `test_bug_regression.py` | 11 | Regression tests for fixed bugs (pagination, sliders, logs) |
 | `test_app_flow.py` | 3 | Main workflow from extraction to export |
+| `test_full_workflow_mocked.py` | 1 | Complete user journey (Extraction -> Pre-Analysis -> Propagation -> Export) |
 | `test_export_flow.py` | - | Export workflow and options |
 | `test_session_lifecycle.py` | - | Session management and state |
 
@@ -507,6 +532,7 @@ tests/
 ├── test_ui_unit.py          # UI component unit tests
 ├── test_smoke.py            # Import smoke tests
 ├── test_gpu_e2e.py          # GPU E2E tests (SAM3, InsightFace)
+├── test_mask_propagator_logic.py # Unit tests for SAM3 propagation logic (mocked)
 ├── test_integration_sam3_patches.py # Integration tests for SAM3 patching
 ├── test_integration_sam3_patches_unit.py # Unit-style tests for SAM3 patches using real torch
 │
@@ -515,6 +541,7 @@ tests/
     ├── conftest.py          # E2E fixtures (app_server, BASE_URL)
     │
     ├── test_app_flow.py           # Main workflow tests
+    ├── test_full_workflow_mocked.py # Complete user journey test
     ├── test_export_flow.py        # Export workflow tests
     ├── test_session_lifecycle.py  # Session management tests
     │
