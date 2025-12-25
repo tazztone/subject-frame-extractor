@@ -22,7 +22,22 @@ def app_server():
     
     The mock app replaces heavy ML operations with fast stubs,
     allowing E2E tests to run quickly without GPU.
+    
+    If the real app is already running on port 7860, uses that instead.
     """
+    import socket
+    
+    # Check if something is already running on the port
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    result = sock.connect_ex(('127.0.0.1', PORT))
+    sock.close()
+    
+    if result == 0:
+        # Port is in use - assume real app is running
+        print(f"✓ Using existing app on port {PORT}")
+        yield None  # No process to manage
+        return
+    
     print(f"Starting mock app on port {PORT}...")
 
     mock_app_path = str(Path(__file__).parent.parent / 'mock_app.py')
