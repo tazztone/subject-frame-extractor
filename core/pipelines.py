@@ -14,7 +14,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from queue import Queue, Empty
 from typing import Optional, List, Dict, Any, Generator, Callable, TYPE_CHECKING
-from dataclasses import fields
+# Note: Scene uses Pydantic (Scene.model_fields.keys()), not dataclass.fields()
 from PIL import Image
 import gradio as gr
 
@@ -689,7 +689,7 @@ def execute_propagation(event: PropagationEvent, progress_queue: Queue, cancel_e
     try:
         params = AnalysisParameters.from_ui(logger, config, **event.analysis_params.model_dump())
         is_folder_mode = not params.video_path
-        scene_fields = {f.name for f in fields(Scene)}
+        scene_fields = set(Scene.model_fields.keys())
         scenes_to_process = [Scene(**{k: v for k, v in s.items() if k in scene_fields}) for s in event.scenes if is_folder_mode or s.get('status') == 'included']
         if not scenes_to_process: yield {"unified_log": "No scenes were included for processing. Nothing to do."}; return
         tracker = AdvancedProgressTracker(progress, progress_queue, logger, ui_stage_name="Analysis")
@@ -717,7 +717,7 @@ def execute_analysis(event: PropagationEvent, progress_queue: Queue, cancel_even
     """Orchestrates the frame analysis stage."""
     try:
         params = AnalysisParameters.from_ui(logger, config, **event.analysis_params.model_dump())
-        scenes_to_process = [Scene(**{k: v for k, v in s.items() if k in {f.name for f in fields(Scene)}}) for s in event.scenes if s.get('status') == 'included']
+        scenes_to_process = [Scene(**{k: v for k, v in s.items() if k in set(Scene.model_fields.keys())}) for s in event.scenes if s.get('status') == 'included']
         if not scenes_to_process: yield {"unified_log": "No scenes to analyze. Nothing to do."}; return
         video_info = VideoManager.get_video_info(params.video_path)
         totals = estimate_totals(params, video_info, scenes_to_process)
