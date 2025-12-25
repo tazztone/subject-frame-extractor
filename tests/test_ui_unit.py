@@ -90,7 +90,7 @@ class TestMinConfidenceFilter:
                         scenes=scenes,
                         min_mask_area=0.0,
                         min_face_sim=0.0,
-                        min_confidence=0.5,  # Set threshold > 0
+                        min_quality_score=0.5,  # Set threshold > 0
                         enable_face_filter=False,
                         output_folder="/tmp/test",
                         view="All"
@@ -99,9 +99,9 @@ class TestMinConfidenceFilter:
         # Scene should be excluded because score defaults to 0, which is < 0.5
         updated_scenes = result[0]
         assert updated_scenes[0]['status'] == 'excluded', \
-            "Scene without score should be excluded when min_confidence > 0"
-        assert "Conf" in updated_scenes[0]['rejection_reasons'], \
-            "Rejection reason should include 'Conf'"
+            "Scene without score should be excluded when min_quality_score > 0"
+        assert "Score" in updated_scenes[0]['rejection_reasons'], \
+            "Rejection reason should include 'Score'"
     
     def test_scene_with_high_score_is_kept(self, app_ui):
         """Scenes with score >= threshold should be kept."""
@@ -127,7 +127,7 @@ class TestMinConfidenceFilter:
                         scenes=scenes,
                         min_mask_area=0.0,
                         min_face_sim=0.0,
-                        min_confidence=0.5,
+                        min_quality_score=0.5,
                         enable_face_filter=False,
                         output_folder="/tmp/test",
                         view="All"
@@ -159,7 +159,7 @@ class TestMinConfidenceFilter:
                         scenes=scenes,
                         min_mask_area=0.0,
                         min_face_sim=0.0,
-                        min_confidence=0.9,  # High threshold
+                        min_quality_score=0.9,  # High threshold
                         enable_face_filter=False,
                         output_folder="/tmp/test",
                         view="All"
