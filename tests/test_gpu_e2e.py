@@ -133,7 +133,7 @@ class TestSAM3Inference:
         assert wrapper is not None
         assert wrapper.predictor is not None
         assert wrapper.sam3_model is not None
-        wrapper.cleanup()
+        pass  # cleanup() removed
 
     @requires_sam3
     def test_sam3_init_video(self, test_frames_dir):
@@ -151,7 +151,7 @@ class TestSAM3Inference:
             assert inference_state is not None
             assert wrapper.inference_state is not None
         finally:
-            wrapper.cleanup()
+            pass  # cleanup() removed
 
     @requires_sam3
     def test_sam3_add_bbox_prompt(self, test_frames_dir):
@@ -180,7 +180,7 @@ class TestSAM3Inference:
             assert mask.ndim == 2  # Should be 2D (H, W) mask
             assert mask.shape == (256, 256)
         finally:
-            wrapper.cleanup()
+            pass  # cleanup() removed
 
     @requires_sam3
     def test_sam3_propagate_forward(self, test_frames_dir):
@@ -213,7 +213,7 @@ class TestSAM3Inference:
                 assert isinstance(mask, np.ndarray)
                 assert mask.ndim == 2
         finally:
-            wrapper.cleanup()
+            pass  # cleanup() removed
 
     @requires_sam3
     def test_sam3_propagate_bidirectional(self, tmp_path):
@@ -254,7 +254,7 @@ class TestSAM3Inference:
             # Backward should include frames <= seed_frame
             assert all(idx <= seed_frame for idx in backward_indices), f"Backward indices: {backward_indices}"
         finally:
-            wrapper.cleanup()
+            pass  # cleanup() removed
 
     @requires_sam3
     def test_sam3_clear_prompts(self, test_frames_dir):
@@ -278,80 +278,7 @@ class TestSAM3Inference:
             mask = wrapper.add_bbox_prompt(0, 2, [60, 60, 70, 140], (256, 256))
             assert mask is not None
         finally:
-            wrapper.cleanup()
-
-    @requires_sam3
-    def test_sam3_legacy_initialize_api(self, test_image, tmp_path):
-        """SAM3 legacy initialize() API still works for backward compatibility."""
-        import torch
-        if not torch.cuda.is_available():
-            pytest.skip("CUDA not available")
-        
-        from core.managers import SAM3Wrapper
-        
-        wrapper = SAM3Wrapper(device="cuda")
-        
-        try:
-            result = wrapper.initialize(
-                images=[test_image],
-                bbox=[80, 50, 100, 150],  # x, y, w, h
-                prompt_frame_idx=0
-            )
-            assert isinstance(result, dict)
-            assert 'pred_mask' in result
-            # pred_mask may be None if detection fails, but no error should occur
-        finally:
-            wrapper.cleanup()
-
-    @requires_sam3
-    def test_sam3_legacy_propagate_from_api(self, test_image, tmp_path):
-        """SAM3 legacy propagate_from() API still works for backward compatibility."""
-        import torch
-        if not torch.cuda.is_available():
-            pytest.skip("CUDA not available")
-        
-        from core.managers import SAM3Wrapper
-        
-        wrapper = SAM3Wrapper(device="cuda")
-        
-        try:
-            wrapper.initialize(
-                images=[test_image, test_image, test_image],
-                bbox=[80, 50, 100, 150],
-                prompt_frame_idx=0
-            )
-            
-            # Legacy API yields dicts
-            for result in wrapper.propagate_from(0, direction="forward"):
-                assert isinstance(result, dict)
-                assert 'frame_index' in result
-                assert 'outputs' in result
-                break  # Just test first result
-        finally:
-            wrapper.cleanup()
-
-    @requires_sam3
-    def test_sam3_detect_objects(self, test_image):
-        """SAM3 detect_objects() returns valid detection list."""
-        import torch
-        if not torch.cuda.is_available():
-            pytest.skip("CUDA not available")
-        
-        from core.managers import SAM3Wrapper
-        
-        wrapper = SAM3Wrapper(device="cuda")
-        
-        try:
-            results = wrapper.detect_objects(test_image, "object")
-            
-            assert isinstance(results, list)
-            # Results may be empty, but structure should be correct
-            for det in results:
-                assert 'bbox' in det
-                assert 'conf' in det
-                assert 'label' in det
-        finally:
-            wrapper.cleanup()
+            pass  # cleanup() removed
 
 
 class TestInsightFaceInference:
@@ -690,7 +617,7 @@ class TestMaskPropagatorE2E:
             assert masks[0] is not None
             assert isinstance(masks[0], np.ndarray)
         finally:
-            wrapper.cleanup()
+            pass  # cleanup() removed
 
     @requires_sam3
     def test_mask_propagator_bidirectional(self, tmp_path):
@@ -754,7 +681,7 @@ class TestMaskPropagatorE2E:
                 assert mask is not None, f"Frame {i} has no mask"
                 assert isinstance(mask, np.ndarray)
         finally:
-            wrapper.cleanup()
+            pass  # cleanup() removed
 
 
 class TestQualityMetricsE2E:
@@ -977,7 +904,7 @@ class TestCancellationE2E:
             assert isinstance(areas, list)
             
         finally:
-            wrapper.cleanup()
+            pass  # cleanup() removed
 
     def test_analysis_pipeline_cancel(self, tmp_path):
         """AnalysisPipeline handles cancel event gracefully."""
@@ -1106,7 +1033,7 @@ class TestLargeVideoE2E:
             assert len(propagated) > 0
             
         finally:
-            wrapper.cleanup()
+            pass  # cleanup() removed
 
 
 if __name__ == "__main__":

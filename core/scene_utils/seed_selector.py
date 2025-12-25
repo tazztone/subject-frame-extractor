@@ -436,7 +436,7 @@ class SeedSelector:
         x1, y1, x2, y2 = box
         return [int(x1), int(y1), int(x2 - x1), int(y2 - y1)]
 
-    def _sam2_mask_for_bbox(
+    def _get_mask_for_bbox(
         self,
         frame_rgb_small: np.ndarray,
         bbox_xywh: list
@@ -444,37 +444,32 @@ class SeedSelector:
         """Generate a mask for the given bounding box using SAM3."""
         if not self.tracker or bbox_xywh is None:
             return None
+        
+        import tempfile
+        import os
+        
         try:
-            import tempfile
-            import os
-            
-            # Save frame to temp directory for SAM3 init_state
-            temp_dir = tempfile.mkdtemp()
-            pil_img = rgb_to_pil(frame_rgb_small)
-            pil_img.save(os.path.join(temp_dir, "00000.jpg"))
-            
-            # Use new SAM3 API
-            h, w = frame_rgb_small.shape[:2]
-            self.tracker.init_video(temp_dir)
-            mask = self.tracker.add_bbox_prompt(
-                frame_idx=0, obj_id=1, bbox_xywh=bbox_xywh, img_size=(w, h)
-            )
-            
-            # Cleanup temp directory
-            import shutil
-            try:
-                shutil.rmtree(temp_dir)
-            except Exception:
-                pass
-            
-            if mask is not None:
-                mask = postprocess_mask(
-                    (mask * 255).astype(np.uint8),
-                    config=self.config,
-                    fill_holes=True,
-                    keep_largest_only=True
+            # Use TemporaryDirectory for automatic cleanup
+            with tempfile.TemporaryDirectory() as temp_dir:
+                # Save frame to temp directory for SAM3 init_state
+                pil_img = rgb_to_pil(frame_rgb_small)
+                pil_img.save(os.path.join(temp_dir, "00000.jpg"))
+                
+                # Use SAM3 API
+                h, w = frame_rgb_small.shape[:2]
+                self.tracker.init_video(temp_dir)
+                mask = self.tracker.add_bbox_prompt(
+                    frame_idx=0, obj_id=1, bbox_xywh=bbox_xywh, img_size=(w, h)
                 )
-            return mask
+                
+                if mask is not None:
+                    mask = postprocess_mask(
+                        (mask * 255).astype(np.uint8),
+                        config=self.config,
+                        fill_holes=True,
+                        keep_largest_only=True
+                    )
+                return mask
         except (torch.cuda.OutOfMemoryError, RuntimeError) as e:
             self.logger.warning(f"GPU error in mask generation: {e}")
             if torch.cuda.is_available():

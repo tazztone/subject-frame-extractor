@@ -39,9 +39,14 @@ For developer guidelines, see [AGENTS.md](AGENTS.md).
 │   │   ├── mask_propagator.py
 │   │   ├── seed_selector.py
 │   │   └── subject_masker.py
+│   ├── scene_utils_pkg
 │   ├── shared.py
 │   └── utils.py
+├── docs
+├── htmlcov
+│   └── status.json
 ├── requirements.txt
+├── run_config.json
 ├── scripts
 │   ├── jules_setup_script.sh
 │   ├── run_ux_audit.py
@@ -141,7 +146,7 @@ def main():
     """
 ```
 
-### `📄 core/batch_manager.py`
+### `📄 core\batch_manager.py`
 
 ```python
 import threading
@@ -216,7 +221,7 @@ class BatchManager:
         """
 ```
 
-### `📄 core/config.py`
+### `📄 core\config.py`
 
 ```python
 """
@@ -259,7 +264,7 @@ class Config(BaseSettings):
         """
 ```
 
-### `📄 core/database.py`
+### `📄 core\database.py`
 
 ```python
 import sqlite3
@@ -315,7 +320,7 @@ class Database:
         """
 ```
 
-### `📄 core/error_handling.py`
+### `📄 core\error_handling.py`
 
 ```python
 """
@@ -374,7 +379,7 @@ class ErrorHandler:
         """
 ```
 
-### `📄 core/events.py`
+### `📄 core\events.py`
 
 ```python
 """
@@ -435,7 +440,7 @@ class SessionLoadEvent(UIEvent):
     """
 ```
 
-### `📄 core/export.py`
+### `📄 core\export.py`
 
 ```python
 from __future__ import annotations
@@ -461,7 +466,7 @@ def export_kept_frames(event: ExportEvent, config: 'Config', logger: 'AppLogger'
 def dry_run_export(event: ExportEvent, config: 'Config') -> str: ...
 ```
 
-### `📄 core/filtering.py`
+### `📄 core\filtering.py`
 
 ```python
 from __future__ import annotations
@@ -546,7 +551,7 @@ def apply_lpips_dedup(all_frames_data: list[dict], filters: dict, dedup_mask: np
     """
 ```
 
-### `📄 core/logger.py`
+### `📄 core\logger.py`
 
 ```python
 """
@@ -647,7 +652,7 @@ class AppLogger:
         """
 ```
 
-### `📄 core/managers.py`
+### `📄 core\managers.py`
 
 ```python
 from __future__ import annotations
@@ -775,44 +780,6 @@ class SAM3Wrapper:
         """
         Reset all prompts in current session.
         """
-    def initialize(self, images, init_mask=None, bbox=None, prompt_frame_idx=0):
-        """
-        Legacy method: Initialize session with images and optional prompt.
-        
-        DEPRECATED: Use init_video() + add_bbox_prompt() instead.
-        
-        Args:
-        images: List of PIL Images or numpy arrays
-        bbox: [x, y, w, h] bounding box
-        prompt_frame_idx: Index of the frame to apply the prompt to
-        
-        Returns:
-        dict with 'pred_mask' key
-        """
-    def propagate_from(self, start_idx, direction='forward'):
-        """
-        Legacy method: Yields results starting from start_idx in given direction.
-        
-        DEPRECATED: Use propagate() generator instead.
-        
-        Yields:
-        Dict with 'frame_index' and 'outputs' keys
-        """
-    def detect_objects(self, image_rgb: np.ndarray, text_prompt: str) -> list:
-        """
-        Detect objects in an image using text prompt.
-        
-        Args:
-        image_rgb: RGB numpy array
-        text_prompt: Text description of object to find
-        
-        Returns:
-        List of detection dicts with bbox, conf, label, type
-        """
-    def cleanup(self):
-        """
-        Clean up temporary resources.
-        """
 
 thread_local = threading.local()
 def get_face_landmarker(model_path: str, logger: 'AppLogger') -> vision.FaceLandmarker:
@@ -856,7 +823,7 @@ class VideoManager:
         """
 ```
 
-### `📄 core/models.py`
+### `📄 core\models.py`
 
 ```python
 from __future__ import annotations
@@ -969,7 +936,7 @@ class MaskingResult(BaseModel):
     """
 ```
 
-### `📄 core/pipelines.py`
+### `📄 core\pipelines.py`
 
 ```python
 from __future__ import annotations
@@ -1015,6 +982,7 @@ def run_ffmpeg_extraction(video_path: str, output_dir: Path, video_info: dict, p
     Executes FFmpeg command to extract frames/thumbnails.
     
     Constructs complex filter chains based on extraction method (interval, keyframes, etc.).
+    Also creates a downscaled video (video_lowres.mp4) for efficient SAM3 processing.
     """
 
 class Pipeline:
@@ -1126,7 +1094,7 @@ def execute_analysis(event: PropagationEvent, progress_queue: Queue, cancel_even
     """
 ```
 
-### `📄 core/progress.py`
+### `📄 core\progress.py`
 
 ```python
 """
@@ -1197,7 +1165,7 @@ class AdvancedProgressTracker:
         """
 ```
 
-### `📄 core/sam3_patches.py`
+### `📄 core\sam3_patches.py`
 
 ```python
 """
@@ -1227,7 +1195,7 @@ def apply_patches():
     """
 ```
 
-### `📄 core/scene_utils/__init__.py`
+### `📄 core\scene_utils\__init__.py`
 
 ```python
 """
@@ -1252,7 +1220,7 @@ from core.scene_utils.helpers import draw_boxes_preview, save_scene_seeds, get_s
 __all__ = ['run_scene_detection', 'make_photo_thumbs', 'MaskPropagator', 'SeedSelector', 'Subject...
 ```
 
-### `📄 core/scene_utils/detection.py`
+### `📄 core\scene_utils\detection.py`
 
 ```python
 """
@@ -1299,7 +1267,7 @@ def make_photo_thumbs(image_paths: list[Path], out_dir: Path, params: 'AnalysisP
     """
 ```
 
-### `📄 core/scene_utils/helpers.py`
+### `📄 core\scene_utils\helpers.py`
 
 ```python
 """
@@ -1385,7 +1353,7 @@ def _wire_recompute_handler(config: 'Config', logger: 'AppLogger', thumbnail_man
     """
 ```
 
-### `📄 core/scene_utils/mask_propagator.py`
+### `📄 core\scene_utils\mask_propagator.py`
 
 ```python
 """
@@ -1398,7 +1366,7 @@ from typing import Optional, TYPE_CHECKING
 from queue import Queue
 import numpy as np
 import torch
-from core.utils import rgb_to_pil, postprocess_mask
+from core.utils import postprocess_mask
 
 class MaskPropagator:
     """
@@ -1420,9 +1388,27 @@ class MaskPropagator:
         logger: Application logger
         device: Device to run on ('cpu' or 'cuda')
         """
+    def propagate_video(self, video_path: str, frame_numbers: list[int], seed_frame_num: int, bbox_xywh: list[int], frame_size: tuple[int, int], tracker: Optional['AdvancedProgressTracker']=None) -> tuple[dict, dict, dict, dict]:
+        """
+        Propagate masks using the video file directly (no temp JPEG I/O).
+        
+        Args:
+        video_path: Path to the downscaled video file
+        frame_numbers: List of original video frame numbers to get masks for
+        seed_frame_num: Original video frame number to seed from
+        bbox_xywh: Bounding box [x, y, width, height] on the seed frame
+        frame_size: (width, height) of the video frames
+        tracker: Optional progress tracker
+        
+        Returns:
+        Tuple of dicts keyed by frame_number: (masks, area_pcts, is_empty, errors)
+        """
     def propagate(self, shot_frames_rgb: list[np.ndarray], seed_idx: int, bbox_xywh: list[int], tracker: Optional['AdvancedProgressTracker']=None) -> tuple[list, list, list, list]:
         """
-        Propagate masks from a seed frame to all frames in a shot.
+        Legacy method: Propagate masks from a seed frame using in-memory frames.
+        
+        This method writes frames to temp JPEGs for SAM3 processing.
+        Prefer propagate_video() when a downscaled video is available.
         
         Args:
         shot_frames_rgb: List of RGB frames as numpy arrays
@@ -1435,7 +1421,7 @@ class MaskPropagator:
         """
 ```
 
-### `📄 core/scene_utils/seed_selector.py`
+### `📄 core\scene_utils\seed_selector.py`
 
 ```python
 """
@@ -1545,13 +1531,13 @@ class SeedSelector:
         """
         Convert box from xyxy to xywh format.
         """
-    def _sam2_mask_for_bbox(self, frame_rgb_small: np.ndarray, bbox_xywh: list) -> Optional[np.ndarray]:
+    def _get_mask_for_bbox(self, frame_rgb_small: np.ndarray, bbox_xywh: list) -> Optional[np.ndarray]:
         """
         Generate a mask for the given bounding box using SAM3.
         """
 ```
 
-### `📄 core/scene_utils/subject_masker.py`
+### `📄 core\scene_utils\subject_masker.py`
 
 ```python
 """
@@ -1679,7 +1665,7 @@ class SubjectMasker:
         """
 ```
 
-### `📄 core/shared.py`
+### `📄 core\shared.py`
 
 ```python
 """
@@ -1750,7 +1736,7 @@ def build_scene_gallery_items(scenes: List[Union[dict, 'Scene']], view: str, out
     """
 ```
 
-### `📄 core/utils.py`
+### `📄 core\utils.py`
 
 ```python
 from __future__ import annotations
@@ -1864,7 +1850,7 @@ def draw_bbox(img_rgb: np.ndarray, xywh: list, config: 'Config', color: Optional
     """
 ```
 
-### `📄 scripts/run_ux_audit.py`
+### `📄 scripts\run_ux_audit.py`
 
 ```python
 """
@@ -1898,7 +1884,7 @@ def generate_report(results: dict, output_path: Path) -> None:
 def main(): ...
 ```
 
-### `📄 scripts/take_screenshot.py`
+### `📄 scripts\take_screenshot.py`
 
 ```python
 import asyncio
@@ -1907,7 +1893,7 @@ from playwright.async_api import async_playwright
 async def main(): ...
 ```
 
-### `📄 tests/conftest.py`
+### `📄 tests\conftest.py`
 
 ```python
 """
@@ -2052,7 +2038,7 @@ def mock_config_simple(tmp_path):
     """
 ```
 
-### `📄 tests/e2e/ai_ux_analyzer.py`
+### `📄 tests\e2e\ai_ux_analyzer.py`
 
 ```python
 """
@@ -2100,7 +2086,7 @@ class UXCheckItem:
 def analyze_screenshot_manual(screenshot_path: Path) -> List[UXIssue]:
     """
     Analyze screenshot for UX issues using rule-based checks.
-
+    
     This is a placeholder for manual/heuristic analysis.
     For actual AI-powered analysis, use analyze_screenshot_with_ai().
     """
@@ -2108,15 +2094,15 @@ def analyze_screenshot_manual(screenshot_path: Path) -> List[UXIssue]:
 def analyze_screenshot_with_ai(screenshot_path: Path, api_key: Optional[str]=None, model: str='gpt-4-vision-preview') -> List[UXIssue]:
     """
     Analyze screenshot using vision AI API.
-
+    
     Args:
     screenshot_path: Path to the screenshot image
     api_key: API key for the vision service (or uses env var)
     model: Model to use for analysis
-
+    
     Returns:
     List of detected UX issues
-
+    
     Note:
     This requires an API key for GPT-4V, Claude, or similar.
     Set OPENAI_API_KEY environment variable or pass api_key.
@@ -2128,7 +2114,7 @@ def generate_issue_report(issues: List[UXIssue], title: str='UX Analysis Report'
     """
 ```
 
-### `📄 tests/e2e/conftest.py`
+### `📄 tests\e2e\conftest.py`
 
 ```python
 """
@@ -2150,10 +2136,10 @@ BASE_URL = f'http://127.0.0.1:{PORT}'
 def app_server():
     """
     Starts the mock app server before tests and kills it after.
-
+    
     The mock app replaces heavy ML operations with fast stubs,
     allowing E2E tests to run quickly without GPU.
-
+    
     If the real app is already running on port 7860, uses that instead.
     """
 
@@ -2161,7 +2147,7 @@ def app_server():
 def extracted_session(page, app_server):
     """
     Fixture that provides a page with extraction already completed.
-
+    
     Useful for tests that need to start from a specific workflow stage.
     """
 
@@ -2169,12 +2155,12 @@ def extracted_session(page, app_server):
 def analyzed_session(extracted_session):
     """
     Fixture that provides a page with pre-analysis completed.
-
+    
     Builds on extracted_session to provide further workflow progress.
     """
 ```
 
-### `📄 tests/e2e/test_accessibility.py`
+### `📄 tests\e2e\test_accessibility.py`
 
 ```python
 """
@@ -2253,7 +2239,7 @@ class TestARIACompliance:
         """
 ```
 
-### `📄 tests/e2e/test_ai_ux_audit.py`
+### `📄 tests\e2e\test_ai_ux_audit.py`
 
 ```python
 """
@@ -2312,7 +2298,7 @@ class TestFullAppAudit:
         """
 ```
 
-### `📄 tests/e2e/test_app_flow.py`
+### `📄 tests\e2e\test_app_flow.py`
 
 ```python
 """
@@ -2384,7 +2370,7 @@ class TestUIInteraction:
         """
 ```
 
-### `📄 tests/e2e/test_bug_regression.py`
+### `📄 tests\e2e\test_bug_regression.py`
 
 ```python
 """
@@ -2478,7 +2464,7 @@ class TestPropagationErrorHandling:
         """
 ```
 
-### `📄 tests/e2e/test_component_verification.py`
+### `📄 tests\e2e\test_component_verification.py`
 
 ```python
 """
@@ -2583,7 +2569,7 @@ class TestStrategyVisibility:
         """
 ```
 
-### `📄 tests/e2e/test_export_flow.py`
+### `📄 tests\e2e\test_export_flow.py`
 
 ```python
 """
@@ -2648,7 +2634,7 @@ class TestExportFormats:
         """
 ```
 
-### `📄 tests/e2e/test_session_lifecycle.py`
+### `📄 tests\e2e\test_session_lifecycle.py`
 
 ```python
 """
@@ -2721,7 +2707,7 @@ class TestLoadPreviousSession:
         """
 ```
 
-### `📄 tests/e2e/test_ui_interactions.py`
+### `📄 tests\e2e\test_ui_interactions.py`
 
 ```python
 """
@@ -2732,7 +2718,7 @@ These tests verify that UI interactions work correctly by:
 2. Adjusting sliders and verifying UI updates
 3. Monitoring console/terminal for expected messages
 
-Run with:
+Run with: 
     python tests/mock_app.py &
     python -m pytest tests/e2e/test_ui_interactions.py -v -s
 """
@@ -2802,7 +2788,7 @@ class TestUIConsoleErrors:
         """
 ```
 
-### `📄 tests/e2e/test_visual_regression.py`
+### `📄 tests\e2e\test_visual_regression.py`
 
 ```python
 """
@@ -2875,7 +2861,7 @@ def _open_help(page: Page):
     """
 ```
 
-### `📄 tests/e2e/test_with_sample_data.py`
+### `📄 tests\e2e\test_with_sample_data.py`
 
 ```python
 """
@@ -2904,7 +2890,7 @@ SAMPLE_IMAGE = str(Path(__file__).parent.parent / 'assets' / 'sample.jpg')
 def extracted_video_session(page: Page, app_server):
     """
     Fixture that extracts frames from sample.mp4 before tests.
-
+    
     This provides a page with:
     - Video loaded
     - Frames extracted
@@ -2947,7 +2933,7 @@ class TestFullWorkflowWithSampleVideo:
         """
 ```
 
-### `📄 tests/e2e/visual_test_utils.py`
+### `📄 tests\e2e\visual_test_utils.py`
 
 ```python
 """
@@ -2967,12 +2953,12 @@ DIFF_DIR = Path(__file__).parent / 'diffs'
 def capture_state_screenshot(page, name: str, wait_ms: int=500) -> Path:
     """
     Capture screenshot of current UI state.
-
+    
     Args:
     page: Playwright page object
     name: Name for the screenshot file
     wait_ms: Time to wait before capture (for animations to settle)
-
+    
     Returns:
     Path to the captured screenshot
     """
@@ -2980,11 +2966,11 @@ def capture_state_screenshot(page, name: str, wait_ms: int=500) -> Path:
 def compare_with_baseline(screenshot_path: Path, threshold: int=5) -> dict:
     """
     Compare screenshot against baseline using perceptual hash.
-
+    
     Args:
     screenshot_path: Path to the current screenshot
     threshold: Maximum hash distance to consider "same" (0-64 for phash)
-
+    
     Returns:
     Dict with status, diff_score, and action recommendation
     """
@@ -2992,10 +2978,10 @@ def compare_with_baseline(screenshot_path: Path, threshold: int=5) -> dict:
 def save_as_baseline(screenshot_path: Path) -> Path:
     """
     Promote current screenshot to baseline.
-
+    
     Args:
     screenshot_path: Path to the screenshot to save as baseline
-
+    
     Returns:
     Path to the saved baseline
     """
@@ -3003,11 +2989,11 @@ def save_as_baseline(screenshot_path: Path) -> Path:
 def generate_diff_image(current_path: Path, baseline_path: Path) -> Optional[Path]:
     """
     Generate a visual diff image highlighting differences.
-
+    
     Args:
     current_path: Path to current screenshot
     baseline_path: Path to baseline screenshot
-
+    
     Returns:
     Path to diff image, or None if images are identical
     """
@@ -3023,7 +3009,7 @@ def cleanup_diffs():
     """
 ```
 
-### `📄 tests/mock_app.py`
+### `📄 tests\mock_app.py`
 
 ```python
 import sys
@@ -3068,7 +3054,7 @@ core.utils.download_model = MagicMock()
 core.managers.download_model = MagicMock()
 ```
 
-### `📄 tests/test_app_ui_logic.py`
+### `📄 tests\test_app_ui_logic.py`
 
 ```python
 import pytest
@@ -3114,7 +3100,7 @@ class TestAppUI:
     def test_run_session_load_wrapper(self, mock_load, app_ui): ...
 ```
 
-### `📄 tests/test_batch_manager.py`
+### `📄 tests\test_batch_manager.py`
 
 ```python
 import time
@@ -3128,7 +3114,7 @@ def test_batch_manager_processing(): ...
 def test_batch_manager_failure(): ...
 ```
 
-### `📄 tests/test_bug_fixes.py`
+### `📄 tests\test_bug_fixes.py`
 
 ```python
 """
@@ -3174,7 +3160,7 @@ class TestFilterSlidersFix:
         """
 ```
 
-### `📄 tests/test_core.py`
+### `📄 tests\test_core.py`
 
 ```python
 """
@@ -3231,7 +3217,7 @@ class TestPreAnalysisEvent:
         """
 ```
 
-### `📄 tests/test_database.py`
+### `📄 tests\test_database.py`
 
 ```python
 import pytest
@@ -3263,7 +3249,7 @@ def test_metrics_json_parsing(db): ...
 def test_mask_empty_conversion(db): ...
 ```
 
-### `📄 tests/test_dedup.py`
+### `📄 tests\test_dedup.py`
 
 ```python
 """
@@ -3297,7 +3283,7 @@ def test_dedup_threshold(sample_frames_for_dedup, mock_thumbnail_manager, mock_c
 def test_run_batched_lpips(mock_thumbnail_manager): ...
 ```
 
-### `📄 tests/test_error_handling.py`
+### `📄 tests\test_error_handling.py`
 
 ```python
 """
@@ -3464,7 +3450,7 @@ class TestErrorSeverityAndRecoveryStrategy:
         """
 ```
 
-### `📄 tests/test_export.py`
+### `📄 tests\test_export.py`
 
 ```python
 """
@@ -3559,7 +3545,7 @@ class TestExportWithFilters:
         """
 ```
 
-### `📄 tests/test_filtering.py`
+### `📄 tests\test_filtering.py`
 
 ```python
 import pytest
@@ -3595,7 +3581,7 @@ class TestFiltering:
     def test_apply_all_filters_vectorized(self, sample_frames, mock_config): ...
 ```
 
-### `📄 tests/test_gallery_utils.py`
+### `📄 tests\test_gallery_utils.py`
 
 ```python
 import pytest
@@ -3632,7 +3618,7 @@ class TestGalleryUtils:
     def test_auto_set_thresholds_empty(self): ...
 ```
 
-### `📄 tests/test_gpu_e2e.py`
+### `📄 tests\test_gpu_e2e.py`
 
 ```python
 """
@@ -3742,21 +3728,6 @@ class TestSAM3Inference:
     def test_sam3_clear_prompts(self, test_frames_dir):
         """
         SAM3 clear_prompts() resets session state.
-        """
-    @requires_sam3
-    def test_sam3_legacy_initialize_api(self, test_image, tmp_path):
-        """
-        SAM3 legacy initialize() API still works for backward compatibility.
-        """
-    @requires_sam3
-    def test_sam3_legacy_propagate_from_api(self, test_image, tmp_path):
-        """
-        SAM3 legacy propagate_from() API still works for backward compatibility.
-        """
-    @requires_sam3
-    def test_sam3_detect_objects(self, test_image):
-        """
-        SAM3 detect_objects() returns valid detection list.
         """
 
 class TestInsightFaceInference:
@@ -3895,7 +3866,7 @@ class TestLargeVideoE2E:
         """
 ```
 
-### `📄 tests/test_handlers.py`
+### `📄 tests\test_handlers.py`
 
 ```python
 """
@@ -4025,7 +3996,7 @@ class TestFilteringHandler:
         """
 ```
 
-### `📄 tests/test_integration.py`
+### `📄 tests\test_integration.py`
 
 ```python
 """
@@ -4142,7 +4113,7 @@ class TestPipelineIntegration:
         """
 ```
 
-### `📄 tests/test_integration_sam3_patches.py`
+### `📄 tests\test_integration_sam3_patches.py`
 
 ```python
 import pytest
@@ -4166,7 +4137,7 @@ def test_apply_patches_triton_missing(): ...
 def test_apply_patches_triton_present(): ...
 ```
 
-### `📄 tests/test_integration_sam3_patches_unit.py`
+### `📄 tests\test_integration_sam3_patches_unit.py`
 
 ```python
 import pytest
@@ -4186,7 +4157,7 @@ class TestSam3Patches:
     def test_connected_components_fallback_3d_input_compat(self): ...
 ```
 
-### `📄 tests/test_managers.py`
+### `📄 tests\test_managers.py`
 
 ```python
 import pytest
@@ -4247,7 +4218,7 @@ class TestManagers:
     def test_thumbnail_manager_corrupt_file(self, mock_exists, mock_open, mock_logger, mock_config): ...
 ```
 
-### `📄 tests/test_pipelines.py`
+### `📄 tests\test_pipelines.py`
 
 ```python
 import pytest
@@ -4296,7 +4267,7 @@ class TestPipelines:
     def test_execute_session_load_valid(self, mock_logger, tmp_path): ...
 ```
 
-### `📄 tests/test_pipelines_extended.py`
+### `📄 tests\test_pipelines_extended.py`
 
 ```python
 import pytest
@@ -4330,7 +4301,7 @@ class TestPipelinesExtended:
     def test_cancellation_in_propagation(self, pipeline, mock_params): ...
 ```
 
-### `📄 tests/test_progress.py`
+### `📄 tests\test_progress.py`
 
 ```python
 import pytest
@@ -4341,7 +4312,7 @@ from core.progress import AdvancedProgressTracker
 def test_progress_tracker(): ...
 ```
 
-### `📄 tests/test_scene_detection.py`
+### `📄 tests\test_scene_detection.py`
 
 ```python
 """
@@ -4468,7 +4439,7 @@ class TestModelRegistry:
         """
 ```
 
-### `📄 tests/test_scene_utils.py`
+### `📄 tests\test_scene_utils.py`
 
 ```python
 """
@@ -4498,8 +4469,8 @@ class TestSeedSelector:
     def test_face_with_text_fallback_seed_success(self, selector): ...
     def test_face_with_text_fallback_seed_fallback(self, selector): ...
     @patch('core.scene_utils.seed_selector.postprocess_mask')
-    def test_sam2_mask_for_bbox_success(self, mock_post, selector, tmp_path): ...
-    def test_sam2_mask_for_bbox_error(self, selector): ...
+    def test_get_mask_for_bbox_success(self, mock_post, selector, tmp_path): ...
+    def test_get_mask_for_bbox_error(self, selector): ...
 
 class TestMaskPropagator:
     @patch('core.scene_utils.mask_propagator.postprocess_mask', side_effect=lambda x, **k: x)
@@ -4512,7 +4483,7 @@ class TestSubjectMasker:
     def test_load_shot_frames(self, mock_config_simple, mock_logger, mock_params, tmp_path): ...
 ```
 
-### `📄 tests/test_scene_utils_helpers.py`
+### `📄 tests\test_scene_utils_helpers.py`
 
 ```python
 import pytest
@@ -4554,7 +4525,7 @@ class TestSceneUtilsHelpers:
     def test_wire_recompute_handler_no_prompt(self, mock_logger): ...
 ```
 
-### `📄 tests/test_shared.py`
+### `📄 tests\test_shared.py`
 
 ```python
 """
@@ -4577,7 +4548,7 @@ class TestSharedUtils:
     def test_build_scene_gallery_items(self, mock_imread, tmp_path): ...
 ```
 
-### `📄 tests/test_signatures.py`
+### `📄 tests\test_signatures.py`
 
 ```python
 """
@@ -4648,7 +4619,7 @@ class TestManagerClasses:
     def test_video_manager_has_get_video_info(self): ...
 ```
 
-### `📄 tests/test_smoke.py`
+### `📄 tests\test_smoke.py`
 
 ```python
 """
@@ -4711,7 +4682,7 @@ class TestDependencyImports:
     def test_pydantic_available(self): ...
 ```
 
-### `📄 tests/test_ui_unit.py`
+### `📄 tests\test_ui_unit.py`
 
 ```python
 import pytest
@@ -4741,7 +4712,7 @@ class TestMinConfidenceFilter:
     def test_scene_without_score_is_filtered_when_threshold_positive(self, app_ui):
         """
         Scenes without score should be filtered when min_confidence > 0.
-
+        
         This tests the fix where score defaults to 0 instead of 100.
         """
     def test_scene_with_high_score_is_kept(self, app_ui):
@@ -4763,7 +4734,7 @@ class TestTextStrategyWarning:
         """
 ```
 
-### `📄 tests/test_utils.py`
+### `📄 tests\test_utils.py`
 
 ```python
 """
@@ -4962,7 +4933,7 @@ class TestToJsonSafe:
         """
 ```
 
-### `📄 ui/app_ui.py`
+### `📄 ui\app_ui.py`
 
 ```python
 from __future__ import annotations
@@ -5242,7 +5213,7 @@ class AppUI:
     def on_find_people_from_video(self, *args) -> tuple[str, gr.update, gr.update, float, list]:
         """
         Scans the video for faces to populate the discovery gallery.
-
+        
         Returns: (status_message, group_visibility, gallery_update, slider_value, all_faces_state)
         """
     def on_apply_bulk_scene_filters_extended(self, scenes: list, min_mask_area: float, min_face_sim: float, min_quality_score: float, enable_face_filter: bool, output_folder: str, view: str) -> tuple:
@@ -5289,7 +5260,7 @@ class AppUI:
         """
 ```
 
-### `📄 ui/gallery_utils.py`
+### `📄 ui\gallery_utils.py`
 
 ```python
 from __future__ import annotations
@@ -5337,7 +5308,7 @@ def auto_set_thresholds(per_metric_values: dict, p: int, slider_keys: list[str],
     """
 ```
 
-### `📄 ui/handlers/__init__.py`
+### `📄 ui\handlers\__init__.py`
 
 ```python
 """
@@ -5355,7 +5326,7 @@ from ui.handlers.filtering_handler import FilteringHandler
 __all__ = ['ExtractionHandler', 'AnalysisHandler', 'FilteringHandler']
 ```
 
-### `📄 ui/handlers/analysis_handler.py`
+### `📄 ui\handlers\analysis_handler.py`
 
 ```python
 """
@@ -5453,7 +5424,7 @@ class AnalysisHandler:
         """
 ```
 
-### `📄 ui/handlers/extraction_handler.py`
+### `📄 ui\handlers\extraction_handler.py`
 
 ```python
 """
@@ -5517,7 +5488,7 @@ class ExtractionHandler:
         """
 ```
 
-### `📄 ui/handlers/filtering_handler.py`
+### `📄 ui\handlers\filtering_handler.py`
 
 ```python
 """

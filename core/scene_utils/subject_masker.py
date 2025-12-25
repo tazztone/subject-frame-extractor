@@ -236,36 +236,87 @@ class SubjectMasker:
                         }
                 continue
 
-            masks, areas, empties, errors = self.mask_propagator.propagate(
-                small_images, seed_idx_in_shot, bbox, tracker=tracker
-            )
+            # Check if downscaled video exists for efficient processing
+            lowres_video_path = Path(frames_dir) / "video_lowres.mp4"
+            
+            if lowres_video_path.exists():
+                # Use new video-based propagation (no temp JPEG I/O)
+                first_thumb = small_images[0] if small_images else None
+                frame_size = (first_thumb.shape[1], first_thumb.shape[0]) if first_thumb is not None else (640, 480)
+                
+                masks_dict, areas_dict, empties_dict, errors_dict = self.mask_propagator.propagate_video(
+                    str(lowres_video_path),
+                    list(frame_numbers),
+                    scene.best_frame,
+                    bbox,
+                    frame_size,
+                    tracker=tracker
+                )
+                
+                # Process results using frame number keys
+                for original_fn, _, (h, w) in shot_frames_data:
+                    frame_fname_webp = self.frame_map.get(original_fn)
+                    if not frame_fname_webp:
+                        continue
+                    frame_fname_png = f"{Path(frame_fname_webp).stem}.png"
+                    mask_path = self.mask_dir / frame_fname_png
+                    
+                    mask = masks_dict.get(original_fn)
+                    area = areas_dict.get(original_fn, 0.0)
+                    is_empty = empties_dict.get(original_fn, True)
+                    error = errors_dict.get(original_fn)
+                    
+                    result_args = {
+                        "shot_id": scene.shot_id,
+                        "seed_type": seed_details.get('type'),
+                        "seed_face_sim": seed_details.get('seed_face_sim'),
+                        "mask_area_pct": area,
+                        "mask_empty": is_empty,
+                        "error": error
+                    }
+                    
+                    if mask is not None and np.any(mask):
+                        mask_full_res = cv2.resize(mask, (w, h), interpolation=cv2.INTER_NEAREST)
+                        if mask_full_res.ndim == 3:
+                            mask_full_res = mask_full_res[:, :, 0]
+                        cv2.imwrite(str(mask_path), mask_full_res)
+                        result_args["mask_path"] = str(mask_path)
+                        mask_metadata[frame_fname_png] = result_args
+                    else:
+                        result_args["mask_path"] = None
+                        mask_metadata[frame_fname_png] = result_args
+            else:
+                # Fallback to legacy temp JPEG method
+                masks, areas, empties, errors = self.mask_propagator.propagate(
+                    small_images, seed_idx_in_shot, bbox, tracker=tracker
+                )
 
-            for j, (original_fn, _, (h, w)) in enumerate(shot_frames_data):
-                frame_fname_webp = self.frame_map.get(original_fn)
-                if not frame_fname_webp:
-                    continue
-                frame_fname_png = f"{Path(frame_fname_webp).stem}.png"
-                mask_path = self.mask_dir / frame_fname_png
-                
-                result_args = {
-                    "shot_id": scene.shot_id,
-                    "seed_type": seed_details.get('type'),
-                    "seed_face_sim": seed_details.get('seed_face_sim'),
-                    "mask_area_pct": areas[j],
-                    "mask_empty": empties[j],
-                    "error": errors[j]
-                }
-                
-                if masks[j] is not None and np.any(masks[j]):
-                    mask_full_res = cv2.resize(masks[j], (w, h), interpolation=cv2.INTER_NEAREST)
-                    if mask_full_res.ndim == 3:
-                        mask_full_res = mask_full_res[:, :, 0]
-                    cv2.imwrite(str(mask_path), mask_full_res)
-                    result_args["mask_path"] = str(mask_path)
-                    mask_metadata[frame_fname_png] = result_args
-                else:
-                    result_args["mask_path"] = None
-                    mask_metadata[frame_fname_png] = result_args
+                for j, (original_fn, _, (h, w)) in enumerate(shot_frames_data):
+                    frame_fname_webp = self.frame_map.get(original_fn)
+                    if not frame_fname_webp:
+                        continue
+                    frame_fname_png = f"{Path(frame_fname_webp).stem}.png"
+                    mask_path = self.mask_dir / frame_fname_png
+                    
+                    result_args = {
+                        "shot_id": scene.shot_id,
+                        "seed_type": seed_details.get('type'),
+                        "seed_face_sim": seed_details.get('seed_face_sim'),
+                        "mask_area_pct": areas[j],
+                        "mask_empty": empties[j],
+                        "error": errors[j]
+                    }
+                    
+                    if masks[j] is not None and np.any(masks[j]):
+                        mask_full_res = cv2.resize(masks[j], (w, h), interpolation=cv2.INTER_NEAREST)
+                        if mask_full_res.ndim == 3:
+                            mask_full_res = mask_full_res[:, :, 0]
+                        cv2.imwrite(str(mask_path), mask_full_res)
+                        result_args["mask_path"] = str(mask_path)
+                        mask_metadata[frame_fname_png] = result_args
+                    else:
+                        result_args["mask_path"] = None
+                        mask_metadata[frame_fname_png] = result_args
         
         self.logger.success("Subject masking complete.")
         try:
@@ -410,7 +461,7 @@ class SubjectMasker:
         Returns:
             Mask as numpy array or None
         """
-        return self.seed_selector._sam2_mask_for_bbox(frame_rgb_small, bbox_xywh)
+        return self.seed_selector._get_mask_for_bbox(frame_rgb_small, bbox_xywh)
 
     def draw_bbox(
         self,
