@@ -366,8 +366,8 @@ class AppUI:
                 self._create_component('scene_filter_status', 'markdown', {'value': 'No scenes loaded.'})
                 with gr.Row():
                     self._create_component('scene_mask_area_min_input', 'slider', {'label': "Min Mask Area %", 'minimum': 0.0, 'maximum': 100.0, 'value': self.config.default_min_mask_area_pct, 'step': 0.1})
-                    self._create_component('scene_face_sim_min_input', 'slider', {'label': "Min Face Sim", 'minimum': 0.0, 'maximum': 1.0, 'value': 0.0, 'step': 0.05, 'visible': False})
-                    self._create_component('scene_confidence_min_input', 'slider', {'label': "Min Confidence", 'minimum': 0.0, 'maximum': 1.0, 'value': 0.0, 'step': 0.05})
+                    self._create_component('scene_face_sim_min_input', 'slider', {'label': "Min Face Similarity", 'minimum': 0.0, 'maximum': 1.0, 'value': 0.0, 'step': 0.05, 'info': "0=any, 1=exact match"})
+                    self._create_component('scene_quality_score_min_input', 'slider', {'label': "Min Quality Score", 'minimum': 0.0, 'maximum': 20.0, 'value': 0.0, 'step': 0.5, 'info': "NIQE + Face composite"})
 
             # Gallery
             self._create_component('scene_gallery_view_toggle', 'radio', {'label': "View", 'choices': ["Kept", "Rejected", "All"], 'value': "Kept"})
@@ -378,6 +378,9 @@ class AppUI:
                 self._create_component('next_page_button', 'button', {'value': 'Next ➡️'})
 
             self.components['scene_gallery'] = gr.Gallery(label="Scene Gallery", columns=8, rows=2, height=560, show_label=True, allow_preview=False, container=True)
+            with gr.Row():
+                self._create_component('scene_gallery_columns', 'slider', {'label': "Columns", 'minimum': 2, 'maximum': 12, 'value': 8, 'step': 1})
+                self._create_component('scene_gallery_height', 'slider', {'label': "Gallery Height (px)", 'minimum': 200, 'maximum': 1000, 'value': 560, 'step': 40})
             self._create_component("sceneundobutton", "button", {"value": "↩️ Undo Last Action"})
 
             gr.Markdown("### 🔬 Step 3.5: Propagate Masks")
@@ -653,12 +656,15 @@ class AppUI:
             return items, index_map, f"/ {total_pages} pages", gr.update(choices=page_choices, value='1')
 
         def on_next_page(scenes, view, output_dir, page_num):
-            """Go to next page."""
+            """Go to next page (clamped to max)."""
             try:
                 current = int(page_num) if page_num else 1
             except (ValueError, TypeError):
                 current = 1
-            return on_page_change(scenes, view, output_dir, current + 1)
+            # Get total pages to clamp
+            _, _, total_pages = build_scene_gallery_items(scenes, view, output_dir, page_num=1)
+            new_page = min(current + 1, total_pages)
+            return on_page_change(scenes, view, output_dir, new_page)
 
         def on_prev_page(scenes, view, output_dir, page_num):
             """Go to previous page."""
@@ -692,8 +698,14 @@ class AppUI:
             return str(evt.index + 1)
         c['subject_selection_gallery'].select(on_subject_gallery_select, None, c['scene_editor_subject_id'])
 
-        for comp in [c['scene_mask_area_min_input'], c['scene_face_sim_min_input'], c['scene_confidence_min_input']]:
-            comp.release(self.on_apply_bulk_scene_filters_extended, [c['scenes_state'], c['scene_mask_area_min_input'], c['scene_face_sim_min_input'], c['scene_confidence_min_input'], c['enable_face_filter_input'], c['extracted_frames_dir_state'], c['scene_gallery_view_toggle']], [c['scenes_state'], c['scene_filter_status'], c['scene_gallery'], c['scene_gallery_index_map_state'], c['propagate_masks_button']])
+        for comp in [c['scene_mask_area_min_input'], c['scene_face_sim_min_input'], c['scene_quality_score_min_input']]:
+            comp.release(self.on_apply_bulk_scene_filters_extended, [c['scenes_state'], c['scene_mask_area_min_input'], c['scene_face_sim_min_input'], c['scene_quality_score_min_input'], c['enable_face_filter_input'], c['extracted_frames_dir_state'], c['scene_gallery_view_toggle']], [c['scenes_state'], c['scene_filter_status'], c['scene_gallery'], c['scene_gallery_index_map_state'], c['propagate_masks_button']])
+
+        # Gallery size controls
+        def update_gallery_layout(columns, height):
+            return gr.update(columns=int(columns), height=int(height))
+        c['scene_gallery_columns'].release(update_gallery_layout, [c['scene_gallery_columns'], c['scene_gallery_height']], [c['scene_gallery']])
+        c['scene_gallery_height'].release(update_gallery_layout, [c['scene_gallery_columns'], c['scene_gallery_height']], [c['scene_gallery']])
 
     def on_reset_scene_wrapper(self, scenes, shot_id, outdir, view, history, *ana_args):
         """Resets a scene's manual overrides to its initial state."""
@@ -1181,12 +1193,14 @@ class AppUI:
                 for face in faces:
                     all_faces.append({'frame_num': frame_num, 'bbox': face.bbox, 'embedding': face.normed_embedding, 'det_score': face.det_score, 'thumb_path': str(thumb_dir / thumb_filename)})
             if not all_faces: return gr.update(visible=True), [], 0.5, []
-            # ... reused clustering logic ...
-            return self.on_identity_confidence_change(0.5, all_faces), self.on_identity_confidence_change(0.5, all_faces)['value'], 0.5, all_faces
-        except Exception:
+            # Get clustered faces for gallery
+            gallery_items = self.on_identity_confidence_change(0.5, all_faces)
+            return gr.update(visible=True), gallery_items, 0.5, all_faces
+        except Exception as e:
+            self.logger.warning(f"Find people failed: {e}")
             return gr.update(visible=False), [], 0.5, []
 
-    def on_apply_bulk_scene_filters_extended(self, scenes: list, min_mask_area: float, min_face_sim: float, min_confidence: float, enable_face_filter: bool, output_folder: str, view: str) -> tuple:
+    def on_apply_bulk_scene_filters_extended(self, scenes: list, min_mask_area: float, min_face_sim: float, min_quality_score: float, enable_face_filter: bool, output_folder: str, view: str) -> tuple:
         """Applies filters to all scenes and updates their status."""
         if not scenes: return [], "No scenes", gr.update(), [], gr.update()
         scenes_objs = [Scene(**s) for s in scenes]
@@ -1196,9 +1210,9 @@ class AppUI:
             seed_metrics = scene.seed_metrics or {}
             details = scene.seed_result.get('details', {}) if scene.seed_result else {}
             if details.get('mask_area_pct', 100) < min_mask_area: rejection_reasons.append("Area")
-            if enable_face_filter and seed_metrics.get('best_face_sim', 1.0) < min_face_sim: rejection_reasons.append("FaceSim")
-            # Score defaults to 0 when missing (conservative - filters unscored scenes if threshold > 0)
-            if seed_metrics.get('score', 0.0) < min_confidence: rejection_reasons.append("Conf")
+            if min_face_sim > 0 and seed_metrics.get('best_face_sim', 0.0) < min_face_sim: rejection_reasons.append("FaceSim")
+            # Quality score is composite (0-20), defaults to 0 when missing
+            if min_quality_score > 0 and seed_metrics.get('score', 0.0) < min_quality_score: rejection_reasons.append("Score")
             scene.rejection_reasons = rejection_reasons
             scene.status = 'excluded' if rejection_reasons else 'included'
 
