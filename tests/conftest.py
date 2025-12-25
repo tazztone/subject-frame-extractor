@@ -138,6 +138,9 @@ def build_modules_to_mock():
     mock_pydantic_settings = MagicMock(name='pydantic_settings')
     mock_pydantic_settings.BaseSettings = pydantic.BaseModel
     mock_pydantic_settings.SettingsConfigDict = dict
+
+    mock_skimage = MagicMock(name='skimage')
+    mock_skimage.measure = MagicMock(name='skimage.measure')
     
     modules = {
         # Torch
@@ -189,7 +192,8 @@ def build_modules_to_mock():
         'mediapipe.tasks.python.vision': MagicMock(),
         'lpips': MagicMock(name='lpips'),
         'numba': MagicMock(name='numba'),
-        'skimage': MagicMock(name='skimage'),
+        'skimage': mock_skimage,
+        'skimage.measure': mock_skimage.measure,
         'skimage.metrics': MagicMock(name='skimage.metrics'),
         'pydantic_settings': mock_pydantic_settings,
     }
