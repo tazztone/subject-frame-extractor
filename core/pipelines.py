@@ -72,6 +72,7 @@ def run_ffmpeg_extraction(video_path: str, output_dir: Path, video_info: dict, p
     Executes FFmpeg command to extract frames/thumbnails.
 
     Constructs complex filter chains based on extraction method (interval, keyframes, etc.).
+    Also creates a downscaled video (video_lowres.mp4) for efficient SAM3 processing.
     """
     cmd_base = ['ffmpeg', '-y', '-i', str(video_path), '-hide_banner']
     progress_args = ['-progress', 'pipe:1', '-nostats', '-loglevel', 'info']
@@ -147,6 +148,28 @@ def run_ffmpeg_extraction(video_path: str, output_dir: Path, video_info: dict, p
     if process.returncode not in [0, -9] and not cancel_event.is_set():
         logger.error("FFmpeg extraction failed", extra={'returncode': process.returncode, 'stderr': stderr_output})
         raise RuntimeError(f"FFmpeg failed with code {process.returncode}. Check logs for details.")
+
+    # Create downscaled video for SAM3 (avoids temp JPEG I/O during propagation)
+    if not cancel_event.is_set():
+        lowres_video_path = output_dir / "video_lowres.mp4"
+        logger.info(f"Creating downscaled video for SAM3: {lowres_video_path}")
+        lowres_cmd = [
+            'ffmpeg', '-y', '-i', str(video_path), '-hide_banner', '-loglevel', 'warning',
+            '-vf', vf_scale,
+            '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
+            '-an',  # No audio needed
+            str(lowres_video_path)
+        ]
+        try:
+            lowres_proc = subprocess.run(lowres_cmd, capture_output=True, text=True, timeout=600)
+            if lowres_proc.returncode == 0:
+                logger.success(f"Downscaled video created: {lowres_video_path}")
+            else:
+                logger.warning(f"Failed to create downscaled video: {lowres_proc.stderr[:500]}")
+        except subprocess.TimeoutExpired:
+            logger.warning("Downscaled video creation timed out")
+        except Exception as e:
+            logger.warning(f"Could not create downscaled video: {e}")
 
 class Pipeline:
     """Base class for processing pipelines."""

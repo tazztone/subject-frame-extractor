@@ -97,7 +97,7 @@ class TestSeedSelector:
                 mock_obj_seed.assert_called_once()
 
     @patch('core.scene_utils.seed_selector.postprocess_mask')
-    def test_sam2_mask_for_bbox_success(self, mock_post, selector, tmp_path):
+    def test_get_mask_for_bbox_success(self, mock_post, selector, tmp_path):
         frame_rgb = np.zeros((100, 100, 3), dtype=np.uint8)
         bbox = [0, 0, 50, 50]
 
@@ -109,13 +109,13 @@ class TestSeedSelector:
             mock_img = MagicMock()
             mock_pil.return_value = mock_img
 
-            mask = selector._sam2_mask_for_bbox(frame_rgb, bbox)
+            mask = selector._get_mask_for_bbox(frame_rgb, bbox)
 
             assert mask is not None
             selector.tracker.init_video.assert_called()
             selector.tracker.add_bbox_prompt.assert_called()
 
-    def test_sam2_mask_for_bbox_error(self, selector):
+    def test_get_mask_for_bbox_error(self, selector):
         frame_rgb = np.zeros((100, 100, 3), dtype=np.uint8)
         bbox = [0, 0, 50, 50]
 
@@ -130,7 +130,7 @@ class TestSeedSelector:
         # We need to ensure torch.cuda.OutOfMemoryError is a valid exception type for except clause.
 
         with patch('torch.cuda.OutOfMemoryError', RuntimeError):
-            mask = selector._sam2_mask_for_bbox(frame_rgb, bbox)
+            mask = selector._get_mask_for_bbox(frame_rgb, bbox)
             assert mask is None
 
 class TestMaskPropagator:
