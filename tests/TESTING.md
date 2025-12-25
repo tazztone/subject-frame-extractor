@@ -104,6 +104,7 @@ The test suite is divided into **Unit Tests** and **Integration Tests** to handl
 | `gpu_e2e` | `test_gpu_e2e.py` | Yes | No | `pytest tests/test_gpu_e2e.py -m ""` |
 | `e2e` | `tests/e2e/` | No | Yes | `pytest tests/e2e/` |
 | `bug_regression` | `test_bug_regression.py` | No | Yes | `pytest tests/e2e/test_bug_regression.py` |
+| `ui_interactions` | `test_ui_interactions.py` | No | Yes | `pytest tests/e2e/test_ui_interactions.py` |
 | `component` | `test_component_verification.py` | No | Yes | `pytest -m component` |
 | `visual` | `test_visual_regression.py` | No | Yes | `pytest -m visual` |
 | `accessibility` | `test_accessibility.py` | No | Yes | `pytest -m accessibility` |
@@ -175,23 +176,89 @@ python -m pytest tests/test_gpu_e2e.py::TestSAM3Inference -v -m ""
 
 ## Playwright E2E Tests
 
-Browser-based tests using a mock application server.
+Browser-based tests that interact with the actual Gradio UI. Tests can run against a mock app or the real app.
+
+### Prerequisites
 
 ```bash
-# Start mock server
-python tests/mock_app.py &
+# Install Playwright and pytest plugin (in venv)
+uv pip install playwright pytest-playwright
 
-# Run all Playwright tests
-python -m pytest tests/e2e/ -v -s
+# Install browser binaries
+playwright install chromium
 ```
+
+### Running E2E Tests
+
+**Option 1: Real App (Recommended for catching real bugs)**
+```bash
+# Terminal 1: Start the real app
+./venv/Scripts/python.exe app.py
+
+# Terminal 2: Run E2E tests (auto-detects running app)
+./venv/Scripts/python.exe -m pytest tests/e2e/test_ui_interactions.py -v -s
+```
+
+**Option 2: Mock Server (Faster, CI-Friendly)**
+```bash
+# Tests will auto-start mock if no app running on port 7860
+./venv/Scripts/python.exe -m pytest tests/e2e/ -v -s
+```
+
+> **💡 TIP**: The `app_server` fixture auto-detects if an app is already running on port 7860. If so, it uses that instead of starting a mock.
 
 ### E2E Test Files
 
-| File | Purpose |
-|------|---------|
-| `test_app_flow.py` | Main workflow from extraction to export |
-| `test_export_flow.py` | Export workflow and options |
-| `test_session_lifecycle.py` | Session management and state |
+| File | Tests | Purpose |
+|------|-------|---------|
+| `test_ui_interactions.py` | 7 | Button clicks, slider changes, log refresh, console errors |
+| `test_bug_regression.py` | 11 | Regression tests for fixed bugs (pagination, sliders, logs) |
+| `test_app_flow.py` | 3 | Main workflow from extraction to export |
+| `test_export_flow.py` | - | Export workflow and options |
+| `test_session_lifecycle.py` | - | Session management and state |
+
+### Common Issues
+
+| Issue | Solution |
+|-------|----------|
+| `ModuleNotFoundError: playwright` | Run `uv pip install playwright pytest-playwright` |
+| Tests timeout | Real app may be loading models, wait longer or use mock |
+| "element not visible" | Some UI elements only appear after data is loaded |
+| Port 7860 in use | Stop existing Python processes: `Stop-Process -Name python -Force` |
+
+### Browser Automation Lessons Learned
+
+1. **Test with real app periodically** - Mocks can hide real issues like missing models or incorrect return values
+2. **Check terminal logs** - Many UI issues manifest as Python errors visible only in terminal output
+3. **Gradio component counts matter** - If a handler returns wrong number of values, Gradio throws `didn't return enough output values`
+4. **Gallery updates need value** - When updating `gr.Gallery` layout, include `value=current_gallery`
+5. **Log visibility requires active polling** - Logs pushed to queue only display when something reads from the queue
+6. **Restart app after code changes** - Gradio doesn't hot-reload, so tests may fail until you restart
+
+### Testing with Sample Data
+
+Some E2E tests require loaded data (scenes, extracted frames) to run. Use the sample files in `tests/assets/`:
+
+**Sample Files:**
+- `tests/assets/sample.mp4` - Sample video for extraction tests
+- `tests/assets/sample.jpg` - Sample reference image
+
+**Running Full Integration Tests:**
+```bash
+# Start the real app
+./venv/Scripts/python.exe app.py
+
+# Run tests that use sample data (these take longer)
+./venv/Scripts/python.exe -m pytest tests/e2e/test_with_sample_data.py -v -s
+```
+
+**What the sample data tests do:**
+1. `extracted_video_session` fixture - Auto-extracts sample.mp4 before tests
+2. `TestGallerySlidersWithData` - Tests Columns/Height sliders with real scenes
+3. `TestFindPeopleWithData` - Tests face detection on real video
+4. `TestFullWorkflowWithSampleVideo` - Complete extraction→analysis→scenes workflow
+
+> **⏱️ Note**: These tests take 30-60 seconds because they run real extraction and analysis.
 
 ---
 

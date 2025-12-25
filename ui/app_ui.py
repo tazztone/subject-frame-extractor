@@ -296,15 +296,20 @@ class AppUI:
                 with gr.Group(visible=False) as face_seeding_group:
                     self.components['face_seeding_group'] = face_seeding_group
                     gr.Markdown("**2. Reference Image (Required for Face Strategy)**")
+                    gr.Markdown("*Option A: Upload a photo of the person to track*")
                     with gr.Row():
                         self._reg('face_ref_img_upload', self._create_component('face_ref_img_upload_input', 'file', {'label': "Upload Photo", 'type': "filepath"}))
                         self._create_component('face_ref_image', 'image', {'label': "Reference", 'interactive': False, 'height': 150})
                     self._reg('face_ref_img_path', self._create_component('face_ref_img_path_input', 'textbox', {'label': "Or local path"}))
-                    self._create_component('find_people_button', 'button', {'value': "Find People in Video"})
+                    gr.Markdown("---")
+                    gr.Markdown("*Option B: Find people in the video and select one*")
+                    self._create_component('find_people_button', 'button', {'value': "🔍 Scan Video for Faces", 'variant': 'secondary'})
+                    self._create_component('find_people_status', 'markdown', {'value': ""})
                     with gr.Group(visible=False) as discovered_people_group:
                         self.components['discovered_people_group'] = discovered_people_group
+                        gr.Markdown("👆 **Click a face below to use as reference:**")
                         self._create_component('discovered_faces_gallery', 'gallery', {'label': "Discovered People", 'columns': 4, 'height': 'auto', 'allow_preview': False})
-                        self._create_component('identity_confidence_slider', 'slider', {'label': "Clustering Confidence", 'minimum': 0.0, 'maximum': 1.0, 'step': 0.05, 'value': 0.5})
+                        self._create_component('identity_confidence_slider', 'slider', {'label': "Clustering Confidence", 'minimum': 0.0, 'maximum': 1.0, 'step': 0.05, 'value': 0.5, 'info': "Higher = stricter identity grouping"})
 
                 # 3. Text Prompt
                 with gr.Group(visible=False) as text_seeding_group:
@@ -1129,7 +1134,7 @@ class AppUI:
         c['clear_queue_button'].click(self.clear_queue_handler, inputs=[], outputs=[c['batch_queue_dataframe']])
         c['start_batch_button'].click(self.start_batch_wrapper, inputs=[c['batch_workers_slider']], outputs=[c['batch_queue_dataframe']])
         c['stop_batch_button'].click(self.stop_batch_handler, inputs=[], outputs=[])
-        c['find_people_button'].click(self.on_find_people_from_video, inputs=self.ana_input_components, outputs=[c['discovered_people_group'], c['discovered_faces_gallery'], c['identity_confidence_slider'], c['discovered_faces_state']])
+        c['find_people_button'].click(self.on_find_people_from_video, inputs=self.ana_input_components, outputs=[c['find_people_status'], c['discovered_people_group'], c['discovered_faces_gallery'], c['identity_confidence_slider'], c['discovered_faces_state']])
         c['identity_confidence_slider'].release(self.on_identity_confidence_change, inputs=[c['identity_confidence_slider'], c['discovered_faces_state']], outputs=[c['discovered_faces_gallery']])
         c['discovered_faces_gallery'].select(self.on_discovered_face_select, inputs=[c['discovered_faces_state'], c['identity_confidence_slider']] + self.ana_input_components, outputs=[c['face_ref_img_path_input'], c['face_ref_image']])
 
@@ -1182,25 +1187,30 @@ class AppUI:
         cv2.imwrite(str(face_crop_path), face_crop)
         return str(face_crop_path), face_crop
 
-    def on_find_people_from_video(self, *args) -> tuple[gr.update, list, float, list]:
-        """Scans the video for faces to populate the discovery gallery."""
+    def on_find_people_from_video(self, *args) -> tuple[str, gr.update, gr.update, float, list]:
+        """Scans the video for faces to populate the discovery gallery.
+        
+        Returns: (status_message, group_visibility, gallery_update, slider_value, all_faces_state)
+        """
         try:
-            self.logger.info("Find People button clicked")
+            self.logger.info("Scan Video for Faces clicked")
             params = self._create_pre_analysis_event(*args)
             output_dir = Path(params.output_folder)
             self.logger.info(f"Output dir: {output_dir}, exists: {output_dir.exists()}")
             if not output_dir.exists():
                 self.logger.warning("Output directory does not exist - run extraction first")
-                return gr.update(visible=False), [], 0.5, []
+                return "⚠️ **Run extraction first** - No video frames found.", gr.update(visible=False), [], 0.5, []
             from core.managers import initialize_analysis_models
             from core.utils import create_frame_map
             models = initialize_analysis_models(params, self.config, self.logger, self.model_registry)
             face_analyzer = models['face_analyzer']
             if not face_analyzer:
-                self.logger.warning("Face analyzer not available - enable face filter first")
-                return gr.update(visible=False), [], 0.5, []
+                self.logger.warning("Face analyzer not available")
+                return "⚠️ **Face analyzer unavailable** - Check model installation.", gr.update(visible=False), [], 0.5, []
             frame_map = create_frame_map(output_dir, self.logger)
             self.logger.info(f"Frame map has {len(frame_map)} frames")
+            if not frame_map:
+                return "⚠️ **No frames found** - Run extraction first.", gr.update(visible=False), [], 0.5, []
             all_faces = []
             thumb_dir = output_dir / "thumbs"
             for frame_num, thumb_filename in frame_map.items():
@@ -1213,13 +1223,14 @@ class AppUI:
             self.logger.info(f"Found {len(all_faces)} faces in video")
             if not all_faces:
                 self.logger.info("No faces found in sampled frames")
-                return gr.update(visible=True), [], 0.5, []
+                return "ℹ️ **No faces detected** in sampled frames. Try adjusting sample rate.", gr.update(visible=False), [], 0.5, []
             # Get clustered faces for gallery
             gallery_items = self.on_identity_confidence_change(0.5, all_faces)
-            return gr.update(visible=True), gallery_items, 0.5, all_faces
+            n_people = len(self.gallery_to_cluster_map) if hasattr(self, 'gallery_to_cluster_map') else 0
+            return f"✅ Found **{n_people} unique people** from {len(all_faces)} face detections.", gr.update(visible=True), gallery_items, 0.5, all_faces
         except Exception as e:
             self.logger.warning(f"Find people failed: {e}", exc_info=True)
-            return gr.update(visible=False), [], 0.5, []
+            return f"❌ **Error:** {str(e)[:100]}", gr.update(visible=False), [], 0.5, []
 
     def on_apply_bulk_scene_filters_extended(self, scenes: list, min_mask_area: float, min_face_sim: float, min_quality_score: float, enable_face_filter: bool, output_folder: str, view: str) -> tuple:
         """Applies filters to all scenes and updates their status."""
