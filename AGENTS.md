@@ -1,6 +1,6 @@
 ---
-Version: 2.0
-Last Updated: 2025-12-20
+Version: 2.1
+Last Updated: 2025-12-25
 Python: 3.10+
 Gradio: 6.x
 SAM3: Via submodule
@@ -194,9 +194,6 @@ mask = wrapper.add_bbox_prompt(
 # 3. Propagate masks (generator)
 for frame_idx, obj_id, mask in wrapper.propagate(start_idx=0, reverse=False):
     process_mask(mask)
-
-# 4. Cleanup
-wrapper.cleanup()
 ```
 
 ### Key Differences from Legacy API
@@ -212,10 +209,8 @@ wrapper.cleanup()
 - `SAM3Wrapper.add_bbox_prompt()` handles conversion automatically
 - Pass absolute pixel coords + image size, it converts internally
 
-### Legacy Compatibility (Deprecated)
-These methods still work but are deprecated:
-- `wrapper.initialize(images, bbox=...)` → use `init_video()` + `add_bbox_prompt()`
-- `wrapper.propagate_from(idx, direction)` → use `propagate(start_idx, reverse)`
+### Performance: Downscaled Video
+During extraction, `video_lowres.mp4` is created at thumbnail resolution. When available, `MaskPropagator.propagate_video()` uses this directly, eliminating temp JPEG I/O.
 
 
 ## 7. Configuration Reference
