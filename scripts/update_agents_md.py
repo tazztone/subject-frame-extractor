@@ -21,45 +21,61 @@ def process_node(node, indent=0):
     for decorator in node.decorator_list:
         lines.append(f"{prefix}@{ast.unparse(decorator)}")
 
-    # Definition
+    # Definition line construction
+    definition = ""
     if isinstance(node, ast.ClassDef):
         bases = [ast.unparse(b) for b in node.bases]
         base_str = f"({', '.join(bases)})" if bases else ""
-        lines.append(f"{prefix}class {node.name}{base_str}:")
+        definition = f"{prefix}class {node.name}{base_str}:"
     elif isinstance(node, ast.FunctionDef):
         args = ast.unparse(node.args)
         returns = f" -> {ast.unparse(node.returns)}" if node.returns else ""
-        lines.append(f"{prefix}def {node.name}({args}){returns}:")
+        definition = f"{prefix}def {node.name}({args}){returns}:"
     elif isinstance(node, ast.AsyncFunctionDef):
         args = ast.unparse(node.args)
         returns = f" -> {ast.unparse(node.returns)}" if node.returns else ""
-        lines.append(f"{prefix}async def {node.name}({args}){returns}:")
+        definition = f"{prefix}async def {node.name}({args}){returns}:"
+
+    # Collect body content
+    body_lines = []
 
     # Docstring
     docstring = ast.get_docstring(node)
     if docstring:
         doc_lines = docstring.strip().split('\n')
-        lines.append(f'{prefix}    """')
+        body_lines.append(f'{prefix}    """')
         for dl in doc_lines:
-            lines.append(f"{prefix}    {dl.strip()}")
-        lines.append(f'{prefix}    """')
+            body_lines.append(f"{prefix}    {dl.strip()}")
+        body_lines.append(f'{prefix}    """')
 
-    # Body Summary
+    # Child nodes
+    has_children = False
     if isinstance(node, ast.ClassDef):
-        has_content = False
         for child in node.body:
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                has_content = True
-                lines.extend(process_node(child, indent + 4))
+                has_children = True
+                body_lines.extend(process_node(child, indent + 4))
             elif isinstance(child, ast.Assign):
                 try:
-                    lines.append(f"{prefix}    {ast.unparse(child)}")
-                    has_content = True
+                    # Limit assignments to one line and 100 chars to save space
+                    assign_str = ast.unparse(child)
+                    if len(assign_str) > 100:
+                        assign_str = assign_str[:97] + "..."
+                    body_lines.append(f"{prefix}    {assign_str}")
+                    has_children = True
                 except: pass
-        if not has_content:
-            lines.append(f"{prefix}    ...")
+
+    # Assemble lines
+    if not docstring and not has_children:
+        # Condensed single-line format for empty bodies
+        lines.append(f"{definition} ...")
     else:
-        lines.append(f"{prefix}    ...")
+        # Standard format
+        lines.append(definition)
+        lines.extend(body_lines)
+        # If there's content (docstring or children), we don't need a trailing "..."
+        # unless it's a class with only a docstring, but even then, the docstring implies body.
+        # So we leave it clean.
 
     return lines
 
@@ -79,7 +95,7 @@ def parse_file_to_skeleton(file_path):
     if docstring:
         lines.append(f'"""\n{docstring}\n"""\n')
 
-    # Imports
+    # Imports - Compact them
     imports = []
     for node in tree.body:
         if isinstance(node, (ast.Import, ast.ImportFrom)):
@@ -89,14 +105,25 @@ def parse_file_to_skeleton(file_path):
         lines.extend(imports)
         lines.append("")
 
+    # Definitions
+    has_definitions = False
     for node in tree.body:
         if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
             lines.extend(process_node(node))
-            lines.append("")
+            lines.append("") # Spacer between top-level definitions
+            has_definitions = True
         elif isinstance(node, ast.Assign):
-            lines.append(ast.unparse(node))
+            # Top level assignments (constants etc)
+            try:
+                # Limit length
+                assign_str = ast.unparse(node)
+                if len(assign_str) > 100:
+                    assign_str = assign_str[:97] + "..."
+                lines.append(assign_str)
+            except: pass
 
-    return "\n".join(lines)
+    result = "\n".join(lines).strip()
+    return result
 
 
 def generate_file_tree(root_dir):
@@ -181,10 +208,14 @@ def generate_skeleton_section(root_dir):
     files.sort()
 
     for file_path in files:
+        skeleton = parse_file_to_skeleton(file_path)
+        # Skip empty skeletons
+        if not skeleton:
+            continue
+
         rel_path = file_path.relative_to(root_dir)
         output.append(f"### `📄 {rel_path}`\n")
         output.append("```python")
-        skeleton = parse_file_to_skeleton(file_path)
         output.append(skeleton)
         output.append("```\n")
 
