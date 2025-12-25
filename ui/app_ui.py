@@ -713,11 +713,11 @@ class AppUI:
         for comp in [c['scene_mask_area_min_input'], c['scene_face_sim_min_input'], c['scene_quality_score_min_input']]:
             comp.release(self.on_apply_bulk_scene_filters_extended, [c['scenes_state'], c['scene_mask_area_min_input'], c['scene_face_sim_min_input'], c['scene_quality_score_min_input'], c['enable_face_filter_input'], c['extracted_frames_dir_state'], c['scene_gallery_view_toggle']], [c['scenes_state'], c['scene_filter_status'], c['scene_gallery'], c['scene_gallery_index_map_state'], c['propagate_masks_button']])
 
-        # Gallery size controls
-        def update_gallery_layout(columns, height):
-            return gr.update(columns=int(columns), height=int(height))
-        c['scene_gallery_columns'].release(update_gallery_layout, [c['scene_gallery_columns'], c['scene_gallery_height']], [c['scene_gallery']])
-        c['scene_gallery_height'].release(update_gallery_layout, [c['scene_gallery_columns'], c['scene_gallery_height']], [c['scene_gallery']])
+        # Gallery size controls - need to get current gallery value to update columns/height
+        def update_gallery_layout(columns, height, current_gallery):
+            return gr.Gallery(columns=int(columns), height=int(height), value=current_gallery)
+        c['scene_gallery_columns'].release(update_gallery_layout, [c['scene_gallery_columns'], c['scene_gallery_height'], c['scene_gallery']], [c['scene_gallery']])
+        c['scene_gallery_height'].release(update_gallery_layout, [c['scene_gallery_columns'], c['scene_gallery_height'], c['scene_gallery']], [c['scene_gallery']])
 
     def on_reset_scene_wrapper(self, scenes, shot_id, outdir, view, history, *ana_args):
         """Resets a scene's manual overrides to its initial state."""
@@ -970,7 +970,6 @@ class AppUI:
         <p><strong>Next:</strong> Compute metrics.</p>
         </div>"""
         return {
-            self.components['scenes_state']: result['scenes'],
             self.components['unified_status']: msg,
             self.components['main_tabs']: gr.update(selected=3),
             self.components['stepper']: self._get_stepper_html(3)
@@ -1186,15 +1185,22 @@ class AppUI:
     def on_find_people_from_video(self, *args) -> tuple[gr.update, list, float, list]:
         """Scans the video for faces to populate the discovery gallery."""
         try:
+            self.logger.info("Find People button clicked")
             params = self._create_pre_analysis_event(*args)
             output_dir = Path(params.output_folder)
-            if not output_dir.exists(): return gr.update(visible=False), [], 0.5, []
+            self.logger.info(f"Output dir: {output_dir}, exists: {output_dir.exists()}")
+            if not output_dir.exists():
+                self.logger.warning("Output directory does not exist - run extraction first")
+                return gr.update(visible=False), [], 0.5, []
             from core.managers import initialize_analysis_models
             from core.utils import create_frame_map
             models = initialize_analysis_models(params, self.config, self.logger, self.model_registry)
             face_analyzer = models['face_analyzer']
-            if not face_analyzer: return gr.update(visible=False), [], 0.5, []
+            if not face_analyzer:
+                self.logger.warning("Face analyzer not available - enable face filter first")
+                return gr.update(visible=False), [], 0.5, []
             frame_map = create_frame_map(output_dir, self.logger)
+            self.logger.info(f"Frame map has {len(frame_map)} frames")
             all_faces = []
             thumb_dir = output_dir / "thumbs"
             for frame_num, thumb_filename in frame_map.items():
@@ -1204,12 +1210,15 @@ class AppUI:
                 faces = face_analyzer.get(cv2.cvtColor(thumb_rgb, cv2.COLOR_RGB2BGR))
                 for face in faces:
                     all_faces.append({'frame_num': frame_num, 'bbox': face.bbox, 'embedding': face.normed_embedding, 'det_score': face.det_score, 'thumb_path': str(thumb_dir / thumb_filename)})
-            if not all_faces: return gr.update(visible=True), [], 0.5, []
+            self.logger.info(f"Found {len(all_faces)} faces in video")
+            if not all_faces:
+                self.logger.info("No faces found in sampled frames")
+                return gr.update(visible=True), [], 0.5, []
             # Get clustered faces for gallery
             gallery_items = self.on_identity_confidence_change(0.5, all_faces)
             return gr.update(visible=True), gallery_items, 0.5, all_faces
         except Exception as e:
-            self.logger.warning(f"Find people failed: {e}")
+            self.logger.warning(f"Find people failed: {e}", exc_info=True)
             return gr.update(visible=False), [], 0.5, []
 
     def on_apply_bulk_scene_filters_extended(self, scenes: list, min_mask_area: float, min_face_sim: float, min_quality_score: float, enable_face_filter: bool, output_folder: str, view: str) -> tuple:
