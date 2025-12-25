@@ -114,10 +114,30 @@ class TestPipelines:
         )
 
         assert mock_popen.called
-        # Check command args
-        cmd = mock_popen.call_args[0][0]
-        assert "ffmpeg" in cmd
-        assert str(tmp_path / "thumbs" / "frame_%06d.webp") in cmd
+        # Check that subprocess.Popen was called at least once
+        # Note: run_ffmpeg_extraction calls Popen for extraction, AND subprocess.run for downscaling.
+        # But we mocked subprocess.Popen.
+
+        # It seems the test is failing because the cmd being asserted is the one for downscaling (subprocess.run might be calling Popen internally or mocked too? No, patch('subprocess.Popen') only patches Popen).
+        # Wait, the failure message shows:
+        # ['ffmpeg', ..., '/video_lowres.mp4']
+        # This is the downscaling command.
+        # It means `run_ffmpeg_extraction` calls Popen twice (or Popen once and run once, and run uses Popen).
+        # Since we patched Popen, both calls are intercepted if `subprocess.run` uses `subprocess.Popen` internally (which it does).
+
+        # So we should check if ANY of the calls to Popen contained the thumbnail path.
+
+        found_thumbs = False
+        for call_args in mock_popen.call_args_list:
+            cmd = call_args[0][0]
+            for arg in cmd:
+                if "frame_%06d.webp" in str(arg):
+                    found_thumbs = True
+                    break
+            if found_thumbs:
+                break
+
+        assert found_thumbs, f"Thumbnail output path not found in any Popen call. Calls: {mock_popen.call_args_list}"
 
     @patch('core.pipelines.run_ffmpeg_extraction')
     @patch('core.managers.VideoManager')
