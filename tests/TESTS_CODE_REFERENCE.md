@@ -155,7 +155,7 @@ def mock_config_simple(tmp_path):
     """
 ```
 
-### `📄 e2e\ai_ux_analyzer.py`
+### `📄 e2e/ai_ux_analyzer.py`
 
 ```python
 """
@@ -231,7 +231,7 @@ def generate_issue_report(issues: List[UXIssue], title: str='UX Analysis Report'
     """
 ```
 
-### `📄 e2e\conftest.py`
+### `📄 e2e/conftest.py`
 
 ```python
 """
@@ -277,7 +277,7 @@ def analyzed_session(extracted_session):
     """
 ```
 
-### `📄 e2e\test_accessibility.py`
+### `📄 e2e/test_accessibility.py`
 
 ```python
 """
@@ -356,7 +356,7 @@ class TestARIACompliance:
         """
 ```
 
-### `📄 e2e\test_ai_ux_audit.py`
+### `📄 e2e/test_ai_ux_audit.py`
 
 ```python
 """
@@ -415,7 +415,7 @@ class TestFullAppAudit:
         """
 ```
 
-### `📄 e2e\test_app_flow.py`
+### `📄 e2e/test_app_flow.py`
 
 ```python
 """
@@ -487,7 +487,7 @@ class TestUIInteraction:
         """
 ```
 
-### `📄 e2e\test_bug_regression.py`
+### `📄 e2e/test_bug_regression.py`
 
 ```python
 """
@@ -581,7 +581,7 @@ class TestPropagationErrorHandling:
         """
 ```
 
-### `📄 e2e\test_component_verification.py`
+### `📄 e2e/test_component_verification.py`
 
 ```python
 """
@@ -686,7 +686,7 @@ class TestStrategyVisibility:
         """
 ```
 
-### `📄 e2e\test_export_flow.py`
+### `📄 e2e/test_export_flow.py`
 
 ```python
 """
@@ -751,7 +751,7 @@ class TestExportFormats:
         """
 ```
 
-### `📄 e2e\test_full_workflow_mocked.py`
+### `📄 e2e/test_full_workflow_mocked.py`
 
 ```python
 import pytest
@@ -789,7 +789,7 @@ class TestFullWorkflowMocked:
         """
 ```
 
-### `📄 e2e\test_session_lifecycle.py`
+### `📄 e2e/test_session_lifecycle.py`
 
 ```python
 """
@@ -862,7 +862,7 @@ class TestLoadPreviousSession:
         """
 ```
 
-### `📄 e2e\test_ui_interactions.py`
+### `📄 e2e/test_ui_interactions.py`
 
 ```python
 """
@@ -943,7 +943,7 @@ class TestUIConsoleErrors:
         """
 ```
 
-### `📄 e2e\test_visual_regression.py`
+### `📄 e2e/test_visual_regression.py`
 
 ```python
 """
@@ -1016,7 +1016,7 @@ def _open_help(page: Page):
     """
 ```
 
-### `📄 e2e\test_with_sample_data.py`
+### `📄 e2e/test_with_sample_data.py`
 
 ```python
 """
@@ -1088,7 +1088,7 @@ class TestFullWorkflowWithSampleVideo:
         """
 ```
 
-### `📄 e2e\visual_test_utils.py`
+### `📄 e2e/visual_test_utils.py`
 
 ```python
 """
