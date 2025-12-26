@@ -31,5 +31,5 @@ jobs:
       - name: Commit changes
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "docs: update AGENTS.md code reference"
-          file_pattern: "AGENTS.md AGENTS_CODE_REFERENCE.md"
+          commit_message: "docs: update code reference skeletons"
+          file_pattern: "AGENTS_CODE_REFERENCE.md"
