@@ -32,4 +32,4 @@ jobs:
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "docs: update code reference skeletons"
-          file_pattern: "AGENTS_CODE_REFERENCE.md"
+          file_pattern: "AGENTS_CODE_REFERENCE.md tests/TESTS_CODE_REFERENCE.md"
