@@ -20,12 +20,10 @@ class TestSAM3WrapperAPICompleteness:
     @pytest.fixture
     def mock_wrapper_class(self):
         """Create a mock-free SAM3Wrapper class reference."""
-        with patch('core.managers.build_sam3_video_model') as mock_build:
-            mock_model = MagicMock()
-            mock_model.tracker = MagicMock()
-            mock_model.detector = MagicMock()
-            mock_model.detector.backbone = MagicMock()
-            mock_build.return_value = mock_model
+        # Use build_sam3_video_predictor as per the new refactor
+        with patch('core.managers.build_sam3_video_predictor') as mock_build:
+            mock_predictor = MagicMock()
+            mock_build.return_value = mock_predictor
             
             with patch('torch.cuda.is_available', return_value=False):
                 from core.managers import SAM3Wrapper
@@ -40,7 +38,7 @@ class TestSAM3WrapperAPICompleteness:
         """
         Verify all API methods expected by SeedSelector exist on SAM3Wrapper.
         
-        This is the key test that would have caught detect_objects() missing.
+        Now includes remove_object and shutdown.
         """
         required_methods = [
             'init_video',
@@ -53,6 +51,8 @@ class TestSAM3WrapperAPICompleteness:
             'add_point_prompt',
             'reset_session',
             'close_session',
+            'remove_object',
+            'shutdown',
         ]
         
         for method in required_methods:
@@ -96,20 +96,17 @@ class TestSAM3WrapperMethodBehavior:
     @pytest.fixture
     def mock_wrapper(self):
         """Create a fully mocked SAM3Wrapper."""
-        with patch('core.managers.build_sam3_video_model') as mock_build:
-            mock_model = MagicMock()
-            mock_tracker = MagicMock()
-            mock_detector = MagicMock()
-            mock_detector.backbone = MagicMock()
+        with patch('core.managers.build_sam3_video_predictor') as mock_build:
+            mock_predictor = MagicMock()
+            mock_predictor.handle_request = MagicMock(return_value={})
+            mock_predictor.handle_stream_request = MagicMock(return_value=[])
             
-            mock_model.tracker = mock_tracker
-            mock_model.detector = mock_detector
-            mock_build.return_value = mock_model
+            mock_build.return_value = mock_predictor
             
             with patch('torch.cuda.is_available', return_value=False):
                 from core.managers import SAM3Wrapper
                 wrapper = SAM3Wrapper(device='cpu')
-                wrapper.sam3_model = mock_model
+                # wrapper.predictor is already set by __init__ due to mock_build
                 yield wrapper
 
     def test_detect_objects_returns_empty_on_empty_prompt(self, mock_wrapper):
@@ -122,7 +119,7 @@ class TestSAM3WrapperMethodBehavior:
 
     def test_add_text_prompt_requires_init_video(self, mock_wrapper):
         """add_text_prompt should raise if init_video not called."""
-        mock_wrapper.inference_state = None
+        mock_wrapper.session_id = None
         
         with pytest.raises(RuntimeError) as exc_info:
             mock_wrapper.add_text_prompt(0, "person")
@@ -131,7 +128,7 @@ class TestSAM3WrapperMethodBehavior:
 
     def test_add_point_prompt_requires_init_video(self, mock_wrapper):
         """add_point_prompt should raise if init_video not called."""
-        mock_wrapper.inference_state = None
+        mock_wrapper.session_id = None
         
         with pytest.raises(RuntimeError) as exc_info:
             mock_wrapper.add_point_prompt(0, 1, [(50, 50)], [1], (100, 100))
@@ -140,22 +137,41 @@ class TestSAM3WrapperMethodBehavior:
 
     def test_reset_session_with_no_state_is_safe(self, mock_wrapper):
         """reset_session should not raise when no session is active."""
-        mock_wrapper.inference_state = None
+        mock_wrapper.session_id = None
         mock_wrapper.reset_session()  # Should not raise
 
     def test_close_session_with_no_state_is_safe(self, mock_wrapper):
         """close_session should not raise when no session is active."""
-        mock_wrapper.inference_state = None
+        mock_wrapper.session_id = None
         mock_wrapper.close_session()  # Should not raise
 
-    def test_close_session_clears_inference_state(self, mock_wrapper):
-        """close_session should clear inference_state."""
-        mock_wrapper.inference_state = {"some": "state"}
+    def test_close_session_clears_session_id(self, mock_wrapper):
+        """close_session should clear session_id."""
+        mock_wrapper.session_id = "test_session"
         mock_wrapper.predictor = MagicMock()
         
         mock_wrapper.close_session()
         
-        assert mock_wrapper.inference_state is None
+        assert mock_wrapper.session_id is None
+
+    def test_remove_object_calls_predictor(self, mock_wrapper):
+        """remove_object should call predictor handle_request."""
+        mock_wrapper.session_id = "test_session"
+
+        mock_wrapper.remove_object(1)
+
+        mock_wrapper.predictor.handle_request.assert_called_with(
+            request={
+                "type": "remove_object",
+                "session_id": "test_session",
+                "obj_id": 1,
+            }
+        )
+
+    def test_shutdown_calls_predictor(self, mock_wrapper):
+        """shutdown should call predictor shutdown."""
+        mock_wrapper.shutdown()
+        mock_wrapper.predictor.shutdown.assert_called_once()
 
 
 class TestSeedSelectorTrackerInterface:
@@ -184,12 +200,9 @@ class TestSeedSelectorTrackerInterface:
         expected_methods = set(tracker_calls)
         
         # Verify SAM3Wrapper has all of them
-        with patch('core.managers.build_sam3_video_model') as mock_build:
-            mock_model = MagicMock()
-            mock_model.tracker = MagicMock()
-            mock_model.detector = MagicMock()
-            mock_model.detector.backbone = MagicMock()
-            mock_build.return_value = mock_model
+        with patch('core.managers.build_sam3_video_predictor') as mock_build:
+            mock_predictor = MagicMock()
+            mock_build.return_value = mock_predictor
             
             with patch('torch.cuda.is_available', return_value=False):
                 from core.managers import SAM3Wrapper
