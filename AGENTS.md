@@ -173,7 +173,7 @@ def test_sam3_feature(...):
 ## 6. SAM3 API Guide
 
 ### Official API Pattern (as of Dec 2024)
-The `SAM3Wrapper` class uses the official `Sam3TrackerPredictor` API:
+The `SAM3Wrapper` class uses the official `Sam3VideoPredictor` API via `build_sam3_video_predictor`:
 
 ```python
 from core.managers import SAM3Wrapper
@@ -203,24 +203,26 @@ wrapper.close_session()
 
 | Method | Description | Returns |
 |--------|-------------|---------|
-| `init_video(video_path)` | Initialize session with video/frames | inference_state |
+| `init_video(video_path)` | Initialize session with video/frames | session_id |
 | `add_bbox_prompt(frame_idx, obj_id, bbox_xywh, img_size)` | Add bounding box prompt | np.ndarray (mask) |
-| `detect_objects(frame_rgb, prompt)` | Text-based object detection | list[dict] with bbox, conf, type |
+| `detect_objects(frame_rgb, prompt)` | Text-based object detection (single image) | list[dict] with bbox, conf, type |
 | `add_text_prompt(frame_idx, text)` | Add text prompt for video detection | dict with obj_ids, masks, boxes |
 | `add_point_prompt(frame_idx, obj_id, points, labels, img_size)` | Mask refinement with clicks | np.ndarray (refined mask) |
 | `propagate(start_idx, max_frames, reverse)` | Generator for mask propagation | yields (frame_idx, obj_id, mask) |
 | `clear_prompts()` | Clear all prompts in session | None |
 | `reset_session()` | Reset without closing session | None |
 | `close_session()` | Close session, free GPU memory | None |
+| `remove_object(obj_id)` | Remove specific object from session | None |
+| `shutdown()` | Shutdown predictor (multi-GPU cleanup) | None |
 
 ### Text-Based Detection (Open Vocabulary)
 ```python
-# Single image detection
+# Single image detection (using legacy processor)
 results = wrapper.detect_objects(frame_rgb, "person")
 for r in results:
     print(f"Found at {r['bbox']} with confidence {r['conf']}")
 
-# Video text prompt (for tracking)
+# Video text prompt (for tracking using new API)
 wrapper.init_video(video_path)
 result = wrapper.add_text_prompt(frame_idx=0, text="person")
 # Then propagate detected objects
@@ -244,17 +246,17 @@ mask = wrapper.add_point_prompt(
 ```
 
 ### Key Differences from Legacy API
-| Old (handle_request) | New (Official) |
+| Old (handle_request) | New (Official Sam3VideoPredictor) |
 |---------------------|----------------|
-| `handle_request(type="start_session")` | `init_video(video_path)` |
-| `handle_request(type="add_prompt")` | `add_bbox_prompt()` |
-| `handle_request(type="propagate")` → dict | `propagate()` → **generator** |
-| Absolute pixel coords | **Relative (0-1) coords** (auto-converted) |
+| `handle_request(type="start_session")` | `init_video(video_path)` (uses `start_session` internally) |
+| `handle_request(type="add_prompt")` | `add_bbox_prompt()` (uses `add_prompt` internally) |
+| `handle_request(type="propagate")` → dict | `propagate()` → **generator** (uses `propagate_in_video` stream) |
+| Absolute pixel coords | **Relative (0-1) coords** (wrapper handles conversion) |
 
 ### 🔴 CRITICAL: Coordinate Handling
 - SAM3 official API expects **relative coordinates (0-1)**
 - `SAM3Wrapper.add_bbox_prompt()` handles conversion automatically
-- Pass absolute pixel coords + image size, it converts internally
+- Pass absolute pixel coords + image size, it converts internally to the required format (e.g. `[x, y, w, h]` normalized)
 
 ### Performance: Downscaled Video
 During extraction, `video_lowres.mp4` is created at thumbnail resolution. When available, `MaskPropagator.propagate_video()` uses this directly, eliminating temp JPEG I/O.
@@ -377,7 +379,7 @@ If `pip` fails with path errors, use `python -m pip` or `uv pip` instead.
 ## 15. Debugging Workflows
 
 ### Tracing SAM3 Issues
-1. Check SAM3 is installed: `python -c "from sam3.model_builder import build_sam3_video_model"`
+1. Check SAM3 is installed: `python -c "from sam3.model_builder import build_sam3_video_predictor"`
 2. Verify CUDA: `python -c "import torch; print(torch.cuda.is_available())"`
 3. Check VRAM: `nvidia-smi`
 4. Run single test: `pytest tests/test_gpu_e2e.py::TestSAM3Inference::test_sam3_wrapper_initialization -v -m ""`
