@@ -1,5 +1,6 @@
 ---
 Last Updated: 2025-12-26
+Last Updated: 2025-12-26
 ---
 
 # Code Skeleton Reference
@@ -40,14 +41,9 @@ For developer guidelines, see [AGENTS.md](AGENTS.md).
 │   │   ├── mask_propagator.py
 │   │   ├── seed_selector.py
 │   │   └── subject_masker.py
-│   ├── scene_utils_pkg
 │   ├── shared.py
 │   └── utils.py
-├── docs
-├── htmlcov
-│   └── status.json
 ├── requirements.txt
-├── run_config.json
 ├── scripts
 │   ├── jules_setup_script.sh
 │   ├── run_ux_audit.py
@@ -67,6 +63,7 @@ For developer guidelines, see [AGENTS.md](AGENTS.md).
 │   │   ├── test_bug_regression.py
 │   │   ├── test_component_verification.py
 │   │   ├── test_export_flow.py
+│   │   ├── test_full_workflow_mocked.py
 │   │   ├── test_full_workflow_mocked.py
 │   │   ├── test_session_lifecycle.py
 │   │   ├── test_ui_interactions.py
@@ -91,9 +88,11 @@ For developer guidelines, see [AGENTS.md](AGENTS.md).
 │   ├── test_integration_sam3_patches_unit.py
 │   ├── test_managers.py
 │   ├── test_mask_propagator_logic.py
+│   ├── test_mask_propagator_logic.py
 │   ├── test_pipelines.py
 │   ├── test_pipelines_extended.py
 │   ├── test_progress.py
+│   ├── test_sam3_wrapper.py
 │   ├── test_sam3_wrapper.py
 │   ├── test_scene_detection.py
 │   ├── test_scene_utils.py
@@ -150,7 +149,7 @@ def main():
     """
 ```
 
-### `📄 core\batch_manager.py`
+### `📄 core/batch_manager.py`
 
 ```python
 import threading
@@ -225,7 +224,7 @@ class BatchManager:
         """
 ```
 
-### `📄 core\config.py`
+### `📄 core/config.py`
 
 ```python
 """
@@ -268,7 +267,7 @@ class Config(BaseSettings):
         """
 ```
 
-### `📄 core\database.py`
+### `📄 core/database.py`
 
 ```python
 import sqlite3
@@ -324,7 +323,7 @@ class Database:
         """
 ```
 
-### `📄 core\error_handling.py`
+### `📄 core/error_handling.py`
 
 ```python
 """
@@ -383,7 +382,7 @@ class ErrorHandler:
         """
 ```
 
-### `📄 core\events.py`
+### `📄 core/events.py`
 
 ```python
 """
@@ -444,7 +443,7 @@ class SessionLoadEvent(UIEvent):
     """
 ```
 
-### `📄 core\export.py`
+### `📄 core/export.py`
 
 ```python
 from __future__ import annotations
@@ -470,7 +469,7 @@ def export_kept_frames(event: ExportEvent, config: 'Config', logger: 'AppLogger'
 def dry_run_export(event: ExportEvent, config: 'Config') -> str: ...
 ```
 
-### `📄 core\filtering.py`
+### `📄 core/filtering.py`
 
 ```python
 from __future__ import annotations
@@ -555,7 +554,7 @@ def apply_lpips_dedup(all_frames_data: list[dict], filters: dict, dedup_mask: np
     """
 ```
 
-### `📄 core\logger.py`
+### `📄 core/logger.py`
 
 ```python
 """
@@ -656,7 +655,7 @@ class AppLogger:
         """
 ```
 
-### `📄 core\managers.py`
+### `📄 core/managers.py`
 
 ```python
 from __future__ import annotations
@@ -838,6 +837,60 @@ class SAM3Wrapper:
         
         Call this when done with a video before loading another.
         """
+    def detect_objects(self, frame_rgb: np.ndarray, prompt: str) -> list:
+        """
+        Detect objects in a single frame using text prompt (open-vocabulary detection).
+        
+        This uses SAM3's Sam3Processor for single-image text-based detection.
+        
+        Args:
+        frame_rgb: RGB image as numpy array (H, W, 3)
+        prompt: Text prompt describing objects to detect (e.g., "person", "cat")
+        
+        Returns:
+        List of dicts with keys: 'bbox' (xyxy format), 'conf', 'type'
+        """
+    def add_text_prompt(self, frame_idx: int, text: str) -> dict:
+        """
+        Add text prompt for video object detection.
+        
+        Uses SAM3's add_prompt with text_str for open-vocabulary detection.
+        Text prompts apply to all frames but inference runs on specified frame.
+        
+        Args:
+        frame_idx: Frame index to run inference on
+        text: Text description of objects to detect
+        
+        Returns:
+        Dict with 'obj_ids', 'masks', 'boxes' from detection
+        """
+    def add_point_prompt(self, frame_idx: int, obj_id: int, points: list, labels: list, img_size: tuple) -> np.ndarray:
+        """
+        Add point prompts for mask refinement (positive/negative clicks).
+        
+        Args:
+        frame_idx: Frame index to add prompt
+        obj_id: Object ID to refine
+        points: List of (x, y) point coordinates in absolute pixels
+        labels: List of labels (1=positive, 0=negative)
+        img_size: Image dimensions as (width, height)
+        
+        Returns:
+        Refined mask as numpy array (H, W)
+        """
+    def reset_session(self):
+        """
+        Reset all prompts and results without closing the session.
+        
+        Use this to start fresh detection on the same video without
+        re-loading all frames.
+        """
+    def close_session(self):
+        """
+        Close the inference session and free GPU resources.
+        
+        Call this when done with a video before loading another.
+        """
 
 thread_local = threading.local()
 def get_face_landmarker(model_path: str, logger: 'AppLogger') -> vision.FaceLandmarker:
@@ -881,7 +934,7 @@ class VideoManager:
         """
 ```
 
-### `📄 core\models.py`
+### `📄 core/models.py`
 
 ```python
 from __future__ import annotations
@@ -994,7 +1047,7 @@ class MaskingResult(BaseModel):
     """
 ```
 
-### `📄 core\pipelines.py`
+### `📄 core/pipelines.py`
 
 ```python
 from __future__ import annotations
@@ -1152,7 +1205,7 @@ def execute_analysis(event: PropagationEvent, progress_queue: Queue, cancel_even
     """
 ```
 
-### `📄 core\progress.py`
+### `📄 core/progress.py`
 
 ```python
 """
@@ -1223,7 +1276,7 @@ class AdvancedProgressTracker:
         """
 ```
 
-### `📄 core\sam3_patches.py`
+### `📄 core/sam3_patches.py`
 
 ```python
 """
@@ -1253,7 +1306,7 @@ def apply_patches():
     """
 ```
 
-### `📄 core\scene_utils\__init__.py`
+### `📄 core/scene_utils/__init__.py`
 
 ```python
 """
@@ -1278,7 +1331,7 @@ from core.scene_utils.helpers import draw_boxes_preview, save_scene_seeds, get_s
 __all__ = ['run_scene_detection', 'make_photo_thumbs', 'MaskPropagator', 'SeedSelector', 'Subject...
 ```
 
-### `📄 core\scene_utils\detection.py`
+### `📄 core/scene_utils/detection.py`
 
 ```python
 """
@@ -1325,7 +1378,7 @@ def make_photo_thumbs(image_paths: list[Path], out_dir: Path, params: 'AnalysisP
     """
 ```
 
-### `📄 core\scene_utils\helpers.py`
+### `📄 core/scene_utils/helpers.py`
 
 ```python
 """
@@ -1411,7 +1464,7 @@ def _wire_recompute_handler(config: 'Config', logger: 'AppLogger', thumbnail_man
     """
 ```
 
-### `📄 core\scene_utils\mask_propagator.py`
+### `📄 core/scene_utils/mask_propagator.py`
 
 ```python
 """
@@ -1479,7 +1532,7 @@ class MaskPropagator:
         """
 ```
 
-### `📄 core\scene_utils\seed_selector.py`
+### `📄 core/scene_utils/seed_selector.py`
 
 ```python
 """
@@ -1595,7 +1648,7 @@ class SeedSelector:
         """
 ```
 
-### `📄 core\scene_utils\subject_masker.py`
+### `📄 core/scene_utils/subject_masker.py`
 
 ```python
 """
@@ -1723,7 +1776,7 @@ class SubjectMasker:
         """
 ```
 
-### `📄 core\shared.py`
+### `📄 core/shared.py`
 
 ```python
 """
@@ -1794,7 +1847,7 @@ def build_scene_gallery_items(scenes: List[Union[dict, 'Scene']], view: str, out
     """
 ```
 
-### `📄 core\utils.py`
+### `📄 core/utils.py`
 
 ```python
 from __future__ import annotations
@@ -1908,7 +1961,7 @@ def draw_bbox(img_rgb: np.ndarray, xywh: list, config: 'Config', color: Optional
     """
 ```
 
-### `📄 scripts\run_ux_audit.py`
+### `📄 scripts/run_ux_audit.py`
 
 ```python
 """
@@ -1942,7 +1995,7 @@ def generate_report(results: dict, output_path: Path) -> None:
 def main(): ...
 ```
 
-### `📄 scripts\take_screenshot.py`
+### `📄 scripts/take_screenshot.py`
 
 ```python
 import asyncio
@@ -1951,7 +2004,7 @@ from playwright.async_api import async_playwright
 async def main(): ...
 ```
 
-### `📄 ui\app_ui.py`
+### `📄 ui/app_ui.py`
 
 ```python
 from __future__ import annotations
@@ -2278,7 +2331,7 @@ class AppUI:
         """
 ```
 
-### `📄 ui\gallery_utils.py`
+### `📄 ui/gallery_utils.py`
 
 ```python
 from __future__ import annotations
@@ -2326,7 +2379,7 @@ def auto_set_thresholds(per_metric_values: dict, p: int, slider_keys: list[str],
     """
 ```
 
-### `📄 ui\handlers\__init__.py`
+### `📄 ui/handlers/__init__.py`
 
 ```python
 """
@@ -2344,7 +2397,7 @@ from ui.handlers.filtering_handler import FilteringHandler
 __all__ = ['ExtractionHandler', 'AnalysisHandler', 'FilteringHandler']
 ```
 
-### `📄 ui\handlers\analysis_handler.py`
+### `📄 ui/handlers/analysis_handler.py`
 
 ```python
 """
@@ -2442,7 +2495,7 @@ class AnalysisHandler:
         """
 ```
 
-### `📄 ui\handlers\extraction_handler.py`
+### `📄 ui/handlers/extraction_handler.py`
 
 ```python
 """
@@ -2506,7 +2559,7 @@ class ExtractionHandler:
         """
 ```
 
-### `📄 ui\handlers\filtering_handler.py`
+### `📄 ui/handlers/filtering_handler.py`
 
 ```python
 """
