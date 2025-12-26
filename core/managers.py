@@ -330,6 +330,171 @@ class SAM3Wrapper:
         if self.inference_state:
             self.predictor.clear_all_points_in_video(self.inference_state)
 
+    def detect_objects(self, frame_rgb: np.ndarray, prompt: str) -> list:
+        """
+        Detect objects in a single frame using text prompt (open-vocabulary detection).
+        
+        This uses SAM3's Sam3Processor for single-image text-based detection.
+        
+        Args:
+            frame_rgb: RGB image as numpy array (H, W, 3)
+            prompt: Text prompt describing objects to detect (e.g., "person", "cat")
+            
+        Returns:
+            List of dicts with keys: 'bbox' (xyxy format), 'conf', 'type'
+        """
+        if not prompt or not prompt.strip():
+            return []
+        
+        try:
+            from sam3.model.sam3_image_processor import Sam3Processor
+            
+            # Create processor for single-image detection
+            processor = Sam3Processor(
+                model=self.sam3_model.detector,
+                resolution=1008,
+                device=self.device,
+                confidence_threshold=0.3
+            )
+            
+            # Run text-based detection
+            state = processor.set_image(frame_rgb)
+            state = processor.set_text_prompt(prompt, state)
+            
+            # Extract results
+            results = []
+            if 'boxes' in state and 'scores' in state:
+                boxes = state['boxes'].cpu().numpy()
+                scores = state['scores'].cpu().numpy()
+                
+                for i, (box, score) in enumerate(zip(boxes, scores)):
+                    results.append({
+                        'bbox': box.tolist(),  # xyxy format
+                        'conf': float(score),
+                        'type': 'text_prompt'
+                    })
+            
+            return results
+            
+        except Exception as e:
+            logging.getLogger(__name__).warning(f"detect_objects failed: {e}")
+            return []
+
+    def add_text_prompt(self, frame_idx: int, text: str) -> dict:
+        """
+        Add text prompt for video object detection.
+        
+        Uses SAM3's add_prompt with text_str for open-vocabulary detection.
+        Text prompts apply to all frames but inference runs on specified frame.
+        
+        Args:
+            frame_idx: Frame index to run inference on
+            text: Text description of objects to detect
+            
+        Returns:
+            Dict with 'obj_ids', 'masks', 'boxes' from detection
+        """
+        if self.inference_state is None:
+            raise RuntimeError("Must call init_video() before add_text_prompt()")
+        
+        if not text or not text.strip():
+            return {'obj_ids': [], 'masks': [], 'boxes': []}
+        
+        try:
+            # Use the video inference add_prompt with text
+            frame_idx_out, outputs = self.predictor.add_prompt(
+                self.inference_state,
+                frame_idx=frame_idx,
+                text_str=text
+            )
+            
+            return {
+                'obj_ids': outputs.get('out_obj_ids', []),
+                'masks': outputs.get('out_binary_masks', []),
+                'boxes': outputs.get('out_boxes_xywh', []),
+                'probs': outputs.get('out_probs', [])
+            }
+        except Exception as e:
+            logging.getLogger(__name__).warning(f"add_text_prompt failed: {e}")
+            return {'obj_ids': [], 'masks': [], 'boxes': []}
+
+    def add_point_prompt(
+        self, frame_idx: int, obj_id: int,
+        points: list, labels: list, img_size: tuple
+    ) -> np.ndarray:
+        """
+        Add point prompts for mask refinement (positive/negative clicks).
+        
+        Args:
+            frame_idx: Frame index to add prompt
+            obj_id: Object ID to refine
+            points: List of (x, y) point coordinates in absolute pixels
+            labels: List of labels (1=positive, 0=negative)
+            img_size: Image dimensions as (width, height)
+            
+        Returns:
+            Refined mask as numpy array (H, W)
+        """
+        if self.inference_state is None:
+            raise RuntimeError("Must call init_video() before add_point_prompt()")
+        
+        w, h = img_size
+        
+        # Convert to relative coordinates (0-1)
+        rel_points = np.array([[x/w, y/h] for x, y in points], dtype=np.float32)
+        point_labels = np.array(labels, dtype=np.int32)
+        
+        try:
+            _, obj_ids, low_res_masks, video_res_masks = self.predictor.add_new_points_or_box(
+                inference_state=self.inference_state,
+                frame_idx=frame_idx,
+                obj_id=obj_id,
+                points=rel_points,
+                labels=point_labels,
+            )
+            
+            if video_res_masks is not None and len(video_res_masks) > 0:
+                mask = (video_res_masks[0] > 0.0).cpu().numpy()
+                if mask.ndim == 3:
+                    mask = mask[0]
+                return mask
+            return np.zeros((h, w), dtype=bool)
+            
+        except Exception as e:
+            logging.getLogger(__name__).warning(f"add_point_prompt failed: {e}")
+            return np.zeros((h, w), dtype=bool)
+
+    def reset_session(self):
+        """
+        Reset all prompts and results without closing the session.
+        
+        Use this to start fresh detection on the same video without
+        re-loading all frames.
+        """
+        if self.inference_state is not None:
+            try:
+                self.predictor.reset_state(self.inference_state)
+            except Exception as e:
+                logging.getLogger(__name__).warning(f"reset_session failed: {e}")
+
+    def close_session(self):
+        """
+        Close the inference session and free GPU resources.
+        
+        Call this when done with a video before loading another.
+        """
+        if self.inference_state is not None:
+            try:
+                # Clear all state
+                self.predictor.reset_state(self.inference_state)
+            except Exception:
+                pass
+            self.inference_state = None
+        
+        # Clean up GPU memory
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
 
 thread_local = threading.local()
 
