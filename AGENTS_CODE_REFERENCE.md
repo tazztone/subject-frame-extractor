@@ -1,5 +1,5 @@
 ---
-Last Updated: 2025-12-25
+Last Updated: 2025-12-26
 ---
 
 # Code Skeleton Reference
@@ -39,14 +39,9 @@ For developer guidelines, see [AGENTS.md](AGENTS.md).
 │   │   ├── mask_propagator.py
 │   │   ├── seed_selector.py
 │   │   └── subject_masker.py
-│   ├── scene_utils_pkg
 │   ├── shared.py
 │   └── utils.py
-├── docs
-├── htmlcov
-│   └── status.json
 ├── requirements.txt
-├── run_config.json
 ├── scripts
 │   ├── jules_setup_script.sh
 │   ├── run_ux_audit.py
@@ -66,6 +61,7 @@ For developer guidelines, see [AGENTS.md](AGENTS.md).
 │   │   ├── test_bug_regression.py
 │   │   ├── test_component_verification.py
 │   │   ├── test_export_flow.py
+│   │   ├── test_full_workflow_mocked.py
 │   │   ├── test_session_lifecycle.py
 │   │   ├── test_ui_interactions.py
 │   │   ├── test_visual_regression.py
@@ -88,9 +84,11 @@ For developer guidelines, see [AGENTS.md](AGENTS.md).
 │   ├── test_integration_sam3_patches.py
 │   ├── test_integration_sam3_patches_unit.py
 │   ├── test_managers.py
+│   ├── test_mask_propagator_logic.py
 │   ├── test_pipelines.py
 │   ├── test_pipelines_extended.py
 │   ├── test_progress.py
+│   ├── test_sam3_wrapper.py
 │   ├── test_scene_detection.py
 │   ├── test_scene_utils.py
 │   ├── test_scene_utils_helpers.py
@@ -146,7 +144,7 @@ def main():
     """
 ```
 
-### `📄 core\batch_manager.py`
+### `📄 core/batch_manager.py`
 
 ```python
 import threading
@@ -221,7 +219,7 @@ class BatchManager:
         """
 ```
 
-### `📄 core\config.py`
+### `📄 core/config.py`
 
 ```python
 """
@@ -264,7 +262,7 @@ class Config(BaseSettings):
         """
 ```
 
-### `📄 core\database.py`
+### `📄 core/database.py`
 
 ```python
 import sqlite3
@@ -320,7 +318,7 @@ class Database:
         """
 ```
 
-### `📄 core\error_handling.py`
+### `📄 core/error_handling.py`
 
 ```python
 """
@@ -379,7 +377,7 @@ class ErrorHandler:
         """
 ```
 
-### `📄 core\events.py`
+### `📄 core/events.py`
 
 ```python
 """
@@ -440,7 +438,7 @@ class SessionLoadEvent(UIEvent):
     """
 ```
 
-### `📄 core\export.py`
+### `📄 core/export.py`
 
 ```python
 from __future__ import annotations
@@ -466,7 +464,7 @@ def export_kept_frames(event: ExportEvent, config: 'Config', logger: 'AppLogger'
 def dry_run_export(event: ExportEvent, config: 'Config') -> str: ...
 ```
 
-### `📄 core\filtering.py`
+### `📄 core/filtering.py`
 
 ```python
 from __future__ import annotations
@@ -551,7 +549,7 @@ def apply_lpips_dedup(all_frames_data: list[dict], filters: dict, dedup_mask: np
     """
 ```
 
-### `📄 core\logger.py`
+### `📄 core/logger.py`
 
 ```python
 """
@@ -652,7 +650,7 @@ class AppLogger:
         """
 ```
 
-### `📄 core\managers.py`
+### `📄 core/managers.py`
 
 ```python
 from __future__ import annotations
@@ -780,6 +778,60 @@ class SAM3Wrapper:
         """
         Reset all prompts in current session.
         """
+    def detect_objects(self, frame_rgb: np.ndarray, prompt: str) -> list:
+        """
+        Detect objects in a single frame using text prompt (open-vocabulary detection).
+        
+        This uses SAM3's Sam3Processor for single-image text-based detection.
+        
+        Args:
+        frame_rgb: RGB image as numpy array (H, W, 3)
+        prompt: Text prompt describing objects to detect (e.g., "person", "cat")
+        
+        Returns:
+        List of dicts with keys: 'bbox' (xyxy format), 'conf', 'type'
+        """
+    def add_text_prompt(self, frame_idx: int, text: str) -> dict:
+        """
+        Add text prompt for video object detection.
+        
+        Uses SAM3's add_prompt with text_str for open-vocabulary detection.
+        Text prompts apply to all frames but inference runs on specified frame.
+        
+        Args:
+        frame_idx: Frame index to run inference on
+        text: Text description of objects to detect
+        
+        Returns:
+        Dict with 'obj_ids', 'masks', 'boxes' from detection
+        """
+    def add_point_prompt(self, frame_idx: int, obj_id: int, points: list, labels: list, img_size: tuple) -> np.ndarray:
+        """
+        Add point prompts for mask refinement (positive/negative clicks).
+        
+        Args:
+        frame_idx: Frame index to add prompt
+        obj_id: Object ID to refine
+        points: List of (x, y) point coordinates in absolute pixels
+        labels: List of labels (1=positive, 0=negative)
+        img_size: Image dimensions as (width, height)
+        
+        Returns:
+        Refined mask as numpy array (H, W)
+        """
+    def reset_session(self):
+        """
+        Reset all prompts and results without closing the session.
+        
+        Use this to start fresh detection on the same video without
+        re-loading all frames.
+        """
+    def close_session(self):
+        """
+        Close the inference session and free GPU resources.
+        
+        Call this when done with a video before loading another.
+        """
 
 thread_local = threading.local()
 def get_face_landmarker(model_path: str, logger: 'AppLogger') -> vision.FaceLandmarker:
@@ -823,7 +875,7 @@ class VideoManager:
         """
 ```
 
-### `📄 core\models.py`
+### `📄 core/models.py`
 
 ```python
 from __future__ import annotations
@@ -936,7 +988,7 @@ class MaskingResult(BaseModel):
     """
 ```
 
-### `📄 core\pipelines.py`
+### `📄 core/pipelines.py`
 
 ```python
 from __future__ import annotations
@@ -1094,7 +1146,7 @@ def execute_analysis(event: PropagationEvent, progress_queue: Queue, cancel_even
     """
 ```
 
-### `📄 core\progress.py`
+### `📄 core/progress.py`
 
 ```python
 """
@@ -1165,7 +1217,7 @@ class AdvancedProgressTracker:
         """
 ```
 
-### `📄 core\sam3_patches.py`
+### `📄 core/sam3_patches.py`
 
 ```python
 """
@@ -1195,7 +1247,7 @@ def apply_patches():
     """
 ```
 
-### `📄 core\scene_utils\__init__.py`
+### `📄 core/scene_utils/__init__.py`
 
 ```python
 """
@@ -1220,7 +1272,7 @@ from core.scene_utils.helpers import draw_boxes_preview, save_scene_seeds, get_s
 __all__ = ['run_scene_detection', 'make_photo_thumbs', 'MaskPropagator', 'SeedSelector', 'Subject...
 ```
 
-### `📄 core\scene_utils\detection.py`
+### `📄 core/scene_utils/detection.py`
 
 ```python
 """
@@ -1267,7 +1319,7 @@ def make_photo_thumbs(image_paths: list[Path], out_dir: Path, params: 'AnalysisP
     """
 ```
 
-### `📄 core\scene_utils\helpers.py`
+### `📄 core/scene_utils/helpers.py`
 
 ```python
 """
@@ -1353,7 +1405,7 @@ def _wire_recompute_handler(config: 'Config', logger: 'AppLogger', thumbnail_man
     """
 ```
 
-### `📄 core\scene_utils\mask_propagator.py`
+### `📄 core/scene_utils/mask_propagator.py`
 
 ```python
 """
@@ -1421,7 +1473,7 @@ class MaskPropagator:
         """
 ```
 
-### `📄 core\scene_utils\seed_selector.py`
+### `📄 core/scene_utils/seed_selector.py`
 
 ```python
 """
@@ -1537,7 +1589,7 @@ class SeedSelector:
         """
 ```
 
-### `📄 core\scene_utils\subject_masker.py`
+### `📄 core/scene_utils/subject_masker.py`
 
 ```python
 """
@@ -1665,7 +1717,7 @@ class SubjectMasker:
         """
 ```
 
-### `📄 core\shared.py`
+### `📄 core/shared.py`
 
 ```python
 """
@@ -1736,7 +1788,7 @@ def build_scene_gallery_items(scenes: List[Union[dict, 'Scene']], view: str, out
     """
 ```
 
-### `📄 core\utils.py`
+### `📄 core/utils.py`
 
 ```python
 from __future__ import annotations
@@ -1850,7 +1902,7 @@ def draw_bbox(img_rgb: np.ndarray, xywh: list, config: 'Config', color: Optional
     """
 ```
 
-### `📄 scripts\run_ux_audit.py`
+### `📄 scripts/run_ux_audit.py`
 
 ```python
 """
@@ -1884,7 +1936,7 @@ def generate_report(results: dict, output_path: Path) -> None:
 def main(): ...
 ```
 
-### `📄 scripts\take_screenshot.py`
+### `📄 scripts/take_screenshot.py`
 
 ```python
 import asyncio
@@ -1893,7 +1945,7 @@ from playwright.async_api import async_playwright
 async def main(): ...
 ```
 
-### `📄 tests\conftest.py`
+### `📄 tests/conftest.py`
 
 ```python
 """
@@ -2038,7 +2090,7 @@ def mock_config_simple(tmp_path):
     """
 ```
 
-### `📄 tests\e2e\ai_ux_analyzer.py`
+### `📄 tests/e2e/ai_ux_analyzer.py`
 
 ```python
 """
@@ -2114,7 +2166,7 @@ def generate_issue_report(issues: List[UXIssue], title: str='UX Analysis Report'
     """
 ```
 
-### `📄 tests\e2e\conftest.py`
+### `📄 tests/e2e/conftest.py`
 
 ```python
 """
@@ -2160,7 +2212,7 @@ def analyzed_session(extracted_session):
     """
 ```
 
-### `📄 tests\e2e\test_accessibility.py`
+### `📄 tests/e2e/test_accessibility.py`
 
 ```python
 """
@@ -2239,7 +2291,7 @@ class TestARIACompliance:
         """
 ```
 
-### `📄 tests\e2e\test_ai_ux_audit.py`
+### `📄 tests/e2e/test_ai_ux_audit.py`
 
 ```python
 """
@@ -2298,7 +2350,7 @@ class TestFullAppAudit:
         """
 ```
 
-### `📄 tests\e2e\test_app_flow.py`
+### `📄 tests/e2e/test_app_flow.py`
 
 ```python
 """
@@ -2370,7 +2422,7 @@ class TestUIInteraction:
         """
 ```
 
-### `📄 tests\e2e\test_bug_regression.py`
+### `📄 tests/e2e/test_bug_regression.py`
 
 ```python
 """
@@ -2464,7 +2516,7 @@ class TestPropagationErrorHandling:
         """
 ```
 
-### `📄 tests\e2e\test_component_verification.py`
+### `📄 tests/e2e/test_component_verification.py`
 
 ```python
 """
@@ -2569,7 +2621,7 @@ class TestStrategyVisibility:
         """
 ```
 
-### `📄 tests\e2e\test_export_flow.py`
+### `📄 tests/e2e/test_export_flow.py`
 
 ```python
 """
@@ -2634,7 +2686,45 @@ class TestExportFormats:
         """
 ```
 
-### `📄 tests\e2e\test_session_lifecycle.py`
+### `📄 tests/e2e/test_full_workflow_mocked.py`
+
+```python
+import pytest
+import shutil
+import json
+import time
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+from playwright.sync_api import Page, expect
+
+@pytest.fixture(scope='module')
+def app_server_url(app_server):
+    """
+    Returns the URL of the running app server.
+    app_server fixture from tests/e2e/conftest.py starts the server if needed.
+    """
+
+class TestFullWorkflowMocked:
+    """
+    Comprehensive E2E test simulating a full user journey using Playwright
+    against the mock application (tests/mock_app.py).
+    
+    The mock app simulates backend processing without needing heavy models/GPU.
+    """
+    def test_full_user_journey(self, page: Page, app_server_url):
+        """
+        Simulates:
+        1. Select Video Source (Extraction)
+        2. Run Extraction
+        3. Define Subject (Pre-analysis)
+        4. Select a person/scene
+        5. Run Propagation
+        6. Filter Results
+        7. Export
+        """
+```
+
+### `📄 tests/e2e/test_session_lifecycle.py`
 
 ```python
 """
@@ -2707,7 +2797,7 @@ class TestLoadPreviousSession:
         """
 ```
 
-### `📄 tests\e2e\test_ui_interactions.py`
+### `📄 tests/e2e/test_ui_interactions.py`
 
 ```python
 """
@@ -2788,7 +2878,7 @@ class TestUIConsoleErrors:
         """
 ```
 
-### `📄 tests\e2e\test_visual_regression.py`
+### `📄 tests/e2e/test_visual_regression.py`
 
 ```python
 """
@@ -2861,7 +2951,7 @@ def _open_help(page: Page):
     """
 ```
 
-### `📄 tests\e2e\test_with_sample_data.py`
+### `📄 tests/e2e/test_with_sample_data.py`
 
 ```python
 """
@@ -2933,7 +3023,7 @@ class TestFullWorkflowWithSampleVideo:
         """
 ```
 
-### `📄 tests\e2e\visual_test_utils.py`
+### `📄 tests/e2e/visual_test_utils.py`
 
 ```python
 """
@@ -3009,7 +3099,7 @@ def cleanup_diffs():
     """
 ```
 
-### `📄 tests\mock_app.py`
+### `📄 tests/mock_app.py`
 
 ```python
 import sys
@@ -3054,7 +3144,7 @@ core.utils.download_model = MagicMock()
 core.managers.download_model = MagicMock()
 ```
 
-### `📄 tests\test_app_ui_logic.py`
+### `📄 tests/test_app_ui_logic.py`
 
 ```python
 import pytest
@@ -3100,7 +3190,7 @@ class TestAppUI:
     def test_run_session_load_wrapper(self, mock_load, app_ui): ...
 ```
 
-### `📄 tests\test_batch_manager.py`
+### `📄 tests/test_batch_manager.py`
 
 ```python
 import time
@@ -3114,7 +3204,7 @@ def test_batch_manager_processing(): ...
 def test_batch_manager_failure(): ...
 ```
 
-### `📄 tests\test_bug_fixes.py`
+### `📄 tests/test_bug_fixes.py`
 
 ```python
 """
@@ -3160,7 +3250,7 @@ class TestFilterSlidersFix:
         """
 ```
 
-### `📄 tests\test_core.py`
+### `📄 tests/test_core.py`
 
 ```python
 """
@@ -3217,7 +3307,7 @@ class TestPreAnalysisEvent:
         """
 ```
 
-### `📄 tests\test_database.py`
+### `📄 tests/test_database.py`
 
 ```python
 import pytest
@@ -3249,7 +3339,7 @@ def test_metrics_json_parsing(db): ...
 def test_mask_empty_conversion(db): ...
 ```
 
-### `📄 tests\test_dedup.py`
+### `📄 tests/test_dedup.py`
 
 ```python
 """
@@ -3283,7 +3373,7 @@ def test_dedup_threshold(sample_frames_for_dedup, mock_thumbnail_manager, mock_c
 def test_run_batched_lpips(mock_thumbnail_manager): ...
 ```
 
-### `📄 tests\test_error_handling.py`
+### `📄 tests/test_error_handling.py`
 
 ```python
 """
@@ -3450,7 +3540,7 @@ class TestErrorSeverityAndRecoveryStrategy:
         """
 ```
 
-### `📄 tests\test_export.py`
+### `📄 tests/test_export.py`
 
 ```python
 """
@@ -3545,7 +3635,7 @@ class TestExportWithFilters:
         """
 ```
 
-### `📄 tests\test_filtering.py`
+### `📄 tests/test_filtering.py`
 
 ```python
 import pytest
@@ -3581,7 +3671,7 @@ class TestFiltering:
     def test_apply_all_filters_vectorized(self, sample_frames, mock_config): ...
 ```
 
-### `📄 tests\test_gallery_utils.py`
+### `📄 tests/test_gallery_utils.py`
 
 ```python
 import pytest
@@ -3618,7 +3708,7 @@ class TestGalleryUtils:
     def test_auto_set_thresholds_empty(self): ...
 ```
 
-### `📄 tests\test_gpu_e2e.py`
+### `📄 tests/test_gpu_e2e.py`
 
 ```python
 """
@@ -3866,7 +3956,7 @@ class TestLargeVideoE2E:
         """
 ```
 
-### `📄 tests\test_handlers.py`
+### `📄 tests/test_handlers.py`
 
 ```python
 """
@@ -3996,7 +4086,7 @@ class TestFilteringHandler:
         """
 ```
 
-### `📄 tests\test_integration.py`
+### `📄 tests/test_integration.py`
 
 ```python
 """
@@ -4113,7 +4203,7 @@ class TestPipelineIntegration:
         """
 ```
 
-### `📄 tests\test_integration_sam3_patches.py`
+### `📄 tests/test_integration_sam3_patches.py`
 
 ```python
 import pytest
@@ -4137,7 +4227,7 @@ def test_apply_patches_triton_missing(): ...
 def test_apply_patches_triton_present(): ...
 ```
 
-### `📄 tests\test_integration_sam3_patches_unit.py`
+### `📄 tests/test_integration_sam3_patches_unit.py`
 
 ```python
 import pytest
@@ -4157,7 +4247,7 @@ class TestSam3Patches:
     def test_connected_components_fallback_3d_input_compat(self): ...
 ```
 
-### `📄 tests\test_managers.py`
+### `📄 tests/test_managers.py`
 
 ```python
 import pytest
@@ -4218,7 +4308,65 @@ class TestManagers:
     def test_thumbnail_manager_corrupt_file(self, mock_exists, mock_open, mock_logger, mock_config): ...
 ```
 
-### `📄 tests\test_pipelines.py`
+### `📄 tests/test_mask_propagator_logic.py`
+
+```python
+import pytest
+import numpy as np
+from unittest.mock import MagicMock, call, ANY, patch
+import threading
+from queue import Queue
+import sys
+from core.scene_utils.mask_propagator import MaskPropagator
+from core.models import AnalysisParameters
+
+@pytest.fixture
+def mock_sam3_wrapper():
+    """
+    Mocks the SAM3Wrapper class.
+    """
+
+@pytest.fixture
+def mask_propagator(mock_config, mock_logger, mock_sam3_wrapper):
+    """
+    Creates a MaskPropagator instance with mocks.
+    """
+
+class TestMaskPropagatorLogic:
+    """
+    Tests the logic of MaskPropagator without requiring real SAM3 models.
+    """
+    def test_initialization(self, mask_propagator, mock_sam3_wrapper):
+        """
+        Test that the propagator initializes correctly.
+        """
+    def test_propagate_video_success(self, mask_propagator, mock_sam3_wrapper):
+        """
+        Test successful video propagation flow.
+        """
+    def test_propagate_video_handles_empty_masks(self, mask_propagator, mock_sam3_wrapper):
+        """
+        Test handling of empty/missing masks from SAM3.
+        """
+    def test_propagate_video_cancellation(self, mask_propagator, mock_sam3_wrapper):
+        """
+        Test that propagation stops when cancel event is set.
+        """
+    def test_propagate_legacy_success(self, mask_propagator, mock_sam3_wrapper):
+        """
+        Test the legacy propagate() method with temp files.
+        """
+    def test_error_handling_gpu_oom(self, mask_propagator, mock_sam3_wrapper):
+        """
+        Test handling of CUDA OOM error.
+        """
+    def test_tracker_progress(self, mask_propagator, mock_sam3_wrapper):
+        """
+        Test that progress tracker is updated.
+        """
+```
+
+### `📄 tests/test_pipelines.py`
 
 ```python
 import pytest
@@ -4267,7 +4415,7 @@ class TestPipelines:
     def test_execute_session_load_valid(self, mock_logger, tmp_path): ...
 ```
 
-### `📄 tests\test_pipelines_extended.py`
+### `📄 tests/test_pipelines_extended.py`
 
 ```python
 import pytest
@@ -4301,7 +4449,7 @@ class TestPipelinesExtended:
     def test_cancellation_in_propagation(self, pipeline, mock_params): ...
 ```
 
-### `📄 tests\test_progress.py`
+### `📄 tests/test_progress.py`
 
 ```python
 import pytest
@@ -4312,7 +4460,104 @@ from core.progress import AdvancedProgressTracker
 def test_progress_tracker(): ...
 ```
 
-### `📄 tests\test_scene_detection.py`
+### `📄 tests/test_sam3_wrapper.py`
+
+```python
+"""
+Unit tests for SAM3Wrapper API completeness and functionality.
+
+These tests ensure all required methods exist on SAM3Wrapper and verify
+basic functionality with mocking to avoid GPU requirements.
+"""
+
+import pytest
+import numpy as np
+from unittest.mock import MagicMock, patch, PropertyMock
+
+class TestSAM3WrapperAPICompleteness:
+    """
+    Tests to verify SAM3Wrapper has all required methods.
+    
+    These tests would have caught the missing detect_objects() issue.
+    """
+    @pytest.fixture
+    def mock_wrapper_class(self):
+        """
+        Create a mock-free SAM3Wrapper class reference.
+        """
+    @pytest.fixture
+    def mock_wrapper(self, mock_wrapper_class):
+        """
+        Create a mocked SAM3Wrapper instance.
+        """
+    def test_all_required_methods_exist(self, mock_wrapper):
+        """
+        Verify all API methods expected by SeedSelector exist on SAM3Wrapper.
+        
+        This is the key test that would have caught detect_objects() missing.
+        """
+    def test_detect_objects_signature(self, mock_wrapper):
+        """
+        Verify detect_objects has correct signature.
+        """
+    def test_add_text_prompt_signature(self, mock_wrapper):
+        """
+        Verify add_text_prompt has correct signature.
+        """
+    def test_add_point_prompt_signature(self, mock_wrapper):
+        """
+        Verify add_point_prompt has correct signature.
+        """
+
+class TestSAM3WrapperMethodBehavior:
+    """
+    Tests for SAM3Wrapper method behavior with mocking.
+    """
+    @pytest.fixture
+    def mock_wrapper(self):
+        """
+        Create a fully mocked SAM3Wrapper.
+        """
+    def test_detect_objects_returns_empty_on_empty_prompt(self, mock_wrapper):
+        """
+        detect_objects should return empty list for empty prompt.
+        """
+    def test_add_text_prompt_requires_init_video(self, mock_wrapper):
+        """
+        add_text_prompt should raise if init_video not called.
+        """
+    def test_add_point_prompt_requires_init_video(self, mock_wrapper):
+        """
+        add_point_prompt should raise if init_video not called.
+        """
+    def test_reset_session_with_no_state_is_safe(self, mock_wrapper):
+        """
+        reset_session should not raise when no session is active.
+        """
+    def test_close_session_with_no_state_is_safe(self, mock_wrapper):
+        """
+        close_session should not raise when no session is active.
+        """
+    def test_close_session_clears_inference_state(self, mock_wrapper):
+        """
+        close_session should clear inference_state.
+        """
+
+class TestSeedSelectorTrackerInterface:
+    """
+    Tests that verify SeedSelector's expected tracker interface.
+    
+    This catches cases where SeedSelector calls methods that don't exist.
+    """
+    def test_seed_selector_tracker_methods_match_wrapper(self):
+        """
+        Verify all tracker methods called by SeedSelector exist on SAM3Wrapper.
+        
+        Parse SeedSelector code to find tracker method calls.
+        """
+```
+
+### `📄 tests/test_scene_detection.py`
 
 ```python
 """
@@ -4439,7 +4684,7 @@ class TestModelRegistry:
         """
 ```
 
-### `📄 tests\test_scene_utils.py`
+### `📄 tests/test_scene_utils.py`
 
 ```python
 """
@@ -4483,7 +4728,7 @@ class TestSubjectMasker:
     def test_load_shot_frames(self, mock_config_simple, mock_logger, mock_params, tmp_path): ...
 ```
 
-### `📄 tests\test_scene_utils_helpers.py`
+### `📄 tests/test_scene_utils_helpers.py`
 
 ```python
 import pytest
@@ -4525,7 +4770,7 @@ class TestSceneUtilsHelpers:
     def test_wire_recompute_handler_no_prompt(self, mock_logger): ...
 ```
 
-### `📄 tests\test_shared.py`
+### `📄 tests/test_shared.py`
 
 ```python
 """
@@ -4548,7 +4793,7 @@ class TestSharedUtils:
     def test_build_scene_gallery_items(self, mock_imread, tmp_path): ...
 ```
 
-### `📄 tests\test_signatures.py`
+### `📄 tests/test_signatures.py`
 
 ```python
 """
@@ -4619,7 +4864,7 @@ class TestManagerClasses:
     def test_video_manager_has_get_video_info(self): ...
 ```
 
-### `📄 tests\test_smoke.py`
+### `📄 tests/test_smoke.py`
 
 ```python
 """
@@ -4682,7 +4927,7 @@ class TestDependencyImports:
     def test_pydantic_available(self): ...
 ```
 
-### `📄 tests\test_ui_unit.py`
+### `📄 tests/test_ui_unit.py`
 
 ```python
 import pytest
@@ -4734,7 +4979,7 @@ class TestTextStrategyWarning:
         """
 ```
 
-### `📄 tests\test_utils.py`
+### `📄 tests/test_utils.py`
 
 ```python
 """
@@ -4933,7 +5178,7 @@ class TestToJsonSafe:
         """
 ```
 
-### `📄 ui\app_ui.py`
+### `📄 ui/app_ui.py`
 
 ```python
 from __future__ import annotations
@@ -5260,7 +5505,7 @@ class AppUI:
         """
 ```
 
-### `📄 ui\gallery_utils.py`
+### `📄 ui/gallery_utils.py`
 
 ```python
 from __future__ import annotations
@@ -5308,7 +5553,7 @@ def auto_set_thresholds(per_metric_values: dict, p: int, slider_keys: list[str],
     """
 ```
 
-### `📄 ui\handlers\__init__.py`
+### `📄 ui/handlers/__init__.py`
 
 ```python
 """
@@ -5326,7 +5571,7 @@ from ui.handlers.filtering_handler import FilteringHandler
 __all__ = ['ExtractionHandler', 'AnalysisHandler', 'FilteringHandler']
 ```
 
-### `📄 ui\handlers\analysis_handler.py`
+### `📄 ui/handlers/analysis_handler.py`
 
 ```python
 """
@@ -5424,7 +5669,7 @@ class AnalysisHandler:
         """
 ```
 
-### `📄 ui\handlers\extraction_handler.py`
+### `📄 ui/handlers/extraction_handler.py`
 
 ```python
 """
@@ -5488,7 +5733,7 @@ class ExtractionHandler:
         """
 ```
 
-### `📄 ui\handlers\filtering_handler.py`
+### `📄 ui/handlers/filtering_handler.py`
 
 ```python
 """
