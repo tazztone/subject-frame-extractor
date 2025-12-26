@@ -1,6 +1,6 @@
 ---
-Version: 2.1
-Last Updated: 2025-12-25
+Version: 2.2
+Last Updated: 2025-12-26
 Python: 3.10+
 Gradio: 6.x
 SAM3: Via submodule
@@ -194,6 +194,53 @@ mask = wrapper.add_bbox_prompt(
 # 3. Propagate masks (generator)
 for frame_idx, obj_id, mask in wrapper.propagate(start_idx=0, reverse=False):
     process_mask(mask)
+
+# 4. Clean up when done
+wrapper.close_session()
+```
+
+### Complete API Reference
+
+| Method | Description | Returns |
+|--------|-------------|---------|
+| `init_video(video_path)` | Initialize session with video/frames | inference_state |
+| `add_bbox_prompt(frame_idx, obj_id, bbox_xywh, img_size)` | Add bounding box prompt | np.ndarray (mask) |
+| `detect_objects(frame_rgb, prompt)` | Text-based object detection | list[dict] with bbox, conf, type |
+| `add_text_prompt(frame_idx, text)` | Add text prompt for video detection | dict with obj_ids, masks, boxes |
+| `add_point_prompt(frame_idx, obj_id, points, labels, img_size)` | Mask refinement with clicks | np.ndarray (refined mask) |
+| `propagate(start_idx, max_frames, reverse)` | Generator for mask propagation | yields (frame_idx, obj_id, mask) |
+| `clear_prompts()` | Clear all prompts in session | None |
+| `reset_session()` | Reset without closing session | None |
+| `close_session()` | Close session, free GPU memory | None |
+
+### Text-Based Detection (Open Vocabulary)
+```python
+# Single image detection
+results = wrapper.detect_objects(frame_rgb, "person")
+for r in results:
+    print(f"Found at {r['bbox']} with confidence {r['conf']}")
+
+# Video text prompt (for tracking)
+wrapper.init_video(video_path)
+result = wrapper.add_text_prompt(frame_idx=0, text="person")
+# Then propagate detected objects
+```
+
+### Point Prompts for Mask Refinement
+```python
+# Positive click (include this region)
+mask = wrapper.add_point_prompt(
+    frame_idx=0, obj_id=1,
+    points=[(150, 200)], labels=[1],  # 1=positive
+    img_size=(width, height)
+)
+
+# Negative click (exclude this region)
+mask = wrapper.add_point_prompt(
+    frame_idx=0, obj_id=1,
+    points=[(50, 50)], labels=[0],  # 0=negative
+    img_size=(width, height)
+)
 ```
 
 ### Key Differences from Legacy API
