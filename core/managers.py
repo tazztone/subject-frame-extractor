@@ -67,7 +67,7 @@ _triton_mocked = _setup_triton_mock()
 
 try:
     from core import sam3_patches
-    from sam3.model_builder import build_sam3_video_model
+    from sam3.model_builder import build_sam3_video_predictor
     
     # Apply patches to replace triton functions with CPU fallbacks
     if _triton_mocked:
@@ -205,57 +205,58 @@ class ModelRegistry:
 
 class SAM3Wrapper:
     """
-    SAM3 Tracker using official Sam3TrackerPredictor API.
+    SAM3 Tracker using official Sam3VideoPredictor API.
     
-    Based on: https://github.com/facebookresearch/sam3/blob/main/examples/sam3_for_sam2_video_task_example.ipynb
-    
-    Key API patterns:
-    - init_state(video_path) for session initialization
-    - add_new_points_or_box() for prompts with relative coordinates
-    - propagate_in_video() generator for mask propagation
+    Refactored to use the high-level request/response API.
     """
     
     def __init__(self, checkpoint_path=None, device="cuda"):
         """
-        Initialize SAM3 wrapper using official model builder pattern.
+        Initialize SAM3 wrapper using build_sam3_video_predictor.
         
         Args:
             checkpoint_path: Optional path to checkpoint (auto-downloads from HF if None)
             device: Device to run on ('cuda' or 'cpu')
         """
-        from sam3.model_builder import build_sam3_video_model
+        from sam3.model_builder import build_sam3_video_predictor
         
         self.device = device
         self._checkpoint_path = checkpoint_path
         
-        # Setup optimal precision for Ampere GPUs (official pattern)
+        # Setup optimal precision for Ampere GPUs
         if torch.cuda.is_available():
             torch.set_float32_matmul_precision('high')
             if torch.cuda.get_device_properties(0).major >= 8:
                 torch.backends.cuda.matmul.allow_tf32 = True
                 torch.backends.cudnn.allow_tf32 = True
         
-        # Build model using official pattern
-        self.sam3_model = build_sam3_video_model()
-        self.predictor = self.sam3_model.tracker
-        self.predictor.backbone = self.sam3_model.detector.backbone
+        # Build predictor (handles multi-GPU internally if configured)
+        # Note: We currently default to using all available GPUs or CPU based on env
+        gpus_to_use = range(torch.cuda.device_count()) if device == 'cuda' else None
+        self.predictor = build_sam3_video_predictor(gpus_to_use=gpus_to_use)
         
         # Session state
-        self.inference_state = None
+        self.session_id = None
         self._temp_dir = None
     
     def init_video(self, video_path: str):
         """
-        Initialize inference state with video or frame directory.
+        Initialize inference session with video or frame directory.
         
         Args:
             video_path: Path to video file or directory of JPEG frames
             
         Returns:
-            inference_state object
+            session_id
         """
-        self.inference_state = self.predictor.init_state(video_path=video_path)
-        return self.inference_state
+        response = self.predictor.handle_request(
+            request=dict(
+                type="start_session",
+                resource_path=str(video_path),
+            )
+        )
+        self.session_id = response["session_id"]
+        return self.session_id
     
     def add_bbox_prompt(self, frame_idx: int, obj_id: int, bbox_xywh: list, 
                         img_size: tuple) -> np.ndarray:
@@ -271,28 +272,49 @@ class SAM3Wrapper:
         Returns:
             Initial mask as numpy array (H, W)
         """
-        if self.inference_state is None:
+        if self.session_id is None:
             raise RuntimeError("Must call init_video() before adding prompts")
         
         w, h = img_size
         x, y, bw, bh = bbox_xywh
         
-        # Convert to relative coordinates (0-1) in xyxy format
-        rel_box = np.array([[x/w, y/h, (x+bw)/w, (y+bh)/h]], dtype=np.float32)
+        # Convert to relative coordinates (0-1) in xywh format
+        rel_box = [x/w, y/h, bw/w, bh/h]
         
-        _, obj_ids, low_res_masks, video_res_masks = self.predictor.add_new_points_or_box(
-            inference_state=self.inference_state,
-            frame_idx=frame_idx,
-            obj_id=obj_id,
-            box=rel_box,
+        response = self.predictor.handle_request(
+            request=dict(
+                type="add_prompt",
+                session_id=self.session_id,
+                frame_index=frame_idx,
+                obj_id=obj_id,
+                box=np.array([rel_box], dtype=np.float32),
+            )
         )
         
-        # Return first mask as boolean numpy array
-        if video_res_masks is not None and len(video_res_masks) > 0:
-            mask = (video_res_masks[0] > 0.0).cpu().numpy()
-            if mask.ndim == 3:
-                mask = mask[0]  # Remove batch dimension if present
-            return mask
+        # Response contains 'outputs': {'out_binary_masks': ..., 'out_obj_ids': ...}
+        outputs = response.get("outputs", {})
+        masks = outputs.get("out_binary_masks")
+        obj_ids = outputs.get("out_obj_ids")
+
+        # Find mask for our obj_id
+        if masks is not None and len(masks) > 0:
+            if hasattr(masks, 'cpu'):
+                masks = masks.cpu().numpy()
+
+            if obj_ids is not None:
+                if hasattr(obj_ids, 'cpu'): obj_ids = obj_ids.cpu().numpy()
+                try:
+                    idx = list(obj_ids).index(obj_id)
+                    mask = masks[idx]
+                    if mask.ndim == 3: mask = mask[0]
+                    return mask > 0
+                except ValueError:
+                    pass
+
+            mask = masks[0]
+            if mask.ndim == 3: mask = mask[0]
+            return mask > 0
+
         return np.zeros((h, w), dtype=bool)
     
     def propagate(self, start_idx: int = 0, max_frames: int = None, 
@@ -302,46 +324,53 @@ class SAM3Wrapper:
         
         Args:
             start_idx: Frame index to start propagation from
-            max_frames: Maximum frames to propagate (default: all frames)
+            max_frames: Maximum frames to propagate
             reverse: If True, propagate backward from start_idx
             
         Yields:
             Tuple of (frame_idx, obj_id, mask) where mask is numpy array
         """
-        if self.inference_state is None:
+        if self.session_id is None:
             return
-        
-        for frame_idx, obj_ids, low_res_masks, video_res_masks, obj_scores in \
-            self.predictor.propagate_in_video(
-                self.inference_state,
-                start_frame_idx=start_idx,
+
+        for response in self.predictor.handle_stream_request(
+            request=dict(
+                type="propagate_in_video",
+                session_id=self.session_id,
+                start_frame_index=start_idx,
                 max_frame_num_to_track=max_frames or 9999,
                 reverse=reverse,
-                propagate_preflight=True,
-            ):
+            )
+        ):
+            frame_idx = response.get("frame_index")
+            outputs = response.get("outputs", {})
+            masks = outputs.get("out_binary_masks")
+            obj_ids = outputs.get("out_obj_ids")
+
+            if masks is None or obj_ids is None:
+                continue
+
+            if hasattr(masks, 'cpu'): masks = masks.cpu().numpy()
+            if hasattr(obj_ids, 'cpu'): obj_ids = obj_ids.cpu().numpy()
+
             for i, obj_id in enumerate(obj_ids):
-                mask = (video_res_masks[i] > 0.0).cpu().numpy()
-                if mask.ndim == 3:
-                    mask = mask[0]
-                yield frame_idx, obj_id, mask
+                mask = masks[i]
+                if mask.ndim == 3: mask = mask[0]
+                yield frame_idx, obj_id, mask > 0
     
     def clear_prompts(self):
         """Reset all prompts in current session."""
-        if self.inference_state:
-            self.predictor.clear_all_points_in_video(self.inference_state)
+        if self.session_id:
+            self.predictor.handle_request(
+                request=dict(
+                    type="reset_session",
+                    session_id=self.session_id,
+                )
+            )
 
     def detect_objects(self, frame_rgb: np.ndarray, prompt: str) -> list:
         """
-        Detect objects in a single frame using text prompt (open-vocabulary detection).
-        
-        This uses SAM3's Sam3Processor for single-image text-based detection.
-        
-        Args:
-            frame_rgb: RGB image as numpy array (H, W, 3)
-            prompt: Text prompt describing objects to detect (e.g., "person", "cat")
-            
-        Returns:
-            List of dicts with keys: 'bbox' (xyxy format), 'conf', 'type'
+        Detect objects in a single frame using text prompt.
         """
         if not prompt or not prompt.strip():
             return []
@@ -349,19 +378,19 @@ class SAM3Wrapper:
         try:
             from sam3.model.sam3_image_processor import Sam3Processor
             
-            # Create processor for single-image detection
+            model = getattr(self.predictor, 'model', None)
+            detector = getattr(model, 'detector', None) if model else None
+
             processor = Sam3Processor(
-                model=self.sam3_model.detector,
+                model=detector,
                 resolution=1008,
                 device=self.device,
                 confidence_threshold=0.3
             )
             
-            # Run text-based detection
             state = processor.set_image(frame_rgb)
             state = processor.set_text_prompt(prompt, state)
             
-            # Extract results
             results = []
             if 'boxes' in state and 'scores' in state:
                 boxes = state['boxes'].cpu().numpy()
@@ -369,7 +398,7 @@ class SAM3Wrapper:
                 
                 for i, (box, score) in enumerate(zip(boxes, scores)):
                     results.append({
-                        'bbox': box.tolist(),  # xyxy format
+                        'bbox': box.tolist(),
                         'conf': float(score),
                         'type': 'text_prompt'
                     })
@@ -382,32 +411,25 @@ class SAM3Wrapper:
 
     def add_text_prompt(self, frame_idx: int, text: str) -> dict:
         """
-        Add text prompt for video object detection.
-        
-        Uses SAM3's add_prompt with text_str for open-vocabulary detection.
-        Text prompts apply to all frames but inference runs on specified frame.
-        
-        Args:
-            frame_idx: Frame index to run inference on
-            text: Text description of objects to detect
-            
-        Returns:
-            Dict with 'obj_ids', 'masks', 'boxes' from detection
+        Add text prompt for video object detection using new API.
         """
-        if self.inference_state is None:
+        if self.session_id is None:
             raise RuntimeError("Must call init_video() before add_text_prompt()")
         
         if not text or not text.strip():
             return {'obj_ids': [], 'masks': [], 'boxes': []}
         
         try:
-            # Use the video inference add_prompt with text
-            frame_idx_out, outputs = self.predictor.add_prompt(
-                self.inference_state,
-                frame_idx=frame_idx,
-                text_str=text
+            response = self.predictor.handle_request(
+                request=dict(
+                    type="add_prompt",
+                    session_id=self.session_id,
+                    frame_index=frame_idx,
+                    text=text,
+                )
             )
             
+            outputs = response.get("outputs", {})
             return {
                 'obj_ids': outputs.get('out_obj_ids', []),
                 'masks': outputs.get('out_binary_masks', []),
@@ -423,77 +445,112 @@ class SAM3Wrapper:
         points: list, labels: list, img_size: tuple
     ) -> np.ndarray:
         """
-        Add point prompts for mask refinement (positive/negative clicks).
-        
-        Args:
-            frame_idx: Frame index to add prompt
-            obj_id: Object ID to refine
-            points: List of (x, y) point coordinates in absolute pixels
-            labels: List of labels (1=positive, 0=negative)
-            img_size: Image dimensions as (width, height)
-            
-        Returns:
-            Refined mask as numpy array (H, W)
+        Add point prompts for mask refinement using new API.
         """
-        if self.inference_state is None:
+        if self.session_id is None:
             raise RuntimeError("Must call init_video() before add_point_prompt()")
         
         w, h = img_size
         
-        # Convert to relative coordinates (0-1)
         rel_points = np.array([[x/w, y/h] for x, y in points], dtype=np.float32)
         point_labels = np.array(labels, dtype=np.int32)
         
         try:
-            _, obj_ids, low_res_masks, video_res_masks = self.predictor.add_new_points_or_box(
-                inference_state=self.inference_state,
-                frame_idx=frame_idx,
-                obj_id=obj_id,
-                points=rel_points,
-                labels=point_labels,
+            response = self.predictor.handle_request(
+                request=dict(
+                    type="add_prompt",
+                    session_id=self.session_id,
+                    frame_index=frame_idx,
+                    obj_id=obj_id,
+                    points=rel_points,
+                    point_labels=point_labels,
+                )
             )
             
-            if video_res_masks is not None and len(video_res_masks) > 0:
-                mask = (video_res_masks[0] > 0.0).cpu().numpy()
-                if mask.ndim == 3:
-                    mask = mask[0]
-                return mask
+            outputs = response.get("outputs", {})
+            masks = outputs.get("out_binary_masks")
+            obj_ids = outputs.get("out_obj_ids")
+
+            if masks is not None and len(masks) > 0:
+                if hasattr(masks, 'cpu'): masks = masks.cpu().numpy()
+
+                if obj_ids is not None:
+                    if hasattr(obj_ids, 'cpu'): obj_ids = obj_ids.cpu().numpy()
+                    try:
+                        idx = list(obj_ids).index(obj_id)
+                        mask = masks[idx]
+                        if mask.ndim == 3: mask = mask[0]
+                        return mask > 0
+                    except ValueError:
+                        pass
+
+                mask = masks[0]
+                if mask.ndim == 3: mask = mask[0]
+                return mask > 0
+
             return np.zeros((h, w), dtype=bool)
             
         except Exception as e:
             logging.getLogger(__name__).warning(f"add_point_prompt failed: {e}")
             return np.zeros((h, w), dtype=bool)
 
+    def remove_object(self, obj_id: int):
+        """
+        Remove an object from the tracking session.
+        """
+        if self.session_id is None:
+            return
+        
+        try:
+            self.predictor.handle_request(
+                request=dict(
+                    type="remove_object",
+                    session_id=self.session_id,
+                    obj_id=obj_id,
+                )
+            )
+        except Exception as e:
+            logging.getLogger(__name__).warning(f"remove_object failed: {e}")
+
     def reset_session(self):
         """
-        Reset all prompts and results without closing the session.
-        
-        Use this to start fresh detection on the same video without
-        re-loading all frames.
+        Reset all prompts and results (clears session state).
         """
-        if self.inference_state is not None:
+        if self.session_id is not None:
             try:
-                self.predictor.reset_state(self.inference_state)
+                self.predictor.handle_request(
+                    request=dict(
+                        type="reset_session",
+                        session_id=self.session_id,
+                    )
+                )
             except Exception as e:
                 logging.getLogger(__name__).warning(f"reset_session failed: {e}")
 
     def close_session(self):
         """
         Close the inference session and free GPU resources.
-        
-        Call this when done with a video before loading another.
         """
-        if self.inference_state is not None:
+        if self.session_id is not None:
             try:
-                # Clear all state
-                self.predictor.reset_state(self.inference_state)
+                self.predictor.handle_request(
+                    request=dict(
+                        type="close_session",
+                        session_id=self.session_id,
+                    )
+                )
             except Exception:
                 pass
-            self.inference_state = None
+            self.session_id = None
         
         # Clean up GPU memory
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
+
+    def shutdown(self):
+        """Shutdown the predictor and free multi-GPU resources."""
+        if hasattr(self.predictor, 'shutdown'):
+            self.predictor.shutdown()
 
 
 thread_local = threading.local()
