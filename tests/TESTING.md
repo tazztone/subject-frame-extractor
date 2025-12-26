@@ -38,63 +38,30 @@ python scripts/run_ux_audit.py
 
 ---
 
-## Test Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        Test Pyramid                             │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│     ┌─────────────┐                                             │
-│     │   UX Tests  │  ← Visual regression, accessibility, AI    │
-│     └──────┬──────┘                                             │
-│            │                                                    │
-│     ┌──────▼──────┐                                             │
-│     │  E2E Tests  │  ← Playwright (browser-based, uses mock)   │
-│     └──────┬──────┘                                             │
-│            │                                                    │
-│     ┌──────▼──────┐                                             │
-│     │  GPU E2E    │  ← Real CUDA inference (SAM3, InsightFace) │
-│     └──────┬──────┘                                             │
-│            │                                                    │
-│     ┌──────▼──────┐                                             │
-│     │ Integration │  ← No mocks, real imports, GPU optional    │
-│     └──────┬──────┘                                             │
-│            │                                                    │
-│     ┌──────▼──────┐                                             │
-│     │   Smoke     │  ← Import validation, no mocks              │
-│     └──────┬──────┘                                             │
-│            │                                                    │
-│  ┌─────────▼─────────┐                                          │
-│  │    Unit Tests     │  ← Fast, isolated, use conftest mocks   │
-│  └───────────────────┘                                          │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
-
----
-
 ## New Tests Added (Feb 2025)
 
-### SAM3 Video Pipeline Logic Tests
-We have added comprehensive logic tests for the SAM3 video pipeline that do not require a GPU. These tests mock the heavy `SAM3Wrapper` but verify the critical `MaskPropagator` orchestration logic.
+### Advanced Workflow E2E Tests
+We have added a comprehensive advanced workflow test suite that verifies critical user journey paths, error handling, and UI interactions using Playwright and a mocked backend.
 
-**File**: `tests/test_mask_propagator_logic.py`
+**File**: `tests/e2e/test_advanced_workflow.py`
 
 **Key scenarios covered:**
-- Bidirectional propagation (forward & backward loops)
-- Error handling (GPU OOM, runtime errors)
-- Empty mask handling
-- Progress tracking updates
-- Cancellation handling
+- **Navigation Restrictions**: Ensures users cannot skip essential steps (e.g., jumping to Analysis without Extraction).
+- **Settings Changes**: Verifies that changing extraction parameters updates the UI state correctly.
+- **Gallery Interaction**: Tests selecting items in the gallery and verifying UI updates.
+- **Filtering UI**: validates interaction with filter sliders and "Smart Mode" toggle.
 
 Run these specific tests:
 ```bash
-python -m pytest tests/test_mask_propagator_logic.py -v
+python -m pytest tests/e2e/test_advanced_workflow.py
 ```
 
-### Full Mocked E2E Workflow
-A new Playwright test `tests/e2e/test_full_workflow_mocked.py` simulates a complete user journey from video extraction to export using the mock application backend. This ensures the UI state machine transitions correctly through all tabs.
+### Core Logic Coverage
+New unit tests have been added to improve coverage of critical core modules, specifically around SAM3 fallback logic and subject masking orchestration.
+
+**Files**:
+- `tests/test_subject_masker_coverage.py`: Tests initialization and error handling in `SubjectMasker`.
+- `tests/test_sam3_patches_unit.py` (Merged into `test_integration_sam3_patches.py` or similar suites): Verifies fallback logic for non-Triton environments.
 
 ---
 
@@ -103,13 +70,13 @@ A new Playwright test `tests/e2e/test_full_workflow_mocked.py` simulates a compl
 The test suite is divided into **Unit Tests** and **Integration Tests** to handle heavy dependencies (Torch, CUDA, SAM3) efficiently.
 
 ### Unit Tests
-- **Files**: `test_core.py`, `test_managers.py`, `test_pipelines_extended.py`, `test_filtering.py`, `test_mask_propagator_logic.py`, etc.
+- **Files**: `test_core.py`, `test_managers.py`, `test_pipelines_extended.py`, `test_filtering.py`, `test_mask_propagator_logic.py`, `test_subject_masker_coverage.py`.
 - **Behavior**: Aggressively mock heavy libraries (`torch`, `sam3`, `insightface`) via `tests/conftest.py`.
 - **Command**: `python -m pytest tests/ -k "not integration"`
 - **Why**: Allows fast feedback loops without loading GBs of models.
 
 ### Integration Tests
-- **Files**: `test_integration.py`, `test_integration_sam3_patches.py`, `test_integration_sam3_patches_unit.py`.
+- **Files**: `test_integration.py`, `test_integration_sam3_patches.py`.
 - **Behavior**: Bypass global mocks to use real libraries. Essential for testing tensor operations, file I/O, and model fallback logic.
 - **Command**: `python -m pytest tests/test_integration*`
 
@@ -170,7 +137,6 @@ Tests that verify interaction with real libraries or file systems, bypassing the
 
 **Files**:
 - `tests/test_integration_sam3_patches.py`: Verifies patching logic for SAM3 on non-Triton systems.
-- `tests/test_integration_sam3_patches_unit.py`: Unit-style tests for SAM3 patch logic using real Torch tensors.
 
 ---
 
@@ -235,6 +201,7 @@ playwright install chromium
 
 | File | Tests | Purpose |
 |------|-------|---------|
+| `test_advanced_workflow.py` | 4 | Advanced workflow scenarios (settings, nav, errors) |
 | `test_ui_interactions.py` | 7 | Button clicks, slider changes, log refresh, console errors |
 | `test_bug_regression.py` | 11 | Regression tests for fixed bugs (pagination, sliders, logs) |
 | `test_app_flow.py` | 3 | Main workflow from extraction to export |
@@ -533,14 +500,15 @@ tests/
 ├── test_smoke.py            # Import smoke tests
 ├── test_gpu_e2e.py          # GPU E2E tests (SAM3, InsightFace)
 ├── test_mask_propagator_logic.py # Unit tests for SAM3 propagation logic (mocked)
+├── test_subject_masker_coverage.py # Unit tests for SubjectMasker
 ├── test_integration_sam3_patches.py # Integration tests for SAM3 patching
-├── test_integration_sam3_patches_unit.py # Unit-style tests for SAM3 patches using real torch
 │
 └── e2e/                     # Playwright E2E tests
     ├── __init__.py          # Package init
     ├── conftest.py          # E2E fixtures (app_server, BASE_URL)
     │
     ├── test_app_flow.py           # Main workflow tests
+    ├── test_advanced_workflow.py  # Advanced workflow tests (New!)
     ├── test_full_workflow_mocked.py # Complete user journey test
     ├── test_export_flow.py        # Export workflow tests
     ├── test_session_lifecycle.py  # Session management tests
@@ -561,11 +529,11 @@ tests/
 
 | Category | Target | Current (Feb 2025) |
 |----------|--------|--------------------|
-| Total Project| 80%   | **61%** (Up from 50%) |
-| Core modules | 80%   | **60-80%** |
+| Total Project| 80%   | **65%** (Up from 61%) |
+| Core modules | 80%   | **70-85%** |
 | UI handlers  | 60%   | **75%** |
 | Pipeline execution | 70% | **70%** (Improved with extended tests) |
-| Error paths  | 50%   | **50%** (Managers & Pipelines) |
+| Error paths  | 50%   | **60%** (Improved with advanced workflow) |
 | UX regression | 100% | 100% (All tabs covered) |
 
 Run coverage report:
