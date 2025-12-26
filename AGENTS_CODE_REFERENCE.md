@@ -1,6 +1,5 @@
 ---
 Last Updated: 2025-12-26
-Last Updated: 2025-12-26
 ---
 
 # Code Skeleton Reference
@@ -51,6 +50,7 @@ For developer guidelines, see [AGENTS.md](AGENTS.md).
 │   └── update_agents_md.py
 ├── tests
 │   ├── TESTING.md
+│   ├── TESTS_CODE_REFERENCE.md
 │   ├── assets
 │   ├── conftest.py
 │   ├── e2e
@@ -63,7 +63,6 @@ For developer guidelines, see [AGENTS.md](AGENTS.md).
 │   │   ├── test_bug_regression.py
 │   │   ├── test_component_verification.py
 │   │   ├── test_export_flow.py
-│   │   ├── test_full_workflow_mocked.py
 │   │   ├── test_full_workflow_mocked.py
 │   │   ├── test_session_lifecycle.py
 │   │   ├── test_ui_interactions.py
@@ -88,11 +87,9 @@ For developer guidelines, see [AGENTS.md](AGENTS.md).
 │   ├── test_integration_sam3_patches_unit.py
 │   ├── test_managers.py
 │   ├── test_mask_propagator_logic.py
-│   ├── test_mask_propagator_logic.py
 │   ├── test_pipelines.py
 │   ├── test_pipelines_extended.py
 │   ├── test_progress.py
-│   ├── test_sam3_wrapper.py
 │   ├── test_sam3_wrapper.py
 │   ├── test_scene_detection.py
 │   ├── test_scene_utils.py
@@ -782,60 +779,6 @@ class SAM3Wrapper:
     def clear_prompts(self):
         """
         Reset all prompts in current session.
-        """
-    def detect_objects(self, frame_rgb: np.ndarray, prompt: str) -> list:
-        """
-        Detect objects in a single frame using text prompt (open-vocabulary detection).
-        
-        This uses SAM3's Sam3Processor for single-image text-based detection.
-        
-        Args:
-        frame_rgb: RGB image as numpy array (H, W, 3)
-        prompt: Text prompt describing objects to detect (e.g., "person", "cat")
-        
-        Returns:
-        List of dicts with keys: 'bbox' (xyxy format), 'conf', 'type'
-        """
-    def add_text_prompt(self, frame_idx: int, text: str) -> dict:
-        """
-        Add text prompt for video object detection.
-        
-        Uses SAM3's add_prompt with text_str for open-vocabulary detection.
-        Text prompts apply to all frames but inference runs on specified frame.
-        
-        Args:
-        frame_idx: Frame index to run inference on
-        text: Text description of objects to detect
-        
-        Returns:
-        Dict with 'obj_ids', 'masks', 'boxes' from detection
-        """
-    def add_point_prompt(self, frame_idx: int, obj_id: int, points: list, labels: list, img_size: tuple) -> np.ndarray:
-        """
-        Add point prompts for mask refinement (positive/negative clicks).
-        
-        Args:
-        frame_idx: Frame index to add prompt
-        obj_id: Object ID to refine
-        points: List of (x, y) point coordinates in absolute pixels
-        labels: List of labels (1=positive, 0=negative)
-        img_size: Image dimensions as (width, height)
-        
-        Returns:
-        Refined mask as numpy array (H, W)
-        """
-    def reset_session(self):
-        """
-        Reset all prompts and results without closing the session.
-        
-        Use this to start fresh detection on the same video without
-        re-loading all frames.
-        """
-    def close_session(self):
-        """
-        Close the inference session and free GPU resources.
-        
-        Call this when done with a video before loading another.
         """
     def detect_objects(self, frame_rgb: np.ndarray, prompt: str) -> list:
         """
