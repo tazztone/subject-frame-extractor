@@ -381,6 +381,34 @@ You may see TF32 deprecation warnings. These are informational only and don't af
 ### venv pip May Be Broken
 If `pip` fails with path errors, use `python -m pip` or `uv pip` instead.
 
+### Forward References and TYPE_CHECKING
+When using string type hints like `logger: 'AppLogger'`, Ruff's F821 check flags them as undefined. Fix by importing under TYPE_CHECKING:
+```python
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from core.logger import AppLogger
+
+class MyClass:
+    def __init__(self, logger: 'AppLogger'):  # Now valid
+        pass
+```
+
+### Ruff Format vs Code Style
+`ruff format` aggressively reformats code. It does **NOT** delete functions or change logic. If code disappears after formatting, check:
+1. Git status for uncommitted changes
+2. Missing re-exports (add to `__all__` to prevent F401 removal suggestions)
+3. File was overwritten by another operation
+
+### Re-exporting Modules
+When re-exporting functions from another module for backward compatibility, add `__all__` to prevent F401 warnings:
+```python
+# ui/gallery_utils.py
+from core.shared import build_scene_gallery_items
+
+__all__ = ["build_scene_gallery_items"]  # Prevents F401 "unused import"
+```
+
 
 ## 15. Debugging Workflows
 

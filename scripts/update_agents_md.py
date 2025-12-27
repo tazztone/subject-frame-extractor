@@ -6,10 +6,11 @@ Usage: python scripts/update_agents_md.py
 This script only generates AGENTS_CODE_REFERENCE.md with code skeletons.
 AGENTS.md is now a manually-maintained file and is not touched by this script.
 """
+
 import ast
+import datetime
 import os
 from pathlib import Path
-import datetime
 
 
 def process_node(node, indent=0):
@@ -42,7 +43,7 @@ def process_node(node, indent=0):
     # Docstring
     docstring = ast.get_docstring(node)
     if docstring:
-        doc_lines = docstring.strip().split('\n')
+        doc_lines = docstring.strip().split("\n")
         body_lines.append(f'{prefix}    """')
         for dl in doc_lines:
             body_lines.append(f"{prefix}    {dl.strip()}")
@@ -63,7 +64,8 @@ def process_node(node, indent=0):
                         assign_str = assign_str[:97] + "..."
                     body_lines.append(f"{prefix}    {assign_str}")
                     has_children = True
-                except: pass
+                except Exception:
+                    pass
 
     # Assemble lines
     if not docstring and not has_children:
@@ -83,7 +85,7 @@ def process_node(node, indent=0):
 def parse_file_to_skeleton(file_path):
     """Parse a Python file and return its skeleton."""
     try:
-        code = file_path.read_text(encoding='utf-8')
+        code = file_path.read_text(encoding="utf-8")
         tree = ast.parse(code)
     except (SyntaxError, UnicodeDecodeError) as e:
         return f"# Error parsing file: {e}"
@@ -106,12 +108,10 @@ def parse_file_to_skeleton(file_path):
         lines.append("")
 
     # Definitions
-    has_definitions = False
     for node in tree.body:
         if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
             lines.extend(process_node(node))
-            lines.append("") # Spacer between top-level definitions
-            has_definitions = True
+            lines.append("")  # Spacer between top-level definitions
         elif isinstance(node, ast.Assign):
             # Top level assignments (constants etc)
             try:
@@ -120,7 +120,8 @@ def parse_file_to_skeleton(file_path):
                 if len(assign_str) > 100:
                     assign_str = assign_str[:97] + "..."
                 lines.append(assign_str)
-            except: pass
+            except Exception:
+                pass
 
     result = "\n".join(lines).strip()
     return result
@@ -131,15 +132,35 @@ def generate_file_tree(root_dir):
     output = ["## Project Structure\n", "```text"]
 
     exclude_dirs = {
-        '.git', 'venv', '__pycache__', 'SAM3_repo',
-        '.claude', '.jules', 'dry-run-assets', 'logs', 'downloads',
-        'models', 'node_modules', '.github', 'init_logs', 'ux_reports',
-        'test_results', '.pytest_cache', '__pycache__'
+        ".git",
+        "venv",
+        "__pycache__",
+        "SAM3_repo",
+        ".claude",
+        ".jules",
+        "dry-run-assets",
+        "logs",
+        "downloads",
+        "models",
+        "node_modules",
+        ".github",
+        "init_logs",
+        "ux_reports",
+        "test_results",
+        ".pytest_cache",
+        "__pycache__",
     }
 
     exclude_files = {
-        'AGENTS_CODE_REFERENCE.md', '.DS_Store', '.gitignore', '.gitmodules',
-        'test_output.txt', 'test_results.txt', 'LICENSE', 'pyproject.toml', '.env_example'
+        "AGENTS_CODE_REFERENCE.md",
+        ".DS_Store",
+        ".gitignore",
+        ".gitmodules",
+        "test_output.txt",
+        "test_results.txt",
+        "LICENSE",
+        "pyproject.toml",
+        ".env_example",
     }
 
     tree_lines = []
@@ -157,7 +178,7 @@ def generate_file_tree(root_dir):
         for item in items:
             if item in exclude_files:
                 continue
-            if item.startswith('.'): # Skip dotfiles mostly
+            if item.startswith("."):  # Skip dotfiles mostly
                 continue
 
             path = os.path.join(directory, item)
@@ -166,13 +187,13 @@ def generate_file_tree(root_dir):
                     filtered_items.append(item)
             else:
                 # Include relevant source files
-                if item.endswith(('.py', '.md', '.json', '.txt', '.cfg', '.yml', '.yaml', '.sh')):
-                     filtered_items.append(item)
+                if item.endswith((".py", ".md", ".json", ".txt", ".cfg", ".yml", ".yaml", ".sh")):
+                    filtered_items.append(item)
 
         count = len(filtered_items)
         for i, item in enumerate(filtered_items):
             path = os.path.join(directory, item)
-            is_last = (i == count - 1)
+            is_last = i == count - 1
             connector = "└── " if is_last else "├── "
 
             tree_lines.append(f"{prefix}{connector}{item}")
@@ -193,9 +214,19 @@ def generate_skeleton_section(root_dir, extra_excludes=None):
     output = ["## Code Skeleton Reference\n"]
 
     exclude_dirs = {
-        '.git', 'venv', '__pycache__', 'SAM3_repo',
-        '.claude', '.jules', 'dry-run-assets', 'logs', 'downloads',
-        'models', 'node_modules', '.github', 'init_logs'
+        ".git",
+        "venv",
+        "__pycache__",
+        "SAM3_repo",
+        ".claude",
+        ".jules",
+        "dry-run-assets",
+        "logs",
+        "downloads",
+        "models",
+        "node_modules",
+        ".github",
+        "init_logs",
     }
     if extra_excludes:
         exclude_dirs.update(extra_excludes)
@@ -232,8 +263,8 @@ def main():
 
     print("Generating code skeletons...")
     # Main app skeleton (exclude tests)
-    main_skeleton = generate_skeleton_section(".", extra_excludes={'tests'})
-    
+    main_skeleton = generate_skeleton_section(".", extra_excludes={"tests"})
+
     # Tests skeleton
     tests_skeleton = generate_skeleton_section("tests")
 
@@ -253,9 +284,9 @@ For developer guidelines, see [AGENTS.md](AGENTS.md).
 
 {file_tree}
 """
-    
+
     Path("AGENTS_CODE_REFERENCE.md").write_text(header_main + main_skeleton, encoding="utf-8")
-    print(f"Successfully updated AGENTS_CODE_REFERENCE.md")
+    print("Successfully updated AGENTS_CODE_REFERENCE.md")
 
     # Generate tests/TESTS_CODE_REFERENCE.md
     header_tests = f"""---

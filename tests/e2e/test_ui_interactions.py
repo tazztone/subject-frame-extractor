@@ -6,14 +6,16 @@ These tests verify that UI interactions work correctly by:
 2. Adjusting sliders and verifying UI updates
 3. Monitoring console/terminal for expected messages
 
-Run with: 
+Run with:
     python tests/mock_app.py &
     python -m pytest tests/e2e/test_ui_interactions.py -v -s
 """
-import pytest
-from playwright.sync_api import Page, expect, ConsoleMessage
-import time
+
 import re
+import time
+
+import pytest
+from playwright.sync_api import ConsoleMessage, Page, expect
 
 from .conftest import BASE_URL
 
@@ -48,17 +50,19 @@ class TestFindPeopleButtonInteraction:
             # Click and verify no crash
             find_people_btn.click()
             time.sleep(2)  # Wait for processing
-            
+
             # App should still be responsive
             expect(page.locator("body")).to_be_visible()
-            
+
             # Check status for error message (since we haven't extracted video)
             status_text = page.locator("#find_people_status")
             if status_text.is_visible():
                 # Allow for different error states (missing frames or missing model)
                 text = status_text.inner_text()
-                assert "Run extraction first" in text or "Face analyzer unavailable" in text or "No video frames" in text
-            
+                assert (
+                    "Run extraction first" in text or "Face analyzer unavailable" in text or "No video frames" in text
+                )
+
             print("✓ Find People button clicked successfully")
         else:
             pytest.skip("Find People button not visible")
@@ -111,16 +115,16 @@ class TestGallerySliderInteractions:
             # Get initial value
             initial_value = columns_slider.input_value()
             print(f"Initial columns value: {initial_value}")
-            
+
             # Try to change the slider value
             columns_slider.fill("4")  # Set to 4 columns
             columns_slider.press("Enter")
             time.sleep(0.5)
-            
+
             # Trigger the release event by clicking elsewhere
             page.locator("body").click()
             time.sleep(0.5)
-            
+
             print("✓ Columns slider interaction completed")
         else:
             pytest.skip("Columns slider not visible")
@@ -142,15 +146,15 @@ class TestGallerySliderInteractions:
         if height_slider.is_visible():
             initial_value = height_slider.input_value()
             print(f"Initial height value: {initial_value}")
-            
+
             # Change the slider
             height_slider.fill("400")  # Set to 400px
             height_slider.press("Enter")
             time.sleep(0.5)
-            
+
             page.locator("body").click()
             time.sleep(0.5)
-            
+
             print("✓ Height slider interaction completed")
         else:
             pytest.skip("Height slider not visible")
@@ -172,7 +176,7 @@ class TestLogRefreshMechanism:
 
         # Get initial log content
         log_area = page.locator("#unified_log textarea")
-        initial_logs = log_area.input_value() if log_area.count() > 0 else ""
+        log_area.input_value() if log_area.count() > 0 else ""
 
         # Click Refresh
         refresh_btn = page.get_by_role("button", name="🔄 Refresh")
@@ -210,7 +214,7 @@ class TestPropagationErrorHandling:
                     time.sleep(2)
                 except:
                     pass  # Button might be disabled, which is fine
-                
+
                 # App should still be responsive
                 expect(page.locator("body")).to_be_visible()
                 print("✓ Propagation button click handled gracefully")
@@ -222,41 +226,41 @@ class TestUIConsoleErrors:
     def test_no_console_errors_on_load(self, page: Page, app_server):
         """Page should load without JavaScript errors."""
         console_errors = []
-        
+
         def handle_console(msg: ConsoleMessage):
             if msg.type == "error":
                 console_errors.append(msg.text)
-        
+
         page.on("console", handle_console)
         page.goto(BASE_URL)
         time.sleep(3)
-        
+
         # Filter out known benign errors
         critical_errors = [e for e in console_errors if "gradio" not in e.lower()]
-        
+
         if critical_errors:
             print(f"Console errors found: {critical_errors}")
-        
+
         # We don't fail on errors, just report them
         print(f"✓ Page loaded. Console errors: {len(console_errors)}")
 
     def test_no_errors_during_tab_navigation(self, page: Page, app_server):
         """Navigating through tabs should not cause errors."""
         console_errors = []
-        
+
         def handle_console(msg: ConsoleMessage):
             if msg.type == "error":
                 console_errors.append(msg.text)
-        
+
         page.on("console", handle_console)
         page.goto(BASE_URL)
         time.sleep(2)
-        
+
         tabs = ["Extract", "Subject", "Scenes", "Metrics", "Export"]
         for tab_name in tabs:
             tab = page.get_by_role("tab", name=tab_name)
             if tab.is_visible():
                 tab.click(force=True)
                 time.sleep(0.5)
-        
+
         print(f"✓ Tab navigation complete. Errors during navigation: {len(console_errors)}")

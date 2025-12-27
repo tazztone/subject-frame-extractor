@@ -10,9 +10,11 @@ These tests run against a mock Gradio server to validate:
 Run with: python -m pytest tests/e2e/test_app_flow.py -v -s
 Requires: mock app running on port 7860
 """
+
+import time
+
 import pytest
 from playwright.sync_api import Page, expect
-import time
 
 from .conftest import BASE_URL
 
@@ -176,4 +178,3 @@ class TestUIInteraction:
         dropdowns = page.locator("[data-testid='dropdown']")
         if dropdowns.count() > 0:
             print(f"✓ Found {dropdowns.count()} dropdown elements")
-

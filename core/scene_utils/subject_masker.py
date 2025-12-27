@@ -1,60 +1,64 @@
 """
 SubjectMasker class for coordinating subject detection and mask propagation.
 """
+
 from __future__ import annotations
-import threading
+
 import json
-from typing import Optional, Callable, TYPE_CHECKING
-from queue import Queue
+import threading
 from pathlib import Path
-import numpy as np
+from queue import Queue
+from typing import TYPE_CHECKING, Callable, Optional
+
 import cv2
+import numpy as np
 import torch
 
 if TYPE_CHECKING:
-    from core.config import Config
-    from core.logger import AppLogger
-    from core.models import AnalysisParameters, Scene
-    from core.managers import SAM3Wrapper, ThumbnailManager, ModelRegistry
-    from core.progress import AdvancedProgressTracker
     from insightface.app import FaceAnalysis
     from mediapipe.tasks.python.vision import FaceLandmarker
 
-from core.utils import create_frame_map, draw_bbox
+    from core.config import Config
+    from core.logger import AppLogger
+    from core.managers import ModelRegistry, ThumbnailManager
+    from core.models import AnalysisParameters, Scene
+    from core.progress import AdvancedProgressTracker
+
 from core.scene_utils.mask_propagator import MaskPropagator
 from core.scene_utils.seed_selector import SeedSelector
+from core.utils import create_frame_map, draw_bbox
 
 
 class SubjectMasker:
     """
     Coordinates subject detection and mask propagation for video frames.
-    
+
     This class orchestrates:
     - SAM3 tracker initialization
     - Seed frame selection
     - Bounding box detection via SeedSelector
     - Mask propagation via MaskPropagator
     """
-    
+
     def __init__(
         self,
-        params: 'AnalysisParameters',
+        params: "AnalysisParameters",
         progress_queue: Queue,
         cancel_event: threading.Event,
-        config: 'Config',
+        config: "Config",
         frame_map: Optional[dict] = None,
-        face_analyzer: Optional['FaceAnalysis'] = None,
+        face_analyzer: Optional["FaceAnalysis"] = None,
         reference_embedding: Optional[np.ndarray] = None,
-        thumbnail_manager: Optional['ThumbnailManager'] = None,
+        thumbnail_manager: Optional["ThumbnailManager"] = None,
         niqe_metric: Optional[Callable] = None,
-        logger: Optional['AppLogger'] = None,
-        face_landmarker: Optional['FaceLandmarker'] = None,
+        logger: Optional["AppLogger"] = None,
+        face_landmarker: Optional["FaceLandmarker"] = None,
         device: str = "cpu",
-        model_registry: 'ModelRegistry' = None
+        model_registry: "ModelRegistry" = None,
     ):
         """
         Initialize SubjectMasker.
-        
+
         Args:
             params: Analysis parameters
             progress_queue: Queue for progress updates
@@ -86,7 +90,7 @@ class SubjectMasker:
         self.thumbnail_manager = thumbnail_manager
         self.niqe_metric = niqe_metric
         self.model_registry = model_registry
-        
+
         # Initialize child components BEFORE calling initialize_models()
         # because _initialize_tracker() may try to access self.seed_selector
         self.seed_selector = SeedSelector(
@@ -96,7 +100,7 @@ class SubjectMasker:
             reference_embedding=reference_embedding,
             tracker=self.dam_tracker,  # Will be None at this point, updated later
             logger=self.logger,
-            device=self._device
+            device=self._device,
         )
         self.mask_propagator = MaskPropagator(
             params,
@@ -105,9 +109,9 @@ class SubjectMasker:
             progress_queue,
             config=self.config,
             logger=self.logger,
-            device=self._device
+            device=self._device,
         )
-        
+
         # Now initialize models (may update tracker in child components)
         self.initialize_models()
 
@@ -122,7 +126,7 @@ class SubjectMasker:
     def _initialize_tracker(self) -> bool:
         """
         Initialize the SAM3 tracker.
-        
+
         Returns:
             True if initialization successful, False otherwise
         """
@@ -140,7 +144,7 @@ class SubjectMasker:
                 models_path=str(self.config.models_dir),
                 user_agent=self.config.user_agent,
                 retry_params=retry_params,
-                config=self.config
+                config=self.config,
             )
             if self.dam_tracker is None:
                 self.logger.error("SAM3 tracker initialization returned None/failed")
@@ -159,26 +163,23 @@ class SubjectMasker:
             return False
 
     def run_propagation(
-        self,
-        frames_dir: str,
-        scenes_to_process: list['Scene'],
-        tracker: Optional['AdvancedProgressTracker'] = None
+        self, frames_dir: str, scenes_to_process: list["Scene"], tracker: Optional["AdvancedProgressTracker"] = None
     ) -> dict:
         """
         Run mask propagation for all scenes.
-        
+
         Args:
             frames_dir: Directory containing extracted frames
             scenes_to_process: List of scenes to process
             tracker: Optional progress tracker
-            
+
         Returns:
             Dictionary mapping frame filenames to mask metadata
         """
         self.mask_dir = Path(frames_dir) / "masks"
         self.mask_dir.mkdir(exist_ok=True)
         self.logger.info("Starting subject mask propagation...")
-        
+
         if not self._initialize_tracker():
             self.logger.error("SAM3 tracker could not be initialized; mask propagation failed.")
             return {"error": "SAM3 tracker initialization failed", "completed": False}
@@ -186,31 +187,22 @@ class SubjectMasker:
         thumb_dir = Path(frames_dir) / "thumbs"
         mask_metadata = {}
         total_scenes = len(scenes_to_process)
-        
+
         for i, scene in enumerate(scenes_to_process):
             if self.cancel_event.is_set():
                 break
-            
+
             self.logger.info(
-                f"Masking scene {i+1}/{total_scenes}",
-                user_context={
-                    'shot_id': scene.shot_id,
-                    'start_frame': scene.start_frame,
-                    'end_frame': scene.end_frame
-                }
+                f"Masking scene {i + 1}/{total_scenes}",
+                user_context={"shot_id": scene.shot_id, "start_frame": scene.start_frame, "end_frame": scene.end_frame},
             )
 
-            shot_frames_data = self._load_shot_frames(
-                frames_dir, thumb_dir, scene.start_frame, scene.end_frame
-            )
+            shot_frames_data = self._load_shot_frames(frames_dir, thumb_dir, scene.start_frame, scene.end_frame)
             if not shot_frames_data:
                 continue
 
             if tracker:
-                tracker.set_stage(
-                    f"Scene {i+1}/{len(scenes_to_process)}",
-                    substage=f"{len(shot_frames_data)} frames"
-                )
+                tracker.set_stage(f"Scene {i + 1}/{len(scenes_to_process)}", substage=f"{len(shot_frames_data)} frames")
 
             frame_numbers, small_images, dims = zip(*shot_frames_data)
 
@@ -223,36 +215,28 @@ class SubjectMasker:
                 )
                 continue
 
-            bbox = scene.seed_result.get('bbox')
-            seed_details = scene.seed_result.get('details', {})
-            
+            bbox = scene.seed_result.get("bbox")
+            seed_details = scene.seed_result.get("details", {})
+
             if bbox is None:
                 for fn in frame_numbers:
                     fname = self.frame_map.get(fn)
                     if fname:
-                        mask_metadata[fname] = {
-                            "error": "Subject not found",
-                            "shot_id": scene.shot_id
-                        }
+                        mask_metadata[fname] = {"error": "Subject not found", "shot_id": scene.shot_id}
                 continue
 
             # Check if downscaled video exists for efficient processing
             lowres_video_path = Path(frames_dir) / "video_lowres.mp4"
-            
+
             if lowres_video_path.exists():
                 # Use new video-based propagation (no temp JPEG I/O)
                 first_thumb = small_images[0] if small_images else None
                 frame_size = (first_thumb.shape[1], first_thumb.shape[0]) if first_thumb is not None else (640, 480)
-                
+
                 masks_dict, areas_dict, empties_dict, errors_dict = self.mask_propagator.propagate_video(
-                    str(lowres_video_path),
-                    list(frame_numbers),
-                    scene.best_frame,
-                    bbox,
-                    frame_size,
-                    tracker=tracker
+                    str(lowres_video_path), list(frame_numbers), scene.best_frame, bbox, frame_size, tracker=tracker
                 )
-                
+
                 # Process results using frame number keys
                 for original_fn, _, (h, w) in shot_frames_data:
                     frame_fname_webp = self.frame_map.get(original_fn)
@@ -260,21 +244,21 @@ class SubjectMasker:
                         continue
                     frame_fname_png = f"{Path(frame_fname_webp).stem}.png"
                     mask_path = self.mask_dir / frame_fname_png
-                    
+
                     mask = masks_dict.get(original_fn)
                     area = areas_dict.get(original_fn, 0.0)
                     is_empty = empties_dict.get(original_fn, True)
                     error = errors_dict.get(original_fn)
-                    
+
                     result_args = {
                         "shot_id": scene.shot_id,
-                        "seed_type": seed_details.get('type'),
-                        "seed_face_sim": seed_details.get('seed_face_sim'),
+                        "seed_type": seed_details.get("type"),
+                        "seed_face_sim": seed_details.get("seed_face_sim"),
                         "mask_area_pct": area,
                         "mask_empty": is_empty,
-                        "error": error
+                        "error": error,
                     }
-                    
+
                     if mask is not None and np.any(mask):
                         mask_full_res = cv2.resize(mask, (w, h), interpolation=cv2.INTER_NEAREST)
                         if mask_full_res.ndim == 3:
@@ -297,16 +281,16 @@ class SubjectMasker:
                         continue
                     frame_fname_png = f"{Path(frame_fname_webp).stem}.png"
                     mask_path = self.mask_dir / frame_fname_png
-                    
+
                     result_args = {
                         "shot_id": scene.shot_id,
-                        "seed_type": seed_details.get('type'),
-                        "seed_face_sim": seed_details.get('seed_face_sim'),
+                        "seed_type": seed_details.get("type"),
+                        "seed_face_sim": seed_details.get("seed_face_sim"),
                         "mask_area_pct": areas[j],
                         "mask_empty": empties[j],
-                        "error": errors[j]
+                        "error": errors[j],
                     }
-                    
+
                     if masks[j] is not None and np.any(masks[j]):
                         mask_full_res = cv2.resize(masks[j], (w, h), interpolation=cv2.INTER_NEAREST)
                         if mask_full_res.ndim == 3:
@@ -317,33 +301,29 @@ class SubjectMasker:
                     else:
                         result_args["mask_path"] = None
                         mask_metadata[frame_fname_png] = result_args
-        
+
         self.logger.success("Subject masking complete.")
         try:
-            with (self.mask_dir.parent / "mask_metadata.json").open('w', encoding='utf-8') as f:
+            with (self.mask_dir.parent / "mask_metadata.json").open("w", encoding="utf-8") as f:
                 json.dump(mask_metadata, f, indent=2)
             self.logger.info("Saved mask metadata.")
         except Exception:
             self.logger.error("Failed to save mask metadata", exc_info=True)
-        
+
         return mask_metadata
 
     def _load_shot_frames(
-        self,
-        frames_dir: str,
-        thumb_dir: Path,
-        start: int,
-        end: int
+        self, frames_dir: str, thumb_dir: Path, start: int, end: int
     ) -> list[tuple[int, np.ndarray, tuple[int, int]]]:
         """
         Load frames for a shot from disk.
-        
+
         Args:
             frames_dir: Base frames directory
             thumb_dir: Thumbnails directory
             start: Start frame number
             end: End frame number
-            
+
         Returns:
             List of (frame_number, thumbnail_rgb, (height, width)) tuples
         """
@@ -360,84 +340,79 @@ class SubjectMasker:
             frames.append((fn, thumb_img, thumb_img.shape[:2]))
         return frames
 
-    def _select_best_frame_in_scene(self, scene: 'Scene', frames_dir: str) -> None:
+    def _select_best_frame_in_scene(self, scene: "Scene", frames_dir: str) -> None:
         """
         Select the best frame in a scene for seeding.
-        
+
         Uses NIQE quality metric and face similarity if available.
-        
+
         Args:
             scene: Scene to process
             frames_dir: Frames directory
         """
         if not self.params.pre_analysis_enabled:
             scene.best_frame = scene.start_frame
-            scene.seed_metrics = {'reason': 'pre-analysis disabled'}
+            scene.seed_metrics = {"reason": "pre-analysis disabled"}
             return
 
         thumb_dir = Path(frames_dir) / "thumbs"
         shot_frames = self._load_shot_frames(frames_dir, thumb_dir, scene.start_frame, scene.end_frame)
         if not shot_frames:
             scene.best_frame = scene.start_frame
-            scene.seed_metrics = {'reason': 'no frames loaded'}
+            scene.seed_metrics = {"reason": "no frames loaded"}
             return
-        
-        candidates = shot_frames[::max(1, self.params.pre_sample_nth)]
+
+        candidates = shot_frames[:: max(1, self.params.pre_sample_nth)]
         scores = []
         niqe_score = 10.0
         face_sim = 0.0
-        
+
         for frame_num, thumb_rgb, _ in candidates:
             niqe_score = 10.0
             if self.niqe_metric:
-                img_tensor = (
-                    torch.from_numpy(thumb_rgb).float().permute(2, 0, 1).unsqueeze(0) / 255.0
-                )
-                with torch.no_grad(), torch.amp.autocast('cuda', enabled=self._device == 'cuda'):
+                img_tensor = torch.from_numpy(thumb_rgb).float().permute(2, 0, 1).unsqueeze(0) / 255.0
+                with torch.no_grad(), torch.amp.autocast("cuda", enabled=self._device == "cuda"):
                     niqe_score = float(self.niqe_metric(img_tensor.to(self.niqe_metric.device)))
-            
+
             face_sim = 0.0
             if self.face_analyzer and self.reference_embedding is not None:
                 faces = self.face_analyzer.get(cv2.cvtColor(thumb_rgb, cv2.COLOR_RGB2BGR))
                 if faces:
                     best_face = max(faces, key=lambda x: x.det_score)
                     face_sim = np.dot(best_face.normed_embedding, self.reference_embedding)
-            
+
             scores.append((10 - niqe_score) + (face_sim * 10))
-        
+
         if not scores:
             scene.best_frame = scene.start_frame
-            scene.seed_metrics = {'reason': 'pre-analysis failed, no scores', 'score': 0}
+            scene.seed_metrics = {"reason": "pre-analysis failed, no scores", "score": 0}
             return
-        
+
         best_local_idx = int(np.argmax(scores))
         scene.best_frame = candidates[best_local_idx][0]
         scene.seed_metrics = {
-            'reason': 'pre-analysis complete',
-            'score': max(scores),
-            'best_niqe': niqe_score,
-            'best_face_sim': face_sim
+            "reason": "pre-analysis complete",
+            "score": max(scores),
+            "best_niqe": niqe_score,
+            "best_face_sim": face_sim,
         }
 
     def get_seed_for_frame(
-        self,
-        frame_rgb: np.ndarray,
-        seed_config: dict = None,
-        scene: Optional['Scene'] = None
+        self, frame_rgb: np.ndarray, seed_config: dict = None, scene: Optional["Scene"] = None
     ) -> tuple[Optional[list], dict]:
         """
         Get seed bounding box for a frame.
-        
+
         Args:
             frame_rgb: RGB frame as numpy array
             seed_config: Optional seed configuration override
             scene: Optional scene context
-            
+
         Returns:
             Tuple of (bbox_xywh, details_dict)
         """
-        if isinstance(seed_config, dict) and seed_config.get('manual_bbox_xywh'):
-            return seed_config['manual_bbox_xywh'], {'type': seed_config.get('seed_type', 'manual')}
+        if isinstance(seed_config, dict) and seed_config.get("manual_bbox_xywh"):
+            return seed_config["manual_bbox_xywh"], {"type": seed_config.get("seed_type", "manual")}
 
         self._initialize_tracker()
 
@@ -446,18 +421,14 @@ class SubjectMasker:
 
         return self.seed_selector.select_seed(frame_rgb, current_params=seed_config, scene=scene)
 
-    def get_mask_for_bbox(
-        self,
-        frame_rgb_small: np.ndarray,
-        bbox_xywh: list
-    ) -> Optional[np.ndarray]:
+    def get_mask_for_bbox(self, frame_rgb_small: np.ndarray, bbox_xywh: list) -> Optional[np.ndarray]:
         """
         Generate a mask for a bounding box.
-        
+
         Args:
             frame_rgb_small: RGB frame
             bbox_xywh: Bounding box in [x, y, w, h] format
-            
+
         Returns:
             Mask as numpy array or None
         """
@@ -469,7 +440,7 @@ class SubjectMasker:
         xywh: list,
         color: Optional[tuple] = None,
         thickness: Optional[int] = None,
-        label: Optional[str] = None
+        label: Optional[str] = None,
     ) -> np.ndarray:
         """Draw a bounding box on an image."""
         return draw_bbox(img_rgb, xywh, self.config, color, thickness, label)

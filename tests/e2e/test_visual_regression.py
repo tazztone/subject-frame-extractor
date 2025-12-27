@@ -12,19 +12,17 @@ Run with:
 Update baselines:
     python -m pytest tests/e2e/test_visual_regression.py -v --update-baselines
 """
-import pytest
-from playwright.sync_api import Page, expect
+
 import time
+
+import pytest
+from playwright.sync_api import Page
 
 from .conftest import BASE_URL
 
 try:
-    from .visual_test_utils import (
-        capture_state_screenshot,
-        compare_with_baseline,
-        save_as_baseline,
-        cleanup_diffs
-    )
+    from .visual_test_utils import capture_state_screenshot, cleanup_diffs, compare_with_baseline, save_as_baseline
+
     HAS_UTILS = True
 except ImportError:
     HAS_UTILS = False
@@ -38,7 +36,7 @@ def pytest_addoption(parser):
         "--update-baselines",
         action="store_true",
         default=False,
-        help="Update baseline screenshots instead of comparing"
+        help="Update baseline screenshots instead of comparing",
     )
 
 
@@ -52,7 +50,7 @@ def cleanup_before_run():
 
 class TestVisualRegression:
     """Screenshot-based visual regression tests."""
-    
+
     # UI states to capture and compare
     # Format: (state_name, setup_action)
     UI_STATES = [
@@ -67,7 +65,7 @@ class TestVisualRegression:
         ("09_logs_accordion_open", lambda p: _open_logs(p)),
         ("10_help_accordion_open", lambda p: _open_help(p)),
     ]
-    
+
     @pytest.mark.skipif(not HAS_UTILS, reason="visual_test_utils dependencies not installed")
     @pytest.mark.parametrize("state_name,action", UI_STATES)
     def test_ui_state_visual(self, page: Page, app_server, state_name, action, request):
@@ -75,7 +73,7 @@ class TestVisualRegression:
         page.goto(BASE_URL)
         page.wait_for_load_state("networkidle")
         time.sleep(1)  # Wait for initial render
-        
+
         # Execute setup action if provided
         if action:
             try:
@@ -83,28 +81,28 @@ class TestVisualRegression:
                 time.sleep(0.5)  # Wait for state change
             except Exception as e:
                 pytest.skip(f"Setup action failed: {e}")
-        
+
         # Capture screenshot
         screenshot = capture_state_screenshot(page, state_name)
-        
+
         # Check if we should update baselines
         update_baselines = request.config.getoption("--update-baselines", default=False)
-        
+
         if update_baselines:
             baseline = save_as_baseline(screenshot)
             pytest.skip(f"Baseline updated: {baseline}")
-        
+
         # Compare with baseline
         result = compare_with_baseline(screenshot)
-        
+
         if result["status"] == "no_baseline":
             # First run - save as baseline
             save_as_baseline(screenshot)
             pytest.skip(f"No baseline for {state_name} - saved current as baseline")
-        
+
         if result["status"] == "skip":
             pytest.skip(result.get("reason", "Comparison skipped"))
-        
+
         assert result["status"] == "pass", (
             f"Visual regression detected for {state_name}! "
             f"Diff score: {result['diff_score']} (threshold: {result['threshold']}). "
@@ -114,38 +112,37 @@ class TestVisualRegression:
 
 class TestUIStateConsistency:
     """Test that UI remains consistent across interactions."""
-    
+
     @pytest.mark.skipif(not HAS_UTILS, reason="visual_test_utils dependencies not installed")
     def test_tab_switching_preserves_state(self, page: Page, app_server):
         """Switching tabs and back should preserve visual state."""
         page.goto(BASE_URL)
         page.wait_for_load_state("networkidle")
         time.sleep(1)
-        
+
         # Fill in some data on Source tab
         page.get_by_label("Video URL or Local Path").fill("test_video.mp4")
-        
+
         # Capture initial state
         initial = capture_state_screenshot(page, "consistency_initial")
-        
+
         # Switch away and back
         page.get_by_role("tab", name="Subject").click(force=True)
         time.sleep(0.3)
         page.get_by_role("tab", name="Source").click(force=True)
         time.sleep(0.3)
-        
+
         # Capture return state
         returned = capture_state_screenshot(page, "consistency_returned")
-        
+
         # Compare (should be nearly identical)
-        from .visual_test_utils import compare_with_baseline
         import imagehash
         from PIL import Image
-        
+
         initial_hash = imagehash.phash(Image.open(initial))
         returned_hash = imagehash.phash(Image.open(returned))
         diff = initial_hash - returned_hash
-        
+
         assert diff <= 2, f"UI state changed after tab switching! Diff: {diff}"
 
 

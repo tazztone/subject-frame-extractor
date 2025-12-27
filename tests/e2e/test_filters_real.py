@@ -6,18 +6,21 @@ These tests use the sample video to verify that:
 2. Gallery updates to reflect filtered counts.
 3. Smart filtering toggle works.
 """
-import pytest
-from playwright.sync_api import Page, expect
+
 import time
 from pathlib import Path
+
+import pytest
+from playwright.sync_api import Page, expect
+
 from .conftest import BASE_URL, switch_to_tab
 
 pytestmark = pytest.mark.e2e
 
 SAMPLE_VIDEO = "tests/assets/sample.mp4"
 
-class TestRealFilters:
 
+class TestRealFilters:
     @pytest.fixture(autouse=True)
     def setup_with_analysis(self, page: Page, app_server):
         """
@@ -74,9 +77,9 @@ class TestRealFilters:
         time.sleep(0.5)
 
         # Find slider for quality score min
-        slider = page.locator("input[type='range']").first # This is risky, but quality score is first
+        page.locator("input[type='range']").first  # This is risky, but quality score is first
         # Better selector:
-        slider = page.get_by_label("Min", exact=True).first
+        page.get_by_label("Min", exact=True).first
 
         # Drag slider to increase min threshold
         # Slider value is hard to set in Playwright without exact steps
@@ -89,7 +92,7 @@ class TestRealFilters:
 
         # Set percentile to 50%
         pctl_slider = page.get_by_label("Auto-Threshold Percentile")
-        pctl_slider.fill("90") # Keep top 10%
+        pctl_slider.fill("90")  # Keep top 10%
         page.get_by_role("button", name="Apply").click()
         time.sleep(2)
 
@@ -101,6 +104,7 @@ class TestRealFilters:
         text = status_text.inner_text()
         # Parse "Kept 5 / 50 frames"
         import re
+
         match = re.search(r"Kept (\d+) / (\d+)", text)
         if match:
             kept = int(match.group(1))
@@ -128,7 +132,7 @@ class TestRealFilters:
 
         # Set threshold high to ensure dupes are found
         thresh_slider = page.get_by_label("Threshold")
-        thresh_slider.fill("10") # 10 is loose
+        thresh_slider.fill("10")  # 10 is loose
         time.sleep(2)
 
         text_on = status_text.inner_text()

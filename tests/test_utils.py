@@ -9,26 +9,27 @@ Covers utilities in core/utils.py including:
 
 Note: Some tests require integration mode (no mocks) due to numba/opencv dependencies.
 """
-import pytest
-import numpy as np
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+
 import json
+from pathlib import Path
+
+import numpy as np
+import pytest
 
 # Mark module - tests run with mocks by default
 pytestmark = pytest.mark.unit
 
 from core.utils import (
-    validate_video_file,
-    sanitize_filename,
+    _to_json_safe,
+    create_frame_map,
+    draw_bbox,
     is_image_folder,
     list_images,
-    create_frame_map,
     postprocess_mask,
     render_mask_overlay,
     rgb_to_pil,
-    draw_bbox,
-    _to_json_safe,
+    sanitize_filename,
+    validate_video_file,
 )
 
 
@@ -51,14 +52,14 @@ class TestValidateVideoFile:
     def test_valid_video_file(self, tmp_path):
         """Test validation of a valid video file (requires OpenCV)."""
         import cv2
-        
+
         video_path = tmp_path / "test.mp4"
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
         out = cv2.VideoWriter(str(video_path), fourcc, 1.0, (10, 10))
         frame = np.zeros((10, 10, 3), dtype=np.uint8)
         out.write(frame)
         out.release()
-        
+
         result = validate_video_file(str(video_path))
         assert result is True
 
@@ -74,7 +75,7 @@ class TestSanitizeFilename:
 
     def test_special_characters(self, mock_config):
         """Test removal of special characters."""
-        result = sanitize_filename("file<>:\"/\\|?*.txt", mock_config)
+        result = sanitize_filename('file<>:"/\\|?*.txt', mock_config)
         assert "<" not in result
         assert ">" not in result
         assert ":" not in result
@@ -124,9 +125,9 @@ class TestListImages:
         (tmp_path / "img2.png").touch()
         (tmp_path / "img3.webp").touch()
         (tmp_path / "not_an_image.txt").touch()
-        
+
         images = list_images(tmp_path, mock_config)
-        
+
         # Should find some images
         assert isinstance(images, list)
 
@@ -143,13 +144,13 @@ class TestCreateFrameMap:
         """Test frame map creation from directory."""
         thumbs_dir = tmp_path / "thumbs"
         thumbs_dir.mkdir()
-        
+
         (thumbs_dir / "frame_000000.webp").touch()
         (thumbs_dir / "frame_000001.webp").touch()
         (thumbs_dir / "frame_000005.webp").touch()
-        
+
         frame_map = create_frame_map(tmp_path, mock_logger)
-        
+
         # Should return a dict
         assert isinstance(frame_map, dict)
 
@@ -157,7 +158,7 @@ class TestCreateFrameMap:
         """Test returns empty dict for empty thumbs directory."""
         thumbs_dir = tmp_path / "thumbs"
         thumbs_dir.mkdir()
-        
+
         frame_map = create_frame_map(tmp_path, mock_logger)
         assert isinstance(frame_map, dict)
         assert len(frame_map) == 0
@@ -169,12 +170,12 @@ class TestPostprocessMask:
     def test_basic_mask_processing(self, mock_config):
         """Test basic mask postprocessing."""
         import cv2
-        
+
         mask = np.zeros((100, 100), dtype=np.uint8)
         cv2.circle(mask, (50, 50), 30, 255, -1)
-        
+
         result = postprocess_mask(mask, mock_config)
-        
+
         assert result is not None
         assert result.shape == mask.shape
         assert result.dtype == np.uint8
@@ -198,15 +199,15 @@ class TestRenderMaskOverlay:
     def test_basic_overlay(self, mock_logger):
         """Test basic mask overlay on image."""
         import cv2
-        
+
         image = np.zeros((100, 100, 3), dtype=np.uint8)
         image[:, :] = [100, 150, 200]
-        
+
         mask = np.zeros((100, 100), dtype=np.uint8)
         cv2.circle(mask, (50, 50), 20, 255, -1)
-        
+
         result = render_mask_overlay(image, mask, 0.5, mock_logger)
-        
+
         assert result is not None
         assert result.shape == image.shape
 
@@ -214,7 +215,7 @@ class TestRenderMaskOverlay:
         """Test overlay with empty mask doesn't crash."""
         image = np.zeros((100, 100, 3), dtype=np.uint8)
         mask = np.zeros((100, 100), dtype=np.uint8)
-        
+
         result = render_mask_overlay(image, mask, 0.5, mock_logger)
         assert result is not None
 
@@ -225,12 +226,12 @@ class TestRgbToPil:
     def test_basic_conversion(self):
         """Test basic RGB to PIL conversion."""
         from PIL import Image
-        
+
         rgb_array = np.zeros((100, 100, 3), dtype=np.uint8)
         rgb_array[50, 50] = [255, 0, 0]
-        
+
         pil_image = rgb_to_pil(rgb_array)
-        
+
         assert isinstance(pil_image, Image.Image)
         assert pil_image.size == (100, 100)
 
@@ -252,9 +253,9 @@ class TestDrawBbox:
         """Test basic bounding box drawing."""
         image = np.zeros((100, 100, 3), dtype=np.uint8)
         xywh = [10, 10, 30, 40]
-        
+
         result = draw_bbox(image, xywh, mock_config)
-        
+
         assert result is not None
         assert result.shape == image.shape
 
@@ -262,7 +263,7 @@ class TestDrawBbox:
         """Test bounding box with label."""
         image = np.zeros((100, 100, 3), dtype=np.uint8)
         xywh = [10, 10, 30, 40]
-        
+
         result = draw_bbox(image, xywh, mock_config, label="Test")
         assert result is not None
 
@@ -270,7 +271,7 @@ class TestDrawBbox:
         """Test bounding box with custom color."""
         image = np.zeros((100, 100, 3), dtype=np.uint8)
         xywh = [10, 10, 30, 40]
-        
+
         result = draw_bbox(image, xywh, mock_config, color=(255, 0, 0))
         assert result is not None
 
@@ -280,46 +281,46 @@ class TestToJsonSafe:
 
     def test_numpy_int(self):
         """Test conversion of numpy int."""
-        data = {'int': np.int64(42)}
+        data = {"int": np.int64(42)}
         safe_data = _to_json_safe(data)
         json_str = json.dumps(safe_data)
-        assert '42' in json_str
+        assert "42" in json_str
 
     def test_numpy_float(self):
         """Test conversion of numpy float."""
-        data = {'float': np.float64(3.14)}
+        data = {"float": np.float64(3.14)}
         safe_data = _to_json_safe(data)
         json_str = json.dumps(safe_data)
-        assert '3.14' in json_str
+        assert "3.14" in json_str
 
     def test_numpy_array(self):
         """Test conversion of numpy array."""
-        data = {'array': np.array([1, 2, 3])}
+        data = {"array": np.array([1, 2, 3])}
         safe_data = _to_json_safe(data)
         json_str = json.dumps(safe_data)
         assert json_str is not None
 
     def test_path_conversion(self):
         """Test conversion of Path objects."""
-        data = {'path': Path('/some/path')}
+        data = {"path": Path("/some/path")}
         safe_data = _to_json_safe(data)
-        
+
         # Path should be converted to string
         json_str = json.dumps(safe_data)
-        assert 'some' in json_str or 'path' in json_str
+        assert "some" in json_str or "path" in json_str
 
     def test_plain_dict(self):
         """Test plain dict passes through."""
-        data = {'key': 'value', 'num': 123}
+        data = {"key": "value", "num": 123}
         safe_data = _to_json_safe(data)
         json_str = json.dumps(safe_data)
-        assert 'key' in json_str
+        assert "key" in json_str
 
     def test_nested_structures(self):
         """Test conversion of nested structures."""
         data = {
-            'list': [np.int64(1), np.float64(2.0)],
-            'nested': {'value': np.int64(3)},
+            "list": [np.int64(1), np.float64(2.0)],
+            "nested": {"value": np.int64(3)},
         }
         safe_data = _to_json_safe(data)
         json_str = json.dumps(safe_data)
@@ -328,4 +329,3 @@ class TestToJsonSafe:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
-

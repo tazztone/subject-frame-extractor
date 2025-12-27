@@ -1,6 +1,7 @@
 """
 Configuration Management for Frame Extractor & Analyzer
 """
+
 import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -14,7 +15,7 @@ def json_config_settings_source() -> Dict[str, Any]:
     try:
         config_path = "config.json"
         if Path(config_path).is_file():
-            with open(config_path, 'r', encoding='utf-8') as f:
+            with open(config_path, "r", encoding="utf-8") as f:
                 return json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         pass
@@ -23,11 +24,9 @@ def json_config_settings_source() -> Dict[str, Any]:
 
 class Config(BaseSettings):
     """Manages the application's configuration settings."""
+
     model_config = SettingsConfigDict(
-        env_file=".env",
-        env_prefix='APP_',
-        env_nested_delimiter='_',
-        case_sensitive=False
+        env_file=".env", env_prefix="APP_", env_nested_delimiter="_", case_sensitive=False
     )
 
     # Paths
@@ -38,14 +37,18 @@ class Config(BaseSettings):
     # Models
     user_agent: str = "Mozilla/5.0"
     huggingface_token: Optional[str] = None
-    face_landmarker_url: str = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
+    face_landmarker_url: str = (
+        "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
+    )
     face_landmarker_sha256: str = "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff"
     sam3_checkpoint_url: str = "https://huggingface.co/facebook/sam3/resolve/main/sam3.pt"
     sam3_checkpoint_sha256: str = "9999e2341ceef5e136daa386eecb55cb414446a00ac2b55eb2dfd2f7c3cf8c9e"  # Placeholder, update if known or remove check
 
     # YouTube-DL
     ytdl_output_template: str = "%(id)s_%(title).40s_%(height)sp.%(ext)s"
-    ytdl_format_string: str = "bestvideo[height<={max_res}][ext=mp4]+bestaudio[ext=m4a]/best[height<={max_res}][ext=mp4]/best"
+    ytdl_format_string: str = (
+        "bestvideo[height<={max_res}][ext=mp4]+bestaudio[ext=m4a]/best[height<={max_res}][ext=mp4]/best"
+    )
 
     # FFmpeg
     ffmpeg_log_level: str = "info"
@@ -97,24 +100,50 @@ class Config(BaseSettings):
     default_disable_parallel: bool = False
 
     # Filter Defaults
-    filter_default_quality_score: Dict[str, float] = Field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.5, 'default_min': 0.0, 'default_max': 100.0})
-    filter_default_sharpness: Dict[str, float] = Field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.5, 'default_min': 0.0, 'default_max': 100.0})
-    filter_default_edge_strength: Dict[str, float] = Field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.5, 'default_min': 0.0, 'default_max': 100.0})
-    filter_default_contrast: Dict[str, float] = Field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.5, 'default_min': 0.0, 'default_max': 100.0})
-    filter_default_brightness: Dict[str, float] = Field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.5, 'default_min': 0.0, 'default_max': 100.0})
-    filter_default_entropy: Dict[str, float] = Field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.5, 'default_min': 0.0, 'default_max': 100.0})
-    
+    filter_default_quality_score: Dict[str, float] = Field(
+        default_factory=lambda: {"min": 0.0, "max": 100.0, "step": 0.5, "default_min": 0.0, "default_max": 100.0}
+    )
+    filter_default_sharpness: Dict[str, float] = Field(
+        default_factory=lambda: {"min": 0.0, "max": 100.0, "step": 0.5, "default_min": 0.0, "default_max": 100.0}
+    )
+    filter_default_edge_strength: Dict[str, float] = Field(
+        default_factory=lambda: {"min": 0.0, "max": 100.0, "step": 0.5, "default_min": 0.0, "default_max": 100.0}
+    )
+    filter_default_contrast: Dict[str, float] = Field(
+        default_factory=lambda: {"min": 0.0, "max": 100.0, "step": 0.5, "default_min": 0.0, "default_max": 100.0}
+    )
+    filter_default_brightness: Dict[str, float] = Field(
+        default_factory=lambda: {"min": 0.0, "max": 100.0, "step": 0.5, "default_min": 0.0, "default_max": 100.0}
+    )
+    filter_default_entropy: Dict[str, float] = Field(
+        default_factory=lambda: {"min": 0.0, "max": 100.0, "step": 0.5, "default_min": 0.0, "default_max": 100.0}
+    )
+
     # Missing Defaults
     default_min_mask_area_pct: float = 1.0
     default_sharpness_base_scale: float = 2500.0
     default_edge_strength_base_scale: float = 100.0
-    filter_default_niqe: Dict[str, float] = Field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.5, 'default_min': 0.0, 'default_max': 100.0})
-    filter_default_face_sim: Dict[str, float] = Field(default_factory=lambda: {'min': 0.0, 'max': 1.0, 'step': 0.01, 'default_min': 0.0})
-    filter_default_mask_area_pct: Dict[str, float] = Field(default_factory=lambda: {'min': 0.0, 'max': 100.0, 'step': 0.1, 'default_min': 1.0})
-    filter_default_dedup_thresh: Dict[str, int] = Field(default_factory=lambda: {'min': -1, 'max': 32, 'step': 1, 'default': -1})
-    filter_default_eyes_open: Dict[str, float] = Field(default_factory=lambda: {'min': 0.0, 'max': 1.0, 'step': 0.01, 'default_min': 0.0})
-    filter_default_yaw: Dict[str, float] = Field(default_factory=lambda: {'min': -180.0, 'max': 180.0, 'step': 1, 'default_min': -25, 'default_max': 25})
-    filter_default_pitch: Dict[str, float] = Field(default_factory=lambda: {'min': -180.0, 'max': 180.0, 'step': 1, 'default_min': -25, 'default_max': 25})
+    filter_default_niqe: Dict[str, float] = Field(
+        default_factory=lambda: {"min": 0.0, "max": 100.0, "step": 0.5, "default_min": 0.0, "default_max": 100.0}
+    )
+    filter_default_face_sim: Dict[str, float] = Field(
+        default_factory=lambda: {"min": 0.0, "max": 1.0, "step": 0.01, "default_min": 0.0}
+    )
+    filter_default_mask_area_pct: Dict[str, float] = Field(
+        default_factory=lambda: {"min": 0.0, "max": 100.0, "step": 0.1, "default_min": 1.0}
+    )
+    filter_default_dedup_thresh: Dict[str, int] = Field(
+        default_factory=lambda: {"min": -1, "max": 32, "step": 1, "default": -1}
+    )
+    filter_default_eyes_open: Dict[str, float] = Field(
+        default_factory=lambda: {"min": 0.0, "max": 1.0, "step": 0.01, "default_min": 0.0}
+    )
+    filter_default_yaw: Dict[str, float] = Field(
+        default_factory=lambda: {"min": -180.0, "max": 180.0, "step": 1, "default_min": -25, "default_max": 25}
+    )
+    filter_default_pitch: Dict[str, float] = Field(
+        default_factory=lambda: {"min": -180.0, "max": 180.0, "step": 1, "default_min": -25, "default_max": 25}
+    )
 
     # Quality Weights
     quality_weights_sharpness: int = 25
@@ -126,7 +155,7 @@ class Config(BaseSettings):
 
     # Logging Config
     log_level: str = "INFO"
-    log_format: str = '%(asctime)s | %(levelname)8s | %(name)s | %(message)s'
+    log_format: str = "%(asctime)s | %(levelname)8s | %(name)s | %(message)s"
     log_colored: bool = True
     log_structured_path: str = "structured_log.jsonl"
 
@@ -155,12 +184,14 @@ class Config(BaseSettings):
     seeding_iou_bonus: float = 50.0  # Bonus score for high IOU matches
     seeding_face_to_body_expansion_factors: List[float] = Field(default_factory=lambda: [4.0, 7.0, 0.75])
     seeding_final_fallback_box: List[float] = Field(default_factory=lambda: [0.25, 0.25, 0.5, 0.5])
-    seeding_balanced_score_weights: Dict[str, float] = Field(default_factory=lambda: {'area': 0.4, 'confidence': 0.4, 'edge': 0.2})
+    seeding_balanced_score_weights: Dict[str, float] = Field(
+        default_factory=lambda: {"area": 0.4, "confidence": 0.4, "edge": 0.2}
+    )
 
     # Utility Defaults
     utility_max_filename_length: int = 50
-    utility_video_extensions: List[str] = Field(default_factory=lambda: ['.mp4','.mov','.mkv','.avi','.webm'])
-    utility_image_extensions: List[str] = Field(default_factory=lambda: ['.png','.jpg','.jpeg','.webp','.bmp'])
+    utility_video_extensions: List[str] = Field(default_factory=lambda: [".mp4", ".mov", ".mkv", ".avi", ".webm"])
+    utility_image_extensions: List[str] = Field(default_factory=lambda: [".png", ".jpg", ".jpeg", ".webp", ".bmp"])
 
     # PostProcessing
     postprocessing_mask_fill_kernel_size: int = 5
@@ -196,12 +227,22 @@ class Config(BaseSettings):
             except (PermissionError, OSError):
                 print(f"WARNING: Directory {p} is not writable.")
 
-    @model_validator(mode='after')
-    def _validate_config(self) -> 'Config':
+    @model_validator(mode="after")
+    def _validate_config(self) -> "Config":
         """Validates that at least one quality weight is non-zero."""
-        if sum([self.quality_weights_sharpness, self.quality_weights_edge_strength,
-                self.quality_weights_contrast, self.quality_weights_brightness,
-                self.quality_weights_entropy, self.quality_weights_niqe]) == 0:
+        if (
+            sum(
+                [
+                    self.quality_weights_sharpness,
+                    self.quality_weights_edge_strength,
+                    self.quality_weights_contrast,
+                    self.quality_weights_brightness,
+                    self.quality_weights_entropy,
+                    self.quality_weights_niqe,
+                ]
+            )
+            == 0
+        ):
             raise ValueError("The sum of quality_weights cannot be zero.")
         return self
 
@@ -209,10 +250,10 @@ class Config(BaseSettings):
     def quality_weights(self) -> Dict[str, int]:
         """Returns a dictionary of quality metric weights."""
         return {
-            'sharpness': self.quality_weights_sharpness,
-            'edge_strength': self.quality_weights_edge_strength,
-            'contrast': self.quality_weights_contrast,
-            'brightness': self.quality_weights_brightness,
-            'entropy': self.quality_weights_entropy,
-            'niqe': self.quality_weights_niqe
+            "sharpness": self.quality_weights_sharpness,
+            "edge_strength": self.quality_weights_edge_strength,
+            "contrast": self.quality_weights_contrast,
+            "brightness": self.quality_weights_brightness,
+            "entropy": self.quality_weights_entropy,
+            "niqe": self.quality_weights_niqe,
         }

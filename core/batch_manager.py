@@ -1,10 +1,11 @@
 import threading
-import uuid
 import time
-from typing import List, Optional, Callable, Dict
+import uuid
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from enum import Enum
-from concurrent.futures import ThreadPoolExecutor
+from typing import Callable, Dict, List, Optional
+
 
 class BatchStatus(Enum):
     PENDING = "Pending"
@@ -13,9 +14,11 @@ class BatchStatus(Enum):
     FAILED = "Failed"
     CANCELLED = "Cancelled"
 
+
 @dataclass
 class BatchItem:
     """Represents a single item in the batch processing queue."""
+
     id: str
     path: str
     params: Dict = field(default_factory=dict)
@@ -25,8 +28,10 @@ class BatchItem:
     output_path: str = ""
     error: str = ""
 
+
 class BatchManager:
     """Manages a queue of batch processing tasks."""
+
     def __init__(self):
         """Initializes the BatchManager."""
         self.queue: List[BatchItem] = []
@@ -56,7 +61,11 @@ class BatchManager:
     def clear_completed(self):
         """Removes completed, failed, and cancelled items from the queue."""
         with self.lock:
-            self.queue = [item for item in self.queue if item.status not in (BatchStatus.COMPLETED, BatchStatus.FAILED, BatchStatus.CANCELLED)]
+            self.queue = [
+                item
+                for item in self.queue
+                if item.status not in (BatchStatus.COMPLETED, BatchStatus.FAILED, BatchStatus.CANCELLED)
+            ]
 
     def clear_all(self):
         """Clears all items from the queue."""
@@ -129,6 +138,7 @@ class BatchManager:
                                 def __init__(self, manager, item_id):
                                     self.manager = manager
                                     self.item_id = item_id
+
                                 def __call__(self, fraction, desc=None):
                                     self.manager.update_progress(self.item_id, fraction, desc)
 

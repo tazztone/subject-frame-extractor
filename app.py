@@ -1,23 +1,26 @@
 """
 Frame Extractor & Analyzer v2.0
 """
+
 import sys
 from pathlib import Path
 
 # Ensure project root and SAM3_repo are in path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
-sys.path.insert(0, str(project_root / 'SAM3_repo'))
+sys.path.insert(0, str(project_root / "SAM3_repo"))
 
+import gc
 import threading
 from queue import Queue
+
 import torch
-import gc
 
 from core.config import Config
 from core.logger import AppLogger
 from core.managers import ModelRegistry, ThumbnailManager
 from ui.app_ui import AppUI
+
 
 def cleanup_models(model_registry):
     """
@@ -30,6 +33,7 @@ def cleanup_models(model_registry):
         model_registry.clear()
     torch.cuda.empty_cache()
     gc.collect()
+
 
 def main():
     """
@@ -52,16 +56,17 @@ def main():
         logger.info("Frame Extractor & Analyzer v2.0\nStarting application...")
         demo.launch()
     except KeyboardInterrupt:
-        if 'logger' in locals():
+        if "logger" in locals():
             logger.info("\nApplication stopped by user")
     except Exception as e:
-        if 'logger' in locals():
+        if "logger" in locals():
             logger.error(f"Error starting application: {e}", exc_info=True)
         else:
             print(f"Error starting application: {e}")
         sys.exit(1)
     finally:
         cleanup_models(model_registry)
+
 
 if __name__ == "__main__":
     main()

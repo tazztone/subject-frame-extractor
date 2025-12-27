@@ -1,8 +1,9 @@
-import sqlite3
 import json
+import sqlite3
 import threading
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Any, Dict, List
+
 
 class Database:
     def __init__(self, db_path: Path, batch_size: int = 50):
@@ -18,7 +19,21 @@ class Database:
         self.buffer = []
         self.batch_size = batch_size
         self.lock = threading.Lock()
-        self.columns = ['filename', 'face_sim', 'face_conf', 'shot_id', 'seed_type', 'seed_face_sim', 'mask_area_pct', 'mask_empty', 'error', 'error_severity', 'phash', 'dedup_thresh', 'metrics']
+        self.columns = [
+            "filename",
+            "face_sim",
+            "face_conf",
+            "shot_id",
+            "seed_type",
+            "seed_face_sim",
+            "mask_area_pct",
+            "mask_empty",
+            "error",
+            "error_severity",
+            "phash",
+            "dedup_thresh",
+            "metrics",
+        ]
 
     def connect(self):
         """Connects to the SQLite database."""
@@ -60,11 +75,11 @@ class Database:
         # Migration: Add error_severity if missing
         cursor.execute("PRAGMA table_info(metadata)")
         columns = [info[1] for info in cursor.fetchall()]
-        if 'error_severity' not in columns:
+        if "error_severity" not in columns:
             try:
                 cursor.execute("ALTER TABLE metadata ADD COLUMN error_severity TEXT")
             except sqlite3.OperationalError:
-                pass # Column might have been added concurrently
+                pass  # Column might have been added concurrently
 
         self.conn.commit()
 
@@ -81,15 +96,32 @@ class Database:
     def insert_metadata(self, metadata: Dict[str, Any]):
         """Inserts or replaces a metadata record."""
         # Pop extra fields to be able to use the spreak operator ** later
-        keys_to_extract = ['filename', 'face_sim', 'face_conf', 'shot_id', 'seed_type', 'seed_face_sim', 'mask_area_pct', 'mask_empty', 'error', 'error_severity', 'phash', 'dedup_thresh']
+        keys_to_extract = [
+            "filename",
+            "face_sim",
+            "face_conf",
+            "shot_id",
+            "seed_type",
+            "seed_face_sim",
+            "mask_area_pct",
+            "mask_empty",
+            "error",
+            "error_severity",
+            "phash",
+            "dedup_thresh",
+        ]
         base_metadata = {key: metadata.pop(key, None) for key in keys_to_extract}
 
         # The rest of the metadata is a dictionary that we will store as a JSON string
-        base_metadata['metrics'] = json.dumps(metadata)
+        base_metadata["metrics"] = json.dumps(metadata)
 
         # Make sure that the mask_empty field is an integer
-        if 'mask_empty' in base_metadata and base_metadata['mask_empty'] is not None and not isinstance(base_metadata['mask_empty'], int) :
-            base_metadata['mask_empty'] = int(base_metadata['mask_empty'])
+        if (
+            "mask_empty" in base_metadata
+            and base_metadata["mask_empty"] is not None
+            and not isinstance(base_metadata["mask_empty"], int)
+        ):
+            base_metadata["mask_empty"] = int(base_metadata["mask_empty"])
 
         # Ensure we have values for all columns in the correct order
         row_values = [base_metadata.get(col) for col in self.columns]
@@ -113,14 +145,17 @@ class Database:
             self.connect()
 
         cursor = self.conn.cursor()
-        placeholders = ', '.join(['?'] * len(self.columns))
-        columns_str = ', '.join(self.columns)
+        placeholders = ", ".join(["?"] * len(self.columns))
+        columns_str = ", ".join(self.columns)
 
         try:
-            cursor.executemany(f"""
+            cursor.executemany(
+                f"""
                 INSERT OR REPLACE INTO metadata ({columns_str})
                 VALUES ({placeholders})
-            """, self.buffer)
+            """,
+                self.buffer,
+            )
             self.conn.commit()
             self.buffer.clear()
         except sqlite3.Error as e:
@@ -131,7 +166,7 @@ class Database:
 
     def load_all_metadata(self) -> List[Dict[str, Any]]:
         """Loads all metadata from the database."""
-        self.flush() # Ensure everything is written before reading
+        self.flush()  # Ensure everything is written before reading
         if not self.conn:
             self.connect()
         cursor = self.conn.cursor()
@@ -141,9 +176,9 @@ class Database:
         results = []
         for row in rows:
             row_dict = dict(row)
-            if 'metrics' in row_dict and isinstance(row_dict['metrics'], str) :
+            if "metrics" in row_dict and isinstance(row_dict["metrics"], str):
                 try:
-                    row_dict.update(json.loads(row_dict['metrics']))
+                    row_dict.update(json.loads(row_dict["metrics"]))
                 except json.JSONDecodeError:
                     pass
             results.append(row_dict)

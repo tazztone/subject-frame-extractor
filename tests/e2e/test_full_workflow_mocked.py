@@ -1,14 +1,11 @@
+import time
 
 import pytest
-import shutil
-import json
-import time
-from pathlib import Path
-from unittest.mock import MagicMock, patch
 from playwright.sync_api import Page, expect
 
 # This test requires the app to be running (mock or real).
 # The conftest.py in tests/e2e handles starting the mock app server.
+
 
 @pytest.fixture(scope="module")
 def app_server_url(app_server):
@@ -17,6 +14,7 @@ def app_server_url(app_server):
     app_server fixture from tests/e2e/conftest.py starts the server if needed.
     """
     return "http://127.0.0.1:7860"
+
 
 class TestFullWorkflowMocked:
     """
@@ -55,8 +53,8 @@ class TestFullWorkflowMocked:
         try:
             page.get_by_label("Video URL or Local Path").fill("test.mp4")
         except Exception:
-             # Fallback if label name changed
-             page.get_by_label("Video Path").fill("test.mp4")
+            # Fallback if label name changed
+            page.get_by_label("Video Path").fill("test.mp4")
 
         # Click Extract Frames
         # Button text might vary.

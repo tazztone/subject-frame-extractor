@@ -13,9 +13,11 @@ Run with:
 
 Requires: playwright, axe-core (injected via CDN)
 """
-import pytest
-from playwright.sync_api import Page, expect
+
 import json
+
+import pytest
+from playwright.sync_api import Page
 
 from .conftest import BASE_URL
 
@@ -41,7 +43,7 @@ def run_axe_audit(page: Page, context: str = None) -> dict:
     options = {}
     if context:
         options["context"] = context
-    
+
     results = page.evaluate(f"() => axe.run({json.dumps(options) if options else ''})")
     return results
 
@@ -50,11 +52,8 @@ def filter_violations(violations: list, min_impact: str = "serious") -> list:
     """Filter violations by minimum impact level."""
     impact_order = ["minor", "moderate", "serious", "critical"]
     min_idx = impact_order.index(min_impact)
-    
-    return [
-        v for v in violations 
-        if impact_order.index(v.get("impact", "minor")) >= min_idx
-    ]
+
+    return [v for v in violations if impact_order.index(v.get("impact", "minor")) >= min_idx]
 
 
 def format_violation(violation: dict) -> str:
@@ -68,7 +67,7 @@ def format_violation(violation: dict) -> str:
 
 class TestAccessibilityAudit:
     """Accessibility tests for each application tab."""
-    
+
     TABS = [
         ("Source", None),
         ("Subject", "Subject"),
@@ -76,47 +75,47 @@ class TestAccessibilityAudit:
         ("Metrics", "Metrics"),
         ("Export", "Export"),
     ]
-    
+
     @pytest.mark.parametrize("tab_name,click_tab", TABS)
     def test_tab_accessibility(self, page: Page, app_server, tab_name, click_tab):
         """Run accessibility audit on each tab."""
         page.goto(BASE_URL)
         page.wait_for_load_state("networkidle")
-        
+
         # Navigate to tab
         if click_tab:
             tab_btn = page.get_by_role("tab", name=click_tab)
             if tab_btn.is_visible():
                 tab_btn.click(force=True)
                 page.wait_for_timeout(500)
-        
+
         # Inject axe-core
         if not inject_axe(page):
             pytest.skip("Could not inject axe-core")
-        
+
         # Run audit
         results = run_axe_audit(page)
         violations = results.get("violations", [])
-        
+
         # Filter to serious/critical only
         serious_violations = filter_violations(violations, "serious")
-        
+
         # Report
         if serious_violations:
             report = f"\n{tab_name} Tab Accessibility Issues:\n"
             for v in serious_violations:
                 report += format_violation(v) + "\n"
             print(report)
-        
+
         assert len(serious_violations) == 0, (
             f"{len(serious_violations)} serious accessibility violations on {tab_name} tab"
         )
-    
+
     def test_keyboard_navigation(self, page: Page, app_server):
         """Test that main elements are keyboard accessible."""
         page.goto(BASE_URL)
         page.wait_for_load_state("networkidle")
-        
+
         # Tab through main interface elements
         focusable_count = 0
         for _ in range(20):  # Tab 20 times
@@ -124,18 +123,18 @@ class TestAccessibilityAudit:
             focused = page.evaluate("document.activeElement.tagName")
             if focused not in ["BODY", "HTML"]:
                 focusable_count += 1
-        
+
         # Should have multiple focusable elements
         assert focusable_count >= 5, "Should have multiple keyboard-focusable elements"
-    
+
     def test_color_contrast(self, page: Page, app_server):
         """Check for color contrast issues."""
         page.goto(BASE_URL)
         page.wait_for_load_state("networkidle")
-        
+
         if not inject_axe(page):
             pytest.skip("Could not inject axe-core")
-        
+
         # Run with just color-contrast rule
         results = page.evaluate("""
             () => axe.run({
@@ -145,27 +144,27 @@ class TestAccessibilityAudit:
                 }
             })
         """)
-        
+
         violations = results.get("violations", [])
-        
+
         # Color contrast issues are usually minor/moderate, not blockers
         critical_contrast = [v for v in violations if v.get("impact") == "critical"]
-        
+
         if violations:
             print(f"\nColor contrast issues found: {len(violations)}")
             for v in violations[:3]:  # Show first 3
                 print(f"  - {v['description']} ({len(v['nodes'])} elements)")
-        
+
         assert len(critical_contrast) == 0, "Critical color contrast violations found"
-    
+
     def test_form_labels(self, page: Page, app_server):
         """Check that form inputs have proper labels."""
         page.goto(BASE_URL)
         page.wait_for_load_state("networkidle")
-        
+
         if not inject_axe(page):
             pytest.skip("Could not inject axe-core")
-        
+
         # Run with form-related rules
         results = page.evaluate("""
             () => axe.run({
@@ -175,24 +174,24 @@ class TestAccessibilityAudit:
                 }
             })
         """)
-        
+
         violations = results.get("violations", [])
         serious = filter_violations(violations, "serious")
-        
+
         assert len(serious) == 0, f"Form labeling issues: {[v['id'] for v in serious]}"
 
 
 class TestARIACompliance:
     """Test ARIA attribute usage."""
-    
+
     def test_aria_roles(self, page: Page, app_server):
         """Check for proper ARIA role usage."""
         page.goto(BASE_URL)
         page.wait_for_load_state("networkidle")
-        
+
         if not inject_axe(page):
             pytest.skip("Could not inject axe-core")
-        
+
         results = page.evaluate("""
             () => axe.run({
                 runOnly: {
@@ -201,12 +200,10 @@ class TestARIACompliance:
                 }
             })
         """)
-        
+
         violations = results.get("violations", [])
         aria_violations = [v for v in violations if "aria" in v["id"].lower()]
-        
+
         critical_aria = [v for v in aria_violations if v.get("impact") in ["critical", "serious"]]
-        
-        assert len(critical_aria) == 0, (
-            f"Critical ARIA violations: {[v['id'] for v in critical_aria]}"
-        )
+
+        assert len(critical_aria) == 0, f"Critical ARIA violations: {[v['id'] for v in critical_aria]}"

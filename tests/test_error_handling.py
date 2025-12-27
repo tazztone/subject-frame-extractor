@@ -4,15 +4,16 @@ Tests for error handling and edge cases.
 These tests ensure the application handles errors gracefully and provides
 useful feedback to users.
 """
-import pytest
+
 from unittest.mock import MagicMock, patch
-from pathlib import Path
+
 import numpy as np
+import pytest
+from pydantic import ValidationError
 
 from core.config import Config
-from core.models import Scene, Frame, AnalysisParameters, QualityConfig
 from core.filtering import apply_all_filters_vectorized
-from pydantic import ValidationError
+from core.models import AnalysisParameters, Frame, QualityConfig, Scene
 
 
 class TestConfigEdgeCases:
@@ -42,9 +43,9 @@ class TestConfigEdgeCases:
         # logs_dir should be usable as a path
         assert isinstance(config.logs_dir, str)
 
-    @patch('pathlib.Path.mkdir', MagicMock())
-    @patch('pathlib.Path.touch', MagicMock()) 
-    @patch('pathlib.Path.unlink', MagicMock())
+    @patch("pathlib.Path.mkdir", MagicMock())
+    @patch("pathlib.Path.touch", MagicMock())
+    @patch("pathlib.Path.unlink", MagicMock())
     def test_config_invalid_quality_weights(self):
         """Test that Config rejects invalid quality weights (sum cannot be zero)."""
         with pytest.raises(ValidationError):
@@ -73,20 +74,20 @@ class TestSceneEdgeCases:
             shot_id=1,
             start_frame=0,
             end_frame=100,
-            seed_result={'bbox': [10, 10, 50, 50], 'details': {'type': 'person'}},
-            seed_metrics={'score': 0.95},
+            seed_result={"bbox": [10, 10, 50, 50], "details": {"type": "person"}},
+            seed_metrics={"score": 0.95},
         )
         assert scene.seed_result is not None
-        assert scene.seed_metrics['score'] == 0.95
+        assert scene.seed_metrics["score"] == 0.95
 
     def test_scene_status_transitions(self):
         """Test Scene status can be changed."""
         scene = Scene(shot_id=1, start_frame=0, end_frame=10)
         assert scene.status == "pending"
-        
+
         scene.status = "included"
         assert scene.status == "included"
-        
+
         scene.status = "excluded"
         assert scene.status == "excluded"
 
@@ -137,7 +138,7 @@ class TestFilteringEdgeCases:
         }
         kept, rejected, _, _ = apply_all_filters_vectorized(sample_frames_data, filters, mock_config)
         # All frames with face_sim should be rejected (max is 0.8)
-        assert len(rejected) >= len([f for f in sample_frames_data if f.get('face_sim')])
+        assert len(rejected) >= len([f for f in sample_frames_data if f.get("face_sim")])
 
 
 class TestAnalysisParametersValidation:
