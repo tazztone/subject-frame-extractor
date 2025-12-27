@@ -340,7 +340,8 @@ class AppUI:
                         self.components['discovered_people_group'] = discovered_people_group
                         self._create_component('discovered_faces_gallery', 'gallery', {'label': "Detected People (Click to Select)", 'columns': 5, 'height': 'auto', 'allow_preview': False})
 
-            self._reg('face_ref_img_path', self._create_component('face_ref_img_path_input', 'textbox', {'label': "Local Path Override", 'visible': False}))
+            with gr.Accordion("Advanced: Local File Path", open=False):
+                self._reg('face_ref_img_path', self._create_component('face_ref_img_path_input', 'textbox', {'label': "Path to Reference Image", 'placeholder': "/path/to/image.jpg", 'visible': True, 'info': "Use a local file path instead of uploading."}))
 
         with gr.Group(visible=False) as text_seeding_group:
             self.components['text_seeding_group'] = text_seeding_group
@@ -377,7 +378,7 @@ class AppUI:
 
     def _create_scene_selection_tab(self):
         """Creates the content for the 'Scenes' tab."""
-        with gr.Column(scale=2, visible=False) as seeding_results_column:
+        with gr.Column(scale=2, visible=True) as seeding_results_column:
             self.components['seeding_results_column'] = seeding_results_column
             gr.Markdown("""### 🎬 Step 3: Scene Review""")
 
