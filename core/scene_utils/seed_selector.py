@@ -476,5 +476,5 @@ class SeedSelector:
                 torch.cuda.empty_cache()
             return None
         except Exception as e:
-            self.logger.error(f"Unexpected error in mask generation: {e}")
+            self.logger.error(f"Unexpected error in mask generation: {type(e).__name__}: {e!r}")
             return None
