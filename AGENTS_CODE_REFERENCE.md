@@ -122,10 +122,10 @@ Frame Extractor & Analyzer v2.0
 
 import sys
 from pathlib import Path
+import gc
 import threading
 from queue import Queue
 import torch
-import gc
 from core.config import Config
 from core.logger import AppLogger
 from core.managers import ModelRegistry, ThumbnailManager
@@ -152,12 +152,12 @@ def main():
 
 ```python
 import threading
-import uuid
 import time
-from typing import List, Optional, Callable, Dict
+import uuid
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from enum import Enum
-from concurrent.futures import ThreadPoolExecutor
+from typing import Callable, Dict, List, Optional
 
 class BatchStatus(Enum):
     PENDING = 'Pending'
@@ -269,11 +269,11 @@ class Config(BaseSettings):
 ### `📄 core/database.py`
 
 ```python
-import sqlite3
 import json
+import sqlite3
 import threading
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 class Database:
     def __init__(self, db_path: Path, batch_size: int=50):
@@ -333,7 +333,7 @@ import functools
 import time
 import traceback
 from enum import Enum
-from typing import Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 class ErrorSeverity(Enum):
     LOW = 'low'
@@ -446,16 +446,15 @@ class SessionLoadEvent(UIEvent):
 
 ```python
 from __future__ import annotations
-import subprocess
-import shutil
-import cv2
-import numpy as np
 import json
+import subprocess
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, TYPE_CHECKING
-from core.filtering import apply_all_filters_vectorized
+from typing import TYPE_CHECKING, Optional
+import cv2
+import numpy as np
 from core.events import ExportEvent
+from core.filtering import apply_all_filters_vectorized
 
 def _perform_ffmpeg_export(video_path: str, frames_to_extract: list, export_dir: Path, logger: 'AppLogger') -> tuple[bool, Optional[str]]: ...
 
@@ -472,19 +471,16 @@ def dry_run_export(event: ExportEvent, config: 'Config') -> str: ...
 
 ```python
 from __future__ import annotations
-import collections
-from collections import defaultdict, Counter
 import io
-import math
-from typing import Optional, Union, List, Any, TYPE_CHECKING, Callable
-import numpy as np
+from collections import Counter, defaultdict
+from pathlib import Path
+from typing import TYPE_CHECKING, Callable, Optional
 import cv2
-import torch
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
-from pathlib import Path
+import numpy as np
+import torch
 from skimage.metrics import structural_similarity as ssim
-import lpips
 from torchvision import transforms
 from core.database import Database
 from core.managers import get_lpips_metric
@@ -566,7 +562,7 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 from queue import Queue
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 from pydantic import BaseModel
 
 SUCCESS_LEVEL_NUM = 25
@@ -658,26 +654,22 @@ class AppLogger:
 
 ```python
 from __future__ import annotations
-import collections
-from collections import OrderedDict, defaultdict
 import gc
 import logging
 import threading
-import time
-import shutil
-import urllib.request
+from collections import OrderedDict, defaultdict
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, Union, TYPE_CHECKING
-import torch
-import numpy as np
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
 import cv2
-from PIL import Image
 import lpips
+import numpy as np
+import torch
 import yt_dlp as ytdlp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
-from core.utils import download_model, validate_video_file, safe_resource_cleanup
+from PIL import Image
 from core.error_handling import ErrorHandler
+from core.utils import download_model, validate_video_file
 
 build_sam3_video_predictor = None
 Sam3VideoPredictor = None
@@ -853,15 +845,13 @@ class VideoManager:
 ```python
 from __future__ import annotations
 import math
-from typing import Optional, List, Dict, Any, Union, Callable, TYPE_CHECKING
-import numpy as np
-from pydantic import BaseModel, Field, ConfigDict
-import cv2
-import torch
-import mediapipe as mp
-from mediapipe.tasks import python
-from mediapipe.tasks.python import vision
 from pathlib import Path
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Union
+import cv2
+import mediapipe as mp
+import numpy as np
+import torch
+from pydantic import BaseModel, ConfigDict, Field
 
 def _coerce(val: Any, to_type: type) -> Any:
     """
@@ -965,32 +955,31 @@ class MaskingResult(BaseModel):
 
 ```python
 from __future__ import annotations
-import math
-import threading
-import subprocess
-import time
-import re
-import os
-import shutil
 import json
-import numpy as np
-import torch
-from collections import deque
+import math
+import os
+import re
+import shutil
+import subprocess
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from queue import Queue, Empty
-from typing import Optional, List, Dict, Any, Generator, Callable, TYPE_CHECKING
-from PIL import Image
+from queue import Queue
+from typing import TYPE_CHECKING, Callable, Generator, Optional, Union
+import cv2
 import gradio as gr
-from core.models import AnalysisParameters, Scene, Frame
-from core.utils import handle_common_errors, estimate_totals, sanitize_filename, _to_json_safe, monitor_memory_usage, validate_video_file, safe_resource_cleanup, create_frame_map
-from core.managers import VideoManager, initialize_analysis_models
-from core.scene_utils import SubjectMasker, save_scene_seeds, get_scene_status_text, run_scene_detection, make_photo_thumbs
-from core.filtering import load_and_prep_filter_data, apply_all_filters_vectorized
+import numpy as np
+import torch
+from PIL import Image
 from core.database import Database
-from core.events import ExtractionEvent, PreAnalysisEvent, PropagationEvent, SessionLoadEvent, ExportEvent
 from core.error_handling import ErrorHandler
+from core.events import ExtractionEvent, PreAnalysisEvent, PropagationEvent, SessionLoadEvent
+from core.managers import VideoManager, initialize_analysis_models
+from core.models import AnalysisParameters, Frame, Scene
 from core.progress import AdvancedProgressTracker
+from core.scene_utils import SubjectMasker, make_photo_thumbs, run_scene_detection, save_scene_seeds
+from core.utils import _to_json_safe, create_frame_map, estimate_totals, handle_common_errors, monitor_memory_usage, sanitize_filename
 
 def _process_ffmpeg_stream(stream, tracker: Optional['AdvancedProgressTracker'], desc: str, total_duration_s: float):
     """
@@ -1129,7 +1118,7 @@ Progress Tracking Infrastructure for Frame Extractor & Analyzer
 import threading
 import time
 from queue import Queue
-from typing import Callable, Optional
+from typing import TYPE_CHECKING, Callable, Optional
 from pydantic import BaseModel
 
 class ProgressEvent(BaseModel): ...
@@ -1236,11 +1225,11 @@ Example usage:
 """
 
 from __future__ import annotations
-from core.scene_utils.detection import run_scene_detection, make_photo_thumbs
+from core.scene_utils.detection import make_photo_thumbs, run_scene_detection
+from core.scene_utils.helpers import _create_analysis_context, _recompute_single_preview, _wire_recompute_handler, draw_boxes_preview, get_scene_status_text, save_scene_seeds, toggle_scene_status
 from core.scene_utils.mask_propagator import MaskPropagator
 from core.scene_utils.seed_selector import SeedSelector
 from core.scene_utils.subject_masker import SubjectMasker
-from core.scene_utils.helpers import draw_boxes_preview, save_scene_seeds, get_scene_status_text, toggle_scene_status, _create_analysis_context, _recompute_single_preview, _wire_recompute_handler
 
 __all__ = ['run_scene_detection', 'make_photo_thumbs', 'MaskPropagator', 'SeedSelector', 'Subject...
 ```
@@ -1253,14 +1242,13 @@ Scene detection and thumbnail generation utilities.
 """
 
 from __future__ import annotations
-import math
 import json
-from typing import Optional, TYPE_CHECKING
+import math
 from pathlib import Path
-import numpy as np
+from typing import TYPE_CHECKING, Optional
 import cv2
 from PIL import Image
-from scenedetect import detect, ContentDetector
+from scenedetect import ContentDetector, detect
 
 def run_scene_detection(video_path: str, output_dir: Path, logger: 'AppLogger') -> list:
     """
@@ -1302,16 +1290,16 @@ Helper functions for scene processing.
 from __future__ import annotations
 import json
 import threading
-from typing import Optional, Any, TYPE_CHECKING
 from pathlib import Path
 from queue import Queue
-import numpy as np
+from typing import TYPE_CHECKING, Any
 import cv2
+import numpy as np
 from PIL import Image
-from core.utils import create_frame_map, render_mask_overlay, draw_bbox, _to_json_safe
 from core.managers import initialize_analysis_models
 from core.scene_utils.subject_masker import SubjectMasker
 from core.shared import build_scene_gallery_items
+from core.utils import _to_json_safe, create_frame_map, render_mask_overlay
 
 def draw_boxes_preview(img: np.ndarray, boxes_xyxy: list[list[int]], cfg: 'Config') -> np.ndarray:
     """
@@ -1387,8 +1375,8 @@ MaskPropagator class for propagating segmentation masks across video frames.
 
 from __future__ import annotations
 import threading
-from typing import Optional, TYPE_CHECKING
 from queue import Queue
+from typing import TYPE_CHECKING, Optional
 import numpy as np
 import torch
 from core.utils import postprocess_mask
@@ -1455,11 +1443,11 @@ SeedSelector class for selecting seed frames and bounding boxes for mask propaga
 
 from __future__ import annotations
 import math
-from typing import Optional, Union, Any, TYPE_CHECKING
-import numpy as np
+from typing import TYPE_CHECKING, Any, Optional, Union
 import cv2
+import numpy as np
 import torch
-from core.utils import rgb_to_pil, postprocess_mask
+from core.utils import postprocess_mask, rgb_to_pil
 
 class SeedSelector:
     """
@@ -1570,17 +1558,17 @@ SubjectMasker class for coordinating subject detection and mask propagation.
 """
 
 from __future__ import annotations
-import threading
 import json
-from typing import Optional, Callable, TYPE_CHECKING
-from queue import Queue
+import threading
 from pathlib import Path
-import numpy as np
+from queue import Queue
+from typing import TYPE_CHECKING, Callable, Optional
 import cv2
+import numpy as np
 import torch
-from core.utils import create_frame_map, draw_bbox
 from core.scene_utils.mask_propagator import MaskPropagator
 from core.scene_utils.seed_selector import SeedSelector
+from core.utils import create_frame_map, draw_bbox
 
 class SubjectMasker:
     """
@@ -1701,10 +1689,10 @@ resolving circular import issues.
 """
 
 from __future__ import annotations
+from pathlib import Path
+from typing import TYPE_CHECKING, List, Optional, Tuple, Union
 import cv2
 import numpy as np
-from pathlib import Path
-from typing import TYPE_CHECKING, Optional, Union, List, Tuple, Any
 
 def scene_matches_view(scene: 'Scene', view: str) -> bool:
     """
@@ -1766,26 +1754,23 @@ def build_scene_gallery_items(scenes: List[Union[dict, 'Scene']], view: str, out
 ```python
 from __future__ import annotations
 import contextlib
-import cv2
 import functools
 import gc
 import hashlib
 import json
-import logging
-import math
-import numpy as np
-import os
 import re
 import shutil
 import traceback
-import urllib.request
 import urllib.error
+import urllib.request
 from pathlib import Path
-from typing import Any, Callable, Optional, Union, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable, Optional, Union
+import cv2
+import numpy as np
 import torch
 from numba import njit
-from pydantic import BaseModel
 from PIL import Image
+from pydantic import BaseModel
 
 def handle_common_errors(func: Callable) -> Callable:
     """
@@ -1890,11 +1875,11 @@ Usage:
     python scripts/run_ux_audit.py --quick            # Quick component check only
 """
 
+import argparse
 import subprocess
 import sys
-import argparse
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 
 def run_tests(test_path: str, extra_args: list=None) -> tuple[int, str]:
     """
@@ -1922,32 +1907,31 @@ async def main(): ...
 
 ```python
 from __future__ import annotations
+import re
+import shutil
+import sys
 import threading
 import time
-import sys
-import re
-from pathlib import Path
-from queue import Queue, Empty
-from concurrent.futures import ThreadPoolExecutor
-from typing import Optional, List, Dict, Any, Callable, Deque, Generator
 from collections import deque
-import gradio as gr
-import torch
-import numpy as np
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+from queue import Empty, Queue
+from typing import Any, Callable, Deque, Dict, Generator, List, Optional
 import cv2
-import uuid
-import shutil
+import gradio as gr
+import numpy as np
+import torch
+from core.batch_manager import BatchItem, BatchManager
 from core.config import Config
+from core.events import ExportEvent, ExtractionEvent, FilterEvent, PreAnalysisEvent, PropagationEvent, SessionLoadEvent
+from core.export import dry_run_export, export_kept_frames
 from core.logger import AppLogger
-from core.managers import ThumbnailManager, ModelRegistry
-from core.models import Scene, SceneState, AnalysisParameters
+from core.managers import ModelRegistry, ThumbnailManager
+from core.models import Scene, SceneState
+from core.pipelines import AdvancedProgressTracker, execute_analysis, execute_extraction, execute_pre_analysis, execute_propagation, execute_session_load
+from core.scene_utils import _create_analysis_context, _recompute_single_preview, _wire_recompute_handler, get_scene_status_text, save_scene_seeds, toggle_scene_status
 from core.utils import is_image_folder
-from core.scene_utils import toggle_scene_status, save_scene_seeds, _recompute_single_preview, _create_analysis_context, _wire_recompute_handler, get_scene_status_text
-from core.pipelines import execute_extraction, execute_pre_analysis, execute_propagation, execute_analysis, execute_session_load, AdvancedProgressTracker
-from core.export import export_kept_frames, dry_run_export
-from ui.gallery_utils import build_scene_gallery_items, on_filters_changed, auto_set_thresholds, _update_gallery, scene_caption, create_scene_thumbnail_with_badge
-from core.events import ExtractionEvent, PreAnalysisEvent, PropagationEvent, SessionLoadEvent, FilterEvent, ExportEvent
-from core.batch_manager import BatchManager, BatchStatus, BatchItem
+from ui.gallery_utils import auto_set_thresholds, build_scene_gallery_items, on_filters_changed
 
 class AppUI:
     """
@@ -2253,20 +2237,17 @@ class AppUI:
 
 ```python
 from __future__ import annotations
-import math
-import cv2
-import numpy as np
-import json
 from pathlib import Path
-from typing import Optional, List, Dict, Tuple, Any, Union
+from typing import Any
+import cv2
 import gradio as gr
-from collections import Counter
-from core.models import Scene
-from core.filtering import apply_all_filters_vectorized
-from core.utils import render_mask_overlay
+import numpy as np
 from core.events import FilterEvent
-from core.shared import scene_matches_view, create_scene_thumbnail_with_badge, scene_caption, build_scene_gallery_items
+from core.filtering import apply_all_filters_vectorized
+from core.shared import build_scene_gallery_items
+from core.utils import render_mask_overlay
 
+__all__ = ['build_scene_gallery_items', 'render_mask_overlay', 'on_filters_changed', 'auto_set_th...
 def _update_gallery(all_frames_data: list[dict], filters: dict, output_dir: str, gallery_view: str, show_overlay: bool, overlay_alpha: float, thumbnail_manager: Any, config: Any, logger: Any) -> tuple[str, gr.update]:
     """
     Updates the Gradio gallery based on applied filters.
@@ -2308,8 +2289,8 @@ extracted from the monolithic AppUI class to improve maintainability.
 """
 
 from __future__ import annotations
-from ui.handlers.extraction_handler import ExtractionHandler
 from ui.handlers.analysis_handler import AnalysisHandler
+from ui.handlers.extraction_handler import ExtractionHandler
 from ui.handlers.filtering_handler import FilteringHandler
 
 __all__ = ['ExtractionHandler', 'AnalysisHandler', 'FilteringHandler']
@@ -2326,7 +2307,7 @@ including pre-analysis, propagation, and full analysis.
 """
 
 from __future__ import annotations
-from typing import TYPE_CHECKING, Callable, Optional, Any, Generator, List
+from typing import TYPE_CHECKING, Callable, Generator
 import gradio as gr
 
 class AnalysisHandler:
@@ -2424,7 +2405,7 @@ including video extraction, session loading, and batch processing.
 """
 
 from __future__ import annotations
-from typing import TYPE_CHECKING, Callable, Optional, Any, Generator
+from typing import TYPE_CHECKING, Callable, Generator
 import gradio as gr
 
 class ExtractionHandler:
@@ -2487,7 +2468,7 @@ This module contains handlers related to frame filtering and export.
 """
 
 from __future__ import annotations
-from typing import TYPE_CHECKING, Callable, Optional, Any, Dict, List
+from typing import TYPE_CHECKING
 import gradio as gr
 
 class FilteringHandler:
