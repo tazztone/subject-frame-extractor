@@ -3,6 +3,7 @@ Event Models for Frame Extractor & Analyzer
 
 Pydantic models representing UI events and data contracts.
 """
+
 from pathlib import Path
 from typing import Any, Optional
 
@@ -11,13 +12,17 @@ from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 class UIEvent(BaseModel):
     """Base class for all UI-triggered events."""
-    model_config = ConfigDict(validate_assignment=True, extra='ignore', str_strip_whitespace=True, arbitrary_types_allowed=True)
+
+    model_config = ConfigDict(
+        validate_assignment=True, extra="ignore", str_strip_whitespace=True, arbitrary_types_allowed=True
+    )
 
 
 class ExtractionEvent(UIEvent):
     """
     Data model for frame extraction events.
     """
+
     source_path: str
     upload_video: Optional[str] = None
     method: str
@@ -34,6 +39,7 @@ class PreAnalysisEvent(UIEvent):
     """
     Data model for pre-analysis configuration and execution.
     """
+
     output_folder: str
     video_path: str
     resume: bool = False
@@ -66,20 +72,23 @@ class PreAnalysisEvent(UIEvent):
     compute_niqe: bool = True
     compute_phash: bool = True
 
-    @field_validator('face_ref_img_path')
+    @field_validator("face_ref_img_path")
     @classmethod
     def validate_face_ref(cls, v: str, info) -> str:
         """Validates that the reference image path is a valid image file."""
-        if not v: return ""
-        video_path = info.data.get('video_path', '')
-        if v == video_path: return ""
+        if not v:
+            return ""
+        video_path = info.data.get("video_path", "")
+        if v == video_path:
+            return ""
         p = Path(v)
-        valid_exts = {'.png', '.jpg', '.jpeg', '.webp', '.bmp'}
-        if not p.is_file() or p.suffix.lower() not in valid_exts: return ""
+        valid_exts = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
+        if not p.is_file() or p.suffix.lower() not in valid_exts:
+            return ""
         return v
 
-    @model_validator(mode='after')
-    def validate_strategy_consistency(self) -> 'PreAnalysisEvent':
+    @model_validator(mode="after")
+    def validate_strategy_consistency(self) -> "PreAnalysisEvent":
         """Ensures that dependent settings (like face filter) are consistent with available data."""
         if not self.face_ref_img_path and self.enable_face_filter:
             self.enable_face_filter = False
@@ -90,6 +99,7 @@ class PropagationEvent(UIEvent):
     """
     Data model for the mask propagation stage.
     """
+
     output_folder: str
     video_path: str
     scenes: list[dict[str, Any]]
@@ -100,6 +110,7 @@ class FilterEvent(UIEvent):
     """
     Data model for filtering and gallery update events.
     """
+
     all_frames_data: list[dict[str, Any]]
     per_metric_values: dict[str, Any]
     output_dir: str
@@ -116,6 +127,7 @@ class ExportEvent(UIEvent):
     """
     Data model for exporting filtered frames.
     """
+
     all_frames_data: list[dict[str, Any]]
     output_dir: str
     video_path: str
@@ -129,4 +141,5 @@ class SessionLoadEvent(UIEvent):
     """
     Data model for loading a previous session.
     """
+
     session_path: str

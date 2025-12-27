@@ -1,11 +1,15 @@
 """
 Error Handling Infrastructure for Frame Extractor & Analyzer
 """
+
 import functools
 import time
 import traceback
 from enum import Enum
-from typing import Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
+
+if TYPE_CHECKING:
+    from core.logger import AppLogger
 
 
 class ErrorSeverity(Enum):
@@ -23,7 +27,7 @@ class RecoveryStrategy(Enum):
 
 
 class ErrorHandler:
-    def __init__(self, logger: 'AppLogger', max_attempts: int, backoff_seconds: list):
+    def __init__(self, logger: "AppLogger", max_attempts: int, backoff_seconds: list):
         """
         Initializes the ErrorHandler.
 
@@ -36,7 +40,12 @@ class ErrorHandler:
         self.max_attempts = max_attempts
         self.backoff_seconds = backoff_seconds
 
-    def with_retry(self, max_attempts: Optional[int] = None, backoff_seconds: Optional[list] = None, recoverable_exceptions: tuple = (Exception,)):
+    def with_retry(
+        self,
+        max_attempts: Optional[int] = None,
+        backoff_seconds: Optional[list] = None,
+        recoverable_exceptions: tuple = (Exception,),
+    ):
         """
         Decorator that retries the function call upon failure.
 
@@ -50,6 +59,7 @@ class ErrorHandler:
         """
         max_attempts = max_attempts or self.max_attempts
         backoff_seconds = backoff_seconds or self.backoff_seconds
+
         def decorator(func: Callable) -> Callable:
             @functools.wraps(func)
             def wrapper(*args, **kwargs) -> Any:
@@ -61,12 +71,21 @@ class ErrorHandler:
                         last_exception = e
                         if attempt < max_attempts - 1:
                             sleep_time = backoff_seconds[min(attempt, len(backoff_seconds) - 1)]
-                            self.logger.warning(f"Attempt {attempt + 1} failed, retrying in {sleep_time}s: {str(e)}", component="error_handler")
+                            self.logger.warning(
+                                f"Attempt {attempt + 1} failed, retrying in {sleep_time}s: {str(e)}",
+                                component="error_handler",
+                            )
                             time.sleep(sleep_time)
                         else:
-                            self.logger.error(f"All retry attempts failed for {func.__name__}: {str(e)}", component="error_handler", stack_trace=traceback.format_exc())
+                            self.logger.error(
+                                f"All retry attempts failed for {func.__name__}: {str(e)}",
+                                component="error_handler",
+                                stack_trace=traceback.format_exc(),
+                            )
                 raise last_exception
+
             return wrapper
+
         return decorator
 
     def with_fallback(self, fallback_func: Callable):
@@ -79,17 +98,26 @@ class ErrorHandler:
         Returns:
             Decorated function.
         """
+
         def decorator(func: Callable) -> Callable:
             @functools.wraps(func)
             def wrapper(*args, **kwargs) -> Any:
                 try:
                     return func(*args, **kwargs)
                 except Exception as e:
-                    self.logger.warning(f"Primary function {func.__name__} failed, using fallback: {str(e)}", component="error_handler")
+                    self.logger.warning(
+                        f"Primary function {func.__name__} failed, using fallback: {str(e)}", component="error_handler"
+                    )
                     try:
                         return fallback_func(*args, **kwargs)
                     except Exception as fallback_error:
-                        self.logger.error(f"Both primary and fallback functions failed for {func.__name__}", component="error_handler", stack_trace=traceback.format_exc())
+                        self.logger.error(
+                            f"Both primary and fallback functions failed for {func.__name__}",
+                            component="error_handler",
+                            stack_trace=traceback.format_exc(),
+                        )
                         raise fallback_error
+
             return wrapper
+
         return decorator

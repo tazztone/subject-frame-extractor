@@ -1,7 +1,6 @@
-
 import pytest
-import time
 from playwright.sync_api import Page, expect
+
 
 @pytest.fixture(scope="module")
 def app_server_url(app_server):
@@ -10,6 +9,7 @@ def app_server_url(app_server):
     app_server fixture from tests/e2e/conftest.py starts the server if needed.
     """
     return "http://127.0.0.1:7860"
+
 
 class TestAdvancedWorkflow:
     """

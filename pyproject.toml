@@ -17,10 +17,28 @@ markers = [
 [tool.ruff]
 line-length = 120
 target-version = "py310"
+exclude = [
+    "SAM3_repo",
+    "venv",
+    ".git",
+    "__pycache__",
+    "htmlcov",
+    ".pytest_cache",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]  # E=pycodestyle errors, F=pyflakes, W=warnings, I=isort
-ignore = ["E501"]  # Line too long (handled by formatter)
+ignore = [
+    "E501",  # Line too long (handled by formatter)
+    "E701",  # Multiple statements on one line (colon) - style choice
+    "E702",  # Multiple statements on one line (semicolon) - style choice
+    "E731",  # Lambda assignment - sometimes clearer
+    "E741",  # Ambiguous variable name (l, O, I) - context-dependent
+    "E402",  # Module import not at top - often intentional for conditional imports
+]
 
 [tool.ruff.format]
 quote-style = "double"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["E722", "E712"]  # E722=bare except, E712=equality to True/False (needed for numpy bools)

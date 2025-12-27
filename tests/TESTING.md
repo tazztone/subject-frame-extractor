@@ -48,3 +48,34 @@ To check coverage:
 ```bash
 python -m pytest --cov=app --cov=core --cov=ui tests/
 ```
+
+## Known Issues & Gotchas
+
+### Numpy Boolean Assertions
+**Problem**: Using `is True` or `is False` in assertions fails with numpy arrays.
+```python
+# ❌ Fails - numpy.bool_ is not Python's True/False singleton
+assert mask[0] is True
+
+# ✅ Works
+assert mask[0] == True
+assert mask[0]  # for truthy check
+```
+
+**Why**: Numpy returns `numpy.bool_` objects, not Python's `bool`. The `is` operator checks identity, not value.
+
+### Test Isolation Issues
+Some tests in `test_sam3_wrapper.py` may fail when run with the full suite but pass individually. This is due to mock state leaking between test files via `conftest.py` patches.
+
+**Workaround**: Run flaky tests in isolation:
+```bash
+python -m pytest tests/test_sam3_wrapper.py -v
+```
+
+### Ruff Linting
+The project uses Ruff for linting. Some lint rules are ignored in tests:
+- `E722`: Bare `except:` (acceptable for defensive cleanup)
+- `E712`: Equality comparisons to `True`/`False` (needed for numpy bools)
+
+See `pyproject.toml` `[tool.ruff.lint.per-file-ignores]` for details.
+

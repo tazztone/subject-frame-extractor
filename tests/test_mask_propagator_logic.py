@@ -1,17 +1,17 @@
-
-import pytest
-import numpy as np
-from unittest.mock import MagicMock, call, ANY, patch
 import threading
 from queue import Queue
-import sys
+from unittest.mock import MagicMock, patch
+
+import numpy as np
+import pytest
+
+from core.models import AnalysisParameters
 
 # We need to ensure we're using the mocked torch from conftest if applicable,
 # or we just need to be careful about what we import.
 # Since this is a unit test (no 'integration' in name), conftest mocks are active.
-
 from core.scene_utils.mask_propagator import MaskPropagator
-from core.models import AnalysisParameters
+
 
 @pytest.fixture
 def mock_sam3_wrapper():
@@ -26,13 +26,14 @@ def mock_sam3_wrapper():
     wrapper.propagate.return_value = iter([])
     return wrapper
 
+
 @pytest.fixture
 def mask_propagator(mock_config, mock_logger, mock_sam3_wrapper):
     """Creates a MaskPropagator instance with mocks."""
     params = AnalysisParameters(
         source_path="test.mp4",
         output_folder="/tmp",
-        min_mask_area_pct=0.1  # 0.1%
+        min_mask_area_pct=0.1,  # 0.1%
     )
     cancel_event = threading.Event()
     progress_queue = Queue()
@@ -44,8 +45,9 @@ def mask_propagator(mock_config, mock_logger, mock_sam3_wrapper):
         progress_queue=progress_queue,
         config=mock_config,
         logger=mock_logger,
-        device="cpu"
+        device="cpu",
     )
+
 
 class TestMaskPropagatorLogic:
     """
@@ -77,16 +79,13 @@ class TestMaskPropagatorLogic:
             frame_numbers=frame_numbers,
             seed_frame_num=seed_frame,
             bbox_xywh=bbox,
-            frame_size=frame_size
+            frame_size=frame_size,
         )
 
         # Verify SAM3 calls
         mock_sam3_wrapper.init_video.assert_called_once_with("video.mp4")
         mock_sam3_wrapper.add_bbox_prompt.assert_called_once_with(
-            frame_idx=seed_frame,
-            obj_id=1,
-            bbox_xywh=bbox,
-            img_size=frame_size
+            frame_idx=seed_frame, obj_id=1, bbox_xywh=bbox, img_size=frame_size
         )
 
         # Verify propagation calls
@@ -112,16 +111,14 @@ class TestMaskPropagatorLogic:
         mock_sam3_wrapper.add_bbox_prompt.return_value = None
 
         # Propagation returns None masks
-        mock_sam3_wrapper.propagate.return_value = iter([
-            (1, 1, None)
-        ])
+        mock_sam3_wrapper.propagate.return_value = iter([(1, 1, None)])
 
         masks, areas, empties, errors = mask_propagator.propagate_video(
             video_path="video.mp4",
             frame_numbers=[0, 1],
             seed_frame_num=0,
-            bbox_xywh=[0,0,10,10],
-            frame_size=(100, 100)
+            bbox_xywh=[0, 0, 10, 10],
+            frame_size=(100, 100),
         )
 
         # Should return blank masks, not None
@@ -132,6 +129,7 @@ class TestMaskPropagatorLogic:
 
     def test_propagate_video_cancellation(self, mask_propagator, mock_sam3_wrapper):
         """Test that propagation stops when cancel event is set."""
+
         # Setup infinite generator to simulate long process
         def infinite_gen():
             i = 1
@@ -148,8 +146,8 @@ class TestMaskPropagatorLogic:
             video_path="video.mp4",
             frame_numbers=[0, 1, 2],
             seed_frame_num=0,
-            bbox_xywh=[0,0,10,10],
-            frame_size=(100, 100)
+            bbox_xywh=[0, 0, 10, 10],
+            frame_size=(100, 100),
         )
 
         # Verify it didn't crash
@@ -161,38 +159,35 @@ class TestMaskPropagatorLogic:
 
         # Setup mocks
         mock_sam3_wrapper.propagate.side_effect = [
-            iter([(1, 1, np.ones((100, 100), dtype=bool))]), # Forward
-            iter([(2, 1, np.ones((100, 100), dtype=bool))])  # Backward
+            iter([(1, 1, np.ones((100, 100), dtype=bool))]),  # Forward
+            iter([(2, 1, np.ones((100, 100), dtype=bool))]),  # Backward
         ]
 
         # Patch core.utils.rgb_to_pil since it is imported inside the method
-        with patch('core.utils.rgb_to_pil') as mock_rgb_to_pil:
-             mock_pil_img = MagicMock()
-             mock_rgb_to_pil.return_value = mock_pil_img
+        with patch("core.utils.rgb_to_pil") as mock_rgb_to_pil:
+            mock_pil_img = MagicMock()
+            mock_rgb_to_pil.return_value = mock_pil_img
 
-             masks, areas, empties, errors = mask_propagator.propagate(
-                 shot_frames_rgb=frames,
-                 seed_idx=0,
-                 bbox_xywh=[0,0,10,10]
-             )
+            masks, areas, empties, errors = mask_propagator.propagate(
+                shot_frames_rgb=frames, seed_idx=0, bbox_xywh=[0, 0, 10, 10]
+            )
 
-             # Verify it saved images (assuming rgb_to_pil is used)
-             # Note: logic inside propagate does `from core.utils import rgb_to_pil`
-             # Since we patched core.utils.rgb_to_pil, the import should get the mock
-             assert mock_pil_img.save.call_count == 3
+            # Verify it saved images (assuming rgb_to_pil is used)
+            # Note: logic inside propagate does `from core.utils import rgb_to_pil`
+            # Since we patched core.utils.rgb_to_pil, the import should get the mock
+            assert mock_pil_img.save.call_count == 3
 
-             # Verify SAM3 init with a path
-             mock_sam3_wrapper.init_video.assert_called_once()
-             args, _ = mock_sam3_wrapper.init_video.call_args
-             assert isinstance(args[0], str) # path
+            # Verify SAM3 init with a path
+            mock_sam3_wrapper.init_video.assert_called_once()
+            args, _ = mock_sam3_wrapper.init_video.call_args
+            assert isinstance(args[0], str)  # path
 
-             # Verify propagation
-             assert len(masks) == 3
-             assert masks[0] is not None # Seed
+            # Verify propagation
+            assert len(masks) == 3
+            assert masks[0] is not None  # Seed
 
     def test_error_handling_gpu_oom(self, mask_propagator, mock_sam3_wrapper):
         """Test handling of CUDA OOM error."""
-        import torch
 
         # The issue with TypeError: catching classes that do not inherit from BaseException
         # is likely because conftest.py mocks torch.cuda.OutOfMemoryError but assigns it to something that isn't a class
@@ -220,42 +215,40 @@ class TestMaskPropagatorLogic:
         # Since we can't change the import in mask_propagator.py easily (it's already imported),
         # We can try to patch `core.scene_utils.mask_propagator.torch.cuda.OutOfMemoryError` to be `RuntimeError`.
 
-        with patch('core.scene_utils.mask_propagator.torch.cuda.OutOfMemoryError', RuntimeError):
-             # Now the except clause is effectively `except (RuntimeError, RuntimeError)` which is valid.
+        with patch("core.scene_utils.mask_propagator.torch.cuda.OutOfMemoryError", RuntimeError):
+            # Now the except clause is effectively `except (RuntimeError, RuntimeError)` which is valid.
 
-             # We raise RuntimeError
-             mock_sam3_wrapper.init_video.side_effect = RuntimeError("GPU OOM Simulated")
+            # We raise RuntimeError
+            mock_sam3_wrapper.init_video.side_effect = RuntimeError("GPU OOM Simulated")
 
-             # Also ensure torch.cuda.is_available is True
-             with patch('core.scene_utils.mask_propagator.torch.cuda.is_available', return_value=True):
-                 with patch('core.scene_utils.mask_propagator.torch.cuda.empty_cache') as mock_empty_cache:
+            # Also ensure torch.cuda.is_available is True
+            with patch("core.scene_utils.mask_propagator.torch.cuda.is_available", return_value=True):
+                with patch("core.scene_utils.mask_propagator.torch.cuda.empty_cache") as mock_empty_cache:
                     masks, areas, empties, errors = mask_propagator.propagate_video(
                         video_path="video.mp4",
                         frame_numbers=[0],
                         seed_frame_num=0,
-                        bbox_xywh=[0,0,10,10],
-                        frame_size=(100, 100)
+                        bbox_xywh=[0, 0, 10, 10],
+                        frame_size=(100, 100),
                     )
 
                     mock_empty_cache.assert_called()
-                    assert empties[0] == True
+                    assert empties[0] is True
                     assert "GPU error" in errors[0]
 
     def test_tracker_progress(self, mask_propagator, mock_sam3_wrapper):
         """Test that progress tracker is updated."""
         tracker = MagicMock()
 
-        mock_sam3_wrapper.propagate.return_value = iter([
-            (1, 1, np.ones((100, 100), dtype=bool))
-        ])
+        mock_sam3_wrapper.propagate.return_value = iter([(1, 1, np.ones((100, 100), dtype=bool))])
 
         mask_propagator.propagate_video(
             video_path="video.mp4",
             frame_numbers=[0, 1],
             seed_frame_num=0,
-            bbox_xywh=[0,0,10,10],
+            bbox_xywh=[0, 0, 10, 10],
             frame_size=(100, 100),
-            tracker=tracker
+            tracker=tracker,
         )
 
         assert tracker.set_stage.call_count >= 1

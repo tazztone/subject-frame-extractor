@@ -1,7 +1,7 @@
-
-import pytest
 from unittest.mock import MagicMock, patch
+
 import numpy as np
+import pytest
 
 # Completely mock cv2 to avoid "partially initialized" errors
 mock_cv2 = MagicMock()
@@ -13,16 +13,20 @@ mock_cv2.cvtColor = MagicMock(return_value=np.zeros((100, 100, 3), dtype=np.uint
 mock_cv2.COLOR_RGB2BGR = 1
 
 # Mock heavy dependencies
-with patch.dict('sys.modules', {
-    'torch': MagicMock(),
-    'torchvision': MagicMock(),
-    'sam3': MagicMock(),
-    'insightface': MagicMock(),
-    'mediapipe': MagicMock(),
-    'cv2': mock_cv2,
-}):
+with patch.dict(
+    "sys.modules",
+    {
+        "torch": MagicMock(),
+        "torchvision": MagicMock(),
+        "sam3": MagicMock(),
+        "insightface": MagicMock(),
+        "mediapipe": MagicMock(),
+        "cv2": mock_cv2,
+    },
+):
+    from core.models import AnalysisParameters
     from core.scene_utils.subject_masker import SubjectMasker
-    from core.models import Scene, AnalysisParameters
+
 
 class TestSubjectMasker:
     """
@@ -42,25 +46,29 @@ class TestSubjectMasker:
         config, logger, thumb_manager, model_registry = mock_dependencies
 
         # Configure models
-        models = {
-            'face_analyzer': MagicMock(),
-            'face_landmarker': MagicMock(),
-            'sam3': MagicMock()
-        }
+        models = {"face_analyzer": MagicMock(), "face_landmarker": MagicMock(), "sam3": MagicMock()}
         model_registry.get_or_load.side_effect = lambda name, **kwargs: models.get(name)
 
         params = AnalysisParameters(
             output_folder="/tmp",
             video_path="test.mp4",
             primary_seed_strategy="🤖 Automatic",
-            enable_face_filter=True # Trigger warning path
+            enable_face_filter=True,  # Trigger warning path
         )
 
         # Ensure logger is mocked
         if logger is None:
-             logger = MagicMock()
+            logger = MagicMock()
 
-        return SubjectMasker(params, MagicMock(), MagicMock(), config, logger=logger, thumbnail_manager=thumb_manager, model_registry=model_registry)
+        return SubjectMasker(
+            params,
+            MagicMock(),
+            MagicMock(),
+            config,
+            logger=logger,
+            thumbnail_manager=thumb_manager,
+            model_registry=model_registry,
+        )
 
     def test_initialization(self, subject_masker):
         """Test proper initialization."""

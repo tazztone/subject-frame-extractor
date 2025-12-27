@@ -11,9 +11,11 @@ These tests verify that previously fixed bugs don't regress:
 Run with: python -m pytest tests/e2e/test_bug_regression.py -v -s
 Requires: mock app running on port 7860
 """
+
+import time
+
 import pytest
 from playwright.sync_api import Page, expect
-import time
 
 from .conftest import BASE_URL
 

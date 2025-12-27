@@ -1,15 +1,17 @@
 """
 Scene detection and thumbnail generation utilities.
 """
+
 from __future__ import annotations
-import math
+
 import json
-from typing import Optional, TYPE_CHECKING
+import math
 from pathlib import Path
-import numpy as np
+from typing import TYPE_CHECKING, Optional
+
 import cv2
 from PIL import Image
-from scenedetect import detect, ContentDetector
+from scenedetect import ContentDetector, detect
 
 if TYPE_CHECKING:
     from core.config import Config
@@ -18,15 +20,15 @@ if TYPE_CHECKING:
     from core.progress import AdvancedProgressTracker
 
 
-def run_scene_detection(video_path: str, output_dir: Path, logger: 'AppLogger') -> list:
+def run_scene_detection(video_path: str, output_dir: Path, logger: "AppLogger") -> list:
     """
     Detect scene changes in a video using PySceneDetect.
-    
+
     Args:
         video_path: Path to the video file
         output_dir: Directory to save scenes.json
         logger: Application logger
-        
+
     Returns:
         List of (start_frame, end_frame) tuples for each scene
     """
@@ -34,11 +36,11 @@ def run_scene_detection(video_path: str, output_dir: Path, logger: 'AppLogger') 
     try:
         scene_list = detect(str(video_path), ContentDetector())
         shots = [(s.get_frames(), e.get_frames()) for s, e in scene_list] if scene_list else []
-        with (output_dir / "scenes.json").open('w', encoding='utf-8') as f:
+        with (output_dir / "scenes.json").open("w", encoding="utf-8") as f:
             json.dump(shots, f)
         logger.success(f"Found {len(shots)} scenes.", component="video")
         return shots
-    except Exception as e:
+    except Exception:
         logger.error("Scene detection failed.", component="video", exc_info=True)
         return []
 
@@ -46,14 +48,14 @@ def run_scene_detection(video_path: str, output_dir: Path, logger: 'AppLogger') 
 def make_photo_thumbs(
     image_paths: list[Path],
     out_dir: Path,
-    params: 'AnalysisParameters',
-    cfg: 'Config',
-    logger: 'AppLogger',
-    tracker: Optional['AdvancedProgressTracker'] = None
+    params: "AnalysisParameters",
+    cfg: "Config",
+    logger: "AppLogger",
+    tracker: Optional["AdvancedProgressTracker"] = None,
 ) -> dict:
     """
     Generate thumbnails for a list of images.
-    
+
     Args:
         image_paths: List of paths to source images
         out_dir: Output directory for thumbnails
@@ -61,7 +63,7 @@ def make_photo_thumbs(
         cfg: Application configuration
         logger: Application logger
         tracker: Optional progress tracker
-        
+
     Returns:
         Dictionary mapping frame numbers to thumbnail filenames
     """
@@ -95,7 +97,7 @@ def make_photo_thumbs(
 
             frame_map[i] = out_name
             image_manifest[i] = str(img_path.resolve())
-        except Exception as e:
+        except Exception:
             logger.error(f"Failed to process image {img_path}", exc_info=True)
         finally:
             if tracker:

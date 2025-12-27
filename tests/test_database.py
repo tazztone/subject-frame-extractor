@@ -1,12 +1,14 @@
-import pytest
 import sqlite3
-import json
-from pathlib import Path
+
+import pytest
+
 from core.database import Database
+
 
 @pytest.fixture
 def db_path(tmp_path):
     return tmp_path / "metadata.db"
+
 
 @pytest.fixture
 def db(db_path):
@@ -16,18 +18,16 @@ def db(db_path):
     yield db
     db.close()
 
+
 def test_create_tables(db, db_path):
     assert db_path.exists()
     cursor = db.conn.cursor()
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='metadata'")
     assert cursor.fetchone() is not None
 
+
 def test_insert_metadata_and_flush(db):
-    data = {
-        "filename": "test.jpg",
-        "face_sim": 0.9,
-        "some_metric": 123
-    }
+    data = {"filename": "test.jpg", "face_sim": 0.9, "some_metric": 123}
     db.insert_metadata(data)
     # buffer not full yet (batch_size=2)
     assert len(db.buffer) == 1
@@ -37,9 +37,10 @@ def test_insert_metadata_and_flush(db):
 
     results = db.load_all_metadata()
     assert len(results) == 1
-    assert results[0]['filename'] == "test.jpg"
-    assert results[0]['face_sim'] == 0.9
-    assert results[0]['some_metric'] == 123
+    assert results[0]["filename"] == "test.jpg"
+    assert results[0]["face_sim"] == 0.9
+    assert results[0]["some_metric"] == 123
+
 
 def test_insert_metadata_batch_flush(db):
     data1 = {"filename": "test1.jpg"}
@@ -52,6 +53,7 @@ def test_insert_metadata_batch_flush(db):
     results = db.load_all_metadata()
     assert len(results) == 2
 
+
 def test_clear_metadata(db):
     db.insert_metadata({"filename": "test.jpg"})
     db.flush()
@@ -59,10 +61,12 @@ def test_clear_metadata(db):
     results = db.load_all_metadata()
     assert len(results) == 0
 
+
 def test_count_errors(db):
     db.insert_metadata({"filename": "err.jpg", "error": "Something went wrong"})
     db.flush()
     assert db.count_errors() == 1
+
 
 def test_migration_adds_column(tmp_path):
     # Setup old schema
@@ -85,12 +89,12 @@ def test_migration_adds_column(tmp_path):
             phash TEXT,
             dedup_thresh INTEGER
         )
-    """) # Missing error_severity
+    """)  # Missing error_severity
     conn.commit()
     conn.close()
 
     db = Database(db_path)
-    db.create_tables() # Should run migration
+    db.create_tables()  # Should run migration
 
     cursor = db.conn.cursor()
     cursor.execute("PRAGMA table_info(metadata)")
@@ -98,25 +102,24 @@ def test_migration_adds_column(tmp_path):
     assert "error_severity" in columns
     db.close()
 
+
 def test_metrics_json_parsing(db):
-    data = {
-        "filename": "test.jpg",
-        "custom_data": {"nested": "value"}
-    }
+    data = {"filename": "test.jpg", "custom_data": {"nested": "value"}}
     db.insert_metadata(data)
     db.flush()
 
     results = db.load_all_metadata()
-    assert results[0]['custom_data'] == {"nested": "value"}
+    assert results[0]["custom_data"] == {"nested": "value"}
+
 
 def test_mask_empty_conversion(db):
     data = {
         "filename": "test.jpg",
-        "mask_empty": "1" # String
+        "mask_empty": "1",  # String
     }
     db.insert_metadata(data)
     db.flush()
 
     results = db.load_all_metadata()
-    assert results[0]['mask_empty'] == 1
-    assert isinstance(results[0]['mask_empty'], int)
+    assert results[0]["mask_empty"] == 1
+    assert isinstance(results[0]["mask_empty"], int)

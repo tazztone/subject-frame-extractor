@@ -9,9 +9,12 @@ Tests the export functionality including:
 
 Run with: python -m pytest tests/e2e/test_export_flow.py -v -s
 """
+
+import time
+
 import pytest
 from playwright.sync_api import Page, expect
-import time
+
 from .conftest import BASE_URL, switch_to_tab
 
 pytestmark = pytest.mark.e2e

@@ -4,36 +4,38 @@ Analysis handler for Frame Extractor UI.
 This module contains handlers related to the analysis pipelines,
 including pre-analysis, propagation, and full analysis.
 """
+
 from __future__ import annotations
-from typing import TYPE_CHECKING, Callable, Optional, Any, Generator, List
+
+from typing import TYPE_CHECKING, Callable, Generator
+
 import gradio as gr
 
 if TYPE_CHECKING:
     from core.config import Config
     from core.logger import AppLogger
-    from core.managers import ThumbnailManager, ModelRegistry
-    from core.models import Scene
+    from core.managers import ModelRegistry, ThumbnailManager
     from ui.app_ui import AppUI
 
 
 class AnalysisHandler:
     """
     Handles analysis-related UI operations.
-    
+
     Extracted from AppUI to reduce class size and improve maintainability.
     """
-    
+
     def __init__(
         self,
-        app: 'AppUI',
-        config: 'Config',
-        logger: 'AppLogger',
-        thumbnail_manager: 'ThumbnailManager',
-        model_registry: 'ModelRegistry'
+        app: "AppUI",
+        config: "Config",
+        logger: "AppLogger",
+        thumbnail_manager: "ThumbnailManager",
+        model_registry: "ModelRegistry",
     ):
         """
         Initialize AnalysisHandler.
-        
+
         Args:
             app: Parent AppUI instance
             config: Application configuration
@@ -47,25 +49,21 @@ class AnalysisHandler:
         self.thumbnail_manager = thumbnail_manager
         self.model_registry = model_registry
 
-    def run_pre_analysis(
-        self,
-        progress: Callable,
-        *args
-    ) -> Generator[dict, None, None]:
+    def run_pre_analysis(self, progress: Callable, *args) -> Generator[dict, None, None]:
         """
         Run the pre-analysis pipeline.
-        
+
         Args:
             progress: Gradio progress callback
             *args: UI component values
-            
+
         Yields:
             Progress updates and final results
         """
-        from core.events import PreAnalysisEvent
-        from core.pipelines import execute_pre_analysis
         import torch
-        
+
+        from core.pipelines import execute_pre_analysis
+
         event = self.app._create_pre_analysis_event(*args)
         yield from execute_pre_analysis(
             event,
@@ -76,16 +74,16 @@ class AnalysisHandler:
             self.thumbnail_manager,
             cuda_available=torch.cuda.is_available(),
             progress=progress,
-            model_registry=self.model_registry
+            model_registry=self.model_registry,
         )
 
     def on_pre_analysis_success(self, result: dict) -> dict:
         """
         Handle successful pre-analysis completion.
-        
+
         Args:
             result: Result dictionary from pre-analysis
-            
+
         Returns:
             Dictionary of component updates
         """
@@ -101,27 +99,23 @@ class AnalysisHandler:
             updates["final_face_ref_path_state"] = result["final_face_ref_path"]
         return updates
 
-    def run_propagation(
-        self,
-        scenes: list,
-        progress: Callable,
-        *args
-    ) -> Generator[dict, None, None]:
+    def run_propagation(self, scenes: list, progress: Callable, *args) -> Generator[dict, None, None]:
         """
         Run the mask propagation pipeline.
-        
+
         Args:
             scenes: List of scenes to process
             progress: Gradio progress callback
             *args: UI component values
-            
+
         Yields:
             Progress updates and final results
         """
+        import torch
+
         from core.events import PropagationEvent
         from core.pipelines import execute_propagation
-        import torch
-        
+
         event = PropagationEvent.from_ui_args(self.app.ana_ui_map_keys, scenes, args)
         yield from execute_propagation(
             event,
@@ -132,16 +126,16 @@ class AnalysisHandler:
             self.thumbnail_manager,
             cuda_available=torch.cuda.is_available(),
             progress=progress,
-            model_registry=self.model_registry
+            model_registry=self.model_registry,
         )
 
     def on_propagation_success(self, result: dict) -> dict:
         """
         Handle successful propagation completion.
-        
+
         Args:
             result: Result dictionary from propagation
-            
+
         Returns:
             Dictionary of component updates
         """
@@ -152,27 +146,23 @@ class AnalysisHandler:
             "main_tabs": gr.update(selected=3),  # Go to Metrics tab
         }
 
-    def run_analysis(
-        self,
-        scenes: list,
-        progress: Callable,
-        *args
-    ) -> Generator[dict, None, None]:
+    def run_analysis(self, scenes: list, progress: Callable, *args) -> Generator[dict, None, None]:
         """
         Run the full analysis pipeline.
-        
+
         Args:
             scenes: List of scenes to process
             progress: Gradio progress callback
             *args: UI component values
-            
+
         Yields:
             Progress updates and final results
         """
+        import torch
+
         from core.events import PropagationEvent
         from core.pipelines import execute_analysis
-        import torch
-        
+
         event = PropagationEvent.from_ui_args(self.app.ana_ui_map_keys, scenes, args)
         yield from execute_analysis(
             event,
@@ -183,16 +173,16 @@ class AnalysisHandler:
             self.thumbnail_manager,
             cuda_available=torch.cuda.is_available(),
             progress=progress,
-            model_registry=self.model_registry
+            model_registry=self.model_registry,
         )
 
     def on_analysis_success(self, result: dict) -> dict:
         """
         Handle successful analysis completion.
-        
+
         Args:
             result: Result dictionary from analysis
-            
+
         Returns:
             Dictionary of component updates
         """

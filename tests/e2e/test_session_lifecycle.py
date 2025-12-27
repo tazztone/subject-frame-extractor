@@ -8,9 +8,11 @@ Tests session management including:
 
 Run with: python -m pytest tests/e2e/test_session_lifecycle.py -v -s
 """
+
+import time
+
 import pytest
 from playwright.sync_api import Page, expect
-import time
 
 from .conftest import BASE_URL
 
