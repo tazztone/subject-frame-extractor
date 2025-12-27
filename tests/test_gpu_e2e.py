@@ -1036,6 +1036,163 @@ class TestLargeVideoE2E:
             pass  # cleanup() removed
 
 
+class TestMaskGenerationE2E:
+    """E2E tests for mask generation to catch silent failures."""
+
+    @requires_sam3
+    def test_get_mask_for_bbox_e2e(self, test_frames_dir, tmp_path):
+        """Test SeedSelector._get_mask_for_bbox with real SAM3."""
+        import torch
+        if not torch.cuda.is_available():
+            pytest.skip("CUDA not available")
+
+        from core.config import Config
+        from core.logger import AppLogger
+        from core.models import AnalysisParameters
+        from core.managers import SAM3Wrapper
+        from core.scene_utils.seed_selector import SeedSelector
+
+        config = Config(logs_dir=str(tmp_path / "logs"))
+        logger = AppLogger(config, log_to_console=False, log_to_file=False)
+        wrapper = SAM3Wrapper(device="cuda")
+
+        # Initialize SeedSelector with minimal dependencies
+        selector = SeedSelector(
+            params=AnalysisParameters(source_path="test.mp4"),
+            config=config,
+            face_analyzer=None,
+            reference_embedding=None,
+            tracker=wrapper,
+            logger=logger,
+            device="cuda"
+        )
+
+        # Create a test frame
+        frame = np.zeros((256, 256, 3), dtype=np.uint8)
+        frame[50:200, 50:150] = [200, 100, 100]  # Object
+
+        try:
+            # _get_mask_for_bbox expects frame and bbox
+            bbox = [50, 50, 100, 150] # x, y, w, h
+            mask = selector._get_mask_for_bbox(frame, bbox)
+
+            assert mask is not None
+            assert isinstance(mask, np.ndarray)
+            assert mask.shape[:2] == (256, 256)
+            assert np.any(mask > 0) # Should have some mask
+        finally:
+            pass
+
+    @requires_sam3
+    def test_identity_first_seed_e2e(self, test_image_with_face, tmp_path):
+        """Test 'By Face' seeding strategy with real models."""
+        import torch
+        if not torch.cuda.is_available():
+            pytest.skip("CUDA not available")
+
+        from core.config import Config
+        from core.logger import AppLogger
+        from core.models import AnalysisParameters
+        from core.managers import SAM3Wrapper, ModelRegistry, get_face_analyzer
+        from core.scene_utils.seed_selector import SeedSelector
+
+        config = Config(logs_dir=str(tmp_path / "logs"))
+        logger = AppLogger(config, log_to_console=False, log_to_file=False)
+        wrapper = SAM3Wrapper(device="cuda")
+        registry = ModelRegistry(logger)
+
+        # Load real face analyzer
+        face_analyzer = get_face_analyzer(
+            "buffalo_l",
+            str(tmp_path / "models"),
+            (640, 640),
+            logger,
+            registry,
+            "cuda"
+        )
+
+        # Get embedding from test image
+        import cv2
+        img_bgr = cv2.cvtColor(test_image_with_face, cv2.COLOR_RGB2BGR)
+        faces = face_analyzer.get(img_bgr)
+        if not faces:
+            pytest.skip("No faces detected in test image, cannot test identity seeding")
+
+        ref_embedding = faces[0].normed_embedding
+
+        selector = SeedSelector(
+            params=AnalysisParameters(
+                source_path="test.mp4",
+                primary_seed_strategy="👤 By Face",
+                enable_face_filter=True
+            ),
+            config=config,
+            face_analyzer=face_analyzer,
+            reference_embedding=ref_embedding,
+            tracker=wrapper,
+            logger=logger,
+            device="cuda"
+        )
+
+        try:
+            # Test seeding
+            bbox, details = selector.select_seed(test_image_with_face)
+
+            assert bbox is not None
+            assert details.get('type') in ['evidence_based_selection', 'face_match', 'expanded_box_from_face']
+        finally:
+            pass
+
+    @requires_sam3
+    def test_pre_analysis_mask_generation_e2e(self, test_frames_dir, tmp_path):
+        """Test the full pre-analysis flow including mask generation."""
+        import torch
+        if not torch.cuda.is_available():
+            pytest.skip("CUDA not available")
+
+        import threading
+        from queue import Queue
+
+        from core.config import Config
+        from core.logger import AppLogger
+        from core.models import AnalysisParameters
+        from core.managers import ThumbnailManager, ModelRegistry
+        from core.scene_utils import SubjectMasker
+
+        config = Config(
+            logs_dir=str(tmp_path / "logs"),
+            models_dir=str(tmp_path / "models")
+        )
+        logger = AppLogger(config, log_to_console=False, log_to_file=False)
+        registry = ModelRegistry(logger)
+        tm = ThumbnailManager(logger, config)
+
+        params = AnalysisParameters(
+            source_path="test.mp4",
+            video_path="test.mp4",
+            output_folder=str(test_frames_dir),
+            thumbnails_only=True,
+            enable_subject_mask=True,
+            primary_seed_strategy="📦 Use Bounding Box",
+            initial_bbox=[50, 50, 100, 150] # Explicit bbox
+        )
+
+        # Initialize SubjectMasker
+        masker = SubjectMasker(
+            params=params,
+            progress_queue=Queue(),
+            cancel_event=threading.Event(),
+            config=config,
+            thumbnail_manager=tm,
+            logger=logger,
+            model_registry=registry,
+            device="cuda"
+        )
+
+        assert masker.tracker is not None
+        assert masker.face_analyzer is not None
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "-s", "-m", "gpu_e2e"])
 
