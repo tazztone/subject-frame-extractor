@@ -179,6 +179,7 @@ def test_sam3_feature(...):
 ## 6. SAM3 API Guide
 
 ### Official API Pattern (as of Dec 2024)
+> **Source of Truth**: The implementation is based on [sam3_video_predictor_example.ipynb](file:///c:/_coding/subject-frame-extractor2/SAM3_repo/examples/sam3_video_predictor_example.ipynb).
 The `SAM3Wrapper` class uses the official `Sam3VideoPredictor` API via `build_sam3_video_predictor`:
 
 ```python
