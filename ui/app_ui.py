@@ -252,7 +252,7 @@ class AppUI:
         with gr.Row():
             with gr.Column(scale=2):
                 self._create_component('unified_status', 'markdown', {'label': "📊 Status", 'value': "Welcome! Ready to start."})
-                self.components['progress_bar'] = gr.Progress()
+                # self.components['progress_bar'] = gr.Progress()
                 self._create_component('progress_details', 'html', {'value': '', 'elem_classes': ['progress-details']})
                 with gr.Row():
                     self._create_component('pause_button', 'button', {'value': '⏸️ Pause', 'interactive': False})

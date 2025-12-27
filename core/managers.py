@@ -287,7 +287,8 @@ class SAM3Wrapper:
                 session_id=self.session_id,
                 frame_index=frame_idx,
                 obj_id=obj_id,
-                box=np.array([rel_box], dtype=np.float32),
+                bounding_boxes=np.array([rel_box], dtype=np.float32),
+                bounding_box_labels=np.array([1], dtype=np.int32),
             )
         )
         
@@ -379,7 +380,7 @@ class SAM3Wrapper:
             from sam3.model.sam3_image_processor import Sam3Processor
             
             model = getattr(self.predictor, 'model', None)
-            detector = getattr(model, 'detector', None) if model else None
+            detector = getattr(model, 'detector', None) if model else getattr(self.predictor, 'detector', None)
 
             processor = Sam3Processor(
                 model=detector,
