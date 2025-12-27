@@ -202,13 +202,25 @@ class AppUI:
             'cbg': gr.CheckboxGroup, 'image': gr.Image, 'dataframe': gr.Dataframe
         }
 
-        # Enforce consistency standards
-        if comp_type == 'slider' and 'label' in kwargs and 'info' not in kwargs:
-             # Placeholder to encourage tooltips, though we won't force it to break things
+        # UX Enforcement: Add defaults for better consistency
+        if comp_type == 'button' and 'variant' not in kwargs:
+            # Default secondary unless specified
+            pass
+
+        if comp_type in ['slider', 'dropdown', 'textbox', 'number', 'checkbox'] and 'label' in kwargs and 'info' not in kwargs:
+             # Auto-generate empty info to ensure spacing consistency if needed,
+             # but for now we just allow it.
              pass
 
         self.components[name] = comp_map[comp_type](**kwargs)
         return self.components[name]
+
+    def _create_section_header(self, title: str, subtitle: str = None, icon: str = "📂"):
+        """Creates a standardized section header."""
+        md = f"### {icon} {title}"
+        if subtitle:
+            md += f"\n<span style='color: #666; font-size: 0.9em;'>{subtitle}</span>"
+        gr.Markdown(md)
 
     def _build_header(self):
         """Builds the UI header section with title and status indicators."""
@@ -271,88 +283,112 @@ class AppUI:
 
     def _create_extraction_tab(self):
         """Creates the content for the 'Source' tab."""
-        gr.Markdown("### 📂 Step 1: Input & Extraction")
+        self._create_section_header("Step 1: Input & Extraction", "Select your video source and how you want to process it.")
 
+        # 1. Source Selection
         with gr.Group():
+            gr.Markdown("#### 📂 Source Input")
             with gr.Row():
-                with gr.Column(scale=3):
-                    self._reg('source_path', self._create_component('source_input', 'textbox', {'label': "Input Source", 'placeholder': "Paste YouTube URL or enter local path...", 'info': "Supports local files, folders, and YouTube URLs."}))
-                with gr.Column(scale=1):
-                    self._reg('max_resolution', self._create_component('max_resolution', 'dropdown', {'choices': self.MAX_RESOLUTION_CHOICES, 'value': self.config.default_max_resolution, 'label': "Download Resolution", 'info': "Only applies to YouTube downloads."}))
+                with gr.Column(scale=4):
+                    self._reg('source_path', self._create_component('source_input', 'textbox', {'label': "Input Path or URL", 'placeholder': "Paste YouTube URL or local path (file/folder)...", 'info': "Enter a path to a video file, a folder of images, or a YouTube link.", 'show_label': False, 'container': False, 'scale': 4}))
+                with gr.Column(scale=1, min_width=150):
+                     self._reg('max_resolution', self._create_component('max_resolution', 'dropdown', {'choices': self.MAX_RESOLUTION_CHOICES, 'value': self.config.default_max_resolution, 'label': "YouTube Res", 'info': "Only for YouTube downloads.", 'show_label': True, 'container': True, 'scale': 1}))
 
-            self._reg('upload_video', self._create_component('upload_video_input', 'file', {'label': "Or Upload File", 'file_count': "multiple", 'file_types': ["video"], 'type': "filepath", 'height': 80}))
+            with gr.Accordion("📂 Or Upload Local File", open=False):
+                self._reg('upload_video', self._create_component('upload_video_input', 'file', {'label': "Upload Video File", 'file_count': "multiple", 'file_types': ["video"], 'type': "filepath", 'height': 80}))
 
-        with gr.Accordion("⚙️ Extraction Settings", open=False):
-            gr.Markdown("Configure how frames are extracted from the source video.")
-            with gr.Group(visible=True) as thumbnail_group:
+        # 2. Strategy & Settings
+        with gr.Group():
+            gr.Markdown("#### ⚙️ Extraction Strategy")
+            with gr.Row(equal_height=True):
+                 with gr.Column(scale=2):
+                    self._reg('method', self._create_component('method_input', 'dropdown', {'choices': self.METHOD_CHOICES, 'value': self.config.default_method, 'label': "Extraction Method", 'info': "How frames are selected from the video."}))
+                 with gr.Column(scale=1):
+                    self._reg('scene_detect', self._create_component('ext_scene_detect_input', 'checkbox', {'label': "Split by Scenes", 'value': self.config.default_scene_detect, 'info': "Detect shot changes (cuts) automatically."}))
+
+            # Dynamic settings based on method
+            with gr.Row():
+                 self._reg('interval', self._create_component('interval_input', 'number', {'label': "Interval (seconds)", 'value': self.config.default_interval, 'minimum': 0.1, 'step': 0.1, 'visible': self.config.default_method == 'interval', 'info': "Extract one frame every X seconds."}))
+                 self._reg('nth_frame', self._create_component('nth_frame_input', 'number', {'label': "N-th Frame", 'value': self.config.default_nth_frame, 'minimum': 1, 'step': 1, 'visible': self.config.default_method in ['every_nth_frame', 'nth_plus_keyframes'], 'info': "Extract every Nth frame (e.g., 10 = 10% of video)."}))
+
+        # 3. Advanced Settings (Hidden by default)
+        with gr.Accordion("🔧 Advanced Processing Settings", open=False):
+             with gr.Group(visible=True) as thumbnail_group:
                 self.components['thumbnail_group'] = thumbnail_group
-                with gr.Row():
-                    self._reg('method', self._create_component('method_input', 'dropdown', {'choices': self.METHOD_CHOICES, 'value': self.config.default_method, 'label': "Frame Selection Method", 'info': "How should we choose frames?"}))
-                    self._reg('scene_detect', self._create_component('ext_scene_detect_input', 'checkbox', {'label': "Use Scene Detection", 'value': self.config.default_scene_detect, 'info': "Detects shot changes automatically."}))
+                self._reg('thumb_megapixels', self._create_component('thumb_megapixels_input', 'slider', {'label': "Analysis Resolution (Megapixels)", 'minimum': 0.1, 'maximum': 2.0, 'step': 0.1, 'value': self.config.default_thumb_megapixels, 'info': "Lower = Faster, Higher = Better small object detection. Default 0.5 is usually good."}))
 
-                with gr.Row():
-                    self._reg('interval', self._create_component('interval_input', 'number', {'label': "Interval (seconds)", 'value': self.config.default_interval, 'minimum': 0.1, 'step': 0.1, 'visible': self.config.default_method == 'interval', 'info': "Seconds between frames."}))
-                    self._reg('nth_frame', self._create_component('nth_frame_input', 'number', {'label': "N-th Frame", 'value': self.config.default_nth_frame, 'minimum': 1, 'step': 1, 'visible': self.config.default_method in ['every_nth_frame', 'nth_plus_keyframes'], 'info': "Extract every Nth frame."}))
+        # 4. Action Area
+        with gr.Row(elem_id="extraction_actions"):
+             self.components['start_extraction_button'] = gr.Button("🚀 Start Extraction", variant="primary", scale=2, size='lg')
+             self._create_component('add_to_queue_button', 'button', {'value': "➕ Queue for Batch", 'variant': 'secondary', 'scale': 1, 'size': 'lg'})
 
-                self._reg('thumb_megapixels', self._create_component('thumb_megapixels_input', 'slider', {'label': "Processing Resolution (MP)", 'minimum': 0.1, 'maximum': 2.0, 'step': 0.1, 'value': self.config.default_thumb_megapixels, 'info': "Internal resolution for analysis. Lower = faster, Higher = more detail."}))
-
-        with gr.Row():
-             self.components['start_extraction_button'] = gr.Button("🚀 Start Extraction", variant="primary", scale=2)
-             self._create_component('add_to_queue_button', 'button', {'value': "➕ Add to Batch Queue", 'variant': 'secondary', 'scale': 1})
-
-        with gr.Accordion("📚 Batch Processing Queue", open=False) as batch_accordion:
+        # 5. Batch Queue
+        with gr.Accordion("📚 Batch Queue", open=False) as batch_accordion:
              self.components['batch_accordion'] = batch_accordion
-             gr.Markdown("Process multiple videos sequentially or in parallel.")
+             gr.Markdown("*Process multiple videos in the background.*")
              self._create_component('batch_queue_dataframe', 'dataframe', {'headers': ["Path", "Status", "Progress", "Message"], 'datatype': ["str", "str", "number", "str"], 'interactive': False, 'value': []})
              with gr.Row():
-                 self._create_component('start_batch_button', 'button', {'value': "▶️ Start Batch", 'variant': "primary"})
-                 self._create_component('stop_batch_button', 'button', {'value': "⏹️ Stop", 'variant': "stop"})
-                 self._create_component('clear_queue_button', 'button', {'value': "🗑️ Clear"})
-             self._create_component('batch_workers_slider', 'slider', {'label': "Parallel Workers", 'minimum': 1, 'maximum': 4, 'value': 1, 'step': 1, 'info': "Number of videos to process at once."})
+                 self._create_component('start_batch_button', 'button', {'value': "▶️ Run Queue", 'variant': "primary"})
+                 self._create_component('stop_batch_button', 'button', {'value': "⏹️ Stop Queue", 'variant': "stop"})
+                 self._create_component('clear_queue_button', 'button', {'value': "🗑️ Clear Queue"})
+             self._create_component('batch_workers_slider', 'slider', {'label': "Max Parallel Jobs", 'minimum': 1, 'maximum': 4, 'value': 1, 'step': 1, 'info': "Be careful with VRAM usage!"})
 
     def _create_define_subject_tab(self):
         """Creates the content for the 'Subject' tab."""
-        gr.Markdown("### 🎯 Step 2: Define Subject")
+        self._create_section_header("Step 2: Define Subject", "Tell the AI who or what to track.")
 
+        # 1. Strategy Selection (Always Visible)
         with gr.Group():
-            gr.Markdown("#### 1. Tracking Strategy")
-            self._reg('primary_seed_strategy', self._create_component('primary_seed_strategy_input', 'radio', {'choices': self.PRIMARY_SEED_STRATEGY_CHOICES, 'value': self.config.default_primary_seed_strategy, 'label': "How to find the subject?", 'info': "Choose 'Automatic' for general people, 'By Face' for specific identity."}))
+            gr.Markdown("#### 🎯 1. Tracking Strategy")
+            self._reg('primary_seed_strategy', self._create_component('primary_seed_strategy_input', 'radio', {'choices': self.PRIMARY_SEED_STRATEGY_CHOICES, 'value': self.config.default_primary_seed_strategy, 'label': "How to find the subject?", 'info': "Choose 'Automatic' for general people, 'By Face' for specific identity.", 'show_label': False}))
 
-        # Dynamic Groups (Visibility toggled by JS)
+        # 2. Dynamic Input Groups (Toggled by Radio)
+
+        # --- A. Face Seeding Group ---
         with gr.Group(visible=False) as face_seeding_group:
             self.components['face_seeding_group'] = face_seeding_group
-            gr.Markdown("#### 2. Provide Face Reference")
+            gr.Markdown("#### 👤 2. Provide Face Reference")
 
             with gr.Tabs():
+                # Tab 1: Upload
                 with gr.Tab("Upload Photo"):
                     with gr.Row():
-                        self._reg('face_ref_img_upload', self._create_component('face_ref_img_upload_input', 'file', {'label': "Upload Reference Photo", 'type': "filepath", 'height': 100}))
-                        self._create_component('face_ref_image', 'image', {'label': "Preview", 'interactive': False, 'height': 150, 'show_label': False})
+                        with gr.Column(scale=3):
+                             self._reg('face_ref_img_upload', self._create_component('face_ref_img_upload_input', 'file', {'label': "Upload Reference Photo", 'type': "filepath", 'height': 100, 'file_types': ["image"]}))
+                        with gr.Column(scale=1):
+                             self._create_component('face_ref_image', 'image', {'label': "Preview", 'interactive': False, 'height': 120, 'show_label': False})
 
-                with gr.Tab("Scan Video"):
-                    gr.Markdown("Find people in the video and click one to track.")
+                # Tab 2: Scan Video (Discovery)
+                with gr.Tab("Scan Video for People"):
+                    gr.Markdown("*Analyze the video to find people, then click a face to select it.*")
                     with gr.Row():
-                        self._create_component('find_people_button', 'button', {'value': "🔍 Scan for People", 'variant': 'secondary'})
-                        self._create_component('identity_confidence_slider', 'slider', {'label': "Grouping Sensitivity", 'minimum': 0.0, 'maximum': 1.0, 'step': 0.05, 'value': 0.5, 'info': "Higher = fewer, stricter groups."})
+                        self._create_component('find_people_button', 'button', {'value': "🔍 Scan Video Now", 'variant': 'secondary', 'scale': 2})
+                        self._create_component('identity_confidence_slider', 'slider', {'label': "Clustering Strictness", 'minimum': 0.0, 'maximum': 1.0, 'step': 0.05, 'value': 0.5, 'info': "Higher = Stricter grouping.", 'scale': 3})
 
                     self._create_component('find_people_status', 'markdown', {'value': ""})
+
                     with gr.Group(visible=False) as discovered_people_group:
                         self.components['discovered_people_group'] = discovered_people_group
-                        self._create_component('discovered_faces_gallery', 'gallery', {'label': "Detected People (Click to Select)", 'columns': 5, 'height': 'auto', 'allow_preview': False})
+                        self._create_component('discovered_faces_gallery', 'gallery', {'label': "Detected People (Click to Select)", 'columns': 6, 'height': 'auto', 'allow_preview': False, 'object_fit': 'cover'})
 
-            with gr.Accordion("Advanced: Local File Path", open=False):
-                self._reg('face_ref_img_path', self._create_component('face_ref_img_path_input', 'textbox', {'label': "Path to Reference Image", 'placeholder': "/path/to/image.jpg", 'visible': True, 'info': "Use a local file path instead of uploading."}))
+            with gr.Accordion("📂 Advanced: Use Local File Path", open=False):
+                self._reg('face_ref_img_path', self._create_component('face_ref_img_path_input', 'textbox', {'label': "Absolute Path to Reference Image", 'placeholder': "/path/to/image.jpg", 'visible': True, 'info': "Useful for automation or server-side files."}))
 
+        # --- B. Text Seeding Group ---
         with gr.Group(visible=False) as text_seeding_group:
             self.components['text_seeding_group'] = text_seeding_group
-            gr.Markdown("#### 2. Text Description")
-            self._reg('text_prompt', self._create_component('text_prompt_input', 'textbox', {'label': "Enter Description", 'placeholder': "e.g., 'a man in a blue suit'", 'info': "Describe the subject to track.", 'lines': 1}))
+            gr.Markdown("#### 📝 2. Text Description")
+            self._reg('text_prompt', self._create_component('text_prompt_input', 'textbox', {'label': "What should we look for?", 'placeholder': "e.g., 'a man in a blue suit', 'a red car'", 'info': "Be specific. Color and clothing help.", 'lines': 1, 'show_label': False}))
 
+        # --- C. Auto/General Seeding Group ---
         with gr.Group(visible=True) as auto_seeding_group:
                 self.components['auto_seeding_group'] = auto_seeding_group
-                self._reg('best_frame_strategy', self._create_component('best_frame_strategy_input', 'dropdown', {'choices': self.SEED_STRATEGY_CHOICES, 'value': self.config.default_seed_strategy, 'label': "Best Shot Selection Rule", 'info': "How to pick the 'best' frame for a person?"}))
+                # Only show this if strictly necessary for the strategy, otherwise it adds noise.
+                # Currently reused for 'Find Prominent Person'.
+                with gr.Row():
+                     self._reg('best_frame_strategy', self._create_component('best_frame_strategy_input', 'dropdown', {'choices': self.SEED_STRATEGY_CHOICES, 'value': self.config.default_seed_strategy, 'label': "Best Shot Selection Rule", 'info': "When multiple frames exist, which one is the 'anchor'?"}))
 
-        # Hidden State Components
+        # 3. Hidden State Components (Required for Logic)
         self._create_component('person_radio', 'radio', {'label': "Select Person", 'choices': [], 'visible': False})
         self._reg('enable_face_filter', self._create_component('enable_face_filter_input', 'checkbox', {'label': "Enable Face Similarity", 'value': self.config.default_enable_face_filter, 'interactive': True, 'visible': False}))
         self._reg('resume', self._create_component('resume_input', 'checkbox', {'label': 'Resume', 'value': self.config.default_resume, 'visible': False}))
@@ -361,84 +397,95 @@ class AppUI:
         self._reg('sharpness_base_scale', self._create_component('sharpness_base_scale_input', 'slider', {'label': 'Sharpness Base Scale', 'minimum': 0, 'maximum': 5000, 'step': 100, 'value': self.config.default_sharpness_base_scale, 'visible': False}))
         self._reg('edge_strength_base_scale', self._create_component('edge_strength_base_scale_input', 'slider', {'label': 'Edge Strength Base Scale', 'minimum': 0, 'maximum': 1000, 'step': 10, 'value': self.config.default_edge_strength_base_scale, 'visible': False}))
 
+        # 4. Action Button
+        self._create_component('start_pre_analysis_button', 'button', {'value': '🔍 Find & Preview Scenes', 'variant': 'primary', 'size': 'lg'})
+
+        # 5. Advanced Configuration Accordion
         with gr.Accordion("🧠 Advanced Model Configuration", open=False):
             with gr.Row():
-                self._reg('tracker_model_name', self._create_component('tracker_model_name_input', 'dropdown', {'choices': self.TRACKER_MODEL_CHOICES, 'value': self.config.default_tracker_model_name, 'label': "Tracking Model", 'info': "SAM3 is recommended for accuracy."}))
-                self._reg('face_model_name', self._create_component('face_model_name_input', 'dropdown', {'choices': self.FACE_MODEL_NAME_CHOICES, 'value': self.config.default_face_model_name, 'label': "Face Model", 'info': "Buffalo_L is more accurate, Buffalo_S is faster."}))
+                self._reg('tracker_model_name', self._create_component('tracker_model_name_input', 'dropdown', {'choices': self.TRACKER_MODEL_CHOICES, 'value': self.config.default_tracker_model_name, 'label': "Tracking Model", 'info': "SAM3 is slower but state-of-the-art."}))
+                self._reg('face_model_name', self._create_component('face_model_name_input', 'dropdown', {'choices': self.FACE_MODEL_NAME_CHOICES, 'value': self.config.default_face_model_name, 'label': "Face Model", 'info': "Buffalo_L (Accurate) vs Buffalo_S (Fast)."}))
 
             with gr.Row():
                 self._reg('pre_analysis_enabled', self._create_component('pre_analysis_enabled_input', 'checkbox', {'label': 'Enable Pre-Analysis Scan', 'value': self.config.default_pre_analysis_enabled, 'info': "Scans thumbnails first to find best shots."}))
                 self._reg('pre_sample_nth', self._create_component('pre_sample_nth_input', 'number', {'label': 'Scan Step Rate', 'value': self.config.default_pre_sample_nth, 'info': "Process every Nth thumbnail during scan."}))
 
-        self._create_component('start_pre_analysis_button', 'button', {'value': '🔍 Find & Preview Scenes', 'variant': 'primary', 'size': 'lg'})
-
+        # 6. Propagation Placeholder (Filled later)
         with gr.Group(visible=False) as propagation_group:
             self.components['propagation_group'] = propagation_group
             # This group is populated/used by the propagation logic, ensuring it exists is enough here.
 
     def _create_scene_selection_tab(self):
         """Creates the content for the 'Scenes' tab."""
+        self._create_section_header("Step 3: Scene Review", "Review detected scenes and confirm subject tracking.")
+
         with gr.Column(scale=2, visible=True) as seeding_results_column:
             self.components['seeding_results_column'] = seeding_results_column
-            gr.Markdown("""### 🎬 Step 3: Scene Review""")
 
-            # Scene Editor Group (Hidden by default, shown on selection)
+            # 1. Editor Panel (Top, for easier access when selected)
             with gr.Group(visible=False, elem_classes="scene-editor") as scene_editor_group:
                 self.components['scene_editor_group'] = scene_editor_group
                 gr.Markdown("#### ✏️ Scene Editor")
                 with gr.Row():
-                    with gr.Column(scale=1):
-                        self._create_component("gallery_image_preview", "image", {"label": "Shot Preview", "interactive": False, "height": 300, "show_label": False})
-                    with gr.Column(scale=1):
+                    # Left: Preview
+                    with gr.Column(scale=3):
+                         self._create_component("gallery_image_preview", "image", {"label": "Shot Preview", "interactive": False, "height": 350, "show_label": False})
+
+                    # Right: Controls
+                    with gr.Column(scale=2):
                          self._create_component('sceneeditorstatusmd', 'markdown', {'value': "**Selected Scene**"})
 
-                         self._create_component('subject_selection_gallery', 'gallery', {'label': "Detected People (Click to Switch Subject)", 'columns': 4, 'height': 'auto', 'allow_preview': False, 'object_fit': 'cover'})
+                         # Mini gallery for changing person ID
+                         gr.Markdown("**Switch Subject:**")
+                         self._create_component('subject_selection_gallery', 'gallery', {'label': "Detected People", 'columns': 4, 'height': 'auto', 'allow_preview': False, 'object_fit': 'cover', 'show_label': False})
 
                          with gr.Row():
-                             self._create_component("sceneincludebutton", "button", {"value": "✅ Include Scene", "variant": "secondary"})
-                             self._create_component("sceneexcludebutton", "button", {"value": "❌ Exclude Scene", "variant": "stop"})
-                             self._create_component("sceneresetbutton", "button", {"value": "🔄 Reset Changes"})
+                             self._create_component("sceneincludebutton", "button", {"value": "✅ Include", "variant": "secondary", "scale": 1})
+                             self._create_component("sceneexcludebutton", "button", {"value": "❌ Exclude", "variant": "stop", "scale": 1})
+                             self._create_component("sceneresetbutton", "button", {"value": "🔄 Reset", "scale": 1})
 
                          with gr.Accordion("🛠️ Manual Override", open=False):
                              self._create_component("sceneeditorpromptinput", "textbox", {"label": "Manual Text Prompt", "info": "Type what to track if auto-detection fails."})
                              self._create_component("scenerecomputebutton", "button", {"value": "▶️ Recompute with Prompt"})
-                             self._create_component("scene_editor_subject_id", "textbox", {"visible": False, "value": ""}) # Hidden state holder
+                             self._create_component("scene_editor_subject_id", "textbox", {"visible": False, "value": ""})
 
-            with gr.Accordion("🔍 Filter Scenes by Quality", open=False):
-                self._create_component('scene_filter_status', 'markdown', {'value': 'No scenes loaded.'})
+            # 2. Filters
+            with gr.Accordion("🔍 Batch Filter Scenes", open=False):
+                self._create_component('scene_filter_status', 'markdown', {'value': '*Apply constraints to automatically exclude bad scenes.*'})
                 with gr.Row():
-                    self._create_component('scene_mask_area_min_input', 'slider', {'label': "Min Mask Area %", 'minimum': 0.0, 'maximum': 100.0, 'value': self.config.default_min_mask_area_pct, 'step': 0.1, 'info': "Remove scenes where subject is too small."})
-                    self._create_component('scene_face_sim_min_input', 'slider', {'label': "Min Face Similarity", 'minimum': 0.0, 'maximum': 1.0, 'value': 0.0, 'step': 0.05, 'info': "Require specific identity match."})
-                    self._create_component('scene_quality_score_min_input', 'slider', {'label': "Min Quality Score", 'minimum': 0.0, 'maximum': 20.0, 'value': 0.0, 'step': 0.5, 'info': "Remove blurry or bad shots."})
+                    self._create_component('scene_mask_area_min_input', 'slider', {'label': "Min Subject Size (%)", 'minimum': 0.0, 'maximum': 100.0, 'value': self.config.default_min_mask_area_pct, 'step': 0.1, 'info': "Remove scenes where subject is too small."})
+                    self._create_component('scene_face_sim_min_input', 'slider', {'label': "Min Face Match", 'minimum': 0.0, 'maximum': 1.0, 'value': 0.0, 'step': 0.05, 'info': "Strictness of identity match."})
+                    self._create_component('scene_quality_score_min_input', 'slider', {'label': "Min Quality Score", 'minimum': 0.0, 'maximum': 20.0, 'value': 0.0, 'step': 0.5, 'info': "Remove blurry/bad composition."})
 
-            # Gallery Section
+            # 3. Main Gallery
             with gr.Group():
+                # Pagination Controls
                 with gr.Row(elem_id="pagination_row", equal_height=True):
                     with gr.Column(scale=2):
-                        self._create_component('scene_gallery_view_toggle', 'radio', {'label': "Show Scenes", 'choices': ["Kept", "Rejected", "All"], 'value': "Kept", 'container': False})
+                        self._create_component('scene_gallery_view_toggle', 'radio', {'label': "View Mode", 'choices': ["Kept", "Rejected", "All"], 'value': "Kept", 'container': False, 'show_label': True})
                     with gr.Column(scale=3):
                         with gr.Row():
-                            self._create_component('prev_page_button', 'button', {'value': '⬅️ Previous'})
-                            self._create_component('page_number_input', 'dropdown', {'label': 'Page', 'value': '1', 'choices': ['1'], 'interactive': True, 'container': False, 'scale': 1, 'min_width': 60})
+                            self._create_component('prev_page_button', 'button', {'value': '⬅️ Previous', 'size': 'sm'})
+                            self._create_component('page_number_input', 'dropdown', {'label': 'Page', 'value': '1', 'choices': ['1'], 'interactive': True, 'container': False, 'scale': 0, 'min_width': 80})
                             self._create_component('total_pages_label', 'markdown', {'value': '/ 1 pages'})
-                            self._create_component('next_page_button', 'button', {'value': 'Next ➡️'})
+                            self._create_component('next_page_button', 'button', {'value': 'Next ➡️', 'size': 'sm'})
                     with gr.Column(scale=1):
-                         self._create_component("sceneundobutton", "button", {"value": "↩️ Undo"})
+                         self._create_component("sceneundobutton", "button", {'value': "↩️ Undo", 'size': 'sm'})
 
-                self.components['scene_gallery'] = gr.Gallery(label="Scene Overview", columns=8, rows=2, height=560, show_label=False, allow_preview=False, container=True)
+                self.components['scene_gallery'] = gr.Gallery(label="Scene Overview", columns=8, rows=2, height=600, show_label=False, allow_preview=False, container=True, object_fit="contain")
 
                 with gr.Accordion("Display Settings", open=False):
                     with gr.Row():
                         self._create_component('scene_gallery_columns', 'slider', {'label': "Columns", 'minimum': 2, 'maximum': 12, 'value': 8, 'step': 1})
-                        self._create_component('scene_gallery_height', 'slider', {'label': "Gallery Height (px)", 'minimum': 200, 'maximum': 1000, 'value': 560, 'step': 40})
+                        self._create_component('scene_gallery_height', 'slider', {'label': "Gallery Height (px)", 'minimum': 200, 'maximum': 1000, 'value': 600, 'step': 40})
 
-            gr.Markdown("### 🚀 Ready to Process?")
+            # 4. Action
+            gr.Markdown("### 🚀 Ready?")
             self._create_component('propagate_masks_button', 'button', {'value': '⚡ Propagate Masks to All Frames', 'variant': 'primary', 'interactive': False, 'size': 'lg'})
 
     def _create_metrics_tab(self):
         """Creates the content for the 'Metrics' tab."""
-        gr.Markdown("### 📊 Step 4: Analysis Metrics")
-        gr.Markdown("Select which properties to calculate for each frame. These will be used for filtering in the next step.")
+        self._create_section_header("Step 4: Analysis Metrics", "Choose what properties to calculate for each frame.")
 
         with gr.Group():
             with gr.Row():
@@ -461,7 +508,7 @@ class AppUI:
                     self._reg('compute_yaw', self._create_component('compute_yaw', 'checkbox', {'label': "Head Yaw (L/R)", 'value': False, 'info': "Head rotation: Left vs Right profile."}))
                     self._reg('compute_pitch', self._create_component('compute_pitch', 'checkbox', {'label': "Head Pitch (Up/Down)", 'value': False, 'info': "Head rotation: Looking up vs down."}))
 
-        with gr.Accordion("Advanced / Legacy Metrics", open=False):
+        with gr.Accordion("🔧 Advanced / Legacy Metrics", open=False):
             with gr.Row():
                 with gr.Column():
                     self._reg('compute_edge_strength', self._create_component('compute_edge_strength', 'checkbox', {'label': "Edge Strength", 'value': False, 'info': "Overall contrast of edges."}))
@@ -470,27 +517,30 @@ class AppUI:
                     self._reg('compute_brightness', self._create_component('compute_brightness', 'checkbox', {'label': "Brightness", 'value': False, 'info': "Average pixel intensity."}))
                     self._reg('compute_entropy', self._create_component('compute_entropy', 'checkbox', {'label': "Entropy", 'value': False, 'info': "Information density."}))
 
-        with gr.Accordion("Deduplication Settings", open=False):
+        with gr.Accordion("📂 Deduplication Preparation", open=False):
             self._reg('compute_phash', self._create_component('compute_phash', 'checkbox', {'label': "Compute Perceptual Hash (p-Hash)", 'value': True, 'info': "Required for identifying duplicate frames later."}))
 
-        self.components['start_analysis_button'] = gr.Button("⚡ Start Analysis", variant="primary", size='lg')
+        self.components['start_analysis_button'] = gr.Button("⚡ Run Analysis", variant="primary", size='lg')
 
     def _create_filtering_tab(self):
         """Creates the content for the 'Export' tab."""
-        with gr.Row():
-            with gr.Column(scale=1, min_width=400):
-                gr.Markdown("### 🎛️ Step 5: Filter & Export")
+        self._create_section_header("Step 5: Filter & Export", "Fine-tune your dataset and save the best frames.")
 
+        with gr.Row():
+            # Left Column: Controls (Filters)
+            with gr.Column(scale=1, min_width=400):
+
+                # 1. Global Filter Controls
                 with gr.Group():
-                    gr.Markdown("#### Global Filters")
+                    gr.Markdown("#### 🎛️ Global Controls")
                     self._create_component('filter_preset_dropdown', 'dropdown', {'label': "Use a Preset", 'choices': ["None"] + list(self.FILTER_PRESETS.keys()), 'info': "Apply standard settings for common use-cases."})
 
                     with gr.Row():
-                        self._create_component('smart_filter_checkbox', 'checkbox', {'label': "Smart Filtering (Percentile)", 'value': False, 'info': "Instead of absolute values, keep the top X% best frames."})
-                        self._create_component('auto_pctl_input', 'slider', {'label': 'Percentile Target', 'minimum': 1, 'maximum': 99, 'value': self.config.gradio_auto_pctl_input, 'step': 1})
+                        self._create_component('smart_filter_checkbox', 'checkbox', {'label': "Smart Filtering (Percentile)", 'value': False, 'info': "Keep top X% instead of absolute values."})
+                        self._create_component('auto_pctl_input', 'slider', {'label': 'Target %', 'minimum': 1, 'maximum': 99, 'value': self.config.gradio_auto_pctl_input, 'step': 1, 'container': False})
 
                     with gr.Row():
-                         self._create_component('apply_auto_button', 'button', {'value': '⚡ Apply Auto-Thresholds', 'size': 'sm'})
+                         self._create_component('apply_auto_button', 'button', {'value': '⚡ Auto-Threshold', 'size': 'sm'})
                          self._create_component('reset_filters_button', 'button', {'value': "🔄 Reset All", 'size': 'sm'})
 
                 self._create_component('filter_status_text', 'markdown', {'value': "*Analysis not loaded.*"})
@@ -501,11 +551,12 @@ class AppUI:
                 self.components['metric_accs'] = {}
                 self.components['metric_auto_threshold_cbs'] = {}
 
-                with gr.Accordion("Deduplication (Remove Duplicates)", open=True) as dedup_acc:
+                # 2. Deduplication Accordion
+                with gr.Accordion("👯 Deduplication (Remove Duplicates)", open=True) as dedup_acc:
                     self.components['metric_accs']['dedup'] = dedup_acc
                     self._create_component('dedup_method_input', 'dropdown', {'label': "Method", 'choices': ["Off", "Fast (pHash)", "Accurate (LPIPS)"], 'value': "Fast (pHash)"})
                     f_def = self.config.filter_default_dedup_thresh
-                    self._create_component('dedup_thresh_input', 'slider', {'label': "Sensitivity Threshold", 'minimum': -1, 'maximum': 32, 'value': 5, 'step': 1, 'info': "Hamming Distance. Lower = stricter (fewer duplicates removed), Higher = aggressive."})
+                    self._create_component('dedup_thresh_input', 'slider', {'label': "Sensitivity Threshold", 'minimum': -1, 'maximum': 32, 'value': 5, 'step': 1, 'info': "Lower = stricter (keeps more similar frames), Higher = removes more."})
                     # Hidden inputs
                     self._create_component('ssim_threshold_input', 'slider', {'visible': False, 'value': 0.95})
                     self._create_component('lpips_threshold_input', 'slider', {'visible': False, 'value': 0.1})
@@ -515,7 +566,7 @@ class AppUI:
                          self._create_component('calculate_diff_button', 'button', {'value': "🔍 Inspect Duplicates"})
                     self._create_component('visual_diff_image', 'image', {'label': "Visual Diff", 'visible': False})
 
-                # Dynamic Metric Accordions
+                # 3. Dynamic Metric Accordions
                 metric_configs = {'quality_score': {'open': True}, 'niqe': {'open': False}, 'sharpness': {'open': False}, 'edge_strength': {'open': False}, 'contrast': {'open': False}, 'brightness': {'open': False}, 'entropy': {'open': False}, 'face_sim': {'open': False}, 'mask_area_pct': {'open': False}, 'eyes_open': {'open': False}, 'yaw': {'open': False}, 'pitch': {'open': False}}
                 for metric_name, metric_config in metric_configs.items():
                     if not hasattr(self.config, f"filter_default_{metric_name}"): continue
@@ -536,19 +587,20 @@ class AppUI:
                             if metric_name == "face_sim":
                                 self._create_component('require_face_match_input', 'checkbox', {'label': "Reject if no face", 'value': self.config.default_require_face_match, 'visible': True})
 
+            # Right Column: Results & Export
             with gr.Column(scale=2):
                 with gr.Group(visible=False) as results_group:
                     self.components['results_group'] = results_group
-                    gr.Markdown("### 🖼️ Results Preview")
+                    gr.Markdown("#### 🖼️ Results Preview")
                     with gr.Row():
                         self._create_component('gallery_view_toggle', 'radio', {'choices': self.GALLERY_VIEW_CHOICES, 'value': "Kept", 'label': "Show", 'container': False})
                         self._create_component('show_mask_overlay_input', 'checkbox', {'label': "Mask Overlay", 'value': self.config.gradio_show_mask_overlay})
                         self._create_component('overlay_alpha_slider', 'slider', {'label': "Alpha", 'minimum': 0.0, 'maximum': 1.0, 'value': self.config.gradio_overlay_alpha, 'step': 0.1, 'container': False})
-                    self._create_component('results_gallery', 'gallery', {'columns': [4, 6, 8], 'rows': 2, 'height': 'auto', 'preview': True, 'allow_preview': True, 'object_fit': 'contain'})
+                    self._create_component('results_gallery', 'gallery', {'columns': [4, 6, 8], 'rows': 2, 'height': 'auto', 'preview': True, 'allow_preview': True, 'object_fit': 'contain', 'show_label': False})
 
                 with gr.Group(visible=False) as export_group:
                     self.components['export_group'] = export_group
-                    gr.Markdown("### 📤 Export Dataset")
+                    gr.Markdown("#### 📤 Export Dataset")
 
                     with gr.Accordion("Advanced Export Options", open=False):
                         with gr.Row():
@@ -557,8 +609,8 @@ class AppUI:
                         self._create_component('crop_ar_input', 'textbox', {'label': "Aspect Ratio (e.g., 1:1, 9:16)", 'value': self.config.export_crop_ars, 'info': "Force crops to specific aspect ratios."})
 
                     with gr.Row():
-                        self._create_component('export_button', 'button', {'value': "💾 Export Kept Frames", 'variant': "primary", 'scale': 2})
-                        self._create_component('dry_run_button', 'button', {'value': "Dry Run", 'scale': 1})
+                        self._create_component('export_button', 'button', {'value': "💾 Export Kept Frames", 'variant': "primary", 'scale': 2, 'size': 'lg'})
+                        self._create_component('dry_run_button', 'button', {'value': "Dry Run", 'scale': 1, 'size': 'lg'})
 
     def get_all_filter_keys(self) -> list[str]:
         """Returns a list of all available filter metric keys."""
