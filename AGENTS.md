@@ -40,8 +40,8 @@ python -m pytest tests/
 # GPU E2E tests (requires CUDA + SAM3)
 python -m pytest tests/test_gpu_e2e.py -v -m "" --tb=short
 
-# Single test class
-python -m pytest tests/test_gpu_e2e.py::TestSAM3Inference -v -m ""
+# Run specific E2E tests (requires Playwright)
+python -m pytest tests/e2e/test_filters_real.py
 ```
 
 > **⚠️ NOTE**: GPU tests require `-m ""` to override the default marker filter in setup.cfg.
@@ -75,6 +75,7 @@ python -m pytest tests/test_gpu_e2e.py::TestSAM3Inference -v -m ""
 - **Refactoring**: Move logic from `app.py` to `core/`.
 - **Typing**: Use Pydantic models (`core/events.py`) instead of untyped dicts.
 - **Testing**: Add fixtures to `tests/conftest.py` for reuse across test files.
+- **E2E Testing**: Use `tests/e2e/test_filters_real.py` as a reference for meaningful E2E tests using sample data.
 
 
 ## 3. Architecture Overview
@@ -129,7 +130,7 @@ python -m pytest tests/test_gpu_e2e.py::TestSAM3Inference -v -m ""
 | Signature | `test_signatures.py` | No | `pytest tests/test_signatures.py` |
 | Integration | `test_integration.py` | Yes | `pytest -m integration` |
 | **GPU E2E** | `test_gpu_e2e.py` | Yes | `pytest tests/test_gpu_e2e.py -v -m ""` |
-| E2E | `tests/e2e/` | Yes | App + Playwright |
+| E2E | `tests/e2e/` | No* | `pytest tests/e2e/` (*Uses Mock App) |
 
 > **⚠️ CRITICAL**: GPU E2E tests require `-m ""` flag to override setup.cfg marker filter!
 
@@ -138,6 +139,11 @@ python -m pytest tests/test_gpu_e2e.py::TestSAM3Inference -v -m ""
 - `TestMaskPropagatorE2E`: Tests mask propagation integration
 - `TestInsightFaceInference`: Tests face analysis
 - `TestQualityMetricsE2E`: Tests NIQE and other metrics
+
+### E2E Tests (Playwright)
+Located in `tests/e2e/`. Use `app_server` fixture to run against a mock backend.
+- `test_filters_real.py`: Tests filtering logic with sample data.
+- `test_export_flow.py`: Tests export UI flow.
 
 ### When to Mock
 - **File I/O**: Patch `pathlib.Path.exists`, `open`.
