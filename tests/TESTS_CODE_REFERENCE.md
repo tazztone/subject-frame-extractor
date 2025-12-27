@@ -2102,6 +2102,26 @@ class TestLargeVideoE2E:
         """
         SAM3 can process a larger sequence.
         """
+
+class TestMaskGenerationE2E:
+    """
+    E2E tests for mask generation to catch silent failures.
+    """
+    @requires_sam3
+    def test_get_mask_for_bbox_e2e(self, test_frames_dir, tmp_path):
+        """
+        Test SeedSelector._get_mask_for_bbox with real SAM3.
+        """
+    @requires_sam3
+    def test_identity_first_seed_e2e(self, test_image_with_face, tmp_path):
+        """
+        Test 'By Face' seeding strategy with real models.
+        """
+    @requires_sam3
+    def test_pre_analysis_mask_generation_e2e(self, test_frames_dir, tmp_path):
+        """
+        Test the full pre-analysis flow including mask generation.
+        """
 ```
 
 ### `📄 test_handlers.py`

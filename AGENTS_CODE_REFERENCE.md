@@ -2008,6 +2008,10 @@ class AppUI:
         Returns:
         The created Gradio component.
         """
+    def _create_section_header(self, title: str, subtitle: str=None, icon: str='📂'):
+        """
+        Creates a standardized section header.
+        """
     def _build_header(self):
         """
         Builds the UI header section with title and status indicators.
