@@ -44,7 +44,7 @@ python -m pytest tests/test_gpu_e2e.py -v -m "" --tb=short
 python -m pytest tests/e2e/test_filters_real.py
 ```
 
-> **⚠️ NOTE**: GPU tests require `-m ""` to override the default marker filter in setup.cfg.
+> **⚠️ NOTE**: GPU tests require `-m ""` to override the default marker filter in `pyproject.toml`.
 
 ### Directory Structure
 - `app.py`: Entry point.
@@ -132,7 +132,7 @@ python -m pytest tests/e2e/test_filters_real.py
 | **GPU E2E** | `test_gpu_e2e.py` | Yes | `pytest tests/test_gpu_e2e.py -v -m ""` |
 | E2E | `tests/e2e/` | No* | `pytest tests/e2e/` (*Uses Mock App) |
 
-> **⚠️ CRITICAL**: GPU E2E tests require `-m ""` flag to override setup.cfg marker filter!
+> **⚠️ CRITICAL**: GPU E2E tests require `-m ""` flag to override `pyproject.toml` marker filter!
 
 ### GPU E2E Test Classes
 - `TestSAM3Inference`: Tests SAM3 API (init, prompts, propagation)
@@ -328,10 +328,9 @@ See `core/config.py` for full list.
 ## 12. Contribution Guidelines
 
 ### Code Style
-- **Formatting**: Use `black` formatter with default settings
-- **Imports**: Sort with `isort`, group: stdlib → third-party → local
+- **Linting & Formatting**: Use `ruff` (replaces black, isort, flake8). Run `ruff check .` and `ruff format .`
 - **Naming**: snake_case for functions/variables, PascalCase for classes
-- **Line Length**: 100 characters max
+- **Line Length**: 120 characters max (configured in `pyproject.toml`)
 - **Docstrings**: Use Google-style docstrings for public APIs
 
 ### Pull Request Process
@@ -366,7 +365,7 @@ APP_HUGGINGFACE_TOKEN=hf_your_token_here
 ## 14. Known Issues & Gotchas
 
 ### GPU E2E Tests Require `-m ""`
-The `setup.cfg` has a default marker filter that skips GPU tests. Override with:
+The `pyproject.toml` has a default marker filter that skips GPU tests. Override with:
 ```bash
 python -m pytest tests/test_gpu_e2e.py -v -m ""
 ```

@@ -1,0 +1,26 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+addopts = "-v --tb=short --ignore=tests/e2e/ -m 'not integration and not gpu_e2e'"
+markers = [
+    "unit: Unit tests (fast, isolated, use mocks)",
+    "smoke: Import smoke tests (no mocks, catches missing imports)",
+    "signature: Function signature validation tests",
+    "integration: Integration tests (no mocks, require GPU)",
+    "gpu_e2e: GPU E2E tests (real inference, catches runtime errors)",
+    "e2e: End-to-end tests (require app running)",
+    "slow: Tests that take longer to run",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]  # E=pycodestyle errors, F=pyflakes, W=warnings, I=isort
+ignore = ["E501"]  # Line too long (handled by formatter)
+
+[tool.ruff.format]
+quote-style = "double"

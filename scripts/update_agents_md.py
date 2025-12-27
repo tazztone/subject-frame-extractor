@@ -139,7 +139,7 @@ def generate_file_tree(root_dir):
 
     exclude_files = {
         'AGENTS_CODE_REFERENCE.md', '.DS_Store', '.gitignore', '.gitmodules',
-        'test_output.txt', 'test_results.txt', 'LICENSE', 'setup.cfg', '.env_example'
+        'test_output.txt', 'test_results.txt', 'LICENSE', 'pyproject.toml', '.env_example'
     }
 
     tree_lines = []
