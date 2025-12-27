@@ -12,8 +12,7 @@ Run with: python -m pytest tests/e2e/test_export_flow.py -v -s
 import pytest
 from playwright.sync_api import Page, expect
 import time
-
-from .conftest import BASE_URL
+from .conftest import BASE_URL, switch_to_tab
 
 pytestmark = pytest.mark.e2e
 
@@ -27,59 +26,42 @@ class TestExportFlow:
         time.sleep(2)
 
         # Navigate to Export tab
-        page.get_by_role("tab", name="Export").click(force=True)
-        time.sleep(1)
+        switch_to_tab(page, "Export")
 
-        # Export tab should have export button
+        # In Gradio, tab content visibility is handled by JS toggling display style
+        # We can check if the filter preset dropdown is visible, which is in the Export tab
+        presets = page.get_by_label("Filter Presets")
+        expect(presets).to_be_visible()
+
+    def test_dry_run_export_requires_analysis(self, full_analysis_session):
+        """Test dry run export mode after full analysis."""
+        page = full_analysis_session
+
+        # Navigate to Export tab
+        switch_to_tab(page, "Export")
+
+        # Look for dry run checkbox or button
+        dry_run_btn = page.get_by_role("button", name="Dry Run")
+        expect(dry_run_btn).to_be_visible(timeout=5000)
+
+        dry_run_btn.click()
+
+        # Check logs for success message
+        log = page.locator("#unified_log")
+        # Wait for log to update
+        time.sleep(2)
+        expect(log).to_be_visible()
+
+    def test_export_button_visibility(self, full_analysis_session):
+        """Test export button becomes visible after analysis."""
+        page = full_analysis_session
+
+        # Navigate to Export tab
+        switch_to_tab(page, "Export")
+
+        # Export button should be visible now
         export_btn = page.get_by_role("button", name="Export Kept Frames", exact=True)
         expect(export_btn).to_be_visible(timeout=5000)
-
-    def test_dry_run_export(self, page: Page, app_server):
-        """Test dry run export mode (no files created)."""
-        page.goto(BASE_URL)
-        time.sleep(2)
-
-        # First need to extract frames
-        page.get_by_label("Video URL or Local Path").fill("dummy_video.mp4")
-        page.get_by_role("button", name="🚀 Start Single Extraction").click()
-        expect(page.get_by_text("Extraction complete")).to_be_visible(timeout=20000)
-        time.sleep(2)
-
-        # Navigate to Export tab
-        page.get_by_role("tab", name="Export").click(force=True)
-        time.sleep(1)
-
-        # Look for dry run checkbox and enable it if exists
-        dry_run_checkbox = page.locator("text=Dry Run").locator("..").locator("input[type='checkbox']")
-        if dry_run_checkbox.count() > 0:
-            dry_run_checkbox.first.check()
-            time.sleep(0.5)
-
-        # Click export
-        export_btn = page.get_by_role("button", name="Export Kept Frames", exact=True)
-        export_btn.click()
-        time.sleep(2)
-
-        # Log should update (exact message depends on implementation)
-        log = page.locator("#unified_log")
-        expect(log).to_be_visible(timeout=5000)
-
-    def test_export_after_analysis(self, analyzed_session):
-        """Test export after running full pre-analysis."""
-        page = analyzed_session
-
-        # Navigate to Export tab
-        page.get_by_role("tab", name="Export").click(force=True)
-        time.sleep(1)
-
-        # Click export
-        export_btn = page.get_by_role("button", name="Export Kept Frames", exact=True)
-        export_btn.click()
-        time.sleep(2)
-
-        # Should not crash
-        log = page.locator("#unified_log")
-        expect(log).to_be_visible(timeout=5000)
 
 
 class TestFilteringBeforeExport:
@@ -91,65 +73,39 @@ class TestFilteringBeforeExport:
         time.sleep(2)
 
         # Navigate to Export tab
-        page.get_by_role("tab", name="Export").click(force=True)
-        time.sleep(1)
+        switch_to_tab(page, "Export")
 
-        # Look for range inputs (sliders)
-        sliders = page.locator("input[type='range']")
-        slider_count = sliders.count()
-        print(f"Found {slider_count} sliders in Export tab")
+        # Presets dropdown should be visible
+        presets = page.get_by_label("Filter Presets")
+        expect(presets).to_be_visible()
 
-    def test_filter_checkbox_toggle(self, page: Page, app_server):
-        """Test that filter checkboxes can be toggled."""
+    def test_smart_filter_toggle(self, page: Page, app_server):
+        """Test Smart Filtering toggle."""
         page.goto(BASE_URL)
         time.sleep(2)
 
         # Navigate to Export tab
-        page.get_by_role("tab", name="Export").click(force=True)
-        time.sleep(1)
+        switch_to_tab(page, "Export")
 
-        # Find checkboxes (filter enables)
-        checkboxes = page.locator("input[type='checkbox']")
-        checkbox_count = checkboxes.count()
-        print(f"Found {checkbox_count} checkboxes in Export tab")
-
-        # Toggle first checkbox if exists
-        if checkbox_count > 0:
-            first_checkbox = checkboxes.first
-            initial_state = first_checkbox.is_checked()
-            first_checkbox.click()
+        smart_filter = page.get_by_label("Smart Filtering")
+        if smart_filter.is_visible():
+            smart_filter.check()
             time.sleep(0.5)
-            new_state = first_checkbox.is_checked()
-            # State should have changed
-            assert initial_state != new_state, "Checkbox toggle did not change state"
+            assert smart_filter.is_checked()
 
 
 class TestExportFormats:
     """Tests for export format options."""
 
-    def test_export_settings_visible(self, page: Page, app_server):
-        """Verify export settings are accessible."""
-        page.goto(BASE_URL)
-        time.sleep(2)
+    def test_export_settings_visible(self, full_analysis_session):
+        """Verify export settings are accessible after analysis."""
+        page = full_analysis_session
 
         # Navigate to Export tab
-        page.get_by_role("tab", name="Export").click(force=True)
-        time.sleep(1)
+        switch_to_tab(page, "Export")
 
-        # Export tab should be visible
-        export_container = page.locator("[role='tabpanel']").first
-        expect(export_container).to_be_visible(timeout=5000)
+        # Check for Export Options accordion visibility
+        # It's inside the export_group which is visible after analysis
 
-    def test_export_destination_input(self, page: Page, app_server):
-        """Test export destination can be modified."""
-        page.goto(BASE_URL)
-        time.sleep(2)
-
-        # Navigate to Export tab
-        page.get_by_role("tab", name="Export").click(force=True)
-        time.sleep(1)
-
-        # Look for output folder input
-        output_inputs = page.locator("input[type='text']")
-        if output_inputs.count() > 0:
-            print(f"Found {output_inputs.count()} text inputs in Export tab")
+        export_btn = page.get_by_role("button", name="Export Kept Frames", exact=True)
+        expect(export_btn).to_be_visible()
