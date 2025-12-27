@@ -1,5 +1,5 @@
 ---
-Last Updated: 2025-12-26
+Last Updated: 2025-12-27
 ---
 
 # Tests Code Reference
@@ -246,9 +246,23 @@ import sys
 import time
 from pathlib import Path
 from os import environ
+import socket
+import requests
+from playwright.sync_api import expect, Page
+import re
 
 PORT = 7860
 BASE_URL = f'http://127.0.0.1:{PORT}'
+def wait_for_server(url, timeout=60):
+    """
+    Wait for the server to be responsive.
+    """
+
+def switch_to_tab(page: Page, tab_name: str):
+    """
+    Robustly switch tabs in Gradio.
+    """
+
 @pytest.fixture(scope='module')
 def app_server():
     """
@@ -272,8 +286,12 @@ def extracted_session(page, app_server):
 def analyzed_session(extracted_session):
     """
     Fixture that provides a page with pre-analysis completed.
-    
-    Builds on extracted_session to provide further workflow progress.
+    """
+
+@pytest.fixture
+def full_analysis_session(analyzed_session):
+    """
+    Fixture that provides a page with full analysis completed (ready for export).
     """
 ```
 
@@ -353,6 +371,38 @@ class TestARIACompliance:
     def test_aria_roles(self, page: Page, app_server):
         """
         Check for proper ARIA role usage.
+        """
+```
+
+### `📄 e2e/test_advanced_workflow.py`
+
+```python
+import pytest
+import time
+from playwright.sync_api import Page, expect
+
+@pytest.fixture(scope='module')
+def app_server_url(app_server):
+    """
+    Returns the URL of the running app server.
+    app_server fixture from tests/e2e/conftest.py starts the server if needed.
+    """
+
+class TestAdvancedWorkflow:
+    """
+    Advanced E2E tests covering edge cases, settings changes, and error handling.
+    """
+    def test_navigation_restrictions(self, page: Page, app_server_url):
+        """
+        Verify that users cannot proceed to later stages without completing earlier ones.
+        """
+    def test_extraction_settings_change(self, page: Page, app_server_url):
+        """
+        Verify that changing extraction settings works in the UI.
+        """
+    def test_filtering_ui(self, page: Page, app_server_url):
+        """
+        Test the Metrics/Filtering tab UI controls.
         """
 ```
 
@@ -704,7 +754,7 @@ Run with: python -m pytest tests/e2e/test_export_flow.py -v -s
 import pytest
 from playwright.sync_api import Page, expect
 import time
-from .conftest import BASE_URL
+from .conftest import BASE_URL, switch_to_tab
 
 pytestmark = pytest.mark.e2e
 class TestExportFlow:
@@ -715,13 +765,13 @@ class TestExportFlow:
         """
         Verify export tab is accessible and shows expected elements.
         """
-    def test_dry_run_export(self, page: Page, app_server):
+    def test_dry_run_export_requires_analysis(self, full_analysis_session):
         """
-        Test dry run export mode (no files created).
+        Test dry run export mode after full analysis.
         """
-    def test_export_after_analysis(self, analyzed_session):
+    def test_export_button_visibility(self, full_analysis_session):
         """
-        Test export after running full pre-analysis.
+        Test export button becomes visible after analysis.
         """
 
 class TestFilteringBeforeExport:
@@ -732,22 +782,55 @@ class TestFilteringBeforeExport:
         """
         Verify filtering sliders are visible in export tab.
         """
-    def test_filter_checkbox_toggle(self, page: Page, app_server):
+    def test_smart_filter_toggle(self, page: Page, app_server):
         """
-        Test that filter checkboxes can be toggled.
+        Test Smart Filtering toggle.
         """
 
 class TestExportFormats:
     """
     Tests for export format options.
     """
-    def test_export_settings_visible(self, page: Page, app_server):
+    def test_export_settings_visible(self, full_analysis_session):
         """
-        Verify export settings are accessible.
+        Verify export settings are accessible after analysis.
         """
-    def test_export_destination_input(self, page: Page, app_server):
+```
+
+### `📄 e2e/test_filters_real.py`
+
+```python
+"""
+E2E Tests for Real Filtering Logic.
+
+These tests use the sample video to verify that:
+1. Filters can be adjusted.
+2. Gallery updates to reflect filtered counts.
+3. Smart filtering toggle works.
+"""
+
+import pytest
+from playwright.sync_api import Page, expect
+import time
+from pathlib import Path
+from .conftest import BASE_URL, switch_to_tab
+
+pytestmark = pytest.mark.e2e
+SAMPLE_VIDEO = 'tests/assets/sample.mp4'
+class TestRealFilters:
+    @pytest.fixture(autouse=True)
+    def setup_with_analysis(self, page: Page, app_server):
         """
-        Test export destination can be modified.
+        Setup state: Extracted and Pre-Analyzed sample video.
+        We implement this manually here since the fixture is flaky.
+        """
+    def test_apply_filter_reduces_count(self, page: Page):
+        """
+        Test that increasing a filter threshold reduces the number of kept frames.
+        """
+    def test_deduplication_toggle(self, page: Page):
+        """
+        Test enabling deduplication updates the count.
         """
 ```
 
@@ -2292,26 +2375,6 @@ def test_apply_patches_triton_missing(): ...
 def test_apply_patches_triton_present(): ...
 ```
 
-### `📄 test_integration_sam3_patches_unit.py`
-
-```python
-import pytest
-import torch
-import numpy as np
-from unittest.mock import MagicMock, patch
-from core.sam3_patches import edt_triton_fallback, connected_components_fallback
-from unittest.mock import MagicMock
-
-class TestSam3Patches:
-    @pytest.fixture(autouse=True)
-    def skip_if_mocked(self): ...
-    def test_edt_triton_fallback_2d_batch(self): ...
-    def test_edt_triton_fallback_all_zeros(self): ...
-    def test_connected_components_fallback_simple(self): ...
-    def test_connected_components_fallback_complex(self): ...
-    def test_connected_components_fallback_3d_input_compat(self): ...
-```
-
 ### `📄 test_managers.py`
 
 ```python
@@ -2559,7 +2622,7 @@ class TestSAM3WrapperAPICompleteness:
         """
         Verify all API methods expected by SeedSelector exist on SAM3Wrapper.
         
-        This is the key test that would have caught detect_objects() missing.
+        Now includes remove_object and shutdown.
         """
     def test_detect_objects_signature(self, mock_wrapper):
         """
@@ -2603,9 +2666,17 @@ class TestSAM3WrapperMethodBehavior:
         """
         close_session should not raise when no session is active.
         """
-    def test_close_session_clears_inference_state(self, mock_wrapper):
+    def test_close_session_clears_session_id(self, mock_wrapper):
         """
-        close_session should clear inference_state.
+        close_session should clear session_id.
+        """
+    def test_remove_object_calls_predictor(self, mock_wrapper):
+        """
+        remove_object should call predictor handle_request.
+        """
+    def test_shutdown_calls_predictor(self, mock_wrapper):
+        """
+        shutdown should call predictor shutdown.
         """
 
 class TestSeedSelectorTrackerInterface:
@@ -2990,6 +3061,42 @@ class TestDependencyImports:
     def test_numpy_available(self): ...
     def test_gradio_available(self): ...
     def test_pydantic_available(self): ...
+```
+
+### `📄 test_subject_masker_coverage.py`
+
+```python
+import pytest
+from unittest.mock import MagicMock, patch
+import numpy as np
+
+mock_cv2 = MagicMock()
+mock_cv2.Mat = MagicMock
+mock_cv2.mat_wrapper = MagicMock()
+mock_cv2.resize = MagicMock(return_value=np.zeros((100, 100), dtype=np.uint8))
+mock_cv2.INTER_NEAREST = 0
+mock_cv2.cvtColor = MagicMock(return_value=np.zeros((100, 100, 3), dtype=np.uint8))
+mock_cv2.COLOR_RGB2BGR = 1
+class TestSubjectMasker:
+    """
+    Tests for core/scene_utils/subject_masker.py
+    """
+    @pytest.fixture
+    def mock_dependencies(self): ...
+    @pytest.fixture
+    def subject_masker(self, mock_dependencies): ...
+    def test_initialization(self, subject_masker):
+        """
+        Test proper initialization.
+        """
+    def test_initialize_tracker(self, subject_masker):
+        """
+        Test tracker initialization logic.
+        """
+    def test_run_propagation_no_tracker(self, subject_masker):
+        """
+        Test propagation fails if tracker cannot be initialized.
+        """
 ```
 
 ### `📄 test_ui_unit.py`

@@ -1,5 +1,5 @@
 ---
-Last Updated: 2025-12-26
+Last Updated: 2025-12-27
 ---
 
 # Code Skeleton Reference
@@ -58,11 +58,13 @@ For developer guidelines, see [AGENTS.md](AGENTS.md).
 │   │   ├── ai_ux_analyzer.py
 │   │   ├── conftest.py
 │   │   ├── test_accessibility.py
+│   │   ├── test_advanced_workflow.py
 │   │   ├── test_ai_ux_audit.py
 │   │   ├── test_app_flow.py
 │   │   ├── test_bug_regression.py
 │   │   ├── test_component_verification.py
 │   │   ├── test_export_flow.py
+│   │   ├── test_filters_real.py
 │   │   ├── test_full_workflow_mocked.py
 │   │   ├── test_session_lifecycle.py
 │   │   ├── test_ui_interactions.py
@@ -84,7 +86,6 @@ For developer guidelines, see [AGENTS.md](AGENTS.md).
 │   ├── test_handlers.py
 │   ├── test_integration.py
 │   ├── test_integration_sam3_patches.py
-│   ├── test_integration_sam3_patches_unit.py
 │   ├── test_managers.py
 │   ├── test_mask_propagator_logic.py
 │   ├── test_pipelines.py
@@ -97,6 +98,7 @@ For developer guidelines, see [AGENTS.md](AGENTS.md).
 │   ├── test_shared.py
 │   ├── test_signatures.py
 │   ├── test_smoke.py
+│   ├── test_subject_masker_coverage.py
 │   ├── test_ui_unit.py
 │   └── test_utils.py
 └── ui
@@ -724,18 +726,13 @@ class ModelRegistry:
 
 class SAM3Wrapper:
     """
-    SAM3 Tracker using official Sam3TrackerPredictor API.
+    SAM3 Tracker using official Sam3VideoPredictor API.
     
-    Based on: https://github.com/facebookresearch/sam3/blob/main/examples/sam3_for_sam2_video_task_example.ipynb
-    
-    Key API patterns:
-    - init_state(video_path) for session initialization
-    - add_new_points_or_box() for prompts with relative coordinates
-    - propagate_in_video() generator for mask propagation
+    Refactored to use the high-level request/response API.
     """
     def __init__(self, checkpoint_path=None, device='cuda'):
         """
-        Initialize SAM3 wrapper using official model builder pattern.
+        Initialize SAM3 wrapper using build_sam3_video_predictor.
         
         Args:
         checkpoint_path: Optional path to checkpoint (auto-downloads from HF if None)
@@ -743,13 +740,13 @@ class SAM3Wrapper:
         """
     def init_video(self, video_path: str):
         """
-        Initialize inference state with video or frame directory.
+        Initialize inference session with video or frame directory.
         
         Args:
         video_path: Path to video file or directory of JPEG frames
         
         Returns:
-        inference_state object
+        session_id
         """
     def add_bbox_prompt(self, frame_idx: int, obj_id: int, bbox_xywh: list, img_size: tuple) -> np.ndarray:
         """
@@ -770,7 +767,7 @@ class SAM3Wrapper:
         
         Args:
         start_idx: Frame index to start propagation from
-        max_frames: Maximum frames to propagate (default: all frames)
+        max_frames: Maximum frames to propagate
         reverse: If True, propagate backward from start_idx
         
         Yields:
@@ -782,57 +779,31 @@ class SAM3Wrapper:
         """
     def detect_objects(self, frame_rgb: np.ndarray, prompt: str) -> list:
         """
-        Detect objects in a single frame using text prompt (open-vocabulary detection).
-        
-        This uses SAM3's Sam3Processor for single-image text-based detection.
-        
-        Args:
-        frame_rgb: RGB image as numpy array (H, W, 3)
-        prompt: Text prompt describing objects to detect (e.g., "person", "cat")
-        
-        Returns:
-        List of dicts with keys: 'bbox' (xyxy format), 'conf', 'type'
+        Detect objects in a single frame using text prompt.
         """
     def add_text_prompt(self, frame_idx: int, text: str) -> dict:
         """
-        Add text prompt for video object detection.
-        
-        Uses SAM3's add_prompt with text_str for open-vocabulary detection.
-        Text prompts apply to all frames but inference runs on specified frame.
-        
-        Args:
-        frame_idx: Frame index to run inference on
-        text: Text description of objects to detect
-        
-        Returns:
-        Dict with 'obj_ids', 'masks', 'boxes' from detection
+        Add text prompt for video object detection using new API.
         """
     def add_point_prompt(self, frame_idx: int, obj_id: int, points: list, labels: list, img_size: tuple) -> np.ndarray:
         """
-        Add point prompts for mask refinement (positive/negative clicks).
-        
-        Args:
-        frame_idx: Frame index to add prompt
-        obj_id: Object ID to refine
-        points: List of (x, y) point coordinates in absolute pixels
-        labels: List of labels (1=positive, 0=negative)
-        img_size: Image dimensions as (width, height)
-        
-        Returns:
-        Refined mask as numpy array (H, W)
+        Add point prompts for mask refinement using new API.
+        """
+    def remove_object(self, obj_id: int):
+        """
+        Remove an object from the tracking session.
         """
     def reset_session(self):
         """
-        Reset all prompts and results without closing the session.
-        
-        Use this to start fresh detection on the same video without
-        re-loading all frames.
+        Reset all prompts and results (clears session state).
         """
     def close_session(self):
         """
         Close the inference session and free GPU resources.
-        
-        Call this when done with a video before loading another.
+        """
+    def shutdown(self):
+        """
+        Shutdown the predictor and free multi-GPU resources.
         """
 
 thread_local = threading.local()
