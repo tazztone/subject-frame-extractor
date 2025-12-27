@@ -20,13 +20,12 @@ This module provides reusable mock fixtures for testing, avoiding duplication
 across test files and improving test maintainability.
 """
 
-import sys
 import os
-import pytest
+import sys
 from unittest.mock import MagicMock, patch
-from pathlib import Path
 import numpy as np
 import pydantic
+import pytest
 
 def _create_mock_torch():
     """
@@ -169,10 +168,10 @@ Usage:
     issues = analyze_screenshot(screenshot_path)
 """
 
-from pathlib import Path
-from dataclasses import dataclass, field
-from typing import List, Optional
+from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
+from typing import List, Optional
 
 class Severity(Enum):
     CRITICAL = 'critical'
@@ -240,16 +239,16 @@ Shared fixtures for Playwright E2E tests.
 Provides the app_server fixture that starts/stops the mock Gradio server.
 """
 
-import pytest
+import re
+import socket
 import subprocess
 import sys
 import time
-from pathlib import Path
 from os import environ
-import socket
+from pathlib import Path
+import pytest
 import requests
-from playwright.sync_api import expect, Page
-import re
+from playwright.sync_api import Page, expect
 
 PORT = 7860
 BASE_URL = f'http://127.0.0.1:{PORT}'
@@ -314,9 +313,9 @@ Run with:
 Requires: playwright, axe-core (injected via CDN)
 """
 
-import pytest
-from playwright.sync_api import Page, expect
 import json
+import pytest
+from playwright.sync_api import Page
 from .conftest import BASE_URL
 
 pytestmark = [pytest.mark.e2e, pytest.mark.accessibility]
@@ -378,7 +377,6 @@ class TestARIACompliance:
 
 ```python
 import pytest
-import time
 from playwright.sync_api import Page, expect
 
 @pytest.fixture(scope='module')
@@ -422,9 +420,9 @@ For AI-powered analysis:
     OPENAI_API_KEY=sk-xxx python -m pytest tests/e2e/test_ai_ux_audit.py -v -s
 """
 
+import os
 import pytest
 from playwright.sync_api import Page
-import os
 from .conftest import BASE_URL
 
 pytestmark = [pytest.mark.e2e, pytest.mark.ux_audit]
@@ -481,9 +479,9 @@ Run with: python -m pytest tests/e2e/test_app_flow.py -v -s
 Requires: mock app running on port 7860
 """
 
+import time
 import pytest
 from playwright.sync_api import Page, expect
-import time
 from .conftest import BASE_URL
 
 pytestmark = pytest.mark.e2e
@@ -554,9 +552,9 @@ Run with: python -m pytest tests/e2e/test_bug_regression.py -v -s
 Requires: mock app running on port 7860
 """
 
+import time
 import pytest
 from playwright.sync_api import Page, expect
-import time
 from .conftest import BASE_URL
 
 pytestmark = pytest.mark.e2e
@@ -644,9 +642,9 @@ Run with:
     python -m pytest tests/e2e/test_component_verification.py -v -s
 """
 
+import time
 import pytest
 from playwright.sync_api import Page, expect
-import time
 from .conftest import BASE_URL
 
 pytestmark = [pytest.mark.e2e, pytest.mark.component]
@@ -751,9 +749,9 @@ Tests the export functionality including:
 Run with: python -m pytest tests/e2e/test_export_flow.py -v -s
 """
 
+import time
 import pytest
 from playwright.sync_api import Page, expect
-import time
 from .conftest import BASE_URL, switch_to_tab
 
 pytestmark = pytest.mark.e2e
@@ -809,10 +807,10 @@ These tests use the sample video to verify that:
 3. Smart filtering toggle works.
 """
 
-import pytest
-from playwright.sync_api import Page, expect
 import time
 from pathlib import Path
+import pytest
+from playwright.sync_api import Page, expect
 from .conftest import BASE_URL, switch_to_tab
 
 pytestmark = pytest.mark.e2e
@@ -837,12 +835,8 @@ class TestRealFilters:
 ### `📄 e2e/test_full_workflow_mocked.py`
 
 ```python
-import pytest
-import shutil
-import json
 import time
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+import pytest
 from playwright.sync_api import Page, expect
 
 @pytest.fixture(scope='module')
@@ -886,9 +880,9 @@ Tests session management including:
 Run with: python -m pytest tests/e2e/test_session_lifecycle.py -v -s
 """
 
+import time
 import pytest
 from playwright.sync_api import Page, expect
-import time
 from .conftest import BASE_URL
 
 pytestmark = pytest.mark.e2e
@@ -956,15 +950,15 @@ These tests verify that UI interactions work correctly by:
 2. Adjusting sliders and verifying UI updates
 3. Monitoring console/terminal for expected messages
 
-Run with: 
+Run with:
     python tests/mock_app.py &
     python -m pytest tests/e2e/test_ui_interactions.py -v -s
 """
 
-import pytest
-from playwright.sync_api import Page, expect, ConsoleMessage
-import time
 import re
+import time
+import pytest
+from playwright.sync_api import ConsoleMessage, Page, expect
 from .conftest import BASE_URL
 
 pytestmark = pytest.mark.e2e
@@ -1044,9 +1038,9 @@ Update baselines:
     python -m pytest tests/e2e/test_visual_regression.py -v --update-baselines
 """
 
-import pytest
-from playwright.sync_api import Page, expect
 import time
+import pytest
+from playwright.sync_api import Page
 from .conftest import BASE_URL
 
 pytestmark = [pytest.mark.e2e, pytest.mark.visual]
@@ -1115,10 +1109,10 @@ Run with:
     ./venv/Scripts/python.exe -m pytest tests/e2e/test_with_sample_data.py -v -s
 """
 
-import pytest
-from playwright.sync_api import Page, expect
 import time
 from pathlib import Path
+import pytest
+from playwright.sync_api import Page, expect
 from .conftest import BASE_URL
 
 pytestmark = pytest.mark.e2e
@@ -1181,10 +1175,9 @@ Provides screenshot capture and comparison against baselines using perceptual ha
 Used to detect unintended UI changes across development cycles.
 """
 
+import time
 from pathlib import Path
 from typing import Optional
-import json
-import time
 
 BASELINE_DIR = Path(__file__).parent / 'baselines'
 DIFF_DIR = Path(__file__).parent / 'diffs'
@@ -1250,16 +1243,14 @@ def cleanup_diffs():
 ### `📄 mock_app.py`
 
 ```python
-import sys
 import os
-import threading
+import sys
 import time
 from unittest.mock import MagicMock, patch
 import app
-from app import Config, AppLogger, ThumbnailManager
+import core.managers
 import core.pipelines
 import core.utils
-import core.managers
 from core.models import Scene
 
 mock_torch = MagicMock(name='torch')
@@ -1295,15 +1286,13 @@ core.managers.download_model = MagicMock()
 ### `📄 test_app_ui_logic.py`
 
 ```python
-import pytest
-import numpy as np
 import threading
-from unittest.mock import MagicMock, patch, ANY, call
-from queue import Queue
 from collections import deque
+from queue import Queue
+from unittest.mock import MagicMock, patch
 import gradio as gr
+import pytest
 from ui.app_ui import AppUI
-from core.models import Scene, SceneState
 
 class TestAppUI:
     @pytest.fixture
@@ -1342,8 +1331,7 @@ class TestAppUI:
 
 ```python
 import time
-import pytest
-from core.batch_manager import BatchManager, BatchStatus, BatchItem
+from core.batch_manager import BatchManager, BatchStatus
 
 def test_batch_manager_add(): ...
 
@@ -1361,10 +1349,9 @@ E2E tests for bug fixes.
 These tests verify the bug fixes using Playwright to interact with the actual Gradio UI.
 """
 
-import pytest
-from unittest.mock import MagicMock, patch
-from core.shared import build_scene_gallery_items
+from unittest.mock import patch
 from core.models import Scene
+from core.shared import build_scene_gallery_items
 
 class TestPaginationBugFixes:
     """
@@ -1407,18 +1394,16 @@ Tests for core functionality - Config, Logger, Filtering, and Event validation.
 Uses fixtures from conftest.py for mock setup.
 """
 
+from unittest.mock import MagicMock, patch
+import numpy as np
 import pytest
 from pydantic import ValidationError
-from unittest.mock import MagicMock, patch
-from pathlib import Path
-import numpy as np
 from core.config import Config
-from core.database import Database
-from core.logger import AppLogger
-from core.models import Scene, Frame, QualityConfig, _coerce
-from core.filtering import apply_all_filters_vectorized
-from ui.gallery_utils import auto_set_thresholds
 from core.events import PreAnalysisEvent
+from core.filtering import apply_all_filters_vectorized
+from core.logger import AppLogger
+from core.models import Frame, QualityConfig, _coerce
+from ui.gallery_utils import auto_set_thresholds
 
 class TestUtils:
     @pytest.mark.parametrize('value, to_type, expected', [('True', bool, True), ('false', bool, False), ('1', bool, True), ('0', bool, False), ('yes', bool, True), ('no', bool, False), (True, bool, True), (False, bool, False), ('123', int, 123), (123, int, 123), ('123.45', float, 123.45), (123.45, float, 123.45), ('string', str, 'string')])
@@ -1458,10 +1443,8 @@ class TestPreAnalysisEvent:
 ### `📄 test_database.py`
 
 ```python
-import pytest
 import sqlite3
-import json
-from pathlib import Path
+import pytest
 from core.database import Database
 
 @pytest.fixture
@@ -1496,13 +1479,11 @@ Tests for deduplication filtering functionality.
 Uses fixtures from conftest.py for mock setup.
 """
 
-import pytest
-import numpy as np
-import imagehash
 from unittest.mock import MagicMock, patch
+import imagehash
+import numpy as np
+import pytest
 from core.filtering import _apply_deduplication_filter, _run_batched_lpips
-from core.config import Config
-from core.managers import ThumbnailManager
 
 @pytest.fixture
 def sample_frames_for_dedup():
@@ -1531,14 +1512,13 @@ These tests ensure the application handles errors gracefully and provides
 useful feedback to users.
 """
 
-import pytest
 from unittest.mock import MagicMock, patch
-from pathlib import Path
 import numpy as np
-from core.config import Config
-from core.models import Scene, Frame, AnalysisParameters, QualityConfig
-from core.filtering import apply_all_filters_vectorized
+import pytest
 from pydantic import ValidationError
+from core.config import Config
+from core.filtering import apply_all_filters_vectorized
+from core.models import AnalysisParameters, Frame, QualityConfig, Scene
 
 class TestConfigEdgeCases:
     """
@@ -1702,14 +1682,10 @@ Covers all functions in core/export.py:
 - _crop_exported_frames (crop around mask)
 """
 
-import pytest
-import json
-import numpy as np
-import cv2
 from unittest.mock import MagicMock, patch
-from pathlib import Path
+import pytest
 from core.events import ExportEvent
-from core.export import export_kept_frames, dry_run_export
+from core.export import dry_run_export, export_kept_frames
 
 class TestExportKeptFrames:
     """
@@ -1786,13 +1762,11 @@ class TestExportWithFilters:
 ### `📄 test_filtering.py`
 
 ```python
-import pytest
+from collections import defaultdict
+from unittest.mock import MagicMock, patch
 import numpy as np
-import torch
-from unittest.mock import MagicMock, patch, ANY
-from collections import defaultdict, Counter
-from pathlib import Path
-from core.filtering import load_and_prep_filter_data, histogram_svg, build_all_metric_svgs, _extract_metric_arrays, _run_batched_lpips, _apply_deduplication_filter, _apply_metric_filters, apply_all_filters_vectorized, apply_ssim_dedup, apply_lpips_dedup
+import pytest
+from core.filtering import _apply_deduplication_filter, _apply_metric_filters, _extract_metric_arrays, _run_batched_lpips, apply_all_filters_vectorized, histogram_svg, load_and_prep_filter_data
 
 class TestFiltering:
     @pytest.fixture
@@ -1822,13 +1796,11 @@ class TestFiltering:
 ### `📄 test_gallery_utils.py`
 
 ```python
-import pytest
+from unittest.mock import MagicMock, patch
 import numpy as np
-import cv2
-from unittest.mock import MagicMock, patch, ANY
-from pathlib import Path
-from ui.gallery_utils import _update_gallery, on_filters_changed, auto_set_thresholds
+import pytest
 from core.events import FilterEvent
+from ui.gallery_utils import _update_gallery, auto_set_thresholds, on_filters_changed
 
 class TestGalleryUtils:
     @pytest.fixture
@@ -1864,7 +1836,7 @@ GPU E2E Tests - Real inference with actual models.
 
 These tests run REAL GPU inference to catch runtime errors like:
 - BFloat16/Float32 dtype mismatches
-- CUDA OOM errors  
+- CUDA OOM errors
 - Model loading failures
 - Tensor shape mismatches
 
@@ -1876,9 +1848,9 @@ Requirements:
 - All models downloaded
 """
 
-import pytest
-import numpy as np
 from pathlib import Path
+import numpy as np
+import pytest
 
 pytestmark = [pytest.mark.gpu_e2e, pytest.mark.slow]
 def _create_test_image(width=256, height=256):
@@ -2134,9 +2106,8 @@ These tests verify the handler classes work correctly in isolation,
 using mocked dependencies to avoid GPU requirements.
 """
 
+from unittest.mock import MagicMock, patch
 import pytest
-from unittest.mock import MagicMock, patch, PropertyMock
-import gradio as gr
 
 class TestAnalysisHandler:
     """
@@ -2272,9 +2243,8 @@ Requirements:
 - Full dependencies installed
 """
 
-import pytest
-import sys
 from pathlib import Path
+import pytest
 
 pytestmark = pytest.mark.integration
 class TestImportSmoke:
@@ -2374,11 +2344,10 @@ class TestPipelineIntegration:
 ### `📄 test_integration_sam3_patches.py`
 
 ```python
-import pytest
-import numpy as np
-import torch
 import sys
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+import pytest
+import torch
 
 @pytest.fixture(autouse=True)
 def skip_if_mocked(): ...
@@ -2398,14 +2367,11 @@ def test_apply_patches_triton_present(): ...
 ### `📄 test_managers.py`
 
 ```python
-import pytest
-import numpy as np
-import threading
-import torch
-import yt_dlp
-from unittest.mock import MagicMock, patch, ANY, call, create_autospec
 from pathlib import Path
-from core.managers import ThumbnailManager, ModelRegistry, VideoManager, get_face_landmarker, get_face_analyzer, initialize_analysis_models
+from unittest.mock import MagicMock, patch
+import numpy as np
+import pytest
+from core.managers import ModelRegistry, ThumbnailManager, VideoManager, get_face_analyzer, get_face_landmarker, initialize_analysis_models
 
 class TestManagers:
     @pytest.fixture
@@ -2459,14 +2425,13 @@ class TestManagers:
 ### `📄 test_mask_propagator_logic.py`
 
 ```python
-import pytest
-import numpy as np
-from unittest.mock import MagicMock, call, ANY, patch
 import threading
 from queue import Queue
-import sys
-from core.scene_utils.mask_propagator import MaskPropagator
+from unittest.mock import MagicMock, patch
+import numpy as np
+import pytest
 from core.models import AnalysisParameters
+from core.scene_utils.mask_propagator import MaskPropagator
 
 @pytest.fixture
 def mock_sam3_wrapper():
@@ -2517,16 +2482,15 @@ class TestMaskPropagatorLogic:
 ### `📄 test_pipelines.py`
 
 ```python
-import pytest
 import threading
-import torch
-import numpy as np
-from unittest.mock import MagicMock, patch, ANY, call, mock_open
 from pathlib import Path
 from queue import Queue
-from core.pipelines import run_ffmpeg_extraction, ExtractionPipeline, AnalysisPipeline, execute_extraction, execute_pre_analysis, execute_session_load, _process_ffmpeg_stream, _process_ffmpeg_showinfo
-from core.models import AnalysisParameters, Scene, Frame
+from unittest.mock import MagicMock, patch
+import numpy as np
+import pytest
 from core.events import ExtractionEvent
+from core.models import AnalysisParameters, Scene
+from core.pipelines import AnalysisPipeline, ExtractionPipeline, _process_ffmpeg_showinfo, _process_ffmpeg_stream, execute_extraction, execute_session_load, run_ffmpeg_extraction
 
 class TestPipelines:
     @pytest.fixture
@@ -2566,15 +2530,11 @@ class TestPipelines:
 ### `📄 test_pipelines_extended.py`
 
 ```python
+from unittest.mock import MagicMock, patch
 import pytest
-import numpy as np
-import torch
-from pathlib import Path
-from unittest.mock import MagicMock, patch, ANY, call
-from core.pipelines import AnalysisPipeline, ExtractionPipeline
-from core.models import AnalysisParameters, Scene
-from core.events import ExtractionEvent
 from core.database import Database
+from core.models import AnalysisParameters
+from core.pipelines import AnalysisPipeline
 
 class TestPipelinesExtended:
     @pytest.fixture
@@ -2600,9 +2560,8 @@ class TestPipelinesExtended:
 ### `📄 test_progress.py`
 
 ```python
-import pytest
-from unittest.mock import MagicMock
 from queue import Queue
+from unittest.mock import MagicMock
 from core.progress import AdvancedProgressTracker
 
 def test_progress_tracker(): ...
@@ -2618,9 +2577,9 @@ These tests ensure all required methods exist on SAM3Wrapper and verify
 basic functionality with mocking to avoid GPU requirements.
 """
 
-import pytest
+from unittest.mock import MagicMock, patch
 import numpy as np
-from unittest.mock import MagicMock, patch, PropertyMock
+import pytest
 
 class TestSAM3WrapperAPICompleteness:
     """
@@ -2722,11 +2681,10 @@ Tests for scene_utils modules (detection, helpers).
 These tests verify scene detection and helper functions work correctly.
 """
 
-import pytest
-from unittest.mock import MagicMock, patch, mock_open
-from pathlib import Path
-import numpy as np
 import json
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+import numpy as np
 
 class TestSceneDetection:
     """
@@ -2849,16 +2807,14 @@ Tests for scene utilities - SeedSelector, MaskPropagator, SubjectMasker.
 Uses fixtures from conftest.py for mock setup.
 """
 
-import pytest
-from unittest.mock import MagicMock, patch, ANY
-from pathlib import Path
-from queue import Queue
 import threading
-import numpy as np
+from queue import Queue
+from unittest.mock import MagicMock, patch
 import cv2
-from core.config import Config
-from core.models import AnalysisParameters, Scene
-from core.scene_utils import SeedSelector, MaskPropagator, SubjectMasker, run_scene_detection
+import numpy as np
+import pytest
+from core.models import Scene
+from core.scene_utils import MaskPropagator, SeedSelector, SubjectMasker
 
 def create_tensor_mock(shape=(100, 100), val=1.0): ...
 
@@ -2887,14 +2843,13 @@ class TestSubjectMasker:
 ### `📄 test_scene_utils_helpers.py`
 
 ```python
-import pytest
-import numpy as np
-import cv2
 import json
-from unittest.mock import MagicMock, patch, ANY
 from pathlib import Path
-from core.scene_utils.helpers import draw_boxes_preview, save_scene_seeds, get_scene_status_text, toggle_scene_status, _create_analysis_context, _recompute_single_preview, _wire_recompute_handler
-from core.models import Scene, AnalysisParameters
+from unittest.mock import MagicMock, patch
+import numpy as np
+import pytest
+from core.models import Scene
+from core.scene_utils.helpers import _create_analysis_context, _recompute_single_preview, _wire_recompute_handler, draw_boxes_preview, get_scene_status_text, save_scene_seeds, toggle_scene_status
 
 class TestSceneUtilsHelpers:
     @pytest.fixture
@@ -2933,13 +2888,10 @@ class TestSceneUtilsHelpers:
 Tests for shared utilities in core/shared.py.
 """
 
-import pytest
-from unittest.mock import MagicMock, patch, ANY
+from unittest.mock import patch
 import numpy as np
-import cv2
-from pathlib import Path
 from core.models import Scene
-from core.shared import scene_matches_view, create_scene_thumbnail_with_badge, scene_caption, build_scene_gallery_items
+from core.shared import build_scene_gallery_items, create_scene_thumbnail_with_badge, scene_caption, scene_matches_view
 
 class TestSharedUtils:
     def test_scene_matches_view(self): ...
@@ -2961,9 +2913,8 @@ return types, and decorator configurations.
 Run with: python -m pytest tests/test_signatures.py -v
 """
 
-import pytest
 import inspect
-from typing import Generator
+import pytest
 
 pytestmark = pytest.mark.signature
 class TestPipelineSignatures:
@@ -3086,9 +3037,9 @@ class TestDependencyImports:
 ### `📄 test_subject_masker_coverage.py`
 
 ```python
-import pytest
 from unittest.mock import MagicMock, patch
 import numpy as np
+import pytest
 
 mock_cv2 = MagicMock()
 mock_cv2.Mat = MagicMock
@@ -3122,12 +3073,11 @@ class TestSubjectMasker:
 ### `📄 test_ui_unit.py`
 
 ```python
+from unittest.mock import MagicMock, patch
 import pytest
-from unittest.mock import MagicMock, patch, ANY
-import gradio as gr
-from ui.app_ui import AppUI
 from core.events import ExtractionEvent
 from core.pipelines import execute_extraction
+from ui.app_ui import AppUI
 
 @pytest.fixture
 def app_ui(mock_config, mock_logger, mock_progress_queue, mock_cancel_event, mock_thumbnail_manager, mock_model_registry): ...
@@ -3186,12 +3136,11 @@ Covers utilities in core/utils.py including:
 Note: Some tests require integration mode (no mocks) due to numba/opencv dependencies.
 """
 
-import pytest
-import numpy as np
-from pathlib import Path
-from unittest.mock import MagicMock, patch
 import json
-from core.utils import validate_video_file, sanitize_filename, is_image_folder, list_images, create_frame_map, postprocess_mask, render_mask_overlay, rgb_to_pil, draw_bbox, _to_json_safe
+from pathlib import Path
+import numpy as np
+import pytest
+from core.utils import _to_json_safe, create_frame_map, draw_bbox, is_image_folder, list_images, postprocess_mask, render_mask_overlay, rgb_to_pil, sanitize_filename, validate_video_file
 
 pytestmark = pytest.mark.unit
 class TestValidateVideoFile:
