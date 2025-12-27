@@ -42,9 +42,9 @@ class AppUI:
 
     Manages the Gradio interface, event handlers, and interaction with backend pipelines.
     """
-    MAX_RESOLUTION_CHOICES: List[str] = ["maximum available", "2160", "1080", "720"]
+    MAX_RESOLUTION_CHOICES: List[Any] = [("Original (Recommended)", "maximum available"), ("4K (2160p)", "2160"), ("Full HD (1080p)", "1080"), ("HD (720p)", "720")]
     EXTRACTION_METHOD_TOGGLE_CHOICES: List[str] = ["Recommended Thumbnails", "Legacy Full-Frame"]
-    METHOD_CHOICES: List[str] = ["keyframes", "interval", "every_nth_frame", "nth_plus_keyframes", "all"]
+    METHOD_CHOICES: List[Any] = [("Keyframes (Scene Changes)", "keyframes"), ("Time Interval", "interval"), ("Every N-th Frame", "every_nth_frame"), ("N-th Frame + Keyframes", "nth_plus_keyframes"), ("All Frames", "all")]
     PRIMARY_SEED_STRATEGY_CHOICES: List[str] = ["🤖 Automatic", "👤 By Face", "📝 By Text (⚠️ Limited)", "🔄 Face + Text Fallback", "🧑‍🤝‍🧑 Find Prominent Person"]
     SEED_STRATEGY_CHOICES: List[str] = ["Largest Person", "Center-most Person", "Highest Confidence", "Tallest Person", "Area x Confidence", "Rule-of-Thirds", "Edge-avoiding", "Balanced", "Best Face"]
     FACE_MODEL_NAME_CHOICES: List[str] = ["buffalo_l", "buffalo_s"]
@@ -263,7 +263,7 @@ class AppUI:
         with gr.Accordion("Advanced Extraction Settings", open=False):
             with gr.Group(visible=True) as thumbnail_group:
                 self.components['thumbnail_group'] = thumbnail_group
-                self._reg('thumb_megapixels', self._create_component('thumb_megapixels_input', 'slider', {'label': "Thumbnail Size (MP)", 'minimum': 0.1, 'maximum': 2.0, 'step': 0.1, 'value': self.config.default_thumb_megapixels}))
+                self._reg('thumb_megapixels', self._create_component('thumb_megapixels_input', 'slider', {'label': "Thumbnail Size (MP)", 'minimum': 0.1, 'maximum': 2.0, 'step': 0.1, 'value': self.config.default_thumb_megapixels, 'info': "Lower = faster processing. Higher = better detail for small faces."}))
                 self._reg('scene_detect', self._create_component('ext_scene_detect_input', 'checkbox', {'label': "Use Scene Detection", 'value': self.config.default_scene_detect}))
                 self._reg('method', self._create_component('method_input', 'dropdown', {'choices': self.METHOD_CHOICES, 'value': self.config.default_method, 'label': "Frame Selection Method"}))
                 self._reg('interval', self._create_component('interval_input', 'number', {'label': "Interval (seconds)", 'value': self.config.default_interval, 'minimum': 0.1, 'step': 0.1, 'visible': self.config.default_method == 'interval'}))
@@ -397,24 +397,24 @@ class AppUI:
         gr.Markdown("### Step 4: Metrics")
         with gr.Row():
             with gr.Column():
-                self._reg('compute_quality_score', self._create_component('compute_quality_score', 'checkbox', {'label': "Quality Score", 'value': True}))
-                self._reg('compute_sharpness', self._create_component('compute_sharpness', 'checkbox', {'label': "Sharpness", 'value': True}))
-                self._reg('compute_face_sim', self._create_component('compute_face_sim', 'checkbox', {'label': "Face Similarity", 'value': True}))
-                self._reg('compute_eyes_open', self._create_component('compute_eyes_open', 'checkbox', {'label': "Eyes Open", 'value': True}))
+                self._reg('compute_quality_score', self._create_component('compute_quality_score', 'checkbox', {'label': "Quality Score", 'value': True, 'info': "Overall 'goodness' score."}))
+                self._reg('compute_sharpness', self._create_component('compute_sharpness', 'checkbox', {'label': "Sharpness", 'value': True, 'info': "Measures fine detail."}))
+                self._reg('compute_face_sim', self._create_component('compute_face_sim', 'checkbox', {'label': "Face Similarity", 'value': True, 'info': "Similarity to reference face."}))
+                self._reg('compute_eyes_open', self._create_component('compute_eyes_open', 'checkbox', {'label': "Eyes Open", 'value': True, 'info': "1.0 = Fully open, 0.0 = Closed."}))
             with gr.Column():
-                self._reg('compute_subject_mask_area', self._create_component('compute_subject_mask_area', 'checkbox', {'label': "Subject Mask Area", 'value': True}))
-                self._reg('compute_edge_strength', self._create_component('compute_edge_strength', 'checkbox', {'label': "Edge Strength", 'value': False}))
-                self._reg('compute_contrast', self._create_component('compute_contrast', 'checkbox', {'label': "Contrast", 'value': False}))
-                self._reg('compute_brightness', self._create_component('compute_brightness', 'checkbox', {'label': "Brightness", 'value': False}))
-                self._reg('compute_entropy', self._create_component('compute_entropy', 'checkbox', {'label': "Entropy", 'value': False}))
-                self._reg('compute_yaw', self._create_component('compute_yaw', 'checkbox', {'label': "Yaw", 'value': False}))
-                self._reg('compute_pitch', self._create_component('compute_pitch', 'checkbox', {'label': "Pitch", 'value': False}))
+                self._reg('compute_subject_mask_area', self._create_component('compute_subject_mask_area', 'checkbox', {'label': "Subject Mask Area", 'value': True, 'info': "Percentage of screen taken by subject."}))
+                self._reg('compute_edge_strength', self._create_component('compute_edge_strength', 'checkbox', {'label': "Edge Strength", 'value': False, 'info': "Measures prominence of edges."}))
+                self._reg('compute_contrast', self._create_component('compute_contrast', 'checkbox', {'label': "Contrast", 'value': False, 'info': "Difference between brightest and darkest parts."}))
+                self._reg('compute_brightness', self._create_component('compute_brightness', 'checkbox', {'label': "Brightness", 'value': False, 'info': "Overall lightness."}))
+                self._reg('compute_entropy', self._create_component('compute_entropy', 'checkbox', {'label': "Entropy", 'value': False, 'info': "Information complexity."}))
+                self._reg('compute_yaw', self._create_component('compute_yaw', 'checkbox', {'label': "Yaw", 'value': False, 'info': "Head rotation (left/right)."}))
+                self._reg('compute_pitch', self._create_component('compute_pitch', 'checkbox', {'label': "Pitch", 'value': False, 'info': "Head rotation (up/down)."}))
                 import pyiqa
                 niqe_avail = pyiqa is not None
-                self._reg('compute_niqe', self._create_component('compute_niqe', 'checkbox', {'label': "NIQE", 'value': False, 'interactive': niqe_avail}))
+                self._reg('compute_niqe', self._create_component('compute_niqe', 'checkbox', {'label': "NIQE", 'value': False, 'interactive': niqe_avail, 'info': "Natural Image Quality Evaluator. Lower is better, but scaled here so higher is better."}))
 
         with gr.Accordion("Advanced Deduplication", open=False):
-            self._reg('compute_phash', self._create_component('compute_phash', 'checkbox', {'label': "Compute p-hash for Deduplication", 'value': True}))
+            self._reg('compute_phash', self._create_component('compute_phash', 'checkbox', {'label': "Compute p-hash for Deduplication", 'value': True, 'info': "Perceptual Hash. Used to identify duplicate images."}))
         self.components['start_analysis_button'] = gr.Button("Analyze Selected Frames", variant="primary")
 
     def _create_filtering_tab(self):
@@ -441,7 +441,7 @@ class AppUI:
                     self.components['metric_accs']['dedup'] = dedup_acc
                     self._create_component('dedup_method_input', 'dropdown', {'label': "Deduplication", 'choices': ["Off", "Fast (pHash)", "Accurate (LPIPS)"], 'value': "Fast (pHash)"})
                     f_def = self.config.filter_default_dedup_thresh
-                    self._create_component('dedup_thresh_input', 'slider', {'label': "Threshold", 'minimum': -1, 'maximum': 32, 'value': 5, 'step': 1})
+                    self._create_component('dedup_thresh_input', 'slider', {'label': "Threshold", 'minimum': -1, 'maximum': 32, 'value': 5, 'step': 1, 'info': "Hamming Distance. Higher = more aggressive deduplication (removes more similar frames). Lower = safer."})
                     # Hidden inputs for backend compatibility
                     self._create_component('ssim_threshold_input', 'slider', {'visible': False, 'value': 0.95})
                     self._create_component('lpips_threshold_input', 'slider', {'visible': False, 'value': 0.1})
