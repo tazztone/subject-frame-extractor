@@ -1,5 +1,66 @@
 # Changelog
 
+## 2025-12-27
+* Fix empty error logging in mask generation and add E2E tests
+* Refactor app_ui.py to improve UX and visual hierarchy
+* Enhance UI clarity and accessibility in app_ui.py
+* Improve test coverage with meaningful E2E and Unit tests
+* Migrate project configuration to `pyproject.toml`
+* Fix SAM3 mask generation error ("Unexpected error in mask generation")
+
+## 2025-12-26
+* Refactor SAM3Wrapper to use Sam3VideoPredictor high-level API
+* Improve test coverage with Advanced Workflow E2E and Core Unit Tests
+* Update documentation generation scripts
+* Fix object detection call in SeedSelector using Sam3Processor
+
+## 2025-12-25
+* Improve test coverage with meaningful SAM3 pipeline and E2E tests
+* Optimize and clean up SAM3 integration code
+* Condense AGENTS_CODE_REFERENCE.md and add file tree
+* Fix "Find People" tests and resolve integration suite issues
+* Fix queue drain and system logs visibility bugs
+
+## 2025-12-24
+* Improve test coverage and fix unit test issues
+
+## 2025-12-23
+* Improve test coverage for core components and UI logic
+* Add comprehensive testing documentation (TESTING.md)
+* Implement comprehensive test coverage framework
+
+## 2025-12-20
+* Cleanup legacy code and dependencies (YOLO, DAM4SAM, Grounded-SAM-2)
+* Rewrite SAM3 integration to follow official API patterns
+* Update Setup Scripts for SAM3 and Jules Compatibility
+* Restructure AGENTS.md and move code skeleton to separate file
+
+## 2025-12-17
+* Add extensive unit and integration tests for core functionality
+* Fix log selector in headless environment for E2E tests
+* Increase maximum range for Sharpness and Edge Strength sliders
+* Fix SAM3 and Triton imports for Windows compatibility
+* Add docstrings to application codebase
+
+## 2025-12-16
+* Refactor core architecture and remove legacy shim
+* Improve test coverage for core and UI modules
+* Fix and improve E2E tests
+* Refactor scene_utils and split monolithic UI class
+* Implement handler architecture (extraction, analysis, filtering)
+* Fix critical architecture issues (circular imports, os usage)
+* Automate AGENTS.md generation and streamline content
+
+## 2025-12-15
+* Resolve NameError in SAM3Wrapper and handle import errors
+* Refactor UI for simplified UX and improved scene selection
+
+## 2025-12-13
+* Vectorize LPIPS deduplication logic
+* Improve test coverage for core logic and fix test infrastructure
+* Add authentication token support to model downloader
+* Update auto-merge workflow
+
 ## 2025-09-18
 * Update SAM2 model name and add DAM4SAM dependency
 * Remove reid_fallback and related fields
