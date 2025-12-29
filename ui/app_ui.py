@@ -292,7 +292,7 @@ class AppUI:
             The Gradio Blocks instance containing the application UI.
         """
         # css argument is deprecated in Gradio 5+
-        with gr.Blocks() as demo:
+        with gr.Blocks(title="Frame Extractor & Analyzer") as demo:
             self._build_header()
             self._create_component("stepper", "html", {"value": self._get_stepper_html(0)})
 

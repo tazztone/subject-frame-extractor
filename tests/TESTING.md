@@ -28,7 +28,7 @@ python -m pytest tests/e2e/
 **Run specific meaningful E2E tests:**
 *   `tests/e2e/test_filters_real.py`: Verifies real filtering logic with sample video.
 *   `tests/e2e/test_export_flow.py`: Verifies export workflow and UI visibility.
-*   `tests/e2e/test_with_sample_data.py`: Full extraction and scene detection workflow.
+*   `tests/e2e/test_workflow_completeness.py`: Full extraction and scene detection workflow.
 
 ## Mock App
 The `tests/mock_app.py` script mimics the real `app.py` but replaces:
@@ -79,3 +79,14 @@ The project uses Ruff for linting. Some lint rules are ignored in tests:
 
 See `pyproject.toml` `[tool.ruff.lint.per-file-ignores]` for details.
 
+### Playwright Timeouts
+If E2E tests time out finding elements:
+1. Ensure the element exists in the DOM.
+2. Check if the element is inside a collapsed accordion or hidden tab.
+3. Use `page.locator()` with text matching if IDs are unstable.
+4. Increase timeout or add `time.sleep()` for animations (sparingly).
+
+### New Tests (Added Dec 2025)
+- **`tests/e2e/test_workflow_completeness.py`**: Comprehensive E2E test covering the full extraction-to-export workflow, including advanced settings and system diagnostics.
+- **`tests/test_core_export_extended.py`**: Thorough testing of `core/export.py`, including dry-run logic, cropping, and cancellation.
+- **`tests/test_pipelines_extended.py`**: Robust tests for pipeline execution flow, error handling, and cancellation in `core/pipelines.py`.

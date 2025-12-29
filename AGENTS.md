@@ -1,6 +1,6 @@
 ---
-Version: 2.2
-Last Updated: 2025-12-26
+Version: 2.3
+Last Updated: 2025-12-28
 Python: 3.10+
 Gradio: 6.x
 SAM3: Via submodule
@@ -134,16 +134,16 @@ python -m pytest tests/e2e/test_filters_real.py
 
 > **⚠️ CRITICAL**: GPU E2E tests require `-m ""` flag to override `pyproject.toml` marker filter!
 
-### GPU E2E Test Classes
-- `TestSAM3Inference`: Tests SAM3 API (init, prompts, propagation)
-- `TestMaskPropagatorE2E`: Tests mask propagation integration
-- `TestInsightFaceInference`: Tests face analysis
-- `TestQualityMetricsE2E`: Tests NIQE and other metrics
+### New Tests (Added Dec 2025)
+- **`tests/e2e/test_workflow_completeness.py`**: Comprehensive E2E test covering the full extraction-to-export workflow, including advanced settings and system diagnostics.
+- **`tests/test_core_export_extended.py`**: Thorough testing of `core/export.py`, including dry-run logic, cropping, and cancellation.
+- **`tests/test_pipelines_extended.py`**: Robust tests for pipeline execution flow, error handling, and cancellation in `core/pipelines.py`.
 
 ### E2E Tests (Playwright)
 Located in `tests/e2e/`. Use `app_server` fixture to run against a mock backend.
 - `test_filters_real.py`: Tests filtering logic with sample data.
 - `test_export_flow.py`: Tests export UI flow.
+- `test_workflow_completeness.py`: Full workflow verification.
 
 ### When to Mock
 - **File I/O**: Patch `pathlib.Path.exists`, `open`.
