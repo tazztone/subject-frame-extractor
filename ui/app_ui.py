@@ -301,7 +301,11 @@ class AppUI:
                     self._create_component(
                         "session_path_input",
                         "textbox",
-                        {"label": "Load previous run", "placeholder": "Path to a previous run's output folder..."},
+                        {
+                            "label": "Load previous run",
+                            "placeholder": "Path to a previous run's output folder...",
+                            "info": "Paste the path to a folder from a previous extraction to resume work.",
+                        },
                     )
                     self._create_component("load_session_button", "button", {"value": "📂 Load Session"})
                     self._create_component("save_config_button", "button", {"value": "💾 Save Current Config"})
@@ -426,37 +430,39 @@ class AppUI:
 
     def _build_footer(self):
         """Builds the footer with status bar, logs, and help section."""
-        with gr.Row():
-            with gr.Column(scale=2):
-                self._create_component(
-                    "unified_status", "markdown", {"label": "📊 Status", "value": "Welcome! Ready to start."}
-                )
-                # self.components['progress_bar'] = gr.Progress()
-                self._create_component("progress_details", "html", {"value": "", "elem_classes": ["progress-details"]})
-                with gr.Row():
-                    self._create_component("pause_button", "button", {"value": "⏸️ Pause", "interactive": False})
-                    self._create_component("cancel_button", "button", {"value": "⏹️ Cancel", "interactive": False})
-            with gr.Column(scale=3):
-                with gr.Accordion("📋 System Logs", open=False):
+        gr.Markdown("---") # Divider
+        with gr.Group():
+            with gr.Row():
+                with gr.Column(scale=2):
                     self._create_component(
-                        "unified_log",
-                        "textbox",
-                        {
-                            "lines": 15,
-                            "interactive": False,
-                            "autoscroll": True,
-                            "elem_classes": ["log-container"],
-                            "elem_id": "unified_log",
-                            "value": "Ready. Operations will be logged here.",
-                        },
+                        "unified_status", "markdown", {"label": "📊 Status", "value": "Welcome! Ready to start."}
                     )
+                    # self.components['progress_bar'] = gr.Progress()
+                    self._create_component("progress_details", "html", {"value": "", "elem_classes": ["progress-details"]})
                     with gr.Row():
+                        self._create_component("pause_button", "button", {"value": "⏸️ Pause", "interactive": False})
+                        self._create_component("cancel_button", "button", {"value": "⏹️ Cancel", "interactive": False})
+                with gr.Column(scale=3):
+                    with gr.Accordion("📋 System Logs", open=False):
                         self._create_component(
-                            "show_debug_logs", "checkbox", {"label": "Show Debug Logs", "value": False}
+                            "unified_log",
+                            "textbox",
+                            {
+                                "lines": 15,
+                                "interactive": False,
+                                "autoscroll": True,
+                                "elem_classes": ["log-container"],
+                                "elem_id": "unified_log",
+                                "value": "Ready. Operations will be logged here.",
+                            },
                         )
-                        self._create_component("refresh_logs_button", "button", {"value": "🔄 Refresh", "scale": 1})
-                        self._create_component("clear_logs_button", "button", {"value": "🗑️ Clear", "scale": 1})
-                        self._create_component("export_logs_button", "button", {"value": "📥 Export", "scale": 1})
+                        with gr.Row():
+                            self._create_component(
+                                "show_debug_logs", "checkbox", {"label": "Show Debug Logs", "value": False}
+                            )
+                            self._create_component("refresh_logs_button", "button", {"value": "🔄 Refresh", "scale": 1})
+                            self._create_component("clear_logs_button", "button", {"value": "🗑️ Clear", "scale": 1})
+                            self._create_component("export_logs_button", "button", {"value": "📥 Export", "scale": 1})
 
         with gr.Accordion("❓ Help / Troubleshooting", open=False):
             self._create_component("run_diagnostics_button", "button", {"value": "Run System Diagnostics"})
@@ -469,57 +475,59 @@ class AppUI:
 
         # 1. Source Selection
         with gr.Group():
-            gr.Markdown("#### 📂 Source Input")
-            with gr.Row():
-                with gr.Column(scale=4):
-                    self._reg(
-                        "source_path",
-                        self._create_component(
-                            "source_input",
-                            "textbox",
-                            {
-                                "label": "Input Path or URL",
-                                "placeholder": "Paste YouTube URL or local path (file/folder)...",
-                                "info": "Enter a path to a video file, a folder of images, or a YouTube link.",
-                                "show_label": False,
-                                "container": False,
-                                "scale": 4,
-                            },
-                        ),
-                    )
-                with gr.Column(scale=1, min_width=150):
-                    self._reg(
-                        "max_resolution",
-                        self._create_component(
-                            "max_resolution",
-                            "dropdown",
-                            {
-                                "choices": self.MAX_RESOLUTION_CHOICES,
-                                "value": self.config.default_max_resolution,
-                                "label": "YouTube Res",
-                                "info": "Only for YouTube downloads.",
-                                "show_label": True,
-                                "container": True,
-                                "scale": 1,
-                            },
-                        ),
-                    )
+            gr.Markdown("#### 📂 Source Selection")
+            with gr.Tabs():
+                with gr.Tab("🔗 Path / URL"):
+                    with gr.Row():
+                        with gr.Column(scale=4):
+                            self._reg(
+                                "source_path",
+                                self._create_component(
+                                    "source_input",
+                                    "textbox",
+                                    {
+                                        "label": "Input Path or URL",
+                                        "placeholder": "Paste YouTube URL or local path (file/folder)...",
+                                        "info": "Enter a path to a video file, a folder of images, or a YouTube link.",
+                                        "show_label": False,
+                                        "container": False,
+                                        "scale": 4,
+                                    },
+                                ),
+                            )
+                        with gr.Column(scale=1, min_width=150):
+                            self._reg(
+                                "max_resolution",
+                                self._create_component(
+                                    "max_resolution",
+                                    "dropdown",
+                                    {
+                                        "choices": self.MAX_RESOLUTION_CHOICES,
+                                        "value": self.config.default_max_resolution,
+                                        "label": "YouTube Res",
+                                        "info": "Only for YouTube downloads.",
+                                        "show_label": True,
+                                        "container": True,
+                                        "scale": 1,
+                                    },
+                                ),
+                            )
 
-            with gr.Accordion("📂 Or Upload Local File", open=False):
-                self._reg(
-                    "upload_video",
-                    self._create_component(
-                        "upload_video_input",
-                        "file",
-                        {
-                            "label": "Upload Video File",
-                            "file_count": "multiple",
-                            "file_types": ["video"],
-                            "type": "filepath",
-                            "height": 80,
-                        },
-                    ),
-                )
+                with gr.Tab("⬆️ Upload File"):
+                    self._reg(
+                        "upload_video",
+                        self._create_component(
+                            "upload_video_input",
+                            "file",
+                            {
+                                "label": "Upload Video File",
+                                "file_count": "multiple",
+                                "file_types": ["video"],
+                                "type": "filepath",
+                                "height": 80,
+                            },
+                        ),
+                    )
 
         # 2. Strategy & Settings
         with gr.Group():
@@ -679,7 +687,7 @@ class AppUI:
 
             with gr.Tabs():
                 # Tab 1: Upload
-                with gr.Tab("Upload Photo"):
+                with gr.Tab("⬆️ Upload Photo"):
                     with gr.Row():
                         with gr.Column(scale=3):
                             self._reg(
@@ -703,13 +711,13 @@ class AppUI:
                             )
 
                 # Tab 2: Scan Video (Discovery)
-                with gr.Tab("Scan Video for People"):
+                with gr.Tab("🔍 Scan Video for People"):
                     gr.Markdown("*Analyze the video to find people, then click a face to select it.*")
                     with gr.Row():
                         self._create_component(
                             "find_people_button",
                             "button",
-                            {"value": "🔍 Scan Video Now", "variant": "secondary", "scale": 2},
+                            {"value": "🔍 Scan Video Now", "variant": "primary", "scale": 1},
                         )
                         self._create_component(
                             "identity_confidence_slider",
@@ -768,7 +776,7 @@ class AppUI:
                     {
                         "label": "What should we look for?",
                         "placeholder": "e.g., 'a man in a blue suit', 'a red car'",
-                        "info": "Be specific. Color and clothing help.",
+                        "info": "Be specific. Color and clothing help. Example: 'person in red shirt'",
                         "lines": 1,
                         "show_label": False,
                     },
@@ -1112,9 +1120,9 @@ class AppUI:
         """Creates the content for the 'Metrics' tab."""
         self._create_section_header("Step 4: Analysis Metrics", "Choose what properties to calculate for each frame.")
 
-        with gr.Group():
-            with gr.Row():
-                with gr.Column():
+        with gr.Row():
+            with gr.Column():
+                with gr.Group():
                     gr.Markdown("#### ✨ Visual Quality")
                     self._reg(
                         "compute_quality_score",
@@ -1153,7 +1161,8 @@ class AppUI:
                         ),
                     )
 
-                with gr.Column():
+            with gr.Column():
+                with gr.Group():
                     gr.Markdown("#### 👤 Subject & Content")
                     self._reg(
                         "compute_face_sim",
@@ -1192,7 +1201,8 @@ class AppUI:
                         ),
                     )
 
-                with gr.Column():
+            with gr.Column():
+                with gr.Group():
                     gr.Markdown("#### 📐 Geometry & Composition")
                     self._reg(
                         "compute_yaw",
@@ -1276,12 +1286,10 @@ class AppUI:
         """Creates the content for the 'Export' tab."""
         self._create_section_header("Step 5: Filter & Export", "Fine-tune your dataset and save the best frames.")
 
-        with gr.Row():
-            # Left Column: Controls (Filters)
-            with gr.Column(scale=1, min_width=400):
-                # 1. Global Filter Controls
-                with gr.Group():
-                    gr.Markdown("#### 🎛️ Global Controls")
+        # 1. Global Filter Controls (Top Row)
+        with gr.Group():
+            with gr.Row(equal_height=True):
+                with gr.Column(scale=2):
                     self._create_component(
                         "filter_preset_dropdown",
                         "dropdown",
@@ -1291,7 +1299,7 @@ class AppUI:
                             "info": "Apply standard settings for common use-cases.",
                         },
                     )
-
+                with gr.Column(scale=3):
                     with gr.Row():
                         self._create_component(
                             "smart_filter_checkbox",
@@ -1314,15 +1322,17 @@ class AppUI:
                                 "container": False,
                             },
                         )
+                with gr.Column(scale=1):
+                    self._create_component(
+                        "apply_auto_button", "button", {"value": "⚡ Auto-Threshold", "size": "sm", "variant": "secondary"}
+                    )
+                    self._create_component(
+                        "reset_filters_button", "button", {"value": "🔄 Reset All", "size": "sm"}
+                    )
 
-                    with gr.Row():
-                        self._create_component(
-                            "apply_auto_button", "button", {"value": "⚡ Auto-Threshold", "size": "sm"}
-                        )
-                        self._create_component(
-                            "reset_filters_button", "button", {"value": "🔄 Reset All", "size": "sm"}
-                        )
-
+        with gr.Row():
+            # Left Column: Controls (Filters)
+            with gr.Column(scale=1, min_width=400):
                 self._create_component("filter_status_text", "markdown", {"value": "*Analysis not loaded.*"})
 
                 # Dynamic Component Registry
