@@ -44,7 +44,7 @@ def switch_to_tab(page: Page, tab_name: str):
 
     # Wait for the tab to be selected - checking class using regex
     expect(tab_btn).to_have_class(re.compile(r"selected|active"))
-    time.sleep(1)  # Animation wait
+    time.sleep(1.0)  # Animation wait
 
 
 @pytest.fixture(scope="module")
@@ -117,14 +117,15 @@ def extracted_session(page, app_server):
     expect(page.get_by_text("Frame Extractor & Analyzer")).to_be_visible(timeout=10000)
 
     # Run extraction
-    page.get_by_label("Video URL or Local Path").fill("dummy_video.mp4")
+    # Use placeholder as label is hidden
+    page.get_by_placeholder("Paste YouTube URL or local path").fill("dummy_video.mp4")
 
-    extract_btn = page.get_by_role("button", name="🚀 Start Single Extraction")
+    extract_btn = page.get_by_role("button", name="🚀 Start Extraction")
     expect(extract_btn).to_be_visible(timeout=5000)
     extract_btn.click()
 
     # Wait for completion
-    expect(page.get_by_text("Extraction complete")).to_be_visible(timeout=20000)
+    expect(page.get_by_text("Frame Extraction Complete")).to_be_visible(timeout=20000)
     time.sleep(1)
 
     return page
@@ -140,10 +141,14 @@ def analyzed_session(extracted_session):
     # Navigate to Subject tab
     switch_to_tab(page, "Subject")
 
-    # Click find frames
-    find_btn = page.get_by_role("button", name=re.compile("Find & Preview Best Frames"))
-    expect(find_btn).to_be_visible(timeout=10000)
+    # Use locator with text content instead of regex on role to reduce ambiguity
+    # "Find & Preview Scenes"
+    find_btn = page.get_by_role("button", name="Find & Preview Scenes")
+    if not find_btn.is_visible():
+        # Fallback for unicode/icons
+        find_btn = page.locator("button").filter(has_text="Find & Preview Scenes").first
 
+    expect(find_btn).to_be_visible(timeout=20000)
     find_btn.click()
 
     # Wait for completion (check status)
@@ -161,7 +166,7 @@ def full_analysis_session(analyzed_session):
     page = analyzed_session
 
     # Propagate
-    propagate_btn = page.get_by_role("button", name="🔬 Propagate Masks")
+    propagate_btn = page.get_by_role("button", name="⚡ Propagate Masks")
     if propagate_btn.is_visible():
         propagate_btn.click()
         expect(page.locator("#unified_status")).to_contain_text("Mask Propagation Complete", timeout=30000)
@@ -170,7 +175,7 @@ def full_analysis_session(analyzed_session):
     # Analyze (Metrics tab)
     switch_to_tab(page, "Metrics")
 
-    analyze_btn = page.get_by_role("button", name="Analyze Selected Frames")
+    analyze_btn = page.get_by_role("button", name="⚡ Run Analysis")
     expect(analyze_btn).to_be_visible(timeout=5000)
     analyze_btn.click()
 

@@ -33,7 +33,7 @@ class TestExportFlow:
 
         # In Gradio, tab content visibility is handled by JS toggling display style
         # We can check if the filter preset dropdown is visible, which is in the Export tab
-        presets = page.get_by_label("Filter Presets")
+        presets = page.get_by_label("Use a Preset")
         expect(presets).to_be_visible()
 
     def test_dry_run_export_requires_analysis(self, full_analysis_session):
@@ -79,7 +79,7 @@ class TestFilteringBeforeExport:
         switch_to_tab(page, "Export")
 
         # Presets dropdown should be visible
-        presets = page.get_by_label("Filter Presets")
+        presets = page.get_by_label("Use a Preset")
         expect(presets).to_be_visible()
 
     def test_smart_filter_toggle(self, page: Page, app_server):
