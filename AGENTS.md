@@ -128,6 +128,8 @@ python -m pytest tests/e2e/test_filters_real.py
 | UI Handlers | `test_handlers.py` | No | `pytest tests/test_handlers.py` |
 | Scene Detection | `test_scene_detection.py` | No | `pytest tests/test_scene_detection.py` |
 | Signature | `test_signatures.py` | No | `pytest tests/test_signatures.py` |
+| Advanced Export | `test_export_advanced.py` | No | `pytest tests/test_export_advanced.py` |
+| Managers | `test_managers_extended.py` | No | `pytest tests/test_managers_extended.py` |
 | Integration | `test_integration.py` | Yes | `pytest -m integration` |
 | **GPU E2E** | `test_gpu_e2e.py` | Yes | `pytest tests/test_gpu_e2e.py -v -m ""` |
 | E2E | `tests/e2e/` | No* | `pytest tests/e2e/` (*Uses Mock App) |
