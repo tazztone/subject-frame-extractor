@@ -34,8 +34,8 @@ class TestRealFilters:
         if not Path(SAMPLE_VIDEO).exists():
             pytest.skip("Sample video not found")
 
-        page.get_by_label("Video URL or Local Path").fill(str(Path(SAMPLE_VIDEO).resolve()))
-        page.get_by_role("button", name="🚀 Start Single Extraction").click()
+        page.get_by_placeholder("Paste YouTube URL or local path").fill(str(Path(SAMPLE_VIDEO).resolve()))
+        page.get_by_role("button", name="🚀 Start Extraction").click()
         expect(page.get_by_text("Extraction complete")).to_be_visible(timeout=30000)
 
         # 2. Pre-Analysis
@@ -43,7 +43,7 @@ class TestRealFilters:
 
         # Wait for the button to appear. It might be hidden initially?
         # In app_ui.py, it's created at the end of _create_define_subject_tab.
-        find_btn = page.get_by_role("button", name="Find & Preview Best Frames")
+        find_btn = page.get_by_role("button", name="🔍 Find & Preview Scenes")
         # Just in case, try to force it
         if not find_btn.is_visible():
             page.reload()

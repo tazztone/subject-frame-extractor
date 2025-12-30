@@ -875,7 +875,12 @@ class AppUI:
         self._create_component(
             "start_pre_analysis_button",
             "button",
-            {"value": "🔍 Find & Preview Scenes", "variant": "primary", "size": "lg"},
+            {
+                "value": "🔍 Find & Preview Scenes",
+                "variant": "primary",
+                "size": "lg",
+                "elem_id": "start_pre_analysis_button",
+            },
         )
 
         # 5. Advanced Configuration Accordion
