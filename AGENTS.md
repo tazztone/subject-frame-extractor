@@ -50,6 +50,8 @@ python -m pytest tests/e2e/test_filters_real.py
 - `app.py`: Entry point.
 - `core/`: Business logic (pipelines, config, db).
 - `ui/`: Gradio interface components.
+    - `ui/app_ui.py`: Main UI definition (Tabs: Source, Subject, Scenes, Metrics, Export).
+    - `ui/gallery_utils.py`: UI logic helper.
 - `tests/`: Unit and E2E tests.
 - `SAM3_repo/`: **Read-only** submodule (install with `uv pip install -e SAM3_repo`).
 
