@@ -100,8 +100,10 @@ def mock_pre_analysis_execution(
             end_frame=50,
             status="included",
             seed_result={"bbox": [10, 10, 100, 100], "details": {"type": "mock"}},
+            seed_metrics={"score": 10.0, "best_face_sim": 0.9}
         ).model_dump(),
-        Scene(shot_id=2, start_frame=51, end_frame=100, status="included").model_dump(),
+        Scene(shot_id=2, start_frame=51, end_frame=100, status="included",
+              seed_metrics={"score": 5.0, "best_face_sim": 0.5}).model_dump(),
     ]
 
     output_dir = os.path.join(config.downloads_dir, "mock_video")

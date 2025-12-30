@@ -117,9 +117,10 @@ def extracted_session(page, app_server):
     expect(page.get_by_text("Frame Extractor & Analyzer")).to_be_visible(timeout=10000)
 
     # Run extraction
-    page.get_by_label("Video URL or Local Path").fill("dummy_video.mp4")
+    # The label is hidden in the UI, so we use the placeholder or a more robust selector
+    page.get_by_placeholder("Paste YouTube URL or local path").fill("dummy_video.mp4")
 
-    extract_btn = page.get_by_role("button", name="🚀 Start Single Extraction")
+    extract_btn = page.get_by_role("button", name="🚀 Start Extraction")
     expect(extract_btn).to_be_visible(timeout=5000)
     extract_btn.click()
 
@@ -141,9 +142,15 @@ def analyzed_session(extracted_session):
     switch_to_tab(page, "Subject")
 
     # Click find frames
-    find_btn = page.get_by_role("button", name=re.compile("Find & Preview Best Frames"))
-    expect(find_btn).to_be_visible(timeout=10000)
+    find_btn = page.get_by_role("button", name=re.compile("Find & Preview Scenes"))
+    # Sometimes it takes time to switch tabs or render
+    time.sleep(1)
+    if not find_btn.is_visible():
+        page.reload()
+        switch_to_tab(page, "Subject")
+        time.sleep(1)
 
+    expect(find_btn).to_be_visible(timeout=10000)
     find_btn.click()
 
     # Wait for completion (check status)

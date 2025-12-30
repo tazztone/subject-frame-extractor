@@ -28,7 +28,11 @@ python -m pytest tests/e2e/
 **Run specific meaningful E2E tests:**
 *   `tests/e2e/test_filters_real.py`: Verifies real filtering logic with sample video.
 *   `tests/e2e/test_export_flow.py`: Verifies export workflow and UI visibility.
-*   `tests/e2e/test_with_sample_data.py`: Full extraction and scene detection workflow.
+*   `tests/e2e/test_full_workflow_mocked.py`: Full user journey (Source -> Export) against mock backend.
+
+## New Tests (Dec 2024)
+*   `tests/test_export_advanced.py`: Covers advanced export logic like cropping and error handling.
+*   `tests/test_managers_extended.py`: Covers caching and model loading retries.
 
 ## Mock App
 The `tests/mock_app.py` script mimics the real `app.py` but replaces:
