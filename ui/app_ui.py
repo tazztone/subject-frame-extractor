@@ -429,7 +429,9 @@ class AppUI:
         with gr.Row():
             with gr.Column(scale=2):
                 self._create_component(
-                    "unified_status", "markdown", {"label": "📊 Status", "value": "Welcome! Ready to start."}
+                    "unified_status",
+                    "markdown",
+                    {"label": "📊 Status", "value": "Welcome! Ready to start.", "elem_id": "unified_status"},
                 )
                 # self.components['progress_bar'] = gr.Progress()
                 self._create_component("progress_details", "html", {"value": "", "elem_classes": ["progress-details"]})
@@ -867,7 +869,12 @@ class AppUI:
         self._create_component(
             "start_pre_analysis_button",
             "button",
-            {"value": "🔍 Find & Preview Scenes", "variant": "primary", "size": "lg"},
+            {
+                "value": "🔍 Find & Preview Scenes",
+                "variant": "primary",
+                "size": "lg",
+                "elem_id": "start_pre_analysis_button",
+            },
         )
 
         # 5. Advanced Configuration Accordion
