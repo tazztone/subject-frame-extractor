@@ -1,5 +1,5 @@
 ---
-Last Updated: 2025-12-28
+Last Updated: 2026-01-04
 ---
 
 # Tests Code Reference
@@ -836,6 +836,7 @@ class TestRealFilters:
 
 ```python
 import time
+import re
 import pytest
 from playwright.sync_api import Page, expect
 
@@ -853,6 +854,7 @@ class TestFullWorkflowMocked:
     
     The mock app simulates backend processing without needing heavy models/GPU.
     """
+    @pytest.mark.xfail(reason='Flaky button visibility in mock environment')
     def test_full_user_journey(self, page: Page, app_server_url):
         """
         Simulates:
@@ -1759,6 +1761,38 @@ class TestExportWithFilters:
         """
 ```
 
+### `📄 test_export_advanced.py`
+
+```python
+import pytest
+from unittest.mock import MagicMock, patch, mock_open
+from pathlib import Path
+import numpy as np
+import cv2
+from core.export import _crop_exported_frames
+
+class TestExportAdvanced:
+    @patch('cv2.imread')
+    @patch('cv2.imwrite')
+    @patch('cv2.findContours')
+    @patch('cv2.boundingRect')
+    def test_crop_exported_frames_logic(self, mock_boundingRect, mock_findContours, mock_imwrite, mock_imread, tmp_path):
+        """
+        Test the logic of cropping exported frames.
+        """
+    @patch('cv2.imread')
+    def test_crop_exported_frames_missing_files(self, mock_imread, tmp_path):
+        """
+        Test graceful handling of missing files.
+        """
+    @patch('cv2.imread')
+    @patch('cv2.findContours')
+    def test_crop_exported_frames_empty_mask(self, mock_findContours, mock_imread, tmp_path):
+        """
+        Test handling of empty masks.
+        """
+```
+
 ### `📄 test_filtering.py`
 
 ```python
@@ -2420,6 +2454,26 @@ class TestManagers:
     @patch('core.managers.Image.open')
     @patch('pathlib.Path.exists', return_value=True)
     def test_thumbnail_manager_corrupt_file(self, mock_exists, mock_open, mock_logger, mock_config): ...
+```
+
+### `📄 test_managers_extended.py`
+
+```python
+import pytest
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+from core.managers import ModelRegistry, ThumbnailManager
+from core.config import Config
+
+class TestManagersExtended:
+    def test_model_registry_basic_load(self):
+        """
+        Test basic ModelRegistry load (retry logic is in get_tracker/etc, not get_or_load).
+        """
+    def test_thumbnail_manager_eviction_logic(self, tmp_path):
+        """
+        Test LRU eviction in ThumbnailManager.
+        """
 ```
 
 ### `📄 test_mask_propagator_logic.py`

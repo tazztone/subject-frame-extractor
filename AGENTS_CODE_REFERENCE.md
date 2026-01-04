@@ -1,5 +1,5 @@
 ---
-Last Updated: 2025-12-28
+Last Updated: 2026-01-04
 ---
 
 # Code Skeleton Reference
@@ -18,6 +18,7 @@ For developer guidelines, see [AGENTS.md](AGENTS.md).
 ├── AGENTS.md
 ├── README.md
 ├── app.py
+├── changelog.md
 ├── core
 │   ├── __init__.py
 │   ├── batch_manager.py
@@ -80,6 +81,7 @@ For developer guidelines, see [AGENTS.md](AGENTS.md).
 │   ├── test_dedup.py
 │   ├── test_error_handling.py
 │   ├── test_export.py
+│   ├── test_export_advanced.py
 │   ├── test_filtering.py
 │   ├── test_gallery_utils.py
 │   ├── test_gpu_e2e.py
@@ -87,6 +89,7 @@ For developer guidelines, see [AGENTS.md](AGENTS.md).
 │   ├── test_integration.py
 │   ├── test_integration_sam3_patches.py
 │   ├── test_managers.py
+│   ├── test_managers_extended.py
 │   ├── test_mask_propagator_logic.py
 │   ├── test_pipelines.py
 │   ├── test_pipelines_extended.py
@@ -101,14 +104,16 @@ For developer guidelines, see [AGENTS.md](AGENTS.md).
 │   ├── test_subject_masker_coverage.py
 │   ├── test_ui_unit.py
 │   └── test_utils.py
-└── ui
-    ├── app_ui.py
-    ├── gallery_utils.py
-    └── handlers
-        ├── __init__.py
-        ├── analysis_handler.py
-        ├── extraction_handler.py
-        └── filtering_handler.py
+├── ui
+│   ├── app_ui.py
+│   ├── gallery_utils.py
+│   └── handlers
+│       ├── __init__.py
+│       ├── analysis_handler.py
+│       ├── extraction_handler.py
+│       └── filtering_handler.py
+└── verification
+    └── verify_simple.py
 ```
 
 ## Code Skeleton Reference
@@ -2541,4 +2546,13 @@ class FilteringHandler:
         Returns:
         Dictionary of slider updates
         """
+```
+
+### `📄 verification/verify_simple.py`
+
+```python
+from playwright.sync_api import sync_playwright
+import time
+
+def verify_ui_simple(): ...
 ```
