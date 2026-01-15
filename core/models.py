@@ -285,6 +285,7 @@ class Scene(BaseModel):
     status: str = "pending"
     best_frame: Optional[int] = None
     seed_metrics: dict = Field(default_factory=dict)
+    rejection_reasons: Optional[List[str]] = Field(default_factory=list)
     seed_frame_idx: Optional[int] = None
     seed_config: dict = Field(default_factory=dict)
     seed_type: Optional[str] = None
@@ -295,7 +296,6 @@ class Scene(BaseModel):
     initial_bbox: Optional[list] = None
     selected_bbox: Optional[list] = None
     person_detections: List[dict] = Field(default_factory=list)
-    rejection_reasons: Optional[list] = None
 
 
 class SceneState:

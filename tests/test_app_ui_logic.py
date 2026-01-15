@@ -252,7 +252,7 @@ class TestAppUI:
     def test_push_history(self, app_ui):
         history = deque()
         scenes = [{"id": 1}]
-        history = app_ui._push_history(scenes, history)
+        history = app_ui.scene_handler._push_history(scenes, history)
         assert len(history) == 1
         assert history[0] == scenes
 
@@ -266,7 +266,9 @@ class TestAppUI:
             patch("ui.app_ui.build_scene_gallery_items", return_value=([], [], 1)),
             patch("ui.app_ui.get_scene_status_text", return_value=("Stat", "Btn")),
         ):
-            scenes, gal, idx, msg, hist = app_ui._undo_last_action(scenes_current, history, "/out", "Kept")
+            scenes, gal, idx, msg, hist = app_ui.scene_handler._undo_last_action(
+                scenes_current, history, "/out", "Kept"
+            )
 
             assert len(scenes) == 1
             assert scenes[0]["shot_id"] == 1
@@ -305,12 +307,12 @@ class TestAppUI:
             patch("ui.app_ui.build_scene_gallery_items", return_value=([], [], 1)),
         ):
             # Filter out by area (min 60)
-            res_scenes, _, _, _, _ = app_ui.on_apply_bulk_scene_filters_extended(
-                scenes, 60.0, 0.0, 0.0, False, "/out", "Kept"
+            res_scenes, _, _, _, _, _ = app_ui.scene_handler.on_apply_bulk_scene_filters_extended(
+                scenes, 60.0, 0.0, 0.0, False, "/out", "Kept", deque()
             )
 
             assert res_scenes[0]["status"] == "excluded"
-            assert "Area" in res_scenes[0]["rejection_reasons"]
+            assert any("Area" in r for r in res_scenes[0]["rejection_reasons"])
 
     # --- Reset Filters ---
 
