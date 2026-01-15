@@ -32,6 +32,10 @@ class BatchItem:
 class BatchManager:
     """Manages a queue of batch processing tasks."""
 
+    # TODO: Add job priority support for urgent items
+    # TODO: Implement queue persistence to survive restarts
+    # TODO: Add resource-aware scheduling (wait for GPU memory)
+    # TODO: Implement job dependencies for chained workflows
     def __init__(self):
         """Initializes the BatchManager."""
         self.queue: List[BatchItem] = []
@@ -147,8 +151,11 @@ class BatchManager:
                                 msg = "Completed"
                                 if isinstance(result, dict) and "message" in result:
                                     msg = result["message"]
+                                    # TODO: Store output path from result for later retrieval
                                 self.set_status(item.id, BatchStatus.COMPLETED, msg)
                             except Exception as e:
+                                # TODO: Add retry logic for transient failures
+                                # TODO: Capture full stack trace for debugging
                                 self.set_status(item.id, BatchStatus.FAILED, str(e))
 
                         futures.append(executor.submit(task))

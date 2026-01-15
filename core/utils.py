@@ -27,6 +27,8 @@ if TYPE_CHECKING:
     from core.models import AnalysisParameters, Scene
 
 
+# TODO: Add specific exception types for better error handling
+# TODO: Consider using a proper Result type instead of dict returns
 def handle_common_errors(func: Callable) -> Callable:
     """Decorator to catch common exceptions and return a standardized error dictionary."""
 
@@ -67,6 +69,9 @@ def monitor_memory_usage(logger: "AppLogger", device: str, threshold_mb: int = 8
 
 def validate_video_file(video_path: str) -> bool:
     """Checks if the video file exists, is not empty, and can be opened by OpenCV."""
+    # TODO: Add codec detection and validation
+    # TODO: Check for minimum video duration/frame count
+    # TODO: Validate video resolution is within supported range
     path = Path(video_path)
     if not path.exists():
         raise FileNotFoundError(f"Video file not found: {video_path}")
@@ -167,6 +172,8 @@ def list_images(p: Union[str, Path], cfg: Config) -> list[Path]:
 @njit
 def compute_entropy(hist: np.ndarray, entropy_norm: float) -> float:
     """Computes normalized entropy from a histogram using Numba."""
+    # TODO: Consider adding caching for repeated computations
+    # TODO: Add input validation for histogram values
     prob = hist / (np.sum(hist) + 1e-7)
     entropy = -np.sum(prob[prob > 0] * np.log2(prob[prob > 0]))
     return min(max(entropy / entropy_norm, 0), 1.0)
@@ -249,6 +256,9 @@ def postprocess_mask(
     mask: np.ndarray, config: "Config", fill_holes: bool = True, keep_largest_only: bool = True
 ) -> np.ndarray:
     """Cleans up binary masks using morphological operations and connected components."""
+    # TODO: Add support for multiple mask refinement strategies
+    # TODO: Consider edge smoothing for more natural mask boundaries
+    # TODO: Add option to preserve small disconnected regions above a size threshold
     if mask is None or mask.size == 0:
         return mask
     binary_mask = (mask > 128).astype(np.uint8)

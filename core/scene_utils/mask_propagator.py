@@ -29,6 +29,10 @@ class MaskPropagator:
     from a seed frame where the subject was initially identified.
     """
 
+    # TODO: Add temporal consistency smoothing between frames
+    # TODO: Implement bidirectional propagation merging (not just forward+backward)
+    # TODO: Add adaptive quality thresholds based on propagation distance from seed
+
     def __init__(
         self,
         params: "AnalysisParameters",
@@ -195,6 +199,8 @@ class MaskPropagator:
 
         return masks, areas, empties, errors
 
+    # TODO: Consider deprecating legacy method in favor of video-based propagation
+    # TODO: Add memory-mapped frame loading for very large sequences
     def propagate(
         self,
         shot_frames_rgb: list[np.ndarray],

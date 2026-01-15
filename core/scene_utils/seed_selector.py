@@ -33,6 +33,10 @@ class SeedSelector:
     - Automatic (person detection with various scoring)
     """
 
+    # TODO: Add adaptive face similarity thresholds based on video quality
+    # TODO: Implement multi-person tracking with ID assignment
+    # TODO: Add strategy confidence scoring for automatic fallback ordering
+
     def __init__(
         self,
         params: "AnalysisParameters",
@@ -351,6 +355,7 @@ class SeedSelector:
             "conf": best_person["conf"],
         }
 
+    # TODO: Cache transform for reuse across multiple frames
     def _load_image_from_array(self, image_rgb: np.ndarray) -> tuple[np.ndarray, torch.Tensor]:
         """Load image for model input."""
         from torchvision import transforms

@@ -10,6 +10,9 @@ from typing import Any, Optional
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 
+# TODO: Add event versioning for backward compatibility
+# TODO: Implement event serialization/deserialization for persistence
+# TODO: Add event validation hooks for complex business rules
 class UIEvent(BaseModel):
     """Base class for all UI-triggered events."""
 
@@ -95,6 +98,8 @@ class PreAnalysisEvent(UIEvent):
         return self
 
 
+# TODO: Add scene status validation (enum instead of string)
+# TODO: Implement scene dependency tracking for ordered processing
 class PropagationEvent(UIEvent):
     """
     Data model for the mask propagation stage.

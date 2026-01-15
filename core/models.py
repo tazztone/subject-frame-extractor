@@ -60,6 +60,9 @@ class QualityConfig(BaseModel):
 class FrameMetrics(BaseModel):
     """Container for calculated quality scores for a frame."""
 
+    # TODO: Add histogram-based metrics (color distribution, etc.)
+    # TODO: Consider adding temporal metrics (motion blur, etc.)
+    # TODO: Add confidence intervals for each metric
     quality_score: float = 0.0
     sharpness_score: float = 0.0
     edge_strength_score: float = 0.0
@@ -264,6 +267,8 @@ class Frame(BaseModel):
                 quality_sum = sum(scores_norm.get(k, 0) * (weights.get(k, 0) / 100.0) for k in scores_norm.keys())
                 self.metrics.quality_score = float(quality_sum * 100)
         except Exception as e:
+            # TODO: Add specific error codes for different failure types
+            # TODO: Consider partial metric computation on failure
             self.error = f"Quality calc failed: {e}"
             logger.error("Frame quality calculation failed", exc_info=True, extra={"frame": self.frame_number})
 
@@ -271,6 +276,9 @@ class Frame(BaseModel):
 class Scene(BaseModel):
     """Represents a detected scene or shot in the video."""
 
+    # TODO: Use Enum for status field (pending, included, excluded)
+    # TODO: Add duration_seconds computed property
+    # TODO: Add scene type classification field
     shot_id: int
     start_frame: int
     end_frame: int

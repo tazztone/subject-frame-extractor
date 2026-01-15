@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from core.models import Scene
 
 
+# TODO: Add caching for repeated scene status checks
 def scene_matches_view(scene: "Scene", view: str) -> bool:
     """
     Check if a scene matches the specified view filter.
@@ -50,6 +51,9 @@ def create_scene_thumbnail_with_badge(thumb_img: np.ndarray, scene_idx: int, is_
     Returns:
         Thumbnail with badge overlay
     """
+    # TODO: Make badge colors configurable
+    # TODO: Add additional status badges (pending, error, etc.)
+    # TODO: Consider SVG overlay for better scaling
     thumb = thumb_img.copy()
     h, w = thumb.shape[:2]
     if is_excluded:
@@ -150,6 +154,8 @@ def build_scene_gallery_items(
 
     for i, s in page_scenes:
         thumb_path = previews_dir / f"scene_{s.shot_id:05d}.jpg"
+        # TODO: Fall back to WebP if JPG doesn't exist
+        # TODO: Add placeholder image for missing previews
         if not thumb_path.exists():
             continue
         try:
@@ -160,6 +166,7 @@ def build_scene_gallery_items(
             badged_thumb = create_scene_thumbnail_with_badge(thumb_img_np, i, s.status == "excluded")
             items.append((badged_thumb, scene_caption(s)))
         except Exception:
+            # TODO: Log the specific exception for debugging
             continue
         index_map.append(i)
 

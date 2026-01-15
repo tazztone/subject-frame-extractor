@@ -20,6 +20,9 @@ if TYPE_CHECKING:
     from core.progress import AdvancedProgressTracker
 
 
+# TODO: Add configurable scene detection threshold
+# TODO: Support multiple detection algorithms (content, histogram, motion)
+# TODO: Implement scene classification (indoor/outdoor, day/night)
 def run_scene_detection(video_path: str, output_dir: Path, logger: "AppLogger") -> list:
     """
     Detect scene changes in a video using PySceneDetect.
@@ -34,6 +37,7 @@ def run_scene_detection(video_path: str, output_dir: Path, logger: "AppLogger") 
     """
     logger.info("Detecting scenes...", component="video")
     try:
+        # TODO: Make ContentDetector threshold configurable
         scene_list = detect(str(video_path), ContentDetector())
         shots = [(s.get_frames(), e.get_frames()) for s, e in scene_list] if scene_list else []
         with (output_dir / "scenes.json").open("w", encoding="utf-8") as f:
@@ -41,6 +45,7 @@ def run_scene_detection(video_path: str, output_dir: Path, logger: "AppLogger") 
         logger.success(f"Found {len(shots)} scenes.", component="video")
         return shots
     except Exception:
+        # TODO: Add specific exception handling for common failures
         logger.error("Scene detection failed.", component="video", exc_info=True)
         return []
 
@@ -67,6 +72,9 @@ def make_photo_thumbs(
     Returns:
         Dictionary mapping frame numbers to thumbnail filenames
     """
+    # TODO: Add parallel thumbnail generation for large folders
+    # TODO: Support thumbnail caching to skip already-processed images
+    # TODO: Add EXIF metadata preservation option
     thumbs_dir = out_dir / "thumbs"
     thumbs_dir.mkdir(parents=True, exist_ok=True)
     target_area = params.thumb_megapixels * 1_000_000

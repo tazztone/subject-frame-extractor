@@ -17,6 +17,9 @@ from core.events import ExportEvent
 from core.filtering import apply_all_filters_vectorized
 
 
+# TODO: Add parallel frame export using multi-threading
+# TODO: Support multiple output formats (JPEG, TIFF, EXR)
+# TODO: Add export quality/compression options
 def _perform_ffmpeg_export(
     video_path: str, frames_to_extract: list, export_dir: Path, logger: "AppLogger"
 ) -> tuple[bool, Optional[str]]:
@@ -93,6 +96,9 @@ def _crop_exported_frames(
     logger: "AppLogger",
     cancel_event,
 ) -> int:
+    # TODO: Add smart cropping based on subject center of mass
+    # TODO: Support custom crop positions (center, face-centered, rule-of-thirds)
+    # TODO: Add option to export both cropped and uncropped versions
     logger.info("Starting crop export...")
     crop_dir = export_dir / "cropped"
     crop_dir.mkdir(exist_ok=True)
@@ -194,6 +200,9 @@ def _crop_exported_frames(
 def export_kept_frames(
     event: ExportEvent, config: "Config", logger: "AppLogger", thumbnail_manager, cancel_event
 ) -> str:
+    # TODO: Add export progress callback for UI updates
+    # TODO: Support exporting to ZIP archive
+    # TODO: Add metadata sidecar files (JSON/CSV) with frame info
     if not event.all_frames_data:
         return "No metadata to export."
     if not event.video_path or not Path(event.video_path).exists():
