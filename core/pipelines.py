@@ -327,6 +327,29 @@ class ExtractionPipeline(Pipeline):
 
             self.logger.info("Video ready", user_context={"path": sanitize_filename(video_path.name, self.config)})
             video_info = VideoManager.get_video_info(video_path)
+            fps = video_info.get("fps") or 30
+            duration = video_info.get("frame_count", 0) / fps
+            if duration < self.config.validation_min_duration_secs:
+                self.logger.warning(
+                    f"Video duration ({duration:.2f}s) is less than the minimum "
+                    f"of {self.config.validation_min_duration_secs}s."
+                )
+                return {
+                    "done": False,
+                    "log": f"Video is too short ({duration:.2f}s). "
+                    f"Minimum duration is {self.config.validation_min_duration_secs}s.",
+                }
+
+            if video_info.get("frame_count", 0) < self.config.validation_min_frame_count:
+                self.logger.warning(
+                    f"Video frame count ({video_info.get('frame_count', 0)}) is less than the minimum "
+                    f"of {self.config.validation_min_frame_count}."
+                )
+                return {
+                    "done": False,
+                    "log": f"Video has too few frames ({video_info.get('frame_count', 0)}). "
+                    f"Minimum is {self.config.validation_min_frame_count}.",
+                }
 
             if tracker:
                 totals = estimate_totals(self.params, video_info, None)
