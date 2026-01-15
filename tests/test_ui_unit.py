@@ -1,4 +1,5 @@
 from unittest.mock import MagicMock, patch
+from collections import deque
 
 import pytest
 
@@ -104,14 +105,15 @@ class TestMinConfidenceFilter:
         with patch("ui.app_ui.save_scene_seeds"):
             with patch("ui.app_ui.build_scene_gallery_items", return_value=([], [], 1)):
                 with patch("ui.app_ui.get_scene_status_text", return_value=("Status", MagicMock())):
-                    result = app_ui.on_apply_bulk_scene_filters_extended(
+                    result = app_ui.scene_handler.on_apply_bulk_scene_filters_extended(
                         scenes=scenes,
-                        min_mask_area=0.0,
+                        min_mask_pct=0.0,
                         min_face_sim=0.0,
-                        min_quality_score=0.5,  # Set threshold > 0
+                        min_quality=0.5,  # Set threshold > 0
                         enable_face_filter=False,
-                        output_folder="/tmp/test",
+                        output_dir="/tmp/test",
                         view="All",
+                        history=deque(),
                     )
 
         # Scene should be excluded because score defaults to 0, which is < 0.5
@@ -119,7 +121,7 @@ class TestMinConfidenceFilter:
         assert updated_scenes[0]["status"] == "excluded", (
             "Scene without score should be excluded when min_quality_score > 0"
         )
-        assert "Score" in updated_scenes[0]["rejection_reasons"], "Rejection reason should include 'Score'"
+        assert "Quality" in updated_scenes[0]["rejection_reasons"][0], "Rejection reason should include 'Quality'"
 
     def test_scene_with_high_score_is_kept(self, app_ui):
         """Scenes with score >= threshold should be kept."""
@@ -129,7 +131,7 @@ class TestMinConfidenceFilter:
                 "shot_id": 1,
                 "start_frame": 0,
                 "end_frame": 50,
-                "seed_metrics": {"score": 0.8},  # High score
+                "seed_metrics": {"quality_score": 0.8},  # High score
                 "seed_result": {"details": {"mask_area_pct": 50}},
                 "status": "included",
                 "manual_status_change": False,
@@ -142,14 +144,15 @@ class TestMinConfidenceFilter:
         with patch("ui.app_ui.save_scene_seeds"):
             with patch("ui.app_ui.build_scene_gallery_items", return_value=([], [], 1)):
                 with patch("ui.app_ui.get_scene_status_text", return_value=("Status", MagicMock())):
-                    result = app_ui.on_apply_bulk_scene_filters_extended(
+                    result = app_ui.scene_handler.on_apply_bulk_scene_filters_extended(
                         scenes=scenes,
-                        min_mask_area=0.0,
+                        min_mask_pct=0.0,
                         min_face_sim=0.0,
-                        min_quality_score=0.5,
+                        min_quality=0.5,
                         enable_face_filter=False,
-                        output_folder="/tmp/test",
+                        output_dir="/tmp/test",
                         view="All",
+                        history=deque(),
                     )
 
         updated_scenes = result[0]
@@ -175,14 +178,15 @@ class TestMinConfidenceFilter:
         with patch("ui.app_ui.save_scene_seeds"):
             with patch("ui.app_ui.build_scene_gallery_items", return_value=([], [], 1)):
                 with patch("ui.app_ui.get_scene_status_text", return_value=("Status", MagicMock())):
-                    result = app_ui.on_apply_bulk_scene_filters_extended(
+                    result = app_ui.scene_handler.on_apply_bulk_scene_filters_extended(
                         scenes=scenes,
-                        min_mask_area=0.0,
+                        min_mask_pct=0.0,
                         min_face_sim=0.0,
-                        min_quality_score=0.9,  # High threshold
+                        min_quality=0.9,  # High threshold
                         enable_face_filter=False,
-                        output_folder="/tmp/test",
+                        output_dir="/tmp/test",
                         view="All",
+                        history=deque(),
                     )
 
         updated_scenes = result[0]
