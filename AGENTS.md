@@ -40,7 +40,7 @@ python -m pytest tests/
 # GPU E2E tests (requires CUDA + SAM3)
 python -m pytest tests/test_gpu_e2e.py -v -m "" --tb=short
 
-# Run specific E2E tests (requires Playwright)
+# Run specific E2E tests (requires Playwright installed: pip install pytest-playwright && playwright install)
 python -m pytest tests/e2e/test_filters_real.py
 ```
 
@@ -101,7 +101,7 @@ python -m pytest tests/e2e/test_filters_real.py
 ### State Management
 - **Session State**: `gr.State` stores mutable data (scene lists, paths).
 - **Global State**: `ModelRegistry` (Singleton-like) manages heavy models.
-- **Persistence**: `metadata.db` (SQLite) for frame data; `json` for configs.
+- **Persistence**: `metadata.db` (SQLite) for frame data; `json` for configs. Export produces `metadata.json` and `metadata.csv` sidecars.
 
 
 ## 4. Development Workflows
