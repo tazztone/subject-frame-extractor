@@ -1153,7 +1153,9 @@ class AppUI:
         if scenes_data and output_dir:
             scenes = [Scene(**s) for s in scenes_data]
             status_text, button_update = get_scene_status_text(scenes)
-            gallery_items, index_map, _ = build_scene_gallery_items(scenes, "Kept", str(output_dir))
+            gallery_items, index_map, _ = build_scene_gallery_items(
+                scenes, "Kept", str(output_dir), config=self.config
+            )
             updates.update(
                 {
                     self.components["scenes_state"]: [s.model_dump() for s in scenes],

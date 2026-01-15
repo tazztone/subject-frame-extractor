@@ -290,10 +290,10 @@ def _wire_recompute_handler(
         scene_state = SceneState(scenes[scene_idx])
         _recompute_single_preview(scene_state, masker, overrides, thumbnail_manager, logger)
         save_scene_seeds(scenes, outdir, logger)
-        gallery_items, index_map, _ = build_scene_gallery_items(scenes, view, outdir)
+        gallery_items, index_map, _ = build_scene_gallery_items(scenes, view, outdir, config=config)
         msg = f"Scene {shot_id} preview recomputed successfully."
         return scenes, gr.update(value=gallery_items), gr.update(value=index_map), msg
     except Exception as e:
         logger.error("Failed to recompute scene preview", exc_info=True)
-        gallery_items, index_map, _ = build_scene_gallery_items(scenes, view, outdir)
+        gallery_items, index_map, _ = build_scene_gallery_items(scenes, view, outdir, config=config)
         return scenes, gr.update(value=gallery_items), gr.update(value=index_map), f"[ERROR] Recompute failed: {str(e)}"
