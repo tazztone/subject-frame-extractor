@@ -22,6 +22,9 @@ from core.database import Database
 from core.managers import get_lpips_metric
 
 
+# TODO: Add support for filtering by scene/shot ID
+# TODO: Implement filter presets save/load functionality
+# TODO: Add real-time histogram updates during filtering
 def load_and_prep_filter_data(output_dir: str, get_all_filter_keys: Callable, config: "Config") -> tuple[list, dict]:
     """Loads metadata from the database and prepares histograms for the UI."""
     db_path = Path(output_dir) / "metadata.db"
@@ -156,6 +159,9 @@ def _run_batched_lpips(
     """
     Runs LPIPS deduplication on a list of pairs in batches using GPU if available.
     """
+    # TODO: Add adaptive batch sizing based on available GPU memory
+    # TODO: Implement caching of LPIPS features for repeated comparisons
+    # TODO: Consider multi-scale LPIPS for better accuracy
     if not pairs:
         return
     loss_fn = get_lpips_metric(device=device)
@@ -427,6 +433,7 @@ def apply_all_filters_vectorized(
     """
     if not all_frames_data:
         return [], [], Counter(), {}
+    # TODO: These variables are computed but not used - clean up or utilize
     len(all_frames_data)
     [f["filename"] for f in all_frames_data]
     metric_arrays = _extract_metric_arrays(all_frames_data, config)

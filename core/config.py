@@ -10,6 +10,9 @@ from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+# TODO: Support multiple config file locations (env var, user home, project root)
+# TODO: Add config schema version for migration support
+# TODO: Consider adding config file hot-reloading for development
 def json_config_settings_source() -> Dict[str, Any]:
     """Loads settings from a JSON file for Pydantic settings."""
     try:
@@ -18,6 +21,7 @@ def json_config_settings_source() -> Dict[str, Any]:
             with open(config_path, "r", encoding="utf-8") as f:
                 return json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
+        # TODO: Log config loading errors instead of silently ignoring
         pass
     return {}
 
@@ -41,7 +45,9 @@ class Config(BaseSettings):
         "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
     )
     face_landmarker_sha256: str = "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff"
+    # TODO: Update SAM3 checkpoint URL when official version is released
     sam3_checkpoint_url: str = "https://huggingface.co/facebook/sam3/resolve/main/sam3.pt"
+    # TODO: Verify and update SHA256 hash once official SAM3 model is available
     sam3_checkpoint_sha256: str = "9999e2341ceef5e136daa386eecb55cb414446a00ac2b55eb2dfd2f7c3cf8c9e"  # Placeholder, update if known or remove check
 
     # YouTube-DL
@@ -160,6 +166,8 @@ class Config(BaseSettings):
     log_structured_path: str = "structured_log.jsonl"
 
     # Monitoring
+    # TODO: Implement actual memory monitoring using these thresholds
+    # TODO: Add automatic memory cleanup when approaching critical threshold
     monitoring_memory_warning_threshold_mb: int = 8192
     monitoring_memory_critical_threshold_mb: int = 16384
     monitoring_cpu_warning_threshold_percent: float = 90.0

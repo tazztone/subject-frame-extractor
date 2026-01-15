@@ -34,6 +34,9 @@ def _update_gallery(
     Returns:
         A tuple containing the status text and a Gradio update object for the gallery.
     """
+    # TODO: Add pagination support for large datasets (>1000 frames)
+    # TODO: Implement virtual scrolling with lazy image loading
+    # TODO: Add gallery sorting options (by score, time, etc.)
     kept, rejected, counts, per_frame_reasons = apply_all_filters_vectorized(
         all_frames_data, filters or {}, config, thumbnail_manager, output_dir
     )
@@ -119,6 +122,9 @@ def auto_set_thresholds(per_metric_values: dict, p: int, slider_keys: list[str],
     Returns:
         Dictionary of updates for the sliders.
     """
+    # TODO: Add outlier detection and exclusion from percentile calculation
+    # TODO: Support custom percentile curves per metric type
+    # TODO: Add smart default suggestions based on metric distributions
     updates = {}
     if not per_metric_values:
         return {f"slider_{key}": gr.update() for key in slider_keys}

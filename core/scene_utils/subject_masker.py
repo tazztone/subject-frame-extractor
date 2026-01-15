@@ -40,6 +40,10 @@ class SubjectMasker:
     - Mask propagation via MaskPropagator
     """
 
+    # TODO: Add support for tracking multiple subjects simultaneously
+    # TODO: Implement confidence-based mask rejection
+    # TODO: Add mask quality assessment metrics
+
     def __init__(
         self,
         params: "AnalysisParameters",
@@ -303,6 +307,8 @@ class SubjectMasker:
                         mask_metadata[frame_fname_png] = result_args
 
         self.logger.success("Subject masking complete.")
+        # TODO: Add mask quality summary statistics
+        # TODO: Consider async metadata saving for large datasets
         try:
             with (self.mask_dir.parent / "mask_metadata.json").open("w", encoding="utf-8") as f:
                 json.dump(mask_metadata, f, indent=2)

@@ -5,6 +5,9 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 
+# TODO: Add database schema versioning and automatic migration support
+# TODO: Consider using SQLAlchemy for more robust ORM features
+# TODO: Implement connection pooling for concurrent access
 class Database:
     def __init__(self, db_path: Path, batch_size: int = 50):
         """
@@ -37,6 +40,8 @@ class Database:
 
     def connect(self):
         """Connects to the SQLite database."""
+        # TODO: Add connection timeout configuration
+        # TODO: Enable WAL mode for better concurrent read performance
         self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
 
@@ -159,6 +164,9 @@ class Database:
             self.conn.commit()
             self.buffer.clear()
         except sqlite3.Error as e:
+            # TODO: Implement proper error recovery strategy (retry with backoff)
+            # TODO: Use logger instead of print for error reporting
+            # TODO: Consider saving failed records to a recovery file
             print(f"Database error during flush: {e}")
             # Optional: Decide whether to clear buffer or retry?
             # For now, we clear to avoid getting stuck, but log error.

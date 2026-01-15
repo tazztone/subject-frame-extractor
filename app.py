@@ -35,6 +35,9 @@ def cleanup_models(model_registry):
     gc.collect()
 
 
+# TODO: Add signal handlers (SIGINT, SIGTERM) for graceful shutdown
+# TODO: Add command-line argument parsing for config overrides (--port, --share, etc.)
+# TODO: Consider adding a health check endpoint for containerized deployments
 def main():
     """
     Main entry point for the application.
@@ -54,6 +57,8 @@ def main():
         app_ui = AppUI(config, logger, progress_queue, cancel_event, thumbnail_manager, model_registry)
         demo = app_ui.build_ui()
         logger.info("Frame Extractor & Analyzer v2.0\nStarting application...")
+        # TODO: Make launch parameters configurable (server_name, server_port, share, auth)
+        # TODO: Consider adding SSL/TLS support for production deployments
         demo.launch()
     except KeyboardInterrupt:
         if "logger" in locals():

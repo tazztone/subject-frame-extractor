@@ -90,6 +90,9 @@ class JsonFormatter(logging.Formatter):
 # --- LOGGER ---
 
 
+# TODO: Add log aggregation support (e.g., Elasticsearch, CloudWatch)
+# TODO: Implement log sampling for high-volume operations
+# TODO: Add correlation IDs for request tracing
 class AppLogger:
     """A comprehensive logger for the application."""
 
@@ -131,6 +134,9 @@ class AppLogger:
 
     def _setup_file_handlers(self):
         """Configures file logging handlers (plain text and JSONL)."""
+        # TODO: Add log file rotation based on size or time
+        # TODO: Implement log file compression for old logs
+        # TODO: Add async file writing for performance
         file_handler = logging.FileHandler(self.session_log_file, encoding="utf-8")
         file_formatter = logging.Formatter(self.config.log_format)
         file_handler.setFormatter(file_formatter)

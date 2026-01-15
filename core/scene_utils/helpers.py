@@ -26,6 +26,8 @@ from core.shared import build_scene_gallery_items
 from core.utils import _to_json_safe, create_frame_map, render_mask_overlay
 
 
+# TODO: Add box drawing style options (dashed, rounded corners, etc.)
+# TODO: Support drawing box labels with confidence scores
 def draw_boxes_preview(img: np.ndarray, boxes_xyxy: list[list[int]], cfg: "Config") -> np.ndarray:
     """
     Draw bounding boxes on an image for preview.
@@ -128,6 +130,9 @@ def toggle_scene_status(
     Returns:
         Tuple of (updated_scenes, status_text, message, button_update)
     """
+    # TODO: Add undo/redo support for status changes
+    # TODO: Support batch status changes for multiple scenes
+    # TODO: Add status change history for audit trail
     if selected_shot_id is None or not scenes_list:
         status_text, button_update = get_scene_status_text(scenes_list)
         return scenes_list, status_text, "No scene selected.", button_update
@@ -200,6 +205,9 @@ def _recompute_single_preview(
     logger: "AppLogger",
 ):
     """Re-runs the seeding process for a single scene and updates its preview image."""
+    # TODO: Add preview caching to avoid redundant regeneration
+    # TODO: Support async preview generation for faster UI response
+    # TODO: Add comparison view (before/after) for seed changes
     scene = scene_state.scene  # Use .scene property if using refactored SceneState
     out_dir = Path(masker.params.output_folder)
     best_frame_num = scene.best_frame or scene.start_frame

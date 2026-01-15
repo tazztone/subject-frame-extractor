@@ -102,6 +102,8 @@ def run_ffmpeg_extraction(
     Constructs complex filter chains based on extraction method (interval, keyframes, etc.).
     Also creates a downscaled video (video_lowres.mp4) for efficient SAM3 processing.
     """
+    # TODO: Add configurable audio codec for downscaled video
+    # TODO: Support hardware-accelerated encoding (NVENC/VAAPI)
     cmd_base = ["ffmpeg", "-y", "-i", str(video_path), "-hide_banner"]
     progress_args = ["-progress", "pipe:1", "-nostats", "-loglevel", "info"]
     cmd_base.extend(progress_args)
@@ -247,6 +249,9 @@ class Pipeline:
 class ExtractionPipeline(Pipeline):
     """Pipeline for extracting frames from video or processing image folders."""
 
+    # TODO: Add support for resumable extraction from checkpoints
+    # TODO: Implement parallel video decoding for multi-GPU systems
+    # TODO: Add extraction quality validation step
     def __init__(
         self,
         config: "Config",
@@ -356,6 +361,9 @@ class ExtractionPipeline(Pipeline):
 class AnalysisPipeline(Pipeline):
     """Pipeline for analyzing frames (pre-analysis, propagation, full analysis)."""
 
+    # TODO: Add automatic batch size adjustment based on available memory
+    # TODO: Implement per-frame error recovery instead of skipping
+    # TODO: Add analysis caching to skip already-analyzed frames
     def __init__(
         self,
         config: "Config",

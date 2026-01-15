@@ -25,6 +25,9 @@ class AnalysisHandler:
     Extracted from AppUI to reduce class size and improve maintainability.
     """
 
+    # TODO: Add analysis job queuing for sequential pipeline execution
+    # TODO: Implement analysis result caching for quick re-runs
+    # TODO: Add analysis progress persistence for crash recovery
     def __init__(
         self,
         app: "AppUI",

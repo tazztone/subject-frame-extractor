@@ -93,6 +93,9 @@ from core.utils import download_model, validate_video_file
 class ThumbnailManager:
     """Manages an in-memory LRU cache for image thumbnails."""
 
+    # TODO: Add memory-based eviction (not just count-based)
+    # TODO: Consider using disk-backed cache for very large datasets
+    # TODO: Add cache statistics/metrics for debugging
     def __init__(self, logger: "AppLogger", config: "Config"):
         """Initializes the manager with a configurable cache size."""
         self.logger = logger
@@ -141,6 +144,9 @@ class ModelRegistry:
     Thread-safe registry for lazy loading and caching of heavy ML models.
     """
 
+    # TODO: Add model unloading for memory-constrained environments
+    # TODO: Implement model version tracking
+    # TODO: Add model warmup/benchmarking on load
     def __init__(self, logger: Optional["AppLogger"] = None):
         self._models: Dict[str, Any] = {}
         self._locks: Dict[str, threading.Lock] = defaultdict(threading.Lock)
@@ -567,6 +573,8 @@ class SAM3Wrapper:
 
     def shutdown(self):
         """Shutdown the predictor and free multi-GPU resources."""
+        # TODO: Add proper cleanup of all GPU resources
+        # TODO: Consider adding shutdown timeout to prevent hanging
         if hasattr(self.predictor, "shutdown"):
             self.predictor.shutdown()
 
@@ -578,6 +586,8 @@ def get_face_landmarker(model_path: str, logger: "AppLogger") -> vision.FaceLand
     """
     Returns a thread-local MediaPipe FaceLandmarker instance.
     """
+    # TODO: Add model version checking for compatibility
+    # TODO: Consider adding cleanup mechanism for orphaned thread-local instances
     if hasattr(thread_local, "face_landmarker_instance"):
         return thread_local.face_landmarker_instance
     logger.info("Initializing MediaPipe FaceLandmarker for new thread.", component="face_landmarker")
