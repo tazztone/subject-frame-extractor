@@ -5,6 +5,10 @@ Logging Infrastructure for Frame Extractor & Analyzer
 import json
 import logging
 import traceback
+import gzip
+import shutil
+import os
+from logging.handlers import RotatingFileHandler
 from datetime import datetime
 from pathlib import Path
 from queue import Queue
@@ -119,6 +123,11 @@ class AppLogger:
         self.logger.setLevel(logging.DEBUG)
         self.logger.propagate = False
         self.logger.handlers.clear()
+
+        # Clean up old logs (compress them)
+        if log_to_file:
+             self._cleanup_old_logs()
+
         if log_to_console and self.config.log_colored:
             self._setup_console_handler()
         if log_to_file:
@@ -134,20 +143,81 @@ class AppLogger:
 
     def _setup_file_handlers(self):
         """Configures file logging handlers (plain text and JSONL)."""
-        # TODO: Add log file rotation based on size or time
-        # TODO: Implement log file compression for old logs
         # TODO: Add async file writing for performance
-        file_handler = logging.FileHandler(self.session_log_file, encoding="utf-8")
+
+        def compress_rotator(source, dest):
+            """Helper to compress rotated log files."""
+            with open(source, "rb") as f_in:
+                with gzip.open(dest, "wb") as f_out:
+                    shutil.copyfileobj(f_in, f_out)
+            os.remove(source)
+
+        def compress_namer(name):
+            """Helper to name compressed log files."""
+            return name + ".gz"
+
+        # Session Log Handler (Rotating + Compression)
+        file_handler = RotatingFileHandler(
+            self.session_log_file,
+            maxBytes=10 * 1024 * 1024,  # 10MB
+            backupCount=5,
+            encoding="utf-8"
+        )
+        file_handler.rotator = compress_rotator
+        file_handler.namer = compress_namer
+
         file_formatter = logging.Formatter(self.config.log_format)
         file_handler.setFormatter(file_formatter)
         file_handler.setLevel(logging.DEBUG)
         self.logger.addHandler(file_handler)
 
-        structured_handler = logging.FileHandler(self.structured_log_file, encoding="utf-8")
+        # Structured Log Handler (Rotating + Compression)
+        structured_handler = RotatingFileHandler(
+            self.structured_log_file,
+            maxBytes=10 * 1024 * 1024,  # 10MB
+            backupCount=5,
+            encoding="utf-8"
+        )
+        structured_handler.rotator = compress_rotator
+        structured_handler.namer = compress_namer
+
         structured_formatter = JsonFormatter()
         structured_handler.setFormatter(structured_formatter)
         structured_handler.setLevel(logging.DEBUG)
         self.logger.addHandler(structured_handler)
+
+    def _cleanup_old_logs(self):
+        """Compresses old log files to save disk space."""
+        try:
+            # Compress old session logs
+            for log_file in self.log_dir.glob("session_*.log"):
+                if log_file.resolve() != self.session_log_file.resolve():
+                    self._compress_file(log_file)
+
+            # Compress rotated structured logs (if they were left uncompressed by previous versions)
+            for log_file in self.log_dir.glob(f"{self.config.log_structured_path}.*"):
+                 # RotatingFileHandler names backups as .1, .2 etc.
+                 # Check if it ends in digit (meaning it's a rotated part) and not .gz
+                 if log_file.suffix[1:].isdigit():
+                     self._compress_file(log_file)
+
+        except Exception as e:
+            # We don't want to crash application startup if cleanup fails
+            print(f"Warning: Failed to cleanup old logs: {e}")
+
+    def _compress_file(self, file_path: Path):
+        """Compresses a single file and removes the original."""
+        try:
+            gz_path = file_path.with_suffix(file_path.suffix + ".gz")
+            if gz_path.exists():
+                return # Already compressed
+
+            with open(file_path, 'rb') as f_in:
+                with gzip.open(gz_path, 'wb') as f_out:
+                    shutil.copyfileobj(f_in, f_out)
+            file_path.unlink()
+        except Exception as e:
+             print(f"Warning: Failed to compress {file_path}: {e}")
 
     def set_progress_queue(self, queue: Queue):
         """Sets the queue used for sending logs to the UI."""
