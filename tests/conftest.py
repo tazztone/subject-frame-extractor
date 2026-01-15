@@ -120,6 +120,19 @@ def _create_mock_matplotlib():
     return mock
 
 
+def _create_mock_scenedetect():
+    """Create a mock for scenedetect with proper Exception classes."""
+    mock = MagicMock(name="scenedetect")
+
+    class MockVideoOpenFailure(Exception):
+        """Mock VideoOpenFailure exception."""
+
+        pass
+
+    mock.VideoOpenFailure = MockVideoOpenFailure
+    return mock
+
+
 def build_modules_to_mock():
     """Build the complete dictionary of modules to mock."""
     mock_torch = _create_mock_torch()
@@ -127,6 +140,7 @@ def build_modules_to_mock():
     mock_torchvision = _create_mock_torchvision()
     mock_psutil = _create_mock_psutil()
     mock_matplotlib = _create_mock_matplotlib()
+    mock_scenedetect = _create_mock_scenedetect()
 
     mock_insightface = MagicMock(name="insightface")
     mock_insightface.app = MagicMock(name="insightface.app")
@@ -187,7 +201,7 @@ def build_modules_to_mock():
         "matplotlib.backends.backend_agg": mock_matplotlib.backends.backend_agg,
         "matplotlib.pyplot": MagicMock(),
         # Other dependencies
-        "scenedetect": MagicMock(),
+        "scenedetect": mock_scenedetect,
         "yt_dlp": MagicMock(),
         "pyiqa": MagicMock(name="pyiqa"),
         "mediapipe": MagicMock(),
