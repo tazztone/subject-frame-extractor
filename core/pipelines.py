@@ -411,66 +411,77 @@ class AnalysisPipeline(Pipeline):
         is_folder_mode = not self.params.video_path
         if is_folder_mode:
             return self._run_image_folder_analysis(tracker=tracker)
-        else:
-            try:
-                progress_file = self.output_dir / "progress.json"
-                if progress_file.exists() and self.params.resume:
-                    with open(progress_file) as f:
-                        progress_data = json.load(f)
-                    scenes_to_process = self._filter_completed_scenes(scenes_to_process, progress_data)
-                self.db.connect()
-                self.db.create_tables()
-                if not self.params.resume:
-                    self.db.clear_metadata()
 
-                self.scene_map = {s.shot_id: s for s in scenes_to_process}
-                self.logger.info("Initializing Models")
+        progress_file = self.output_dir / "progress.json"
+        completed_scene_ids = []
 
-                models = initialize_analysis_models(self.params, self.config, self.logger, self.model_registry)
-                self.face_analyzer = models["face_analyzer"]
-                self.reference_embedding = models["ref_emb"]
-                self.face_landmarker = models["face_landmarker"]
+        try:
+            if progress_file.exists() and self.params.resume:
+                with progress_file.open("r", encoding="utf-8") as f:
+                    progress_data = json.load(f)
+                scenes_to_process = self._filter_completed_scenes(scenes_to_process, progress_data)
 
-                if self.face_analyzer and self.params.face_ref_img_path:
-                    self._process_reference_face()
+            if not scenes_to_process:
+                self.logger.info("All scenes already processed, skipping.")
+                return {"done": True, "output_dir": str(self.output_dir)}
 
-                self.params.need_masks_now = True
-                self.params.enable_subject_mask = True
-                ext = ".webp" if self.params.thumbnails_only else ".png"
+            self.db.connect()
+            self.db.create_tables()
+            if not self.params.resume:
+                self.db.clear_metadata()
 
-                masker = SubjectMasker(
-                    self.params,
-                    self.progress_queue,
-                    self.cancel_event,
-                    self.config,
-                    create_frame_map(self.output_dir, self.logger, ext=ext),
-                    self.face_analyzer,
-                    self.reference_embedding,
-                    thumbnail_manager=self.thumbnail_manager,
-                    niqe_metric=self.niqe_metric,
-                    logger=self.logger,
-                    face_landmarker=self.face_landmarker,
-                    device=models["device"],
-                    model_registry=self.model_registry,
-                )
-                for scene in scenes_to_process:
-                    if self.cancel_event.is_set():
-                        self.logger.info("Propagation cancelled by user.")
-                        break
-                    self.mask_metadata.update(masker.run_propagation(str(self.output_dir), [scene], tracker=tracker))
-                    self._save_progress(scene, progress_file)
+            self.scene_map = {s.shot_id: s for s in scenes_to_process}
+            self.logger.info("Initializing Models")
 
+            models = initialize_analysis_models(self.params, self.config, self.logger, self.model_registry)
+            self.face_analyzer = models["face_analyzer"]
+            self.reference_embedding = models["ref_emb"]
+            self.face_landmarker = models["face_landmarker"]
+
+            if self.face_analyzer and self.params.face_ref_img_path:
+                self._process_reference_face()
+
+            self.params.need_masks_now = True
+            self.params.enable_subject_mask = True
+            ext = ".webp" if self.params.thumbnails_only else ".png"
+
+            masker = SubjectMasker(
+                self.params,
+                self.progress_queue,
+                self.cancel_event,
+                self.config,
+                create_frame_map(self.output_dir, self.logger, ext=ext),
+                self.face_analyzer,
+                self.reference_embedding,
+                thumbnail_manager=self.thumbnail_manager,
+                niqe_metric=self.niqe_metric,
+                logger=self.logger,
+                face_landmarker=self.face_landmarker,
+                device=models["device"],
+                model_registry=self.model_registry,
+            )
+
+            for scene in scenes_to_process:
                 if self.cancel_event.is_set():
                     self.logger.info("Propagation cancelled by user.")
-                    return {"log": "Propagation cancelled.", "done": False}
+                    break
+                self.mask_metadata.update(masker.run_propagation(str(self.output_dir), [scene], tracker=tracker))
+                completed_scene_ids.append(scene.shot_id)
 
-                self.logger.success("Propagation complete.", extra={"output_dir": self.output_dir})
-                return {"done": True, "output_dir": str(self.output_dir)}
-            except Exception as e:
-                self.logger.error(
-                    "Propagation pipeline failed", component="analysis", exc_info=True, extra={"error": str(e)}
-                )
-                return {"error": str(e), "done": False}
+            if self.cancel_event.is_set():
+                self.logger.info("Propagation cancelled by user.")
+                return {"log": "Propagation cancelled.", "done": False}
+
+            self.logger.success("Propagation complete.", extra={"output_dir": self.output_dir})
+            return {"done": True, "output_dir": str(self.output_dir)}
+
+        except Exception as e:
+            self.logger.error(
+                "Propagation pipeline failed", component="analysis", exc_info=True, extra={"error": str(e)}
+            )
+            return {"error": str(e), "done": False}
+        finally:
+            self._save_progress_bulk(completed_scene_ids, progress_file)
 
     def run_analysis_only(
         self, scenes_to_process: list["Scene"], tracker: Optional["AdvancedProgressTracker"] = None
@@ -538,15 +549,29 @@ class AnalysisPipeline(Pipeline):
         completed_scenes = progress_data.get("completed_scenes", [])
         return [s for s in scenes if s.shot_id not in completed_scenes]
 
-    def _save_progress(self, current_scene: "Scene", progress_file: Path):
-        """Updates the progress file with the completed scene ID."""
+    def _save_progress_bulk(self, completed_scene_ids: list[int], progress_file: Path):
+        """Updates the progress file with a list of completed scene IDs."""
+        if not completed_scene_ids:
+            return
+
         progress_data = {"completed_scenes": []}
         if progress_file.exists():
-            with open(progress_file) as f:
-                progress_data = json.load(f)
-        progress_data["completed_scenes"].append(current_scene.shot_id)
-        with open(progress_file, "w") as f:
-            json.dump(progress_data, f)
+            try:
+                with progress_file.open("r", encoding="utf-8") as f:
+                    progress_data = json.load(f)
+            except (IOError, json.JSONDecodeError):
+                self.logger.warning(f"Could not read/parse progress file {progress_file}, overwriting.")
+                progress_data = {"completed_scenes": []}
+
+        existing_ids = set(progress_data.get("completed_scenes", []))
+        existing_ids.update(completed_scene_ids)
+        progress_data["completed_scenes"] = sorted(list(existing_ids))
+
+        try:
+            with progress_file.open("w", encoding="utf-8") as f:
+                json.dump(progress_data, f)
+        except IOError as e:
+            self.logger.error(f"Failed to save progress to {progress_file}: {e}")
 
     def _process_reference_face(self):
         """Computes the embedding for the reference face image."""
