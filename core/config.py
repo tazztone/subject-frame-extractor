@@ -222,6 +222,15 @@ class Config(BaseSettings):
     sharpness_base_scale: int = 2500
     edge_strength_base_scale: int = 100
 
+    # Server Configuration
+    server_name: str = "127.0.0.1"
+    server_port: int = 7860
+    share: bool = False
+    auth: Optional[str] = Field(default=None, description="Authentication credentials in 'username:password' format")
+    ssl_keyfile: Optional[str] = None
+    ssl_certfile: Optional[str] = None
+    ssl_verify: bool = True
+
     def model_post_init(self, __context: Any) -> None:
         """Post-initialization hook to validate paths."""
         self._validate_paths()
