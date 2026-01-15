@@ -107,11 +107,19 @@ For developer guidelines, see [AGENTS.md](AGENTS.md).
 ├── ui
 │   ├── app_ui.py
 │   ├── gallery_utils.py
-│   └── handlers
+│   ├── handlers
+│   │   ├── __init__.py
+│   │   ├── analysis_handler.py
+│   │   ├── extraction_handler.py
+│   │   ├── filtering_handler.py
+│   │   └── scene_handler.py
+│   └── tabs
 │       ├── __init__.py
-│       ├── analysis_handler.py
-│       ├── extraction_handler.py
-│       └── filtering_handler.py
+│       ├── extraction_tab.py
+│       ├── filtering_tab.py
+│       ├── metrics_tab.py
+│       ├── scene_tab.py
+│       └── subject_tab.py
 └── verification
     └── verify_simple.py
 ```
@@ -1937,6 +1945,8 @@ from core.pipelines import AdvancedProgressTracker, execute_analysis, execute_ex
 from core.scene_utils import _create_analysis_context, _recompute_single_preview, _wire_recompute_handler, get_scene_status_text, save_scene_seeds, toggle_scene_status
 from core.utils import is_image_folder
 from ui.gallery_utils import auto_set_thresholds, build_scene_gallery_items, on_filters_changed
+from ui.tabs import ExtractionTabBuilder, SubjectTabBuilder, SceneTabBuilder, MetricsTabBuilder, FilteringTabBuilder
+from ui.handlers import ExtractionHandler, AnalysisHandler, FilteringHandler, SceneHandler
 
 class AppUI:
     """
@@ -2013,26 +2023,6 @@ class AppUI:
         """
         Builds the footer with status bar, logs, and help section.
         """
-    def _create_extraction_tab(self):
-        """
-        Creates the content for the 'Source' tab.
-        """
-    def _create_define_subject_tab(self):
-        """
-        Creates the content for the 'Subject' tab.
-        """
-    def _create_scene_selection_tab(self):
-        """
-        Creates the content for the 'Scenes' tab.
-        """
-    def _create_metrics_tab(self):
-        """
-        Creates the content for the 'Metrics' tab.
-        """
-    def _create_filtering_tab(self):
-        """
-        Creates the content for the 'Export' tab.
-        """
     def get_all_filter_keys(self) -> list[str]:
         """
         Returns a list of all available filter metric keys.
@@ -2049,14 +2039,6 @@ class AppUI:
         """
         Updates the stepper HTML when a tab is selected.
         """
-    def _push_history(self, scenes: List[Dict], history: Deque) -> Deque:
-        """
-        Pushes the current scene state to the history stack for undo support.
-        """
-    def _undo_last_action(self, scenes: List[Dict], history: Deque, output_dir: str, view: str) -> tuple:
-        """
-        Reverts the last action by popping from the history stack.
-        """
     def _run_task_with_progress(self, task_func: Callable, output_components: list, progress: Callable, *args) -> Generator[dict, None, None]:
         """
         Executes a background task while streaming progress updates to the UI.
@@ -2069,22 +2051,6 @@ class AppUI:
         
         Yields:
         Dictionary of UI updates.
-        """
-    def _setup_bulk_scene_handlers(self):
-        """
-        Configures event handlers for the scene selection tab (pagination, bulk actions).
-        """
-    def on_reset_scene_wrapper(self, scenes, shot_id, outdir, view, history, *ana_args):
-        """
-        Resets a scene's manual overrides to its initial state.
-        """
-    def on_select_for_edit(self, scenes, view, indexmap, outputdir, event: Optional[gr.EventData]=None):
-        """
-        Handles selection of a scene from the gallery for editing.
-        """
-    def on_editor_toggle(self, scenes, selected_shotid, outputfolder, view, new_status, history):
-        """
-        Toggles the included/excluded status of a scene.
         """
     def _toggle_pause(self, tracker: 'AdvancedProgressTracker') -> str:
         """
@@ -2194,10 +2160,6 @@ class AppUI:
         
         Returns: (status_message, group_visibility, gallery_update, slider_value, all_faces_state)
         """
-    def on_apply_bulk_scene_filters_extended(self, scenes: list, min_mask_area: float, min_face_sim: float, min_quality_score: float, enable_face_filter: bool, output_folder: str, view: str) -> tuple:
-        """
-        Applies filters to all scenes and updates their status.
-        """
     def _get_smart_mode_updates(self, is_enabled: bool) -> list[gr.update]:
         """
         Calculates slider updates when toggling 'Smart Mode'.
@@ -2297,8 +2259,9 @@ from __future__ import annotations
 from ui.handlers.analysis_handler import AnalysisHandler
 from ui.handlers.extraction_handler import ExtractionHandler
 from ui.handlers.filtering_handler import FilteringHandler
+from ui.handlers.scene_handler import SceneHandler
 
-__all__ = ['ExtractionHandler', 'AnalysisHandler', 'FilteringHandler']
+__all__ = ['ExtractionHandler', 'AnalysisHandler', 'FilteringHandler', 'SceneHandler']
 ```
 
 ### `📄 ui/handlers/analysis_handler.py`
@@ -2545,6 +2508,141 @@ class FilteringHandler:
         
         Returns:
         Dictionary of slider updates
+        """
+```
+
+### `📄 ui/handlers/scene_handler.py`
+
+```python
+from __future__ import annotations
+import copy
+from typing import TYPE_CHECKING, List, Dict, Deque, Optional, Tuple
+from pathlib import Path
+import gradio as gr
+from core.models import Scene, SceneState
+from core.scene_utils import _create_analysis_context, _recompute_single_preview, _wire_recompute_handler, get_scene_status_text, save_scene_seeds, toggle_scene_status
+from ui.gallery_utils import build_scene_gallery_items
+
+class SceneHandler:
+    """
+    Handles scene-related UI operations (selection, filtering, undo, etc.).
+    """
+    def __init__(self, app: 'AppUI'): ...
+    def setup_handlers(self):
+        """
+        Configures event handlers for the scene selection tab (pagination, bulk actions).
+        """
+    def _push_history(self, scenes: List[Dict], history: Deque) -> Deque:
+        """
+        Pushes the current scene state to the history stack for undo support.
+        """
+    def _undo_last_action(self, scenes: List[Dict], history: Deque, output_dir: str, view: str) -> tuple:
+        """
+        Reverts the last action by popping from the history stack.
+        """
+    def on_reset_scene_wrapper(self, scenes, shot_id, outdir, view, history, *ana_args):
+        """
+        Resets a scene's manual overrides to its initial state.
+        """
+    def on_select_for_edit(self, scenes, view, indexmap, outputdir, event: Optional[gr.EventData]=None):
+        """
+        Handles selection of a scene from the gallery for editing.
+        """
+    def on_editor_toggle(self, scenes, selected_shotid, outputfolder, view, new_status, history):
+        """
+        Toggles the included/excluded status of a scene.
+        """
+    def on_apply_bulk_scene_filters_extended(self, scenes, min_mask_pct, min_face_sim, min_quality, enable_face_filter, output_dir, view, history):
+        """
+        Applies bulk filters to scenes based on metric thresholds.
+        """
+```
+
+### `📄 ui/tabs/__init__.py`
+
+```python
+from __future__ import annotations
+from ui.tabs.extraction_tab import ExtractionTabBuilder
+from ui.tabs.subject_tab import SubjectTabBuilder
+from ui.tabs.scene_tab import SceneTabBuilder
+from ui.tabs.metrics_tab import MetricsTabBuilder
+from ui.tabs.filtering_tab import FilteringTabBuilder
+
+__all__ = ['ExtractionTabBuilder', 'SubjectTabBuilder', 'SceneTabBuilder', 'MetricsTabBuilder', '...
+```
+
+### `📄 ui/tabs/extraction_tab.py`
+
+```python
+from __future__ import annotations
+from typing import TYPE_CHECKING
+import gradio as gr
+
+class ExtractionTabBuilder:
+    def __init__(self, app: 'AppUI'): ...
+    def build(self):
+        """
+        Creates the content for the 'Source' tab.
+        """
+```
+
+### `📄 ui/tabs/filtering_tab.py`
+
+```python
+from __future__ import annotations
+from typing import TYPE_CHECKING
+import gradio as gr
+
+class FilteringTabBuilder:
+    def __init__(self, app: 'AppUI'): ...
+    def build(self):
+        """
+        Creates the content for the 'Export' tab.
+        """
+```
+
+### `📄 ui/tabs/metrics_tab.py`
+
+```python
+from __future__ import annotations
+from typing import TYPE_CHECKING
+import gradio as gr
+
+class MetricsTabBuilder:
+    def __init__(self, app: 'AppUI'): ...
+    def build(self):
+        """
+        Creates the content for the 'Metrics' tab.
+        """
+```
+
+### `📄 ui/tabs/scene_tab.py`
+
+```python
+from __future__ import annotations
+from typing import TYPE_CHECKING
+import gradio as gr
+
+class SceneTabBuilder:
+    def __init__(self, app: 'AppUI'): ...
+    def build(self):
+        """
+        Creates the content for the 'Scenes' tab.
+        """
+```
+
+### `📄 ui/tabs/subject_tab.py`
+
+```python
+from __future__ import annotations
+from typing import TYPE_CHECKING
+import gradio as gr
+
+class SubjectTabBuilder:
+    def __init__(self, app: 'AppUI'): ...
+    def build(self):
+        """
+        Creates the content for the 'Subject' tab.
         """
 ```
 
