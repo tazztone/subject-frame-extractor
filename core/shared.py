@@ -14,6 +14,7 @@ import cv2
 import numpy as np
 
 if TYPE_CHECKING:
+    from core.config import Config
     from core.models import Scene
 
 
@@ -39,7 +40,9 @@ def scene_matches_view(scene: "Scene", view: str) -> bool:
     return False
 
 
-def create_scene_thumbnail_with_badge(thumb_img: np.ndarray, scene_idx: int, is_excluded: bool) -> np.ndarray:
+def create_scene_thumbnail_with_badge(
+    thumb_img: np.ndarray, scene_idx: int, is_excluded: bool, config: Optional["Config"] = None
+) -> np.ndarray:
     """
     Create a scene thumbnail with a visual badge indicating exclusion status.
 
@@ -47,29 +50,39 @@ def create_scene_thumbnail_with_badge(thumb_img: np.ndarray, scene_idx: int, is_
         thumb_img: RGB thumbnail image
         scene_idx: Index of the scene
         is_excluded: Whether the scene is excluded
+        config: Application configuration (optional)
 
     Returns:
         Thumbnail with badge overlay
     """
-    # TODO: Make badge colors configurable
     # TODO: Add additional status badges (pending, error, etc.)
     # TODO: Consider SVG overlay for better scaling
     thumb = thumb_img.copy()
     h, w = thumb.shape[:2]
+
+    # Defaults
+    border_color = (33, 128, 141)  # Teal-ish color
+    text_color = (255, 255, 255)  # White
+
+    if config:
+        border_color = tuple(config.visualization_badge_excluded_color)
+        text_color = tuple(config.visualization_badge_text_color)
+
     if is_excluded:
-        border_color = (33, 128, 141)  # Teal-ish color
         cv2.rectangle(thumb, (0, 0), (w - 1, h - 1), border_color, 4)
         badge_size = int(min(w, h) * 0.15)
         badge_pos = (w - badge_size - 5, 5)
+        # Draw filled circle with border color
         cv2.circle(
             thumb,
             (badge_pos[0] + badge_size // 2, badge_pos[1] + badge_size // 2),
             badge_size // 2,
-            (255, 255, 255),
+            border_color,
             -1,
         )
         font = cv2.FONT_HERSHEY_SIMPLEX
-        cv2.putText(thumb, "E", badge_pos, font, 0.5, border_color, 2)
+        # Draw text with text color (White by default)
+        cv2.putText(thumb, "E", badge_pos, font, 0.5, text_color, 2)
     return thumb
 
 
@@ -106,7 +119,12 @@ def scene_caption(scene: Union[dict, "Scene"]) -> str:
 
 
 def build_scene_gallery_items(
-    scenes: List[Union[dict, "Scene"]], view: str, output_dir: str, page_num: int = 1, page_size: int = 20
+    scenes: List[Union[dict, "Scene"]],
+    view: str,
+    output_dir: str,
+    page_num: int = 1,
+    page_size: int = 20,
+    config: Optional["Config"] = None,
 ) -> Tuple[List[Tuple], List[int], int]:
     """
     Build gallery items for scene display.
@@ -120,6 +138,7 @@ def build_scene_gallery_items(
         output_dir: Path to output directory
         page_num: Current page number (1-indexed)
         page_size: Items per page
+        config: Application configuration (optional)
 
     Returns:
         Tuple of (gallery_items, index_map, total_pages)
@@ -163,7 +182,9 @@ def build_scene_gallery_items(
             if thumb_img_np is None:
                 continue
             thumb_img_np = cv2.cvtColor(thumb_img_np, cv2.COLOR_BGR2RGB)
-            badged_thumb = create_scene_thumbnail_with_badge(thumb_img_np, i, s.status == "excluded")
+            badged_thumb = create_scene_thumbnail_with_badge(
+                thumb_img_np, i, s.status == "excluded", config=config
+            )
             items.append((badged_thumb, scene_caption(s)))
         except Exception:
             # TODO: Log the specific exception for debugging
