@@ -2,6 +2,7 @@
 Frame Extractor & Analyzer v2.0
 """
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -35,8 +36,26 @@ def cleanup_models(model_registry):
     gc.collect()
 
 
+def parse_args():
+    """Parses command-line arguments."""
+    parser = argparse.ArgumentParser(description="Frame Extractor & Analyzer v2.0")
+
+    # Server Configuration
+    parser.add_argument("--server-name", type=str, help="Server host (e.g., 0.0.0.0)")
+    parser.add_argument("--server-port", type=int, help="Server port (e.g., 7860)")
+    parser.add_argument("--share", action="store_true", default=None, help="Create a public link")
+    parser.add_argument("--auth", type=str, help="Authentication credentials (username:password)")
+
+    # SSL Configuration
+    parser.add_argument("--ssl-keyfile", type=str, help="Path to SSL key file")
+    parser.add_argument("--ssl-certfile", type=str, help="Path to SSL certificate file")
+    parser.add_argument("--ssl-verify", action="store_true", default=None, help="Enable SSL verification")
+    parser.add_argument("--no-ssl-verify", action="store_false", dest="ssl_verify", help="Disable SSL verification")
+
+    return parser.parse_args()
+
+
 # TODO: Add signal handlers (SIGINT, SIGTERM) for graceful shutdown
-# TODO: Add command-line argument parsing for config overrides (--port, --share, etc.)
 # TODO: Consider adding a health check endpoint for containerized deployments
 def main():
     """
@@ -44,9 +63,13 @@ def main():
 
     Initializes configuration, logging, managers, and the Gradio UI.
     """
+    args = parse_args()
     model_registry = None
     try:
-        config = Config()
+        # Create config with CLI overrides
+        config_overrides = {k: v for k, v in vars(args).items() if v is not None}
+        config = Config(**config_overrides)
+
         logger = AppLogger(config=config)
         model_registry = ModelRegistry(logger=logger)
         thumbnail_manager = ThumbnailManager(logger, config)
@@ -57,9 +80,26 @@ def main():
         app_ui = AppUI(config, logger, progress_queue, cancel_event, thumbnail_manager, model_registry)
         demo = app_ui.build_ui()
         logger.info("Frame Extractor & Analyzer v2.0\nStarting application...")
-        # TODO: Make launch parameters configurable (server_name, server_port, share, auth)
-        # TODO: Consider adding SSL/TLS support for production deployments
-        demo.launch()
+
+        # Prepare launch parameters
+        launch_kwargs = {
+            "server_name": config.server_name,
+            "server_port": config.server_port,
+            "share": config.share,
+            "ssl_keyfile": config.ssl_keyfile,
+            "ssl_certfile": config.ssl_certfile,
+            "ssl_verify": config.ssl_verify,
+        }
+
+        if config.auth:
+            auth_parts = config.auth.split(":")
+            if len(auth_parts) == 2:
+                launch_kwargs["auth"] = (auth_parts[0], auth_parts[1])
+            else:
+                logger.warning(f"Invalid auth format '{config.auth}'. Expected 'username:password'. Auth disabled.")
+
+        logger.info(f"Launching on {config.server_name}:{config.server_port} (Share: {config.share})")
+        demo.launch(**launch_kwargs)
     except KeyboardInterrupt:
         if "logger" in locals():
             logger.info("\nApplication stopped by user")
