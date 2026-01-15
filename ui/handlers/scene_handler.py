@@ -42,7 +42,9 @@ class SceneHandler:
                 current_page = int(page_num) if page_num else 1
             except (ValueError, TypeError):
                 current_page = 1
-            items, index_map, total_pages = build_scene_gallery_items(scenes, view, output_dir, page_num=current_page)
+            items, index_map, total_pages = build_scene_gallery_items(
+                scenes, view, output_dir, page_num=current_page, config=self.config
+            )
             # Generate page choices for dropdown
             page_choices = [str(i) for i in range(1, total_pages + 1)] if total_pages > 0 else ["1"]
             return (
@@ -54,7 +56,9 @@ class SceneHandler:
 
         def on_view_change(scenes, view, output_dir):
             """Handle view filter change - reset to page 1 and update dropdown choices."""
-            items, index_map, total_pages = build_scene_gallery_items(scenes, view, output_dir, page_num=1)
+            items, index_map, total_pages = build_scene_gallery_items(
+                scenes, view, output_dir, page_num=1, config=self.config
+            )
             page_choices = [str(i) for i in range(1, total_pages + 1)] if total_pages > 0 else ["1"]
             return items, index_map, f"/ {total_pages} pages", gr.update(choices=page_choices, value="1")
 
@@ -65,7 +69,9 @@ class SceneHandler:
             except (ValueError, TypeError):
                 current = 1
             # Get total pages to clamp
-            _, _, total_pages = build_scene_gallery_items(scenes, view, output_dir, page_num=1)
+            _, _, total_pages = build_scene_gallery_items(
+                scenes, view, output_dir, page_num=1, config=self.config
+            )
             new_page = min(current + 1, total_pages)
             return on_page_change(scenes, view, output_dir, new_page)
 
@@ -247,7 +253,10 @@ class SceneHandler:
             ],
         )
         c["scenes_state"].change(
-            lambda s, v, o: (build_scene_gallery_items(s, v, o)[0], build_scene_gallery_items(s, v, o)[1]),
+            lambda s, v, o: (
+                build_scene_gallery_items(s, v, o, config=self.config)[0],
+                build_scene_gallery_items(s, v, o, config=self.config)[1],
+            ),
             [c["scenes_state"], c["scene_gallery_view_toggle"], c["extracted_frames_dir_state"]],
             [c["scene_gallery"], c["scene_gallery_index_map_state"]],
         )
@@ -313,7 +322,9 @@ class SceneHandler:
 
         prev_scenes = history.pop()
         save_scene_seeds([Scene(**s) for s in prev_scenes], output_dir, self.logger)
-        gallery_items, index_map, _ = build_scene_gallery_items(prev_scenes, view, output_dir)
+        gallery_items, index_map, _ = build_scene_gallery_items(
+            prev_scenes, view, output_dir, config=self.config
+        )
         status_text, button_update = get_scene_status_text([Scene(**s) for s in prev_scenes])
 
         return prev_scenes, gr.update(value=gallery_items), gr.update(value=index_map), "Undid last action.", history
@@ -350,7 +361,9 @@ class SceneHandler:
             _recompute_single_preview(scene_state, masker, {}, self.thumbnail_manager, self.logger)
             scenes[scene_idx] = scene_state.data
             save_scene_seeds([Scene(**s) for s in scenes], outdir, self.logger)
-            gallery_items, index_map, _ = build_scene_gallery_items(scenes, view, outdir)
+            gallery_items, index_map, _ = build_scene_gallery_items(
+                scenes, view, outdir, config=self.config
+            )
             return (
                 scenes,
                 gr.update(value=gallery_items),
@@ -429,7 +442,9 @@ class SceneHandler:
             scenes_objs, selected_shotid, new_status, outputfolder, self.logger
         )
         scenes = [s.model_dump() for s in scenes_objs]
-        items, index_map, _ = build_scene_gallery_items(scenes, view, outputfolder)
+        items, index_map, _ = build_scene_gallery_items(
+            scenes, view, outputfolder, config=self.config
+        )
         return scenes, status_text, gr.update(value=items), gr.update(value=index_map), button_update, history
 
     def on_apply_bulk_scene_filters_extended(
@@ -479,7 +494,9 @@ class SceneHandler:
                 changed_count += 1
 
         save_scene_seeds([Scene(**s) for s in scenes], output_dir, self.logger)
-        items, index_map, _ = build_scene_gallery_items(scenes, view, output_dir)
+        items, index_map, _ = build_scene_gallery_items(
+            scenes, view, output_dir, config=self.config
+        )
         status_text, button_update = get_scene_status_text([Scene(**s) for s in scenes])
 
         return (
