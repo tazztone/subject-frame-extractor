@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Optional
 
 import cv2
 from PIL import Image
-from scenedetect import ContentDetector, detect
+from scenedetect import ContentDetector, VideoOpenFailure, detect
 
 if TYPE_CHECKING:
     from core.config import Config
@@ -44,8 +44,18 @@ def run_scene_detection(video_path: str, output_dir: Path, logger: "AppLogger") 
             json.dump(shots, f)
         logger.success(f"Found {len(shots)} scenes.", component="video")
         return shots
+    except FileNotFoundError:
+        logger.error(f"Video file not found: {video_path}", component="video")
+        return []
+    except PermissionError:
+        logger.error(f"Permission denied accessing video: {video_path}", component="video")
+        return []
+    except VideoOpenFailure:
+        logger.error(
+            f"Failed to open video file (corrupted or unsupported): {video_path}", component="video"
+        )
+        return []
     except Exception:
-        # TODO: Add specific exception handling for common failures
         logger.error("Scene detection failed.", component="video", exc_info=True)
         return []
 
