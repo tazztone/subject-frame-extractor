@@ -212,6 +212,10 @@ class Config(BaseSettings):
     analysis_default_batch_size: int = 25
     analysis_default_workers: int = 4
 
+    # Validation
+    validation_min_duration_secs: int = 1
+    validation_min_frame_count: int = 10
+
     # Model Defaults
     model_face_analyzer_det_size: List[int] = Field(default_factory=lambda: [640, 640])
 
