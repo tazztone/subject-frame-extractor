@@ -41,8 +41,8 @@ class Database:
     def connect(self):
         """Connects to the SQLite database."""
         # TODO: Add connection timeout configuration
-        # TODO: Enable WAL mode for better concurrent read performance
         self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        self.conn.execute("PRAGMA journal_mode=WAL;")
         self.conn.row_factory = sqlite3.Row
 
     def close(self):
