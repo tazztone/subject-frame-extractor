@@ -113,6 +113,73 @@ class TestExportKeptFrames:
         # Should handle error gracefully
         assert result is not None
 
+    @patch("subprocess.Popen")
+    @patch("core.export.apply_all_filters_vectorized")
+    def test_export_metadata_creation(self, mock_filter, mock_popen, mock_config, mock_logger, tmp_path):
+        """Test that metadata files are created during export."""
+        mock_filter.return_value = (
+            [
+                {"filename": "frame_000001.webp", "score": 0.8, "face_sim": 0.5, "extra": "data"},
+                {"filename": "frame_000002.webp", "score": 0.9, "face_sim": 0.6},
+            ],
+            [],
+            [],
+            [],
+        )
+
+        process = MagicMock()
+        process.returncode = 0
+        process.communicate.return_value = ("", "")
+        mock_popen.return_value = process
+
+        video_path = tmp_path / "video.mp4"
+        video_path.touch()
+        output_dir = tmp_path / "out"
+        output_dir.mkdir()
+        (output_dir / "frame_map.json").write_text("[0, 1, 2]")
+
+        event = ExportEvent(
+            all_frames_data=[{"filename": "frame_000001.webp"}],
+            video_path=str(video_path),
+            output_dir=str(output_dir),
+            filter_args={},
+            enable_crop=False,
+            crop_ars="1:1",
+            crop_padding=10,
+        )
+
+        result = export_kept_frames(event, mock_config, mock_logger, None, None)
+
+        assert "Exported 2 frames" in result
+
+        # Check export directory
+        # The export function creates a timestamped directory. We need to find it.
+        # Since it's the only one, we can look for it.
+        exported_dirs = list(tmp_path.glob("out_exported_*"))
+        assert len(exported_dirs) == 1
+        export_dir = exported_dirs[0]
+
+        assert (export_dir / "metadata.json").exists()
+        assert (export_dir / "metadata.csv").exists()
+
+        import json
+
+        with (export_dir / "metadata.json").open() as f:
+            data = json.load(f)
+            assert len(data) == 2
+            assert data[0]["filename"] == "frame_000001.webp"
+            assert data[0]["extra"] == "data"
+
+        import csv
+
+        with (export_dir / "metadata.csv").open() as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+            assert len(rows) == 2
+            assert rows[0]["filename"] == "frame_000001.webp"
+            assert rows[0]["score"] == "0.8"
+            assert rows[0]["extra"] == "data"
+
 
 class TestDryRunExport:
     """Tests for dry_run_export function."""
