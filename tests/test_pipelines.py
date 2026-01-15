@@ -37,6 +37,8 @@ class TestPipelines:
         config.sharpness_base_scale = 1.0
         config.edge_strength_base_scale = 1.0
         config.monitoring_memory_warning_threshold_mb = 1000
+        config.validation_min_duration_secs = 0.1
+        config.validation_min_frame_count = 1
         return config
 
     @pytest.fixture
@@ -155,7 +157,7 @@ class TestPipelines:
             with patch("core.pipelines.VideoManager") as mock_vm_cls_pipeline:
                 mock_vm = mock_vm_cls_pipeline.return_value
                 mock_vm.prepare_video.return_value = "prepared.mp4"
-                mock_vm_cls_pipeline.get_video_info.return_value = {"fps": 30}
+                mock_vm_cls_pipeline.get_video_info.return_value = {"fps": 30, "frame_count": 100}
 
                 res = pipeline.run()
 
