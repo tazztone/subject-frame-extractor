@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import json
 import subprocess
 from datetime import datetime
@@ -15,6 +16,7 @@ if TYPE_CHECKING:
 
 from core.events import ExportEvent
 from core.filtering import apply_all_filters_vectorized
+from core.utils import _to_json_safe
 
 
 # TODO: Add parallel frame export using multi-threading
@@ -85,6 +87,38 @@ def _rename_exported_frames(export_dir: Path, frames_to_extract: list, fn_to_ori
                 tmp.rename(dst)
             except FileNotFoundError:
                 logger.warning(f"Could not find temp file {tmp.name} to rename.", extra={"target": dst.name})
+
+
+def _export_metadata(kept_frames: list, export_dir: Path, logger: "AppLogger"):
+    logger.info("Exporting metadata...")
+    safe_frames = [_to_json_safe(f) for f in kept_frames]
+
+    # JSON export
+    try:
+        with (export_dir / "metadata.json").open("w", encoding="utf-8") as f:
+            json.dump(safe_frames, f, indent=2)
+    except Exception as e:
+        logger.error(f"Failed to save metadata.json: {e}")
+
+    # CSV export
+    try:
+        if not safe_frames:
+            return
+        all_keys = set()
+        for f in safe_frames:
+            all_keys.update(f.keys())
+        fieldnames = sorted(list(all_keys))
+
+        # Ensure common important keys are first
+        priority_keys = ["filename", "frame_number", "timestamp", "score", "face_sim"]
+        fieldnames = [k for k in priority_keys if k in fieldnames] + [k for k in fieldnames if k not in priority_keys]
+
+        with (export_dir / "metadata.csv").open("w", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(safe_frames)
+    except Exception as e:
+        logger.error(f"Failed to save metadata.csv: {e}")
 
 
 def _crop_exported_frames(
@@ -245,6 +279,8 @@ def export_kept_frames(
             return f"Error during export: FFmpeg failed. Check logs for details:\n{stderr}"
 
         _rename_exported_frames(export_dir, frames_to_extract, fn_to_orig_map, logger)
+
+        _export_metadata(kept, export_dir, logger)
 
         if event.enable_crop:
             try:
