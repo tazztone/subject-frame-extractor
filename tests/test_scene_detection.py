@@ -67,6 +67,53 @@ class TestSceneDetection:
         # Should return empty list on exception
         assert result == []
 
+    @patch("core.scene_utils.detection.detect")
+    def test_run_scene_detection_file_not_found(self, mock_detect, tmp_path):
+        """Test run_scene_detection handles FileNotFoundError."""
+        from core.scene_utils.detection import run_scene_detection
+
+        mock_logger = MagicMock()
+        mock_detect.side_effect = FileNotFoundError("File not found")
+
+        result = run_scene_detection("/nonexistent/video.mp4", tmp_path, mock_logger)
+
+        assert result == []
+        mock_logger.error.assert_called_with(
+            "Video file not found: /nonexistent/video.mp4", component="video"
+        )
+
+    @patch("core.scene_utils.detection.detect")
+    def test_run_scene_detection_permission_error(self, mock_detect, tmp_path):
+        """Test run_scene_detection handles PermissionError."""
+        from core.scene_utils.detection import run_scene_detection
+
+        mock_logger = MagicMock()
+        mock_detect.side_effect = PermissionError("Permission denied")
+
+        result = run_scene_detection("/path/to/video.mp4", tmp_path, mock_logger)
+
+        assert result == []
+        mock_logger.error.assert_called_with(
+            "Permission denied accessing video: /path/to/video.mp4", component="video"
+        )
+
+    @patch("core.scene_utils.detection.detect")
+    def test_run_scene_detection_video_open_failure(self, mock_detect, tmp_path):
+        """Test run_scene_detection handles VideoOpenFailure."""
+        from core.scene_utils.detection import run_scene_detection
+        from scenedetect import VideoOpenFailure
+
+        mock_logger = MagicMock()
+        mock_detect.side_effect = VideoOpenFailure("Open failed")
+
+        result = run_scene_detection("/path/to/video.mp4", tmp_path, mock_logger)
+
+        assert result == []
+        mock_logger.error.assert_called_with(
+            "Failed to open video file (corrupted or unsupported): /path/to/video.mp4",
+            component="video",
+        )
+
     @patch("cv2.imread")
     @patch("cv2.resize")
     @patch("cv2.cvtColor")
