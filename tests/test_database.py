@@ -123,3 +123,10 @@ def test_mask_empty_conversion(db):
     results = db.load_all_metadata()
     assert results[0]["mask_empty"] == 1
     assert isinstance(results[0]["mask_empty"], int)
+
+
+def test_wal_mode_enabled(db):
+    cursor = db.conn.cursor()
+    cursor.execute("PRAGMA journal_mode;")
+    mode = cursor.fetchone()[0]
+    assert mode.lower() == "wal"
