@@ -3128,6 +3128,7 @@ class TestSubjectMasker:
 
 ```python
 from unittest.mock import MagicMock, patch
+from collections import deque
 import pytest
 from core.events import ExtractionEvent
 from core.pipelines import execute_extraction
