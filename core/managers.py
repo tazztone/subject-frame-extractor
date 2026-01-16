@@ -276,6 +276,12 @@ class SAM3Wrapper:
         Returns:
             session_id
         """
+        if self.session_id is not None:
+            try:
+                self.close_session()
+            except Exception:
+                pass
+
         response = self.predictor.handle_request(
             request=dict(
                 type="start_session",

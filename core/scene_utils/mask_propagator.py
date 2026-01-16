@@ -71,6 +71,7 @@ class MaskPropagator:
         bbox_xywh: list[int],
         frame_size: tuple[int, int],
         tracker: Optional["AdvancedProgressTracker"] = None,
+        additional_seeds: Optional[list[dict]] = None,
     ) -> tuple[dict, dict, dict, dict]:
         """
         Propagate masks using the video file directly (no temp JPEG I/O).
@@ -78,10 +79,11 @@ class MaskPropagator:
         Args:
             video_path: Path to the downscaled video file
             frame_numbers: List of original video frame numbers to get masks for
-            seed_frame_num: Original video frame number to seed from
+            seed_frame_num: Original video frame number to seed from (primary)
             bbox_xywh: Bounding box [x, y, width, height] on the seed frame
             frame_size: (width, height) of the video frames
             tracker: Optional progress tracker
+            additional_seeds: Optional list of additional seeds [{"frame": int, "bbox": list}]
 
         Returns:
             Tuple of dicts keyed by frame_number: (masks, area_pcts, is_empty, errors)
@@ -104,7 +106,11 @@ class MaskPropagator:
         self.logger.info(
             "Propagating masks with SAM3 (video mode)",
             component="propagator",
-            user_context={"num_frames": len(frame_numbers), "seed_frame": seed_frame_num},
+            user_context={
+                "num_frames": len(frame_numbers),
+                "seed_frame": seed_frame_num,
+                "extra_seeds": len(additional_seeds or []),
+            },
         )
 
         if tracker:
@@ -114,34 +120,34 @@ class MaskPropagator:
             # Initialize SAM3 with the downscaled video directly
             self.dam_tracker.init_video(video_path)
 
-            # Add bbox prompt on seed frame (using original video frame index)
-            seed_mask = self.dam_tracker.add_bbox_prompt(
-                frame_idx=seed_frame_num, obj_id=1, bbox_xywh=bbox_xywh, img_size=(w, h)
-            )
+            # Add primary seed bbox prompt
+            self.dam_tracker.add_bbox_prompt(frame_idx=seed_frame_num, obj_id=1, bbox_xywh=bbox_xywh, img_size=(w, h))
 
-            # Process seed mask
-            if seed_mask is not None:
-                mask = postprocess_mask(
-                    (seed_mask * 255).astype(np.uint8), config=self.config, fill_holes=True, keep_largest_only=True
-                )
-            else:
-                mask = np.zeros((h, w), dtype=np.uint8)
-
-            masks[seed_frame_num] = mask
-            img_area = h * w
-            area_pct = (np.sum(mask > 0) / img_area) * 100 if img_area > 0 else 0.0
-            areas[seed_frame_num] = area_pct
-            empties[seed_frame_num] = area_pct < self.params.min_mask_area_pct
-            errors[seed_frame_num] = "Empty mask" if empties[seed_frame_num] else None
+            # Add any additional seed prompts
+            if additional_seeds:
+                for seed in additional_seeds:
+                    self.dam_tracker.add_bbox_prompt(
+                        frame_idx=seed["frame"], obj_id=1, bbox_xywh=seed["bbox"], img_size=(w, h)
+                    )
 
             if tracker:
-                tracker.step(1, desc="Propagation (seed)")
+                tracker.step(1, desc="Prompts added")
 
             # Collect all propagated masks
             all_propagated = {}
 
+            # Collect seed list
+            all_seed_frames = [seed_frame_num]
+            if additional_seeds:
+                all_seed_frames.extend([s["frame"] for s in additional_seeds])
+            all_seed_frames = sorted(list(set(all_seed_frames)))
+
+            # Start propagation from the earliest seed for forward, and latest for backward
+            # Actually SAM3 can start from any index. We use the primary seed as specified.
+            start_idx = seed_frame_num
+
             # Propagate forward
-            for frame_idx, obj_id, pred_mask in self.dam_tracker.propagate(start_idx=seed_frame_num, reverse=False):
+            for frame_idx, obj_id, pred_mask in self.dam_tracker.propagate(start_idx=start_idx, reverse=False):
                 if self.cancel_event.is_set():
                     break
                 all_propagated[frame_idx] = pred_mask
@@ -149,20 +155,19 @@ class MaskPropagator:
                     tracker.step(1, desc="Propagation (→)")
 
             # Propagate backward
-            for frame_idx, obj_id, pred_mask in self.dam_tracker.propagate(start_idx=seed_frame_num, reverse=True):
+            for frame_idx, obj_id, pred_mask in self.dam_tracker.propagate(start_idx=start_idx, reverse=True):
                 if self.cancel_event.is_set():
                     break
-                if frame_idx not in all_propagated:  # Don't overwrite forward results
+                if frame_idx not in all_propagated:
                     all_propagated[frame_idx] = pred_mask
                 if tracker:
                     tracker.step(1, desc="Propagation (←)")
 
-            # Filter to only the frames we care about
+            # Process all gathered masks (seeds + propagated)
+            img_area = h * w
             for fn in frame_numbers:
-                if fn == seed_frame_num:
-                    continue  # Already processed
-
                 pred_mask = all_propagated.get(fn)
+
                 if pred_mask is not None and np.any(pred_mask):
                     mask = postprocess_mask(
                         (pred_mask * 255).astype(np.uint8), config=self.config, fill_holes=True, keep_largest_only=True
@@ -207,6 +212,8 @@ class MaskPropagator:
         seed_idx: int,
         bbox_xywh: list[int],
         tracker: Optional["AdvancedProgressTracker"] = None,
+        additional_seeds: Optional[list[dict]] = None,
+        frame_numbers: Optional[list[int]] = None,
     ) -> tuple[list, list, list, list]:
         """
         Legacy method: Propagate masks from a seed frame using in-memory frames.
@@ -216,9 +223,11 @@ class MaskPropagator:
 
         Args:
             shot_frames_rgb: List of RGB frames as numpy arrays
-            seed_idx: Index of the seed frame in the list
+            seed_idx: Index of the seed frame in the list (relative to shot_frames_rgb)
             bbox_xywh: Bounding box [x, y, width, height] on the seed frame
             tracker: Optional progress tracker
+            additional_seeds: Optional list of additional seeds [{"frame": original_fn, "bbox": [x,y,w,h]}]
+            frame_numbers: List of original frame numbers matching shot_frames_rgb
 
         Returns:
             Tuple of (masks, area_percentages, is_empty_flags, error_messages)
@@ -242,7 +251,11 @@ class MaskPropagator:
         self.logger.info(
             "Propagating masks with SAM3 (legacy temp JPEG mode)",
             component="propagator",
-            user_context={"num_frames": len(shot_frames_rgb), "seed_index": seed_idx},
+            user_context={
+                "num_frames": len(shot_frames_rgb),
+                "seed_index": seed_idx,
+                "extra_seeds": len(additional_seeds or []),
+            },
         )
         h, w = shot_frames_rgb[0].shape[:2]
         masks = [None] * len(shot_frames_rgb)
@@ -261,10 +274,20 @@ class MaskPropagator:
                 # Initialize video session with new API
                 self.dam_tracker.init_video(temp_dir)
 
-                # Add bbox prompt on seed frame
+                # Add primary seed bbox prompt (index i in temp_dir files)
                 seed_mask = self.dam_tracker.add_bbox_prompt(
                     frame_idx=seed_idx, obj_id=1, bbox_xywh=bbox_xywh, img_size=(w, h)
                 )
+
+                # Add additional seeds if we can map their frame numbers to indices
+                if additional_seeds and frame_numbers:
+                    fn_to_idx = {fn: i for i, fn in enumerate(frame_numbers)}
+                    for seed in additional_seeds:
+                        idx = fn_to_idx.get(seed["frame"])
+                        if idx is not None:
+                            self.dam_tracker.add_bbox_prompt(
+                                frame_idx=idx, obj_id=1, bbox_xywh=seed["bbox"], img_size=(w, h)
+                            )
 
                 # Process seed mask
                 if seed_mask is not None:

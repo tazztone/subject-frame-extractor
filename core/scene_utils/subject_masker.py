@@ -229,6 +229,21 @@ class SubjectMasker:
                         mask_metadata[fname] = {"error": "Subject not found", "shot_id": scene.shot_id}
                 continue
 
+            # Identify additional seeds from candidates
+            additional_seeds = []
+            if getattr(scene, "candidate_seed_frames", None):
+                for cand_fn in scene.candidate_seed_frames:
+                    if cand_fn == scene.best_frame:
+                        continue
+                    # Load candidate thumbnail and find bbox
+                    cand_thumb = self._get_thumb_for_frame(thumb_dir, cand_fn)
+                    if cand_thumb is not None:
+                        cand_bbox, cand_details = self.get_seed_for_frame(cand_thumb)
+                        if cand_bbox:
+                            additional_seeds.append({"frame": cand_fn, "bbox": cand_bbox, "details": cand_details})
+
+            scene.additional_seeds = additional_seeds
+
             # Check if downscaled video exists for efficient processing
             lowres_video_path = Path(frames_dir) / "video_lowres.mp4"
 
@@ -238,7 +253,13 @@ class SubjectMasker:
                 frame_size = (first_thumb.shape[1], first_thumb.shape[0]) if first_thumb is not None else (640, 480)
 
                 masks_dict, areas_dict, empties_dict, errors_dict = self.mask_propagator.propagate_video(
-                    str(lowres_video_path), list(frame_numbers), scene.best_frame, bbox, frame_size, tracker=tracker
+                    str(lowres_video_path),
+                    list(frame_numbers),
+                    scene.best_frame,
+                    bbox,
+                    frame_size,
+                    tracker=tracker,
+                    additional_seeds=additional_seeds,
                 )
 
                 # Process results using frame number keys
@@ -276,7 +297,12 @@ class SubjectMasker:
             else:
                 # Fallback to legacy temp JPEG method
                 masks, areas, empties, errors = self.mask_propagator.propagate(
-                    small_images, seed_idx_in_shot, bbox, tracker=tracker
+                    small_images,
+                    seed_idx_in_shot,
+                    bbox,
+                    tracker=tracker,
+                    additional_seeds=additional_seeds,
+                    frame_numbers=list(frame_numbers),
                 )
 
                 for j, (original_fn, _, (h, w)) in enumerate(shot_frames_data):
@@ -307,8 +333,18 @@ class SubjectMasker:
                         mask_metadata[frame_fname_png] = result_args
 
         self.logger.success("Subject masking complete.")
-        # TODO: Add mask quality summary statistics
-        # TODO: Consider async metadata saving for large datasets
+
+        # Calculate summary statistics
+        total_masks = len(mask_metadata)
+        if total_masks > 0:
+            empty_masks = sum(1 for m in mask_metadata.values() if m.get("mask_empty"))
+            avg_area = np.mean(
+                [m.get("mask_area_pct", 0) for m in mask_metadata.values() if m.get("mask_area_pct") is not None]
+            )
+            self.logger.info(
+                f"Mask quality summary: {total_masks} frames processed, {empty_masks} empty masks, {avg_area:.2f}% average mask area."
+            )
+
         try:
             with (self.mask_dir.parent / "mask_metadata.json").open("w", encoding="utf-8") as f:
                 json.dump(mask_metadata, f, indent=2)
@@ -345,6 +381,16 @@ class SubjectMasker:
                 continue
             frames.append((fn, thumb_img, thumb_img.shape[:2]))
         return frames
+
+    def _get_thumb_for_frame(self, thumb_dir: Path, frame_num: int) -> Optional[np.ndarray]:
+        """Retrieve a thumbnail for a specific frame number."""
+        if not self.frame_map:
+            return None
+        fname = self.frame_map.get(frame_num)
+        if not fname:
+            return None
+        thumb_path = thumb_dir / f"{Path(fname).stem}.webp"
+        return self.thumbnail_manager.get(thumb_path)
 
     def _select_best_frame_in_scene(self, scene: "Scene", frames_dir: str) -> None:
         """
@@ -394,13 +440,31 @@ class SubjectMasker:
             scene.seed_metrics = {"reason": "pre-analysis failed, no scores", "score": 0}
             return
 
-        best_local_idx = int(np.argmax(scores))
-        scene.best_frame = candidates[best_local_idx][0]
+        # Select top candidates that are sufficiently far apart
+        candidates_with_scores = sorted(zip(candidates, scores), key=lambda x: x[1], reverse=True)
+        best_seeds = []
+        min_dist = max(1, (scene.end_frame - scene.start_frame) // 8)  # At least 12.5% apart
+
+        for candidate, score in candidates_with_scores:
+            frame_num = candidate[0]
+            if all(abs(frame_num - existing_fn) >= min_dist for existing_fn in best_seeds):
+                best_seeds.append(frame_num)
+                if len(best_seeds) >= 3:  # Limit to 3 candidate seeds
+                    break
+
+        if best_seeds:
+            scene.best_frame = best_seeds[0]
+            scene.candidate_seed_frames = best_seeds
+        else:
+            scene.best_frame = candidates[int(np.argmax(scores))][0]
+            scene.candidate_seed_frames = [scene.best_frame]
+
         scene.seed_metrics = {
             "reason": "pre-analysis complete",
-            "score": max(scores),
-            "best_niqe": niqe_score,
-            "best_face_sim": face_sim,
+            "score": float(max(scores)) if scores else 0.0,
+            "best_niqe": float(niqe_score),
+            "best_face_sim": float(face_sim),
+            "num_candidates": len(scene.candidate_seed_frames),
         }
 
     def get_seed_for_frame(
