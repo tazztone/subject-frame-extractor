@@ -8,7 +8,7 @@ on:
       - '**.py'
       - 'scripts/update_agents_md.py'
   schedule:
-    - cron: '0 0 * * 0'  # Weekly run
+    - cron: '0 4 * * *'  # Daily at 4AM
   workflow_dispatch:
 
 permissions:
