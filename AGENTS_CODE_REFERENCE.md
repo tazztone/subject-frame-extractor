@@ -1,5 +1,5 @@
 ---
-Last Updated: 2026-01-15
+Last Updated: 2026-01-16
 ---
 
 # Code Skeleton Reference
@@ -88,6 +88,7 @@ For developer guidelines, see [AGENTS.md](AGENTS.md).
 │   ├── test_handlers.py
 │   ├── test_integration.py
 │   ├── test_integration_sam3_patches.py
+│   ├── test_launch_config.py
 │   ├── test_managers.py
 │   ├── test_managers_extended.py
 │   ├── test_mask_propagator_logic.py
@@ -133,6 +134,7 @@ For developer guidelines, see [AGENTS.md](AGENTS.md).
 Frame Extractor & Analyzer v2.0
 """
 
+import argparse
 import sys
 from pathlib import Path
 import gc
@@ -151,6 +153,11 @@ def cleanup_models(model_registry):
     
     Args:
     model_registry: The ModelRegistry instance to clear.
+    """
+
+def parse_args():
+    """
+    Parses command-line arguments.
     """
 
 def main():
@@ -289,6 +296,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 class Database:
+    CURRENT_VERSION = 2
     def __init__(self, db_path: Path, batch_size: int=50):
         """
         Initializes the Database manager.
@@ -305,9 +313,21 @@ class Database:
         """
         Closes the database connection.
         """
-    def create_tables(self):
+    def migrate(self):
         """
-        Creates the necessary tables if they don't exist.
+        Applies database migrations to reach the current version.
+        """
+    def _detect_legacy_version(self, cursor) -> int:
+        """
+        Detects the schema version of a legacy database.
+        """
+    def _migration_v1_initial_schema(self, cursor):
+        """
+        Migration v1: Create initial metadata table and indexes.
+        """
+    def _migration_v2_add_error_severity(self, cursor):
+        """
+        Migration v2: Add error_severity column.
         """
     def clear_metadata(self):
         """
@@ -459,6 +479,7 @@ class SessionLoadEvent(UIEvent):
 
 ```python
 from __future__ import annotations
+import csv
 import json
 import subprocess
 from datetime import datetime
@@ -468,10 +489,13 @@ import cv2
 import numpy as np
 from core.events import ExportEvent
 from core.filtering import apply_all_filters_vectorized
+from core.utils import _to_json_safe
 
 def _perform_ffmpeg_export(video_path: str, frames_to_extract: list, export_dir: Path, logger: 'AppLogger') -> tuple[bool, Optional[str]]: ...
 
 def _rename_exported_frames(export_dir: Path, frames_to_extract: list, fn_to_orig_map: dict, logger: 'AppLogger'): ...
+
+def _export_metadata(kept_frames: list, export_dir: Path, logger: 'AppLogger'): ...
 
 def _crop_exported_frames(kept_frames: list, export_dir: Path, crop_ars: str, crop_padding: int, masks_root: Path, logger: 'AppLogger', cancel_event) -> int: ...
 
@@ -572,6 +596,10 @@ Logging Infrastructure for Frame Extractor & Analyzer
 import json
 import logging
 import traceback
+import gzip
+import shutil
+import os
+from logging.handlers import RotatingFileHandler
 from datetime import datetime
 from pathlib import Path
 from queue import Queue
@@ -624,6 +652,14 @@ class AppLogger:
     def _setup_file_handlers(self):
         """
         Configures file logging handlers (plain text and JSONL).
+        """
+    def _cleanup_old_logs(self):
+        """
+        Compresses old log files to save disk space.
+        """
+    def _compress_file(self, file_path: Path):
+        """
+        Compresses a single file and removes the original.
         """
     def set_progress_queue(self, queue: Queue):
         """
@@ -1054,9 +1090,9 @@ class AnalysisPipeline(Pipeline):
         """
         Removes scenes that have already been processed when resuming.
         """
-    def _save_progress(self, current_scene: 'Scene', progress_file: Path):
+    def _save_progress_bulk(self, completed_scene_ids: list[int], progress_file: Path):
         """
-        Updates the progress file with the completed scene ID.
+        Updates the progress file with a list of completed scene IDs.
         """
     def _process_reference_face(self):
         """
@@ -1261,7 +1297,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 import cv2
 from PIL import Image
-from scenedetect import ContentDetector, detect
+from scenedetect import ContentDetector, VideoOpenFailure, detect
 
 def run_scene_detection(video_path: str, output_dir: Path, logger: 'AppLogger') -> list:
     """
@@ -1719,7 +1755,7 @@ def scene_matches_view(scene: 'Scene', view: str) -> bool:
     True if the scene matches the view filter
     """
 
-def create_scene_thumbnail_with_badge(thumb_img: np.ndarray, scene_idx: int, is_excluded: bool) -> np.ndarray:
+def create_scene_thumbnail_with_badge(thumb_img: np.ndarray, scene_idx: int, is_excluded: bool, config: Optional['Config']=None) -> np.ndarray:
     """
     Create a scene thumbnail with a visual badge indicating exclusion status.
     
@@ -1727,6 +1763,7 @@ def create_scene_thumbnail_with_badge(thumb_img: np.ndarray, scene_idx: int, is_
     thumb_img: RGB thumbnail image
     scene_idx: Index of the scene
     is_excluded: Whether the scene is excluded
+    config: Application configuration (optional)
     
     Returns:
     Thumbnail with badge overlay
@@ -1743,7 +1780,7 @@ def scene_caption(scene: Union[dict, 'Scene']) -> str:
     Caption string with scene ID, frame range, and status
     """
 
-def build_scene_gallery_items(scenes: List[Union[dict, 'Scene']], view: str, output_dir: str, page_num: int=1, page_size: int=20) -> Tuple[List[Tuple], List[int], int]:
+def build_scene_gallery_items(scenes: List[Union[dict, 'Scene']], view: str, output_dir: str, page_num: int=1, page_size: int=20, config: Optional['Config']=None) -> Tuple[List[Tuple], List[int], int]:
     """
     Build gallery items for scene display.
     
@@ -1756,6 +1793,7 @@ def build_scene_gallery_items(scenes: List[Union[dict, 'Scene']], view: str, out
     output_dir: Path to output directory
     page_num: Current page number (1-indexed)
     page_size: Items per page
+    config: Application configuration (optional)
     
     Returns:
     Tuple of (gallery_items, index_map, total_pages)
