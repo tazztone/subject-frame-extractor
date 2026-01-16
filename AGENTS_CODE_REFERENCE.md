@@ -1450,22 +1450,23 @@ class MaskPropagator:
         logger: Application logger
         device: Device to run on ('cpu' or 'cuda')
         """
-    def propagate_video(self, video_path: str, frame_numbers: list[int], seed_frame_num: int, bbox_xywh: list[int], frame_size: tuple[int, int], tracker: Optional['AdvancedProgressTracker']=None) -> tuple[dict, dict, dict, dict]:
+    def propagate_video(self, video_path: str, frame_numbers: list[int], seed_frame_num: int, bbox_xywh: list[int], frame_size: tuple[int, int], tracker: Optional['AdvancedProgressTracker']=None, additional_seeds: Optional[list[dict]]=None) -> tuple[dict, dict, dict, dict]:
         """
         Propagate masks using the video file directly (no temp JPEG I/O).
         
         Args:
         video_path: Path to the downscaled video file
         frame_numbers: List of original video frame numbers to get masks for
-        seed_frame_num: Original video frame number to seed from
+        seed_frame_num: Original video frame number to seed from (primary)
         bbox_xywh: Bounding box [x, y, width, height] on the seed frame
         frame_size: (width, height) of the video frames
         tracker: Optional progress tracker
+        additional_seeds: Optional list of additional seeds [{"frame": int, "bbox": list}]
         
         Returns:
         Tuple of dicts keyed by frame_number: (masks, area_pcts, is_empty, errors)
         """
-    def propagate(self, shot_frames_rgb: list[np.ndarray], seed_idx: int, bbox_xywh: list[int], tracker: Optional['AdvancedProgressTracker']=None) -> tuple[list, list, list, list]:
+    def propagate(self, shot_frames_rgb: list[np.ndarray], seed_idx: int, bbox_xywh: list[int], tracker: Optional['AdvancedProgressTracker']=None, additional_seeds: Optional[list[dict]]=None, frame_numbers: Optional[list[int]]=None) -> tuple[list, list, list, list]:
         """
         Legacy method: Propagate masks from a seed frame using in-memory frames.
         
@@ -1474,9 +1475,11 @@ class MaskPropagator:
         
         Args:
         shot_frames_rgb: List of RGB frames as numpy arrays
-        seed_idx: Index of the seed frame in the list
+        seed_idx: Index of the seed frame in the list (relative to shot_frames_rgb)
         bbox_xywh: Bounding box [x, y, width, height] on the seed frame
         tracker: Optional progress tracker
+        additional_seeds: Optional list of additional seeds [{"frame": original_fn, "bbox": [x,y,w,h]}]
+        frame_numbers: List of original frame numbers matching shot_frames_rgb
         
         Returns:
         Tuple of (masks, area_percentages, is_empty_flags, error_messages)
@@ -1683,6 +1686,10 @@ class SubjectMasker:
         
         Returns:
         List of (frame_number, thumbnail_rgb, (height, width)) tuples
+        """
+    def _get_thumb_for_frame(self, thumb_dir: Path, frame_num: int) -> Optional[np.ndarray]:
+        """
+        Retrieve a thumbnail for a specific frame number.
         """
     def _select_best_frame_in_scene(self, scene: 'Scene', frames_dir: str) -> None:
         """
