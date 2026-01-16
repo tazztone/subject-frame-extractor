@@ -5,10 +5,9 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 
-# TODO: Add database schema versioning and automatic migration support
-# TODO: Consider using SQLAlchemy for more robust ORM features
-# TODO: Implement connection pooling for concurrent access
 class Database:
+    CURRENT_VERSION = 2
+
     def __init__(self, db_path: Path, batch_size: int = 50):
         """
         Initializes the Database manager.
@@ -37,11 +36,12 @@ class Database:
             "dedup_thresh",
             "metrics",
         ]
+        self.connect()
+        self.migrate()
 
     def connect(self):
         """Connects to the SQLite database."""
-        # TODO: Add connection timeout configuration
-        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        self.conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=30.0)
         self.conn.execute("PRAGMA journal_mode=WAL;")
         self.conn.row_factory = sqlite3.Row
 
@@ -51,11 +51,71 @@ class Database:
         if self.conn:
             self.conn.close()
 
-    def create_tables(self):
-        """Creates the necessary tables if they don't exist."""
-        if not self.conn:
-            self.connect()
+    def migrate(self):
+        """Applies database migrations to reach the current version."""
         cursor = self.conn.cursor()
+
+        # Ensure schema_versions table exists
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS schema_versions (
+                version INTEGER PRIMARY KEY,
+                applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        self.conn.commit()
+
+        # Get current version
+        cursor.execute("SELECT MAX(version) FROM schema_versions")
+        row = cursor.fetchone()
+        current_version = row[0] if row and row[0] is not None else 0
+
+        # Handle legacy databases without schema_versions
+        if current_version == 0:
+            current_version = self._detect_legacy_version(cursor)
+            # Record the detected starting version
+            if current_version > 0:
+                cursor.execute("INSERT INTO schema_versions (version) VALUES (?)", (current_version,))
+                self.conn.commit()
+
+        # Apply migrations
+        if current_version < self.CURRENT_VERSION:
+            print(f"Migrating database from version {current_version} to {self.CURRENT_VERSION}...")
+
+            try:
+                if current_version < 1:
+                    self._migration_v1_initial_schema(cursor)
+                    cursor.execute("INSERT INTO schema_versions (version) VALUES (1)")
+                    self.conn.commit()
+                    print("Applied migration v1")
+
+                if current_version < 2:
+                    self._migration_v2_add_error_severity(cursor)
+                    cursor.execute("INSERT INTO schema_versions (version) VALUES (2)")
+                    self.conn.commit()
+                    print("Applied migration v2")
+
+            except Exception as e:
+                self.conn.rollback()
+                print(f"Migration failed: {e}")
+                raise
+
+    def _detect_legacy_version(self, cursor) -> int:
+        """Detects the schema version of a legacy database."""
+        # Check if metadata table exists
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='metadata'")
+        if not cursor.fetchone():
+            return 0
+
+        # Check if error_severity column exists
+        cursor.execute("PRAGMA table_info(metadata)")
+        columns = [info[1] for info in cursor.fetchall()]
+        if "error_severity" in columns:
+            return 2
+
+        return 1
+
+    def _migration_v1_initial_schema(self, cursor):
+        """Migration v1: Create initial metadata table and indexes."""
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS metadata (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -69,7 +129,6 @@ class Database:
                 mask_area_pct REAL,
                 mask_empty INTEGER,
                 error TEXT,
-                error_severity TEXT,
                 phash TEXT,
                 dedup_thresh INTEGER
             )
@@ -77,16 +136,15 @@ class Database:
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_shot_id ON metadata (shot_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_filename ON metadata (filename)")
 
-        # Migration: Add error_severity if missing
+    def _migration_v2_add_error_severity(self, cursor):
+        """Migration v2: Add error_severity column."""
+        # Check again just in case, though _detect_legacy_version should handle it
         cursor.execute("PRAGMA table_info(metadata)")
         columns = [info[1] for info in cursor.fetchall()]
         if "error_severity" not in columns:
-            try:
-                cursor.execute("ALTER TABLE metadata ADD COLUMN error_severity TEXT")
-            except sqlite3.OperationalError:
-                pass  # Column might have been added concurrently
+            cursor.execute("ALTER TABLE metadata ADD COLUMN error_severity TEXT")
 
-        self.conn.commit()
+    # Removed create_tables as it is replaced by migrate()
 
     def clear_metadata(self):
         """Deletes all records from the metadata table."""
@@ -146,6 +204,7 @@ class Database:
         if not self.buffer:
             return
 
+        # Helper to ensure connection - though it should be open
         if not self.conn:
             self.connect()
 
