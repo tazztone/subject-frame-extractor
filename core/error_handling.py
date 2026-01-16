@@ -19,7 +19,6 @@ class ErrorSeverity(Enum):
     CRITICAL = "critical"
 
 
-# TODO: Add ABORT_ALL strategy for cascading failures
 # TODO: Consider adding NOTIFY strategy for non-blocking alerts
 class RecoveryStrategy(Enum):
     RETRY = "retry"
@@ -29,9 +28,6 @@ class RecoveryStrategy(Enum):
 
 
 class ErrorHandler:
-    # TODO: Add error metrics/counters for monitoring
-    # TODO: Implement circuit breaker pattern for repeated failures
-    # TODO: Add error aggregation for batch operations
     def __init__(self, logger: "AppLogger", max_attempts: int, backoff_seconds: list):
         """
         Initializes the ErrorHandler.

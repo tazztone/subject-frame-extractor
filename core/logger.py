@@ -94,9 +94,7 @@ class JsonFormatter(logging.Formatter):
 # --- LOGGER ---
 
 
-# TODO: Add log aggregation support (e.g., Elasticsearch, CloudWatch)
-# TODO: Implement log sampling for high-volume operations
-# TODO: Add correlation IDs for request tracing
+# TODO: Keep logging simple for local use
 class AppLogger:
     """A comprehensive logger for the application."""
 
@@ -126,7 +124,7 @@ class AppLogger:
 
         # Clean up old logs (compress them)
         if log_to_file:
-             self._cleanup_old_logs()
+            self._cleanup_old_logs()
 
         if log_to_console and self.config.log_colored:
             self._setup_console_handler()
@@ -143,7 +141,6 @@ class AppLogger:
 
     def _setup_file_handlers(self):
         """Configures file logging handlers (plain text and JSONL)."""
-        # TODO: Add async file writing for performance
 
         def compress_rotator(source, dest):
             """Helper to compress rotated log files."""
@@ -161,7 +158,7 @@ class AppLogger:
             self.session_log_file,
             maxBytes=10 * 1024 * 1024,  # 10MB
             backupCount=5,
-            encoding="utf-8"
+            encoding="utf-8",
         )
         file_handler.rotator = compress_rotator
         file_handler.namer = compress_namer
@@ -176,7 +173,7 @@ class AppLogger:
             self.structured_log_file,
             maxBytes=10 * 1024 * 1024,  # 10MB
             backupCount=5,
-            encoding="utf-8"
+            encoding="utf-8",
         )
         structured_handler.rotator = compress_rotator
         structured_handler.namer = compress_namer
@@ -196,10 +193,10 @@ class AppLogger:
 
             # Compress rotated structured logs (if they were left uncompressed by previous versions)
             for log_file in self.log_dir.glob(f"{self.config.log_structured_path}.*"):
-                 # RotatingFileHandler names backups as .1, .2 etc.
-                 # Check if it ends in digit (meaning it's a rotated part) and not .gz
-                 if log_file.suffix[1:].isdigit():
-                     self._compress_file(log_file)
+                # RotatingFileHandler names backups as .1, .2 etc.
+                # Check if it ends in digit (meaning it's a rotated part) and not .gz
+                if log_file.suffix[1:].isdigit():
+                    self._compress_file(log_file)
 
         except Exception as e:
             # We don't want to crash application startup if cleanup fails
@@ -210,14 +207,14 @@ class AppLogger:
         try:
             gz_path = file_path.with_suffix(file_path.suffix + ".gz")
             if gz_path.exists():
-                return # Already compressed
+                return  # Already compressed
 
-            with open(file_path, 'rb') as f_in:
-                with gzip.open(gz_path, 'wb') as f_out:
+            with open(file_path, "rb") as f_in:
+                with gzip.open(gz_path, "wb") as f_out:
                     shutil.copyfileobj(f_in, f_out)
             file_path.unlink()
         except Exception as e:
-             print(f"Warning: Failed to compress {file_path}: {e}")
+            print(f"Warning: Failed to compress {file_path}: {e}")
 
     def set_progress_queue(self, queue: Queue):
         """Sets the queue used for sending logs to the UI."""
