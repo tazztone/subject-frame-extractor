@@ -174,10 +174,37 @@ class TestSAM3WrapperMethodBehavior:
             }
         )
 
-    def test_shutdown_calls_predictor(self, mock_wrapper):
-        """shutdown should call predictor shutdown."""
-        mock_wrapper.shutdown()
-        mock_wrapper.predictor.shutdown.assert_called_once()
+    @patch("core.managers.torch.cuda.is_available", return_value=True)
+    @patch("core.managers.torch.cuda.empty_cache")
+    @patch("core.managers.gc.collect")
+    def test_shutdown_cleans_up_resources(self, mock_gc_collect, mock_empty_cache, mock_cuda_available, mock_wrapper):
+        """shutdown should call close_session, predictor.shutdown, delete predictor and clear cache."""
+        # Store a reference to the original predictor mock, ensuring it has a shutdown mock
+        original_predictor = mock_wrapper.predictor
+        original_predictor.shutdown = MagicMock()
+
+        # Spy on the close_session method to verify it gets called
+        with patch.object(mock_wrapper, "close_session", wraps=mock_wrapper.close_session) as mock_close_session:
+            assert hasattr(mock_wrapper, "predictor")
+
+            # Execute the shutdown
+            mock_wrapper.shutdown()
+
+            # 1. Verify close_session was called
+            mock_close_session.assert_called_once()
+
+            # 2. Verify original predictor's shutdown was called
+            original_predictor.shutdown.assert_called_once()
+
+            # 3. Verify predictor attribute is deleted
+            assert not hasattr(mock_wrapper, "predictor")
+
+            # 4. Verify gc.collect was called
+            mock_gc_collect.assert_called_once()
+
+            # 5. Verify empty_cache was called (since cuda is available)
+            # It's called in both close_session and shutdown, so we expect at least one call.
+            mock_empty_cache.assert_called()
 
 
 class TestSeedSelectorTrackerInterface:
