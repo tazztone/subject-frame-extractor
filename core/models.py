@@ -296,6 +296,8 @@ class Scene(BaseModel):
     initial_bbox: Optional[list] = None
     selected_bbox: Optional[list] = None
     person_detections: List[dict] = Field(default_factory=list)
+    additional_seeds: List[dict] = Field(default_factory=list)
+    candidate_seed_frames: List[int] = Field(default_factory=list)
 
 
 class SceneState:
