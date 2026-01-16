@@ -40,14 +40,13 @@ def process_node(node, indent=0):
     # Collect body content
     body_lines = []
 
-    # Docstring
+    # Docstring - Compact to single line
     docstring = ast.get_docstring(node)
     if docstring:
-        doc_lines = docstring.strip().split("\n")
-        body_lines.append(f'{prefix}    """')
-        for dl in doc_lines:
-            body_lines.append(f"{prefix}    {dl.strip()}")
-        body_lines.append(f'{prefix}    """')
+        summary = docstring.strip().split("\n")[0]
+        if len(summary) > 80:
+            summary = summary[:77] + "..."
+        body_lines.append(f'{prefix}    """{summary}"""')
 
     # Child nodes
     has_children = False
@@ -60,8 +59,8 @@ def process_node(node, indent=0):
                 try:
                     # Limit assignments to one line and 100 chars to save space
                     assign_str = ast.unparse(child)
-                    if len(assign_str) > 100:
-                        assign_str = assign_str[:97] + "..."
+                    if len(assign_str) > 80:
+                        assign_str = assign_str[:77] + "..."
                     body_lines.append(f"{prefix}    {assign_str}")
                     has_children = True
                 except Exception:
@@ -75,9 +74,6 @@ def process_node(node, indent=0):
         # Standard format
         lines.append(definition)
         lines.extend(body_lines)
-        # If there's content (docstring or children), we don't need a trailing "..."
-        # unless it's a class with only a docstring, but even then, the docstring implies body.
-        # So we leave it clean.
 
     return lines
 
@@ -92,33 +88,28 @@ def parse_file_to_skeleton(file_path):
 
     lines = []
 
-    # Docstring
+    # Docstring - specific to module level
     docstring = ast.get_docstring(tree)
     if docstring:
-        lines.append(f'"""\n{docstring}\n"""\n')
+        summary = docstring.strip().split("\n")[0]
+        if len(summary) > 80:
+            summary = summary[:77] + "..."
+        lines.append(f'"""{summary}"""')
 
-    # Imports - Compact them
-    imports = []
-    for node in tree.body:
-        if isinstance(node, (ast.Import, ast.ImportFrom)):
-            imports.append(ast.unparse(node))
-
-    if imports:
-        lines.extend(imports)
-        lines.append("")
+    # Imports - Skipped for compactness
 
     # Definitions
     for node in tree.body:
         if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
             lines.extend(process_node(node))
-            lines.append("")  # Spacer between top-level definitions
+            # No spacer between top-level definitions for compactness
         elif isinstance(node, ast.Assign):
             # Top level assignments (constants etc)
             try:
                 # Limit length
                 assign_str = ast.unparse(node)
-                if len(assign_str) > 100:
-                    assign_str = assign_str[:97] + "..."
+                if len(assign_str) > 80:
+                    assign_str = assign_str[:77] + "..."
                 lines.append(assign_str)
             except Exception:
                 pass
@@ -269,8 +260,8 @@ def main():
     tests_skeleton = generate_skeleton_section("tests")
 
     # Generate AGENTS_CODE_REFERENCE.md
-    header_main = f"""---
-Last Updated: {current_date}
+    header_main = """---
+description: Auto-generated code skeletons for the main application.
 ---
 
 # Code Skeleton Reference
@@ -285,12 +276,14 @@ For developer guidelines, see [AGENTS.md](AGENTS.md).
 {file_tree}
 """
 
-    Path("AGENTS_CODE_REFERENCE.md").write_text(header_main + main_skeleton, encoding="utf-8")
+    Path("AGENTS_CODE_REFERENCE.md").write_text(
+        header_main.format(file_tree=file_tree) + main_skeleton, encoding="utf-8"
+    )
     print("Successfully updated AGENTS_CODE_REFERENCE.md")
 
     # Generate tests/TESTS_CODE_REFERENCE.md
-    header_tests = f"""---
-Last Updated: {current_date}
+    header_tests = """---
+description: Auto-generated code skeletons for the test suite.
 ---
 
 # Tests Code Reference

@@ -236,7 +236,6 @@ def export_kept_frames(
 ) -> str:
     # TODO: Add export progress callback for UI updates
     # TODO: Support exporting to ZIP archive
-    # TODO: Add metadata sidecar files (JSON/CSV) with frame info
     if not event.all_frames_data:
         return "No metadata to export."
     if not event.video_path or not Path(event.video_path).exists():
