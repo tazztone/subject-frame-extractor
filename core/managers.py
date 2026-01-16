@@ -559,12 +559,13 @@ class SAM3Wrapper:
         """
         if self.session_id is not None:
             try:
-                self.predictor.handle_request(
-                    request=dict(
-                        type="close_session",
-                        session_id=self.session_id,
+                if hasattr(self, "predictor") and self.predictor:
+                    self.predictor.handle_request(
+                        request=dict(
+                            type="close_session",
+                            session_id=self.session_id,
+                        )
                     )
-                )
             except Exception:
                 pass
             self.session_id = None
@@ -574,10 +575,21 @@ class SAM3Wrapper:
             torch.cuda.empty_cache()
 
     def shutdown(self):
-        """Shutdown the predictor and free multi-GPU resources."""
-        # TODO: Add proper cleanup of all GPU resources
-        if hasattr(self.predictor, "shutdown"):
-            self.predictor.shutdown()
+        """Shutdown the predictor, release memory, and clean up all resources."""
+        self.close_session()
+
+        if hasattr(self, "predictor") and self.predictor:
+            if hasattr(self.predictor, "shutdown"):
+                try:
+                    self.predictor.shutdown()
+                except Exception as e:
+                    logging.getLogger(__name__).warning(f"Error during predictor shutdown: {e}")
+            del self.predictor
+
+        # Force garbage collection to release memory, especially for large models
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
 
 thread_local = threading.local()
