@@ -1,5 +1,5 @@
 ---
-Last Updated: 2026-01-16
+description: Auto-generated code skeletons for the main application.
 ---
 
 # Code Skeleton Reference
@@ -130,2572 +130,917 @@ For developer guidelines, see [AGENTS.md](AGENTS.md).
 ### `📄 app.py`
 
 ```python
-"""
-Frame Extractor & Analyzer v2.0
-"""
-
-import argparse
-import sys
-from pathlib import Path
-import gc
-import threading
-from queue import Queue
-import torch
-from core.config import Config
-from core.logger import AppLogger
-from core.managers import ModelRegistry, ThumbnailManager
-from ui.app_ui import AppUI
-
+"""Frame Extractor & Analyzer v2.0"""
 project_root = Path(__file__).parent
 def cleanup_models(model_registry):
-    """
-    Clears the model registry and performs garbage collection.
-    
-    Args:
-    model_registry: The ModelRegistry instance to clear.
-    """
-
+    """Clears the model registry and performs garbage collection."""
 def parse_args():
-    """
-    Parses command-line arguments.
-    """
-
+    """Parses command-line arguments."""
 def main():
-    """
-    Main entry point for the application.
-    
-    Initializes configuration, logging, managers, and the Gradio UI.
-    """
+    """Main entry point for the application."""
 ```
 
 ### `📄 core/batch_manager.py`
 
 ```python
-import threading
-import time
-import uuid
-from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
-from enum import Enum
-from typing import Callable, Dict, List, Optional
-
 class BatchStatus(Enum):
     PENDING = 'Pending'
     PROCESSING = 'Processing'
     COMPLETED = 'Completed'
     FAILED = 'Failed'
     CANCELLED = 'Cancelled'
-
 @dataclass
 class BatchItem:
-    """
-    Represents a single item in the batch processing queue.
-    """
-
+    """Represents a single item in the batch processing queue."""
 class BatchManager:
-    """
-    Manages a queue of batch processing tasks.
-    """
+    """Manages a queue of batch processing tasks."""
     def __init__(self):
-        """
-        Initializes the BatchManager.
-        """
+        """Initializes the BatchManager."""
     def add_paths(self, paths: List[str]):
-        """
-        Adds a list of file paths to the batch queue.
-        """
+        """Adds a list of file paths to the batch queue."""
     def get_queue_snapshot(self) -> List[BatchItem]:
-        """
-        Returns a thread-safe snapshot of the current queue.
-        """
+        """Returns a thread-safe snapshot of the current queue."""
     def get_status_list(self) -> List[List]:
-        """
-        Returns a simplified list of status data for the UI.
-        """
+        """Returns a simplified list of status data for the UI."""
     def clear_completed(self):
-        """
-        Removes completed, failed, and cancelled items from the queue.
-        """
+        """Removes completed, failed, and cancelled items from the queue."""
     def clear_all(self):
-        """
-        Clears all items from the queue.
-        """
+        """Clears all items from the queue."""
     def update_progress(self, item_id: str, fraction: float, message: Optional[str]=None):
-        """
-        Updates the progress of a specific batch item.
-        """
+        """Updates the progress of a specific batch item."""
     def set_status(self, item_id: str, status: BatchStatus, message: Optional[str]=None):
-        """
-        Updates the status and message of a specific batch item.
-        """
+        """Updates the status and message of a specific batch item."""
     def start_processing(self, processor_func: Callable, max_workers: int=1):
-        """
-        Starts processing the batch queue in a background thread.
-        
-        Args:
-        processor_func: Function to process each item.
-        max_workers: Number of concurrent worker threads.
-        """
+        """Starts processing the batch queue in a background thread."""
     def _run_scheduler(self, processor_func, max_workers): ...
     def stop_processing(self):
-        """
-        Signals the scheduler to stop processing.
-        """
+        """Signals the scheduler to stop processing."""
 ```
 
 ### `📄 core/config.py`
 
 ```python
-"""
-Configuration Management for Frame Extractor & Analyzer
-"""
-
-import json
-from pathlib import Path
-from typing import Any, Dict, List, Optional
-from pydantic import Field, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
-
+"""Configuration Management for Frame Extractor & Analyzer"""
 def json_config_settings_source() -> Dict[str, Any]:
-    """
-    Loads settings from a JSON file for Pydantic settings.
-    """
-
+    """Loads settings from a JSON file for Pydantic settings."""
 class Config(BaseSettings):
-    """
-    Manages the application's configuration settings.
-    """
-    model_config = SettingsConfigDict(env_file='.env', env_prefix='APP_', env_nested_delimiter='_', c...
+    """Manages the application's configuration settings."""
+    model_config = SettingsConfigDict(env_file='.env', env_prefix='APP_', env_nes...
     def model_post_init(self, __context: Any) -> None:
-        """
-        Post-initialization hook to validate paths.
-        """
+        """Post-initialization hook to validate paths."""
     def _validate_paths(self):
-        """
-        Ensures critical directories exist and are writable.
-        """
+        """Ensures critical directories exist and are writable."""
     @model_validator(mode='after')
     def _validate_config(self) -> 'Config':
-        """
-        Validates that at least one quality weight is non-zero.
-        """
+        """Validates that at least one quality weight is non-zero."""
     @property
     def quality_weights(self) -> Dict[str, int]:
-        """
-        Returns a dictionary of quality metric weights.
-        """
+        """Returns a dictionary of quality metric weights."""
 ```
 
 ### `📄 core/database.py`
 
 ```python
-import json
-import sqlite3
-import threading
-from pathlib import Path
-from typing import Any, Dict, List
-
 class Database:
     CURRENT_VERSION = 2
     def __init__(self, db_path: Path, batch_size: int=50):
-        """
-        Initializes the Database manager.
-        
-        Args:
-        db_path: Path to the SQLite database file.
-        batch_size: Number of records to buffer before writing.
-        """
+        """Initializes the Database manager."""
     def connect(self):
-        """
-        Connects to the SQLite database.
-        """
+        """Connects to the SQLite database."""
     def close(self):
-        """
-        Closes the database connection.
-        """
+        """Closes the database connection."""
     def migrate(self):
-        """
-        Applies database migrations to reach the current version.
-        """
+        """Applies database migrations to reach the current version."""
     def _detect_legacy_version(self, cursor) -> int:
-        """
-        Detects the schema version of a legacy database.
-        """
+        """Detects the schema version of a legacy database."""
     def _migration_v1_initial_schema(self, cursor):
-        """
-        Migration v1: Create initial metadata table and indexes.
-        """
+        """Migration v1: Create initial metadata table and indexes."""
     def _migration_v2_add_error_severity(self, cursor):
-        """
-        Migration v2: Add error_severity column.
-        """
+        """Migration v2: Add error_severity column."""
     def clear_metadata(self):
-        """
-        Deletes all records from the metadata table.
-        """
+        """Deletes all records from the metadata table."""
     def insert_metadata(self, metadata: Dict[str, Any]):
-        """
-        Inserts or replaces a metadata record.
-        """
+        """Inserts or replaces a metadata record."""
     def flush(self):
-        """
-        Manually flush the buffer.
-        """
+        """Manually flush the buffer."""
     def _flush_buffer(self):
-        """
-        Internal method to write buffered records to the database.
-        """
+        """Internal method to write buffered records to the database."""
     def load_all_metadata(self) -> List[Dict[str, Any]]:
-        """
-        Loads all metadata from the database.
-        """
+        """Loads all metadata from the database."""
     def count_errors(self) -> int:
-        """
-        Counts the number of records with errors.
-        """
+        """Counts the number of records with errors."""
 ```
 
 ### `📄 core/error_handling.py`
 
 ```python
-"""
-Error Handling Infrastructure for Frame Extractor & Analyzer
-"""
-
-import functools
-import time
-import traceback
-from enum import Enum
-from typing import TYPE_CHECKING, Any, Callable, Optional
-
+"""Error Handling Infrastructure for Frame Extractor & Analyzer"""
 class ErrorSeverity(Enum):
     LOW = 'low'
     MEDIUM = 'medium'
     HIGH = 'high'
     CRITICAL = 'critical'
-
 class RecoveryStrategy(Enum):
     RETRY = 'retry'
     FALLBACK = 'fallback'
     SKIP = 'skip'
     ABORT = 'abort'
-
 class ErrorHandler:
     def __init__(self, logger: 'AppLogger', max_attempts: int, backoff_seconds: list):
-        """
-        Initializes the ErrorHandler.
-        
-        Args:
-        logger: Application logger.
-        max_attempts: Default maximum retry attempts.
-        backoff_seconds: List of backoff delays in seconds.
-        """
+        """Initializes the ErrorHandler."""
     def with_retry(self, max_attempts: Optional[int]=None, backoff_seconds: Optional[list]=None, recoverable_exceptions: tuple=(Exception,)):
-        """
-        Decorator that retries the function call upon failure.
-        
-        Args:
-        max_attempts: Maximum number of attempts.
-        backoff_seconds: List of backoff times between retries.
-        recoverable_exceptions: Tuple of exceptions to catch and retry.
-        
-        Returns:
-        Decorated function.
-        """
+        """Decorator that retries the function call upon failure."""
     def with_fallback(self, fallback_func: Callable):
-        """
-        Decorator that executes a fallback function if the primary function fails.
-        
-        Args:
-        fallback_func: Function to call on failure.
-        
-        Returns:
-        Decorated function.
-        """
+        """Decorator that executes a fallback function if the primary function fails."""
 ```
 
 ### `📄 core/events.py`
 
 ```python
-"""
-Event Models for Frame Extractor & Analyzer
-
-Pydantic models representing UI events and data contracts.
-"""
-
-from pathlib import Path
-from typing import Any, Optional
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
-
+"""Event Models for Frame Extractor & Analyzer"""
 class UIEvent(BaseModel):
-    """
-    Base class for all UI-triggered events.
-    """
-    model_config = ConfigDict(validate_assignment=True, extra='ignore', str_strip_whitespace=True, ar...
-
+    """Base class for all UI-triggered events."""
+    model_config = ConfigDict(validate_assignment=True, extra='ignore', str_strip...
 class ExtractionEvent(UIEvent):
-    """
-    Data model for frame extraction events.
-    """
-
+    """Data model for frame extraction events."""
 class PreAnalysisEvent(UIEvent):
-    """
-    Data model for pre-analysis configuration and execution.
-    """
+    """Data model for pre-analysis configuration and execution."""
     @field_validator('face_ref_img_path')
     @classmethod
     def validate_face_ref(cls, v: str, info) -> str:
-        """
-        Validates that the reference image path is a valid image file.
-        """
+        """Validates that the reference image path is a valid image file."""
     @model_validator(mode='after')
     def validate_strategy_consistency(self) -> 'PreAnalysisEvent':
-        """
-        Ensures that dependent settings (like face filter) are consistent with available data.
-        """
-
+        """Ensures that dependent settings (like face filter) are consistent with availa..."""
 class PropagationEvent(UIEvent):
-    """
-    Data model for the mask propagation stage.
-    """
-
+    """Data model for the mask propagation stage."""
 class FilterEvent(UIEvent):
-    """
-    Data model for filtering and gallery update events.
-    """
-
+    """Data model for filtering and gallery update events."""
 class ExportEvent(UIEvent):
-    """
-    Data model for exporting filtered frames.
-    """
-
+    """Data model for exporting filtered frames."""
 class SessionLoadEvent(UIEvent):
-    """
-    Data model for loading a previous session.
-    """
+    """Data model for loading a previous session."""
 ```
 
 ### `📄 core/export.py`
 
 ```python
-from __future__ import annotations
-import csv
-import json
-import subprocess
-from datetime import datetime
-from pathlib import Path
-from typing import TYPE_CHECKING, Optional
-import cv2
-import numpy as np
-from core.events import ExportEvent
-from core.filtering import apply_all_filters_vectorized
-from core.utils import _to_json_safe
-
 def _perform_ffmpeg_export(video_path: str, frames_to_extract: list, export_dir: Path, logger: 'AppLogger') -> tuple[bool, Optional[str]]: ...
-
 def _rename_exported_frames(export_dir: Path, frames_to_extract: list, fn_to_orig_map: dict, logger: 'AppLogger'): ...
-
 def _export_metadata(kept_frames: list, export_dir: Path, logger: 'AppLogger'): ...
-
 def _crop_exported_frames(kept_frames: list, export_dir: Path, crop_ars: str, crop_padding: int, masks_root: Path, logger: 'AppLogger', cancel_event) -> int: ...
-
 def export_kept_frames(event: ExportEvent, config: 'Config', logger: 'AppLogger', thumbnail_manager, cancel_event) -> str: ...
-
 def dry_run_export(event: ExportEvent, config: 'Config') -> str: ...
 ```
 
 ### `📄 core/filtering.py`
 
 ```python
-from __future__ import annotations
-import io
-from collections import Counter, defaultdict
-from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Optional
-import cv2
-import matplotlib.pyplot as plt
-import matplotlib.ticker as mticker
-import numpy as np
-import torch
-from skimage.metrics import structural_similarity as ssim
-from torchvision import transforms
-from core.database import Database
-from core.managers import get_lpips_metric
-
 def load_and_prep_filter_data(output_dir: str, get_all_filter_keys: Callable, config: 'Config') -> tuple[list, dict]:
-    """
-    Loads metadata from the database and prepares histograms for the UI.
-    """
-
+    """Loads metadata from the database and prepares histograms for the UI."""
 def histogram_svg(hist_data: tuple, title: str='', logger: Optional['AppLogger']=None) -> str:
-    """
-    Generates an SVG string of a histogram plot.
-    """
-
+    """Generates an SVG string of a histogram plot."""
 def build_all_metric_svgs(per_metric_values: dict, get_all_filter_keys: Callable, logger: 'AppLogger') -> dict:
-    """
-    Builds histogram SVGs for all available metrics.
-    """
-
+    """Builds histogram SVGs for all available metrics."""
 def _extract_metric_arrays(all_frames_data: list[dict], config: 'Config') -> dict:
-    """
-    Extracts numerical arrays for each metric from the list of frame data dicts.
-    """
-
+    """Extracts numerical arrays for each metric from the list of frame data dicts."""
 def _run_batched_lpips(pairs: list[tuple[int, int]], all_frames_data: list[dict], dedup_mask: np.ndarray, reasons: defaultdict, thumbnail_manager: 'ThumbnailManager', output_dir: str, threshold: float, device: str='cpu'):
-    """
-    Runs LPIPS deduplication on a list of pairs in batches using GPU if available.
-    """
-
+    """Runs LPIPS deduplication on a list of pairs in batches using GPU if available."""
 def _apply_deduplication_filter(all_frames_data: list[dict], filters: dict, thumbnail_manager: 'ThumbnailManager', config: 'Config', output_dir: str) -> tuple[np.ndarray, defaultdict]:
-    """
-    Applies deduplication logic (pHash, SSIM, or LPIPS) to filter out similar frames.
-    """
-
+    """Applies deduplication logic (pHash, SSIM, or LPIPS) to filter out similar fra..."""
 def _apply_metric_filters(all_frames_data: list[dict], metric_arrays: dict, filters: dict, config: 'Config') -> tuple[np.ndarray, defaultdict]:
-    """
-    Applies threshold-based filtering on scalar metrics.
-    """
-
+    """Applies threshold-based filtering on scalar metrics."""
 def apply_all_filters_vectorized(all_frames_data: list[dict], filters: dict, config: 'Config', thumbnail_manager: Optional['ThumbnailManager']=None, output_dir: Optional[str]=None) -> tuple[list, list, Counter, dict]:
-    """
-    Main entry point for filtering frames based on deduplication and metric thresholds.
-    
-    Returns:
-    Tuple of (kept_frames, rejected_frames, rejection_counts, rejection_reasons)
-    """
-
+    """Main entry point for filtering frames based on deduplication and metric thres..."""
 def _generic_dedup(all_frames_data: list[dict], dedup_mask: np.ndarray, reasons: defaultdict, thumbnail_manager: 'ThumbnailManager', output_dir: str, compare_fn: Callable[[np.ndarray, np.ndarray], bool]) -> tuple[np.ndarray, defaultdict]:
-    """
-    Generic deduplication helper that compares adjacent frames using a custom function.
-    """
-
+    """Generic deduplication helper that compares adjacent frames using a custom fun..."""
 def _ssim_compare(img1: np.ndarray, img2: np.ndarray, threshold: float) -> bool:
-    """
-    Compares two images using SSIM.
-    """
-
+    """Compares two images using SSIM."""
 def apply_ssim_dedup(all_frames_data: list[dict], filters: dict, dedup_mask: np.ndarray, reasons: defaultdict, thumbnail_manager: 'ThumbnailManager', config: 'Config', output_dir: str) -> tuple[np.ndarray, defaultdict]:
-    """
-    Applies SSIM-based deduplication.
-    """
-
+    """Applies SSIM-based deduplication."""
 def apply_lpips_dedup(all_frames_data: list[dict], filters: dict, dedup_mask: np.ndarray, reasons: defaultdict, thumbnail_manager: 'ThumbnailManager', config: 'Config', output_dir: str) -> tuple[np.ndarray, defaultdict]:
-    """
-    Applies LPIPS-based deduplication.
-    """
+    """Applies LPIPS-based deduplication."""
 ```
 
 ### `📄 core/logger.py`
 
 ```python
-"""
-Logging Infrastructure for Frame Extractor & Analyzer
-"""
-
-import json
-import logging
-import traceback
-import gzip
-import shutil
-import os
-from logging.handlers import RotatingFileHandler
-from datetime import datetime
-from pathlib import Path
-from queue import Queue
-from typing import TYPE_CHECKING, Any, Dict, Optional
-from pydantic import BaseModel
-
+"""Logging Infrastructure for Frame Extractor & Analyzer"""
 SUCCESS_LEVEL_NUM = 25
 class LogEvent(BaseModel):
-    """
-    Represents a structured log entry.
-    """
-
+    """Represents a structured log entry."""
 class ColoredFormatter(logging.Formatter):
-    """
-    Custom formatter that adds colors to log levels.
-    """
-    COLORS = {'DEBUG': '\x1b[36m', 'INFO': '\x1b[37m', 'WARNING': '\x1b[33m', 'ERROR': '\x1b[31m', 'C...
+    """Custom formatter that adds colors to log levels."""
+    COLORS = {'DEBUG': '\x1b[36m', 'INFO': '\x1b[37m', 'WARNING': '\x1b[33m', 'ER...
     def format(self, record: logging.LogRecord) -> str:
-        """
-        Formats the log record with color codes.
-        """
-
+        """Formats the log record with color codes."""
 class JsonFormatter(logging.Formatter):
-    """
-    Formatter that outputs logs as JSON strings.
-    """
+    """Formatter that outputs logs as JSON strings."""
     def format(self, record: logging.LogRecord) -> str:
-        """
-        Formats the log record as a JSON string.
-        """
-
+        """Formats the log record as a JSON string."""
 class AppLogger:
-    """
-    A comprehensive logger for the application.
-    """
+    """A comprehensive logger for the application."""
     def __init__(self, config: 'Config', log_dir: Optional[Path]=None, log_to_file: bool=True, log_to_console: bool=True):
-        """
-        Initializes the AppLogger.
-        
-        Args:
-        config: Application configuration.
-        log_dir: Directory to store log files.
-        log_to_file: Whether to write logs to files.
-        log_to_console: Whether to print logs to the console.
-        """
+        """Initializes the AppLogger."""
     def _setup_console_handler(self):
-        """
-        Configures the console logging handler.
-        """
+        """Configures the console logging handler."""
     def _setup_file_handlers(self):
-        """
-        Configures file logging handlers (plain text and JSONL).
-        """
+        """Configures file logging handlers (plain text and JSONL)."""
     def _cleanup_old_logs(self):
-        """
-        Compresses old log files to save disk space.
-        """
+        """Compresses old log files to save disk space."""
     def _compress_file(self, file_path: Path):
-        """
-        Compresses a single file and removes the original.
-        """
+        """Compresses a single file and removes the original."""
     def set_progress_queue(self, queue: Queue):
-        """
-        Sets the queue used for sending logs to the UI.
-        """
+        """Sets the queue used for sending logs to the UI."""
     def _create_log_event(self, level: str, message: str, component: str, **kwargs) -> LogEvent:
-        """
-        Helper to create a structured LogEvent object.
-        """
+        """Helper to create a structured LogEvent object."""
     def _log_event(self, event: LogEvent):
-        """
-        Dispatches the LogEvent to standard logging and the UI queue.
-        """
+        """Dispatches the LogEvent to standard logging and the UI queue."""
     def debug(self, message: str, component: str='system', **kwargs):
-        """
-        Logs a debug message.
-        """
+        """Logs a debug message."""
     def info(self, message: str, component: str='system', **kwargs):
-        """
-        Logs an info message.
-        """
+        """Logs an info message."""
     def warning(self, message: str, component: str='system', **kwargs):
-        """
-        Logs a warning message.
-        """
+        """Logs a warning message."""
     def error(self, message: str, component: str='system', **kwargs):
-        """
-        Logs an error message.
-        """
+        """Logs an error message."""
     def success(self, message: str, component: str='system', **kwargs):
-        """
-        Logs a success message.
-        """
+        """Logs a success message."""
     def critical(self, message: str, component: str='system', **kwargs):
-        """
-        Logs a critical error message.
-        """
+        """Logs a critical error message."""
 ```
 
 ### `📄 core/managers.py`
 
 ```python
-from __future__ import annotations
-import gc
-import logging
-import threading
-from collections import OrderedDict, defaultdict
-from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
-import cv2
-import lpips
-import numpy as np
-import torch
-import yt_dlp as ytdlp
-from mediapipe.tasks import python
-from mediapipe.tasks.python import vision
-from PIL import Image
-from core.error_handling import ErrorHandler
-from core.utils import download_model, validate_video_file
-
 build_sam3_video_predictor = None
 Sam3VideoPredictor = None
 def _setup_triton_mock():
-    """
-    Create a mock triton module if triton is not available (Windows).
-    """
-
+    """Create a mock triton module if triton is not available (Windows)."""
 _triton_mocked = _setup_triton_mock()
 class ThumbnailManager:
-    """
-    Manages an in-memory LRU cache for image thumbnails.
-    """
+    """Manages an in-memory LRU cache for image thumbnails."""
     def __init__(self, logger: 'AppLogger', config: 'Config'):
-        """
-        Initializes the manager with a configurable cache size.
-        """
+        """Initializes the manager with a configurable cache size."""
     def get(self, thumb_path: Path) -> Optional[np.ndarray]:
-        """
-        Retrieves a thumbnail from cache or loads it from disk.
-        """
+        """Retrieves a thumbnail from cache or loads it from disk."""
     def clear_cache(self):
-        """
-        Clears the thumbnail cache and triggers garbage collection.
-        """
+        """Clears the thumbnail cache and triggers garbage collection."""
     def _cleanup_old_entries(self): ...
-
 class ModelRegistry:
-    """
-    Thread-safe registry for lazy loading and caching of heavy ML models.
-    """
+    """Thread-safe registry for lazy loading and caching of heavy ML models."""
     def __init__(self, logger: Optional['AppLogger']=None): ...
     def get_or_load(self, key: str, loader_fn: Callable[[], Any]) -> Any:
-        """
-        Retrieves a model by key, loading it via loader_fn if not present.
-        """
+        """Retrieves a model by key, loading it via loader_fn if not present."""
     def clear(self):
-        """
-        Clears all loaded models from the registry.
-        """
+        """Clears all loaded models from the registry."""
     def get_tracker(self, model_name: str, models_path: str, user_agent: str, retry_params: tuple, config: 'Config') -> Optional['SAM3Wrapper']:
-        """
-        Gets or loads the SAM3 tracker, handling CPU fallback on CUDA OOM.
-        """
+        """Gets or loads the SAM3 tracker, handling CPU fallback on CUDA OOM."""
     def _load_tracker_impl(self, model_name: str, models_path: str, user_agent: str, retry_params: tuple, device: str, config: 'Config') -> 'SAM3Wrapper': ...
-
 class SAM3Wrapper:
-    """
-    SAM3 Tracker using official Sam3VideoPredictor API.
-    
-    Refactored to use the high-level request/response API.
-    """
+    """SAM3 Tracker using official Sam3VideoPredictor API."""
     def __init__(self, checkpoint_path=None, device='cuda'):
-        """
-        Initialize SAM3 wrapper using build_sam3_video_predictor.
-        
-        Args:
-        checkpoint_path: Optional path to checkpoint (auto-downloads from HF if None)
-        device: Device to run on ('cuda' or 'cpu')
-        """
+        """Initialize SAM3 wrapper using build_sam3_video_predictor."""
     def init_video(self, video_path: str):
-        """
-        Initialize inference session with video or frame directory.
-        
-        Args:
-        video_path: Path to video file or directory of JPEG frames
-        
-        Returns:
-        session_id
-        """
+        """Initialize inference session with video or frame directory."""
     def add_bbox_prompt(self, frame_idx: int, obj_id: int, bbox_xywh: list, img_size: tuple) -> np.ndarray:
-        """
-        Add bounding box prompt at specified frame.
-        
-        Args:
-        frame_idx: Frame index to add prompt
-        obj_id: Unique object ID (any integer)
-        bbox_xywh: Bounding box as [x, y, width, height]
-        img_size: Image dimensions as (width, height)
-        
-        Returns:
-        Initial mask as numpy array (H, W)
-        """
+        """Add bounding box prompt at specified frame."""
     def propagate(self, start_idx: int=0, max_frames: int=None, reverse: bool=False):
-        """
-        Generator yielding masks for each frame during propagation.
-        
-        Args:
-        start_idx: Frame index to start propagation from
-        max_frames: Maximum frames to propagate
-        reverse: If True, propagate backward from start_idx
-        
-        Yields:
-        Tuple of (frame_idx, obj_id, mask) where mask is numpy array
-        """
+        """Generator yielding masks for each frame during propagation."""
     def clear_prompts(self):
-        """
-        Reset all prompts in current session.
-        """
+        """Reset all prompts in current session."""
     def detect_objects(self, frame_rgb: np.ndarray, prompt: str) -> list:
-        """
-        Detect objects in a single frame using text prompt.
-        """
+        """Detect objects in a single frame using text prompt."""
     def add_text_prompt(self, frame_idx: int, text: str) -> dict:
-        """
-        Add text prompt for video object detection using new API.
-        """
+        """Add text prompt for video object detection using new API."""
     def add_point_prompt(self, frame_idx: int, obj_id: int, points: list, labels: list, img_size: tuple) -> np.ndarray:
-        """
-        Add point prompts for mask refinement using new API.
-        """
+        """Add point prompts for mask refinement using new API."""
     def remove_object(self, obj_id: int):
-        """
-        Remove an object from the tracking session.
-        """
+        """Remove an object from the tracking session."""
     def reset_session(self):
-        """
-        Reset all prompts and results (clears session state).
-        """
+        """Reset all prompts and results (clears session state)."""
     def close_session(self):
-        """
-        Close the inference session and free GPU resources.
-        """
+        """Close the inference session and free GPU resources."""
     def shutdown(self):
-        """
-        Shutdown the predictor and free multi-GPU resources.
-        """
-
+        """Shutdown the predictor and free multi-GPU resources."""
 thread_local = threading.local()
 def get_face_landmarker(model_path: str, logger: 'AppLogger') -> vision.FaceLandmarker:
-    """
-    Returns a thread-local MediaPipe FaceLandmarker instance.
-    """
-
+    """Returns a thread-local MediaPipe FaceLandmarker instance."""
 def get_face_analyzer(model_name: str, models_path: str, det_size_tuple: tuple, logger: 'AppLogger', model_registry: 'ModelRegistry', device: str='cpu') -> 'FaceAnalysis':
-    """
-    Gets or loads the InsightFace FaceAnalysis app, with OOM handling.
-    """
-
+    """Gets or loads the InsightFace FaceAnalysis app, with OOM handling."""
 def get_lpips_metric(model_name: str='alex', device: str='cpu') -> torch.nn.Module:
-    """
-    Returns the LPIPS metric model.
-    """
-
+    """Returns the LPIPS metric model."""
 def initialize_analysis_models(params: 'AnalysisParameters', config: 'Config', logger: 'AppLogger', model_registry: 'ModelRegistry') -> dict:
-    """
-    Initializes all necessary analysis models based on parameters.
-    
-    Returns:
-    Dictionary of initialized models (face_analyzer, ref_emb, etc.).
-    """
-
+    """Initializes all necessary analysis models based on parameters."""
 class VideoManager:
-    """
-    Handles video preparation and metadata extraction.
-    """
+    """Handles video preparation and metadata extraction."""
     def __init__(self, source_path: str, config: 'Config', max_resolution: Optional[str]=None): ...
     def prepare_video(self, logger: 'AppLogger') -> str:
-        """
-        Prepares the video for processing.
-        
-        Downloads it if it's a YouTube URL, or validates the local path.
-        """
+        """Prepares the video for processing."""
     @staticmethod
     def get_video_info(video_path: str) -> dict:
-        """
-        Extracts metadata (FPS, dimensions, frame count) from the video file.
-        """
+        """Extracts metadata (FPS, dimensions, frame count) from the video file."""
 ```
 
 ### `📄 core/models.py`
 
 ```python
-from __future__ import annotations
-import math
-from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Union
-import cv2
-import mediapipe as mp
-import numpy as np
-import torch
-from pydantic import BaseModel, ConfigDict, Field
-
 def _coerce(val: Any, to_type: type) -> Any:
-    """
-    Helper to strictly coerce values to the target type.
-    """
-
+    """Helper to strictly coerce values to the target type."""
 def _sanitize_face_ref(kwargs: dict, logger: 'AppLogger') -> tuple[str, bool]:
-    """
-    Validates the face reference image path.
-    """
-
+    """Validates the face reference image path."""
 class QualityConfig(BaseModel):
-    """
-    Configuration for quality metric normalization.
-    """
-
+    """Configuration for quality metric normalization."""
 class FrameMetrics(BaseModel):
-    """
-    Container for calculated quality scores for a frame.
-    """
-
+    """Container for calculated quality scores for a frame."""
 class Frame(BaseModel):
-    """
-    Represents a single video frame and its associated metadata.
-    """
+    """Represents a single video frame and its associated metadata."""
     model_config = ConfigDict(arbitrary_types_allowed=True)
     def calculate_quality_metrics(self, thumb_image_rgb: np.ndarray, quality_config: 'QualityConfig', logger: 'AppLogger', mask: Optional[np.ndarray]=None, niqe_metric: Optional[Callable]=None, main_config: Optional['Config']=None, face_landmarker: Optional[Callable]=None, face_bbox: Optional[List[int]]=None, metrics_to_compute: Optional[Dict[str, bool]]=None):
-        """
-        Computes various image quality metrics (sharpness, contrast, NIQE, etc.) for the frame.
-        
-        Args:
-        thumb_image_rgb: RGB image data.
-        quality_config: Configuration for metric calculation.
-        logger: Application logger.
-        mask: Optional boolean mask to restrict calculation to the subject.
-        niqe_metric: Optional PyTorch NIQE model.
-        main_config: Global app configuration.
-        face_landmarker: Optional MediaPipe FaceLandmarker instance.
-        face_bbox: Optional bounding box of the face.
-        metrics_to_compute: Dictionary flagging which metrics to calculate.
-        """
-
+        """Computes various image quality metrics (sharpness, contrast, NIQE, etc.) for ..."""
 class Scene(BaseModel):
-    """
-    Represents a detected scene or shot in the video.
-    """
-
+    """Represents a detected scene or shot in the video."""
 class SceneState:
-    """
-    Wrapper to manage state transitions and updates for a Scene object.
-    """
+    """Wrapper to manage state transitions and updates for a Scene object."""
     def __init__(self, scene_data: Union[dict, Scene]): ...
     @property
     def data(self) -> dict:
-        """
-        Returns the scene data as a dictionary.
-        """
+        """Returns the scene data as a dictionary."""
     @property
     def scene(self) -> Scene:
-        """
-        Returns the underlying Scene object.
-        """
+        """Returns the underlying Scene object."""
     def set_manual_bbox(self, bbox: list[int], source: str):
-        """
-        Overrides the automatically selected subject bounding box.
-        """
+        """Overrides the automatically selected subject bounding box."""
     def reset(self):
-        """
-        Resets the scene to its initial state (undoes manual overrides).
-        """
+        """Resets the scene to its initial state (undoes manual overrides)."""
     def include(self):
-        """
-        Marks the scene as included.
-        """
+        """Marks the scene as included."""
     def exclude(self):
-        """
-        Marks the scene as excluded.
-        """
+        """Marks the scene as excluded."""
     def update_seed_result(self, bbox: Optional[list[int]], details: dict):
-        """
-        Updates the seeding result (detected subject) for the scene.
-        """
-
+        """Updates the seeding result (detected subject) for the scene."""
 class AnalysisParameters(BaseModel):
-    """
-    Aggregates all parameters for the analysis pipeline.
-    """
+    """Aggregates all parameters for the analysis pipeline."""
     @classmethod
     def from_ui(cls, logger: 'AppLogger', config: 'Config', **kwargs) -> 'AnalysisParameters':
-        """
-        Factory method to create parameters from UI arguments, handling validation and defaults.
-        """
-
+        """Factory method to create parameters from UI arguments, handling validation an..."""
 class MaskingResult(BaseModel):
-    """
-    Result of the mask propagation process for a frame.
-    """
+    """Result of the mask propagation process for a frame."""
 ```
 
 ### `📄 core/pipelines.py`
 
 ```python
-from __future__ import annotations
-import json
-import math
-import os
-import re
-import shutil
-import subprocess
-import threading
-import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from pathlib import Path
-from queue import Queue
-from typing import TYPE_CHECKING, Callable, Generator, Optional, Union
-import cv2
-import gradio as gr
-import numpy as np
-import torch
-from PIL import Image
-from core.database import Database
-from core.error_handling import ErrorHandler
-from core.events import ExtractionEvent, PreAnalysisEvent, PropagationEvent, SessionLoadEvent
-from core.managers import VideoManager, initialize_analysis_models
-from core.models import AnalysisParameters, Frame, Scene
-from core.progress import AdvancedProgressTracker
-from core.scene_utils import SubjectMasker, make_photo_thumbs, run_scene_detection, save_scene_seeds
-from core.utils import _to_json_safe, create_frame_map, estimate_totals, handle_common_errors, monitor_memory_usage, sanitize_filename
-
 def _process_ffmpeg_stream(stream, tracker: Optional['AdvancedProgressTracker'], desc: str, total_duration_s: float):
-    """
-    Parses FFmpeg progress stream and updates the tracker.
-    """
-
+    """Parses FFmpeg progress stream and updates the tracker."""
 def _process_ffmpeg_showinfo(stream) -> tuple[list, str]:
-    """
-    Parses FFmpeg stderr for 'showinfo' frame numbers.
-    """
-
+    """Parses FFmpeg stderr for 'showinfo' frame numbers."""
 def run_ffmpeg_extraction(video_path: str, output_dir: Path, video_info: dict, params: 'AnalysisParameters', progress_queue: Queue, cancel_event: threading.Event, logger: 'AppLogger', config: 'Config', tracker: Optional['AdvancedProgressTracker']=None):
-    """
-    Executes FFmpeg command to extract frames/thumbnails.
-    
-    Constructs complex filter chains based on extraction method (interval, keyframes, etc.).
-    Also creates a downscaled video (video_lowres.mp4) for efficient SAM3 processing.
-    """
-
+    """Executes FFmpeg command to extract frames/thumbnails."""
 class Pipeline:
-    """
-    Base class for processing pipelines.
-    """
+    """Base class for processing pipelines."""
     def __init__(self, config: 'Config', logger: 'AppLogger', params: 'AnalysisParameters', progress_queue: Queue, cancel_event: threading.Event): ...
-
 class ExtractionPipeline(Pipeline):
-    """
-    Pipeline for extracting frames from video or processing image folders.
-    """
+    """Pipeline for extracting frames from video or processing image folders."""
     def __init__(self, config: 'Config', logger: 'AppLogger', params: 'AnalysisParameters', progress_queue: Queue, cancel_event: threading.Event): ...
     def _run_impl(self, tracker: Optional['AdvancedProgressTracker']=None) -> dict:
-        """
-        Internal execution logic for extraction.
-        """
-
+        """Internal execution logic for extraction."""
 class AnalysisPipeline(Pipeline):
-    """
-    Pipeline for analyzing frames (pre-analysis, propagation, full analysis).
-    """
+    """Pipeline for analyzing frames (pre-analysis, propagation, full analysis)."""
     def __init__(self, config: 'Config', logger: 'AppLogger', params: 'AnalysisParameters', progress_queue: Queue, cancel_event: threading.Event, thumbnail_manager: 'ThumbnailManager', model_registry: 'ModelRegistry'): ...
     def _initialize_niqe_metric(self):
-        """
-        Lazy initialization of the NIQE metric model.
-        """
+        """Lazy initialization of the NIQE metric model."""
     def run_full_analysis(self, scenes_to_process: list['Scene'], tracker: Optional['AdvancedProgressTracker']=None) -> dict:
-        """
-        Runs the mask propagation phase.
-        
-        Despite the name, this currently focuses on propagation (subject masking) for video,
-        or full processing for image folders.
-        """
+        """Runs the mask propagation phase."""
     def run_analysis_only(self, scenes_to_process: list['Scene'], tracker: Optional['AdvancedProgressTracker']=None) -> dict:
-        """
-        Runs the frame analysis phase (calculating quality metrics).
-        
-        This phase consumes the masks generated in the propagation phase.
-        """
+        """Runs the frame analysis phase (calculating quality metrics)."""
     def _filter_completed_scenes(self, scenes: list['Scene'], progress_data: dict) -> list['Scene']:
-        """
-        Removes scenes that have already been processed when resuming.
-        """
+        """Removes scenes that have already been processed when resuming."""
     def _save_progress_bulk(self, completed_scene_ids: list[int], progress_file: Path):
-        """
-        Updates the progress file with a list of completed scene IDs.
-        """
+        """Updates the progress file with a list of completed scene IDs."""
     def _process_reference_face(self):
-        """
-        Computes the embedding for the reference face image.
-        """
+        """Computes the embedding for the reference face image."""
     def _run_image_folder_analysis(self, tracker: Optional['AdvancedProgressTracker']=None) -> dict:
-        """
-        Specialized execution path for image folder inputs.
-        """
+        """Specialized execution path for image folder inputs."""
     def _run_analysis_loop(self, scenes_to_process: list['Scene'], metrics_to_compute: dict, tracker: Optional['AdvancedProgressTracker']=None):
-        """
-        Orchestrates the parallel processing of frames for metric calculation.
-        """
+        """Orchestrates the parallel processing of frames for metric calculation."""
     def _process_batch(self, batch_paths: list[Path], metrics_to_compute: dict) -> int:
-        """
-        Processes a batch of frame files.
-        """
+        """Processes a batch of frame files."""
     def _process_single_frame(self, thumb_path: Path, metrics_to_compute: dict):
-        """
-        Analyzes a single frame: computes metrics, face similarity, and stores metadata.
-        """
+        """Analyzes a single frame: computes metrics, face similarity, and stores metadata."""
     def _analyze_face_similarity(self, frame: 'Frame', image_rgb: np.ndarray) -> Optional[list[int]]:
-        """
-        Computes face similarity and confidence against the reference face.
-        """
-
+        """Computes face similarity and confidence against the reference face."""
 @handle_common_errors
 def execute_extraction(event: 'ExtractionEvent', progress_queue: Queue, cancel_event: threading.Event, logger: 'AppLogger', config: 'Config', thumbnail_manager: Optional['ThumbnailManager']=None, cuda_available: Optional[bool]=None, progress: Optional[Callable]=None, model_registry: Optional['ModelRegistry']=None) -> Generator[dict, None, None]:
-    """
-    Orchestrates the frame extraction process.
-    
-    Handlers file uploads, parameter validation, and running the extraction pipeline.
-    """
-
+    """Orchestrates the frame extraction process."""
 @handle_common_errors
 def execute_pre_analysis(event: 'PreAnalysisEvent', progress_queue: Queue, cancel_event: threading.Event, logger: 'AppLogger', config: 'Config', thumbnail_manager: 'ThumbnailManager', cuda_available: bool, progress: Optional[Callable]=None, model_registry: 'ModelRegistry'=None) -> Generator[dict, None, None]:
-    """
-    Orchestrates the pre-analysis phase (scene detection, subject seeding).
-    """
-
+    """Orchestrates the pre-analysis phase (scene detection, subject seeding)."""
 def validate_session_dir(path: Union[str, Path]) -> tuple[Optional[Path], Optional[str]]:
-    """
-    Checks if the provided path is a valid session directory.
-    """
-
+    """Checks if the provided path is a valid session directory."""
 def execute_session_load(event: 'SessionLoadEvent', logger: 'AppLogger') -> dict:
-    """
-    Loads session state from disk.
-    
-    Verifies the directory structure and loads configuration, scenes, and metadata.
-    """
-
+    """Loads session state from disk."""
 def execute_propagation(event: PropagationEvent, progress_queue: Queue, cancel_event: threading.Event, logger: AppLogger, config: Config, thumbnail_manager, cuda_available, progress=None, model_registry: 'ModelRegistry'=None) -> Generator[dict, None, None]:
-    """
-    Orchestrates the mask propagation stage.
-    """
-
+    """Orchestrates the mask propagation stage."""
 @handle_common_errors
 def execute_analysis(event: PropagationEvent, progress_queue: Queue, cancel_event: threading.Event, logger: AppLogger, config: Config, thumbnail_manager, cuda_available, progress=None, model_registry: 'ModelRegistry'=None) -> Generator[dict, None, None]:
-    """
-    Orchestrates the frame analysis stage.
-    """
+    """Orchestrates the frame analysis stage."""
 ```
 
 ### `📄 core/progress.py`
 
 ```python
-"""
-Progress Tracking Infrastructure for Frame Extractor & Analyzer
-"""
-
-import threading
-import time
-from queue import Queue
-from typing import TYPE_CHECKING, Callable, Optional
-from pydantic import BaseModel
-
+"""Progress Tracking Infrastructure for Frame Extractor & Analyzer"""
 class ProgressEvent(BaseModel): ...
-
 class AdvancedProgressTracker:
-    """
-    Tracks and estimates progress for long-running operations.
-    
-    Calculates ETA using exponential moving average (EMA) and updates the UI.
-    """
+    """Tracks and estimates progress for long-running operations."""
     def __init__(self, progress: Callable, queue: Queue, logger: 'AppLogger', ui_stage_name: str=''):
-        """
-        Initializes the progress tracker.
-        
-        Args:
-        progress: Gradio progress callback.
-        queue: Queue for sending progress events.
-        logger: Application logger.
-        ui_stage_name: Initial stage name.
-        """
+        """Initializes the progress tracker."""
     def start(self, total_items: int, desc: Optional[str]=None):
-        """
-        Resets the tracker for a new operation.
-        """
+        """Resets the tracker for a new operation."""
     def step(self, n: int=1, desc: Optional[str]=None, substage: Optional[str]=None):
-        """
-        Increments progress by 'n' steps.
-        
-        Args:
-        n: Number of steps completed.
-        desc: Optional stage description update.
-        substage: Optional substage description update.
-        """
+        """Increments progress by 'n' steps."""
     def set(self, done: int, desc: Optional[str]=None, substage: Optional[str]=None):
-        """
-        Sets the absolute number of completed steps.
-        """
+        """Sets the absolute number of completed steps."""
     def set_stage(self, stage: str, substage: Optional[str]=None):
-        """
-        Updates the current stage description without changing progress.
-        """
+        """Updates the current stage description without changing progress."""
     def done_stage(self, final_text: Optional[str]=None):
-        """
-        Marks the current operation as complete.
-        """
+        """Marks the current operation as complete."""
     def _overlay(self, force: bool=False):
-        """
-        Emits a progress update if enough time has passed (throttling).
-        """
+        """Emits a progress update if enough time has passed (throttling)."""
     def _eta_seconds(self) -> Optional[float]:
-        """
-        Calculates estimated seconds remaining based on EMA.
-        """
+        """Calculates estimated seconds remaining based on EMA."""
     @staticmethod
     def _fmt_eta(eta_s: Optional[float]) -> str:
-        """
-        Formats seconds into a human-readable string.
-        """
+        """Formats seconds into a human-readable string."""
 ```
 
 ### `📄 core/sam3_patches.py`
 
 ```python
-"""
-SAM3 Compatibility Patches for Windows
-
-Provides fallback implementations for SAM3 operations that require Triton,
-which is not available on Windows.
-"""
-
-import cv2
-import numpy as np
-import torch
-
+"""SAM3 Compatibility Patches for Windows"""
 def edt_triton_fallback(data):
-    """
-    OpenCV-based fallback for Euclidean Distance Transform when Triton unavailable
-    """
-
+    """OpenCV-based fallback for Euclidean Distance Transform when Triton unavailable"""
 def connected_components_fallback(input_tensor):
-    """
-    CPU-based fallback for connected components when Triton unavailable
-    """
-
+    """CPU-based fallback for connected components when Triton unavailable"""
 def apply_patches():
-    """
-    Apply monkey patches to SAM3 if Triton is not available
-    """
+    """Apply monkey patches to SAM3 if Triton is not available"""
 ```
 
 ### `📄 core/scene_utils/__init__.py`
 
 ```python
-"""
-Scene utilities package for Frame Extractor & Analyzer.
-
-This package provides scene detection, seed selection, mask propagation,
-and related utilities. All public symbols are re-exported for backward
-compatibility.
-
-Example usage:
-    from core.scene_utils import SubjectMasker, run_scene_detection
-    from core.scene_utils import MaskPropagator, SeedSelector
-"""
-
-from __future__ import annotations
-from core.scene_utils.detection import make_photo_thumbs, run_scene_detection
-from core.scene_utils.helpers import _create_analysis_context, _recompute_single_preview, _wire_recompute_handler, draw_boxes_preview, get_scene_status_text, save_scene_seeds, toggle_scene_status
-from core.scene_utils.mask_propagator import MaskPropagator
-from core.scene_utils.seed_selector import SeedSelector
-from core.scene_utils.subject_masker import SubjectMasker
-
-__all__ = ['run_scene_detection', 'make_photo_thumbs', 'MaskPropagator', 'SeedSelector', 'Subject...
+"""Scene utilities package for Frame Extractor & Analyzer."""
+__all__ = ['run_scene_detection', 'make_photo_thumbs', 'MaskPropagator', 'See...
 ```
 
 ### `📄 core/scene_utils/detection.py`
 
 ```python
-"""
-Scene detection and thumbnail generation utilities.
-"""
-
-from __future__ import annotations
-import json
-import math
-from pathlib import Path
-from typing import TYPE_CHECKING, Optional
-import cv2
-from PIL import Image
-from scenedetect import ContentDetector, VideoOpenFailure, detect
-
+"""Scene detection and thumbnail generation utilities."""
 def run_scene_detection(video_path: str, output_dir: Path, logger: 'AppLogger') -> list:
-    """
-    Detect scene changes in a video using PySceneDetect.
-    
-    Args:
-    video_path: Path to the video file
-    output_dir: Directory to save scenes.json
-    logger: Application logger
-    
-    Returns:
-    List of (start_frame, end_frame) tuples for each scene
-    """
-
+    """Detect scene changes in a video using PySceneDetect."""
 def make_photo_thumbs(image_paths: list[Path], out_dir: Path, params: 'AnalysisParameters', cfg: 'Config', logger: 'AppLogger', tracker: Optional['AdvancedProgressTracker']=None) -> dict:
-    """
-    Generate thumbnails for a list of images.
-    
-    Args:
-    image_paths: List of paths to source images
-    out_dir: Output directory for thumbnails
-    params: Analysis parameters containing thumb_megapixels
-    cfg: Application configuration
-    logger: Application logger
-    tracker: Optional progress tracker
-    
-    Returns:
-    Dictionary mapping frame numbers to thumbnail filenames
-    """
+    """Generate thumbnails for a list of images."""
 ```
 
 ### `📄 core/scene_utils/helpers.py`
 
 ```python
-"""
-Helper functions for scene processing.
-"""
-
-from __future__ import annotations
-import json
-import threading
-from pathlib import Path
-from queue import Queue
-from typing import TYPE_CHECKING, Any
-import cv2
-import numpy as np
-from PIL import Image
-from core.managers import initialize_analysis_models
-from core.scene_utils.subject_masker import SubjectMasker
-from core.shared import build_scene_gallery_items
-from core.utils import _to_json_safe, create_frame_map, render_mask_overlay
-
+"""Helper functions for scene processing."""
 def draw_boxes_preview(img: np.ndarray, boxes_xyxy: list[list[int]], cfg: 'Config') -> np.ndarray:
-    """
-    Draw bounding boxes on an image for preview.
-    
-    Args:
-    img: RGB image
-    boxes_xyxy: List of boxes in [x1, y1, x2, y2] format
-    cfg: Config with visualization settings
-    
-    Returns:
-    Image with boxes drawn
-    """
-
+    """Draw bounding boxes on an image for preview."""
 def save_scene_seeds(scenes_list: list['Scene'], output_dir_str: str, logger: 'AppLogger') -> None:
-    """
-    Save scene seed information to JSON file.
-    
-    Args:
-    scenes_list: List of Scene objects
-    output_dir_str: Output directory path
-    logger: Application logger
-    """
-
+    """Save scene seed information to JSON file."""
 def get_scene_status_text(scenes_list: list['Scene']) -> tuple[str, Any]:
-    """
-    Generate status text and button update for scene list.
-    
-    Args:
-    scenes_list: List of Scene objects
-    
-    Returns:
-    Tuple of (status_text, gr.update for button)
-    """
-
+    """Generate status text and button update for scene list."""
 def toggle_scene_status(scenes_list: list['Scene'], selected_shot_id: int, new_status: str, output_folder: str, logger: 'AppLogger') -> tuple[list, str, str, Any]:
-    """
-    Toggle the status of a selected scene.
-    
-    Args:
-    scenes_list: List of Scene objects
-    selected_shot_id: ID of the scene to toggle
-    new_status: New status ('included' or 'excluded')
-    output_folder: Output folder path
-    logger: Application logger
-    
-    Returns:
-    Tuple of (updated_scenes, status_text, message, button_update)
-    """
-
+    """Toggle the status of a selected scene."""
 def _create_analysis_context(config: 'Config', logger: 'AppLogger', thumbnail_manager: 'ThumbnailManager', cuda_available: bool, ana_ui_map_keys: list[str], ana_input_components: list, model_registry: 'ModelRegistry') -> 'SubjectMasker':
-    """
-    Helper to initialize a SubjectMasker from UI arguments.
-    """
-
+    """Helper to initialize a SubjectMasker from UI arguments."""
 def _recompute_single_preview(scene_state: 'SceneState', masker: 'SubjectMasker', overrides: dict, thumbnail_manager: 'ThumbnailManager', logger: 'AppLogger'):
-    """
-    Re-runs the seeding process for a single scene and updates its preview image.
-    """
-
+    """Re-runs the seeding process for a single scene and updates its preview image."""
 def _wire_recompute_handler(config: 'Config', logger: 'AppLogger', thumbnail_manager: 'ThumbnailManager', scenes: list['Scene'], shot_id: int, outdir: str, text_prompt: str, view: str, ana_ui_map_keys: list[str], ana_input_components: list, cuda_available: bool, model_registry: 'ModelRegistry') -> tuple:
-    """
-    Gradio event handler for the 'Recompute' button in the scene editor.
-    """
+    """Gradio event handler for the 'Recompute' button in the scene editor."""
 ```
 
 ### `📄 core/scene_utils/mask_propagator.py`
 
 ```python
-"""
-MaskPropagator class for propagating segmentation masks across video frames.
-"""
-
-from __future__ import annotations
-import threading
-from queue import Queue
-from typing import TYPE_CHECKING, Optional
-import numpy as np
-import torch
-from core.utils import postprocess_mask
-
+"""MaskPropagator class for propagating segmentation masks across video frames."""
 class MaskPropagator:
-    """
-    Propagates segmentation masks from a seed frame to surrounding frames.
-    
-    Uses SAM3 (Segment Anything Model 3) to propagate masks forward and backward
-    from a seed frame where the subject was initially identified.
-    """
+    """Propagates segmentation masks from a seed frame to surrounding frames."""
     def __init__(self, params: 'AnalysisParameters', dam_tracker: 'SAM3Wrapper', cancel_event: threading.Event, progress_queue: Queue, config: 'Config', logger: 'AppLogger', device: str='cpu'):
-        """
-        Initialize the MaskPropagator.
-        
-        Args:
-        params: Analysis parameters
-        dam_tracker: SAM3 wrapper for mask prediction
-        cancel_event: Event to signal cancellation
-        progress_queue: Queue for progress updates
-        config: Application configuration
-        logger: Application logger
-        device: Device to run on ('cpu' or 'cuda')
-        """
+        """Initialize the MaskPropagator."""
     def propagate_video(self, video_path: str, frame_numbers: list[int], seed_frame_num: int, bbox_xywh: list[int], frame_size: tuple[int, int], tracker: Optional['AdvancedProgressTracker']=None, additional_seeds: Optional[list[dict]]=None) -> tuple[dict, dict, dict, dict]:
-        """
-        Propagate masks using the video file directly (no temp JPEG I/O).
-        
-        Args:
-        video_path: Path to the downscaled video file
-        frame_numbers: List of original video frame numbers to get masks for
-        seed_frame_num: Original video frame number to seed from (primary)
-        bbox_xywh: Bounding box [x, y, width, height] on the seed frame
-        frame_size: (width, height) of the video frames
-        tracker: Optional progress tracker
-        additional_seeds: Optional list of additional seeds [{"frame": int, "bbox": list}]
-        
-        Returns:
-        Tuple of dicts keyed by frame_number: (masks, area_pcts, is_empty, errors)
-        """
+        """Propagate masks using the video file directly (no temp JPEG I/O)."""
     def propagate(self, shot_frames_rgb: list[np.ndarray], seed_idx: int, bbox_xywh: list[int], tracker: Optional['AdvancedProgressTracker']=None, additional_seeds: Optional[list[dict]]=None, frame_numbers: Optional[list[int]]=None) -> tuple[list, list, list, list]:
-        """
-        Legacy method: Propagate masks from a seed frame using in-memory frames.
-        
-        This method writes frames to temp JPEGs for SAM3 processing.
-        Prefer propagate_video() when a downscaled video is available.
-        
-        Args:
-        shot_frames_rgb: List of RGB frames as numpy arrays
-        seed_idx: Index of the seed frame in the list (relative to shot_frames_rgb)
-        bbox_xywh: Bounding box [x, y, width, height] on the seed frame
-        tracker: Optional progress tracker
-        additional_seeds: Optional list of additional seeds [{"frame": original_fn, "bbox": [x,y,w,h]}]
-        frame_numbers: List of original frame numbers matching shot_frames_rgb
-        
-        Returns:
-        Tuple of (masks, area_percentages, is_empty_flags, error_messages)
-        """
+        """Legacy method: Propagate masks from a seed frame using in-memory frames."""
 ```
 
 ### `📄 core/scene_utils/seed_selector.py`
 
 ```python
-"""
-SeedSelector class for selecting seed frames and bounding boxes for mask propagation.
-"""
-
-from __future__ import annotations
-import math
-from typing import TYPE_CHECKING, Any, Optional, Union
-import cv2
-import numpy as np
-import torch
-from core.utils import postprocess_mask, rgb_to_pil
-
+"""SeedSelector class for selecting seed frames and bounding boxes for mask prop..."""
 class SeedSelector:
-    """
-    Selects seed frames and bounding boxes for mask propagation.
-    
-    Supports multiple strategies:
-    - Identity-first (face matching)
-    - Object-first (text prompt)
-    - Face + text fallback
-    - Automatic (person detection with various scoring)
-    """
+    """Selects seed frames and bounding boxes for mask propagation."""
     def __init__(self, params: 'AnalysisParameters', config: 'Config', face_analyzer: 'FaceAnalysis', reference_embedding: np.ndarray, tracker: 'SAM3Wrapper', logger: 'AppLogger', device: str='cpu'):
-        """
-        Initialize the SeedSelector.
-        
-        Args:
-        params: Analysis parameters
-        config: Application configuration
-        face_analyzer: InsightFace analyzer for face detection/recognition
-        reference_embedding: Reference face embedding for identity matching
-        tracker: SAM3 wrapper for object detection
-        logger: Application logger
-        device: Device to run on ('cpu' or 'cuda')
-        """
+        """Initialize the SeedSelector."""
     def _get_param(self, source: Union[dict, object], key: str, default: Any=None) -> Any:
-        """
-        Get a parameter from either a dict or an object.
-        """
+        """Get a parameter from either a dict or an object."""
     def select_seed(self, frame_rgb: np.ndarray, current_params: Optional[dict]=None, scene: Optional['Scene']=None) -> tuple[Optional[list], dict]:
-        """
-        Select a seed bounding box for the given frame.
-        
-        Args:
-        frame_rgb: RGB frame as numpy array
-        current_params: Optional override parameters
-        scene: Optional scene context
-        
-        Returns:
-        Tuple of (bbox_xywh, details_dict)
-        """
+        """Select a seed bounding box for the given frame."""
     def _face_with_text_fallback_seed(self, frame_rgb: np.ndarray, params: Union[dict, 'AnalysisParameters'], scene: Optional['Scene']=None) -> tuple[Optional[list], dict]:
-        """
-        Try face-first, fall back to text prompt if face not found.
-        """
+        """Try face-first, fall back to text prompt if face not found."""
     def _identity_first_seed(self, frame_rgb: np.ndarray, params: Union[dict, 'AnalysisParameters'], scene: Optional['Scene']=None) -> tuple[Optional[list], dict]:
-        """
-        Find subject by matching to reference face.
-        """
+        """Find subject by matching to reference face."""
     def _object_first_seed(self, frame_rgb: np.ndarray, params: Union[dict, 'AnalysisParameters'], scene: Optional['Scene']=None) -> tuple[Optional[list], dict]:
-        """
-        Find subject using text prompt, validated by person detection.
-        """
+        """Find subject using text prompt, validated by person detection."""
     def _find_target_face(self, frame_rgb: np.ndarray) -> tuple[Optional[dict], dict]:
-        """
-        Find the target face in frame that matches reference embedding.
-        """
+        """Find the target face in frame that matches reference embedding."""
     def _get_person_boxes(self, frame_rgb: np.ndarray, scene: Optional['Scene']=None) -> list[dict]:
-        """
-        Get person bounding boxes from scene cache or detection.
-        """
+        """Get person bounding boxes from scene cache or detection."""
     def _get_text_prompt_boxes(self, frame_rgb: np.ndarray, params: Union[dict, 'AnalysisParameters']) -> tuple[list[dict], dict]:
-        """
-        Get bounding boxes from text prompt detection.
-        """
+        """Get bounding boxes from text prompt detection."""
     def _score_and_select_candidate(self, target_face: dict, person_boxes: list[dict], text_boxes: list[dict]) -> tuple[Optional[list], dict]:
-        """
-        Score and select the best candidate box that contains the target face.
-        """
+        """Score and select the best candidate box that contains the target face."""
     def _choose_person_by_strategy(self, frame_rgb: np.ndarray, params: Union[dict, 'AnalysisParameters'], scene: Optional['Scene']=None) -> tuple[list, dict]:
-        """
-        Select person using configurable strategy.
-        """
+        """Select person using configurable strategy."""
     def _load_image_from_array(self, image_rgb: np.ndarray) -> tuple[np.ndarray, torch.Tensor]:
-        """
-        Load image for model input.
-        """
+        """Load image for model input."""
     def _calculate_iou(self, box1: list, box2: list) -> float:
-        """
-        Calculate IoU between two boxes in xyxy format.
-        """
+        """Calculate IoU between two boxes in xyxy format."""
     def _box_contains(self, cb: list, ib: list) -> bool:
-        """
-        Check if container box (cb) contains inner box (ib).
-        """
+        """Check if container box (cb) contains inner box (ib)."""
     def _expand_face_to_body(self, face_bbox: list, img_shape: tuple) -> list[int]:
-        """
-        Expand a face bounding box to approximate body bounding box.
-        """
+        """Expand a face bounding box to approximate body bounding box."""
     def _final_fallback_box(self, img_shape: tuple) -> list[int]:
-        """
-        Return a fallback bounding box when no subject is found.
-        """
+        """Return a fallback bounding box when no subject is found."""
     def _xyxy_to_xywh(self, box: list) -> list[int]:
-        """
-        Convert box from xyxy to xywh format.
-        """
+        """Convert box from xyxy to xywh format."""
     def _get_mask_for_bbox(self, frame_rgb_small: np.ndarray, bbox_xywh: list) -> Optional[np.ndarray]:
-        """
-        Generate a mask for the given bounding box using SAM3.
-        """
+        """Generate a mask for the given bounding box using SAM3."""
 ```
 
 ### `📄 core/scene_utils/subject_masker.py`
 
 ```python
-"""
-SubjectMasker class for coordinating subject detection and mask propagation.
-"""
-
-from __future__ import annotations
-import json
-import threading
-from pathlib import Path
-from queue import Queue
-from typing import TYPE_CHECKING, Callable, Optional
-import cv2
-import numpy as np
-import torch
-from core.scene_utils.mask_propagator import MaskPropagator
-from core.scene_utils.seed_selector import SeedSelector
-from core.utils import create_frame_map, draw_bbox
-
+"""SubjectMasker class for coordinating subject detection and mask propagation."""
 class SubjectMasker:
-    """
-    Coordinates subject detection and mask propagation for video frames.
-    
-    This class orchestrates:
-    - SAM3 tracker initialization
-    - Seed frame selection
-    - Bounding box detection via SeedSelector
-    - Mask propagation via MaskPropagator
-    """
+    """Coordinates subject detection and mask propagation for video frames."""
     def __init__(self, params: 'AnalysisParameters', progress_queue: Queue, cancel_event: threading.Event, config: 'Config', frame_map: Optional[dict]=None, face_analyzer: Optional['FaceAnalysis']=None, reference_embedding: Optional[np.ndarray]=None, thumbnail_manager: Optional['ThumbnailManager']=None, niqe_metric: Optional[Callable]=None, logger: Optional['AppLogger']=None, face_landmarker: Optional['FaceLandmarker']=None, device: str='cpu', model_registry: 'ModelRegistry'=None):
-        """
-        Initialize SubjectMasker.
-        
-        Args:
-        params: Analysis parameters
-        progress_queue: Queue for progress updates
-        cancel_event: Event to signal cancellation
-        config: Application configuration
-        frame_map: Optional pre-loaded frame map
-        face_analyzer: Optional InsightFace analyzer
-        reference_embedding: Optional reference face embedding
-        thumbnail_manager: Optional thumbnail cache manager
-        niqe_metric: Optional NIQE quality metric
-        logger: Application logger
-        face_landmarker: Optional MediaPipe face landmarker
-        device: Device for computation ('cpu' or 'cuda')
-        model_registry: Model registry for loading SAM3
-        """
+        """Initialize SubjectMasker."""
     def initialize_models(self) -> None:
-        """
-        Initialize required models based on parameters.
-        """
+        """Initialize required models based on parameters."""
     def _initialize_tracker(self) -> bool:
-        """
-        Initialize the SAM3 tracker.
-        
-        Returns:
-        True if initialization successful, False otherwise
-        """
+        """Initialize the SAM3 tracker."""
     def run_propagation(self, frames_dir: str, scenes_to_process: list['Scene'], tracker: Optional['AdvancedProgressTracker']=None) -> dict:
-        """
-        Run mask propagation for all scenes.
-        
-        Args:
-        frames_dir: Directory containing extracted frames
-        scenes_to_process: List of scenes to process
-        tracker: Optional progress tracker
-        
-        Returns:
-        Dictionary mapping frame filenames to mask metadata
-        """
+        """Run mask propagation for all scenes."""
     def _load_shot_frames(self, frames_dir: str, thumb_dir: Path, start: int, end: int) -> list[tuple[int, np.ndarray, tuple[int, int]]]:
-        """
-        Load frames for a shot from disk.
-        
-        Args:
-        frames_dir: Base frames directory
-        thumb_dir: Thumbnails directory
-        start: Start frame number
-        end: End frame number
-        
-        Returns:
-        List of (frame_number, thumbnail_rgb, (height, width)) tuples
-        """
+        """Load frames for a shot from disk."""
     def _get_thumb_for_frame(self, thumb_dir: Path, frame_num: int) -> Optional[np.ndarray]:
-        """
-        Retrieve a thumbnail for a specific frame number.
-        """
+        """Retrieve a thumbnail for a specific frame number."""
     def _select_best_frame_in_scene(self, scene: 'Scene', frames_dir: str) -> None:
-        """
-        Select the best frame in a scene for seeding.
-        
-        Uses NIQE quality metric and face similarity if available.
-        
-        Args:
-        scene: Scene to process
-        frames_dir: Frames directory
-        """
+        """Select the best frame in a scene for seeding."""
     def get_seed_for_frame(self, frame_rgb: np.ndarray, seed_config: dict=None, scene: Optional['Scene']=None) -> tuple[Optional[list], dict]:
-        """
-        Get seed bounding box for a frame.
-        
-        Args:
-        frame_rgb: RGB frame as numpy array
-        seed_config: Optional seed configuration override
-        scene: Optional scene context
-        
-        Returns:
-        Tuple of (bbox_xywh, details_dict)
-        """
+        """Get seed bounding box for a frame."""
     def get_mask_for_bbox(self, frame_rgb_small: np.ndarray, bbox_xywh: list) -> Optional[np.ndarray]:
-        """
-        Generate a mask for a bounding box.
-        
-        Args:
-        frame_rgb_small: RGB frame
-        bbox_xywh: Bounding box in [x, y, w, h] format
-        
-        Returns:
-        Mask as numpy array or None
-        """
+        """Generate a mask for a bounding box."""
     def draw_bbox(self, img_rgb: np.ndarray, xywh: list, color: Optional[tuple]=None, thickness: Optional[int]=None, label: Optional[str]=None) -> np.ndarray:
-        """
-        Draw a bounding box on an image.
-        """
+        """Draw a bounding box on an image."""
     def _create_frame_map(self, output_dir: str) -> dict:
-        """
-        Create a frame map for the output directory.
-        """
+        """Create a frame map for the output directory."""
 ```
 
 ### `📄 core/shared.py`
 
 ```python
-"""
-Shared utilities for Frame Extractor & Analyzer
-
-This module contains pure functions that are shared between core and UI modules,
-resolving circular import issues.
-"""
-
-from __future__ import annotations
-from pathlib import Path
-from typing import TYPE_CHECKING, List, Optional, Tuple, Union
-import cv2
-import numpy as np
-
+"""Shared utilities for Frame Extractor & Analyzer"""
 def scene_matches_view(scene: 'Scene', view: str) -> bool:
-    """
-    Check if a scene matches the specified view filter.
-    
-    Args:
-    scene: Scene object to check
-    view: One of "All", "Kept", or "Rejected"
-    
-    Returns:
-    True if the scene matches the view filter
-    """
-
+    """Check if a scene matches the specified view filter."""
 def create_scene_thumbnail_with_badge(thumb_img: np.ndarray, scene_idx: int, is_excluded: bool, config: Optional['Config']=None) -> np.ndarray:
-    """
-    Create a scene thumbnail with a visual badge indicating exclusion status.
-    
-    Args:
-    thumb_img: RGB thumbnail image
-    scene_idx: Index of the scene
-    is_excluded: Whether the scene is excluded
-    config: Application configuration (optional)
-    
-    Returns:
-    Thumbnail with badge overlay
-    """
-
+    """Create a scene thumbnail with a visual badge indicating exclusion status."""
 def scene_caption(scene: Union[dict, 'Scene']) -> str:
-    """
-    Generate a caption string for a scene.
-    
-    Args:
-    scene: Scene object or dict
-    
-    Returns:
-    Caption string with scene ID, frame range, and status
-    """
-
+    """Generate a caption string for a scene."""
 def build_scene_gallery_items(scenes: List[Union[dict, 'Scene']], view: str, output_dir: str, page_num: int=1, page_size: int=20, config: Optional['Config']=None) -> Tuple[List[Tuple], List[int], int]:
-    """
-    Build gallery items for scene display.
-    
-    This function is moved from ui/gallery_utils.py to break the circular
-    import between core/pipelines.py and ui/gallery_utils.py.
-    
-    Args:
-    scenes: List of Scene objects or dicts
-    view: View filter ("All", "Kept", "Rejected")
-    output_dir: Path to output directory
-    page_num: Current page number (1-indexed)
-    page_size: Items per page
-    config: Application configuration (optional)
-    
-    Returns:
-    Tuple of (gallery_items, index_map, total_pages)
-    """
+    """Build gallery items for scene display."""
 ```
 
 ### `📄 core/utils.py`
 
 ```python
-from __future__ import annotations
-import contextlib
-import functools
-import gc
-import hashlib
-import json
-import re
-import shutil
-import traceback
-import urllib.error
-import urllib.request
-from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Optional, Union
-import cv2
-import numpy as np
-import torch
-from numba import njit
-from PIL import Image
-from pydantic import BaseModel
-
 def handle_common_errors(func: Callable) -> Callable:
-    """
-    Decorator to catch common exceptions and return a standardized error dictionary.
-    """
-
+    """Decorator to catch common exceptions and return a standardized error dictionary."""
 def monitor_memory_usage(logger: 'AppLogger', device: str, threshold_mb: int=8000):
-    """
-    Logs a warning and clears cache if GPU memory usage exceeds threshold.
-    """
-
+    """Logs a warning and clears cache if GPU memory usage exceeds threshold."""
 def validate_video_file(video_path: str) -> bool:
-    """
-    Checks if the video file exists, is not empty, and can be opened by OpenCV.
-    """
-
+    """Checks if the video file exists, is not empty, and can be opened by OpenCV."""
 def estimate_totals(params: 'AnalysisParameters', video_info: dict, scenes: Optional[list['Scene']]) -> dict:
-    """
-    Estimates the total work items for each pipeline stage.
-    """
-
+    """Estimates the total work items for each pipeline stage."""
 def sanitize_filename(name: str, config: 'Config', max_length: Optional[int]=None) -> str:
-    """
-    Sanitizes a string to be safe for use as a filename.
-    """
-
+    """Sanitizes a string to be safe for use as a filename."""
 def _to_json_safe(obj: Any) -> Any:
-    """
-    Recursively converts objects (NumPy types, Path, etc.) to JSON-serializable types.
-    """
-
+    """Recursively converts objects (NumPy types, Path, etc.) to JSON-serializable t..."""
 @contextlib.contextmanager
 def safe_resource_cleanup(device: str='cpu'):
-    """
-    Context manager to ensure garbage collection and CUDA cache clearing.
-    """
-
+    """Context manager to ensure garbage collection and CUDA cache clearing."""
 def is_image_folder(p: Union[str, Path]) -> bool:
-    """
-    Checks if the path points to a directory.
-    """
-
+    """Checks if the path points to a directory."""
 def list_images(p: Union[str, Path], cfg: Config) -> list[Path]:
-    """
-    Lists all valid image files in a directory.
-    """
-
+    """Lists all valid image files in a directory."""
 @njit
 def compute_entropy(hist: np.ndarray, entropy_norm: float) -> float:
-    """
-    Computes normalized entropy from a histogram using Numba.
-    """
-
+    """Computes normalized entropy from a histogram using Numba."""
 def _compute_sha256(path: Path) -> str:
-    """
-    Computes SHA256 hash of a file.
-    """
-
+    """Computes SHA256 hash of a file."""
 def download_model(url: str, dest_path: Union[str, Path], description: str, logger: 'AppLogger', error_handler: 'ErrorHandler', user_agent: str, min_size: int=1000000, expected_sha256: Optional[str]=None, token: Optional[str]=None):
-    """
-    Downloads a file from a URL with retries, validation, and progress logging.
-    """
-
+    """Downloads a file from a URL with retries, validation, and progress logging."""
 def postprocess_mask(mask: np.ndarray, config: 'Config', fill_holes: bool=True, keep_largest_only: bool=True) -> np.ndarray:
-    """
-    Cleans up binary masks using morphological operations and connected components.
-    """
-
+    """Cleans up binary masks using morphological operations and connected components."""
 def render_mask_overlay(frame_rgb: np.ndarray, mask_gray: np.ndarray, alpha: float, logger: 'AppLogger') -> np.ndarray:
-    """
-    overlays a semi-transparent red mask on the image.
-    """
-
+    """overlays a semi-transparent red mask on the image."""
 def rgb_to_pil(image_rgb: np.ndarray) -> Image.Image:
-    """
-    Converts a NumPy RGB array to a PIL Image.
-    """
-
+    """Converts a NumPy RGB array to a PIL Image."""
 def create_frame_map(output_dir: Path, logger: 'AppLogger', ext: str='.webp') -> dict:
-    """
-    Creates a mapping from original frame numbers to extracted filenames.
-    """
-
+    """Creates a mapping from original frame numbers to extracted filenames."""
 def draw_bbox(img_rgb: np.ndarray, xywh: list, config: 'Config', color: Optional[tuple]=None, thickness: Optional[int]=None, label: Optional[str]=None) -> np.ndarray:
-    """
-    Draws a bounding box and optional label on an image.
-    """
+    """Draws a bounding box and optional label on an image."""
 ```
 
 ### `📄 scripts/run_ux_audit.py`
 
 ```python
-"""
-Run comprehensive UX audit and generate report.
-
-This script runs all UI/UX tests and generates a markdown report
-with findings and recommendations.
-
-Usage:
-    python scripts/run_ux_audit.py                    # Run full audit
-    python scripts/run_ux_audit.py --update-baselines # Update visual baselines
-    python scripts/run_ux_audit.py --quick            # Quick component check only
-"""
-
-import argparse
-import subprocess
-import sys
-from datetime import datetime
-from pathlib import Path
-
+"""Run comprehensive UX audit and generate report."""
 def run_tests(test_path: str, extra_args: list=None) -> tuple[int, str]:
-    """
-    Run pytest on specified test path and capture output.
-    """
-
+    """Run pytest on specified test path and capture output."""
 def generate_report(results: dict, output_path: Path) -> None:
-    """
-    Generate markdown report from test results.
-    """
-
+    """Generate markdown report from test results."""
 def main(): ...
 ```
 
 ### `📄 scripts/take_screenshot.py`
 
 ```python
-import asyncio
-from playwright.async_api import async_playwright
-
 async def main(): ...
 ```
 
 ### `📄 ui/app_ui.py`
 
 ```python
-from __future__ import annotations
-import re
-import shutil
-import sys
-import threading
-import time
-from collections import deque
-from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
-from queue import Empty, Queue
-from typing import Any, Callable, Deque, Dict, Generator, List, Optional
-import cv2
-import gradio as gr
-import numpy as np
-import torch
-from core.batch_manager import BatchItem, BatchManager
-from core.config import Config
-from core.events import ExportEvent, ExtractionEvent, FilterEvent, PreAnalysisEvent, PropagationEvent, SessionLoadEvent
-from core.export import dry_run_export, export_kept_frames
-from core.logger import AppLogger
-from core.managers import ModelRegistry, ThumbnailManager
-from core.models import Scene, SceneState
-from core.pipelines import AdvancedProgressTracker, execute_analysis, execute_extraction, execute_pre_analysis, execute_propagation, execute_session_load
-from core.scene_utils import _create_analysis_context, _recompute_single_preview, _wire_recompute_handler, get_scene_status_text, save_scene_seeds, toggle_scene_status
-from core.utils import is_image_folder
-from ui.gallery_utils import auto_set_thresholds, build_scene_gallery_items, on_filters_changed
-from ui.tabs import ExtractionTabBuilder, SubjectTabBuilder, SceneTabBuilder, MetricsTabBuilder, FilteringTabBuilder
-from ui.handlers import ExtractionHandler, AnalysisHandler, FilteringHandler, SceneHandler
-
 class AppUI:
-    """
-    Main UI class for the Frame Extractor & Analyzer application.
-    
-    Manages the Gradio interface, event handlers, and interaction with backend pipelines.
-    """
+    """Main UI class for the Frame Extractor & Analyzer application."""
     def __init__(self, config: 'Config', logger: 'AppLogger', progress_queue: Queue, cancel_event: threading.Event, thumbnail_manager: 'ThumbnailManager', model_registry: 'ModelRegistry'):
-        """
-        Initialize the AppUI.
-        
-        Args:
-        config: Application configuration.
-        logger: Application logger.
-        progress_queue: Queue for progress updates.
-        cancel_event: Event to signal task cancellation.
-        thumbnail_manager: Manager for thumbnail caching.
-        model_registry: Registry for ML models.
-        """
+        """Initialize the AppUI."""
     def preload_models(self):
-        """
-        Asynchronously preloads heavy models (SAM3) in a background thread.
-        """
+        """Asynchronously preloads heavy models (SAM3) in a background thread."""
     def _get_stepper_html(self, current_step: int=0) -> str:
-        """
-        Generates the HTML for the workflow progress stepper.
-        
-        Args:
-        current_step: The index of the current active step (0-based).
-        
-        Returns:
-        HTML string for the stepper component.
-        """
+        """Generates the HTML for the workflow progress stepper."""
     def build_ui(self) -> gr.Blocks:
-        """
-        Constructs the entire Gradio UI layout.
-        
-        Returns:
-        The Gradio Blocks instance containing the application UI.
-        """
+        """Constructs the entire Gradio UI layout."""
     def _get_comp(self, name: str) -> Optional[gr.components.Component]:
-        """
-        Retrieves a component by name from the internal registry.
-        """
+        """Retrieves a component by name from the internal registry."""
     def _reg(self, key: str, component: gr.components.Component) -> gr.components.Component:
-        """
-        Registers a component for later retrieval by UI mapping key.
-        """
+        """Registers a component for later retrieval by UI mapping key."""
     def _create_component(self, name: str, comp_type: str, kwargs: dict) -> gr.components.Component:
-        """
-        Helper to create and register a Gradio component.
-        
-        Args:
-        name: Unique name for the component.
-        comp_type: String identifier for the component type (e.g., 'button', 'textbox').
-        kwargs: Arguments to pass to the component constructor.
-        
-        Returns:
-        The created Gradio component.
-        """
+        """Helper to create and register a Gradio component."""
     def _create_section_header(self, title: str, subtitle: str=None, icon: str='📂'):
-        """
-        Creates a standardized section header.
-        """
+        """Creates a standardized section header."""
     def _build_header(self):
-        """
-        Builds the UI header section with title and status indicators.
-        """
+        """Builds the UI header section with title and status indicators."""
     def _build_main_tabs(self):
-        """
-        Constructs the main tabbed interface.
-        """
+        """Constructs the main tabbed interface."""
     def _build_footer(self):
-        """
-        Builds the footer with status bar, logs, and help section.
-        """
+        """Builds the footer with status bar, logs, and help section."""
     def get_all_filter_keys(self) -> list[str]:
-        """
-        Returns a list of all available filter metric keys.
-        """
+        """Returns a list of all available filter metric keys."""
     def get_metric_description(self, metric_name: str) -> str:
-        """
-        Returns a user-friendly description for a given metric.
-        """
+        """Returns a user-friendly description for a given metric."""
     def _create_event_handlers(self):
-        """
-        Sets up all global event listeners and state management.
-        """
+        """Sets up all global event listeners and state management."""
     def update_stepper(self, evt: gr.SelectData):
-        """
-        Updates the stepper HTML when a tab is selected.
-        """
+        """Updates the stepper HTML when a tab is selected."""
     def _run_task_with_progress(self, task_func: Callable, output_components: list, progress: Callable, *args) -> Generator[dict, None, None]:
-        """
-        Executes a background task while streaming progress updates to the UI.
-        
-        Args:
-        task_func: The function to execute.
-        output_components: List of components to update (deprecated).
-        progress: Gradio progress callback.
-        args: Arguments for the task function.
-        
-        Yields:
-        Dictionary of UI updates.
-        """
+        """Executes a background task while streaming progress updates to the UI."""
     def _toggle_pause(self, tracker: 'AdvancedProgressTracker') -> str:
-        """
-        Toggles the pause state of the current running task.
-        """
+        """Toggles the pause state of the current running task."""
     def run_system_diagnostics(self) -> Generator[str, None, None]:
-        """
-        Runs a comprehensive suite of system checks and a dry run.
-        """
+        """Runs a comprehensive suite of system checks and a dry run."""
     def _create_pre_analysis_event(self, *args: Any) -> 'PreAnalysisEvent':
-        """
-        Helper to construct a PreAnalysisEvent from UI arguments.
-        """
+        """Helper to construct a PreAnalysisEvent from UI arguments."""
     def _run_pipeline(self, pipeline_func: Callable, event: Any, progress: Callable, success_callback: Optional[Callable]=None, *args):
-        """
-        Generic wrapper to run a pipeline function and handle progress/errors.
-        
-        Args:
-        pipeline_func: The pipeline generator function to run.
-        event: The event object to pass to the pipeline.
-        progress: Gradio progress callback.
-        success_callback: Optional callback to run on successful completion.
-        """
+        """Generic wrapper to run a pipeline function and handle progress/errors."""
     def run_extraction_wrapper(self, *args, progress=None):
-        """
-        Wrapper to execute the extraction pipeline.
-        """
+        """Wrapper to execute the extraction pipeline."""
     def add_to_queue_handler(self, *args):
-        """
-        Adds a job to the batch processing queue.
-        """
+        """Adds a job to the batch processing queue."""
     def clear_queue_handler(self):
-        """
-        Clears all items from the batch queue.
-        """
+        """Clears all items from the batch queue."""
     def _batch_processor(self, item: BatchItem, progress_callback: Callable):
-        """
-        Callback to process a single item in the batch queue.
-        """
+        """Callback to process a single item in the batch queue."""
     def start_batch_wrapper(self, workers: float):
-        """
-        Starts processing the batch queue with specified number of workers.
-        """
+        """Starts processing the batch queue with specified number of workers."""
     def stop_batch_handler(self):
-        """
-        Stops the batch processing.
-        """
+        """Stops the batch processing."""
     def _on_extraction_success(self, result: dict) -> dict:
-        """
-        Callback for successful extraction.
-        """
+        """Callback for successful extraction."""
     def _on_pre_analysis_success(self, result: dict) -> dict:
-        """
-        Callback for successful pre-analysis.
-        """
+        """Callback for successful pre-analysis."""
     def run_pre_analysis_wrapper(self, *args, progress=None):
-        """
-        Wrapper to execute the pre-analysis pipeline.
-        """
+        """Wrapper to execute the pre-analysis pipeline."""
     def run_propagation_wrapper(self, scenes, *args, progress=None):
-        """
-        Wrapper to execute the mask propagation pipeline.
-        """
+        """Wrapper to execute the mask propagation pipeline."""
     def _on_propagation_success(self, result: dict) -> dict:
-        """
-        Callback for successful propagation.
-        """
+        """Callback for successful propagation."""
     def run_analysis_wrapper(self, scenes, *args, progress=None):
-        """
-        Wrapper to execute the full analysis pipeline.
-        """
+        """Wrapper to execute the full analysis pipeline."""
     def _on_analysis_success(self, result: dict) -> dict:
-        """
-        Callback for successful analysis.
-        """
+        """Callback for successful analysis."""
     def run_session_load_wrapper(self, session_path: str):
-        """
-        Loads a previous session and updates the UI state.
-        """
+        """Loads a previous session and updates the UI state."""
     def _fix_strategy_visibility(self, strategy: str) -> dict:
-        """
-        Adjusts UI component visibility based on the selected seed strategy.
-        """
+        """Adjusts UI component visibility based on the selected seed strategy."""
     def _setup_visibility_toggles(self):
-        """
-        Configures dynamic visibility logic for UI components.
-        """
+        """Configures dynamic visibility logic for UI components."""
     def get_inputs(self, keys: list[str]) -> list[gr.components.Component]:
-        """
-        Retrieves a list of UI components based on their registry keys.
-        """
+        """Retrieves a list of UI components based on their registry keys."""
     def _setup_pipeline_handlers(self):
-        """
-        Configures event handlers for starting main processing pipelines.
-        """
+        """Configures event handlers for starting main processing pipelines."""
     def on_identity_confidence_change(self, confidence: float, all_faces: list) -> gr.update:
-        """
-        Updates the face discovery gallery based on clustering confidence.
-        """
+        """Updates the face discovery gallery based on clustering confidence."""
     def on_discovered_face_select(self, all_faces: list, confidence: float, *args, evt: gr.EventData=None) -> tuple[str, Optional[np.ndarray]]:
-        """
-        Handles selection of a face cluster from the discovery gallery.
-        """
+        """Handles selection of a face cluster from the discovery gallery."""
     def on_find_people_from_video(self, *args) -> tuple[str, gr.update, gr.update, float, list]:
-        """
-        Scans the video for faces to populate the discovery gallery.
-        
-        Returns: (status_message, group_visibility, gallery_update, slider_value, all_faces_state)
-        """
+        """Scans the video for faces to populate the discovery gallery."""
     def _get_smart_mode_updates(self, is_enabled: bool) -> list[gr.update]:
-        """
-        Calculates slider updates when toggling 'Smart Mode'.
-        """
+        """Calculates slider updates when toggling 'Smart Mode'."""
     def _setup_filtering_handlers(self):
-        """
-        Configures event handlers for the filtering and export tab.
-        """
+        """Configures event handlers for the filtering and export tab."""
     def on_preset_changed(self, preset_name: str) -> list[Any]:
-        """
-        Updates filter sliders when a preset is selected.
-        """
+        """Updates filter sliders when a preset is selected."""
     def on_filters_changed_wrapper(self, all_frames_data: list, per_metric_values: dict, output_dir: str, gallery_view: str, show_overlay: bool, overlay_alpha: float, require_face_match: bool, dedup_thresh: int, dedup_method_ui: str, smart_mode_enabled: bool, *slider_values: float) -> tuple[str, gr.update]:
-        """
-        Updates the results gallery when filters change.
-        
-        Handles smart mode percentile conversion if enabled.
-        """
+        """Updates the results gallery when filters change."""
     def calculate_visual_diff(self, gallery: gr.Gallery, all_frames_data: list, dedup_method_ui: str, dedup_thresh: int, ssim_thresh: float, lpips_thresh: float) -> Optional[np.ndarray]:
-        """
-        Computes a side-by-side comparison image for duplicate inspection.
-        """
+        """Computes a side-by-side comparison image for duplicate inspection."""
     def on_reset_filters(self, all_frames_data: list, per_metric_values: dict, output_dir: str) -> tuple:
-        """
-        Resets all filter settings to their defaults.
-        """
+        """Resets all filter settings to their defaults."""
     def on_auto_set_thresholds(self, per_metric_values: dict, p: int, *checkbox_values: bool) -> list[gr.update]:
-        """
-        Automatically sets filter thresholds based on data percentiles.
-        """
+        """Automatically sets filter thresholds based on data percentiles."""
     def export_kept_frames_wrapper(self, all_frames_data: list, output_dir: str, video_path: str, enable_crop: bool, crop_ars: str, crop_padding: int, require_face_match: bool, dedup_thresh: int, dedup_method_ui: str, *slider_values: float) -> str:
-        """
-        Wrapper to execute the final frame export.
-        """
+        """Wrapper to execute the final frame export."""
     def dry_run_export_wrapper(self, all_frames_data: list, output_dir: str, video_path: str, enable_crop: bool, crop_ars: str, crop_padding: int, require_face_match: bool, dedup_thresh: int, dedup_method_ui: str, *slider_values: float) -> str:
-        """
-        Wrapper to perform a dry run of the export.
-        """
+        """Wrapper to perform a dry run of the export."""
 ```
 
 ### `📄 ui/gallery_utils.py`
 
 ```python
-from __future__ import annotations
-from pathlib import Path
-from typing import Any
-import cv2
-import gradio as gr
-import numpy as np
-from core.events import FilterEvent
-from core.filtering import apply_all_filters_vectorized
-from core.shared import build_scene_gallery_items
-from core.utils import render_mask_overlay
-
-__all__ = ['build_scene_gallery_items', 'render_mask_overlay', 'on_filters_changed', 'auto_set_th...
+__all__ = ['build_scene_gallery_items', 'render_mask_overlay', 'on_filters_ch...
 def _update_gallery(all_frames_data: list[dict], filters: dict, output_dir: str, gallery_view: str, show_overlay: bool, overlay_alpha: float, thumbnail_manager: Any, config: Any, logger: Any) -> tuple[str, gr.update]:
-    """
-    Updates the Gradio gallery based on applied filters.
-    
-    Returns:
-    A tuple containing the status text and a Gradio update object for the gallery.
-    """
-
+    """Updates the Gradio gallery based on applied filters."""
 def on_filters_changed(event: FilterEvent, thumbnail_manager: Any, config: Any, logger: Any) -> dict:
-    """
-    Event handler for when filter settings are modified.
-    
-    Re-filters data and updates the gallery view.
-    """
-
+    """Event handler for when filter settings are modified."""
 def auto_set_thresholds(per_metric_values: dict, p: int, slider_keys: list[str], selected_metrics: list[str]) -> dict:
-    """
-    Calculates threshold values based on data percentiles.
-    
-    Args:
-    per_metric_values: Dictionary of metric values.
-    p: Percentile value.
-    slider_keys: List of slider component keys.
-    selected_metrics: List of metrics to auto-tune.
-    
-    Returns:
-    Dictionary of updates for the sliders.
-    """
+    """Calculates threshold values based on data percentiles."""
 ```
 
 ### `📄 ui/handlers/__init__.py`
 
 ```python
-"""
-UI Handlers package for Frame Extractor.
-
-This package contains handler modules that encapsulate related UI functionality,
-extracted from the monolithic AppUI class to improve maintainability.
-"""
-
-from __future__ import annotations
-from ui.handlers.analysis_handler import AnalysisHandler
-from ui.handlers.extraction_handler import ExtractionHandler
-from ui.handlers.filtering_handler import FilteringHandler
-from ui.handlers.scene_handler import SceneHandler
-
-__all__ = ['ExtractionHandler', 'AnalysisHandler', 'FilteringHandler', 'SceneHandler']
+"""UI Handlers package for Frame Extractor."""
+__all__ = ['ExtractionHandler', 'AnalysisHandler', 'FilteringHandler', 'Scene...
 ```
 
 ### `📄 ui/handlers/analysis_handler.py`
 
 ```python
-"""
-Analysis handler for Frame Extractor UI.
-
-This module contains handlers related to the analysis pipelines,
-including pre-analysis, propagation, and full analysis.
-"""
-
-from __future__ import annotations
-from typing import TYPE_CHECKING, Callable, Generator
-import gradio as gr
-
+"""Analysis handler for Frame Extractor UI."""
 class AnalysisHandler:
-    """
-    Handles analysis-related UI operations.
-    
-    Extracted from AppUI to reduce class size and improve maintainability.
-    """
+    """Handles analysis-related UI operations."""
     def __init__(self, app: 'AppUI', config: 'Config', logger: 'AppLogger', thumbnail_manager: 'ThumbnailManager', model_registry: 'ModelRegistry'):
-        """
-        Initialize AnalysisHandler.
-        
-        Args:
-        app: Parent AppUI instance
-        config: Application configuration
-        logger: Application logger
-        thumbnail_manager: Thumbnail cache manager
-        model_registry: Model registry
-        """
+        """Initialize AnalysisHandler."""
     def run_pre_analysis(self, progress: Callable, *args) -> Generator[dict, None, None]:
-        """
-        Run the pre-analysis pipeline.
-        
-        Args:
-        progress: Gradio progress callback
-        *args: UI component values
-        
-        Yields:
-        Progress updates and final results
-        """
+        """Run the pre-analysis pipeline."""
     def on_pre_analysis_success(self, result: dict) -> dict:
-        """
-        Handle successful pre-analysis completion.
-        
-        Args:
-        result: Result dictionary from pre-analysis
-        
-        Returns:
-        Dictionary of component updates
-        """
+        """Handle successful pre-analysis completion."""
     def run_propagation(self, scenes: list, progress: Callable, *args) -> Generator[dict, None, None]:
-        """
-        Run the mask propagation pipeline.
-        
-        Args:
-        scenes: List of scenes to process
-        progress: Gradio progress callback
-        *args: UI component values
-        
-        Yields:
-        Progress updates and final results
-        """
+        """Run the mask propagation pipeline."""
     def on_propagation_success(self, result: dict) -> dict:
-        """
-        Handle successful propagation completion.
-        
-        Args:
-        result: Result dictionary from propagation
-        
-        Returns:
-        Dictionary of component updates
-        """
+        """Handle successful propagation completion."""
     def run_analysis(self, scenes: list, progress: Callable, *args) -> Generator[dict, None, None]:
-        """
-        Run the full analysis pipeline.
-        
-        Args:
-        scenes: List of scenes to process
-        progress: Gradio progress callback
-        *args: UI component values
-        
-        Yields:
-        Progress updates and final results
-        """
+        """Run the full analysis pipeline."""
     def on_analysis_success(self, result: dict) -> dict:
-        """
-        Handle successful analysis completion.
-        
-        Args:
-        result: Result dictionary from analysis
-        
-        Returns:
-        Dictionary of component updates
-        """
+        """Handle successful analysis completion."""
 ```
 
 ### `📄 ui/handlers/extraction_handler.py`
 
 ```python
-"""
-Extraction handler for Frame Extractor UI.
-
-This module contains handlers related to the extraction pipeline,
-including video extraction, session loading, and batch processing.
-"""
-
-from __future__ import annotations
-from typing import TYPE_CHECKING, Callable, Generator
-import gradio as gr
-
+"""Extraction handler for Frame Extractor UI."""
 class ExtractionHandler:
-    """
-    Handles extraction-related UI operations.
-    
-    Extracted from AppUI to reduce class size and improve maintainability.
-    """
+    """Handles extraction-related UI operations."""
     def __init__(self, app: 'AppUI', config: 'Config', logger: 'AppLogger', thumbnail_manager: 'ThumbnailManager', model_registry: 'ModelRegistry'):
-        """
-        Initialize ExtractionHandler.
-        
-        Args:
-        app: Parent AppUI instance
-        config: Application configuration
-        logger: Application logger
-        thumbnail_manager: Thumbnail cache manager
-        model_registry: Model registry
-        """
+        """Initialize ExtractionHandler."""
     def run_extraction(self, progress: Callable, *args) -> Generator[dict, None, None]:
-        """
-        Run the extraction pipeline.
-        
-        Args:
-        progress: Gradio progress callback
-        *args: UI component values
-        
-        Yields:
-        Progress updates and final results
-        """
+        """Run the extraction pipeline."""
     def on_extraction_success(self, result: dict) -> dict:
-        """
-        Handle successful extraction completion.
-        
-        Args:
-        result: Result dictionary from extraction
-        
-        Returns:
-        Dictionary of component updates
-        """
+        """Handle successful extraction completion."""
     def run_session_load(self, session_path: str) -> Generator[dict, None, None]:
-        """
-        Load a previous session.
-        
-        Args:
-        session_path: Path to session directory
-        
-        Yields:
-        Progress updates and component updates
-        """
+        """Load a previous session."""
 ```
 
 ### `📄 ui/handlers/filtering_handler.py`
 
 ```python
-"""
-Filtering handler for Frame Extractor UI.
-
-This module contains handlers related to frame filtering and export.
-"""
-
-from __future__ import annotations
-from typing import TYPE_CHECKING
-import gradio as gr
-
+"""Filtering handler for Frame Extractor UI."""
 class FilteringHandler:
-    """
-    Handles filtering-related UI operations.
-    
-    Extracted from AppUI to reduce class size and improve maintainability.
-    """
+    """Handles filtering-related UI operations."""
     def __init__(self, app: 'AppUI', config: 'Config', logger: 'AppLogger', thumbnail_manager: 'ThumbnailManager'):
-        """
-        Initialize FilteringHandler.
-        
-        Args:
-        app: Parent AppUI instance
-        config: Application configuration
-        logger: Application logger
-        thumbnail_manager: Thumbnail cache manager
-        """
+        """Initialize FilteringHandler."""
     def on_filters_changed(self, all_frames_data: list, per_metric_values: dict, output_dir: str, gallery_view: str, show_overlay: bool, overlay_alpha: float, require_face_match: bool, dedup_thresh: int, dedup_method_ui: str, smart_mode_enabled: bool, *slider_values: float) -> dict:
-        """
-        Handle filter changes and update gallery.
-        
-        Args:
-        all_frames_data: All frame metadata
-        per_metric_values: Per-metric value distributions
-        output_dir: Output directory path
-        gallery_view: Current gallery view mode
-        show_overlay: Whether to show mask overlay
-        overlay_alpha: Overlay transparency
-        require_face_match: Whether face matching is required
-        dedup_thresh: Deduplication threshold
-        dedup_method_ui: Deduplication method
-        smart_mode_enabled: Whether smart mode is enabled
-        *slider_values: Slider values for each metric
-        
-        Returns:
-        Dictionary of component updates
-        """
+        """Handle filter changes and update gallery."""
     def on_preset_changed(self, preset_name: str) -> dict:
-        """
-        Handle preset selection.
-        
-        Args:
-        preset_name: Name of the selected preset
-        
-        Returns:
-        Dictionary of slider updates
-        """
+        """Handle preset selection."""
     def on_reset_filters(self, all_frames_data: list, per_metric_values: dict, output_dir: str) -> dict:
-        """
-        Reset all filters to default values.
-        
-        Args:
-        all_frames_data: All frame metadata
-        per_metric_values: Per-metric value distributions
-        output_dir: Output directory path
-        
-        Returns:
-        Dictionary of component updates
-        """
+        """Reset all filters to default values."""
     def on_auto_set_thresholds(self, per_metric_values: dict, percentile: int, *checkbox_values: bool) -> dict:
-        """
-        Automatically set thresholds based on percentiles.
-        
-        Args:
-        per_metric_values: Per-metric value distributions
-        percentile: Percentile to use for threshold
-        *checkbox_values: Which metrics are enabled
-        
-        Returns:
-        Dictionary of slider updates
-        """
+        """Automatically set thresholds based on percentiles."""
 ```
 
 ### `📄 ui/handlers/scene_handler.py`
 
 ```python
-from __future__ import annotations
-import copy
-from typing import TYPE_CHECKING, List, Dict, Deque, Optional, Tuple
-from pathlib import Path
-import gradio as gr
-from core.models import Scene, SceneState
-from core.scene_utils import _create_analysis_context, _recompute_single_preview, _wire_recompute_handler, get_scene_status_text, save_scene_seeds, toggle_scene_status
-from ui.gallery_utils import build_scene_gallery_items
-
 class SceneHandler:
-    """
-    Handles scene-related UI operations (selection, filtering, undo, etc.).
-    """
+    """Handles scene-related UI operations (selection, filtering, undo, etc.)."""
     def __init__(self, app: 'AppUI'): ...
     def setup_handlers(self):
-        """
-        Configures event handlers for the scene selection tab (pagination, bulk actions).
-        """
+        """Configures event handlers for the scene selection tab (pagination, bulk actio..."""
     def _push_history(self, scenes: List[Dict], history: Deque) -> Deque:
-        """
-        Pushes the current scene state to the history stack for undo support.
-        """
+        """Pushes the current scene state to the history stack for undo support."""
     def _undo_last_action(self, scenes: List[Dict], history: Deque, output_dir: str, view: str) -> tuple:
-        """
-        Reverts the last action by popping from the history stack.
-        """
+        """Reverts the last action by popping from the history stack."""
     def on_reset_scene_wrapper(self, scenes, shot_id, outdir, view, history, *ana_args):
-        """
-        Resets a scene's manual overrides to its initial state.
-        """
+        """Resets a scene's manual overrides to its initial state."""
     def on_select_for_edit(self, scenes, view, indexmap, outputdir, event: Optional[gr.EventData]=None):
-        """
-        Handles selection of a scene from the gallery for editing.
-        """
+        """Handles selection of a scene from the gallery for editing."""
     def on_editor_toggle(self, scenes, selected_shotid, outputfolder, view, new_status, history):
-        """
-        Toggles the included/excluded status of a scene.
-        """
+        """Toggles the included/excluded status of a scene."""
     def on_apply_bulk_scene_filters_extended(self, scenes, min_mask_pct, min_face_sim, min_quality, enable_face_filter, output_dir, view, history):
-        """
-        Applies bulk filters to scenes based on metric thresholds.
-        """
+        """Applies bulk filters to scenes based on metric thresholds."""
 ```
 
 ### `📄 ui/tabs/__init__.py`
 
 ```python
-from __future__ import annotations
-from ui.tabs.extraction_tab import ExtractionTabBuilder
-from ui.tabs.subject_tab import SubjectTabBuilder
-from ui.tabs.scene_tab import SceneTabBuilder
-from ui.tabs.metrics_tab import MetricsTabBuilder
-from ui.tabs.filtering_tab import FilteringTabBuilder
-
-__all__ = ['ExtractionTabBuilder', 'SubjectTabBuilder', 'SceneTabBuilder', 'MetricsTabBuilder', '...
+__all__ = ['ExtractionTabBuilder', 'SubjectTabBuilder', 'SceneTabBuilder', 'M...
 ```
 
 ### `📄 ui/tabs/extraction_tab.py`
 
 ```python
-from __future__ import annotations
-from typing import TYPE_CHECKING
-import gradio as gr
-
 class ExtractionTabBuilder:
     def __init__(self, app: 'AppUI'): ...
     def build(self):
-        """
-        Creates the content for the 'Source' tab.
-        """
+        """Creates the content for the 'Source' tab."""
 ```
 
 ### `📄 ui/tabs/filtering_tab.py`
 
 ```python
-from __future__ import annotations
-from typing import TYPE_CHECKING
-import gradio as gr
-
 class FilteringTabBuilder:
     def __init__(self, app: 'AppUI'): ...
     def build(self):
-        """
-        Creates the content for the 'Export' tab.
-        """
+        """Creates the content for the 'Export' tab."""
 ```
 
 ### `📄 ui/tabs/metrics_tab.py`
 
 ```python
-from __future__ import annotations
-from typing import TYPE_CHECKING
-import gradio as gr
-
 class MetricsTabBuilder:
     def __init__(self, app: 'AppUI'): ...
     def build(self):
-        """
-        Creates the content for the 'Metrics' tab.
-        """
+        """Creates the content for the 'Metrics' tab."""
 ```
 
 ### `📄 ui/tabs/scene_tab.py`
 
 ```python
-from __future__ import annotations
-from typing import TYPE_CHECKING
-import gradio as gr
-
 class SceneTabBuilder:
     def __init__(self, app: 'AppUI'): ...
     def build(self):
-        """
-        Creates the content for the 'Scenes' tab.
-        """
+        """Creates the content for the 'Scenes' tab."""
 ```
 
 ### `📄 ui/tabs/subject_tab.py`
 
 ```python
-from __future__ import annotations
-from typing import TYPE_CHECKING
-import gradio as gr
-
 class SubjectTabBuilder:
     def __init__(self, app: 'AppUI'): ...
     def build(self):
-        """
-        Creates the content for the 'Subject' tab.
-        """
+        """Creates the content for the 'Subject' tab."""
 ```
 
 ### `📄 verification/verify_simple.py`
 
 ```python
-from playwright.sync_api import sync_playwright
-import time
-
 def verify_ui_simple(): ...
 ```

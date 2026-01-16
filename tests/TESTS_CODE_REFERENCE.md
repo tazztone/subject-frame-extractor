@@ -1,5 +1,5 @@
 ---
-Last Updated: 2026-01-16
+description: Auto-generated code skeletons for the test suite.
 ---
 
 # Tests Code Reference
@@ -13,177 +13,76 @@ This file contains auto-generated code skeletons for the test suite.
 ### `📄 conftest.py`
 
 ```python
-"""
-Centralized pytest fixtures for Frame Extractor & Analyzer tests.
-
-This module provides reusable mock fixtures for testing, avoiding duplication
-across test files and improving test maintainability.
-"""
-
-import os
-import sys
-from unittest.mock import MagicMock, patch
-import numpy as np
-import pydantic
-import pytest
-
+"""Centralized pytest fixtures for Frame Extractor & Analyzer tests."""
 def _create_mock_torch():
-    """
-    Create a comprehensive mock for torch and its submodules.
-    """
-
+    """Create a comprehensive mock for torch and its submodules."""
 def _create_mock_torch_submodules(mock_torch):
-    """
-    Create mocks for torch submodules like nn, optim, utils.
-    """
-
+    """Create mocks for torch submodules like nn, optim, utils."""
 def _create_mock_torchvision():
-    """
-    Create a mock for torchvision.
-    """
-
+    """Create a mock for torchvision."""
 def _create_mock_psutil():
-    """
-    Create a mock for psutil with expected return values.
-    """
-
+    """Create a mock for psutil with expected return values."""
 def _create_mock_matplotlib():
-    """
-    Create a mock for matplotlib.
-    """
-
+    """Create a mock for matplotlib."""
 def _create_mock_scenedetect():
-    """
-    Create a mock for scenedetect with proper Exception classes.
-    """
-
+    """Create a mock for scenedetect with proper Exception classes."""
 def build_modules_to_mock():
-    """
-    Build the complete dictionary of modules to mock.
-    """
-
+    """Build the complete dictionary of modules to mock."""
 def _should_apply_mocks():
-    """
-    Check if we should apply mocks (skip for integration/smoke/signature/gpu_e2e tests).
-    """
-
+    """Check if we should apply mocks (skip for integration/smoke/signature/gpu_e2e ..."""
 @pytest.fixture(scope='session')
 def mock_torch():
-    """
-    Session-scoped mock for torch module.
-    """
-
+    """Session-scoped mock for torch module."""
 @pytest.fixture
 def mock_config(tmp_path):
-    """
-    Provides a test Config with temporary directories.
-    
-    Use this for tests that need a valid Config object
-    with writable paths.
-    """
-
+    """Provides a test Config with temporary directories."""
 @pytest.fixture
 def mock_logger(mock_config):
-    """
-    Provides a mock AppLogger for testing.
-    """
-
+    """Provides a mock AppLogger for testing."""
 @pytest.fixture
 def mock_thumbnail_manager(mock_logger, mock_config):
-    """
-    Provides a mock ThumbnailManager.
-    """
-
+    """Provides a mock ThumbnailManager."""
 @pytest.fixture
 def mock_model_registry(mock_logger):
-    """
-    Provides a mock ModelRegistry.
-    """
-
+    """Provides a mock ModelRegistry."""
 @pytest.fixture
 def mock_progress_queue():
-    """
-    Provides a mock progress queue.
-    """
-
+    """Provides a mock progress queue."""
 @pytest.fixture
 def mock_cancel_event():
-    """
-    Provides a mock cancel event.
-    """
-
+    """Provides a mock cancel event."""
 @pytest.fixture
 def mock_ui_state():
-    """
-    Provides a dictionary with default values for UI-related event models.
-    
-    Useful for testing event validation and pipeline execution.
-    """
-
+    """Provides a dictionary with default values for UI-related event models."""
 @pytest.fixture
 def sample_frames_data():
-    """
-    Provides sample frame metadata for filtering tests.
-    
-    Includes a mix of good and bad frames to test various filters.
-    """
-
+    """Provides sample frame metadata for filtering tests."""
 @pytest.fixture
 def sample_scenes():
-    """
-    Provides sample Scene objects for scene-related tests.
-    """
-
+    """Provides sample Scene objects for scene-related tests."""
 @pytest.fixture
 def sample_image_rgb():
-    """
-    Provides a sample RGB image for testing.
-    """
-
+    """Provides a sample RGB image for testing."""
 @pytest.fixture
 def sample_mask():
-    """
-    Provides a sample binary mask for testing.
-    """
-
+    """Provides a sample binary mask for testing."""
 @pytest.fixture
 def mock_params(tmp_path):
-    """
-    Provides mock AnalysisParameters for pipeline tests.
-    """
-
+    """Provides mock AnalysisParameters for pipeline tests."""
 @pytest.fixture
 def mock_config_simple(tmp_path):
-    """
-    Provides a MagicMock config for tests needing attribute flexibility.
-    """
+    """Provides a MagicMock config for tests needing attribute flexibility."""
 ```
 
 ### `📄 e2e/ai_ux_analyzer.py`
 
 ```python
-"""
-AI-powered UX analysis using screenshot inspection.
-
-This module provides tools for analyzing UI screenshots against a UX checklist.
-It can be integrated with vision AI APIs (GPT-4V, Claude, etc.) for automated analysis.
-
-Usage:
-    from ai_ux_analyzer import analyze_screenshot, UX_CHECKLIST
-    issues = analyze_screenshot(screenshot_path)
-"""
-
-from dataclasses import dataclass
-from enum import Enum
-from pathlib import Path
-from typing import List, Optional
-
+"""AI-powered UX analysis using screenshot inspection."""
 class Severity(Enum):
     CRITICAL = 'critical'
     MAJOR = 'major'
     MINOR = 'minor'
     INFO = 'info'
-
 class Category(Enum):
     LAYOUT = 'layout'
     USABILITY = 'usability'
@@ -191,1075 +90,434 @@ class Category(Enum):
     FEEDBACK = 'feedback'
     CONTROLS = 'controls'
     CONSISTENCY = 'consistency'
-
 @dataclass
 class UXIssue:
-    """
-    Represents a detected UX issue.
-    """
-
+    """Represents a detected UX issue."""
 @dataclass
 class UXCheckItem:
-    """
-    A single item in the UX checklist.
-    """
-
+    """A single item in the UX checklist."""
 def analyze_screenshot_manual(screenshot_path: Path) -> List[UXIssue]:
-    """
-    Analyze screenshot for UX issues using rule-based checks.
-    
-    This is a placeholder for manual/heuristic analysis.
-    For actual AI-powered analysis, use analyze_screenshot_with_ai().
-    """
-
+    """Analyze screenshot for UX issues using rule-based checks."""
 def analyze_screenshot_with_ai(screenshot_path: Path, api_key: Optional[str]=None, model: str='gpt-4-vision-preview') -> List[UXIssue]:
-    """
-    Analyze screenshot using vision AI API.
-    
-    Args:
-    screenshot_path: Path to the screenshot image
-    api_key: API key for the vision service (or uses env var)
-    model: Model to use for analysis
-    
-    Returns:
-    List of detected UX issues
-    
-    Note:
-    This requires an API key for GPT-4V, Claude, or similar.
-    Set OPENAI_API_KEY environment variable or pass api_key.
-    """
-
+    """Analyze screenshot using vision AI API."""
 def generate_issue_report(issues: List[UXIssue], title: str='UX Analysis Report') -> str:
-    """
-    Generate markdown report of UX issues.
-    """
+    """Generate markdown report of UX issues."""
 ```
 
 ### `📄 e2e/conftest.py`
 
 ```python
-"""
-Shared fixtures for Playwright E2E tests.
-
-Provides the app_server fixture that starts/stops the mock Gradio server.
-"""
-
-import re
-import socket
-import subprocess
-import sys
-import time
-from os import environ
-from pathlib import Path
-import pytest
-import requests
-from playwright.sync_api import Page, expect
-
+"""Shared fixtures for Playwright E2E tests."""
 PORT = 7860
 BASE_URL = f'http://127.0.0.1:{PORT}'
 def wait_for_server(url, timeout=60):
-    """
-    Wait for the server to be responsive.
-    """
-
+    """Wait for the server to be responsive."""
 def switch_to_tab(page: Page, tab_name: str):
-    """
-    Robustly switch tabs in Gradio.
-    """
-
+    """Robustly switch tabs in Gradio."""
 @pytest.fixture(scope='module')
 def app_server():
-    """
-    Starts the mock app server before tests and kills it after.
-    
-    The mock app replaces heavy ML operations with fast stubs,
-    allowing E2E tests to run quickly without GPU.
-    
-    If the real app is already running on port 7860, uses that instead.
-    """
-
+    """Starts the mock app server before tests and kills it after."""
 @pytest.fixture
 def extracted_session(page, app_server):
-    """
-    Fixture that provides a page with extraction already completed.
-    
-    Useful for tests that need to start from a specific workflow stage.
-    """
-
+    """Fixture that provides a page with extraction already completed."""
 @pytest.fixture
 def analyzed_session(extracted_session):
-    """
-    Fixture that provides a page with pre-analysis completed.
-    """
-
+    """Fixture that provides a page with pre-analysis completed."""
 @pytest.fixture
 def full_analysis_session(analyzed_session):
-    """
-    Fixture that provides a page with full analysis completed (ready for export).
-    """
+    """Fixture that provides a page with full analysis completed (ready for export)."""
 ```
 
 ### `📄 e2e/test_accessibility.py`
 
 ```python
-"""
-Accessibility audit tests using axe-core.
-
-Runs automated accessibility checks on all application tabs to detect:
-- Missing alt text
-- Color contrast issues
-- Keyboard navigation problems
-- ARIA violations
-- Form label issues
-
-Run with:
-    python -m pytest tests/e2e/test_accessibility.py -v -s
-
-Requires: playwright, axe-core (injected via CDN)
-"""
-
-import json
-import pytest
-from playwright.sync_api import Page
-from .conftest import BASE_URL
-
+"""Accessibility audit tests using axe-core."""
 pytestmark = [pytest.mark.e2e, pytest.mark.accessibility]
-AXE_CORE_URL = 'https://cdnjs.cloudflare.com/ajax/libs/axe-core/4.8.2/axe.min.js'
+AXE_CORE_URL = 'https://cdnjs.cloudflare.com/ajax/libs/axe-core/4.8.2/axe.min...
 def inject_axe(page: Page) -> bool:
-    """
-    Inject axe-core into the page for accessibility testing.
-    """
-
+    """Inject axe-core into the page for accessibility testing."""
 def run_axe_audit(page: Page, context: str=None) -> dict:
-    """
-    Run axe-core accessibility audit on current page.
-    """
-
+    """Run axe-core accessibility audit on current page."""
 def filter_violations(violations: list, min_impact: str='serious') -> list:
-    """
-    Filter violations by minimum impact level.
-    """
-
+    """Filter violations by minimum impact level."""
 def format_violation(violation: dict) -> str:
-    """
-    Format a single violation for reporting.
-    """
-
+    """Format a single violation for reporting."""
 class TestAccessibilityAudit:
-    """
-    Accessibility tests for each application tab.
-    """
-    TABS = [('Source', None), ('Subject', 'Subject'), ('Scenes', 'Scenes'), ('Metrics', 'Metrics'), (...
+    """Accessibility tests for each application tab."""
+    TABS = [('Source', None), ('Subject', 'Subject'), ('Scenes', 'Scenes'), ('Met...
     @pytest.mark.parametrize('tab_name,click_tab', TABS)
     def test_tab_accessibility(self, page: Page, app_server, tab_name, click_tab):
-        """
-        Run accessibility audit on each tab.
-        """
+        """Run accessibility audit on each tab."""
     def test_keyboard_navigation(self, page: Page, app_server):
-        """
-        Test that main elements are keyboard accessible.
-        """
+        """Test that main elements are keyboard accessible."""
     def test_color_contrast(self, page: Page, app_server):
-        """
-        Check for color contrast issues.
-        """
+        """Check for color contrast issues."""
     def test_form_labels(self, page: Page, app_server):
-        """
-        Check that form inputs have proper labels.
-        """
-
+        """Check that form inputs have proper labels."""
 class TestARIACompliance:
-    """
-    Test ARIA attribute usage.
-    """
+    """Test ARIA attribute usage."""
     def test_aria_roles(self, page: Page, app_server):
-        """
-        Check for proper ARIA role usage.
-        """
+        """Check for proper ARIA role usage."""
 ```
 
 ### `📄 e2e/test_advanced_workflow.py`
 
 ```python
-import pytest
-from playwright.sync_api import Page, expect
-
 @pytest.fixture(scope='module')
 def app_server_url(app_server):
-    """
-    Returns the URL of the running app server.
-    app_server fixture from tests/e2e/conftest.py starts the server if needed.
-    """
-
+    """Returns the URL of the running app server."""
 class TestAdvancedWorkflow:
-    """
-    Advanced E2E tests covering edge cases, settings changes, and error handling.
-    """
+    """Advanced E2E tests covering edge cases, settings changes, and error handling."""
     def test_navigation_restrictions(self, page: Page, app_server_url):
-        """
-        Verify that users cannot proceed to later stages without completing earlier ones.
-        """
+        """Verify that users cannot proceed to later stages without completing earlier o..."""
     def test_extraction_settings_change(self, page: Page, app_server_url):
-        """
-        Verify that changing extraction settings works in the UI.
-        """
+        """Verify that changing extraction settings works in the UI."""
     def test_filtering_ui(self, page: Page, app_server_url):
-        """
-        Test the Metrics/Filtering tab UI controls.
-        """
+        """Test the Metrics/Filtering tab UI controls."""
 ```
 
 ### `📄 e2e/test_ai_ux_audit.py`
 
 ```python
-"""
-AI-powered UX audit tests.
-
-Uses the ai_ux_analyzer module to detect UX issues in screenshots.
-Can run with or without AI API - manual mode uses heuristic checks.
-
-Run with:
-    python -m pytest tests/e2e/test_ai_ux_audit.py -v -s
-
-For AI-powered analysis:
-    OPENAI_API_KEY=sk-xxx python -m pytest tests/e2e/test_ai_ux_audit.py -v -s
-"""
-
-import os
-import pytest
-from playwright.sync_api import Page
-from .conftest import BASE_URL
-
+"""AI-powered UX audit tests."""
 pytestmark = [pytest.mark.e2e, pytest.mark.ux_audit]
 @pytest.fixture
 def use_ai():
-    """
-    Check if AI analysis should be used (API key available).
-    """
-
+    """Check if AI analysis should be used (API key available)."""
 class TestUXAudit:
-    """
-    Run UX analysis on application states.
-    """
+    """Run UX analysis on application states."""
     @pytest.mark.skipif(not HAS_ANALYZER, reason='ai_ux_analyzer not available')
     def test_source_tab_ux(self, page: Page, app_server, use_ai, tmp_path):
-        """
-        Audit Source tab UX.
-        """
+        """Audit Source tab UX."""
     @pytest.mark.skipif(not HAS_ANALYZER, reason='ai_ux_analyzer not available')
     def test_scenes_tab_ux(self, page: Page, app_server, use_ai, tmp_path):
-        """
-        Audit Scenes tab UX - where pagination issues were found.
-        """
+        """Audit Scenes tab UX - where pagination issues were found."""
     @pytest.mark.skipif(not HAS_ANALYZER, reason='ai_ux_analyzer not available')
     def test_export_tab_ux(self, page: Page, app_server, use_ai, tmp_path):
-        """
-        Audit Export tab UX - filter controls and results display.
-        """
-
+        """Audit Export tab UX - filter controls and results display."""
 class TestFullAppAudit:
-    """
-    Run comprehensive audit across all tabs.
-    """
+    """Run comprehensive audit across all tabs."""
     @pytest.mark.skipif(not HAS_ANALYZER, reason='ai_ux_analyzer not available')
     def test_full_app_ux_audit(self, page: Page, app_server, use_ai, tmp_path):
-        """
-        Comprehensive UX audit of entire application.
-        """
+        """Comprehensive UX audit of entire application."""
 ```
 
 ### `📄 e2e/test_app_flow.py`
 
 ```python
-"""
-Playwright E2E Tests for main application workflow.
-
-These tests run against a mock Gradio server to validate:
-- Full workflow from extraction to export
-- Tab navigation and UI responsiveness
-- Error handling and display
-- Cancel operations
-
-Run with: python -m pytest tests/e2e/test_app_flow.py -v -s
-Requires: mock app running on port 7860
-"""
-
-import time
-import pytest
-from playwright.sync_api import Page, expect
-from .conftest import BASE_URL
-
+"""Playwright E2E Tests for main application workflow."""
 pytestmark = pytest.mark.e2e
 class TestMainWorkflow:
-    """
-    Complete end-to-end workflow tests.
-    """
+    """Complete end-to-end workflow tests."""
     def test_full_user_flow(self, page: Page, app_server):
-        """
-        Tests the complete end-to-end workflow:
-        Extraction -> Pre-Analysis -> Scene Selection -> Propagation -> Analysis -> Export
-        """
-
+        """Tests the complete end-to-end workflow:"""
 class TestTabNavigation:
-    """
-    Tests for tab navigation and UI responsiveness.
-    """
+    """Tests for tab navigation and UI responsiveness."""
     def test_all_tabs_accessible(self, page: Page, app_server):
-        """
-        Verify all main tabs can be accessed and show expected content.
-        """
+        """Verify all main tabs can be accessed and show expected content."""
     def test_tab_state_preserved(self, page: Page, app_server):
-        """
-        Verify tab state is preserved when switching tabs.
-        """
-
+        """Verify tab state is preserved when switching tabs."""
 class TestErrorHandling:
-    """
-    Tests for error display and recovery.
-    """
+    """Tests for error display and recovery."""
     def test_empty_source_shows_message(self, page: Page, app_server):
-        """
-        Verify appropriate message when no source is provided.
-        """
+        """Verify appropriate message when no source is provided."""
     def test_log_displays_updates(self, page: Page, app_server):
-        """
-        Verify log area displays status updates.
-        """
-
+        """Verify log area displays status updates."""
 class TestUIInteraction:
-    """
-    Tests for UI component interactions.
-    """
+    """Tests for UI component interactions."""
     def test_slider_interaction(self, page: Page, app_server):
-        """
-        Test that sliders can be interacted with.
-        """
+        """Test that sliders can be interacted with."""
     def test_dropdown_interaction(self, page: Page, app_server):
-        """
-        Test that dropdowns can be opened.
-        """
+        """Test that dropdowns can be opened."""
 ```
 
 ### `📄 e2e/test_bug_regression.py`
 
 ```python
-"""
-Playwright E2E Tests for Bug Regression Prevention.
-
-These tests verify that previously fixed bugs don't regress:
-- Pagination crash on single page (Bug 2)
-- Find People button functionality (Bug 3)
-- Filter slider ranges and behavior (Bug 4)
-- Gallery size controls (Bug 5)
-- System logs visibility (Bug 6)
-
-Run with: python -m pytest tests/e2e/test_bug_regression.py -v -s
-Requires: mock app running on port 7860
-"""
-
-import time
-import pytest
-from playwright.sync_api import Page, expect
-from .conftest import BASE_URL
-
+"""Playwright E2E Tests for Bug Regression Prevention."""
 pytestmark = pytest.mark.e2e
 class TestPaginationBugRegression:
-    """
-    Tests to prevent pagination crash regression (Bug 2).
-    """
+    """Tests to prevent pagination crash regression (Bug 2)."""
     def test_next_button_on_empty_gallery_no_crash(self, page: Page, app_server):
-        """
-        Clicking Next on empty/single-page gallery should not crash.
-        """
+        """Clicking Next on empty/single-page gallery should not crash."""
     def test_prev_button_on_page_one_no_crash(self, page: Page, app_server):
-        """
-        Clicking Previous on page 1 should not crash.
-        """
-
+        """Clicking Previous on page 1 should not crash."""
 class TestFindPeopleButtonRegression:
-    """
-    Tests to prevent Find People button regression (Bug 3).
-    """
+    """Tests to prevent Find People button regression (Bug 3)."""
     def test_find_people_button_visible_in_face_strategy(self, page: Page, app_server):
-        """
-        Find People button should be visible when 'By Face' strategy selected.
-        """
-
+        """Find People button should be visible when 'By Face' strategy selected."""
 class TestFilterSlidersRegression:
-    """
-    Tests to prevent filter slider bugs (Bug 4).
-    """
+    """Tests to prevent filter slider bugs (Bug 4)."""
     def test_scenes_tab_has_filter_sliders(self, page: Page, app_server):
-        """
-        Scenes tab should have properly ranged filter sliders.
-        """
+        """Scenes tab should have properly ranged filter sliders."""
     def test_export_tab_has_filter_sliders(self, page: Page, app_server):
-        """
-        Export tab filtering should have proper metric sliders.
-        """
-
+        """Export tab filtering should have proper metric sliders."""
 class TestGallerySizeControlsRegression:
-    """
-    Tests to prevent gallery sizing issues (Bug 5).
-    """
+    """Tests to prevent gallery sizing issues (Bug 5)."""
     def test_gallery_size_controls_exist(self, page: Page, app_server):
-        """
-        Scene gallery should have columns and height controls.
-        """
-
+        """Scene gallery should have columns and height controls."""
 class TestSystemLogsRegression:
-    """
-    Tests to prevent system log visibility issues (Bug 6).
-    """
+    """Tests to prevent system log visibility issues (Bug 6)."""
     def test_logs_accordion_exists(self, page: Page, app_server):
-        """
-        System Logs accordion should be present.
-        """
+        """System Logs accordion should be present."""
     def test_refresh_logs_button_exists(self, page: Page, app_server):
-        """
-        Refresh Logs button should be present for manual log updates.
-        """
+        """Refresh Logs button should be present for manual log updates."""
     def test_clear_logs_button_works(self, page: Page, app_server):
-        """
-        Clear Logs button should clear the log display.
-        """
-
+        """Clear Logs button should clear the log display."""
 class TestPropagationErrorHandling:
-    """
-    Tests for propagation error handling (Bug 1).
-    """
+    """Tests for propagation error handling (Bug 1)."""
     def test_propagate_button_disabled_without_scenes(self, page: Page, app_server):
-        """
-        Propagate button should be disabled when no scenes are ready.
-        """
+        """Propagate button should be disabled when no scenes are ready."""
 ```
 
 ### `📄 e2e/test_component_verification.py`
 
 ```python
-"""
-Component-level verification tests.
-
-Tests that each UI component (sliders, dropdowns, filters, logs) actually functions
-correctly, not just renders. This catches "does nothing" type bugs.
-
-Run with:
-    python -m pytest tests/e2e/test_component_verification.py -v -s
-"""
-
-import time
-import pytest
-from playwright.sync_api import Page, expect
-from .conftest import BASE_URL
-
+"""Component-level verification tests."""
 pytestmark = [pytest.mark.e2e, pytest.mark.component]
 class TestSliderFunctionality:
-    """
-    Verify all sliders are functional and update values.
-    """
-    SLIDERS_BY_TAB = [('Source', 'Advanced Extraction', 'Thumbnail Size'), ('Scenes', 'Scene Filterin...
+    """Verify all sliders are functional and update values."""
+    SLIDERS_BY_TAB = [('Source', 'Advanced Extraction', 'Thumbnail Size'), ('Scen...
     @pytest.mark.parametrize('tab,accordion,slider_label', SLIDERS_BY_TAB)
     def test_slider_value_changes(self, page: Page, app_server, tab, accordion, slider_label):
-        """
-        Slider value changes when interacted with.
-        """
-
+        """Slider value changes when interacted with."""
 class TestDropdownFunctionality:
-    """
-    Verify dropdowns can be opened and selections work.
-    """
-    DROPDOWNS_BY_TAB = [('Source', 'Max Download Resolution'), ('Source', 'Frame Selection Method'), ...
+    """Verify dropdowns can be opened and selections work."""
+    DROPDOWNS_BY_TAB = [('Source', 'Max Download Resolution'), ('Source', 'Frame ...
     @pytest.mark.parametrize('tab,dropdown_label', DROPDOWNS_BY_TAB)
     def test_dropdown_is_interactive(self, page: Page, app_server, tab, dropdown_label):
-        """
-        Dropdowns can be clicked and show options.
-        """
-
+        """Dropdowns can be clicked and show options."""
 class TestFiltersFunctionality:
-    """
-    Verify filter components actually filter content.
-    """
+    """Verify filter components actually filter content."""
     def test_scene_gallery_view_toggle(self, page: Page, app_server):
-        """
-        View toggle changes displayed scenes.
-        """
-
+        """View toggle changes displayed scenes."""
 class TestLogsFunctionality:
-    """
-    Verify logging system works correctly.
-    """
+    """Verify logging system works correctly."""
     def test_logs_visible_in_accordion(self, page: Page, app_server):
-        """
-        System Logs accordion contains a textbox.
-        """
+        """System Logs accordion contains a textbox."""
     def test_logs_have_initial_content(self, page: Page, app_server):
-        """
-        Logs should show initial ready message.
-        """
+        """Logs should show initial ready message."""
     def test_clear_logs_button(self, page: Page, app_server):
-        """
-        Clear button empties log content.
-        """
-
+        """Clear button empties log content."""
 class TestPaginationFunctionality:
-    """
-    Verify pagination controls work correctly.
-    """
+    """Verify pagination controls work correctly."""
     def test_pagination_dropdown_exists(self, page: Page, app_server):
-        """
-        Page selector should be a dropdown (after Phase 0 fix).
-        """
+        """Page selector should be a dropdown (after Phase 0 fix)."""
     def test_prev_next_buttons_exist(self, page: Page, app_server):
-        """
-        Previous and Next pagination buttons should exist.
-        """
-
+        """Previous and Next pagination buttons should exist."""
 class TestButtonsFunctionality:
-    """
-    Verify buttons are clickable and perform actions.
-    """
-    CRITICAL_BUTTONS = [('Source', '🚀 Start Single Extraction'), ('Source', '➕ Add to Batch Queue'), ...
+    """Verify buttons are clickable and perform actions."""
+    CRITICAL_BUTTONS = [('Source', '🚀 Start Single Extraction'), ('Source', '➕ Ad...
     @pytest.mark.parametrize('tab,button_name', CRITICAL_BUTTONS)
     def test_button_is_clickable(self, page: Page, app_server, tab, button_name):
-        """
-        Critical buttons should be visible and enabled.
-        """
-
+        """Critical buttons should be visible and enabled."""
 class TestStrategyVisibility:
-    """
-    Verify strategy selection shows/hides appropriate UI groups.
-    """
+    """Verify strategy selection shows/hides appropriate UI groups."""
     def test_face_strategy_shows_face_options(self, page: Page, app_server):
-        """
-        Selecting Face strategy should show face-specific options.
-        """
+        """Selecting Face strategy should show face-specific options."""
     def test_text_strategy_shows_text_options(self, page: Page, app_server):
-        """
-        Selecting Text strategy should show text prompt and warning.
-        """
+        """Selecting Text strategy should show text prompt and warning."""
 ```
 
 ### `📄 e2e/test_export_flow.py`
 
 ```python
-"""
-Playwright E2E Tests for export workflow.
-
-Tests the export functionality including:
-- Dry run export
-- Filter application before export
-- Export format selection
-- Export completion verification
-
-Run with: python -m pytest tests/e2e/test_export_flow.py -v -s
-"""
-
-import time
-import pytest
-from playwright.sync_api import Page, expect
-from .conftest import BASE_URL, switch_to_tab
-
+"""Playwright E2E Tests for export workflow."""
 pytestmark = pytest.mark.e2e
 class TestExportFlow:
-    """
-    Export workflow tests.
-    """
+    """Export workflow tests."""
     def test_export_tab_accessible(self, page: Page, app_server):
-        """
-        Verify export tab is accessible and shows expected elements.
-        """
+        """Verify export tab is accessible and shows expected elements."""
     def test_dry_run_export_requires_analysis(self, full_analysis_session):
-        """
-        Test dry run export mode after full analysis.
-        """
+        """Test dry run export mode after full analysis."""
     def test_export_button_visibility(self, full_analysis_session):
-        """
-        Test export button becomes visible after analysis.
-        """
-
+        """Test export button becomes visible after analysis."""
 class TestFilteringBeforeExport:
-    """
-    Tests for filtering controls in export tab.
-    """
+    """Tests for filtering controls in export tab."""
     def test_filter_sliders_visible(self, page: Page, app_server):
-        """
-        Verify filtering sliders are visible in export tab.
-        """
+        """Verify filtering sliders are visible in export tab."""
     def test_smart_filter_toggle(self, page: Page, app_server):
-        """
-        Test Smart Filtering toggle.
-        """
-
+        """Test Smart Filtering toggle."""
 class TestExportFormats:
-    """
-    Tests for export format options.
-    """
+    """Tests for export format options."""
     def test_export_settings_visible(self, full_analysis_session):
-        """
-        Verify export settings are accessible after analysis.
-        """
+        """Verify export settings are accessible after analysis."""
 ```
 
 ### `📄 e2e/test_filters_real.py`
 
 ```python
-"""
-E2E Tests for Real Filtering Logic.
-
-These tests use the sample video to verify that:
-1. Filters can be adjusted.
-2. Gallery updates to reflect filtered counts.
-3. Smart filtering toggle works.
-"""
-
-import time
-from pathlib import Path
-import pytest
-from playwright.sync_api import Page, expect
-from .conftest import BASE_URL, switch_to_tab
-
+"""E2E Tests for Real Filtering Logic."""
 pytestmark = pytest.mark.e2e
 SAMPLE_VIDEO = 'tests/assets/sample.mp4'
 class TestRealFilters:
     @pytest.fixture(autouse=True)
     def setup_with_analysis(self, page: Page, app_server):
-        """
-        Setup state: Extracted and Pre-Analyzed sample video.
-        We implement this manually here since the fixture is flaky.
-        """
+        """Setup state: Extracted and Pre-Analyzed sample video."""
     def test_apply_filter_reduces_count(self, page: Page):
-        """
-        Test that increasing a filter threshold reduces the number of kept frames.
-        """
+        """Test that increasing a filter threshold reduces the number of kept frames."""
     def test_deduplication_toggle(self, page: Page):
-        """
-        Test enabling deduplication updates the count.
-        """
+        """Test enabling deduplication updates the count."""
 ```
 
 ### `📄 e2e/test_full_workflow_mocked.py`
 
 ```python
-import time
-import re
-import pytest
-from playwright.sync_api import Page, expect
-
 @pytest.fixture(scope='module')
 def app_server_url(app_server):
-    """
-    Returns the URL of the running app server.
-    app_server fixture from tests/e2e/conftest.py starts the server if needed.
-    """
-
+    """Returns the URL of the running app server."""
 class TestFullWorkflowMocked:
-    """
-    Comprehensive E2E test simulating a full user journey using Playwright
-    against the mock application (tests/mock_app.py).
-    
-    The mock app simulates backend processing without needing heavy models/GPU.
-    """
+    """Comprehensive E2E test simulating a full user journey using Playwright"""
     @pytest.mark.xfail(reason='Flaky button visibility in mock environment')
     def test_full_user_journey(self, page: Page, app_server_url):
-        """
-        Simulates:
-        1. Select Video Source (Extraction)
-        2. Run Extraction
-        3. Define Subject (Pre-analysis)
-        4. Select a person/scene
-        5. Run Propagation
-        6. Filter Results
-        7. Export
-        """
+        """Simulates:"""
 ```
 
 ### `📄 e2e/test_session_lifecycle.py`
 
 ```python
-"""
-Playwright E2E Tests for session lifecycle.
-
-Tests session management including:
-- Session state persistence
-- Loading previous sessions
-- Session recovery after refresh
-
-Run with: python -m pytest tests/e2e/test_session_lifecycle.py -v -s
-"""
-
-import time
-import pytest
-from playwright.sync_api import Page, expect
-from .conftest import BASE_URL
-
+"""Playwright E2E Tests for session lifecycle."""
 pytestmark = pytest.mark.e2e
 class TestSessionPersistence:
-    """
-    Tests for session state persistence.
-    """
+    """Tests for session state persistence."""
     def test_session_dropdown_visible(self, page: Page, app_server):
-        """
-        Verify session dropdown/selector is visible.
-        """
+        """Verify session dropdown/selector is visible."""
     def test_output_folder_persists(self, page: Page, app_server):
-        """
-        Verify output folder path persists across tab switches.
-        """
-
+        """Verify output folder path persists across tab switches."""
 class TestSessionRecovery:
-    """
-    Tests for session recovery scenarios.
-    """
+    """Tests for session recovery scenarios."""
     def test_app_loads_without_errors(self, page: Page, app_server):
-        """
-        Verify app loads cleanly without console errors.
-        """
+        """Verify app loads cleanly without console errors."""
     def test_multiple_tab_switches(self, page: Page, app_server):
-        """
-        Test rapid tab switching doesn't cause errors.
-        """
-
+        """Test rapid tab switching doesn't cause errors."""
 class TestWorkflowState:
-    """
-    Tests for workflow state management.
-    """
+    """Tests for workflow state management."""
     def test_extraction_enables_subject_tab(self, extracted_session):
-        """
-        Verify Subject tab becomes usable after extraction.
-        """
+        """Verify Subject tab becomes usable after extraction."""
     def test_workflow_progress_tracking(self, page: Page, app_server):
-        """
-        Verify workflow progress is tracked.
-        """
-
+        """Verify workflow progress is tracked."""
 class TestLoadPreviousSession:
-    """
-    Tests for loading previous sessions.
-    """
+    """Tests for loading previous sessions."""
     def test_session_loader_ui(self, page: Page, app_server):
-        """
-        Verify session loading UI is accessible.
-        """
+        """Verify session loading UI is accessible."""
     def test_no_crash_on_fresh_start(self, page: Page, app_server):
-        """
-        Verify app starts cleanly with no previous session.
-        """
+        """Verify app starts cleanly with no previous session."""
 ```
 
 ### `📄 e2e/test_ui_interactions.py`
 
 ```python
-"""
-Automated UI Interaction Tests using Playwright.
-
-These tests verify that UI interactions work correctly by:
-1. Clicking buttons and verifying log output appears
-2. Adjusting sliders and verifying UI updates
-3. Monitoring console/terminal for expected messages
-
-Run with:
-    python tests/mock_app.py &
-    python -m pytest tests/e2e/test_ui_interactions.py -v -s
-"""
-
-import re
-import time
-import pytest
-from playwright.sync_api import ConsoleMessage, Page, expect
-from .conftest import BASE_URL
-
+"""Automated UI Interaction Tests using Playwright."""
 pytestmark = pytest.mark.e2e
 class TestFindPeopleButtonInteraction:
-    """
-    Tests for Find People in Video button - verifies button click works.
-    """
+    """Tests for Find People in Video button - verifies button click works."""
     def test_find_people_button_clickable(self, page: Page, app_server):
-        """
-        Button should be clickable and not crash the app.
-        """
+        """Button should be clickable and not crash the app."""
     def test_find_people_graceful_error_handling(self, page: Page, app_server):
-        """
-        Verify graceful error handling when prerequisites are missing.
-        """
-
+        """Verify graceful error handling when prerequisites are missing."""
 class TestGallerySliderInteractions:
-    """
-    Tests for gallery size sliders - verifies sliders affect gallery.
-    """
+    """Tests for gallery size sliders - verifies sliders affect gallery."""
     def test_columns_slider_exists_and_interactive(self, page: Page, app_server):
-        """
-        Columns slider should exist and be draggable.
-        """
+        """Columns slider should exist and be draggable."""
     def test_height_slider_exists_and_interactive(self, page: Page, app_server):
-        """
-        Height slider should exist and be adjustable.
-        """
-
+        """Height slider should exist and be adjustable."""
 class TestLogRefreshMechanism:
-    """
-    Tests for log display - verifies logs can be refreshed.
-    """
+    """Tests for log display - verifies logs can be refreshed."""
     def test_refresh_button_updates_logs(self, page: Page, app_server):
-        """
-        Clicking Refresh should drain log queue and update display.
-        """
-
+        """Clicking Refresh should drain log queue and update display."""
 class TestPropagationErrorHandling:
-    """
-    Tests for propagation - verifies graceful error handling.
-    """
+    """Tests for propagation - verifies graceful error handling."""
     def test_propagation_without_scenes_no_crash(self, page: Page, app_server):
-        """
-        Clicking propagate without scenes should not crash.
-        """
-
+        """Clicking propagate without scenes should not crash."""
 class TestUIConsoleErrors:
-    """
-    Tests that monitor browser console for JavaScript errors.
-    """
+    """Tests that monitor browser console for JavaScript errors."""
     def test_no_console_errors_on_load(self, page: Page, app_server):
-        """
-        Page should load without JavaScript errors.
-        """
+        """Page should load without JavaScript errors."""
     def test_no_errors_during_tab_navigation(self, page: Page, app_server):
-        """
-        Navigating through tabs should not cause errors.
-        """
+        """Navigating through tabs should not cause errors."""
 ```
 
 ### `📄 e2e/test_visual_regression.py`
 
 ```python
-"""
-Visual regression tests - captures UI states and compares to baselines.
-
-These tests detect unintended visual changes by:
-1. Capturing screenshots at each UI state
-2. Comparing against baseline images using perceptual hashing
-3. Failing if visual changes exceed threshold
-
-Run with:
-    python -m pytest tests/e2e/test_visual_regression.py -v
-
-Update baselines:
-    python -m pytest tests/e2e/test_visual_regression.py -v --update-baselines
-"""
-
-import time
-import pytest
-from playwright.sync_api import Page
-from .conftest import BASE_URL
-
+"""Visual regression tests - captures UI states and compares to baselines."""
 pytestmark = [pytest.mark.e2e, pytest.mark.visual]
 def pytest_addoption(parser):
-    """
-    Add --update-baselines option.
-    """
-
+    """Add --update-baselines option."""
 @pytest.fixture(scope='module', autouse=True)
 def cleanup_before_run():
-    """
-    Clean up diff screenshots before test run.
-    """
-
+    """Clean up diff screenshots before test run."""
 class TestVisualRegression:
-    """
-    Screenshot-based visual regression tests.
-    """
-    UI_STATES = [('01_source_tab_initial', None), ('02_source_tab_with_input', lambda p: p.get_by_lab...
+    """Screenshot-based visual regression tests."""
+    UI_STATES = [('01_source_tab_initial', None), ('02_source_tab_with_input', la...
     @pytest.mark.skipif(not HAS_UTILS, reason='visual_test_utils dependencies not installed')
     @pytest.mark.parametrize('state_name,action', UI_STATES)
     def test_ui_state_visual(self, page: Page, app_server, state_name, action, request):
-        """
-        Capture and compare UI state screenshot.
-        """
-
+        """Capture and compare UI state screenshot."""
 class TestUIStateConsistency:
-    """
-    Test that UI remains consistent across interactions.
-    """
+    """Test that UI remains consistent across interactions."""
     @pytest.mark.skipif(not HAS_UTILS, reason='visual_test_utils dependencies not installed')
     def test_tab_switching_preserves_state(self, page: Page, app_server):
-        """
-        Switching tabs and back should preserve visual state.
-        """
-
+        """Switching tabs and back should preserve visual state."""
 def _click_strategy(page: Page, strategy_keyword: str):
-    """
-    Click a strategy radio button containing keyword.
-    """
-
+    """Click a strategy radio button containing keyword."""
 def _open_logs(page: Page):
-    """
-    Open the System Logs accordion.
-    """
-
+    """Open the System Logs accordion."""
 def _open_help(page: Page):
-    """
-    Open the Help accordion.
-    """
+    """Open the Help accordion."""
 ```
 
 ### `📄 e2e/test_with_sample_data.py`
 
 ```python
-"""
-E2E Tests with Sample Data - Full Integration Tests.
-
-These tests use the actual sample.mp4 file to:
-1. Run extraction
-2. Populate scenes
-3. Test gallery sliders with real data
-
-Run with:
-    ./venv/Scripts/python.exe app.py &
-    ./venv/Scripts/python.exe -m pytest tests/e2e/test_with_sample_data.py -v -s
-"""
-
-import time
-from pathlib import Path
-import pytest
-from playwright.sync_api import Page, expect
-from .conftest import BASE_URL
-
+"""E2E Tests with Sample Data - Full Integration Tests."""
 pytestmark = pytest.mark.e2e
 SAMPLE_VIDEO = str(Path(__file__).parent.parent / 'assets' / 'sample.mp4')
 SAMPLE_IMAGE = str(Path(__file__).parent.parent / 'assets' / 'sample.jpg')
 @pytest.fixture
 def extracted_video_session(page: Page, app_server):
-    """
-    Fixture that extracts frames from sample.mp4 before tests.
-    
-    This provides a page with:
-    - Video loaded
-    - Frames extracted
-    - Ready for pre-analysis or scene testing
-    """
-
+    """Fixture that extracts frames from sample.mp4 before tests."""
 class TestGallerySlidersWithData:
-    """
-    Tests for gallery sliders after data is loaded.
-    """
+    """Tests for gallery sliders after data is loaded."""
     def test_columns_slider_changes_gallery(self, extracted_video_session):
-        """
-        Columns slider should change gallery layout when scenes exist.
-        """
+        """Columns slider should change gallery layout when scenes exist."""
     def test_height_slider_changes_gallery(self, extracted_video_session):
-        """
-        Height slider should change gallery height when scenes exist.
-        """
-
+        """Height slider should change gallery height when scenes exist."""
 class TestFindPeopleWithData:
-    """
-    Tests for Find People feature with actual video.
-    """
+    """Tests for Find People feature with actual video."""
     def test_scan_video_finds_faces(self, extracted_video_session):
-        """
-        Scan Video for Faces should detect people in sample video.
-        """
+        """Scan Video for Faces should detect people in sample video."""
     def test_upload_reference_face(self, extracted_video_session):
-        """
-        Upload sample.jpg as reference face for Face strategy.
-        """
-
+        """Upload sample.jpg as reference face for Face strategy."""
 class TestFullWorkflowWithSampleVideo:
-    """
-    Complete workflow test using sample video.
-    """
+    """Complete workflow test using sample video."""
     def test_extract_to_scenes(self, page: Page, app_server):
-        """
-        Test extraction followed by scene detection.
-        """
+        """Test extraction followed by scene detection."""
 ```
 
 ### `📄 e2e/visual_test_utils.py`
 
 ```python
-"""
-Visual regression testing utilities.
-
-Provides screenshot capture and comparison against baselines using perceptual hashing.
-Used to detect unintended UI changes across development cycles.
-"""
-
-import time
-from pathlib import Path
-from typing import Optional
-
+"""Visual regression testing utilities."""
 BASELINE_DIR = Path(__file__).parent / 'baselines'
 DIFF_DIR = Path(__file__).parent / 'diffs'
 def capture_state_screenshot(page, name: str, wait_ms: int=500) -> Path:
-    """
-    Capture screenshot of current UI state.
-    
-    Args:
-    page: Playwright page object
-    name: Name for the screenshot file
-    wait_ms: Time to wait before capture (for animations to settle)
-    
-    Returns:
-    Path to the captured screenshot
-    """
-
+    """Capture screenshot of current UI state."""
 def compare_with_baseline(screenshot_path: Path, threshold: int=5) -> dict:
-    """
-    Compare screenshot against baseline using perceptual hash.
-    
-    Args:
-    screenshot_path: Path to the current screenshot
-    threshold: Maximum hash distance to consider "same" (0-64 for phash)
-    
-    Returns:
-    Dict with status, diff_score, and action recommendation
-    """
-
+    """Compare screenshot against baseline using perceptual hash."""
 def save_as_baseline(screenshot_path: Path) -> Path:
-    """
-    Promote current screenshot to baseline.
-    
-    Args:
-    screenshot_path: Path to the screenshot to save as baseline
-    
-    Returns:
-    Path to the saved baseline
-    """
-
+    """Promote current screenshot to baseline."""
 def generate_diff_image(current_path: Path, baseline_path: Path) -> Optional[Path]:
-    """
-    Generate a visual diff image highlighting differences.
-    
-    Args:
-    current_path: Path to current screenshot
-    baseline_path: Path to baseline screenshot
-    
-    Returns:
-    Path to diff image, or None if images are identical
-    """
-
+    """Generate a visual diff image highlighting differences."""
 def list_baselines() -> list[str]:
-    """
-    List all available baseline screenshots.
-    """
-
+    """List all available baseline screenshots."""
 def cleanup_diffs():
-    """
-    Remove all temporary diff screenshots.
-    """
+    """Remove all temporary diff screenshots."""
 ```
 
 ### `📄 mock_app.py`
 
 ```python
-import os
-import sys
-import time
-from unittest.mock import MagicMock, patch
-import app
-import core.managers
-import core.pipelines
-import core.utils
-from core.models import Scene
-
 mock_torch = MagicMock(name='torch')
 mock_torch.cuda.is_available.return_value = False
 mock_torch.__version__ = '2.0.0'
@@ -1267,21 +525,13 @@ mock_torch.nn.Module = MagicMock
 mock_torch.Tensor = MagicMock
 mock_sam3 = MagicMock(name='sam3')
 mock_sam3.model_builder = MagicMock()
-modules_to_mock = {'torch': mock_torch, 'torchvision': MagicMock(), 'torchvision.ops': MagicMock(...
+modules_to_mock = {'torch': mock_torch, 'torchvision': MagicMock(), 'torchvis...
 def mock_extraction_run(self, tracker=None):
-    """
-    Mocks the extraction process.
-    """
-
+    """Mocks the extraction process."""
 def mock_pre_analysis_execution(event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress=None, model_registry=None):
-    """
-    Mocks execute_pre_analysis generator.
-    """
-
+    """Mocks execute_pre_analysis generator."""
 def mock_propagation_execution(event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress=None, model_registry=None): ...
-
 def mock_analysis_execution(event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress=None, model_registry=None): ...
-
 core.pipelines.ExtractionPipeline._run_impl = mock_extraction_run
 core.pipelines.execute_pre_analysis = mock_pre_analysis_execution
 core.pipelines.execute_propagation = mock_propagation_execution
@@ -1293,14 +543,6 @@ core.managers.download_model = MagicMock()
 ### `📄 test_app_ui_logic.py`
 
 ```python
-import threading
-from collections import deque
-from queue import Queue
-from unittest.mock import MagicMock, patch
-import gradio as gr
-import pytest
-from ui.app_ui import AppUI
-
 class TestAppUI:
     @pytest.fixture
     def mock_config(self, tmp_path): ...
@@ -1337,81 +579,35 @@ class TestAppUI:
 ### `📄 test_batch_manager.py`
 
 ```python
-import time
-from core.batch_manager import BatchManager, BatchStatus
-
 def test_batch_manager_add(): ...
-
 def test_batch_manager_processing(): ...
-
 def test_batch_manager_failure(): ...
 ```
 
 ### `📄 test_bug_fixes.py`
 
 ```python
-"""
-E2E tests for bug fixes.
-
-These tests verify the bug fixes using Playwright to interact with the actual Gradio UI.
-"""
-
-from unittest.mock import patch
-from core.models import Scene
-from core.shared import build_scene_gallery_items
-
+"""E2E tests for bug fixes."""
 class TestPaginationBugFixes:
-    """
-    Tests for pagination edge case fixes (Bug 2).
-    """
+    """Tests for pagination edge case fixes (Bug 2)."""
     def test_build_scene_gallery_items_page_clamped_to_max(self):
-        """
-        Page number greater than total_pages should be clamped.
-        """
+        """Page number greater than total_pages should be clamped."""
     def test_build_scene_gallery_items_empty_scenes(self):
-        """
-        Empty scenes list should return page 1.
-        """
-
+        """Empty scenes list should return page 1."""
 class TestPipelinesSceneFieldsFix:
-    """
-    Tests for Scene.model_fields fix (Bug 1).
-    """
+    """Tests for Scene.model_fields fix (Bug 1)."""
     def test_scene_model_fields_accessible(self):
-        """
-        Scene.model_fields.keys() should work for Pydantic model.
-        """
-
+        """Scene.model_fields.keys() should work for Pydantic model."""
 class TestFilterSlidersFix:
-    """
-    Tests for filter slider separation (Bug 4).
-    """
+    """Tests for filter slider separation (Bug 4)."""
     def test_seed_metrics_score_range(self):
-        """
-        Seed metrics score should be in 0-20 range (NIQE + face composite).
-        """
+        """Seed metrics score should be in 0-20 range (NIQE + face composite)."""
 ```
 
 ### `📄 test_core.py`
 
 ```python
-"""
-Tests for core functionality - Config, Logger, Filtering, and Event validation.
-
-Uses fixtures from conftest.py for mock setup.
-"""
-
-from unittest.mock import MagicMock, patch
-import numpy as np
-import pytest
-from pydantic import ValidationError
-from core.config import Config
-from core.events import PreAnalysisEvent
-from core.filtering import apply_all_filters_vectorized
-from core.logger import AppLogger
-from core.models import Frame, QualityConfig, _coerce
-from ui.gallery_utils import auto_set_thresholds
-
+"""Tests for core functionality - Config, Logger, Filtering, and Event validation."""
 class TestUtils:
     @pytest.mark.parametrize('value, to_type, expected', [('True', bool, True), ('false', bool, False), ('1', bool, True), ('0', bool, False), ('yes', bool, True), ('no', bool, False), (True, bool, True), (False, bool, False), ('123', int, 123), (123, int, 123), ('123.45', float, 123.45), (123.45, float, 123.45), ('string', str, 'string')])
     def test_coerce(self, value, to_type, expected): ...
@@ -1421,400 +617,199 @@ class TestUtils:
     @patch('pathlib.Path.touch', MagicMock())
     @patch('pathlib.Path.unlink', MagicMock())
     def test_validation_error(self):
-        """
-        Test that a validation error is raised for invalid config.
-        """
-
+        """Test that a validation error is raised for invalid config."""
 class TestAppLogger:
     def test_app_logger_instantiation(self, mock_config):
-        """
-        Tests that the logger can be instantiated with a valid config.
-        """
+        """Tests that the logger can be instantiated with a valid config."""
     def test_auto_set_thresholds(self): ...
     def test_apply_all_filters_with_face_and_mask(self, sample_frames_data, mock_config):
-        """
-        Verify filtering by face similarity and mask area.
-        """
+        """Verify filtering by face similarity and mask area."""
     def test_calculate_quality_metrics_with_niqe(self, mock_config):
-        """
-        Test quality metrics calculation including NIQE.
-        """
-
+        """Test quality metrics calculation including NIQE."""
 class TestPreAnalysisEvent:
     def test_face_ref_validation(self, tmp_path, mock_ui_state):
-        """
-        Test the custom validator for face_ref_img_path.
-        """
+        """Test the custom validator for face_ref_img_path."""
 ```
 
 ### `📄 test_database.py`
 
 ```python
-import sqlite3
-import pytest
-from core.database import Database
-
 @pytest.fixture
 def db_path(tmp_path): ...
-
 @pytest.fixture
 def db(db_path): ...
-
 def test_create_tables(db, db_path): ...
-
 def test_insert_metadata_and_flush(db): ...
-
 def test_insert_metadata_batch_flush(db): ...
-
 def test_clear_metadata(db): ...
-
 def test_count_errors(db): ...
-
 def test_migration_adds_column(tmp_path): ...
-
 def test_metrics_json_parsing(db): ...
-
 def test_mask_empty_conversion(db): ...
-
 def test_wal_mode_enabled(db): ...
 ```
 
 ### `📄 test_dedup.py`
 
 ```python
-"""
-Tests for deduplication filtering functionality.
-
-Uses fixtures from conftest.py for mock setup.
-"""
-
-from unittest.mock import MagicMock, patch
-import imagehash
-import numpy as np
-import pytest
-from core.filtering import _apply_deduplication_filter, _run_batched_lpips
-
+"""Tests for deduplication filtering functionality."""
 @pytest.fixture
 def sample_frames_for_dedup():
-    """
-    Sample frames with phash values for deduplication testing.
-    """
-
+    """Sample frames with phash values for deduplication testing."""
 def test_dedup_phash_replacement(sample_frames_for_dedup, mock_thumbnail_manager, mock_config): ...
-
 def test_dedup_phash_no_replacement(sample_frames_for_dedup, mock_thumbnail_manager, mock_config): ...
-
 def test_dedup_disabled(sample_frames_for_dedup, mock_thumbnail_manager, mock_config): ...
-
 def test_dedup_threshold(sample_frames_for_dedup, mock_thumbnail_manager, mock_config): ...
-
 def test_run_batched_lpips(mock_thumbnail_manager): ...
 ```
 
 ### `📄 test_error_handling.py`
 
 ```python
-"""
-Tests for error handling and edge cases.
-
-These tests ensure the application handles errors gracefully and provides
-useful feedback to users.
-"""
-
-from unittest.mock import MagicMock, patch
-import numpy as np
-import pytest
-from pydantic import ValidationError
-from core.config import Config
-from core.filtering import apply_all_filters_vectorized
-from core.models import AnalysisParameters, Frame, QualityConfig, Scene
-
+"""Tests for error handling and edge cases."""
 class TestConfigEdgeCases:
-    """
-    Tests for Config validation and edge cases.
-    """
+    """Tests for Config validation and edge cases."""
     def test_config_default_values(self):
-        """
-        Test that Config has sensible defaults.
-        """
+        """Test that Config has sensible defaults."""
     def test_config_custom_values(self, tmp_path):
-        """
-        Test that Config accepts custom values.
-        """
+        """Test that Config accepts custom values."""
     def test_config_path_creation(self, tmp_path):
-        """
-        Test that Config creates necessary directories.
-        """
+        """Test that Config creates necessary directories."""
     @patch('pathlib.Path.mkdir', MagicMock())
     @patch('pathlib.Path.touch', MagicMock())
     @patch('pathlib.Path.unlink', MagicMock())
     def test_config_invalid_quality_weights(self):
-        """
-        Test that Config rejects invalid quality weights (sum cannot be zero).
-        """
-
+        """Test that Config rejects invalid quality weights (sum cannot be zero)."""
 class TestSceneEdgeCases:
-    """
-    Tests for Scene model edge cases.
-    """
+    """Tests for Scene model edge cases."""
     def test_scene_minimal(self):
-        """
-        Test Scene with minimal required fields.
-        """
+        """Test Scene with minimal required fields."""
     def test_scene_with_seed_result(self):
-        """
-        Test Scene with seed_result data.
-        """
+        """Test Scene with seed_result data."""
     def test_scene_status_transitions(self):
-        """
-        Test Scene status can be changed.
-        """
-
+        """Test Scene status can be changed."""
 class TestFrameEdgeCases:
-    """
-    Tests for Frame model edge cases.
-    """
+    """Tests for Frame model edge cases."""
     def test_frame_with_none_image(self):
-        """
-        Test Frame with None image data (some workflows don't need images).
-        """
+        """Test Frame with None image data (some workflows don't need images)."""
     def test_frame_with_image_data(self, sample_image_rgb):
-        """
-        Test Frame stores image data correctly.
-        """
-
+        """Test Frame stores image data correctly."""
 class TestFilteringEdgeCases:
-    """
-    Tests for filtering with edge cases and empty data.
-    """
+    """Tests for filtering with edge cases and empty data."""
     def test_filter_empty_frames(self, mock_config):
-        """
-        Test filtering handles empty frame list.
-        """
+        """Test filtering handles empty frame list."""
     def test_filter_all_frames_pass(self, sample_frames_data, mock_config):
-        """
-        Test filtering when all frames pass.
-        """
+        """Test filtering when all frames pass."""
     def test_filter_strict_thresholds(self, sample_frames_data, mock_config):
-        """
-        Test filtering with very strict thresholds rejects most frames.
-        """
-
+        """Test filtering with very strict thresholds rejects most frames."""
 class TestAnalysisParametersValidation:
-    """
-    Tests for AnalysisParameters validation.
-    """
+    """Tests for AnalysisParameters validation."""
     def test_params_minimal(self, tmp_path):
-        """
-        Test AnalysisParameters with minimal required fields.
-        """
+        """Test AnalysisParameters with minimal required fields."""
     def test_params_full(self, tmp_path):
-        """
-        Test AnalysisParameters with all fields.
-        """
-
+        """Test AnalysisParameters with all fields."""
 class TestQualityConfigEdgeCases:
-    """
-    Tests for QualityConfig edge cases.
-    """
+    """Tests for QualityConfig edge cases."""
     def test_quality_config_with_required_fields(self):
-        """
-        Test QualityConfig with required fields.
-        """
+        """Test QualityConfig with required fields."""
     def test_quality_config_niqe_disabled(self):
-        """
-        Test QualityConfig with NIQE disabled.
-        """
+        """Test QualityConfig with NIQE disabled."""
     def test_quality_config_custom_scales(self):
-        """
-        Test QualityConfig with custom scales.
-        """
-
+        """Test QualityConfig with custom scales."""
 class TestErrorHandlerDecorators:
-    """
-    Tests for ErrorHandler.with_retry and with_fallback decorators.
-    """
+    """Tests for ErrorHandler.with_retry and with_fallback decorators."""
     def test_with_retry_success_first_try(self, mock_logger):
-        """
-        Test with_retry when function succeeds on first try.
-        """
+        """Test with_retry when function succeeds on first try."""
     def test_with_retry_success_after_failures(self, mock_logger):
-        """
-        Test with_retry when function succeeds after initial failures.
-        """
+        """Test with_retry when function succeeds after initial failures."""
     def test_with_retry_all_attempts_fail(self, mock_logger):
-        """
-        Test with_retry raises exception when all attempts fail.
-        """
+        """Test with_retry raises exception when all attempts fail."""
     def test_with_retry_custom_exceptions(self, mock_logger):
-        """
-        Test with_retry only catches specified exceptions.
-        """
+        """Test with_retry only catches specified exceptions."""
     def test_with_fallback_primary_succeeds(self, mock_logger):
-        """
-        Test with_fallback when primary function succeeds.
-        """
+        """Test with_fallback when primary function succeeds."""
     def test_with_fallback_primary_fails(self, mock_logger):
-        """
-        Test with_fallback when primary function fails.
-        """
+        """Test with_fallback when primary function fails."""
     def test_with_fallback_both_fail(self, mock_logger):
-        """
-        Test with_fallback when both primary and fallback fail.
-        """
-
+        """Test with_fallback when both primary and fallback fail."""
 class TestErrorSeverityAndRecoveryStrategy:
-    """
-    Tests for ErrorSeverity and RecoveryStrategy enums.
-    """
+    """Tests for ErrorSeverity and RecoveryStrategy enums."""
     def test_error_severity_values(self):
-        """
-        Test ErrorSeverity enum values exist.
-        """
+        """Test ErrorSeverity enum values exist."""
     def test_recovery_strategy_values(self):
-        """
-        Test RecoveryStrategy enum values exist.
-        """
+        """Test RecoveryStrategy enum values exist."""
 ```
 
 ### `📄 test_export.py`
 
 ```python
-"""
-Tests for export functionality.
-
-Covers all functions in core/export.py:
-- export_kept_frames (main export function)
-- dry_run_export (preview export without writing)
-- _perform_ffmpeg_export (internal FFmpeg call)
-- _rename_exported_frames (rename to original names)
-- _crop_exported_frames (crop around mask)
-"""
-
-from unittest.mock import MagicMock, patch
-import pytest
-from core.events import ExportEvent
-from core.export import dry_run_export, export_kept_frames
-
+"""Tests for export functionality."""
 class TestExportKeptFrames:
-    """
-    Tests for the main export_kept_frames function.
-    """
+    """Tests for the main export_kept_frames function."""
     @patch('subprocess.Popen')
     @patch('core.export.apply_all_filters_vectorized')
     def test_export_kept_frames_basic(self, mock_filter, mock_popen, mock_config, mock_logger, tmp_path):
-        """
-        Test basic export functionality.
-        """
+        """Test basic export functionality."""
     @patch('subprocess.Popen')
     @patch('core.export.apply_all_filters_vectorized')
     def test_export_no_frames_kept(self, mock_filter, mock_popen, mock_config, mock_logger, tmp_path):
-        """
-        Test export when no frames pass filters.
-        """
+        """Test export when no frames pass filters."""
     @patch('subprocess.Popen')
     @patch('core.export.apply_all_filters_vectorized')
     def test_export_ffmpeg_failure(self, mock_filter, mock_popen, mock_config, mock_logger, tmp_path):
-        """
-        Test export handles FFmpeg failure gracefully.
-        """
+        """Test export handles FFmpeg failure gracefully."""
     @patch('subprocess.Popen')
     @patch('core.export.apply_all_filters_vectorized')
     def test_export_metadata_creation(self, mock_filter, mock_popen, mock_config, mock_logger, tmp_path):
-        """
-        Test that metadata files are created during export.
-        """
-
+        """Test that metadata files are created during export."""
 class TestDryRunExport:
-    """
-    Tests for dry_run_export function.
-    """
+    """Tests for dry_run_export function."""
     def test_dry_run_basic(self, mock_config, tmp_path):
-        """
-        Test basic dry run export returns expected format.
-        """
+        """Test basic dry run export returns expected format."""
     def test_dry_run_no_frames(self, mock_config, tmp_path):
-        """
-        Test dry run with no frames.
-        """
-
+        """Test dry run with no frames."""
 class TestExportEvent:
-    """
-    Tests for ExportEvent validation.
-    """
+    """Tests for ExportEvent validation."""
     def test_event_creation_minimal(self, tmp_path):
-        """
-        Test ExportEvent with minimal required fields.
-        """
+        """Test ExportEvent with minimal required fields."""
     def test_event_with_crop_settings(self, tmp_path):
-        """
-        Test ExportEvent with crop enabled.
-        """
-
+        """Test ExportEvent with crop enabled."""
 class TestExportCancellation:
-    """
-    Tests for export cancellation handling.
-    """
+    """Tests for export cancellation handling."""
     @patch('subprocess.Popen')
     @patch('core.export.apply_all_filters_vectorized')
     def test_export_with_cancel_event(self, mock_filter, mock_popen, mock_config, mock_logger, tmp_path):
-        """
-        Test export handles cancel event.
-        """
-
+        """Test export handles cancel event."""
 class TestExportWithFilters:
-    """
-    Tests for export with various filter configurations.
-    """
+    """Tests for export with various filter configurations."""
     @patch('subprocess.Popen')
     @patch('core.export.apply_all_filters_vectorized')
     def test_export_with_face_filter(self, mock_filter, mock_popen, mock_config, mock_logger, tmp_path):
-        """
-        Test export with face similarity filter.
-        """
+        """Test export with face similarity filter."""
 ```
 
 ### `📄 test_export_advanced.py`
 
 ```python
-import pytest
-from unittest.mock import MagicMock, patch, mock_open
-from pathlib import Path
-import numpy as np
-import cv2
-from core.export import _crop_exported_frames
-
 class TestExportAdvanced:
     @patch('cv2.imread')
     @patch('cv2.imwrite')
     @patch('cv2.findContours')
     @patch('cv2.boundingRect')
     def test_crop_exported_frames_logic(self, mock_boundingRect, mock_findContours, mock_imwrite, mock_imread, tmp_path):
-        """
-        Test the logic of cropping exported frames.
-        """
+        """Test the logic of cropping exported frames."""
     @patch('cv2.imread')
     def test_crop_exported_frames_missing_files(self, mock_imread, tmp_path):
-        """
-        Test graceful handling of missing files.
-        """
+        """Test graceful handling of missing files."""
     @patch('cv2.imread')
     @patch('cv2.findContours')
     def test_crop_exported_frames_empty_mask(self, mock_findContours, mock_imread, tmp_path):
-        """
-        Test handling of empty masks.
-        """
+        """Test handling of empty masks."""
 ```
 
 ### `📄 test_filtering.py`
 
 ```python
-from collections import defaultdict
-from unittest.mock import MagicMock, patch
-import numpy as np
-import pytest
-from core.filtering import _apply_deduplication_filter, _apply_metric_filters, _extract_metric_arrays, _run_batched_lpips, apply_all_filters_vectorized, histogram_svg, load_and_prep_filter_data
-
 class TestFiltering:
     @pytest.fixture
     def mock_logger(self): ...
@@ -1843,12 +838,6 @@ class TestFiltering:
 ### `📄 test_gallery_utils.py`
 
 ```python
-from unittest.mock import MagicMock, patch
-import numpy as np
-import pytest
-from core.events import FilterEvent
-from ui.gallery_utils import _update_gallery, auto_set_thresholds, on_filters_changed
-
 class TestGalleryUtils:
     @pytest.fixture
     def mock_logger(self): ...
@@ -1878,566 +867,273 @@ class TestGalleryUtils:
 ### `📄 test_gpu_e2e.py`
 
 ```python
-"""
-GPU E2E Tests - Real inference with actual models.
-
-These tests run REAL GPU inference to catch runtime errors like:
-- BFloat16/Float32 dtype mismatches
-- CUDA OOM errors
-- Model loading failures
-- Tensor shape mismatches
-
-Run with: python -m pytest tests/test_gpu_e2e.py -m gpu_e2e -v
-
-Requirements:
-- CUDA-capable GPU with 6GB+ VRAM
-- SAM3 installed (pip install -e SAM3_repo)
-- All models downloaded
-"""
-
-from pathlib import Path
-import numpy as np
-import pytest
-
+"""GPU E2E Tests - Real inference with actual models."""
 pytestmark = [pytest.mark.gpu_e2e, pytest.mark.slow]
 def _create_test_image(width=256, height=256):
-    """
-    Create a simple test image with a rectangle (simulates an object).
-    """
-
+    """Create a simple test image with a rectangle (simulates an object)."""
 def _create_test_image_with_face(width=256, height=256):
-    """
-    Create a test image with a face-like pattern.
-    """
-
+    """Create a test image with a face-like pattern."""
 def _create_test_frames_dir(tmp_path, num_frames=5, width=256, height=256):
-    """
-    Create a directory with test frames for SAM3 video processing.
-    """
-
+    """Create a directory with test frames for SAM3 video processing."""
 def _is_sam3_available():
-    """
-    Check if SAM3 is properly installed and can be imported.
-    """
-
-requires_sam3 = pytest.mark.skipif(not _is_sam3_available(), reason='SAM3 not installed (pip inst...
+    """Check if SAM3 is properly installed and can be imported."""
+requires_sam3 = pytest.mark.skipif(not _is_sam3_available(), reason='SAM3 not...
 @pytest.fixture
 def test_image():
-    """
-    Provides a simple test image.
-    """
-
+    """Provides a simple test image."""
 @pytest.fixture
 def test_image_with_face():
-    """
-    Provides a test image with face-like features.
-    """
-
+    """Provides a test image with face-like features."""
 @pytest.fixture
 def test_frames_dir(tmp_path):
-    """
-    Provides a directory with test frames for video processing.
-    """
-
+    """Provides a directory with test frames for video processing."""
 class TestCUDAAvailability:
-    """
-    Verify CUDA is available and working before running GPU tests.
-    """
+    """Verify CUDA is available and working before running GPU tests."""
     def test_cuda_available(self):
-        """
-        CUDA must be available for GPU E2E tests.
-        """
+        """CUDA must be available for GPU E2E tests."""
     def test_cuda_memory_available(self):
-        """
-        Verify sufficient GPU memory (~4GB needed).
-        """
-
+        """Verify sufficient GPU memory (~4GB needed)."""
 class TestSAM3Inference:
-    """
-    Real SAM3 inference tests - catches BFloat16 and other runtime errors.
-    """
+    """Real SAM3 inference tests - catches BFloat16 and other runtime errors."""
     @requires_sam3
     def test_sam3_wrapper_initialization(self, tmp_path):
-        """
-        SAM3Wrapper can be initialized without errors.
-        """
+        """SAM3Wrapper can be initialized without errors."""
     @requires_sam3
     def test_sam3_init_video(self, test_frames_dir):
-        """
-        SAM3 init_video() initializes inference state correctly.
-        """
+        """SAM3 init_video() initializes inference state correctly."""
     @requires_sam3
     def test_sam3_add_bbox_prompt(self, test_frames_dir):
-        """
-        SAM3 add_bbox_prompt() returns valid mask.
-        """
+        """SAM3 add_bbox_prompt() returns valid mask."""
     @requires_sam3
     def test_sam3_propagate_forward(self, test_frames_dir):
-        """
-        SAM3 propagate() forward generator yields valid results.
-        """
+        """SAM3 propagate() forward generator yields valid results."""
     @requires_sam3
     def test_sam3_propagate_bidirectional(self, tmp_path):
-        """
-        SAM3 propagate() works bidirectionally from middle frame.
-        """
+        """SAM3 propagate() works bidirectionally from middle frame."""
     @requires_sam3
     def test_sam3_clear_prompts(self, test_frames_dir):
-        """
-        SAM3 clear_prompts() resets session state.
-        """
-
+        """SAM3 clear_prompts() resets session state."""
 class TestInsightFaceInference:
-    """
-    Real InsightFace inference tests.
-    """
+    """Real InsightFace inference tests."""
     def test_insightface_initialization(self, tmp_path):
-        """
-        InsightFace can be initialized.
-        """
+        """InsightFace can be initialized."""
     def test_face_detection_on_image(self, test_image_with_face, tmp_path):
-        """
-        InsightFace can process an image without errors.
-        """
-
+        """InsightFace can process an image without errors."""
 class TestPipelineE2E:
-    """
-    End-to-end pipeline tests with real execution.
-    """
+    """End-to-end pipeline tests with real execution."""
     def test_extraction_pipeline_creates_output(self, tmp_path):
-        """
-        ExtractionPipeline initializes correctly with real config.
-        """
+        """ExtractionPipeline initializes correctly with real config."""
     def test_analysis_pipeline_initializes_with_real_managers(self, tmp_path):
-        """
-        AnalysisPipeline initializes with real ThumbnailManager and ModelRegistry.
-        """
-
+        """AnalysisPipeline initializes with real ThumbnailManager and ModelRegistry."""
 class TestVideoE2E:
-    """
-    End-to-end tests with real video processing.
-    """
+    """End-to-end tests with real video processing."""
     @pytest.fixture
     def test_video_path(self, tmp_path):
-        """
-        Create a small test video (5 frames, 256x256).
-        """
+        """Create a small test video (5 frames, 256x256)."""
     @pytest.fixture
     def test_frames_dir(self, tmp_path, test_video_path):
-        """
-        Create directory with extracted frames and required files.
-        """
+        """Create directory with extracted frames and required files."""
     def test_extraction_pipeline_on_real_video(self, test_video_path, tmp_path):
-        """
-        ExtractionPipeline can process a real video file.
-        """
+        """ExtractionPipeline can process a real video file."""
     def test_pre_analysis_with_sam3(self, test_frames_dir, tmp_path):
-        """
-        Pre-analysis can run SAM3 on extracted frames.
-        """
-
+        """Pre-analysis can run SAM3 on extracted frames."""
 class TestMaskPropagatorE2E:
-    """
-    Tests for MaskPropagator with real SAM3 inference.
-    """
+    """Tests for MaskPropagator with real SAM3 inference."""
     @requires_sam3
     def test_mask_propagator_propagate(self, tmp_path):
-        """
-        MaskPropagator.propagate() works with new SAM3 API.
-        """
+        """MaskPropagator.propagate() works with new SAM3 API."""
     @requires_sam3
     def test_mask_propagator_bidirectional(self, tmp_path):
-        """
-        MaskPropagator.propagate() works bidirectionally from middle frame.
-        """
-
+        """MaskPropagator.propagate() works bidirectionally from middle frame."""
 class TestQualityMetricsE2E:
-    """
-    Tests for quality metric calculation with real images.
-    """
+    """Tests for quality metric calculation with real images."""
     def test_calculate_quality_metrics_real(self, test_image, tmp_path):
-        """
-        Frame quality metrics can be calculated on real image.
-        """
+        """Frame quality metrics can be calculated on real image."""
     def test_niqe_metric_calculation(self, test_image, tmp_path):
-        """
-        NIQE metric can be calculated (requires pyiqa).
-        """
-
+        """NIQE metric can be calculated (requires pyiqa)."""
 class TestExportE2E:
-    """
-    E2E tests for export pipeline.
-    """
+    """E2E tests for export pipeline."""
     def test_export_pipeline_initialization(self, tmp_path):
-        """
-        ExportPipeline can be initialized with real config.
-        """
+        """ExportPipeline can be initialized with real config."""
     def test_export_with_real_frames(self, tmp_path):
-        """
-        Export can process frames from a real directory.
-        """
+        """Export can process frames from a real directory."""
     def test_export_dry_run_mode(self, tmp_path):
-        """
-        Dry run export mode works without creating files.
-        """
-
+        """Dry run export mode works without creating files."""
 class TestCancellationE2E:
-    """
-    E2E tests for cancel operations during pipeline execution.
-    """
+    """E2E tests for cancel operations during pipeline execution."""
     @requires_sam3
     def test_propagation_with_cancel_event(self, tmp_path):
-        """
-        MaskPropagator handles cancel event during propagation.
-        """
+        """MaskPropagator handles cancel event during propagation."""
     def test_analysis_pipeline_cancel(self, tmp_path):
-        """
-        AnalysisPipeline handles cancel event gracefully.
-        """
-
+        """AnalysisPipeline handles cancel event gracefully."""
 class TestMediaPipeLandmarkerE2E:
-    """
-    E2E tests for MediaPipe Face Landmarker.
-    """
+    """E2E tests for MediaPipe Face Landmarker."""
     def test_face_landmarker_import(self):
-        """
-        MediaPipe face landmarker can be imported.
-        """
+        """MediaPipe face landmarker can be imported."""
     def test_face_landmarker_model_download(self, tmp_path):
-        """
-        Face landmarker model can be downloaded.
-        """
-
+        """Face landmarker model can be downloaded."""
 class TestLargeVideoE2E:
-    """
-    E2E tests for handling larger videos/frame sequences.
-    """
+    """E2E tests for handling larger videos/frame sequences."""
     def test_many_frames_processing(self, tmp_path):
-        """
-        Test processing a larger number of frames.
-        """
+        """Test processing a larger number of frames."""
     @requires_sam3
     def test_sam3_with_many_frames(self, tmp_path):
-        """
-        SAM3 can process a larger sequence.
-        """
-
+        """SAM3 can process a larger sequence."""
 class TestMaskGenerationE2E:
-    """
-    E2E tests for mask generation to catch silent failures.
-    """
+    """E2E tests for mask generation to catch silent failures."""
     @requires_sam3
     def test_get_mask_for_bbox_e2e(self, test_frames_dir, tmp_path):
-        """
-        Test SeedSelector._get_mask_for_bbox with real SAM3.
-        """
+        """Test SeedSelector._get_mask_for_bbox with real SAM3."""
     @requires_sam3
     def test_identity_first_seed_e2e(self, test_image_with_face, tmp_path):
-        """
-        Test 'By Face' seeding strategy with real models.
-        """
+        """Test 'By Face' seeding strategy with real models."""
     @requires_sam3
     def test_pre_analysis_mask_generation_e2e(self, test_frames_dir, tmp_path):
-        """
-        Test the full pre-analysis flow including mask generation.
-        """
+        """Test the full pre-analysis flow including mask generation."""
 ```
 
 ### `📄 test_handlers.py`
 
 ```python
-"""
-Tests for UI handlers (analysis, extraction, filtering).
-
-These tests verify the handler classes work correctly in isolation,
-using mocked dependencies to avoid GPU requirements.
-"""
-
-from unittest.mock import MagicMock, patch
-import pytest
-
+"""Tests for UI handlers (analysis, extraction, filtering)."""
 class TestAnalysisHandler:
-    """
-    Tests for AnalysisHandler class.
-    """
+    """Tests for AnalysisHandler class."""
     @pytest.fixture
     def mock_app_ui(self, mock_config, mock_logger, mock_thumbnail_manager, mock_model_registry):
-        """
-        Create a mock AppUI instance.
-        """
+        """Create a mock AppUI instance."""
     @pytest.fixture
     def handler(self, mock_app_ui, mock_config, mock_logger, mock_thumbnail_manager, mock_model_registry):
-        """
-        Create an AnalysisHandler instance.
-        """
+        """Create an AnalysisHandler instance."""
     def test_init(self, handler, mock_app_ui, mock_config):
-        """
-        Test AnalysisHandler initialization.
-        """
+        """Test AnalysisHandler initialization."""
     def test_on_pre_analysis_success_basic(self, handler):
-        """
-        Test on_pre_analysis_success returns correct updates.
-        """
+        """Test on_pre_analysis_success returns correct updates."""
     def test_on_pre_analysis_success_with_face_ref(self, handler):
-        """
-        Test on_pre_analysis_success includes face reference when present.
-        """
+        """Test on_pre_analysis_success includes face reference when present."""
     def test_on_pre_analysis_success_default_log(self, handler):
-        """
-        Test on_pre_analysis_success uses default log message.
-        """
+        """Test on_pre_analysis_success uses default log message."""
     def test_on_propagation_success(self, handler):
-        """
-        Test on_propagation_success returns correct updates.
-        """
+        """Test on_propagation_success returns correct updates."""
     def test_on_analysis_success(self, handler):
-        """
-        Test on_analysis_success returns correct updates.
-        """
-
+        """Test on_analysis_success returns correct updates."""
 class TestExtractionHandler:
-    """
-    Tests for ExtractionHandler class.
-    """
+    """Tests for ExtractionHandler class."""
     @pytest.fixture
     def mock_app_ui(self, mock_config, mock_logger, mock_thumbnail_manager, mock_model_registry):
-        """
-        Create a mock AppUI instance.
-        """
+        """Create a mock AppUI instance."""
     @pytest.fixture
     def handler(self, mock_app_ui, mock_config, mock_logger, mock_thumbnail_manager, mock_model_registry):
-        """
-        Create an ExtractionHandler instance.
-        """
+        """Create an ExtractionHandler instance."""
     def test_init(self, handler, mock_app_ui, mock_config):
-        """
-        Test ExtractionHandler initialization.
-        """
+        """Test ExtractionHandler initialization."""
     def test_on_extraction_success(self, handler):
-        """
-        Test on_extraction_success returns correct updates.
-        """
+        """Test on_extraction_success returns correct updates."""
     def test_on_extraction_success_default_values(self, handler):
-        """
-        Test on_extraction_success uses defaults for missing values.
-        """
-
+        """Test on_extraction_success uses defaults for missing values."""
 class TestFilteringHandler:
-    """
-    Tests for FilteringHandler class.
-    """
+    """Tests for FilteringHandler class."""
     @pytest.fixture
     def mock_app_ui(self, mock_config, mock_logger, mock_thumbnail_manager):
-        """
-        Create a mock AppUI instance.
-        """
+        """Create a mock AppUI instance."""
     @pytest.fixture
     def handler(self, mock_app_ui, mock_config, mock_logger, mock_thumbnail_manager):
-        """
-        Create a FilteringHandler instance.
-        """
+        """Create a FilteringHandler instance."""
     def test_init(self, handler, mock_app_ui, mock_config):
-        """
-        Test FilteringHandler initialization.
-        """
+        """Test FilteringHandler initialization."""
     def test_on_preset_changed_no_filters(self, handler):
-        """
-        Test on_preset_changed with 'No Filters' preset.
-        """
+        """Test on_preset_changed with 'No Filters' preset."""
     def test_on_preset_changed_quality_focus(self, handler):
-        """
-        Test on_preset_changed with 'Quality Focus' preset.
-        """
+        """Test on_preset_changed with 'Quality Focus' preset."""
     def test_on_preset_changed_face_priority(self, handler):
-        """
-        Test on_preset_changed with 'Face Priority' preset.
-        """
+        """Test on_preset_changed with 'Face Priority' preset."""
     def test_on_preset_changed_balanced(self, handler):
-        """
-        Test on_preset_changed with 'Balanced' preset.
-        """
+        """Test on_preset_changed with 'Balanced' preset."""
     def test_on_preset_changed_unknown_preset(self, handler):
-        """
-        Test on_preset_changed with unknown preset uses defaults.
-        """
+        """Test on_preset_changed with unknown preset uses defaults."""
     @patch('ui.gallery_utils.on_filters_changed')
     def test_on_reset_filters(self, mock_on_filters, handler):
-        """
-        Test on_reset_filters resets all sliders.
-        """
+        """Test on_reset_filters resets all sliders."""
     @patch('ui.gallery_utils.auto_set_thresholds')
     def test_on_auto_set_thresholds(self, mock_auto_set, handler):
-        """
-        Test on_auto_set_thresholds calls utility correctly.
-        """
+        """Test on_auto_set_thresholds calls utility correctly."""
 ```
 
 ### `📄 test_integration.py`
 
 ```python
-"""
-Integration tests for local GPU hardware.
-
-These tests run WITHOUT mocks to catch real integration issues like missing imports,
-model loading failures, and GPU compatibility problems.
-
-Run with: python -m pytest tests/test_integration.py -v -s --integration
-Skip with: python -m pytest tests/ --ignore=tests/test_integration.py
-
-Requirements:
-- CUDA-capable GPU
-- All models downloaded
-- Full dependencies installed
-"""
-
-from pathlib import Path
-import pytest
-
+"""Integration tests for local GPU hardware."""
 pytestmark = pytest.mark.integration
 class TestImportSmoke:
-    """
-    Smoke tests that verify all modules import without mocking.
-    """
+    """Smoke tests that verify all modules import without mocking."""
     def test_import_core_modules(self):
-        """
-        Test that all core modules can be imported.
-        """
+        """Test that all core modules can be imported."""
     def test_import_ui_modules(self):
-        """
-        Test that all UI modules can be imported.
-        """
+        """Test that all UI modules can be imported."""
     def test_import_pil(self):
-        """
-        Test PIL is available (was missing in pipelines.py).
-        """
+        """Test PIL is available (was missing in pipelines.py)."""
     def test_import_cv2(self):
-        """
-        Test OpenCV is available.
-        """
+        """Test OpenCV is available."""
     def test_import_torch(self):
-        """
-        Test PyTorch is available.
-        """
+        """Test PyTorch is available."""
     def test_import_gradio(self):
-        """
-        Test Gradio is available (was missing in pipelines.py).
-        """
+        """Test Gradio is available (was missing in pipelines.py)."""
     def test_pipelines_has_all_imports(self):
-        """
-        Verify pipelines.py has all required imports at module level.
-        """
-
+        """Verify pipelines.py has all required imports at module level."""
 class TestGPUIntegration:
-    """
-    Tests that require GPU hardware.
-    """
+    """Tests that require GPU hardware."""
     def test_cuda_available(self):
-        """
-        Verify CUDA is available and working.
-        """
+        """Verify CUDA is available and working."""
     def test_sam3_import(self):
-        """
-        Test SAM3 can be imported (requires: pip install -e SAM3_repo).
-        """
+        """Test SAM3 can be imported (requires: pip install -e SAM3_repo)."""
     def test_insightface_import(self):
-        """
-        Test InsightFace can be imported.
-        """
+        """Test InsightFace can be imported."""
     def test_pyiqa_import(self):
-        """
-        Test PyIQA (NIQE) can be imported.
-        """
-
+        """Test PyIQA (NIQE) can be imported."""
 class TestConfigIntegration:
-    """
-    Tests Config without mocks.
-    """
+    """Tests Config without mocks."""
     def test_config_loads(self, tmp_path):
-        """
-        Test Config loads and creates directories.
-        """
+        """Test Config loads and creates directories."""
     def test_config_quality_weights(self):
-        """
-        Test quality weights are valid.
-        """
-
+        """Test quality weights are valid."""
 class TestModelLoadingIntegration:
-    """
-    Tests that model loading works correctly.
-    """
+    """Tests that model loading works correctly."""
     def test_model_registry_initialization(self):
-        """
-        Test ModelRegistry can be initialized.
-        """
+        """Test ModelRegistry can be initialized."""
     def test_thumbnail_manager_initialization(self, tmp_path):
-        """
-        Test ThumbnailManager can be initialized.
-        """
-
+        """Test ThumbnailManager can be initialized."""
 class TestPipelineIntegration:
-    """
-    Tests pipeline classes without full execution.
-    """
+    """Tests pipeline classes without full execution."""
     def test_extraction_pipeline_init(self, tmp_path):
-        """
-        Test ExtractionPipeline can be initialized.
-        """
+        """Test ExtractionPipeline can be initialized."""
     def test_analysis_pipeline_init(self, tmp_path):
-        """
-        Test AnalysisPipeline can be initialized.
-        """
+        """Test AnalysisPipeline can be initialized."""
 ```
 
 ### `📄 test_integration_sam3_patches.py`
 
 ```python
-import sys
-from unittest.mock import MagicMock, patch
-import pytest
-import torch
-
 @pytest.fixture(autouse=True)
 def skip_if_mocked(): ...
-
 def test_edt_triton_fallback(): ...
-
 def test_connected_components_fallback(): ...
-
 def test_connected_components_fallback_3d_input(): ...
-
 @pytest.mark.skip(reason='Flaky due to global mocks in conftest.py')
 def test_apply_patches_triton_missing(): ...
-
 def test_apply_patches_triton_present(): ...
 ```
 
 ### `📄 test_launch_config.py`
 
 ```python
-import sys
-import pytest
-from unittest.mock import patch
-from core.config import Config
-from app import parse_args
-
 def test_config_defaults(): ...
-
 def test_config_overrides(): ...
-
 def test_parse_args(): ...
-
 def test_parse_args_defaults(): ...
 ```
 
 ### `📄 test_managers.py`
 
 ```python
-from pathlib import Path
-from unittest.mock import MagicMock, patch
-import numpy as np
-import pytest
-from core.managers import ModelRegistry, ThumbnailManager, VideoManager, get_face_analyzer, get_face_landmarker, initialize_analysis_models
-
 class TestManagers:
     @pytest.fixture
     def mock_logger(self): ...
@@ -2490,93 +1186,43 @@ class TestManagers:
 ### `📄 test_managers_extended.py`
 
 ```python
-import pytest
-from pathlib import Path
-from unittest.mock import MagicMock, patch
-from core.managers import ModelRegistry, ThumbnailManager
-from core.config import Config
-
 class TestManagersExtended:
     def test_model_registry_basic_load(self):
-        """
-        Test basic ModelRegistry load (retry logic is in get_tracker/etc, not get_or_load).
-        """
+        """Test basic ModelRegistry load (retry logic is in get_tracker/etc, not get_or_..."""
     def test_thumbnail_manager_eviction_logic(self, tmp_path):
-        """
-        Test LRU eviction in ThumbnailManager.
-        """
+        """Test LRU eviction in ThumbnailManager."""
 ```
 
 ### `📄 test_mask_propagator_logic.py`
 
 ```python
-import threading
-from queue import Queue
-from unittest.mock import MagicMock, patch
-import numpy as np
-import pytest
-from core.models import AnalysisParameters
-from core.scene_utils.mask_propagator import MaskPropagator
-
 @pytest.fixture
 def mock_sam3_wrapper():
-    """
-    Mocks the SAM3Wrapper class.
-    """
-
+    """Mocks the SAM3Wrapper class."""
 @pytest.fixture
 def mask_propagator(mock_config, mock_logger, mock_sam3_wrapper):
-    """
-    Creates a MaskPropagator instance with mocks.
-    """
-
+    """Creates a MaskPropagator instance with mocks."""
 class TestMaskPropagatorLogic:
-    """
-    Tests the logic of MaskPropagator without requiring real SAM3 models.
-    """
+    """Tests the logic of MaskPropagator without requiring real SAM3 models."""
     def test_initialization(self, mask_propagator, mock_sam3_wrapper):
-        """
-        Test that the propagator initializes correctly.
-        """
+        """Test that the propagator initializes correctly."""
     def test_propagate_video_success(self, mask_propagator, mock_sam3_wrapper):
-        """
-        Test successful video propagation flow.
-        """
+        """Test successful video propagation flow."""
     def test_propagate_video_handles_empty_masks(self, mask_propagator, mock_sam3_wrapper):
-        """
-        Test handling of empty/missing masks from SAM3.
-        """
+        """Test handling of empty/missing masks from SAM3."""
     def test_propagate_video_cancellation(self, mask_propagator, mock_sam3_wrapper):
-        """
-        Test that propagation stops when cancel event is set.
-        """
+        """Test that propagation stops when cancel event is set."""
     def test_propagate_legacy_success(self, mask_propagator, mock_sam3_wrapper):
-        """
-        Test the legacy propagate() method with temp files.
-        """
+        """Test the legacy propagate() method with temp files."""
     def test_error_handling_gpu_oom(self, mask_propagator, mock_sam3_wrapper):
-        """
-        Test handling of CUDA OOM error.
-        """
+        """Test handling of CUDA OOM error."""
     def test_tracker_progress(self, mask_propagator, mock_sam3_wrapper):
-        """
-        Test that progress tracker is updated.
-        """
+        """Test that progress tracker is updated."""
 ```
 
 ### `📄 test_pipelines.py`
 
 ```python
-import threading
-from pathlib import Path
-from queue import Queue
-from unittest.mock import MagicMock, patch
-import numpy as np
-import pytest
-from core.events import ExtractionEvent
-from core.models import AnalysisParameters, Scene
-from core.pipelines import AnalysisPipeline, ExtractionPipeline, _process_ffmpeg_showinfo, _process_ffmpeg_stream, execute_extraction, execute_session_load, run_ffmpeg_extraction
-
 class TestPipelines:
     @pytest.fixture
     def mock_logger(self): ...
@@ -2615,12 +1261,6 @@ class TestPipelines:
 ### `📄 test_pipelines_extended.py`
 
 ```python
-from unittest.mock import MagicMock, patch
-import pytest
-from core.database import Database
-from core.models import AnalysisParameters
-from core.pipelines import AnalysisPipeline
-
 class TestPipelinesExtended:
     @pytest.fixture
     def mock_logger(self): ...
@@ -2645,279 +1285,133 @@ class TestPipelinesExtended:
 ### `📄 test_progress.py`
 
 ```python
-from queue import Queue
-from unittest.mock import MagicMock
-from core.progress import AdvancedProgressTracker
-
 def test_progress_tracker(): ...
 ```
 
 ### `📄 test_sam3_wrapper.py`
 
 ```python
-"""
-Unit tests for SAM3Wrapper API completeness and functionality.
-
-These tests ensure all required methods exist on SAM3Wrapper and verify
-basic functionality with mocking to avoid GPU requirements.
-"""
-
-from unittest.mock import MagicMock, patch
-import numpy as np
-import pytest
-
+"""Unit tests for SAM3Wrapper API completeness and functionality."""
 class TestSAM3WrapperAPICompleteness:
-    """
-    Tests to verify SAM3Wrapper has all required methods.
-    
-    These tests would have caught the missing detect_objects() issue.
-    """
+    """Tests to verify SAM3Wrapper has all required methods."""
     @pytest.fixture
     def mock_wrapper_class(self):
-        """
-        Create a mock-free SAM3Wrapper class reference.
-        """
+        """Create a mock-free SAM3Wrapper class reference."""
     @pytest.fixture
     def mock_wrapper(self, mock_wrapper_class):
-        """
-        Create a mocked SAM3Wrapper instance.
-        """
+        """Create a mocked SAM3Wrapper instance."""
     def test_all_required_methods_exist(self, mock_wrapper):
-        """
-        Verify all API methods expected by SeedSelector exist on SAM3Wrapper.
-        
-        Now includes remove_object and shutdown.
-        """
+        """Verify all API methods expected by SeedSelector exist on SAM3Wrapper."""
     def test_detect_objects_signature(self, mock_wrapper):
-        """
-        Verify detect_objects has correct signature.
-        """
+        """Verify detect_objects has correct signature."""
     def test_add_text_prompt_signature(self, mock_wrapper):
-        """
-        Verify add_text_prompt has correct signature.
-        """
+        """Verify add_text_prompt has correct signature."""
     def test_add_point_prompt_signature(self, mock_wrapper):
-        """
-        Verify add_point_prompt has correct signature.
-        """
-
+        """Verify add_point_prompt has correct signature."""
 class TestSAM3WrapperMethodBehavior:
-    """
-    Tests for SAM3Wrapper method behavior with mocking.
-    """
+    """Tests for SAM3Wrapper method behavior with mocking."""
     @pytest.fixture
     def mock_wrapper(self):
-        """
-        Create a fully mocked SAM3Wrapper.
-        """
+        """Create a fully mocked SAM3Wrapper."""
     def test_detect_objects_returns_empty_on_empty_prompt(self, mock_wrapper):
-        """
-        detect_objects should return empty list for empty prompt.
-        """
+        """detect_objects should return empty list for empty prompt."""
     def test_add_text_prompt_requires_init_video(self, mock_wrapper):
-        """
-        add_text_prompt should raise if init_video not called.
-        """
+        """add_text_prompt should raise if init_video not called."""
     def test_add_point_prompt_requires_init_video(self, mock_wrapper):
-        """
-        add_point_prompt should raise if init_video not called.
-        """
+        """add_point_prompt should raise if init_video not called."""
     def test_reset_session_with_no_state_is_safe(self, mock_wrapper):
-        """
-        reset_session should not raise when no session is active.
-        """
+        """reset_session should not raise when no session is active."""
     def test_close_session_with_no_state_is_safe(self, mock_wrapper):
-        """
-        close_session should not raise when no session is active.
-        """
+        """close_session should not raise when no session is active."""
     def test_close_session_clears_session_id(self, mock_wrapper):
-        """
-        close_session should clear session_id.
-        """
+        """close_session should clear session_id."""
     def test_remove_object_calls_predictor(self, mock_wrapper):
-        """
-        remove_object should call predictor handle_request.
-        """
+        """remove_object should call predictor handle_request."""
     def test_shutdown_calls_predictor(self, mock_wrapper):
-        """
-        shutdown should call predictor shutdown.
-        """
-
+        """shutdown should call predictor shutdown."""
 class TestSeedSelectorTrackerInterface:
-    """
-    Tests that verify SeedSelector's expected tracker interface.
-    
-    This catches cases where SeedSelector calls methods that don't exist.
-    """
+    """Tests that verify SeedSelector's expected tracker interface."""
     def test_seed_selector_tracker_methods_match_wrapper(self):
-        """
-        Verify all tracker methods called by SeedSelector exist on SAM3Wrapper.
-        
-        Parse SeedSelector code to find tracker method calls.
-        """
+        """Verify all tracker methods called by SeedSelector exist on SAM3Wrapper."""
 ```
 
 ### `📄 test_scene_detection.py`
 
 ```python
-"""
-Tests for scene_utils modules (detection, helpers).
-
-These tests verify scene detection and helper functions work correctly.
-"""
-
-import json
-from pathlib import Path
-from unittest.mock import MagicMock, patch
-import numpy as np
-
+"""Tests for scene_utils modules (detection, helpers)."""
 class TestSceneDetection:
-    """
-    Tests for scene_utils/detection.py.
-    """
+    """Tests for scene_utils/detection.py."""
     @patch('core.scene_utils.detection.detect')
     def test_run_scene_detection_success(self, mock_detect, mock_logger, tmp_path):
-        """
-        Test run_scene_detection returns scene list.
-        """
+        """Test run_scene_detection returns scene list."""
     @patch('core.scene_utils.detection.detect')
     def test_run_scene_detection_empty(self, mock_detect, mock_logger, tmp_path):
-        """
-        Test run_scene_detection with no scenes detected.
-        """
+        """Test run_scene_detection with no scenes detected."""
     @patch('core.scene_utils.detection.detect')
     def test_run_scene_detection_exception(self, mock_detect, mock_logger, tmp_path):
-        """
-        Test run_scene_detection handles exceptions gracefully.
-        """
+        """Test run_scene_detection handles exceptions gracefully."""
     @patch('core.scene_utils.detection.detect')
     def test_run_scene_detection_file_not_found(self, mock_detect, tmp_path):
-        """
-        Test run_scene_detection handles FileNotFoundError.
-        """
+        """Test run_scene_detection handles FileNotFoundError."""
     @patch('core.scene_utils.detection.detect')
     def test_run_scene_detection_permission_error(self, mock_detect, tmp_path):
-        """
-        Test run_scene_detection handles PermissionError.
-        """
+        """Test run_scene_detection handles PermissionError."""
     @patch('core.scene_utils.detection.detect')
     def test_run_scene_detection_video_open_failure(self, mock_detect, tmp_path):
-        """
-        Test run_scene_detection handles VideoOpenFailure.
-        """
+        """Test run_scene_detection handles VideoOpenFailure."""
     @patch('cv2.imread')
     @patch('cv2.resize')
     @patch('cv2.cvtColor')
     def test_make_photo_thumbs(self, mock_cvtcolor, mock_resize, mock_imread, mock_logger, mock_config_simple, tmp_path):
-        """
-        Test make_photo_thumbs generates thumbnails.
-        """
+        """Test make_photo_thumbs generates thumbnails."""
     @patch('cv2.imread')
     def test_make_photo_thumbs_unreadable_image(self, mock_imread, mock_logger, mock_config_simple, tmp_path):
-        """
-        Test make_photo_thumbs handles unreadable images.
-        """
-
+        """Test make_photo_thumbs handles unreadable images."""
 class TestSceneHelpers:
-    """
-    Tests for scene_utils/helpers.py.
-    """
+    """Tests for scene_utils/helpers.py."""
     def test_draw_boxes_preview(self, mock_config_simple):
-        """
-        Test draw_boxes_preview draws bounding boxes.
-        """
+        """Test draw_boxes_preview draws bounding boxes."""
     def test_draw_boxes_preview_empty_boxes(self, mock_config_simple):
-        """
-        Test draw_boxes_preview with no boxes.
-        """
+        """Test draw_boxes_preview with no boxes."""
     def test_save_scene_seeds(self, mock_logger, tmp_path, sample_scenes):
-        """
-        Test save_scene_seeds writes JSON file.
-        """
+        """Test save_scene_seeds writes JSON file."""
     def test_get_scene_status_text_empty(self):
-        """
-        Test get_scene_status_text with empty list.
-        """
+        """Test get_scene_status_text with empty list."""
     def test_get_scene_status_text_with_scenes(self, sample_scenes):
-        """
-        Test get_scene_status_text with scenes.
-        """
+        """Test get_scene_status_text with scenes."""
     def test_toggle_scene_status_include(self, mock_logger, tmp_path, sample_scenes):
-        """
-        Test toggle_scene_status includes a scene.
-        """
+        """Test toggle_scene_status includes a scene."""
     def test_toggle_scene_status_exclude(self, mock_logger, tmp_path, sample_scenes):
-        """
-        Test toggle_scene_status excludes a scene.
-        """
+        """Test toggle_scene_status excludes a scene."""
     def test_toggle_scene_status_invalid_id(self, mock_logger, tmp_path, sample_scenes):
-        """
-        Test toggle_scene_status with invalid shot_id.
-        """
-
+        """Test toggle_scene_status with invalid shot_id."""
 class TestManagersThumbnailManager:
-    """
-    Tests for ThumbnailManager in managers.py.
-    """
+    """Tests for ThumbnailManager in managers.py."""
     def test_thumbnail_manager_init(self, mock_logger, mock_config):
-        """
-        Test ThumbnailManager initialization.
-        """
+        """Test ThumbnailManager initialization."""
     def test_thumbnail_manager_get_from_cache(self, mock_logger, mock_config, tmp_path):
-        """
-        Test ThumbnailManager returns cached thumbnail.
-        """
+        """Test ThumbnailManager returns cached thumbnail."""
     def test_thumbnail_manager_get_missing_file(self, mock_logger, mock_config):
-        """
-        Test ThumbnailManager handles missing file.
-        """
+        """Test ThumbnailManager handles missing file."""
     def test_thumbnail_manager_clear_cache(self, mock_logger, mock_config, tmp_path):
-        """
-        Test ThumbnailManager cache clearing.
-        """
-
+        """Test ThumbnailManager cache clearing."""
 class TestModelRegistry:
-    """
-    Tests for ModelRegistry in managers.py.
-    """
+    """Tests for ModelRegistry in managers.py."""
     def test_model_registry_init(self, mock_logger):
-        """
-        Test ModelRegistry initialization.
-        """
+        """Test ModelRegistry initialization."""
     def test_model_registry_get_or_load_new(self, mock_logger):
-        """
-        Test ModelRegistry loads new model.
-        """
+        """Test ModelRegistry loads new model."""
     def test_model_registry_get_or_load_cached(self, mock_logger):
-        """
-        Test ModelRegistry returns cached model.
-        """
+        """Test ModelRegistry returns cached model."""
     def test_model_registry_clear(self, mock_logger):
-        """
-        Test ModelRegistry clear removes all models.
-        """
+        """Test ModelRegistry clear removes all models."""
 ```
 
 ### `📄 test_scene_utils.py`
 
 ```python
-"""
-Tests for scene utilities - SeedSelector, MaskPropagator, SubjectMasker.
-
-Uses fixtures from conftest.py for mock setup.
-"""
-
-import threading
-from queue import Queue
-from unittest.mock import MagicMock, patch
-import cv2
-import numpy as np
-import pytest
-from core.models import Scene
-from core.scene_utils import MaskPropagator, SeedSelector, SubjectMasker
-
+"""Tests for scene utilities - SeedSelector, MaskPropagator, SubjectMasker."""
 def create_tensor_mock(shape=(100, 100), val=1.0): ...
-
 class TestSeedSelector:
     @pytest.fixture
     def selector(self, mock_config_simple, mock_logger, mock_params): ...
@@ -2928,12 +1422,10 @@ class TestSeedSelector:
     @patch('core.scene_utils.seed_selector.postprocess_mask')
     def test_get_mask_for_bbox_success(self, mock_post, selector, tmp_path): ...
     def test_get_mask_for_bbox_error(self, selector): ...
-
 class TestMaskPropagator:
     @patch('core.scene_utils.mask_propagator.postprocess_mask', side_effect=lambda x, **k: x)
     def test_propagate_success(self, mock_post, mock_config_simple, mock_logger, mock_params): ...
     def test_propagate_cancel(self, mock_config_simple, mock_logger, mock_params): ...
-
 class TestSubjectMasker:
     @patch('core.scene_utils.subject_masker.create_frame_map', return_value={0: 'frame_0.png'})
     def test_run_propagation(self, mock_create_map, mock_config_simple, mock_logger, mock_params, tmp_path): ...
@@ -2943,14 +1435,6 @@ class TestSubjectMasker:
 ### `📄 test_scene_utils_helpers.py`
 
 ```python
-import json
-from pathlib import Path
-from unittest.mock import MagicMock, patch
-import numpy as np
-import pytest
-from core.models import Scene
-from core.scene_utils.helpers import _create_analysis_context, _recompute_single_preview, _wire_recompute_handler, draw_boxes_preview, get_scene_status_text, save_scene_seeds, toggle_scene_status
-
 class TestSceneUtilsHelpers:
     @pytest.fixture
     def mock_scene(self): ...
@@ -2984,15 +1468,7 @@ class TestSceneUtilsHelpers:
 ### `📄 test_shared.py`
 
 ```python
-"""
-Tests for shared utilities in core/shared.py.
-"""
-
-from unittest.mock import patch
-import numpy as np
-from core.models import Scene
-from core.shared import build_scene_gallery_items, create_scene_thumbnail_with_badge, scene_caption, scene_matches_view
-
+"""Tests for shared utilities in core/shared.py."""
 class TestSharedUtils:
     def test_scene_matches_view(self): ...
     def test_create_scene_thumbnail_with_badge(self): ...
@@ -3004,68 +1480,34 @@ class TestSharedUtils:
 ### `📄 test_signatures.py`
 
 ```python
-"""
-Function signature validation tests.
-
-These tests verify that pipeline functions have correct signatures,
-return types, and decorator configurations.
-
-Run with: python -m pytest tests/test_signatures.py -v
-"""
-
-import inspect
-import pytest
-
+"""Function signature validation tests."""
 pytestmark = pytest.mark.signature
 class TestPipelineSignatures:
-    """
-    Verify pipeline functions have correct signatures.
-    """
+    """Verify pipeline functions have correct signatures."""
     def test_execute_extraction_returns_generator(self):
-        """
-        execute_extraction should return a generator when called.
-        """
+        """execute_extraction should return a generator when called."""
     def test_execute_pre_analysis_returns_generator(self):
-        """
-        execute_pre_analysis should return a generator when called.
-        """
+        """execute_pre_analysis should return a generator when called."""
     def test_execute_propagation_is_generator(self):
-        """
-        execute_propagation should be a generator function.
-        """
+        """execute_propagation should be a generator function."""
     def test_execute_analysis_returns_generator(self):
-        """
-        execute_analysis should return a generator when called.
-        """
+        """execute_analysis should return a generator when called."""
     def test_execute_session_load_returns_dict(self):
-        """
-        execute_session_load returns dict, not generator.
-        """
-
+        """execute_session_load returns dict, not generator."""
 class TestEventModels:
-    """
-    Verify event models have required fields.
-    """
+    """Verify event models have required fields."""
     def test_pre_analysis_event_has_required_fields(self): ...
     def test_extraction_event_exists(self): ...
     def test_propagation_event_exists(self): ...
     def test_export_event_exists(self): ...
-
 class TestModelClasses:
-    """
-    Verify model classes have correct structure.
-    """
+    """Verify model classes have correct structure."""
     def test_analysis_parameters_has_from_ui(self):
-        """
-        AnalysisParameters should have from_ui factory method.
-        """
+        """AnalysisParameters should have from_ui factory method."""
     def test_scene_has_required_fields(self): ...
     def test_frame_has_metrics(self): ...
-
 class TestManagerClasses:
-    """
-    Verify manager classes have correct interface.
-    """
+    """Verify manager classes have correct interface."""
     def test_model_registry_has_get_or_load(self): ...
     def test_thumbnail_manager_has_get(self): ...
     def test_video_manager_has_get_video_info(self): ...
@@ -3074,22 +1516,10 @@ class TestManagerClasses:
 ### `📄 test_smoke.py`
 
 ```python
-"""
-Smoke tests for import validation.
-
-These tests verify that all modules can be imported without mocks,
-catching missing imports like Image, gradio, etc. before runtime.
-
-Run with: python -m pytest tests/test_smoke.py -v
-"""
-
-import pytest
-
+"""Smoke tests for import validation."""
 pytestmark = pytest.mark.smoke
 class TestImportSmoke:
-    """
-    Verify all modules import correctly without mocks.
-    """
+    """Verify all modules import correctly without mocks."""
     def test_import_core_config(self): ...
     def test_import_core_database(self): ...
     def test_import_core_events(self): ...
@@ -3106,27 +1536,17 @@ class TestImportSmoke:
     def test_import_core_scene_utils(self): ...
     def test_import_ui_app_ui(self): ...
     def test_import_ui_gallery_utils(self): ...
-
 class TestCriticalSymbols:
-    """
-    Verify critical symbols exist in modules (catches missing imports).
-    """
+    """Verify critical symbols exist in modules (catches missing imports)."""
     def test_pipelines_has_image(self):
-        """
-        PIL.Image was missing - caused NameError.
-        """
+        """PIL.Image was missing - caused NameError."""
     def test_pipelines_has_gradio(self):
-        """
-        gradio was missing - caused NameError.
-        """
+        """gradio was missing - caused NameError."""
     def test_pipelines_has_torch(self): ...
     def test_pipelines_has_json(self): ...
     def test_export_has_subprocess(self): ...
-
 class TestDependencyImports:
-    """
-    Verify external dependencies are available.
-    """
+    """Verify external dependencies are available."""
     def test_pil_available(self): ...
     def test_cv2_available(self): ...
     def test_numpy_available(self): ...
@@ -3137,285 +1557,137 @@ class TestDependencyImports:
 ### `📄 test_subject_masker_coverage.py`
 
 ```python
-from unittest.mock import MagicMock, patch
-import numpy as np
-import pytest
-
 mock_cv2 = MagicMock()
 mock_cv2.Mat = MagicMock
 mock_cv2.mat_wrapper = MagicMock()
 mock_cv2.resize = MagicMock(return_value=np.zeros((100, 100), dtype=np.uint8))
 mock_cv2.INTER_NEAREST = 0
-mock_cv2.cvtColor = MagicMock(return_value=np.zeros((100, 100, 3), dtype=np.uint8))
+mock_cv2.cvtColor = MagicMock(return_value=np.zeros((100, 100, 3), dtype=np.u...
 mock_cv2.COLOR_RGB2BGR = 1
 class TestSubjectMasker:
-    """
-    Tests for core/scene_utils/subject_masker.py
-    """
+    """Tests for core/scene_utils/subject_masker.py"""
     @pytest.fixture
     def mock_dependencies(self): ...
     @pytest.fixture
     def subject_masker(self, mock_dependencies): ...
     def test_initialization(self, subject_masker):
-        """
-        Test proper initialization.
-        """
+        """Test proper initialization."""
     def test_initialize_tracker(self, subject_masker):
-        """
-        Test tracker initialization logic.
-        """
+        """Test tracker initialization logic."""
     def test_run_propagation_no_tracker(self, subject_masker):
-        """
-        Test propagation fails if tracker cannot be initialized.
-        """
+        """Test propagation fails if tracker cannot be initialized."""
 ```
 
 ### `📄 test_ui_unit.py`
 
 ```python
-from unittest.mock import MagicMock, patch
-from collections import deque
-import pytest
-from core.events import ExtractionEvent
-from core.pipelines import execute_extraction
-from ui.app_ui import AppUI
-
 @pytest.fixture
 def app_ui(mock_config, mock_logger, mock_progress_queue, mock_cancel_event, mock_thumbnail_manager, mock_model_registry): ...
-
 def test_stepper_html(app_ui): ...
-
 def test_run_extraction_wrapper(app_ui): ...
-
 def test_fix_strategy_visibility_face_ref(app_ui): ...
-
 def test_fix_strategy_visibility_text(app_ui): ...
-
 def test_get_metric_description(app_ui): ...
-
 class TestMinConfidenceFilter:
-    """
-    Tests for the Min Confidence filter fix (Issue #1).
-    """
+    """Tests for the Min Confidence filter fix (Issue #1)."""
     def test_scene_without_score_is_filtered_when_threshold_positive(self, app_ui):
-        """
-        Scenes without score should be filtered when min_confidence > 0.
-        
-        This tests the fix where score defaults to 0 instead of 100.
-        """
+        """Scenes without score should be filtered when min_confidence > 0."""
     def test_scene_with_high_score_is_kept(self, app_ui):
-        """
-        Scenes with score >= threshold should be kept.
-        """
+        """Scenes with score >= threshold should be kept."""
     def test_manual_override_not_affected_by_filters(self, app_ui):
-        """
-        Scenes with manual_status_change should not be auto-filtered.
-        """
-
+        """Scenes with manual_status_change should not be auto-filtered."""
 class TestTextStrategyWarning:
-    """
-    Tests for TEXT strategy warning label (Issue #3).
-    """
+    """Tests for TEXT strategy warning label (Issue #3)."""
     def test_text_strategy_has_warning_in_choices(self, app_ui):
-        """
-        TEXT strategy choice should include warning indicator.
-        """
+        """TEXT strategy choice should include warning indicator."""
 ```
 
 ### `📄 test_utils.py`
 
 ```python
-"""
-Tests for core utility functions.
-
-Covers utilities in core/utils.py including:
-- Video validation
-- Filename sanitization
-- Image/mask processing
-- JSON serialization
-
-Note: Some tests require integration mode (no mocks) due to numba/opencv dependencies.
-"""
-
-import json
-from pathlib import Path
-import numpy as np
-import pytest
-from core.utils import _to_json_safe, create_frame_map, draw_bbox, is_image_folder, list_images, postprocess_mask, render_mask_overlay, rgb_to_pil, sanitize_filename, validate_video_file
-
+"""Tests for core utility functions."""
 pytestmark = pytest.mark.unit
 class TestValidateVideoFile:
-    """
-    Tests for validate_video_file function.
-    """
+    """Tests for validate_video_file function."""
     def test_nonexistent_file_raises(self):
-        """
-        Test validation raises FileNotFoundError for non-existent file.
-        """
+        """Test validation raises FileNotFoundError for non-existent file."""
     def test_empty_file_raises(self, tmp_path):
-        """
-        Test validation raises ValueError for empty file.
-        """
+        """Test validation raises ValueError for empty file."""
     @pytest.mark.integration
     def test_valid_video_file(self, tmp_path):
-        """
-        Test validation of a valid video file (requires OpenCV).
-        """
-
+        """Test validation of a valid video file (requires OpenCV)."""
 class TestSanitizeFilename:
-    """
-    Tests for sanitize_filename function.
-    """
+    """Tests for sanitize_filename function."""
     def test_basic_sanitization(self, mock_config):
-        """
-        Test basic filename sanitization.
-        """
+        """Test basic filename sanitization."""
     def test_special_characters(self, mock_config):
-        """
-        Test removal of special characters.
-        """
+        """Test removal of special characters."""
     def test_max_length(self, mock_config):
-        """
-        Test filename truncation at max length.
-        """
+        """Test filename truncation at max length."""
     def test_empty_string(self, mock_config):
-        """
-        Test sanitization of empty string.
-        """
-
+        """Test sanitization of empty string."""
 class TestIsImageFolder:
-    """
-    Tests for is_image_folder function.
-    """
+    """Tests for is_image_folder function."""
     def test_valid_directory(self, tmp_path):
-        """
-        Test detection of valid directory.
-        """
+        """Test detection of valid directory."""
     def test_file_not_folder(self, tmp_path):
-        """
-        Test returns False for file.
-        """
+        """Test returns False for file."""
     def test_nonexistent_path(self):
-        """
-        Test returns False for non-existent path.
-        """
+        """Test returns False for non-existent path."""
     def test_string_path(self, tmp_path):
-        """
-        Test works with string path.
-        """
-
+        """Test works with string path."""
 class TestListImages:
-    """
-    Tests for list_images function.
-    """
+    """Tests for list_images function."""
     def test_lists_image_files(self, tmp_path, mock_config):
-        """
-        Test listing of image files in directory.
-        """
+        """Test listing of image files in directory."""
     def test_empty_directory(self, tmp_path, mock_config):
-        """
-        Test returns empty list for empty directory.
-        """
-
+        """Test returns empty list for empty directory."""
 class TestCreateFrameMap:
-    """
-    Tests for create_frame_map function.
-    """
+    """Tests for create_frame_map function."""
     def test_creates_frame_map(self, tmp_path, mock_logger):
-        """
-        Test frame map creation from directory.
-        """
+        """Test frame map creation from directory."""
     def test_empty_thumbs_directory(self, tmp_path, mock_logger):
-        """
-        Test returns empty dict for empty thumbs directory.
-        """
-
+        """Test returns empty dict for empty thumbs directory."""
 class TestPostprocessMask:
-    """
-    Tests for postprocess_mask function.
-    """
+    """Tests for postprocess_mask function."""
     def test_basic_mask_processing(self, mock_config):
-        """
-        Test basic mask postprocessing.
-        """
+        """Test basic mask postprocessing."""
     def test_empty_mask(self, mock_config):
-        """
-        Test processing of empty mask.
-        """
+        """Test processing of empty mask."""
     def test_full_mask(self, mock_config):
-        """
-        Test processing of full mask.
-        """
-
+        """Test processing of full mask."""
 class TestRenderMaskOverlay:
-    """
-    Tests for render_mask_overlay function.
-    """
+    """Tests for render_mask_overlay function."""
     def test_basic_overlay(self, mock_logger):
-        """
-        Test basic mask overlay on image.
-        """
+        """Test basic mask overlay on image."""
     def test_empty_mask_overlay(self, mock_logger):
-        """
-        Test overlay with empty mask doesn't crash.
-        """
-
+        """Test overlay with empty mask doesn't crash."""
 class TestRgbToPil:
-    """
-    Tests for rgb_to_pil function.
-    """
+    """Tests for rgb_to_pil function."""
     def test_basic_conversion(self):
-        """
-        Test basic RGB to PIL conversion.
-        """
+        """Test basic RGB to PIL conversion."""
     def test_grayscale_raises(self):
-        """
-        Test that 2D array handling.
-        """
-
+        """Test that 2D array handling."""
 class TestDrawBbox:
-    """
-    Tests for draw_bbox function.
-    """
+    """Tests for draw_bbox function."""
     def test_basic_bbox(self, mock_config):
-        """
-        Test basic bounding box drawing.
-        """
+        """Test basic bounding box drawing."""
     def test_bbox_with_label(self, mock_config):
-        """
-        Test bounding box with label.
-        """
+        """Test bounding box with label."""
     def test_bbox_with_color(self, mock_config):
-        """
-        Test bounding box with custom color.
-        """
-
+        """Test bounding box with custom color."""
 class TestToJsonSafe:
-    """
-    Tests for _to_json_safe function.
-    """
+    """Tests for _to_json_safe function."""
     def test_numpy_int(self):
-        """
-        Test conversion of numpy int.
-        """
+        """Test conversion of numpy int."""
     def test_numpy_float(self):
-        """
-        Test conversion of numpy float.
-        """
+        """Test conversion of numpy float."""
     def test_numpy_array(self):
-        """
-        Test conversion of numpy array.
-        """
+        """Test conversion of numpy array."""
     def test_path_conversion(self):
-        """
-        Test conversion of Path objects.
-        """
+        """Test conversion of Path objects."""
     def test_plain_dict(self):
-        """
-        Test plain dict passes through.
-        """
+        """Test plain dict passes through."""
     def test_nested_structures(self):
-        """
-        Test conversion of nested structures.
-        """
+        """Test conversion of nested structures."""
 ```
