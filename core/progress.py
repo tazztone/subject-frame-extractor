@@ -30,9 +30,6 @@ class AdvancedProgressTracker:
     Calculates ETA using exponential moving average (EMA) and updates the UI.
     """
 
-    # TODO: Add progress history for analytics and debugging
-    # TODO: Implement progress persistence for crash recovery
-    # TODO: Add cancellation reason tracking
     # TODO: Support nested progress stages (sub-operations)
     def __init__(self, progress: Callable, queue: Queue, logger: "AppLogger", ui_stage_name: str = ""):
         """

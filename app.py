@@ -55,8 +55,6 @@ def parse_args():
     return parser.parse_args()
 
 
-# TODO: Add signal handlers (SIGINT, SIGTERM) for graceful shutdown
-# TODO: Consider adding a health check endpoint for containerized deployments
 def main():
     """
     Main entry point for the application.

@@ -10,9 +10,6 @@ from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-# TODO: Support multiple config file locations (env var, user home, project root)
-# TODO: Add config schema version for migration support
-# TODO: Consider adding config file hot-reloading for development
 def json_config_settings_source() -> Dict[str, Any]:
     """Loads settings from a JSON file for Pydantic settings."""
     try:
@@ -207,9 +204,7 @@ class Config(BaseSettings):
     # Visualization
     visualization_bbox_color: List[int] = Field(default_factory=lambda: [255, 0, 0])
     visualization_bbox_thickness: int = 2
-    visualization_badge_excluded_color: List[int] = Field(
-        default_factory=lambda: [33, 128, 141]
-    )  # BGR Teal-ish
+    visualization_badge_excluded_color: List[int] = Field(default_factory=lambda: [33, 128, 141])  # BGR Teal-ish
     visualization_badge_text_color: List[int] = Field(default_factory=lambda: [255, 255, 255])
 
     # Analysis

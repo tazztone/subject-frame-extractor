@@ -256,9 +256,7 @@ def postprocess_mask(
     mask: np.ndarray, config: "Config", fill_holes: bool = True, keep_largest_only: bool = True
 ) -> np.ndarray:
     """Cleans up binary masks using morphological operations and connected components."""
-    # TODO: Add support for multiple mask refinement strategies
-    # TODO: Consider edge smoothing for more natural mask boundaries
-    # TODO: Add option to preserve small disconnected regions above a size threshold
+
     if mask is None or mask.size == 0:
         return mask
     binary_mask = (mask > 128).astype(np.uint8)

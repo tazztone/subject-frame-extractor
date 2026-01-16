@@ -122,9 +122,7 @@ def auto_set_thresholds(per_metric_values: dict, p: int, slider_keys: list[str],
     Returns:
         Dictionary of updates for the sliders.
     """
-    # TODO: Add outlier detection and exclusion from percentile calculation
-    # TODO: Support custom percentile curves per metric type
-    # TODO: Add smart default suggestions based on metric distributions
+
     updates = {}
     if not per_metric_values:
         return {f"slider_{key}": gr.update() for key in slider_keys}
