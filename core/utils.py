@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import functools
+import functools
 import gc
 import hashlib
 import json
@@ -297,6 +298,7 @@ def rgb_to_pil(image_rgb: np.ndarray) -> Image.Image:
     return Image.fromarray(image_rgb)
 
 
+@functools.lru_cache(maxsize=4)
 def create_frame_map(output_dir: Path, logger: "AppLogger", ext: str = ".webp") -> dict:
     """Creates a mapping from original frame numbers to extracted filenames."""
     logger.info("Loading frame map...", component="frames")
