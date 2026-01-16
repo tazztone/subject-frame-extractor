@@ -1,5 +1,5 @@
 ---
-Last Updated: 2026-01-15
+Last Updated: 2026-01-16
 ---
 
 # Tests Code Reference
@@ -50,6 +50,11 @@ def _create_mock_psutil():
 def _create_mock_matplotlib():
     """
     Create a mock for matplotlib.
+    """
+
+def _create_mock_scenedetect():
+    """
+    Create a mock for scenedetect with proper Exception classes.
     """
 
 def build_modules_to_mock():
@@ -1470,6 +1475,8 @@ def test_migration_adds_column(tmp_path): ...
 def test_metrics_json_parsing(db): ...
 
 def test_mask_empty_conversion(db): ...
+
+def test_wal_mode_enabled(db): ...
 ```
 
 ### `📄 test_dedup.py`
@@ -1710,6 +1717,12 @@ class TestExportKeptFrames:
     def test_export_ffmpeg_failure(self, mock_filter, mock_popen, mock_config, mock_logger, tmp_path):
         """
         Test export handles FFmpeg failure gracefully.
+        """
+    @patch('subprocess.Popen')
+    @patch('core.export.apply_all_filters_vectorized')
+    def test_export_metadata_creation(self, mock_filter, mock_popen, mock_config, mock_logger, tmp_path):
+        """
+        Test that metadata files are created during export.
         """
 
 class TestDryRunExport:
@@ -2398,6 +2411,24 @@ def test_apply_patches_triton_missing(): ...
 def test_apply_patches_triton_present(): ...
 ```
 
+### `📄 test_launch_config.py`
+
+```python
+import sys
+import pytest
+from unittest.mock import patch
+from core.config import Config
+from app import parse_args
+
+def test_config_defaults(): ...
+
+def test_config_overrides(): ...
+
+def test_parse_args(): ...
+
+def test_parse_args_defaults(): ...
+```
+
 ### `📄 test_managers.py`
 
 ```python
@@ -2758,6 +2789,21 @@ class TestSceneDetection:
     def test_run_scene_detection_exception(self, mock_detect, mock_logger, tmp_path):
         """
         Test run_scene_detection handles exceptions gracefully.
+        """
+    @patch('core.scene_utils.detection.detect')
+    def test_run_scene_detection_file_not_found(self, mock_detect, tmp_path):
+        """
+        Test run_scene_detection handles FileNotFoundError.
+        """
+    @patch('core.scene_utils.detection.detect')
+    def test_run_scene_detection_permission_error(self, mock_detect, tmp_path):
+        """
+        Test run_scene_detection handles PermissionError.
+        """
+    @patch('core.scene_utils.detection.detect')
+    def test_run_scene_detection_video_open_failure(self, mock_detect, tmp_path):
+        """
+        Test run_scene_detection handles VideoOpenFailure.
         """
     @patch('cv2.imread')
     @patch('cv2.resize')
