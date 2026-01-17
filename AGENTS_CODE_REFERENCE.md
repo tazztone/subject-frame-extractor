@@ -422,7 +422,7 @@ class SAM3Wrapper:
     def close_session(self):
         """Close the inference session and free GPU resources."""
     def shutdown(self):
-        """Shutdown the predictor and free multi-GPU resources."""
+        """Shutdown the predictor, release memory, and clean up all resources."""
 thread_local = threading.local()
 def get_face_landmarker(model_path: str, logger: 'AppLogger') -> vision.FaceLandmarker:
     """Returns a thread-local MediaPipe FaceLandmarker instance."""
@@ -761,6 +761,7 @@ def render_mask_overlay(frame_rgb: np.ndarray, mask_gray: np.ndarray, alpha: flo
     """overlays a semi-transparent red mask on the image."""
 def rgb_to_pil(image_rgb: np.ndarray) -> Image.Image:
     """Converts a NumPy RGB array to a PIL Image."""
+@functools.lru_cache(maxsize=4)
 def create_frame_map(output_dir: Path, logger: 'AppLogger', ext: str='.webp') -> dict:
     """Creates a mapping from original frame numbers to extracted filenames."""
 def draw_bbox(img_rgb: np.ndarray, xywh: list, config: 'Config', color: Optional[tuple]=None, thickness: Optional[int]=None, label: Optional[str]=None) -> np.ndarray:
