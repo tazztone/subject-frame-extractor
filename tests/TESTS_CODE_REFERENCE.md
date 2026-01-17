@@ -1327,8 +1327,11 @@ class TestSAM3WrapperMethodBehavior:
         """close_session should clear session_id."""
     def test_remove_object_calls_predictor(self, mock_wrapper):
         """remove_object should call predictor handle_request."""
-    def test_shutdown_calls_predictor(self, mock_wrapper):
-        """shutdown should call predictor shutdown."""
+    @patch('core.managers.torch.cuda.is_available', return_value=True)
+    @patch('core.managers.torch.cuda.empty_cache')
+    @patch('core.managers.gc.collect')
+    def test_shutdown_cleans_up_resources(self, mock_gc_collect, mock_empty_cache, mock_cuda_available, mock_wrapper):
+        """shutdown should call close_session, predictor.shutdown, delete predictor and ..."""
 class TestSeedSelectorTrackerInterface:
     """Tests that verify SeedSelector's expected tracker interface."""
     def test_seed_selector_tracker_methods_match_wrapper(self):
