@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 import gradio as gr
 import pytest
 
-from ui.app_ui import AppUI
+from ui.app_ui import AppUI, ApplicationState
 
 
 class TestAppUI:
@@ -73,6 +73,10 @@ class TestAppUI:
         return MagicMock()
 
     @pytest.fixture
+    def app_state(self):
+        return ApplicationState()
+
+    @pytest.fixture
     def app_ui(
         self, mock_config, mock_logger, mock_queue, mock_cancel_event, mock_thumbnail_manager, mock_model_registry
     ):
@@ -135,6 +139,10 @@ class TestAppUI:
             "smart_filter_state": MagicMock(),
             "smart_filter_checkbox": MagicMock(),
             "scene_history_state": MagicMock(),
+            "application_state": MagicMock(),
+            "face_seeding_group": MagicMock(),
+            "text_seeding_group": MagicMock(),
+            "auto_seeding_group": MagicMock(),
         }
 
         # Populate metric sliders with string labels
@@ -163,26 +171,23 @@ class TestAppUI:
         assert "color: #3498db" in html  # Highlight color
 
     def test_fix_strategy_visibility(self, app_ui):
-        app_ui.components["face_seeding_group"] = MagicMock()
-        app_ui.components["text_seeding_group"] = MagicMock()
-        app_ui.components["auto_seeding_group"] = MagicMock()
-
         updates = app_ui._fix_strategy_visibility("👤 By Face")
         assert updates[app_ui.components["face_seeding_group"]]["visible"] is True
         assert updates[app_ui.components["text_seeding_group"]]["visible"] is False
 
     # --- Pipeline Wrappers ---
 
-    def test_run_extraction_wrapper(self, app_ui):
+    def test_run_extraction_wrapper(self, app_ui, app_state):
         # We assume _run_pipeline is working (tested elsewhere or mocked)
         # We test that it creates event correctly
 
         with patch.object(app_ui, "_run_pipeline") as mock_run:
             mock_run.return_value = iter([])
+            # ext keys: source_path, upload_video, method, interval, nth_frame, max_resolution, thumb_megapixels, scene_detect
             args = ["vid.mp4", None, "interval", 1.0, 1, "1080", 0.5, True]
 
             # Consume generator
-            list(app_ui.run_extraction_wrapper(*args))
+            list(app_ui.run_extraction_wrapper(app_state, *args))
 
             mock_run.assert_called_once()
             # Verify event creation
@@ -190,47 +195,48 @@ class TestAppUI:
             assert event.source_path == "vid.mp4"
             assert event.method == "interval"
 
-    def test_run_pre_analysis_wrapper(self, app_ui, tmp_path):
+    def test_run_pre_analysis_wrapper(self, app_ui, app_state, tmp_path):
         out_dir = str(tmp_path / "out")
         with patch.object(app_ui, "_run_pipeline") as mock_run:
             mock_run.return_value = iter([])
-            # Ana keys: output_folder, video_path, resume, enable_face_filter...
+            # Ana keys: output_folder, video_path, resume, enable_face_filter... (31 keys total)
             args = [
-                out_dir,
-                "vid.mp4",
-                False,
-                False,
-                "",
-                None,
-                "buffalo_l",
-                True,
-                "sam3",
-                "Largest",
-                True,
-                "",
-                1.0,
-                100,
-                100,
-                True,
-                1,
-                "Auto",
-            ] + [True] * 13
+                out_dir,        # output_folder
+                "vid.mp4",      # video_path
+                False,          # resume
+                False,          # enable_face_filter
+                "",             # face_ref_img_path
+                None,           # face_ref_img_upload
+                "buffalo_l",    # face_model_name
+                True,           # enable_subject_mask
+                "sam3",         # tracker_model_name
+                "Largest",      # best_frame_strategy
+                True,           # scene_detect
+                "",             # text_prompt
+                1.0,            # min_mask_area_pct
+                2500.0,         # sharpness_base_scale
+                100.0,          # edge_strength_base_scale
+                True,           # pre_analysis_enabled
+                1,              # pre_sample_nth
+                "Auto",         # primary_seed_strategy
+            ] + [True] * 13     # compute_... flags (13 metrics)
 
-            list(app_ui.run_pre_analysis_wrapper(*args))
+            list(app_ui.run_pre_analysis_wrapper(app_state, *args))
             mock_run.assert_called_once()
             event = mock_run.call_args[0][1]
             assert event.output_folder == out_dir
 
     # --- Success Callbacks ---
 
-    def test_on_extraction_success(self, app_ui):
+    def test_on_extraction_success(self, app_ui, app_state):
         res = {"extracted_video_path_state": "v.mp4", "extracted_frames_dir_state": "/frames"}
-        updates = app_ui._on_extraction_success(res)
+        updates = app_ui._on_extraction_success(res, app_state)
 
-        assert updates[app_ui.components["extracted_video_path_state"]] == "v.mp4"
+        new_state = updates[app_ui.components["application_state"]]
+        assert new_state.extracted_video_path == "v.mp4"
         assert "Extraction Complete" in updates[app_ui.components["unified_status"]]
 
-    def test_on_pre_analysis_success(self, app_ui, tmp_path):
+    def test_on_pre_analysis_success(self, app_ui, app_state, tmp_path):
         scenes = [
             {
                 "shot_id": 1,
@@ -243,9 +249,10 @@ class TestAppUI:
         res = {"scenes": scenes, "output_dir": str(tmp_path / "out")}
 
         with patch("ui.app_ui.get_scene_status_text", return_value=("Status", "Button")):
-            updates = app_ui._on_pre_analysis_success(res)
+            updates = app_ui._on_pre_analysis_success(res, app_state)
 
-        assert updates[app_ui.components["scenes_state"]] == scenes
+        new_state = updates[app_ui.components["application_state"]]
+        assert new_state.scenes == scenes
         assert updates[app_ui.components["scene_filter_status"]] == "Status"
 
     # --- History/Undo ---
@@ -319,11 +326,11 @@ class TestAppUI:
 
     # --- Reset Filters ---
 
-    def test_on_reset_filters(self, app_ui, tmp_path):
-        res = app_ui.on_reset_filters([], {}, str(tmp_path / "out"))
-        # tuple([False] + slider_updates + [5, False, "Filters Reset.", gr.update(), "Fast (pHash)"] + acc_updates + [False])
+    def test_on_reset_filters(self, app_ui, app_state, tmp_path):
+        res = app_ui.on_reset_filters(app_state)
+        # tuple([new_state] + slider_updates + [5, False, "Filters Reset.", gr.update(), "Fast (pHash)"] + acc_updates + [False])
 
-        assert res[0] is False  # Smart filter state
+        assert res[0].smart_filter_enabled is False  # Smart filter state
         assert res[-1] is False  # Smart filter checkbox
         assert res[2] == 5  # Dedup thresh
 
@@ -342,7 +349,7 @@ class TestAppUI:
     # --- Integration-ish Wrapper Tests ---
 
     @patch("ui.app_ui.execute_session_load")
-    def test_run_session_load_wrapper(self, mock_load, app_ui):
+    def test_run_session_load_wrapper(self, mock_load, app_ui, app_state):
         mock_load.return_value = {
             "run_config": {"source_path": "test.mp4"},
             "session_path": "/session",
@@ -350,7 +357,7 @@ class TestAppUI:
             "metadata_exists": True,
         }
 
-        gen = app_ui.run_session_load_wrapper("/session")
+        gen = app_ui.run_session_load_wrapper("/session", app_state)
 
         # First yield is status update
         next(gen)

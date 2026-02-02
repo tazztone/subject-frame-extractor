@@ -27,7 +27,7 @@ Stabilize and modernize the Subject Frame Extractor by resolving critical regres
 - **Environment**: Must run reliably on Linux environments using `uv` for package management.
 
 ## Success Criteria
-- [ ] **Zero Failing Tests**: All unit, smoke, and integration tests pass.
-- [ ] **Successful E2E Run**: Complete a full processing run (Extraction -> Analysis -> Export) via the GUI using the provided `sample.mp4` and `sample.jpg`.
-- [ ] **Refactored Codebase**: Monolithic pipeline functions are broken down; `ModelRegistry` handles its own memory cleanup.
-- [ ] **Clean Repository**: No legacy artifacts or redundant configuration files remaining.
+- [x] **Zero Failing Tests**: All unit, smoke, and integration tests pass.
+- [x] **Successful E2E Run**: Complete a full processing run (Extraction -> Analysis -> Export) via the GUI using the provided `sample.mp4` and `sample.jpg`.
+- [x] **Refactored Codebase**: Monolithic pipeline functions are broken down; `ModelRegistry` handles its own memory cleanup.
+- [x] **Clean Repository**: No legacy artifacts or redundant configuration files remaining.

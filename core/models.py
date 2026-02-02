@@ -248,13 +248,15 @@ class Frame(BaseModel):
                     # Robust device check
                     is_cuda = False
                     device_obj = getattr(niqe_metric, "device", "cpu")
-                    if isinstance(device_obj, torch.device):
+                    # Handle both real torch.device and mocked ones
+                    if hasattr(device_obj, "type"):
                         is_cuda = device_obj.type == "cuda"
                     else:
                         is_cuda = "cuda" in str(device_obj)
 
                     with torch.no_grad(), torch.amp.autocast("cuda", enabled=is_cuda):
-                        niqe_raw = float(niqe_metric(img_tensor.to(device_obj)))
+                        res = niqe_metric(img_tensor.to(device_obj))
+                        niqe_raw = float(res)
                         niqe_score = max(
                             0,
                             min(
