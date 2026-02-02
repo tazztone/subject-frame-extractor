@@ -449,7 +449,7 @@ class AnalysisPipeline(Pipeline):
                 return {"done": True, "output_dir": str(self.output_dir)}
 
             self.db.connect()
-            self.db.create_tables()
+            self.db.migrate()
             if not self.params.resume:
                 self.db.clear_metadata()
 
@@ -516,7 +516,7 @@ class AnalysisPipeline(Pipeline):
         """
         try:
             self.db.connect()
-            self.db.create_tables()
+            self.db.migrate()
             if not self.params.resume:
                 self.db.clear_metadata()
             self.scene_map = {s.shot_id: s for s in scenes_to_process}
@@ -782,6 +782,24 @@ class AnalysisPipeline(Pipeline):
         return face_bbox
 
 
+def _handle_extraction_uploads(event_dict: dict, config: "Config") -> dict:
+    """Handles video file uploads and updates the event dictionary."""
+    if event_dict.get("upload_video"):
+        source = event_dict.pop("upload_video")
+        dest = str(Path(config.downloads_dir) / Path(source).name)
+        shutil.copy2(source, dest)
+        event_dict["source_path"] = dest
+    return event_dict
+
+
+def _initialize_extraction_params(
+    event_dict: dict, config: "Config", logger: "AppLogger"
+) -> tuple[AnalysisParameters, AdvancedProgressTracker]:
+    """Initializes analysis parameters and progress tracker for extraction."""
+    params = AnalysisParameters.from_ui(logger, config, **event_dict)
+    return params
+
+
 @handle_common_errors
 def execute_extraction(
     event: "ExtractionEvent",
@@ -800,18 +818,14 @@ def execute_extraction(
     Handlers file uploads, parameter validation, and running the extraction pipeline.
     """
     try:
-        params_dict = event.model_dump()
-        if event.upload_video:
-            source, dest = (
-                params_dict.pop("upload_video"),
-                str(Path(config.downloads_dir) / Path(event.upload_video).name),
-            )
-            shutil.copy2(source, dest)
-            params_dict["source_path"] = dest
-        params = AnalysisParameters.from_ui(logger, config, **params_dict)
+        event_dict = event.model_dump()
+        event_dict = _handle_extraction_uploads(event_dict, config)
+        params = _initialize_extraction_params(event_dict, config, logger)
+
         tracker = AdvancedProgressTracker(progress, progress_queue, logger, ui_stage_name="Extracting")
         pipeline = ExtractionPipeline(config, logger, params, progress_queue, cancel_event)
         result = pipeline.run(tracker=tracker)
+        
         if result and result.get("done"):
             yield {
                 "unified_log": "Extraction complete. You can now proceed to the next step.",
@@ -824,6 +838,155 @@ def execute_extraction(
     except Exception as e:
         logger.error("Extraction execution failed", exc_info=True)
         yield {"unified_log": f"[ERROR] Extraction failed unexpectedly: {e}", "done": False}
+
+
+def _handle_pre_analysis_uploads(event_dict: dict, config: "Config") -> dict:
+    """Handles face reference image uploads and updates the event dictionary."""
+    if event_dict.get("face_ref_img_upload"):
+        ref_upload = event_dict.pop("face_ref_img_upload")
+        dest = Path(config.downloads_dir) / Path(ref_upload).name
+        shutil.copy2(ref_upload, dest)
+        event_dict["face_ref_img_path"] = str(dest)
+    return event_dict
+
+
+def _initialize_pre_analysis_params(
+    event_dict: dict, config: "Config", logger: "AppLogger"
+) -> tuple[AnalysisParameters, Path]:
+    """Initializes analysis parameters and ensures output directory exists."""
+    params = AnalysisParameters.from_ui(logger, config, **event_dict)
+    output_dir = Path(params.output_folder)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Save run configuration
+    config_to_save = {k: v for k, v in event_dict.items() if k != "face_ref_img_upload"}
+    (output_dir / "run_config.json").write_text(json.dumps(config_to_save, indent=4))
+
+    return params, output_dir
+
+
+def _load_scenes(output_dir: Path) -> list[Scene]:
+    """Loads scenes from scenes.json."""
+    scenes_path = output_dir / "scenes.json"
+    if not scenes_path.exists():
+        raise FileNotFoundError("scenes.json not found. Run extraction first.")
+    
+    with scenes_path.open("r", encoding="utf-8") as f:
+        scenes_data = json.load(f)
+    
+    return [
+        Scene(shot_id=i, start_frame=s, end_frame=e)
+        for i, (s, e) in enumerate(scenes_data)
+    ]
+
+
+class PreAnalysisPipeline(Pipeline):
+    """Pipeline for pre-analyzing scenes (best frame selection, seeding)."""
+
+    def __init__(
+        self,
+        config: "Config",
+        logger: "AppLogger",
+        params: "AnalysisParameters",
+        progress_queue: Queue,
+        cancel_event: threading.Event,
+        thumbnail_manager: "ThumbnailManager",
+        model_registry: "ModelRegistry",
+    ):
+        super().__init__(config, logger, params, progress_queue, cancel_event)
+        self.thumbnail_manager = thumbnail_manager
+        self.model_registry = model_registry
+        self.output_dir = Path(self.params.output_folder)
+
+    def run(self, scenes: list[Scene], tracker: Optional["AdvancedProgressTracker"] = None) -> list[Scene]:
+        """Runs pre-analysis for a list of scenes."""
+        models = initialize_analysis_models(self.params, self.config, self.logger, self.model_registry)
+        
+        is_folder_mode = not self.params.video_path
+        niqe_metric = self._initialize_niqe_if_needed(models["device"], is_folder_mode)
+
+        masker = SubjectMasker(
+            self.params,
+            self.progress_queue,
+            self.cancel_event,
+            self.config,
+            face_analyzer=models["face_analyzer"],
+            reference_embedding=models["ref_emb"],
+            niqe_metric=niqe_metric,
+            thumbnail_manager=self.thumbnail_manager,
+            logger=self.logger,
+            face_landmarker=models["face_landmarker"],
+            device=models["device"],
+            model_registry=self.model_registry,
+        )
+        masker.frame_map = masker._create_frame_map(str(self.output_dir))
+        
+        previews_dir = self.output_dir / "previews"
+        previews_dir.mkdir(exist_ok=True)
+
+        for scene in scenes:
+            if self.cancel_event.is_set():
+                break
+            
+            if tracker:
+                tracker.step(1, desc=f"Scene {scene.shot_id}")
+            
+            self._process_single_scene(scene, masker, previews_dir, is_folder_mode)
+
+        save_scene_seeds(scenes, str(self.output_dir), self.logger)
+        return scenes
+
+    def _initialize_niqe_if_needed(self, device: str, is_folder_mode: bool):
+        """Lazy initialization of NIQE for seeding."""
+        if (not is_folder_mode and 
+            self.params.pre_analysis_enabled and 
+            self.params.primary_seed_strategy != "🧑‍🤝‍🧑 Find Prominent Person"):
+            try:
+                import pyiqa
+                return pyiqa.create_metric("niqe", device=device)
+            except (ImportError, Exception):
+                pass
+        return None
+
+    def _process_single_scene(self, scene: Scene, masker: SubjectMasker, previews_dir: Path, is_folder_mode: bool):
+        """Processes a single scene: selects best frame, generates seed, and preview."""
+        if is_folder_mode:
+            scene.best_frame = scene.start_frame
+        elif not scene.best_frame:
+            masker._select_best_frame_in_scene(scene, str(self.output_dir))
+
+        fname = masker.frame_map.get(scene.best_frame)
+        if not fname:
+            return
+
+        thumb_rgb = self.thumbnail_manager.get(self.output_dir / "thumbs" / f"{Path(fname).stem}.webp")
+        if thumb_rgb is None:
+            return
+
+        # Get seed bounding box and details
+        bbox, details = masker.get_seed_for_frame(thumb_rgb, seed_config=scene.seed_config or self.params, scene=scene)
+        scene.seed_result = {"bbox": bbox, "details": details}
+
+        # Handle mask if enabled
+        mask = None
+        if bbox and self.params.enable_subject_mask:
+            mask = masker.get_mask_for_bbox(thumb_rgb, bbox)
+            if mask is not None and mask.size > 0:
+                h, w = mask.shape[:2]
+                area = h * w
+                scene.seed_result["details"]["mask_area_pct"] = (np.sum(mask > 0) / area * 100) if area > 0 else 0.0
+
+        # Generate preview overlay
+        from core.utils import render_mask_overlay
+        overlay_rgb = (
+            render_mask_overlay(thumb_rgb, mask, 0.6, logger=self.logger)
+            if mask is not None
+            else masker.draw_bbox(thumb_rgb, bbox)
+        )
+        
+        preview_path = previews_dir / f"scene_{scene.shot_id:05d}.jpg"
+        Image.fromarray(overlay_rgb).save(preview_path)
+        scene.preview_path, scene.status = str(preview_path), "included"
 
 
 @handle_common_errors
@@ -843,98 +1006,30 @@ def execute_pre_analysis(
     """
     try:
         tracker = AdvancedProgressTracker(progress, progress_queue, logger, ui_stage_name="Pre-Analysis")
-        params_dict = event.model_dump()
-        is_folder_mode = not params_dict.get("video_path")
-        if event.face_ref_img_upload:
-            ref_upload, dest = (
-                params_dict.pop("face_ref_img_upload"),
-                Path(config.downloads_dir) / Path(event.face_ref_img_upload).name,
-            )
-            shutil.copy2(ref_upload, dest)
-            params_dict["face_ref_img_path"] = str(dest)
-        params = AnalysisParameters.from_ui(logger, config, **params_dict)
-        output_dir = Path(params.output_folder)
-        (output_dir / "run_config.json").write_text(
-            json.dumps({k: v for k, v in params_dict.items() if k != "face_ref_img_upload"}, indent=4)
-        )
-
-        models = initialize_analysis_models(params, config, logger, model_registry)
-
+        
+        event_dict = event.model_dump()
+        event_dict = _handle_pre_analysis_uploads(event_dict, config)
+        params, output_dir = _initialize_pre_analysis_params(event_dict, config, logger)
+        
         try:
-            import pyiqa
-
-            niqe_metric = (
-                pyiqa.create_metric("niqe", device=models["device"])
-                if not is_folder_mode
-                and params.pre_analysis_enabled
-                and params.primary_seed_strategy != "🧑‍🤝‍🧑 Find Prominent Person"
-                else None
-            )
-        except ImportError:
-            niqe_metric = None
-
-        masker = SubjectMasker(
-            params,
-            progress_queue,
-            cancel_event,
-            config,
-            face_analyzer=models["face_analyzer"],
-            reference_embedding=models["ref_emb"],
-            niqe_metric=niqe_metric,
-            thumbnail_manager=thumbnail_manager,
-            logger=logger,
-            face_landmarker=models["face_landmarker"],
-            device=models["device"],
-            model_registry=model_registry,
-        )
-        masker.frame_map = masker._create_frame_map(str(output_dir))
-        scenes_path = output_dir / "scenes.json"
-        if not scenes_path.exists():
-            yield {"unified_log": "[ERROR] scenes.json not found. Run extraction first.", "done": False}
+            scenes = _load_scenes(output_dir)
+        except FileNotFoundError as e:
+            yield {"unified_log": f"[ERROR] {e}", "done": False}
             return
-        scenes = [
-            Scene(shot_id=i, start_frame=s, end_frame=e)
-            for i, (s, e) in enumerate(json.load(scenes_path.open("r", encoding="utf-8")))
-        ]
-        tracker.start(len(scenes), desc="Analyzing Scenes" if is_folder_mode else "Pre-analyzing Scenes")
-        previews_dir = output_dir / "previews"
-        previews_dir.mkdir(exist_ok=True)
-        from core.utils import render_mask_overlay
 
-        for scene in scenes:
-            if cancel_event.is_set():
-                break
-            tracker.step(1, desc=f"Scene {scene.shot_id}")
-            if is_folder_mode:
-                scene.best_frame = scene.start_frame
-            elif not scene.best_frame:
-                masker._select_best_frame_in_scene(scene, str(output_dir))
-            fname = masker.frame_map.get(scene.best_frame)
-            if not fname:
-                continue
-            thumb_rgb = thumbnail_manager.get(output_dir / "thumbs" / f"{Path(fname).stem}.webp")
-            if thumb_rgb is None:
-                continue
-            bbox, details = masker.get_seed_for_frame(thumb_rgb, seed_config=scene.seed_config or params, scene=scene)
-            scene.seed_result = {"bbox": bbox, "details": details}
-            mask = masker.get_mask_for_bbox(thumb_rgb, bbox) if bbox and params.enable_subject_mask else None
-            if mask is not None and mask.size > 0:
-                h, w = mask.shape[:2]
-                area = h * w
-                scene.seed_result["details"]["mask_area_pct"] = (np.sum(mask > 0) / area * 100) if area > 0 else 0.0
-            overlay_rgb = (
-                render_mask_overlay(thumb_rgb, mask, 0.6, logger=logger)
-                if mask is not None
-                else masker.draw_bbox(thumb_rgb, bbox)
-            )
-            preview_path = previews_dir / f"scene_{scene.shot_id:05d}.jpg"
-            Image.fromarray(overlay_rgb).save(preview_path)
-            scene.preview_path, scene.status = str(preview_path), "included"
-        save_scene_seeds(scenes, str(output_dir), logger)
+        is_folder_mode = not params.video_path
+        tracker.start(len(scenes), desc="Analyzing Scenes" if is_folder_mode else "Pre-analyzing Scenes")
+
+        pipeline = PreAnalysisPipeline(
+            config, logger, params, progress_queue, cancel_event, thumbnail_manager, model_registry
+        )
+        processed_scenes = pipeline.run(scenes, tracker=tracker)
+
         tracker.done_stage("Pre-analysis complete")
+        
         final_yield = {
             "unified_log": "Pre-analysis complete. Review scenes in the next tab.",
-            "scenes": [s.model_dump() for s in scenes],
+            "scenes": [s.model_dump() for s in processed_scenes],
             "output_dir": str(output_dir),
             "done": True,
             "seeding_results_column": gr.update(visible=True),
@@ -943,6 +1038,10 @@ def execute_pre_analysis(
         if params.face_ref_img_path:
             final_yield["final_face_ref_path"] = params.face_ref_img_path
         yield final_yield
+
+    except Exception as e:
+        logger.error("Pre-analysis execution failed", exc_info=True)
+        yield {"unified_log": f"[ERROR] Pre-analysis failed unexpectedly: {e}", "done": False}
     except Exception as e:
         logger.error("Pre-analysis execution failed", exc_info=True)
         yield {"unified_log": f"[ERROR] Pre-analysis failed unexpectedly: {e}", "done": False}
@@ -1024,6 +1123,31 @@ def execute_session_load(event: "SessionLoadEvent", logger: "AppLogger") -> dict
         return {"error": f"Failed to load session: {e}"}
 
 
+def _load_analysis_scenes(scenes_data: list, is_folder_mode: bool, include_only: bool = True) -> list[Scene]:
+    """Converts raw scene data to Scene objects, optionally filtering by status."""
+    scene_fields = set(Scene.model_fields.keys())
+    return [
+        Scene(**{k: v for k, v in s.items() if k in scene_fields})
+        for s in scenes_data
+        if not include_only or is_folder_mode or s.get("status") == "included"
+    ]
+
+
+def _initialize_analysis_pipeline(
+    config: "Config",
+    logger: "AppLogger",
+    params: AnalysisParameters,
+    progress_queue: Queue,
+    cancel_event: threading.Event,
+    thumbnail_manager: "ThumbnailManager",
+    model_registry: "ModelRegistry",
+) -> AnalysisPipeline:
+    """Creates and returns an AnalysisPipeline instance."""
+    return AnalysisPipeline(
+        config, logger, params, progress_queue, cancel_event, thumbnail_manager, model_registry
+    )
+
+
 def execute_propagation(
     event: PropagationEvent,
     progress_queue: Queue,
@@ -1039,15 +1163,12 @@ def execute_propagation(
     try:
         params = AnalysisParameters.from_ui(logger, config, **event.analysis_params.model_dump())
         is_folder_mode = not params.video_path
-        scene_fields = set(Scene.model_fields.keys())
-        scenes_to_process = [
-            Scene(**{k: v for k, v in s.items() if k in scene_fields})
-            for s in event.scenes
-            if is_folder_mode or s.get("status") == "included"
-        ]
+        
+        scenes_to_process = _load_analysis_scenes(event.scenes, is_folder_mode)
         if not scenes_to_process:
             yield {"unified_log": "No scenes were included for processing. Nothing to do."}
             return
+
         tracker = AdvancedProgressTracker(progress, progress_queue, logger, ui_stage_name="Analysis")
         if is_folder_mode:
             tracker.start(len(scenes_to_process), desc="Analyzing Images")
@@ -1055,9 +1176,11 @@ def execute_propagation(
             video_info = VideoManager.get_video_info(params.video_path)
             totals = estimate_totals(params, video_info, scenes_to_process)
             tracker.start(totals.get("propagation", 0) + len(scenes_to_process), desc="Propagating Masks & Analyzing")
-        pipeline = AnalysisPipeline(
+
+        pipeline = _initialize_analysis_pipeline(
             config, logger, params, progress_queue, cancel_event, thumbnail_manager, model_registry
         )
+        
         result = pipeline.run_full_analysis(scenes_to_process, tracker=tracker)
         if result and result.get("done"):
             masks_dir = Path(result["output_dir"]) / "masks"
@@ -1098,21 +1221,21 @@ def execute_analysis(
     """Orchestrates the frame analysis stage."""
     try:
         params = AnalysisParameters.from_ui(logger, config, **event.analysis_params.model_dump())
-        scenes_to_process = [
-            Scene(**{k: v for k, v in s.items() if k in set(Scene.model_fields.keys())})
-            for s in event.scenes
-            if s.get("status") == "included"
-        ]
+        is_folder_mode = not params.video_path
+        
+        scenes_to_process = _load_analysis_scenes(event.scenes, is_folder_mode)
         if not scenes_to_process:
             yield {"unified_log": "No scenes to analyze. Nothing to do."}
             return
+
         video_info = VideoManager.get_video_info(params.video_path)
-        estimate_totals(params, video_info, scenes_to_process)
         tracker = AdvancedProgressTracker(progress, progress_queue, logger, ui_stage_name="Analyzing")
         tracker.start(sum(s.end_frame - s.start_frame for s in scenes_to_process), desc="Analyzing Frames")
-        pipeline = AnalysisPipeline(
+
+        pipeline = _initialize_analysis_pipeline(
             config, logger, params, progress_queue, cancel_event, thumbnail_manager, model_registry
         )
+        
         result = pipeline.run_analysis_only(scenes_to_process, tracker=tracker)
         if result and result.get("done"):
             yield {

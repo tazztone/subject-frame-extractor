@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
+from core.managers import SAM3Wrapper
 
 
 class TestSAM3WrapperAPICompleteness:
@@ -22,21 +23,20 @@ class TestSAM3WrapperAPICompleteness:
     def mock_wrapper_class(self):
         """Create a mock-free SAM3Wrapper class reference."""
         # Use build_sam3_video_predictor as per the new refactor
-        with patch("core.managers.build_sam3_video_predictor") as mock_build:
+        # Patch the source module to ensure the local import in __init__ is caught
+        with patch("sam3.model_builder.build_sam3_video_predictor") as mock_build:
             mock_predictor = MagicMock()
             mock_build.return_value = mock_predictor
 
             with patch("torch.cuda.is_available", return_value=False):
-                from core.managers import SAM3Wrapper
-
                 yield SAM3Wrapper
 
     @pytest.fixture
-    def mock_wrapper(self, mock_wrapper_class):
+    def api_mock_wrapper(self, mock_wrapper_class):
         """Create a mocked SAM3Wrapper instance."""
         return mock_wrapper_class(device="cpu")
 
-    def test_all_required_methods_exist(self, mock_wrapper):
+    def test_all_required_methods_exist(self, api_mock_wrapper):
         """
         Verify all API methods expected by SeedSelector exist on SAM3Wrapper.
 
@@ -58,34 +58,42 @@ class TestSAM3WrapperAPICompleteness:
         ]
 
         for method in required_methods:
-            assert hasattr(mock_wrapper, method), f"SAM3Wrapper missing required method: {method}"
-            assert callable(getattr(mock_wrapper, method)), f"SAM3Wrapper.{method} is not callable"
+            assert hasattr(api_mock_wrapper, method), f"SAM3Wrapper missing required method: {method}"
+            assert callable(getattr(api_mock_wrapper, method)), f"SAM3Wrapper.{method} is not callable"
 
-    def test_detect_objects_signature(self, mock_wrapper):
+    def test_detect_objects_signature(self, api_mock_wrapper):
         """Verify detect_objects has correct signature."""
         import inspect
 
-        sig = inspect.signature(mock_wrapper.detect_objects)
+        # If the class was somehow replaced by a MagicMock (e.g. by another test),
+        # this will fail. We ensure we have the real class.
+        from core.managers import SAM3Wrapper
+        
+        # Check the class method directly if the instance looks mocked
+        method = SAM3Wrapper.detect_objects
+        sig = inspect.signature(method)
         params = list(sig.parameters.keys())
 
-        assert "frame_rgb" in params, "detect_objects missing frame_rgb parameter"
-        assert "prompt" in params, "detect_objects missing prompt parameter"
+        assert "frame_rgb" in params, f"detect_objects missing frame_rgb parameter. Found: {params}"
+        assert "prompt" in params, f"detect_objects missing prompt parameter. Found: {params}"
 
-    def test_add_text_prompt_signature(self, mock_wrapper):
+    def test_add_text_prompt_signature(self, api_mock_wrapper):
         """Verify add_text_prompt has correct signature."""
         import inspect
 
-        sig = inspect.signature(mock_wrapper.add_text_prompt)
+        from core.managers import SAM3Wrapper
+        method = SAM3Wrapper.add_text_prompt
+        sig = inspect.signature(method)
         params = list(sig.parameters.keys())
 
-        assert "frame_idx" in params, "add_text_prompt missing frame_idx parameter"
-        assert "text" in params, "add_text_prompt missing text parameter"
+        assert "frame_idx" in params, f"add_text_prompt missing frame_idx parameter. Found: {params}"
+        assert "text" in params, f"add_text_prompt missing text parameter. Found: {params}"
 
-    def test_add_point_prompt_signature(self, mock_wrapper):
+    def test_add_point_prompt_signature(self, api_mock_wrapper):
         """Verify add_point_prompt has correct signature."""
         import inspect
 
-        sig = inspect.signature(mock_wrapper.add_point_prompt)
+        sig = inspect.signature(api_mock_wrapper.add_point_prompt)
         params = list(sig.parameters.keys())
 
         assert "frame_idx" in params
@@ -99,9 +107,10 @@ class TestSAM3WrapperMethodBehavior:
     """Tests for SAM3Wrapper method behavior with mocking."""
 
     @pytest.fixture
-    def mock_wrapper(self):
+    def behavior_mock_wrapper(self):
         """Create a fully mocked SAM3Wrapper."""
-        with patch("core.managers.build_sam3_video_predictor") as mock_build:
+        # Patch the source module to ensure the local import in __init__ is caught
+        with patch("sam3.model_builder.build_sam3_video_predictor") as mock_build:
             mock_predictor = MagicMock()
             mock_predictor.handle_request = MagicMock(return_value={})
             mock_predictor.handle_stream_request = MagicMock(return_value=[])
@@ -115,58 +124,58 @@ class TestSAM3WrapperMethodBehavior:
                 # wrapper.predictor is already set by __init__ due to mock_build
                 yield wrapper
 
-    def test_detect_objects_returns_empty_on_empty_prompt(self, mock_wrapper):
+    def test_detect_objects_returns_empty_on_empty_prompt(self, behavior_mock_wrapper):
         """detect_objects should return empty list for empty prompt."""
         frame = np.zeros((100, 100, 3), dtype=np.uint8)
 
-        assert mock_wrapper.detect_objects(frame, "") == []
-        assert mock_wrapper.detect_objects(frame, "   ") == []
-        assert mock_wrapper.detect_objects(frame, None) == []
+        assert behavior_mock_wrapper.detect_objects(frame, "") == []
+        assert behavior_mock_wrapper.detect_objects(frame, "   ") == []
+        assert behavior_mock_wrapper.detect_objects(frame, None) == []
 
-    def test_add_text_prompt_requires_init_video(self, mock_wrapper):
+    def test_add_text_prompt_requires_init_video(self, behavior_mock_wrapper):
         """add_text_prompt should raise if init_video not called."""
-        mock_wrapper.session_id = None
+        behavior_mock_wrapper.session_id = None
 
         with pytest.raises(RuntimeError) as exc_info:
-            mock_wrapper.add_text_prompt(0, "person")
+            behavior_mock_wrapper.add_text_prompt(0, "person")
 
         assert "init_video" in str(exc_info.value)
 
-    def test_add_point_prompt_requires_init_video(self, mock_wrapper):
+    def test_add_point_prompt_requires_init_video(self, behavior_mock_wrapper):
         """add_point_prompt should raise if init_video not called."""
-        mock_wrapper.session_id = None
+        behavior_mock_wrapper.session_id = None
 
         with pytest.raises(RuntimeError) as exc_info:
-            mock_wrapper.add_point_prompt(0, 1, [(50, 50)], [1], (100, 100))
+            behavior_mock_wrapper.add_point_prompt(0, 1, [(50, 50)], [1], (100, 100))
 
         assert "init_video" in str(exc_info.value)
 
-    def test_reset_session_with_no_state_is_safe(self, mock_wrapper):
+    def test_reset_session_with_no_state_is_safe(self, behavior_mock_wrapper):
         """reset_session should not raise when no session is active."""
-        mock_wrapper.session_id = None
-        mock_wrapper.reset_session()  # Should not raise
+        behavior_mock_wrapper.session_id = None
+        behavior_mock_wrapper.reset_session()  # Should not raise
 
-    def test_close_session_with_no_state_is_safe(self, mock_wrapper):
+    def test_close_session_with_no_state_is_safe(self, behavior_mock_wrapper):
         """close_session should not raise when no session is active."""
-        mock_wrapper.session_id = None
-        mock_wrapper.close_session()  # Should not raise
+        behavior_mock_wrapper.session_id = None
+        behavior_mock_wrapper.close_session()  # Should not raise
 
-    def test_close_session_clears_session_id(self, mock_wrapper):
+    def test_close_session_clears_session_id(self, behavior_mock_wrapper):
         """close_session should clear session_id."""
-        mock_wrapper.session_id = "test_session"
-        mock_wrapper.predictor = MagicMock()
+        behavior_mock_wrapper.session_id = "test_session"
+        behavior_mock_wrapper.predictor = MagicMock()
 
-        mock_wrapper.close_session()
+        behavior_mock_wrapper.close_session()
 
-        assert mock_wrapper.session_id is None
+        assert behavior_mock_wrapper.session_id is None
 
-    def test_remove_object_calls_predictor(self, mock_wrapper):
+    def test_remove_object_calls_predictor(self, behavior_mock_wrapper):
         """remove_object should call predictor handle_request."""
-        mock_wrapper.session_id = "test_session"
+        behavior_mock_wrapper.session_id = "test_session"
 
-        mock_wrapper.remove_object(1)
+        behavior_mock_wrapper.remove_object(1)
 
-        mock_wrapper.predictor.handle_request.assert_called_with(
+        behavior_mock_wrapper.predictor.handle_request.assert_called_with(
             request={
                 "type": "remove_object",
                 "session_id": "test_session",
@@ -177,18 +186,18 @@ class TestSAM3WrapperMethodBehavior:
     @patch("core.managers.torch.cuda.is_available", return_value=True)
     @patch("core.managers.torch.cuda.empty_cache")
     @patch("core.managers.gc.collect")
-    def test_shutdown_cleans_up_resources(self, mock_gc_collect, mock_empty_cache, mock_cuda_available, mock_wrapper):
+    def test_shutdown_cleans_up_resources(self, mock_gc_collect, mock_empty_cache, mock_cuda_available, behavior_mock_wrapper):
         """shutdown should call close_session, predictor.shutdown, delete predictor and clear cache."""
         # Store a reference to the original predictor mock, ensuring it has a shutdown mock
-        original_predictor = mock_wrapper.predictor
+        original_predictor = behavior_mock_wrapper.predictor
         original_predictor.shutdown = MagicMock()
 
         # Spy on the close_session method to verify it gets called
-        with patch.object(mock_wrapper, "close_session", wraps=mock_wrapper.close_session) as mock_close_session:
-            assert hasattr(mock_wrapper, "predictor")
+        with patch.object(behavior_mock_wrapper, "close_session", wraps=behavior_mock_wrapper.close_session) as mock_close_session:
+            assert hasattr(behavior_mock_wrapper, "predictor")
 
             # Execute the shutdown
-            mock_wrapper.shutdown()
+            behavior_mock_wrapper.shutdown()
 
             # 1. Verify close_session was called
             mock_close_session.assert_called_once()
@@ -197,7 +206,7 @@ class TestSAM3WrapperMethodBehavior:
             original_predictor.shutdown.assert_called_once()
 
             # 3. Verify predictor attribute is deleted
-            assert not hasattr(mock_wrapper, "predictor")
+            assert not hasattr(behavior_mock_wrapper, "predictor")
 
             # 4. Verify gc.collect was called
             mock_gc_collect.assert_called_once()
@@ -233,7 +242,8 @@ class TestSeedSelectorTrackerInterface:
         expected_methods = set(tracker_calls)
 
         # Verify SAM3Wrapper has all of them
-        with patch("core.managers.build_sam3_video_predictor") as mock_build:
+        # Patch the source module to ensure the local import in __init__ is caught
+        with patch("sam3.model_builder.build_sam3_video_predictor") as mock_build:
             mock_predictor = MagicMock()
             mock_build.return_value = mock_predictor
 

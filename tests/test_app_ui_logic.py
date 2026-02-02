@@ -190,12 +190,13 @@ class TestAppUI:
             assert event.source_path == "vid.mp4"
             assert event.method == "interval"
 
-    def test_run_pre_analysis_wrapper(self, app_ui):
+    def test_run_pre_analysis_wrapper(self, app_ui, tmp_path):
+        out_dir = str(tmp_path / "out")
         with patch.object(app_ui, "_run_pipeline") as mock_run:
             mock_run.return_value = iter([])
             # Ana keys: output_folder, video_path, resume, enable_face_filter...
             args = [
-                "/out",
+                out_dir,
                 "vid.mp4",
                 False,
                 False,
@@ -218,7 +219,7 @@ class TestAppUI:
             list(app_ui.run_pre_analysis_wrapper(*args))
             mock_run.assert_called_once()
             event = mock_run.call_args[0][1]
-            assert event.output_folder == "/out"
+            assert event.output_folder == out_dir
 
     # --- Success Callbacks ---
 
@@ -229,7 +230,7 @@ class TestAppUI:
         assert updates[app_ui.components["extracted_video_path_state"]] == "v.mp4"
         assert "Extraction Complete" in updates[app_ui.components["unified_status"]]
 
-    def test_on_pre_analysis_success(self, app_ui):
+    def test_on_pre_analysis_success(self, app_ui, tmp_path):
         scenes = [
             {
                 "shot_id": 1,
@@ -239,7 +240,7 @@ class TestAppUI:
                 "seed_result": {"bbox": [0, 0, 10, 10]},
             }
         ]
-        res = {"scenes": scenes, "output_dir": "/out"}
+        res = {"scenes": scenes, "output_dir": str(tmp_path / "out")}
 
         with patch("ui.app_ui.get_scene_status_text", return_value=("Status", "Button")):
             updates = app_ui._on_pre_analysis_success(res)
@@ -256,7 +257,8 @@ class TestAppUI:
         assert len(history) == 1
         assert history[0] == scenes
 
-    def test_undo_last_action(self, app_ui):
+    def test_undo_last_action(self, app_ui, tmp_path):
+        out_dir = str(tmp_path / "out")
         history = deque()
         history.append([{"shot_id": 1, "start_frame": 0, "end_frame": 10}])
         scenes_current = []
@@ -267,7 +269,7 @@ class TestAppUI:
             patch("ui.app_ui.get_scene_status_text", return_value=("Stat", "Btn")),
         ):
             scenes, gal, idx, msg, hist = app_ui.scene_handler._undo_last_action(
-                scenes_current, history, "/out", "Kept"
+                scenes_current, history, out_dir, "Kept"
             )
 
             assert len(scenes) == 1
@@ -289,7 +291,8 @@ class TestAppUI:
 
     # --- Bulk Scene Filters ---
 
-    def test_on_apply_bulk_scene_filters_extended(self, app_ui):
+    def test_on_apply_bulk_scene_filters_extended(self, app_ui, tmp_path):
+        out_dir = str(tmp_path / "out")
         scenes = [
             {
                 "shot_id": 1,
@@ -308,7 +311,7 @@ class TestAppUI:
         ):
             # Filter out by area (min 60)
             res_scenes, _, _, _, _, _ = app_ui.scene_handler.on_apply_bulk_scene_filters_extended(
-                scenes, 60.0, 0.0, 0.0, False, "/out", "Kept", deque()
+                scenes, 60.0, 0.0, 0.0, False, out_dir, "Kept", deque()
             )
 
             assert res_scenes[0]["status"] == "excluded"
@@ -316,8 +319,8 @@ class TestAppUI:
 
     # --- Reset Filters ---
 
-    def test_on_reset_filters(self, app_ui):
-        res = app_ui.on_reset_filters([], {}, "/out")
+    def test_on_reset_filters(self, app_ui, tmp_path):
+        res = app_ui.on_reset_filters([], {}, str(tmp_path / "out"))
         # tuple([False] + slider_updates + [5, False, "Filters Reset.", gr.update(), "Fast (pHash)"] + acc_updates + [False])
 
         assert res[0] is False  # Smart filter state

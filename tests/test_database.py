@@ -14,12 +14,12 @@ def db_path(tmp_path):
 def db(db_path):
     db = Database(db_path, batch_size=2)
     db.connect()
-    db.create_tables()
+    db.migrate()
     yield db
     db.close()
 
 
-def test_create_tables(db, db_path):
+def test_initial_schema(db, db_path):
     assert db_path.exists()
     cursor = db.conn.cursor()
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='metadata'")
@@ -94,7 +94,7 @@ def test_migration_adds_column(tmp_path):
     conn.close()
 
     db = Database(db_path)
-    db.create_tables()  # Should run migration
+    db.migrate()  # Should run migration
 
     cursor = db.conn.cursor()
     cursor.execute("PRAGMA table_info(metadata)")

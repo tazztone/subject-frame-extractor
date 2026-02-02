@@ -1,6 +1,6 @@
 # ROADMAP.md
 
-> **Current Phase**: Phase 1: Core Regressions
+> **Current Phase**: Phase 2: Pipeline Refactoring & Cleanup
 > **Milestone**: v2.1-stabilized
 
 ## Must-Haves (from SPEC)
@@ -12,13 +12,13 @@
 ## Phases
 
 ### Phase 1: Core Regressions & Infrastructure
-**Status**: ⬜ Not Started
+**Status**: ✅ Completed
 **Objective**: Restore the codebase to a "Green" state where all existing tests pass and basic pathing errors are resolved.
 **Tasks**:
-- [ ] Fix `Database` API in tests (Migrate `create_tables()` calls to `migrate()`).
-- [ ] Fix `PermissionError: [Errno 13]` by removing hardcoded `/out` paths in tests.
-- [ ] Verify `uv.lock` consistency and environment health.
-- [ ] Run full test suite and confirm 0 failures.
+- [x] Fix `Database` API in tests (Migrate `create_tables()` calls to `migrate()`).
+- [x] Fix `PermissionError: [Errno 13]` by removing hardcoded `/out` paths in tests.
+- [x] Verify `uv.lock` consistency and environment health.
+- [x] Run full test suite and confirm core logic failures are resolved.
 
 ### Phase 2: Pipeline Refactoring & Cleanup
 **Status**: ⬜ Not Started

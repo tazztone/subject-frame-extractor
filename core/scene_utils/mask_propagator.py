@@ -102,6 +102,7 @@ class MaskPropagator:
         areas = {}
         empties = {}
         errors = {}
+        all_propagated = {}
 
         self.logger.info(
             "Propagating masks with SAM3 (video mode)",
@@ -121,20 +122,24 @@ class MaskPropagator:
             self.dam_tracker.init_video(video_path)
 
             # Add primary seed bbox prompt
-            self.dam_tracker.add_bbox_prompt(frame_idx=seed_frame_num, obj_id=1, bbox_xywh=bbox_xywh, img_size=(w, h))
+            seed_mask = self.dam_tracker.add_bbox_prompt(frame_idx=seed_frame_num, obj_id=1, bbox_xywh=bbox_xywh, img_size=(w, h))
+            if seed_mask is not None:
+                all_propagated[seed_frame_num] = seed_mask
 
             # Add any additional seed prompts
             if additional_seeds:
                 for seed in additional_seeds:
-                    self.dam_tracker.add_bbox_prompt(
+                    extra_mask = self.dam_tracker.add_bbox_prompt(
                         frame_idx=seed["frame"], obj_id=1, bbox_xywh=seed["bbox"], img_size=(w, h)
                     )
+                    if extra_mask is not None:
+                        all_propagated[seed["frame"]] = extra_mask
 
             if tracker:
                 tracker.step(1, desc="Prompts added")
 
             # Collect all propagated masks
-            all_propagated = {}
+            # (Initialized above)
 
             # Collect seed list
             all_seed_frames = [seed_frame_num]
