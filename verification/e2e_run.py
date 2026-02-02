@@ -30,6 +30,9 @@ def run_e2e_verification():
     print("🚀 Starting E2E Verification with real data...")
     
     config = Config()
+    # Disable memory watchdog for E2E test to prevent model unloading
+    config.monitoring_memory_critical_threshold_mb = 64000
+    
     # Disable file logging for dry run
     logger = AppLogger(config, log_to_file=False)
     progress_queue = Queue()

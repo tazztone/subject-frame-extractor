@@ -370,11 +370,33 @@ class SAM3Wrapper:
         if self.session_id is None:
             raise RuntimeError("Must call init_video() before adding prompts")
 
+        if self.predictor is None:
+             raise RuntimeError("SAM3 predictor is not initialized (possibly shut down due to memory pressure).")
+
         w, h = img_size
         x, y, bw, bh = bbox_xywh
 
+        # Robust clamping to image boundaries in pixel space
+        x1 = max(0.0, float(x))
+        y1 = max(0.0, float(y))
+        x2 = min(float(w), float(x + bw))
+        y2 = min(float(h), float(y + bh))
+        
+        new_w = max(0.0, x2 - x1)
+        new_h = max(0.0, y2 - y1)
+
+        if new_w <= 0 or new_h <= 0:
+            logging.getLogger(__name__).warning(f"Invalid bbox after clamping: {bbox_xywh} -> [w={new_w}, h={new_h}]")
+            return np.zeros((h, w), dtype=bool)
+
         # Convert to relative coordinates (0-1) in xywh format
-        rel_box = [x / w, y / h, bw / w, bh / h]
+        # Ensure strict 0.0-1.0 range for SAM3 assertion
+        rel_x = max(0.0, min(1.0, x1 / w))
+        rel_y = max(0.0, min(1.0, y1 / h))
+        rel_w = max(0.0, min(1.0, new_w / w))
+        rel_h = max(0.0, min(1.0, new_h / h))
+
+        rel_box = [rel_x, rel_y, rel_w, rel_h]
 
         response = self.predictor.handle_request(
             request=dict(
@@ -473,6 +495,10 @@ class SAM3Wrapper:
         """
         Detect objects in a single frame using text prompt.
         """
+        if self.predictor is None:
+            logging.getLogger(__name__).warning("detect_objects called on shutdown SAM3Wrapper")
+            return []
+
         if not prompt or not prompt.strip():
             return []
 
@@ -651,7 +677,7 @@ class SAM3Wrapper:
                     self.predictor.shutdown()
                 except Exception as e:
                     logging.getLogger(__name__).warning(f"Error during predictor shutdown: {e}")
-            del self.predictor
+            self.predictor = None
 
         # Force garbage collection to release memory, especially for large models
         gc.collect()
