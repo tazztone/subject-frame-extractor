@@ -280,6 +280,34 @@ See `core/config.py` for the full schema.
 
 ---
 
+## 10. Verification Framework
+
+To ensure system stability, we employ a multi-layered verification strategy.
+
+### 🟢 Layer 1: Unit & Integration Tests
+Run these frequently during development to catch regressions early.
+```bash
+uv run pytest tests/
+```
+
+### 🟡 Layer 2: End-to-End (E2E) Verification
+Validates the full processing pipeline using real video data and ML models (no mocks). This ensures that FFmpeg, SAM3, and InsightFace are working correctly together.
+```bash
+uv run python verification/e2e_run.py
+```
+*   **Requires**: `downloads/example clip (2).mp4` and `downloads/example face.png`.
+*   **Output**: Checks for valid `metadata.db` and generated masks in `verification/e2e_output`.
+
+### 🔵 Layer 3: UX Audit & Visual Regression
+Automated browser testing using Playwright to verify UI components and visual consistency.
+```bash
+uv run python scripts/run_ux_audit.py
+```
+*   **Generates**: A comprehensive report in `ux_reports/`.
+*   **Options**: Use `--update-baselines` to approve visual changes.
+
+---
+
 ## 📄 License
 MIT License. See [LICENSE](LICENSE) for details.
 

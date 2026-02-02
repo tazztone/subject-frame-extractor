@@ -557,23 +557,25 @@ class TestAppUI:
     @pytest.fixture
     def mock_model_registry(self): ...
     @pytest.fixture
+    def app_state(self): ...
+    @pytest.fixture
     def app_ui(self, mock_config, mock_logger, mock_queue, mock_cancel_event, mock_thumbnail_manager, mock_model_registry): ...
     def test_init(self, app_ui): ...
     def test_preload_models(self, app_ui): ...
     def test_get_stepper_html(self, app_ui): ...
     def test_fix_strategy_visibility(self, app_ui): ...
-    def test_run_extraction_wrapper(self, app_ui): ...
-    def test_run_pre_analysis_wrapper(self, app_ui, tmp_path): ...
-    def test_on_extraction_success(self, app_ui): ...
-    def test_on_pre_analysis_success(self, app_ui, tmp_path): ...
+    def test_run_extraction_wrapper(self, app_ui, app_state): ...
+    def test_run_pre_analysis_wrapper(self, app_ui, app_state, tmp_path): ...
+    def test_on_extraction_success(self, app_ui, app_state): ...
+    def test_on_pre_analysis_success(self, app_ui, app_state, tmp_path): ...
     def test_push_history(self, app_ui): ...
     def test_undo_last_action(self, app_ui, tmp_path): ...
     def test_get_smart_mode_updates(self, app_ui): ...
     def test_on_apply_bulk_scene_filters_extended(self, app_ui, tmp_path): ...
-    def test_on_reset_filters(self, app_ui, tmp_path): ...
+    def test_on_reset_filters(self, app_ui, app_state, tmp_path): ...
     def test_on_auto_set_thresholds(self, app_ui): ...
     @patch('ui.app_ui.execute_session_load')
-    def test_run_session_load_wrapper(self, mock_load, app_ui): ...
+    def test_run_session_load_wrapper(self, mock_load, app_ui, app_state): ...
 ```
 
 ### `📄 test_batch_manager.py`
@@ -995,67 +997,25 @@ class TestMaskGenerationE2E:
 ### `📄 test_handlers.py`
 
 ```python
-"""Tests for UI handlers (analysis, extraction, filtering)."""
-class TestAnalysisHandler:
-    """Tests for AnalysisHandler class."""
+"""Tests for AppUI handlers and state management."""
+class TestAppUIHandlers:
+    """Tests for AppUI event handlers."""
     @pytest.fixture
-    def mock_app_ui(self, mock_config, mock_logger, mock_thumbnail_manager, mock_model_registry):
-        """Create a mock AppUI instance."""
-    @pytest.fixture
-    def handler(self, mock_app_ui, mock_config, mock_logger, mock_thumbnail_manager, mock_model_registry):
-        """Create an AnalysisHandler instance."""
-    def test_init(self, handler, mock_app_ui, mock_config):
-        """Test AnalysisHandler initialization."""
-    def test_on_pre_analysis_success_basic(self, handler):
-        """Test on_pre_analysis_success returns correct updates."""
-    def test_on_pre_analysis_success_with_face_ref(self, handler):
-        """Test on_pre_analysis_success includes face reference when present."""
-    def test_on_pre_analysis_success_default_log(self, handler):
-        """Test on_pre_analysis_success uses default log message."""
-    def test_on_propagation_success(self, handler):
-        """Test on_propagation_success returns correct updates."""
-    def test_on_analysis_success(self, handler):
-        """Test on_analysis_success returns correct updates."""
-class TestExtractionHandler:
-    """Tests for ExtractionHandler class."""
-    @pytest.fixture
-    def mock_app_ui(self, mock_config, mock_logger, mock_thumbnail_manager, mock_model_registry):
-        """Create a mock AppUI instance."""
-    @pytest.fixture
-    def handler(self, mock_app_ui, mock_config, mock_logger, mock_thumbnail_manager, mock_model_registry):
-        """Create an ExtractionHandler instance."""
-    def test_init(self, handler, mock_app_ui, mock_config):
-        """Test ExtractionHandler initialization."""
-    def test_on_extraction_success(self, handler):
-        """Test on_extraction_success returns correct updates."""
-    def test_on_extraction_success_default_values(self, handler):
-        """Test on_extraction_success uses defaults for missing values."""
-class TestFilteringHandler:
-    """Tests for FilteringHandler class."""
-    @pytest.fixture
-    def mock_app_ui(self, mock_config, mock_logger, mock_thumbnail_manager):
-        """Create a mock AppUI instance."""
-    @pytest.fixture
-    def handler(self, mock_app_ui, mock_config, mock_logger, mock_thumbnail_manager):
-        """Create a FilteringHandler instance."""
-    def test_init(self, handler, mock_app_ui, mock_config):
-        """Test FilteringHandler initialization."""
-    def test_on_preset_changed_no_filters(self, handler):
-        """Test on_preset_changed with 'No Filters' preset."""
-    def test_on_preset_changed_quality_focus(self, handler):
-        """Test on_preset_changed with 'Quality Focus' preset."""
-    def test_on_preset_changed_face_priority(self, handler):
-        """Test on_preset_changed with 'Face Priority' preset."""
-    def test_on_preset_changed_balanced(self, handler):
-        """Test on_preset_changed with 'Balanced' preset."""
-    def test_on_preset_changed_unknown_preset(self, handler):
-        """Test on_preset_changed with unknown preset uses defaults."""
-    @patch('ui.gallery_utils.on_filters_changed')
-    def test_on_reset_filters(self, mock_on_filters, handler):
-        """Test on_reset_filters resets all sliders."""
-    @patch('ui.gallery_utils.auto_set_thresholds')
-    def test_on_auto_set_thresholds(self, mock_auto_set, handler):
-        """Test on_auto_set_thresholds calls utility correctly."""
+    def app_ui(self, mock_config, mock_logger, mock_thumbnail_manager, mock_model_registry, mock_progress_queue, mock_cancel_event):
+        """Create an AppUI instance for testing."""
+    def test_on_extraction_success(self, app_ui):
+        """Test _on_extraction_success updates ApplicationState correctly."""
+    def test_on_pre_analysis_success(self, app_ui):
+        """Test _on_pre_analysis_success updates ApplicationState correctly."""
+    def test_on_propagation_success(self, app_ui):
+        """Test _on_propagation_success returns the state."""
+    def test_on_analysis_success(self, app_ui):
+        """Test _on_analysis_success updates ApplicationState correctly."""
+    def test_on_reset_filters(self, app_ui):
+        """Test on_reset_filters resets ApplicationState."""
+    @patch('ui.app_ui.on_filters_changed')
+    def test_on_filters_changed_wrapper(self, mock_on_filters, app_ui):
+        """Test on_filters_changed_wrapper uses ApplicationState data."""
 ```
 
 ### `📄 test_integration.py`
@@ -1151,6 +1111,9 @@ class TestManagers:
     def test_model_registry_get_or_load(self, mock_logger): ...
     def test_model_registry_get_or_load_error(self, mock_logger): ...
     def test_model_registry_clear(self, mock_logger): ...
+    @patch('core.managers.psutil.virtual_memory')
+    @patch('core.managers.torch.cuda')
+    def test_model_registry_memory_watchdog(self, mock_cuda, mock_psutil, mock_logger, mock_config): ...
     @patch('core.managers.download_model')
     @patch('core.managers.SAM3Wrapper')
     @patch('torch.cuda.is_available', return_value=True)
