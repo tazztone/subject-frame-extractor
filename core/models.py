@@ -132,7 +132,8 @@ class Frame(BaseModel):
                 }
 
             if face_landmarker and any(metrics_to_compute.get(k) for k in ["eyes_open", "yaw", "pitch"]):
-                if face_bbox:
+                # Face-specific metrics
+                if face_bbox is not None:
                     x1, y1, x2, y2 = face_bbox
                     face_img = thumb_image_rgb[y1:y2, x1:x2]
                 else:
@@ -243,8 +244,17 @@ class Frame(BaseModel):
                         mask_3ch = np.stack([active_mask_full] * 3, axis=-1)
                         rgb_image = np.where(mask_3ch, rgb_image, 0)
                     img_tensor = torch.from_numpy(rgb_image).float().permute(2, 0, 1).unsqueeze(0) / 255.0
-                    with torch.no_grad(), torch.amp.autocast("cuda", enabled=niqe_metric.device.type == "cuda"):
-                        niqe_raw = float(niqe_metric(img_tensor.to(niqe_metric.device)))
+                    
+                    # Robust device check
+                    is_cuda = False
+                    device_obj = getattr(niqe_metric, "device", "cpu")
+                    if isinstance(device_obj, torch.device):
+                        is_cuda = device_obj.type == "cuda"
+                    else:
+                        is_cuda = "cuda" in str(device_obj)
+
+                    with torch.no_grad(), torch.amp.autocast("cuda", enabled=is_cuda):
+                        niqe_raw = float(niqe_metric(img_tensor.to(device_obj)))
                         niqe_score = max(
                             0,
                             min(
@@ -256,7 +266,8 @@ class Frame(BaseModel):
                         self.metrics.niqe_score = float(niqe_score)
                 except Exception as e:
                     logger.warning("NIQE calculation failed", extra={"frame": self.frame_number, "error": e})
-                    if niqe_metric.device.type == "cuda":
+                    device_obj = getattr(niqe_metric, "device", "cpu")
+                    if "cuda" in str(device_obj):
                         torch.cuda.empty_cache()
 
             if main_config and metrics_to_compute.get("quality"):

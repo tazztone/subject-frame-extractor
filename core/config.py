@@ -42,7 +42,7 @@ class Config(BaseSettings):
         "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
     )
     face_landmarker_sha256: str = "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff"
-    sam3_checkpoint_url: str = "https://huggingface.co/1038lab/sam3/resolve/main/sam3.safetensors"
+    sam3_checkpoint_url: str = "https://huggingface.co/1038lab/sam3/resolve/main/sam3.pt"
 
     # YouTube-DL
     ytdl_output_template: str = "%(id)s_%(title).40s_%(height)sp.%(ext)s"

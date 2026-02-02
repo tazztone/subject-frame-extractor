@@ -347,8 +347,10 @@ class SubjectMasker:
             )
 
         try:
+            from core.utils import _to_json_safe
+            json_safe_metadata = _to_json_safe(mask_metadata)
             with (self.mask_dir.parent / "mask_metadata.json").open("w", encoding="utf-8") as f:
-                json.dump(mask_metadata, f, indent=2)
+                json.dump(json_safe_metadata, f, indent=2)
             self.logger.info("Saved mask metadata.")
         except Exception:
             self.logger.error("Failed to save mask metadata", exc_info=True)
