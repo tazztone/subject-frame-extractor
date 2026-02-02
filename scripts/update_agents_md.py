@@ -13,6 +13,15 @@ import os
 from pathlib import Path
 
 
+
+def sanitize_value(node_value):
+    """Sanitizes string values in AST nodes to preventing leaking secrets."""
+    if isinstance(node_value, ast.Constant) and isinstance(node_value.value, str):
+        # Redact all string literals in assignments
+        return '"<REDACTED_STRING>"'
+    return ast.unparse(node_value)
+
+
 def process_node(node, indent=0):
     """Convert an AST node to a skeleton representation."""
     lines = []
@@ -58,7 +67,11 @@ def process_node(node, indent=0):
             elif isinstance(child, ast.Assign):
                 try:
                     # Limit assignments to one line and 100 chars to save space
-                    assign_str = ast.unparse(child)
+                    # REDACTION APPLIED HERE
+                    targets = [ast.unparse(t) for t in child.targets]
+                    value_str = sanitize_value(child.value)
+                    assign_str = f"{' = '.join(targets)} = {value_str}"
+                    
                     if len(assign_str) > 80:
                         assign_str = assign_str[:77] + "..."
                     body_lines.append(f"{prefix}    {assign_str}")
@@ -107,7 +120,11 @@ def parse_file_to_skeleton(file_path):
             # Top level assignments (constants etc)
             try:
                 # Limit length
-                assign_str = ast.unparse(node)
+                # REDACTION APPLIED HERE
+                targets = [ast.unparse(t) for t in node.targets]
+                value_str = sanitize_value(node.value)
+                assign_str = f"{' = '.join(targets)} = {value_str}"
+
                 if len(assign_str) > 80:
                     assign_str = assign_str[:77] + "..."
                 lines.append(assign_str)
@@ -125,6 +142,7 @@ def generate_file_tree(root_dir):
     exclude_dirs = {
         ".git",
         "venv",
+        ".venv",
         "__pycache__",
         "SAM3_repo",
         ".claude",
@@ -161,7 +179,7 @@ def generate_file_tree(root_dir):
             items = os.listdir(directory)
         except OSError:
             return
-
+        
         items.sort()
 
         # Filter items
@@ -171,7 +189,7 @@ def generate_file_tree(root_dir):
                 continue
             if item.startswith("."):  # Skip dotfiles mostly
                 continue
-
+            
             path = os.path.join(directory, item)
             if os.path.isdir(path):
                 if item not in exclude_dirs:
@@ -200,34 +218,29 @@ def generate_file_tree(root_dir):
     return "\n".join(output)
 
 
-def generate_skeleton_section(root_dir, extra_excludes=None):
-    """Generate code skeleton section for all Python files."""
+def generate_skeleton_section(source_dirs):
+    """Generate code skeleton section for all Python files in specific source directories."""
     output = ["## Code Skeleton Reference\n"]
 
-    exclude_dirs = {
-        ".git",
-        "venv",
-        "__pycache__",
-        "SAM3_repo",
-        ".claude",
-        ".jules",
-        "dry-run-assets",
-        "logs",
-        "downloads",
-        "models",
-        "node_modules",
-        ".github",
-        "init_logs",
-    }
-    if extra_excludes:
-        exclude_dirs.update(extra_excludes)
-
     files = []
-    for root, dirs, filenames in os.walk(root_dir):
-        dirs[:] = [d for d in dirs if d not in exclude_dirs]
-        for name in filenames:
-            if name.endswith(".py") and name != os.path.basename(__file__):
-                files.append(Path(root) / name)
+    
+    # Iterate over explicit source directories to be safe (Whitelisting)
+    for source_dir in source_dirs:
+        root_path = Path(source_dir)
+        if not root_path.exists():
+            continue
+            
+        if root_path.is_file():
+             if root_path.suffix == ".py":
+                 files.append(root_path)
+        else:
+            for root, dirs, filenames in os.walk(root_path):
+                # Exclude hidden and venv dirs even within whitelisted sources
+                dirs[:] = [d for d in dirs if not d.startswith(".") and d != "venv" and d != "__pycache__"]
+                
+                for name in filenames:
+                    if name.endswith(".py") and name != os.path.basename(__file__):
+                        files.append(Path(root) / name)
 
     files.sort()
 
@@ -237,7 +250,7 @@ def generate_skeleton_section(root_dir, extra_excludes=None):
         if not skeleton:
             continue
 
-        rel_path = file_path.relative_to(root_dir)
+        rel_path = file_path
         output.append(f"### `📄 {rel_path}`\n")
         output.append("```python")
         output.append(skeleton)
@@ -247,17 +260,18 @@ def generate_skeleton_section(root_dir, extra_excludes=None):
 
 
 def main():
-    current_date = datetime.date.today().isoformat()
-
     print("Generating file tree...")
     file_tree = generate_file_tree(".")
 
     print("Generating code skeletons...")
-    # Main app skeleton (exclude tests)
-    main_skeleton = generate_skeleton_section(".", extra_excludes={"tests"})
+    # Safe Whitelist of source directories
+    source_dirs = ["app.py", "core", "ui", "scripts"]
+    main_skeleton = generate_skeleton_section(source_dirs)
 
     # Tests skeleton
-    tests_skeleton = generate_skeleton_section("tests")
+    tests_skeleton = generate_skeleton_section(["tests"])
+
+
 
     # Generate AGENTS_CODE_REFERENCE.md
     header_main = """---

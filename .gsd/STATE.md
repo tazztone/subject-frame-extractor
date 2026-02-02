@@ -24,3 +24,4 @@ Resolved the final unit test regressions and verified the full stability of the 
 
 ## Next Steps
 1. Project handoff.
+2. Monitor future documentation generation for unexpected growth (mitigated by script fix).

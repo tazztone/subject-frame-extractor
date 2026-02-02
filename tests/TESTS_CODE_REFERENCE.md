@@ -10,7 +10,7 @@ description: Auto-generated code skeletons for the test suite.
 This file contains auto-generated code skeletons for the test suite.
 ## Code Skeleton Reference
 
-### `📄 conftest.py`
+### `📄 tests/conftest.py`
 
 ```python
 """Centralized pytest fixtures for Frame Extractor & Analyzer tests."""
@@ -74,22 +74,22 @@ def mock_config_simple(tmp_path):
     """Provides a MagicMock config for tests needing attribute flexibility."""
 ```
 
-### `📄 e2e/ai_ux_analyzer.py`
+### `📄 tests/e2e/ai_ux_analyzer.py`
 
 ```python
 """AI-powered UX analysis using screenshot inspection."""
 class Severity(Enum):
-    CRITICAL = 'critical'
-    MAJOR = 'major'
-    MINOR = 'minor'
-    INFO = 'info'
+    CRITICAL = "<REDACTED_STRING>"
+    MAJOR = "<REDACTED_STRING>"
+    MINOR = "<REDACTED_STRING>"
+    INFO = "<REDACTED_STRING>"
 class Category(Enum):
-    LAYOUT = 'layout'
-    USABILITY = 'usability'
-    ACCESSIBILITY = 'accessibility'
-    FEEDBACK = 'feedback'
-    CONTROLS = 'controls'
-    CONSISTENCY = 'consistency'
+    LAYOUT = "<REDACTED_STRING>"
+    USABILITY = "<REDACTED_STRING>"
+    ACCESSIBILITY = "<REDACTED_STRING>"
+    FEEDBACK = "<REDACTED_STRING>"
+    CONTROLS = "<REDACTED_STRING>"
+    CONSISTENCY = "<REDACTED_STRING>"
 @dataclass
 class UXIssue:
     """Represents a detected UX issue."""
@@ -104,7 +104,7 @@ def generate_issue_report(issues: List[UXIssue], title: str='UX Analysis Report'
     """Generate markdown report of UX issues."""
 ```
 
-### `📄 e2e/conftest.py`
+### `📄 tests/e2e/conftest.py`
 
 ```python
 """Shared fixtures for Playwright E2E tests."""
@@ -128,12 +128,12 @@ def full_analysis_session(analyzed_session):
     """Fixture that provides a page with full analysis completed (ready for export)."""
 ```
 
-### `📄 e2e/test_accessibility.py`
+### `📄 tests/e2e/test_accessibility.py`
 
 ```python
 """Accessibility audit tests using axe-core."""
 pytestmark = [pytest.mark.e2e, pytest.mark.accessibility]
-AXE_CORE_URL = 'https://cdnjs.cloudflare.com/ajax/libs/axe-core/4.8.2/axe.min...
+AXE_CORE_URL = "<REDACTED_STRING>"
 def inject_axe(page: Page) -> bool:
     """Inject axe-core into the page for accessibility testing."""
 def run_axe_audit(page: Page, context: str=None) -> dict:
@@ -160,7 +160,7 @@ class TestARIACompliance:
         """Check for proper ARIA role usage."""
 ```
 
-### `📄 e2e/test_advanced_workflow.py`
+### `📄 tests/e2e/test_advanced_workflow.py`
 
 ```python
 @pytest.fixture(scope='module')
@@ -176,7 +176,7 @@ class TestAdvancedWorkflow:
         """Test the Metrics/Filtering tab UI controls."""
 ```
 
-### `📄 e2e/test_ai_ux_audit.py`
+### `📄 tests/e2e/test_ai_ux_audit.py`
 
 ```python
 """AI-powered UX audit tests."""
@@ -202,7 +202,7 @@ class TestFullAppAudit:
         """Comprehensive UX audit of entire application."""
 ```
 
-### `📄 e2e/test_app_flow.py`
+### `📄 tests/e2e/test_app_flow.py`
 
 ```python
 """Playwright E2E Tests for main application workflow."""
@@ -231,7 +231,7 @@ class TestUIInteraction:
         """Test that dropdowns can be opened."""
 ```
 
-### `📄 e2e/test_bug_regression.py`
+### `📄 tests/e2e/test_bug_regression.py`
 
 ```python
 """Playwright E2E Tests for Bug Regression Prevention."""
@@ -270,7 +270,7 @@ class TestPropagationErrorHandling:
         """Propagate button should be disabled when no scenes are ready."""
 ```
 
-### `📄 e2e/test_component_verification.py`
+### `📄 tests/e2e/test_component_verification.py`
 
 ```python
 """Component-level verification tests."""
@@ -319,7 +319,7 @@ class TestStrategyVisibility:
         """Selecting Text strategy should show text prompt and warning."""
 ```
 
-### `📄 e2e/test_export_flow.py`
+### `📄 tests/e2e/test_export_flow.py`
 
 ```python
 """Playwright E2E Tests for export workflow."""
@@ -344,12 +344,12 @@ class TestExportFormats:
         """Verify export settings are accessible after analysis."""
 ```
 
-### `📄 e2e/test_filters_real.py`
+### `📄 tests/e2e/test_filters_real.py`
 
 ```python
 """E2E Tests for Real Filtering Logic."""
 pytestmark = pytest.mark.e2e
-SAMPLE_VIDEO = 'tests/assets/sample.mp4'
+SAMPLE_VIDEO = "<REDACTED_STRING>"
 class TestRealFilters:
     @pytest.fixture(autouse=True)
     def setup_with_analysis(self, page: Page, app_server):
@@ -360,7 +360,7 @@ class TestRealFilters:
         """Test enabling deduplication updates the count."""
 ```
 
-### `📄 e2e/test_full_workflow_mocked.py`
+### `📄 tests/e2e/test_full_workflow_mocked.py`
 
 ```python
 @pytest.fixture(scope='module')
@@ -373,7 +373,7 @@ class TestFullWorkflowMocked:
         """Simulates:"""
 ```
 
-### `📄 e2e/test_session_lifecycle.py`
+### `📄 tests/e2e/test_session_lifecycle.py`
 
 ```python
 """Playwright E2E Tests for session lifecycle."""
@@ -404,7 +404,7 @@ class TestLoadPreviousSession:
         """Verify app starts cleanly with no previous session."""
 ```
 
-### `📄 e2e/test_ui_interactions.py`
+### `📄 tests/e2e/test_ui_interactions.py`
 
 ```python
 """Automated UI Interaction Tests using Playwright."""
@@ -437,7 +437,7 @@ class TestUIConsoleErrors:
         """Navigating through tabs should not cause errors."""
 ```
 
-### `📄 e2e/test_visual_regression.py`
+### `📄 tests/e2e/test_visual_regression.py`
 
 ```python
 """Visual regression tests - captures UI states and compares to baselines."""
@@ -467,7 +467,7 @@ def _open_help(page: Page):
     """Open the Help accordion."""
 ```
 
-### `📄 e2e/test_with_sample_data.py`
+### `📄 tests/e2e/test_with_sample_data.py`
 
 ```python
 """E2E Tests with Sample Data - Full Integration Tests."""
@@ -495,7 +495,7 @@ class TestFullWorkflowWithSampleVideo:
         """Test extraction followed by scene detection."""
 ```
 
-### `📄 e2e/visual_test_utils.py`
+### `📄 tests/e2e/visual_test_utils.py`
 
 ```python
 """Visual regression testing utilities."""
@@ -515,12 +515,12 @@ def cleanup_diffs():
     """Remove all temporary diff screenshots."""
 ```
 
-### `📄 mock_app.py`
+### `📄 tests/mock_app.py`
 
 ```python
 mock_torch = MagicMock(name='torch')
 mock_torch.cuda.is_available.return_value = False
-mock_torch.__version__ = '2.0.0'
+mock_torch.__version__ = "<REDACTED_STRING>"
 mock_torch.nn.Module = MagicMock
 mock_torch.Tensor = MagicMock
 mock_sam3 = MagicMock(name='sam3')
@@ -540,7 +540,7 @@ core.utils.download_model = MagicMock()
 core.managers.download_model = MagicMock()
 ```
 
-### `📄 test_app_ui_logic.py`
+### `📄 tests/test_app_ui_logic.py`
 
 ```python
 class TestAppUI:
@@ -578,7 +578,7 @@ class TestAppUI:
     def test_run_session_load_wrapper(self, mock_load, app_ui, app_state): ...
 ```
 
-### `📄 test_batch_manager.py`
+### `📄 tests/test_batch_manager.py`
 
 ```python
 def test_batch_manager_add(): ...
@@ -586,7 +586,7 @@ def test_batch_manager_processing(): ...
 def test_batch_manager_failure(): ...
 ```
 
-### `📄 test_bug_fixes.py`
+### `📄 tests/test_bug_fixes.py`
 
 ```python
 """E2E tests for bug fixes."""
@@ -606,7 +606,7 @@ class TestFilterSlidersFix:
         """Seed metrics score should be in 0-20 range (NIQE + face composite)."""
 ```
 
-### `📄 test_core.py`
+### `📄 tests/test_core.py`
 
 ```python
 """Tests for core functionality - Config, Logger, Filtering, and Event validation."""
@@ -633,7 +633,7 @@ class TestPreAnalysisEvent:
         """Test the custom validator for face_ref_img_path."""
 ```
 
-### `📄 test_database.py`
+### `📄 tests/test_database.py`
 
 ```python
 @pytest.fixture
@@ -651,7 +651,7 @@ def test_mask_empty_conversion(db): ...
 def test_wal_mode_enabled(db): ...
 ```
 
-### `📄 test_dedup.py`
+### `📄 tests/test_dedup.py`
 
 ```python
 """Tests for deduplication filtering functionality."""
@@ -665,7 +665,7 @@ def test_dedup_threshold(sample_frames_for_dedup, mock_thumbnail_manager, mock_c
 def test_run_batched_lpips(mock_thumbnail_manager): ...
 ```
 
-### `📄 test_error_handling.py`
+### `📄 tests/test_error_handling.py`
 
 ```python
 """Tests for error handling and edge cases."""
@@ -742,7 +742,7 @@ class TestErrorSeverityAndRecoveryStrategy:
         """Test RecoveryStrategy enum values exist."""
 ```
 
-### `📄 test_export.py`
+### `📄 tests/test_export.py`
 
 ```python
 """Tests for export functionality."""
@@ -790,7 +790,7 @@ class TestExportWithFilters:
         """Test export with face similarity filter."""
 ```
 
-### `📄 test_export_advanced.py`
+### `📄 tests/test_export_advanced.py`
 
 ```python
 class TestExportAdvanced:
@@ -809,7 +809,7 @@ class TestExportAdvanced:
         """Test handling of empty masks."""
 ```
 
-### `📄 test_filtering.py`
+### `📄 tests/test_filtering.py`
 
 ```python
 class TestFiltering:
@@ -837,7 +837,7 @@ class TestFiltering:
     def test_apply_all_filters_vectorized(self, sample_frames, mock_config): ...
 ```
 
-### `📄 test_gallery_utils.py`
+### `📄 tests/test_gallery_utils.py`
 
 ```python
 class TestGalleryUtils:
@@ -866,7 +866,7 @@ class TestGalleryUtils:
     def test_auto_set_thresholds_empty(self): ...
 ```
 
-### `📄 test_gpu_e2e.py`
+### `📄 tests/test_gpu_e2e.py`
 
 ```python
 """GPU E2E Tests - Real inference with actual models."""
@@ -994,7 +994,7 @@ class TestMaskGenerationE2E:
         """Test the full pre-analysis flow including mask generation."""
 ```
 
-### `📄 test_handlers.py`
+### `📄 tests/test_handlers.py`
 
 ```python
 """Tests for AppUI handlers and state management."""
@@ -1018,7 +1018,7 @@ class TestAppUIHandlers:
         """Test on_filters_changed_wrapper uses ApplicationState data."""
 ```
 
-### `📄 test_integration.py`
+### `📄 tests/test_integration.py`
 
 ```python
 """Integration tests for local GPU hardware."""
@@ -1069,7 +1069,7 @@ class TestPipelineIntegration:
         """Test AnalysisPipeline can be initialized."""
 ```
 
-### `📄 test_integration_sam3_patches.py`
+### `📄 tests/test_integration_sam3_patches.py`
 
 ```python
 @pytest.fixture(autouse=True)
@@ -1082,7 +1082,7 @@ def test_apply_patches_triton_missing(): ...
 def test_apply_patches_triton_present(): ...
 ```
 
-### `📄 test_launch_config.py`
+### `📄 tests/test_launch_config.py`
 
 ```python
 def test_config_defaults(): ...
@@ -1091,7 +1091,7 @@ def test_parse_args(): ...
 def test_parse_args_defaults(): ...
 ```
 
-### `📄 test_managers.py`
+### `📄 tests/test_managers.py`
 
 ```python
 class TestManagers:
@@ -1146,7 +1146,7 @@ class TestManagers:
     def test_thumbnail_manager_corrupt_file(self, mock_exists, mock_open, mock_logger, mock_config): ...
 ```
 
-### `📄 test_managers_extended.py`
+### `📄 tests/test_managers_extended.py`
 
 ```python
 class TestManagersExtended:
@@ -1156,7 +1156,7 @@ class TestManagersExtended:
         """Test LRU eviction in ThumbnailManager."""
 ```
 
-### `📄 test_mask_propagator_logic.py`
+### `📄 tests/test_mask_propagator_logic.py`
 
 ```python
 @pytest.fixture
@@ -1183,7 +1183,7 @@ class TestMaskPropagatorLogic:
         """Test that progress tracker is updated."""
 ```
 
-### `📄 test_pipelines.py`
+### `📄 tests/test_pipelines.py`
 
 ```python
 class TestPipelines:
@@ -1221,7 +1221,7 @@ class TestPipelines:
     def test_execute_session_load_valid(self, mock_logger, tmp_path): ...
 ```
 
-### `📄 test_pipelines_extended.py`
+### `📄 tests/test_pipelines_extended.py`
 
 ```python
 class TestPipelinesExtended:
@@ -1259,13 +1259,13 @@ class TestExecutePreAnalysis:
     def test_execute_pre_analysis_success(self, mock_handle_uploads, mock_init_params, mock_load_scenes, mock_pipeline_cls, tmp_path): ...
 ```
 
-### `📄 test_progress.py`
+### `📄 tests/test_progress.py`
 
 ```python
 def test_progress_tracker(): ...
 ```
 
-### `📄 test_sam3_wrapper.py`
+### `📄 tests/test_sam3_wrapper.py`
 
 ```python
 """Unit tests for SAM3Wrapper API completeness and functionality."""
@@ -1315,7 +1315,7 @@ class TestSeedSelectorTrackerInterface:
         """Verify all tracker methods called by SeedSelector exist on SAM3Wrapper."""
 ```
 
-### `📄 test_scene_detection.py`
+### `📄 tests/test_scene_detection.py`
 
 ```python
 """Tests for scene_utils modules (detection, helpers)."""
@@ -1387,7 +1387,7 @@ class TestModelRegistry:
         """Test ModelRegistry clear removes all models."""
 ```
 
-### `📄 test_scene_utils.py`
+### `📄 tests/test_scene_utils.py`
 
 ```python
 """Tests for scene utilities - SeedSelector, MaskPropagator, SubjectMasker."""
@@ -1412,7 +1412,7 @@ class TestSubjectMasker:
     def test_load_shot_frames(self, mock_config_simple, mock_logger, mock_params, tmp_path): ...
 ```
 
-### `📄 test_scene_utils_helpers.py`
+### `📄 tests/test_scene_utils_helpers.py`
 
 ```python
 class TestSceneUtilsHelpers:
@@ -1445,7 +1445,7 @@ class TestSceneUtilsHelpers:
     def test_wire_recompute_handler_no_prompt(self, mock_logger): ...
 ```
 
-### `📄 test_shared.py`
+### `📄 tests/test_shared.py`
 
 ```python
 """Tests for shared utilities in core/shared.py."""
@@ -1457,7 +1457,7 @@ class TestSharedUtils:
     def test_build_scene_gallery_items(self, mock_imread, tmp_path): ...
 ```
 
-### `📄 test_signatures.py`
+### `📄 tests/test_signatures.py`
 
 ```python
 """Function signature validation tests."""
@@ -1493,7 +1493,7 @@ class TestManagerClasses:
     def test_video_manager_has_get_video_info(self): ...
 ```
 
-### `📄 test_smoke.py`
+### `📄 tests/test_smoke.py`
 
 ```python
 """Smoke tests for import validation."""
@@ -1534,7 +1534,7 @@ class TestDependencyImports:
     def test_pydantic_available(self): ...
 ```
 
-### `📄 test_subject_masker_coverage.py`
+### `📄 tests/test_subject_masker_coverage.py`
 
 ```python
 mock_cv2 = MagicMock()
@@ -1558,7 +1558,7 @@ class TestSubjectMasker:
         """Test propagation fails if tracker cannot be initialized."""
 ```
 
-### `📄 test_ui_unit.py`
+### `📄 tests/test_ui_unit.py`
 
 ```python
 @pytest.fixture
@@ -1582,7 +1582,7 @@ class TestTextStrategyWarning:
         """TEXT strategy choice should include warning indicator."""
 ```
 
-### `📄 test_utils.py`
+### `📄 tests/test_utils.py`
 
 ```python
 """Tests for core utility functions."""
