@@ -197,8 +197,8 @@ class ModelRegistry:
                     gpu_mem = 0.0
 
                 # Note: PyTorch doesn't easily give % of total without extra libs, 
-                # we use the MB threshold from config.
-                if gpu_mem > config.monitoring_memory_critical_threshold_mb: # Reusing threshold for simplicity
+                # we use the dedicated GPU MB threshold from config.
+                if gpu_mem > config.monitoring_gpu_memory_critical_threshold_mb:
                      self.logger.warning(
                         f"CRITICAL: GPU {i} memory high ({gpu_mem:.0f}MB). Clearing cache.",
                         component="memory_watchdog"

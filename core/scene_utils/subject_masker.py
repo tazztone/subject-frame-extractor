@@ -114,6 +114,7 @@ class SubjectMasker:
             config=self.config,
             logger=self.logger,
             device=self._device,
+            model_registry=self.model_registry,
         )
 
         # Now initialize models (may update tracker in child components)
