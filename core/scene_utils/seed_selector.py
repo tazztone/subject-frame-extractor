@@ -392,11 +392,28 @@ class SeedSelector:
         w, h = x2 - x1, y2 - y1
         cx = x1 + w / 2
         expansion_factors = self.config.seeding_face_to_body_expansion_factors
-        new_w = min(W, w * expansion_factors[0])
-        new_h = min(H, h * expansion_factors[1])
-        new_x1 = max(0, cx - new_w / 2)
-        new_y1 = max(0, y1 - h * expansion_factors[2])
-        return [int(new_x1), int(new_y1), int(min(W, new_x1 + new_w) - new_x1), int(min(H, new_y1 + new_h) - new_y1)]
+        
+        # Calculate target expanded dimensions
+        target_w = w * expansion_factors[0]
+        target_h = h * expansion_factors[1]
+        
+        # Calculate top-left corner
+        new_x1 = cx - target_w / 2
+        new_y1 = y1 - h * expansion_factors[2]
+        
+        # Clamp top-left to image bounds
+        new_x1 = max(0, min(W - 1, new_x1))
+        new_y1 = max(0, min(H - 1, new_y1))
+        
+        # Calculate available space
+        max_w = W - new_x1
+        max_h = H - new_y1
+        
+        # Determine final width/height (at least 1px, at most available space/target)
+        final_w = max(1, min(max_w, target_w))
+        final_h = max(1, min(max_h, target_h))
+        
+        return [int(new_x1), int(new_y1), int(final_w), int(final_h)]
 
     def _final_fallback_box(self, img_shape: tuple) -> list[int]:
         """Return a fallback bounding box when no subject is found."""
@@ -407,7 +424,9 @@ class SeedSelector:
     def _xyxy_to_xywh(self, box: list) -> list[int]:
         """Convert box from xyxy to xywh format."""
         x1, y1, x2, y2 = box
-        return [int(x1), int(y1), int(x2 - x1), int(y2 - y1)]
+        w = max(1, int(x2 - x1))
+        h = max(1, int(y2 - y1))
+        return [int(x1), int(y1), w, h]
 
     def _get_mask_for_bbox(self, frame_rgb_small: np.ndarray, bbox_xywh: list) -> Optional[np.ndarray]:
         """Generate a mask for the given bounding box using SAM3."""
