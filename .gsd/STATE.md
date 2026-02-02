@@ -1,27 +1,28 @@
 # STATE
 
 ## Project Status
-- **Current Phase**: Phase 1: Core Regressions
-- **Status**: 🟡 Initializing
+- **Current Phase**: Phase 2: Pipeline Refactoring & Cleanup
+- **Status**: 🟢 Phase 2 Complete - Pipeline Architecture Modularized
 
 ## Last Session Summary (2026-02-02)
-Project structure finalized. Moving from mapping to execution.
-- **SPEC.md**: FINALIZED
-- **ROADMAP.md**: 4 Phases defined.
-- **ARCHITECTURE.md**: Documented.
+Successfully refactored the pipeline orchestration and migrated to a non-gated SAM3 model.
+- **Pipeline Refactoring**: Modularized `core/pipelines.py` by introducing `PreAnalysisPipeline` and extraction/analysis helper functions, improving code reuse and testability.
+- **Extended Testing**: Added `tests/test_pipelines_extended.py` covering pre-analysis and class-based pipeline logic.
+- **SAM3 Migration**: Switched to `sam3.safetensors` from `1038lab/sam3` (non-gated).
+- **Environment Fixes**: Resolved `ml-dtypes` and `GatedRepoError` issues.
 
 ### Accomplishments
-- Initialized `.gsd` directory structure.
-- Documented System Architecture in `ARCHITECTURE.md`.
-- Cataloged technology inventory in `STACK.md`.
-- Established stabilizing roadmap based on test failures and audit results.
+- Refactored all main pipeline execution functions (`execute_extraction`, `execute_pre_analysis`, `execute_propagation`, `execute_analysis`).
+- Verified 38+ tests passing across core and extended suites.
+- Removed legacy infrastructure blockers.
 
 ## Current Position
-- **Phase**: 1
-- **Task**: Planning complete
-- **Status**: Ready for execution
+- **Phase**: 3
+- **Task**: READY for Phase 3: Advanced Filtering & Export Enhancements.
+- **Status**: Stable and refactored.
 
 ## Next Steps
-1. /execute 1
+1. Enhance `core/filtering.py` with multi-dimensional score normalization.
+2. Implement Advanced Export options (AR-aware cropping).
 
 

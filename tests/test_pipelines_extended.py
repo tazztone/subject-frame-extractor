@@ -1,10 +1,18 @@
-from unittest.mock import MagicMock, patch
+from pathlib import Path
+from unittest.mock import MagicMock, patch, ANY
+import json
+import numpy as np
 
 import pytest
 
 from core.database import Database
-from core.models import AnalysisParameters
-from core.pipelines import AnalysisPipeline
+from core.models import AnalysisParameters, Scene
+from core.pipelines import (
+    AnalysisPipeline, 
+    PreAnalysisPipeline, 
+    execute_pre_analysis,
+    PreAnalysisEvent
+)
 
 
 class TestPipelinesExtended:
@@ -25,6 +33,10 @@ class TestPipelinesExtended:
         config.analysis_default_batch_size = 1
         config.retry_max_attempts = 1
         config.retry_backoff_seconds = (0.1,)
+        config.downloads_dir = "downloads"
+        config.model_face_analyzer_det_size = [640, 640]
+        config.sharpness_base_scale = 1000
+        config.edge_strength_base_scale = 100
         return config
 
     @pytest.fixture
@@ -167,3 +179,97 @@ class TestPipelinesExtended:
 
         assert result["done"] is False
         assert "cancelled" in str(result).lower()
+
+
+class TestPreAnalysisPipeline:
+    @pytest.fixture
+    def pre_pipeline(self, mock_params, mock_logger, mock_config, mock_thumbnail_manager):
+        mock_registry = MagicMock()
+        mock_queue = MagicMock()
+        mock_cancel = MagicMock()
+        mock_cancel.is_set.return_value = False
+
+        return PreAnalysisPipeline(
+            config=mock_config,
+            logger=mock_logger,
+            params=mock_params,
+            progress_queue=mock_queue,
+            cancel_event=mock_cancel,
+            thumbnail_manager=mock_thumbnail_manager,
+            model_registry=mock_registry,
+        )
+
+    @patch("core.pipelines.initialize_analysis_models")
+    @patch("core.pipelines.SubjectMasker")
+    @patch("core.pipelines.save_scene_seeds")
+    @patch("PIL.Image.fromarray")
+    def test_pre_analysis_run(self, mock_img_save, mock_save_seeds, mock_masker_cls, mock_init_models, pre_pipeline, tmp_path):
+        # Setup mocks
+        mock_init_models.return_value = {
+            "face_analyzer": MagicMock(),
+            "ref_emb": MagicMock(),
+            "face_landmarker": MagicMock(),
+            "device": "cpu",
+        }
+        
+        mock_masker = mock_masker_cls.return_value
+        mock_masker.frame_map = {1: "frame_000001.webp"}
+        mock_masker.get_seed_for_frame.return_value = ([0, 0, 10, 10], {"score": 1.0})
+        mock_masker.get_mask_for_bbox.return_value = np.zeros((100, 100), dtype=np.uint8)
+        mock_masker.draw_bbox.return_value = np.zeros((100, 100, 3), dtype=np.uint8)
+
+        pre_pipeline.thumbnail_manager.get.return_value = np.zeros((100, 100, 3), dtype=np.uint8)
+
+        scene = Scene(shot_id=0, start_frame=0, end_frame=10)
+        scene.best_frame = 1
+        
+        # Act
+        result_scenes = pre_pipeline.run([scene])
+
+        # Assert
+        assert len(result_scenes) == 1
+        assert result_scenes[0].seed_result["bbox"] == [0, 0, 10, 10]
+        assert Path(result_scenes[0].preview_path).name == "scene_00000.jpg"
+        mock_save_seeds.assert_called_once()
+
+
+class TestExecutePreAnalysis:
+    @patch("core.pipelines.PreAnalysisPipeline")
+    @patch("core.pipelines._load_scenes")
+    @patch("core.pipelines._initialize_pre_analysis_params")
+    @patch("core.pipelines._handle_pre_analysis_uploads")
+    def test_execute_pre_analysis_success(self, mock_handle_uploads, mock_init_params, mock_load_scenes, mock_pipeline_cls, tmp_path):
+        # Setup
+        mock_event = MagicMock(spec=PreAnalysisEvent)
+        mock_event.model_dump.return_value = {}
+        mock_event.face_ref_img_upload = None
+        
+        mock_handle_uploads.return_value = {}
+        
+        params = MagicMock(spec=AnalysisParameters)
+        params.output_folder = str(tmp_path)
+        params.video_path = "video.mp4"
+        params.face_ref_img_path = None
+        mock_init_params.return_value = (params, tmp_path)
+        
+        mock_load_scenes.return_value = [Scene(shot_id=0, start_frame=0, end_frame=10)]
+        
+        mock_pipeline = mock_pipeline_cls.return_value
+        mock_pipeline.run.return_value = [Scene(shot_id=0, start_frame=0, end_frame=10)]
+
+        # Act
+        gen = execute_pre_analysis(
+            event=mock_event,
+            progress_queue=MagicMock(),
+            cancel_event=MagicMock(),
+            logger=MagicMock(),
+            config=MagicMock(),
+            thumbnail_manager=MagicMock(),
+            cuda_available=False
+        )
+        results = list(gen)
+
+        # Assert
+        assert len(results) == 1
+        assert results[0]["done"] is True
+        assert "Pre-analysis complete" in results[0]["unified_log"]

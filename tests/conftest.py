@@ -33,6 +33,13 @@ def _create_mock_torch():
     mock_torch.hub = MagicMock(name="torch.hub")
     mock_torch.cuda = MagicMock(name="torch.cuda")
     mock_torch.cuda.is_available.return_value = False
+
+    class MockOutOfMemoryError(RuntimeError):
+        """Mock for torch.cuda.OutOfMemoryError."""
+
+        pass
+
+    mock_torch.cuda.OutOfMemoryError = MockOutOfMemoryError
     mock_torch.distributed = MagicMock(name="torch.distributed")
     mock_torch.multiprocessing = MagicMock(name="torch.multiprocessing")
     mock_torch.amp = MagicMock(name="torch.amp")

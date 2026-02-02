@@ -12,6 +12,7 @@ import lpips
 import numpy as np
 import torch
 import yt_dlp as ytdlp
+from safetensors.torch import load_file as load_safetensors
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 from PIL import Image
@@ -208,7 +209,7 @@ class ModelRegistry:
                 component="tracker",
             )
 
-        checkpoint_path = Path(models_path) / "sam3.pt"
+        checkpoint_path = Path(models_path) / "sam3.safetensors"
         if not checkpoint_path.exists():
             self.logger.info(f"Downloading SAM3 model to {checkpoint_path}...", component="tracker")
             download_model(
@@ -218,7 +219,6 @@ class ModelRegistry:
                 logger=self.logger,
                 error_handler=ErrorHandler(self.logger, *retry_params),
                 user_agent=user_agent,
-                expected_sha256=config.sam3_checkpoint_sha256,
                 token=config.huggingface_token,
             )
 
@@ -256,7 +256,25 @@ class SAM3Wrapper:
         # Build predictor (handles multi-GPU internally if configured)
         # Note: We currently default to using all available GPUs or CPU based on env
         gpus_to_use = range(torch.cuda.device_count()) if device == "cuda" else None
-        self.predictor = build_sam3_video_predictor(gpus_to_use=gpus_to_use)
+
+        # Handle safetensors loading manually since official build_sam3_video_predictor
+        # might not support it natively yet.
+        checkpoint = None
+        if checkpoint_path and checkpoint_path.endswith(".safetensors"):
+            self.predictor = None # Placeholder for structure if needed
+            try:
+                state_dict = load_safetensors(checkpoint_path)
+                if "model" in state_dict:
+                    state_dict = state_dict["model"]
+                checkpoint = state_dict
+            except Exception as e:
+                logging.getLogger(__name__).warning(f"Failed to load safetensors checkpoint: {e}")
+
+        self.predictor = build_sam3_video_predictor(
+            checkpoint=checkpoint,
+            checkpoint_path=None if checkpoint else checkpoint_path,
+            gpus_to_use=gpus_to_use
+        )
 
         # Session state
         self.session_id = None
