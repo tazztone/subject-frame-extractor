@@ -54,22 +54,16 @@ Perfect for creating training datasets (LoRA/Dreambooth), finding thumbnail cand
     ```
     *Note: The `--recursive` flag is critical to fetch the SAM3 submodule.*
 
-2.  **Create a Virtual Environment**
+2.  **Install & Setup Environment (using uv)**
     ```bash
-    python3 -m venv venv
-    source venv/bin/activate  # On Windows: venv\Scripts\activate
+    # Install uv if you haven't already
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+
+    # Sync environment (creates venv and installs all dependencies including SAM3)
+    uv sync
     ```
 
-3.  **Install Dependencies**
-    ```bash
-    # Install main dependencies
-    pip install -r requirements.txt
-
-    # Install SAM3 from the local submodule
-    pip install -e SAM3_repo
-    ```
-
-4.  **Install FFmpeg**
+3.  **Install FFmpeg**
     - **Ubuntu/Debian**: `sudo apt install ffmpeg`
     - **macOS**: `brew install ffmpeg`
     - **Windows**: Download from [ffmpeg.org](https://ffmpeg.org/download.html) and add to PATH.

@@ -23,25 +23,26 @@ SAM3: Via submodule
    - Linux/Mac: `source venv/bin/activate`
 4. **Install dependencies (use uv for speed)**:
    ```bash
-   uv pip install -r requirements.txt
-   uv pip install -e SAM3_repo
+   uv sync
    ```
-5. **Run App**: `python app.py`
+5. **Run App**: `uv run python app.py`
 
 ### Essential Commands
 ```bash
-# Activate venv first!
-. venv\Scripts\activate.ps1  # Windows
-source venv/bin/activate       # Linux/Mac
+# Sync environment (installs everything including SAM3)
+uv sync
+
+# Run the app
+uv run python app.py
 
 # Unit tests (fast, uses mocks)
-python -m pytest tests/
+uv run pytest tests/
 
 # GPU E2E tests (requires CUDA + SAM3)
-python -m pytest tests/test_gpu_e2e.py -v -m "" --tb=short
+uv run pytest tests/test_gpu_e2e.py -v -m "" --tb=short
 
-# Run specific E2E tests (requires Playwright installed: pip install pytest-playwright && playwright install)
-python -m pytest tests/e2e/test_filters_real.py
+# Run specific E2E tests
+uv run pytest tests/e2e/test_filters_real.py
 ```
 
 > **⚠️ NOTE**: GPU tests require `-m ""` to override the default marker filter in `pyproject.toml`.

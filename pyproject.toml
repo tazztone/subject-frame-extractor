@@ -1,3 +1,61 @@
+[project]
+name = "subject-frame-extractor"
+version = "0.1.0"
+description = "AI-powered tool for extracting and analyzing video frames"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "gradio",
+    "insightface",
+    "numba",
+    "numpy<2",
+    "onnxruntime-gpu",
+    "opencv-python",
+    "Pillow",
+    "PyYAML",
+    "scenedetect",
+    "vot-toolkit",
+    "yt-dlp",
+    "huggingface_hub",
+    "pyiqa",
+    "matplotlib",
+    "imagehash",
+    "mediapipe",
+    "scikit-learn",
+    "scikit-image",
+    "lpips",
+    "pydantic",
+    "pydantic-settings",
+    "timm>=1.0.17",
+    "ftfy",
+    "regex",
+    "iopath",
+    "decord",
+    "python-dotenv",
+    "pycocotools",
+    "triton-windows; sys_platform == 'win32'",
+    "triton; sys_platform != 'win32'",
+    "sam3",
+    "psutil",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "ruff",
+]
+
+[tool.uv]
+# Note: Sources are relative to the root pyproject.toml
+sources = { sam3 = { path = "SAM3_repo", editable = true } }
+
+[tool.setuptools]
+packages = ["core", "ui"]
+
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = "test_*.py"
