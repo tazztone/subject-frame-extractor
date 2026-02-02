@@ -563,14 +563,14 @@ class TestAppUI:
     def test_get_stepper_html(self, app_ui): ...
     def test_fix_strategy_visibility(self, app_ui): ...
     def test_run_extraction_wrapper(self, app_ui): ...
-    def test_run_pre_analysis_wrapper(self, app_ui): ...
+    def test_run_pre_analysis_wrapper(self, app_ui, tmp_path): ...
     def test_on_extraction_success(self, app_ui): ...
-    def test_on_pre_analysis_success(self, app_ui): ...
+    def test_on_pre_analysis_success(self, app_ui, tmp_path): ...
     def test_push_history(self, app_ui): ...
-    def test_undo_last_action(self, app_ui): ...
+    def test_undo_last_action(self, app_ui, tmp_path): ...
     def test_get_smart_mode_updates(self, app_ui): ...
-    def test_on_apply_bulk_scene_filters_extended(self, app_ui): ...
-    def test_on_reset_filters(self, app_ui): ...
+    def test_on_apply_bulk_scene_filters_extended(self, app_ui, tmp_path): ...
+    def test_on_reset_filters(self, app_ui, tmp_path): ...
     def test_on_auto_set_thresholds(self, app_ui): ...
     @patch('ui.app_ui.execute_session_load')
     def test_run_session_load_wrapper(self, mock_load, app_ui): ...
@@ -638,7 +638,7 @@ class TestPreAnalysisEvent:
 def db_path(tmp_path): ...
 @pytest.fixture
 def db(db_path): ...
-def test_create_tables(db, db_path): ...
+def test_initial_schema(db, db_path): ...
 def test_insert_metadata_and_flush(db): ...
 def test_insert_metadata_batch_flush(db): ...
 def test_clear_metadata(db): ...
@@ -1280,6 +1280,20 @@ class TestPipelinesExtended:
     @patch('core.pipelines.initialize_analysis_models')
     def test_run_analysis_only(self, mock_init_models, pipeline, mock_params): ...
     def test_cancellation_in_propagation(self, pipeline, mock_params): ...
+class TestPreAnalysisPipeline:
+    @pytest.fixture
+    def pre_pipeline(self, mock_params, mock_logger, mock_config, mock_thumbnail_manager): ...
+    @patch('core.pipelines.initialize_analysis_models')
+    @patch('core.pipelines.SubjectMasker')
+    @patch('core.pipelines.save_scene_seeds')
+    @patch('PIL.Image.fromarray')
+    def test_pre_analysis_run(self, mock_img_save, mock_save_seeds, mock_masker_cls, mock_init_models, pre_pipeline, tmp_path): ...
+class TestExecutePreAnalysis:
+    @patch('core.pipelines.PreAnalysisPipeline')
+    @patch('core.pipelines._load_scenes')
+    @patch('core.pipelines._initialize_pre_analysis_params')
+    @patch('core.pipelines._handle_pre_analysis_uploads')
+    def test_execute_pre_analysis_success(self, mock_handle_uploads, mock_init_params, mock_load_scenes, mock_pipeline_cls, tmp_path): ...
 ```
 
 ### `📄 test_progress.py`
@@ -1298,39 +1312,39 @@ class TestSAM3WrapperAPICompleteness:
     def mock_wrapper_class(self):
         """Create a mock-free SAM3Wrapper class reference."""
     @pytest.fixture
-    def mock_wrapper(self, mock_wrapper_class):
+    def api_mock_wrapper(self, mock_wrapper_class):
         """Create a mocked SAM3Wrapper instance."""
-    def test_all_required_methods_exist(self, mock_wrapper):
+    def test_all_required_methods_exist(self, api_mock_wrapper):
         """Verify all API methods expected by SeedSelector exist on SAM3Wrapper."""
-    def test_detect_objects_signature(self, mock_wrapper):
+    def test_detect_objects_signature(self, api_mock_wrapper):
         """Verify detect_objects has correct signature."""
-    def test_add_text_prompt_signature(self, mock_wrapper):
+    def test_add_text_prompt_signature(self, api_mock_wrapper):
         """Verify add_text_prompt has correct signature."""
-    def test_add_point_prompt_signature(self, mock_wrapper):
+    def test_add_point_prompt_signature(self, api_mock_wrapper):
         """Verify add_point_prompt has correct signature."""
 class TestSAM3WrapperMethodBehavior:
     """Tests for SAM3Wrapper method behavior with mocking."""
     @pytest.fixture
-    def mock_wrapper(self):
+    def behavior_mock_wrapper(self):
         """Create a fully mocked SAM3Wrapper."""
-    def test_detect_objects_returns_empty_on_empty_prompt(self, mock_wrapper):
+    def test_detect_objects_returns_empty_on_empty_prompt(self, behavior_mock_wrapper):
         """detect_objects should return empty list for empty prompt."""
-    def test_add_text_prompt_requires_init_video(self, mock_wrapper):
+    def test_add_text_prompt_requires_init_video(self, behavior_mock_wrapper):
         """add_text_prompt should raise if init_video not called."""
-    def test_add_point_prompt_requires_init_video(self, mock_wrapper):
+    def test_add_point_prompt_requires_init_video(self, behavior_mock_wrapper):
         """add_point_prompt should raise if init_video not called."""
-    def test_reset_session_with_no_state_is_safe(self, mock_wrapper):
+    def test_reset_session_with_no_state_is_safe(self, behavior_mock_wrapper):
         """reset_session should not raise when no session is active."""
-    def test_close_session_with_no_state_is_safe(self, mock_wrapper):
+    def test_close_session_with_no_state_is_safe(self, behavior_mock_wrapper):
         """close_session should not raise when no session is active."""
-    def test_close_session_clears_session_id(self, mock_wrapper):
+    def test_close_session_clears_session_id(self, behavior_mock_wrapper):
         """close_session should clear session_id."""
-    def test_remove_object_calls_predictor(self, mock_wrapper):
+    def test_remove_object_calls_predictor(self, behavior_mock_wrapper):
         """remove_object should call predictor handle_request."""
     @patch('core.managers.torch.cuda.is_available', return_value=True)
     @patch('core.managers.torch.cuda.empty_cache')
     @patch('core.managers.gc.collect')
-    def test_shutdown_cleans_up_resources(self, mock_gc_collect, mock_empty_cache, mock_cuda_available, mock_wrapper):
+    def test_shutdown_cleans_up_resources(self, mock_gc_collect, mock_empty_cache, mock_cuda_available, behavior_mock_wrapper):
         """shutdown should call close_session, predictor.shutdown, delete predictor and ..."""
 class TestSeedSelectorTrackerInterface:
     """Tests that verify SeedSelector's expected tracker interface."""
