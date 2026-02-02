@@ -182,7 +182,9 @@ class Frame(BaseModel):
                 active_mask = None
 
             def _calculate_and_store_score(name, value):
-                normalized_value = min(max(value, 0.0), 1.0)
+                # Ensure value is a scalar to avoid ambiguous truth value warnings with NumPy arrays
+                val_scalar = value.item() if hasattr(value, "item") else float(value)
+                normalized_value = min(max(val_scalar, 0.0), 1.0)
                 scores_norm[name] = normalized_value
                 setattr(self.metrics, f"{name}_score", float(normalized_value * 100))
 
@@ -213,8 +215,10 @@ class Frame(BaseModel):
                     _calculate_and_store_score("brightness", brightness)
                 if metrics_to_compute.get("contrast"):
                     contrast = float(std_br) / (mean_br + 1e-7)
+                    # Convert to float to avoid ambiguous truth value warnings with NumPy arrays in min()
+                    contrast_val = float(contrast)
                     contrast_scaled = (
-                        min(contrast, main_config.quality_contrast_clamp) / main_config.quality_contrast_clamp
+                        min(contrast_val, main_config.quality_contrast_clamp) / main_config.quality_contrast_clamp
                     )
                     _calculate_and_store_score("contrast", contrast_scaled)
 
