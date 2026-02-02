@@ -7,7 +7,7 @@
 - [x] Passing test suite (0 failures)
 - [x] Memory watchdog in `ModelRegistry`
 - [x] Refactored pipelines
-- [ ] Verified GUI workflow
+- [x] Verified GUI workflow
 
 ## Phases
 ...
@@ -20,10 +20,10 @@
 - [x] Improve error handling in the GUI to prevent silent crashes.
 
 ### Phase 4: Final Verification & Delivery
-**Status**: ⬜ Not Started
+**Status**: ✅ Completed
 **Objective**: Empirical validation of all features via the GUI.
 **Tasks**:
-- [ ] Perform E2E browser-based run using `sample.mp4` and `sample.jpg`.
-- [ ] Verify every UI tab: Source, Subject, Scenes, Metrics, Export.
-- [ ] Validate export artifacts (metadata, cropped frames).
-- [ ] Update documentation to reflect final changes.
+- [x] Perform E2E browser-based run using `sample.mp4` and `sample.jpg`.
+- [x] Verify every UI tab: Source, Subject, Scenes, Metrics, Export.
+- [x] Validate export artifacts (metadata, cropped frames).
+- [x] Update documentation to reflect final changes.

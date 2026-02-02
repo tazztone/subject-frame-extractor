@@ -3,12 +3,13 @@ name = "subject-frame-extractor"
 version = "0.1.0"
 description = "AI-powered tool for extracting and analyzing video frames"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.13"
 dependencies = [
     "gradio",
     "insightface",
     "numba",
-    "numpy<2",
+    "numpy==1.26.0",
+    "ml-dtypes>=0.5.0",
     "onnxruntime-gpu",
     "opencv-python",
     "Pillow",

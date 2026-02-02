@@ -265,11 +265,16 @@ class ModelRegistry:
                 component="tracker",
             )
 
-        checkpoint_path = Path(models_path) / "sam3.safetensors"
+        checkpoint_path = Path(models_path) / "sam3.pt"
         if not checkpoint_path.exists():
             self.logger.info(f"Downloading SAM3 model to {checkpoint_path}...", component="tracker")
+            # Ensure we use the .pt URL from config
+            url = config.sam3_checkpoint_url
+            if ".safetensors" in url:
+                url = url.replace(".safetensors", ".pt")
+            
             download_model(
-                url=config.sam3_checkpoint_url,
+                url=url,
                 dest_path=checkpoint_path,
                 description="SAM3 Model",
                 logger=self.logger,
@@ -313,24 +318,12 @@ class SAM3Wrapper:
         # Note: We currently default to using all available GPUs or CPU based on env
         gpus_to_use = range(torch.cuda.device_count()) if device == "cuda" else None
 
-        # Handle safetensors loading manually since official build_sam3_video_predictor
-        # might not support it natively yet.
-        checkpoint = None
-        if checkpoint_path and checkpoint_path.endswith(".safetensors"):
-            self.predictor = None # Placeholder for structure if needed
-            try:
-                state_dict = load_safetensors(checkpoint_path)
-                if "model" in state_dict:
-                    state_dict = state_dict["model"]
-                checkpoint = state_dict
-            except Exception as e:
-                logging.getLogger(__name__).warning(f"Failed to load safetensors checkpoint: {e}")
-
-        self.predictor = build_sam3_video_predictor(
-            checkpoint=checkpoint,
-            checkpoint_path=None if checkpoint else checkpoint_path,
-            gpus_to_use=gpus_to_use
-        )
+        from unittest.mock import patch
+        with patch("sam3.model_builder.download_ckpt_from_hf", return_value=None):
+            self.predictor = build_sam3_video_predictor(
+                checkpoint_path=checkpoint_path,
+                gpus_to_use=gpus_to_use
+            )
 
         # Session state
         self.session_id = None
