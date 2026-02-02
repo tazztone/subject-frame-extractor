@@ -164,6 +164,7 @@ class Config(BaseSettings):
     # TODO: Add automatic memory cleanup when approaching critical threshold
     monitoring_memory_warning_threshold_mb: int = 8192
     monitoring_memory_critical_threshold_mb: int = 16384
+    monitoring_gpu_memory_critical_threshold_mb: int = 7168 # Protect 8GB cards
     monitoring_cpu_warning_threshold_percent: float = 90.0
     monitoring_gpu_memory_warning_threshold_percent: int = 90
     monitoring_memory_limit_mb: int = 8192

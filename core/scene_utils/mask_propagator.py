@@ -42,6 +42,7 @@ class MaskPropagator:
         config: "Config",
         logger: "AppLogger",
         device: str = "cpu",
+        model_registry: Optional["ModelRegistry"] = None,
     ):
         """
         Initialize the MaskPropagator.
@@ -54,6 +55,7 @@ class MaskPropagator:
             config: Application configuration
             logger: Application logger
             device: Device to run on ('cpu' or 'cuda')
+            model_registry: Optional model registry for memory monitoring
         """
         self.params = params
         self.dam_tracker = dam_tracker
@@ -62,6 +64,7 @@ class MaskPropagator:
         self.config = config
         self.logger = logger
         self._device = device
+        self.model_registry = model_registry
 
     def propagate_video(
         self,
@@ -155,6 +158,8 @@ class MaskPropagator:
             for frame_idx, obj_id, pred_mask in self.dam_tracker.propagate(start_idx=start_idx, reverse=False):
                 if self.cancel_event.is_set():
                     break
+                if self.model_registry:
+                    self.model_registry.check_memory_usage(self.config)
                 all_propagated[frame_idx] = pred_mask
                 if tracker:
                     tracker.step(1, desc="Propagation (→)")
@@ -163,6 +168,8 @@ class MaskPropagator:
             for frame_idx, obj_id, pred_mask in self.dam_tracker.propagate(start_idx=start_idx, reverse=True):
                 if self.cancel_event.is_set():
                     break
+                if self.model_registry:
+                    self.model_registry.check_memory_usage(self.config)
                 if frame_idx not in all_propagated:
                     all_propagated[frame_idx] = pred_mask
                 if tracker:
@@ -314,6 +321,9 @@ class MaskPropagator:
                         break
                     if self.cancel_event.is_set():
                         break
+                    
+                    if self.model_registry:
+                        self.model_registry.check_memory_usage(self.config)
 
                     if pred_mask is not None and np.any(pred_mask):
                         mask = postprocess_mask(
@@ -336,6 +346,10 @@ class MaskPropagator:
                     if frame_idx < 0:
                         break
                     if self.cancel_event.is_set():
+                        break
+
+                    if self.model_registry:
+                        self.model_registry.check_memory_usage(self.config)
                         break
 
                     if pred_mask is not None and np.any(pred_mask):

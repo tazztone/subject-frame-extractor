@@ -52,12 +52,7 @@ from ui.tabs import (
     MetricsTabBuilder,
     FilteringTabBuilder,
 )
-from ui.handlers import (
-    ExtractionHandler,
-    AnalysisHandler,
-    FilteringHandler,
-    SceneHandler,
-)
+from ui.handlers import SceneHandler
 
 
 from pydantic import BaseModel, Field
@@ -272,12 +267,13 @@ class AppUI:
             self.components["unified_status"]: f"❌ **{context} Failed.** Check logs for details."
         }
 
-    def safe_ui_callback(self, context: str):
+    @staticmethod
+    def safe_ui_callback(context: str):
         """Decorator to wrap UI callbacks with error handling."""
         def decorator(func: Callable):
-            def wrapper(*args, **kwargs):
+            def wrapper(self, *args, **kwargs):
                 try:
-                    return func(*args, **kwargs)
+                    return func(self, *args, **kwargs)
                 except Exception as e:
                     return self._handle_exception(e, context)
             return wrapper

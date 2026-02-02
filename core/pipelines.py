@@ -259,8 +259,10 @@ class ExtractionPipeline(Pipeline):
         params: "AnalysisParameters",
         progress_queue: Queue,
         cancel_event: threading.Event,
+        model_registry: Optional["ModelRegistry"] = None,
     ):
         super().__init__(config, logger, params, progress_queue, cancel_event)
+        self.model_registry = model_registry
         self.error_handler = ErrorHandler(
             self.logger, self.config.retry_max_attempts, self.config.retry_backoff_seconds
         )
@@ -268,6 +270,8 @@ class ExtractionPipeline(Pipeline):
 
     def _run_impl(self, tracker: Optional["AdvancedProgressTracker"] = None) -> dict:
         """Internal execution logic for extraction."""
+        if self.model_registry:
+            self.model_registry.check_memory_usage(self.config)
         source_p = Path(self.params.source_path)
         from core.utils import is_image_folder, list_images
 
@@ -823,7 +827,7 @@ def execute_extraction(
         params = _initialize_extraction_params(event_dict, config, logger)
 
         tracker = AdvancedProgressTracker(progress, progress_queue, logger, ui_stage_name="Extracting")
-        pipeline = ExtractionPipeline(config, logger, params, progress_queue, cancel_event)
+        pipeline = ExtractionPipeline(config, logger, params, progress_queue, cancel_event, model_registry=model_registry)
         result = pipeline.run(tracker=tracker)
         
         if result and result.get("done"):
@@ -928,6 +932,9 @@ class PreAnalysisPipeline(Pipeline):
             if self.cancel_event.is_set():
                 break
             
+            if self.model_registry:
+                self.model_registry.check_memory_usage(self.config)
+
             if tracker:
                 tracker.step(1, desc=f"Scene {scene.shot_id}")
             

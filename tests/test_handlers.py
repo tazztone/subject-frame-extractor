@@ -1,267 +1,123 @@
 """
-Tests for UI handlers (analysis, extraction, filtering).
+Tests for AppUI handlers and state management.
 
-These tests verify the handler classes work correctly in isolation,
-using mocked dependencies to avoid GPU requirements.
+These tests verify that AppUI methods correctly handle the consolidated
+ApplicationState and perform UI updates as expected.
 """
 
 from unittest.mock import MagicMock, patch
-
 import pytest
+from ui.app_ui import AppUI, ApplicationState
 
 
-class TestAnalysisHandler:
-    """Tests for AnalysisHandler class."""
-
-    @pytest.fixture
-    def mock_app_ui(self, mock_config, mock_logger, mock_thumbnail_manager, mock_model_registry):
-        """Create a mock AppUI instance."""
-        mock_app = MagicMock()
-        mock_app.config = mock_config
-        mock_app.logger = mock_logger
-        mock_app.thumbnail_manager = mock_thumbnail_manager
-        mock_app.model_registry = mock_model_registry
-        mock_app.progress_queue = MagicMock()
-        mock_app.cancel_event = MagicMock()
-        mock_app.ana_ui_map_keys = ["output_folder", "seed_strategy"]
-        mock_app._create_pre_analysis_event = MagicMock()
-        return mock_app
+class TestAppUIHandlers:
+    """Tests for AppUI event handlers."""
 
     @pytest.fixture
-    def handler(self, mock_app_ui, mock_config, mock_logger, mock_thumbnail_manager, mock_model_registry):
-        """Create an AnalysisHandler instance."""
-        from ui.handlers.analysis_handler import AnalysisHandler
-
-        return AnalysisHandler(
-            app=mock_app_ui,
+    def app_ui(self, mock_config, mock_logger, mock_thumbnail_manager, mock_model_registry, mock_progress_queue, mock_cancel_event):
+        """Create an AppUI instance for testing."""
+        app = AppUI(
             config=mock_config,
             logger=mock_logger,
+            progress_queue=mock_progress_queue,
+            cancel_event=mock_cancel_event,
             thumbnail_manager=mock_thumbnail_manager,
-            model_registry=mock_model_registry,
+            model_registry=mock_model_registry
         )
+        # Manually initialize critical components for testing
+        app.components["application_state"] = MagicMock()
+        app.components["unified_log"] = MagicMock()
+        app.components["unified_status"] = MagicMock()
+        app.components["main_tabs"] = MagicMock()
+        app.components["stepper"] = MagicMock()
+        app.components["seeding_results_column"] = MagicMock()
+        app.components["propagation_group"] = MagicMock()
+        app.components["propagate_masks_button"] = MagicMock()
+        app.components["scene_filter_status"] = MagicMock()
+        app.components["metric_sliders"] = {}
+        app.components["metric_accs"] = {}
+        return app
 
-    def test_init(self, handler, mock_app_ui, mock_config):
-        """Test AnalysisHandler initialization."""
-        assert handler.app == mock_app_ui
-        assert handler.config == mock_config
-        assert handler.logger is not None
-        assert handler.thumbnail_manager is not None
-        assert handler.model_registry is not None
-
-    def test_on_pre_analysis_success_basic(self, handler):
-        """Test on_pre_analysis_success returns correct updates."""
+    def test_on_extraction_success(self, app_ui):
+        """Test _on_extraction_success updates ApplicationState correctly."""
+        current_state = ApplicationState()
         result = {
-            "unified_log": "Pre-analysis done",
-            "scenes": [{"shot_id": 1}],
-            "output_dir": "/test/output",
-        }
-
-        updates = handler.on_pre_analysis_success(result)
-
-        assert updates["unified_log"] == "Pre-analysis done"
-        assert updates["scenes_state"] == [{"shot_id": 1}]
-        assert updates["analysis_output_dir_state"] == "/test/output"
-        assert "main_tabs" in updates
-
-    def test_on_pre_analysis_success_with_face_ref(self, handler):
-        """Test on_pre_analysis_success includes face reference when present."""
-        result = {
-            "unified_log": "Done",
-            "scenes": [],
-            "output_dir": "/test",
-            "final_face_ref_path": "/path/to/face.png",
-        }
-
-        updates = handler.on_pre_analysis_success(result)
-
-        assert updates["final_face_ref_path_state"] == "/path/to/face.png"
-
-    def test_on_pre_analysis_success_default_log(self, handler):
-        """Test on_pre_analysis_success uses default log message."""
-        result = {}
-
-        updates = handler.on_pre_analysis_success(result)
-
-        assert updates["unified_log"] == "Pre-analysis complete."
-
-    def test_on_propagation_success(self, handler):
-        """Test on_propagation_success returns correct updates."""
-        result = {
-            "unified_log": "Propagation done",
-            "output_dir": "/test/output",
-        }
-
-        updates = handler.on_propagation_success(result)
-
-        assert updates["unified_log"] == "Propagation done"
-        assert updates["analysis_output_dir_state"] == "/test/output"
-        assert "filtering_tab" in updates
-        assert "main_tabs" in updates
-
-    def test_on_analysis_success(self, handler):
-        """Test on_analysis_success returns correct updates."""
-        result = {
-            "unified_log": "Analysis done",
-            "output_dir": "/test/output",
-        }
-
-        updates = handler.on_analysis_success(result)
-
-        assert updates["unified_log"] == "Analysis done"
-        assert updates["analysis_output_dir_state"] == "/test/output"
-        assert "filtering_tab" in updates
-        assert "main_tabs" in updates
-
-
-class TestExtractionHandler:
-    """Tests for ExtractionHandler class."""
-
-    @pytest.fixture
-    def mock_app_ui(self, mock_config, mock_logger, mock_thumbnail_manager, mock_model_registry):
-        """Create a mock AppUI instance."""
-        mock_app = MagicMock()
-        mock_app.config = mock_config
-        mock_app.logger = mock_logger
-        mock_app.thumbnail_manager = mock_thumbnail_manager
-        mock_app.model_registry = mock_model_registry
-        mock_app.progress_queue = MagicMock()
-        mock_app.cancel_event = MagicMock()
-        mock_app.ext_ui_map_keys = ["source_path", "method", "interval"]
-        return mock_app
-
-    @pytest.fixture
-    def handler(self, mock_app_ui, mock_config, mock_logger, mock_thumbnail_manager, mock_model_registry):
-        """Create an ExtractionHandler instance."""
-        from ui.handlers.extraction_handler import ExtractionHandler
-
-        return ExtractionHandler(
-            app=mock_app_ui,
-            config=mock_config,
-            logger=mock_logger,
-            thumbnail_manager=mock_thumbnail_manager,
-            model_registry=mock_model_registry,
-        )
-
-    def test_init(self, handler, mock_app_ui, mock_config):
-        """Test ExtractionHandler initialization."""
-        assert handler.app == mock_app_ui
-        assert handler.config == mock_config
-        assert handler.logger is not None
-
-    def test_on_extraction_success(self, handler):
-        """Test on_extraction_success returns correct updates."""
-        result = {
-            "unified_log": "Extraction done",
             "extracted_video_path_state": "/path/to/video.mp4",
             "extracted_frames_dir_state": "/path/to/frames",
         }
 
-        updates = handler.on_extraction_success(result)
+        updates = app_ui._on_extraction_success(result, current_state)
+        
+        new_state = updates[app_ui.components["application_state"]]
+        assert new_state.extracted_video_path == "/path/to/video.mp4"
+        assert new_state.extracted_frames_dir == "/path/to/frames"
+        assert app_ui.components["main_tabs"] in updates
 
-        assert updates["unified_log"] == "Extraction done"
-        assert updates["extracted_video_path_state"] == "/path/to/video.mp4"
-        assert updates["extracted_frames_dir_state"] == "/path/to/frames"
-        assert "main_tabs" in updates
+    def test_on_pre_analysis_success(self, app_ui):
+        """Test _on_pre_analysis_success updates ApplicationState correctly."""
+        current_state = ApplicationState()
+        result = {
+            "scenes": [{"shot_id": 1, "start_frame": 0, "end_frame": 100}],
+            "output_dir": "/test/output",
+        }
 
-    def test_on_extraction_success_default_values(self, handler):
-        """Test on_extraction_success uses defaults for missing values."""
-        result = {}
+        updates = app_ui._on_pre_analysis_success(result, current_state)
+        
+        new_state = updates[app_ui.components["application_state"]]
+        assert len(new_state.scenes) == 1
+        assert new_state.analysis_output_dir == "/test/output"
+        assert app_ui.components["main_tabs"] in updates
 
-        updates = handler.on_extraction_success(result)
+    def test_on_propagation_success(self, app_ui):
+        """Test _on_propagation_success returns the state."""
+        current_state = ApplicationState(analysis_output_dir="/test")
+        result = {"output_dir": "/test"}
 
-        assert updates["unified_log"] == "Extraction complete."
-        assert updates["extracted_video_path_state"] == ""
-        assert updates["extracted_frames_dir_state"] == ""
+        updates = app_ui._on_propagation_success(result, current_state)
+        
+        assert updates[app_ui.components["application_state"]] == current_state
+        assert app_ui.components["main_tabs"] in updates
 
+    def test_on_analysis_success(self, app_ui):
+        """Test _on_analysis_success updates ApplicationState correctly."""
+        current_state = ApplicationState()
+        result = {
+            "metadata_path": "/test/metadata.db",
+        }
 
-class TestFilteringHandler:
-    """Tests for FilteringHandler class."""
+        updates = app_ui._on_analysis_success(result, current_state)
+        
+        new_state = updates[app_ui.components["application_state"]]
+        assert new_state.analysis_metadata_path == "/test/metadata.db"
+        assert app_ui.components["main_tabs"] in updates
 
-    @pytest.fixture
-    def mock_app_ui(self, mock_config, mock_logger, mock_thumbnail_manager):
-        """Create a mock AppUI instance."""
-        mock_app = MagicMock()
-        mock_app.config = mock_config
-        mock_app.logger = mock_logger
-        mock_app.thumbnail_manager = mock_thumbnail_manager
-        mock_app.get_all_filter_keys = MagicMock(return_value=["sharpness_min", "contrast_min", "face_sim_min"])
-        return mock_app
+    def test_on_reset_filters(self, app_ui):
+        """Test on_reset_filters resets ApplicationState."""
+        current_state = ApplicationState(smart_filter_enabled=True)
+        
+        # Note: on_reset_filters is decorated with @safe_ui_callback, 
+        # but we can test the underlying logic if needed or the wrapped call
+        updates = app_ui.on_reset_filters(current_state)
+        
+        new_state = updates[0] # Returns a tuple
+        assert new_state.smart_filter_enabled is False
 
-    @pytest.fixture
-    def handler(self, mock_app_ui, mock_config, mock_logger, mock_thumbnail_manager):
-        """Create a FilteringHandler instance."""
-        from ui.handlers.filtering_handler import FilteringHandler
-
-        return FilteringHandler(
-            app=mock_app_ui, config=mock_config, logger=mock_logger, thumbnail_manager=mock_thumbnail_manager
+    @patch("ui.app_ui.on_filters_changed")
+    def test_on_filters_changed_wrapper(self, mock_on_filters, app_ui):
+        """Test on_filters_changed_wrapper uses ApplicationState data."""
+        mock_on_filters.return_value = {"filter_status_text": "OK", "results_gallery": []}
+        state = ApplicationState(all_frames_data=[{"f": 1}], analysis_output_dir="/test")
+        
+        # Zip slider values - assuming default 3 metrics for test
+        slider_vals = [0.0, 0.0, 0.0] 
+        
+        # We need to ensure sliders are in components for zip to work if it uses them
+        # In current impl it uses sorted(self.components['metric_sliders'].keys())
+        app_ui.components['metric_sliders'] = {} # Empty for simple test
+        
+        status, gallery = app_ui.on_filters_changed_wrapper(
+            state, "Kept", False, 0.6, False, 5, "pHash", *slider_vals
         )
-
-    def test_init(self, handler, mock_app_ui, mock_config):
-        """Test FilteringHandler initialization."""
-        assert handler.app == mock_app_ui
-        assert handler.config == mock_config
-        assert handler.logger is not None
-
-    def test_on_preset_changed_no_filters(self, handler):
-        """Test on_preset_changed with 'No Filters' preset."""
-        updates = handler.on_preset_changed("No Filters")
-
-        # All sliders should be set to 0
-        for key in ["sharpness_min", "contrast_min", "face_sim_min"]:
-            assert f"slider_{key}" in updates
-
-    def test_on_preset_changed_quality_focus(self, handler):
-        """Test on_preset_changed with 'Quality Focus' preset."""
-        updates = handler.on_preset_changed("Quality Focus")
-
-        # Quality Focus preset has specific values
-        assert "slider_sharpness_min" in updates
-        assert "slider_contrast_min" in updates
-
-    def test_on_preset_changed_face_priority(self, handler):
-        """Test on_preset_changed with 'Face Priority' preset."""
-        updates = handler.on_preset_changed("Face Priority")
-
-        assert "slider_face_sim_min" in updates
-
-    def test_on_preset_changed_balanced(self, handler):
-        """Test on_preset_changed with 'Balanced' preset."""
-        updates = handler.on_preset_changed("Balanced")
-
-        assert "slider_sharpness_min" in updates
-        assert "slider_face_sim_min" in updates
-
-    def test_on_preset_changed_unknown_preset(self, handler):
-        """Test on_preset_changed with unknown preset uses defaults."""
-        updates = handler.on_preset_changed("Unknown Preset")
-
-        # Should return updates with default values (0)
-        for key in ["sharpness_min", "contrast_min", "face_sim_min"]:
-            assert f"slider_{key}" in updates
-
-    @patch("ui.gallery_utils.on_filters_changed")
-    def test_on_reset_filters(self, mock_on_filters, handler):
-        """Test on_reset_filters resets all sliders."""
-        mock_on_filters.return_value = {"gallery": []}
-
-        updates = handler.on_reset_filters(all_frames_data=[], per_metric_values={}, output_dir="/test")
-
-        # All sliders should be reset
-        for key in ["sharpness_min", "contrast_min", "face_sim_min"]:
-            assert f"slider_{key}" in updates
-
-    @patch("ui.gallery_utils.auto_set_thresholds")
-    def test_on_auto_set_thresholds(self, mock_auto_set, handler):
-        """Test on_auto_set_thresholds calls utility correctly."""
-        mock_auto_set.return_value = {"slider_sharpness_min": 10}
-
-        result = handler.on_auto_set_thresholds(
-            {"sharpness": [10, 20, 30]},  # per_metric_values
-            25,  # percentile
-            True,
-            False,
-            True,  # checkbox values
-        )
-
-        mock_auto_set.assert_called_once()
-        assert result == {"slider_sharpness_min": 10}
+        
+        assert status == "OK"
+        mock_on_filters.assert_called_once()
