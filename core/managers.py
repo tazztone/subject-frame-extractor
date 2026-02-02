@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import gc
 import logging
+import psutil
 import threading
 from collections import OrderedDict, defaultdict
 from pathlib import Path
@@ -141,9 +142,9 @@ class ThumbnailManager:
 class ModelRegistry:
     """
     Thread-safe registry for lazy loading and caching of heavy ML models.
+    Includes a memory watchdog to prevent OOM crashes.
     """
 
-    # TODO: Add model unloading for memory-constrained environments
     def __init__(self, logger: Optional["AppLogger"] = None):
         self._models: Dict[str, Any] = {}
         self._locks: Dict[str, threading.Lock] = defaultdict(threading.Lock)
@@ -159,20 +160,75 @@ class ModelRegistry:
                         self.logger.info(f"Loading model '{key}' for the first time...")
                     try:
                         val = loader_fn()
-                        # print(f"DEBUG: ModelRegistry loaded {key} -> {val}")
                         self._models[key] = val
                     except Exception as e:
-                        # print(f"DEBUG: ModelRegistry failed to load {key}: {e}")
                         raise e
                     if self.logger:
                         self.logger.success(f"Model '{key}' loaded successfully.")
         return self._models[key]
 
+    def check_memory_usage(self, config: "Config"):
+        """
+        Monitors system and GPU memory usage. 
+        Triggers cleanup if critical thresholds are exceeded.
+        """
+        # System Memory Check
+        mem = psutil.virtual_memory()
+        mem_usage_mb = mem.used / (1024**2)
+        if mem_usage_mb > config.monitoring_memory_critical_threshold_mb:
+            self.logger.warning(
+                f"CRITICAL: System memory usage high ({mem_usage_mb:.0f}MB). Triggering emergency cleanup.",
+                component="memory_watchdog"
+            )
+            self.clear()
+        elif mem.percent > config.monitoring_cpu_warning_threshold_percent:
+            self.logger.warning(
+                f"High system memory usage: {mem.percent}%",
+                component="memory_watchdog"
+            )
+
+        # GPU Memory Check
+        if torch.cuda.is_available():
+            for i in range(torch.cuda.device_count()):
+                try:
+                    gpu_mem_raw = torch.cuda.memory_reserved(i)
+                    gpu_mem = float(gpu_mem_raw) / (1024**2)
+                except (TypeError, ValueError):
+                    gpu_mem = 0.0
+
+                # Note: PyTorch doesn't easily give % of total without extra libs, 
+                # we use the MB threshold from config.
+                if gpu_mem > config.monitoring_memory_critical_threshold_mb: # Reusing threshold for simplicity
+                     self.logger.warning(
+                        f"CRITICAL: GPU {i} memory high ({gpu_mem:.0f}MB). Clearing cache.",
+                        component="memory_watchdog"
+                    )
+                     self.clear()
+                     break
+
     def clear(self):
-        """Clears all loaded models from the registry."""
+        """
+        Clears all loaded models from the registry, 
+        safely shutting down those that support it.
+        """
         if self.logger:
             self.logger.info("Clearing all models from the registry.")
+        
+        for key, model in list(self._models.items()):
+            try:
+                if hasattr(model, "shutdown") and callable(model.shutdown):
+                    model.shutdown()
+                elif hasattr(model, "close") and callable(model.close):
+                    model.close()
+            except Exception as e:
+                self.logger.warning(f"Error shutting down model {key}: {e}")
+            
+            del self._models[key]
+
         self._models.clear()
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     def get_tracker(
         self, model_name: str, models_path: str, user_agent: str, retry_params: tuple, config: "Config"

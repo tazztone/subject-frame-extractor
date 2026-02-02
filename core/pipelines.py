@@ -647,7 +647,7 @@ class AnalysisPipeline(Pipeline):
             ]
             futures = [executor.submit(self._process_batch, batch, metrics_to_compute) for batch in batches]
             for future in as_completed(futures):
-                monitor_memory_usage(self.logger, self.config.monitoring_memory_warning_threshold_mb)
+                self.model_registry.check_memory_usage(self.config)
                 if self.cancel_event.is_set():
                     for f in futures:
                         f.cancel()
