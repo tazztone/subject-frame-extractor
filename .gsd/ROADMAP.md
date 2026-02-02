@@ -4,9 +4,9 @@
 > **Milestone**: v2.1-stabilized
 
 ## Must-Haves (from SPEC)
-- [ ] Passing test suite (0 failures)
-- [ ] Memory watchdog in `ModelRegistry`
-- [ ] Refactored pipelines
+- [x] Passing test suite (0 failures)
+- [x] Memory watchdog in `ModelRegistry`
+- [x] Refactored pipelines
 - [ ] Verified GUI workflow
 
 ## Phases
@@ -21,13 +21,13 @@
 - [x] Run full test suite and confirm core logic failures are resolved.
 
 ### Phase 2: Pipeline Refactoring & Cleanup
-**Status**: ⬜ Not Started
+**Status**: ✅ Completed
 **Objective**: Improve maintainability of core logic and remove legacy artifacts.
 **Tasks**:
-- [ ] Decompose `execute_pre_analysis` in `core/pipelines.py` into smaller logic blocks.
-- [ ] Refactor common pipeline patterns into a base class or utility functions.
-- [ ] Remove `ui/app_ui.py.bak` and other identified orphans.
-- [ ] Consolidate manual verification scripts under a single standard `pytest` pattern.
+- [x] Decompose `execute_pre_analysis` in `core/pipelines.py` into smaller logic blocks.
+- [x] Refactor common pipeline patterns into a base class or utility functions.
+- [x] Remove `ui/app_ui.py.bak` and other identified orphans.
+- [x] Consolidate manual verification scripts under a single standard `pytest` pattern.
 
 ### Phase 3: Resource Management & UI State
 **Status**: ⬜ Not Started

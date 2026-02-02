@@ -39,6 +39,8 @@ class TestManagers:
         config.sam3_checkpoint_sha256 = "dummy_sha_sam3"
         config.huggingface_token = "token"
         config.downloads_dir = "/tmp/downloads"
+        config.monitoring_memory_critical_threshold_mb = 16384
+        config.monitoring_cpu_warning_threshold_percent = 90.0
         return config
 
     # --- ThumbnailManager Tests ---
@@ -167,6 +169,44 @@ class TestManagers:
         registry._models["key"] = "val"
         registry.clear()
         assert len(registry._models) == 0
+
+    @patch("core.managers.psutil.virtual_memory")
+    @patch("core.managers.torch.cuda")
+    def test_model_registry_memory_watchdog(self, mock_cuda, mock_psutil, mock_logger, mock_config):
+        registry = ModelRegistry(mock_logger)
+        
+        # Add a mock model that has a shutdown method
+        mock_model = MagicMock()
+        registry._models["heavy_model"] = mock_model
+        
+        # 1. Test System Memory Threshold Trigger
+        mock_psutil.return_value.used = (mock_config.monitoring_memory_critical_threshold_mb + 100) * (1024**2)
+        mock_psutil.return_value.percent = 95.0
+        
+        registry.check_memory_usage(mock_config)
+        
+        # Verify clear was called (model removed and shutdown called)
+        assert len(registry._models) == 0
+        mock_model.shutdown.assert_called_once()
+        
+        # 2. Test GPU Memory Threshold Trigger
+        # Reset
+        registry._models["heavy_model_2"] = mock_model
+        mock_model.shutdown.reset_mock()
+        
+        # Simulate system memory OK, but GPU high
+        mock_psutil.return_value.used = (mock_config.monitoring_memory_critical_threshold_mb - 1000) * (1024**2)
+        mock_cuda.is_available.return_value = True
+        mock_cuda.device_count.return_value = 1
+        # Set return_value for the call mock_cuda.memory_reserved(i)
+        mock_cuda.memory_reserved.return_value = (mock_config.monitoring_memory_critical_threshold_mb + 100) * (1024**2)
+        
+        registry.check_memory_usage(mock_config)
+        
+        # Verify clear was called
+        assert len(registry._models) == 0
+        mock_model.shutdown.assert_called_once()
+        mock_cuda.empty_cache.assert_called()
 
     @patch("core.managers.download_model")
     @patch("core.managers.SAM3Wrapper")
