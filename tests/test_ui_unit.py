@@ -38,12 +38,14 @@ def test_stepper_html(app_ui):
 
 
 def test_run_extraction_wrapper(app_ui):
+    from ui.app_ui import ApplicationState
+    state = ApplicationState()
     with patch.object(app_ui, "_run_pipeline", return_value=iter([])) as mock_run_pipeline:
         # Args matching ext_ui_map_keys:
         # ['source_path', 'upload_video', 'method', 'interval', 'nth_frame', 'max_resolution', 'thumb_megapixels', 'scene_detect']
         args = ["video.mp4", None, "interval", 1.0, 1, "1080", 0.5, True]
 
-        gen = app_ui.run_extraction_wrapper(*args)
+        gen = app_ui.run_extraction_wrapper(state, *args)
         list(gen)
 
         mock_run_pipeline.assert_called_once()

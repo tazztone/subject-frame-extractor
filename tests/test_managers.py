@@ -40,7 +40,17 @@ class TestManagers:
         config.huggingface_token = "token"
         config.downloads_dir = "/tmp/downloads"
         config.monitoring_memory_critical_threshold_mb = 16384
+        config.monitoring_gpu_memory_critical_threshold_mb = 8192
         config.monitoring_cpu_warning_threshold_percent = 90.0
+        config.quality_weights_sharpness = 25
+        config.quality_weights_edge_strength = 15
+        config.quality_weights_contrast = 15
+        config.quality_weights_brightness = 10
+        config.quality_weights_entropy = 15
+        config.quality_weights_niqe = 20
+        config.quality_niqe_offset = 10.0
+        config.quality_niqe_scale_factor = 10.0
+        config.quality_contrast_clamp = 2.0
         return config
 
     # --- ThumbnailManager Tests ---
