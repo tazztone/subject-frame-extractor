@@ -1,0 +1,47 @@
+# ROADMAP.md
+
+> **Current Phase**: Phase 1: Core Regressions
+> **Milestone**: v2.1-stabilized
+
+## Must-Haves (from SPEC)
+- [ ] Passing test suite (0 failures)
+- [ ] Memory watchdog in `ModelRegistry`
+- [ ] Refactored pipelines
+- [ ] Verified GUI workflow
+
+## Phases
+
+### Phase 1: Core Regressions & Infrastructure
+**Status**: ⬜ Not Started
+**Objective**: Restore the codebase to a "Green" state where all existing tests pass and basic pathing errors are resolved.
+**Tasks**:
+- [ ] Fix `Database` API in tests (Migrate `create_tables()` calls to `migrate()`).
+- [ ] Fix `PermissionError: [Errno 13]` by removing hardcoded `/out` paths in tests.
+- [ ] Verify `uv.lock` consistency and environment health.
+- [ ] Run full test suite and confirm 0 failures.
+
+### Phase 2: Pipeline Refactoring & Cleanup
+**Status**: ⬜ Not Started
+**Objective**: Improve maintainability of core logic and remove legacy artifacts.
+**Tasks**:
+- [ ] Decompose `execute_pre_analysis` in `core/pipelines.py` into smaller logic blocks.
+- [ ] Refactor common pipeline patterns into a base class or utility functions.
+- [ ] Remove `ui/app_ui.py.bak` and other identified orphans.
+- [ ] Consolidate manual verification scripts under a single standard `pytest` pattern.
+
+### Phase 3: Resource Management & UI State
+**Status**: ⬜ Not Started
+**Objective**: Prevent OOM crashes and stabilize the Gradio interface.
+**Tasks**:
+- [ ] Implement `ModelRegistry` memory watchdog/unloader.
+- [ ] Consolidate `gr.State` usage in `ui/app_ui.py` into a more predictable application state model.
+- [ ] Improve error handling in the GUI to prevent silent crashes.
+
+### Phase 4: Final Verification & Delivery
+**Status**: ⬜ Not Started
+**Objective**: Empirical validation of all features via the GUI.
+**Tasks**:
+- [ ] Perform E2E browser-based run using `sample.mp4` and `sample.jpg`.
+- [ ] Verify every UI tab: Source, Subject, Scenes, Metrics, Export.
+- [ ] Validate export artifacts (metadata, cropped frames).
+- [ ] Update `AGENTS.md` and documentation to reflect changes.
