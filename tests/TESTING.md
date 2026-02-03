@@ -30,6 +30,25 @@ python -m pytest tests/e2e/
 *   `tests/e2e/test_export_flow.py`: Verifies export workflow and UI visibility.
 *   `tests/e2e/test_full_workflow_mocked.py`: Full user journey (Source -> Export) against mock backend.
 
+### 3. Real Integration & GPU Tests (New)
+These tests run the **real** application logic (no mocks) with actual models and data. They are perfect for final verification before release.
+
+**Prerequisites:**
+- Valid video files in `downloads/` (e.g., `example clip (2).mp4`).
+- A GPU with CUDA support (for GPU tests).
+
+**Run the Full Real-World Pipeline:**
+This replaces the manual `verification/e2e_run.py` script.
+```bash
+python -m pytest tests/integration/ -m integration
+```
+
+**Run GPU Hardware Tests:**
+Verifies that models load and run on the GPU without OOM or dtype errors.
+```bash
+python -m pytest tests/test_gpu_e2e.py -m gpu_e2e
+```
+
 ## New Tests (Dec 2024)
 *   `tests/test_export_advanced.py`: Covers advanced export logic like cropping and error handling.
 *   `tests/test_managers_extended.py`: Covers caching and model loading retries.

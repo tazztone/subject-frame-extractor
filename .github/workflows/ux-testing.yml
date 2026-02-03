@@ -1,19 +1,21 @@
 # UX Testing Workflow
-# Runs visual regression, component verification, and accessibility tests
+# Runs unit tests, visual regression, component verification, and accessibility tests
 
-name: UX Testing
+name: Test Suite
 
 on:
   push:
     branches: [main, develop]
     paths:
+      - 'core/**'
       - 'ui/**'
-      - 'tests/e2e/**'
+      - 'tests/**'
   pull_request:
     branches: [main]
     paths:
+      - 'core/**'
       - 'ui/**'
-      - 'tests/e2e/**'
+      - 'tests/**'
   workflow_dispatch:
     inputs:
       update_baselines:
@@ -23,7 +25,7 @@ on:
         default: false
 
 jobs:
-  ux-tests:
+  tests:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     
@@ -39,13 +41,18 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install gradio pytest playwright imagehash pillow
+          pip install gradio pytest pytest-playwright playwright imagehash pillow
           playwright install chromium
       
       - name: Install project (dev mode)
         run: |
-          pip install -e ".[test]" || pip install -e .
+          pip install -e .
       
+      - name: Run Unit Tests
+        run: |
+          # Run standard unit tests (skipping heavy integration/GPU tests)
+          python -m pytest tests/ -m "not integration and not gpu_e2e" -v
+
       - name: Download baselines artifact
         uses: actions/download-artifact@v4
         with:
@@ -63,7 +70,6 @@ jobs:
       - name: Run Component Verification
         run: |
           python -m pytest tests/e2e/test_component_verification.py -v --tb=short
-        continue-on-error: true
       
       - name: Run Visual Regression Tests
         run: |
@@ -72,12 +78,10 @@ jobs:
           else
             python -m pytest tests/e2e/test_visual_regression.py -v
           fi
-        continue-on-error: true
       
       - name: Run Accessibility Tests
         run: |
           python -m pytest tests/e2e/test_accessibility.py -v --tb=short
-        continue-on-error: true
       
       - name: Upload baselines artifact
         if: github.event.inputs.update_baselines == 'true'
