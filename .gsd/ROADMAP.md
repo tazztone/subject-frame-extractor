@@ -1,40 +1,17 @@
 # ROADMAP.md
 
-> **Current Phase**: Phase 4: Final Verification & Delivery
-> **Milestone**: v2.1-stabilized
+> **Current Phase**: Planning Next Milestone
+> **Milestone**: v3.0-evolution (Proposed)
 
-## Must-Haves (from SPEC)
-- [x] Passing test suite (0 failures)
-- [x] Memory watchdog in `ModelRegistry`
-- [x] Refactored pipelines
-- [x] Verified GUI workflow
+## Current Status
+- Milestone `v2.1-stabilized` COMPLETED.
+- System is in a stable, production-ready state.
 
-## Phases
-...
-### Phase 3: Resource Management & UI State
-**Status**: ✅ Completed
-**Objective**: Prevent OOM crashes and stabilize the Gradio interface.
-**Tasks**:
-- [x] Implement `ModelRegistry` memory watchdog/unloader.
-- [x] Consolidate `gr.State` usage in `ui/app_ui.py` into a more predictable application state model.
-- [x] Improve error handling in the GUI to prevent silent crashes.
+## Next Milestone Proposals
+- **Phase 1: Performance Tuning**: Investigate multi-GPU batching and AV1 support.
+- **Phase 2: UI Overhaul**: Move to a more modern CSS-heavy theme or custom components.
+- **Phase 3: Database Optimization**: Implement full-text search for metadata.
 
-### Phase 4: Final Verification & Delivery
-**Status**: ✅ Completed
-**Objective**: Empirical validation of all features via the GUI.
-**Tasks**:
-- [x] Perform E2E browser-based run using `sample.mp4` and `sample.jpg`.
-- [x] Verify every UI tab: Source, Subject, Scenes, Metrics, Export.
-- [x] Validate export artifacts (metadata, cropped frames).
-- [x] Update documentation to reflect final changes.
-- [x] Create Linux run script (`scripts/linux_run_app.sh`).
+---
 
-### Phase 5: UI/UX Polish (User Feedback)
-**Status**: ✅ Completed
-**Objective**: Address usability friction points identified during user testing.
-**Tasks**:
-- [x] Remove redundant "Stepper" component (obsolete).
-- [x] Implement auto-refresh for System Logs (remove manual refresh button).
-- [x] Implement auto-save of logs to session output folder (remove manual export button).
-- [x] Add explanatory info for "System Diagnostics".
-- [x] Ensure robust auto-navigation between tabs on step completion.
+*Run /new-milestone to start a new track.*

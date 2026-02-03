@@ -1,17 +1,17 @@
 # TODO
 
-## Phase 1: Core Regressions
-- [ ] Fix `test_database.py` failures (AttributeError: create_tables).
-- [ ] Fix `test_pipelines_extended.py` (AttributeError: create_tables).
-- [ ] Fix `PermissionError` for `/out` in `tests/test_app_ui_logic.py`.
-- [ ] Fix `test_mask_propagator_logic.py` assertion failure.
+## Ongoing / Post-Release Improvements
+- [ ] Refactor `AppUI` to remove legacy state keys and fully migrate to `ApplicationState`.
+- [ ] Monitor documentation generation script to ensure it doesn't leak secrets or grow excessively.
+- [ ] Create a unified `Makefile` or `justfile` for cross-platform task management (shortcut for run, test, layout).
 
-## Phase 2: Refactoring
-- [ ] Decompose `execute_pre_analysis`.
-- [ ] Remove `ui/app_ui.py.bak`.
-
-## Phase 3: Resource Management
-- [ ] Implement `ModelRegistry` watchdog.
-
-## Miscellaneous
-- [ ] Update `AGENTS.md` with new stabilization instructions.
+## Completed (v2.1-stabilized)
+- [x] Fix `test_database.py` failures (AttributeError: create_tables).
+- [x] Fix `test_pipelines_extended.py` (AttributeError: create_tables).
+- [x] Fix `PermissionError` for `/out` in `tests/test_app_ui_logic.py`.
+- [x] Fix `test_mask_propagator_logic.py` assertion failure.
+- [x] Decompose `execute_pre_analysis`.
+- [x] Remove `ui/app_ui.py.bak`.
+- [x] Implement `ModelRegistry` watchdog.
+- [x] Update `AGENTS.md` with new stabilization instructions.
+- [x] Create Linux run script (`scripts/linux_run_app.sh`).

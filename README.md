@@ -79,6 +79,8 @@ We highly recommend [uv](https://astral.sh/uv) for its speed and reliability.
     ```bash
     uv run python app.py
     ```
+    *Alternatively, on Linux, use:* `./scripts/linux_run_app.sh`
+
     Access the UI at `http://127.0.0.1:7860`.
 
 ### Manual Setup (vEnv)
