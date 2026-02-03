@@ -419,7 +419,7 @@ class SAM3Wrapper:
         """Initialize inference session with video or frame directory."""
     def add_bbox_prompt(self, frame_idx: int, obj_id: int, bbox_xywh: list, img_size: tuple) -> np.ndarray:
         """Add bounding box prompt at specified frame."""
-    def propagate(self, start_idx: int=0, max_frames: int=None, reverse: bool=False):
+    def propagate(self, start_idx: int = 0, max_frames: int = None, direction: str = "forward"):
         """Generator yielding masks for each frame during propagation."""
     def clear_prompts(self):
         """Reset all prompts in current session."""

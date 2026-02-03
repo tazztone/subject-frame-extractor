@@ -94,11 +94,9 @@ class AppUI:
     ]
     EXTRACTION_METHOD_TOGGLE_CHOICES: List[str] = ["Recommended Thumbnails", "Legacy Full-Frame"]
     METHOD_CHOICES: List[Any] = [
-        ("Keyframes (Scene Changes)", "keyframes"),
-        ("Time Interval", "interval"),
-        ("Every N-th Frame", "every_nth_frame"),
-        ("N-th Frame + Keyframes", "nth_plus_keyframes"),
-        ("All Frames", "all"),
+        ("Every N-th Frame (Recommended)", "every_nth_frame"),
+        ("All Frames (Maximum Quality)", "all"),
+        ("Keyframes (Cuts/Scene Changes)", "keyframes"),
     ]
     PRIMARY_SEED_STRATEGY_CHOICES: List[str] = [
         "🤖 Automatic",
@@ -1274,11 +1272,10 @@ class AppUI:
             control.change(handle_source_change, inputs=control, outputs=[c["max_resolution"], c["thumbnail_group"]])
         c["method_input"].change(
             lambda m: {
-                c["interval_input"]: gr.update(visible=m == "interval"),
-                c["nth_frame_input"]: gr.update(visible=m in ["every_nth_frame", "nth_plus_keyframes"]),
+                c["nth_frame_input"]: gr.update(visible=m == "every_nth_frame"),
             },
             c["method_input"],
-            [c["interval_input"], c["nth_frame_input"]],
+            [c["nth_frame_input"]],
         )
         c["primary_seed_strategy_input"].change(
             self._fix_strategy_visibility,

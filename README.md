@@ -210,7 +210,8 @@ def test_sam3_feature(...):
 
 ## 5. SAM3 API Guide (Developer Reference)
 
-The `SAM3Wrapper` in `core/managers.py` encapsulates the official `Sam3VideoPredictor` API.
+The `SAM3Wrapper` in `core/managers.py` encapsulates the official `Sam3VideoPredictor` API. For the primary reference implementation this project follows, see:
+`SAM3_repo/examples/sam3_video_predictor_example.ipynb`
 
 ### Core API Usage
 ```python
@@ -224,7 +225,8 @@ wrapper.init_video("/path/to/frames")
 mask = wrapper.add_bbox_prompt(frame_idx=0, obj_id=1, bbox_xywh=[x,y,w,h], img_size=(W,H))
 
 # 3. Propagate (Generator yielding frame_idx, obj_id, mask_array)
-for frame_idx, obj_id, mask in wrapper.propagate(start_idx=0):
+# direction can be "forward", "backward", or "both"
+for frame_idx, obj_id, mask in wrapper.propagate(start_idx=0, direction="both"):
     ...
 ```
 
@@ -236,7 +238,7 @@ for frame_idx, obj_id, mask in wrapper.propagate(start_idx=0):
 | `detect_objects(...)` | Open-vocabulary text detection on single frames. |
 | `add_text_prompt(...)` | Add text prompts for video tracking (new API). |
 | `add_point_prompt(...)` | Refine masks with positive/negative points. |
-| `propagate(...)` | **Generator** yielding propagation results. |
+| `propagate(...)` | **Generator** yielding propagation results. Supports `direction="both"`. |
 | `close_session()` | Release GPU resources. |
 
 ### 🔴 Coordinate Handling Nuance

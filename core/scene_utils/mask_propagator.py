@@ -71,11 +71,10 @@ class MaskPropagator:
         self,
         video_path: str,
         frame_numbers: list[int],
-        seed_frame_num: int,
-        bbox_xywh: list[int],
+        prompts: list[dict],
         frame_size: tuple[int, int],
+        frame_map: dict[int, str],
         tracker: Optional["AdvancedProgressTracker"] = None,
-        additional_seeds: Optional[list[dict]] = None,
     ) -> tuple[dict, dict, dict, dict]:
         """
         Propagate masks using the video file directly (no temp JPEG I/O).
@@ -83,11 +82,10 @@ class MaskPropagator:
         Args:
             video_path: Path to the downscaled video file
             frame_numbers: List of original video frame numbers to get masks for
-            seed_frame_num: Original video frame number to seed from (primary)
-            bbox_xywh: Bounding box [x, y, width, height] on the seed frame
+            prompts: List of prompts [{"frame": int, "bbox": list, "obj_id": int}]
             frame_size: (width, height) of the video frames
+            frame_map: Mapping from frame number to filename
             tracker: Optional progress tracker
-            additional_seeds: Optional list of additional seeds [{"frame": int, "bbox": list}]
 
         Returns:
             Tuple of dicts keyed by frame_number: (masks, area_pcts, is_empty, errors)
@@ -107,14 +105,21 @@ class MaskPropagator:
         empties = {}
         errors = {}
         all_propagated = {}
+        
+        # We only care about masks for these specific frames
+        target_frames = set(frame_numbers)
+        
+        # Initialize all target frames with None/Empty to ensure alignment
+        for fn in frame_numbers:
+            all_propagated[fn] = None
 
         self.logger.info(
             "Propagating masks with SAM3 (video mode)",
             component="propagator",
             user_context={
-                "num_frames": len(frame_numbers),
-                "seed_frame": seed_frame_num,
-                "extra_seeds": len(additional_seeds or []),
+                "num_targets": len(frame_numbers),
+                "num_prompts": len(prompts),
+                "video": Path(video_path).name
             },
         )
 
@@ -122,77 +127,44 @@ class MaskPropagator:
             tracker.set_stage(f"Propagating masks for {len(frame_numbers)} frames")
 
         try:
-            # Load all frames for the scene directly as PIL images to ensure perfect sync
-            from PIL import Image
-            pil_frames = []
-            for fn in frame_numbers:
-                fname = self.frame_map.get(fn)
-                if not fname:
-                    continue
-                t_path = Path(video_path).parent / "thumbs" / f"{Path(fname).stem}.webp"
-                if t_path.exists():
-                    pil_frames.append(Image.open(t_path).convert("RGB"))
-            
-            if not pil_frames:
-                self.logger.error("No thumbnails found to initialize tracker.")
-                return {fn: None for fn in frame_numbers}, {fn: 0.0 for fn in frame_numbers}, {fn: True for fn in frame_numbers}, {fn: "No frames" for fn in frame_numbers}
+            # Initialize SAM3 with the video file directly for temporal continuity
+            self.dam_tracker.init_video(video_path)
 
-            self.logger.info(f"Initializing SAM3 with {len(pil_frames)} in-memory frames.")
-            self.dam_tracker.init_video(pil_frames)
-
-            # Re-map frame numbers to 0-based indices for SAM3 session
-            # Since we passed a list, SAM3 index i corresponds to frame_numbers[i]
-            sam3_to_orig = {i: fn for i, fn in enumerate(frame_numbers)}
-            orig_to_sam3 = {fn: i for i, fn in enumerate(frame_numbers)}
-
-            # Add primary seed bbox prompt using re-mapped index
-            seed_sam3_idx = orig_to_sam3.get(seed_frame_num, 0)
-            seed_mask = self.dam_tracker.add_bbox_prompt(
-                frame_idx=seed_sam3_idx, obj_id=1, bbox_xywh=bbox_xywh, img_size=(w, h)
-            )
-            if seed_mask is not None:
-                all_propagated[seed_frame_num] = seed_mask
-
-            # Add any additional seed prompts
-            if additional_seeds:
-                for seed in additional_seeds:
-                    idx = orig_to_sam3.get(seed["frame"])
-                    if idx is not None:
-                        extra_mask = self.dam_tracker.add_bbox_prompt(
-                            frame_idx=idx, obj_id=1, bbox_xywh=seed["bbox"], img_size=(w, h)
-                        )
-                        if extra_mask is not None:
-                            all_propagated[seed["frame"]] = extra_mask
+            # Add all prompts
+            start_frame_idx = 0
+            if prompts:
+                start_frame_idx = prompts[0]["frame"]
+                for p in prompts:
+                    fn = p["frame"]
+                    mask = self.dam_tracker.add_bbox_prompt(
+                        frame_idx=fn, obj_id=p.get("obj_id", 1), bbox_xywh=p["bbox"], img_size=(w, h)
+                    )
+                    if mask is not None and fn in target_frames:
+                        all_propagated[fn] = mask
+                        self.logger.debug(f"Added prompt mask at frame {fn}", component="propagator")
 
             if tracker:
                 tracker.step(1, desc="Prompts added")
 
-            # Start propagation from the primary seed's re-mapped index
-            start_idx = seed_sam3_idx
-
-            # Propagate forward
-            for sam3_idx, obj_id, pred_mask in self.dam_tracker.propagate(start_idx=start_idx, reverse=False):
+            # Propagate in both directions using single call.
+            # SAM3 will track through EVERY frame in the video, ensuring stability.
+            for frame_idx, obj_id, pred_mask in self.dam_tracker.propagate(start_idx=start_frame_idx, direction="both"):
                 if self.cancel_event.is_set():
                     break
                 if self.model_registry:
                     self.model_registry.check_memory_usage(self.config)
-                orig_fn = sam3_to_orig.get(sam3_idx)
-                if orig_fn is not None:
-                    all_propagated[orig_fn] = pred_mask
-                if tracker:
-                    tracker.step(1, desc="Propagation (→)")
-
-            # Propagate backward
-            for sam3_idx, obj_id, pred_mask in self.dam_tracker.propagate(start_idx=start_idx, reverse=True):
-                if self.cancel_event.is_set():
-                    break
-                if self.model_registry:
-                    self.model_registry.check_memory_usage(self.config)
-                orig_fn = sam3_to_orig.get(sam3_idx)
-                if orig_fn is not None and orig_fn not in all_propagated:
-                    all_propagated[orig_fn] = pred_mask
-                if tracker:
-                    tracker.step(1, desc="Propagation (←)")
+                
+                # Only store results for frames we actually want to analyze
+                if frame_idx in target_frames:
+                    all_propagated[frame_idx] = pred_mask
+                    
+                    if tracker:
+                        tracker.step(1, desc="Propagation (↔)")
+                    
+                    if pred_mask is not None and np.any(pred_mask):
+                        self.logger.debug(f"Tracked subject at frame {frame_idx}", component="propagator")
+                    else:
+                        self.logger.debug(f"Lost subject at frame {frame_idx}", component="propagator")
 
             # Process all gathered masks (seeds + propagated)
             img_area = h * w
@@ -332,12 +304,12 @@ class MaskPropagator:
                 if tracker:
                     tracker.step(1, desc="Propagation (seed)")
 
-                # Propagate forward using new generator API
-                for frame_idx, obj_id, pred_mask in self.dam_tracker.propagate(start_idx=seed_idx, reverse=False):
+                # Propagate in both directions using single call
+                for frame_idx, obj_id, pred_mask in self.dam_tracker.propagate(start_idx=seed_idx, direction="both"):
                     if frame_idx == seed_idx:
                         continue
-                    if frame_idx >= len(shot_frames_rgb):
-                        break
+                    if frame_idx < 0 or frame_idx >= len(shot_frames_rgb):
+                        continue
                     if self.cancel_event.is_set():
                         break
                     
@@ -356,34 +328,7 @@ class MaskPropagator:
                         masks[frame_idx] = np.zeros((h, w), dtype=np.uint8)
 
                     if tracker:
-                        tracker.step(1, desc="Propagation (→)")
-
-                # Propagate backward using new generator API
-                for frame_idx, obj_id, pred_mask in self.dam_tracker.propagate(start_idx=seed_idx, reverse=True):
-                    if frame_idx == seed_idx:
-                        continue
-                    if frame_idx < 0:
-                        break
-                    if self.cancel_event.is_set():
-                        break
-
-                    if self.model_registry:
-                        self.model_registry.check_memory_usage(self.config)
-                        break
-
-                    if pred_mask is not None and np.any(pred_mask):
-                        mask = postprocess_mask(
-                            (pred_mask * 255).astype(np.uint8),
-                            config=self.config,
-                            fill_holes=True,
-                            keep_largest_only=True,
-                        )
-                        masks[frame_idx] = mask
-                    else:
-                        masks[frame_idx] = np.zeros((h, w), dtype=np.uint8)
-
-                    if tracker:
-                        tracker.step(1, desc="Propagation (←)")
+                        tracker.step(1, desc="Propagation (↔)")
 
             except (torch.cuda.OutOfMemoryError, RuntimeError) as e:
                 self.logger.error(f"GPU error in propagation: {e}", component="propagator")

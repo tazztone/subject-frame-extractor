@@ -148,8 +148,18 @@ class ModelRegistry:
     def __init__(self, logger: Optional["AppLogger"] = None):
         self._models: Dict[str, Any] = {}
         self._locks: Dict[str, threading.Lock] = defaultdict(threading.Lock)
+        self._active_locks = set() # Track keys that should not be cleared
         self.logger = logger or logging.getLogger(__name__)
         self.runtime_device_override: Optional[str] = None
+
+    def lock(self, key: str):
+        """Prevents a model from being cleared by the watchdog."""
+        self._active_locks.add(key)
+
+    def unlock(self, key: str):
+        """Allows a model to be cleared by the watchdog again."""
+        if key in self._active_locks:
+            self._active_locks.remove(key)
 
     def get_or_load(self, key: str, loader_fn: Callable[[], Any]) -> Any:
         """Retrieves a model by key, loading it via loader_fn if not present."""
@@ -180,7 +190,7 @@ class ModelRegistry:
                 f"CRITICAL: System memory usage high ({mem_usage_mb:.0f}MB). Triggering emergency cleanup.",
                 component="memory_watchdog"
             )
-            self.clear()
+            self.clear(force=False) # Respect active locks by default
         elif mem.percent > config.monitoring_cpu_warning_threshold_percent:
             self.logger.warning(
                 f"High system memory usage: {mem.percent}%",
@@ -192,29 +202,38 @@ class ModelRegistry:
             for i in range(torch.cuda.device_count()):
                 try:
                     gpu_mem_raw = torch.cuda.memory_reserved(i)
-                    gpu_mem = float(gpu_mem_raw) / (1024**2)
-                except (TypeError, ValueError):
-                    gpu_mem = 0.0
+                    gpu_mem_mb = float(gpu_mem_raw) / (1024**2)
+                    
+                    # Calculate dynamic threshold: 85% of total VRAM
+                    total_vram_mb = torch.cuda.get_device_properties(i).total_memory / (1024**2)
+                    critical_threshold_mb = total_vram_mb * 0.85
+                except (TypeError, ValueError, RuntimeError):
+                    gpu_mem_mb = 0.0
+                    critical_threshold_mb = config.monitoring_gpu_memory_critical_threshold_mb
 
-                # Note: PyTorch doesn't easily give % of total without extra libs, 
-                # we use the dedicated GPU MB threshold from config.
-                if gpu_mem > config.monitoring_gpu_memory_critical_threshold_mb:
+                if gpu_mem_mb > critical_threshold_mb:
                      self.logger.warning(
-                        f"CRITICAL: GPU {i} memory high ({gpu_mem:.0f}MB). Clearing cache.",
+                        f"VRAM pressure high ({gpu_mem_mb:.0f}MB / {total_vram_mb:.0f}MB). Attempting cleanup...",
                         component="memory_watchdog"
                     )
-                     self.clear()
+                     # Respect active locks (don't clear SAM3 if it's currently tracking)
+                     self.clear(force=False)
                      break
 
-    def clear(self):
+    def clear(self, force: bool = True):
         """
-        Clears all loaded models from the registry, 
-        safely shutting down those that support it.
+        Clears loaded models from the registry.
+        
+        Args:
+            force: If False, only clears models that are not locked.
         """
         if self.logger:
-            self.logger.info("Clearing all models from the registry.")
+            self.logger.info(f"Clearing models from registry (force={force}).")
         
         for key, model in list(self._models.items()):
+            if not force and key in self._active_locks:
+                continue
+                
             try:
                 if hasattr(model, "shutdown") and callable(model.shutdown):
                     model.shutdown()
@@ -225,7 +244,6 @@ class ModelRegistry:
             
             del self._models[key]
 
-        self._models.clear()
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
@@ -444,14 +462,14 @@ class SAM3Wrapper:
 
         return np.zeros((h, w), dtype=bool)
 
-    def propagate(self, start_idx: int = 0, max_frames: int = None, reverse: bool = False):
+    def propagate(self, start_idx: int = 0, max_frames: int = None, direction: str = "forward"):
         """
         Generator yielding masks for each frame during propagation.
 
         Args:
             start_idx: Frame index to start propagation from
             max_frames: Maximum frames to propagate
-            reverse: If True, propagate backward from start_idx
+            direction: Propagation direction ("forward", "backward", or "both")
 
         Yields:
             Tuple of (frame_idx, obj_id, mask) where mask is numpy array
@@ -459,13 +477,17 @@ class SAM3Wrapper:
         if self.session_id is None:
             return
 
+        if direction not in ["forward", "backward", "both"]:
+            logging.getLogger(__name__).warning(f"Invalid propagation direction: {direction}. Defaulting to 'forward'.")
+            direction = "forward"
+
         for response in self.predictor.handle_stream_request(
             request=dict(
                 type="propagate_in_video",
                 session_id=self.session_id,
                 start_frame_index=start_idx,
                 max_frame_num_to_track=max_frames or 9999,
-                reverse=reverse,
+                propagation_direction=direction,
             )
         ):
             frame_idx = response.get("frame_index")
@@ -516,7 +538,11 @@ class SAM3Wrapper:
 
             processor = Sam3Processor(model=detector, resolution=1008, device=self.device, confidence_threshold=0.3)
 
-            state = processor.set_image(frame_rgb)
+            # Convert numpy array to PIL Image to avoid shape detection bug in Sam3Processor.set_image
+            # (Submodule incorrectly assumes last two dims are H,W for numpy arrays)
+            pil_image = Image.fromarray(frame_rgb)
+            state = processor.set_image(pil_image)
+
             state = processor.set_text_prompt(prompt, state)
 
             results = []
