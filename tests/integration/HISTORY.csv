@@ -1,0 +1,14 @@
+Timestamp,Output Dir,Status,Mask Yield,Avg NIQE,Avg Face Sim,Errors
+2026-02-03T17:01:42.081601,/tmp/pytest-of-tazztone/pytest-15/test_real_end_to_end_workflow0/e2e_output,PASS,33.3%,24.38,0.6,
+2026-02-03T17:14:48.563581,/home/tazztone/_coding/subject-frame-extractor/tests/integration/e2e_output_debug,PASS,33.3%,24.38,0.6,
+2026-02-03T18:37:30.054128,/home/tazztone/_coding/subject-frame-extractor/tests/integration/e2e_output_debug,PASS,33.3%,24.38,0.6,
+2026-02-03T18:43:49.573573,/home/tazztone/_coding/subject-frame-extractor/tests/integration/e2e_output_debug,PASS,33.3%,24.38,0.6,
+2026-02-03T18:46:18.929548,/home/tazztone/_coding/subject-frame-extractor/tests/integration/e2e_output_debug,PASS,33.3%,24.38,0.6,
+2026-02-03T18:48:08.870341,/home/tazztone/_coding/subject-frame-extractor/tests/integration/e2e_output_debug,PASS,33.3%,24.38,0.6,
+2026-02-03T18:49:52.162989,/home/tazztone/_coding/subject-frame-extractor/tests/integration/e2e_output_debug,PASS,33.3%,24.38,0.6,
+2026-02-03T18:53:52.204492,/tmp/pytest-of-tazztone/pytest-22/test_real_end_to_end_workflow0/e2e_output,FAIL,4.0%,23.87,0.57,Mask yield too low (4.0% < 30%)
+2026-02-03T18:55:54.438168,/home/tazztone/_coding/subject-frame-extractor/tests/integration/e2e_output_debug,FAIL,4.0%,23.87,0.57,Mask yield too low (4.0% < 30%)
+2026-02-03T19:00:05.599822,/home/tazztone/_coding/subject-frame-extractor/tests/integration/e2e_output_debug,FAIL,4.0%,23.87,0.57,Mask yield too low (4.0% < 30%)
+2026-02-03T19:03:42.050675,/home/tazztone/_coding/subject-frame-extractor/tests/integration/e2e_output_debug,FAIL,14.8%,23.84,0.57,Mask yield too low (14.8% < 30%)
+2026-02-03T19:14:25.321888,/home/tazztone/_coding/subject-frame-extractor/tests/integration/e2e_output_debug,FAIL,14.8%,23.84,0.57,Mask yield too low (14.8% < 30%)
+2026-02-03T19:19:59.149299,/tmp/pytest-of-tazztone/pytest-28/test_real_end_to_end_workflow0/e2e_output,FAIL,14.8%,23.84,0.57,Mask yield too low (14.8% < 30%)

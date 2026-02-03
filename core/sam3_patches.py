@@ -50,8 +50,34 @@ def connected_components_fallback(input_tensor):
     return labels_tensor, counts_tensor
 
 
+def set_image_patched(self, image):
+    """
+    Patched version of Sam3Processor.set_image to handle HWC inputs correctly.
+    Original implementation assumes CHW or HW, failing on standard HWC.
+    """
+    if isinstance(image, np.ndarray):
+        # Check for channel-last format (H, W, C) typical for OpenCV/Pillow
+        if image.ndim == 3 and image.shape[2] <= 4:
+            height, width = image.shape[:2]
+        else:
+            height, width = image.shape[-2:]
+    else:
+        height, width = image.shape[-2:]
+
+    self.orig_h = height
+    self.orig_w = width
+    return self.transform(image)
+
+
 def apply_patches():
-    """Apply monkey patches to SAM3 if Triton is not available"""
+    """Apply monkey patches to SAM3 if Triton is not available, AND fix image processing."""
+    # Always patch the image processor to fix HWC handling
+    try:
+        from sam3.model.sam3_image_processor import Sam3Processor
+        Sam3Processor.set_image = set_image_patched
+    except ImportError:
+        pass
+
     try:
         import triton  # noqa: F401
         # Triton is available, no patching needed

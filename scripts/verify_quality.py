@@ -133,9 +133,41 @@ class QualityVerifier:
                 print(f"📊 Avg Face Sim: {avg_sim:.2f}")
 
             conn.close()
+            
+            # Log to history
+            self.log_history()
 
         except Exception as e:
             self._fail(f"Database check failed: {str(e)}")
+
+    def log_history(self):
+        try:
+            import csv
+            import datetime
+            
+            history_path = Path("tests/integration/HISTORY.csv")
+            history_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            file_exists = history_path.exists()
+            
+            with open(history_path, "a", newline="") as f:
+                writer = csv.writer(f)
+                if not file_exists:
+                    writer.writerow(["Timestamp", "Output Dir", "Status", "Mask Yield", "Avg NIQE", "Avg Face Sim", "Errors"])
+                
+                timestamp = datetime.datetime.now().isoformat()
+                writer.writerow([
+                    timestamp,
+                    str(self.output_dir),
+                    self.report["status"],
+                    self.report["metrics"].get("mask_yield", "N/A"),
+                    self.report["metrics"].get("avg_niqe", "N/A"),
+                    self.report["metrics"].get("avg_face_sim", "N/A"),
+                    "; ".join(self.report["errors"])
+                ])
+                print(f"📝 Logged results to {history_path}")
+        except Exception as e:
+            print(f"⚠️ Failed to log history: {e}")
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:

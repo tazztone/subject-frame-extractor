@@ -76,15 +76,15 @@ def _process_ffmpeg_showinfo(stream, fps: float) -> tuple[list, str]:
     """Parses FFmpeg stderr for 'showinfo' frame timestamps to map back to original frame indices."""
     frame_numbers = []
     stderr_lines = []
+    frame_counter = 0
     for line in iter(stream.readline, ""):
         stderr_lines.append(line)
-        # Parse pts_time (presentation timestamp in seconds)
-        match = re.search(r"pts_time:\s*(\d+(?:\.\d+)?)", line)
-        if match:
-            pts_time = float(match.group(1))
-            # Calculate original frame index
-            original_frame_idx = int(round(pts_time * fps))
-            frame_numbers.append(original_frame_idx)
+        # Check if this line is a frame info line
+        if "[Parsed_showinfo_" in line and "n:" in line:
+            # For "all" frames, the sequential order in showinfo matches video indices perfectly
+            # We use the counter to be safe against PTS jitter
+            frame_numbers.append(frame_counter)
+            frame_counter += 1
     stream.close()
     return frame_numbers, "".join(stderr_lines)
 
@@ -146,11 +146,23 @@ def run_ffmpeg_extraction(
             str(config.ffmpeg_thumbnail_quality),
             "-vsync",
             "vfr",
+            "-start_number",
+            "0",
             str(thumb_dir / "frame_%06d.webp"),
         ]
     else:
         vf = f"{vf_select},showinfo"
-        cmd = cmd_base + ["-vf", vf, "-c:v", "png", "-vsync", "vfr", str(thumb_dir / "frame_%06d.png")]
+        cmd = cmd_base + [
+            "-vf", 
+            vf, 
+            "-c:v", 
+            "png", 
+            "-vsync", 
+            "vfr", 
+            "-start_number", 
+            "0", 
+            str(thumb_dir / "frame_%06d.png")
+        ]
 
     process = subprocess.Popen(
         cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", bufsize=1
