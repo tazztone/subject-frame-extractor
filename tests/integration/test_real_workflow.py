@@ -173,6 +173,20 @@ def test_real_end_to_end_workflow(tmp_path):
     mask_dir = output_dir / "masks"
     assert mask_dir.exists(), "Mask directory missing!"
     assert any(mask_dir.iterdir()), "No masks generated!"
+
+    # 7. Quality Analysis
+    print("\n--- [STAGE 6: QUALITY ANALYSIS] ---")
+    sys.path.append(str(Path(__file__).parent.parent.parent / "scripts"))
+    try:
+        from verify_quality import QualityVerifier
+        verifier = QualityVerifier(output_dir)
+        report = verifier.verify()
+        
+        assert report["status"] == "PASS", f"Quality check failed: {report['errors']}"
+        print(f"✅ Quality check passed with warnings: {report['warnings']}")
+        
+    except ImportError:
+        print("⚠️ Could not import QualityVerifier script. Skipping deep analysis.")
         
     print("\n🎉 E2E VERIFICATION SUCCESSFUL!")
 
