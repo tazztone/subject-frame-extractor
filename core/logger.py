@@ -283,3 +283,14 @@ class AppLogger:
     def critical(self, message: str, component: str = "system", **kwargs):
         """Logs a critical error message."""
         self._log_event(self._create_log_event("CRITICAL", message, component, **kwargs))
+
+    def copy_log_to_output(self, output_dir: Path):
+        """Copies the current session log to the specified output directory."""
+        if not output_dir.exists():
+            return
+        try:
+            target_file = output_dir / f"run_log_{self.session_id}.txt"
+            shutil.copy2(self.session_log_file, target_file)
+            self.success(f"Log saved to {target_file}", component="logger")
+        except Exception as e:
+            self.error(f"Failed to copy log to output: {e}", component="logger")

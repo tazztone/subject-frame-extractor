@@ -189,8 +189,6 @@ class AppUI:
             "scene_detect",
         ]
         self.ana_ui_map_keys = [
-            "output_folder",
-            "video_path",
             "resume",
             "enable_face_filter",
             "face_ref_img_path",
@@ -308,35 +306,6 @@ class AppUI:
 
         threading.Thread(target=_load, daemon=True).start()
 
-    def _get_stepper_html(self, current_step: int = 0) -> str:
-        """
-        Generates the HTML for the workflow progress stepper.
-
-        Args:
-            current_step: The index of the current active step (0-based).
-
-        Returns:
-            HTML string for the stepper component.
-        """
-        steps = ["Source", "Subject", "Scenes", "Metrics", "Export"]
-        html = '<div style="display: flex; justify-content: space-around; align_items: center; margin-bottom: 10px; padding: 10px; background: #f9f9f9; border-radius: 8px; font-family: sans-serif; font-size: 0.9rem;">'
-        for i, step in enumerate(steps):
-            color = "#ccc"
-            icon = "○"
-            weight = "normal"
-            if i < current_step:
-                icon = "✓"
-                color = "#2ecc71"  # Green
-            elif i == current_step:
-                icon = "●"
-                color = "#3498db"  # Blue
-                weight = "bold"
-
-            html += f'<div style="color: {color}; font-weight: {weight};">{icon} {step}</div>'
-            if i < len(steps) - 1:
-                html += '<div style="color: #eee;">→</div>'
-        html += "</div>"
-        return html
 
     def build_ui(self) -> gr.Blocks:
         """
@@ -348,7 +317,6 @@ class AppUI:
         # css argument is deprecated in Gradio 5+
         with gr.Blocks() as demo:
             self._build_header()
-            self._create_component("stepper", "html", {"value": self._get_stepper_html(0)})
 
             with gr.Accordion("🔄 Resume previous Session", open=False):
                 with gr.Row():
@@ -516,11 +484,13 @@ class AppUI:
                             self._create_component(
                                 "show_debug_logs", "checkbox", {"label": "Show Debug Logs", "value": False}
                             )
-                            self._create_component("refresh_logs_button", "button", {"value": "🔄 Refresh", "scale": 1})
+                            # Hidden refresh button, now handled by Timer
+                            self._create_component("refresh_logs_button", "button", {"value": "🔄 Refresh", "scale": 1, "visible": False})
                             self._create_component("clear_logs_button", "button", {"value": "🗑️ Clear", "scale": 1})
-                            self._create_component("export_logs_button", "button", {"value": "📥 Export", "scale": 1})
+                            self._create_component("export_logs_button", "button", {"value": "📥 Export to File", "scale": 1, "visible": False})
 
         with gr.Accordion("❓ Help / Troubleshooting", open=False):
+            gr.Markdown("Run checks for GPU availability, missing libraries, and path permissions.")
             self._create_component("run_diagnostics_button", "button", {"value": "Run System Diagnostics"})
 
 
@@ -564,6 +534,17 @@ class AppUI:
         
         # Unified Application State
         self.components["application_state"] = gr.State(ApplicationState())
+
+        # Legacy states (needed by SceneHandler until it is refactored to use ApplicationState)
+        self.components["scenes_state"] = gr.State([])
+        self.components["extracted_frames_dir_state"] = gr.State("")
+        self.components["scene_gallery_index_map_state"] = gr.State([])
+        self.components["selected_scene_id_state"] = gr.State(None)
+        self.components["gallery_image_state"] = gr.State(None)
+        self.components["gallery_shape_state"] = gr.State(None)
+        self.components["analysis_output_dir_state"] = gr.State("")
+        self.components["extracted_video_path_state"] = gr.State("")
+        self.components["analysis_metadata_path_state"] = gr.State("")
 
         # Undo/Redo State (Separate as it uses deque)
         self.components["scene_history_state"] = gr.State(deque(maxlen=self.history_depth))
@@ -617,17 +598,18 @@ class AppUI:
             return "\n".join(filtered_logs[-1000:])
 
         c["show_debug_logs"].change(update_logs, inputs=[c["show_debug_logs"]], outputs=[c["unified_log"]])
+        # Log Auto-Refresh (every 1s)
+        self.components["log_timer"] = gr.Timer(1.0)
+        self.components["log_timer"].tick(update_logs, inputs=[c["show_debug_logs"]], outputs=[c["unified_log"]])
+        
+        # Keep manual refresh just in case, though hidden
         c["refresh_logs_button"].click(update_logs, inputs=[c["show_debug_logs"]], outputs=[c["unified_log"]])
 
-        # Stepper Handler
-        c["main_tabs"].select(self.update_stepper, None, c["stepper"])
+        # Stepper Handler (Removed)
 
         # Hidden radio for scene editor state compatibility
         c["run_diagnostics_button"].click(self.run_system_diagnostics, inputs=[], outputs=[c["unified_log"]])
 
-    def update_stepper(self, evt: gr.SelectData):
-        """Updates the stepper HTML when a tab is selected."""
-        return self._get_stepper_html(evt.index)
 
 
 
@@ -914,10 +896,17 @@ class AppUI:
         self.logger.info(final_report)
         yield final_report
 
-    def _create_pre_analysis_event(self, *args: Any) -> "PreAnalysisEvent":
+    def _create_pre_analysis_event(self, state: ApplicationState, *args: Any) -> "PreAnalysisEvent":
         """Helper to construct a PreAnalysisEvent from UI arguments."""
         ui_args = dict(zip(self.ana_ui_map_keys, args))
         clean_args = {k: v for k, v in ui_args.items() if v is not None}
+        
+        # Inject state values
+        # If analysis_output_dir is empty, use extracted_frames_dir as fallback
+        out_dir = state.analysis_output_dir or state.extracted_frames_dir
+        clean_args["output_folder"] = str(out_dir)
+        clean_args["video_path"] = str(state.extracted_video_path)
+
         strategy = clean_args.get("primary_seed_strategy", self.config.default_primary_seed_strategy)
         if strategy == "👤 By Face":
             clean_args.update({"enable_face_filter": True, "text_prompt": ""})
@@ -1021,12 +1010,20 @@ class AppUI:
         """Stops the batch processing."""
         self.batch_manager.stop_processing()
         return "Stopping..."
+    
+    def _save_session_log(self, output_dir_str: str):
+        """Helper to save logs to the result directory."""
+        if output_dir_str:
+            self.logger.copy_log_to_output(Path(output_dir_str))
 
     def _on_extraction_success(self, result: dict, current_state: ApplicationState) -> dict:
         """Callback for successful extraction."""
         new_state = current_state.model_copy()
         new_state.extracted_video_path = result["extracted_video_path_state"]
         new_state.extracted_frames_dir = result["extracted_frames_dir_state"]
+        
+        # Auto-save logs
+        self._save_session_log(result["extracted_frames_dir_state"])
 
         msg = f"""<div class="success-card">
         <h3>✅ Frame Extraction Complete</h3>
@@ -1035,9 +1032,10 @@ class AppUI:
         </div>"""
         return {
             self.components["application_state"]: new_state,
+            self.components["extracted_video_path_state"]: result["extracted_video_path_state"],
+            self.components["extracted_frames_dir_state"]: result["extracted_frames_dir_state"],
             self.components["unified_status"]: msg,
             self.components["main_tabs"]: gr.update(selected=1),
-            self.components["stepper"]: self._get_stepper_html(1),
         }
 
     def _on_pre_analysis_success(self, result: dict, current_state: ApplicationState) -> dict:
@@ -1045,6 +1043,9 @@ class AppUI:
         new_state = current_state.model_copy()
         new_state.scenes = result["scenes"]
         new_state.analysis_output_dir = result["output_dir"]
+        
+        # Auto-save logs
+        self._save_session_log(result["output_dir"])
 
         scenes_objs = [Scene(**s) for s in result["scenes"]]
         status_text, button_update = get_scene_status_text(scenes_objs)
@@ -1055,18 +1056,20 @@ class AppUI:
         </div>"""
         return {
             self.components["application_state"]: new_state,
+            self.components["scenes_state"]: result["scenes"],
+            self.components["analysis_output_dir_state"]: result["output_dir"],
+            self.components["extracted_frames_dir_state"]: result["output_dir"], # Mirror for handler compatibility
             self.components["seeding_results_column"]: gr.update(visible=True),
             self.components["propagation_group"]: gr.update(visible=True),
             self.components["propagate_masks_button"]: button_update,
             self.components["scene_filter_status"]: status_text,
             self.components["unified_status"]: msg,
             self.components["main_tabs"]: gr.update(selected=2),
-            self.components["stepper"]: self._get_stepper_html(2),
         }
 
     def run_pre_analysis_wrapper(self, current_state: ApplicationState, *args, progress=None):
         """Wrapper to execute the pre-analysis pipeline."""
-        event = self._create_pre_analysis_event(*args)
+        event = self._create_pre_analysis_event(current_state, *args)
         yield from self._run_pipeline(
             execute_pre_analysis, event, progress or gr.Progress(), 
             lambda res: self._on_pre_analysis_success(res, current_state)
@@ -1077,7 +1080,7 @@ class AppUI:
         if not scenes:
             yield {"unified_log": "No scenes."}
             return
-        params = self._create_pre_analysis_event(*args)
+        params = self._create_pre_analysis_event(current_state, *args)
         event = PropagationEvent(
             output_folder=params.output_folder, video_path=params.video_path, scenes=scenes, analysis_params=params
         )
@@ -1097,7 +1100,6 @@ class AppUI:
             self.components["application_state"]: current_state,
             self.components["unified_status"]: msg,
             self.components["main_tabs"]: gr.update(selected=3),
-            self.components["stepper"]: self._get_stepper_html(3),
         }
 
     def run_analysis_wrapper(self, scenes, current_state: ApplicationState, *args, progress=None):
@@ -1105,7 +1107,7 @@ class AppUI:
         if not scenes:
             yield {"unified_log": "No scenes."}
             return
-        params = self._create_pre_analysis_event(*args)
+        params = self._create_pre_analysis_event(current_state, *args)
         event = PropagationEvent(
             output_folder=params.output_folder, video_path=params.video_path, scenes=scenes, analysis_params=params
         )
@@ -1118,6 +1120,9 @@ class AppUI:
         """Callback for successful analysis."""
         new_state = current_state.model_copy()
         new_state.analysis_metadata_path = result["metadata_path"]
+        
+        # Auto-save logs (Analysis output dir is usually same as extraction, but ensuring correctness)
+        self._save_session_log(str(Path(result["metadata_path"]).parent))
 
         msg = """<div class="success-card">
         <h3>✅ Analysis Complete</h3>
@@ -1127,7 +1132,6 @@ class AppUI:
             self.components["application_state"]: new_state,
             self.components["unified_status"]: msg,
             self.components["main_tabs"]: gr.update(selected=4),
-            self.components["stepper"]: self._get_stepper_html(4),
         }
 
     def run_session_load_wrapper(self, session_path: str, current_state: ApplicationState):
@@ -1182,6 +1186,9 @@ class AppUI:
                 value=run_config.get("best_frame_strategy", "Largest Person")
             ),
             self.components["tracker_model_name_input"]: gr.update(value=run_config.get("tracker_model_name", "sam3")),
+            self.components["extracted_video_path_state"]: run_config.get("video_path", ""),
+            self.components["extracted_frames_dir_state"]: str(output_dir),
+            self.components["analysis_output_dir_state"]: str(output_dir.resolve() if output_dir else ""),
             self.components["application_state"]: new_state,
         }
 
@@ -1212,6 +1219,8 @@ class AppUI:
                         visible=any((s.seed_metrics or {}).get("best_face_sim") is not None for s in scenes)
                     ),
                     self.components["scene_gallery"]: gr.update(value=gallery_items),
+                    self.components["scenes_state"]: [s.model_dump() for s in scenes],
+                    self.components["scene_gallery_index_map_state"]: index_map,
                 }
             )
 
@@ -1362,7 +1371,7 @@ class AppUI:
         c["discovered_faces_gallery"].select(
             lambda state, conf, evt: self.on_discovered_face_select(state, conf, evt),
             inputs=[c["application_state"], c["identity_confidence_slider"]],
-            outputs=[c["face_ref_img_path_input"], c["face_ref_image"]],
+            outputs=[c["face_ref_img_path_input"], c["face_ref_image"], c["find_people_status"]],
         )
 
     @safe_ui_callback("Face Clustering")
@@ -1395,14 +1404,14 @@ class AppUI:
     @safe_ui_callback("Face Selection")
     def on_discovered_face_select(
         self, state: ApplicationState, confidence: float, evt: gr.SelectData = None
-    ) -> tuple[str, Optional[np.ndarray]]:
+    ) -> tuple[str, Optional[np.ndarray], str]:
         """Handles selection of a face cluster from the discovery gallery."""
         all_faces = state.discovered_faces
         if not all_faces or evt is None or evt.index is None:
-            return "", None
+            return "", None, "⚠️ Selection Failed"
         selected_label = self.gallery_to_cluster_map.get(evt.index)
         if selected_label is None:
-            return "", None
+            return "", None, "⚠️ Selection Failed"
         
         from sklearn.cluster import DBSCAN
 
@@ -1410,7 +1419,7 @@ class AppUI:
         clustering = DBSCAN(eps=1.0 - confidence, min_samples=2, metric="cosine").fit(embeddings)
         cluster_faces = [all_faces[i] for i, l in enumerate(clustering.labels_) if l == selected_label]
         if not cluster_faces:
-            return "", None
+            return "", None, "⚠️ Cluster not found"
         best_face = max(cluster_faces, key=lambda x: x["det_score"])
 
         cap = cv2.VideoCapture(state.extracted_video_path)
@@ -1418,7 +1427,7 @@ class AppUI:
         ret, frame = cap.read()
         cap.release()
         if not ret:
-            return "", None
+            return "", None, "⚠️ Could not read video frame"
         x1, y1, x2, y2 = best_face["bbox"].astype(int)
         thumb_rgb = self.thumbnail_manager.get(Path(best_face["thumb_path"]))
         h, w, _ = thumb_rgb.shape
@@ -1427,7 +1436,7 @@ class AppUI:
         face_crop = frame[y1:y2, x1:x2]
         face_crop_path = Path(state.extracted_frames_dir) / "reference_face.png"
         cv2.imwrite(str(face_crop_path), face_crop)
-        return str(face_crop_path), face_crop
+        return str(face_crop_path), face_crop, f"✅ **Selected Person {selected_label}**"
 
     @safe_ui_callback("Face Discovery")
     def on_find_people_from_video(self, current_state: ApplicationState, *args) -> tuple[str, gr.update, gr.update, float, ApplicationState]:
@@ -1437,7 +1446,7 @@ class AppUI:
         """
         new_state = current_state.model_copy()
         self.logger.info("Scan Video for Faces clicked")
-        params = self._create_pre_analysis_event(*args)
+        params = self._create_pre_analysis_event(current_state, *args)
         output_dir = Path(params.output_folder)
         self.logger.info(f"Output dir: {output_dir}, exists: {output_dir.exists()}")
         if not output_dir.exists():
