@@ -205,8 +205,8 @@ class TestSAM3WrapperMethodBehavior:
             # 2. Verify original predictor's shutdown was called
             original_predictor.shutdown.assert_called_once()
 
-            # 3. Verify predictor attribute is deleted
-            assert not hasattr(behavior_mock_wrapper, "predictor")
+            # 3. Verify predictor is set to None
+            assert behavior_mock_wrapper.predictor is None
 
             # 4. Verify gc.collect was called
             mock_gc_collect.assert_called_once()

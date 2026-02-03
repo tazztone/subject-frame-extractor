@@ -29,7 +29,12 @@ class TestAppUIHandlers:
         app.components["unified_log"] = MagicMock()
         app.components["unified_status"] = MagicMock()
         app.components["main_tabs"] = MagicMock()
-        app.components["stepper"] = MagicMock()
+        app.components["main_tabs"] = MagicMock()
+        # app.components["stepper"] = MagicMock() # Removed from UI
+        app.components["extracted_video_path_state"] = MagicMock()
+        app.components["extracted_frames_dir_state"] = MagicMock()
+        app.components["scenes_state"] = MagicMock()
+        app.components["analysis_output_dir_state"] = MagicMock()
         app.components["seeding_results_column"] = MagicMock()
         app.components["propagation_group"] = MagicMock()
         app.components["propagate_masks_button"] = MagicMock()
