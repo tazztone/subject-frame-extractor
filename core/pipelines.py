@@ -76,15 +76,18 @@ def _process_ffmpeg_showinfo(stream, fps: float) -> tuple[list, str]:
     """Parses FFmpeg stderr for 'showinfo' frame timestamps to map back to original frame indices."""
     frame_numbers = []
     stderr_lines = []
-    frame_counter = 0
     for line in iter(stream.readline, ""):
         stderr_lines.append(line)
         # Check if this line is a frame info line
-        if "[Parsed_showinfo_" in line and "n:" in line:
-            # For "all" frames, the sequential order in showinfo matches video indices perfectly
-            # We use the counter to be safe against PTS jitter
-            frame_numbers.append(frame_counter)
-            frame_counter += 1
+        if "[Parsed_showinfo_" in line and "pts_time:" in line:
+            # Extract pts_time to calculate original frame index
+            # Line format: ... pts: 1234 pts_time:1.234 ...
+            match = re.search(r"pts_time:(\d+\.?\d*)", line)
+            if match:
+                pts_time = float(match.group(1))
+                # Map back to original frame number using FPS
+                orig_frame_idx = int(round(pts_time * fps))
+                frame_numbers.append(orig_frame_idx)
     stream.close()
     return frame_numbers, "".join(stderr_lines)
 
@@ -115,26 +118,29 @@ def run_ffmpeg_extraction(
     thumb_dir = output_dir / "thumbs"
     thumb_dir.mkdir(exist_ok=True)
 
+    # Calculate thumbnail scale (based on user config)
     target_area = params.thumb_megapixels * 1_000_000
     w, h = video_info.get("width", 1920), video_info.get("height", 1080)
     scale_factor = math.sqrt(target_area / (w * h)) if w * h > 0 else 1.0
-    vf_scale = f"scale=w=trunc(iw*{scale_factor}/2)*2:h=trunc(ih*{scale_factor}/2)*2"
+    vf_scale_thumb = f"scale=w=trunc(iw*{scale_factor}/2)*2:h=trunc(ih*{scale_factor}/2)*2"
+    
+    # Calculate video scale (fixed to 240p for SAM3 speed)
+    video_target_height = 240
+    video_scale_factor = video_target_height / h if h > 0 else 1.0
+    vf_scale_video = f"scale=w=trunc(iw*{video_scale_factor}/2)*2:h={video_target_height}"
 
     fps = max(1, int(video_info.get("fps", 30)))
     N = max(1, int(params.nth_frame or 0))
-    interval = max(0.1, float(params.interval or 0.0))
 
     select_map = {
         "keyframes": "select='eq(pict_type,I)'",
         "every_nth_frame": f"select='not(mod(n,{N}))'",
-        "nth_plus_keyframes": f"select='or(eq(pict_type,I),not(mod(n,{N})))'",
-        "interval": f"fps=1/{interval}",
         "all": f"fps={fps}",
     }
     vf_select = select_map.get(params.method, f"fps={fps}")
 
     if params.thumbnails_only:
-        vf = f"{vf_select},{vf_scale},showinfo"
+        vf = f"{vf_select},{vf_scale_thumb},showinfo" # Use thumb scale
         cmd = cmd_base + [
             "-vf",
             vf,
@@ -147,7 +153,7 @@ def run_ffmpeg_extraction(
             "-vsync",
             "vfr",
             "-start_number",
-            "0",
+            "1",
             str(thumb_dir / "frame_%06d.webp"),
         ]
     else:
@@ -160,7 +166,7 @@ def run_ffmpeg_extraction(
             "-vsync", 
             "vfr", 
             "-start_number", 
-            "0", 
+            "1", 
             str(thumb_dir / "frame_%06d.png")
         ]
 
@@ -213,7 +219,8 @@ def run_ffmpeg_extraction(
     # Create downscaled video for SAM3 (avoids temp JPEG I/O during propagation)
     if not cancel_event.is_set():
         lowres_video_path = output_dir / "video_lowres.mp4"
-        logger.info(f"Creating downscaled video for SAM3: {lowres_video_path}")
+        logger.info(f"Creating downscaled contiguous video for SAM3 (240p): {lowres_video_path}")
+        # Note: We do NOT use vf_select here. We want EVERY frame for tracking stability.
         lowres_cmd = [
             "ffmpeg",
             "-y",
@@ -223,7 +230,7 @@ def run_ffmpeg_extraction(
             "-loglevel",
             "warning",
             "-vf",
-            vf_scale,
+            vf_scale_video, # Force 240p for SAM3 tracking
             "-c:v",
             "libx264",
             "-preset",
@@ -505,11 +512,11 @@ class AnalysisPipeline(Pipeline):
                 model_registry=self.model_registry,
             )
 
+            # Run propagation ONCE for all scenes to leverage SAM3 batching and temporal memory
+            self.mask_metadata = masker.run_propagation(str(self.output_dir), scenes_to_process, tracker=tracker)
+            
+            # Update completed IDs
             for scene in scenes_to_process:
-                if self.cancel_event.is_set():
-                    self.logger.info("Propagation cancelled by user.")
-                    break
-                self.mask_metadata.update(masker.run_propagation(str(self.output_dir), [scene], tracker=tracker))
                 completed_scene_ids.append(scene.shot_id)
 
             if self.cancel_event.is_set():
@@ -551,7 +558,9 @@ class AnalysisPipeline(Pipeline):
             mask_metadata_path = self.output_dir / "mask_metadata.json"
             if mask_metadata_path.exists():
                 with open(mask_metadata_path, "r", encoding="utf-8") as f:
-                    self.mask_metadata = json.load(f)
+                    raw_mask_meta = json.load(f)
+                    # Create optimized lookup by stem
+                    self.mask_metadata = {Path(k).stem: v for k, v in raw_mask_meta.items()}
             else:
                 self.mask_metadata = {}
             if tracker:
@@ -700,7 +709,10 @@ class AnalysisPipeline(Pipeline):
             if thumb_image_rgb is None:
                 raise ValueError("Could not read thumbnail.")
             frame, base_filename = Frame(image_data=thumb_image_rgb, frame_number=-1), thumb_path.name
-            mask_meta = self.mask_metadata.get(base_filename, {})
+            
+            # Use optimized stem-based lookup
+            mask_meta = self.mask_metadata.get(thumb_path.stem, {})
+            
             mask_thumb = None
             if mask_meta.get("mask_path"):
                 mask_full_path = Path(mask_meta["mask_path"])
@@ -768,6 +780,10 @@ class AnalysisPipeline(Pipeline):
 
             if frame.error:
                 meta["error"] = frame.error
+                self.logger.error(f"Analysis error for {thumb_path.name}: {frame.error}", component="analysis")
+            elif meta.get("mask_empty"):
+                self.logger.warning(f"Empty mask for {thumb_path.name} (Subject lost or not found)", component="analysis")
+                
             if meta.get("mask_path"):
                 meta["mask_path"] = Path(meta["mask_path"]).name
 

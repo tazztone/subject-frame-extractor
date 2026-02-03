@@ -90,16 +90,15 @@ def validate_video_file(video_path: str) -> bool:
 
 def estimate_totals(params: "AnalysisParameters", video_info: dict, scenes: Optional[list["Scene"]]) -> dict:
     """Estimates the total work items for each pipeline stage."""
-    fps = max(1, int(video_info.get("fps") or 30))
     total_frames = int(video_info.get("frame_count") or 0)
     method = params.method
-    if method == "interval":
-        extraction_total = max(1, int(total_frames / max(0.1, params.interval) / fps))
-    elif method == "every_nth_frame":
+    
+    if method == "every_nth_frame":
         extraction_total = max(1, int(total_frames / max(1, params.nth_frame)))
     elif method == "all":
         extraction_total = total_frames
-    elif method in ("keyframes", "nth_plus_keyframes"):
+    elif method == "keyframes":
+        # Heuristic: assume ~15% of frames are keyframes/cuts
         extraction_total = max(1, int(total_frames * 0.15))
     else:
         extraction_total = total_frames

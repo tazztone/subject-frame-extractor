@@ -138,7 +138,7 @@ class SeedSelector:
             return None, {"type": "no_subject_found"}
         person_boxes = self._get_person_boxes(frame_rgb, scene)
         text_boxes = self._get_text_prompt_boxes(frame_rgb, params)[0]
-        best_box, best_details = self._score_and_select_candidate(target_face, person_boxes, text_boxes)
+        best_box, best_details = self._score_and_select_candidate(frame_rgb, target_face, person_boxes, text_boxes)
         if best_box:
             # Propagate face similarity if available
             if "seed_face_sim" in details:
@@ -172,9 +172,9 @@ class SeedSelector:
                             }
                 if best_match and best_match["iou"] > self.config.seeding_iou_threshold:
                     self.logger.info("Found high-confidence intersection.", extra=best_match)
-                    return self._xyxy_to_xywh(best_match["bbox"]), best_match
+                    return self._xyxy_to_xywh(best_match["bbox"], frame_rgb.shape), best_match
             self.logger.info("Using best text box without validation.", extra=text_details)
-            return self._xyxy_to_xywh(text_boxes[0]["bbox"]), text_details
+            return self._xyxy_to_xywh(text_boxes[0]["bbox"], frame_rgb.shape), text_details
         self.logger.info("No text results, falling back to person-only strategy.")
         return self._choose_person_by_strategy(frame_rgb, params, scene)
 
@@ -234,7 +234,7 @@ class SeedSelector:
         return results, {**results[0], "all_boxes_count": len(results)}
 
     def _score_and_select_candidate(
-        self, target_face: dict, person_boxes: list[dict], text_boxes: list[dict]
+        self, frame_rgb: np.ndarray, target_face: dict, person_boxes: list[dict], text_boxes: list[dict]
     ) -> tuple[Optional[list], dict]:
         """Score and select the best candidate box that contains the target face."""
         candidates = person_boxes + text_boxes
@@ -265,10 +265,8 @@ class SeedSelector:
                     cand["score"] += self.config.seeding_iou_bonus
                     cand["details"]["high_iou_pair"] = True
 
-        if not scored_candidates:
-            return None, {}
         winner = max(scored_candidates, key=lambda x: x["score"])
-        return self._xyxy_to_xywh(winner["box"]), {
+        return self._xyxy_to_xywh(winner["box"], frame_rgb.shape), {
             "type": "evidence_based_selection",
             "final_score": winner["score"],
             **winner["details"],
@@ -340,10 +338,16 @@ class SeedSelector:
                 return 0.0
             return max(f.det_score for f in faces_in_box)
 
+        def highest_conf_score(b):
+            # Penalize very low confidence detections even if they are the "highest"
+            if b["conf"] < 0.4:
+                return -1.0
+            return b["conf"]
+
         score_funcs = {
             "Largest Person": lambda b: area(b),
             "Center-most Person": lambda b: -center_dist(b),
-            "Highest Confidence": lambda b: b["conf"],
+            "Highest Confidence": highest_conf_score,
             "Tallest Person": lambda b: height(b),
             "Area x Confidence": lambda b: area(b) * b["conf"],
             "Rule-of-Thirds": lambda b: -thirds_dist(b),
@@ -379,7 +383,7 @@ class SeedSelector:
                             best_face_sim_in_box = sim
                 seed_face_sim = float(best_face_sim_in_box)
 
-        return self._xyxy_to_xywh(best_person["bbox"]), {
+        return self._xyxy_to_xywh(best_person["bbox"], frame_rgb.shape), {
             "type": f"person_{strategy.lower().replace(' ', '_')}",
             "conf": best_person["conf"],
             "seed_face_sim": seed_face_sim if seed_face_sim > 0 else None
@@ -451,9 +455,27 @@ class SeedSelector:
         fallback_box = self.config.seeding_final_fallback_box
         return [int(w * fallback_box[0]), int(h * fallback_box[1]), int(w * fallback_box[2]), int(h * fallback_box[3])]
 
-    def _xyxy_to_xywh(self, box: list) -> list[int]:
-        """Convert box from xyxy to xywh format."""
+    def _xyxy_to_xywh(self, box: list, img_shape: Optional[tuple] = None) -> list[int]:
+        """
+        Convert box from xyxy to xywh format with optional padding and clamping.
+        
+        Args:
+            box: [x1, y1, x2, y2]
+            img_shape: (height, width) for clamping
+        """
         x1, y1, x2, y2 = box
+        
+        # Add 5% padding if we have dimensions
+        if img_shape:
+            h_img, w_img = img_shape[:2]
+            w_box, h_box = x2 - x1, y2 - y1
+            pad_w, pad_h = w_box * 0.05, h_box * 0.05
+            
+            x1 = max(0, x1 - pad_w)
+            y1 = max(0, y1 - pad_h)
+            x2 = min(w_img - 1, x2 + pad_w)
+            y2 = min(h_img - 1, y2 + pad_h)
+
         w = max(1, int(x2 - x1))
         h = max(1, int(y2 - y1))
         return [int(x1), int(y1), w, h]

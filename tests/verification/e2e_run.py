@@ -3,12 +3,16 @@ import sys
 import threading
 import json
 import time
+import shutil
 from pathlib import Path
 from queue import Queue
 from collections import deque
 
+import torch
+import numpy as np
+
 # Add root to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from core.config import Config
 from core.logger import AppLogger
@@ -26,15 +30,44 @@ from core.events import (
 )
 from core.models import Scene
 
+# --- ADDED: LOGGER REDIRECTION ---
+class Logger(object):
+    def __init__(self, filename):
+        self.terminal = sys.stdout
+        self.log = open(filename, "w", encoding="utf-8")
+
+    def write(self, message):
+        self.terminal.write(message)
+        self.log.write(message)
+        self.log.flush()
+
+    def flush(self):
+        self.terminal.flush()
+        self.log.flush()
+
 def run_e2e_verification():
+    output_dir = Path("verification/e2e_output")
+    if output_dir.exists():
+        shutil.rmtree(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Redirect stdout and stderr to terminal_log.txt
+    log_file = output_dir / "terminal_log.txt"
+    sys.stdout = Logger(log_file)
+    sys.stderr = sys.stdout
+    
     print("🚀 Starting E2E Verification with real data...")
+    print(f"📝 Logging to: {log_file}")
     
     config = Config()
     # Disable memory watchdog for E2E test to prevent model unloading
     config.monitoring_memory_critical_threshold_mb = 64000
+    config.log_level = "DEBUG" # Enable verbose logging
     
-    # Disable file logging for dry run
-    logger = AppLogger(config, log_to_file=False)
+    # AppLogger now automatically creates 'run.log' in the output_dir
+    logger = AppLogger(config, log_dir=output_dir, log_to_file=True)
+    print(f"📝 Logs and results will be saved to: {output_dir}")
+    
     progress_queue = Queue()
     cancel_event = threading.Event()
     model_registry = ModelRegistry(logger)
@@ -43,22 +76,16 @@ def run_e2e_verification():
     video_path = "downloads/example clip (2).mp4"
     face_path = "downloads/example face.png"
     
-    output_dir = Path("verification/e2e_output")
-    if output_dir.exists():
-        import shutil
-        shutil.rmtree(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    
     # 1. Extraction
     print("\n--- [STAGE 1: EXTRACTION] ---")
     ext_event = ExtractionEvent(
         source_path=video_path,
-        method="interval",
+        method="every_nth_frame", # CORRECTED: Get every 3rd frame
         interval="1.0",
-        nth_frame=5,
-        max_resolution="720",
+        nth_frame=3,
+        max_resolution="480", # 480p source for high-quality thumbs
         thumbnails_only=True,
-        thumb_megapixels=0.2,
+        thumb_megapixels=0.5, # INCREASED: 0.5MP for better face recognition
         scene_detect=True,
         output_folder=str(output_dir)
     )
@@ -71,7 +98,15 @@ def run_e2e_verification():
     if not ext_result.get("done"):
         print(f"❌ Extraction failed: {ext_result.get('unified_log')}")
         return False
-    print("✅ Extraction complete.")
+    
+    # Debug: Check frame map
+    frame_map_path = output_dir / "frame_map.json"
+    if frame_map_path.exists():
+        frame_map = json.loads(frame_map_path.read_text())
+        print(f"✅ Extraction complete. Mapped {len(frame_map)} frames.")
+    else:
+        print("❌ frame_map.json missing!")
+        return False
     
     # 2. Pre-Analysis
     print("\n--- [STAGE 2: PRE-ANALYSIS] ---")
@@ -107,9 +142,14 @@ def run_e2e_verification():
         compute_phash=True
     )
     
+    # Enable Half-Precision for E2E if CUDA is available
+    if torch.cuda.is_available():
+        print("💡 Enabling half-precision (FP16/BF16) optimizations for verification.")
+        torch.set_float32_matmul_precision("medium") # Balance speed/precision
+    
     pre_ana_gen = execute_pre_analysis(
         pre_ana_event, progress_queue, cancel_event, logger, config, thumbnail_manager, 
-        cuda_available=True, # Assume true for E2E
+        cuda_available=torch.cuda.is_available(),
         model_registry=model_registry
     )
     
@@ -120,6 +160,14 @@ def run_e2e_verification():
     
     scenes = pre_ana_result["scenes"]
     print(f"✅ Pre-analysis complete. Found {len(scenes)} scenes.")
+    
+    # Debug: Print seeding results
+    for i, scene in enumerate(scenes):
+        seed = scene.get("seed_result", {})
+        bbox = seed.get("bbox")
+        details = seed.get("details", {})
+        print(f"  Scene {i}: best_frame={scene.get('best_frame')}, bbox={bbox}, type={details.get('type')}, face_sim={details.get('seed_face_sim')}")
+
     
     # 3. Propagation
     print("\n--- [STAGE 3: MASK PROPAGATION] ---")
@@ -156,6 +204,7 @@ def run_e2e_verification():
     
     # 5. Final Check
     print("\n--- [STAGE 5: FINAL VERIFICATION] ---")
+    
     db_path = output_dir / "metadata.db"
     if db_path.exists():
         print(f"✅ Metadata database found at {db_path}")
@@ -171,6 +220,7 @@ def run_e2e_verification():
         return False
         
     print("\n🎉 E2E VERIFICATION SUCCESSFUL!")
+    print(f"📝 Full terminal log saved to: {log_file}")
     return True
 
 if __name__ == "__main__":

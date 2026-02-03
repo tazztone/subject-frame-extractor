@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-02-03
+### SAM3 API Alignment
+* **Unified Propagation**: Refactored `SAM3Wrapper` and `MaskPropagator` to use the official `propagation_direction="both"` API.
+* Optimized propagation efficiency by eliminating redundant forward/backward passes.
+* Updated `README.md` documentation to reflect the new `propagate` signature.
+
 ## 2025-12-27
 ### UI & UX Overhaul
 * Significantly improved UI visual hierarchy, clarity, and accessibility in `app_ui.py`.
