@@ -42,6 +42,10 @@ This replaces the manual `verification/e2e_run.py` script.
 ```bash
 python -m pytest tests/integration/ -m integration
 ```
+*Note: The integration test includes an automated Quality Verification step (`scripts/verify_quality.py`) that checks for:*
+*   *Mask Yield (>50% frames must have masks)*
+*   *Tracking Stability (warnings for consecutive drops)*
+*   *Database Metrics (validity of NIQE and Face Similarity scores)*
 
 **Run GPU Hardware Tests:**
 Verifies that models load and run on the GPU without OOM or dtype errors.
