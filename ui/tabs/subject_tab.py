@@ -69,12 +69,13 @@ class SubjectTabBuilder:
 
                 # Tab 2: Scan Video (Discovery)
                 with gr.Tab("🔍 Scan Video for People"):
-                    gr.Markdown("*Analyze the video to find people, then click a face to select it.*")
+                    gr.Markdown("### 1. Scan Video\nClick **'Scan Video Now'**. The AI will find people in the footage.")
+                    
                     with gr.Row():
                         self.app._create_component(
                             "find_people_button",
                             "button",
-                            {"value": "🔍 Scan Video Now", "variant": "primary", "scale": 1},
+                            {"value": "🔍 Scan Video Now", "variant": "secondary", "scale": 1},
                         )
                         self.app._create_component(
                             "identity_confidence_slider",
@@ -94,6 +95,7 @@ class SubjectTabBuilder:
 
                     with gr.Group(visible=False) as discovered_people_group:
                         self.app.components["discovered_people_group"] = discovered_people_group
+                        gr.Markdown("### 2. Select Person\n**Click on a face** below to select your subject. A confirmation will appear.")
                         self.app._create_component(
                             "discovered_faces_gallery",
                             "gallery",
@@ -233,7 +235,7 @@ class SubjectTabBuilder:
             "start_pre_analysis_button",
             "button",
             {
-                "value": "🔍 Find & Preview Scenes",
+                "value": "✅ Confirm Subject & Find Scenes (Next Step)",
                 "variant": "primary",
                 "size": "lg",
                 "elem_id": "start_pre_analysis_button",

@@ -27,3 +27,14 @@
 - [x] Verify every UI tab: Source, Subject, Scenes, Metrics, Export.
 - [x] Validate export artifacts (metadata, cropped frames).
 - [x] Update documentation to reflect final changes.
+- [x] Create Linux run script (`scripts/linux_run_app.sh`).
+
+### Phase 5: UI/UX Polish (User Feedback)
+**Status**: ✅ Completed
+**Objective**: Address usability friction points identified during user testing.
+**Tasks**:
+- [x] Remove redundant "Stepper" component (obsolete).
+- [x] Implement auto-refresh for System Logs (remove manual refresh button).
+- [x] Implement auto-save of logs to session output folder (remove manual export button).
+- [x] Add explanatory info for "System Diagnostics".
+- [x] Ensure robust auto-navigation between tabs on step completion.

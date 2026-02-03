@@ -12,3 +12,8 @@
 - **E2E Success**: Verified the entire application workflow via `verification/e2e_run.py`. Confirmed that masks are generated correctly and metadata is accurately stored in SQLite.
 - **Dependency Hygiene**: Fixed `onnx` and `sam3` version conflicts via `pyproject.toml` updates.
 - **Status**: The project is now stable, resource-safe, and passes comprehensive E2E verification.
+
+## 2026-02-03: Linux Support Enhancement
+- **UX/Ease of Use**: Created `scripts/linux_run_app.sh` to mirror the functionality of the Windows `.bat` script.
+- **Environment Optimization**: Configured the script to use `uv run`, ensuring that the correct virtual environment and project settings are always applied without manual activation.
+- **Status**: Improved accessibility for Linux-based developers and users.
