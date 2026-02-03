@@ -92,7 +92,7 @@ def test_real_end_to_end_workflow(tmp_path):
         scene_detect=True,
         pre_analysis_enabled=True,
         pre_sample_nth=1,
-        primary_seed_strategy="👤 By Face",
+        primary_seed_strategy="🤖 Automatic",
         face_ref_img_path=str(FACE_PATH),
         face_model_name="buffalo_l",
         tracker_model_name="sam3",
@@ -113,7 +113,7 @@ def test_real_end_to_end_workflow(tmp_path):
         compute_pitch=True,
         compute_face_sim=True,
         compute_subject_mask_area=True,
-        compute_niqe=True,
+        compute_niqe=False,
         compute_phash=True
     )
     

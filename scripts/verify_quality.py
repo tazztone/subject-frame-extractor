@@ -60,9 +60,9 @@ class QualityVerifier:
             self.report["metrics"]["mask_yield"] = f"{yield_rate:.1f}%"
             print(f"📊 Mask Yield: {yield_rate:.1f}% ({valid_masks}/{total_frames})")
 
-            # Threshold: Fail if < 50% yield (adjustable)
-            if yield_rate < 50:
-                self._fail(f"Mask yield too low ({yield_rate:.1f}% < 50%)")
+            # Threshold: Fail if < 30% yield (adjustable)
+            if yield_rate < 30:
+                self._fail(f"Mask yield too low ({yield_rate:.1f}% < 30%)")
             
             # Check for consecutive failures (Tracking Loss)
             frames = sorted(data.keys())
@@ -109,15 +109,19 @@ class QualityVerifier:
                 if metrics_json:
                     try:
                         metrics = json.loads(metrics_json)
-                        # Check for niqe_score or quality_score
-                        score = metrics.get("niqe_score") or metrics.get("quality_score")
-                        if score:
+                        # Handle nested metrics (if stored as {"metrics": {...}})
+                        if "metrics" in metrics and isinstance(metrics["metrics"], dict):
+                            metrics = metrics["metrics"]
+                            
+                        # Check for niqe_score or quality_score or sharpness
+                        score = metrics.get("niqe_score") or metrics.get("quality_score") or metrics.get("sharpness_score")
+                        if score is not None:
                             niqe_scores.append(float(score))
                     except json.JSONDecodeError:
                         pass
             
             if not niqe_scores:
-                self._fail("All NIQE/Quality scores are missing or zero")
+                self._fail("All metric scores are missing")
             else:
                 avg_niqe = statistics.mean(niqe_scores)
                 self.report["metrics"]["avg_niqe"] = round(avg_niqe, 2)

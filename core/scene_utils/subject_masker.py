@@ -349,7 +349,18 @@ class SubjectMasker:
         try:
             from core.utils import _to_json_safe
             json_safe_metadata = _to_json_safe(mask_metadata)
-            with (self.mask_dir.parent / "mask_metadata.json").open("w", encoding="utf-8") as f:
+            
+            mask_metadata_path = self.mask_dir.parent / "mask_metadata.json"
+            if mask_metadata_path.exists():
+                try:
+                    with mask_metadata_path.open("r", encoding="utf-8") as f:
+                        existing_data = json.load(f)
+                    existing_data.update(json_safe_metadata)
+                    json_safe_metadata = existing_data
+                except Exception as e:
+                    self.logger.warning(f"Failed to load existing mask metadata: {e}")
+
+            with mask_metadata_path.open("w", encoding="utf-8") as f:
                 json.dump(json_safe_metadata, f, indent=2)
             self.logger.info("Saved mask metadata.")
         except Exception:

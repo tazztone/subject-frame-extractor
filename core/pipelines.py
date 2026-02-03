@@ -72,15 +72,19 @@ def _process_ffmpeg_stream(stream, tracker: Optional["AdvancedProgressTracker"],
     stream.close()
 
 
-def _process_ffmpeg_showinfo(stream) -> tuple[list, str]:
-    """Parses FFmpeg stderr for 'showinfo' frame numbers."""
+def _process_ffmpeg_showinfo(stream, fps: float) -> tuple[list, str]:
+    """Parses FFmpeg stderr for 'showinfo' frame timestamps to map back to original frame indices."""
     frame_numbers = []
     stderr_lines = []
     for line in iter(stream.readline, ""):
         stderr_lines.append(line)
-        match = re.search(r" n:\s*(\d+)", line)
+        # Parse pts_time (presentation timestamp in seconds)
+        match = re.search(r"pts_time:\s*(\d+(?:\.\d+)?)", line)
         if match:
-            frame_numbers.append(int(match.group(1)))
+            pts_time = float(match.group(1))
+            # Calculate original frame index
+            original_frame_idx = int(round(pts_time * fps))
+            frame_numbers.append(original_frame_idx)
     stream.close()
     return frame_numbers, "".join(stderr_lines)
 
@@ -163,7 +167,8 @@ def run_ffmpeg_extraction(
 
         def process_stderr_and_store():
             nonlocal stderr_results
-            frame_map, full_stderr = _process_ffmpeg_showinfo(process.stderr)
+            # Pass FPS for frame index calculation
+            frame_map, full_stderr = _process_ffmpeg_showinfo(process.stderr, fps)
             stderr_results["frame_map"] = frame_map
             stderr_results["full_stderr"] = full_stderr
 
