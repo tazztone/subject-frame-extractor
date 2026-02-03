@@ -32,7 +32,7 @@ FACE_PATH = Path("downloads/example face.png")
 @pytest.mark.slow
 def test_real_end_to_end_workflow(tmp_path):
     """
-    Automated version of verification/e2e_run.py.
+    Automated version of tests/verification/e2e_run.py.
     Runs the full extraction -> pre-analysis -> propagation -> analysis pipeline
     on a real video file.
     """
@@ -45,9 +45,10 @@ def test_real_end_to_end_workflow(tmp_path):
 
     print(f"\n🚀 Starting E2E Verification with real data at {tmp_path}...")
     
-    # Use tmp_path for output to avoid cluttering the repo, 
-    # but we can optionally use a fixed path if debugging is needed.
-    output_dir = tmp_path / "e2e_output"
+    # Use a fixed path for debugging artifacts
+    output_dir = Path(__file__).parent / "e2e_output_debug"
+    if output_dir.exists():
+        shutil.rmtree(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     
     config = Config()
@@ -65,9 +66,9 @@ def test_real_end_to_end_workflow(tmp_path):
     print("\n--- [STAGE 1: EXTRACTION] ---")
     ext_event = ExtractionEvent(
         source_path=str(VIDEO_PATH),
-        method="interval",
+        method="all",
         interval="1.0",
-        nth_frame=5,
+        nth_frame=1,
         max_resolution="720",
         thumbnails_only=True,
         thumb_megapixels=0.2,
@@ -99,7 +100,7 @@ def test_real_end_to_end_workflow(tmp_path):
         best_frame_strategy="Largest Person",
         enable_face_filter=True,
         enable_subject_mask=True,
-        min_mask_area_pct=1.0,
+        min_mask_area_pct=0.1,
         sharpness_base_scale=2500.0,
         edge_strength_base_scale=100.0,
         compute_quality_score=True,

@@ -26,8 +26,10 @@ def verify_ui_simple():
         time.sleep(10)
 
         print("Taking screenshot...")
-        page.screenshot(path="verification/simple_check.png")
-        print("Screenshot saved.")
+        from pathlib import Path
+        output_path = Path(__file__).parent / "simple_check.png"
+        page.screenshot(path=str(output_path))
+        print(f"Screenshot saved to {output_path}")
 
         title = page.title()
         print(f"Page Title: {title}")

@@ -222,3 +222,4 @@ models/*
 logs/*
 verification/e2e_output/
 tests/integration/e2e_output_debug/
+tests/verification/e2e_output/

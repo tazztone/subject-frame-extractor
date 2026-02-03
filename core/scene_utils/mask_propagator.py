@@ -5,6 +5,7 @@ MaskPropagator class for propagating segmentation masks across video frames.
 from __future__ import annotations
 
 import threading
+from pathlib import Path
 from queue import Queue
 from typing import TYPE_CHECKING, Optional
 
@@ -121,57 +122,75 @@ class MaskPropagator:
             tracker.set_stage(f"Propagating masks for {len(frame_numbers)} frames")
 
         try:
-            # Initialize SAM3 with the downscaled video directly
-            self.dam_tracker.init_video(video_path)
+            # Load all frames for the scene directly as PIL images to ensure perfect sync
+            from PIL import Image
+            pil_frames = []
+            for fn in frame_numbers:
+                fname = self.frame_map.get(fn)
+                if not fname:
+                    continue
+                t_path = Path(video_path).parent / "thumbs" / f"{Path(fname).stem}.webp"
+                if t_path.exists():
+                    pil_frames.append(Image.open(t_path).convert("RGB"))
+            
+            if not pil_frames:
+                self.logger.error("No thumbnails found to initialize tracker.")
+                return {fn: None for fn in frame_numbers}, {fn: 0.0 for fn in frame_numbers}, {fn: True for fn in frame_numbers}, {fn: "No frames" for fn in frame_numbers}
 
-            # Add primary seed bbox prompt
-            seed_mask = self.dam_tracker.add_bbox_prompt(frame_idx=seed_frame_num, obj_id=1, bbox_xywh=bbox_xywh, img_size=(w, h))
+            self.logger.info(f"Initializing SAM3 with {len(pil_frames)} in-memory frames.")
+            self.dam_tracker.init_video(pil_frames)
+
+            # Re-map frame numbers to 0-based indices for SAM3 session
+            # Since we passed a list, SAM3 index i corresponds to frame_numbers[i]
+            sam3_to_orig = {i: fn for i, fn in enumerate(frame_numbers)}
+            orig_to_sam3 = {fn: i for i, fn in enumerate(frame_numbers)}
+
+            # Add primary seed bbox prompt using re-mapped index
+            seed_sam3_idx = orig_to_sam3.get(seed_frame_num, 0)
+            seed_mask = self.dam_tracker.add_bbox_prompt(
+                frame_idx=seed_sam3_idx, obj_id=1, bbox_xywh=bbox_xywh, img_size=(w, h)
+            )
             if seed_mask is not None:
                 all_propagated[seed_frame_num] = seed_mask
 
             # Add any additional seed prompts
             if additional_seeds:
                 for seed in additional_seeds:
-                    extra_mask = self.dam_tracker.add_bbox_prompt(
-                        frame_idx=seed["frame"], obj_id=1, bbox_xywh=seed["bbox"], img_size=(w, h)
-                    )
-                    if extra_mask is not None:
-                        all_propagated[seed["frame"]] = extra_mask
+                    idx = orig_to_sam3.get(seed["frame"])
+                    if idx is not None:
+                        extra_mask = self.dam_tracker.add_bbox_prompt(
+                            frame_idx=idx, obj_id=1, bbox_xywh=seed["bbox"], img_size=(w, h)
+                        )
+                        if extra_mask is not None:
+                            all_propagated[seed["frame"]] = extra_mask
 
             if tracker:
                 tracker.step(1, desc="Prompts added")
 
-            # Collect all propagated masks
-            # (Initialized above)
-
-            # Collect seed list
-            all_seed_frames = [seed_frame_num]
-            if additional_seeds:
-                all_seed_frames.extend([s["frame"] for s in additional_seeds])
-            all_seed_frames = sorted(list(set(all_seed_frames)))
-
-            # Start propagation from the earliest seed for forward, and latest for backward
-            # Actually SAM3 can start from any index. We use the primary seed as specified.
-            start_idx = seed_frame_num
+            # Start propagation from the primary seed's re-mapped index
+            start_idx = seed_sam3_idx
 
             # Propagate forward
-            for frame_idx, obj_id, pred_mask in self.dam_tracker.propagate(start_idx=start_idx, reverse=False):
+            for sam3_idx, obj_id, pred_mask in self.dam_tracker.propagate(start_idx=start_idx, reverse=False):
                 if self.cancel_event.is_set():
                     break
                 if self.model_registry:
                     self.model_registry.check_memory_usage(self.config)
-                all_propagated[frame_idx] = pred_mask
+                orig_fn = sam3_to_orig.get(sam3_idx)
+                if orig_fn is not None:
+                    all_propagated[orig_fn] = pred_mask
                 if tracker:
                     tracker.step(1, desc="Propagation (→)")
 
             # Propagate backward
-            for frame_idx, obj_id, pred_mask in self.dam_tracker.propagate(start_idx=start_idx, reverse=True):
+            for sam3_idx, obj_id, pred_mask in self.dam_tracker.propagate(start_idx=start_idx, reverse=True):
                 if self.cancel_event.is_set():
                     break
                 if self.model_registry:
                     self.model_registry.check_memory_usage(self.config)
-                if frame_idx not in all_propagated:
-                    all_propagated[frame_idx] = pred_mask
+                orig_fn = sam3_to_orig.get(sam3_idx)
+                if orig_fn is not None and orig_fn not in all_propagated:
+                    all_propagated[orig_fn] = pred_mask
                 if tracker:
                     tracker.step(1, desc="Propagation (←)")
 

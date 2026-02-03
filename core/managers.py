@@ -329,12 +329,12 @@ class SAM3Wrapper:
         self.session_id = None
         self._temp_dir = None
 
-    def init_video(self, video_path: str):
+    def init_video(self, video_resource: Union[str, list]):
         """
-        Initialize inference session with video or frame directory.
+        Initialize inference session with video, frame directory, or list of images.
 
         Args:
-            video_path: Path to video file or directory of JPEG frames
+            video_resource: Path to video file, directory of JPEG frames, or list of PIL Images
 
         Returns:
             session_id
@@ -348,7 +348,7 @@ class SAM3Wrapper:
         response = self.predictor.handle_request(
             request=dict(
                 type="start_session",
-                resource_path=str(video_path),
+                resource_path=video_resource,
             )
         )
         self.session_id = response["session_id"]
@@ -390,11 +390,17 @@ class SAM3Wrapper:
             return np.zeros((h, w), dtype=bool)
 
         # Convert to relative coordinates (0-1) in xywh format
-        # Ensure strict 0.0-1.0 range for SAM3 assertion
-        rel_x = max(0.0, min(1.0, x1 / w))
-        rel_y = max(0.0, min(1.0, y1 / h))
-        rel_w = max(0.0, min(1.0, new_w / w))
-        rel_h = max(0.0, min(1.0, new_h / h))
+        # Ensure strict 0.0-1.0 range for SAM3 assertions
+        rel_x = float(max(0.0, min(1.0, x1 / w)))
+        rel_y = float(max(0.0, min(1.0, y1 / h)))
+        rel_w = float(max(0.0, min(1.0, new_w / w)))
+        rel_h = float(max(0.0, min(1.0, new_h / h)))
+
+        # Handle edge case where rel_x + rel_w > 1.0 due to rounding
+        if rel_x + rel_w > 1.0:
+            rel_w = 1.0 - rel_x
+        if rel_y + rel_h > 1.0:
+            rel_h = 1.0 - rel_y
 
         rel_box = [rel_x, rel_y, rel_w, rel_h]
 

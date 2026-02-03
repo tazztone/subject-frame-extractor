@@ -140,6 +140,9 @@ class SeedSelector:
         text_boxes = self._get_text_prompt_boxes(frame_rgb, params)[0]
         best_box, best_details = self._score_and_select_candidate(target_face, person_boxes, text_boxes)
         if best_box:
+            # Propagate face similarity if available
+            if "seed_face_sim" in details:
+                best_details["seed_face_sim"] = details["seed_face_sim"]
             self.logger.success("Evidence-based seed selected.", extra=best_details)
             return best_box, best_details
         self.logger.warning("No high-confidence body box found, expanding face box as fallback.")
@@ -350,9 +353,36 @@ class SeedSelector:
         }
         score = score_funcs.get(strategy, score_funcs["Largest Person"])
         best_person = sorted(boxes, key=lambda b: (score(b), b["conf"], area(b)), reverse=True)[0]
+        
+        # Post-selection: Try to calculate face similarity for the chosen person
+        seed_face_sim = 0.0
+        if self.reference_embedding is not None and self.face_analyzer:
+            if not all_faces:
+                try:
+                    all_faces = self.face_analyzer.get(cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR))
+                except Exception as e:
+                    self.logger.warning(f"Face analysis failed during post-selection: {e}")
+                    all_faces = []
+            
+            if all_faces:
+                person_bbox = best_person["bbox"]
+                best_face_sim_in_box = 0.0
+                for face in all_faces:
+                    # Check if face center is inside person bbox
+                    # InsightFace bbox is usually xyxy
+                    face_cx = (face.bbox[0] + face.bbox[2]) / 2
+                    face_cy = (face.bbox[1] + face.bbox[3]) / 2
+                    if (person_bbox[0] <= face_cx <= person_bbox[2] and 
+                        person_bbox[1] <= face_cy <= person_bbox[3]):
+                        sim = np.dot(face.normed_embedding, self.reference_embedding)
+                        if sim > best_face_sim_in_box:
+                            best_face_sim_in_box = sim
+                seed_face_sim = float(best_face_sim_in_box)
+
         return self._xyxy_to_xywh(best_person["bbox"]), {
             "type": f"person_{strategy.lower().replace(' ', '_')}",
             "conf": best_person["conf"],
+            "seed_face_sim": seed_face_sim if seed_face_sim > 0 else None
         }
 
     # TODO: Cache transform for reuse across multiple frames
