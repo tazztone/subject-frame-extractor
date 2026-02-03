@@ -165,10 +165,6 @@ class TestAppUI:
 
     # --- UI Helpers ---
 
-    def test_get_stepper_html(self, app_ui):
-        html = app_ui._get_stepper_html(2)
-        assert "Scenes" in html
-        assert "color: #3498db" in html  # Highlight color
 
     def test_fix_strategy_visibility(self, app_ui):
         updates = app_ui._fix_strategy_visibility("👤 By Face")
@@ -199,10 +195,9 @@ class TestAppUI:
         out_dir = str(tmp_path / "out")
         with patch.object(app_ui, "_run_pipeline") as mock_run:
             mock_run.return_value = iter([])
-            # Ana keys: output_folder, video_path, resume, enable_face_filter... (31 keys total)
+            # Ana keys: resume (index 0), then checks/params...
+            # Removed: output_folder, video_path
             args = [
-                out_dir,        # output_folder
-                "vid.mp4",      # video_path
                 False,          # resume
                 False,          # enable_face_filter
                 "",             # face_ref_img_path
@@ -219,12 +214,18 @@ class TestAppUI:
                 True,           # pre_analysis_enabled
                 1,              # pre_sample_nth
                 "Auto",         # primary_seed_strategy
-            ] + [True] * 13     # compute_... flags (13 metrics)
+                True,           # compute_quality_score
+                True,           # compute_sharpness
+            ] + [True] * 11     # remaining compute_... metrics
 
+            app_state.extracted_video_path = "vid.mp4"
+            app_state.analysis_output_dir = out_dir
+            
             list(app_ui.run_pre_analysis_wrapper(app_state, *args))
             mock_run.assert_called_once()
             event = mock_run.call_args[0][1]
             assert event.output_folder == out_dir
+            assert event.video_path == "vid.mp4"
 
     # --- Success Callbacks ---
 

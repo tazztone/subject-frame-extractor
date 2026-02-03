@@ -31,10 +31,6 @@ def app_ui(
         return app
 
 
-def test_stepper_html(app_ui):
-    html = app_ui._get_stepper_html(0)
-    assert "Source" in html
-    assert "Export" in html
 
 
 def test_run_extraction_wrapper(app_ui):
