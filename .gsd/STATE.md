@@ -4,11 +4,11 @@
 - **Current Milestone**: v2.1-stabilized [COMPLETE]
 - **Status**: ✅ Production Ready
 
-## Last Session Summary (2026-02-03)
-Completed the final stabilization milestone. Verified all 315 tests, implemented memory management, refactored pipelines, and added a native Linux run script.
-- **Milestone Archived**: Summary generated and phases moved to `.gsd/milestones/v2.1-stabilized/`.
-- **Documentation**: Updated `README.md` and `TODO.md`.
-- **System Health**: 100% test pass rate.
+## Last Session Summary (2026-02-04)
+Finalized the stabilization milestone. Resolved a critical SAM3 tracking loss issue by implementing text-hinted grounding and increasing video resolution. Verified 100% mask yield in real-world integration tests.
+- **Milestone Archived**: Summary generated and documents finalized.
+- **Documentation**: Updated `SPEC.md`, `ROADMAP.md`, and `TODO.md`.
+- **System Health**: 100% test pass rate + 100% mask yield in E2E.
 
 ## Current Position
 - **Milestone**: None (Waiting for next)

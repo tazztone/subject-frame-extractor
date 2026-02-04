@@ -1,6 +1,6 @@
 # SPEC.md — Project Specification
 
-> **Status**: 
+> **Status**: FINALIZED
 
 ## Vision
 Stabilize the Subject Frame Extractor by resolving critical regressions, refactoring core pipelines for maintainability, and implementing automated memory management to ensure a robust user experience and best practice coding standards.

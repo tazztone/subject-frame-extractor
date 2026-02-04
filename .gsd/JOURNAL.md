@@ -17,3 +17,13 @@
 - **UX/Ease of Use**: Created `scripts/linux_run_app.sh` to mirror the functionality of the Windows `.bat` script.
 - **Environment Optimization**: Configured the script to use `uv run`, ensuring that the correct virtual environment and project settings are always applied without manual activation.
 - **Status**: Improved accessibility for Linux-based developers and users.
+
+## 2026-02-04: Critical SAM3 Tracking Fix & Milestone Completion
+- **The Problem**: Discovered that SAM3 grounding mode (used for box prompts) was losing tracking immediately after the seed frame, resulting in only a 1.3% mask yield.
+- **The Fix**: 
+    1. Unlocked tracking by providing a default text hint (`"person"`) in the `add_prompt` call. Grounding mode requires a text prompt to enable `allow_new_detections` on non-prompted frames.
+    2. Increased lowres video resolution from 240p to 360p to provide better tracking features.
+    3. Optimized `MaskPropagator` to use a single bidirectional pass.
+- **Verification**: Integration tests now pass with **100.0% mask yield** (149/149 frames) on real video data.
+- **Status**: Milestone `v2.1-stabilized` is now fully complete and verified.
+
