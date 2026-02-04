@@ -53,7 +53,9 @@ class TestMainWorkflow:
         page.get_by_role("button", name="🚀 Start Extraction").click()
 
         # Wait for "complete" in the status area (always visible)
-        expect(page.locator("body")).to_contain_text("Extraction Complete", timeout=30000)
+        expect(page.locator("#unified_status")).to_contain_text("Extraction Complete", timeout=30000)
+        # Also verify the success card is present
+        expect(page.locator(".success-card")).to_be_visible()
         print("  ✓ Extraction Complete")
 
         # 2. Define Subject (Pre-Analysis)

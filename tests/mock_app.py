@@ -60,9 +60,10 @@ def mock_extraction_run(self, tracker=None):
     if tracker:
         tracker.start(10, desc="Mock Extraction")
         for i in range(10):
-            time.sleep(0.01)
+            time.sleep(0.1)
             tracker.step(1)
-        tracker.done_stage("Mock Extraction Complete")
+        tracker.set_stage("Extraction Complete")
+        tracker.done_stage()
 
     # Create fake output
     output_dir = os.path.join(self.config.downloads_dir, "mock_video")
