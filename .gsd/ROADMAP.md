@@ -22,6 +22,17 @@
 **Status**: ✅ Complete
 **Objective**: Rewrite `TESTING.md` and ensure 100% test pass rate in new structure.
 
+### Phase 4: Gap Closure
+**Status**: ⬜ Not Started
+**Objective**: Address UI test regressions and stabilization issues identified in @v0.9.0 audit.
+
+**Tasks:**
+- [ ] Synchronize UI test selectors with current Gradio labels
+- [ ] Isolate slow accessibility/UX audits with `@pytest.mark.slow`
+- [ ] Update `mock_app.py` for full `ApplicationState` compatibility
+- [ ] Verify full unit + fast-ui suite pass with zero failures
+
+
 ---
 
 ## Milestone: v2.1-stabilized

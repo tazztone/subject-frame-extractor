@@ -1,24 +1,22 @@
 # STATE
 
 ## Project Status
-- **Current Milestone**: v2.1-stabilized [COMPLETE]
-- **Status**: ✅ Production Ready
-
-## Last Session Summary (2026-02-04)
-Finalized the stabilization milestone. Resolved a critical SAM3 tracking loss issue by implementing text-hinted grounding and increasing video resolution. Verified 100% mask yield in real-world integration tests.
-- **Milestone Archived**: Summary generated and documents finalized.
-- **Documentation**: Updated `SPEC.md`, `ROADMAP.md`, and `TODO.md`.
-- **System Health**: 100% test pass rate + 100% mask yield in E2E.
+- **Current Milestone**: v0.9.0-testing-stabilization
+- **Phase**: Phase 4: Gap Closure
+- **Status**: 🟢 In Progress
 
 ## Current Position
-## Current Position
-## Current Position
-## Current Position
-- **Milestone**: v0.9.0-testing-stabilization [COMPLETE]
-- **Phase**: Complete
-- **Status**: Test Structure Reorganized
+- **Milestone**: v0.9.0-testing-stabilization
+- **Phase**: Phase 4: Gap Closure
+- **Status**: Addressing UI test regressions and stabilization issues.
+
+## Gap Closure Mode
+Addressing UI test regressions and stabilization issues identified in @v0.9.0 audit.
+- [ ] Synchronize UI test selectors
+- [ ] Isolate slow audits
+- [ ] Update mock_app state
 
 ## Next Steps
-1. Hand off the project to the user.
-2. Monitor future feature requests.
-3. `/new-milestone` when ready for new development.
+1. Synchronize UI test selectors with current Gradio labels in `tests/ui/`.
+2. Update `mock_app` to populated `application_state`.
+3. Perform final verification of unit + fast-ui tests.
