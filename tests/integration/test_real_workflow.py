@@ -25,7 +25,7 @@ from core.events import (
 )
 
 # Constants from the manual script
-VIDEO_PATH = Path("downloads/example clip (2).mp4")
+VIDEO_PATH = Path("downloads/example clip 720p 2x.mov")
 FACE_PATH = Path("downloads/example face.png")
 
 @pytest.mark.integration
