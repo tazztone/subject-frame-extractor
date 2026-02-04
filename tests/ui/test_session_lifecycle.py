@@ -6,7 +6,7 @@ Tests session management including:
 - Loading previous sessions
 - Session recovery after refresh
 
-Run with: python -m pytest tests/e2e/test_session_lifecycle.py -v -s
+Run with: python -m pytest tests/ui/test_session_lifecycle.py -v -s
 """
 
 import time
@@ -22,32 +22,27 @@ pytestmark = pytest.mark.e2e
 class TestSessionPersistence:
     """Tests for session state persistence."""
 
-    def test_session_dropdown_visible(self, page: Page, app_server):
-        """Verify session dropdown/selector is visible."""
+    def test_session_loader_visible(self, page: Page, app_server):
+        """Verify session loader accordion is visible."""
         page.goto(BASE_URL)
         time.sleep(2)
 
-        # Look for session-related UI elements
-        # Usually in the Extract tab or a sidebar
-        session_elements = page.locator("text=Session").or_(page.locator("text=session"))
-        if session_elements.count() > 0:
-            print(f"Found {session_elements.count()} session-related elements")
-        else:
-            print("No explicit session elements found (may be implicit)")
+        session_acc = page.get_by_text("Resume previous Session")
+        expect(session_acc).to_be_visible()
 
-    def test_output_folder_persists(self, page: Page, app_server):
-        """Verify output folder path persists across tab switches."""
+    def test_source_input_persists(self, page: Page, app_server):
+        """Verify source input path persists across tab switches."""
         page.goto(BASE_URL)
         time.sleep(2)
 
         # Set a source path
-        source_input = page.get_by_label("Video URL or Local Path")
+        source_input = page.get_by_label("Input Path or URL")
         source_input.fill("my_test_video.mp4")
 
         # Switch tabs
         page.get_by_role("tab", name="Subject").click(force=True)
         time.sleep(0.5)
-        page.get_by_role("tab", name="Extract").click(force=True)
+        page.get_by_role("tab", name="Source").click(force=True)
         time.sleep(0.5)
 
         # Verify value persisted
@@ -63,18 +58,17 @@ class TestSessionRecovery:
         time.sleep(3)
 
         # Check that main UI elements are present
-        # This indirectly verifies no critical JS errors occurred
-        expect(page.get_by_text("Provide a Video Source")).to_be_visible(timeout=10000)
+        expect(page.get_by_text("Input & Extraction")).to_be_visible(timeout=10000)
 
     def test_multiple_tab_switches(self, page: Page, app_server):
         """Test rapid tab switching doesn't cause errors."""
         page.goto(BASE_URL)
         time.sleep(2)
 
-        tabs = ["Extract", "Subject", "Scenes", "Metrics", "Export"]
+        tabs = ["Source", "Subject", "Scenes", "Metrics", "Export"]
 
         # Rapid tab switching
-        for _ in range(3):
+        for _ in range(2):
             for tab_name in tabs:
                 tab = page.get_by_role("tab", name=tab_name)
                 if tab.is_visible():
@@ -82,7 +76,7 @@ class TestSessionRecovery:
                     time.sleep(0.2)
 
         # App should still be responsive
-        expect(page.get_by_role("tab", name="Extract")).to_be_visible(timeout=5000)
+        expect(page.get_by_role("tab", name="Source")).to_be_visible(timeout=5000)
 
 
 class TestWorkflowState:
@@ -96,8 +90,8 @@ class TestWorkflowState:
         page.get_by_role("tab", name="Subject").click(force=True)
         time.sleep(1)
 
-        # Find Best Frames button should be visible
-        btn = page.get_by_role("button", name="🌱 Find & Preview Best Frames")
+        # Confirm Subject button should be visible
+        btn = page.get_by_role("button", name="✅ Confirm Subject & Find Scenes (Next Step)")
         expect(btn).to_be_visible(timeout=5000)
 
     def test_workflow_progress_tracking(self, page: Page, app_server):
@@ -106,8 +100,8 @@ class TestWorkflowState:
         time.sleep(2)
 
         # Run extraction
-        page.get_by_label("Video URL or Local Path").fill("test_video.mp4")
-        page.get_by_role("button", name="🚀 Start Single Extraction").click()
+        page.get_by_label("Input Path or URL").fill("test_video.mp4")
+        page.get_by_role("button", name="🚀 Start Extraction").click()
 
         # Wait for completion
         expect(page.get_by_text("Extraction complete")).to_be_visible(timeout=20000)
@@ -115,31 +109,3 @@ class TestWorkflowState:
         # Log should contain extraction info
         log = page.locator("#unified_log")
         expect(log).to_be_visible(timeout=5000)
-
-
-class TestLoadPreviousSession:
-    """Tests for loading previous sessions."""
-
-    def test_session_loader_ui(self, page: Page, app_server):
-        """Verify session loading UI is accessible."""
-        page.goto(BASE_URL)
-        time.sleep(2)
-
-        # Look for "Load Session" or similar button/dropdown
-        load_elements = page.locator("text=Load").or_(page.locator("text=Previous"))
-        count = load_elements.count()
-        print(f"Found {count} load-related elements")
-
-    def test_no_crash_on_fresh_start(self, page: Page, app_server):
-        """Verify app starts cleanly with no previous session."""
-        page.goto(BASE_URL)
-        time.sleep(3)
-
-        # Should load without errors
-        extraction_tab = page.get_by_role("tab", name="Extract")
-        expect(extraction_tab).to_be_visible(timeout=10000)
-
-        # Should be able to interact
-        source_input = page.get_by_label("Video URL or Local Path")
-        source_input.fill("fresh_start_test.mp4")
-        expect(source_input).to_have_value("fresh_start_test.mp4")

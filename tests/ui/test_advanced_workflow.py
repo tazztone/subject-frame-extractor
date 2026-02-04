@@ -21,25 +21,20 @@ class TestAdvancedWorkflow:
         Verify that users cannot proceed to later stages without completing earlier ones.
         """
         page.goto(app_server_url)
-        expect(page.get_by_role("heading", name="Frame Extractor & Analyzer")).to_be_visible(timeout=30000)
+        expect(page.get_by_text("Frame Extractor & Analyzer v2.0")).to_be_visible(timeout=30000)
 
         # Try to go to Subject tab immediately
         page.get_by_role("tab", name="Subject").click()
 
         # Click "Pre-Analyze Scenes"
-        try:
-            pre_analyze_btn = page.get_by_role("button", name="🌱 Find & Preview Best Frames")
-        except:
-            pre_analyze_btn = page.get_by_role("button", name="Pre-Analyze Scenes")
+        pre_analyze_btn = page.get_by_role("button", name="✅ Confirm Subject & Find Scenes (Next Step)")
 
         pre_analyze_btn.click(force=True)
 
         # Check logs. Must open accordion first.
-        page.get_by_text("System Logs").click()
+        page.get_by_text(re.compile("System Logs")).click()
 
         # Assert that an error is logged.
-        # Since exact text might vary between mock implementation and real app,
-        # we check for "Error" keyword which is standard for logged exceptions.
         log_area = page.locator(".log-container")
         expect(log_area).to_contain_text("Error", timeout=10000)
 
@@ -48,26 +43,23 @@ class TestAdvancedWorkflow:
         Verify that changing extraction settings works in the UI.
         """
         page.goto(app_server_url)
-        expect(page.get_by_role("heading", name="Frame Extractor & Analyzer")).to_be_visible(timeout=30000)
+        expect(page.get_by_text("Frame Extractor & Analyzer v2.0")).to_be_visible(timeout=30000)
 
-        page.get_by_label("Video URL or Local Path").fill("test_advanced.mp4")
+        page.get_by_label("Input Path or URL").fill("test_advanced.mp4")
 
-        try:
-            extract_btn = page.get_by_role("button", name="🚀 Start Single Extraction")
-        except:
-            extract_btn = page.get_by_role("button", name="Extract Frames")
+        extract_btn = page.get_by_role("button", name="🚀 Start Extraction")
 
         extract_btn.click()
 
         # Check unified_status (always visible)
-        expect(page.locator("body")).to_contain_text("Frame Extraction Complete", timeout=30000)
+        expect(page.locator("body")).to_contain_text("Extraction complete", timeout=30000)
 
     def test_filtering_ui(self, page: Page, app_server_url):
         """
         Test the Metrics/Filtering tab UI controls.
         """
         page.goto(app_server_url)
-        expect(page.get_by_role("heading", name="Frame Extractor & Analyzer")).to_be_visible(timeout=30000)
+        expect(page.get_by_text("Frame Extractor & Analyzer v2.0")).to_be_visible(timeout=30000)
 
         page.get_by_role("tab", name="Export").click()
 

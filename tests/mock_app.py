@@ -135,6 +135,7 @@ def mock_propagation_execution(
         "output_dir": event.output_folder,
         "done": True,
         "scenes": event.scenes,  # Pass back scenes
+        "metadata_path": os.path.join(event.output_folder, "metadata.db") # Add for compatibility
     }
 
 
@@ -161,11 +162,12 @@ def mock_analysis_execution(
 
 
 # Apply patches
+import ui.app_ui
 core.pipelines.ExtractionPipeline._run_impl = mock_extraction_run
 # We mock the `execute_*` functions directly as they are what the UI calls via `_run_pipeline`
-core.pipelines.execute_pre_analysis = mock_pre_analysis_execution
-core.pipelines.execute_propagation = mock_propagation_execution
-core.pipelines.execute_analysis = mock_analysis_execution
+core.pipelines.execute_pre_analysis = ui.app_ui.execute_pre_analysis = mock_pre_analysis_execution
+core.pipelines.execute_propagation = ui.app_ui.execute_propagation = mock_propagation_execution
+core.pipelines.execute_analysis = ui.app_ui.execute_analysis = mock_analysis_execution
 # Patch download_model to avoid network calls
 core.utils.download_model = MagicMock()
 core.managers.download_model = MagicMock()
