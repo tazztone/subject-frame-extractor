@@ -455,7 +455,9 @@ class AppUI:
             with gr.Row():
                 with gr.Column(scale=2):
                     self._create_component(
-                        "unified_status", "markdown", {"label": "📊 Status", "value": "Welcome! Ready to start."}
+                        "unified_status",
+                        "markdown",
+                        {"label": "📊 Status", "value": "Welcome! Ready to start.", "elem_id": "unified_status"},
                     )
                     # self.components['progress_bar'] = gr.Progress()
                     self._create_component(
