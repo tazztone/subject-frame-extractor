@@ -297,7 +297,7 @@ uv run pytest tests/
 ### 🟡 Layer 2: End-to-End (E2E) Verification
 Validates the full processing pipeline using real video data and ML models (no mocks). This ensures that FFmpeg, SAM3, and InsightFace are working correctly together.
 ```bash
-uv run python verification/e2e_run.py
+uv run python tests/verification/e2e_run.py
 ```
 *   **Requires**: `downloads/example clip (2).mp4` and `downloads/example face.png`.
 *   **Output**: Checks for valid `metadata.db` and generated masks in `verification/e2e_output`.
