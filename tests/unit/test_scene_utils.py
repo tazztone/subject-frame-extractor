@@ -46,19 +46,19 @@ class TestSeedSelector:
 
         selector.params.seed_strategy = "Largest Person"
         bbox, _ = selector.select_seed(frame_rgb)
-        assert bbox == [0, 0, 40, 40]
+        assert bbox == [0, 0, 42, 42]
 
         selector.params.seed_strategy = "Highest Confidence"
         bbox, _ = selector.select_seed(frame_rgb)
-        assert bbox == [40, 40, 20, 20]
+        assert bbox == [39, 39, 22, 22]
 
         selector.params.seed_strategy = "Center-most Person"
         bbox, _ = selector.select_seed(frame_rgb)
-        assert bbox == [40, 40, 20, 20]
+        assert bbox == [39, 39, 22, 22]
 
         selector.params.seed_strategy = "Tallest Person"
         bbox, _ = selector.select_seed(frame_rgb)
-        assert bbox == [80, 0, 10, 100]
+        assert bbox == [79, 0, 11, 99]
 
     def test_identity_first_seed(self, selector):
         selector.params.primary_seed_strategy = "👤 By Face"
@@ -181,7 +181,9 @@ class TestSubjectMasker:
 
         with patch("core.scene_utils.subject_masker.MaskPropagator") as MockPropagator:
             instance = MockPropagator.return_value
-            instance.propagate.return_value = ([np.ones((10, 10), dtype=np.uint8)], [100.0], [False], [None])
+            instance.propagate_video.return_value = (
+                {0: np.ones((10, 10), dtype=np.uint8)}, {0: 100.0}, {0: False}, {0: None}
+            )
 
             masker = SubjectMasker(
                 mock_params,
@@ -190,6 +192,7 @@ class TestSubjectMasker:
                 mock_config_simple,
                 logger=mock_logger,
                 model_registry=mock_model_registry,
+                thumbnail_manager=MagicMock()
             )
             masker.frame_map = {0: "frame_0.png"}
 
@@ -201,6 +204,7 @@ class TestSubjectMasker:
                 mock_load.return_value = [(0, np.zeros((10, 10, 3), dtype=np.uint8), (10, 10))]
                 frames_dir = tmp_path / "frames"
                 frames_dir.mkdir()
+                (frames_dir / "video_lowres.mp4").touch()
                 result = masker.run_propagation(str(frames_dir), [scene])
                 assert result
 

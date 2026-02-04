@@ -232,7 +232,7 @@ class TestSeedSelectorTrackerInterface:
         import re
         from pathlib import Path
 
-        seed_selector_path = Path(__file__).parent.parent / "core" / "scene_utils" / "seed_selector.py"
+        seed_selector_path = Path(__file__).resolve().parents[2] / "core" / "scene_utils" / "seed_selector.py"
         content = seed_selector_path.read_text(encoding="utf-8")
 
         # Find all self.tracker.method_name() calls
