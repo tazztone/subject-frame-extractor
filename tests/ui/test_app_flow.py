@@ -17,13 +17,18 @@ pytestmark = pytest.mark.e2e
 
 
 def switch_to_tab(page: Page, tab_name: str):
-    """Robustly switch tabs in Gradio."""
+    """Robustly switch tabs in Gradio, handling potential race conditions."""
     tab_btn = page.get_by_role("tab", name=tab_name)
-    expect(tab_btn).to_be_visible(timeout=10000)
-    tab_btn.click(force=True)
-    # Wait for tab activation
-    expect(tab_btn).to_have_attribute("aria-selected", "true", timeout=5000)
-    time.sleep(1)
+    # Wait for the tab button to exist and be visible
+    tab_btn.wait_for(state="visible", timeout=15000)
+    
+    # Only click if not already selected
+    if tab_btn.get_attribute("aria-selected") != "true":
+        tab_btn.click(force=True)
+        # Wait for tab activation
+        expect(tab_btn).to_have_attribute("aria-selected", "true", timeout=10000)
+    
+    time.sleep(1.5)  # Allow time for tab content to render
 
 
 def open_logs(page: Page):
@@ -51,6 +56,7 @@ class TestMainWorkflow:
         
         # Select Every Nth for speed in mock (though it doesn't matter for mock)
         page.get_by_role("button", name="🚀 Start Extraction").click()
+        time.sleep(1) # Wait for event loop to register click
 
         # Wait for "complete" in the status area (always visible)
         expect(page.locator("#unified_status")).to_contain_text("Extraction Complete", timeout=30000)
@@ -60,10 +66,33 @@ class TestMainWorkflow:
 
         # 2. Define Subject (Pre-Analysis)
         print("Step 2: Define Subject")
+        page.screenshot(path="before_tab_switch.png")
         switch_to_tab(page, "Subject")
+        page.screenshot(path="after_tab_switch.png")
+        
+        # Ensure tab content is rendered (look for multiple possible elements)
+        # Sometimes Gradio needs a moment to 'mount' the tab content
+        print("  - Waiting for tab content...")
+        try:
+            # Check for header OR strategy selection specifically
+            # In Gradio 6, we might need to wait for the component to be detached/reattached
+            page.wait_for_selector("text=Step 2: Define Subject", state="visible", timeout=15000)
+            print("  ✓ Subject tab content loaded")
+        except Exception as e:
+            page.screenshot(path="timeout_tab_content_v2.png")
+            print(f"  ❌ Subject tab content NOT visible. Screenshot saved. Error: {e}")
+            raise
         
         # Confirm and find scenes
-        btn = page.get_by_role("button", name=re.compile("Confirm Subject", re.IGNORECASE))
+        # Use ID for more robust targeting in Gradio 5
+        btn = page.locator("#start_pre_analysis_button")
+        print(f"  - Waiting for button: {btn}")
+        try:
+            btn.wait_for(state="visible", timeout=10000)
+        except Exception as e:
+            page.screenshot(path="timeout_confirm_subject_v2.png")
+            print(f"  ❌ Timeout waiting for Confirm Subject button. Screenshot saved. Error: {e}")
+            raise
         btn.click()
         
         expect(page.locator("body")).to_contain_text("Pre-Analysis Complete", timeout=30000)
