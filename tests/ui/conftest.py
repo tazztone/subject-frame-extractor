@@ -42,8 +42,8 @@ def switch_to_tab(page: Page, tab_name: str):
     expect(tab_btn).to_be_visible()
     tab_btn.click(force=True)
 
-    # Wait for the tab to be selected - checking class using regex
-    expect(tab_btn).to_have_class(re.compile(r"selected|active"))
+    # Wait for the tab to be selected
+    expect(tab_btn).to_have_attribute("aria-selected", "true")
     time.sleep(1)  # Animation wait
 
 
@@ -114,10 +114,9 @@ def extracted_session(page, app_server):
     page.goto(BASE_URL)
 
     # Ensure app is loaded
-    expect(page.get_by_text("Frame Extractor & Analyzer")).to_be_visible(timeout=10000)
+    expect(page.get_by_text("Frame Extractor & Analyzer v2.0")).to_be_visible(timeout=10000)
 
     # Run extraction
-    # The label is hidden in the UI, so we use the placeholder or a more robust selector
     page.get_by_placeholder("Paste YouTube URL or local path").fill("dummy_video.mp4")
 
     extract_btn = page.get_by_role("button", name="🚀 Start Extraction")
@@ -142,7 +141,7 @@ def analyzed_session(extracted_session):
     switch_to_tab(page, "Subject")
 
     # Click find frames
-    find_btn = page.get_by_role("button", name=re.compile("Find & Preview Scenes"))
+    find_btn = page.get_by_role("button", name="✅ Confirm Subject & Find Scenes (Next Step)")
     # Sometimes it takes time to switch tabs or render
     time.sleep(1)
     if not find_btn.is_visible():
@@ -168,7 +167,7 @@ def full_analysis_session(analyzed_session):
     page = analyzed_session
 
     # Propagate
-    propagate_btn = page.get_by_role("button", name="🔬 Propagate Masks")
+    propagate_btn = page.get_by_role("button", name="⚡ Propagate Masks to All Frames")
     if propagate_btn.is_visible():
         propagate_btn.click()
         expect(page.locator("#unified_status")).to_contain_text("Mask Propagation Complete", timeout=30000)
@@ -177,7 +176,7 @@ def full_analysis_session(analyzed_session):
     # Analyze (Metrics tab)
     switch_to_tab(page, "Metrics")
 
-    analyze_btn = page.get_by_role("button", name="Analyze Selected Frames")
+    analyze_btn = page.get_by_role("button", name="⚡ Run Analysis")
     expect(analyze_btn).to_be_visible(timeout=5000)
     analyze_btn.click()
 

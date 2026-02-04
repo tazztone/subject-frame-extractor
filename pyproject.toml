@@ -65,7 +65,7 @@ testpaths = ["tests"]
 python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
-addopts = "-v --tb=short --ignore=tests/e2e/ -m 'not integration and not gpu_e2e'"
+addopts = "-v --tb=short --ignore=tests/e2e/ -m 'not integration and not gpu_e2e and not audit and not slow'"
 markers = [
     "unit: Unit tests (fast, isolated, use mocks)",
     "smoke: Import smoke tests (no mocks, catches missing imports)",
