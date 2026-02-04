@@ -35,6 +35,20 @@ modules_to_mock = {
     "yt_dlp": MagicMock(),
     "numba": MagicMock(),
     "lpips": MagicMock(),
+    "matplotlib": MagicMock(),
+    "matplotlib.pyplot": MagicMock(),
+    "matplotlib.ticker": MagicMock(),
+    "matplotlib.figure": MagicMock(),
+    "matplotlib.backends": MagicMock(),
+    "matplotlib.backends.backend_agg": MagicMock(),
+    "skimage": MagicMock(),
+    "skimage.metrics": MagicMock(),
+    "safetensors": MagicMock(),
+    "safetensors.torch": MagicMock(),
+    "ftfy": MagicMock(),
+    "regex": MagicMock(),
+    "iopath": MagicMock(),
+    "decord": MagicMock(),
 }
 
 # Patch sys.modules
