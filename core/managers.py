@@ -372,7 +372,7 @@ class SAM3Wrapper:
         self.session_id = response["session_id"]
         return self.session_id
 
-    def add_bbox_prompt(self, frame_idx: int, obj_id: int, bbox_xywh: list, img_size: tuple) -> np.ndarray:
+    def add_bbox_prompt(self, frame_idx: int, obj_id: int, bbox_xywh: list, img_size: tuple, text: Optional[str] = None) -> np.ndarray:
         """
         Add bounding box prompt at specified frame.
 
@@ -381,6 +381,7 @@ class SAM3Wrapper:
             obj_id: Unique object ID (any integer)
             bbox_xywh: Bounding box as [x, y, width, height]
             img_size: Image dimensions as (width, height)
+            text: Optional text prompt to enable grounding-to-track
 
         Returns:
             Initial mask as numpy array (H, W)
@@ -422,16 +423,18 @@ class SAM3Wrapper:
 
         rel_box = [rel_x, rel_y, rel_w, rel_h]
 
-        response = self.predictor.handle_request(
-            request=dict(
-                type="add_prompt",
-                session_id=self.session_id,
-                frame_index=frame_idx,
-                obj_id=obj_id,
-                bounding_boxes=np.array([rel_box], dtype=np.float32),
-                bounding_box_labels=np.array([1], dtype=np.int32),
-            )
+        request = dict(
+            type="add_prompt",
+            session_id=self.session_id,
+            frame_index=frame_idx,
+            obj_id=obj_id,
+            bounding_boxes=np.array([rel_box], dtype=np.float32),
+            bounding_box_labels=np.array([1], dtype=np.int32),
         )
+        if text:
+            request["text"] = text
+
+        response = self.predictor.handle_request(request=request)
 
         # Response contains 'outputs': {'out_binary_masks': ..., 'out_obj_ids': ...}
         outputs = response.get("outputs", {})

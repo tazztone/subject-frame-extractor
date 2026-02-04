@@ -134,10 +134,13 @@ class MaskPropagator:
             start_frame_idx = frame_numbers[0]
             if prompts:
                 start_frame_idx = prompts[0]["frame"]
+                # Use provided text prompt or default to "person" to enable tracking in grounding mode.
+                # SAM3 grounding requires allow_new_detections=True which is tied to presence of text prompts.
+                text_hint = self.params.text_prompt if (hasattr(self.params, "text_prompt") and self.params.text_prompt) else "person"
                 for p in prompts:
                     fn = p["frame"]
                     mask = self.dam_tracker.add_bbox_prompt(
-                        frame_idx=fn, obj_id=p.get("obj_id", 1), bbox_xywh=p["bbox"], img_size=(w, h)
+                        frame_idx=fn, obj_id=p.get("obj_id", 1), bbox_xywh=p["bbox"], img_size=(w, h), text=text_hint
                     )
                     # For seed frames, prioritize the added mask
                     if mask is not None:
