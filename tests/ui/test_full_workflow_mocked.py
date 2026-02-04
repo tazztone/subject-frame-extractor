@@ -1,6 +1,4 @@
 import time
-import re
-
 import pytest
 from playwright.sync_api import Page, expect
 
@@ -73,11 +71,7 @@ class TestFullWorkflowMocked:
         expect(unified_status).to_contain_text("Extraction Complete", timeout=30000)
 
         # --- 2. Subject Tab ---
-        subject_tab = page.get_by_role("tab", name="Subject")
-        subject_tab.click()
-        # Wait for tab activation
-        expect(subject_tab).to_have_class(re.compile(r"selected|active"))
-        time.sleep(1)
+        self.switch_to_tab(page, "Subject")
 
         # Click "Pre-Analyze Scenes"
         # Using ID for robustness
@@ -93,7 +87,7 @@ class TestFullWorkflowMocked:
         expect(unified_status).to_contain_text("Pre-Analysis Complete", timeout=30000)
 
         # --- 3. Scenes Tab (Correction) ---
-        page.get_by_role("tab", name="Scenes").click()
+        self.switch_to_tab(page, "Scenes")
 
         # Verify gallery has items
         # Just check if we can see the gallery container
@@ -111,7 +105,7 @@ class TestFullWorkflowMocked:
         expect(unified_status).to_contain_text("Propagation Complete", timeout=30000)
 
         # --- 4. Metrics Tab ---
-        page.get_by_role("tab", name="Metrics").click()
+        self.switch_to_tab(page, "Metrics")
 
         # Click "Run Analysis"
         try:
@@ -125,7 +119,7 @@ class TestFullWorkflowMocked:
         expect(unified_status).to_contain_text("Analysis Complete", timeout=30000)
 
         # --- 5. Export Tab ---
-        page.get_by_role("tab", name="Export").click()
+        self.switch_to_tab(page, "Export")
 
         # Click "Export Frames"
         try:
@@ -138,3 +132,17 @@ class TestFullWorkflowMocked:
         # Wait for export complete
         # Check for success message in status
         expect(unified_status).to_contain_text("Exported", timeout=30000)
+
+    def switch_to_tab(self, page: Page, tab_name: str):
+        """Robustly switch tabs in Gradio."""
+        tab_btn = page.get_by_role("tab", name=tab_name)
+        expect(tab_btn).to_be_visible()
+        tab_btn.click(force=True)
+
+        # Wait for the tab to be selected
+        # Gradio tabs have 'selected' class or 'aria-selected=true'
+        # We try to check aria-selected which is more standard
+        expect(tab_btn).to_have_attribute("aria-selected", "true")
+
+        # Additional wait for animation/content swap
+        time.sleep(2)
