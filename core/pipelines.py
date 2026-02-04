@@ -124,10 +124,9 @@ def run_ffmpeg_extraction(
     scale_factor = math.sqrt(target_area / (w * h)) if w * h > 0 else 1.0
     vf_scale_thumb = f"scale=w=trunc(iw*{scale_factor}/2)*2:h=trunc(ih*{scale_factor}/2)*2"
     
-    # Calculate video scale (fixed to 240p for SAM3 speed)
-    video_target_height = 240
-    video_scale_factor = video_target_height / h if h > 0 else 1.0
-    vf_scale_video = f"scale=w=trunc(iw*{video_scale_factor}/2)*2:h={video_target_height}"
+    # Calculate video scale (fixed to 240p for SAM3 speed and memory efficiency)
+    # We use a fixed-height scale that maintains aspect ratio
+    vf_scale_video = "scale=-2:240"
 
     fps = max(1, int(video_info.get("fps", 30)))
     N = max(1, int(params.nth_frame or 0))

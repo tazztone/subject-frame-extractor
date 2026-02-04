@@ -127,11 +127,11 @@ class MaskPropagator:
             tracker.set_stage(f"Propagating masks for {len(frame_numbers)} frames")
 
         try:
-            # Initialize SAM3 with the video file directly for temporal continuity
+            # Initialize SAM3 with the video file
             self.dam_tracker.init_video(video_path)
 
-            # Add all prompts
-            start_frame_idx = 0
+            # Add all prompts and capture their indices
+            start_frame_idx = frame_numbers[0]
             if prompts:
                 start_frame_idx = prompts[0]["frame"]
                 for p in prompts:
@@ -139,32 +139,52 @@ class MaskPropagator:
                     mask = self.dam_tracker.add_bbox_prompt(
                         frame_idx=fn, obj_id=p.get("obj_id", 1), bbox_xywh=p["bbox"], img_size=(w, h)
                     )
-                    if mask is not None and fn in target_frames:
+                    # For seed frames, prioritize the added mask
+                    if mask is not None:
                         all_propagated[fn] = mask
                         self.logger.debug(f"Added prompt mask at frame {fn}", component="propagator")
 
             if tracker:
                 tracker.step(1, desc="Prompts added")
 
-            # Propagate in both directions using single call.
-            # SAM3 will track through EVERY frame in the video, ensuring stability.
-            for frame_idx, obj_id, pred_mask in self.dam_tracker.propagate(start_idx=start_frame_idx, direction="both"):
-                if self.cancel_event.is_set():
-                    break
-                if self.model_registry:
-                    self.model_registry.check_memory_usage(self.config)
-                
-                # Only store results for frames we actually want to analyze
-                if frame_idx in target_frames:
-                    all_propagated[frame_idx] = pred_mask
+            # Determine boundaries for progress bar and max_frames
+            min_fn = min(frame_numbers)
+            max_fn = max(frame_numbers)
+            
+            # --- Pass 1: Forward Propagation ---
+            fwd_steps = max_fn - start_frame_idx
+            if fwd_steps > 0:
+                self.logger.debug(f"Tracking forward from {start_frame_idx} to {max_fn} ({fwd_steps} steps)", component="propagator")
+                for frame_idx, obj_id, pred_mask in self.dam_tracker.propagate(
+                    start_idx=start_frame_idx, direction="forward", max_frames=fwd_steps
+                ):
+                    if self.cancel_event.is_set(): break
+                    if self.model_registry: self.model_registry.check_memory_usage(self.config)
                     
-                    if tracker:
-                        tracker.step(1, desc="Propagation (↔)")
+                    if frame_idx in target_frames:
+                        # Protect existing seeds or better masks
+                        if pred_mask is not None and np.any(pred_mask):
+                            all_propagated[frame_idx] = pred_mask
+                        
+                        if tracker:
+                            tracker.step(1, desc="Propagation (→)")
+
+            # --- Pass 2: Backward Propagation ---
+            bwd_steps = start_frame_idx - min_fn
+            if bwd_steps > 0:
+                self.logger.debug(f"Tracking backward from {start_frame_idx} to {min_fn} ({bwd_steps} steps)", component="propagator")
+                for frame_idx, obj_id, pred_mask in self.dam_tracker.propagate(
+                    start_idx=start_frame_idx, direction="backward", max_frames=bwd_steps
+                ):
+                    if self.cancel_event.is_set(): break
+                    if self.model_registry: self.model_registry.check_memory_usage(self.config)
                     
-                    if pred_mask is not None and np.any(pred_mask):
-                        self.logger.debug(f"Tracked subject at frame {frame_idx}", component="propagator")
-                    else:
-                        self.logger.debug(f"Lost subject at frame {frame_idx}", component="propagator")
+                    if frame_idx in target_frames:
+                        if pred_mask is not None and np.any(pred_mask):
+                            all_propagated[frame_idx] = pred_mask
+                        
+                        if tracker:
+                            tracker.step(1, desc="Propagation (←)")
 
             # Process all gathered masks (seeds + propagated)
             img_area = h * w
@@ -204,6 +224,8 @@ class MaskPropagator:
                     areas[fn] = 0.0
                     empties[fn] = True
                     errors[fn] = err_msg
+        finally:
+            self.dam_tracker.close_session()
 
         return masks, areas, empties, errors
 
