@@ -81,11 +81,11 @@ class TestPipelines:
         stream = MagicMock()
         stream.readline.side_effect = [
             "[Parsed_showinfo_2 @ 0x...] n:   0 pts:      0 pts_time:0       pos:      0 fmt:rgb24 sar:1/1 s:100x100 i:P iskey:1 type:I checksum:...",
-            "[Parsed_showinfo_2 @ 0x...] n:   1 pts:      1 ...",
+            "[Parsed_showinfo_2 @ 0x...] n:   1 pts:      1 pts_time:1.0     pos:      1 ...",
             "",
         ]
 
-        frames, stderr = _process_ffmpeg_showinfo(stream)
+        frames, stderr = _process_ffmpeg_showinfo(stream, fps=1.0)
 
         assert frames == [0, 1]
         assert "n:   0" in stderr

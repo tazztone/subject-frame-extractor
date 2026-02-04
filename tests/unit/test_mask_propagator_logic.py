@@ -62,43 +62,43 @@ class TestMaskPropagatorLogic:
     def test_propagate_video_success(self, mask_propagator, mock_sam3_wrapper):
         """Test successful video propagation flow."""
         # Setup mocks
-        # Forward: frame 1
-        forward_gen = iter([(1, 1, np.ones((100, 100), dtype=bool))])
-        # Backward: frame -1 (not requested)
-        backward_gen = iter([])
+        # Forward: frame 2
+        forward_gen = iter([(2, 1, np.ones((100, 100), dtype=bool))])
+        # Backward: frame 0
+        backward_gen = iter([(0, 1, np.ones((100, 100), dtype=bool))])
 
         mock_sam3_wrapper.propagate.side_effect = [forward_gen, backward_gen]
 
-        frame_numbers = [0, 1]
-        seed_frame = 0
+        frame_numbers = [0, 1, 2]
+        seed_frame = 1
         bbox = [10, 10, 50, 50]
         frame_size = (100, 100)
+        prompts = [{"frame": seed_frame, "bbox": bbox, "obj_id": 1}]
+        frame_map = {0: "f0.webp", 1: "f1.webp", 2: "f2.webp"}
 
         masks, areas, empties, errors = mask_propagator.propagate_video(
             video_path="video.mp4",
             frame_numbers=frame_numbers,
-            seed_frame_num=seed_frame,
-            bbox_xywh=bbox,
+            prompts=prompts,
             frame_size=frame_size,
+            frame_map=frame_map
         )
 
         # Verify SAM3 calls
         mock_sam3_wrapper.init_video.assert_called_once_with("video.mp4")
         mock_sam3_wrapper.add_bbox_prompt.assert_called_once_with(
-            frame_idx=seed_frame, obj_id=1, bbox_xywh=bbox, img_size=frame_size
+            frame_idx=seed_frame, obj_id=1, bbox_xywh=bbox, img_size=frame_size, text="person"
         )
 
         # Verify propagation calls
         assert mock_sam3_wrapper.propagate.call_count == 2
-        mock_sam3_wrapper.propagate.assert_any_call(start_idx=seed_frame, reverse=False)
-        mock_sam3_wrapper.propagate.assert_any_call(start_idx=seed_frame, reverse=True)
+        mock_sam3_wrapper.propagate.assert_any_call(start_idx=seed_frame, direction="forward", max_frames=1)
+        mock_sam3_wrapper.propagate.assert_any_call(start_idx=seed_frame, direction="backward", max_frames=1)
 
         # Verify results
-        assert len(masks) == 2
-        assert 0 in masks
+        assert len(masks) == 3
         assert 1 in masks
-        assert np.all(masks[0] == 255)  # Seed mask (from ones)
-        assert np.all(masks[1] == 255)  # Propagated mask
+        assert np.all(masks[1] == 255)  # Seed mask (from ones)
 
         assert areas[0] == 100.0  # Full mask
         # Use == instead of is because numpy bools are not singletons
@@ -116,9 +116,9 @@ class TestMaskPropagatorLogic:
         masks, areas, empties, errors = mask_propagator.propagate_video(
             video_path="video.mp4",
             frame_numbers=[0, 1],
-            seed_frame_num=0,
-            bbox_xywh=[0, 0, 10, 10],
+            prompts=[{"frame": 0, "bbox": [0, 0, 10, 10]}],
             frame_size=(100, 100),
+            frame_map={0: "a.webp", 1: "b.webp"}
         )
 
         # Should return blank masks, not None
@@ -145,9 +145,9 @@ class TestMaskPropagatorLogic:
         masks, areas, empties, errors = mask_propagator.propagate_video(
             video_path="video.mp4",
             frame_numbers=[0, 1, 2],
-            seed_frame_num=0,
-            bbox_xywh=[0, 0, 10, 10],
+            prompts=[{"frame": 0, "bbox": [0, 0, 10, 10]}],
             frame_size=(100, 100),
+            frame_map={0: "a.webp", 1: "b.webp", 2: "c.webp"}
         )
 
         # Verify it didn't crash
@@ -227,9 +227,9 @@ class TestMaskPropagatorLogic:
                     masks, areas, empties, errors = mask_propagator.propagate_video(
                         video_path="video.mp4",
                         frame_numbers=[0],
-                        seed_frame_num=0,
-                        bbox_xywh=[0, 0, 10, 10],
+                        prompts=[{"frame": 0, "bbox": [0, 0, 10, 10]}],
                         frame_size=(100, 100),
+                        frame_map={0: "a.webp"}
                     )
 
                     mock_empty_cache.assert_called()
@@ -245,9 +245,9 @@ class TestMaskPropagatorLogic:
         mask_propagator.propagate_video(
             video_path="video.mp4",
             frame_numbers=[0, 1],
-            seed_frame_num=0,
-            bbox_xywh=[0, 0, 10, 10],
+            prompts=[{"frame": 0, "bbox": [0, 0, 10, 10]}],
             frame_size=(100, 100),
+            frame_map={0: "a.webp", 1: "b.webp"},
             tracker=tracker,
         )
 

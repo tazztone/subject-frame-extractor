@@ -192,6 +192,7 @@ class TestManagers:
         # 1. Test System Memory Threshold Trigger
         mock_psutil.return_value.used = (mock_config.monitoring_memory_critical_threshold_mb + 100) * (1024**2)
         mock_psutil.return_value.percent = 95.0
+        mock_cuda.is_available.return_value = False
         
         registry.check_memory_usage(mock_config)
         
@@ -210,6 +211,7 @@ class TestManagers:
         mock_cuda.device_count.return_value = 1
         # Set return_value for the call mock_cuda.memory_reserved(i)
         mock_cuda.memory_reserved.return_value = (mock_config.monitoring_memory_critical_threshold_mb + 100) * (1024**2)
+        mock_cuda.get_device_properties.return_value.total_memory = 16384 * (1024**2)
         
         registry.check_memory_usage(mock_config)
         
