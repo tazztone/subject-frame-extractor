@@ -49,6 +49,7 @@ modules_to_mock = {
     "regex": MagicMock(),
     "iopath": MagicMock(),
     "decord": MagicMock(),
+    "onnxruntime": MagicMock(),
 }
 
 # Patch sys.modules
@@ -180,6 +181,7 @@ def mock_analysis_execution(
 import ui.app_ui
 core.pipelines.ExtractionPipeline._run_impl = mock_extraction_run
 # We mock the `execute_*` functions directly as they are what the UI calls via `_run_pipeline`
+ui.app_ui.AppUI.preload_models = MagicMock(side_effect=lambda self: setattr(self.components["model_status_indicator"], "value", "🟢 All Models Ready"))
 core.pipelines.execute_pre_analysis = ui.app_ui.execute_pre_analysis = mock_pre_analysis_execution
 core.pipelines.execute_propagation = ui.app_ui.execute_propagation = mock_propagation_execution
 core.pipelines.execute_analysis = ui.app_ui.execute_analysis = mock_analysis_execution
