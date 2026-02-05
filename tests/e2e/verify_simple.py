@@ -27,7 +27,9 @@ def verify_ui_simple():
 
         print("Taking screenshot...")
         from pathlib import Path
-        output_path = Path(__file__).parent / "simple_check.png"
+        output_dir = Path(__file__).parent.parent / "results" / "screenshots"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / "simple_check.png"
         page.screenshot(path=str(output_path))
         print(f"Screenshot saved to {output_path}")
 

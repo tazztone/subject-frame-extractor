@@ -220,6 +220,6 @@ __marimo__/
 run_config.json
 models/*
 logs/*
-verification/e2e_output/
+tests/results/
+
 tests/integration/e2e_output_debug/
-tests/verification/e2e_output/
