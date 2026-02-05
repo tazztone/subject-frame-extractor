@@ -45,20 +45,41 @@ For developer guidelines, see [AGENTS.md](AGENTS.md).
 ├── requirements.txt
 ├── scripts
 │   ├── jules_setup_script.sh
+│   ├── linux_run_app.sh
 │   ├── run_ux_audit.py
 │   ├── take_screenshot.py
-│   └── update_agents_md.py
+│   ├── update_agents_md.py
+│   ├── verification
+│   │   ├── e2e_run.py
+│   │   └── verify_simple.py
+│   └── verify_quality.py
 ├── subject_frame_extractor.egg-info
 │   ├── SOURCES.txt
 │   ├── dependency_links.txt
 │   ├── requires.txt
 │   └── top_level.txt
 ├── tests
+│   ├── README.md
 │   ├── TESTING.md
 │   ├── TESTS_CODE_REFERENCE.md
 │   ├── assets
 │   ├── conftest.py
-│   ├── e2e
+│   ├── integration
+│   │   ├── __init__.py
+│   │   ├── e2e_output_debug
+│   │   │   ├── frame_map.json
+│   │   │   ├── mask_metadata.json
+│   │   │   ├── masks
+│   │   │   ├── previews
+│   │   │   ├── progress.json
+│   │   │   ├── run_config.json
+│   │   │   ├── scene_seeds.json
+│   │   │   ├── scenes.json
+│   │   │   └── thumbs
+│   │   └── test_real_workflow.py
+│   ├── mock_app.py
+│   ├── smoke_test_ui_init.py
+│   ├── ui
 │   │   ├── __init__.py
 │   │   ├── ai_ux_analyzer.py
 │   │   ├── conftest.py
@@ -76,40 +97,41 @@ For developer guidelines, see [AGENTS.md](AGENTS.md).
 │   │   ├── test_visual_regression.py
 │   │   ├── test_with_sample_data.py
 │   │   └── visual_test_utils.py
-│   ├── mock_app.py
-│   ├── test_app_ui_logic.py
-│   ├── test_batch_manager.py
-│   ├── test_bug_fixes.py
-│   ├── test_core.py
-│   ├── test_database.py
-│   ├── test_dedup.py
-│   ├── test_error_handling.py
-│   ├── test_export.py
-│   ├── test_export_advanced.py
-│   ├── test_filtering.py
-│   ├── test_gallery_utils.py
-│   ├── test_gpu_e2e.py
-│   ├── test_handlers.py
-│   ├── test_integration.py
-│   ├── test_integration_sam3_patches.py
-│   ├── test_launch_config.py
-│   ├── test_managers.py
-│   ├── test_managers_extended.py
-│   ├── test_mask_propagator_logic.py
-│   ├── test_pipelines.py
-│   ├── test_pipelines_extended.py
-│   ├── test_progress.py
-│   ├── test_sam3_wrapper.py
-│   ├── test_scene_detection.py
-│   ├── test_scene_utils.py
-│   ├── test_scene_utils_helpers.py
-│   ├── test_shared.py
-│   ├── test_signatures.py
-│   ├── test_smoke.py
-│   ├── test_subject_masker_coverage.py
-│   ├── test_ui_unit.py
-│   └── test_utils.py
+│   └── unit
+│       ├── test_app_ui_logic.py
+│       ├── test_batch_manager.py
+│       ├── test_bug_fixes.py
+│       ├── test_core.py
+│       ├── test_database.py
+│       ├── test_dedup.py
+│       ├── test_error_handling.py
+│       ├── test_export.py
+│       ├── test_export_advanced.py
+│       ├── test_filtering.py
+│       ├── test_gallery_utils.py
+│       ├── test_gpu_e2e.py
+│       ├── test_handlers.py
+│       ├── test_integration.py
+│       ├── test_integration_sam3_patches.py
+│       ├── test_launch_config.py
+│       ├── test_managers.py
+│       ├── test_managers_extended.py
+│       ├── test_mask_propagator_logic.py
+│       ├── test_pipelines.py
+│       ├── test_pipelines_extended.py
+│       ├── test_progress.py
+│       ├── test_sam3_wrapper.py
+│       ├── test_scene_detection.py
+│       ├── test_scene_utils.py
+│       ├── test_scene_utils_helpers.py
+│       ├── test_shared.py
+│       ├── test_signatures.py
+│       ├── test_smoke.py
+│       ├── test_subject_masker_coverage.py
+│       ├── test_ui_unit.py
+│       └── test_utils.py
 ├── ui
+│   ├── __init__.py
 │   ├── app_ui.py
 │   ├── gallery_utils.py
 │   ├── handlers
@@ -123,18 +145,17 @@ For developer guidelines, see [AGENTS.md](AGENTS.md).
 │       ├── scene_tab.py
 │       └── subject_tab.py
 └── verification
-    ├── e2e_output
-    │   ├── frame_map.json
-    │   ├── mask_metadata.json
-    │   ├── masks
-    │   ├── previews
-    │   ├── progress.json
-    │   ├── run_config.json
-    │   ├── scene_seeds.json
-    │   ├── scenes.json
-    │   └── thumbs
-    ├── e2e_run.py
-    └── verify_simple.py
+    └── e2e_output
+        ├── frame_map.json
+        ├── mask_metadata.json
+        ├── masks
+        ├── previews
+        ├── progress.json
+        ├── run_config.json
+        ├── scene_seeds.json
+        ├── scenes.json
+        ├── terminal_log.txt
+        └── thumbs
 ```
 
 ## Code Skeleton Reference
@@ -351,35 +372,23 @@ class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         """Formats the log record as a JSON string."""
 class AppLogger:
-    """A comprehensive logger for the application."""
+    """A streamlined logger for the application, consolidating output into a single ..."""
     def __init__(self, config: 'Config', log_dir: Optional[Path]=None, log_to_file: bool=True, log_to_console: bool=True):
         """Initializes the AppLogger."""
-    def _setup_console_handler(self):
-        """Configures the console logging handler."""
-    def _setup_file_handlers(self):
-        """Configures file logging handlers (plain text and JSONL)."""
-    def _cleanup_old_logs(self):
-        """Compresses old log files to save disk space."""
-    def _compress_file(self, file_path: Path):
-        """Compresses a single file and removes the original."""
     def set_progress_queue(self, queue: Queue):
         """Sets the queue used for sending logs to the UI."""
     def _create_log_event(self, level: str, message: str, component: str, **kwargs) -> LogEvent:
         """Helper to create a structured LogEvent object."""
     def _log_event(self, event: LogEvent):
         """Dispatches the LogEvent to standard logging and the UI queue."""
-    def debug(self, message: str, component: str='system', **kwargs):
-        """Logs a debug message."""
-    def info(self, message: str, component: str='system', **kwargs):
-        """Logs an info message."""
-    def warning(self, message: str, component: str='system', **kwargs):
-        """Logs a warning message."""
-    def error(self, message: str, component: str='system', **kwargs):
-        """Logs an error message."""
-    def success(self, message: str, component: str='system', **kwargs):
-        """Logs a success message."""
-    def critical(self, message: str, component: str='system', **kwargs):
-        """Logs a critical error message."""
+    def debug(self, message: str, component: str='system', **kwargs): ...
+    def info(self, message: str, component: str='system', **kwargs): ...
+    def warning(self, message: str, component: str='system', **kwargs): ...
+    def error(self, message: str, component: str='system', **kwargs): ...
+    def success(self, message: str, component: str='system', **kwargs): ...
+    def critical(self, message: str, component: str='system', **kwargs): ...
+    def copy_log_to_output(self, output_dir: Path):
+        """No longer needed with consolidated logging."""
 ```
 
 ### `📄 core/managers.py`
@@ -402,12 +411,16 @@ class ThumbnailManager:
 class ModelRegistry:
     """Thread-safe registry for lazy loading and caching of heavy ML models."""
     def __init__(self, logger: Optional['AppLogger']=None): ...
+    def lock(self, key: str):
+        """Prevents a model from being cleared by the watchdog."""
+    def unlock(self, key: str):
+        """Allows a model to be cleared by the watchdog again."""
     def get_or_load(self, key: str, loader_fn: Callable[[], Any]) -> Any:
         """Retrieves a model by key, loading it via loader_fn if not present."""
     def check_memory_usage(self, config: 'Config'):
         """Monitors system and GPU memory usage. """
-    def clear(self):
-        """Clears all loaded models from the registry, """
+    def clear(self, force: bool=True):
+        """Clears loaded models from the registry."""
     def get_tracker(self, model_name: str, models_path: str, user_agent: str, retry_params: tuple, config: 'Config') -> Optional['SAM3Wrapper']:
         """Gets or loads the SAM3 tracker, handling CPU fallback on CUDA OOM."""
     def _load_tracker_impl(self, model_name: str, models_path: str, user_agent: str, retry_params: tuple, device: str, config: 'Config') -> 'SAM3Wrapper': ...
@@ -415,11 +428,11 @@ class SAM3Wrapper:
     """SAM3 Tracker using official Sam3VideoPredictor API."""
     def __init__(self, checkpoint_path=None, device='cuda'):
         """Initialize SAM3 wrapper using build_sam3_video_predictor."""
-    def init_video(self, video_path: str):
-        """Initialize inference session with video or frame directory."""
-    def add_bbox_prompt(self, frame_idx: int, obj_id: int, bbox_xywh: list, img_size: tuple) -> np.ndarray:
+    def init_video(self, video_resource: Union[str, list]):
+        """Initialize inference session with video, frame directory, or list of images."""
+    def add_bbox_prompt(self, frame_idx: int, obj_id: int, bbox_xywh: list, img_size: tuple, text: Optional[str]=None) -> np.ndarray:
         """Add bounding box prompt at specified frame."""
-    def propagate(self, start_idx: int = 0, max_frames: int = None, direction: str = "forward"):
+    def propagate(self, start_idx: int=0, max_frames: int=None, direction: str='forward'):
         """Generator yielding masks for each frame during propagation."""
     def clear_prompts(self):
         """Reset all prompts in current session."""
@@ -507,8 +520,8 @@ class MaskingResult(BaseModel):
 ```python
 def _process_ffmpeg_stream(stream, tracker: Optional['AdvancedProgressTracker'], desc: str, total_duration_s: float):
     """Parses FFmpeg progress stream and updates the tracker."""
-def _process_ffmpeg_showinfo(stream) -> tuple[list, str]:
-    """Parses FFmpeg stderr for 'showinfo' frame numbers."""
+def _process_ffmpeg_showinfo(stream, fps: float) -> tuple[list, str]:
+    """Parses FFmpeg stderr for 'showinfo' frame timestamps to map back to original ..."""
 def run_ffmpeg_extraction(video_path: str, output_dir: Path, video_info: dict, params: 'AnalysisParameters', progress_queue: Queue, cancel_event: threading.Event, logger: 'AppLogger', config: 'Config', tracker: Optional['AdvancedProgressTracker']=None):
     """Executes FFmpeg command to extract frames/thumbnails."""
 class Pipeline:
@@ -620,8 +633,10 @@ def edt_triton_fallback(data):
     """OpenCV-based fallback for Euclidean Distance Transform when Triton unavailable"""
 def connected_components_fallback(input_tensor):
     """CPU-based fallback for connected components when Triton unavailable"""
+def set_image_patched(self, image):
+    """Patched version of Sam3Processor.set_image to handle HWC inputs correctly."""
 def apply_patches():
-    """Apply monkey patches to SAM3 if Triton is not available"""
+    """Apply monkey patches to SAM3 if Triton is not available, AND fix image proces..."""
 ```
 
 ### `📄 core/scene_utils/__init__.py`
@@ -669,7 +684,7 @@ class MaskPropagator:
     """Propagates segmentation masks from a seed frame to surrounding frames."""
     def __init__(self, params: 'AnalysisParameters', dam_tracker: 'SAM3Wrapper', cancel_event: threading.Event, progress_queue: Queue, config: 'Config', logger: 'AppLogger', device: str='cpu', model_registry: Optional['ModelRegistry']=None):
         """Initialize the MaskPropagator."""
-    def propagate_video(self, video_path: str, frame_numbers: list[int], seed_frame_num: int, bbox_xywh: list[int], frame_size: tuple[int, int], tracker: Optional['AdvancedProgressTracker']=None, additional_seeds: Optional[list[dict]]=None) -> tuple[dict, dict, dict, dict]:
+    def propagate_video(self, video_path: str, frame_numbers: list[int], prompts: list[dict], frame_size: tuple[int, int], frame_map: dict[int, str], tracker: Optional['AdvancedProgressTracker']=None) -> tuple[dict, dict, dict, dict]:
         """Propagate masks using the video file directly (no temp JPEG I/O)."""
     def propagate(self, shot_frames_rgb: list[np.ndarray], seed_idx: int, bbox_xywh: list[int], tracker: Optional['AdvancedProgressTracker']=None, additional_seeds: Optional[list[dict]]=None, frame_numbers: Optional[list[int]]=None) -> tuple[list, list, list, list]:
         """Legacy method: Propagate masks from a seed frame using in-memory frames."""
@@ -699,7 +714,7 @@ class SeedSelector:
         """Get person bounding boxes from scene cache or detection."""
     def _get_text_prompt_boxes(self, frame_rgb: np.ndarray, params: Union[dict, 'AnalysisParameters']) -> tuple[list[dict], dict]:
         """Get bounding boxes from text prompt detection."""
-    def _score_and_select_candidate(self, target_face: dict, person_boxes: list[dict], text_boxes: list[dict]) -> tuple[Optional[list], dict]:
+    def _score_and_select_candidate(self, frame_rgb: np.ndarray, target_face: dict, person_boxes: list[dict], text_boxes: list[dict]) -> tuple[Optional[list], dict]:
         """Score and select the best candidate box that contains the target face."""
     def _choose_person_by_strategy(self, frame_rgb: np.ndarray, params: Union[dict, 'AnalysisParameters'], scene: Optional['Scene']=None) -> tuple[list, dict]:
         """Select person using configurable strategy."""
@@ -713,8 +728,8 @@ class SeedSelector:
         """Expand a face bounding box to approximate body bounding box."""
     def _final_fallback_box(self, img_shape: tuple) -> list[int]:
         """Return a fallback bounding box when no subject is found."""
-    def _xyxy_to_xywh(self, box: list) -> list[int]:
-        """Convert box from xyxy to xywh format."""
+    def _xyxy_to_xywh(self, box: list, img_shape: Optional[tuple]=None) -> list[int]:
+        """Convert box from xyxy to xywh format with optional padding and clamping."""
     def _get_mask_for_bbox(self, frame_rgb_small: np.ndarray, bbox_xywh: list) -> Optional[np.ndarray]:
         """Generate a mask for the given bounding box using SAM3."""
 ```
@@ -822,6 +837,35 @@ def main(): ...
 async def main(): ...
 ```
 
+### `📄 scripts/verification/e2e_run.py`
+
+```python
+class Logger(object):
+    def __init__(self, filename): ...
+    def write(self, message): ...
+    def flush(self): ...
+def run_e2e_verification(): ...
+```
+
+### `📄 scripts/verification/verify_simple.py`
+
+```python
+def verify_ui_simple(): ...
+```
+
+### `📄 scripts/verify_quality.py`
+
+```python
+class QualityVerifier:
+    def __init__(self, output_dir: Path): ...
+    def verify(self) -> Dict[str, Any]: ...
+    def _fail(self, msg: str): ...
+    def _warn(self, msg: str): ...
+    def _check_mask_quality(self): ...
+    def _check_db_metrics(self): ...
+    def log_history(self): ...
+```
+
 ### `📄 ui/app_ui.py`
 
 ```python
@@ -838,8 +882,6 @@ class AppUI:
         """Decorator to wrap UI callbacks with error handling."""
     def preload_models(self):
         """Asynchronously preloads heavy models (SAM3) in a background thread."""
-    def _get_stepper_html(self, current_step: int=0) -> str:
-        """Generates the HTML for the workflow progress stepper."""
     def build_ui(self) -> gr.Blocks:
         """Constructs the entire Gradio UI layout."""
     def _get_comp(self, name: str) -> Optional[gr.components.Component]:
@@ -862,15 +904,13 @@ class AppUI:
         """Returns a user-friendly description for a given metric."""
     def _create_event_handlers(self):
         """Sets up all global event listeners and state management."""
-    def update_stepper(self, evt: gr.SelectData):
-        """Updates the stepper HTML when a tab is selected."""
     def _run_task_with_progress(self, task_func: Callable, output_components: list, progress: Callable, *args) -> Generator[dict, None, None]:
         """Executes a background task while streaming progress updates to the UI."""
     def _toggle_pause(self, tracker: 'AdvancedProgressTracker') -> str:
         """Toggles the pause state of the current running task."""
     def run_system_diagnostics(self) -> Generator[str, None, None]:
         """Runs a comprehensive suite of system checks and a dry run."""
-    def _create_pre_analysis_event(self, *args: Any) -> 'PreAnalysisEvent':
+    def _create_pre_analysis_event(self, state: ApplicationState, *args: Any) -> 'PreAnalysisEvent':
         """Helper to construct a PreAnalysisEvent from UI arguments."""
     def _run_pipeline(self, pipeline_func: Callable, event: Any, progress: Callable, success_callback: Optional[Callable]=None, *args):
         """Generic wrapper to run a pipeline function and handle progress/errors."""
@@ -886,6 +926,8 @@ class AppUI:
         """Starts processing the batch queue with specified number of workers."""
     def stop_batch_handler(self):
         """Stops the batch processing."""
+    def _save_session_log(self, output_dir_str: str):
+        """Helper to save logs to the result directory."""
     def _on_extraction_success(self, result: dict, current_state: ApplicationState) -> dict:
         """Callback for successful extraction."""
     def _on_pre_analysis_success(self, result: dict, current_state: ApplicationState) -> dict:
@@ -914,7 +956,7 @@ class AppUI:
     def on_identity_confidence_change(self, confidence: float, state: ApplicationState) -> gr.update:
         """Updates the face discovery gallery based on clustering confidence."""
     @safe_ui_callback('Face Selection')
-    def on_discovered_face_select(self, state: ApplicationState, confidence: float, evt: gr.SelectData=None) -> tuple[str, Optional[np.ndarray]]:
+    def on_discovered_face_select(self, state: ApplicationState, confidence: float, evt: gr.SelectData=None) -> tuple[str, Optional[np.ndarray], str]:
         """Handles selection of a face cluster from the discovery gallery."""
     @safe_ui_callback('Face Discovery')
     def on_find_people_from_video(self, current_state: ApplicationState, *args) -> tuple[str, gr.update, gr.update, float, ApplicationState]:
