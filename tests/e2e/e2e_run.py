@@ -46,7 +46,7 @@ class Logger(object):
         self.log.flush()
 
 def run_e2e_verification():
-    output_dir = Path("verification/e2e_output")
+    output_dir = Path(__file__).parent.parent / "results" / "e2e_output"
     if output_dir.exists():
         shutil.rmtree(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)

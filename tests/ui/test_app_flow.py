@@ -8,6 +8,7 @@ import time
 import re
 
 import pytest
+from pathlib import Path
 from playwright.sync_api import Page, expect
 
 from .conftest import BASE_URL
@@ -66,9 +67,12 @@ class TestMainWorkflow:
 
         # 2. Define Subject (Pre-Analysis)
         print("Step 2: Define Subject")
-        page.screenshot(path="before_tab_switch.png")
+        screenshot_dir = Path(__file__).parent.parent / "results" / "screenshots"
+        screenshot_dir.mkdir(parents=True, exist_ok=True)
+        
+        page.screenshot(path=str(screenshot_dir / "before_tab_switch.png"))
         switch_to_tab(page, "Subject")
-        page.screenshot(path="after_tab_switch.png")
+        page.screenshot(path=str(screenshot_dir / "after_tab_switch.png"))
         
         # Ensure tab content is rendered (look for multiple possible elements)
         # Sometimes Gradio needs a moment to 'mount' the tab content
@@ -79,7 +83,7 @@ class TestMainWorkflow:
             page.wait_for_selector("text=Step 2: Define Subject", state="visible", timeout=15000)
             print("  ✓ Subject tab content loaded")
         except Exception as e:
-            page.screenshot(path="timeout_tab_content_v2.png")
+            page.screenshot(path=str(screenshot_dir / "timeout_tab_content_v2.png"))
             print(f"  ❌ Subject tab content NOT visible. Screenshot saved. Error: {e}")
             raise
         
@@ -90,7 +94,7 @@ class TestMainWorkflow:
         try:
             btn.wait_for(state="visible", timeout=10000)
         except Exception as e:
-            page.screenshot(path="timeout_confirm_subject_v2.png")
+            page.screenshot(path=str(screenshot_dir / "timeout_confirm_subject_v2.png"))
             print(f"  ❌ Timeout waiting for Confirm Subject button. Screenshot saved. Error: {e}")
             raise
         btn.click()

@@ -74,7 +74,11 @@ def app_server():
     mock_app_path = str(Path(__file__).parent.parent / "mock_app.py")
 
     # Start the mock server process
-    log_file = open("mock_app_e2e.log", "w")
+    log_dir = Path(__file__).parent.parent.parent / "tests" / "results" / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_file_path = log_dir / "mock_app_e2e.log"
+    
+    log_file = open(log_file_path, "w")
     process = subprocess.Popen(
         [sys.executable, mock_app_path],
         stdout=log_file,
@@ -84,11 +88,11 @@ def app_server():
 
     # Wait for server startup using HTTP check
     if wait_for_server(BASE_URL, timeout=30):
-        print("✓ Server started successfully")
+        print(f"✓ Server started successfully (Logs: {log_file_path})")
     else:
         print("❌ Server failed to start within timeout")
         # Print last few lines of log
-        with open("mock_app_e2e.log", "r") as f:
+        with open(log_file_path, "r") as f:
             print(f.read()[-1000:])
 
     yield process
