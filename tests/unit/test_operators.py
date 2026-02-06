@@ -23,7 +23,6 @@ from core.operators import (
     OperatorResult,
     OperatorRegistry,
     register_operator,
-    register_operator,
     run_operators,
     discover_operators,
 )
@@ -550,6 +549,17 @@ class TestAutoDiscovery:
 
     def test_discover_finds_known_operators(self):
         """discover_operators finds standard operators."""
+        # Force unload of operator modules to allow re-discovery
+        import sys
+        for mod in list(sys.modules.keys()):
+            # Unload simple_cv, sharpness, etc. but keep base/registry
+            if mod.startswith("core.operators.") and mod not in (
+                "core.operators.base",
+                "core.operators.registry",
+                "core.operators",
+            ):
+                del sys.modules[mod]
+
         # Note: fixtures clear registry, so we must run discovery
         discovered = discover_operators()
         
@@ -557,7 +567,7 @@ class TestAutoDiscovery:
         assert "sharpness" in discovered
         assert "entropy" in discovered
         assert "niqe" in discovered
-        assert "simple_cv_edge" in discovered
+        assert "edge_strength" in discovered
 
     def test_discover_skips_infrastructure(self):
         """Infrastructure modules are not discovered as operators."""

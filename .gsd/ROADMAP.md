@@ -1,47 +1,23 @@
 # ROADMAP
 
-> **Current Milestone**: v3.0-extensibility
+> **Current Milestone**: [None - use /new-milestone]
+
+
+
+## Milestone: v3.0-extensibility (ARCHIVED)
 > **Goal**: Establish clean state management, then refactor pipelines into an extensible "Operator" pattern.
 
-## Must-Haves
-- [ ] Migrate `AppUI` fully to `ApplicationState` (remove legacy states)
-- [ ] Define `Operator` Protocol/ABC
-- [ ] Refactor `AnalysisPipeline` to use operators
-- [ ] Migrate 3+ existing metrics to operators
-- [ ] "How to add an Operator" documentation
+### Must-Haves
+- [x] Migrate `AppUI` fully to `ApplicationState` (remove legacy states)
+- [x] Define `Operator` Protocol/ABC
+- [x] Refactor `AnalysisPipeline` to use operators
+- [x] Migrate 3+ existing metrics to operators
+- [x] "How to add an Operator" documentation
 
-## Nice-to-Haves
-- [ ] CLIP semantic search (deferred to v3.1)
+### Phases
+See [.gsd/milestones/v3.0-extensibility-SUMMARY.md](.gsd/milestones/v3.0-extensibility-SUMMARY.md)
 
-## Phases
-
-### Phase 0: State Cleanup
-**Status**: ✅ Complete
-**Objective**: Migrate `AppUI` from legacy `gr.State` to unified `ApplicationState`.
-- [x] Audit all `gr.State` usages in `app_ui.py`
-- [x] Refactor `SceneHandler` and callbacks to use `ApplicationState`
-- [x] Remove legacy state components
-
-### Phase 1: Operator Design
-**Status**: ✅ Complete
-**Objective**: Design the Operator Pattern with research and prototype.
-- [x] Research FiftyOne Operators; document in `.gsd/phases/1/RESEARCH.md`
-- [x] Define `Operator` Protocol in `core/operators/base.py`
-- [x] Prototype `sharpness` metric as operator
-
-### Phase 2: Core Migration
-**Status**: ✅ Complete
-**Objective**: Migrate remaining metrics and refactor `AnalysisPipeline`.
-- [x] Migrate: `niqe`, `face_sim`, `mask_area`, `contrast`, `brightness`
-- [x] Refactor `AnalysisPipeline._process_single_frame` to use operators
-- [x] Create golden snapshot; verify regression
-
-### Phase 3: Plugin Infrastructure
-**Status**: ✅ Complete
-**Objective**: Enable dynamic operator discovery and documentation.
-- [x] Implement operator auto-discovery from `core/operators/*.py`
-- [x] Document "How to add an Operator"
-- [x] Write and verify dummy operator plugin test
+---
 
 ---
 
