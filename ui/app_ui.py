@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import re
 import shutil
 import sys
@@ -77,6 +78,20 @@ class ApplicationState(BaseModel):
     sharpness_base_scale: float = 2500.0
     edge_strength_base_scale: float = 100.0
     smart_filter_enabled: bool = False
+    scene_history: List[List[dict]] = Field(default_factory=list)
+
+    def push_history(self, scenes: List[dict]):
+        """Push a snapshot of scenes to history."""
+        # Deep copy to ensure isolation
+        self.scene_history.append(copy.deepcopy(scenes))
+        if len(self.scene_history) > 10:
+            self.scene_history.pop(0)
+
+    def pop_history(self) -> Optional[List[dict]]:
+        """Pop the last snapshot from history."""
+        if not self.scene_history:
+            return None
+        return self.scene_history.pop()
 
 
 class AppUI:
