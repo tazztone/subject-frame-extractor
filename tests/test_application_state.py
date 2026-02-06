@@ -1,6 +1,6 @@
 
 import pytest
-from ui.app_ui import ApplicationState
+from core.application_state import ApplicationState
 
 def test_push_pop_history():
     state = ApplicationState()
