@@ -742,23 +742,10 @@ class AnalysisPipeline(Pipeline):
             if self.params.compute_face_sim and self.face_analyzer:
                 face_bbox = self._analyze_face_similarity(frame, thumb_image_rgb)
 
-            if any(metrics_to_compute.values()) or self.params.compute_niqe:
-                frame.calculate_quality_metrics(
-                    thumb_image_rgb,
-                    quality_conf,
-                    self.logger,
-                    mask=mask_thumb,
-                    niqe_metric=self.niqe_metric,
-                    main_config=self.config,
-                    face_landmarker=self.face_landmarker,
-                    face_bbox=face_bbox,
-                    metrics_to_compute=metrics_to_compute,
-                )
-
-            # PARALLEL OPERATOR EXECUTION (Phase 2.3 Integration)
+            # --- OPERATOR ENGINE EXECUTION (Phase 2.5) ---
             if any(metrics_to_compute.values()) or self.params.compute_niqe:
                 try:
-                    # Prepare params (Face Data) - Phase 2.4
+                    # Prepare params (Face Data)
                     face_params = {}
                     if (self.face_landmarker and 
                         any(metrics_to_compute.get(k) for k in ["eyes_open", "yaw", "pitch"])):
@@ -774,7 +761,6 @@ class AnalysisPipeline(Pipeline):
                                 face_img = np.ascontiguousarray(face_img, dtype=np.uint8)
                             
                             mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=face_img)
-                            # Note: self.face_landmarker is passed to models.py, so it exists here
                             lm_result = self.face_landmarker.detect(mp_image)
                             
                             if lm_result.face_blendshapes:
@@ -787,6 +773,7 @@ class AnalysisPipeline(Pipeline):
                         except Exception as e:
                             self.logger.warning(f"Face landmark extraction failed: {e}")
 
+                    # Run Operators
                     op_results = run_operators(
                         image_rgb=thumb_image_rgb,
                         mask=mask_thumb,
@@ -794,43 +781,17 @@ class AnalysisPipeline(Pipeline):
                         params=face_params,
                     )
                     
-                    # Log comparison for drift detection
-                    drift_metrics = [
-                        ("sharpness", "sharpness_score"),
-                        ("edge_strength", "edge_strength_score"),
-                        ("contrast", "contrast_score"),
-                        ("brightness", "brightness_score"),
-                        ("entropy", "entropy_score"),
-                        ("niqe", "niqe_score"),
-                        ("eyes_open", "eyes_open_score"),
-                        ("face_pose", "yaw"), # Check yaw as proxy for pose
-                    ]
-                    
-                    for metric, key in drift_metrics:
-                        if metric == "niqe" and not self.params.compute_niqe:
-                            continue
-                        # Map operator name to requested metric key
-                        metric_req_key = "yaw" if metric == "face_pose" else metric
-                        if metric != "niqe" and not metrics_to_compute.get(metric_req_key):
-                            continue
-                            
-                        if metric in op_results and op_results[metric].success:
-                            op_val = op_results[metric].metrics.get(key, 0.0)
-                            
-                            # Handle Legacy fallback
-                            legacy_key = key
-                            if metric == "face_pose":
-                                legacy_key = "yaw" # Compare yaw specifically
-                                
-                            leg_val = getattr(frame.metrics, legacy_key, 0.0) or 0.0
-                            
-                            if abs(op_val - leg_val) > 1.0:
-                                self.logger.warning(
-                                    f"Metric Drift [{metric}]: op={op_val:.2f} legacy={leg_val:.2f}",
-                                    extra={"file": base_filename}
-                                )
+                    # Populate frame metrics from results
+                    for name, result in op_results.items():
+                        if result.success:
+                            # Map specific metric keys if needed, or rely on naming convention
+                            for key, value in result.metrics.items():
+                                # Check if metric exists on FrameParams model
+                                if hasattr(frame.metrics, key):
+                                    setattr(frame.metrics, key, value)
+                                    
                 except Exception as e:
-                    self.logger.error(f"Parallel operator execution failed: {e}")
+                    self.logger.error(f"Operator execution failed: {e}")
 
             meta = {"filename": base_filename, "metrics": frame.metrics.model_dump()}
             if self.params.compute_face_sim:
