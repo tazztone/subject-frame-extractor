@@ -193,26 +193,9 @@ class SceneHandler:
                 c["application_state"],
                 c["scene_filter_status"],
                 c["scene_gallery"], # Updates just in case but usually not needed for select? Actually on_select_for_edit returns update() for gallery.
-                # c["scene_gallery_index_map_state"] removed, handled by app_state
-                c["scene_gallery_index_map_state"], # KEEPING temporarily because I need to check if I can remove it from lists if I don't use it.
-                                                    # Actually, if I return app_state, I don't need to return legacy states.
-                                                    # But verify outputs of on_select_for_edit:
-                                                    # It returns app_state, status, gallery_update, indexmap, shotid, status_md, prompt, visible, image, shape, crops, button_text, image_prev
-                # Wait, on_select_for_edit implementation (refactored) returns:
-                # (app_state, status, update, app_state.scene_gallery_index_map, shotid, ...)
-                # So I DO return index_map. I should probably NOT return it if I don't wire it to a component.
-                # But Plan 0.3 removes the component.
-                # So here I should wire it to SOMETHING or nothing.
-                # If I remove c["scene_gallery_index_map_state"] from Plan 0.3, it won't exist in `c`.
-                # So I should assume it doesn't exist or I shouldn't try to update it.
-                # I will create a dummy update for legacy states if they exist, or just drop them.
-                # Let's drop explicit legacy state updates if possible.
-                c["selected_scene_id_state"], # Legacy
                 c["sceneeditorstatusmd"],
                 c["sceneeditorpromptinput"],
                 c["scene_editor_group"],
-                c["gallery_image_state"], # Legacy
-                c["gallery_shape_state"], # Legacy
                 c["subject_selection_gallery"],
                 c["propagate_masks_button"],
                 c["gallery_image_preview"],
@@ -244,16 +227,12 @@ class SceneHandler:
             outputs=[
                 c["application_state"],
                 c["scene_gallery"],
-                c["scene_gallery_index_map_state"], # Legacy return in wrapper? Wrapper returns 4 items.
-                # Wrapper returns (app_state, gallery, indexmap, status)
-                # So I need to accept indexmap here or remove it from wrapper return.
-                # I'll keep it for now and verify signature matches.
                 c["sceneeditorstatusmd"],
             ],
         )
 
         c["sceneincludebutton"].click(
-            lambda s, v, h: self.on_editor_toggle(s, v, "included"),
+            lambda s, v: self.on_editor_toggle(s, v, "included"),
             # Lambda signature mismatch. on_editor_toggle(app_state, view, status)
             # Input list: [app_state, view_toggle, dummy_history?]
             # Wait, I removed history from on_editor_toggle.
@@ -266,7 +245,6 @@ class SceneHandler:
                 c["application_state"],
                 c["scene_filter_status"],
                 c["scene_gallery"],
-                c["scene_gallery_index_map_state"], # Legacy
                 c["propagate_masks_button"],
             ],
         )
@@ -280,7 +258,6 @@ class SceneHandler:
                 c["application_state"],
                 c["scene_filter_status"],
                 c["scene_gallery"],
-                c["scene_gallery_index_map_state"], # Legacy
                 c["propagate_masks_button"],
             ],
         )
@@ -294,7 +271,6 @@ class SceneHandler:
             outputs=[
                 c["application_state"],
                 c["scene_gallery"],
-                c["scene_gallery_index_map_state"], # Legacy
                 c["sceneeditorstatusmd"],
             ],
         )
@@ -337,7 +313,6 @@ class SceneHandler:
                     c["application_state"],
                     c["scene_filter_status"],
                     c["scene_gallery"],
-                    c["scene_gallery_index_map_state"],
                     c["propagate_masks_button"],
                 ],
             )
@@ -366,7 +341,7 @@ class SceneHandler:
             items, index_map, _ = build_scene_gallery_items(
                 app_state.scenes, view, app_state.extracted_frames_dir, config=self.config
             )
-            return app_state, gr.update(value=items), gr.update(value=index_map), "Nothing to undo."
+            return app_state, gr.update(value=items), "Nothing to undo."
 
         # Restore state
         app_state.scenes = prev_scenes
@@ -377,7 +352,7 @@ class SceneHandler:
         )
         status_text, button_update = get_scene_status_text([Scene(**s) for s in prev_scenes])
 
-        return app_state, gr.update(value=gallery_items), gr.update(value=index_map), "Undid last action."
+        return app_state, gr.update(value=gallery_items), "Undid last action."
 
     def on_reset_scene_wrapper(self, app_state: ApplicationState, view: str, *ana_args):
         """Resets a scene's manual overrides to its initial state."""
@@ -388,7 +363,7 @@ class SceneHandler:
             
             scene_idx = next((i for i, s in enumerate(app_state.scenes) if s["shot_id"] == shot_id), None)
             if scene_idx is None:
-                return app_state, gr.update(), gr.update(), "Scene not found."
+                return app_state, gr.update(), "Scene not found."
 
             scene = app_state.scenes[scene_idx]
             scene.update(
@@ -422,12 +397,11 @@ class SceneHandler:
             return (
                 app_state,
                 gr.update(value=gallery_items),
-                gr.update(value=index_map),
                 f"Scene {shot_id} reset.",
             )
         except Exception as e:
             self.logger.error(f"Failed to reset scene {shot_id}", exc_info=True)
-            return app_state, gr.update(), gr.update(), f"Error: {e}"
+            return app_state, gr.update(), f"Error: {e}"
 
     def on_select_for_edit(self, app_state: ApplicationState, view: str, event: Optional[gr.SelectData] = None):
         """Handles selection of a scene from the gallery for editing."""
@@ -435,19 +409,13 @@ class SceneHandler:
         
         # Guard: invalid selection
         if sel_idx is None or not app_state.scenes:
-            # Need strict return matching the outputs
-            # Outputs: app_state, filter_status, gallery, indexmap, selected_id, status_md, prompt, editor_group, gallery_image, gallery_shape, subject_gallery, prop_btn, image_preview
             return (
                 app_state,
                 "Status",
                 gr.update(),
-                gr.update(), # indexmap state
-                None,
                 "Select a scene.",
                 "",
                 gr.update(visible=False),
-                None,
-                None,
                 gr.update(value=[]),
                 gr.update(),
                 gr.update(),
@@ -457,7 +425,7 @@ class SceneHandler:
         if sel_idx >= len(app_state.scene_gallery_index_map):
             self.logger.warning(f"Selection index {sel_idx} out of range for map (len {len(app_state.scene_gallery_index_map)})")
             # If map is stale, fallback or return empty? Return empty for safety
-            return (app_state, *[gr.update() for _ in range(12)]) # Sloppy but safe
+            return (app_state, *[gr.update() for _ in range(8)]) # Sloppy but safe
 
         scene_idx_in_state = app_state.scene_gallery_index_map[sel_idx]
         scene = app_state.scenes[scene_idx_in_state]
@@ -494,13 +462,9 @@ class SceneHandler:
             app_state,
             get_scene_status_text([Scene(**s) for s in app_state.scenes])[0],
             gr.update(),
-            app_state.scene_gallery_index_map, # Return current map state
-            shotid,
             gr.update(value=status_md),
             gr.update(value=prompt),
             gr.update(visible=True),
-            gallery_image,
-            gallery_shape,
             gr.update(value=subject_crops),
             get_scene_status_text([Scene(**s) for s in app_state.scenes])[1],
             gr.update(value=gallery_image),
@@ -522,7 +486,7 @@ class SceneHandler:
         items, index_map, _ = build_scene_gallery_items(
             app_state.scenes, view, outputfolder, config=self.config
         )
-        return app_state, status_text, gr.update(value=items), gr.update(value=index_map), button_update
+        return app_state, status_text, gr.update(value=items), button_update
 
     def on_apply_bulk_scene_filters_extended(
         self, app_state: ApplicationState, min_mask_pct, min_face_sim, min_quality, enable_face_filter, view
@@ -579,10 +543,10 @@ class SceneHandler:
         )
         status_text, button_update = get_scene_status_text([Scene(**s) for s in app_state.scenes])
 
+        app_state.scene_gallery_index_map = index_map
         return (
             app_state,
             status_text,
             gr.update(value=items),
-            gr.update(value=index_map),
             button_update,
         )
