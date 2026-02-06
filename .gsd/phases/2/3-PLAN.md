@@ -4,57 +4,94 @@ plan: 3
 wave: 2
 ---
 
-# Plan 2.3: Face Metrics & Context Integration
+# Plan 2.3: Pipeline Engine Integration
 
 ## Objective
-Migrate `eyes_open`, `yaw`, `pitch` metrics. These require face landmarks. We will implement them as light operators that consume detection results explicitly passed via `ctx.params`.
+Integrate the new `run_operators` bridge into `AnalysisPipeline`. This is a PARALLEL integration: operators run alongside legacy code to verify output matches before switching over.
 
 ## Context
-- @core/models.py — Current implementation (lines 150-177)
-- @core/pipelines.py — Where detection happens (needs to be exposed)
+- @core/pipelines.py — `_process_single_frame` method (lines 698-797)
+- @core/operators/registry.py — `run_operators` function
+- @tests/regression/test_metric_parity.py — Golden snapshot test (from Plan 2.0)
 
 ## Tasks
 
 <task type="auto">
-  <name>Implement Face Metrics Operators</name>
+  <name>Add Operator Initialization to Pipeline</name>
   <files>
-    - core/operators/face_metrics.py (NEW)
+    - core/pipelines.py (MODIFY)
   </files>
   <action>
-    Create `core/operators/face_metrics.py`:
+    Modify `AnalysisPipeline.__init__`:
     
-    1. `FaceBlinkOperator`:
-       - Config: name="eyes_open", category="face", requires_face=True
-       - Execute: Read `ctx.params["face_landmarks"]`. Calculate eyes open score.
-    
-    2. `FacePoseOperator`:
-       - Config: name="face_pose", category="face", requires_face=True
-       - Execute: Read `ctx.params["face_matrix"]` (transformation matrix). Calculate `yaw`, `pitch`, `roll`.
-       - Returns keys: `yaw`, `pitch`, `roll`.
-    
-    3. Ensure operators return `warning` if required params are missing from context.
+    1. Import `OperatorRegistry` from `core.operators`.
+    2. After existing model init, call:
+       ```python
+       OperatorRegistry.initialize_all(self.config)
+       ```
+    3. Update `core/operators/__init__.py` to import all operators (triggers registration).
   </action>
-  <verify>python -c "from core.operators.face_metrics import FaceBlinkOperator; print('Face ops OK')"</verify>
-  <done>Face operators implemented</done>
+  <verify>uv run python -c "from core.pipelines import AnalysisPipeline; print('Import OK')"</verify>
+  <done>Pipeline initializes operator registry</done>
 </task>
 
 <task type="auto">
-  <name>Test Face Metrics with Mock Data</name>
+  <name>Add Parallel Operator Execution</name>
   <files>
-    - tests/unit/test_face_operators.py (NEW)
+    - core/pipelines.py (MODIFY)
   </files>
   <action>
-    Create tests injecting mock landmark/matrix data into `ctx.params`:
+    Modify `AnalysisPipeline._process_single_frame`:
     
-    1. Test `FaceBlinkOperator` with open/closed eye blendshapes.
-    2. Test `FacePoseOperator` with identity matrix (0 yaw/pitch) and rotated matrix.
-    3. Verify missing params trigger warnings, not crashes.
+    1. AFTER legacy `frame.calculate_quality_metrics()` call (keep it for now!)
+    2. Add parallel operator execution:
+       ```python
+       from core.operators import run_operators, OperatorContext
+       
+       op_results = run_operators(
+           image_rgb=thumb_image_rgb,
+           mask=mask_thumb,
+           config=self.config,
+       )
+       
+       # Log comparison (debug only)
+       for name, result in op_results.items():
+           if result.success:
+               self.logger.debug(f"Operator {name}: {result.metrics}")
+       ```
+    3. Do NOT replace legacy code yet — this is for comparison.
   </action>
-  <verify>uv run pytest tests/unit/test_face_operators.py -v</verify>
-  <done>Tests pass with mock context params</done>
+  <verify>uv run pytest tests/regression/test_metric_parity.py -v</verify>
+  <done>Operators run in parallel; parity test still passes</done>
+</task>
+
+<task type="auto">
+  <name>Add Operator-to-Legacy Comparison</name>
+  <files>
+    - core/pipelines.py (MODIFY)
+  </files>
+  <action>
+    Add temporary comparison logic in `_process_single_frame`:
+    
+    1. For each operator result, compare to corresponding legacy metric.
+    2. Log WARNING if difference > 1.0 (score points).
+    3. This helps catch any implementation drift before switching.
+    
+    Example:
+    ```python
+    if "sharpness" in op_results:
+        op_score = op_results["sharpness"].metrics.get("sharpness_score", 0)
+        legacy_score = frame.metrics.sharpness_score or 0
+        if abs(op_score - legacy_score) > 1.0:
+            self.logger.warning(f"Sharpness drift: op={op_score:.1f} legacy={legacy_score:.1f}")
+    ```
+  </action>
+  <verify>Manual: Run analysis on test video, check for drift warnings</verify>
+  <done>Comparison logging added; no drift warnings</done>
 </task>
 
 ## Success Criteria
-- [ ] Face operators consume standard data from `ctx.params`
-- [ ] Logic accurately reflects `core/models.py` math
-- [ ] Robust handling of missing face data
+- [ ] `AnalysisPipeline` initializes operators
+- [ ] Operators run in parallel with legacy code
+- [ ] Comparison logging catches any drift
+- [ ] Golden snapshot parity test passes
