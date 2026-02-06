@@ -21,7 +21,7 @@ from playwright.sync_api import Page
 
 from .conftest import BASE_URL
 
-pytestmark = [pytest.mark.e2e, pytest.mark.accessibility, pytest.mark.audit]
+pytestmark = [pytest.mark.e2e, pytest.mark.accessibility, pytest.mark.audit, pytest.mark.slow]
 
 # axe-core CDN URL
 AXE_CORE_URL = "https://cdnjs.cloudflare.com/ajax/libs/axe-core/4.8.2/axe.min.js"

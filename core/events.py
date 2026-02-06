@@ -34,6 +34,12 @@ class ExtractionEvent(UIEvent):
     scene_detect: bool
     output_folder: Optional[str] = None
 
+    @model_validator(mode="after")
+    def validate_source(self) -> "ExtractionEvent":
+        if not self.source_path and not self.upload_video:
+            raise ValueError("Please provide a Source Path or Upload a Video.")
+        return self
+
 
 class PreAnalysisEvent(UIEvent):
     """
