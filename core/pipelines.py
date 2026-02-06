@@ -31,6 +31,7 @@ from core.error_handling import ErrorHandler
 from core.events import ExtractionEvent, PreAnalysisEvent, PropagationEvent, SessionLoadEvent
 from core.managers import VideoManager, initialize_analysis_models
 from core.models import AnalysisParameters, Frame, Scene
+from core.operators import OperatorRegistry, run_operators
 from core.progress import AdvancedProgressTracker
 from core.scene_utils import (
     SubjectMasker,
@@ -436,6 +437,9 @@ class AnalysisPipeline(Pipeline):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.thumbnail_manager = thumbnail_manager
         self.model_registry = model_registry
+        
+        # Initialize Operators
+        OperatorRegistry.initialize_all(self.config)
 
     def _initialize_niqe_metric(self):
         """Lazy initialization of the NIQE metric model."""
@@ -749,6 +753,42 @@ class AnalysisPipeline(Pipeline):
                     face_bbox=face_bbox,
                     metrics_to_compute=metrics_to_compute,
                 )
+
+            # PARALLEL OPERATOR EXECUTION (Phase 2.3 Integration)
+            if any(metrics_to_compute.values()) or self.params.compute_niqe:
+                try:
+                    op_results = run_operators(
+                        image_rgb=thumb_image_rgb,
+                        mask=mask_thumb,
+                        config=self.config,
+                    )
+                    
+                    # Log comparison for drift detection
+                    for metric, key in [
+                        ("sharpness", "sharpness_score"),
+                        ("edge_strength", "edge_strength_score"),
+                        ("contrast", "contrast_score"),
+                        ("brightness", "brightness_score"),
+                        ("entropy", "entropy_score"),
+                        ("niqe", "niqe_score"),
+                    ]:
+                        if metric == "niqe" and not self.params.compute_niqe:
+                            continue
+                        if metric != "niqe" and not metrics_to_compute.get(metric):
+                            continue
+                            
+                        if metric in op_results and op_results[metric].success:
+                            op_val = op_results[metric].metrics.get(key, 0.0)
+                            # Handle Legacy fallback
+                            leg_val = getattr(frame.metrics, key, 0.0) or 0.0
+                            
+                            if abs(op_val - leg_val) > 1.0:
+                                self.logger.warning(
+                                    f"Metric Drift [{metric}]: op={op_val:.2f} legacy={leg_val:.2f}",
+                                    extra={"file": base_filename}
+                                )
+                except Exception as e:
+                    self.logger.error(f"Parallel operator execution failed: {e}")
 
             meta = {"filename": base_filename, "metrics": frame.metrics.model_dump()}
             if self.params.compute_face_sim:
