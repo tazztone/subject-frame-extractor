@@ -1,5 +1,50 @@
 # ROADMAP
 
+> **Current Milestone**: v3.0-extensibility
+> **Goal**: Establish clean state management, then refactor pipelines into an extensible "Operator" pattern.
+
+## Must-Haves
+- [ ] Migrate `AppUI` fully to `ApplicationState` (remove legacy states)
+- [ ] Define `Operator` Protocol/ABC
+- [ ] Refactor `AnalysisPipeline` to use operators
+- [ ] Migrate 3+ existing metrics to operators
+- [ ] "How to add an Operator" documentation
+
+## Nice-to-Haves
+- [ ] CLIP semantic search (deferred to v3.1)
+
+## Phases
+
+### Phase 0: State Cleanup
+**Status**: ⬜ Not Started
+**Objective**: Migrate `AppUI` from legacy `gr.State` to unified `ApplicationState`.
+- [ ] Audit all `gr.State` usages in `app_ui.py`
+- [ ] Refactor `SceneHandler` and callbacks to use `ApplicationState`
+- [ ] Remove legacy state components
+
+### Phase 1: Operator Design
+**Status**: ⬜ Not Started
+**Objective**: Design the Operator Pattern with research and prototype.
+- [ ] Research FiftyOne Operators; document in `.gsd/milestones/v3.0-extensibility/1/RESEARCH.md`
+- [ ] Define `Operator` Protocol/ABC in `core/operators/base.py`
+- [ ] Prototype `sharpness` metric as operator
+
+### Phase 2: Core Migration
+**Status**: ⬜ Not Started
+**Objective**: Migrate remaining metrics and refactor `AnalysisPipeline`.
+- [ ] Migrate: `niqe`, `face_sim`, `mask_area`, `contrast`, `brightness`
+- [ ] Refactor `AnalysisPipeline._process_single_frame` to use operators
+- [ ] Create golden snapshot; verify regression
+
+### Phase 3: Plugin Infrastructure
+**Status**: ⬜ Not Started
+**Objective**: Enable dynamic operator discovery and documentation.
+- [ ] Implement operator auto-discovery from `core/operators/*.py`
+- [ ] Document "How to add an Operator"
+- [ ] Write and verify dummy operator plugin test
+
+---
+
 ## Milestone: v0.9.1-stabilization (ARCHIVED)
 > **Goal**: Final stabilization and UI test cleanup.
 

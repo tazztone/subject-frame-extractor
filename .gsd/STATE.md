@@ -1,10 +1,10 @@
 # STATE
 
 ## Current Position
-- **Milestone**: None (All Completed)
-- **Phase**: N/A
-- **Task**: Project Finalized
-- **Status**: Complete
+- **Milestone**: v3.0-extensibility
+- **Phase**: 0 (State Cleanup)
+- **Task**: Not started
+- **Status**: Milestone planned
 
 ## Last Session Summary
 - **Roadmap Cleanup**: Marked all pending stabilization tasks as complete.
@@ -12,7 +12,12 @@
 - **Decision**: Deferred Photo Mode was preserved for future use, but the active roadmap is now considered 100% complete per user request.
 
 ## In-Progress Work
-- None (Planning/Research finalized and committed).
+- [x] Captured architectural inspirations from `OVERVIEW_comparison.md` into `TODO.md`.
+- [x] Verified status of pre-existing todos:
+    - Seeding mismatch: Investigated; logic found (3 per scene), but remains open.
+    - AppUI refactor: Not done; legacy states still active.
+    - Makefile: Not done.
+    - Doc Monitoring: Ongoing; secret redaction implemented.
 - Tests status: Video tests stable; Photo unit tests planned for Phase 1.
 
 ## Context Dump
