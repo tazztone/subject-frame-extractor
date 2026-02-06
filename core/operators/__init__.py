@@ -49,6 +49,7 @@ from core.operators.sharpness import SharpnessOperator
 from core.operators.simple_cv import EdgeStrengthOperator, ContrastOperator, BrightnessOperator
 from core.operators.entropy import EntropyOperator
 from core.operators.niqe import NiqeOperator
+from core.operators.face_metrics import EyesOpenOperator, FacePoseOperator
 
 __all__ = [
     "Operator",
