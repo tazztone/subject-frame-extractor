@@ -191,3 +191,26 @@ Phase 2 Complete. Clean break before Phase 3 (Plugin Infrastructure).
 
 ### Handoff Notes
 System is fully running on the new Operator Engine. Legacy code is deprecated but present. Next phase should focus on making adding new operators easier (auto-discovery).
+
+## Session: 2026-02-06 23:38
+
+### Objective
+Plan and execute Phase 3 (Plugin Infrastructure) to enable operator auto-discovery.
+
+### Accomplished
+- **Planned Phase 3**: Consolidated auto-discovery and documentation into efficient execution waves.
+- **Implemented Auto-Discovery**: Added `discover_operators()` to `registry.py` and refactored `__init__.py`.
+- **Verified Implementation**: Added unit tests for auto-discovery (initially failed, then fixed).
+- **Documentation**: Created `HOW_TO_ADD_OPERATOR.md` and `examples/operators/pixel_count.py`.
+- **Verified Phase 3**: All success criteria met.
+
+### Verification
+- [x] Auto-discovery works (tests passed).
+- [x] Documentation exists and is accurate.
+- [x] Example operator works.
+
+### Paused Because
+Phase 3 complete. End of current roadmap scope.
+
+### Handoff Notes
+The system is now fully extensible. New operators can be added by simply dropping a file into `core/operators/`.
