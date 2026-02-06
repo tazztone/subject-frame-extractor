@@ -1,38 +1,35 @@
 ## Current Position
-- **Phase**: 2 (Core Migration)
-- **Task**: Execution Complete
-- **Status**: Paused at 2026-02-06 23:25
-- **Mode**: PAUSED
+- **Phase**: 3 (Plugin Infrastructure)
+- **Task**: Planning complete
+- **Status**: Active (resumed 2026-02-06T23:27:35+01:00)
+- **Mode**: PLANNING
 
 ## Last Session Summary
 - **Accomplished**:
-  - **Phase 2 Execution**: Successfully migrated all metrics to the Operator Framework.
-    - Implemented `SimpleCV`, `Entropy`, `Niqe`, and `FaceMetrics` operators.
-    - Refactored `AnalysisPipeline` to use `run_operators` exclusively.
-    - Verified metric parity with legacy code using `test_metric_parity.py`.
-    - Deprecated `Frame.calculate_quality_metrics`.
-  - **Documentation**: Created `walkthrough.md` detailing the migration.
+  - **Phase 2 Verified Complete**: Marked Phase 2 as ✅ Complete in ROADMAP.md.
+  - **Phase 3 Planned**: Created 3 execution plans (6 tasks total).
 
 ## In-Progress Work
-- None (All Phase 2 plans executed and committed).
+- None (Ready for execution).
 
 ## Blockers
 - None.
 
 ## Context Dump
 
-### Decisions Made
-- **OperatorRegistry**: Centralized registry used for all operator instantiation.
-- **Drift Checks**: Used temporary drift check logic during migration (Plan 2.3) then removed it (Plan 2.5) after verification.
-- **Deprecation**: Legacy logic retained but deprecated to ensure safe rollback if needed.
-- **Dependency Mocking**: Used `sys.modules` patching for `NiqeOperator` tests to mock `pyiqa` and avoid large model downloads in CI.
+### Plans Created
+1. **3.0**: Implement `discover_operators()` function in registry.py
+2. **3.1**: Refactor `__init__.py` to use auto-discovery
+3. **3.2**: Write "How to Add an Operator" documentation + example
+
+### Decisions Pending
+- None.
 
 ### Files of Interest
-- `core/operators/*.py`: New operator implementations.
-- `core/pipelines.py`: Updated pipeline logic.
-- `tests/regression/test_metric_parity.py`: Regression verification suite.
+- `.gsd/phases/3/0-PLAN.md`: Auto-discovery function
+- `.gsd/phases/3/1-PLAN.md`: Refactor __init__.py
+- `.gsd/phases/3/2-PLAN.md`: Documentation
 
 ## Next Steps
-1. **Explore Plugin System**: Start Phase 3 (Plugin Infrastructure).
-2. **Auto-Discovery**: Implement automatic operator loading from directory.
-3. **Documentation**: Write "How to Add an Operator" guide.
+1. `/execute 3` — Run all Phase 3 plans.
+2. `/verify 3` — Validate documentation and example operator.
