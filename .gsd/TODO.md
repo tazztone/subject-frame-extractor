@@ -2,13 +2,13 @@
 
 ## Ongoing / Post-Release Improvements
 - [ ] Investigate seeding mismatch: 2 scenes found but 6 seeds generated (likely redundant calls or logic error) `medium` — 2026-02-03
-- [ ] Refactor `AppUI` to remove legacy state keys and fully migrate to `ApplicationState`.
+- [x] ~~Refactor `AppUI` to remove legacy state keys and fully migrate to `ApplicationState`.~~ *(Done in v3.0 Phase 0)*
 - [ ] Monitor documentation generation script to ensure it doesn't leak secrets or grow excessively.
 - [ ] Create a unified `Makefile` or `justfile` for cross-platform task management (shortcut for run, test, layout).
 - [ ] Implement Embeddings Visualization (Cluster Panel): 2D projection (UMAP or t-SNE) of LPIPS/CLIP embeddings for visual frame clustering. `medium` — 2026-02-06
 - [ ] Integrate Semantic Search (CLIP-powered Filtering): Text-to-image search field using OpenAI's CLIP for ad-hoc filtering. `medium` — 2026-02-06
-- [ ] Refactor `AnalysisPipeline` into "Operators" pattern (Extensible Pipelines) for plugin-based metrics and UI updates. `medium` — 2026-02-06
-- [ ] Implement Multi-View Synchronization (State Mirroring): Single source of truth state model to sync SAM3, Metric Gallery, and Statistics Dashboard. `medium` — 2026-02-06
+- [x] ~~Refactor `AnalysisPipeline` into "Operators" pattern (Extensible Pipelines) for plugin-based metrics and UI updates.~~ *(Done in v3.0 Phase 2)*
+- [x] ~~Implement Multi-View Synchronization (State Mirroring)~~ *(Partially done via `ApplicationState` in v3.0 Phase 0)*
 - [ ] Add better guidance for agents to avoid using system `python` (use `python3` or `uv run`) and ensure venv awareness. `high` — 2026-02-06
 
 
