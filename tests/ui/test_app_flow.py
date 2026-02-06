@@ -155,7 +155,25 @@ class TestMainWorkflow:
         print("Step 4: Metrics & Analysis")
         switch_to_tab(page, "Metrics")
         
+        # Wait for Metrics tab content to load
+        page.wait_for_timeout(2000)
+        
         ana_btn = page.get_by_role("button", name=re.compile("Run Analysis", re.IGNORECASE))
+        try:
+            expect(ana_btn).to_be_visible(timeout=10000)
+            expect(ana_btn).to_be_enabled(timeout=5000)
+        except Exception:
+            print("  - Run Analysis button not ready, trying tab switch...")
+            page.screenshot(path=str(screenshot_dir / "before_metrics_retry.png"))
+             # Switch away and back to force render
+            switch_to_tab(page, "Scenes")
+            page.wait_for_timeout(500)
+            switch_to_tab(page, "Metrics")
+            page.wait_for_timeout(2000)
+            
+            expect(ana_btn).to_be_visible(timeout=15000)
+            expect(ana_btn).to_be_enabled(timeout=10000)
+
         ana_btn.click()
         
         expect(page.locator("body")).to_contain_text("Analysis Complete", timeout=30000)
@@ -165,7 +183,24 @@ class TestMainWorkflow:
         print("Step 5: Export")
         switch_to_tab(page, "Export")
         
+        # Wait for Export tab content to load
+        page.wait_for_timeout(2000)
+        
         export_btn = page.get_by_role("button", name=re.compile("Export Kept Frames", re.IGNORECASE))
+        try:
+            expect(export_btn).to_be_visible(timeout=10000)
+            expect(export_btn).to_be_enabled(timeout=5000)
+        except Exception:
+            print("  - Export button not ready, trying tab switch...")
+            page.screenshot(path=str(screenshot_dir / "before_export_retry.png"))
+            switch_to_tab(page, "Metrics")
+            page.wait_for_timeout(500)
+            switch_to_tab(page, "Export")
+            page.wait_for_timeout(2000)
+            
+            expect(export_btn).to_be_visible(timeout=15000)
+            expect(export_btn).to_be_enabled(timeout=10000)
+
         export_btn.click()
         
         print("  ✓ Export Clicked")
