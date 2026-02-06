@@ -27,3 +27,33 @@
 - **Verification**: Integration tests now pass with **100.0% mask yield** (149/149 frames) on real video data.
 - **Status**: Milestone `v2.1-stabilized` is now fully complete and verified.
 
+## 2026-02-06: UI Test Stabilization (Phase 4.1)
+- **Objective**: Fix persistent timeouts and failures in E2E UI tests (`test_full_user_flow`).
+- **Accomplished**:
+    - **Test Robustness**: Implemented robust "Wait & Retry" (tab switching) strategy in `tests/ui/test_app_flow.py` to handle Gradio's lazy rendering, fixing timeouts in Steps 2-5.
+    - **Bug Fix**: Identified and fixed a critical bug in `ui/app_ui.py` where propagation/analysis button handlers were returning generators (lambda issue), causing silent failures.
+    - **Mock Verification**: Confirmed `tests/mock_app.py` correctly populates state to enable UI buttons.
+- **Verification**: `test_full_user_flow` now passes 100% consistently.
+- **Status**: Phase 4.1 UI Debugging Complete. Proceeding to Documentation/Verification.
+
+## Session: 2026-02-06 10:10
+
+### Objective
+Fix regression in `test_empty_source_shows_message` ensuring robust error handling for empty source inputs.
+
+### Accomplished
+- **Fixed Root Cause**: Added `@model_validator` to `ExtractionEvent` in `core/events.py` to reject empty source inputs.
+- **Fixed UI Handling**: Wrapped `run_extraction_wrapper` in `ui/app_ui.py` to catch validation errors and display them in `unified_log`.
+- **Hardened Test**: Updated `tests/ui/test_app_flow.py` to target textareas for robust log verification.
+- **Verified**: Passed specific E2E test `test_empty_source_shows_message`.
+
+### Verification
+- [x] Reproduction script confirmed validation logic.
+- [x] E2E test passed with new selectors.
+- [ ] Full unit test suite pending.
+
+### Paused Because
+User requested pause.
+
+### Handoff Notes
+The regression is fixed. Need to clean up the temporary reproduction script `tests/repro_wrapper.py` and run the full suite before closing Phase 4.

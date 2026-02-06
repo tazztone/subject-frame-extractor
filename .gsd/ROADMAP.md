@@ -1,28 +1,15 @@
 # ROADMAP
 
-## Milestone: v0.9.0-testing-stabilization
-> **Goal**: Clarify testing taxonomy, restructure test folders, and stabilize the suite structure.
+## Milestone: [Next Milestone]
+> **Goal**: Define the next set of objectives.
 
 ## Must-Haves
-- [ ] Clear folder structure (`unit`, `integration`, `e2e`).
-- [ ] `TESTING.md` rewritten.
-- [ ] All root-level `tests/test_*.py` files organized into subfolders.
+- [ ] Define Must-Have 1
+- [ ] Define Must-Have 2
 
 ## Phases
 
-### Phase 1: Research & Definition
-**Status**: ✅ Complete
-**Objective**: Audit current verify/integrate/e2e folders and define clear boundaries (Integration vs Verification).
-
-### Phase 2: Restructuring
-**Status**: ✅ Complete
-**Objective**: Move files into strict `unit/`, `integration/`, `e2e/` hierarchy and fix imports.
-
-### Phase 3: Documentation & Verification
-**Status**: ✅ Complete
-**Objective**: Rewrite `TESTING.md` and ensure 100% test pass rate in new structure.
-
-### Phase 4: Gap Closure
+### Phase 1: Planning
 **Status**: ⬜ Not Started
 **Objective**: Address UI test regressions and stabilization issues identified in @v0.9.0 audit.
 
