@@ -36,24 +36,25 @@
 - **Verification**: `test_full_user_flow` now passes 100% consistently.
 - **Status**: Phase 4.1 UI Debugging Complete. Proceeding to Documentation/Verification.
 
-## Session: 2026-02-06 10:10
+## Session: 2026-02-06 13:58
 
 ### Objective
-Fix regression in `test_empty_source_shows_message` ensuring robust error handling for empty source inputs.
+Incorporate best ideas from FocusCull PRD into `subject-frame-extractor`, specifically a dedicated "Photo Mode" for culling RAW/JPEG files.
 
 ### Accomplished
-- **Fixed Root Cause**: Added `@model_validator` to `ExtractionEvent` in `core/events.py` to reject empty source inputs.
-- **Fixed UI Handling**: Wrapped `run_extraction_wrapper` in `ui/app_ui.py` to catch validation errors and display them in `unified_log`.
-- **Hardened Test**: Updated `tests/ui/test_app_flow.py` to target textareas for robust log verification.
-- **Verified**: Passed specific E2E test `test_empty_source_shows_message`.
+- **Milestone Defined**: Created `v1.0-photo-mode` milestone in `ROADMAP.md` with 5 clear phases.
+- **Phase 1 Research**:
+    - Identified `rawpy` for 10x-100x faster preview extraction.
+    - Selected `pyexiv2` for industry-standard XMP sidecar R/W.
+    - Solved Gradio Gallery scaling via manual pagination (100/page).
+- **Documentation**: Generated `.gsd/phases/1/RESEARCH.md`.
 
 ### Verification
-- [x] Reproduction script confirmed validation logic.
-- [x] E2E test passed with new selectors.
-- [ ] Full unit test suite pending.
+- [x] Research documented and approach selected.
+- [ ] Implementation plan for Phase 1 pending.
 
 ### Paused Because
-User requested pause.
+Session end.
 
 ### Handoff Notes
-The regression is fixed. Need to clean up the temporary reproduction script `tests/repro_wrapper.py` and run the full suite before closing Phase 4.
+Ready to start Phase 1. Planning involves designing the `PhotoIngestPipeline` and the `XMPHandler`. Dependencies (`rawpy`, `pyexiv2`) need to be added to `pyproject.toml`.
