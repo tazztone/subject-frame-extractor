@@ -24,13 +24,26 @@
 
 ### Phase 4: Gap Closure
 **Status**: ⬜ Not Started
-**Objective**: Address UI test regressions and stabilization issues identified in @v0.9.0 audit.
+**Objective**: Close all gaps identified in v0.9.0 milestone audit.
+
+#### 🔴 High Priority (Must-Have Blockers)
+| Gap | Plan | Status |
+|-----|------|--------|
+| UI test timeout (`test_full_user_flow`) | [1-PLAN.md](file:///home/tazztone/_coding/subject-frame-extractor/.gsd/phases/4/1-PLAN.md) | ⬜ |
+| Selectors/mock state divergence | [PLAN.md](file:///home/tazztone/_coding/subject-frame-extractor/.gsd/phases/4/PLAN.md) | ⬜ |
+
+#### 🟡 Medium Priority (Quality/Verification)
+| Gap | Plan | Status |
+|-----|------|--------|
+| Missing VERIFICATION.md evidence | [2-PLAN.md](file:///home/tazztone/_coding/subject-frame-extractor/.gsd/phases/4/2-PLAN.md) | ⬜ |
 
 **Tasks:**
-- [ ] Synchronize UI test selectors with current Gradio labels
-- [ ] Isolate slow accessibility/UX audits with `@pytest.mark.slow`
-- [ ] Update `mock_app.py` for full `ApplicationState` compatibility
-- [ ] Verify full unit + fast-ui suite pass with zero failures
+- [ ] 🔴 Fix UI test extraction timeout (Plan 4.1)
+- [ ] 🔴 Synchronize UI test selectors with current Gradio labels
+- [ ] 🔴 Update `mock_app.py` for full `ApplicationState` compatibility
+- [ ] 🟡 Create VERIFICATION.md for Phases 1-3 (retroactive evidence)
+- [ ] 🟢 Isolate slow accessibility/UX audits with `@pytest.mark.slow`
+- [ ] ✅ Verify full unit + fast-ui suite pass with zero failures
 
 
 ---
