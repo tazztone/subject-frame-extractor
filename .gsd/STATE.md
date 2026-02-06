@@ -3,12 +3,12 @@
 ## Project Status
 - **Current Milestone**: v0.9.0-testing-stabilization
 - **Phase**: Phase 4: Gap Closure
-- **Status**: ⏸️ Paused (Phase 4.1 UI Debugging Complete)
+- **Status**: Active (resumed 2026-02-06T09:50:29+01:00)
 
 ## Current Position
-- **Milestone**: v0.9.0-testing-stabilization
-- **Phase**: Phase 4: Gap Closure
-- **Task**: Completed UI Test Stabilization (Phase 4.1)
+- **Current Milestone**: v0.9.0-testing-stabilization
+- **Phase**: Phase 4: Gap Closure (Complete)
+- **Status**: ✅ Phase 4 Verified
 
 ## Gap Closure Status
 Addressing 3 categories of gaps from milestone audit (2026-02-06):
@@ -34,6 +34,5 @@ Addressing 3 categories of gaps from milestone audit (2026-02-06):
 - `ui/app_ui.py`: Contains the fixed button handlers (`_propagation_button_handler`, etc.).
 
 ## Next Steps
-1. Isolate slow audits (Phase 4.1 remaining).
-2. Create VERIFICATION.md files (Phase 4.2).
-3. Final Verify.
+1. Request Milestone Audit/Completion.
+2. Begin v2.1-stabilized planning? (Or check ROADMAP for next milestone).
