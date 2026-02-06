@@ -1,48 +1,35 @@
 ## Current Position
-- **Phase**: 0 (State Cleanup)
-- **Task**: Plan 0.3 - Remove Legacy States & Final Cleanup
-- **Status**: Active (resumed 2026-02-06 22:38)
-- **Mode**: Verification
+- **Phase**: 1 (Operator Design)
+- **Task**: Research FiftyOne Operators
+- **Status**: Paused at 2026-02-06 22:44
+- **Mode**: Planning
 
 ## Last Session Summary
 - **Accomplished**:
-    - Refactored `SceneHandler` to use `ApplicationState` exclusively.
-    - Extracted `ApplicationState` to `core/application_state.py` to fix circular dependencies.
-    - Removed all legacy `gr.State` components from `app_ui.py`.
-    - Fixed multiple syntax/indentation errors in `scene_handler.py`.
-- **Roadblocks**:
-    - **Circular Imports**: Caused `NameError` on startup. Fixed by moving model to `core`.
-    - **Syntax Errors**: `IndentationError`, `SyntaxError` (missing brackets, return outside function) in `scene_handler.py` prevented app startup, leading to `ERR_CONNECTION_REFUSED` in E2E tests.
+    - **Phase 0 Verified**: `tests/ui/test_app_flow.py` passed 100%.
+    - **Bug Fixes**: Resolved `SyntaxError`, return tuple mismatch, and lambda signature warnings in `SceneHandler` and `AppUI`.
+    - **Cleanup**: Committed Phase 0 changes.
+    - **Transition**: Updated `ROADMAP.md` and `STATE.md` for Phase 1.
 
 ## In-Progress Work
-- **Verification**: `tests/ui/test_app_flow.py` was running. Last run status was ambiguous (no output captured). Needs definitive pass confirmation.
-- **Files Modified**:
-    - `core/application_state.py` (New)
-    - `ui/app_ui.py` (Legacy state removal)
-    - `ui/handlers/scene_handler.py` (Refactor & Fixes)
+- None (Clean transition to Phase 1)
 
 ## Blockers
-- **Verification Confirmation**: Need to confirm E2E tests pass consistently now that syntax errors are resolved.
+- None
 
 ## Context Dump
 
 ### Decisions Made
-- **Extract ApplicationState**: Necessary to break the import cycle between `AppUI` and `SceneHandler`.
-- **Remove Legacy Returns**: Updated `on_select_for_edit` and other handlers to stop returning legacy state tuples, simplifying the data flow.
-
-### Approaches Tried
-- **Grep Verification**: Used `grep` to find legacy key usages (`scenes_state` etc.).
-- **App.py Debugging**: Ran `app.py` directly to catch syntax errors that `pytest` masked with generic connection errors.
+- **Fix Lambdas**: Replaced lambda wrappers in `AppUI` with direct method references to support Gradio's introspection and `SelectData` passing.
 
 ### Current Hypothesis
-- The `ERR_CONNECTION_REFUSED` was purely due to the Python syntax errors crashing the app on startup. Now that `app.py` runs (or at least valid syntax is restored), the E2E tests should pass.
+- The system is stable and ready for the Operator Pattern refactor.
 
 ### Files of Interest
-- `ui/handlers/scene_handler.py`: Recently fixed syntax errors here. Watch for logic regressions.
-- `tests/ui/test_app_flow.py`: Primary verification suite.
+- `.gsd/ROADMAP.md`: Contains the plan for Phase 1.
+- `.gsd/phases/1/RESEARCH.md`: (To be created) for Operator research.
 
 ## Next Steps
-1. **Run E2E Tests**: `uv run pytest tests/ui/test_app_flow.py` to confirm everything is green.
-2. **Commit Phase 0 Code**: Once tests pass, `git commit` the removal of legacy states.
-3. **Verify Roadmap**: Mark Phase 0 as complete in `task.md` and `ROADMAP.md` (if separate).
-4. **Start Phase 1**: Move to `Operator Pattern` implementation.
+1. **Research Application**: Execute `/mcp-context7` to research FiftyOne Operators.
+2. **Plan Protocol**: Define the `Operator` protocol based on research.
+3. **Prototype**: Implement a simple operator (e.g., Sharpness) to test the design.
