@@ -1,56 +1,106 @@
 ---
 phase: 1
 level: 2
-researched_at: 2026-02-04
+researched_at: 2026-02-06
 ---
 
-# Phase 1 Research: Testing Taxonomy
+# Phase 1 Research: Foundation (Ingest & Interop)
 
 ## Questions Investigated
-1. What is the difference between `tests/integration` and `tests/verification`?
-2. How should the test suite be organized for clarity and stability?
-3. Where should ad-hoc verification scripts live?
+1. How to extract embedded JPEG previews from RAW files without demosaicing?
+2. How to read/write XMP sidecar files for ratings and color labels?
+3. Can Gradio's Gallery component handle 500+ images with acceptable performance?
 
 ## Findings
 
-### 1. Integration vs Verification
-- **Integration (`tests/integration`)**: Contains automated `pytest` suites (`test_real_workflow.py`) that exercise the **real backend pipeline** without mocks (or with minimal mocks). These are formal tests that must pass.
-- **Verification (`tests/verification`)**: Contains ad-hoc scripts (e.g., `verify_simple.py`) that connect to a *manually running* server instance (port 7860). These are **manual tools** for debugging, not automated tests.
+### 1. RAW Preview Extraction (rawpy)
 
-### 2. E2E (`tests/e2e`)
-- Contains automated UI tests using Playwright.
-- Crucially, these use a `mock_app` fixture, meaning they test the **UI Logic** but *not* the real backend model execution.
+**What was learned:**
+- `rawpy` provides `extract_thumb()` method that returns embedded JPEG/BITMAP preview
+- Returns JPEG data directly (no demosaicing needed) for most cameras
+- Handles two formats: `ThumbFormat.JPEG` (bytes) and `ThumbFormat.BITMAP` (numpy array)
+- Raises `LibRawNoThumbnailError` if no thumbnail exists
 
-### 3. Root Level Tests
-- The root `tests/` folder is cluttered with unit tests (`test_core.py`, `test_utils.py`) mixed with configuration setups.
+**Code Pattern:**
+```python
+import rawpy
 
-## Decisions Made
-| Decision | Choice | Rationale |
-|----------|--------|-----------|
-| **Verification Location** | Move to `scripts/verification/` | These are operational tools/scripts, not part of the `pytest` automated suite. |
-| **Unit Test Location** | Move to `tests/unit/` | De-clutter the root `tests/` directory. |
-| **E2E Naming** | Rename `tests/e2e` → `tests/ui` | Clarifies that these test the UI layer (often mocked), distinct from "Real Integration". |
-| **Integration Naming** | Keep `tests/integration` | Standard name for backend pipeline tests. |
-
-## Proposed Structure
-
-```text
-subject-frame-extractor/
-├── tests/
-│   ├── unit/            # Was root test_*.py (Fast, Mocked)
-│   ├── integration/     # Real Backend Pipeline (Slow, Real Models)
-│   ├── ui/              # Was e2e/ (Playwright + Mock App)
-│   ├── conftest.py      # Shared fixtures
-│   └── TESTING.md       # The Guide
-└── scripts/
-    └── verification/    # Was tests/verification/ (Manual checks)
+with rawpy.imread(path) as raw:
+    thumb = raw.extract_thumb()
+if thumb.format == rawpy.ThumbFormat.JPEG:
+    with open('thumb.jpeg', 'wb') as f:
+        f.write(thumb.data)  # Already JPEG bytes
+elif thumb.format == rawpy.ThumbFormat.BITMAP:
+    imageio.imwrite('thumb.jpeg', thumb.data)  # RGB numpy array
 ```
 
+**Recommendation:** Use rawpy for embedded preview extraction.
+
+**Source:** https://github.com/letmaik/rawpy
+
+---
+
+### 2. XMP Sidecar Handling (pyexiv2)
+
+**What was learned:**
+- `pyexiv2` is a Python binding to the `exiv2` C++ library
+- Supports reading/writing EXIF, IPTC, and **XMP** metadata
+- Can handle XMP embedded in images AND external `.xmp` sidecar files
+- BSD-licensed (commercial safe)
+
+**Key XMP Fields for Culling:**
+| XMP Key | Purpose | Type |
+|---------|---------|------|
+| `Xmp.xmp.Rating` | Star rating (0-5) | Integer |
+| `Xmp.xmp.Label` | Color label | String |
+
+**Recommendation:** Use pyexiv2 for XMP sidecar R/W.
+
+**Source:** https://pyexiv2.readthedocs.io
+
+---
+
+### 3. Gradio Gallery Performance
+
+**What was learned:**
+- Gradio Gallery renders **all images in DOM** at once (no native lazy loading)
+- No built-in pagination—must be implemented manually
+- `allow_preview=True` enables modal zoom
+
+**Performance Implications:**
+| Image Count | Expected Behavior |
+|-------------|-------------------|
+| <100 | Smooth |
+| 100-500 | Usable with load time |
+| 500+ | Sluggish, needs pagination |
+
+**Recommendation:** Target 100 images per page with pagination controls.
+
+---
+
+## Decisions Made
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| RAW preview library | `rawpy` | MIT-like license, direct JPEG extraction |
+| XMP library | `pyexiv2` | BSD license, full XMP support |
+| Gallery pagination | Manual (100/page) | Gradio has no native lazy loading |
+
+## Dependencies to Add
+
+| Package | Version | Purpose | License |
+|---------|---------|---------|---------|
+| `rawpy` | >=0.18 | RAW embedded preview extraction | MIT-like |
+| `pyexiv2` | >=2.8 | XMP sidecar read/write | BSD |
+
 ## Risks
-- **Import Errors**: Moving root tests to `tests/unit/` might break relative imports if they rely on `..`.
-- **Mitigation**: Ensure `pytest` is invoked as `python -m pytest` from project root, and check `sys.path` handling in `conftest.py`. Currently `conftest.py` adds project root to sys.path.
+
+| Risk | Mitigation |
+|------|------------|
+| Small embedded previews (<1600px) | Fallback to `rawpy.postprocess()` |
+| pyexiv2 requires libexiv2 | Document install requirement |
 
 ## Ready for Planning
 - [x] Questions answered
 - [x] Approach selected
-- [x] Taxonomy defined
+- [x] Dependencies identified
