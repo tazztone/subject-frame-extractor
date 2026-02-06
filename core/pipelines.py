@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Callable, Generator, Optional, Union
 
 import cv2
 import gradio as gr
+import mediapipe as mp
 import numpy as np
 import torch
 
@@ -757,30 +758,71 @@ class AnalysisPipeline(Pipeline):
             # PARALLEL OPERATOR EXECUTION (Phase 2.3 Integration)
             if any(metrics_to_compute.values()) or self.params.compute_niqe:
                 try:
+                    # Prepare params (Face Data) - Phase 2.4
+                    face_params = {}
+                    if (self.face_landmarker and 
+                        any(metrics_to_compute.get(k) for k in ["eyes_open", "yaw", "pitch"])):
+                        try:
+                            # Replicate logic from core/models.py to get landmarks
+                            if face_bbox:
+                                x1, y1, x2, y2 = face_bbox
+                                face_img = thumb_image_rgb[y1:y2, x1:x2]
+                            else:
+                                face_img = thumb_image_rgb
+
+                            if not face_img.flags["C_CONTIGUOUS"]:
+                                face_img = np.ascontiguousarray(face_img, dtype=np.uint8)
+                            
+                            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=face_img)
+                            # Note: self.face_landmarker is passed to models.py, so it exists here
+                            lm_result = self.face_landmarker.detect(mp_image)
+                            
+                            if lm_result.face_blendshapes:
+                                face_params["face_blendshapes"] = {
+                                    b.category_name: b.score 
+                                    for b in lm_result.face_blendshapes[0]
+                                }
+                            if lm_result.facial_transformation_matrixes:
+                                face_params["face_matrix"] = lm_result.facial_transformation_matrixes[0]
+                        except Exception as e:
+                            self.logger.warning(f"Face landmark extraction failed: {e}")
+
                     op_results = run_operators(
                         image_rgb=thumb_image_rgb,
                         mask=mask_thumb,
                         config=self.config,
+                        params=face_params,
                     )
                     
                     # Log comparison for drift detection
-                    for metric, key in [
+                    drift_metrics = [
                         ("sharpness", "sharpness_score"),
                         ("edge_strength", "edge_strength_score"),
                         ("contrast", "contrast_score"),
                         ("brightness", "brightness_score"),
                         ("entropy", "entropy_score"),
                         ("niqe", "niqe_score"),
-                    ]:
+                        ("eyes_open", "eyes_open_score"),
+                        ("face_pose", "yaw"), # Check yaw as proxy for pose
+                    ]
+                    
+                    for metric, key in drift_metrics:
                         if metric == "niqe" and not self.params.compute_niqe:
                             continue
-                        if metric != "niqe" and not metrics_to_compute.get(metric):
+                        # Map operator name to requested metric key
+                        metric_req_key = "yaw" if metric == "face_pose" else metric
+                        if metric != "niqe" and not metrics_to_compute.get(metric_req_key):
                             continue
                             
                         if metric in op_results and op_results[metric].success:
                             op_val = op_results[metric].metrics.get(key, 0.0)
+                            
                             # Handle Legacy fallback
-                            leg_val = getattr(frame.metrics, key, 0.0) or 0.0
+                            legacy_key = key
+                            if metric == "face_pose":
+                                legacy_key = "yaw" # Compare yaw specifically
+                                
+                            leg_val = getattr(frame.metrics, legacy_key, 0.0) or 0.0
                             
                             if abs(op_val - leg_val) > 1.0:
                                 self.logger.warning(
