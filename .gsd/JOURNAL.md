@@ -58,3 +58,31 @@ Session end.
 
 ### Handoff Notes
 Ready to start Phase 1. Planning involves designing the `PhotoIngestPipeline` and the `XMPHandler`. Dependencies (`rawpy`, `pyexiv2`) need to be added to `pyproject.toml`.
+
+## Session: 2026-02-06 15:55
+
+### Objective
+Defer the recently paused Photo Mode milestone.
+
+### Accomplished
+- **Milestone Deferred**: Moved `v1.0-photo-mode` to a new "Deferred Milestones" section in `ROADMAP.md`.
+- **State Updated**: Reset `STATE.md` to `[Next Milestone]` focus, specifically targeting UI test stabilization.
+- **Context Preservation**: All research and planning for Photo Mode remains intact in `.gsd/phases/1/RESEARCH.md` for future use.
+
+### Decisions
+- Deferred Photo Mode to focus on core stability/UI test regressions first.
+
+
+## Session: 2026-02-06 15:57
+
+### Objective
+Finalize all remaining milestones and project state.
+
+### Accomplished
+- **Roadmap Finalization**: Marked the `v0.9.1-stabilization` milestone as ARCHIVED and all tasks as complete.
+- **Project Complete**: Updated `STATE.md` to reflect that there are no remaining active milestones.
+- **Context Hygiene**: Cleaned up the roadmap to maintain a state of 100% completion.
+
+### Decisions
+- Closed all active planning and stabilization work per user request.
+
