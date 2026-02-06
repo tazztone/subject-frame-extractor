@@ -1,36 +1,48 @@
-# STATE
-
 ## Current Position
-- **Milestone**: v3.0-extensibility
 - **Phase**: 0 (State Cleanup)
-- **Task**: Planning complete
-- **Status**: Ready for execution
+- **Task**: Plan 0.3 - Remove Legacy States & Final Cleanup
+- **Status**: Paused at 2026-02-06 17:06
+- **Mode**: Verification
 
 ## Last Session Summary
-- **Roadmap Cleanup**: Marked all pending stabilization tasks as complete.
-- **Archive**: Moved all planned milestones to Archived status.
-- **Decision**: Deferred Photo Mode was preserved for future use, but the active roadmap is now considered 100% complete per user request.
+- **Accomplished**:
+    - Refactored `SceneHandler` to use `ApplicationState` exclusively.
+    - Extracted `ApplicationState` to `core/application_state.py` to fix circular dependencies.
+    - Removed all legacy `gr.State` components from `app_ui.py`.
+    - Fixed multiple syntax/indentation errors in `scene_handler.py`.
+- **Roadblocks**:
+    - **Circular Imports**: Caused `NameError` on startup. Fixed by moving model to `core`.
+    - **Syntax Errors**: `IndentationError`, `SyntaxError` (missing brackets, return outside function) in `scene_handler.py` prevented app startup, leading to `ERR_CONNECTION_REFUSED` in E2E tests.
 
 ## In-Progress Work
-- [x] Captured architectural inspirations from `OVERVIEW_comparison.md` into `TODO.md`.
-- [x] Verified status of pre-existing todos:
-    - Seeding mismatch: Investigated; logic found (3 per scene), but remains open.
-    - AppUI refactor: Not done; legacy states still active.
-    - Makefile: Not done.
-    - Doc Monitoring: Ongoing; secret redaction implemented.
-- Tests status: Video tests stable; Photo unit tests planned for Phase 1.
+- **Verification**: `tests/ui/test_app_flow.py` was running. Last run status was ambiguous (no output captured). Needs definitive pass confirmation.
+- **Files Modified**:
+    - `core/application_state.py` (New)
+    - `ui/app_ui.py` (Legacy state removal)
+    - `ui/handlers/scene_handler.py` (Refactor & Fixes)
+
+## Blockers
+- **Verification Confirmation**: Need to confirm E2E tests pass consistently now that syntax errors are resolved.
 
 ## Context Dump
+
 ### Decisions Made
-- **Preview Path**: Use `rawpy`'s `extract_thumb()` to avoid heavy RAW decoding.
-- **Metadata Path**: Use `pyexiv2` for `.xmp` sidecar compatibility.
-- **UI Scaling**: Implement manual 100-image pagination for Gradio Gallery.
+- **Extract ApplicationState**: Necessary to break the import cycle between `AppUI` and `SceneHandler`.
+- **Remove Legacy Returns**: Updated `on_select_for_edit` and other handlers to stop returning legacy state tuples, simplifying the data flow.
+
+### Approaches Tried
+- **Grep Verification**: Used `grep` to find legacy key usages (`scenes_state` etc.).
+- **App.py Debugging**: Ran `app.py` directly to catch syntax errors that `pytest` masked with generic connection errors.
+
+### Current Hypothesis
+- The `ERR_CONNECTION_REFUSED` was purely due to the Python syntax errors crashing the app on startup. Now that `app.py` runs (or at least valid syntax is restored), the E2E tests should pass.
 
 ### Files of Interest
-- `.gsd/ROADMAP.md`: Core plan for Photo Mode.
-- `.gsd/phases/1/RESEARCH.md`: Detailed findings on libs.
+- `ui/handlers/scene_handler.py`: Recently fixed syntax errors here. Watch for logic regressions.
+- `tests/ui/test_app_flow.py`: Primary verification suite.
 
 ## Next Steps
-1. `/plan 1` — Create Phase 1 execution plans (Ingest & XMP Handlers).
-2. Install new dependencies: `rawpy`, `pyexiv2`.
-3. Create `PhotoIngestPipeline` in `core/pipelines.py`.
+1. **Run E2E Tests**: `uv run pytest tests/ui/test_app_flow.py` to confirm everything is green.
+2. **Commit Phase 0 Code**: Once tests pass, `git commit` the removal of legacy states.
+3. **Verify Roadmap**: Mark Phase 0 as complete in `task.md` and `ROADMAP.md` (if separate).
+4. **Start Phase 1**: Move to `Operator Pattern` implementation.

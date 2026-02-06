@@ -86,3 +86,33 @@ Finalize all remaining milestones and project state.
 ### Decisions
 - Closed all active planning and stabilization work per user request.
 
+
+## Session: 2026-02-06 16:00
+
+### Objective
+Refactor `SceneHandler` to use Unified State and remove legacy `gr.State` components (Phase 0).
+
+### Accomplished
+- [x] Moved `ApplicationState` to `core/application_state.py`.
+- [x] Refactored `SceneHandler` imports and logic.
+- [x] Removed legacy `gr.State` definitions from `app_ui.py`.
+- [x] Removed legacy state returns from `SceneHandler` methods (`on_select_for_edit`, `on_reset`, etc.).
+- [x] Fixed syntax errors preventing app startup.
+
+### Verification
+- [ ] `tests/ui/test_app_flow.py` - Run initiated but result unconfirmed at pause.
+- [x] `app.py` syntax check - Passed (after fixes).
+
+### Paused Because
+User requested pause. Final verification pending.
+
+### Handoff Notes
+Resume by running the E2E tests. If they pass, Phase 0 is done.
+
+**Errors encountered and fixed this session:**
+1. `NameError: name 'ApplicationState' is not defined` (Circular Import) -> Extracted to `core/application_state.py`.
+2. `KeyError: 'scene_gallery_index_map_state'` -> Removed legacy key access in `SceneHandler`.
+3. `SyntaxError` (Missing bracket) in list definition -> Fixed in `scene_handler.py`.
+4. `IndentationError` in `on_select_for_edit` -> Fixed indentation.
+5. `SyntaxError` ('return' outside function) -> Restored missing `if` block.
+6. `net::ERR_CONNECTION_REFUSED` in tests -> Caused by app crashing on startup due to above syntax errors.
