@@ -1,34 +1,35 @@
 ## Current Position
-- **Phase**: 1 (Operator Design)
-- **Task**: Planning complete
-- **Status**: Ready for execution
+- **Phase**: 2 (Core Migration)
+- **Task**: Planning Complete
+- **Status**: Ready for Execution
 - **Mode**: Execution
 
 ## Last Session Summary
 - **Accomplished**:
-    - **Research Complete**: Documented FiftyOne Operator pattern in `.gsd/phases/1/RESEARCH.md`.
-    - **Plans Created**: 2 execution plans (1-PLAN.md, 2-PLAN.md) with 6 total tasks.
-    - **Protocol Design**: Defined `Operator` Protocol, `OperatorContext`, `OperatorConfig`.
+    - **Phase 1 Complete**: Operator infrastructure and SharpnessOperator implemented.
+    - **Phase 2 Planned**: Created 4 execution plans covering all remaining metrics.
+    - **Scope Defined**: Simple CV metrics, NIQE (stateful), Face metrics (context-aware), and Pipeline refactor.
 
 ## In-Progress Work
-- None (Ready to execute)
+- None (Ready to execute Phase 2)
 
 ## Blockers
 - None
 
 ## Context Dump
 
-### Decisions Made
-- **Protocol over ABC**: Use Python `Protocol` for type hints + duck typing.
-- **Minimal Context**: `OperatorContext` dataclass simpler than FiftyOne's full context.
-- **Dict-based Registry**: Simple registration pattern, auto-discovery deferred to Phase 3.
+### Key Decisions
+- **NIQE**: Stateful operator pattern (lazy load `pyiqa` in `initialize`).
+- **Face Metrics**: Context-aware pattern (read `ctx.params` populated by pipeline).
+- **Refactor**: `AnalysisPipeline` will populate context -> `run_operators` -> flatten results.
 
 ### Files of Interest
-- `.gsd/phases/1/1-PLAN.md`: Operator Protocol Infrastructure (3 tasks)
-- `.gsd/phases/1/2-PLAN.md`: SharpnessOperator Prototype (3 tasks)
-- `core/operators/` — Target directory (to be created)
+- `.gsd/phases/2/1-PLAN.md`: Simple CV Metrics (Edge, Contrast, Brightness, Entropy)
+- `.gsd/phases/2/2-PLAN.md`: NIQE Operator (Stateful)
+- `.gsd/phases/2/3-PLAN.md`: Face Metrics (Eyes, Pose)
+- `.gsd/phases/2/4-PLAN.md`: Pipeline Integration
 
 ## Next Steps
-1. **Execute Phase 1**: Run `/execute 1` to implement all plans.
-2. **Verify**: Run tests to confirm operator infrastructure works.
-3. **Commit**: Git commit completed work.
+1. **Execute Phase 2**: Run `/execute 2` to migrate all metrics.
+2. **Verify**: Ensure metadata output remains consistent.
+3. **Cleanup**: Remove legacy `calculate_quality_metrics`.
