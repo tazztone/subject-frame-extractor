@@ -3,19 +3,19 @@
 ## Project Status
 - **Current Milestone**: v0.9.0-testing-stabilization
 - **Phase**: Phase 4: Gap Closure
-- **Status**: 📋 Plans Ready
+- **Status**: ⏸️ Paused (Phase 4.1 UI Debugging Complete)
 
 ## Current Position
 - **Milestone**: v0.9.0-testing-stabilization
 - **Phase**: Phase 4: Gap Closure
-- **Task**: All gap plans created, ready for execution
+- **Task**: Completed UI Test Stabilization (Phase 4.1)
 
-## Gap Closure Mode
+## Gap Closure Status
 Addressing 3 categories of gaps from milestone audit (2026-02-06):
 
 ### 🔴 High Priority (Must-Have Blockers)
-- [ ] Fix UI test extraction timeout ([1-PLAN.md](file:///home/tazztone/_coding/subject-frame-extractor/.gsd/phases/4/1-PLAN.md))
-- [ ] Fix selectors/mock state divergence ([PLAN.md](file:///home/tazztone/_coding/subject-frame-extractor/.gsd/phases/4/PLAN.md))
+- [x] Fix UI test extraction timeout ([1-PLAN.md](file:///home/tazztone/_coding/subject-frame-extractor/.gsd/phases/4/1-PLAN.md))
+- [x] Fix selectors/mock state divergence ([PLAN.md](file:///home/tazztone/_coding/subject-frame-extractor/.gsd/phases/4/PLAN.md))
 
 ### 🟡 Medium Priority (Quality)
 - [ ] Create VERIFICATION.md for Phases 1-3 ([2-PLAN.md](file:///home/tazztone/_coding/subject-frame-extractor/.gsd/phases/4/2-PLAN.md))
@@ -23,11 +23,17 @@ Addressing 3 categories of gaps from milestone audit (2026-02-06):
 ### 🟢 Low Priority (Nice-to-Have)
 - [ ] Isolate slow audits with `@pytest.mark.slow`
 
-## Research Complete
-Root cause analysis in `.gsd/phases/4/RESEARCH.md`:
-- Traced extraction flow: Button → run_extraction_wrapper → _run_pipeline → execute_extraction → _on_extraction_success
-- Mock patches `_run_impl` correctly
-- Need fresh-context execution to observe actual failure state
+## Context Dump (2026-02-06)
+**Accomplished**: Stabilized `test_full_user_flow` (passing).
+- **Fix 1 (Test)**: Added robust Wait & Retry logic (tab switching) to `test_app_flow.py` (Steps 2-5) to handle Gradio lazy rendering.
+- **Fix 2 (App Bug)**: Fixed `ui/app_ui.py` button handlers (propagation/analysis) which were returning generators instead of yielding.
+- **Fix 3 (Mock)**: Verified `mock_app.py` correctly populates `seed_result` to enable UI buttons.
+
+**Files of Interest**:
+- `tests/ui/test_app_flow.py`: Contains the robust wait logic.
+- `ui/app_ui.py`: Contains the fixed button handlers (`_propagation_button_handler`, etc.).
 
 ## Next Steps
-1. `/execute 4` — Execute gap closure plans with fresh context
+1. Isolate slow audits (Phase 4.1 remaining).
+2. Create VERIFICATION.md files (Phase 4.2).
+3. Final Verify.
