@@ -31,7 +31,7 @@ try:
 except ImportError:
     HAS_ANALYZER = False
 
-pytestmark = [pytest.mark.e2e, pytest.mark.ux_audit, pytest.mark.audit]
+pytestmark = [pytest.mark.e2e, pytest.mark.ux_audit, pytest.mark.audit, pytest.mark.slow]
 
 
 @pytest.fixture
