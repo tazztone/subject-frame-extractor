@@ -6,18 +6,6 @@
 - **Status**: Active (resumed 2026-02-06T09:50:29+01:00)
 
 ## Current Position
-- **Current Milestone**: v0.9.0-testing-stabilization
-- **Phase**: Phase 4: Gap Closure
-- **Status**: ⚠️ Fixing Verification Regression
-
-## Gap Closure Status
-Addressing 3 categories of gaps from milestone audit (2026-02-06):
-
-### 🔴 High Priority (Must-Have Blockers)
-- [x] Fix UI test extraction timeout ([1-PLAN.md](file:///home/tazztone/_coding/subject-frame-extractor/.gsd/phases/4/1-PLAN.md))
-- [x] Fix selectors/mock state divergence ([PLAN.md](file:///home/tazztone/_coding/subject-frame-extractor/.gsd/phases/4/PLAN.md))
-
-### 🟡 Medium Priority (Quality)
 - [ ] Create VERIFICATION.md for Phases 1-3 ([2-PLAN.md](file:///home/tazztone/_coding/subject-frame-extractor/.gsd/phases/4/2-PLAN.md))
 
 ### 🟢 Low Priority (Nice-to-Have)
