@@ -1,26 +1,18 @@
 # STATE
 
 ## Project Status
-- **Current Milestone**: v0.9.0-testing-stabilization
-- **Phase**: Phase 4: Gap Closure
-- **Status**: Active (resumed 2026-02-06T09:50:29+01:00)
+- **Current Milestone**: v0.9.0-testing-stabilization (Complete)
+- **Phase**: Phase 4: Gap Closure (Complete)
+- **Status**: Milestone Complete
 
 ## Current Position
-- [ ] Create VERIFICATION.md for Phases 1-3 ([2-PLAN.md](file:///home/tazztone/_coding/subject-frame-extractor/.gsd/phases/4/2-PLAN.md))
+- **Phase**: All Phases Complete
+- **Task**: Milestone v0.9.0-testing-stabilization Verified
+- **Status**: Ready for Next Milestone
 
-### 🟢 Low Priority (Nice-to-Have)
-- [ ] Isolate slow audits with `@pytest.mark.slow`
-
-## Context Dump (2026-02-06)
-**Accomplished**: Stabilized `test_full_user_flow` (passing).
-- **Fix 1 (Test)**: Added robust Wait & Retry logic (tab switching) to `test_app_flow.py` (Steps 2-5) to handle Gradio lazy rendering.
-- **Fix 2 (App Bug)**: Fixed `ui/app_ui.py` button handlers (propagation/analysis) which were returning generators instead of yielding.
-- **Fix 3 (Mock)**: Verified `mock_app.py` correctly populates `seed_result` to enable UI buttons.
-
-**Files of Interest**:
-- `tests/ui/test_app_flow.py`: Contains the robust wait logic.
-- `ui/app_ui.py`: Contains the fixed button handlers (`_propagation_button_handler`, etc.).
+## Last Session Summary
+Phase 4 executed successfully. Regression fixed, redundant code removed, and full test suite passed.
 
 ## Next Steps
-1. Fix `test_empty_source_shows_message` failure.
-2. Re-run Verification.
+1. Archive Milestone v0.9.0.
+2. Plan next milestone (v2.2-features or similar).
