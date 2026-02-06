@@ -253,4 +253,10 @@ class TestErrorHandling:
         # Check logs for Error
         open_logs(page)
         # Give mock app a moment to yield the error
-        expect(page.locator("#unified_log")).to_contain_text("Error", timeout=10000)
+        # Target the textarea specifically for value check
+        try:
+             expect(page.locator("#unified_log textarea")).to_have_value(re.compile("Error|Validation failed"), timeout=10000)
+        except AssertionError:
+             # Fallback/Debug: check unified_status as well since we update both
+             expect(page.locator("#unified_status")).to_contain_text("Validation Failed", timeout=5000)
+

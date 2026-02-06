@@ -962,7 +962,17 @@ class AppUI:
         if isinstance(ui_args.get("upload_video"), list):
             ui_args["upload_video"] = ui_args["upload_video"][0] if ui_args["upload_video"] else None
         clean_args = {k: v for k, v in ui_args.items() if v is not None}
-        event = ExtractionEvent.model_validate(clean_args)
+        
+        try:
+            event = ExtractionEvent.model_validate(clean_args)
+        except Exception as e:
+            self.app_logger.error(f"Validation failed: {e}", exc_info=True)
+            yield {
+                self.components["unified_log"]: f"[ERROR] Validation failed: {e}",
+                self.components["unified_status"]: f"❌ **Validation Failed.** Check inputs."
+            }
+            return
+
         yield from self._run_pipeline(
             execute_extraction, event, progress or gr.Progress(), 
             lambda res: self._on_extraction_success(res, current_state)

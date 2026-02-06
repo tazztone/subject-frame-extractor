@@ -7,8 +7,8 @@
 
 ## Current Position
 - **Current Milestone**: v0.9.0-testing-stabilization
-- **Phase**: Phase 4: Gap Closure (Complete)
-- **Status**: ✅ Phase 4 Verified
+- **Phase**: Phase 4: Gap Closure
+- **Status**: ⚠️ Fixing Verification Regression
 
 ## Gap Closure Status
 Addressing 3 categories of gaps from milestone audit (2026-02-06):
@@ -34,5 +34,5 @@ Addressing 3 categories of gaps from milestone audit (2026-02-06):
 - `ui/app_ui.py`: Contains the fixed button handlers (`_propagation_button_handler`, etc.).
 
 ## Next Steps
-1. Request Milestone Audit/Completion.
-2. Begin v2.1-stabilized planning? (Or check ROADMAP for next milestone).
+1. Fix `test_empty_source_shows_message` failure.
+2. Re-run Verification.
