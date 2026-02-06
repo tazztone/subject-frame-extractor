@@ -23,7 +23,7 @@
 **Objective**: Rewrite `TESTING.md` and ensure 100% test pass rate in new structure.
 
 ### Phase 4: Gap Closure
-**Status**: ⬜ Not Started
+**Status**: ✅ Complete
 **Objective**: Close all gaps identified in v0.9.0 milestone audit.
 
 #### 🔴 High Priority (Must-Have Blockers)
@@ -38,12 +38,12 @@
 | Missing VERIFICATION.md evidence | [2-PLAN.md](file:///home/tazztone/_coding/subject-frame-extractor/.gsd/phases/4/2-PLAN.md) | ⬜ |
 
 **Tasks:**
-- [ ] 🔴 Fix UI test extraction timeout (Plan 4.1)
-- [ ] 🔴 Synchronize UI test selectors with current Gradio labels
-- [ ] 🔴 Update `mock_app.py` for full `ApplicationState` compatibility
-- [ ] 🟡 Create VERIFICATION.md for Phases 1-3 (retroactive evidence)
-- [ ] 🟢 Isolate slow accessibility/UX audits with `@pytest.mark.slow`
-- [ ] ✅ Verify full unit + fast-ui suite pass with zero failures
+- [x] 🔴 Fix UI test extraction timeout (Plan 4.1)
+- [x] 🔴 Synchronize UI test selectors with current Gradio labels
+- [x] 🔴 Update `mock_app.py` for full `ApplicationState` compatibility
+- [x] 🟡 Create VERIFICATION.md for Phases 1-3 (retroactive evidence)
+- [x] 🟢 Isolate slow accessibility/UX audits with `@pytest.mark.slow`
+- [x] ✅ Verify full unit + fast-ui suite pass with zero failures
 
 
 ---
