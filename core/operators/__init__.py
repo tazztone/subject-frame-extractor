@@ -32,6 +32,7 @@ Quick Start:
     results = run_operators(image_rgb, mask=None, config=app_config)
 """
 
+
 from core.operators.base import (
     Operator,
     OperatorConfig,
@@ -42,14 +43,11 @@ from core.operators.registry import (
     OperatorRegistry,
     register_operator,
     run_operators,
+    discover_operators,
 )
 
-# Import operators to trigger registration
-from core.operators.sharpness import SharpnessOperator
-from core.operators.simple_cv import EdgeStrengthOperator, ContrastOperator, BrightnessOperator
-from core.operators.entropy import EntropyOperator
-from core.operators.niqe import NiqeOperator
-from core.operators.face_metrics import EyesOpenOperator, FacePoseOperator
+# Auto-discover all operators in this package
+discover_operators()
 
 __all__ = [
     "Operator",
@@ -59,5 +57,5 @@ __all__ = [
     "OperatorRegistry",
     "register_operator",
     "run_operators",
-    "SharpnessOperator",
+    "discover_operators",
 ]

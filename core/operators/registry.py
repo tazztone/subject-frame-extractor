@@ -8,6 +8,8 @@ for integrating operators with the analysis pipeline.
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Callable, Optional, Type
+import importlib
+import pkgutil
 
 from core.operators.base import Operator, OperatorConfig, OperatorContext, OperatorResult
 
@@ -111,6 +113,33 @@ class OperatorRegistry:
         cls._operators.clear()
         cls._initialized.clear()
 
+
+def discover_operators(package_path: str = "core.operators") -> list[str]:
+    """
+    Auto-discover and register operators from a package.
+
+    Args:
+        package_path: Dotted module path to the package containing operators
+
+    Returns:
+        List of names of all discovered operators
+    """
+    try:
+        package = importlib.import_module(package_path)
+    except ImportError:
+        return []
+
+    if hasattr(package, "__path__"):
+        for importer, modname, ispkg in pkgutil.iter_modules(package.__path__):
+            # Skip infrastructure modules to avoid circular imports or re-registration loops
+            if modname not in ("base", "registry", "__init__"):
+                try:
+                    importlib.import_module(f"{package_path}.{modname}")
+                except Exception:
+                    # Log error but continue discovery
+                    pass
+
+    return OperatorRegistry.list_names()
 
 def register_operator(cls: Type[Operator]) -> Type[Operator]:
     """
