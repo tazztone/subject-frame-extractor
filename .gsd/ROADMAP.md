@@ -16,25 +16,25 @@
 ## Phases
 
 ### Phase 0: State Cleanup
-**Status**: ⬜ Not Started
+**Status**: ✅ Complete
 **Objective**: Migrate `AppUI` from legacy `gr.State` to unified `ApplicationState`.
-- [ ] Audit all `gr.State` usages in `app_ui.py`
-- [ ] Refactor `SceneHandler` and callbacks to use `ApplicationState`
-- [ ] Remove legacy state components
+- [x] Audit all `gr.State` usages in `app_ui.py`
+- [x] Refactor `SceneHandler` and callbacks to use `ApplicationState`
+- [x] Remove legacy state components
 
 ### Phase 1: Operator Design
-**Status**: ⬜ Not Started
+**Status**: ✅ Complete
 **Objective**: Design the Operator Pattern with research and prototype.
-- [ ] Research FiftyOne Operators; document in `.gsd/milestones/v3.0-extensibility/1/RESEARCH.md`
-- [ ] Define `Operator` Protocol/ABC in `core/operators/base.py`
-- [ ] Prototype `sharpness` metric as operator
+- [x] Research FiftyOne Operators; document in `.gsd/phases/1/RESEARCH.md`
+- [x] Define `Operator` Protocol in `core/operators/base.py`
+- [x] Prototype `sharpness` metric as operator
 
 ### Phase 2: Core Migration
-**Status**: ⬜ Not Started
+**Status**: ✅ Complete
 **Objective**: Migrate remaining metrics and refactor `AnalysisPipeline`.
-- [ ] Migrate: `niqe`, `face_sim`, `mask_area`, `contrast`, `brightness`
-- [ ] Refactor `AnalysisPipeline._process_single_frame` to use operators
-- [ ] Create golden snapshot; verify regression
+- [x] Migrate: `niqe`, `face_sim`, `mask_area`, `contrast`, `brightness`
+- [x] Refactor `AnalysisPipeline._process_single_frame` to use operators
+- [x] Create golden snapshot; verify regression
 
 ### Phase 3: Plugin Infrastructure
 **Status**: ⬜ Not Started
