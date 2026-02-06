@@ -1,34 +1,38 @@
 ## Current Position
 - **Phase**: 2 (Core Migration)
-- **Task**: Planning Complete
-- **Status**: Paused at 2026-02-06 23:12
-- **Mode**: Planning
+- **Task**: Execution Complete
+- **Status**: Paused at 2026-02-06 23:25
+- **Mode**: PAUSED
 
 ## Last Session Summary
 - **Accomplished**:
-    - **Phase 1 Complete**: Operator infrastructure and SharpnessOperator implemented. Verified with 28 passing unit tests.
-    - **Phase 2 Planned**: Created 6 refined execution plans (2.0 - 2.5) with regression safety (golden snapshots) and proper wave ordering.
-    - **Infrastructure**: Established `Operator`, `OperatorContext`, `OperatorResult` protocols and `OperatorRegistry`.
+  - **Phase 2 Execution**: Successfully migrated all metrics to the Operator Framework.
+    - Implemented `SimpleCV`, `Entropy`, `Niqe`, and `FaceMetrics` operators.
+    - Refactored `AnalysisPipeline` to use `run_operators` exclusively.
+    - Verified metric parity with legacy code using `test_metric_parity.py`.
+    - Deprecated `Frame.calculate_quality_metrics`.
+  - **Documentation**: Created `walkthrough.md` detailing the migration.
 
 ## In-Progress Work
-- None (Phase 2 Planning finalized and committed)
+- None (All Phase 2 plans executed and committed).
 
 ## Blockers
-- None
+- None.
 
 ## Context Dump
 
 ### Decisions Made
-- **Regression Safety**: Added Plan 2.0 specifically to capture "Golden Snapshots" of current metrics before refactoring.
-- **Wave Ordering**: Reordered plans so Face Metrics (Wave 3) run after Pipeline Integration (Wave 2) provides the necessary context.
-- **Protocol-First**: Used Python `Protocol` for duck-typing flexibility in the operator pattern.
+- **OperatorRegistry**: Centralized registry used for all operator instantiation.
+- **Drift Checks**: Used temporary drift check logic during migration (Plan 2.3) then removed it (Plan 2.5) after verification.
+- **Deprecation**: Legacy logic retained but deprecated to ensure safe rollback if needed.
+- **Dependency Mocking**: Used `sys.modules` patching for `NiqeOperator` tests to mock `pyiqa` and avoid large model downloads in CI.
 
 ### Files of Interest
-- `core/operators/`: Core implementation of the new pattern.
-- `.gsd/phases/2/`: Execution plans for the migration.
-- `tests/unit/test_operators.py`: Verification suite for the framework.
+- `core/operators/*.py`: New operator implementations.
+- `core/pipelines.py`: Updated pipeline logic.
+- `tests/regression/test_metric_parity.py`: Regression verification suite.
 
 ## Next Steps
-1. **Execute Phase 2**: Run `/execute 2` starting with Plan 2.0 (Regression Safety).
-2. **Implement Wave 1**: Simple CV and NIQE operators.
-3. **Verify Parity**: Use the golden snapshot test to ensure zero regression.
+1. **Explore Plugin System**: Start Phase 3 (Plugin Infrastructure).
+2. **Auto-Discovery**: Implement automatic operator loading from directory.
+3. **Documentation**: Write "How to Add an Operator" guide.
