@@ -3,18 +3,25 @@
 ## Project Status
 - **Current Milestone**: v0.9.0-testing-stabilization
 - **Phase**: Phase 4: Gap Closure
-- **Status**: 📋 Planned (Ready for Execution)
+- **Status**: 📋 Plans Ready
 
 ## Current Position
 - **Milestone**: v0.9.0-testing-stabilization
 - **Phase**: Phase 4: Gap Closure
-- **Task**: Planning complete
+- **Task**: All gap plans created, ready for execution
 
 ## Gap Closure Mode
-Addressing UI test regressions and stabilization issues identified in @v0.9.0 audit.
-- [x] Synchronize UI test selectors (partially - needs fresh-context debug)
-- [x] Isolate slow audits
-- [ ] Update mock_app state (Extraction Complete timeout persists)
+Addressing 3 categories of gaps from milestone audit (2026-02-06):
+
+### 🔴 High Priority (Must-Have Blockers)
+- [ ] Fix UI test extraction timeout ([1-PLAN.md](file:///home/tazztone/_coding/subject-frame-extractor/.gsd/phases/4/1-PLAN.md))
+- [ ] Fix selectors/mock state divergence ([PLAN.md](file:///home/tazztone/_coding/subject-frame-extractor/.gsd/phases/4/PLAN.md))
+
+### 🟡 Medium Priority (Quality)
+- [ ] Create VERIFICATION.md for Phases 1-3 ([2-PLAN.md](file:///home/tazztone/_coding/subject-frame-extractor/.gsd/phases/4/2-PLAN.md))
+
+### 🟢 Low Priority (Nice-to-Have)
+- [ ] Isolate slow audits with `@pytest.mark.slow`
 
 ## Research Complete
 Root cause analysis in `.gsd/phases/4/RESEARCH.md`:
@@ -23,4 +30,4 @@ Root cause analysis in `.gsd/phases/4/RESEARCH.md`:
 - Need fresh-context execution to observe actual failure state
 
 ## Next Steps
-1. `/execute 4` — Run Plan 4.1 to debug and fix UI test timeout
+1. `/execute 4` — Execute gap closure plans with fresh context
