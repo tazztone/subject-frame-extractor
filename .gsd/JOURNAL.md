@@ -167,3 +167,27 @@ Session end. Phase 2 project structure confirmed.
 
 ### Handoff Notes
 Ready to run `/execute 2`. Plan 2.0 starts with regression safety (golden snapshots), which is critical before touching `AnalysisPipeline`.
+
+## Session: 2026-02-06 23:25
+
+### Objective
+Execute Phase 2: Core Migration (Migrate legacy metrics to Operator Framework).
+
+### Accomplished
+- Implemented `SimpleCV` (Edge, Contrast, Brightness), `Entropy`, `Niqe`, `EyesOpen`, `FacePose` operators.
+- Integrated `OperatorRegistry` into `AnalysisPipeline`.
+- Verified 100% parity with legacy metrics via regression tests.
+- Switched pipeline to use Operators exclusively.
+- Deprecated legacy `calculate_quality_metrics`.
+
+### Verification
+- [x] `tests/regression/test_metric_parity.py` PASSED
+- [x] `tests/unit/test_niqe_operator.py` PASSED
+- [x] `tests/unit/test_face_operators.py` PASSED
+- [x] `tests/unit/test_simple_cv_operators.py` PASSED
+
+### Paused Because
+Phase 2 Complete. Clean break before Phase 3 (Plugin Infrastructure).
+
+### Handoff Notes
+System is fully running on the new Operator Engine. Legacy code is deprecated but present. Next phase should focus on making adding new operators easier (auto-discovery).
