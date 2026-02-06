@@ -23,7 +23,9 @@ from core.operators import (
     OperatorResult,
     OperatorRegistry,
     register_operator,
+    register_operator,
     run_operators,
+    discover_operators,
 )
 
 
@@ -536,3 +538,31 @@ class TestSharpnessOperator:
         
         # Lower scale should produce higher score for same image
         assert result_custom.metrics["sharpness_score"] >= result_default.metrics["sharpness_score"]
+
+
+# ============================================================================
+# TestAutoDiscovery
+# ============================================================================
+
+
+class TestAutoDiscovery:
+    """Tests for automatic operator discovery."""
+
+    def test_discover_finds_known_operators(self):
+        """discover_operators finds standard operators."""
+        # Note: fixtures clear registry, so we must run discovery
+        discovered = discover_operators()
+        
+        # Check for core operators we know exist
+        assert "sharpness" in discovered
+        assert "entropy" in discovered
+        assert "niqe" in discovered
+        assert "simple_cv_edge" in discovered
+
+    def test_discover_skips_infrastructure(self):
+        """Infrastructure modules are not discovered as operators."""
+        discovered = discover_operators()
+        
+        assert "base" not in discovered
+        assert "registry" not in discovered
+        assert "__init__" not in discovered
