@@ -1,65 +1,109 @@
 ---
 phase: 3
 plan: 1
-wave: 1
+wave: 2
 ---
 
-# Plan 3.1: Refactor __init__.py to Use Auto-Discovery
+# Plan 3.1: Operator Documentation & Example
 
 ## Objective
-Replace manual operator imports in `core/operators/__init__.py` with a call to `discover_operators()`.
-This simplifies adding new operators to just creating the file.
+Write developer documentation explaining how to add new operators.
+Validate the guide by creating a working example operator.
 
 ## Context
-- `core/operators/__init__.py` — Current manual imports (lines 47-52)
-- `core/operators/registry.py` — Contains `discover_operators()` from Plan 3.0
+- `core/operators/base.py` — Operator Protocol definition
+- `core/operators/sharpness.py` — Reference implementation
 
 ## Tasks
 
 <task type="auto">
-  <name>Replace manual imports with discover_operators()</name>
-  <files>core/operators/__init__.py</files>
+  <name>Create HOW_TO_ADD_OPERATOR.md guide</name>
+  <files>docs/HOW_TO_ADD_OPERATOR.md</files>
   <action>
-    1. Remove the explicit operator imports (SharpnessOperator, SimpleCV, etc.)
-    2. Add a call to `discover_operators()` at module load time
-    3. Keep the public `__all__` exports for framework types
+    Create a concise Markdown guide (~100 lines) with:
     
-    Before:
-    ```python
-    # Import operators to trigger registration
-    from core.operators.sharpness import SharpnessOperator
-    from core.operators.simple_cv import EdgeStrengthOperator, ...
-    ...
-    ```
+    1. **Quick Start** (10 lines): Minimal copy-paste example
+    2. **Step-by-Step**:
+       - Create `core/operators/my_metric.py`
+       - Implement `config` property
+       - Implement `execute(ctx)` method
+       - Add `@register_operator` decorator
+       - That's it! Auto-discovered on import.
+    3. **Testing**: Add tests to `tests/unit/test_<name>_operator.py`
+    4. **Advanced**: `initialize()`/`cleanup()`, `requires_mask`, error handling
+    5. **Reference**: Links to existing operators
     
-    After:
-    ```python
-    # Auto-discover and register all operators
-    from core.operators.registry import discover_operators
-    discover_operators()
-    ```
-    
-    AVOID: Breaking the existing `__all__` exports that downstream code relies on.
+    Keep examples copy-paste ready. Avoid boilerplate explanations.
   </action>
-  <verify>pytest tests/unit/test_operators.py -v</verify>
-  <done>All 28+ existing operator tests pass with auto-discovery.</done>
+  <verify>test -f docs/HOW_TO_ADD_OPERATOR.md && head -30 docs/HOW_TO_ADD_OPERATOR.md</verify>
+  <done>File exists with Quick Start section visible.</done>
 </task>
 
 <task type="auto">
-  <name>Verify existing pipeline integration</name>
-  <files>core/pipelines.py</files>
+  <name>Create example operator in examples/ directory</name>
+  <files>examples/operators/pixel_count.py</files>
   <action>
-    Run the regression test suite to confirm `AnalysisPipeline` still works:
-    - `run_operators()` is called from `_process_single_frame`
-    - All operators are discovered and executed
+    Create a simple operator following the guide exactly:
     
-    No code changes expected. This is a verification task.
+    ```python
+    """Example operator demonstrating the plugin pattern."""
+    from core.operators import Operator, OperatorConfig, OperatorContext, OperatorResult
+    from core.operators import register_operator
+    import numpy as np
+    
+    @register_operator
+    class PixelCountOperator:
+        @property
+        def config(self) -> OperatorConfig:
+            return OperatorConfig(
+                name="pixel_count",
+                display_name="Non-Black Pixel Count",
+                category="debug",
+                default_enabled=False,  # Not for production
+            )
+        
+        def execute(self, ctx: OperatorContext) -> OperatorResult:
+            count = np.count_nonzero(ctx.image_rgb.sum(axis=-1))
+            return OperatorResult(metrics={"pixel_count": float(count)})
+    ```
+    
+    Note: This is in `examples/` NOT `core/operators/` to avoid polluting production.
   </action>
-  <verify>pytest tests/regression/test_metric_parity.py -v</verify>
-  <done>Metric parity tests pass, confirming operators compute same values.</done>
+  <verify>python -c "import examples.operators.pixel_count; from core.operators import OperatorRegistry; print(OperatorRegistry.get('pixel_count'))"</verify>
+  <done>Example operator can be imported and registers correctly.</done>
+</task>
+
+<task type="auto">
+  <name>Add example operator test</name>
+  <files>examples/operators/test_pixel_count.py</files>
+  <action>
+    Create a test file demonstrating how to test custom operators:
+    
+    ```python
+    import numpy as np
+    import pytest
+    from examples.operators.pixel_count import PixelCountOperator
+    from core.operators import OperatorContext
+    
+    def test_pixel_count_all_black():
+        op = PixelCountOperator()
+        ctx = OperatorContext(image_rgb=np.zeros((10, 10, 3), dtype=np.uint8))
+        result = op.execute(ctx)
+        assert result.metrics["pixel_count"] == 0.0
+    
+    def test_pixel_count_all_white():
+        op = PixelCountOperator()
+        ctx = OperatorContext(image_rgb=np.full((10, 10, 3), 255, dtype=np.uint8))
+        result = op.execute(ctx)
+        assert result.metrics["pixel_count"] == 100.0  # 10x10 pixels
+    ```
+  </action>
+  <verify>pytest examples/operators/test_pixel_count.py -v</verify>
+  <done>Both example tests pass.</done>
 </task>
 
 ## Success Criteria
-- [ ] `core/operators/__init__.py` no longer has manual operator imports
-- [ ] All 28+ existing tests pass
-- [ ] Regression (metric parity) tests pass
+- [ ] `docs/HOW_TO_ADD_OPERATOR.md` exists and is < 150 lines
+- [ ] Example operator in `examples/operators/` works
+- [ ] Example tests pass
+- [ ] Guide matches actual implementation pattern
