@@ -218,11 +218,6 @@ class AppUI:
             "text_prompt_input",
             "best_frame_strategy_input",
             "tracker_model_name_input",
-            "extracted_video_path_state",
-            "extracted_frames_dir_state",
-            "analysis_output_dir_state",
-            "analysis_metadata_path_state",
-            "scenes_state",
             "propagate_masks_button",
             "seeding_results_column",
             "propagation_group",
@@ -230,7 +225,6 @@ class AppUI:
             "scene_face_sim_min_input",
             "filtering_tab",
             "scene_gallery",
-            "scene_gallery_index_map_state",
         ]
 
         # Undo/Redo History
@@ -518,21 +512,7 @@ class AppUI:
         # Unified Application State
         self.components["application_state"] = gr.State(ApplicationState())
 
-        # Legacy states (needed by SceneHandler until it is refactored to use ApplicationState)
-        self.components["scenes_state"] = gr.State([])
-        self.components["extracted_frames_dir_state"] = gr.State("")
-        self.components["scene_gallery_index_map_state"] = gr.State([])
-        self.components["selected_scene_id_state"] = gr.State(None)
-        self.components["gallery_image_state"] = gr.State(None)
-        self.components["gallery_shape_state"] = gr.State(None)
-        self.components["analysis_output_dir_state"] = gr.State("")
-        self.components["extracted_video_path_state"] = gr.State("")
-        self.components["analysis_metadata_path_state"] = gr.State("")
 
-        # Undo/Redo State (Separate as it uses deque)
-        self.components["scene_history_state"] = gr.State(deque(maxlen=self.history_depth))
-        # Smart Filter State
-        self.components["smart_filter_state"] = gr.State(False)
 
         self._setup_visibility_toggles()
         self._setup_pipeline_handlers()
@@ -1025,8 +1005,6 @@ class AppUI:
         </div>"""
         return {
             self.components["application_state"]: new_state,
-            self.components["extracted_video_path_state"]: result["extracted_video_path_state"],
-            self.components["extracted_frames_dir_state"]: result["extracted_frames_dir_state"],
             self.components["unified_status"]: msg,
             self.components["main_tabs"]: gr.update(selected=1),
         }
@@ -1049,9 +1027,6 @@ class AppUI:
         </div>"""
         return {
             self.components["application_state"]: new_state,
-            self.components["scenes_state"]: result["scenes"],
-            self.components["analysis_output_dir_state"]: result["output_dir"],
-            self.components["extracted_frames_dir_state"]: result["output_dir"], # Mirror for handler compatibility
             self.components["seeding_results_column"]: gr.update(visible=True),
             self.components["propagation_group"]: gr.update(visible=True),
             self.components["propagate_masks_button"]: button_update,
@@ -1187,9 +1162,6 @@ class AppUI:
                 value=run_config.get("best_frame_strategy", "Largest Person")
             ),
             self.components["tracker_model_name_input"]: gr.update(value=run_config.get("tracker_model_name", "sam3")),
-            self.components["extracted_video_path_state"]: run_config.get("video_path", ""),
-            self.components["extracted_frames_dir_state"]: str(output_dir),
-            self.components["analysis_output_dir_state"]: str(output_dir.resolve() if output_dir else ""),
             self.components["application_state"]: new_state,
         }
 
@@ -1220,8 +1192,6 @@ class AppUI:
                         visible=any((s.seed_metrics or {}).get("best_face_sim") is not None for s in scenes)
                     ),
                     self.components["scene_gallery"]: gr.update(value=gallery_items),
-                    self.components["scenes_state"]: [s.model_dump() for s in scenes],
-                    self.components["scene_gallery_index_map_state"]: index_map,
                 }
             )
 
@@ -1364,12 +1334,12 @@ class AppUI:
         
         # We need to update on_identity_confidence_change to take/return state
         c["identity_confidence_slider"].release(
-            lambda conf, state: self.on_identity_confidence_change(conf, state),
+            self.on_identity_confidence_change,
             inputs=[c["identity_confidence_slider"], c["application_state"]],
             outputs=[c["discovered_faces_gallery"]],
         )
         c["discovered_faces_gallery"].select(
-            lambda state, conf, evt: self.on_discovered_face_select(state, conf, evt),
+            self.on_discovered_face_select,
             inputs=[c["application_state"], c["identity_confidence_slider"]],
             outputs=[c["face_ref_img_path_input"], c["face_ref_image"], c["find_people_status"]],
         )
