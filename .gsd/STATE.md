@@ -1,35 +1,34 @@
 ## Current Position
 - **Phase**: 2 (Core Migration)
 - **Task**: Planning Complete
-- **Status**: Ready for Execution
-- **Mode**: Execution
+- **Status**: Paused at 2026-02-06 23:12
+- **Mode**: Planning
 
 ## Last Session Summary
 - **Accomplished**:
-    - **Phase 1 Complete**: Operator infrastructure and SharpnessOperator implemented.
-    - **Phase 2 Planned**: Created 4 execution plans covering all remaining metrics.
-    - **Scope Defined**: Simple CV metrics, NIQE (stateful), Face metrics (context-aware), and Pipeline refactor.
+    - **Phase 1 Complete**: Operator infrastructure and SharpnessOperator implemented. Verified with 28 passing unit tests.
+    - **Phase 2 Planned**: Created 6 refined execution plans (2.0 - 2.5) with regression safety (golden snapshots) and proper wave ordering.
+    - **Infrastructure**: Established `Operator`, `OperatorContext`, `OperatorResult` protocols and `OperatorRegistry`.
 
 ## In-Progress Work
-- None (Ready to execute Phase 2)
+- None (Phase 2 Planning finalized and committed)
 
 ## Blockers
 - None
 
 ## Context Dump
 
-### Key Decisions
-- **NIQE**: Stateful operator pattern (lazy load `pyiqa` in `initialize`).
-- **Face Metrics**: Context-aware pattern (read `ctx.params` populated by pipeline).
-- **Refactor**: `AnalysisPipeline` will populate context -> `run_operators` -> flatten results.
+### Decisions Made
+- **Regression Safety**: Added Plan 2.0 specifically to capture "Golden Snapshots" of current metrics before refactoring.
+- **Wave Ordering**: Reordered plans so Face Metrics (Wave 3) run after Pipeline Integration (Wave 2) provides the necessary context.
+- **Protocol-First**: Used Python `Protocol` for duck-typing flexibility in the operator pattern.
 
 ### Files of Interest
-- `.gsd/phases/2/1-PLAN.md`: Simple CV Metrics (Edge, Contrast, Brightness, Entropy)
-- `.gsd/phases/2/2-PLAN.md`: NIQE Operator (Stateful)
-- `.gsd/phases/2/3-PLAN.md`: Face Metrics (Eyes, Pose)
-- `.gsd/phases/2/4-PLAN.md`: Pipeline Integration
+- `core/operators/`: Core implementation of the new pattern.
+- `.gsd/phases/2/`: Execution plans for the migration.
+- `tests/unit/test_operators.py`: Verification suite for the framework.
 
 ## Next Steps
-1. **Execute Phase 2**: Run `/execute 2` to migrate all metrics.
-2. **Verify**: Ensure metadata output remains consistent.
-3. **Cleanup**: Remove legacy `calculate_quality_metrics`.
+1. **Execute Phase 2**: Run `/execute 2` starting with Plan 2.0 (Regression Safety).
+2. **Implement Wave 1**: Simple CV and NIQE operators.
+3. **Verify Parity**: Use the golden snapshot test to ensure zero regression.
