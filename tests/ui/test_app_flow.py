@@ -74,18 +74,40 @@ class TestMainWorkflow:
         switch_to_tab(page, "Subject")
         page.screenshot(path=str(screenshot_dir / "after_tab_switch.png"))
         
-        # Ensure tab content is rendered (look for multiple possible elements)
-        # Sometimes Gradio needs a moment to 'mount' the tab content
+        # Ensure tab content is rendered - Gradio tabs render content lazily
+        # Note: Can't use reload as it loses Gradio state (extraction results, etc)
+        # Use tab switch to force re-render instead
         print("  - Waiting for tab content...")
+        subject_content_visible = False
+        
+        # Wait extra time for Gradio lazy rendering
+        page.wait_for_timeout(2000)
+        
         try:
-            # Check for header OR strategy selection specifically
-            # In Gradio 6, we might need to wait for the component to be detached/reattached
-            page.wait_for_selector("text=Step 2: Define Subject", state="visible", timeout=15000)
-            print("  ✓ Subject tab content loaded")
-        except Exception as e:
-            page.screenshot(path=str(screenshot_dir / "timeout_tab_content_v2.png"))
-            print(f"  ❌ Subject tab content NOT visible. Screenshot saved. Error: {e}")
-            raise
+            # First attempt: wait for the Subject tab header
+            page.wait_for_selector("text=Step 2: Define Subject", state="visible", timeout=8000)
+            subject_content_visible = True
+        except Exception:
+            print("  - Subject content not visible, trying tab switch...")
+            page.screenshot(path=str(screenshot_dir / "before_tab_retry.png"))
+            
+        # Fallback: switch tabs to force Gradio to re-render content
+        if not subject_content_visible:
+            switch_to_tab(page, "Source")  # Switch away from Subject
+            page.wait_for_timeout(1000)
+            switch_to_tab(page, "Subject")  # Switch back
+            page.wait_for_timeout(2000)  # Wait for content to render
+            page.screenshot(path=str(screenshot_dir / "after_tab_retry.png"))
+            
+            try:
+                page.wait_for_selector("text=Step 2: Define Subject", state="visible", timeout=10000)
+                subject_content_visible = True
+            except Exception as e:
+                page.screenshot(path=str(screenshot_dir / "timeout_after_retry.png"))
+                print(f"  ❌ Subject tab content NOT visible even after tab switch. Error: {e}")
+                raise
+        
+        print("  ✓ Subject tab content loaded")
         
         # Confirm and find scenes
         # Use ID for more robust targeting in Gradio 5
@@ -106,7 +128,24 @@ class TestMainWorkflow:
         print("Step 3: Scene Selection")
         switch_to_tab(page, "Scenes")
         
+        # Wait for Scenes tab content to load
+        # Note: Can't reload here as it loses Gradio state (scenes, button enabled, etc)
+        # Use longer wait and force click approach instead
+        page.wait_for_timeout(2000)  # Allow extra time for Gradio to render
+        
         prop_btn = page.get_by_role("button", name=re.compile("Propagate Masks", re.IGNORECASE))
+        try:
+            expect(prop_btn).to_be_enabled(timeout=10000)
+        except Exception as e:
+            print(f"  - Propagate button disabled, waiting longer...")
+            page.screenshot(path=str(screenshot_dir / "prop_btn_disabled.png"))
+            # Try clicking tab again to trigger re-render
+            switch_to_tab(page, "Subject")  # Switch away
+            page.wait_for_timeout(500)
+            switch_to_tab(page, "Scenes")  # Switch back
+            page.wait_for_timeout(2000)
+            expect(prop_btn).to_be_enabled(timeout=15000)
+        
         prop_btn.click()
         
         expect(page.locator("body")).to_contain_text("Mask Propagation Complete", timeout=30000)

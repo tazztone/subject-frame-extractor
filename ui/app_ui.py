@@ -1075,6 +1075,14 @@ class AppUI:
             lambda res: self._on_pre_analysis_success(res, current_state)
         )
 
+    def _propagation_button_handler(self, current_state: ApplicationState, *args, progress=None):
+        """Button handler for propagation that properly yields from the generator."""
+        yield from self.run_propagation_wrapper(current_state.scenes, current_state, *args, progress=progress)
+
+    def _analysis_button_handler(self, current_state: ApplicationState, *args, progress=None):
+        """Button handler for analysis that properly yields from the generator."""
+        yield from self.run_analysis_wrapper(current_state.scenes, current_state, *args, progress=progress)
+
     def run_propagation_wrapper(self, scenes, current_state: ApplicationState, *args, progress=None):
         """Wrapper to execute the mask propagation pipeline."""
         if not scenes:
@@ -1327,13 +1335,13 @@ class AppUI:
             show_progress="hidden",
         )
         c["propagate_masks_button"].click(
-            fn=lambda state, *args: self.run_propagation_wrapper(state.scenes, state, *args),
-            inputs=self.ana_input_components, # Reuse ana inputs
+            fn=self._propagation_button_handler,
+            inputs=self.ana_input_components,
             outputs=all_outputs, 
             show_progress="hidden"
         )
         c["start_analysis_button"].click(
-            fn=lambda state, *args: self.run_analysis_wrapper(state.scenes, state, *args),
+            fn=self._analysis_button_handler,
             inputs=self.ana_input_components,
             outputs=all_outputs,
             show_progress="hidden",
