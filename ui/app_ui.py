@@ -54,7 +54,6 @@ from ui.tabs import (
     SceneTabBuilder,
     MetricsTabBuilder,
     FilteringTabBuilder,
-    PhotoTabBuilder,
 )
 from ui.handlers import SceneHandler
 
@@ -227,9 +226,6 @@ class AppUI:
             "scene_face_sim_min_input",
             "filtering_tab",
             "scene_gallery",
-            "photo_folder_input",
-            "photo_gallery",
-            "photo_status",
         ]
 
         # Undo/Redo History
@@ -432,9 +428,6 @@ class AppUI:
             with gr.Tab("Export", id=4) as filtering_tab:
                 self.components["filtering_tab"] = filtering_tab
                 FilteringTabBuilder(self).build()
-            with gr.Tab("Photo Culling", id=5) as photo_tab:
-                self.components["photo_tab"] = photo_tab
-                PhotoTabBuilder(self).build()
 
     def _build_footer(self):
         """Builds the footer with status bar, logs, and help section."""
@@ -1660,6 +1653,7 @@ class AppUI:
                 c["enable_crop_input"],
                 c["crop_ar_input"],
                 c["crop_padding_input"],
+                c["enable_xmp_export_input"],
                 c["require_face_match_input"],
                 c["dedup_thresh_input"],
                 c["dedup_method_input"],
@@ -1674,6 +1668,7 @@ class AppUI:
                 c["enable_crop_input"],
                 c["crop_ar_input"],
                 c["crop_padding_input"],
+                c["enable_xmp_export_input"],
                 c["require_face_match_input"],
                 c["dedup_thresh_input"],
                 c["dedup_method_input"],
@@ -1929,6 +1924,7 @@ class AppUI:
         enable_crop: bool,
         crop_ars: str,
         crop_padding: int,
+        enable_xmp_export: bool,
         require_face_match: bool,
         dedup_thresh: int,
         dedup_method_ui: str,
@@ -1964,6 +1960,7 @@ class AppUI:
                 enable_crop=enable_crop,
                 crop_ars=crop_ars,
                 crop_padding=crop_padding,
+                enable_xmp_export=enable_xmp_export,
                 filter_args=filter_args,
             ),
             self.config,
@@ -1979,6 +1976,7 @@ class AppUI:
         enable_crop: bool,
         crop_ars: str,
         crop_padding: int,
+        enable_xmp_export: bool,
         require_face_match: bool,
         dedup_thresh: int,
         dedup_method_ui: str,
@@ -2002,109 +2000,10 @@ class AppUI:
             {
                 "require_face_match": require_face_match,
                 "dedup_thresh": dedup_thresh,
-                "enable_dedup": dedup_method != "None",
-            }
-        )
-        return dry_run_export(
-            ExportEvent(
-                all_frames_data=all_frames_data,
-                output_dir=output_dir,
-                video_path=video_path,
-                enable_crop=enable_crop,
-                crop_ars=crop_ars,
-                crop_padding=crop_padding,
-                filter_args=filter_args,
-            ),
-            self.config,
-        )
-
-    def on_auto_set_thresholds(self, per_metric_values: dict, p: int, *checkbox_values: bool) -> list[gr.update]:
-        """Automatically sets filter thresholds based on data percentiles."""
-        slider_keys = sorted(self.components["metric_sliders"].keys())
-        auto_threshold_cbs_keys = sorted(self.components["metric_auto_threshold_cbs"].keys())
-        selected_metrics = [
-            metric_name for metric_name, is_selected in zip(auto_threshold_cbs_keys, checkbox_values) if is_selected
-        ]
-        updates = auto_set_thresholds(per_metric_values, p, slider_keys, selected_metrics)
-        return [updates.get(f"slider_{key}", gr.update()) for key in slider_keys]
-
-    def export_kept_frames_wrapper(
-        self,
-        all_frames_data: list,
-        output_dir: str,
-        video_path: str,
-        enable_crop: bool,
-        crop_ars: str,
-        crop_padding: int,
-        require_face_match: bool,
-        dedup_thresh: int,
-        dedup_method_ui: str,
-        *slider_values: float,
-    ) -> str:
-        """Wrapper to execute the final frame export."""
-        slider_values_dict = {k: v for k, v in zip(sorted(self.components["metric_sliders"].keys()), slider_values)}
-        dedup_method = (
-            "pHash"
-            if dedup_method_ui == "Fast (pHash)"
-            else "pHash then LPIPS"
-            if dedup_method_ui == "Accurate (LPIPS)"
-            else "None"
-        )
-        filter_args = slider_values_dict
-        filter_args.update(
-            {
-                "require_face_match": require_face_match,
-                "dedup_thresh": dedup_thresh,
                 "dedup_method": dedup_method,
                 "enable_dedup": dedup_method != "None",
             }
         )
-        return export_kept_frames(
-            ExportEvent(
-                all_frames_data=all_frames_data,
-                output_dir=output_dir,
-                video_path=video_path,
-                enable_crop=enable_crop,
-                crop_ars=crop_ars,
-                crop_padding=crop_padding,
-                filter_args=filter_args,
-            ),
-            self.config,
-            self.logger,
-            self.thumbnail_manager,
-            self.cancel_event,
-        )
-
-    def dry_run_export_wrapper(
-        self,
-        all_frames_data: list,
-        output_dir: str,
-        video_path: str,
-        enable_crop: bool,
-        crop_ars: str,
-        crop_padding: int,
-        require_face_match: bool,
-        dedup_thresh: int,
-        dedup_method_ui: str,
-        *slider_values: float,
-    ) -> str:
-        """Wrapper to perform a dry run of the export."""
-        slider_values_dict = {k: v for k, v in zip(sorted(self.components["metric_sliders"].keys()), slider_values)}
-        dedup_method = (
-            "pHash"
-            if dedup_method_ui == "Fast (pHash)"
-            else "pHash then LPIPS"
-            if dedup_method_ui == "Accurate (LPIPS)"
-            else "None"
-        )
-        filter_args = slider_values_dict
-        filter_args.update(
-            {
-                "require_face_match": require_face_match,
-                "dedup_thresh": dedup_thresh,
-                "enable_dedup": dedup_method != "None",
-            }
-        )
         return dry_run_export(
             ExportEvent(
                 all_frames_data=all_frames_data,
@@ -2113,6 +2012,7 @@ class AppUI:
                 enable_crop=enable_crop,
                 crop_ars=crop_ars,
                 crop_padding=crop_padding,
+                enable_xmp_export=enable_xmp_export,
                 filter_args=filter_args,
             ),
             self.config,

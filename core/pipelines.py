@@ -33,6 +33,7 @@ from core.events import ExtractionEvent, PreAnalysisEvent, PropagationEvent, Ses
 from core.managers import VideoManager, initialize_analysis_models
 from core.models import AnalysisParameters, Frame, Scene
 from core.operators import OperatorRegistry, run_operators
+from core.photo_utils import ingest_folder
 from core.progress import AdvancedProgressTracker
 from core.scene_utils import (
     SubjectMasker,
@@ -378,18 +379,51 @@ class ExtractionPipeline(Pipeline):
             except OSError as e:
                 self.logger.warning(f"Could not write run config to {run_cfg_path}: {e}")
 
-            self.logger.info(f"Processing image folder: {source_p.name}")
-            images = list_images(source_p, self.config)
-            if not images:
+            self.logger.info(f"Ingesting image folder: {source_p.name}")
+            
+            # Use ingest_folder to handle RAW and regular images
+            thumb_dir = output_dir / "thumbs"
+            thumb_dir.mkdir(exist_ok=True)
+            
+            ingested = ingest_folder(source_p, thumb_dir)
+            if not ingested:
                 self.logger.warning("No images found in the specified folder.")
                 return {"done": False, "log": "No images found."}
 
-            make_photo_thumbs(images, output_dir, self.params, self.config, self.logger, tracker=tracker)
+            # Map ingested photos to scenes and frames
+            # Each photo is a scene with 1 frame
+            scenes = []
+            frame_map = {}
+            source_map = {}
+            
+            for i, photo in enumerate(ingested):
+                frame_idx = i + 1
+                # Rename/Link preview to frame_XXXXXX.webp or .jpg
+                preview_path = Path(photo["preview"])
+                ext = ".webp" if self.params.thumbnails_only else ".png"
+                target_name = f"frame_{frame_idx:06d}{ext}"
+                target_path = thumb_dir / target_name
+                
+                # If the preview is already in thumb_dir (it might be if we passed thumb_dir to ingest_folder)
+                # but we want the frame_XXXXXX naming convention for the rest of the pipeline
+                if preview_path.exists() and preview_path != target_path:
+                    # We use copy for now to avoid cross-device link issues with symlinks
+                    shutil.copy2(preview_path, target_path)
+                
+                scenes.append([frame_idx, frame_idx])
+                frame_map[frame_idx] = target_name
+                source_map[target_name] = str(photo["source"])
 
-            num_images = len(images)
-            scenes = [[i, i] for i in range(1, num_images + 1)]
             with (output_dir / "scenes.json").open("w", encoding="utf-8") as f:
                 json.dump(scenes, f)
+                
+            with (output_dir / "frame_map.json").open("w", encoding="utf-8") as f:
+                json.dump(list(frame_map.keys()), f) # Video workflow expects list of original frame numbers
+            
+            with (output_dir / "source_map.json").open("w", encoding="utf-8") as f:
+                json.dump(source_map, f)
+
+            self.logger.success(f"Ingested {len(ingested)} photos as individual scenes.")
             return {"done": True, "output_dir": str(output_dir), "video_path": ""}
         else:
             self.logger.info("Preparing video source...")
@@ -709,11 +743,26 @@ class AnalysisPipeline(Pipeline):
     def _run_image_folder_analysis(self, tracker: Optional["AdvancedProgressTracker"] = None) -> dict:
         """Specialized execution path for image folder inputs."""
         self.logger.info("Starting image folder analysis...")
-        self.logger.info("Running pre-filter on thumbnails...")
-        self.logger.info("Running full analysis on kept images...")
-        self.logger.success("Image folder analysis complete.")
-        metadata_path = self.output_dir / "metadata.db"
-        return {"done": True, "metadata_path": str(metadata_path), "output_dir": str(self.output_dir)}
+        
+        # Load all scenes
+        scenes = _load_scenes(self.output_dir)
+        if not scenes:
+            return {"done": False, "log": "No scenes found for analysis."}
+            
+        # Filter included scenes if not resuming
+        scenes_to_process = [s for s in scenes if s.status == "included" or not self.params.resume]
+        
+        if tracker:
+            tracker.set_stage("Analyzing images")
+            tracker.start(len(scenes_to_process), desc="Analyzing Images")
+
+        # Reuse run_analysis_only logic
+        result = self.run_analysis_only(scenes_to_process, tracker=tracker)
+        
+        if result.get("done"):
+            self.logger.success("Image folder analysis complete.")
+        
+        return result
 
     def _run_analysis_loop(
         self,

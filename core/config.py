@@ -195,7 +195,7 @@ class Config(BaseSettings):
     # Utility Defaults
     utility_max_filename_length: int = 50
     utility_video_extensions: List[str] = Field(default_factory=lambda: [".mp4", ".mov", ".mkv", ".avi", ".webm"])
-    utility_image_extensions: List[str] = Field(default_factory=lambda: [".png", ".jpg", ".jpeg", ".webp", ".bmp"])
+    utility_image_extensions: List[str] = Field(default_factory=lambda: [".png", ".jpg", ".jpeg", ".webp", ".bmp", ".cr2", ".nef", ".arw", ".dng", ".orf", ".raf"])
 
     # PostProcessing
     postprocessing_mask_fill_kernel_size: int = 5

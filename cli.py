@@ -34,9 +34,6 @@ from core.pipelines import (
     execute_pre_analysis,
     execute_propagation,
 )
-from core.photo_utils import ingest_folder
-from core.photo_scoring import apply_scores_to_photos
-from core.xmp_writer import export_xmps_for_photos
 from core.filtering import apply_all_filters_vectorized
 from core.database import Database
 
@@ -86,24 +83,26 @@ def cli():
 
 
 @cli.command()
-@click.option("--video", "-v", required=True, type=click.Path(exists=True), help="Path to input video file.")
+@click.option("--source", "-s", required=True, type=click.Path(exists=True), help="Path to input video file or image folder.")
 @click.option("--output", "-o", required=True, type=click.Path(), help="Output directory for extracted frames.")
-@click.option("--method", "-m", default="every_nth_frame", type=click.Choice(["every_nth_frame", "scene", "keyframes"]), help="Extraction method.")
+@click.option("--method", "-m", default="every_nth_frame", type=click.Choice(["every_nth_frame", "all", "keyframes"]), help="Extraction method (ignored for folders).")
 @click.option("--nth-frame", "-n", default=3, type=int, help="Extract every Nth frame (for every_nth_frame method).")
 @click.option("--max-resolution", "-r", default="1080", type=click.Choice(["480", "720", "1080", "1440", "2160"]), help="Max video resolution.")
 @click.option("--thumb-mp", default=0.5, type=float, help="Thumbnail megapixels.")
-@click.option("--scene-detect/--no-scene-detect", default=True, help="Enable scene detection.")
+@click.option("--scene-detect/--no-scene-detect", default=True, help="Enable scene detection (ignored for folders).")
 @click.option("--verbose", is_flag=True, help="Enable verbose logging.")
 @click.option("--clean", is_flag=True, help="Remove existing output directory before extraction.")
 @click.option("--force", is_flag=True, help="Force extraction even if fingerprint matches.")
-def extract(video, output, method, nth_frame, max_resolution, thumb_mp, scene_detect, verbose, clean, force):
+def extract(source, output, method, nth_frame, max_resolution, thumb_mp, scene_detect, verbose, clean, force):
     """
-    Extract frames from a video file.
+    Extract frames from a video file or ingest an image folder.
     
-    This is the first step in the pipeline. It extracts thumbnails from the video
-    and optionally detects scene boundaries.
+    This is the first step in the pipeline. It extracts thumbnails from the source
+    and prepares it for analysis.
     """
     output_dir = Path(output)
+    source_path = Path(source)
+    is_video = not source_path.is_dir()
     
     if clean and output_dir.exists():
         click.echo(f"🧹 Cleaning existing output: {output_dir}")
@@ -111,96 +110,83 @@ def extract(video, output, method, nth_frame, max_resolution, thumb_mp, scene_de
     
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Check for existing fingerprint
-    from core.fingerprint import load_fingerprint, create_fingerprint, fingerprints_match
-    
-    # Create potential new fingerprint for comparison
-    ext_settings = {
-        "method": method,
-        "nth_frame": nth_frame,
-        "max_resolution": max_resolution,
-        "scene_detect": scene_detect,
-        "thumb_megapixels": thumb_mp,
-    }
-    
-    existing_fp = load_fingerprint(str(output_dir))
-    new_fp = None
-    
-    # We can only create a full fingerprint if the video exists, which click verifies
-    # But we need to handle the case where we might skip
-    
-    if existing_fp:
-        try:
-            new_fp = create_fingerprint(str(video), ext_settings)
-            if fingerprints_match(new_fp, existing_fp):
-                click.secho("\n🔎 Fingerprint match detected!", fg="yellow")
-                click.echo(f"   Stored: {existing_fp.created_at}")
-                
-                # Check if --clean was requested - if so, we don't return early (logic above handles it)
-                # But if we are here, clean was either False or processed
-                
-                # If clean was True, we wouldn't see an existing fp because it was deleted
-                # So we only need to handle the "skip" case here
-                
-                if not force:
+    if is_video:
+        # Check for existing fingerprint
+        from core.fingerprint import load_fingerprint, create_fingerprint, fingerprints_match
+        
+        ext_settings = {
+            "method": method,
+            "nth_frame": nth_frame,
+            "max_resolution": max_resolution,
+            "scene_detect": scene_detect,
+            "thumb_megapixels": thumb_mp,
+        }
+        
+        existing_fp = load_fingerprint(str(output_dir))
+        if existing_fp and not force:
+            try:
+                new_fp = create_fingerprint(str(source), ext_settings)
+                if fingerprints_match(new_fp, existing_fp):
+                    click.secho("\n🔎 Fingerprint match detected!", fg="yellow")
                     click.secho("✓ Extraction already complete (use --force to re-run)", fg="green")
                     return
-                else:
-                    click.secho("➤ Forcing re-extraction...", fg="yellow")
-        except Exception as e:
-            click.secho(f"⚠️ Could not verify fingerprint: {e}", fg="yellow")
+            except Exception as e:
+                click.secho(f"⚠️ Could not verify fingerprint: {e}", fg="yellow")
 
-    click.secho(f"\n🎬 EXTRACTION", fg="cyan", bold=True)
-    click.echo(f"   Video: {video}")
+    click.secho(f"\n🎬 {'EXTRACTION' if is_video else 'INGESTION'}", fg="cyan", bold=True)
+    click.echo(f"   Source: {source}")
     click.echo(f"   Output: {output_dir}")
-    click.echo(f"   Method: {method} (every {nth_frame} frames)")
+    if is_video:
+        click.echo(f"   Method: {method} (every {nth_frame} frames)")
     
     config, logger, progress_queue, cancel_event, model_registry, thumbnail_manager = _setup_runtime(output_dir, verbose)
     
     event = ExtractionEvent(
-        source_path=str(video),
+        source_path=str(source),
         method=method,
         interval="1.0",
         nth_frame=nth_frame,
         max_resolution=max_resolution,
         thumbnails_only=True,
         thumb_megapixels=thumb_mp,
-        scene_detect=scene_detect,
+        scene_detect=scene_detect if is_video else False,
         output_folder=str(output_dir),
     )
     
     gen = execute_extraction(event, progress_queue, cancel_event, logger, config, thumbnail_manager, model_registry=model_registry)
-    result = _run_pipeline(gen, "Extraction")
+    result = _run_pipeline(gen, "Extraction" if is_video else "Ingestion")
     
     # Verify output
     frame_map_path = output_dir / "frame_map.json"
     if frame_map_path.exists():
         frame_map = json.loads(frame_map_path.read_text())
-        click.echo(f"   📊 Extracted {len(frame_map)} frames")
+        click.echo(f"   📊 Processed {len(frame_map)} frames/images")
     
-    click.secho(f"\n✅ Extraction complete. Output: {output_dir}", fg="green", bold=True)
+    click.secho(f"\n✅ {'Extraction' if is_video else 'Ingestion'} complete. Output: {output_dir}", fg="green", bold=True)
 
 
 @cli.command()
 @click.option("--session", "-s", required=True, type=click.Path(exists=True), help="Path to extraction output directory.")
-@click.option("--video", "-v", required=True, type=click.Path(exists=True), help="Path to original video file.")
+@click.option("--source", "-v", required=True, type=click.Path(exists=True), help="Path to original video file or image folder.")
 @click.option("--face-ref", "-f", type=click.Path(exists=True), help="Path to reference face image for tracking.")
 @click.option("--strategy", default="🧑‍🤝‍🧑 Find Prominent Person", help="Primary seed strategy.")
 @click.option("--verbose", is_flag=True, help="Enable verbose logging.")
 @click.option("--resume", is_flag=True, help="Resume from last checkpoint.")
 @click.option("--force", is_flag=True, help="Force re-run of all steps.")
-def analyze(session, video, face_ref, strategy, verbose, resume, force):
+def analyze(session, source, face_ref, strategy, verbose, resume, force):
     """
-    Run full analysis pipeline on extracted frames.
+    Run full analysis pipeline on extracted frames or ingested photos.
     
-    This runs pre-analysis (seed detection), mask propagation, and metric analysis.
-    Requires extraction to have been run first.
+    This runs pre-analysis (seed detection), mask propagation (video only), and metric analysis.
+    Requires extraction/ingestion to have been run first.
     """
     output_dir = Path(session)
+    source_path = Path(source)
+    is_video = not source_path.is_dir()
     
     click.secho(f"\n🔬 ANALYSIS", fg="cyan", bold=True)
     click.echo(f"   Session: {output_dir}")
-    click.echo(f"   Video: {video}")
+    click.echo(f"   Source: {source}")
     if face_ref:
         click.echo(f"   Face Ref: {face_ref}")
     
@@ -209,7 +195,7 @@ def analyze(session, video, face_ref, strategy, verbose, resume, force):
     # Build PreAnalysisEvent
     pre_event = PreAnalysisEvent(
         output_folder=str(output_dir),
-        video_path=str(video),
+        video_path=str(source) if is_video else "",
         resume=resume,
         enable_face_filter=bool(face_ref),
         face_ref_img_path=str(face_ref) if face_ref else "",
@@ -217,7 +203,7 @@ def analyze(session, video, face_ref, strategy, verbose, resume, force):
         enable_subject_mask=True,
         tracker_model_name="sam3",
         best_frame_strategy="Largest Person",
-        scene_detect=True,
+        scene_detect=True if is_video else False,
         min_mask_area_pct=1.0,
         sharpness_base_scale=2500.0,
         edge_strength_base_scale=100.0,
@@ -252,16 +238,20 @@ def analyze(session, video, face_ref, strategy, verbose, resume, force):
     scenes = pre_result.get("scenes", [])
     click.echo(f"   📊 Found {len(scenes)} scenes")
     
-    # Stage 2: Propagation
-    click.secho("\n📍 Stage 2: Mask Propagation", fg="yellow")
+    # Stage 2: Propagation (Skip for folders as they have no temporal tracking)
     prop_event = PropagationEvent(
         output_folder=str(output_dir),
-        video_path=str(video),
+        video_path=str(source) if is_video else "",
         scenes=scenes,
         analysis_params=pre_event,
     )
-    gen = execute_propagation(prop_event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress=None, model_registry=model_registry)
-    _run_pipeline(gen, "Propagation")
+
+    if is_video:
+        click.secho("\n📍 Stage 2: Mask Propagation", fg="yellow")
+        gen = execute_propagation(prop_event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress=None, model_registry=model_registry)
+        _run_pipeline(gen, "Propagation")
+    else:
+        click.secho("\n📍 Stage 2: Mask Propagation (Skipped for Folder)", fg="yellow")
     
     # Stage 3: Analysis
     click.secho("\n📍 Stage 3: Metric Analysis", fg="yellow")
@@ -281,22 +271,24 @@ def analyze(session, video, face_ref, strategy, verbose, resume, force):
 
 
 @cli.command()
-@click.option("--video", "-v", required=True, type=click.Path(exists=True), help="Path to input video file.")
+@click.option("--source", "-v", required=True, type=click.Path(exists=True), help="Path to input video file or image folder.")
 @click.option("--output", "-o", required=True, type=click.Path(), help="Output directory.")
 @click.option("--face-ref", "-f", type=click.Path(exists=True), help="Path to reference face image.")
-@click.option("--nth-frame", "-n", default=3, type=int, help="Extract every Nth frame.")
-@click.option("--max-resolution", "-r", default="1080", help="Max video resolution.")
+@click.option("--nth-frame", "-n", default=3, type=int, help="Extract every Nth frame (video only).")
+@click.option("--max-resolution", "-r", default="1080", help="Max video resolution (video only).")
 @click.option("--verbose", is_flag=True, help="Enable verbose logging.")
 @click.option("--clean", is_flag=True, help="Remove existing output directory.")
 @click.option("--resume", is_flag=True, help="Resume from last checkpoint.")
 @click.option("--force", is_flag=True, help="Force re-run of all steps.")
-def full(video, output, face_ref, nth_frame, max_resolution, verbose, clean, resume, force):
+def full(source, output, face_ref, nth_frame, max_resolution, verbose, clean, resume, force):
     """
-    Run the complete pipeline: extraction + analysis.
+    Run the complete pipeline: extraction/ingestion + analysis.
     
     This is equivalent to running 'extract' followed by 'analyze'.
     """
     output_dir = Path(output)
+    source_path = Path(source)
+    is_video = not source_path.is_dir()
     
     if clean and output_dir.exists():
         click.echo(f"🧹 Cleaning existing output: {output_dir}")
@@ -305,33 +297,33 @@ def full(video, output, face_ref, nth_frame, max_resolution, verbose, clean, res
     output_dir.mkdir(parents=True, exist_ok=True)
     
     click.secho(f"\n🚀 FULL PIPELINE", fg="cyan", bold=True)
-    click.echo(f"   Video: {video}")
+    click.echo(f"   Source: {source}")
     click.echo(f"   Output: {output_dir}")
     
     config, logger, progress_queue, cancel_event, model_registry, thumbnail_manager = _setup_runtime(output_dir, verbose)
     cuda_available = torch.cuda.is_available()
     
-    # --- EXTRACTION ---
-    click.secho("\n━━━ STAGE: EXTRACTION ━━━", fg="cyan", bold=True)
+    # --- EXTRACTION / INGESTION ---
+    click.secho(f"\n━━━ STAGE: {'EXTRACTION' if is_video else 'INGESTION'} ━━━", fg="cyan", bold=True)
     ext_event = ExtractionEvent(
-        source_path=str(video),
+        source_path=str(source),
         method="every_nth_frame",
         interval="1.0",
         nth_frame=nth_frame,
         max_resolution=max_resolution,
         thumbnails_only=True,
         thumb_megapixels=0.5,
-        scene_detect=True,
+        scene_detect=True if is_video else False,
         output_folder=str(output_dir),
     )
     gen = execute_extraction(ext_event, progress_queue, cancel_event, logger, config, thumbnail_manager, model_registry=model_registry)
-    _run_pipeline(gen, "Extraction")
+    _run_pipeline(gen, "Extraction" if is_video else "Ingestion")
     
     # --- PRE-ANALYSIS ---
     click.secho("\n━━━ STAGE: PRE-ANALYSIS ━━━", fg="cyan", bold=True)
     pre_event = PreAnalysisEvent(
         output_folder=str(output_dir),
-        video_path=str(video),
+        video_path=str(source) if is_video else "",
         resume=resume,
         enable_face_filter=bool(face_ref),
         face_ref_img_path=str(face_ref) if face_ref else "",
@@ -339,7 +331,7 @@ def full(video, output, face_ref, nth_frame, max_resolution, verbose, clean, res
         enable_subject_mask=True,
         tracker_model_name="sam3",
         best_frame_strategy="Largest Person",
-        scene_detect=True,
+        scene_detect=True if is_video else False,
         min_mask_area_pct=1.0,
         sharpness_base_scale=2500.0,
         edge_strength_base_scale=100.0,
@@ -366,15 +358,24 @@ def full(video, output, face_ref, nth_frame, max_resolution, verbose, clean, res
     click.echo(f"   📊 Found {len(scenes)} scenes")
     
     # --- PROPAGATION ---
-    click.secho("\n━━━ STAGE: PROPAGATION ━━━", fg="cyan", bold=True)
-    prop_event = PropagationEvent(
-        output_folder=str(output_dir),
-        video_path=str(video),
-        scenes=scenes,
-        analysis_params=pre_event,
-    )
-    gen = execute_propagation(prop_event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress=None, model_registry=model_registry)
-    _run_pipeline(gen, "Propagation")
+    if is_video:
+        click.secho("\n━━━ STAGE: PROPAGATION ━━━", fg="cyan", bold=True)
+        prop_event = PropagationEvent(
+            output_folder=str(output_dir),
+            video_path=str(source),
+            scenes=scenes,
+            analysis_params=pre_event,
+        )
+        gen = execute_propagation(prop_event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress=None, model_registry=model_registry)
+        _run_pipeline(gen, "Propagation")
+    else:
+        click.secho("\n━━━ STAGE: PROPAGATION (Skipped for Folder) ━━━", fg="cyan", bold=True)
+        prop_event = PropagationEvent(
+            output_folder=str(output_dir),
+            video_path="",
+            scenes=scenes,
+            analysis_params=pre_event,
+        )
     
     # --- ANALYSIS ---
     click.secho("\n━━━ STAGE: ANALYSIS ━━━", fg="cyan", bold=True)
@@ -384,7 +385,8 @@ def full(video, output, face_ref, nth_frame, max_resolution, verbose, clean, res
     click.secho(f"\n🎉 PIPELINE COMPLETE", fg="green", bold=True)
     click.echo(f"   Results: {output_dir}")
     click.echo(f"   Metadata: {output_dir / 'metadata.db'}")
-    click.echo(f"   Masks: {output_dir / 'masks'}")
+    if is_video:
+        click.echo(f"   Masks: {output_dir / 'masks'}")
 
 
 @cli.command()
@@ -439,154 +441,6 @@ def status(session):
             click.secho(f"   🔄 Resumable: Yes ({completed} scenes completed)", fg="blue")
         except:
             pass
-
-
-@cli.group()
-def photo():
-    """Photo Mode: Ingest, Score, and Export."""
-    pass
-
-
-@photo.command()
-@click.option("--folder", "-f", required=True, type=click.Path(exists=True), help="Path to source folder with RAW/JPEG images.")
-@click.option("--output", "-o", required=True, type=click.Path(), help="Output directory for the session metadata and previews.")
-@click.option("--verbose", is_flag=True, help="Enable verbose logging.")
-def ingest(folder, output, verbose):
-    """
-    Scan folder and extract RAW previews.
-
-    Crawls the folder for supported images (CR2, NEF, ARW, DNG, JPEG, PNG, etc.).
-    For RAW files, it leverages ExifTool to extract high-resolution embedded previews
-    to enable fast processing without expensive demosaicing.
-    """
-    output_dir = Path(output)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    
-    config, logger, progress_queue, cancel_event, model_registry, thumbnail_manager = _setup_runtime(output_dir, verbose)
-    
-    click.secho(f"\n📸 PHOTO INGEST", fg="cyan", bold=True)
-    click.echo(f"   Folder: {folder}")
-    
-    photos = ingest_folder(Path(folder), output_dir / "previews")
-    
-    # Save session state
-    photos_json = output_dir / "photos.json"
-    with open(photos_json, "w") as f:
-        # Convert Path objects to strings for JSON serialization
-        json_photos = []
-        for p in photos:
-            p_copy = p.copy()
-            p_copy["source"] = str(p["source"])
-            p_copy["preview"] = str(p["preview"])
-            json_photos.append(p_copy)
-        json.dump(json_photos, f, indent=4)
-        
-    click.secho(f"✓ Ingested {len(photos)} photos.", fg="green")
-    click.echo(f"   Session state: {photos_json}")
-
-
-@photo.command()
-@click.option("--session", "-s", required=True, type=click.Path(exists=True), help="Path to the photo session directory created by 'ingest'.")
-@click.option("--weights", "-w", type=str, help="JSON string of weights for scoring (e.g. '{\"sharpness\": 0.5, \"niqe\": 0.5}')")
-@click.option("--verbose", is_flag=True, help="Enable verbose logging.")
-def score(session, weights, verbose):
-    """
-    Compute quality scores for ingested photos.
-
-    Calculates technical and aesthetic metrics:
-    - Sharpness: Laplacian variance based focus detection.
-    - NIQE: Natural Image Quality Evaluator (perceptual quality).
-    - Entropy: Information density (complexity).
-    - Face: Detection confidence and prominence.
-    """
-    output_dir = Path(session)
-    photos_json = output_dir / "photos.json"
-    
-    if not photos_json.exists():
-        click.secho(f"❌ No ingested photos found in {session}. Run 'ingest' first.", fg="red")
-        sys.exit(1)
-        
-    with open(photos_json) as f:
-        photos = json.load(f)
-        
-    # Parse weights
-    if weights:
-        try:
-            parsed_weights = json.loads(weights)
-        except json.JSONDecodeError:
-            click.secho("❌ Invalid weights JSON.", fg="red")
-            sys.exit(1)
-    else:
-        # Default weights
-        parsed_weights = {"sharpness": 0.5, "entropy": 0.25, "niqe": 0.25}
-        
-    config, logger, progress_queue, cancel_event, model_registry, thumbnail_manager = _setup_runtime(output_dir, verbose)
-    
-    click.secho(f"\n⚖️ PHOTO SCORING", fg="cyan", bold=True)
-    click.echo(f"   Weights: {parsed_weights}")
-    
-    # Convert string paths back to Path objects for core functions
-    for p in photos:
-        p["source"] = Path(p["source"])
-        p["preview"] = Path(p["preview"])
-        
-    scored_photos = apply_scores_to_photos(photos, parsed_weights)
-    
-    # Save updated session state
-    with open(photos_json, "w") as f:
-        json_photos = []
-        for p in scored_photos:
-            p_copy = p.copy()
-            p_copy["source"] = str(p["source"])
-            p_copy["preview"] = str(p["preview"])
-            json_photos.append(p_copy)
-        json.dump(json_photos, f, indent=4)
-        
-    click.secho("✓ Scoring complete.", fg="green")
-
-
-@photo.command()
-@click.option("--session", "-s", required=True, type=click.Path(exists=True), help="Path to the photo session directory.")
-@click.option("--thresholds", "-t", type=str, help="JSON list of 5 star thresholds (e.g. '[20, 40, 60, 80, 90]')")
-@click.option("--verbose", is_flag=True, help="Enable verbose logging.")
-def export(session, thresholds, verbose):
-    """
-    Write XMP sidecars for photos.
-
-    Converts internal quality scores into 1-5 star ratings and writes them
-    to non-destructive .xmp sidecars compatible with Lightroom, Capture One, etc.
-    """
-    output_dir = Path(session)
-    photos_json = output_dir / "photos.json"
-    
-    if not photos_json.exists():
-        click.secho(f"❌ No photos found in {session}.", fg="red")
-        sys.exit(1)
-        
-    with open(photos_json) as f:
-        photos = json.load(f)
-        
-    if thresholds:
-        try:
-            parsed_thresholds = json.loads(thresholds)
-        except json.JSONDecodeError:
-            click.secho("❌ Invalid thresholds JSON.", fg="red")
-            sys.exit(1)
-    else:
-        parsed_thresholds = [20, 40, 60, 80, 90]
-        
-    config, logger, progress_queue, cancel_event, model_registry, thumbnail_manager = _setup_runtime(output_dir, verbose)
-    
-    click.secho(f"\n📤 PHOTO EXPORT", fg="cyan", bold=True)
-    
-    # Convert string paths back to Path objects
-    for p in photos:
-        p["source"] = Path(p["source"])
-        p["preview"] = Path(p["preview"])
-        
-    count = export_xmps_for_photos(photos, parsed_thresholds)
-    
-    click.secho(f"✓ Exported {count} XMP files.", fg="green")
 
 
 @cli.command()
