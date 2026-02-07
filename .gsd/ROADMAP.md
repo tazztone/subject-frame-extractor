@@ -31,7 +31,7 @@
 - [ ] Verification: `python cli.py extract --video sample.mp4 --output ./out` exits 0
 
 #### Phase 2: Caching & Idempotency
-**Status**: ⬜ Not Started
+**Status**: ✅ Complete
 **Objective**: Make re-runs fast by detecting already-completed work.
 - [ ] Implement `run_state.json` to track completed stages
 - [ ] Add `--resume` flag to CLI

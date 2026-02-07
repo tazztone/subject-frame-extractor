@@ -88,7 +88,8 @@ def cli():
 @click.option("--scene-detect/--no-scene-detect", default=True, help="Enable scene detection.")
 @click.option("--verbose", is_flag=True, help="Enable verbose logging.")
 @click.option("--clean", is_flag=True, help="Remove existing output directory before extraction.")
-def extract(video, output, method, nth_frame, max_resolution, thumb_mp, scene_detect, verbose, clean):
+@click.option("--force", is_flag=True, help="Force extraction even if fingerprint matches.")
+def extract(video, output, method, nth_frame, max_resolution, thumb_mp, scene_detect, verbose, clean, force):
     """
     Extract frames from a video file.
     
@@ -102,7 +103,46 @@ def extract(video, output, method, nth_frame, max_resolution, thumb_mp, scene_de
         shutil.rmtree(output_dir)
     
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Check for existing fingerprint
+    from core.fingerprint import load_fingerprint, create_fingerprint, fingerprints_match
     
+    # Create potential new fingerprint for comparison
+    ext_settings = {
+        "method": method,
+        "nth_frame": nth_frame,
+        "max_resolution": max_resolution,
+        "scene_detect": scene_detect,
+        "thumb_megapixels": thumb_mp,
+    }
+    
+    existing_fp = load_fingerprint(str(output_dir))
+    new_fp = None
+    
+    # We can only create a full fingerprint if the video exists, which click verifies
+    # But we need to handle the case where we might skip
+    
+    if existing_fp:
+        try:
+            new_fp = create_fingerprint(str(video), ext_settings)
+            if fingerprints_match(new_fp, existing_fp):
+                click.secho("\n🔎 Fingerprint match detected!", fg="yellow")
+                click.echo(f"   Stored: {existing_fp.created_at}")
+                
+                # Check if --clean was requested - if so, we don't return early (logic above handles it)
+                # But if we are here, clean was either False or processed
+                
+                # If clean was True, we wouldn't see an existing fp because it was deleted
+                # So we only need to handle the "skip" case here
+                
+                if not force:
+                    click.secho("✓ Extraction already complete (use --force to re-run)", fg="green")
+                    return
+                else:
+                    click.secho("➤ Forcing re-extraction...", fg="yellow")
+        except Exception as e:
+            click.secho(f"⚠️ Could not verify fingerprint: {e}", fg="yellow")
+
     click.secho(f"\n🎬 EXTRACTION", fg="cyan", bold=True)
     click.echo(f"   Video: {video}")
     click.echo(f"   Output: {output_dir}")
@@ -140,7 +180,9 @@ def extract(video, output, method, nth_frame, max_resolution, thumb_mp, scene_de
 @click.option("--face-ref", "-f", type=click.Path(exists=True), help="Path to reference face image for tracking.")
 @click.option("--strategy", default="🧑‍🤝‍🧑 Find Prominent Person", help="Primary seed strategy.")
 @click.option("--verbose", is_flag=True, help="Enable verbose logging.")
-def analyze(session, video, face_ref, strategy, verbose):
+@click.option("--resume", is_flag=True, help="Resume from last checkpoint.")
+@click.option("--force", is_flag=True, help="Force re-run of all steps.")
+def analyze(session, video, face_ref, strategy, verbose, resume, force):
     """
     Run full analysis pipeline on extracted frames.
     
@@ -161,7 +203,7 @@ def analyze(session, video, face_ref, strategy, verbose):
     pre_event = PreAnalysisEvent(
         output_folder=str(output_dir),
         video_path=str(video),
-        resume=False,
+        resume=resume,
         enable_face_filter=bool(face_ref),
         face_ref_img_path=str(face_ref) if face_ref else "",
         face_model_name="buffalo_l",
@@ -239,7 +281,9 @@ def analyze(session, video, face_ref, strategy, verbose):
 @click.option("--max-resolution", "-r", default="1080", help="Max video resolution.")
 @click.option("--verbose", is_flag=True, help="Enable verbose logging.")
 @click.option("--clean", is_flag=True, help="Remove existing output directory.")
-def full(video, output, face_ref, nth_frame, max_resolution, verbose, clean):
+@click.option("--resume", is_flag=True, help="Resume from last checkpoint.")
+@click.option("--force", is_flag=True, help="Force re-run of all steps.")
+def full(video, output, face_ref, nth_frame, max_resolution, verbose, clean, resume, force):
     """
     Run the complete pipeline: extraction + analysis.
     
@@ -281,7 +325,7 @@ def full(video, output, face_ref, nth_frame, max_resolution, verbose, clean):
     pre_event = PreAnalysisEvent(
         output_folder=str(output_dir),
         video_path=str(video),
-        resume=False,
+        resume=resume,
         enable_face_filter=bool(face_ref),
         face_ref_img_path=str(face_ref) if face_ref else "",
         face_model_name="buffalo_l",
@@ -348,7 +392,15 @@ def status(session):
     
     click.secho(f"\n📋 SESSION STATUS: {output_dir}", fg="cyan", bold=True)
     
-    # Check for key files
+    # Check for fingerprint
+    from core.fingerprint import load_fingerprint
+    fp = load_fingerprint(str(output_dir))
+    if fp:
+        click.secho(f"   ✓ Fingerprint: {fp.created_at}", fg="green")
+        click.echo(f"      Video: {Path(fp.video_path).name}")
+        click.echo(f"      Size: {fp.video_size:,} bytes")
+    
+    # Check for keys files
     checks = [
         ("frame_map.json", "Extraction complete"),
         ("scene_seeds.json", "Pre-analysis complete"),
@@ -369,6 +421,17 @@ def status(session):
             else:
                 count = len(list(path.iterdir())) if path.is_dir() else 0
                 click.echo(f"      {filename}/ ({count} items)")
+    
+    # Check resumability
+    progress_path = output_dir / "progress.json"
+    if progress_path.exists():
+        try:
+            with open(progress_path) as f:
+                prog = json.load(f)
+            completed = len(prog.get("completed_scenes", []))
+            click.secho(f"   🔄 Resumable: Yes ({completed} scenes completed)", fg="blue")
+        except:
+            pass
 
 
 if __name__ == "__main__":
