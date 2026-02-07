@@ -56,6 +56,25 @@ Analyzed `ui/handlers/scene_handler.py`.
 - **Pagination:** Essential for performance. `SceneHandler` implements pagination by manually slicing the list of items and maintaining a `index_map` to map gallery indices back to global scene IDs.
 - **Pattern:** We will reuse the `SceneHandler` pagination pattern for the Photo Mode tab.
 
+### Custom Quality Scoring (IQA)
+To support diverse datasets (e.g., Portrait vs. Landscape), the "Quality Score" must be a configurable weighted sum of available metrics.
+
+**Available Metrics:**
+- `niqe` (Naturalness)
+- `sharpness` (Laplacian variance)
+- `face_count` / `face_size`
+- `entropy`
+- `sim_prev` (Similarity to previous frame for burst detection)
+
+**Proposal: Weighted Scoring Strategy**
+Users can define weights in the UI (0.0 to 1.0).
+Formula: `Score = (Sum(w_i * norm(m_i)) / Sum(w_i)) * 100`
+
+**UI Design:**
+- Accordion "Scoring Weights" in Photo Tab.
+- Sliders for each metric.
+- Real-time preview of the score on the currently selected image.
+
 ## Decisions Made
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
