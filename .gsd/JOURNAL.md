@@ -14,11 +14,13 @@ Strategic Pivots & CLI Foundation
 - **Created:** `.gsd/phases/2/1-PLAN.md` (Fingerprint Module) and `2.2-PLAN.md` (CLI Flags).
 
 ### Verification
-- [x] CLI `extract` and `analyze` commands verified and working.
-- [ ] Phase 2 implementation pending.
+- [x] CLI `extract` and `analyze` commands verified.
+- [x] Phase 2 (Fingerprinting & CLI Resume) verified with skip/force tests.
 
 ### Paused Because
-- Completed Phase 1 and fully planned Phase 2. Ready for execution in a fresh session.
+- Phase 2 (Caching & Idempotency) is complete. Documentation updated. Ready for Phase 3.
 
 ### Handoff Notes
-- Start with `/execute 2` to implement the fingerprinting and resume logic.
+- All Phase 2 goals reached. 
+- Infrastructure for idempotency is in place (`run_fingerprint.json`).
+- Next phase: Photo Mode MVP.
