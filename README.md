@@ -40,6 +40,11 @@ Traditional frame extraction is noisy. **Subject Frame Extractor** uses advanced
 *   **Smart Deduplication**: Uses pHash and LPIPS to remove near-identical frames.
 *   **AR-Aware Cropping**: Export subject-centered crops in 1:1, 9:16, 16:9, or custom ratios.
 
+### 📸 Photo Culling
+*   **RAW Support**: Extract embedded previews from RAW files (CR2, NEF, ARW, etc.) using **ExifTool**.
+*   **Quality Culling**: AI-powered scoring for focus, composition, and technical quality.
+*   **Lightroom/C1 Interop**: Export ratings and labels directly to **XMP sidecars**.
+
 ---
 
 ## 🛠️ Tech Stack

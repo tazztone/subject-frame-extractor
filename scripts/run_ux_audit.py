@@ -99,7 +99,7 @@ def main():
     try:
         # 1. Component Verification
         print("\n📦 Running Component Verification...")
-        code, output = run_tests("tests/e2e/test_component_verification.py")
+        code, output = run_tests("tests/ui/test_component_verification.py")
         results["Component Verification"] = {
             "status": "pass" if code == 0 else ("fail" if "FAILED" in output else "skip"),
             "output": output,
@@ -111,7 +111,7 @@ def main():
             # 2. Visual Regression
             print("\n🖼️ Running Visual Regression Tests...")
             extra_args = ["--update-baselines"] if args.update_baselines else []
-            code, output = run_tests("tests/e2e/test_visual_regression.py", extra_args)
+            code, output = run_tests("tests/ui/test_visual_regression.py", extra_args)
             results["Visual Regression"] = {
                 "status": "pass" if code == 0 else ("fail" if "FAILED" in output else "skip"),
                 "output": output,
@@ -119,7 +119,7 @@ def main():
 
         # 3. Main Flow Tests
         print("\n🔄 Running Main Flow Tests...")
-        code, output = run_tests("tests/e2e/test_app_flow.py")
+        code, output = run_tests("tests/ui/test_app_flow.py")
         results["Main App Flow"] = {
             "status": "pass" if code == 0 else ("fail" if "FAILED" in output else "skip"),
             "output": output,
