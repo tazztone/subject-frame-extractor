@@ -315,4 +315,4 @@ uv run python scripts/run_ux_audit.py
 ## 📄 License
 MIT License. See [LICENSE](LICENSE) for details.
 
-> **Internal Reference**: For detailed code skeletons, see [AGENTS_CODE_REFERENCE.md](AGENTS_CODE_REFERENCE.md)
+> **Internal Reference**: For detailed code skeletons, see [AGENTS_CODE_REFERENCE.md](docs/AGENTS_CODE_REFERENCE.md)
