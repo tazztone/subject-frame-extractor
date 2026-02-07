@@ -45,7 +45,7 @@ def _setup_runtime(output_dir: Path, verbose: bool = False):
     config.monitoring_memory_critical_threshold_mb = 64000  # Disable watchdog for CLI
     config.log_level = "DEBUG" if verbose else "INFO"
 
-    logger = AppLogger(config, log_dir=output_dir, log_to_file=True)
+    logger = AppLogger(config, log_dir=output_dir, log_to_file=True, log_to_console=False)
     progress_queue = Queue()
     cancel_event = threading.Event()
     model_registry = ModelRegistry(logger)
