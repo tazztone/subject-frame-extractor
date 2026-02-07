@@ -39,13 +39,13 @@
 - [ ] Verification: Second run on same video takes <10% of first run time
 
 #### Phase 3: Photo Mode (MVP)
-**Status**: ⬜ Not Started
+**Status**: ✅ Complete
 **Objective**: Minimal viable photo culling support.
-- [ ] Implement RAW preview extraction via ffmpeg
-- [ ] Treat extracted previews as "seed frames" for subject detection
-- [ ] Implement XMP sidecar export (rating, label)
-- [ ] Add "Photo Mode" preset with suitable IQA settings
-- [ ] Verification: Import 50 RAWs, export XMPs, verify in Lightroom
+- [x] Implement RAW preview extraction via ffmpeg (Changed to ExifTool)
+- [x] Treat extracted previews as "seed frames" for subject detection
+- [x] Implement XMP sidecar export (rating, label)
+- [x] Add "Photo Mode" preset with suitable IQA settings
+- [x] Verification: Import 50 RAWs, export XMPs, verify in Lightroom
 
 #### Phase 4: Polish & Verification
 **Status**: ⬜ Not Started
