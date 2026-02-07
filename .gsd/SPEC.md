@@ -3,27 +3,54 @@
 > **Status**: FINALIZED
 
 ## Vision
-Stabilize the Subject Frame Extractor by resolving critical regressions, refactoring core pipelines for maintainability, and implementing automated memory management to ensure a robust user experience and best practice coding standards.
+A robust, automated Subject Frame Extraction platform for Video and Photo datasets.
+The system prioritizes **testability** (via a headless CLI) and **composability** (via a plugin architecture for metrics).
 
-## Goals
-1. **Test Suite**: ensure end to end testing and automated analysis is in place for catching issues or report room for improvements early.
-2. **Refactor Pipelines**: Decompose monolithic functions in `core/pipelines.py` into smaller, testable, pure-logic components.
-3. **UI Stability & State**: fix or improve gradio GUI.
-4. **Performance Optimizations**: certain tasks like face detection and quality metrics should be done on the extracted thumbnail images while others like propagate masks in video can be done on very low res downscaled video. investigate and improve.
+## Core Principles
+1. **CLI-First**: The UI is a presentation layer atop a fully scriptable CLI.
+2. **Idempotent**: Re-running the same job on the same input is fast (skips completed work).
+3. **Extensible**: New metrics are added as drop-in "Metric Plugins" (the existing Operator pattern).
 
-## Non-Goals (Out of Scope)
-- swapping SAM3 for something else.
-- Rewriting the entire UI in a different framework (staying with Gradio).
+---
+
+## Goals (Prioritized)
+
+### P0: Stabilization (Must Fix Before Anything Else)
+1. **Repair UI State Flow**: Fix the Tab 1 → Tab 2 blocker.
+   - Root cause: Component visibility not updating after extraction success.
+   - Verification: Can complete a full Extraction → Pre-Analysis → Propagation → Analysis → Filter cycle via the UI.
+2. **Formalize CLI**: Create `cli.py` with subcommands: `extract`, `analyze`, `filter`.
+   - Verification: `python cli.py extract --video path/to/video.mp4 --output path/to/output` runs to completion.
+
+### P1: Performance & Caching
+3. **Implement Run Fingerprinting**: Hash inputs (video path, settings) to detect re-runs.
+   - If fingerprint matches existing output, skip to results.
+   - Verification: Second run on same video takes <10% of original time.
+4. **Consolidate Progress Tracking**: Use a single `run_state.json` file to track which stages are complete.
+   - Enables `--resume` flag for interrupted runs.
+
+### P2: Photo Mode (MVP)
+5. **RAW/JPEG Import**: Use `ffmpeg` to extract embedded JPEG from RAW files.
+   - Treat each photo as a "seed frame".
+   - Verification: Import a folder of 50 RAW files, extract previews.
+6. **XMP Sidecar Export**: Write Lightroom-compatible XMP files with rating/label.
+   - Verification: Imported into Lightroom, ratings visible.
+
+---
+
+## Non-Goals
+- Replacing Gradio (we fix the existing UI).
+- Full RAW demosaicing (we extract embedded previews only).
 - Cloud integration or multi-user features.
+- Renaming "Operator" → "Plugin" in code (cosmetic, defer).
 
-## Users
-- Developers and researchers needing to filter the highest-quality subject-focused image datasets from a video.
+---
 
-## Constraints
-- **Dependency**: Must respect the boundaries of the `SAM3_repo` submodule (read-only! no edits allowed). implementation should follow example code located in SAM3_repo/examples/sam3_video_predictor_example.ipynb where possible.
-- **Environment**: should run on linux and windows using `uv` for package management.
-
-## Success Criteria
-- [x] **Zero Failing Tests**: All unit, smoke, and integration tests pass.
-- [x] **Successful E2E Run**: Complete a full run via the GUI. ensure all outputs are as expected according to the settings used. use the downloads/example clip 720p 2x.mov and downloads/example face.png as inputs
-- [x] **Clean Repository**: No legacy or redundant files remaining.
+## Success Criteria (Measurable)
+| # | Criterion | Verification Method |
+|---|-----------|---------------------|
+| 1 | UI Unblocked | Manual: Complete full UI cycle on sample video. |
+| 2 | CLI Works | `python cli.py extract --video sample.mp4 --output ./out` exits 0. |
+| 3 | Re-run Fast | Timed: `time python cli.py analyze ...` on same input, <10% of first run. |
+| 4 | Photo Import | CLI: `python cli.py import-photos --dir ./raws --output ./out` extracts previews. |
+| 5 | XMP Export | Lightroom: Open sidecar, see rating. |
