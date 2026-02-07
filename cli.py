@@ -37,6 +37,8 @@ from core.pipelines import (
 from core.photo_utils import ingest_folder
 from core.photo_scoring import apply_scores_to_photos
 from core.xmp_writer import export_xmps_for_photos
+from core.filtering import apply_all_filters_vectorized
+from core.database import Database
 
 
 def _setup_runtime(output_dir: Path, verbose: bool = False):
@@ -583,6 +585,76 @@ def export(session, thresholds, verbose):
     count = export_xmps_for_photos(photos, parsed_thresholds)
     
     click.secho(f"✓ Exported {count} XMP files.", fg="green")
+
+
+@cli.command()
+@click.option("--session", "-s", required=True, type=click.Path(exists=True), help="Path to analysis output directory.")
+@click.option("--quality-min", type=float, help="Minimum quality score (0-100).")
+@click.option("--face-min", type=float, help="Minimum face similarity/match score (0-1).")
+@click.option("--dedup/--no-dedup", default=True, help="Enable deduplication.")
+@click.option("--dedup-method", type=click.Choice(["pHash", "SSIM", "LPIPS"]), default="pHash", help="Deduplication method.")
+@click.option("--dedup-thresh", type=float, help="Deduplication threshold.")
+@click.option("--verbose", is_flag=True, help="Enable verbose logging.")
+def filter(session, quality_min, face_min, dedup, dedup_method, dedup_thresh, verbose):
+    """
+    Filter analyzed frames based on quality and similarity.
+
+    Loads metadata from the session database, applies specified thresholds,
+    and reports the number of kept vs rejected frames.
+    """
+    output_dir = Path(session)
+    db_path = output_dir / "metadata.db"
+    
+    if not db_path.exists():
+        click.secho(f"❌ No metadata database found in {session}. Run 'analyze' first.", fg="red")
+        sys.exit(1)
+        
+    click.secho(f"\n🔍 FILTERING: {output_dir}", fg="cyan", bold=True)
+    
+    config, logger, progress_queue, cancel_event, model_registry, thumbnail_manager = _setup_runtime(output_dir, verbose)
+    
+    # Load all frames from DB
+    db = Database(db_path)
+    all_frames = db.load_all_metadata()
+    db.close()
+    
+    if not all_frames:
+        click.secho("⚠️ No frames found in database.", fg="yellow")
+        return
+
+    # Build filter dict
+    filters = {
+        "quality_score_min": quality_min if quality_min is not None else config.filter_default_quality_score["default_min"],
+        "face_sim_min": face_min if face_min is not None else config.filter_default_face_sim["default_min"],
+        "enable_dedup": dedup,
+        "dedup_method": dedup_method,
+        "dedup_thresh": dedup_thresh if dedup_thresh is not None else (5 if dedup_method == "pHash" else 0.95),
+    }
+    
+    click.echo(f"   📊 Applying filters to {len(all_frames)} frames...")
+    if quality_min is not None:
+        click.echo(f"      - Quality Min: {quality_min}")
+    if face_min is not None:
+        click.echo(f"      - Face Min: {face_min}")
+    if dedup:
+        click.echo(f"      - Dedup: {dedup_method} (thresh: {filters['dedup_thresh']})")
+
+    kept, rejected, rejection_counts, reasons = apply_all_filters_vectorized(
+        all_frames, 
+        filters, 
+        config, 
+        thumbnail_manager=thumbnail_manager, 
+        output_dir=str(output_dir)
+    )
+    
+    click.secho(f"\n✅ Filtering complete:", fg="green", bold=True)
+    click.echo(f"   🟢 Kept:     {len(kept)}")
+    click.echo(f"   🔴 Rejected: {len(rejected)}")
+    
+    if rejection_counts:
+        click.echo("\n   Rejection Reasons:")
+        for reason, count in rejection_counts.most_common():
+            click.echo(f"      - {reason}: {count}")
 
 
 if __name__ == "__main__":

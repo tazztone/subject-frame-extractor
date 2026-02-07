@@ -4,14 +4,14 @@
 
 ---
 
-## Milestone: v4.0-cli-first (ARCHIVED)
+## Milestone: v4.0-cli-first (ACTIVE)
 > **Goal**: Stabilize the application, formalize a CLI for automated testing, improve performance via caching, and add minimal Photo Mode support.
 
 ### Must-Haves
 - [x] Fix Tab 1 → Tab 2 UI blocker
 - [x] Create `cli.py` with `extract`, `analyze`, `filter` subcommands
 - [x] Implement run fingerprinting for cache hits
-- [x] RAW/JPEG import via ffmpeg embedded preview extraction
+- [x] RAW/JPEG import via ExifTool embedded preview extraction
 - [x] XMP sidecar export for Lightroom
 
 ### Phases
