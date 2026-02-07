@@ -1,7 +1,61 @@
 # ROADMAP
 
-> **Current Milestone**: [None - use /new-milestone]
+> **Current Milestone**: v4.0-cli-first
 
+## Milestone: v4.0-cli-first
+> **Goal**: Stabilize the application, formalize a CLI for automated testing, improve performance via caching, and add minimal Photo Mode support.
+
+### Must-Haves
+- [ ] Fix Tab 1 → Tab 2 UI blocker
+- [ ] Create `cli.py` with `extract`, `analyze`, `filter` subcommands
+- [ ] Implement run fingerprinting for cache hits
+- [ ] RAW/JPEG import via ffmpeg embedded preview extraction
+- [ ] XMP sidecar export for Lightroom
+
+### Phases
+
+#### Phase 0: Triage (UI Blocker)
+**Status**: 🔄 In Progress
+**Objective**: Fix the Tab 1 → Tab 2 visibility bug preventing full UI workflow.
+- [ ] Investigate `ApplicationState` propagation after extraction
+- [ ] Fix component visibility updates in `_on_extraction_success`
+- [ ] Manual verification: Complete full UI cycle on sample video
+
+#### Phase 1: CLI Foundation
+**Status**: ⬜ Not Started
+**Objective**: Create a formal CLI for scriptable, headless operation.
+- [ ] Create `cli.py` with Click or argparse
+- [ ] Implement `extract` subcommand (wraps `execute_extraction`)
+- [ ] Implement `analyze` subcommand (wraps pre-analysis + propagation + analysis)
+- [ ] Implement `filter` subcommand (applies filter presets, exports)
+- [ ] Verification: `python cli.py extract --video sample.mp4 --output ./out` exits 0
+
+#### Phase 2: Caching & Idempotency
+**Status**: ⬜ Not Started
+**Objective**: Make re-runs fast by detecting already-completed work.
+- [ ] Implement `run_state.json` to track completed stages
+- [ ] Add `--resume` flag to CLI
+- [ ] Add fingerprinting (hash video path + key settings)
+- [ ] Verification: Second run on same video takes <10% of first run time
+
+#### Phase 3: Photo Mode (MVP)
+**Status**: ⬜ Not Started
+**Objective**: Minimal viable photo culling support.
+- [ ] Implement RAW preview extraction via ffmpeg
+- [ ] Treat extracted previews as "seed frames" for subject detection
+- [ ] Implement XMP sidecar export (rating, label)
+- [ ] Add "Photo Mode" preset with suitable IQA settings
+- [ ] Verification: Import 50 RAWs, export XMPs, verify in Lightroom
+
+#### Phase 4: Polish & Verification
+**Status**: ⬜ Not Started
+**Objective**: Finalize, document, and verify.
+- [ ] Full E2E test via CLI
+- [ ] Full E2E test via UI
+- [ ] Update README with CLI usage
+- [ ] Commit and tag release
+
+---
 
 
 ## Milestone: v3.0-extensibility (ARCHIVED)
