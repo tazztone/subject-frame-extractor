@@ -162,7 +162,6 @@ class MaskPropagator:
                     start_idx=start_frame_idx, direction="forward", max_frames=fwd_steps
                 ):
                     if self.cancel_event.is_set(): break
-                    if self.model_registry: self.model_registry.check_memory_usage(self.config)
                     
                     if frame_idx in target_frames:
                         # Protect existing seeds or better masks
@@ -180,7 +179,6 @@ class MaskPropagator:
                     start_idx=start_frame_idx, direction="backward", max_frames=bwd_steps
                 ):
                     if self.cancel_event.is_set(): break
-                    if self.model_registry: self.model_registry.check_memory_usage(self.config)
                     
                     if frame_idx in target_frames:
                         if pred_mask is not None and np.any(pred_mask):
@@ -338,9 +336,6 @@ class MaskPropagator:
                     if self.cancel_event.is_set():
                         break
                     
-                    if self.model_registry:
-                        self.model_registry.check_memory_usage(self.config)
-
                     if pred_mask is not None and np.any(pred_mask):
                         mask = postprocess_mask(
                             (pred_mask * 255).astype(np.uint8),

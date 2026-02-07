@@ -143,36 +143,19 @@ class ThumbnailManager:
 class ModelRegistry:
     """
     Thread-safe registry for lazy loading and caching of heavy ML models.
-    Includes a memory watchdog to prevent OOM crashes.
     """
 
     def __init__(self, logger: Optional["AppLogger"] = None):
         self._models: Dict[str, Any] = {}
         self._locks: Dict[str, threading.Lock] = defaultdict(threading.Lock)
-        self._active_locks = set() # Track keys that should not be cleared
         self._registry_lock = threading.RLock() # Reentrant lock for internal state
         self.logger = logger or logging.getLogger(__name__)
         self.runtime_device_override: Optional[str] = None
 
     @contextlib.contextmanager
     def locked(self, key: str):
-        """Context manager to lock a model for the duration of a block."""
-        self.lock(key)
-        try:
-            yield
-        finally:
-            self.unlock(key)
-
-    def lock(self, key: str):
-        """Prevents a model from being cleared by the watchdog."""
-        with self._registry_lock:
-            self._active_locks.add(key)
-
-    def unlock(self, key: str):
-        """Allows a model to be cleared by the watchdog again."""
-        with self._registry_lock:
-            if key in self._active_locks:
-                self._active_locks.remove(key)
+        """No-op context manager for backward compatibility."""
+        yield
 
     def get_or_load(self, key: str, loader_fn: Callable[[], Any]) -> Any:
         """Retrieves a model by key, loading it via loader_fn if not present."""
@@ -187,7 +170,7 @@ class ModelRegistry:
                     return self._models[key]
                 
             if self.logger:
-                self.logger.info(f"Loading model '{key}' for the first time...")
+                self.logger.info(f"Loading model '{key}'...")
             
             val = loader_fn()
             
@@ -199,68 +182,14 @@ class ModelRegistry:
                 
         return val
 
-    def check_memory_usage(self, config: "Config"):
-        """
-        Monitors system and GPU memory usage. 
-        Triggers cleanup if critical thresholds are exceeded.
-        """
-        # System Memory Check
-        mem = psutil.virtual_memory()
-        mem_usage_mb = mem.used / (1024**2)
-        if mem_usage_mb > config.monitoring_memory_critical_threshold_mb:
-            self.logger.warning(
-                f"CRITICAL: System memory usage high ({mem_usage_mb:.0f}MB). Triggering emergency cleanup.",
-                component="memory_watchdog"
-            )
-            self.clear(force=False) # Respect active locks by default
-        elif mem.percent > config.monitoring_cpu_warning_threshold_percent:
-            self.logger.warning(
-                f"High system memory usage: {mem.percent}%",
-                component="memory_watchdog"
-            )
-
-        # GPU Memory Check
-        if torch.cuda.is_available():
-            for i in range(torch.cuda.device_count()):
-                try:
-                    gpu_mem_raw = torch.cuda.memory_reserved(i)
-                    gpu_mem_mb = float(gpu_mem_raw) / (1024**2)
-                    
-                    # Calculate dynamic threshold: 85% of total VRAM
-                    total_vram_mb = torch.cuda.get_device_properties(i).total_memory / (1024**2)
-                    critical_threshold_mb = total_vram_mb * 0.85
-                except (TypeError, ValueError, RuntimeError):
-                    gpu_mem_mb = 0.0
-                    critical_threshold_mb = config.monitoring_gpu_memory_critical_threshold_mb
-
-                if gpu_mem_mb > critical_threshold_mb:
-                     self.logger.warning(
-                        f"VRAM pressure high ({gpu_mem_mb:.0f}MB / {total_vram_mb:.0f}MB). Attempting cleanup...",
-                        component="memory_watchdog"
-                    )
-                     # Respect active locks (don't clear SAM3 if it's currently tracking)
-                     self.clear(force=False)
-                     break
-
-    def clear(self, force: bool = True):
-        """
-        Clears loaded models from the registry.
-        
-        Args:
-            force: If False, only clears models that are not locked.
-        """
+    def clear(self):
+        """Clears all loaded models from the registry."""
         if self.logger:
-            self.logger.info(f"Clearing models from registry (force={force}).")
+            self.logger.info("Clearing models from registry.")
         
         with self._registry_lock:
-            models_to_clear = []
-            for key, model in self._models.items():
-                if not force and key in self._active_locks:
-                    continue
-                models_to_clear.append((key, model))
-            
-            for key, _ in models_to_clear:
-                del self._models[key]
+            models_to_clear = list(self._models.items())
+            self._models.clear()
 
         for key, model in models_to_clear:
             try:
