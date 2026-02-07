@@ -42,20 +42,15 @@ echo [3/6] Creating Python virtual environment...
 python -m venv venv || goto :end
 call venv\Scripts\activate.bat || goto :end
 
-REM 4) Base deps (install PyTorch first for correct CUDA build)
+REM 4) Base deps (uv sync handles it all)
 echo [4/6] Installing Python dependencies...
 python -m pip install -U pip || goto :end
 pip install -U uv || goto :end
-uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128 || goto :end
+uv sync || goto :end
 
-REM Install project requirements
-if exist requirements.txt (
-  uv pip install -r requirements.txt || goto :end
-)
-
-REM 5) Install SAM3 in editable mode
-echo [5/6] Installing SAM3 in editable mode...
-uv pip install -e SAM3_repo || goto :end
+REM 5) Verify SAM3 installation
+echo [5/6] Verifying environment...
+uv run python -c "import sam3; print('SAM3 available')" || goto :end
 
 
 

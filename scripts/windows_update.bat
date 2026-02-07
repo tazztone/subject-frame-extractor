@@ -33,7 +33,7 @@ call venv\Scripts\activate.bat || goto :fail
 
 rem --- Reinstall Requirements ---
 echo [3/4] Updating Python dependencies...
-uv pip install --upgrade -r requirements.txt || goto :fail
+uv sync || goto :fail
 
 rem --- Update submodules (SAM3_repo) ---
 echo [4/4] Ensuring submodules are up-to-date...
