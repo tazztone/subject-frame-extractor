@@ -1,6 +1,9 @@
 import os
 import sys
 import time
+import threading
+from queue import Queue
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 # --- 1. Mock Heavy Dependencies ---
@@ -63,6 +66,9 @@ import app
 import core.managers
 import core.pipelines
 import core.utils
+import core.photo_utils
+import core.photo_scoring
+import core.xmp_writer
 from core.models import Scene
 
 # --- 3. Patch Pipeline Logic for E2E Speed ---
@@ -177,14 +183,47 @@ def mock_analysis_execution(
     }
 
 
+def mock_ingest_folder(folder_path, output_dir):
+    print(f"[Mock] Ingesting folder: {folder_path}")
+    dummy_path = str(Path(__file__).parent / "ui" / "dummy.jpg")
+    return [
+        {
+            "id": f"photo_{i}",
+            "source": f"photo_{i}.CR2",
+            "preview": dummy_path,
+            "type": "raw",
+            "status": "unreviewed",
+            "scores": {}
+        }
+        for i in range(1, 6)
+    ]
+
+
+def mock_apply_scores_to_photos(photos, weights):
+    print(f"[Mock] Scoring photos with weights: {weights}")
+    for p in photos:
+        p["scores"] = {"quality_score": 85.0, "sharpness": 90.0, "entropy": 80.0}
+    return photos
+
+
+def mock_export_xmps_for_photos(photos, thresholds=None):
+    print("[Mock] Exporting XMPs")
+    return len(photos)
+
+
 # Apply patches
 import ui.app_ui
 core.pipelines.ExtractionPipeline._run_impl = mock_extraction_run
 # We mock the `execute_*` functions directly as they are what the UI calls via `_run_pipeline`
-ui.app_ui.AppUI.preload_models = MagicMock(side_effect=lambda self: setattr(self.components["model_status_indicator"], "value", "🟢 All Models Ready"))
+ui.app_ui.AppUI.preload_models = MagicMock(side_effect=lambda *args: None)
 core.pipelines.execute_pre_analysis = ui.app_ui.execute_pre_analysis = mock_pre_analysis_execution
 core.pipelines.execute_propagation = ui.app_ui.execute_propagation = mock_propagation_execution
 core.pipelines.execute_analysis = ui.app_ui.execute_analysis = mock_analysis_execution
+core.photo_utils.ingest_folder = mock_ingest_folder
+import ui.tabs.photo_tab
+ui.tabs.photo_tab.ingest_folder = mock_ingest_folder
+core.photo_scoring.apply_scores_to_photos = mock_apply_scores_to_photos
+core.xmp_writer.export_xmps_for_photos = mock_export_xmps_for_photos
 # Patch download_model to avoid network calls
 core.utils.download_model = MagicMock()
 core.managers.download_model = MagicMock()

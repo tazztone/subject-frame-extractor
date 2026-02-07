@@ -17,3 +17,6 @@
 | 2026-02-07 | **Photo Mode: IQA Config** | Full UI sliders for weight tuning (Option C). | Maximum flexibility for diverse datasets. |
 | 2026-02-07 | **Photo Mode: Export Trigger** | Manual "Sync XMP" button. | Safe, explicit user action. |
 | 2026-02-07 | **Photo Mode: Ingest Scope** | Flat folder support only (no recursion) for MVP. | Simplifies initial implementation. |
+| 2026-02-07 | **Verify: Split Suites** | Separate `test_video_flow.py` and `test_photo_flow.py`. | Better isolation, faster feedback. |
+| 2026-02-07 | **CLI: Hybrid Reuse** | Reuse `PreAnalysis` logic for Photo Mode CLI. | Avoids code duplication ("reinventing the wheel"). |
+| 2026-02-07 | **Version: 4.0.0** | Unify `pyproject.toml` and `cli.py` to 4.0.0. | Matches milestone goal "v4.0-cli-first". |

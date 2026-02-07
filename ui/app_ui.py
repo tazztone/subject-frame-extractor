@@ -227,6 +227,9 @@ class AppUI:
             "scene_face_sim_min_input",
             "filtering_tab",
             "scene_gallery",
+            "photo_folder_input",
+            "photo_gallery",
+            "photo_status",
         ]
 
         # Undo/Redo History
@@ -293,6 +296,9 @@ class AppUI:
         """
         # css argument is deprecated in Gradio 5+
         with gr.Blocks() as demo:
+            # Unified Application State (Must be first for tab builders)
+            self.components["application_state"] = gr.State(ApplicationState())
+            
             self._build_header()
 
             with gr.Accordion("🔄 Resume previous Session", open=False):
@@ -514,8 +520,8 @@ class AppUI:
         """Sets up all global event listeners and state management."""
         self.logger.info("Initializing Gradio event handlers...")
         
-        # Unified Application State
-        self.components["application_state"] = gr.State(ApplicationState())
+        # Unified Application State - MOVED TO build_ui
+        # self.components["application_state"] = gr.State(ApplicationState())
 
 
 
