@@ -290,7 +290,7 @@ For developer guidelines, see [AGENTS.md](AGENTS.md).
 {file_tree}
 """
 
-    Path("AGENTS_CODE_REFERENCE.md").write_text(
+    Path("docs/AGENTS_CODE_REFERENCE.md").write_text(
         header_main.format(file_tree=file_tree) + main_skeleton, encoding="utf-8"
     )
     print("Successfully updated AGENTS_CODE_REFERENCE.md")
