@@ -128,6 +128,19 @@ Check the progress and metadata of a session:
 uv run python cli.py status --session ./results
 ```
 
+### Photo Mode (Culling)
+Process image folders and sync ratings to sidecars:
+```bash
+# 1. Ingest folder (crawls images, extracts RAW previews)
+uv run python cli.py photo ingest --folder /path/to/raws --output ./photo_session
+
+# 2. Score photos (sharpness, naturalness, face prominence, etc.)
+uv run python cli.py photo score --session ./photo_session
+
+# 3. Export XMP sidecars (Ratings & Labels compatible with Lightroom)
+uv run python cli.py photo export --session ./photo_session
+```
+
 
 ---
 

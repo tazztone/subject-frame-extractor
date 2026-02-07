@@ -16,10 +16,10 @@ class PhotoTabBuilder:
 
     def build(self):
         with gr.Row():
-            with gr.Column(scale=1):
-                self._build_sidebar()
             with gr.Column(scale=3):
                 self._build_gallery_area()
+            with gr.Column(scale=1):
+                self._build_sidebar()
 
     def _build_sidebar(self):
         gr.Markdown("### 📥 Import Photos")
@@ -79,7 +79,8 @@ class PhotoTabBuilder:
             rows=3,
             height=800,
             object_fit="contain",
-            allow_preview=True
+            allow_preview=True,
+            elem_id="photo_gallery"
         )
         self.app.components["photo_gallery"] = gallery
         
