@@ -150,6 +150,7 @@ class ModelRegistry:
         self._models: Dict[str, Any] = {}
         self._locks: Dict[str, threading.Lock] = defaultdict(threading.Lock)
         self._active_locks = set() # Track keys that should not be cleared
+        self._registry_lock = threading.RLock() # Reentrant lock for internal state
         self.logger = logger or logging.getLogger(__name__)
         self.runtime_device_override: Optional[str] = None
 
@@ -164,28 +165,39 @@ class ModelRegistry:
 
     def lock(self, key: str):
         """Prevents a model from being cleared by the watchdog."""
-        self._active_locks.add(key)
+        with self._registry_lock:
+            self._active_locks.add(key)
 
     def unlock(self, key: str):
         """Allows a model to be cleared by the watchdog again."""
-        if key in self._active_locks:
-            self._active_locks.remove(key)
+        with self._registry_lock:
+            if key in self._active_locks:
+                self._active_locks.remove(key)
 
     def get_or_load(self, key: str, loader_fn: Callable[[], Any]) -> Any:
         """Retrieves a model by key, loading it via loader_fn if not present."""
-        if key not in self._models:
-            with self._locks[key]:
-                if key not in self._models:
-                    if self.logger:
-                        self.logger.info(f"Loading model '{key}' for the first time...")
-                    try:
-                        val = loader_fn()
-                        self._models[key] = val
-                    except Exception as e:
-                        raise e
-                    if self.logger:
-                        self.logger.success(f"Model '{key}' loaded successfully.")
-        return self._models[key]
+        with self._registry_lock:
+            if key in self._models:
+                return self._models[key]
+            
+        with self._locks[key]:
+            # Double-check inside model-specific lock
+            with self._registry_lock:
+                if key in self._models:
+                    return self._models[key]
+                
+            if self.logger:
+                self.logger.info(f"Loading model '{key}' for the first time...")
+            
+            val = loader_fn()
+            
+            with self._registry_lock:
+                self._models[key] = val
+                
+            if self.logger:
+                self.logger.success(f"Model '{key}' loaded successfully.")
+                
+        return val
 
     def check_memory_usage(self, config: "Config"):
         """
@@ -240,10 +252,17 @@ class ModelRegistry:
         if self.logger:
             self.logger.info(f"Clearing models from registry (force={force}).")
         
-        for key, model in list(self._models.items()):
-            if not force and key in self._active_locks:
-                continue
-                
+        with self._registry_lock:
+            models_to_clear = []
+            for key, model in self._models.items():
+                if not force and key in self._active_locks:
+                    continue
+                models_to_clear.append((key, model))
+            
+            for key, _ in models_to_clear:
+                del self._models[key]
+
+        for key, model in models_to_clear:
             try:
                 if hasattr(model, "shutdown") and callable(model.shutdown):
                     model.shutdown()
@@ -251,8 +270,6 @@ class ModelRegistry:
                     model.close()
             except Exception as e:
                 self.logger.warning(f"Error shutting down model {key}: {e}")
-            
-            del self._models[key]
 
         gc.collect()
         if torch.cuda.is_available():

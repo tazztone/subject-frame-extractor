@@ -211,12 +211,15 @@ class AppLogger:
 
     def _log(self, level: str, message: str, component: str, **kwargs):
         """Helper to create a structured log and pass to standard logger."""
+        # Extract exc_info if it exists to avoid overwriting it in 'extra'
+        exc_info = kwargs.pop("exc_info", None)
+        
         extra = {"component": component, **kwargs}
         log_level = getattr(logging, level.upper(), logging.INFO)
         if level.upper() == "SUCCESS":
             log_level = SUCCESS_LEVEL_NUM
             
-        self.logger.log(log_level, f"{message} [{component}]", extra=extra)
+        self.logger.log(log_level, f"{message} [{component}]", extra=extra, exc_info=exc_info)
 
     def debug(self, message: str, component: str = "system", **kwargs):
         self._log("DEBUG", message, component, **kwargs)
