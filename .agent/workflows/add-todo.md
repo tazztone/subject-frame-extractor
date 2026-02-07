@@ -31,10 +31,10 @@ Extract:
 
 ## 2. Ensure TODO.md Exists
 
-```powershell
-if (-not (Test-Path ".gsd/TODO.md")) {
+```bash
+if [ ! -f ".gsd/TODO.md" ]; then
     # Create with header
-}
+fi
 ```
 
 ---

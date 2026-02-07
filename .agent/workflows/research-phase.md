@@ -127,8 +127,8 @@ researched_at: {date}
 
 ## 5. Commit Research
 
-```powershell
-git add .gsd/phases/{N}/RESEARCH.md
+```bash
+git add ".gsd/phases/{N}/RESEARCH.md"
 git commit -m "docs(phase-{N}): research complete"
 ```
 

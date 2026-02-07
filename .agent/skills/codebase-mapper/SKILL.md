@@ -64,30 +64,28 @@ Surface issues to address:
 ### Phase 1: Project Type Detection
 
 Identify project type from markers:
-```powershell
+```bash
 # Node.js/JavaScript
-Test-Path "package.json"
+[ -f "package.json" ]
 
 # Python
-Test-Path "requirements.txt" -or Test-Path "pyproject.toml"
+[ -f "requirements.txt" ] || [ -f "pyproject.toml" ]
 
 # Rust
-Test-Path "Cargo.toml"
+[ -f "Cargo.toml" ]
 
 # Go
-Test-Path "go.mod"
+[ -f "go.mod" ]
 
 # .NET
-Get-ChildItem "*.csproj"
+find . -maxdepth 1 -name "*.csproj"
 ```
 
 ### Phase 2: Structure Scan
 
-```powershell
+```bash
 # Get directory structure
-Get-ChildItem -Recurse -Directory | 
-    Where-Object { $_.Name -notmatch "node_modules|\.git|__pycache__|dist|build|\.next" } |
-    Select-Object FullName
+find . -type d -not -path '*/.*' -not -path '*/node_modules*' -not -path '*/__pycache__*' -not -path '*/dist*' -not -path '*/build*' -not -path '*/.next*'
 ```
 
 ### Phase 3: Dependency Extraction
@@ -95,42 +93,41 @@ Get-ChildItem -Recurse -Directory |
 For each ecosystem:
 
 **Node.js:**
-```powershell
-$pkg = Get-Content "package.json" | ConvertFrom-Json
-$pkg.dependencies
-$pkg.devDependencies
+```bash
+# requires jq
+cat package.json | jq '.dependencies, .devDependencies'
 ```
 
 **Python:**
-```powershell
-Get-Content "requirements.txt"
+```bash
+cat requirements.txt
 ```
 
 ### Phase 4: Pattern Discovery
 
 Search for common patterns:
-```powershell
+```bash
 # Components
-Get-ChildItem -Recurse -Include "*.tsx","*.jsx" | Select-Object Name
+find . -name "*.tsx" -o -name "*.jsx"
 
 # API routes
-Get-ChildItem -Recurse -Path "**/api/**" -Include "*.ts","*.js"
+find . -path "**/api/**" -name "*.ts" -o -name "*.js"
 
 # Models/schemas
-Select-String -Path "**/*.ts" -Pattern "interface|type|schema"
+grep -rE "interface|type|schema" --include="*.ts" .
 ```
 
 ### Phase 5: Debt Discovery
 
-```powershell
+```bash
 # TODOs
-Select-String -Path "src/**/*" -Pattern "TODO|FIXME|HACK|XXX"
+grep -rE "TODO|FIXME|HACK|XXX" src/
 
 # Deprecated
-Select-String -Path "**/*" -Pattern "@deprecated|DEPRECATED"
+grep -rE "@deprecated|DEPRECATED" .
 
 # Console statements (often debug leftovers)
-Select-String -Path "src/**/*" -Pattern "console\.(log|debug|warn)"
+grep -rE "console\.(log|debug|warn)" src/
 ```
 
 ---

@@ -26,14 +26,6 @@ This is the most leveraged moment in any project. Deep questioning here means be
 
 1. **Abort if project exists:**
 
-   **PowerShell:**
-   ```powershell
-   if (Test-Path ".gsd/SPEC.md") {
-       Write-Error "Project already initialized. Use /progress"
-       exit 1
-   }
-   ```
-
    **Bash:**
    ```bash
    if [ -f ".gsd/SPEC.md" ]; then
@@ -44,14 +36,6 @@ This is the most leveraged moment in any project. Deep questioning here means be
 
 2. **Initialize git repo** (if not exists):
 
-   **PowerShell:**
-   ```powershell
-   if (-not (Test-Path ".git")) {
-       git init
-       Write-Output "Initialized new git repo"
-   }
-   ```
-
    **Bash:**
    ```bash
    if [ ! -d ".git" ]; then
@@ -61,16 +45,6 @@ This is the most leveraged moment in any project. Deep questioning here means be
    ```
 
 3. **Detect existing code (brownfield detection):**
-
-   **PowerShell:**
-   ```powershell
-   $codeFiles = Get-ChildItem -Recurse -Include "*.ts","*.js","*.py","*.go","*.rs" | 
-       Where-Object { $_.FullName -notmatch "node_modules|\.git" } | 
-       Select-Object -First 20
-   
-   $hasPackage = Test-Path "package.json" -or Test-Path "requirements.txt" -or Test-Path "Cargo.toml"
-   $hasArchitecture = Test-Path ".gsd/ARCHITECTURE.md"
-   ```
 
    **Bash:**
    ```bash
