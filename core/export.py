@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import shutil
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -17,6 +18,7 @@ if TYPE_CHECKING:
 from core.events import ExportEvent
 from core.filtering import apply_all_filters_vectorized
 from core.utils import _to_json_safe
+from core.xmp_writer import write_xmp_sidecar
 
 
 # TODO: Add parallel frame export using multi-threading
@@ -234,9 +236,10 @@ def export_kept_frames(
 ) -> str:
     if not event.all_frames_data:
         return "No metadata to export."
-    if not event.video_path or not Path(event.video_path).exists():
-        return "[ERROR] Original video path is required for export."
+    
+    is_video = bool(event.video_path and Path(event.video_path).exists() and not Path(event.video_path).is_dir())
     out_root = Path(event.output_dir)
+    
     try:
         filters = event.filter_args.copy()
         filters.update(
@@ -251,29 +254,58 @@ def export_kept_frames(
         )
         if not kept:
             return "No frames kept after filtering. Nothing to export."
-        frame_map_path = out_root / "frame_map.json"
-        if not frame_map_path.exists():
-            return "[ERROR] frame_map.json not found. Cannot export."
-        with frame_map_path.open("r", encoding="utf-8") as f:
-            frame_map_list = json.load(f)
-        sample_name = next((f["filename"] for f in kept if "filename" in f), None)
-        analyzed_ext = Path(sample_name).suffix if sample_name else ".webp"
-        fn_to_orig_map = {f"frame_{i + 1:06d}{analyzed_ext}": orig for i, orig in enumerate(sorted(frame_map_list))}
-        frames_to_extract = sorted(
-            [fn_to_orig_map.get(f["filename"]) for f in kept if f.get("filename") in fn_to_orig_map]
-        )
-        frames_to_extract = [n for n in frames_to_extract if n is not None]
-        if not frames_to_extract:
-            return "No frames to extract."
 
         export_dir = out_root.parent / f"{out_root.name}_exported_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         export_dir.mkdir(exist_ok=True, parents=True)
 
-        success, stderr = _perform_ffmpeg_export(event.video_path, frames_to_extract, export_dir, logger)
-        if not success:
-            return f"Error during export: FFmpeg failed. Check logs for details:\n{stderr}"
+        if is_video:
+            frame_map_path = out_root / "frame_map.json"
+            if not frame_map_path.exists():
+                return "[ERROR] frame_map.json not found. Cannot export."
+            with frame_map_path.open("r", encoding="utf-8") as f:
+                frame_map_list = json.load(f)
+            sample_name = next((f["filename"] for f in kept if "filename" in f), None)
+            analyzed_ext = Path(sample_name).suffix if sample_name else ".webp"
+            fn_to_orig_map = {f"frame_{i + 1:06d}{analyzed_ext}": orig for i, orig in enumerate(sorted(frame_map_list))}
+            frames_to_extract = sorted(
+                [fn_to_orig_map.get(f["filename"]) for f in kept if f.get("filename") in fn_to_orig_map]
+            )
+            frames_to_extract = [n for n in frames_to_extract if n is not None]
+            if not frames_to_extract:
+                return "No frames to extract."
 
-        _rename_exported_frames(export_dir, frames_to_extract, fn_to_orig_map, logger)
+            success, stderr = _perform_ffmpeg_export(event.video_path, frames_to_extract, export_dir, logger)
+            if not success:
+                return f"Error during export: FFmpeg failed. Check logs for details:\n{stderr}"
+
+            _rename_exported_frames(export_dir, frames_to_extract, fn_to_orig_map, logger)
+        else:
+            # Folder mode: Copy original files
+            source_map_path = out_root / "source_map.json"
+            source_map = {}
+            if source_map_path.exists():
+                with source_map_path.open("r", encoding="utf-8") as f:
+                    source_map = json.load(f)
+            
+            num_copied = 0
+            for frame_meta in kept:
+                filename = frame_meta.get("filename")
+                if filename in source_map:
+                    src_path = Path(source_map[filename])
+                    if src_path.exists():
+                        shutil.copy2(src_path, export_dir / src_path.name)
+                        num_copied += 1
+                        
+                        # Handle XMP Export
+                        if event.enable_xmp_export:
+                            score = frame_meta.get("score", 0.0)
+                            # Simple rating logic: 0-100 -> 0-5 stars
+                            rating = int(min(5, max(0, score / 20)))
+                            # Lightroom labels: "Green" for kept (default)
+                            label = "Green"
+                            write_xmp_sidecar(src_path, rating, label)
+            
+            logger.info(f"Copied {num_copied} original files to export directory.")
 
         _export_metadata(kept, export_dir, logger)
 
@@ -286,7 +318,13 @@ def export_kept_frames(
             except ValueError as e:
                 return str(e)
 
-        return f"Exported {len(kept)} frames to {export_dir.name}."
+        return f"Exported {len(kept)} items to {export_dir.name}."
+    except subprocess.CalledProcessError as e:
+        logger.error("FFmpeg export failed", exc_info=True, extra={"stderr": e.stderr})
+        return "Error during export: FFmpeg failed. Check logs."
+    except Exception as e:
+        logger.error("Error during export process", exc_info=True)
+        return f"Error during export: {e}"
     except subprocess.CalledProcessError as e:
         logger.error("FFmpeg export failed", exc_info=True, extra={"stderr": e.stderr})
         return "Error during export: FFmpeg failed. Check logs."

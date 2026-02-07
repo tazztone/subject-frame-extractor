@@ -141,6 +141,7 @@ class ExportEvent(UIEvent):
     enable_crop: bool
     crop_ars: str
     crop_padding: int
+    enable_xmp_export: bool = False
     filter_args: dict[str, Any]
 
 

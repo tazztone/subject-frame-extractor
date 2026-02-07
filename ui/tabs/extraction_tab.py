@@ -16,7 +16,7 @@ class ExtractionTabBuilder:
     def build(self):
         """Creates the content for the 'Source' tab."""
         self.app._create_section_header(
-            "Step 1: Input & Extraction", "Select your video source and how you want to process it."
+            "Step 1: Input & Extraction", "Select your video or image folder source and how you want to process it."
         )
 
         # 1. Source Selection

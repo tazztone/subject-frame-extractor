@@ -252,6 +252,13 @@ class FilteringTabBuilder:
                                 {"label": "✂️ Crop to Subject", "value": self.config.export_enable_crop},
                             )
                             self.app._create_component(
+                                "enable_xmp_export_input",
+                                "checkbox",
+                                {"label": "📝 Write XMP Sidecars (Photos)", "value": False},
+                            )
+
+                        with gr.Row():
+                            self.app._create_component(
                                 "crop_padding_input",
                                 "slider",
                                 {"label": "Crop Padding %", "value": self.config.export_crop_padding},
