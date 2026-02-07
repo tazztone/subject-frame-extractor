@@ -1,25 +1,28 @@
 import json
 import sqlite3
 import threading
+import logging
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 
 class Database:
     CURRENT_VERSION = 2
 
-    def __init__(self, db_path: Path, batch_size: int = 50):
+    def __init__(self, db_path: Path, batch_size: int = 50, logger: Optional[logging.Logger] = None):
         """
         Initializes the Database manager.
 
         Args:
             db_path: Path to the SQLite database file.
             batch_size: Number of records to buffer before writing.
+            logger: Optional logger for errors and info.
         """
         self.db_path = db_path
         self.conn = None
         self.buffer = []
         self.batch_size = batch_size
+        self.logger = logger or logging.getLogger(__name__)
         self.lock = threading.Lock()
         self.columns = [
             "filename",
@@ -79,24 +82,24 @@ class Database:
 
         # Apply migrations
         if current_version < self.CURRENT_VERSION:
-            print(f"Migrating database from version {current_version} to {self.CURRENT_VERSION}...")
+            self.logger.info(f"Migrating database from version {current_version} to {self.CURRENT_VERSION}...")
 
             try:
                 if current_version < 1:
                     self._migration_v1_initial_schema(cursor)
                     cursor.execute("INSERT INTO schema_versions (version) VALUES (1)")
                     self.conn.commit()
-                    print("Applied migration v1")
+                    self.logger.info("Applied migration v1")
 
                 if current_version < 2:
                     self._migration_v2_add_error_severity(cursor)
                     cursor.execute("INSERT INTO schema_versions (version) VALUES (2)")
                     self.conn.commit()
-                    print("Applied migration v2")
+                    self.logger.info("Applied migration v2")
 
             except Exception as e:
                 self.conn.rollback()
-                print(f"Migration failed: {e}")
+                self.logger.error(f"Migration failed: {e}")
                 raise
 
     def _detect_legacy_version(self, cursor) -> int:
@@ -158,7 +161,9 @@ class Database:
 
     def insert_metadata(self, metadata: Dict[str, Any]):
         """Inserts or replaces a metadata record."""
-        # Pop extra fields to be able to use the spreak operator ** later
+        # Work on a copy to avoid mutating the original dictionary passed by the caller
+        data_copy = metadata.copy()
+        
         keys_to_extract = [
             "filename",
             "face_sim",
@@ -173,10 +178,18 @@ class Database:
             "phash",
             "dedup_thresh",
         ]
-        base_metadata = {key: metadata.pop(key, None) for key in keys_to_extract}
+        base_metadata = {key: data_copy.pop(key, None) for key in keys_to_extract}
 
-        # The rest of the metadata is a dictionary that we will store as a JSON string
-        base_metadata["metrics"] = json.dumps(metadata)
+        # Use the metrics key if it already exists as a dict, otherwise use remaining data
+        if "metrics" in data_copy and isinstance(data_copy["metrics"], dict):
+            metrics_dict = data_copy.pop("metrics")
+            # If there are other remaining keys, merge them into metrics_dict
+            if data_copy:
+                metrics_dict.update(data_copy)
+            base_metadata["metrics"] = json.dumps(metrics_dict)
+        else:
+            # The rest of the metadata is a dictionary that we will store as a JSON string
+            base_metadata["metrics"] = json.dumps(data_copy)
 
         # Make sure that the mask_empty field is an integer
         if (
@@ -224,9 +237,7 @@ class Database:
             self.buffer.clear()
         except sqlite3.Error as e:
             # TODO: Implement proper error recovery strategy (retry with backoff)
-            # TODO: Use logger instead of print for error reporting
-            # TODO: Consider saving failed records to a recovery file
-            print(f"Database error during flush: {e}")
+            self.logger.error(f"Database error during flush: {e}", exc_info=True)
             # Optional: Decide whether to clear buffer or retry?
             # For now, we clear to avoid getting stuck, but log error.
             self.buffer.clear()
