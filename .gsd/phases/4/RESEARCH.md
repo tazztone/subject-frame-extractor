@@ -1,6 +1,6 @@
 ---
 phase: 4
-level: 2
+level: 3
 researched_at: 2026-02-07
 ---
 
@@ -14,45 +14,65 @@ researched_at: 2026-02-07
 
 ## Findings
 
-### 1. Verification Gap: Photo Mode Untested by E2E
-- The current E2E script (`tests/e2e/e2e_run.py`) only tests video extraction and analysis.
-- **Gap**: No automated test for:
-    - `ingest_folder` (ExifTool preview extraction).
-    - `score_photo` (IQA metrics).
-    - `write_xmp_sidecar` (Export).
-- **Recommendation**: Create `tests/e2e/test_photo_mode.py` or extend `e2e_run.py` to support a `--photo` mode.
+### 1. Verification Gap: Photo Mode Untested
+The current test suite focuses entirely on video workflows.
+- **UI Tests**: `tests/ui/test_app_flow.py` tests the Video Tab.
+    - **Gap**: No `tests/ui/test_photo_flow.py` to verify:
+        - Ingest folder selection.
+        - Gallery rendering (lazy loading).
+        - Scoring slider interactions.
+        - Export button state.
+- **E2E/CLI Tests**: `tests/e2e/e2e_run.py` tests the video pipeline.
+    - **Gap**: No automated backend test for `ingest_folder` -> `score_photo` -> `write_xmp_sidecar`.
+
+**Recommendation**:
+1. Create `tests/ui/test_photo_flow.py` using Playwright (mocking the backend to avoid real RAW file dependencies in CI).
+2. Create `tests/e2e/test_photo_cli.py` to test the new CLI commands with a small set of sample assets.
 
 ### 2. CLI Feature Parity Gap
-- `cli.py` (v4.0.0) has commands: `extract`, `analyze`, `full`, `status`.
-- **Gap**: No commands for Photo Mode.
-- **Recommendation**: 
-    - Add `photo` command group.
-    - `photo ingest --folder <path>`
-    - `photo score --threshold <N>`
-    - `photo export --format xmp`
+`cli.py` (v4.0.0) lacks Photo Mode commands.
+
+**Proposed Architecture**:
+Use `click` groups to nest photo commands. Reuse `_setup_runtime` for logging/config.
+
+```python
+@cli.group()
+def photo():
+    """Photo Mode: Ingest, Score, and Export."""
+    pass
+
+@photo.command()
+@click.option("--folder", required=True, type=click.Path(exists=True))
+def ingest(folder):
+    ...
+
+@photo.command()
+@click.option("--input", required=True)
+@click.option("--weights", type=str, help="JSON string of weights")
+def score(input, weights):
+    ...
+```
 
 ### 3. Broken Verification Scripts
-- `scripts/run_ux_audit.py` references `tests/e2e/test_app_flow.py`.
-- **Finding**: Actual file is at `tests/ui/test_app_flow.py`. The script is broken.
-- **Action**: Fix path in `run_ux_audit.py`.
+`scripts/run_ux_audit.py` fails because it references `tests/e2e/test_app_flow.py`.
+- **Actual Path**: `tests/ui/test_app_flow.py`.
+- **Fix**: Update the path in `run_ux_audit.py`.
 
 ### 4. Documentation & Version Mismatch
-- `README.md`: No mention of Photo Mode usage.
-- `pyproject.toml`: Version is `0.1.0`.
-- `cli.py`: Version is `4.0.0`.
-- `app.py`: Mentions "Subject Frame Extractor v4.0 (Dev)"? (Assumed based on CLI).
-- **Action**: Unify version numbers (Recommend bump to `0.4.0` or `4.0.0` depending on user preference, probably `0.4.0` as it is still dev?). The CLI says "4.0.0". Let's standardize on **4.0.0** to match CLI and generic "v4.0" naming in `STATE.md` ("Milestone: v4.0-cli-first").
+- **README.md**: Completely missing Photo Mode documentation. Needs a new section "📸 Photo Culling".
+- **Versioning**: `pyproject.toml` (0.1.0) vs `cli.py` (4.0.0).
+- **Decision**: Bump `pyproject.toml` to **0.4.0** (Pre-release for 4.0) or **4.0.0** to match CLI. Given the "v4.0-cli-first" milestone, **4.0.0** is the intended target.
 
 ## Decisions Made
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| E2E Strategy | New `test_photo_e2e.py` | Separate concern from video pipeline; faster to run independently. |
-| CLI Strategy | New `photo` command | Keep broad capabilities distinct (video vs photo). |
-| Versioning | **4.0.0** | Align `pyproject.toml` with `cli.py` and milestone name. |
+| Verification | **Split Suites** | Separate `test_video_flow.py` and `test_photo_flow.py` for specialized UI testing. |
+| CLI Structure | **Nested Group** | `python cli.py photo <cmd>` keeps the namespace clean. |
+| Versioning | **4.0.0** | Unify all version numbers to match the milestone goal. |
 
 ## Risks
-- **ExifTool Dependency**: E2E tests for photo mode will require ExifTool installed in the test environment (CI/CD).
-- **FileSystem Access**: Photo mode tests involve file creation/deletion; ensure cleanup to avoid artifact buildup.
+- **ExifTool in CI**: UI tests should mock the *result* of ingest (stateless), but E2E CLI tests will fail without `exiftool`.
+    - *Mitigation*: Mark E2E tests with `@pytest.mark.skipif(shutil.which("exiftool") is None)`.
 
 ## Ready for Planning
 - [x] Questions answered
