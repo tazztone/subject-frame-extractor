@@ -56,9 +56,13 @@ class EdgeStrengthOperator:
                 base_scale = ctx.config.edge_strength_base_scale
                 
             if base_scale:
-                edge_strength = min(100.0, (edge_strength / base_scale) * 100.0)
+                raw_normalized = min(1.0, edge_strength / base_scale)
+                edge_strength = raw_normalized * 100.0
                 
-            return OperatorResult(metrics={"edge_strength_score": edge_strength})
+            return OperatorResult(metrics={
+                "edge_strength": float(raw_normalized),
+                "edge_strength_score": edge_strength
+            })
             
         except Exception as e:
             return OperatorResult(success=False, error=str(e))
@@ -82,13 +86,8 @@ class ContrastOperator:
         try:
             gray = cv2.cvtColor(ctx.image_rgb, cv2.COLOR_RGB2GRAY)
             
-            # Legacy logic:
-            # pixels = gray[active_mask] if active_mask is not None else gray
-            
             pixels = gray
             if ctx.mask is not None:
-                # Legacy mask logic: active_mask = (mask > 128)
-                # And check if np.sum(active_mask) < 100 -> active_mask = None
                 active_mask = ctx.mask > 128
                 if np.sum(active_mask) >= 100:
                     pixels = gray[active_mask]
@@ -102,25 +101,17 @@ class ContrastOperator:
             contrast = float(std_br) / (mean_br + 1e-7)
             
             # Scaling
-            contrast_clamp = 50.0 # Default from mock_config in tests, legacy implies available in config
+            contrast_clamp = 50.0 
             if ctx.config and hasattr(ctx.config, "quality_contrast_clamp"):
                 contrast_clamp = ctx.config.quality_contrast_clamp
-            elif getattr(Config, "quality_contrast_clamp", None): # Fallback if Config class has default
-                # But we don't have Config class instance here easily unless passed.
-                # We'll rely on ctx.config usually being populated.
-                pass
                 
             contrast_val = float(contrast)
-            contrast_scaled = (min(contrast_val, contrast_clamp) / contrast_clamp)
+            raw_normalized = min(contrast_val, contrast_clamp) / contrast_clamp
             
-            # Legacy stores as 0-1, verify scaling. 
-            # `_calculate_and_store_score` multiplies by 100.
-            # So here we return 0-100?
-            # Plan 2.1 says "Return: {'contrast_score': 0-100}"
-            # Model.py: `setattr(self.metrics, f"{name}_score", float(normalized_value * 100))`
-            # So yes, return 0-100.
-            
-            return OperatorResult(metrics={"contrast_score": contrast_scaled * 100.0})
+            return OperatorResult(metrics={
+                "contrast": float(raw_normalized),
+                "contrast_score": raw_normalized * 100.0
+            })
             
         except Exception as e:
             return OperatorResult(success=False, error=str(e))
@@ -154,9 +145,12 @@ class BrightnessOperator:
             mean_br = np.mean(pixels) if pixels.size > 0 else 0.0
             
             # Legacy: float(mean_br) / 255.0
-            brightness = float(mean_br) / 255.0
+            raw_normalized = float(mean_br) / 255.0
             
-            return OperatorResult(metrics={"brightness_score": brightness * 100.0})
+            return OperatorResult(metrics={
+                "brightness": raw_normalized,
+                "brightness_score": raw_normalized * 100.0
+            })
             
         except Exception as e:
             return OperatorResult(success=False, error=str(e))

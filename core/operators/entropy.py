@@ -46,12 +46,13 @@ class EntropyOperator:
             entropy = -np.sum(prob * np.log2(prob))
             
             # Scale: Max entropy for 8-bit is 8.0. Map 8.0 -> 100.0
-            entropy_score = (entropy / 8.0) * 100.0
+            raw_normalized = min(1.0, max(0.0, entropy / 8.0))
+            entropy_score = raw_normalized * 100.0
             
-            # Clamp to 100 just in case
-            entropy_score = min(100.0, max(0.0, entropy_score))
-            
-            return OperatorResult(metrics={"entropy_score": entropy_score})
+            return OperatorResult(metrics={
+                "entropy": float(raw_normalized),
+                "entropy_score": entropy_score
+            })
             
         except Exception as e:
             return OperatorResult(success=False, error=str(e))

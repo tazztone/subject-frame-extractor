@@ -169,6 +169,41 @@ def list_images(p: Union[str, Path], cfg: Config) -> list[Path]:
     return sorted([f for f in p.iterdir() if f.suffix.lower() in exts and f.is_file()])
 
 
+import subprocess
+
+def detect_hwaccel(logger: "AppLogger") -> tuple[Optional[str], Optional[str]]:
+    """
+    Probes FFmpeg for hardware acceleration support.
+    
+    Returns:
+        tuple: (hwaccel_type, decoder_name) or (None, None)
+    """
+    try:
+        # Check for NVIDIA NVENC/CUVID
+        res = subprocess.run(["ffmpeg", "-hide_banner", "-hwaccels"], capture_output=True, text=True)
+        hwaccels = res.stdout.splitlines()
+        
+        # Check for CUDA (Nvidia)
+        if "cuda" in hwaccels or "cuvid" in hwaccels:
+            logger.info("Hardware acceleration detected: NVIDIA (CUDA/CUVID)")
+            return "cuda", None # FFmpeg can usually pick the right decoder with -hwaccel cuda
+            
+        # Check for VAAPI (Intel/AMD on Linux)
+        if "vaapi" in hwaccels:
+            logger.info("Hardware acceleration detected: VAAPI")
+            return "vaapi", None
+            
+        # Check for VideoToolbox (macOS)
+        if "videotoolbox" in hwaccels:
+            logger.info("Hardware acceleration detected: VideoToolbox")
+            return "videotoolbox", None
+            
+    except Exception as e:
+        logger.warning(f"Hardware acceleration detection failed: {e}")
+        
+    return None, None
+
+
 @njit
 def compute_entropy(hist: np.ndarray, entropy_norm: float) -> float:
     """Computes normalized entropy from a histogram using Numba."""
