@@ -34,6 +34,9 @@ from core.pipelines import (
     execute_pre_analysis,
     execute_propagation,
 )
+from core.photo_utils import ingest_folder
+from core.photo_scoring import apply_scores_to_photos
+from core.xmp_writer import export_xmps_for_photos
 
 
 def _setup_runtime(output_dir: Path, verbose: bool = False):
@@ -432,6 +435,135 @@ def status(session):
             click.secho(f"   🔄 Resumable: Yes ({completed} scenes completed)", fg="blue")
         except:
             pass
+
+
+@cli.group()
+def photo():
+    """Photo Mode: Ingest, Score, and Export."""
+    pass
+
+
+@photo.command()
+@click.option("--folder", "-f", required=True, type=click.Path(exists=True), help="Path to source folder with RAW/JPEG images.")
+@click.option("--output", "-o", required=True, type=click.Path(), help="Output directory for the session.")
+@click.option("--verbose", is_flag=True, help="Enable verbose logging.")
+def ingest(folder, output, verbose):
+    """Scan folder and extract RAW previews."""
+    output_dir = Path(output)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    config, logger, progress_queue, cancel_event, model_registry, thumbnail_manager = _setup_runtime(output_dir, verbose)
+    
+    click.secho(f"\n📸 PHOTO INGEST", fg="cyan", bold=True)
+    click.echo(f"   Folder: {folder}")
+    
+    photos = ingest_folder(Path(folder), output_dir / "previews")
+    
+    # Save session state
+    photos_json = output_dir / "photos.json"
+    with open(photos_json, "w") as f:
+        # Convert Path objects to strings for JSON serialization
+        json_photos = []
+        for p in photos:
+            p_copy = p.copy()
+            p_copy["source"] = str(p["source"])
+            p_copy["preview"] = str(p["preview"])
+            json_photos.append(p_copy)
+        json.dump(json_photos, f, indent=4)
+        
+    click.secho(f"✓ Ingested {len(photos)} photos.", fg="green")
+    click.echo(f"   Session state: {photos_json}")
+
+
+@photo.command()
+@click.option("--session", "-s", required=True, type=click.Path(exists=True), help="Path to session directory.")
+@click.option("--weights", "-w", type=str, help="JSON string of weights (e.g. '{\"sharpness\": 1.0}')")
+@click.option("--verbose", is_flag=True, help="Enable verbose logging.")
+def score(session, weights, verbose):
+    """Compute quality scores for ingested photos."""
+    output_dir = Path(session)
+    photos_json = output_dir / "photos.json"
+    
+    if not photos_json.exists():
+        click.secho(f"❌ No ingested photos found in {session}. Run 'ingest' first.", fg="red")
+        sys.exit(1)
+        
+    with open(photos_json) as f:
+        photos = json.load(f)
+        
+    # Parse weights
+    if weights:
+        try:
+            parsed_weights = json.loads(weights)
+        except json.JSONDecodeError:
+            click.secho("❌ Invalid weights JSON.", fg="red")
+            sys.exit(1)
+    else:
+        # Default weights
+        parsed_weights = {"sharpness": 0.5, "entropy": 0.25, "niqe": 0.25}
+        
+    config, logger, progress_queue, cancel_event, model_registry, thumbnail_manager = _setup_runtime(output_dir, verbose)
+    
+    click.secho(f"\n⚖️ PHOTO SCORING", fg="cyan", bold=True)
+    click.echo(f"   Weights: {parsed_weights}")
+    
+    # Convert string paths back to Path objects for core functions
+    for p in photos:
+        p["source"] = Path(p["source"])
+        p["preview"] = Path(p["preview"])
+        
+    scored_photos = apply_scores_to_photos(photos, parsed_weights)
+    
+    # Save updated session state
+    with open(photos_json, "w") as f:
+        json_photos = []
+        for p in scored_photos:
+            p_copy = p.copy()
+            p_copy["source"] = str(p["source"])
+            p_copy["preview"] = str(p["preview"])
+            json_photos.append(p_copy)
+        json.dump(json_photos, f, indent=4)
+        
+    click.secho("✓ Scoring complete.", fg="green")
+
+
+@photo.command()
+@click.option("--session", "-s", required=True, type=click.Path(exists=True), help="Path to session directory.")
+@click.option("--thresholds", "-t", type=str, help="JSON list of star thresholds (e.g. '[20, 40, 60, 80, 90]')")
+@click.option("--verbose", is_flag=True, help="Enable verbose logging.")
+def export(session, thresholds, verbose):
+    """Write XMP sidecars for photos."""
+    output_dir = Path(session)
+    photos_json = output_dir / "photos.json"
+    
+    if not photos_json.exists():
+        click.secho(f"❌ No photos found in {session}.", fg="red")
+        sys.exit(1)
+        
+    with open(photos_json) as f:
+        photos = json.load(f)
+        
+    if thresholds:
+        try:
+            parsed_thresholds = json.loads(thresholds)
+        except json.JSONDecodeError:
+            click.secho("❌ Invalid thresholds JSON.", fg="red")
+            sys.exit(1)
+    else:
+        parsed_thresholds = [20, 40, 60, 80, 90]
+        
+    config, logger, progress_queue, cancel_event, model_registry, thumbnail_manager = _setup_runtime(output_dir, verbose)
+    
+    click.secho(f"\n📤 PHOTO EXPORT", fg="cyan", bold=True)
+    
+    # Convert string paths back to Path objects
+    for p in photos:
+        p["source"] = Path(p["source"])
+        p["preview"] = Path(p["preview"])
+        
+    count = export_xmps_for_photos(photos, parsed_thresholds)
+    
+    click.secho(f"✓ Exported {count} XMP files.", fg="green")
 
 
 if __name__ == "__main__":
