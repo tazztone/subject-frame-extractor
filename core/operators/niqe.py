@@ -91,12 +91,13 @@ class NiqeOperator:
             # Note: self.model might have its own device concept if pyiqa wraps it?
             # But we passed device to create_metric.
             
-            with torch.no_grad():
-                # PyIQA forward
-                # Depending on pyiqa version, it might expect different scale.
-                # Usually 0-1 float.
-                res = self.model(img_tensor.to(device_obj))
-                niqe_raw = float(res)
+            with ctx.model_registry.locked("niqe"): # Use a stable key for NIQE
+                with torch.no_grad():
+                    # PyIQA forward
+                    # Depending on pyiqa version, it might expect different scale.
+                    # Usually 0-1 float.
+                    res = self.model(img_tensor.to(device_obj))
+                    niqe_raw = float(res)
 
             # Normalization
             # Plan Default: 100 - (raw * 2)

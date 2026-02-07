@@ -741,58 +741,65 @@ class AnalysisPipeline(Pipeline):
         current_batch_size = self.config.analysis_default_batch_size
         processed_count = 0
         
-        with ThreadPoolExecutor(max_workers=num_workers) as executor:
-            futures = []
-            
-            while processed_count < total_frames or futures:
-                # 1. Monitor memory and adjust batch size
-                mem_usage = self.model_registry.check_memory_usage(self.config)
-                # Note: ModelRegistry returns None but logs warnings. 
-                # I should ideally have a way to get the usage % or status.
+        # Determine models to lock
+        models_to_lock = []
+        if self.params.compute_face_sim and self.face_analyzer:
+            models_to_lock.append(f"face_analyzer_{self.params.face_model_name}_{self.device}_{tuple(self.config.model_face_analyzer_det_size)}")
+        # Note: FaceLandmarker is thread-local and managed differently, but we can lock its entry in registry if needed.
+        
+        from contextlib import ExitStack
+        with ExitStack() as stack:
+            for model_key in models_to_lock:
+                stack.enter_context(self.model_registry.locked(model_key))
+
+            with ThreadPoolExecutor(max_workers=num_workers) as executor:
+                futures = []
                 
-                # Proactive adjustment (hypothetical, based on psutil inside check_memory_usage logic)
-                import psutil
-                vram_pressure = False
-                if torch.cuda.is_available():
-                    # Simplified check: if ModelRegistry just cleared, we are under pressure
-                    # Or we can check directly
-                    try:
-                        gpu_mem_raw = torch.cuda.memory_reserved(0)
-                        total_vram = torch.cuda.get_device_properties(0).total_memory
-                        if gpu_mem_raw / total_vram > 0.85:
-                            vram_pressure = True
-                    except: pass
-
-                if vram_pressure:
-                    current_batch_size = max(1, current_batch_size // 2)
-                    self.logger.warning(f"VRAM pressure detected. Reducing batch size to {current_batch_size}")
-                elif current_batch_size < self.config.analysis_default_batch_size:
-                    current_batch_size = min(self.config.analysis_default_batch_size, current_batch_size + 2)
-
-                # 2. Submit new batches if workers are available
-                while len(futures) < num_workers and processed_count < total_frames:
-                    end_idx = min(processed_count + current_batch_size, total_frames)
-                    batch = image_files_to_process[processed_count:end_idx]
-                    futures.append(executor.submit(self._process_batch, batch, metrics_to_compute))
-                    processed_count = end_idx
-
-                # 3. Collect finished futures
-                done, futures = [], [f for f in futures if not f.done() or done.append(f) or False]
-                
-                for future in done:
-                    try:
-                        num_processed = future.result()
-                        if tracker and num_processed:
-                            tracker.step(num_processed)
-                    except Exception as e:
-                        self.logger.error(f"Error processing batch: {e}")
-
-                if self.cancel_event.is_set():
-                    for f in futures:
-                        f.cancel()
-                    break
+                while processed_count < total_frames or futures:
+                    # 1. Monitor memory and adjust batch size
+                    self.model_registry.check_memory_usage(self.config)
+                    # Note: ModelRegistry returns None but logs warnings. 
                     
-                time.sleep(0.1) # Prevent tight loop
+                    # Proactive adjustment (hypothetical, based on psutil inside check_memory_usage logic)
+                    vram_pressure = False
+                    if torch.cuda.is_available():
+                        try:
+                            gpu_mem_raw = torch.cuda.memory_reserved(0)
+                            total_vram = torch.cuda.get_device_properties(0).total_memory
+                            if gpu_mem_raw / total_vram > 0.85:
+                                vram_pressure = True
+                        except: pass
+
+                    if vram_pressure:
+                        current_batch_size = max(1, current_batch_size // 2)
+                        self.logger.warning(f"VRAM pressure detected. Reducing batch size to {current_batch_size}")
+                    elif current_batch_size < self.config.analysis_default_batch_size:
+                        current_batch_size = min(self.config.analysis_default_batch_size, current_batch_size + 2)
+
+                    # 2. Submit new batches if workers are available
+                    while len(futures) < num_workers and processed_count < total_frames:
+                        end_idx = min(processed_count + current_batch_size, total_frames)
+                        batch = image_files_to_process[processed_count:end_idx]
+                        futures.append(executor.submit(self._process_batch, batch, metrics_to_compute))
+                        processed_count = end_idx
+
+                    # 3. Collect finished futures
+                    done, futures = [], [f for f in futures if not f.done() or done.append(f) or False]
+                    
+                    for future in done:
+                        try:
+                            num_processed = future.result()
+                            if tracker and num_processed:
+                                tracker.step(num_processed)
+                        except Exception as e:
+                            self.logger.error(f"Error processing batch: {e}")
+
+                    if self.cancel_event.is_set():
+                        for f in futures:
+                            f.cancel()
+                        break
+                        
+                    time.sleep(0.1) # Prevent tight loop
 
     def _process_batch(self, batch_paths: list[Path], metrics_to_compute: dict) -> int:
         """Processes a batch of frame files."""
@@ -814,6 +821,7 @@ class AnalysisPipeline(Pipeline):
             if thumb_image_rgb is None:
                 raise ValueError("Could not read thumbnail.")
             frame, base_filename = Frame(image_data=thumb_image_rgb, frame_number=-1), thumb_path.name
+            meta = {"filename": base_filename, "metrics": {}} # Metrics will be updated after operators
             
             # Use optimized stem-based lookup
             mask_meta = self.mask_metadata.get(thumb_path.stem, {})
@@ -833,7 +841,17 @@ class AnalysisPipeline(Pipeline):
                         )
             face_bbox = None
             if self.params.compute_face_sim and self.face_analyzer:
-                face_bbox = self._analyze_face_similarity(frame, thumb_image_rgb)
+                # We still run face detection once here to get the bbox for other operators
+                # although advanced operators could do it themselves too.
+                try:
+                    image_bgr = cv2.cvtColor(thumb_image_rgb, cv2.COLOR_RGB2BGR)
+                    with self.processing_lock:
+                        faces = self.face_analyzer.get(image_bgr)
+                    if faces:
+                        best_face = max(faces, key=lambda x: x.det_score)
+                        face_bbox = best_face.bbox.astype(int)
+                except Exception as e:
+                    self.logger.warning(f"Initial face detection failed: {e}")
 
             # --- OPERATOR ENGINE EXECUTION (Phase 2.5 / Finalized) ---
             if any(metrics_to_compute.values()) or self.params.compute_niqe:
@@ -855,6 +873,7 @@ class AnalysisPipeline(Pipeline):
                     # Populate frame metrics from results
                     for name, result in op_results.items():
                         if result.success:
+                            # Handle numerical metrics
                             for key, value in result.metrics.items():
                                 # Handle top-level Frame attributes (mapped from face_sim op)
                                 if key == "face_sim":
@@ -864,11 +883,18 @@ class AnalysisPipeline(Pipeline):
                                 # Handle FrameMetrics attributes
                                 elif hasattr(frame.metrics, key):
                                     setattr(frame.metrics, key, value)
+                            
+                            # Handle non-numerical data (like phash)
+                            if result.data:
+                                for key, value in result.data.items():
+                                    if key == "phash":
+                                        meta["phash"] = value
                                     
                 except Exception as e:
                     self.logger.error(f"Operator execution failed: {e}")
 
-            meta = {"filename": base_filename, "metrics": frame.metrics.model_dump()}
+            meta["metrics"] = frame.metrics.model_dump()
+            
             if self.params.compute_face_sim:
                 if frame.face_similarity_score is not None:
                     meta["face_sim"] = frame.face_similarity_score
@@ -884,14 +910,6 @@ class AnalysisPipeline(Pipeline):
                 and scene.seed_metrics
             ):
                 meta["seed_face_sim"] = scene.seed_metrics.get("best_face_sim")
-
-            if self.params.compute_phash:
-                try:
-                    import imagehash
-
-                    meta["phash"] = str(imagehash.phash(Image.fromarray(thumb_image_rgb)))
-                except ImportError:
-                    pass
 
             if "dedup_thresh" in self.params.__dict__:
                 meta["dedup_thresh"] = self.params.dedup_thresh
@@ -913,28 +931,6 @@ class AnalysisPipeline(Pipeline):
             self.db.insert_metadata(
                 {"filename": thumb_path.name, "error": f"processing_failed: {e}", "error_severity": severity}
             )
-
-    def _analyze_face_similarity(self, frame: "Frame", image_rgb: np.ndarray) -> Optional[list[int]]:
-        """Computes face similarity and confidence against the reference face."""
-        face_bbox = None
-        try:
-            image_bgr = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR)
-            with self.processing_lock:
-                faces = self.face_analyzer.get(image_bgr)
-            if faces:
-                best_face = max(faces, key=lambda x: x.det_score)
-                face_bbox = best_face.bbox.astype(int)
-                if self.params.enable_face_filter and self.reference_embedding is not None:
-                    distance = 1 - np.dot(best_face.normed_embedding, self.reference_embedding)
-                    frame.face_similarity_score, frame.max_face_confidence = (
-                        1.0 - float(distance),
-                        float(best_face.det_score),
-                    )
-        except Exception as e:
-            frame.error = f"Face similarity failed: {e}"
-            if "out of memory" in str(e) and torch.cuda.is_available():
-                torch.cuda.empty_cache()
-        return face_bbox
 
 
 def _handle_extraction_uploads(event_dict: dict, config: "Config") -> dict:
