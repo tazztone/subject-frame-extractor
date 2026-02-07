@@ -35,10 +35,10 @@ class PhotoTabBuilder:
         gr.Markdown("### ⚖️ Scoring Weights")
         
         with gr.Accordion("Configure Quality Scoring", open=True):
-            s_sharpness = gr.Slider(0.0, 1.0, value=0.4, label="Sharpness")
-            s_niqe = gr.Slider(0.0, 1.0, value=0.3, label="Naturalness (NIQE)")
-            s_face = gr.Slider(0.0, 1.0, value=0.2, label="Face Prominence")
-            s_entropy = gr.Slider(0.0, 1.0, value=0.1, label="Information (Entropy)")
+            s_sharpness = gr.Slider(0.0, 1.0, value=0.4, label="Sharpness", info="Focus detection using Laplacian variance.")
+            s_niqe = gr.Slider(0.0, 1.0, value=0.3, label="Naturalness (NIQE)", info="Perceptual quality model (blind/no-reference).")
+            s_face = gr.Slider(0.0, 1.0, value=0.2, label="Face Prominence", info="Detection confidence and face area relative to image.")
+            s_entropy = gr.Slider(0.0, 1.0, value=0.1, label="Information (Entropy)", info="Shannon entropy indicating detail/complexity.")
             
             recalc_btn = gr.Button("Recalculate Scores")
 

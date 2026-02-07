@@ -445,10 +445,16 @@ def photo():
 
 @photo.command()
 @click.option("--folder", "-f", required=True, type=click.Path(exists=True), help="Path to source folder with RAW/JPEG images.")
-@click.option("--output", "-o", required=True, type=click.Path(), help="Output directory for the session.")
+@click.option("--output", "-o", required=True, type=click.Path(), help="Output directory for the session metadata and previews.")
 @click.option("--verbose", is_flag=True, help="Enable verbose logging.")
 def ingest(folder, output, verbose):
-    """Scan folder and extract RAW previews."""
+    """
+    Scan folder and extract RAW previews.
+
+    Crawls the folder for supported images (CR2, NEF, ARW, DNG, JPEG, PNG, etc.).
+    For RAW files, it leverages ExifTool to extract high-resolution embedded previews
+    to enable fast processing without expensive demosaicing.
+    """
     output_dir = Path(output)
     output_dir.mkdir(parents=True, exist_ok=True)
     
@@ -476,11 +482,19 @@ def ingest(folder, output, verbose):
 
 
 @photo.command()
-@click.option("--session", "-s", required=True, type=click.Path(exists=True), help="Path to session directory.")
-@click.option("--weights", "-w", type=str, help="JSON string of weights (e.g. '{\"sharpness\": 1.0}')")
+@click.option("--session", "-s", required=True, type=click.Path(exists=True), help="Path to the photo session directory created by 'ingest'.")
+@click.option("--weights", "-w", type=str, help="JSON string of weights for scoring (e.g. '{\"sharpness\": 0.5, \"niqe\": 0.5}')")
 @click.option("--verbose", is_flag=True, help="Enable verbose logging.")
 def score(session, weights, verbose):
-    """Compute quality scores for ingested photos."""
+    """
+    Compute quality scores for ingested photos.
+
+    Calculates technical and aesthetic metrics:
+    - Sharpness: Laplacian variance based focus detection.
+    - NIQE: Natural Image Quality Evaluator (perceptual quality).
+    - Entropy: Information density (complexity).
+    - Face: Detection confidence and prominence.
+    """
     output_dir = Path(session)
     photos_json = output_dir / "photos.json"
     
@@ -528,11 +542,16 @@ def score(session, weights, verbose):
 
 
 @photo.command()
-@click.option("--session", "-s", required=True, type=click.Path(exists=True), help="Path to session directory.")
-@click.option("--thresholds", "-t", type=str, help="JSON list of star thresholds (e.g. '[20, 40, 60, 80, 90]')")
+@click.option("--session", "-s", required=True, type=click.Path(exists=True), help="Path to the photo session directory.")
+@click.option("--thresholds", "-t", type=str, help="JSON list of 5 star thresholds (e.g. '[20, 40, 60, 80, 90]')")
 @click.option("--verbose", is_flag=True, help="Enable verbose logging.")
 def export(session, thresholds, verbose):
-    """Write XMP sidecars for photos."""
+    """
+    Write XMP sidecars for photos.
+
+    Converts internal quality scores into 1-5 star ratings and writes them
+    to non-destructive .xmp sidecars compatible with Lightroom, Capture One, etc.
+    """
     output_dir = Path(session)
     photos_json = output_dir / "photos.json"
     
