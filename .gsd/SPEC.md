@@ -30,7 +30,7 @@ The system prioritizes **testability** (via a headless CLI) and **composability*
    - Enables `--resume` flag for interrupted runs.
 
 ### P2: Photo Mode (MVP)
-5. **RAW/JPEG Import**: Use `ffmpeg` to extract embedded JPEG from RAW files.
+5. **RAW/JPEG Import**: Use `ExifTool` to extract high-resolution embedded JPEGs from RAW files.
    - Treat each photo as a "seed frame".
    - Verification: Import a folder of 50 RAW files, extract previews.
 6. **XMP Sidecar Export**: Write Lightroom-compatible XMP files with rating/label.
