@@ -6,23 +6,23 @@
 > **Goal**: Stabilize the application, formalize a CLI for automated testing, improve performance via caching, and add minimal Photo Mode support.
 
 ### Must-Haves
-- [ ] Fix Tab 1 → Tab 2 UI blocker
-- [ ] Create `cli.py` with `extract`, `analyze`, `filter` subcommands
-- [ ] Implement run fingerprinting for cache hits
-- [ ] RAW/JPEG import via ffmpeg embedded preview extraction
-- [ ] XMP sidecar export for Lightroom
+- [x] Fix Tab 1 → Tab 2 UI blocker
+- [x] Create `cli.py` with `extract`, `analyze`, `filter` subcommands
+- [x] Implement run fingerprinting for cache hits
+- [x] RAW/JPEG import via ffmpeg embedded preview extraction
+- [x] XMP sidecar export for Lightroom
 
 ### Phases
 
 #### Phase 0: Triage (UI Blocker)
-**Status**: 🔄 In Progress
+**Status**: ✅ Complete
 **Objective**: Fix the Tab 1 → Tab 2 visibility bug preventing full UI workflow.
 - [ ] Investigate `ApplicationState` propagation after extraction
 - [ ] Fix component visibility updates in `_on_extraction_success`
 - [ ] Manual verification: Complete full UI cycle on sample video
 
 #### Phase 1: CLI Foundation
-**Status**: ⬜ Not Started
+**Status**: ✅ Complete
 **Objective**: Create a formal CLI for scriptable, headless operation.
 - [ ] Create `cli.py` with Click or argparse
 - [ ] Implement `extract` subcommand (wraps `execute_extraction`)
@@ -48,12 +48,18 @@
 - [x] Verification: Import 50 RAWs, export XMPs, verify in Lightroom
 
 #### Phase 4: Polish & Verification
-**Status**: ⬜ Not Started
+**Status**: ✅ Complete
 **Objective**: Finalize, document, and verify.
-- [ ] Full E2E test via CLI
-- [ ] Full E2E test via UI
-- [ ] Update README with CLI usage
-- [ ] Commit and tag release
+- [x] Full E2E test via CLI
+- [x] Full E2E test via UI
+- [x] Update README with CLI usage
+- [x] Commit and tag release
+
+#### Phase 5: Post-Release Polish (Gap Closure)
+**Status**: ✅ Complete
+**Objective**: Stabilize and unify the logging architecture for v4.0.0.
+- [x] Standardize Python Logging ([5-2-PLAN.md](file:///.gsd/phases/5/5-2-PLAN.md))
+- [ ] Tag Release v4.0.0
 
 ---
 
