@@ -9,8 +9,7 @@ import logging
 from core.operators.base import OperatorContext
 from core.operators.sharpness import SharpnessOperator
 from core.operators.entropy import EntropyOperator
-from core.operators.niqe import NIQEOperator
-from core.operators.face_metrics import FaceMetricsOperator
+from core.operators.niqe import NiqeOperator
 
 logger = logging.getLogger(__name__)
 
@@ -71,12 +70,11 @@ def score_photo(preview_path: Path, weights: Dict[str, float]) -> Dict[str, Any]
         
     # NIQE (Naturalness)
     # NIQEOperator likely returns "niqe_score"
-    run_op(NIQEOperator, "niqe", "niqe")
+    run_op(NiqeOperator, "niqe", "niqe")
 
     # Face Prominence
-    # FaceMetricsOperator likely returns "face_prominence" or similar
-    # We map 'face' weight to this operator
-    run_op(FaceMetricsOperator, "face", "face")
+    # Placeholder for now until we implement a proper FaceProminenceOperator
+    scores["face"] = 0.0
 
     # Calculate Weighted Score
     total_weight = sum(weights.values())

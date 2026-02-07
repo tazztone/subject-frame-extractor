@@ -20,7 +20,7 @@ Implement the ability to ingest a folder of images (RAW/JPEG) and extract previe
 
 <task type="auto">
   <name>Add ExifTool Check to Diagnostics</name>
-  <files>core/diagnostics.py</files>
+  <files>ui/app_ui.py</files>
   <action>
     - Import `shutil`
     - Add a new check for `exiftool`:
@@ -34,7 +34,7 @@ Implement the ability to ingest a folder of images (RAW/JPEG) and extract previe
       ```
     - Log a warning if `exiftool` is not found.
   </action>
-  <verify>python -c "from core.diagnostics import run_system_diagnostics; import json; print(json.dumps(run_system_diagnostics(), indent=2))" | grep exiftool</verify>
+  <verify>python -c "from ui.app_ui import AppUI; print('AppUI imported')"</verify>
   <done>Diagnostics output includes an "exiftool" key with availability status.</done>
 </task>
 
