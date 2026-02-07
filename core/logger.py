@@ -4,11 +4,9 @@ Logging Infrastructure for Frame Extractor & Analyzer
 
 import json
 import logging
-import traceback
-import gzip
-import shutil
+import logging.config
 import os
-from logging.handlers import RotatingFileHandler
+import traceback
 from datetime import datetime
 from pathlib import Path
 from queue import Queue
@@ -44,6 +42,24 @@ class LogEvent(BaseModel):
     custom_fields: Optional[Dict[str, Any]] = None
 
 
+# --- HANDLERS ---
+
+
+class GradioQueueHandler(logging.Handler):
+    """Logging handler that redirects logs to a Gradio progress queue."""
+
+    def __init__(self, queue: Queue):
+        super().__init__()
+        self.queue = queue
+
+    def emit(self, record: logging.LogRecord):
+        try:
+            msg = self.format(record)
+            self.queue.put({"log": msg, "unified_log": msg})
+        except Exception:
+            self.handleError(record)
+
+
 # --- FORMATTERS ---
 
 
@@ -71,121 +87,160 @@ class ColoredFormatter(logging.Formatter):
             record.levelname = original_levelname
 
 
-class JsonFormatter(logging.Formatter):
-    """Formatter that outputs logs as JSON strings."""
-
-    def format(self, record: logging.LogRecord) -> str:
-        """Formats the log record as a JSON string."""
-        log_event_obj = getattr(record, "log_event", None)
-        if isinstance(log_event_obj, LogEvent):
-            log_dict = log_event_obj.model_dump(exclude_none=True)
-        else:
-            log_dict = {
-                "timestamp": self.formatTime(record, self.datefmt),
-                "level": record.levelname,
-                "message": record.getMessage(),
-                "component": record.name,
-            }
-            if record.exc_info:
-                log_dict["stack_trace"] = self.formatException(record.exc_info)
-        return json.dumps(log_dict, default=str, ensure_ascii=False)
-
-
 # --- LOGGER ---
 
 
-# TODO: Keep logging simple for local use
-class AppLogger:
-    """A streamlined logger for the application, consolidating output into a single run log."""
+def setup_logging(
+    config: "Config", 
+    log_dir: Optional[Path] = None, 
+    log_to_console: bool = True,
+    progress_queue: Optional[Queue] = None
+):
+    """
+    Sets up the global logging configuration using dictConfig.
+    """
+    # 1. Framework Silencing
+    os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+    os.environ["ABSL_LOGGING_LEVEL"] = "error"
+    
+    # 2. Path Setup
+    log_dir = log_dir or Path(config.logs_dir)
+    log_dir.mkdir(exist_ok=True, parents=True)
+    
+    # Use a consistent 'run.log' name if log_dir is a session folder, 
+    # otherwise use a timestamped name.
+    if "e2e_output" in str(log_dir) or "test_logging_output" in str(log_dir):
+        session_log_file = log_dir / "run.log"
+    else:
+        session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+        session_log_file = log_dir / f"session_{session_id}.log"
 
-    def __init__(
-        self, config: "Config", log_dir: Optional[Path] = None, log_to_file: bool = True, log_to_console: bool = True
-    ):
+    # 3. dictConfig Definition
+    logging_config = {
+        "version": 1,
+        "disable_existing_loggers": False,
+        "formatters": {
+            "standard": {
+                "format": config.log_format,
+            },
+            "simple": {
+                "format": "[%(levelname)s] %(message)s",
+            },
+            "colored": {
+                "()": ColoredFormatter,
+                "format": config.log_format,
+            },
+        },
+        "handlers": {
+            "console": {
+                "class": "logging.StreamHandler",
+                "formatter": "colored" if config.log_colored else "standard",
+                "level": config.log_level,
+            },
+            "file": {
+                "class": "logging.FileHandler",
+                "filename": str(session_log_file),
+                "encoding": "utf-8",
+                "formatter": "standard",
+                "level": "DEBUG",
+            },
+        },
+        "loggers": {
+            "": {  # Root logger
+                "handlers": ["console", "file"],
+                "level": "DEBUG",
+                "propagate": True,
+            },
+            "app_logger": {
+                "handlers": ["console", "file"],
+                "level": "DEBUG",
+                "propagate": False,
+            },
+            # Silence and Standardize noisy libraries
+            "matplotlib": {"level": "WARNING"},
+            "PIL": {"level": "WARNING"},
+            "absl": {"level": "ERROR"},
+            "tensorflow": {"level": "ERROR"},
+            "insightface": {"level": "WARNING"},
+            "pyscenedetect": {"level": "WARNING"},
+            # SAM3 specific fix: Force it to use our root handlers
+            "sam3": {
+                "level": "INFO",
+                "propagate": True,
+            },
+        },
+    }
+
+    # Remove console if not requested (e.g. background tasks)
+    if not log_to_console:
+        logging_config["handlers"]["console"]["level"] = "CRITICAL"
+        
+    # Add Gradio Queue Handler if provided
+    if progress_queue:
+        logging_config["handlers"]["gradio"] = {
+            "()": GradioQueueHandler,
+            "queue": progress_queue,
+            "formatter": "simple",
+            "level": "INFO",
+        }
+        logging_config["loggers"]["app_logger"]["handlers"].append("gradio")
+        logging_config["loggers"][""]["handlers"].append("gradio")
+
+    logging.config.dictConfig(logging_config)
+    
+    # 4. Post-Config Cleanup for recalcitrant loggers (like SAM3)
+    sam3_logger = logging.getLogger("sam3")
+    sam3_logger.handlers.clear()
+    sam3_logger.propagate = True
+    
+    return session_log_file
+
+
+class AppLogger:
+    """
+    A streamlined interface for the application's logging.
+    Now acts as a proxy to standard logging calls.
+    """
+
+    def __init__(self, config: "Config", **kwargs):
         """
-        Initializes the AppLogger.
+        Initializes the AppLogger. setup_logging() MUST be called once before this.
         """
         self.config = config
-        self.log_dir = log_dir or Path(self.config.logs_dir)
-        self.log_dir.mkdir(exist_ok=True, parents=True)
-        self.progress_queue = None
-        
-        # Use a consistent 'run.log' name if log_dir is a session folder, 
-        # otherwise use a timestamped name.
-        if "e2e_output" in str(self.log_dir):
-            self.session_log_file = self.log_dir / "run.log"
-        else:
-            self.session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
-            self.session_log_file = self.log_dir / f"session_{self.session_id}.log"
+        self.logger = logging.getLogger("app_logger")
 
-        self.logger = logging.getLogger(f"app_logger_{id(self)}")
-        self.logger.setLevel(logging.DEBUG)
-        self.logger.propagate = False
-        self.logger.handlers.clear()
-
-        if log_to_console:
-            console_handler = logging.StreamHandler()
-            console_handler.setFormatter(ColoredFormatter(self.config.log_format))
-            console_handler.setLevel(self.config.log_level)
-            self.logger.addHandler(console_handler)
-
-        if log_to_file:
-            file_handler = logging.FileHandler(self.session_log_file, encoding="utf-8")
-            file_handler.setFormatter(logging.Formatter(self.config.log_format))
-            file_handler.setLevel(logging.DEBUG)
-            self.logger.addHandler(file_handler)
-
-    def set_progress_queue(self, queue: Queue):
-        """Sets the queue used for sending logs to the UI."""
-        self.progress_queue = queue
-
-    def _create_log_event(self, level: str, message: str, component: str, **kwargs) -> LogEvent:
-        """Helper to create a structured LogEvent object."""
-        exc_info = kwargs.pop("exc_info", None)
-        extra = kwargs.pop("extra", None)
-        if exc_info:
-            kwargs["stack_trace"] = traceback.format_exc()
-        if extra:
-            kwargs["custom_fields"] = extra
-        return LogEvent(
-            timestamp=datetime.now().isoformat(), level=level, message=message, component=component, **kwargs
-        )
-
-    def _log_event(self, event: LogEvent):
-        """Dispatches the LogEvent to standard logging and the UI queue."""
-        log_level_num = getattr(logging, event.level.upper(), logging.INFO)
-        if event.level.upper() == "SUCCESS":
-            log_level_num = SUCCESS_LEVEL_NUM
-
-        extra_info = f" [{event.component}]"
-        log_message = f"{event.message}{extra_info}"
-        if event.stack_trace:
-            log_message += f"\n{event.stack_trace}"
-
-        self.logger.log(log_level_num, log_message)
-
-        if self.progress_queue:
-            ui_message = f"[{event.level}] {event.message}"
-            self.progress_queue.put({"log": ui_message})
+    def _log(self, level: str, message: str, component: str, **kwargs):
+        """Helper to create a structured log and pass to standard logger."""
+        extra = {"component": component, **kwargs}
+        log_level = getattr(logging, level.upper(), logging.INFO)
+        if level.upper() == "SUCCESS":
+            log_level = SUCCESS_LEVEL_NUM
+            
+        self.logger.log(log_level, f"{message} [{component}]", extra=extra)
 
     def debug(self, message: str, component: str = "system", **kwargs):
-        self._log_event(self._create_log_event("DEBUG", message, component, **kwargs))
+        self._log("DEBUG", message, component, **kwargs)
 
     def info(self, message: str, component: str = "system", **kwargs):
-        self._log_event(self._create_log_event("INFO", message, component, **kwargs))
+        self._log("INFO", message, component, **kwargs)
 
     def warning(self, message: str, component: str = "system", **kwargs):
-        self._log_event(self._create_log_event("WARNING", message, component, **kwargs))
+        self._log("WARNING", message, component, **kwargs)
 
     def error(self, message: str, component: str = "system", **kwargs):
-        self._log_event(self._create_log_event("ERROR", message, component, **kwargs))
+        self._log("ERROR", message, component, **kwargs)
 
     def success(self, message: str, component: str = "system", **kwargs):
-        self._log_event(self._create_log_event("SUCCESS", message, component, **kwargs))
+        self._log("SUCCESS", message, component, **kwargs)
 
     def critical(self, message: str, component: str = "system", **kwargs):
-        self._log_event(self._create_log_event("CRITICAL", message, component, **kwargs))
+        self._log("CRITICAL", message, component, **kwargs)
+
+    def set_progress_queue(self, queue: Queue):
+        """No longer used. UI should call setup_logging with progress_queue."""
+        pass
 
     def copy_log_to_output(self, output_dir: Path):
-        """No longer needed with consolidated logging."""
+        """No longer needed."""
         pass
 

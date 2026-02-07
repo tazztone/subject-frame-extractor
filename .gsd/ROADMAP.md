@@ -4,7 +4,7 @@
 
 ---
 
-## Milestone: v4.0-cli-first (ACTIVE)
+## Milestone: v4.0-cli-first (ARCHIVED)
 > **Goal**: Stabilize the application, formalize a CLI for automated testing, improve performance via caching, and add minimal Photo Mode support.
 
 ### Must-Haves
