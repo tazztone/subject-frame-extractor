@@ -1,8 +1,10 @@
 # ROADMAP
 
-> **Current Milestone**: v4.0-cli-first
+> **Current Milestone**: [None - Ready for Planning]
 
-## Milestone: v4.0-cli-first
+---
+
+## Milestone: v4.0-cli-first (ARCHIVED)
 > **Goal**: Stabilize the application, formalize a CLI for automated testing, improve performance via caching, and add minimal Photo Mode support.
 
 ### Must-Haves
@@ -13,53 +15,7 @@
 - [x] XMP sidecar export for Lightroom
 
 ### Phases
-
-#### Phase 0: Triage (UI Blocker)
-**Status**: ✅ Complete
-**Objective**: Fix the Tab 1 → Tab 2 visibility bug preventing full UI workflow.
-- [ ] Investigate `ApplicationState` propagation after extraction
-- [ ] Fix component visibility updates in `_on_extraction_success`
-- [ ] Manual verification: Complete full UI cycle on sample video
-
-#### Phase 1: CLI Foundation
-**Status**: ✅ Complete
-**Objective**: Create a formal CLI for scriptable, headless operation.
-- [ ] Create `cli.py` with Click or argparse
-- [ ] Implement `extract` subcommand (wraps `execute_extraction`)
-- [ ] Implement `analyze` subcommand (wraps pre-analysis + propagation + analysis)
-- [ ] Implement `filter` subcommand (applies filter presets, exports)
-- [ ] Verification: `python cli.py extract --video sample.mp4 --output ./out` exits 0
-
-#### Phase 2: Caching & Idempotency
-**Status**: ✅ Complete
-**Objective**: Make re-runs fast by detecting already-completed work.
-- [ ] Implement `run_state.json` to track completed stages
-- [ ] Add `--resume` flag to CLI
-- [ ] Add fingerprinting (hash video path + key settings)
-- [ ] Verification: Second run on same video takes <10% of first run time
-
-#### Phase 3: Photo Mode (MVP)
-**Status**: ✅ Complete
-**Objective**: Minimal viable photo culling support.
-- [x] Implement RAW preview extraction via ffmpeg (Changed to ExifTool)
-- [x] Treat extracted previews as "seed frames" for subject detection
-- [x] Implement XMP sidecar export (rating, label)
-- [x] Add "Photo Mode" preset with suitable IQA settings
-- [x] Verification: Import 50 RAWs, export XMPs, verify in Lightroom
-
-#### Phase 4: Polish & Verification
-**Status**: ✅ Complete
-**Objective**: Finalize, document, and verify.
-- [x] Full E2E test via CLI
-- [x] Full E2E test via UI
-- [x] Update README with CLI usage
-- [x] Commit and tag release
-
-#### Phase 5: Post-Release Polish (Gap Closure)
-**Status**: ✅ Complete
-**Objective**: Stabilize and unify the logging architecture for v4.0.0.
-- [x] Standardize Python Logging ([5-2-PLAN.md](file:///.gsd/phases/5/5-2-PLAN.md))
-- [ ] Tag Release v4.0.0
+See [.gsd/milestones/v4.0-cli-first-SUMMARY.md](.gsd/milestones/v4.0-cli-first-SUMMARY.md)
 
 ---
 
