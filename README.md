@@ -299,7 +299,7 @@ Validates the full processing pipeline using real video data and ML models (no m
 ```bash
 uv run python tests/verification/e2e_run.py
 ```
-*   **Requires**: `downloads/example clip (2).mp4` and `downloads/example face.png`.
+*   **Requires**: `downloads/example clip 720p 2x.mp4` and `downloads/example face.png`.
 *   **Output**: Checks for valid `metadata.db` and generated masks in `verification/e2e_output`.
 
 ### 🔵 Layer 3: UX Audit & Visual Regression

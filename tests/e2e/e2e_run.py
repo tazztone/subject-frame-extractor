@@ -73,7 +73,7 @@ def run_e2e_verification():
     model_registry = ModelRegistry(logger)
     thumbnail_manager = ThumbnailManager(logger, config)
     
-    video_path = "downloads/example clip (2).mp4"
+    video_path = "downloads/example clip 720p 2x.mp4"
     face_path = "downloads/example face.png"
     
     # 1. Extraction

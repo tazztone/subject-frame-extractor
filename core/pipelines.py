@@ -907,6 +907,30 @@ def execute_extraction(
         result = pipeline.run(tracker=tracker)
         
         if result and result.get("done"):
+            try:
+                from core.fingerprint import create_fingerprint, save_fingerprint
+                fp_vid_path = result.get("video_path")
+                fp_out_dir = result.get("output_dir")
+                
+                if fp_vid_path and fp_out_dir:
+                    # Create extraction settings dict based on Plan 2.1
+                    ext_settings = {
+                        "method": params.method,
+                        "nth_frame": params.nth_frame,
+                        "max_resolution": params.max_resolution,
+                        "scene_detect": params.scene_detect,
+                        "thumb_megapixels": params.thumb_megapixels,
+                    }
+                    
+                    fingerprint = create_fingerprint(
+                        video_path=fp_vid_path,
+                        extraction_settings=ext_settings
+                    )
+                    save_fingerprint(fingerprint, fp_out_dir)
+                    logger.info("Run fingerprint saved")
+            except Exception as e:
+                logger.warning(f"Failed to save run fingerprint: {e}")
+
             yield {
                 "unified_log": "Extraction complete. You can now proceed to the next step.",
                 "extracted_video_path_state": result.get("video_path", ""),
