@@ -83,10 +83,14 @@ class SharpnessOperator:
                 scale = ctx.config.sharpness_base_scale
             
             # Normalize to 0-100 range
-            score = min(100.0, (variance / scale) * 100.0)
+            raw_normalized = min(1.0, variance / scale)
+            score = raw_normalized * 100.0
             score = max(0.0, score)  # Ensure non-negative
             
-            return OperatorResult(metrics={"sharpness_score": score})
+            return OperatorResult(metrics={
+                "sharpness": float(raw_normalized),
+                "sharpness_score": score
+            })
 
         except Exception as e:
             return OperatorResult(

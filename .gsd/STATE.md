@@ -4,18 +4,21 @@
 > **Session Status**: Active (resumed 2026-02-07T18:52:56+01:00)
 
 ## Current Position
-- **Milestone**: v4.0-cli-first
-- **Phase**: 5 (Post-Release Polish)
-- **Status**: Completed
+- **Milestone**: v5.0-performance-architecture
+- **Phase**: 7 (Hardware-Accelerated Extraction)
+- **Status**: Executing
 
 ## Last Session Summary
-Finalized Phase 5 Polish & UI Hotfixes.
-- Implemented `filter` CLI subcommand (completing P0 SPEC goal).
-- Standardized logging via `dictConfig`, silencing framework noise and unifying library outputs (SAM3, SceneDetect).
-- Decoupled UI progress queue from core `AppLogger` using a custom `GradioQueueHandler`.
-- Added `allowed_paths` configuration to fix `InvalidPathError` when using external drives in the UI.
-- Purged all references to the disproven "Seeding Stability" bug.
-- Updated `SPEC.md` and `ROADMAP.md` to reflect `ExifTool` implementation.
+Completed Phase 6: Architectural Cleanup & Operator Consolidation.
+- Fully migrated all legacy metrics from `core/models.py` to the Operator pattern.
+- Enhanced `OperatorContext` to support lazy loading via `model_registry` and data sharing via `shared_data`.
+- Simplified `AnalysisPipeline` to use the unified operator engine.
+- Implemented `QualityScoreOperator` for centralized weighted score calculation.
+- Purged legacy `Frame.calculate_quality_metrics` method.
+
+## In-Progress Work
+- Implementing hardware-accelerated FFmpeg extraction (Phase 7).
+- Files modified (this session): `core/models.py`, `core/pipelines.py`, `core/operators/base.py`, `core/operators/registry.py`, `core/operators/face_metrics.py`, `core/operators/sharpness.py`, `core/operators/simple_cv.py`, `core/operators/entropy.py`, `core/operators/niqe.py`, `core/operators/quality_score.py`.
 
 ## In-Progress Work
 - None (Phase 5 complete).

@@ -113,7 +113,21 @@ def run_ffmpeg_extraction(
     """
     # TODO: Add configurable audio codec for downscaled video
     # TODO: Support hardware-accelerated encoding (NVENC/VAAPI)
-    cmd_base = ["ffmpeg", "-y", "-i", str(video_path), "-hide_banner"]
+    
+    # 1. Hardware Acceleration Detection
+    from core.utils import detect_hwaccel
+    hwaccel_type = None
+    if config.ffmpeg_hwaccel != "off":
+        if config.ffmpeg_hwaccel == "auto":
+            hwaccel_type, _ = detect_hwaccel(logger)
+        else:
+            hwaccel_type = config.ffmpeg_hwaccel
+
+    cmd_base = ["ffmpeg", "-y"]
+    if hwaccel_type:
+        cmd_base.extend(["-hwaccel", hwaccel_type])
+        
+    cmd_base.extend(["-i", str(video_path), "-hide_banner"])
     progress_args = ["-progress", "pipe:1", "-nostats", "-loglevel", "info"]
     cmd_base.extend(progress_args)
 
@@ -223,16 +237,18 @@ def run_ffmpeg_extraction(
         lowres_video_path = output_dir / "video_lowres.mp4"
         logger.info(f"Creating downscaled contiguous video for SAM3 (360p): {lowres_video_path}")
         # Note: We do NOT use vf_select here. We want EVERY frame for tracking stability.
-        lowres_cmd = [
-            "ffmpeg",
-            "-y",
+        lowres_cmd = ["ffmpeg", "-y"]
+        if hwaccel_type:
+            lowres_cmd.extend(["-hwaccel", hwaccel_type])
+            
+        lowres_cmd.extend([
             "-i",
             str(video_path),
             "-hide_banner",
             "-loglevel",
             "warning",
             "-vf",
-            vf_scale_video, # Force 240p for SAM3 tracking
+            vf_scale_video, 
             "-c:v",
             "libx264",
             "-preset",
@@ -241,7 +257,7 @@ def run_ffmpeg_extraction(
             "23",
             "-an",  # No audio needed
             str(lowres_video_path),
-        ]
+        ])
         try:
             lowres_proc = subprocess.run(lowres_cmd, capture_output=True, text=True, timeout=600)
             if lowres_proc.returncode == 0:
@@ -663,7 +679,7 @@ class AnalysisPipeline(Pipeline):
         metrics_to_compute: dict,
         tracker: Optional["AdvancedProgressTracker"] = None,
     ):
-        """Orchestrates the parallel processing of frames for metric calculation."""
+        """Orchestrates the parallel processing of frames with dynamic batch sizing."""
         frame_map = create_frame_map(self.thumb_dir.parent, self.logger)
         all_frame_nums_to_process = {
             fn for scene in scenes_to_process for fn in range(scene.start_frame, scene.end_frame) if fn in frame_map
@@ -671,28 +687,68 @@ class AnalysisPipeline(Pipeline):
         image_files_to_process = [
             self.thumb_dir / frame_map[fn] for fn in sorted(list(all_frame_nums_to_process)) if frame_map.get(fn)
         ]
-        self.logger.info(f"Analyzing {len(image_files_to_process)} frames")
+        total_frames = len(image_files_to_process)
+        self.logger.info(f"Analyzing {total_frames} frames with dynamic batching")
+        
         num_workers = (
             1 if self.params.disable_parallel else min(os.cpu_count() or 4, self.config.analysis_default_workers)
         )
-        batch_size = self.config.analysis_default_batch_size
+        
+        current_batch_size = self.config.analysis_default_batch_size
+        processed_count = 0
+        
         with ThreadPoolExecutor(max_workers=num_workers) as executor:
-            batches = [
-                image_files_to_process[i : i + batch_size] for i in range(0, len(image_files_to_process), batch_size)
-            ]
-            futures = [executor.submit(self._process_batch, batch, metrics_to_compute) for batch in batches]
-            for future in as_completed(futures):
-                self.model_registry.check_memory_usage(self.config)
+            futures = []
+            
+            while processed_count < total_frames or futures:
+                # 1. Monitor memory and adjust batch size
+                mem_usage = self.model_registry.check_memory_usage(self.config)
+                # Note: ModelRegistry returns None but logs warnings. 
+                # I should ideally have a way to get the usage % or status.
+                
+                # Proactive adjustment (hypothetical, based on psutil inside check_memory_usage logic)
+                import psutil
+                vram_pressure = False
+                if torch.cuda.is_available():
+                    # Simplified check: if ModelRegistry just cleared, we are under pressure
+                    # Or we can check directly
+                    try:
+                        gpu_mem_raw = torch.cuda.memory_reserved(0)
+                        total_vram = torch.cuda.get_device_properties(0).total_memory
+                        if gpu_mem_raw / total_vram > 0.85:
+                            vram_pressure = True
+                    except: pass
+
+                if vram_pressure:
+                    current_batch_size = max(1, current_batch_size // 2)
+                    self.logger.warning(f"VRAM pressure detected. Reducing batch size to {current_batch_size}")
+                elif current_batch_size < self.config.analysis_default_batch_size:
+                    current_batch_size = min(self.config.analysis_default_batch_size, current_batch_size + 2)
+
+                # 2. Submit new batches if workers are available
+                while len(futures) < num_workers and processed_count < total_frames:
+                    end_idx = min(processed_count + current_batch_size, total_frames)
+                    batch = image_files_to_process[processed_count:end_idx]
+                    futures.append(executor.submit(self._process_batch, batch, metrics_to_compute))
+                    processed_count = end_idx
+
+                # 3. Collect finished futures
+                done, futures = [], [f for f in futures if not f.done() or done.append(f) or False]
+                
+                for future in done:
+                    try:
+                        num_processed = future.result()
+                        if tracker and num_processed:
+                            tracker.step(num_processed)
+                    except Exception as e:
+                        self.logger.error(f"Error processing batch: {e}")
+
                 if self.cancel_event.is_set():
                     for f in futures:
                         f.cancel()
                     break
-                try:
-                    num_processed = future.result()
-                    if tracker and num_processed:
-                        tracker.step(num_processed)
-                except Exception as e:
-                    self.logger.error(f"Error processing batch future: {e}")
+                    
+                time.sleep(0.1) # Prevent tight loop
 
     def _process_batch(self, batch_paths: list[Path], metrics_to_compute: dict) -> int:
         """Processes a batch of frame files."""
@@ -742,51 +798,23 @@ class AnalysisPipeline(Pipeline):
             if self.params.compute_face_sim and self.face_analyzer:
                 face_bbox = self._analyze_face_similarity(frame, thumb_image_rgb)
 
-            # --- OPERATOR ENGINE EXECUTION (Phase 2.5) ---
+            # --- OPERATOR ENGINE EXECUTION (Phase 2.5 / Refactored) ---
             if any(metrics_to_compute.values()) or self.params.compute_niqe:
                 try:
-                    # Prepare params (Face Data)
-                    face_params = {}
-                    if (self.face_landmarker and 
-                        any(metrics_to_compute.get(k) for k in ["eyes_open", "yaw", "pitch"])):
-                        try:
-                            # Replicate logic from core/models.py to get landmarks
-                            if face_bbox:
-                                x1, y1, x2, y2 = face_bbox
-                                face_img = thumb_image_rgb[y1:y2, x1:x2]
-                            else:
-                                face_img = thumb_image_rgb
-
-                            if not face_img.flags["C_CONTIGUOUS"]:
-                                face_img = np.ascontiguousarray(face_img, dtype=np.uint8)
-                            
-                            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=face_img)
-                            lm_result = self.face_landmarker.detect(mp_image)
-                            
-                            if lm_result.face_blendshapes:
-                                face_params["face_blendshapes"] = {
-                                    b.category_name: b.score 
-                                    for b in lm_result.face_blendshapes[0]
-                                }
-                            if lm_result.facial_transformation_matrixes:
-                                face_params["face_matrix"] = lm_result.facial_transformation_matrixes[0]
-                        except Exception as e:
-                            self.logger.warning(f"Face landmark extraction failed: {e}")
-
-                    # Run Operators
+                    # Run Operators with rich context
                     op_results = run_operators(
                         image_rgb=thumb_image_rgb,
                         mask=mask_thumb,
                         config=self.config,
-                        params=face_params,
+                        model_registry=self.model_registry,
+                        logger=self.logger,
+                        params={"face_bbox": face_bbox},
                     )
                     
                     # Populate frame metrics from results
                     for name, result in op_results.items():
                         if result.success:
-                            # Map specific metric keys if needed, or rely on naming convention
                             for key, value in result.metrics.items():
-                                # Check if metric exists on FrameParams model
                                 if hasattr(frame.metrics, key):
                                     setattr(frame.metrics, key, value)
                                     

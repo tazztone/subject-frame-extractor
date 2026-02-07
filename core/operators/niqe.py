@@ -113,9 +113,12 @@ class NiqeOperator:
                 if hasattr(ctx.config, "quality_niqe_scale_factor"):
                     scale = ctx.config.quality_niqe_scale_factor
 
-            niqe_score = max(0.0, min(100.0, offset - (niqe_raw * scale)))
+            niqe_score = max(0.0, min(100.0, (offset - niqe_raw) * scale))
             
-            return OperatorResult(metrics={"niqe_score": niqe_score})
+            return OperatorResult(metrics={
+                "niqe": niqe_score / 100.0,
+                "niqe_score": niqe_score
+            })
 
         except Exception as e:
             return OperatorResult(error=str(e))

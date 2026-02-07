@@ -1,6 +1,21 @@
 # ROADMAP
 
-> **Current Milestone**: [None - Ready for Planning]
+> **Current Milestone**: v5.0-performance-architecture
+
+---
+
+## Milestone: v5.0-performance-architecture (ACTIVE)
+> **Goal**: Optimize the core engine for high-performance hardware, ensure resiliency against interruptions, and finalize the transition to a clean, plugin-based architecture.
+
+### Must-Haves
+- [ ] FFmpeg Hardware Acceleration (NVENC/VAAPI)
+- [ ] Resumable Extraction (Mid-run checkpoints)
+- [ ] Proactive Memory Management (Dynamic batch sizing)
+- [ ] Complete removal of legacy metric logic from `core/models.py`
+- [ ] Self-contained Operators (handling their own dependencies)
+
+### Phases
+See [.gsd/milestones/v5.0-performance-architecture-SUMMARY.md](.gsd/milestones/v5.0-performance-architecture-SUMMARY.md)
 
 ---
 

@@ -163,6 +163,9 @@ def run_operators(
     config: Optional[Any] = None,
     operators: Optional[list[str]] = None,
     params: Optional[dict] = None,
+    model_registry: Optional[Any] = None,
+    logger: Optional[Any] = None,
+    shared_data: Optional[dict] = None,
 ) -> dict[str, OperatorResult]:
     """
     Bridge function to run operators on an image.
@@ -175,6 +178,9 @@ def run_operators(
         config: Application Config object
         operators: List of operator names to run (None = all)
         params: Optional operator-specific parameters
+        model_registry: Optional model registry for lazy loading
+        logger: Optional logger
+        shared_data: Optional dictionary for sharing data between operators
         
     Returns:
         Dict mapping operator names to their OperatorResult
@@ -186,6 +192,9 @@ def run_operators(
         image_rgb=image_rgb,
         mask=mask,
         config=config,
+        model_registry=model_registry,
+        logger=logger,
+        shared_data=shared_data if shared_data is not None else {},
         params=params or {},
     )
     
@@ -194,6 +203,11 @@ def run_operators(
         operator_names = OperatorRegistry.list_names()
     else:
         operator_names = operators
+    
+    # Sort operator_names to ensure quality_score runs last if present
+    if "quality_score" in operator_names:
+        operator_names = [n for n in operator_names if n != "quality_score"]
+        operator_names.append("quality_score")
     
     # Execute each operator
     for name in operator_names:
@@ -208,6 +222,18 @@ def run_operators(
         try:
             result = operator.execute(ctx)
             results[name] = result
+            
+            # Store normalized metrics for QualityScore computation
+            if result.success and result.metrics:
+                if "normalized_metrics" not in ctx.shared_data:
+                    ctx.shared_data["normalized_metrics"] = {}
+                
+                # We expect operators to provide raw 0-1 values if they want to contribute to QualityScore
+                # Convention: metric_name_score is 0-100, metric_name is 0-1
+                for m_name, m_val in result.metrics.items():
+                    if not m_name.endswith("_score") and m_name not in ["yaw", "pitch", "roll", "blink_prob"]:
+                        ctx.shared_data["normalized_metrics"][m_name] = m_val
+                        
         except Exception as e:
             results[name] = OperatorResult(
                 metrics={},

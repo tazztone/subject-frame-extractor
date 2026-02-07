@@ -68,12 +68,18 @@ class OperatorContext:
         image_rgb: Input image as RGB numpy array (H, W, 3)
         mask: Optional subject mask as grayscale array (H, W)
         config: Global application Config object
+        model_registry: Registry for lazy loading ML models
+        logger: Application logger
+        shared_data: Dictionary for sharing data between operators (e.g., face detections)
         params: Operator-specific parameters
     """
 
     image_rgb: np.ndarray
     mask: Optional[np.ndarray] = None
     config: Optional[Any] = None
+    model_registry: Optional[Any] = None
+    logger: Optional[Any] = None
+    shared_data: dict = field(default_factory=dict)
     params: dict = field(default_factory=dict)
 
 

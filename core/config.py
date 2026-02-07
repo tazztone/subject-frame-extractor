@@ -54,6 +54,7 @@ class Config(BaseSettings):
     ffmpeg_log_level: str = "info"
     ffmpeg_thumbnail_quality: int = 80
     ffmpeg_scene_threshold: float = 0.4
+    ffmpeg_hwaccel: str = "auto" # auto, cuda, vaapi, videotoolbox, off
 
     # Cache
     cache_size: int = 200
