@@ -18,7 +18,7 @@ from queue import Queue
 import torch
 
 from core.config import Config
-from core.logger import AppLogger
+from core.logger import AppLogger, setup_logging
 from core.managers import ModelRegistry, ThumbnailManager
 from ui.app_ui import AppUI
 
@@ -68,12 +68,13 @@ def main():
         config_overrides = {k: v for k, v in vars(args).items() if v is not None}
         config = Config(**config_overrides)
 
+        progress_queue = Queue()
+        setup_logging(config, progress_queue=progress_queue)
         logger = AppLogger(config=config)
+        
         model_registry = ModelRegistry(logger=logger)
         thumbnail_manager = ThumbnailManager(logger, config)
-        progress_queue = Queue()
         cancel_event = threading.Event()
-        logger.set_progress_queue(progress_queue)
 
         app_ui = AppUI(config, logger, progress_queue, cancel_event, thumbnail_manager, model_registry)
         demo = app_ui.build_ui()
@@ -87,6 +88,11 @@ def main():
             "ssl_keyfile": config.ssl_keyfile,
             "ssl_certfile": config.ssl_certfile,
             "ssl_verify": config.ssl_verify,
+            "allowed_paths": [
+                str(project_root),
+                str(Path(config.downloads_dir).resolve()),
+                *config.allowed_paths
+            ]
         }
 
         if config.auth:

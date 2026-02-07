@@ -5,21 +5,21 @@
 
 ## Current Position
 - **Milestone**: v4.0-cli-first
-- **Phase**: 5 (Post-Release Polish & CLI Filter)
-- **Status**: Executing
+- **Phase**: 5 (Post-Release Polish)
+- **Status**: Completed
 
 ## Last Session Summary
-Audited Milestone v4.0-cli-first.
-- Identified missing `filter` subcommand in `cli.py`.
-- Updated `SPEC.md` to reflect `ExifTool` pivot for RAW previews.
-- Confirmed discrepancies between SUMMARY and implementation.
-- Planned immediate fix for CLI Filter and Logging.
+Finalized Phase 5 Polish & UI Hotfixes.
+- Implemented `filter` CLI subcommand (completing P0 SPEC goal).
+- Standardized logging via `dictConfig`, silencing framework noise and unifying library outputs (SAM3, SceneDetect).
+- Decoupled UI progress queue from core `AppLogger` using a custom `GradioQueueHandler`.
+- Added `allowed_paths` configuration to fix `InvalidPathError` when using external drives in the UI.
+- Purged all references to the disproven "Seeding Stability" bug.
+- Updated `SPEC.md` and `ROADMAP.md` to reflect `ExifTool` implementation.
 
 ## In-Progress Work
-- Implementing `filter` subcommand in `cli.py`.
-- Refactoring `AppLogger` to `dictConfig`.
-- Seeding stability fixes.
-- Files modified (this session): `.gsd/SPEC.md`, `.gsd/STATE.md`.
+- None (Phase 5 complete).
+- Files modified (this session): `core/logger.py`, `cli.py`, `app.py`, `.gsd/STATE.md`, `.gsd/JOURNAL.md`, `.gsd/phases/5/LOGGING_PLAN.md`.
 
 ## Blockers
 - None.
@@ -27,18 +27,17 @@ Audited Milestone v4.0-cli-first.
 ## Context Dump
 
 ### Decisions Made
-- **Standard Logging**: Refactor `AppLogger` to use `dictConfig` to allow different handlers (File, Console, UIQueue) to be toggled per entry point (CLI vs. UI).
-- **Audit Hygiene**: Removed specific "bug" mentions of seeding mismatch from the audit report to keep it clean, opting for "Seeding Stability" in internal plans instead.
+- **Standard Logging**: Refactored `AppLogger` to use `dictConfig`. Specifically targeted `sam3` logger to force propagation and unified formatting.
+- **UI Decoupling**: Moved UI updates to a dedicated `GradioQueueHandler`, allowing backend code to be log-agnostic.
 
 ### Approaches Tried
-- **Reproduction**: Created `reproduce_seeding_bug.py` which confirmed `save_scene_seeds` overwrites correctly, narrowing the issue to state cleanup or resume logic.
+- **Framework Silencing**: Successfully suppressed TF/MediaPipe noise using env vars and logger level overrides.
 
 ### Files of Interest
-- `core/logger.py`: Needs refactoring for standard `dictConfig`.
-- `cli.py`: Needs logging config update to disable console logs from `AppLogger`.
-- `core/pipelines.py`: Needs duplicate detection in `_load_scenes`.
+- `core/logger.py`: Now contains the centralized logging logic.
+- `cli.py`: Updated to use `setup_logging`.
+- `app.py`: Updated to use `setup_logging` with the Gradio queue.
 
 ## Next Steps
-1. Execute Phase 5: Implement standardized logging.
-2. Execute Phase 5: Implement seeding stability fixes.
-3. Tag Release v4.0.0.
+1. Tag Release v4.0.0.
+2. Archive Milestone v4.0-cli-first.

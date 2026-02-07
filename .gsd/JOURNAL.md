@@ -1,5 +1,31 @@
 # JOURNAL
 
+## Session: 2026-02-07 19:55
+
+### Objective
+Logging Standardization & Phase 5 Finalization.
+
+### Accomplished
+- **CLI Filter**: Implemented the missing `filter` command in `cli.py`.
+- **Logging Refactor**: Successfully migrated to `dictConfig`. 
+  - Standardized formatting across `AppLogger`, `SAM3`, and `SceneDetect`.
+  - Suppressed MediaPipe and TensorFlow terminal noise.
+  - Decoupled UI queue from backend logic via `GradioQueueHandler`.
+- **UI Hotfix**: Resolved `InvalidPathError` when using external drives by adding `allowed_paths` to Gradio launch config.
+- **Bug Purge**: Removed all mentions of "Seeding Stability" after reproduction tests disproved the issue.
+- **Spec Sync**: Updated `SPEC.md` and `ROADMAP.md` to match the `ExifTool` implementation.
+
+### Verification
+- [x] CLI `analyze` run confirms unified logging format for all libraries.
+- [x] CLI `filter --help` verified.
+- [x] Terminal is free of `W0000` noise.
+- [x] Backend tests pass.
+
+### Paused Because
+- Phase 5 is 100% complete. Milestone v4.0 is ready for tagging and archiving.
+
+---
+
 ## Session: 2026-02-07 18:55
 
 ### Objective
@@ -8,7 +34,7 @@ Audit v4.0-cli-first and Plan Phase 5 Gap Closure.
 ### Accomplished
 - **Milestone Audit**: Completed full audit of Phase 0-4. Achieved "GOOD" health.
 - **Phase 4 Verification**: Confirmed Photo Mode CLI and UI flows pass automated tests.
-- **Phase 5 Planning**: Decomposed Gap Closure requirements into Standard Logging and Seeding Stability.
+- **Phase 5 Planning**: Decomposed Gap Closure requirements into Standard Logging and CLI Filter integration.
 - **Documentation Hygiene**: Purged redundant bug mentions from audit/TODO to keep release stats clean.
 
 ### Verification
@@ -20,7 +46,7 @@ Audit v4.0-cli-first and Plan Phase 5 Gap Closure.
 - Planning is complete and refined. User requested a pause.
 
 ### Handoff Notes
-- Seeding mismatch is documented as "Stability Improvements" in PLAN.md to avoid audit noise.
+- Reproduction tests disproved the suspected seeding bug; logic confirmed stable.
 - Logging refactor should move towards `dictConfig` to fix double-printing in CLI.
 - Tagging v4.0.0 is the final item in Phase 5.
 

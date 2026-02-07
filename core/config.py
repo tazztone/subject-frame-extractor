@@ -227,6 +227,7 @@ class Config(BaseSettings):
     ssl_keyfile: Optional[str] = None
     ssl_certfile: Optional[str] = None
     ssl_verify: bool = True
+    allowed_paths: List[str] = Field(default_factory=list, description="Additional paths allowed for Gradio file serving")
 
     def model_post_init(self, __context: Any) -> None:
         """Post-initialization hook to validate paths."""

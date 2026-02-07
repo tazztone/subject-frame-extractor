@@ -26,7 +26,7 @@ import torch
 
 from core.config import Config
 from core.events import ExtractionEvent, PreAnalysisEvent, PropagationEvent
-from core.logger import AppLogger
+from core.logger import AppLogger, setup_logging
 from core.managers import ModelRegistry, ThumbnailManager
 from core.pipelines import (
     execute_analysis,
@@ -47,8 +47,10 @@ def _setup_runtime(output_dir: Path, verbose: bool = False):
     config.monitoring_memory_critical_threshold_mb = 64000  # Disable watchdog for CLI
     config.log_level = "DEBUG" if verbose else "INFO"
 
-    logger = AppLogger(config, log_dir=output_dir, log_to_file=True, log_to_console=False)
     progress_queue = Queue()
+    setup_logging(config, log_dir=output_dir, log_to_console=True, progress_queue=None)
+    logger = AppLogger(config)
+    
     cancel_event = threading.Event()
     model_registry = ModelRegistry(logger)
     thumbnail_manager = ThumbnailManager(logger, config)
