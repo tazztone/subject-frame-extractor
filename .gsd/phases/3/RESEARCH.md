@@ -13,18 +13,24 @@ researched_at: 2026-02-07
 
 ## Findings
 
-### RAW Extraction via FFmpeg
-FFmpeg can extract embedded I-frames (thumbnails/previews) from many RAW formats.
-Ref: `ffmpeg -i input.CR2` typically exposes a video stream (mjpeg) for the embedded preview.
+### RAW Extraction via ExifTool
+User feedback and further research indicate `ExifTool` is superior for extracting embedded preview images from RAW files (CR2, NEF, ARW, etc.) as it reliably accesses the specialized binary tags without decoding the full RAW data.
 
 **Command:**
 ```bash
-ffmpeg -i input.CR2 -vf "select='eq(pict_type,I)'" -vsync vfr -q:v 2 output.jpg
+# Extract JpgFromRaw to output file
+exiftool -b -JpgFromRaw -w %d%f_preview.jpg input.CR2
+
+# Or recursive for a directory
+exiftool -b -JpgFromRaw -w %d%f_preview.jpg -ext CR2 -r ./directory
 ```
-*Note: If multiple streams exist, mapping the largest MJPEG stream is preferred.*
+*Note: Some cameras use different tags like `PreviewImage`. We should probe for `JpgFromRaw`, `PreviewImage`, then `ThumbnailImage` in priority order.*
 
 **Recommendation:**
-Use `ExtractionPipeline`'s existing FFmpeg wrapper but adapt it for single-file processing or batch processing of a folder of RAWs.
+Use `subprocess` to call `exiftool`.
+- Check if `exiftool` is installed (`shutil.which('exiftool')`).
+- Fallback to FFmpeg ONLY if ExifTool is missing? Or just require ExifTool for Photo Mode. 
+- **Decision:** Require ExifTool for Photo Mode.
 
 ### Lightweight XMP Sidecar Generation
 We explored using `xml.etree.ElementTree` to generate XMP sidecars instead of adding `pyexiv2` (which has system dependencies) or `python-xmp-toolkit` (depends on Exempi).
@@ -53,7 +59,7 @@ Analyzed `ui/handlers/scene_handler.py`.
 ## Decisions Made
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| RAW Extraction | FFmpeg | Requirement in Roadmap; avoids new `rawpy` dependency for now. |
+| RAW Extraction | **ExifTool** | Superior reliability for embedded previews over FFmpeg. |
 | XMP Library | `xml.etree` | Lightweight, sufficient for simple Ratings/Labels. |
 | UI Component | `gr.Gallery` | reused with pagination logic from SceneHandler. |
 | Pipeline | New `PhotoPipeline`? | No, adapt `ExtractionPipeline` to handle directory inputs and treat images as "frames". |
@@ -64,11 +70,12 @@ Analyzed `ui/handlers/scene_handler.py`.
 - **Directory as Video:** Treat a folder of images conceptually similar to a video timeline for the `ApplicationState`.
 
 ## Dependencies Identified
-- None new required. (FFmpeg is already a system dep, standard lib for XML).
+- **ExifTool**: Must be installed on the system (CLI).
+- None new python packages.
 
 ## Risks
-- **FFmpeg Speed:** Extracting 1000 RAWs might be slow if shelling out 1000 times.
-  - *Mitigation:* Use `find ... | xargs ffmpeg` or python `subprocess` with parallelism.
+- **ExifTool Missing:** User might not have it installed.
+  - *Mitigation:* Add check in `diagnostics` and show warning in UI.
 - **Gradio Latency:** Sending large base64 strings for gallery.
   - *Mitigation:* Use `ThumbnailManager` to serve small cached JPEGs, not full frames.
 
