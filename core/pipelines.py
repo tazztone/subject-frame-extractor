@@ -356,8 +356,6 @@ class ExtractionPipeline(Pipeline):
 
     def _run_impl(self, tracker: Optional["AdvancedProgressTracker"] = None) -> dict:
         """Internal execution logic for extraction."""
-        if self.model_registry:
-            self.model_registry.check_memory_usage(self.config)
         source_p = Path(self.params.source_path)
         from core.utils import is_image_folder, list_images
 
@@ -741,65 +739,50 @@ class AnalysisPipeline(Pipeline):
         current_batch_size = self.config.analysis_default_batch_size
         processed_count = 0
         
-        # Determine models to lock
-        models_to_lock = []
-        if self.params.compute_face_sim and self.face_analyzer:
-            models_to_lock.append(f"face_analyzer_{self.params.face_model_name}_{self.device}_{tuple(self.config.model_face_analyzer_det_size)}")
-        # Note: FaceLandmarker is thread-local and managed differently, but we can lock its entry in registry if needed.
-        
-        from contextlib import ExitStack
-        with ExitStack() as stack:
-            for model_key in models_to_lock:
-                stack.enter_context(self.model_registry.locked(model_key))
+        with ThreadPoolExecutor(max_workers=num_workers) as executor:
+            futures = []
+            
+            while processed_count < total_frames or futures:
+                # Proactive adjustment based on CUDA VRAM pressure
+                vram_pressure = False
+                if torch.cuda.is_available():
+                    try:
+                        gpu_mem_raw = torch.cuda.memory_reserved(0)
+                        total_vram = torch.cuda.get_device_properties(0).total_memory
+                        if gpu_mem_raw / total_vram > 0.85:
+                            vram_pressure = True
+                    except: pass
 
-            with ThreadPoolExecutor(max_workers=num_workers) as executor:
-                futures = []
+                if vram_pressure:
+                    current_batch_size = max(1, current_batch_size // 2)
+                    self.logger.warning(f"VRAM pressure detected. Reducing batch size to {current_batch_size}")
+                elif current_batch_size < self.config.analysis_default_batch_size:
+                    current_batch_size = min(self.config.analysis_default_batch_size, current_batch_size + 2)
+
+                # 2. Submit new batches if workers are available
+                while len(futures) < num_workers and processed_count < total_frames:
+                    end_idx = min(processed_count + current_batch_size, total_frames)
+                    batch = image_files_to_process[processed_count:end_idx]
+                    futures.append(executor.submit(self._process_batch, batch, metrics_to_compute))
+                    processed_count = end_idx
+
+                # 3. Collect finished futures
+                done, futures = [], [f for f in futures if not f.done() or done.append(f) or False]
                 
-                while processed_count < total_frames or futures:
-                    # 1. Monitor memory and adjust batch size
-                    self.model_registry.check_memory_usage(self.config)
-                    # Note: ModelRegistry returns None but logs warnings. 
+                for future in done:
+                    try:
+                        num_processed = future.result()
+                        if tracker and num_processed:
+                            tracker.step(num_processed)
+                    except Exception as e:
+                        self.logger.error(f"Error processing batch: {e}")
+
+                if self.cancel_event.is_set():
+                    for f in futures:
+                        f.cancel()
+                    break
                     
-                    # Proactive adjustment (hypothetical, based on psutil inside check_memory_usage logic)
-                    vram_pressure = False
-                    if torch.cuda.is_available():
-                        try:
-                            gpu_mem_raw = torch.cuda.memory_reserved(0)
-                            total_vram = torch.cuda.get_device_properties(0).total_memory
-                            if gpu_mem_raw / total_vram > 0.85:
-                                vram_pressure = True
-                        except: pass
-
-                    if vram_pressure:
-                        current_batch_size = max(1, current_batch_size // 2)
-                        self.logger.warning(f"VRAM pressure detected. Reducing batch size to {current_batch_size}")
-                    elif current_batch_size < self.config.analysis_default_batch_size:
-                        current_batch_size = min(self.config.analysis_default_batch_size, current_batch_size + 2)
-
-                    # 2. Submit new batches if workers are available
-                    while len(futures) < num_workers and processed_count < total_frames:
-                        end_idx = min(processed_count + current_batch_size, total_frames)
-                        batch = image_files_to_process[processed_count:end_idx]
-                        futures.append(executor.submit(self._process_batch, batch, metrics_to_compute))
-                        processed_count = end_idx
-
-                    # 3. Collect finished futures
-                    done, futures = [], [f for f in futures if not f.done() or done.append(f) or False]
-                    
-                    for future in done:
-                        try:
-                            num_processed = future.result()
-                            if tracker and num_processed:
-                                tracker.step(num_processed)
-                        except Exception as e:
-                            self.logger.error(f"Error processing batch: {e}")
-
-                    if self.cancel_event.is_set():
-                        for f in futures:
-                            f.cancel()
-                        break
-                        
-                    time.sleep(0.1) # Prevent tight loop
+                time.sleep(0.1) # Prevent tight loop
 
     def _process_batch(self, batch_paths: list[Path], metrics_to_compute: dict) -> int:
         """Processes a batch of frame files."""
@@ -1103,9 +1086,6 @@ class PreAnalysisPipeline(Pipeline):
             if self.cancel_event.is_set():
                 break
             
-            if self.model_registry:
-                self.model_registry.check_memory_usage(self.config)
-
             if tracker:
                 tracker.step(1, desc=f"Scene {scene.shot_id}")
             

@@ -212,62 +212,59 @@ class SubjectMasker:
                     frame_size = (sample_thumb.shape[1], sample_thumb.shape[0])
                     self.logger.info(f"Targeting propagation frame size: {frame_size[0]}x{frame_size[1]}", component="propagator")
 
-            # Lock tracker model during the loop to prevent watchdog clearing it
-            tracker_key = f"tracker_{self.params.tracker_model_name}"
-            with self.model_registry.locked(tracker_key):
-                for scene in scenes_to_process:
-                    if self.cancel_event.is_set(): break
+            for scene in scenes_to_process:
+                if self.cancel_event.is_set(): break
+                
+                shot_frames_data = self._load_shot_frames(frames_dir, thumb_dir, scene.start_frame, scene.end_frame)
+                if not shot_frames_data: continue
+                
+                target_fns = [f[0] for f in shot_frames_data]
+                bbox = scene.seed_result.get("bbox")
+                if not bbox:
+                    self.logger.warning(f"No seed for scene {scene.shot_id}, skipping.")
+                    continue
+
+                prop_seeds = [{"frame": scene.best_frame, "bbox": bbox, "obj_id": 1}]
+
+                masks_dict, areas_dict, empties_dict, errors_dict = self.mask_propagator.propagate_video(
+                    str(lowres_video_path),
+                    target_fns,
+                    prop_seeds,
+                    frame_size,
+                    self.frame_map,
+                    tracker=tracker,
+                )
+
+                # Distribute results for this scene
+                for fn in target_fns:
+                    fname_webp = self.frame_map.get(fn)
+                    if not fname_webp: continue
                     
-                    shot_frames_data = self._load_shot_frames(frames_dir, thumb_dir, scene.start_frame, scene.end_frame)
-                    if not shot_frames_data: continue
+                    fname_png = f"{Path(fname_webp).stem}.png"
+                    mask_path = self.mask_dir / fname_png
                     
-                    target_fns = [f[0] for f in shot_frames_data]
-                    bbox = scene.seed_result.get("bbox")
-                    if not bbox:
-                        self.logger.warning(f"No seed for scene {scene.shot_id}, skipping.")
-                        continue
-
-                    prop_seeds = [{"frame": scene.best_frame, "bbox": bbox, "obj_id": 1}]
-
-                    masks_dict, areas_dict, empties_dict, errors_dict = self.mask_propagator.propagate_video(
-                        str(lowres_video_path),
-                        target_fns,
-                        prop_seeds,
-                        frame_size,
-                        self.frame_map,
-                        tracker=tracker,
-                    )
-
-                    # Distribute results for this scene
-                    for fn in target_fns:
-                        fname_webp = self.frame_map.get(fn)
-                        if not fname_webp: continue
-                        
-                        fname_png = f"{Path(fname_webp).stem}.png"
-                        mask_path = self.mask_dir / fname_png
-                        
-                        mask = masks_dict.get(fn)
-                        area = areas_dict.get(fn, 0.0)
-                        is_empty = empties_dict.get(fn, True)
-                        
-                        res = {
-                            "shot_id": scene.shot_id,
-                            "seed_type": scene.seed_result.get("details", {}).get("type"),
-                            "seed_face_sim": scene.seed_result.get("details", {}).get("seed_face_sim"),
-                            "mask_area_pct": area,
-                            "mask_empty": is_empty,
-                            "error": errors_dict.get(fn)
-                        }
-                        
-                        if mask is not None and np.any(mask):
-                            cv2.imwrite(str(mask_path), mask)
-                            res["mask_path"] = str(mask_path)
-                        else:
-                            res["mask_path"] = None
-                            if not errors_dict.get(fn):
-                                self.logger.error(f"Failed to generate mask for {fname_png} (frame {fn}). Subject lost.", component="propagator")
-                        
-                        mask_metadata[fname_png] = res
+                    mask = masks_dict.get(fn)
+                    area = areas_dict.get(fn, 0.0)
+                    is_empty = empties_dict.get(fn, True)
+                    
+                    res = {
+                        "shot_id": scene.shot_id,
+                        "seed_type": scene.seed_result.get("details", {}).get("type"),
+                        "seed_face_sim": scene.seed_result.get("details", {}).get("seed_face_sim"),
+                        "mask_area_pct": area,
+                        "mask_empty": is_empty,
+                        "error": errors_dict.get(fn)
+                    }
+                    
+                    if mask is not None and np.any(mask):
+                        cv2.imwrite(str(mask_path), mask)
+                        res["mask_path"] = str(mask_path)
+                    else:
+                        res["mask_path"] = None
+                        if not errors_dict.get(fn):
+                            self.logger.error(f"Failed to generate mask for {fname_png} (frame {fn}). Subject lost.", component="propagator")
+                    
+                    mask_metadata[fname_png] = res
         else:
             self.logger.warning("video_lowres.mp4 not found, falling back to legacy mode.")
             # Legacy fallback omitted or can be re-implemented if needed.
@@ -356,19 +353,16 @@ class SubjectMasker:
         for frame_num, thumb_rgb, _ in candidates:
             niqe_score = 10.0
             if self.niqe_metric:
-                with self.model_registry.locked("niqe"): # Assuming niqe key in future or similar
-                    img_tensor = torch.from_numpy(thumb_rgb).float().permute(2, 0, 1).unsqueeze(0) / 255.0
-                    with torch.no_grad(), torch.amp.autocast("cuda", enabled=self._device == "cuda"):
-                        niqe_score = float(self.niqe_metric(img_tensor.to(self.niqe_metric.device)))
+                img_tensor = torch.from_numpy(thumb_rgb).float().permute(2, 0, 1).unsqueeze(0) / 255.0
+                with torch.no_grad(), torch.amp.autocast("cuda", enabled=self._device == "cuda"):
+                    niqe_score = float(self.niqe_metric(img_tensor.to(self.niqe_metric.device)))
 
             face_sim = 0.0
             if self.face_analyzer and self.reference_embedding is not None:
-                face_model_key = f"face_analyzer_{self.params.face_model_name}_{self._device}_{tuple(self.config.model_face_analyzer_det_size)}"
-                with self.model_registry.locked(face_model_key):
-                    faces = self.face_analyzer.get(cv2.cvtColor(thumb_rgb, cv2.COLOR_RGB2BGR))
-                    if faces:
-                        best_face = max(faces, key=lambda x: x.det_score)
-                        face_sim = np.dot(best_face.normed_embedding, self.reference_embedding)
+                faces = self.face_analyzer.get(cv2.cvtColor(thumb_rgb, cv2.COLOR_RGB2BGR))
+                if faces:
+                    best_face = max(faces, key=lambda x: x.det_score)
+                    face_sim = np.dot(best_face.normed_embedding, self.reference_embedding)
 
             scores.append((10 - niqe_score) + (face_sim * 10))
 
