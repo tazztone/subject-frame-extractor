@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import re
 import shutil
+import subprocess
 import sys
 import threading
 import time
@@ -721,6 +722,18 @@ class AppUI:
             except ImportError:
                 report.append(f"  - {dep}: FAILED (Not Installed)")
         report.append("\n[SECTION 3: Paths & Assets]")
+        
+        # Check ExifTool
+        exiftool_path = shutil.which("exiftool")
+        if exiftool_path:
+            try:
+                ver = subprocess.run([exiftool_path, "-ver"], capture_output=True, text=True).stdout.strip()
+                report.append(f"  - ExifTool: OK (Version: {ver})")
+            except Exception:
+                report.append(f"  - ExifTool: FOUND but check failed (Path: {exiftool_path})")
+        else:
+            report.append("  - ExifTool: FAILED (Not Found - Required for Photo Mode)")
+
         for name, path in {
             "Models Directory": Path(self.config.models_dir),
             "Dry Run Assets": Path("dry-run-assets"),
