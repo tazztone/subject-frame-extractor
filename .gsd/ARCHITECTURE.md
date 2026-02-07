@@ -68,9 +68,9 @@ The Subject Frame Extractor is a high-performance tool for extracting, analyzing
 - **Location:** `core/database.py`, `core/config.py`, `core/application_state.py`.
 - **Details:** SQLite database with JSON storage for extensible metrics. Pydantic-based configuration.
 
-### 6. Utilities (`core/filtering.py`, `core/logger.py`)
-- **Purpose:** Core algorithms and monitoring.
-- **Logic:** `filtering.py` contains the math for quality scoring and frame de-duplication. `logger.py` provides structured JSONL logging.
+### 6. Utilities (`core/filtering.py`, `core/logger.py`, `core/fingerprint.py`)
+- **Purpose:** Core algorithms, monitoring, and idempotency.
+- **Logic:** `filtering.py` contains the math for quality scoring. `logger.py` provides structured logging. `core/fingerprint.py` implements the hashing logic for session caching.
 
 ## Data Flow
 
@@ -97,7 +97,8 @@ The Subject Frame Extractor is a high-performance tool for extracting, analyzing
 
 - [ ] **FFmpeg Optimization**: Support hardware acceleration (NVENC/VAAPI) and configurable audio codecs.
 - [ ] **Extraction Resilience**: Add support for resumable extraction and parallel video decoding.
-- [ ] **Analysis Caching**: Skip already-analyzed frames to speed up re-runs.
+- [x] **Analysis Caching**: Skip already-analyzed extraction via fingerprinting.
+- [ ] **Resume Propagation**: Formalize scene-level resumption for large-scale tracking.
 - [ ] **Memory Management**: Automatic batch size adjustment based on available memory.
 - [ ] **Error Recovery**: Implement per-frame error recovery in pipelines instead of skipping.
 - [ ] **Submodule**: `SAM3_repo` initialization manual check.

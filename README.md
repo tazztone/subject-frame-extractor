@@ -91,6 +91,41 @@ We highly recommend [uv](https://astral.sh/uv) for its speed and reliability.
 
 ---
 
+## ⌨️ CLI Usage
+
+The application provides a powerful CLI for automated extraction, analysis, and headless operation. Always use `uv run` to ensure the correct environment.
+
+### Extraction
+Extract thumbnails and detect scenes from a video:
+```bash
+uv run python cli.py extract --video path/to/video.mp4 --output ./results --nth-frame 10
+```
+- **Caching**: Subsequent runs with identical settings will skip automatically using fingerprints.
+- **Force**: Use `--force` to re-extract even if a fingerprint match is found.
+- **Clean**: Use `--clean` to delete the output directory before starting.
+
+### Analysis
+Run the full AI pipeline (seeding, tracking, metrics) on an existing extraction:
+```bash
+uv run python cli.py analyze --session ./results --video path/to/video.mp4 --face-ref person.png --resume
+```
+- **Resume**: Use `--resume` to skip already completed scenes (uses `progress.json`).
+
+### Full Pipeline
+Run extraction and analysis in one command:
+```bash
+uv run python cli.py full --video video.mp4 --output ./results --face-ref person.png
+```
+
+### Status
+Check the progress and metadata of a session:
+```bash
+uv run python cli.py status --session ./results
+```
+
+
+---
+
 ## 📖 Usage Guide
 
 1.  **Source**: Upload a video or paste a YouTube URL. Choose your extraction resolution.
@@ -139,7 +174,7 @@ The application enforces a strict **Core/UI separation** to ensure maintainabili
 ### State Management
 - **Session State**: `gr.State` handles ephemeral UI data (scene lists, current paths).
 - **Global State**: `ModelRegistry` acts as a thread-safe singleton for lazy-loading heavy ML models.
-- **Persistence**: `metadata.db` (SQLite) stores all frame metrics; `run_config.json` saves session parameters.
+- **Persistence**: `metadata.db` (SQLite) stores all frame metrics; `run_config.json` saves session parameters; `run_fingerprint.json` enables run-skipping logic.
 
 ## 2. Critical Rules (The "Agent Memory")
 

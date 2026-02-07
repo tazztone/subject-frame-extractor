@@ -1,7 +1,7 @@
 # STATE.md — Project Memory
 
-> **Last Updated**: 2026-02-07T16:35:25+01:00
-> **Session Status**: Active (resumed 2026-02-07T16:35:25+01:00)
+> **Last Updated**: 2026-02-07T16:47:00+01:00
+> **Session Status**: Paused
 
 ## Current Position
 - **Milestone**: v4.0-cli-first
@@ -9,15 +9,13 @@
 - **Status**: Verified
 
 ## Last Session Summary
-Phase 2 executed successfully. Implemented fingerprinting and CLI resume logic. Verified with extraction skip/force.
+Successfully completed Phase 2. Implemented the `core/fingerprint.py` module for idempotency, added `--resume` and `--force` flags to the CLI, and updated the `status` command. Verified skip/force behavior with real video data. Updated documentation (`README.md`, `ARCHITECTURE.md`).
 
 ## In-Progress Work
-- Phase 2 plans are created but not yet executed.
-- `.gsd/phases/2/` contains research and plans.
-- `cli.py` is implemented and verified.
+- None. (Phase 2 complete).
 
 ## Blockers
 - None.
 
 ## Next Steps
-1. Proceed to Phase 3 (Photo Mode MVP)
+1. Execute Phase 3 (Photo Mode MVP) with `/plan 3` or `/execute 3`.
