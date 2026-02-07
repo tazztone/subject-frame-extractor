@@ -21,8 +21,7 @@ python -m pip install --upgrade pip
 pip install uv
 
 # Install requirements 
-uv pip install -r requirements.txt
-uv pip install -e SAM3_repo
+uv sync --frozen
 
 echo "--- Jules Environment Complete ---"
 
