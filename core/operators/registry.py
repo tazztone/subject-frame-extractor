@@ -219,25 +219,36 @@ def run_operators(
             )
             continue
         
-        try:
-            result = operator.execute(ctx)
-            results[name] = result
-            
-            # Store normalized metrics for QualityScore computation
-            if result.success and result.metrics:
-                if "normalized_metrics" not in ctx.shared_data:
-                    ctx.shared_data["normalized_metrics"] = {}
+        # Implement retry logic for transient errors (e.g. CUDA timeouts)
+        max_retries = 2
+        for attempt in range(max_retries + 1):
+            try:
+                result = operator.execute(ctx)
+                results[name] = result
                 
-                # We expect operators to provide raw 0-1 values if they want to contribute to QualityScore
-                # Convention: metric_name_score is 0-100, metric_name is 0-1
-                for m_name, m_val in result.metrics.items():
-                    if not m_name.endswith("_score") and m_name not in ["yaw", "pitch", "roll", "blink_prob"]:
-                        ctx.shared_data["normalized_metrics"][m_name] = m_val
-                        
-        except Exception as e:
-            results[name] = OperatorResult(
-                metrics={},
-                error=f"Execution failed: {e}",
-            )
+                # Store normalized metrics for QualityScore computation
+                if result.success and result.metrics:
+                    if "normalized_metrics" not in ctx.shared_data:
+                        ctx.shared_data["normalized_metrics"] = {}
+                    
+                    # We expect operators to provide raw 0-1 values if they want to contribute to QualityScore
+                    # Convention: metric_name_score is 0-100, metric_name is 0-1
+                    for m_name, m_val in result.metrics.items():
+                        if not m_name.endswith("_score") and m_name not in ["yaw", "pitch", "roll", "blink_prob"]:
+                            ctx.shared_data["normalized_metrics"][m_name] = m_val
+                break # Success, exit retry loop
+                            
+            except Exception as e:
+                if attempt < max_retries:
+                    if logger:
+                        logger.warning(f"Operator '{name}' failed (attempt {attempt + 1}), retrying...", extra={"error": e})
+                    if "cuda" in str(e).lower() and torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                    time.sleep(0.5 * (attempt + 1))
+                else:
+                    results[name] = OperatorResult(
+                        metrics={},
+                        error=f"Execution failed after {max_retries} retries: {e}",
+                    )
     
     return results

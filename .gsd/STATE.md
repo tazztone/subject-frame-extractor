@@ -4,21 +4,18 @@
 > **Session Status**: Active (resumed 2026-02-07T18:52:56+01:00)
 
 ## Current Position
-- **Milestone**: v5.0-performance-architecture
-- **Phase**: 7 (Hardware-Accelerated Extraction)
-- **Status**: Executing
+- **Milestone**: v5.0-performance-architecture (COMPLETED)
+- **Phase**: None
+- **Status**: Ready for release / Next milestone
 
 ## Last Session Summary
-Completed Phase 6: Architectural Cleanup & Operator Consolidation.
-- Fully migrated all legacy metrics from `core/models.py` to the Operator pattern.
-- Enhanced `OperatorContext` to support lazy loading via `model_registry` and data sharing via `shared_data`.
-- Simplified `AnalysisPipeline` to use the unified operator engine.
-- Implemented `QualityScoreOperator` for centralized weighted score calculation.
-- Purged legacy `Frame.calculate_quality_metrics` method.
-
-## In-Progress Work
-- Implementing hardware-accelerated FFmpeg extraction (Phase 7).
-- Files modified (this session): `core/models.py`, `core/pipelines.py`, `core/operators/base.py`, `core/operators/registry.py`, `core/operators/face_metrics.py`, `core/operators/sharpness.py`, `core/operators/simple_cv.py`, `core/operators/entropy.py`, `core/operators/niqe.py`, `core/operators/quality_score.py`.
+Finalized Milestone v5.0: Performance & Architecture.
+- Fully migrated all legacy metrics to the Operator pattern.
+- Implemented hardware-accelerated extraction (NVENC/VAAPI).
+- Implemented resumable extraction with mid-run checkpoints.
+- Implemented dynamic batch sizing for proactive OOM prevention.
+- Added global retry mechanism for operator execution.
+- Purged all legacy code from `core/models.py`.
 
 ## In-Progress Work
 - None (Phase 5 complete).

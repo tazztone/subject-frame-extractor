@@ -50,8 +50,8 @@ from core.utils import (
 )
 
 
-def _process_ffmpeg_stream(stream, tracker: Optional["AdvancedProgressTracker"], desc: str, total_duration_s: float):
-    """Parses FFmpeg progress stream and updates the tracker."""
+def _process_ffmpeg_stream(stream, tracker: Optional["AdvancedProgressTracker"], desc: str, total_duration_s: float, start_time_s: float = 0):
+    """Parses FFmpeg progress stream and updates the tracker with optional time offset."""
     progress_data = {}
     for line in iter(stream.readline, ""):
         try:
@@ -63,7 +63,9 @@ def _process_ffmpeg_stream(stream, tracker: Optional["AdvancedProgressTracker"],
                 break
             if key == "out_time_us" and total_duration_s > 0:
                 us = int(value)
-                fraction = us / (total_duration_s * 1_000_000)
+                # out_time_us is relative to seek point if -ss is before -i
+                current_time_s = start_time_s + (us / 1_000_000)
+                fraction = current_time_s / total_duration_s
                 if tracker:
                     tracker.set(int(fraction * tracker.total), desc=desc)
             elif key == "frame" and tracker and total_duration_s <= 0:
@@ -148,6 +150,24 @@ def run_ffmpeg_extraction(
     fps = max(1, int(video_info.get("fps", 30)))
     N = max(1, int(params.nth_frame or 0))
 
+    # --- RESUME LOGIC ---
+    start_frame_idx = 0
+    existing_frame_map = []
+    frame_map_path = output_dir / "frame_map.json"
+    if frame_map_path.exists() and params.resume:
+        try:
+            with open(frame_map_path, "r", encoding="utf-8") as f:
+                existing_frame_map = json.load(f)
+            if existing_frame_map:
+                # How many files actually exist?
+                ext = ".webp" if params.thumbnails_only else ".png"
+                files = sorted(list(thumb_dir.glob(f"frame_*{ext}")))
+                if len(files) > 0:
+                    start_frame_idx = len(files)
+                    logger.info(f"Resuming extraction from frame {start_frame_idx + 1} (Found {len(files)} existing frames)")
+        except Exception as e:
+            logger.warning(f"Could not load existing frame map for resume: {e}")
+
     select_map = {
         "keyframes": "select='eq(pict_type,I)'",
         "every_nth_frame": f"select='not(mod(n,{N}))'",
@@ -155,36 +175,51 @@ def run_ffmpeg_extraction(
     }
     vf_select = select_map.get(params.method, f"fps={fps}")
 
+    # Build Seek Argument
+    seek_args = []
+    if start_frame_idx > 0:
+        # Heuristic: estimate timestamp for seek
+        # This is tricky for variable frame rate or complex selections
+        # For 'every_nth_frame', it's (start_frame_idx * N) / fps
+        if params.method == "every_nth_frame":
+            timestamp = (start_frame_idx * N) / fps
+            seek_args = ["-ss", f"{timestamp:.3f}"]
+        elif params.method == "all":
+            timestamp = start_frame_idx / fps
+            seek_args = ["-ss", f"{timestamp:.3f}"]
+        # For keyframes, seeking is too hard to estimate precisely, we'll start from 0 or implement better logic
+        # For now, only resume simple methods
+
     if params.thumbnails_only:
         vf = f"{vf_select},{vf_scale_thumb},showinfo" # Use thumb scale
-        cmd = cmd_base + [
-            "-vf",
-            vf,
-            "-c:v",
-            "libwebp",
-            "-lossless",
-            "0",
-            "-quality",
-            str(config.ffmpeg_thumbnail_quality),
-            "-vsync",
-            "vfr",
-            "-start_number",
-            "1",
+        cmd = ["ffmpeg", "-y"]
+        if hwaccel_type: cmd.extend(["-hwaccel", hwaccel_type])
+        if seek_args: cmd.extend(seek_args)
+        
+        cmd.extend([
+            "-i", str(video_path),
+            "-vf", vf,
+            "-c:v", "libwebp",
+            "-lossless", "0",
+            "-quality", str(config.ffmpeg_thumbnail_quality),
+            "-vsync", "vfr",
+            "-start_number", str(start_frame_idx + 1),
             str(thumb_dir / "frame_%06d.webp"),
-        ]
+        ])
     else:
         vf = f"{vf_select},showinfo"
-        cmd = cmd_base + [
-            "-vf", 
-            vf, 
-            "-c:v", 
-            "png", 
-            "-vsync", 
-            "vfr", 
-            "-start_number", 
-            "1", 
-            str(thumb_dir / "frame_%06d.png")
-        ]
+        cmd = ["ffmpeg", "-y"]
+        if hwaccel_type: cmd.extend(["-hwaccel", hwaccel_type])
+        if seek_args: cmd.extend(seek_args)
+        
+        cmd.extend([
+            "-i", str(video_path),
+            "-vf", vf,
+            "-c:v", "png",
+            "-vsync", "vfr",
+            "-start_number", str(start_frame_idx + 1),
+            str(thumb_dir / "frame_%06d.png"),
+        ])
 
     process = subprocess.Popen(
         cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", bufsize=1
@@ -195,8 +230,15 @@ def run_ffmpeg_extraction(
 
     with process.stdout, process.stderr:
         total_duration_s = video_info.get("frame_count", 0) / max(0.01, video_info.get("fps", 30))
+        start_time_s = 0
+        if start_frame_idx > 0:
+            if params.method == "every_nth_frame":
+                start_time_s = (start_frame_idx * N) / fps
+            elif params.method == "all":
+                start_time_s = start_frame_idx / fps
+
         stdout_thread = threading.Thread(
-            target=lambda: _process_ffmpeg_stream(process.stdout, tracker, "Extracting frames", total_duration_s)
+            target=lambda: _process_ffmpeg_stream(process.stdout, tracker, "Extracting frames", total_duration_s, start_time_s)
         )
 
         def process_stderr_and_store():
@@ -225,8 +267,10 @@ def run_ffmpeg_extraction(
     stderr_output = stderr_results.get("full_stderr", "")
 
     if frame_map_list:
+        # If resuming, we need to merge with existing map
+        final_frame_map = sorted(list(set(existing_frame_map + frame_map_list)))
         with open(output_dir / "frame_map.json", "w", encoding="utf-8") as f:
-            json.dump(sorted(frame_map_list), f)
+            json.dump(final_frame_map, f)
 
     if process.returncode not in [0, -9] and not cancel_event.is_set():
         logger.error("FFmpeg extraction failed", extra={"returncode": process.returncode, "stderr": stderr_output})
@@ -787,18 +831,11 @@ class AnalysisPipeline(Pipeline):
                             (thumb_image_rgb.shape[1], thumb_image_rgb.shape[0]),
                             interpolation=cv2.INTER_NEAREST,
                         )
-            from core.models import QualityConfig
-
-            quality_conf = QualityConfig(
-                sharpness_base_scale=self.config.sharpness_base_scale,
-                edge_strength_base_scale=self.config.edge_strength_base_scale,
-                enable_niqe=(self.niqe_metric is not None and self.params.compute_niqe),
-            )
             face_bbox = None
             if self.params.compute_face_sim and self.face_analyzer:
                 face_bbox = self._analyze_face_similarity(frame, thumb_image_rgb)
 
-            # --- OPERATOR ENGINE EXECUTION (Phase 2.5 / Refactored) ---
+            # --- OPERATOR ENGINE EXECUTION (Phase 2.5 / Finalized) ---
             if any(metrics_to_compute.values()) or self.params.compute_niqe:
                 try:
                     # Run Operators with rich context
@@ -808,14 +845,24 @@ class AnalysisPipeline(Pipeline):
                         config=self.config,
                         model_registry=self.model_registry,
                         logger=self.logger,
-                        params={"face_bbox": face_bbox},
+                        params={
+                            "face_bbox": face_bbox,
+                            "reference_embedding": self.reference_embedding,
+                            "mask_meta": mask_meta
+                        },
                     )
                     
                     # Populate frame metrics from results
                     for name, result in op_results.items():
                         if result.success:
                             for key, value in result.metrics.items():
-                                if hasattr(frame.metrics, key):
+                                # Handle top-level Frame attributes (mapped from face_sim op)
+                                if key == "face_sim":
+                                    frame.face_similarity_score = value
+                                elif key == "face_conf":
+                                    frame.max_face_confidence = value
+                                # Handle FrameMetrics attributes
+                                elif hasattr(frame.metrics, key):
                                     setattr(frame.metrics, key, value)
                                     
                 except Exception as e:
