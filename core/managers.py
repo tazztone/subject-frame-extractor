@@ -4,6 +4,7 @@ import gc
 import logging
 import psutil
 import threading
+import contextlib
 from collections import OrderedDict, defaultdict
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
@@ -151,6 +152,15 @@ class ModelRegistry:
         self._active_locks = set() # Track keys that should not be cleared
         self.logger = logger or logging.getLogger(__name__)
         self.runtime_device_override: Optional[str] = None
+
+    @contextlib.contextmanager
+    def locked(self, key: str):
+        """Context manager to lock a model for the duration of a block."""
+        self.lock(key)
+        try:
+            yield
+        finally:
+            self.unlock(key)
 
     def lock(self, key: str):
         """Prevents a model from being cleared by the watchdog."""

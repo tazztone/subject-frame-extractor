@@ -89,12 +89,14 @@ class OperatorResult:
     Standardized result from operator execution.
     
     Attributes:
-        metrics: Dict of computed metric values (e.g., {"sharpness_score": 85.2})
+        metrics: Dict of computed numerical values (e.g., {"sharpness_score": 85.2})
+        data: Dict of non-numerical data (e.g., {"phash": "a1b2c3d4"})
         error: Error message if execution failed, None otherwise
         warnings: List of non-fatal warning messages
     """
 
     metrics: dict[str, float] = field(default_factory=dict)
+    data: dict[str, Any] = field(default_factory=dict)
     error: Optional[str] = None
     warnings: list[str] = field(default_factory=list)
 

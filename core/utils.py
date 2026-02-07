@@ -162,10 +162,12 @@ def is_image_folder(p: Union[str, Path]) -> bool:
         return False
 
 
-def list_images(p: Union[str, Path], cfg: Config) -> list[Path]:
-    """Lists all valid image files in a directory."""
+def list_images(p: Union[str, Path], cfg: Config, recursive: bool = False) -> list[Path]:
+    """Lists all valid image files in a directory (optionally recursive)."""
     p = Path(p)
     exts = {e.lower() for e in cfg.utility_image_extensions}
+    if recursive:
+        return sorted([f for f in p.rglob("*") if f.suffix.lower() in exts and f.is_file()])
     return sorted([f for f in p.iterdir() if f.suffix.lower() in exts and f.is_file()])
 
 

@@ -70,25 +70,17 @@ def extract_preview(raw_path: Path, output_dir: Path) -> Optional[Path]:
     logger.warning(f"Could not extract any preview from {raw_path}")
     return None
 
-def ingest_folder(folder_path: Path, output_dir: Path) -> List[Dict[str, Any]]:
+def ingest_folder(folder_path: Path, output_dir: Path, recursive: bool = False) -> List[Dict[str, Any]]:
     """
     Scans a folder for images, extracting previews for RAW files.
 
     Args:
         folder_path: Path to the source folder.
         output_dir: Directory to store extracted previews.
+        recursive: Whether to scan subdirectories.
 
     Returns:
-        List of dictionaries with photo metadata:
-        [
-            {
-                "id": "file_stem",
-                "source": Path(...),
-                "preview": Path(...),
-                "type": "raw" | "jpeg"
-            },
-            ...
-        ]
+        List of dictionaries with photo metadata.
     """
     if not folder_path.exists():
         logger.error(f"Source folder not found: {folder_path}")
@@ -104,15 +96,19 @@ def ingest_folder(folder_path: Path, output_dir: Path) -> List[Dict[str, Any]]:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Sort files for consistent order
-    files = sorted([f for f in folder_path.iterdir() if f.is_file()])
+    if recursive:
+        files = sorted(list(folder_path.rglob("*")))
+    else:
+        files = sorted(list(folder_path.iterdir()))
 
     for file_path in files:
+        if not file_path.is_file():
+            continue
+            
         ext = file_path.suffix.upper()
         photo_id = file_path.stem
         
         if ext in jpeg_exts:
-            # For JPEGs, the source is the preview (or we could copy it if needed)
-            # We'll just define the preview as the source itself to save space/time
             ingested_photos.append({
                 "id": photo_id,
                 "source": file_path,

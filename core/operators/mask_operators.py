@@ -20,13 +20,7 @@ class PhashOperator:
             pil_img = Image.fromarray(ctx.image_rgb)
             phash = str(imagehash.phash(pil_img))
             
-            # Phash is a string, but OperatorResult expects float metrics?
-            # Actually, OperatorResult says dict[str, float].
-            # PHASH IS NOT A FLOAT.
-            # I should update OperatorResult to allow any JSON-serializable values?
-            # Or just return it in custom_data if I add that.
-            # For now, let's keep Phash outside Operators if it's not a metric.
-            return OperatorResult(metrics={}, warnings=["Phash not a float metric, skipped"])
+            return OperatorResult(data={"phash": phash})
         except ImportError:
             return OperatorResult(error="imagehash missing")
 
