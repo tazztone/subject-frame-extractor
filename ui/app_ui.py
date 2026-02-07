@@ -54,6 +54,7 @@ from ui.tabs import (
     SceneTabBuilder,
     MetricsTabBuilder,
     FilteringTabBuilder,
+    PhotoTabBuilder,
 )
 from ui.handlers import SceneHandler
 
@@ -425,6 +426,9 @@ class AppUI:
             with gr.Tab("Export", id=4) as filtering_tab:
                 self.components["filtering_tab"] = filtering_tab
                 FilteringTabBuilder(self).build()
+            with gr.Tab("Photo Culling", id=5) as photo_tab:
+                self.components["photo_tab"] = photo_tab
+                PhotoTabBuilder(self).build()
 
     def _build_footer(self):
         """Builds the footer with status bar, logs, and help section."""

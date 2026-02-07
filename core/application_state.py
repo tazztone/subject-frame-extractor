@@ -23,6 +23,14 @@ class ApplicationState(BaseModel):
     sharpness_base_scale: float = 2500.0
     edge_strength_base_scale: float = 100.0
     smart_filter_enabled: bool = False
+    
+    # Photo Mode State
+    photos: List[Dict[str, Any]] = Field(default_factory=list)  # {"id", "source", "preview", "scores", "status"}
+    photo_filter_settings: Dict[str, float] = Field(default_factory=dict)
+    photo_page: int = 0
+    photo_page_size: int = 50
+    photo_index_map: Dict[int, str] = Field(default_factory=dict)
+    
     scene_history: List[List[dict]] = Field(default_factory=list)
 
     def push_history(self, scenes: List[dict]):
