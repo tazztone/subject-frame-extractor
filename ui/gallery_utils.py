@@ -6,6 +6,7 @@ from typing import Any
 import cv2
 import gradio as gr
 import numpy as np
+from functools import lru_cache
 
 from core.events import FilterEvent
 from core.filtering import apply_all_filters_vectorized
@@ -15,6 +16,17 @@ from core.shared import build_scene_gallery_items
 from core.utils import render_mask_overlay
 
 __all__ = ["build_scene_gallery_items", "render_mask_overlay", "on_filters_changed", "auto_set_thresholds"]
+
+@lru_cache(maxsize=256)
+def _load_mask_cached(mask_path: str) -> Optional[np.ndarray]:
+    """Loads a mask from disk with LRU caching."""
+    if not Path(mask_path).exists():
+        return None
+    return cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
+
+def clear_mask_cache():
+    """Clears the mask LRU cache."""
+    _load_mask_cached.cache_clear()
 
 
 def _update_gallery(
@@ -52,7 +64,8 @@ def _update_gallery(
     )
     if output_dir:
         _output_path, thumb_dir, masks_dir = Path(output_dir), Path(output_dir) / "thumbs", Path(output_dir) / "masks"
-        for f_meta in frames_to_show[:100]:
+        MAX_OVERLAY_RENDER = 100
+        for i, f_meta in enumerate(frames_to_show[:500]):
             thumb_path = thumb_dir / f"{Path(f_meta['filename']).stem}.webp"
             caption = (
                 f"Reasons: {', '.join(per_frame_reasons.get(f_meta['filename'], []))}"
@@ -62,10 +75,12 @@ def _update_gallery(
             thumb_rgb_np = thumbnail_manager.get(thumb_path)
             if thumb_rgb_np is None:
                 continue
-            if show_overlay and not f_meta.get("mask_empty", True) and (mask_name := f_meta.get("mask_path")):
+                
+            use_overlay = show_overlay and i < MAX_OVERLAY_RENDER and not f_meta.get("mask_empty", True)
+            if use_overlay and (mask_name := f_meta.get("mask_path")):
                 mask_path = masks_dir / mask_name
-                if mask_path.exists():
-                    mask_gray = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
+                mask_gray = _load_mask_cached(str(mask_path))
+                if mask_gray is not None:
                     preview_images.append(
                         (render_mask_overlay(thumb_rgb_np, mask_gray, float(overlay_alpha), logger=logger), caption)
                     )

@@ -550,6 +550,8 @@ class AppUI:
                     msg = self.progress_queue.get_nowait()
                     if "log" in msg:
                         self.all_logs.append(msg["log"])
+                    if "ui_update" in msg:
+                        yield msg["ui_update"]
                 except Exception:
                     break
 
@@ -562,15 +564,15 @@ class AppUI:
                 for l in self.all_logs
                 if any(f"[{lvl}]" in l for lvl in self.LOG_LEVEL_CHOICES[current_filter_level:])
             ]
-            return "\n".join(filtered_logs[-1000:])
+            yield {self.components["unified_log"]: "\n".join(filtered_logs[-1000:])}
 
-        c["show_debug_logs"].change(update_logs, inputs=[c["show_debug_logs"]], outputs=[c["unified_log"]])
+        c["show_debug_logs"].change(update_logs, inputs=[c["show_debug_logs"]], outputs=None)
         # Log Auto-Refresh (every 1s)
         self.components["log_timer"] = gr.Timer(1.0)
-        self.components["log_timer"].tick(update_logs, inputs=[c["show_debug_logs"]], outputs=[c["unified_log"]])
+        self.components["log_timer"].tick(update_logs, inputs=[c["show_debug_logs"]], outputs=None)
         
         # Keep manual refresh just in case, though hidden
-        c["refresh_logs_button"].click(update_logs, inputs=[c["show_debug_logs"]], outputs=[c["unified_log"]])
+        c["refresh_logs_button"].click(update_logs, inputs=[c["show_debug_logs"]], outputs=None)
 
         # Stepper Handler (Removed)
 
@@ -1022,7 +1024,6 @@ class AppUI:
         return {
             self.components["application_state"]: new_state,
             self.components["unified_status"]: msg,
-            self.components["main_tabs"]: gr.update(selected=1),
         }
 
     def _on_pre_analysis_success(self, result: dict, current_state: ApplicationState) -> dict:
@@ -1036,10 +1037,21 @@ class AppUI:
 
         scenes_objs = [Scene(**s) for s in result["scenes"]]
         status_text, button_update = get_scene_status_text(scenes_objs)
+        
+        # Hide propagation for image-only folders
+        if is_image_folder(result["output_dir"]):
+            button_update = gr.update(visible=False)
+        else:
+            # Ensure visible for videos
+            if isinstance(button_update, dict):
+                button_update["visible"] = True
+            else:
+                button_update = gr.update(visible=True, interactive=button_update.interactive if hasattr(button_update, "interactive") else True)
+
         msg = f"""<div class="success-card">
         <h3>✅ Pre-Analysis Complete</h3>
         <p>Found <strong>{len(scenes_objs)}</strong> scenes.</p>
-        <p><strong>Next:</strong> Review scenes and propagate masks.</p>
+        <p><strong>Next:</strong> {"Review scenes and compute metrics." if is_image_folder(result["output_dir"]) else "Review scenes and propagate masks."}</p>
         </div>"""
         return {
             self.components["application_state"]: new_state,
@@ -1048,7 +1060,6 @@ class AppUI:
             self.components["propagate_masks_button"]: button_update,
             self.components["scene_filter_status"]: status_text,
             self.components["unified_status"]: msg,
-            self.components["main_tabs"]: gr.update(selected=2),
         }
 
     def run_pre_analysis_wrapper(self, current_state: ApplicationState, *args, progress=None):
@@ -1061,6 +1072,9 @@ class AppUI:
 
     def _propagation_button_handler(self, current_state: ApplicationState, *args, progress=None):
         """Button handler for propagation that properly yields from the generator."""
+        if not current_state.extracted_video_path:
+            yield {self.components["unified_log"]: "ℹ️ Propagation is not needed for image folders."}
+            return
         yield from self.run_propagation_wrapper(current_state.scenes, current_state, *args, progress=progress)
 
     def _analysis_button_handler(self, current_state: ApplicationState, *args, progress=None):
@@ -1091,7 +1105,6 @@ class AppUI:
         return {
             self.components["application_state"]: current_state,
             self.components["unified_status"]: msg,
-            self.components["main_tabs"]: gr.update(selected=3),
         }
 
     def run_analysis_wrapper(self, scenes, current_state: ApplicationState, *args, progress=None):
@@ -1123,7 +1136,6 @@ class AppUI:
         return {
             self.components["application_state"]: new_state,
             self.components["unified_status"]: msg,
-            self.components["main_tabs"]: gr.update(selected=4),
         }
 
     def run_session_load_wrapper(self, session_path: str, current_state: ApplicationState):
@@ -1228,7 +1240,6 @@ class AppUI:
             {
                 self.components["application_state"]: new_state,
                 self.components["unified_log"]: f"Successfully loaded session from: {session_path}",
-                self.components["main_tabs"]: gr.update(selected=3),
                 self.components["unified_status"]: "✅ Session Loaded.",
             }
         )

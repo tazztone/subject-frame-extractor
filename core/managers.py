@@ -835,6 +835,9 @@ class VideoManager:
 
         Downloads it if it's a YouTube URL, or validates the local path.
         """
+        if not self.source_path:
+            raise ValueError("No video source path provided.")
+
         if self.is_youtube:
             logger.info("Downloading video", component="video", user_context={"source": self.source_path})
             tmpl = self.config.ytdl_output_template
@@ -859,8 +862,16 @@ class VideoManager:
         return str(local_path)
 
     @staticmethod
-    def get_video_info(video_path: str) -> dict:
+    def get_video_info(video_path: Optional[str]) -> dict:
         """Extracts metadata (FPS, dimensions, frame count) from the video file."""
+        if not video_path:
+            return {
+                "width": 0,
+                "height": 0,
+                "fps": 30.0,
+                "frame_count": 0,
+            }
+
         cap = cv2.VideoCapture(str(video_path))
         if not cap.isOpened():
             raise IOError(f"Could not open video: {video_path}")

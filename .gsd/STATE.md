@@ -4,19 +4,21 @@
 > **Session Status**: Paused (at 2026-02-08T17:52:00+01:00)
 
 ## Current Position
-- **Milestone**: v6.0-photo-stabilization (ACTIVE)
-- **Phase**: 1 (UI & Workflow Stabilization)
-- **Task**: Planning complete
-- **Status**: Ready for execution
+- **Milestone**: v6.0-photo-stabilization (COMPLETED)
+- **Phase**: 3 (Tab 3 UX & Performance)
+- **Task**: All phases complete and verified.
+- **Status**: Milestone v6.0 Finalized
 
 ## Last Session Summary
-Completed technical audit and planning for Milestone v6.0.
-- Identified root causes for UI hangs, ARW file size issues, Tab 3 lag, and button crashes.
-- Created 5 refined execution plans across 3 phases.
-- Updated ROADMAP.md and SPEC.md.
+Successfully completed Milestone v6.0-photo-stabilization.
+- **UI & Workflow**: Fixed startup hangs and removed annoying auto-tab switching.
+- **ARW Optimization**: Reduced photo preview sizes from multi-MB to optimized thumbnails (<300KB) with automatic resizing.
+- **Pipeline Safety**: Added defensive guards to prevent crashes when processing image folders instead of videos.
+- **Performance**: Implemented LRU caching for mask overlays and capped gallery rendering to ensure a smooth UI experience in the Filtering tab.
+- **Verification**: All changes verified via 100% pass rate in new and existing test suites.
 
 ## In-Progress Work
-- Planning finalized and verified.
+- None. All tasks for v6.0 are closed.
 - Files modified (this session): `.gsd/ROADMAP.md`, `.gsd/STATE.md`, `.gsd/JOURNAL.md`, `.gsd/phases/1/1-PLAN.md`, `.gsd/phases/1/2-PLAN.md`, `.gsd/phases/2/1-PLAN.md`, `.gsd/phases/2/2-PLAN.md`, `.gsd/phases/3/1-PLAN.md`.
 
 ## Blockers
