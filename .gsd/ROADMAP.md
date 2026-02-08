@@ -4,15 +4,51 @@
 
 ---
 
-## Milestone: v5.0-performance-architecture (ACTIVE)
+## Milestone: v6.0-photo-stabilization (ACTIVE)
+> **Goal**: Refine the Photo Mode workflow by addressing critical UI/UX bottlenecks, optimizing ARW asset management, and improving visual feedback in the analysis phase.
+
+### Must-Haves
+- [ ] Fix "System Initializing..." UI hang on startup
+- [ ] Implement `ExifTool` based `PreviewImage` extraction for RAW files
+- [ ] Remove auto-tab switching during workflow steps
+- [ ] Resolve Tab 3 slider lag via optimized filtering
+- [ ] Replace red bounding boxes with semi-transparent mask overlays in Tab 3
+- [ ] Fix "Propagate Masks" button crash and logic for image-only folders
+
+### Phases
+
+### Phase 1: UI & Workflow Stabilization
+**Objective**: Fix the immediate crashes and workflow disruptions.
+- **Tasks**:
+  - Update `update_logs` to handle `ui_update` messages correctly.
+  - Remove auto-tab switching triggers.
+  - Fix "Propagate Masks" button visibility and crash.
+  - Ensure correct return signatures for UI handlers.
+
+### Phase 2: ARW Resource Optimization & Pipeline Safety
+**Objective**: Reduce storage/memory footprint and fix pipeline crashes.
+- **Tasks**:
+  - Implement `--thumbnails-only` for efficient ARW preview extraction.
+  - Add null guards for `video_path` in `VideoManager`.
+
+### Phase 3: Tab 3 UX & Performance
+**Objective**: Enhance visual feedback and responsiveness.
+- **Tasks**:
+  - Implement mask thumbnail caching.
+  - Optimize gallery rendering to prevent main-thread lag.
+  - Finalize vectorized filtering logic.
+
+---
+
+## Milestone: v5.0-performance-architecture (ARCHIVED)
 > **Goal**: Optimize the core engine for high-performance hardware, ensure resiliency against interruptions, and finalize the transition to a clean, plugin-based architecture.
 
 ### Must-Haves
-- [ ] FFmpeg Hardware Acceleration (NVENC/VAAPI)
-- [ ] Resumable Extraction (Mid-run checkpoints)
-- [ ] Proactive Memory Management (Dynamic batch sizing)
-- [ ] Complete removal of legacy metric logic from `core/models.py`
-- [ ] Self-contained Operators (handling their own dependencies)
+- [x] FFmpeg Hardware Acceleration (NVENC/VAAPI)
+- [x] Resumable Extraction (Mid-run checkpoints)
+- [x] Proactive Memory Management (Dynamic batch sizing)
+- [x] Complete removal of legacy metric logic from `core/models.py`
+- [x] Self-contained Operators (handling their own dependencies)
 
 ### Phases
 See [.gsd/milestones/v5.0-performance-architecture-SUMMARY.md](.gsd/milestones/v5.0-performance-architecture-SUMMARY.md)

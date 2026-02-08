@@ -1,5 +1,31 @@
 # JOURNAL
 
+## Session: 2026-02-08 17:52
+
+### Objective
+Audit and Plan Milestone v6.0-photo-stabilization.
+
+### Accomplished
+- **Technical Audit**: Investigated UI hang (timer issue), ARW size (tag priority), Tab 3 lag (sync I/O), and propagation crash (VideoManager None-check).
+- **Implementation Mapping**: Created `audit_report.md` and `implementation_plan.md` in brain artifacts.
+- **Phased Planning**: Decomposed v6.0 into 3 phases and 5 atomic, verifiable `PLAN.md` files.
+- **Roadmap Sync**: Formally archived v5.0 and activated v6.0 in `.gsd/ROADMAP.md`.
+
+### Verification
+- [x] All 5 plans verified with `planner` checker logic.
+- [x] SPEC.md confirmed FINALIZED.
+- [x] Executable `<verify>` commands added to all tasks.
+
+### Paused Because
+- Planning is complete and refined. User requested a pause.
+
+### Handoff Notes
+- Startup hang is a `ui_update` propagation issue in `update_logs`.
+- Image-only folders need specific button guards in `SceneTabBuilder`.
+- Ready to start implementation with `/execute 1`.
+
+---
+
 ## Session: 2026-02-07 19:55
 
 ### Objective
