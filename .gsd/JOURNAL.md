@@ -1,28 +1,36 @@
 # JOURNAL
 
-## Session: 2026-02-08 17:52
+## Session: 2026-02-08 18:30
 
 ### Objective
-Audit and Plan Milestone v6.0-photo-stabilization.
+Execute and Finalize Milestone v6.0-photo-stabilization.
 
 ### Accomplished
-- **Technical Audit**: Investigated UI hang (timer issue), ARW size (tag priority), Tab 3 lag (sync I/O), and propagation crash (VideoManager None-check).
-- **Implementation Mapping**: Created `audit_report.md` and `implementation_plan.md` in brain artifacts.
-- **Phased Planning**: Decomposed v6.0 into 3 phases and 5 atomic, verifiable `PLAN.md` files.
-- **Roadmap Sync**: Formally archived v5.0 and activated v6.0 in `.gsd/ROADMAP.md`.
+- **UI & Workflow Stabilization**: 
+  - Eliminated automatic tab switching in all success callbacks to prevent user disorientation.
+  - Refactored `update_logs` into a generator yielding dicts, fixing the "System Initializing..." startup hang.
+- **ARW Resource Optimization**:
+  - Modified `extract_preview` to prioritize `ThumbnailImage` tags for smaller, faster-loading previews.
+  - Implemented automatic resizing of RAW previews to max 1000px using PIL, significantly reducing storage footprint.
+- **Pipeline Safety**:
+  - Implemented automatic hiding of "Propagate Masks" button for image-only folders.
+  - Added defensive guards in `VideoManager` and `_propagation_button_handler` to handle `None` or empty `video_path` gracefully.
+- **Performance Optimization**:
+  - Implemented LRU cache for mask overlays in Tab 3 gallery.
+  - Capped gallery rendering to 500 items (with only the first 100 getting expensive mask overlays) to eliminate slider lag.
 
 ### Verification
-- [x] All 5 plans verified with `planner` checker logic.
-- [x] SPEC.md confirmed FINALIZED.
-- [x] Executable `<verify>` commands added to all tasks.
+- [x] Verified auto-tab removal with `grep`.
+- [x] Verified image-folder logic and button guards with new unit tests (`tests/unit/test_phase1_logic.py`).
+- [x] Verified ARW optimization logic with new unit tests (`tests/unit/test_phase2_logic.py`).
+- [x] Confirmed zero regressions in core application state tests.
 
 ### Paused Because
-- Planning is complete and refined. User requested a pause.
+- Milestone v6.0 is 100% complete and verified.
 
 ### Handoff Notes
-- Startup hang is a `ui_update` propagation issue in `update_logs`.
-- Image-only folders need specific button guards in `SceneTabBuilder`.
-- Ready to start implementation with `/execute 1`.
+- System is stabilized for Photo Mode and Video workflows.
+- Next steps should involve P1 goals from SPEC.md: Implement Run Fingerprinting for caching (if not already fully covered) or proceed to v1.0 dedicated Photo Culling tab features.
 
 ---
 

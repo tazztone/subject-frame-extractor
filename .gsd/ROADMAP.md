@@ -4,39 +4,30 @@
 
 ---
 
-## Milestone: v6.0-photo-stabilization (ACTIVE)
+## Milestone: v6.0-photo-stabilization (ARCHIVED)
 > **Goal**: Refine the Photo Mode workflow by addressing critical UI/UX bottlenecks, optimizing ARW asset management, and improving visual feedback in the analysis phase.
 
 ### Must-Haves
-- [ ] Fix "System Initializing..." UI hang on startup
-- [ ] Implement `ExifTool` based `PreviewImage` extraction for RAW files
-- [ ] Remove auto-tab switching during workflow steps
-- [ ] Resolve Tab 3 slider lag via optimized filtering
-- [ ] Replace red bounding boxes with semi-transparent mask overlays in Tab 3
-- [ ] Fix "Propagate Masks" button crash and logic for image-only folders
+- [x] Fix "System Initializing..." UI hang on startup
+- [x] Implement `ExifTool` based `PreviewImage` extraction for RAW files
+- [x] Remove auto-tab switching during workflow steps
+- [x] Resolve Tab 3 slider lag via optimized filtering
+- [x] Replace red bounding boxes with semi-transparent mask overlays in Tab 3
+- [x] Fix "Propagate Masks" button crash and logic for image-only folders
 
 ### Phases
 
 ### Phase 1: UI & Workflow Stabilization
+**Status**: ✅ Complete
 **Objective**: Fix the immediate crashes and workflow disruptions.
-- **Tasks**:
-  - Update `update_logs` to handle `ui_update` messages correctly.
-  - Remove auto-tab switching triggers.
-  - Fix "Propagate Masks" button visibility and crash.
-  - Ensure correct return signatures for UI handlers.
 
 ### Phase 2: ARW Resource Optimization & Pipeline Safety
+**Status**: ✅ Complete
 **Objective**: Reduce storage/memory footprint and fix pipeline crashes.
-- **Tasks**:
-  - Implement `--thumbnails-only` for efficient ARW preview extraction.
-  - Add null guards for `video_path` in `VideoManager`.
 
 ### Phase 3: Tab 3 UX & Performance
+**Status**: ✅ Complete
 **Objective**: Enhance visual feedback and responsiveness.
-- **Tasks**:
-  - Implement mask thumbnail caching.
-  - Optimize gallery rendering to prevent main-thread lag.
-  - Finalize vectorized filtering logic.
 
 ---
 

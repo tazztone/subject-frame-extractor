@@ -3,19 +3,21 @@ from __future__ import annotations
 import subprocess
 import shutil
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 import logging
+from PIL import Image
 
 # Configure logger
 logger = logging.getLogger(__name__)
 
-def extract_preview(raw_path: Path, output_dir: Path) -> Optional[Path]:
+def extract_preview(raw_path: Path, output_dir: Path, thumbnails_only: bool = True) -> Optional[Path]:
     """
     Extracts the embedded JPEG preview from a RAW file using ExifTool.
 
     Args:
         raw_path: Path to the RAW image file.
         output_dir: Directory to save the extracted preview.
+        thumbnails_only: If True, prioritizes smaller ThumbnailImage over JpgFromRaw.
 
     Returns:
         Path to the extracted preview file, or None if extraction failed.
@@ -36,20 +38,11 @@ def extract_preview(raw_path: Path, output_dir: Path) -> Optional[Path]:
         return None
 
     # ExifTool command to extract the binary preview
-    # -b: Binary output
-    # -JpgFromRaw: Try to extract the JpgFromRaw tag (common in Nikon/Canon)
-    # -PreviewImage: Fallback tag
-    # -ThumbnailImage: Fallback tag
-    # -w: Write to file
-    # %d: directory, %f: filename
-    
-    # We use a simplified approach: pipe stdout to file or use specific tag extraction
-    # The most robust way is asking for -JpgFromRaw first, then others.
-    
-    # Command: exiftool -b -JpgFromRaw src.CR2 > dst.jpg
-    # If that fails (empty), try PreviewImage
-    
-    tags_to_try = ["-JpgFromRaw", "-PreviewImage", "-ThumbnailImage"]
+    # If thumbnails_only is True, we want smaller previews first to save space.
+    if thumbnails_only:
+        tags_to_try = ["-ThumbnailImage", "-PreviewImage", "-JpgFromRaw"]
+    else:
+        tags_to_try = ["-JpgFromRaw", "-PreviewImage", "-ThumbnailImage"]
     
     for tag in tags_to_try:
         try:
@@ -61,6 +54,17 @@ def extract_preview(raw_path: Path, output_dir: Path) -> Optional[Path]:
                 # Success, write to file
                 with open(preview_path, "wb") as f:
                     f.write(result.stdout)
+                
+                # Task 2.1: Resize if too large
+                try:
+                    with Image.open(preview_path) as img:
+                        if max(img.size) > 1000:
+                            img.thumbnail((1000, 1000), Image.Resampling.LANCZOS)
+                            img.save(preview_path, quality=85, optimize=True)
+                            logger.debug(f"Resized preview {preview_path} to max 1000px")
+                except Exception as e:
+                    logger.warning(f"Failed to resize extracted preview {preview_path}: {e}")
+                
                 return preview_path
                 
         except Exception as e:
@@ -70,7 +74,7 @@ def extract_preview(raw_path: Path, output_dir: Path) -> Optional[Path]:
     logger.warning(f"Could not extract any preview from {raw_path}")
     return None
 
-def ingest_folder(folder_path: Path, output_dir: Path, recursive: bool = False) -> List[Dict[str, Any]]:
+def ingest_folder(folder_path: Path, output_dir: Path, recursive: bool = False, thumbnails_only: bool = True) -> List[Dict[str, Any]]:
     """
     Scans a folder for images, extracting previews for RAW files.
 
@@ -78,6 +82,7 @@ def ingest_folder(folder_path: Path, output_dir: Path, recursive: bool = False) 
         folder_path: Path to the source folder.
         output_dir: Directory to store extracted previews.
         recursive: Whether to scan subdirectories.
+        thumbnails_only: Passed to extract_preview.
 
     Returns:
         List of dictionaries with photo metadata.
@@ -120,7 +125,7 @@ def ingest_folder(folder_path: Path, output_dir: Path, recursive: bool = False) 
             
         elif ext in raw_exts:
             # Extract preview
-            preview = extract_preview(file_path, output_dir)
+            preview = extract_preview(file_path, output_dir, thumbnails_only=thumbnails_only)
             if preview:
                 ingested_photos.append({
                     "id": photo_id,
