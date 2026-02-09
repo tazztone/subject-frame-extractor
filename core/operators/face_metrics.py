@@ -1,4 +1,5 @@
 import math
+from typing import Optional
 import numpy as np
 import mediapipe as mp
 from core.operators import OperatorConfig, OperatorResult, OperatorContext, register_operator
