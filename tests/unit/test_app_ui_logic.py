@@ -143,6 +143,18 @@ class TestAppUI:
             "face_seeding_group": MagicMock(),
             "text_seeding_group": MagicMock(),
             "auto_seeding_group": MagicMock(),
+            "total_pages_label": MagicMock(),
+            "page_number_input": MagicMock(),
+            "sceneeditorstatusmd": MagicMock(),
+            "sceneeditorpromptinput": MagicMock(),
+            "scene_editor_group": MagicMock(),
+            "subject_selection_gallery": MagicMock(),
+            "gallery_image_preview": MagicMock(),
+            "scene_mask_area_min_input": MagicMock(),
+            "scene_face_sim_min_input": MagicMock(),
+            "scene_quality_score_min_input": MagicMock(),
+            "scene_gallery_columns": MagicMock(),
+            "scene_gallery_height": MagicMock(),
         }
 
         # Populate metric sliders with string labels
@@ -258,31 +270,30 @@ class TestAppUI:
 
     # --- History/Undo ---
 
-    def test_push_history(self, app_ui):
-        history = deque()
+    def test_push_history(self, app_state):
         scenes = [{"id": 1}]
-        history = app_ui.scene_handler._push_history(scenes, history)
-        assert len(history) == 1
-        assert history[0] == scenes
+        app_state.push_history(scenes)
+        assert len(app_state.scene_history) == 1
+        assert app_state.scene_history[0] == scenes
 
-    def test_undo_last_action(self, app_ui, tmp_path):
+    def test_undo_last_action(self, app_ui, app_state, tmp_path):
         out_dir = str(tmp_path / "out")
-        history = deque()
-        history.append([{"shot_id": 1, "start_frame": 0, "end_frame": 10}])
-        scenes_current = []
+        app_state.extracted_frames_dir = out_dir
+        app_state.push_history([{"shot_id": 1, "start_frame": 0, "end_frame": 10}])
+        app_state.scenes = []
 
         with (
-            patch("ui.app_ui.save_scene_seeds"),
-            patch("ui.app_ui.build_scene_gallery_items", return_value=([], [], 1)),
-            patch("ui.app_ui.get_scene_status_text", return_value=("Stat", "Btn")),
+            patch("ui.handlers.scene_handler.save_scene_seeds"),
+            patch("ui.handlers.scene_handler.build_scene_gallery_items", return_value=([], [], 1)),
+            patch("ui.handlers.scene_handler.get_scene_status_text", return_value=("Stat", "Btn")),
         ):
-            scenes, gal, idx, msg, hist = app_ui.scene_handler._undo_last_action(
-                scenes_current, history, out_dir, "Kept"
+            new_state, gal, msg = app_ui.scene_handler._undo_last_action(
+                app_state, "Kept"
             )
 
-            assert len(scenes) == 1
-            assert scenes[0]["shot_id"] == 1
-            assert len(hist) == 0
+            assert len(new_state.scenes) == 1
+            assert new_state.scenes[0]["shot_id"] == 1
+            assert len(new_state.scene_history) == 0
 
     # --- Smart Mode Updates ---
 
@@ -299,31 +310,32 @@ class TestAppUI:
 
     # --- Bulk Scene Filters ---
 
-    def test_on_apply_bulk_scene_filters_extended(self, app_ui, tmp_path):
+    def test_on_apply_bulk_scene_filters_extended(self, app_ui, app_state, tmp_path):
         out_dir = str(tmp_path / "out")
-        scenes = [
+        app_state.extracted_frames_dir = out_dir
+        app_state.scenes = [
             {
                 "shot_id": 1,
                 "start_frame": 0,
                 "end_frame": 10,
                 "status": "included",
-                "seed_metrics": {"score": 0.9},
+                "seed_metrics": {"quality_score": 0.9},
                 "seed_result": {"details": {"mask_area_pct": 50}},
                 "manual_status_change": False,
             }
         ]
 
         with (
-            patch("ui.app_ui.save_scene_seeds"),
-            patch("ui.app_ui.build_scene_gallery_items", return_value=([], [], 1)),
+            patch("ui.handlers.scene_handler.save_scene_seeds"),
+            patch("ui.handlers.scene_handler.build_scene_gallery_items", return_value=([], [], 1)),
         ):
-            # Filter out by area (min 60)
-            res_scenes, _, _, _, _, _ = app_ui.scene_handler.on_apply_bulk_scene_filters_extended(
-                scenes, 60.0, 0.0, 0.0, False, out_dir, "Kept", deque()
+            # Signature: on_apply_bulk_scene_filters_extended(self, app_state, min_mask_pct, min_face_sim, min_quality, enable_face_filter, view)
+            new_state, _, _, _ = app_ui.scene_handler.on_apply_bulk_scene_filters_extended(
+                app_state, 60.0, 0.0, 0.0, False, "Kept"
             )
 
-            assert res_scenes[0]["status"] == "excluded"
-            assert any("Area" in r for r in res_scenes[0]["rejection_reasons"])
+            assert new_state.scenes[0]["status"] == "excluded"
+            assert any("Area" in r for r in new_state.scenes[0]["rejection_reasons"])
 
     # --- Reset Filters ---
 

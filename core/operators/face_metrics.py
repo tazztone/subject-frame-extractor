@@ -6,8 +6,32 @@ from core.operators import OperatorConfig, OperatorResult, OperatorContext, regi
 
 def _get_face_data(ctx: OperatorContext) -> tuple[Optional[dict], Optional[np.ndarray]]:
     """Helper to get or compute face landmarks and blendshapes."""
+    # Check shared data first (real inference)
     if "face_landmarker_result" in ctx.shared_data:
         return ctx.shared_data["face_landmarker_result"], ctx.shared_data.get("face_bbox")
+
+    # Support mock data for testing
+    if "face_blendshapes" in ctx.params or "face_matrix" in ctx.params:
+        # Wrap in a mock-like structure that matches MP result
+        class MockMPResult:
+            def __init__(self, blendshapes=None, matrices=None):
+                # MP returns a list of lists/objects
+                if blendshapes:
+                    class Cat:
+                        def __init__(self, name, score):
+                            self.category_name = name
+                            self.score = score
+                    self.face_blendshapes = [[Cat(k, v) for k, v in blendshapes.items()]]
+                else:
+                    self.face_blendshapes = None
+                
+                if matrices is not None:
+                    # MP returns list of np arrays
+                    self.facial_transformation_matrixes = [matrices]
+                else:
+                    self.facial_transformation_matrixes = None
+        
+        return MockMPResult(ctx.params.get("face_blendshapes"), ctx.params.get("face_matrix")), ctx.params.get("face_bbox")
 
     if not ctx.model_registry:
         return None, None

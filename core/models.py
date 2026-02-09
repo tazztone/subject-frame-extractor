@@ -236,15 +236,23 @@ class AnalysisParameters(BaseModel):
             kwargs["enable_face_filter"] = face_filter_enabled
 
         if "thumb_megapixels" in kwargs:
-            thumb_mp = kwargs["thumb_megapixels"]
-            if not isinstance(thumb_mp, (int, float)) or thumb_mp <= 0:
-                logger.warning(f"Invalid thumb_megapixels: {thumb_mp}, using default")
+            try:
+                thumb_mp = _coerce(kwargs["thumb_megapixels"], float)
+                if thumb_mp <= 0:
+                    raise ValueError
+                kwargs["thumb_megapixels"] = thumb_mp
+            except (ValueError, TypeError):
+                logger.warning(f"Invalid thumb_megapixels: {kwargs['thumb_megapixels']}, using default")
                 kwargs["thumb_megapixels"] = config.default_thumb_megapixels
 
         if "pre_sample_nth" in kwargs:
-            sample_nth = kwargs["pre_sample_nth"]
-            if not isinstance(sample_nth, int) or sample_nth < 1:
-                logger.warning(f"Invalid pre_sample_nth: {sample_nth}, using 1")
+            try:
+                sample_nth = _coerce(kwargs["pre_sample_nth"], int)
+                if sample_nth < 1:
+                    raise ValueError
+                kwargs["pre_sample_nth"] = sample_nth
+            except (ValueError, TypeError):
+                logger.warning(f"Invalid pre_sample_nth: {kwargs['pre_sample_nth']}, using 1")
                 kwargs["pre_sample_nth"] = 1
 
         valid_keys = set(cls.model_fields.keys())
@@ -263,15 +271,22 @@ class AnalysisParameters(BaseModel):
         instance = cls(**defaults)
 
         for key, value in kwargs.items():
-            if hasattr(instance, key) and value is not None:
+            if key in valid_keys and value is not None:
                 if isinstance(value, str) and not value.strip() and key not in ["text_prompt", "face_ref_img_path"]:
                     continue
-                default = getattr(instance, key)
+                
+                target_type = cls.model_fields[key].annotation
+                # Handle Optional types (extract the inner type)
+                if hasattr(target_type, "__origin__") and target_type.__origin__ is Union:
+                    args = target_type.__args__
+                    # Pick the first non-None type
+                    target_type = next((t for t in args if t is not type(None)), target_type)
+
                 try:
-                    setattr(instance, key, _coerce(value, type(default)))
+                    setattr(instance, key, _coerce(value, target_type))
                 except (ValueError, TypeError):
                     logger.warning(
-                        f"Could not coerce UI value for '{key}' to {type(default)}. Using default.",
+                        f"Could not coerce UI value for '{key}' to {target_type}. Using default.",
                         extra={"key": key, "value": value},
                     )
         return instance

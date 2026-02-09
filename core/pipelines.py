@@ -772,9 +772,14 @@ class AnalysisPipeline(Pipeline):
     ):
         """Orchestrates the parallel processing of frames with dynamic batch sizing."""
         frame_map = create_frame_map(self.thumb_dir.parent, self.logger)
-        all_frame_nums_to_process = {
-            fn for scene in scenes_to_process for fn in range(scene.start_frame, scene.end_frame) if fn in frame_map
-        }
+        all_frame_nums_to_process = set()
+        for scene in scenes_to_process:
+            # For photos, start_frame often equals end_frame (single-frame scene)
+            end = scene.end_frame if scene.end_frame > scene.start_frame else scene.start_frame + 1
+            for fn in range(scene.start_frame, end):
+                if fn in frame_map:
+                    all_frame_nums_to_process.add(fn)
+        
         image_files_to_process = [
             self.thumb_dir / frame_map[fn] for fn in sorted(list(all_frame_nums_to_process)) if frame_map.get(fn)
         ]

@@ -51,7 +51,7 @@ class TestExportKeptFrames:
 
         result = export_kept_frames(event, mock_config, mock_logger, None, None)
 
-        assert "Exported 1 frames" in result
+        assert "Exported 1 items" in result
         mock_popen.assert_called()
 
     @patch("subprocess.Popen")
@@ -150,7 +150,7 @@ class TestExportKeptFrames:
 
         result = export_kept_frames(event, mock_config, mock_logger, None, None)
 
-        assert "Exported 2 frames" in result
+        assert "Exported 2 items" in result
 
         # Check export directory
         # The export function creates a timestamped directory. We need to find it.
