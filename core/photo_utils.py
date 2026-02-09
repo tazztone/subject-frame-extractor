@@ -38,11 +38,18 @@ def extract_preview(raw_path: Path, output_dir: Path, thumbnails_only: bool = Tr
         return None
 
     # ExifTool command to extract the binary preview
-    # If thumbnails_only is True, we want smaller previews first to save space.
+    # We want a usable preview. 'PreviewImage' is usually the best balance (~100-500KB).
+    # 'JpgFromRaw' is high quality but large (multi-MB).
+    # 'ThumbnailImage' is often too small (<20KB) for a main UI preview.
+    
     if thumbnails_only:
-        tags_to_try = ["-ThumbnailImage", "-PreviewImage", "-JpgFromRaw"]
+        # Prioritize balance: PreviewImage first
+        tags_to_try = ["-PreviewImage", "-ThumbnailImage", "-JpgFromRaw"]
     else:
+        # Prioritize quality: JpgFromRaw is full resolution
         tags_to_try = ["-JpgFromRaw", "-PreviewImage", "-ThumbnailImage"]
+    
+    MIN_USABLE_SIZE = 25 * 1024  # 25KB threshold to skip tiny thumbnails
     
     for tag in tags_to_try:
         try:
@@ -50,7 +57,7 @@ def extract_preview(raw_path: Path, output_dir: Path, thumbnails_only: bool = Tr
             cmd = [exiftool_path, "-b", tag, str(raw_path)]
             result = subprocess.run(cmd, capture_output=True, check=False)
             
-            if result.returncode == 0 and len(result.stdout) > 0:
+            if result.returncode == 0 and len(result.stdout) > MIN_USABLE_SIZE:
                 # Success, write to file
                 with open(preview_path, "wb") as f:
                     f.write(result.stdout)

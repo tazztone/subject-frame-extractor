@@ -9,9 +9,10 @@ Execute and Finalize Milestone v6.0-photo-stabilization.
 - **UI & Workflow Stabilization**: 
   - Eliminated automatic tab switching in all success callbacks to prevent user disorientation.
   - Refactored `update_logs` into a generator yielding dicts, fixing the "System Initializing..." startup hang.
-- **ARW Resource Optimization**:
-  - Modified `extract_preview` to prioritize `ThumbnailImage` tags for smaller, faster-loading previews.
-  - Implemented automatic resizing of RAW previews to max 1000px using PIL, significantly reducing storage footprint.
+- **ARW Resource Optimization & Smart Selection**:
+  - Modified `extract_preview` to prioritize `PreviewImage` (~150KB) over `ThumbnailImage` (~6KB) to resolve the "unusable tiny preview" issue.
+  - Implemented a `MIN_USABLE_SIZE` (25KB) heuristic to skip tiny icons and fallback to larger embedded JPEGs if necessary.
+  - Implemented automatic resizing of RAW previews to max 1000px using PIL, significantly reducing storage footprint while maintaining usability.
 - **Pipeline Safety**:
   - Implemented automatic hiding of "Propagate Masks" button for image-only folders.
   - Added defensive guards in `VideoManager` and `_propagation_button_handler` to handle `None` or empty `video_path` gracefully.
