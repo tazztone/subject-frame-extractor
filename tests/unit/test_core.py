@@ -4,6 +4,8 @@ Tests for core functionality - Config, Logger, Filtering, and Event validation.
 Uses fixtures from conftest.py for mock setup.
 """
 
+from __future__ import annotations
+
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -15,7 +17,7 @@ from core.config import Config
 from core.events import PreAnalysisEvent
 from core.filtering import apply_all_filters_vectorized
 from core.logger import AppLogger
-from core.models import Frame, QualityConfig, _coerce
+from core.models import _coerce
 from ui.gallery_utils import auto_set_thresholds
 
 
@@ -103,35 +105,6 @@ class TestAppLogger:
         assert "frame_04.png" in rejected_filenames  # face_sim too low
         assert "frame_05.png" in rejected_filenames  # mask_area_pct too low
 
-    def test_calculate_quality_metrics_with_niqe(self, mock_config):
-        """Test quality metrics calculation including NIQE."""
-        mock_niqe_metric = MagicMock()
-        mock_niqe_metric.device.type = "cpu"
-        mock_niqe_metric.return_value = 5.0
-
-        image_data = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
-        frame = Frame(image_data=image_data, frame_number=1)
-
-        quality_config = QualityConfig(
-            sharpness_base_scale=mock_config.sharpness_base_scale,
-            edge_strength_base_scale=mock_config.edge_strength_base_scale,
-            enable_niqe=True,
-        )
-
-        with patch("core.models.torch.from_numpy") as mock_torch_from_numpy:
-            mock_tensor = MagicMock()
-            mock_tensor.to.return_value = mock_tensor
-            mock_torch_from_numpy.return_value.float.return_value.permute.return_value.unsqueeze.return_value = (
-                mock_tensor
-            )
-            frame.calculate_quality_metrics(
-                image_data, quality_config, MagicMock(), niqe_metric=mock_niqe_metric, main_config=mock_config
-            )
-
-        assert frame.metrics.niqe_score > 0
-        mock_niqe_metric.assert_called_once()
-        assert frame.error is None
-
 
 class TestPreAnalysisEvent:
     def test_face_ref_validation(self, tmp_path, mock_ui_state):
@@ -171,4 +144,5 @@ class TestPreAnalysisEvent:
 
 
 if __name__ == "__main__":
+    import pytest
     pytest.main([__file__])

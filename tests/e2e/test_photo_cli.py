@@ -16,70 +16,70 @@ def photo_test_dir(tmp_path):
     photo_dir = tmp_path / "photos"
     photo_dir.mkdir()
     
-    # Create 3 dummy JPEGs
+    # Create 3 dummy JPEGs (actual binary content to avoid PIL errors)
+    from PIL import Image
+    import numpy as np
+    
     for i in range(1, 4):
         p = photo_dir / f"test_{i}.jpg"
-        p.write_bytes(b"dummy jpeg content")
+        img = Image.fromarray(np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8))
+        img.save(p)
         
     return photo_dir
 
 def run_cli(args):
     """Helper to run cli.py."""
     cmd = [sys.executable, "cli.py"] + args
-    return subprocess.run(cmd, capture_output=True, text=True)
+    res = subprocess.run(cmd, capture_output=True, text=True)
+    # Always print output for debugging in -s mode
+    if res.stdout: print(f"CLI STDOUT:\n{res.stdout}")
+    if res.stderr: print(f"CLI STDERR:\n{res.stderr}")
+    return res
 
 class TestPhotoCLI:
-    """End-to-end tests for the 'photo' command group."""
+    """End-to-end tests for the modern unified CLI workflow."""
 
     def test_full_photo_cli_workflow(self, photo_test_dir, tmp_path):
         session_dir = tmp_path / "session"
         
-        # 1. Ingest
-        print("Running photo ingest...")
-        res = run_cli(["photo", "ingest", "--folder", str(photo_test_dir), "--output", str(session_dir)])
+        # 1. Ingestion (using 'extract' command on a folder)
+        print("Running photo ingestion...")
+        res = run_cli(["extract", "--source", str(photo_test_dir), "--output", str(session_dir)])
         assert res.returncode == 0
-        assert "Ingested 3 photos" in res.stdout
+        assert "Ingestion complete" in res.stdout
         
-        photos_json = session_dir / "photos.json"
-        assert photos_json.exists()
+        frame_map_json = session_dir / "frame_map.json"
+        assert frame_map_json.exists()
         
-        with open(photos_json) as f:
-            photos = json.load(f)
-        assert len(photos) == 3
-        assert photos[0]["type"] == "jpeg"
-        
-        # 2. Score
-        print("Running photo score...")
-        # Use simple weights
-        res = run_cli(["photo", "score", "--session", str(session_dir), "--weights", '{"sharpness": 1.0}'])
+        # 2. Analysis (using 'analyze' command)
+        print("Running photo analysis...")
+        res = run_cli(["analyze", "--session", str(session_dir), "--source", str(photo_test_dir), "--verbose"])
         assert res.returncode == 0
-        assert "Scoring complete" in res.stdout
+        assert "Analysis complete" in res.stdout
         
-        with open(photos_json) as f:
-            scored_photos = json.load(f)
-        assert "quality_score" in scored_photos[0]["scores"]
+        db_path = session_dir / "metadata.db"
+        assert db_path.exists()
         
-        # 3. Export
-        print("Running photo export...")
-        res = run_cli(["photo", "export", "--session", str(session_dir)])
-        assert res.returncode == 0
-        assert "Exported 3 XMP files" in res.stdout
+        # Verify database content (basic check)
+        from core.database import Database
+        db = Database(db_path)
+        metadata = db.load_all_metadata()
+        db.close()
         
-        # Verify XMPs exist next to source
-        for i in range(1, 4):
-            xmp = photo_test_dir / f"test_{i}.xmp"
-            assert xmp.exists()
-            content = xmp.read_text()
-            assert "xmp:Rating" in content
-            assert "xmp:Label" in content
+        assert len(metadata) == 3
+        # Check that metrics were computed (sharpness etc)
+        assert "quality_score" in metadata[0]["metrics"]
 
-    def test_ingest_invalid_folder(self, tmp_path):
-        res = run_cli(["photo", "ingest", "--folder", "/non/existent/path", "--output", str(tmp_path)])
+    def test_extract_invalid_folder(self, tmp_path):
+        res = run_cli(["extract", "--source", "/non/existent/path", "--output", str(tmp_path)])
         # Click validates Path(exists=True) and exits with 2
         assert res.returncode == 2
         assert "does not exist" in res.stderr
 
-    def test_score_missing_session(self, tmp_path):
-        res = run_cli(["photo", "score", "--session", str(tmp_path)])
+    def test_analyze_missing_session(self, tmp_path):
+        # Point to an empty dir
+        session_dir = tmp_path / "empty_session"
+        session_dir.mkdir()
+        res = run_cli(["analyze", "--session", str(session_dir), "--source", str(tmp_path)])
+        # Should fail because frame_map.json is missing
         assert res.returncode != 0
-        assert "No ingested photos found" in res.stderr or "No ingested photos found" in res.stdout

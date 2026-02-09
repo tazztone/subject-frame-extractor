@@ -5,6 +5,8 @@ These tests ensure the application handles errors gracefully and provides
 useful feedback to users.
 """
 
+from __future__ import annotations
+
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -13,7 +15,7 @@ from pydantic import ValidationError
 
 from core.config import Config
 from core.filtering import apply_all_filters_vectorized
-from core.models import AnalysisParameters, Frame, QualityConfig, Scene
+from core.models import AnalysisParameters, Frame, Scene
 
 
 class TestConfigEdgeCases:
@@ -103,9 +105,9 @@ class TestFrameEdgeCases:
         assert frame.frame_number == 1
         assert frame.metrics is not None
 
-    def test_frame_with_image_data(self, sample_image_rgb):
+    def test_frame_with_image_data(self, sample_image):
         """Test Frame stores image data correctly."""
-        frame = Frame(image_data=sample_image_rgb, frame_number=1)
+        frame = Frame(image_data=sample_image, frame_number=1)
         assert frame.image_data is not None
         assert frame.image_data.shape == (100, 100, 3)
 
@@ -138,7 +140,7 @@ class TestFilteringEdgeCases:
         }
         kept, rejected, _, _ = apply_all_filters_vectorized(sample_frames_data, filters, mock_config)
         # All frames with face_sim should be rejected (max is 0.8)
-        assert len(rejected) >= len([f for f in sample_frames_data if f.get("face_sim")])
+        assert len(rejected) >= len([f for f in sample_frames_data if f.get("face_sim") is not None])
 
 
 class TestAnalysisParametersValidation:
@@ -167,30 +169,21 @@ class TestAnalysisParametersValidation:
         assert params.enable_face_filter is True
         assert params.tracker_model_name == "sam3"
 
-
-class TestQualityConfigEdgeCases:
-    """Tests for QualityConfig edge cases."""
-
-    def test_quality_config_with_required_fields(self):
-        """Test QualityConfig with required fields."""
-        config = QualityConfig(sharpness_base_scale=2500.0, edge_strength_base_scale=100.0)
-        assert config.sharpness_base_scale == 2500.0
-        assert config.edge_strength_base_scale == 100.0
-        assert config.enable_niqe is True  # default
-
-    def test_quality_config_niqe_disabled(self):
-        """Test QualityConfig with NIQE disabled."""
-        config = QualityConfig(sharpness_base_scale=2500.0, edge_strength_base_scale=100.0, enable_niqe=False)
-        assert config.enable_niqe is False
-
-    def test_quality_config_custom_scales(self):
-        """Test QualityConfig with custom scales."""
-        config = QualityConfig(
-            sharpness_base_scale=5000.0,
-            edge_strength_base_scale=200.0,
-        )
-        assert config.sharpness_base_scale == 5000.0
-        assert config.edge_strength_base_scale == 200.0
+    def test_params_from_ui(self, mock_config):
+        """Test AnalysisParameters.from_ui factory method."""
+        logger = MagicMock()
+        ui_kwargs = {
+            "source_path": "test.mp4",
+            "compute_sharpness": "true", # Should be coerced to bool
+            "interval": "2.5", # Should be coerced to float
+            "pre_sample_nth": "10", # Should be coerced to int
+        }
+        params = AnalysisParameters.from_ui(logger, mock_config, **ui_kwargs)
+        
+        assert params.source_path == "test.mp4"
+        assert params.compute_sharpness is True
+        assert params.interval == 2.5
+        assert params.pre_sample_nth == 10
 
 
 class TestErrorHandlerDecorators:
@@ -352,4 +345,5 @@ class TestErrorSeverityAndRecoveryStrategy:
 
 
 if __name__ == "__main__":
+    import pytest
     pytest.main([__file__, "-v"])

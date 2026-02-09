@@ -655,50 +655,38 @@ class TestMaskPropagatorE2E:
             pass  # cleanup() removed
 
 
-class TestQualityMetricsE2E:
-    """Tests for quality metric calculation with real images."""
+class TestOperatorE2E:
+    """Tests for quality metric calculation using the Operator framework."""
 
-    def test_calculate_quality_metrics_real(self, test_image, tmp_path):
-        """Frame quality metrics can be calculated on real image."""
-
+    def test_run_operators_real(self, test_image, tmp_path):
+        """Standard operators can be executed on a real image."""
         from core.config import Config
         from core.logger import AppLogger
-        from core.models import Frame, QualityConfig
+        from core.operators import run_operators, discover_operators
 
         config = Config(logs_dir=str(tmp_path / "logs"))
         logger = AppLogger(config, log_to_console=False, log_to_file=False)
+        
+        # Ensure operators are discovered
+        discover_operators()
 
-        quality_config = QualityConfig(
-            sharpness_base_scale=config.sharpness_base_scale,
-            edge_strength_base_scale=config.edge_strength_base_scale,
-            enable_niqe=False,  # Skip NIQE for speed
+        # Run subset of operators for speed
+        results = run_operators(
+            image_rgb=test_image,
+            config=config,
+            operators=["sharpness", "edge_strength", "contrast", "brightness"],
+            logger=logger
         )
 
-        frame = Frame(image_data=test_image, frame_number=0)
+        assert "sharpness" in results
+        assert results["sharpness"].success is True
+        assert "sharpness_score" in results["sharpness"].metrics
+        assert "edge_strength" in results
+        assert results["edge_strength"].success is True
 
-        # This tests real metric calculation
-        frame.calculate_quality_metrics(
-            test_image,
-            quality_config,
-            logger,
-            main_config=config,
-            metrics_to_compute={
-                "sharpness": True,
-                "edge_strength": True,
-                "contrast": True,
-                "brightness": True,
-                "entropy": True,
-            },
-        )
-
-        assert frame.metrics is not None
-        assert frame.metrics.sharpness_score is not None
-        assert frame.metrics.edge_strength_score is not None
-
-    def test_niqe_metric_calculation(self, test_image, tmp_path):
-        """NIQE metric can be calculated (requires pyiqa)."""
+    def test_niqe_operator_real(self, test_image, tmp_path):
+        """NIQE operator can be executed (requires pyiqa and GPU)."""
         import torch
-
         if not torch.cuda.is_available():
             pytest.skip("CUDA not available")
 
@@ -709,34 +697,32 @@ class TestQualityMetricsE2E:
 
         from core.config import Config
         from core.logger import AppLogger
-        from core.models import Frame, QualityConfig
+        from core.operators import run_operators, discover_operators, OperatorRegistry
 
         config = Config(logs_dir=str(tmp_path / "logs"))
         logger = AppLogger(config, log_to_console=False, log_to_file=False)
+        
+        discover_operators()
+        niqe_op = OperatorRegistry.get("niqe")
+        if not niqe_op:
+            pytest.skip("NIQE operator not found")
+            
+        # Initialize the operator (loads model)
+        niqe_op.initialize(config)
 
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        niqe_metric = pyiqa.create_metric("niqe", device=device)
+        try:
+            results = run_operators(
+                image_rgb=test_image,
+                config=config,
+                operators=["niqe"],
+                logger=logger
+            )
 
-        quality_config = QualityConfig(
-            sharpness_base_scale=config.sharpness_base_scale,
-            edge_strength_base_scale=config.edge_strength_base_scale,
-            enable_niqe=True,
-        )
-
-        frame = Frame(image_data=test_image, frame_number=0)
-
-        frame.calculate_quality_metrics(
-            test_image,
-            quality_config,
-            logger,
-            main_config=config,
-            niqe_metric=niqe_metric,
-            metrics_to_compute={"quality": True},
-        )
-
-        assert frame.metrics is not None
-        # NIQE score should be calculated
-        assert frame.metrics.niqe_score is not None or frame.metrics.quality_score is not None
+            assert "niqe" in results
+            assert results["niqe"].success is True
+            assert "niqe_score" in results["niqe"].metrics
+        finally:
+            niqe_op.cleanup()
 
 
 class TestExportE2E:

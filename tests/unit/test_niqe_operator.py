@@ -1,100 +1,81 @@
-import pytest
 from unittest.mock import MagicMock, patch
 import numpy as np
+import pytest
 import torch
-import sys
-from core.operators import OperatorContext, OperatorResult
+
 from core.operators.niqe import NiqeOperator
+from core.operators import OperatorContext
 
 class TestNiqeOperator:
     @pytest.fixture
     def operator(self):
         return NiqeOperator()
 
-    @pytest.fixture
-    def sample_image(self):
-        return np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
-
     def test_config(self, operator):
-        assert operator.config.name == "niqe"
-        
-    def test_uninitialized_execution_fails(self, operator, sample_image):
-        """Execute fails if initialize() not called."""
-        ctx = OperatorContext(image_rgb=sample_image)
+        cfg = operator.config
+        assert cfg.name == "niqe"
+        assert cfg.display_name == "NIQE Score"
+        assert cfg.category == "quality"
+
+    def test_uninitialized_execution_fails(self, operator):
+        ctx = OperatorContext(image_rgb=np.zeros((100, 100, 3), dtype=np.uint8))
         result = operator.execute(ctx)
         assert result.success is False
         assert "not initialized" in result.error
 
-    @patch("core.operators.niqe.torch")
-    def test_initialize_loads_model(self, mock_torch, operator):
-        """Initialize loads model via pyiqa."""
-        mock_torch.cuda.is_available.return_value = False
+    @patch("pyiqa.create_metric")
+    def test_initialize_loads_model(self, mock_create, operator):
         mock_config = MagicMock()
-        
-        # Mock pyiqa in sys.modules
-        mock_pyiqa = MagicMock()
-        with patch.dict(sys.modules, {"pyiqa": mock_pyiqa}):
-            operator.initialize(mock_config)
-            
-            mock_pyiqa.create_metric.assert_called_once()
-            assert operator.model is not None
-            assert operator.device == "cpu"
+        operator.initialize(mock_config)
+        mock_create.assert_called_once_with("niqe", device=pytest.any_any)
+        assert operator._model is not None
 
-    @patch("core.operators.niqe.torch") 
-    def test_execute_flow(self, mock_torch, operator, sample_image):
-        """Execute runs model and normalizes score."""
-        # Setup mocks
+    @patch("pyiqa.create_metric")
+    def test_execute_flow(self, mock_create, operator):
+        # Setup mock model
         mock_model = MagicMock()
-        mock_model.return_value = 10.0 # Raw NIQE score
+        mock_model.return_value = torch.tensor([5.0]) # Lower NIQE is better
+        mock_model.device = torch.device("cpu")
+        mock_create.return_value = mock_model
         
-        # Configure torch mocks for the tensor chain
-        mock_tensor = MagicMock()
-        mock_torch.from_numpy.return_value.float.return_value.div.return_value.permute.return_value.unsqueeze.return_value = mock_tensor
-        # Configure default device
-        mock_torch.cuda.is_available.return_value = False
+        mock_config = MagicMock()
+        mock_config.quality_niqe_offset = 15.0
+        mock_config.quality_niqe_scale_factor = 10.0
         
-        # initialize uses pyiqa
-        mock_pyiqa = MagicMock()
-        mock_pyiqa.create_metric.return_value = mock_model
+        operator.initialize(mock_config)
         
-        with patch.dict(sys.modules, {"pyiqa": mock_pyiqa}):
-            operator.initialize(None)
-            
-            # Execute
-            ctx = OperatorContext(image_rgb=sample_image)
-            result = operator.execute(ctx)
-            
-            assert result.success is True
-            # Score calculation: 100 - (10.0 * 2) = 80.0
-            assert result.metrics["niqe_score"] == 80.0
+        img = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
+        ctx = OperatorContext(image_rgb=img, config=mock_config)
+        
+        result = operator.execute(ctx)
+        
+        assert result.success is True
+        # (15.0 - 5.0) * 10.0 = 100.0 (capped at 100)
+        assert result.metrics["niqe_score"] == 100.0
 
-    @patch("core.operators.niqe.torch")
-    def test_execute_with_config_overrides(self, mock_torch, operator, sample_image):
-        """Config overrides affect normalization."""
+    @patch("pyiqa.create_metric")
+    def test_execute_with_config_overrides(self, mock_create, operator):
         mock_model = MagicMock()
-        mock_model.return_value = 10.0
+        mock_model.return_value = torch.tensor([10.0])
+        mock_model.device = torch.device("cpu")
+        mock_create.return_value = mock_model
         
-        # Force device valid
-        mock_torch.cuda.is_available.return_value = False
-        mock_torch.from_numpy.return_value.float.return_value.div.return_value.permute.return_value.unsqueeze.return_value = MagicMock()
-
-        mock_pyiqa = MagicMock()
-        mock_pyiqa.create_metric.return_value = mock_model
+        # Test custom offset/scale
+        mock_config = MagicMock()
+        mock_config.quality_niqe_offset = 12.0
+        mock_config.quality_niqe_scale_factor = 5.0
         
-        with patch.dict(sys.modules, {"pyiqa": mock_pyiqa}):
-            operator.initialize(None)
-            
-            mock_cfg = MagicMock()
-            mock_cfg.quality_niqe_offset = 50.0
-            mock_cfg.quality_niqe_scale_factor = 1.0
-            
-            ctx = OperatorContext(image_rgb=sample_image, config=mock_cfg)
-            result = operator.execute(ctx)
-            
-            # Score: 50 - (10 * 1) = 40.0
-            assert result.metrics["niqe_score"] == 40.0
+        operator.initialize(mock_config)
+        
+        img = np.zeros((100, 100, 3), dtype=np.uint8)
+        ctx = OperatorContext(image_rgb=img, config=mock_config)
+        
+        result = operator.execute(ctx)
+        
+        # (12.0 - 10.0) * 5.0 = 10.0
+        assert result.metrics["niqe_score"] == 10.0
 
     def test_cleanup_clears_model(self, operator):
-        operator.model = "something"
+        operator._model = MagicMock()
         operator.cleanup()
-        assert operator.model is None
+        assert operator._model is None
