@@ -48,6 +48,18 @@ def _sanitize_face_ref(kwargs: dict, logger: "AppLogger") -> tuple[str, bool]:
     return str(p), True
 
 
+class QualityConfig(BaseModel):
+    """
+    Configuration for quality metric normalization.
+    DEPRECATED: Replaced by AnalysisParameters and Operator logic.
+    Included for backward compatibility with existing tests.
+    """
+
+    sharpness_base_scale: float
+    edge_strength_base_scale: float
+    enable_niqe: bool = True
+
+
 class FrameMetrics(BaseModel):
     """Container for calculated quality scores for a frame."""
 
