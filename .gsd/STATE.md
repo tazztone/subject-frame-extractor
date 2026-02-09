@@ -10,9 +10,10 @@
 - **Status**: Milestone v6.0 Finalized
 
 ## Last Session Summary
-Successfully completed Milestone v6.0-photo-stabilization.
+Successfully completed Milestone v6.0-photo-stabilization and implemented Smart Preview Selection.
 - **UI & Workflow**: Fixed startup hangs and removed annoying auto-tab switching.
 - **ARW Optimization**: Reduced photo preview sizes from multi-MB to optimized thumbnails (<300KB) with automatic resizing.
+- **Smart Preview Selection**: Refined ExifTool logic to prioritize `PreviewImage` (~150KB) over tiny `ThumbnailImage` (6KB) and added a 25KB minimum size heuristic to ensure usable UI previews.
 - **Pipeline Safety**: Added defensive guards to prevent crashes when processing image folders instead of videos.
 - **Performance**: Implemented LRU caching for mask overlays and capped gallery rendering to ensure a smooth UI experience in the Filtering tab.
 - **Verification**: All changes verified via 100% pass rate in new and existing test suites.
