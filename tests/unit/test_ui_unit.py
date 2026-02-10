@@ -6,6 +6,7 @@ import pytest
 from core.events import ExtractionEvent
 from core.pipelines import execute_extraction
 from ui.app_ui import AppUI
+from core.application_state import ApplicationState
 
 
 @pytest.fixture
@@ -103,19 +104,19 @@ class TestMinConfidenceFilter:
         with patch("ui.app_ui.save_scene_seeds"):
             with patch("ui.app_ui.build_scene_gallery_items", return_value=([], [], 1)):
                 with patch("ui.app_ui.get_scene_status_text", return_value=("Status", MagicMock())):
+                    state = ApplicationState(scenes=scenes, extracted_frames_dir="/tmp/test")
                     result = app_ui.scene_handler.on_apply_bulk_scene_filters_extended(
-                        scenes=scenes,
+                        state,
                         min_mask_pct=0.0,
                         min_face_sim=0.0,
                         min_quality=0.5,  # Set threshold > 0
                         enable_face_filter=False,
-                        output_dir="/tmp/test",
                         view="All",
-                        history=deque(),
                     )
 
         # Scene should be excluded because score defaults to 0, which is < 0.5
-        updated_scenes = result[0]
+        updated_state = result[0]
+        updated_scenes = updated_state.scenes
         assert updated_scenes[0]["status"] == "excluded", (
             "Scene without score should be excluded when min_quality_score > 0"
         )
@@ -142,18 +143,18 @@ class TestMinConfidenceFilter:
         with patch("ui.app_ui.save_scene_seeds"):
             with patch("ui.app_ui.build_scene_gallery_items", return_value=([], [], 1)):
                 with patch("ui.app_ui.get_scene_status_text", return_value=("Status", MagicMock())):
+                    state = ApplicationState(scenes=scenes, extracted_frames_dir="/tmp/test")
                     result = app_ui.scene_handler.on_apply_bulk_scene_filters_extended(
-                        scenes=scenes,
+                        state,
                         min_mask_pct=0.0,
                         min_face_sim=0.0,
                         min_quality=0.5,
                         enable_face_filter=False,
-                        output_dir="/tmp/test",
                         view="All",
-                        history=deque(),
                     )
 
-        updated_scenes = result[0]
+        updated_state = result[0]
+        updated_scenes = updated_state.scenes
         assert updated_scenes[0]["status"] == "included", "Scene with score >= threshold should be kept"
 
     def test_manual_override_not_affected_by_filters(self, app_ui):
@@ -176,18 +177,18 @@ class TestMinConfidenceFilter:
         with patch("ui.app_ui.save_scene_seeds"):
             with patch("ui.app_ui.build_scene_gallery_items", return_value=([], [], 1)):
                 with patch("ui.app_ui.get_scene_status_text", return_value=("Status", MagicMock())):
+                    state = ApplicationState(scenes=scenes, extracted_frames_dir="/tmp/test")
                     result = app_ui.scene_handler.on_apply_bulk_scene_filters_extended(
-                        scenes=scenes,
+                        state,
                         min_mask_pct=0.0,
                         min_face_sim=0.0,
                         min_quality=0.9,  # High threshold
                         enable_face_filter=False,
-                        output_dir="/tmp/test",
                         view="All",
-                        history=deque(),
                     )
 
-        updated_scenes = result[0]
+        updated_state = result[0]
+        updated_scenes = updated_state.scenes
         assert updated_scenes[0]["status"] == "included", "Manual override scenes should not be auto-filtered"
 
 

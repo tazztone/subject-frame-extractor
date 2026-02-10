@@ -40,7 +40,7 @@ class TestPipelines:
 
     @patch("core.pipelines.run_ffmpeg_extraction")
     @patch("core.pipelines.VideoManager.get_video_info")
-    @patch("core.pipelines.validate_video_file")
+    @patch("core.managers.validate_video_file")
     def test_extraction_pipeline_run_video(self, mock_val, mock_info, mock_run_ffmpeg, mock_logger, mock_config, tmp_path):
         mock_info.return_value = {"fps": 30, "frame_count": 300}
         
@@ -86,7 +86,7 @@ class TestPipelines:
         res = pipeline.run()
         
         assert res["done"] is True
-        assert "photos" in res["output_dir"]
+        assert res["output_dir"] == str(tmp_path)
 
     @patch("core.pipelines.initialize_analysis_models")
     @patch("core.pipelines.SubjectMasker")

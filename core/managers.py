@@ -298,6 +298,11 @@ class SAM3Wrapper:
                 checkpoint_path=checkpoint_path,
                 gpus_to_use=gpus_to_use
             )
+        
+        # Ensure model is on the correct dtype to prevent BFloat16/float32 bias mismatch
+        # This is applied here to avoid modifying the read-only SAM3_repo submodule.
+        if device == "cuda" and hasattr(self.predictor, "model"):
+            self.predictor.model.to(dtype=torch.float32)
 
         # Session state
         self.session_id = None

@@ -69,6 +69,10 @@ def mock_config():
     config.quality_contrast_clamp = 50.0
     config.ffmpeg_thumbnail_quality = 100
     config.cache_cleanup_threshold = 0.9
+    config.cache_size = 100
+    config.cache_thumbnail_max_size = 100
+    config.cache_eviction_factor = 0.5
+    config.seeding_iou_threshold = 0.5
     # Analysis params
     config.analysis_default_workers = 4
     config.analysis_default_batch_size = 8

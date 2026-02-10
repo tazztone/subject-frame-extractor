@@ -466,7 +466,7 @@ class AppUI:
                                 "show_debug_logs", "checkbox", {"label": "Show Debug Logs", "value": False}
                             )
                             # Hidden refresh button, now handled by Timer
-                            self._create_component("refresh_logs_button", "button", {"value": "🔄 Refresh", "scale": 1, "visible": False})
+                            self._create_component("refresh_logs_button", "button", {"value": "🔄 Refresh", "scale": 1, "visible": True})
                             self._create_component("clear_logs_button", "button", {"value": "🗑️ Clear", "scale": 1})
                             self._create_component("export_logs_button", "button", {"value": "📥 Export to File", "scale": 1, "visible": False})
 
@@ -926,16 +926,16 @@ class AppUI:
             ):
                 if isinstance(result, dict):
                     if self.cancel_event.is_set():
-                        yield {"unified_log": "Cancelled."}
+                        yield {self.components["unified_log"]: "Cancelled."}
                         return
                     if result.get("done"):
                         if success_callback:
                             yield success_callback(result)
                         return
-            yield {"unified_log": "❌ Failed."}
+            yield {self.components["unified_log"]: "❌ Failed."}
         except Exception as e:
             self.app_logger.error("Pipeline failed", exc_info=True)
-            yield {"unified_log": f"[ERROR] {e}"}
+            yield {self.components["unified_log"]: f"[ERROR] {e}"}
 
     def run_extraction_wrapper(self, current_state: ApplicationState, *args, progress=None):
         """Wrapper to execute the extraction pipeline."""
@@ -1039,7 +1039,7 @@ class AppUI:
         status_text, button_update = get_scene_status_text(scenes_objs)
         
         # Hide propagation for image-only folders
-        if is_image_folder(result["output_dir"]):
+        if not new_state.extracted_video_path:
             button_update = gr.update(visible=False)
         else:
             # Ensure visible for videos
@@ -1084,7 +1084,7 @@ class AppUI:
     def run_propagation_wrapper(self, scenes, current_state: ApplicationState, *args, progress=None):
         """Wrapper to execute the mask propagation pipeline."""
         if not scenes:
-            yield {"unified_log": "No scenes."}
+            yield {self.components["unified_log"]: "No scenes."}
             return
         params = self._create_pre_analysis_event(current_state, *args)
         event = PropagationEvent(
@@ -1110,7 +1110,7 @@ class AppUI:
     def run_analysis_wrapper(self, scenes, current_state: ApplicationState, *args, progress=None):
         """Wrapper to execute the full analysis pipeline."""
         if not scenes:
-            yield {"unified_log": "No scenes."}
+            yield {self.components["unified_log"]: "No scenes."}
             return
         params = self._create_pre_analysis_event(current_state, *args)
         event = PropagationEvent(
