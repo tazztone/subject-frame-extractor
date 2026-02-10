@@ -84,8 +84,14 @@ class TestFindPeopleButtonRegression:
                 face_option.click()
                 time.sleep(0.5)
 
+                # Click the Scan Video tab
+                scan_tab = page.get_by_role("tab", name="🔍 Scan Video for People")
+                if scan_tab.is_visible():
+                    scan_tab.click()
+                    time.sleep(0.5)
+
                 # Find People button should be visible
-                find_people_btn = page.get_by_role("button", name="Find People in Video")
+                find_people_btn = page.get_by_role("button", name="🔍 Scan Video Now")
                 expect(find_people_btn).to_be_visible(timeout=5000)
                 print("✓ Find People button is visible")
 
@@ -110,12 +116,12 @@ class TestFilterSlidersRegression:
                 time.sleep(0.5)
 
             # Check for Face Similarity slider (0-1 range)
-            face_sim_slider = page.get_by_label("Min Face Similarity")
+            face_sim_slider = page.get_by_label("Min Face Similarity").first
             if face_sim_slider.is_visible():
                 print("✓ Face Similarity slider found")
 
             # Check for Quality Score slider (0-20 range)
-            quality_slider = page.get_by_label("Min Quality Score")
+            quality_slider = page.get_by_label("Min Quality Score").first
             if quality_slider.is_visible():
                 print("✓ Quality Score slider found")
 
@@ -150,12 +156,12 @@ class TestGallerySizeControlsRegression:
             time.sleep(1)
 
             # Check for Columns slider
-            columns_slider = page.get_by_label("Columns")
+            columns_slider = page.get_by_label("Columns").first
             if columns_slider.is_visible():
                 print("✓ Columns slider found")
 
             # Check for Height slider
-            height_slider = page.get_by_label("Gallery Height")
+            height_slider = page.get_by_label("Gallery Height").first
             if height_slider.is_visible():
                 print("✓ Height slider found")
 

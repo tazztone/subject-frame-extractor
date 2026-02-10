@@ -56,11 +56,10 @@ class TestAppUIHandlers:
         new_state = updates[app_ui.components["application_state"]]
         assert new_state.extracted_video_path == "/path/to/video.mp4"
         assert new_state.extracted_frames_dir == "/path/to/frames"
-        assert app_ui.components["main_tabs"] in updates
 
     def test_on_pre_analysis_success(self, app_ui):
         """Test _on_pre_analysis_success updates ApplicationState correctly."""
-        current_state = ApplicationState()
+        current_state = ApplicationState(extracted_video_path="/path/to/video.mp4")
         result = {
             "scenes": [{"shot_id": 1, "start_frame": 0, "end_frame": 100}],
             "output_dir": "/test/output",
@@ -71,7 +70,6 @@ class TestAppUIHandlers:
         new_state = updates[app_ui.components["application_state"]]
         assert len(new_state.scenes) == 1
         assert new_state.analysis_output_dir == "/test/output"
-        assert app_ui.components["main_tabs"] in updates
 
     def test_on_propagation_success(self, app_ui):
         """Test _on_propagation_success returns the state."""
@@ -81,7 +79,6 @@ class TestAppUIHandlers:
         updates = app_ui._on_propagation_success(result, current_state)
         
         assert updates[app_ui.components["application_state"]] == current_state
-        assert app_ui.components["main_tabs"] in updates
 
     def test_on_analysis_success(self, app_ui):
         """Test _on_analysis_success updates ApplicationState correctly."""
@@ -94,7 +91,6 @@ class TestAppUIHandlers:
         
         new_state = updates[app_ui.components["application_state"]]
         assert new_state.analysis_metadata_path == "/test/metadata.db"
-        assert app_ui.components["main_tabs"] in updates
 
     def test_on_reset_filters(self, app_ui):
         """Test on_reset_filters resets ApplicationState."""

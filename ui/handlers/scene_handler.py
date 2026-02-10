@@ -49,35 +49,12 @@ class SceneHandler:
             )
             # Generate page choices for dropdown
             page_choices = [str(i) for i in range(1, total_pages + 1)] if total_pages > 0 else ["1"]
-            return (
-                gr.update(value=items),
-                index_map, # We still update the index map state, but it should be derived from app_state if possible, 
-                           # or we just return it to update the legacy component if it still exists, 
-                           # but likely we should return it to a dummy or part of app_state? 
-                           # Wait, index_map IS in app_state now: scene_gallery_index_map.
-                           # But build_scene_gallery_items returns it.
-                           # We should update app_state with it?
-                           # on_page_change is wired to outputs: [scene_gallery, scene_gallery_index_map_state...]
-                           # We should switch to updating app_state?
-                           # BUT on_page_change doesn't modify SCENES, just the VIEW map.
-                           # app_state.scene_gallery_index_map IS the state. So we should update it.
-            ) 
-            # RE-THINK:
-            # Gr.update cannot update a specific field of a Pydantic model inside a gr.State. 
-            # We must return the WHOLE app_state object to update the gr.State component.
-            # So on_page_change MUST return app_state.
             
             app_state.scene_gallery_index_map = index_map
             
             return (
                 app_state,
                 gr.update(value=items),
-                # We don't need to return index_map separately if no component consumes it directly 
-                # (except passing it back to state).
-                # But wait, other components might read c["scene_gallery_index_map_state"].
-                # In Plan 0.3 we remove legacy states. So we should remove c["scene_gallery_index_map_state"] usage.
-                # All consumers should read from app_state.
-                
                 f"/ {total_pages} pages",
                 gr.update(choices=page_choices, value=str(current_page)),
             )

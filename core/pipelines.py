@@ -1134,7 +1134,7 @@ class PreAnalysisPipeline(Pipeline):
         masker.frame_map = masker._create_frame_map(str(self.output_dir))
         
         previews_dir = self.output_dir / "previews"
-        previews_dir.mkdir(exist_ok=True)
+        previews_dir.mkdir(exist_ok=True, parents=True)
 
         for scene in scenes:
             if self.cancel_event.is_set():
@@ -1453,6 +1453,7 @@ def execute_analysis(
             yield {
                 "unified_log": "Analysis complete. You can now proceed to the Filtering & Export tab.",
                 "output_dir": result["output_dir"],
+                "metadata_path": str(Path(result["output_dir"]) / "metadata.db"),
                 "done": True,
             }
         else:

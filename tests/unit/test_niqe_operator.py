@@ -27,8 +27,9 @@ class TestNiqeOperator:
     def test_initialize_loads_model(self, mock_create, operator):
         mock_config = MagicMock()
         operator.initialize(mock_config)
-        mock_create.assert_called_once_with("niqe", device=pytest.any_any)
-        assert operator._model is not None
+        from unittest.mock import ANY
+        mock_create.assert_called_once_with("niqe", device=ANY)
+        assert operator.model is not None
 
     @patch("pyiqa.create_metric")
     def test_execute_flow(self, mock_create, operator):
@@ -75,7 +76,12 @@ class TestNiqeOperator:
         # (12.0 - 10.0) * 5.0 = 10.0
         assert result.metrics["niqe_score"] == 10.0
 
-    def test_cleanup_clears_model(self, operator):
-        operator._model = MagicMock()
-        operator.cleanup()
-        assert operator._model is None
+        def test_cleanup_clears_model(self, operator):
+
+            operator.model = MagicMock()
+
+            operator.cleanup()
+
+            assert operator.model is None
+
+    

@@ -63,7 +63,7 @@ class TestPhase1Logic(unittest.TestCase):
             "scenes": [],
             "output_dir": "/mock/video"
         }
-        current_state = ApplicationState()
+        current_state = ApplicationState(extracted_video_path="/mock/video.mp4")
         
         with patch('ui.app_ui.Scene', side_effect=lambda **kwargs: kwargs):
             updates = self.app._on_pre_analysis_success(result, current_state)

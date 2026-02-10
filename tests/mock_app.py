@@ -67,7 +67,6 @@ import core.managers
 import core.pipelines
 import core.utils
 import core.photo_utils
-import core.photo_scoring
 import core.xmp_writer
 from core.models import Scene
 
@@ -220,9 +219,6 @@ core.pipelines.execute_pre_analysis = ui.app_ui.execute_pre_analysis = mock_pre_
 core.pipelines.execute_propagation = ui.app_ui.execute_propagation = mock_propagation_execution
 core.pipelines.execute_analysis = ui.app_ui.execute_analysis = mock_analysis_execution
 core.photo_utils.ingest_folder = mock_ingest_folder
-import ui.tabs.photo_tab
-ui.tabs.photo_tab.ingest_folder = mock_ingest_folder
-core.photo_scoring.apply_scores_to_photos = mock_apply_scores_to_photos
 core.xmp_writer.export_xmps_for_photos = mock_export_xmps_for_photos
 # Patch download_model to avoid network calls
 core.utils.download_model = MagicMock()

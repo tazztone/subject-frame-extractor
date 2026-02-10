@@ -83,7 +83,7 @@ class TestFacePoseOperator:
     def test_missing_matrix(self, operator, sample_image):
         ctx = OperatorContext(image_rgb=sample_image, params={})
         result = operator.execute(ctx)
-        assert "Missing face_matrix" in result.warnings[0]
+        assert "No face transformation matrix detected" in result.warnings[0]
 
     def test_identity_matrix(self, operator, sample_image):
         """Identity matrix -> all 0 angles."""
