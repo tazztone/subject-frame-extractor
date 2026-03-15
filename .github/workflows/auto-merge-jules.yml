@@ -4,13 +4,13 @@ on:
     types:
       - opened
       - synchronize
-      - ready_for_review  # Added this so it triggers when you click "Ready for review"
+      - ready_for_review
 
 jobs:
   approve-and-merge:
     runs-on: ubuntu-latest
-    # Run for Jules OR yourself (for testing)
-    if: github.actor == 'google-labs-jules' || github.actor == 'tazztone'
+    # Only allow the Jules AI agent — not personal accounts
+    if: github.actor == 'google-labs-jules'
     permissions:
       contents: write
       pull-requests: write
@@ -22,9 +22,9 @@ jobs:
         run: |
           # 1. Mark as ready for review (if it is a draft)
           gh pr ready "$PR_URL" || true
-          
+
           # 2. Approve the PR
           gh pr review --approve "$PR_URL"
-          
+
           # 3. Merge immediately
           gh pr merge --auto --merge --delete-branch "$PR_URL"
