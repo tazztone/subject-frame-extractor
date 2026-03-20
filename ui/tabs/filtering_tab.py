@@ -51,6 +51,7 @@ class FilteringTabBuilder:
                                 "value": self.config.gradio_auto_pctl_input,
                                 "step": 1,
                                 "container": False,
+                                "show_label": False,
                             },
                         )
                 with gr.Column(scale=1):
@@ -207,6 +208,7 @@ class FilteringTabBuilder:
                                 "value": "Kept",
                                 "label": "Show",
                                 "container": False,
+                                "show_label": False,
                             },
                         )
                         self.app._create_component(
@@ -224,6 +226,7 @@ class FilteringTabBuilder:
                                 "value": self.config.gradio_overlay_alpha,
                                 "step": 0.1,
                                 "container": False,
+                                "show_label": False,
                             },
                         )
                     self.app._create_component(

@@ -1,27 +1,28 @@
+import shutil
 import sys
 import threading
-import shutil
+from collections import deque
 from pathlib import Path
 from queue import Queue
-from collections import deque
+
 import pytest
 
 # Add root to path so we can import core modules
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from core.config import Config
-from core.logger import AppLogger
-from core.managers import ModelRegistry, ThumbnailManager
-from core.pipelines import (
-    execute_extraction,
-    execute_pre_analysis,
-    execute_propagation,
-    execute_analysis,
-)
 from core.events import (
     ExtractionEvent,
     PreAnalysisEvent,
     PropagationEvent,
+)
+from core.logger import AppLogger
+from core.managers import ModelRegistry, ThumbnailManager
+from core.pipelines import (
+    execute_analysis,
+    execute_extraction,
+    execute_pre_analysis,
+    execute_propagation,
 )
 
 # Constants from the manual script
@@ -36,7 +37,7 @@ def test_real_end_to_end_workflow(tmp_path):
     Runs the full extraction -> pre-analysis -> propagation -> analysis pipeline
     on a real video file.
     """
-    
+
     # 1. Setup & Checks
     if not VIDEO_PATH.exists():
         pytest.skip(f"Test video not found at {VIDEO_PATH}. Skip integration test.")
@@ -44,24 +45,24 @@ def test_real_end_to_end_workflow(tmp_path):
         pytest.skip(f"Test face image not found at {FACE_PATH}. Skip integration test.")
 
     print(f"\n🚀 Starting E2E Verification with real data at {tmp_path}...")
-    
+
     # Use a fixed path for debugging artifacts
     output_dir = Path(__file__).parent / "e2e_output_debug"
     if output_dir.exists():
         shutil.rmtree(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    
+
     config = Config()
     # Disable memory watchdog for E2E test to prevent model unloading
     config.monitoring_memory_critical_threshold_mb = 64000
-    
+
     # Disable file logging for dry run
     logger = AppLogger(config, log_to_file=False)
     progress_queue = Queue()
     cancel_event = threading.Event()
     model_registry = ModelRegistry(logger)
     thumbnail_manager = ThumbnailManager(logger, config)
-    
+
     # 2. Extraction
     print("\n--- [STAGE 1: EXTRACTION] ---")
     ext_event = ExtractionEvent(
@@ -75,15 +76,15 @@ def test_real_end_to_end_workflow(tmp_path):
         scene_detect=True,
         output_folder=str(output_dir)
     )
-    
+
     ext_gen = execute_extraction(
         ext_event, progress_queue, cancel_event, logger, config, thumbnail_manager, model_registry=model_registry
     )
-    
+
     ext_result = deque(ext_gen, maxlen=1)[0]
     assert ext_result.get("done"), f"Extraction failed: {ext_result.get('unified_log')}"
     print("✅ Extraction complete.")
-    
+
     # 3. Pre-Analysis
     print("\n--- [STAGE 2: PRE-ANALYSIS] ---")
     pre_ana_event = PreAnalysisEvent(
@@ -117,7 +118,7 @@ def test_real_end_to_end_workflow(tmp_path):
         compute_niqe=False,
         compute_phash=True
     )
-    
+
     # Check for CUDA availability for the test
     import torch
     cuda_available = torch.cuda.is_available()
@@ -125,18 +126,18 @@ def test_real_end_to_end_workflow(tmp_path):
         print("⚠️ CUDA not available, some models might be slow or fail if they require GPU.")
 
     pre_ana_gen = execute_pre_analysis(
-        pre_ana_event, progress_queue, cancel_event, logger, config, thumbnail_manager, 
+        pre_ana_event, progress_queue, cancel_event, logger, config, thumbnail_manager,
         cuda_available=cuda_available,
         model_registry=model_registry
     )
-    
+
     pre_ana_result = deque(pre_ana_gen, maxlen=1)[0]
     assert pre_ana_result.get("done"), f"Pre-analysis failed: {pre_ana_result.get('unified_log')}"
-    
+
     scenes = pre_ana_result["scenes"]
     print(f"✅ Pre-analysis complete. Found {len(scenes)} scenes.")
     assert len(scenes) > 0, "No scenes found during pre-analysis"
-    
+
     # 4. Propagation
     print("\n--- [STAGE 3: MASK PROPAGATION] ---")
     prop_event = PropagationEvent(
@@ -145,32 +146,32 @@ def test_real_end_to_end_workflow(tmp_path):
         scenes=scenes,
         analysis_params=pre_ana_event
     )
-    
+
     prop_gen = execute_propagation(
-        prop_event, progress_queue, cancel_event, logger, config, thumbnail_manager, 
+        prop_event, progress_queue, cancel_event, logger, config, thumbnail_manager,
         cuda_available=cuda_available, model_registry=model_registry
     )
-    
+
     prop_result = deque(prop_gen, maxlen=1)[0]
     assert prop_result.get("done"), f"Propagation failed: {prop_result.get('unified_log')}"
     print("✅ Propagation complete.")
-    
+
     # 5. Analysis
     print("\n--- [STAGE 4: FRAME ANALYSIS] ---")
     ana_gen = execute_analysis(
-        prop_event, progress_queue, cancel_event, logger, config, thumbnail_manager, 
+        prop_event, progress_queue, cancel_event, logger, config, thumbnail_manager,
         cuda_available=cuda_available, model_registry=model_registry
     )
-    
+
     ana_result = deque(ana_gen, maxlen=1)[0]
     assert ana_result.get("done"), f"Analysis failed: {ana_result.get('unified_log')}"
     print("✅ Analysis complete.")
-    
+
     # 6. Final Verification
     print("\n--- [STAGE 5: FINAL VERIFICATION] ---")
     db_path = output_dir / "metadata.db"
     assert db_path.exists(), "Metadata database MISSING!"
-        
+
     mask_dir = output_dir / "masks"
     assert mask_dir.exists(), "Mask directory missing!"
     assert any(mask_dir.iterdir()), "No masks generated!"
@@ -182,13 +183,13 @@ def test_real_end_to_end_workflow(tmp_path):
         from verify_quality import QualityVerifier
         verifier = QualityVerifier(output_dir)
         report = verifier.verify()
-        
+
         assert report["status"] == "PASS", f"Quality check failed: {report['errors']}"
         print(f"✅ Quality check passed with warnings: {report['warnings']}")
-        
+
     except ImportError:
         print("⚠️ Could not import QualityVerifier script. Skipping deep analysis.")
-        
+
     print("\n🎉 E2E VERIFICATION SUCCESSFUL!")
 
 if __name__ == "__main__":

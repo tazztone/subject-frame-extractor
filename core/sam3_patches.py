@@ -1,8 +1,8 @@
 """
-SAM3 Compatibility Patches for Windows
+SAM3 Compatibility Patches
 
 Provides fallback implementations for SAM3 operations that require Triton,
-which is not available on Windows.
+fixes image processing issues, and addresses deprecation warnings.
 """
 
 import cv2
@@ -100,10 +100,10 @@ def patch_sam3_dtype():
             # because Sam3VideoPredictor imports it locally in __init__
             import sam3.model.sam3_video_predictor as svp
             svp.build_sam3_video_model = build_sam3_video_model_patched
-            
+
             # Now call original init
             original_predictor_init(self, *args, **kwargs)
-            
+
             # After init, ensure the model is indeed float32 and on the right device
             if hasattr(self, "model") and hasattr(self.model, "to"):
                 self.model = self.model.to(device="cuda", dtype=torch.float32)
@@ -114,25 +114,59 @@ def patch_sam3_dtype():
         pass
 
 
+def patch_sam3_resources():
+    """
+    Monkey patch pkg_resources within sam3.model_builder to use importlib.resources.
+    This avoids the deprecation warning without modifying the 3rd party code.
+    """
+    try:
+        from importlib import resources as importlib_resources
+
+        import pkg_resources
+        import sam3.model_builder as mb
+
+        # Define a replacement for resource_filename
+        def patched_resource_filename(package, resource):
+            if package == "sam3" and "assets" in resource:
+                try:
+                    return str(importlib_resources.files(package).joinpath(resource))
+                except Exception:
+                    # Fallback to original if something fails
+                    return pkg_resources.resource_filename(package, resource)
+            return pkg_resources.resource_filename(package, resource)
+
+        # Apply the patch to the model_builder module's reference to pkg_resources
+        # Note: We patch the attribute on the module object itself
+        if hasattr(mb, "pkg_resources"):
+            mb.pkg_resources.resource_filename = patched_resource_filename
+
+    except (ImportError, AttributeError):
+        pass
+
+
 def apply_patches():
-    """Apply monkey patches to SAM3 if Triton is not available, AND fix image processing."""
-    # Always patch the image processor to fix HWC handling
+    """Apply all monkey patches to SAM3."""
+    # 1. Resource patches (pkg_resources deprecation)
+    patch_sam3_resources()
+
+    # 2. Image processor patches (HWC handling)
     try:
         from sam3.model.sam3_image_processor import Sam3Processor
         Sam3Processor.set_image = set_image_patched
     except ImportError:
         pass
 
-    # Apply dtype patches for Ampere+ stability
+    # 3. Dtype patches (Ampere+ stability)
     patch_sam3_dtype()
 
+    # 4. Triton fallbacks
     try:
         import triton  # noqa: F401
-        # Triton is available, no patching needed
     except ImportError:
-        # Triton not available - apply monkey patches
-        import sam3.model.edt as edt_module
-        import sam3.perflib.connected_components as cc_module
-
-        edt_module.edt_triton = edt_triton_fallback
-        cc_module.connected_components = connected_components_fallback
+        try:
+            import sam3.model.edt as edt_module
+            import sam3.perflib.connected_components as cc_module
+            edt_module.edt_triton = edt_triton_fallback
+            cc_module.connected_components = connected_components_fallback
+        except ImportError:
+            pass

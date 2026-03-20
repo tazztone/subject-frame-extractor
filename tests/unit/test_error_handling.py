@@ -179,7 +179,7 @@ class TestAnalysisParametersValidation:
             "pre_sample_nth": "10", # Should be coerced to int
         }
         params = AnalysisParameters.from_ui(logger, mock_config, **ui_kwargs)
-        
+
         assert params.source_path == "test.mp4"
         assert params.compute_sharpness is True
         assert params.interval == 2.5

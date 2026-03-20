@@ -4,7 +4,6 @@ Shared fixtures for Playwright E2E tests.
 Provides the app_server fixture that starts/stops the mock Gradio server.
 """
 
-import re
 import socket
 import subprocess
 import sys
@@ -77,7 +76,7 @@ def app_server():
     log_dir = Path(__file__).parent.parent.parent / "tests" / "results" / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     log_file_path = log_dir / "mock_app_e2e.log"
-    
+
     log_file = open(log_file_path, "w")
     process = subprocess.Popen(
         [sys.executable, mock_app_path],

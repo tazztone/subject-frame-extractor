@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-import math
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Any, List, Optional, Union
 
-import cv2
 import numpy as np
-import torch
 from pydantic import BaseModel, ConfigDict, Field
 
 if TYPE_CHECKING:
@@ -274,7 +271,7 @@ class AnalysisParameters(BaseModel):
             if key in valid_keys and value is not None:
                 if isinstance(value, str) and not value.strip() and key not in ["text_prompt", "face_ref_img_path"]:
                     continue
-                
+
                 target_type = cls.model_fields[key].annotation
                 # Handle Optional types (extract the inner type)
                 if hasattr(target_type, "__origin__") and target_type.__origin__ is Union:

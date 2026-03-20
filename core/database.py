@@ -1,7 +1,7 @@
 import json
+import logging
 import sqlite3
 import threading
-import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -163,7 +163,7 @@ class Database:
         """Inserts or replaces a metadata record."""
         # Work on a copy to avoid mutating the original dictionary passed by the caller
         data_copy = metadata.copy()
-        
+
         keys_to_extract = [
             "filename",
             "face_sim",

@@ -1,9 +1,9 @@
 import numpy as np
 import pytest
-from core.operators import OperatorContext, OperatorRegistry
-from core.operators.simple_cv import EdgeStrengthOperator, ContrastOperator, BrightnessOperator
-from core.operators.entropy import EntropyOperator
 
+from core.operators import OperatorContext
+from core.operators.entropy import EntropyOperator
+from core.operators.simple_cv import BrightnessOperator, ContrastOperator, EdgeStrengthOperator
 
 # ============================================================================
 # EdgeStrengthOperator
@@ -42,14 +42,14 @@ class TestEdgeStrengthOperator:
         img = np.zeros((100, 100, 3), dtype=np.uint8)
         img[:, 50:] = 255
         ctx_default = OperatorContext(image_rgb=img)
-        
+
         # Lower scale = higher score
         mock_config.edge_strength_base_scale = 10.0
         ctx_scaled = OperatorContext(image_rgb=img, config=mock_config)
-        
+
         res_def = operator.execute(ctx_default)
         res_scale = operator.execute(ctx_scaled)
-        
+
         # With default scale (100), score X. With scale 10, score 10X.
         assert res_scale.metrics["edge_strength_score"] >= res_def.metrics["edge_strength_score"]
 
@@ -90,14 +90,14 @@ class TestContrastOperator:
         # Mask: Only Left half.
         img = np.zeros((100, 100, 3), dtype=np.uint8)
         img[:, 50:] = 255
-        
+
         # Mask selecting only the black part (Contrast should be 0)
         mask_left = np.zeros((100, 100), dtype=np.uint8)
         mask_left[:, :50] = 255
-        
+
         ctx = OperatorContext(image_rgb=img, mask=mask_left)
         result = operator.execute(ctx)
-        
+
         # Std dev of solid black is 0
         assert result.metrics["contrast_score"] < 1.0
 

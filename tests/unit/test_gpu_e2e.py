@@ -662,11 +662,11 @@ class TestOperatorE2E:
         """Standard operators can be executed on a real image."""
         from core.config import Config
         from core.logger import AppLogger
-        from core.operators import run_operators, discover_operators
+        from core.operators import discover_operators, run_operators
 
         config = Config(logs_dir=str(tmp_path / "logs"))
         logger = AppLogger(config, log_to_console=False, log_to_file=False)
-        
+
         # Ensure operators are discovered
         discover_operators()
 
@@ -697,16 +697,16 @@ class TestOperatorE2E:
 
         from core.config import Config
         from core.logger import AppLogger
-        from core.operators import run_operators, discover_operators, OperatorRegistry
+        from core.operators import OperatorRegistry, discover_operators, run_operators
 
         config = Config(logs_dir=str(tmp_path / "logs"))
         logger = AppLogger(config, log_to_console=False, log_to_file=False)
-        
+
         discover_operators()
         niqe_op = OperatorRegistry.get("niqe")
         if not niqe_op:
             pytest.skip("NIQE operator not found")
-            
+
         # Initialize the operator (loads model)
         niqe_op.initialize(config)
 

@@ -1,15 +1,13 @@
-from queue import Queue
 import threading
-from pathlib import Path
+from queue import Queue
 from unittest.mock import MagicMock, patch
-import json
 
 import pytest
-import numpy as np
 
-from core.pipelines import ExtractionPipeline, AnalysisPipeline, execute_extraction, execute_pre_analysis
 from core.events import ExtractionEvent
-from core.models import AnalysisParameters, Scene
+from core.models import AnalysisParameters
+from core.pipelines import AnalysisPipeline, ExtractionPipeline
+
 
 class TestPipelines:
     @pytest.fixture
@@ -43,7 +41,7 @@ class TestPipelines:
     @patch("core.managers.validate_video_file")
     def test_extraction_pipeline_run_video(self, mock_val, mock_info, mock_run_ffmpeg, mock_logger, mock_config, tmp_path):
         mock_info.return_value = {"fps": 30, "frame_count": 300}
-        
+
         event = ExtractionEvent(
             source_path="video.mp4",
             method="all",
@@ -55,10 +53,10 @@ class TestPipelines:
             scene_detect=False,
             output_folder=str(tmp_path)
         )
-        
+
         pipeline = ExtractionPipeline(mock_config, mock_logger, event, Queue(), threading.Event())
         res = pipeline.run()
-        
+
         assert res["done"] is True
         assert res["video_path"] == "video.mp4"
 
@@ -67,9 +65,9 @@ class TestPipelines:
         # Create a real dummy folder
         photos_dir = tmp_path / "photos"
         photos_dir.mkdir()
-        
+
         mock_ingest.return_value = [{"id": "1", "source": "1.jpg", "preview": "1.jpg"}]
-        
+
         event = ExtractionEvent(
             source_path=str(photos_dir), # MUST be an existing dir
             method="all",
@@ -81,10 +79,10 @@ class TestPipelines:
             scene_detect=False,
             output_folder=str(tmp_path)
         )
-        
+
         pipeline = ExtractionPipeline(mock_config, mock_logger, event, Queue(), threading.Event())
         res = pipeline.run()
-        
+
         assert res["done"] is True
         assert res["output_dir"] == str(tmp_path)
 
@@ -98,13 +96,13 @@ class TestPipelines:
     def test_run_analysis_only(self, mock_init, mock_logger, mock_config, tmp_path):
         # AnalysisPipeline needs frame_map.json
         (tmp_path / "frame_map.json").write_text("{}")
-        
+
         params = AnalysisParameters(output_folder=str(tmp_path))
         tm = MagicMock()
         registry = MagicMock()
-        
+
         pipeline = AnalysisPipeline(mock_config, mock_logger, params, Queue(), threading.Event(), tm, registry)
-        
+
         with patch.object(pipeline, "_run_analysis_loop"):
             res = pipeline.run_analysis_only([])
             assert res["done"] is True

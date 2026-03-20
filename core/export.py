@@ -236,10 +236,10 @@ def export_kept_frames(
 ) -> str:
     if not event.all_frames_data:
         return "No metadata to export."
-    
+
     is_video = bool(event.video_path and Path(event.video_path).exists() and not Path(event.video_path).is_dir())
     out_root = Path(event.output_dir)
-    
+
     try:
         filters = event.filter_args.copy()
         filters.update(
@@ -286,7 +286,7 @@ def export_kept_frames(
             if source_map_path.exists():
                 with source_map_path.open("r", encoding="utf-8") as f:
                     source_map = json.load(f)
-            
+
             num_copied = 0
             for frame_meta in kept:
                 filename = frame_meta.get("filename")
@@ -295,7 +295,7 @@ def export_kept_frames(
                     if src_path.exists():
                         shutil.copy2(src_path, export_dir / src_path.name)
                         num_copied += 1
-                        
+
                         # Handle XMP Export
                         if event.enable_xmp_export:
                             score = frame_meta.get("score", 0.0)
@@ -304,7 +304,7 @@ def export_kept_frames(
                             # Lightroom labels: "Green" for kept (default)
                             label = "Green"
                             write_xmp_sidecar(src_path, rating, label)
-            
+
             logger.info(f"Copied {num_copied} original files to export directory.")
 
         _export_metadata(kept, export_dir, logger)

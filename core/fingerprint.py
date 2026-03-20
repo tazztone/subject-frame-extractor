@@ -1,9 +1,10 @@
 import hashlib
 import json
 import os
-from dataclasses import dataclass, asdict
-from typing import Optional, Dict, Any
+from dataclasses import asdict, dataclass
 from datetime import datetime
+from typing import Any, Dict, Optional
+
 
 @dataclass
 class RunFingerprint:
@@ -31,7 +32,7 @@ def create_fingerprint(
 ) -> RunFingerprint:
     """Create a fingerprint for a run."""
     stat = os.stat(video_path)
-    
+
     return RunFingerprint(
         video_path=os.path.abspath(video_path),
         video_size=stat.st_size,
@@ -52,7 +53,7 @@ def load_fingerprint(output_dir: str) -> Optional[RunFingerprint]:
     path = os.path.join(output_dir, "run_fingerprint.json")
     if not os.path.exists(path):
         return None
-    
+
     try:
         with open(path, 'r') as f:
             data = json.load(f)
@@ -65,7 +66,7 @@ def fingerprints_match(new: RunFingerprint, existing: RunFingerprint) -> bool:
     # Use os.path.abspath to normalize paths
     new_path = os.path.abspath(new.video_path)
     existing_path = os.path.abspath(existing.video_path)
-    
+
     return (
         new_path == existing_path and
         new.video_size == existing.video_size and

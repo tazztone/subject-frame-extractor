@@ -71,7 +71,7 @@ def main():
         progress_queue = Queue()
         setup_logging(config, progress_queue=progress_queue)
         logger = AppLogger(config=config)
-        
+
         model_registry = ModelRegistry(logger=logger)
         thumbnail_manager = ThumbnailManager(logger, config)
         cancel_event = threading.Event()

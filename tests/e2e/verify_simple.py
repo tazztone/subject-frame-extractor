@@ -1,5 +1,7 @@
-from playwright.sync_api import sync_playwright
 import time
+
+from playwright.sync_api import sync_playwright
+
 
 def verify_ui_simple():
     print("Starting Playwright...")

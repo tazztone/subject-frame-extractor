@@ -56,10 +56,10 @@ class SharpnessOperator:
         try:
             # Convert to grayscale
             gray = cv2.cvtColor(ctx.image_rgb, cv2.COLOR_RGB2GRAY)
-            
+
             # Compute Laplacian
             laplacian = cv2.Laplacian(gray, cv2.CV_64F)
-            
+
             # Apply mask if provided
             if ctx.mask is not None and ctx.mask.size > 0:
                 # Mask should be same size as image
@@ -67,26 +67,26 @@ class SharpnessOperator:
                     active_mask = ctx.mask > 128
                     if np.sum(active_mask) >= 100:  # Need minimum area for valid stats
                         laplacian = laplacian[active_mask]
-            
+
             # Compute variance
             if laplacian.size == 0:
                 return OperatorResult(
                     metrics={"sharpness_score": 0.0},
                     warnings=["Empty region after masking"],
                 )
-            
+
             variance = float(np.var(laplacian))
-            
+
             # Get normalization scale from config
             scale = 2500.0  # Default
             if ctx.config is not None and hasattr(ctx.config, "sharpness_base_scale"):
                 scale = ctx.config.sharpness_base_scale
-            
+
             # Normalize to 0-100 range
             raw_normalized = min(1.0, variance / scale)
             score = raw_normalized * 100.0
             score = max(0.0, score)  # Ensure non-negative
-            
+
             return OperatorResult(metrics={
                 "sharpness": float(raw_normalized),
                 "sharpness_score": score

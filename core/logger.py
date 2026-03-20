@@ -2,17 +2,27 @@
 Logging Infrastructure for Frame Extractor & Analyzer
 """
 
-import json
 import logging
 import logging.config
 import os
-import traceback
+import warnings
 from datetime import datetime
 from pathlib import Path
 from queue import Queue
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from pydantic import BaseModel
+
+# Silence common warnings early to catch them during library imports
+# Deprecation/Future warnings from libraries
+warnings.filterwarnings("ignore", category=UserWarning, module="pkg_resources")
+warnings.filterwarnings("ignore", category=UserWarning, module="gradio")
+warnings.filterwarnings("ignore", category=FutureWarning, module="timm")
+# Specific message-based filters
+warnings.filterwarnings("ignore", message=".*show_label has no effect when container is False.*")
+# Pydantic 2.x warnings if any (though we use it correctly, some libs might not)
+warnings.filterwarnings("ignore", category=UserWarning, module="pydantic")
+
 
 if TYPE_CHECKING:
     from core.config import Config
@@ -91,8 +101,8 @@ class ColoredFormatter(logging.Formatter):
 
 
 def setup_logging(
-    config: "Config", 
-    log_dir: Optional[Path] = None, 
+    config: "Config",
+    log_dir: Optional[Path] = None,
     log_to_console: bool = True,
     progress_queue: Optional[Queue] = None
 ):
@@ -102,12 +112,12 @@ def setup_logging(
     # 1. Framework Silencing
     os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
     os.environ["ABSL_LOGGING_LEVEL"] = "error"
-    
+
     # 2. Path Setup
     log_dir = log_dir or Path(config.logs_dir)
     log_dir.mkdir(exist_ok=True, parents=True)
-    
-    # Use a consistent 'run.log' name if log_dir is a session folder, 
+
+    # Use a consistent 'run.log' name if log_dir is a session folder,
     # otherwise use a timestamped name.
     if "e2e_output" in str(log_dir) or "test_logging_output" in str(log_dir):
         session_log_file = log_dir / "run.log"
@@ -163,9 +173,13 @@ def setup_logging(
             "tensorflow": {"level": "ERROR"},
             "insightface": {"level": "WARNING"},
             "pyscenedetect": {"level": "WARNING"},
+            "httpx": {"level": "WARNING"},
+            "gradio": {"level": "WARNING"},
+            "torch": {"level": "WARNING"},
+            "transformers": {"level": "WARNING"},
             # SAM3 specific fix: Force it to use our root handlers
             "sam3": {
-                "level": "INFO",
+                "level": "WARNING",
                 "propagate": True,
             },
         },
@@ -174,7 +188,7 @@ def setup_logging(
     # Remove console if not requested (e.g. background tasks)
     if not log_to_console:
         logging_config["handlers"]["console"]["level"] = "CRITICAL"
-        
+
     # Add Gradio Queue Handler if provided
     if progress_queue:
         logging_config["handlers"]["gradio"] = {
@@ -187,12 +201,12 @@ def setup_logging(
         logging_config["loggers"][""]["handlers"].append("gradio")
 
     logging.config.dictConfig(logging_config)
-    
+
     # 4. Post-Config Cleanup for recalcitrant loggers (like SAM3)
     sam3_logger = logging.getLogger("sam3")
     sam3_logger.handlers.clear()
     sam3_logger.propagate = True
-    
+
     return session_log_file
 
 
@@ -213,12 +227,12 @@ class AppLogger:
         """Helper to create a structured log and pass to standard logger."""
         # Extract exc_info if it exists to avoid overwriting it in 'extra'
         exc_info = kwargs.pop("exc_info", None)
-        
+
         extra = {"component": component, **kwargs}
         log_level = getattr(logging, level.upper(), logging.INFO)
         if level.upper() == "SUCCESS":
             log_level = SUCCESS_LEVEL_NUM
-            
+
         self.logger.log(log_level, f"{message} [{component}]", extra=extra, exc_info=exc_info)
 
     def debug(self, message: str, component: str = "system", **kwargs):
@@ -246,4 +260,3 @@ class AppLogger:
     def copy_log_to_output(self, output_dir: Path):
         """No longer needed."""
         pass
-

@@ -12,6 +12,7 @@ from unittest.mock import MagicMock
 import cv2
 import numpy as np
 import pytest
+
 from core.operators import OperatorRegistry
 
 
@@ -79,7 +80,7 @@ def mock_config():
     # System params
     config.downloads_dir = "/tmp/downloads"
     config.retry_max_attempts = 1
-    
+
     # Utils params
     config.masking_close_kernel_size = 3
     config.masking_keep_largest_only = True
