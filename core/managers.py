@@ -1,20 +1,18 @@
 from __future__ import annotations
 
+import contextlib
 import gc
 import logging
-import psutil
 import threading
-import contextlib
 from collections import OrderedDict, defaultdict
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Union
 
 import cv2
 import lpips
 import numpy as np
 import torch
 import yt_dlp as ytdlp
-from safetensors.torch import load_file as load_safetensors
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 from PIL import Image
@@ -72,12 +70,6 @@ _triton_mocked = _setup_triton_mock()
 
 try:
     from sam3.model_builder import build_sam3_video_predictor  # noqa: F401
-
-    from core import sam3_patches
-
-    # Always apply patches to handle HWC inputs and ensure float32 stability.
-    # It also handles triton fallbacks if triton is missing.
-    sam3_patches.apply_patches()
 except ImportError as e:
     # This might fail if run in isolation without path setup or missing dependencies
     logging.getLogger(__name__).warning(f"Failed to import SAM3 dependencies: {e}")
@@ -162,31 +154,31 @@ class ModelRegistry:
         with self._registry_lock:
             if key in self._models:
                 return self._models[key]
-            
+
         with self._locks[key]:
             # Double-check inside model-specific lock
             with self._registry_lock:
                 if key in self._models:
                     return self._models[key]
-                
+
             if self.logger:
                 self.logger.info(f"Loading model '{key}'...")
-            
+
             val = loader_fn()
-            
+
             with self._registry_lock:
                 self._models[key] = val
-                
+
             if self.logger:
                 self.logger.success(f"Model '{key}' loaded successfully.")
-                
+
         return val
 
     def clear(self):
         """Clears all loaded models from the registry."""
         if self.logger:
             self.logger.info("Clearing models from registry.")
-        
+
         with self._registry_lock:
             models_to_clear = list(self._models.items())
             self._models.clear()
@@ -246,7 +238,7 @@ class ModelRegistry:
             url = config.sam3_checkpoint_url
             if ".safetensors" in url:
                 url = url.replace(".safetensors", ".pt")
-            
+
             download_model(
                 url=url,
                 dest_path=checkpoint_path,
@@ -298,7 +290,7 @@ class SAM3Wrapper:
                 checkpoint_path=checkpoint_path,
                 gpus_to_use=gpus_to_use
             )
-        
+
         # Ensure model is on the correct dtype to prevent BFloat16/float32 bias mismatch
         # This is applied here to avoid modifying the read-only SAM3_repo submodule.
         if device == "cuda" and hasattr(self.predictor, "model"):
@@ -361,7 +353,7 @@ class SAM3Wrapper:
         y1 = max(0.0, float(y))
         x2 = min(float(w), float(x + bw))
         y2 = min(float(h), float(y + bh))
-        
+
         new_w = max(0.0, x2 - x1)
         new_h = max(0.0, y2 - y1)
 

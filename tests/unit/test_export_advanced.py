@@ -1,10 +1,11 @@
 
-import pytest
-from unittest.mock import MagicMock, patch, mock_open
-from pathlib import Path
+from unittest.mock import MagicMock, patch
+
 import numpy as np
-import cv2
+import pytest
+
 from core.export import _crop_exported_frames
+
 
 class TestExportAdvanced:
 

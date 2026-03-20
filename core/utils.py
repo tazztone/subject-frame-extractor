@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import contextlib
 import functools
-import functools
 import gc
 import hashlib
 import json
@@ -92,7 +91,7 @@ def estimate_totals(params: "AnalysisParameters", video_info: dict, scenes: Opti
     """Estimates the total work items for each pipeline stage."""
     total_frames = int(video_info.get("frame_count") or 0)
     method = params.method
-    
+
     if method == "every_nth_frame":
         extraction_total = max(1, int(total_frames / max(1, params.nth_frame)))
     elif method == "all":
@@ -173,6 +172,7 @@ def list_images(p: Union[str, Path], cfg: Config, recursive: bool = False) -> li
 
 import subprocess
 
+
 def detect_hwaccel(logger: "AppLogger") -> tuple[Optional[str], Optional[str]]:
     """
     Probes FFmpeg for hardware acceleration support.
@@ -184,25 +184,25 @@ def detect_hwaccel(logger: "AppLogger") -> tuple[Optional[str], Optional[str]]:
         # Check for NVIDIA NVENC/CUVID
         res = subprocess.run(["ffmpeg", "-hide_banner", "-hwaccels"], capture_output=True, text=True)
         hwaccels = res.stdout.splitlines()
-        
+
         # Check for CUDA (Nvidia)
         if "cuda" in hwaccels or "cuvid" in hwaccels:
             logger.info("Hardware acceleration detected: NVIDIA (CUDA/CUVID)")
             return "cuda", None # FFmpeg can usually pick the right decoder with -hwaccel cuda
-            
+
         # Check for VAAPI (Intel/AMD on Linux)
         if "vaapi" in hwaccels:
             logger.info("Hardware acceleration detected: VAAPI")
             return "vaapi", None
-            
+
         # Check for VideoToolbox (macOS)
         if "videotoolbox" in hwaccels:
             logger.info("Hardware acceleration detected: VideoToolbox")
             return "videotoolbox", None
-            
+
     except Exception as e:
         logger.warning(f"Hardware acceleration detection failed: {e}")
-        
+
     return None, None
 
 

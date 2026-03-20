@@ -6,8 +6,10 @@ ApplicationState and perform UI updates as expected.
 """
 
 from unittest.mock import MagicMock, patch
+
 import pytest
-from ui.app_ui import AppUI, ApplicationState
+
+from ui.app_ui import ApplicationState, AppUI
 
 
 class TestAppUIHandlers:
@@ -52,7 +54,7 @@ class TestAppUIHandlers:
         }
 
         updates = app_ui._on_extraction_success(result, current_state)
-        
+
         new_state = updates[app_ui.components["application_state"]]
         assert new_state.extracted_video_path == "/path/to/video.mp4"
         assert new_state.extracted_frames_dir == "/path/to/frames"
@@ -66,7 +68,7 @@ class TestAppUIHandlers:
         }
 
         updates = app_ui._on_pre_analysis_success(result, current_state)
-        
+
         new_state = updates[app_ui.components["application_state"]]
         assert len(new_state.scenes) == 1
         assert new_state.analysis_output_dir == "/test/output"
@@ -77,7 +79,7 @@ class TestAppUIHandlers:
         result = {"output_dir": "/test"}
 
         updates = app_ui._on_propagation_success(result, current_state)
-        
+
         assert updates[app_ui.components["application_state"]] == current_state
 
     def test_on_analysis_success(self, app_ui):
@@ -88,18 +90,18 @@ class TestAppUIHandlers:
         }
 
         updates = app_ui._on_analysis_success(result, current_state)
-        
+
         new_state = updates[app_ui.components["application_state"]]
         assert new_state.analysis_metadata_path == "/test/metadata.db"
 
     def test_on_reset_filters(self, app_ui):
         """Test on_reset_filters resets ApplicationState."""
         current_state = ApplicationState(smart_filter_enabled=True)
-        
-        # Note: on_reset_filters is decorated with @safe_ui_callback, 
+
+        # Note: on_reset_filters is decorated with @safe_ui_callback,
         # but we can test the underlying logic if needed or the wrapped call
         updates = app_ui.on_reset_filters(current_state)
-        
+
         new_state = updates[0] # Returns a tuple
         assert new_state.smart_filter_enabled is False
 
@@ -108,17 +110,17 @@ class TestAppUIHandlers:
         """Test on_filters_changed_wrapper uses ApplicationState data."""
         mock_on_filters.return_value = {"filter_status_text": "OK", "results_gallery": []}
         state = ApplicationState(all_frames_data=[{"f": 1}], analysis_output_dir="/test")
-        
+
         # Zip slider values - assuming default 3 metrics for test
-        slider_vals = [0.0, 0.0, 0.0] 
-        
+        slider_vals = [0.0, 0.0, 0.0]
+
         # We need to ensure sliders are in components for zip to work if it uses them
         # In current impl it uses sorted(self.components['metric_sliders'].keys())
         app_ui.components['metric_sliders'] = {} # Empty for simple test
-        
+
         status, gallery = app_ui.on_filters_changed_wrapper(
             state, "Kept", False, 0.6, False, 5, "pHash", *slider_vals
         )
-        
+
         assert status == "OK"
         mock_on_filters.assert_called_once()

@@ -1,18 +1,12 @@
 from pathlib import Path
-from unittest.mock import MagicMock, patch, ANY
-import json
-import numpy as np
+from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
 
 from core.database import Database
 from core.models import AnalysisParameters, Scene
-from core.pipelines import (
-    AnalysisPipeline, 
-    PreAnalysisPipeline, 
-    execute_pre_analysis,
-    PreAnalysisEvent
-)
+from core.pipelines import AnalysisPipeline, PreAnalysisEvent, PreAnalysisPipeline, execute_pre_analysis
 
 
 class TestPipelinesExtended:
@@ -211,7 +205,7 @@ class TestPreAnalysisPipeline:
             "face_landmarker": MagicMock(),
             "device": "cpu",
         }
-        
+
         mock_masker = mock_masker_cls.return_value
         mock_masker.frame_map = {1: "frame_000001.webp"}
         mock_masker.get_seed_for_frame.return_value = ([0, 0, 10, 10], {"score": 1.0})
@@ -222,7 +216,7 @@ class TestPreAnalysisPipeline:
 
         scene = Scene(shot_id=0, start_frame=0, end_frame=10)
         scene.best_frame = 1
-        
+
         # Act
         result_scenes = pre_pipeline.run([scene])
 
@@ -243,17 +237,17 @@ class TestExecutePreAnalysis:
         mock_event = MagicMock(spec=PreAnalysisEvent)
         mock_event.model_dump.return_value = {}
         mock_event.face_ref_img_upload = None
-        
+
         mock_handle_uploads.return_value = {}
-        
+
         params = MagicMock(spec=AnalysisParameters)
         params.output_folder = str(tmp_path)
         params.video_path = "video.mp4"
         params.face_ref_img_path = None
         mock_init_params.return_value = (params, tmp_path)
-        
+
         mock_load_scenes.return_value = [Scene(shot_id=0, start_frame=0, end_frame=10)]
-        
+
         mock_pipeline = mock_pipeline_cls.return_value
         mock_pipeline.run.return_value = [Scene(shot_id=0, start_frame=0, end_frame=10)]
 

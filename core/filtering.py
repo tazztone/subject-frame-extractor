@@ -142,7 +142,7 @@ def _extract_metric_arrays(all_frames_data: list[dict], config: "Config") -> dic
             vals = [f.get(path[0], np.nan) for f in all_frames_data]
         else:
             vals = [f.get(path[0], {}).get(path[1], np.nan) for f in all_frames_data]
-        
+
         # Ensure we return a 1D array of floats with correct length
         arr = np.array(vals, dtype=np.float32)
         if arr.size == 0 and num_frames > 0:
@@ -386,14 +386,14 @@ def _apply_metric_filters(
             def_max = f_defaults.get("default_max")
             if not isinstance(def_max, (int, float, np.number)):
                 def_max = np.inf
-                
+
             min_v = filters.get(f"{key}_min", def_min)
             max_v = filters.get(f"{key}_max", def_max)
-            
+
             # Final sanity check for UI-provided values which might be wrong types
             if not isinstance(min_v, (int, float, np.number)): min_v = -np.inf
             if not isinstance(max_v, (int, float, np.number)): max_v = np.inf
-            
+
             nan_fill = def_min if def_min != -np.inf else 0.0
             mask = (np.nan_to_num(arr, nan=nan_fill) >= min_v) & (np.nan_to_num(arr, nan=nan_fill) <= max_v)
             metric_filter_mask &= mask
@@ -401,10 +401,10 @@ def _apply_metric_filters(
             def_min = f_defaults.get("default_min")
             if not isinstance(def_min, (int, float, np.number)):
                 def_min = -np.inf
-                
+
             min_v = filters.get(f"{key}_min", def_min)
             if not isinstance(min_v, (int, float, np.number)): min_v = -np.inf
-            
+
             nan_fill = def_min if def_min != -np.inf else 0.0
             if key == "face_sim":
                 has_face_sim = ~np.isnan(arr)
@@ -430,7 +430,7 @@ def _apply_metric_filters(
             if f_type == "range":
                 min_v = filters.get(f"{key}_min", f_defaults.get("default_min", -np.inf))
                 max_v = filters.get(f"{key}_max", f_defaults.get("default_max", np.inf))
-                
+
                 # Ensure they are scalars for comparison
                 if not np.isscalar(min_v): min_v = -np.inf
                 if not np.isscalar(max_v): max_v = np.inf

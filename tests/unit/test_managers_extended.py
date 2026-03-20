@@ -1,9 +1,10 @@
 
-import pytest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-from core.managers import ModelRegistry, ThumbnailManager
+
 from core.config import Config
+from core.managers import ModelRegistry, ThumbnailManager
+
 
 class TestManagersExtended:
 

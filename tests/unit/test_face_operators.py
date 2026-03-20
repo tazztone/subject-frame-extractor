@@ -1,8 +1,10 @@
-import pytest
+
 import numpy as np
-import math
-from core.operators import OperatorContext, OperatorResult
+import pytest
+
+from core.operators import OperatorContext
 from core.operators.face_metrics import EyesOpenOperator, FacePoseOperator
+
 
 class TestEyesOpenOperator:
     @pytest.fixture
@@ -34,7 +36,7 @@ class TestEyesOpenOperator:
         }
         ctx = OperatorContext(image_rgb=sample_image, params=params)
         result = operator.execute(ctx)
-        
+
         assert result.metrics["eyes_open_score"] == 100.0
         assert result.metrics["blink_prob"] == 0.0
 
@@ -42,13 +44,13 @@ class TestEyesOpenOperator:
         """Blink 1.0 -> Score 0."""
         params = {
             "face_blendshapes": {
-                "eyeBlinkLeft": 1.0, 
+                "eyeBlinkLeft": 1.0,
                 "eyeBlinkRight": 1.0
             }
         }
         ctx = OperatorContext(image_rgb=sample_image, params=params)
         result = operator.execute(ctx)
-        
+
         assert result.metrics["eyes_open_score"] == 0.0
         assert result.metrics["blink_prob"] == 1.0
 
@@ -56,13 +58,13 @@ class TestEyesOpenOperator:
         """Max(left, right) used."""
         params = {
             "face_blendshapes": {
-                "eyeBlinkLeft": 0.2, 
+                "eyeBlinkLeft": 0.2,
                 "eyeBlinkRight": 0.8
             }
         }
         ctx = OperatorContext(image_rgb=sample_image, params=params)
         result = operator.execute(ctx)
-        
+
         # Max is 0.8. Score = 1.0 - 0.8 = 0.2 -> 20.0
         assert result.metrics["eyes_open_score"] == pytest.approx(20.0)
         assert result.metrics["blink_prob"] == 0.8
@@ -72,7 +74,7 @@ class TestFacePoseOperator:
     @pytest.fixture
     def operator(self):
         return FacePoseOperator()
-        
+
     @pytest.fixture
     def sample_image(self):
         return np.zeros((100, 100, 3), dtype=np.uint8)
@@ -91,7 +93,7 @@ class TestFacePoseOperator:
         params = {"face_matrix": matrix}
         ctx = OperatorContext(image_rgb=sample_image, params=params)
         result = operator.execute(ctx)
-        
+
         assert result.metrics["yaw"] == 0.0
         assert result.metrics["pitch"] == 0.0
         assert result.metrics["roll"] == 0.0
@@ -108,16 +110,16 @@ class TestFacePoseOperator:
         # yaw = degrees(atan2(matrix[1, 0], matrix[0, 0]))
         # If identity: [0,0]=1, [1,0]=0. atan2(0, 1) = 0.
         # If 90 deg: [0,0]=0, [1,0]=1 (depends on axis convention).
-        
+
         # Let's trust the math implementation is consistent with models.py
         # Test distinct values
         matrix = np.eye(4)
         matrix[0,0] = 0.5
         matrix[1,0] = 0.5
         # atan2(0.5, 0.5) = 45 degrees
-        
+
         params = {"face_matrix": matrix}
         ctx = OperatorContext(image_rgb=sample_image, params=params)
         result = operator.execute(ctx)
-        
+
         assert result.metrics["yaw"] == pytest.approx(45.0)

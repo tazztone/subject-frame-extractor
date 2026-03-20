@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-import subprocess
-import shutil
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
 import logging
+import shutil
+import subprocess
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
 from PIL import Image
 
 # Configure logger
@@ -41,27 +42,27 @@ def extract_preview(raw_path: Path, output_dir: Path, thumbnails_only: bool = Tr
     # We want a usable preview. 'PreviewImage' is usually the best balance (~100-500KB).
     # 'JpgFromRaw' is high quality but large (multi-MB).
     # 'ThumbnailImage' is often too small (<20KB) for a main UI preview.
-    
+
     if thumbnails_only:
         # Prioritize balance: PreviewImage first
         tags_to_try = ["-PreviewImage", "-ThumbnailImage", "-JpgFromRaw"]
     else:
         # Prioritize quality: JpgFromRaw is full resolution
         tags_to_try = ["-JpgFromRaw", "-PreviewImage", "-ThumbnailImage"]
-    
+
     MIN_USABLE_SIZE = 25 * 1024  # 25KB threshold to skip tiny thumbnails
-    
+
     for tag in tags_to_try:
         try:
             # We redirect stdout to the file manually to handle the binary stream check
             cmd = [exiftool_path, "-b", tag, str(raw_path)]
             result = subprocess.run(cmd, capture_output=True, check=False)
-            
+
             if result.returncode == 0 and len(result.stdout) > MIN_USABLE_SIZE:
                 # Success, write to file
                 with open(preview_path, "wb") as f:
                     f.write(result.stdout)
-                
+
                 # Task 2.1: Resize if too large
                 try:
                     with Image.open(preview_path) as img:
@@ -71,9 +72,9 @@ def extract_preview(raw_path: Path, output_dir: Path, thumbnails_only: bool = Tr
                             logger.debug(f"Resized preview {preview_path} to max 1000px")
                 except Exception as e:
                     logger.warning(f"Failed to resize extracted preview {preview_path}: {e}")
-                
+
                 return preview_path
-                
+
         except Exception as e:
             logger.debug(f"Failed to extract {tag} from {raw_path}: {e}")
             continue
@@ -101,9 +102,9 @@ def ingest_folder(folder_path: Path, output_dir: Path, recursive: bool = False, 
     # Supported extensions
     raw_exts = {".CR2", ".NEF", ".ARW", ".DNG", ".ORF", ".RAF"}
     jpeg_exts = {".JPG", ".JPEG"}
-    
+
     ingested_photos = []
-    
+
     # Ensure output dir
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -116,10 +117,10 @@ def ingest_folder(folder_path: Path, output_dir: Path, recursive: bool = False, 
     for file_path in files:
         if not file_path.is_file():
             continue
-            
+
         ext = file_path.suffix.upper()
         photo_id = file_path.stem
-        
+
         if ext in jpeg_exts:
             ingested_photos.append({
                 "id": photo_id,
@@ -129,7 +130,7 @@ def ingest_folder(folder_path: Path, output_dir: Path, recursive: bool = False, 
                 "status": "unreviewed",
                 "scores": {}
             })
-            
+
         elif ext in raw_exts:
             # Extract preview
             preview = extract_preview(file_path, output_dir, thumbnails_only=thumbnails_only)
@@ -142,6 +143,6 @@ def ingest_folder(folder_path: Path, output_dir: Path, recursive: bool = False, 
                     "status": "unreviewed",
                     "scores": {}
                 })
-        
+
     logger.info(f"Ingested {len(ingested_photos)} photos from {folder_path}")
     return ingested_photos

@@ -46,7 +46,8 @@ echo "If the page doesn't load immediately, please refresh after the app finishe
 echo ""
 
 # Run via uv to ensure correct environment
-uv run python app.py
+# --no-sync avoids the startup package check noise
+uv run --no-sync python app.py
 
 # Keep the window open if there's an error
 if [ $? -ne 0 ]; then

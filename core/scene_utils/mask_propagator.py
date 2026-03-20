@@ -15,7 +15,7 @@ import torch
 if TYPE_CHECKING:
     from core.config import Config
     from core.logger import AppLogger
-    from core.managers import SAM3Wrapper
+    from core.managers import ModelRegistry, SAM3Wrapper
     from core.models import AnalysisParameters
     from core.progress import AdvancedProgressTracker
 
@@ -105,10 +105,10 @@ class MaskPropagator:
         empties = {}
         errors = {}
         all_propagated = {}
-        
+
         # We only care about masks for these specific frames
         target_frames = set(frame_numbers)
-        
+
         # Initialize all target frames with None/Empty to ensure alignment
         for fn in frame_numbers:
             all_propagated[fn] = None
@@ -153,7 +153,7 @@ class MaskPropagator:
             # Determine boundaries for progress bar and max_frames
             min_fn = min(frame_numbers)
             max_fn = max(frame_numbers)
-            
+
             # --- Pass 1: Forward Propagation ---
             fwd_steps = max_fn - start_frame_idx
             if fwd_steps > 0:
@@ -162,12 +162,12 @@ class MaskPropagator:
                     start_idx=start_frame_idx, direction="forward", max_frames=fwd_steps
                 ):
                     if self.cancel_event.is_set(): break
-                    
+
                     if frame_idx in target_frames:
                         # Protect existing seeds or better masks
                         if pred_mask is not None and np.any(pred_mask):
                             all_propagated[frame_idx] = pred_mask
-                        
+
                         if tracker:
                             tracker.step(1, desc="Propagation (→)")
 
@@ -179,11 +179,11 @@ class MaskPropagator:
                     start_idx=start_frame_idx, direction="backward", max_frames=bwd_steps
                 ):
                     if self.cancel_event.is_set(): break
-                    
+
                     if frame_idx in target_frames:
                         if pred_mask is not None and np.any(pred_mask):
                             all_propagated[frame_idx] = pred_mask
-                        
+
                         if tracker:
                             tracker.step(1, desc="Propagation (←)")
 
@@ -335,7 +335,7 @@ class MaskPropagator:
                         continue
                     if self.cancel_event.is_set():
                         break
-                    
+
                     if pred_mask is not None and np.any(pred_mask):
                         mask = postprocess_mask(
                             (pred_mask * 255).astype(np.uint8),

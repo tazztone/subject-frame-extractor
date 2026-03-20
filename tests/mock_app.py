@@ -1,8 +1,6 @@
 import os
 import sys
 import time
-import threading
-from queue import Queue
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -64,9 +62,9 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 # --- 2. Import App and Core Modules ---
 import app
 import core.managers
+import core.photo_utils
 import core.pipelines
 import core.utils
-import core.photo_utils
 import core.xmp_writer
 from core.models import Scene
 
@@ -212,6 +210,7 @@ def mock_export_xmps_for_photos(photos, thresholds=None):
 
 # Apply patches
 import ui.app_ui
+
 core.pipelines.ExtractionPipeline._run_impl = mock_extraction_run
 # We mock the `execute_*` functions directly as they are what the UI calls via `_run_pipeline`
 ui.app_ui.AppUI.preload_models = MagicMock(side_effect=lambda *args: None)

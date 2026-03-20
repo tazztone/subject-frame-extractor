@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import copy
 import re
 import shutil
 import subprocess
@@ -11,21 +10,21 @@ from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from queue import Empty, Queue
-from typing import Any, Callable, Deque, Dict, Generator, List, Optional
+from typing import Any, Callable, Dict, Generator, List, Optional
 
 import cv2
 import gradio as gr
 import numpy as np
 import torch
 
+from core.application_state import ApplicationState
 from core.batch_manager import BatchItem, BatchManager
 from core.config import Config
-from core.application_state import ApplicationState
 from core.events import ExportEvent, ExtractionEvent, FilterEvent, PreAnalysisEvent, PropagationEvent, SessionLoadEvent
 from core.export import dry_run_export, export_kept_frames
 from core.logger import AppLogger
 from core.managers import ModelRegistry, ThumbnailManager
-from core.models import Scene, SceneState
+from core.models import Scene
 from core.pipelines import (
     AdvancedProgressTracker,
     execute_analysis,
@@ -35,12 +34,7 @@ from core.pipelines import (
     execute_session_load,
 )
 from core.scene_utils import (
-    _create_analysis_context,
-    _recompute_single_preview,
-    _wire_recompute_handler,
     get_scene_status_text,
-    save_scene_seeds,
-    toggle_scene_status,
 )
 from core.utils import is_image_folder
 from ui.gallery_utils import (
@@ -48,19 +42,14 @@ from ui.gallery_utils import (
     build_scene_gallery_items,
     on_filters_changed,
 )
+from ui.handlers import SceneHandler
 from ui.tabs import (
     ExtractionTabBuilder,
-    SubjectTabBuilder,
-    SceneTabBuilder,
-    MetricsTabBuilder,
     FilteringTabBuilder,
+    MetricsTabBuilder,
+    SceneTabBuilder,
+    SubjectTabBuilder,
 )
-from ui.handlers import SceneHandler
-
-
-from pydantic import BaseModel, Field
-
-
 
 
 class AppUI:
@@ -294,7 +283,7 @@ class AppUI:
         with gr.Blocks() as demo:
             # Unified Application State (Must be first for tab builders)
             self.components["application_state"] = gr.State(ApplicationState())
-            
+
             self._build_header()
 
             with gr.Accordion("🔄 Resume previous Session", open=False):
@@ -313,10 +302,10 @@ class AppUI:
 
             self._build_main_tabs()
             self._build_footer()
-            
+
             # Global outputs for dynamic UI updates
             self.all_outputs = [v for v in self.components.values() if hasattr(v, "_id")]
-            
+
             self._create_event_handlers()
 
             # Trigger preloading on load
@@ -516,7 +505,7 @@ class AppUI:
     def _create_event_handlers(self):
         """Sets up all global event listeners and state management."""
         self.logger.info("Initializing Gradio event handlers...")
-        
+
         # Unified Application State - MOVED TO build_ui
         # self.components["application_state"] = gr.State(ApplicationState())
 
@@ -574,7 +563,7 @@ class AppUI:
         # Log Auto-Refresh (every 1s)
         self.components["log_timer"] = gr.Timer(1.0)
         self.components["log_timer"].tick(update_logs, inputs=[c["show_debug_logs"]], outputs=self.all_outputs)
-        
+
         # Keep manual refresh just in case, though hidden
         c["refresh_logs_button"].click(update_logs, inputs=[c["show_debug_logs"]], outputs=self.all_outputs)
 
@@ -731,7 +720,7 @@ class AppUI:
             except ImportError:
                 report.append(f"  - {dep}: FAILED (Not Installed)")
         report.append("\n[SECTION 3: Paths & Assets]")
-        
+
         # Check ExifTool
         exiftool_path = shutil.which("exiftool")
         if exiftool_path:
@@ -885,7 +874,7 @@ class AppUI:
         """Helper to construct a PreAnalysisEvent from UI arguments."""
         ui_args = dict(zip(self.ana_ui_map_keys, args))
         clean_args = {k: v for k, v in ui_args.items() if v is not None}
-        
+
         # Inject state values
         # If analysis_output_dir is empty, use extracted_frames_dir as fallback
         out_dir = state.analysis_output_dir or state.extracted_frames_dir
@@ -947,19 +936,19 @@ class AppUI:
         if isinstance(ui_args.get("upload_video"), list):
             ui_args["upload_video"] = ui_args["upload_video"][0] if ui_args["upload_video"] else None
         clean_args = {k: v for k, v in ui_args.items() if v is not None}
-        
+
         try:
             event = ExtractionEvent.model_validate(clean_args)
         except Exception as e:
             self.app_logger.error(f"Validation failed: {e}", exc_info=True)
             yield {
                 self.components["unified_log"]: f"[ERROR] Validation failed: {e}",
-                self.components["unified_status"]: f"❌ **Validation Failed.** Check inputs."
+                self.components["unified_status"]: "❌ **Validation Failed.** Check inputs."
             }
             return
 
         yield from self._run_pipeline(
-            execute_extraction, event, progress or gr.Progress(), 
+            execute_extraction, event, progress or gr.Progress(),
             lambda res: self._on_extraction_success(res, current_state)
         )
 
@@ -1005,7 +994,7 @@ class AppUI:
         """Stops the batch processing."""
         self.batch_manager.stop_processing()
         return "Stopping..."
-    
+
     def _save_session_log(self, output_dir_str: str):
         """Helper to save logs to the result directory."""
         if output_dir_str:
@@ -1016,7 +1005,7 @@ class AppUI:
         new_state = current_state.model_copy()
         new_state.extracted_video_path = result["extracted_video_path_state"]
         new_state.extracted_frames_dir = result["extracted_frames_dir_state"]
-        
+
         # Auto-save logs
         self._save_session_log(result["extracted_frames_dir_state"])
 
@@ -1035,13 +1024,13 @@ class AppUI:
         new_state = current_state.model_copy()
         new_state.scenes = result["scenes"]
         new_state.analysis_output_dir = result["output_dir"]
-        
+
         # Auto-save logs
         self._save_session_log(result["output_dir"])
 
         scenes_objs = [Scene(**s) for s in result["scenes"]]
         status_text, button_update = get_scene_status_text(scenes_objs)
-        
+
         # Hide propagation for image-only folders
         if not new_state.extracted_video_path:
             button_update = gr.update(visible=False)
@@ -1070,7 +1059,7 @@ class AppUI:
         """Wrapper to execute the pre-analysis pipeline."""
         event = self._create_pre_analysis_event(current_state, *args)
         yield from self._run_pipeline(
-            execute_pre_analysis, event, progress or gr.Progress(), 
+            execute_pre_analysis, event, progress or gr.Progress(),
             lambda res: self._on_pre_analysis_success(res, current_state)
         )
 
@@ -1095,7 +1084,7 @@ class AppUI:
             output_folder=params.output_folder, video_path=params.video_path, scenes=scenes, analysis_params=params
         )
         yield from self._run_pipeline(
-            execute_propagation, event, progress or gr.Progress(), 
+            execute_propagation, event, progress or gr.Progress(),
             lambda res: self._on_propagation_success(res, current_state)
         )
 
@@ -1121,7 +1110,7 @@ class AppUI:
             output_folder=params.output_folder, video_path=params.video_path, scenes=scenes, analysis_params=params
         )
         yield from self._run_pipeline(
-            execute_analysis, event, progress or gr.Progress(), 
+            execute_analysis, event, progress or gr.Progress(),
             lambda res: self._on_analysis_success(res, current_state)
         )
 
@@ -1129,7 +1118,7 @@ class AppUI:
         """Callback for successful analysis."""
         new_state = current_state.model_copy()
         new_state.analysis_metadata_path = result["metadata_path"]
-        
+
         # Auto-save logs (Analysis output dir is usually same as extraction, but ensuring correctness)
         self._save_session_log(str(Path(result["metadata_path"]).parent))
 
@@ -1213,7 +1202,7 @@ class AppUI:
             )
             new_state.scenes = [s.model_dump() for s in scenes]
             new_state.scene_gallery_index_map = index_map
-            
+
             updates.update(
                 {
                     self.components["propagate_masks_button"]: button_update,
@@ -1310,10 +1299,10 @@ class AppUI:
 
         ext_inputs = [c["application_state"]] + self.get_inputs(self.ext_ui_map_keys)
         self.ana_input_components = [c["application_state"]] + self.get_inputs(self.ana_ui_map_keys)
-        
+
         # Propagation and Analysis also need scenes
         def get_prop_inputs(state):
-            # This is a bit tricky with current wrapper signature, 
+            # This is a bit tricky with current wrapper signature,
             # let's simplify wrapper to take state and extract scenes
             pass
 
@@ -1330,7 +1319,7 @@ class AppUI:
         c["propagate_masks_button"].click(
             fn=self._propagation_button_handler,
             inputs=self.ana_input_components,
-            outputs=self.all_outputs, 
+            outputs=self.all_outputs,
             show_progress="hidden"
         )
         c["start_analysis_button"].click(
@@ -1349,7 +1338,7 @@ class AppUI:
             self.start_batch_wrapper, inputs=[c["batch_workers_slider"]], outputs=[c["batch_queue_dataframe"]]
         )
         c["stop_batch_button"].click(self.stop_batch_handler, inputs=[], outputs=[c["unified_log"]])
-        
+
         c["find_people_button"].click(
             self.on_find_people_from_video,
             inputs=self.ana_input_components,
@@ -1361,7 +1350,7 @@ class AppUI:
                 c["application_state"],
             ],
         )
-        
+
         # We need to update on_identity_confidence_change to take/return state
         c["identity_confidence_slider"].release(
             self.on_identity_confidence_change,
@@ -1412,7 +1401,7 @@ class AppUI:
         selected_label = self.gallery_to_cluster_map.get(evt.index)
         if selected_label is None:
             return "", None, "⚠️ Selection Failed"
-        
+
         from sklearn.cluster import DBSCAN
 
         embeddings = np.array([face["embedding"] for face in all_faces])
@@ -1452,7 +1441,7 @@ class AppUI:
         if not output_dir.exists():
             self.logger.warning("Output directory does not exist - run extraction first")
             return "⚠️ **Run extraction first** - No video frames found.", gr.update(visible=False), [], 0.5, new_state
-        
+
         from core.managers import initialize_analysis_models
         from core.utils import create_frame_map
 
@@ -1471,7 +1460,7 @@ class AppUI:
         self.logger.info(f"Frame map has {len(frame_map)} frames")
         if not frame_map:
             return "⚠️ **No frames found** - Run extraction first.", gr.update(visible=False), [], 0.5, new_state
-        
+
         all_faces = []
         thumb_dir = output_dir / "thumbs"
         for frame_num, thumb_filename in frame_map.items():
@@ -1491,7 +1480,7 @@ class AppUI:
                         "thumb_path": str(thumb_dir / thumb_filename),
                     }
                 )
-        
+
         self.logger.info(f"Found {len(all_faces)} faces in video")
         new_state.discovered_faces = all_faces
 
@@ -1504,7 +1493,7 @@ class AppUI:
                 0.5,
                 new_state,
             )
-        
+
         # Get clustered faces for gallery
         gallery_items = self.on_identity_confidence_change(0.5, new_state)
         n_people = len(self.gallery_to_cluster_map) if hasattr(self, "gallery_to_cluster_map") else 0
@@ -1611,7 +1600,7 @@ class AppUI:
 
             all_frames, metric_values = load_and_prep_filter_data(output_dir, self.get_all_filter_keys, self.config)
             svgs = build_all_metric_svgs(metric_values, self.get_all_filter_keys, self.logger)
-            
+
             new_state = state.model_copy()
             new_state.all_frames_data = all_frames
             new_state.per_metric_values = metric_values
@@ -1861,7 +1850,7 @@ class AppUI:
             if dedup_method_ui == "Accurate (LPIPS)"
             else "None"
         )
-        
+
         selected_image_index = gallery.selection["index"]
         selected_frame_data = all_frames_data[selected_image_index]
         duplicate_frame_data = None

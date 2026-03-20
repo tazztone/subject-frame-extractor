@@ -41,9 +41,9 @@ from core.operators.base import (
 )
 from core.operators.registry import (
     OperatorRegistry,
+    discover_operators,
     register_operator,
     run_operators,
-    discover_operators,
 )
 
 # Auto-discover all operators in this package

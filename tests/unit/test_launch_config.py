@@ -1,8 +1,9 @@
 import sys
-import pytest
 from unittest.mock import patch
-from core.config import Config
+
 from app import parse_args
+from core.config import Config
+
 
 def test_config_defaults():
     config = Config()

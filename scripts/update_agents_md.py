@@ -8,10 +8,8 @@ AGENTS.md is now a manually-maintained file and is not touched by this script.
 """
 
 import ast
-import datetime
 import os
 from pathlib import Path
-
 
 
 def sanitize_value(node_value):
@@ -71,7 +69,7 @@ def process_node(node, indent=0):
                     targets = [ast.unparse(t) for t in child.targets]
                     value_str = sanitize_value(child.value)
                     assign_str = f"{' = '.join(targets)} = {value_str}"
-                    
+
                     if len(assign_str) > 80:
                         assign_str = assign_str[:77] + "..."
                     body_lines.append(f"{prefix}    {assign_str}")
@@ -179,7 +177,7 @@ def generate_file_tree(root_dir):
             items = os.listdir(directory)
         except OSError:
             return
-        
+
         items.sort()
 
         # Filter items
@@ -189,7 +187,7 @@ def generate_file_tree(root_dir):
                 continue
             if item.startswith("."):  # Skip dotfiles mostly
                 continue
-            
+
             path = os.path.join(directory, item)
             if os.path.isdir(path):
                 if item not in exclude_dirs:
@@ -223,13 +221,13 @@ def generate_skeleton_section(source_dirs):
     output = ["## Code Skeleton Reference\n"]
 
     files = []
-    
+
     # Iterate over explicit source directories to be safe (Whitelisting)
     for source_dir in source_dirs:
         root_path = Path(source_dir)
         if not root_path.exists():
             continue
-            
+
         if root_path.is_file():
              if root_path.suffix == ".py":
                  files.append(root_path)
@@ -237,7 +235,7 @@ def generate_skeleton_section(source_dirs):
             for root, dirs, filenames in os.walk(root_path):
                 # Exclude hidden and venv dirs even within whitelisted sources
                 dirs[:] = [d for d in dirs if not d.startswith(".") and d != "venv" and d != "__pycache__"]
-                
+
                 for name in filenames:
                     if name.endswith(".py") and name != os.path.basename(__file__):
                         files.append(Path(root) / name)

@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
+
 from core.managers import SAM3Wrapper
 
 
@@ -68,7 +69,7 @@ class TestSAM3WrapperAPICompleteness:
         # If the class was somehow replaced by a MagicMock (e.g. by another test),
         # this will fail. We ensure we have the real class.
         from core.managers import SAM3Wrapper
-        
+
         # Check the class method directly if the instance looks mocked
         method = SAM3Wrapper.detect_objects
         sig = inspect.signature(method)

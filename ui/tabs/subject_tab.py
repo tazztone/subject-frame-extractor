@@ -70,7 +70,7 @@ class SubjectTabBuilder:
                 # Tab 2: Scan Video (Discovery)
                 with gr.Tab("🔍 Scan Video for People"):
                     gr.Markdown("### 1. Scan Video\nClick **'Scan Video Now'**. The AI will find people in the footage.")
-                    
+
                     with gr.Row():
                         self.app._create_component(
                             "find_people_button",

@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import cv2
 import gradio as gr
 import numpy as np
-from functools import lru_cache
 
 from core.events import FilterEvent
 from core.filtering import apply_all_filters_vectorized
@@ -75,7 +75,7 @@ def _update_gallery(
             thumb_rgb_np = thumbnail_manager.get(thumb_path)
             if thumb_rgb_np is None:
                 continue
-                
+
             use_overlay = show_overlay and i < MAX_OVERLAY_RENDER and not f_meta.get("mask_empty", True)
             if use_overlay and (mask_name := f_meta.get("mask_path")):
                 mask_path = masks_dir / mask_name

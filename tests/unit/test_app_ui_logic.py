@@ -1,12 +1,11 @@
 import threading
-from collections import deque
 from queue import Queue
 from unittest.mock import MagicMock, patch
 
 import gradio as gr
 import pytest
 
-from ui.app_ui import AppUI, ApplicationState
+from ui.app_ui import ApplicationState, AppUI
 
 
 class TestAppUI:
@@ -151,7 +150,6 @@ class TestAppUI:
             "subject_selection_gallery": MagicMock(),
             "gallery_image_preview": MagicMock(),
             "scene_mask_area_min_input": MagicMock(),
-            "scene_face_sim_min_input": MagicMock(),
             "scene_quality_score_min_input": MagicMock(),
             "scene_gallery_columns": MagicMock(),
             "scene_gallery_height": MagicMock(),
@@ -232,7 +230,7 @@ class TestAppUI:
 
             app_state.extracted_video_path = "vid.mp4"
             app_state.analysis_output_dir = out_dir
-            
+
             list(app_ui.run_pre_analysis_wrapper(app_state, *args))
             mock_run.assert_called_once()
             event = mock_run.call_args[0][1]

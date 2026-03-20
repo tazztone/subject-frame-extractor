@@ -8,14 +8,13 @@ import shutil
 import subprocess
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from queue import Queue
 from typing import TYPE_CHECKING, Callable, Generator, Optional, Union
 
 import cv2
 import gradio as gr
-import mediapipe as mp
 import numpy as np
 import torch
 
@@ -37,7 +36,6 @@ from core.photo_utils import ingest_folder
 from core.progress import AdvancedProgressTracker
 from core.scene_utils import (
     SubjectMasker,
-    make_photo_thumbs,
     run_scene_detection,
     save_scene_seeds,
 )
@@ -46,7 +44,6 @@ from core.utils import (
     create_frame_map,
     estimate_totals,
     handle_common_errors,
-    monitor_memory_usage,
     sanitize_filename,
 )
 
@@ -116,7 +113,7 @@ def run_ffmpeg_extraction(
     """
     # TODO: Add configurable audio codec for downscaled video
     # TODO: Support hardware-accelerated encoding (NVENC/VAAPI)
-    
+
     # 1. Hardware Acceleration Detection
     from core.utils import detect_hwaccel
     hwaccel_type = None
@@ -129,7 +126,7 @@ def run_ffmpeg_extraction(
     cmd_base = ["ffmpeg", "-y"]
     if hwaccel_type:
         cmd_base.extend(["-hwaccel", hwaccel_type])
-        
+
     cmd_base.extend(["-i", str(video_path), "-hide_banner"])
     progress_args = ["-progress", "pipe:1", "-nostats", "-loglevel", "info"]
     cmd_base.extend(progress_args)
@@ -142,9 +139,9 @@ def run_ffmpeg_extraction(
     w, h = video_info.get("width", 1920), video_info.get("height", 1080)
     scale_factor = math.sqrt(target_area / (w * h)) if w * h > 0 else 1.0
     vf_scale_thumb = f"scale=w=trunc(iw*{scale_factor}/2)*2:h=trunc(ih*{scale_factor}/2)*2"
-    
+
     # Calculate video scale (fixed to 360p for SAM3 speed and memory efficiency)
-    # We use a fixed-height scale that maintains aspect ratio. 
+    # We use a fixed-height scale that maintains aspect ratio.
     # 360p provides better tracking stability than 240p while remaining efficient.
     vf_scale_video = "scale=-2:360"
 
@@ -196,7 +193,7 @@ def run_ffmpeg_extraction(
         cmd = ["ffmpeg", "-y"]
         if hwaccel_type: cmd.extend(["-hwaccel", hwaccel_type])
         if seek_args: cmd.extend(seek_args)
-        
+
         cmd.extend([
             "-i", str(video_path),
             "-vf", vf,
@@ -212,7 +209,7 @@ def run_ffmpeg_extraction(
         cmd = ["ffmpeg", "-y"]
         if hwaccel_type: cmd.extend(["-hwaccel", hwaccel_type])
         if seek_args: cmd.extend(seek_args)
-        
+
         cmd.extend([
             "-i", str(video_path),
             "-vf", vf,
@@ -285,7 +282,7 @@ def run_ffmpeg_extraction(
         lowres_cmd = ["ffmpeg", "-y"]
         if hwaccel_type:
             lowres_cmd.extend(["-hwaccel", hwaccel_type])
-            
+
         lowres_cmd.extend([
             "-i",
             str(video_path),
@@ -293,7 +290,7 @@ def run_ffmpeg_extraction(
             "-loglevel",
             "warning",
             "-vf",
-            vf_scale_video, 
+            vf_scale_video,
             "-c:v",
             "libx264",
             "-preset",
@@ -358,7 +355,7 @@ class ExtractionPipeline(Pipeline):
     def _run_impl(self, tracker: Optional["AdvancedProgressTracker"] = None) -> dict:
         """Internal execution logic for extraction."""
         source_p = Path(self.params.source_path)
-        from core.utils import is_image_folder, list_images
+        from core.utils import is_image_folder
 
         is_folder = is_image_folder(source_p)
 
@@ -380,11 +377,11 @@ class ExtractionPipeline(Pipeline):
                 self.logger.warning(f"Could not write run config to {run_cfg_path}: {e}")
 
             self.logger.info(f"Ingesting image folder: {source_p.name}")
-            
+
             # Use ingest_folder to handle RAW and regular images
             thumb_dir = output_dir / "thumbs"
             thumb_dir.mkdir(exist_ok=True)
-            
+
             ingested = ingest_folder(source_p, thumb_dir)
             if not ingested:
                 self.logger.warning("No images found in the specified folder.")
@@ -395,7 +392,7 @@ class ExtractionPipeline(Pipeline):
             scenes = []
             frame_map = {}
             source_map = {}
-            
+
             for i, photo in enumerate(ingested):
                 frame_idx = i + 1
                 # Rename/Link preview to frame_XXXXXX.webp or .jpg
@@ -403,23 +400,23 @@ class ExtractionPipeline(Pipeline):
                 ext = ".webp" if self.params.thumbnails_only else ".png"
                 target_name = f"frame_{frame_idx:06d}{ext}"
                 target_path = thumb_dir / target_name
-                
+
                 # If the preview is already in thumb_dir (it might be if we passed thumb_dir to ingest_folder)
                 # but we want the frame_XXXXXX naming convention for the rest of the pipeline
                 if preview_path.exists() and preview_path != target_path:
                     # We use copy for now to avoid cross-device link issues with symlinks
                     shutil.copy2(preview_path, target_path)
-                
+
                 scenes.append([frame_idx, frame_idx])
                 frame_map[frame_idx] = target_name
                 source_map[target_name] = str(photo["source"])
 
             with (output_dir / "scenes.json").open("w", encoding="utf-8") as f:
                 json.dump(scenes, f)
-                
+
             with (output_dir / "frame_map.json").open("w", encoding="utf-8") as f:
                 json.dump(list(frame_map.keys()), f) # Video workflow expects list of original frame numbers
-            
+
             with (output_dir / "source_map.json").open("w", encoding="utf-8") as f:
                 json.dump(source_map, f)
 
@@ -530,7 +527,7 @@ class AnalysisPipeline(Pipeline):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.thumbnail_manager = thumbnail_manager
         self.model_registry = model_registry
-        
+
         # Initialize Operators
         OperatorRegistry.initialize_all(self.config)
 
@@ -611,7 +608,7 @@ class AnalysisPipeline(Pipeline):
 
             # Run propagation ONCE for all scenes to leverage SAM3 batching and temporal memory
             self.mask_metadata = masker.run_propagation(str(self.output_dir), scenes_to_process, tracker=tracker)
-            
+
             # Update completed IDs
             for scene in scenes_to_process:
                 completed_scene_ids.append(scene.shot_id)
@@ -743,25 +740,25 @@ class AnalysisPipeline(Pipeline):
     def _run_image_folder_analysis(self, tracker: Optional["AdvancedProgressTracker"] = None) -> dict:
         """Specialized execution path for image folder inputs."""
         self.logger.info("Starting image folder analysis...")
-        
+
         # Load all scenes
         scenes = _load_scenes(self.output_dir)
         if not scenes:
             return {"done": False, "log": "No scenes found for analysis."}
-            
+
         # Filter included scenes if not resuming
         scenes_to_process = [s for s in scenes if s.status == "included" or not self.params.resume]
-        
+
         if tracker:
             tracker.set_stage("Analyzing images")
             tracker.start(len(scenes_to_process), desc="Analyzing Images")
 
         # Reuse run_analysis_only logic
         result = self.run_analysis_only(scenes_to_process, tracker=tracker)
-        
+
         if result.get("done"):
             self.logger.success("Image folder analysis complete.")
-        
+
         return result
 
     def _run_analysis_loop(
@@ -779,23 +776,23 @@ class AnalysisPipeline(Pipeline):
             for fn in range(scene.start_frame, end):
                 if fn in frame_map:
                     all_frame_nums_to_process.add(fn)
-        
+
         image_files_to_process = [
             self.thumb_dir / frame_map[fn] for fn in sorted(list(all_frame_nums_to_process)) if frame_map.get(fn)
         ]
         total_frames = len(image_files_to_process)
         self.logger.info(f"Analyzing {total_frames} frames with dynamic batching")
-        
+
         num_workers = (
             1 if self.params.disable_parallel else min(os.cpu_count() or 4, self.config.analysis_default_workers)
         )
-        
+
         current_batch_size = self.config.analysis_default_batch_size
         processed_count = 0
-        
+
         with ThreadPoolExecutor(max_workers=num_workers) as executor:
             futures = []
-            
+
             while processed_count < total_frames or futures:
                 # Proactive adjustment based on CUDA VRAM pressure
                 vram_pressure = False
@@ -805,7 +802,8 @@ class AnalysisPipeline(Pipeline):
                         total_vram = torch.cuda.get_device_properties(0).total_memory
                         if gpu_mem_raw / total_vram > 0.85:
                             vram_pressure = True
-                    except: pass
+                    except Exception: 
+                        pass
 
                 if vram_pressure:
                     current_batch_size = max(1, current_batch_size // 2)
@@ -821,8 +819,9 @@ class AnalysisPipeline(Pipeline):
                     processed_count = end_idx
 
                 # 3. Collect finished futures
-                done, futures = [], [f for f in futures if not f.done() or done.append(f) or False]
-                
+                done = [f for f in futures if f.done()]
+                futures = [f for f in futures if not f.done()]
+
                 for future in done:
                     try:
                         num_processed = future.result()
@@ -835,7 +834,7 @@ class AnalysisPipeline(Pipeline):
                     for f in futures:
                         f.cancel()
                     break
-                    
+
                 time.sleep(0.1) # Prevent tight loop
 
     def _process_batch(self, batch_paths: list[Path], metrics_to_compute: dict) -> int:
@@ -859,10 +858,10 @@ class AnalysisPipeline(Pipeline):
                 raise ValueError("Could not read thumbnail.")
             frame, base_filename = Frame(image_data=thumb_image_rgb, frame_number=-1), thumb_path.name
             meta = {"filename": base_filename, "metrics": {}} # Metrics will be updated after operators
-            
+
             # Use optimized stem-based lookup
             mask_meta = self.mask_metadata.get(thumb_path.stem, {})
-            
+
             mask_thumb = None
             if mask_meta.get("mask_path"):
                 mask_full_path = Path(mask_meta["mask_path"])
@@ -906,7 +905,7 @@ class AnalysisPipeline(Pipeline):
                             "mask_meta": mask_meta
                         },
                     )
-                    
+
                     # Populate frame metrics from results
                     for name, result in op_results.items():
                         if result.success:
@@ -920,18 +919,18 @@ class AnalysisPipeline(Pipeline):
                                 # Handle FrameMetrics attributes
                                 elif hasattr(frame.metrics, key):
                                     setattr(frame.metrics, key, value)
-                            
+
                             # Handle non-numerical data (like phash)
                             if result.data:
                                 for key, value in result.data.items():
                                     if key == "phash":
                                         meta["phash"] = value
-                                    
+
                 except Exception as e:
                     self.logger.error(f"Operator execution failed: {e}")
 
             meta["metrics"] = frame.metrics.model_dump()
-            
+
             if self.params.compute_face_sim:
                 if frame.face_similarity_score is not None:
                     meta["face_sim"] = frame.face_similarity_score
@@ -956,7 +955,7 @@ class AnalysisPipeline(Pipeline):
                 self.logger.error(f"Analysis error for {thumb_path.name}: {frame.error}", component="analysis")
             elif meta.get("mask_empty"):
                 self.logger.warning(f"Empty mask for {thumb_path.name} (Subject lost or not found)", component="analysis")
-                
+
             if meta.get("mask_path"):
                 meta["mask_path"] = Path(meta["mask_path"]).name
 
@@ -1013,13 +1012,13 @@ def execute_extraction(
         tracker = AdvancedProgressTracker(progress, progress_queue, logger, ui_stage_name="Extracting")
         pipeline = ExtractionPipeline(config, logger, params, progress_queue, cancel_event, model_registry=model_registry)
         result = pipeline.run(tracker=tracker)
-        
+
         if result and result.get("done"):
             try:
                 from core.fingerprint import create_fingerprint, save_fingerprint
                 fp_vid_path = result.get("video_path")
                 fp_out_dir = result.get("output_dir")
-                
+
                 if fp_vid_path and fp_out_dir:
                     # Create extraction settings dict based on Plan 2.1
                     ext_settings = {
@@ -1029,7 +1028,7 @@ def execute_extraction(
                         "scene_detect": params.scene_detect,
                         "thumb_megapixels": params.thumb_megapixels,
                     }
-                    
+
                     fingerprint = create_fingerprint(
                         video_path=fp_vid_path,
                         extraction_settings=ext_settings
@@ -1082,10 +1081,10 @@ def _load_scenes(output_dir: Path) -> list[Scene]:
     scenes_path = output_dir / "scenes.json"
     if not scenes_path.exists():
         raise FileNotFoundError("scenes.json not found. Run extraction first.")
-    
+
     with scenes_path.open("r", encoding="utf-8") as f:
         scenes_data = json.load(f)
-    
+
     return [
         Scene(shot_id=i, start_frame=s, end_frame=e)
         for i, (s, e) in enumerate(scenes_data)
@@ -1113,7 +1112,7 @@ class PreAnalysisPipeline(Pipeline):
     def run(self, scenes: list[Scene], tracker: Optional["AdvancedProgressTracker"] = None) -> list[Scene]:
         """Runs pre-analysis for a list of scenes."""
         models = initialize_analysis_models(self.params, self.config, self.logger, self.model_registry)
-        
+
         is_folder_mode = not self.params.video_path
         niqe_metric = self._initialize_niqe_if_needed(models["device"], is_folder_mode)
 
@@ -1132,17 +1131,17 @@ class PreAnalysisPipeline(Pipeline):
             model_registry=self.model_registry,
         )
         masker.frame_map = masker._create_frame_map(str(self.output_dir))
-        
+
         previews_dir = self.output_dir / "previews"
         previews_dir.mkdir(exist_ok=True, parents=True)
 
         for scene in scenes:
             if self.cancel_event.is_set():
                 break
-            
+
             if tracker:
                 tracker.step(1, desc=f"Scene {scene.shot_id}")
-            
+
             self._process_single_scene(scene, masker, previews_dir, is_folder_mode)
 
         save_scene_seeds(scenes, str(self.output_dir), self.logger)
@@ -1150,8 +1149,8 @@ class PreAnalysisPipeline(Pipeline):
 
     def _initialize_niqe_if_needed(self, device: str, is_folder_mode: bool):
         """Lazy initialization of NIQE for seeding."""
-        if (not is_folder_mode and 
-            self.params.pre_analysis_enabled and 
+        if (not is_folder_mode and
+            self.params.pre_analysis_enabled and
             self.params.primary_seed_strategy != "🧑‍🤝‍🧑 Find Prominent Person"):
             try:
                 import pyiqa
@@ -1195,7 +1194,7 @@ class PreAnalysisPipeline(Pipeline):
             if mask is not None
             else masker.draw_bbox(thumb_rgb, bbox)
         )
-        
+
         preview_path = previews_dir / f"scene_{scene.shot_id:05d}.jpg"
         Image.fromarray(overlay_rgb).save(preview_path)
         scene.preview_path, scene.status = str(preview_path), "included"
@@ -1218,11 +1217,11 @@ def execute_pre_analysis(
     """
     try:
         tracker = AdvancedProgressTracker(progress, progress_queue, logger, ui_stage_name="Pre-Analysis")
-        
+
         event_dict = event.model_dump()
         event_dict = _handle_pre_analysis_uploads(event_dict, config)
         params, output_dir = _initialize_pre_analysis_params(event_dict, config, logger)
-        
+
         try:
             scenes = _load_scenes(output_dir)
         except FileNotFoundError as e:
@@ -1238,7 +1237,7 @@ def execute_pre_analysis(
         processed_scenes = pipeline.run(scenes, tracker=tracker)
 
         tracker.done_stage("Pre-analysis complete")
-        
+
         final_yield = {
             "unified_log": "Pre-analysis complete. Review scenes in the next tab.",
             "scenes": [s.model_dump() for s in processed_scenes],
@@ -1375,7 +1374,7 @@ def execute_propagation(
     try:
         params = AnalysisParameters.from_ui(logger, config, **event.analysis_params.model_dump())
         is_folder_mode = not params.video_path
-        
+
         scenes_to_process = _load_analysis_scenes(event.scenes, is_folder_mode)
         if not scenes_to_process:
             progress_queue.put({"log": "[INFO] No scenes were included for processing. Nothing to do."})
@@ -1393,7 +1392,7 @@ def execute_propagation(
         pipeline = _initialize_analysis_pipeline(
             config, logger, params, progress_queue, cancel_event, thumbnail_manager, model_registry
         )
-        
+
         result = pipeline.run_full_analysis(scenes_to_process, tracker=tracker)
         if result and result.get("done"):
             masks_dir = Path(result["output_dir"]) / "masks"
@@ -1435,7 +1434,7 @@ def execute_analysis(
     try:
         params = AnalysisParameters.from_ui(logger, config, **event.analysis_params.model_dump())
         is_folder_mode = not params.video_path
-        
+
         scenes_to_process = _load_analysis_scenes(event.scenes, is_folder_mode)
         if not scenes_to_process:
             progress_queue.put({"log": "[INFO] No scenes to analyze. Nothing to do."})
@@ -1449,7 +1448,7 @@ def execute_analysis(
         pipeline = _initialize_analysis_pipeline(
             config, logger, params, progress_queue, cancel_event, thumbnail_manager, model_registry
         )
-        
+
         result = pipeline.run_analysis_only(scenes_to_process, tracker=tracker)
         if result and result.get("done"):
             yield {

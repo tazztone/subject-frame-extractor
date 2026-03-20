@@ -20,13 +20,12 @@ from core.operators import (
     Operator,
     OperatorConfig,
     OperatorContext,
-    OperatorResult,
     OperatorRegistry,
+    OperatorResult,
+    discover_operators,
     register_operator,
     run_operators,
-    discover_operators,
 )
-
 
 # ============================================================================
 # Fixtures
@@ -490,10 +489,10 @@ class TestSharpnessOperator:
         """Sharp image scores higher than blurry image."""
         sharp_ctx = OperatorContext(image_rgb=sharp_image)
         blurry_ctx = OperatorContext(image_rgb=blurry_image)
-        
+
         sharp_result = sharpness_operator.execute(sharp_ctx)
         blurry_result = sharpness_operator.execute(blurry_ctx)
-        
+
         assert sharp_result.metrics["sharpness_score"] > blurry_result.metrics["sharpness_score"]
 
     def test_with_mask_changes_score(self, sharpness_operator, sample_mask):
@@ -505,13 +504,13 @@ class TestSharpnessOperator:
         img[75:, 75:] = np.indices((25, 25)).sum(axis=0)[:, :, np.newaxis] % 2 * 255
         # Low frequency in center (inside mask)
         img[25:75, 25:75] = 128
-        
+
         no_mask_ctx = OperatorContext(image_rgb=img)
         with_mask_ctx = OperatorContext(image_rgb=img, mask=sample_mask)
-        
+
         no_mask_result = sharpness_operator.execute(no_mask_ctx)
         with_mask_result = sharpness_operator.execute(with_mask_ctx)
-        
+
         # Masked version should be lower (blurry center only)
         assert no_mask_result.metrics["sharpness_score"] > with_mask_result.metrics["sharpness_score"]
 
@@ -520,7 +519,7 @@ class TestSharpnessOperator:
         # Pass invalid image data
         ctx = OperatorContext(image_rgb=np.array([]))  # Empty array
         result = sharpness_operator.execute(ctx)
-        
+
         assert result.success is False
         assert result.error is not None
 
@@ -528,13 +527,13 @@ class TestSharpnessOperator:
         """Operator uses sharpness_base_scale from config."""
         mock_cfg = MagicMock()
         mock_cfg.sharpness_base_scale = 500.0  # Lower scale = higher scores
-        
+
         ctx_default = OperatorContext(image_rgb=sample_image)
         ctx_custom = OperatorContext(image_rgb=sample_image, config=mock_cfg)
-        
+
         result_default = sharpness_operator.execute(ctx_default)
         result_custom = sharpness_operator.execute(ctx_custom)
-        
+
         # Lower scale should produce higher score for same image
         assert result_custom.metrics["sharpness_score"] >= result_default.metrics["sharpness_score"]
 
@@ -562,7 +561,7 @@ class TestAutoDiscovery:
 
         # Note: fixtures clear registry, so we must run discovery
         discovered = discover_operators()
-        
+
         # Check for core operators we know exist
         assert "sharpness" in discovered
         assert "entropy" in discovered
@@ -572,7 +571,7 @@ class TestAutoDiscovery:
     def test_discover_skips_infrastructure(self):
         """Infrastructure modules are not discovered as operators."""
         discovered = discover_operators()
-        
+
         assert "base" not in discovered
         assert "registry" not in discovered
         assert "__init__" not in discovered

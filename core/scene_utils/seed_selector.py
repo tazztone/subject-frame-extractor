@@ -357,7 +357,7 @@ class SeedSelector:
         }
         score = score_funcs.get(strategy, score_funcs["Largest Person"])
         best_person = sorted(boxes, key=lambda b: (score(b), b["conf"], area(b)), reverse=True)[0]
-        
+
         # Post-selection: Try to calculate face similarity for the chosen person
         seed_face_sim = 0.0
         if self.reference_embedding is not None and self.face_analyzer:
@@ -367,7 +367,7 @@ class SeedSelector:
                 except Exception as e:
                     self.logger.warning(f"Face analysis failed during post-selection: {e}")
                     all_faces = []
-            
+
             if all_faces:
                 person_bbox = best_person["bbox"]
                 best_face_sim_in_box = 0.0
@@ -376,7 +376,7 @@ class SeedSelector:
                     # InsightFace bbox is usually xyxy
                     face_cx = (face.bbox[0] + face.bbox[2]) / 2
                     face_cy = (face.bbox[1] + face.bbox[3]) / 2
-                    if (person_bbox[0] <= face_cx <= person_bbox[2] and 
+                    if (person_bbox[0] <= face_cx <= person_bbox[2] and
                         person_bbox[1] <= face_cy <= person_bbox[3]):
                         sim = np.dot(face.normed_embedding, self.reference_embedding)
                         if sim > best_face_sim_in_box:
@@ -426,27 +426,27 @@ class SeedSelector:
         w, h = x2 - x1, y2 - y1
         cx = x1 + w / 2
         expansion_factors = self.config.seeding_face_to_body_expansion_factors
-        
+
         # Calculate target expanded dimensions
         target_w = w * expansion_factors[0]
         target_h = h * expansion_factors[1]
-        
+
         # Calculate top-left corner
         new_x1 = cx - target_w / 2
         new_y1 = y1 - h * expansion_factors[2]
-        
+
         # Clamp top-left to image bounds
         new_x1 = max(0, min(W - 1, new_x1))
         new_y1 = max(0, min(H - 1, new_y1))
-        
+
         # Calculate available space
         max_w = W - new_x1
         max_h = H - new_y1
-        
+
         # Determine final width/height (at least 1px, at most available space/target)
         final_w = max(1, min(max_w, target_w))
         final_h = max(1, min(max_h, target_h))
-        
+
         return [int(new_x1), int(new_y1), int(final_w), int(final_h)]
 
     def _final_fallback_box(self, img_shape: tuple) -> list[int]:
@@ -464,13 +464,13 @@ class SeedSelector:
             img_shape: (height, width) for clamping
         """
         x1, y1, x2, y2 = box
-        
+
         # Add 5% padding if we have dimensions
         if img_shape:
             h_img, w_img = img_shape[:2]
             w_box, h_box = x2 - x1, y2 - y1
             pad_w, pad_h = w_box * 0.05, h_box * 0.05
-            
+
             x1 = max(0, x1 - pad_w)
             y1 = max(0, y1 - pad_h)
             x2 = min(w_img - 1, x2 + pad_w)

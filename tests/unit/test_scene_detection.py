@@ -100,8 +100,9 @@ class TestSceneDetection:
     @patch("core.scene_utils.detection.detect")
     def test_run_scene_detection_video_open_failure(self, mock_detect, tmp_path):
         """Test run_scene_detection handles VideoOpenFailure."""
-        from core.scene_utils.detection import run_scene_detection
         from scenedetect import VideoOpenFailure
+
+        from core.scene_utils.detection import run_scene_detection
 
         mock_logger = MagicMock()
         mock_detect.side_effect = VideoOpenFailure("Open failed")

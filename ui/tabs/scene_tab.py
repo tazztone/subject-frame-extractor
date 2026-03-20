@@ -134,7 +134,7 @@ class SceneTabBuilder:
                                 "choices": self.app.SCENE_GALLERY_VIEW_CHOICES or ["Kept", "Rejected", "All"],
                                 "value": "Kept",
                                 "container": False,
-                                "show_label": True,
+                                "show_label": False,
                             },
                         )
                     with gr.Column(scale=3):
@@ -151,6 +151,7 @@ class SceneTabBuilder:
                                     "choices": ["1"],
                                     "interactive": True,
                                     "container": False,
+                                    "show_label": False,
                                     "scale": 0,
                                     "min_width": 80,
                                 },

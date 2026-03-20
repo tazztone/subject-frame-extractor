@@ -1,12 +1,11 @@
 from unittest.mock import MagicMock, patch
-from collections import deque
 
 import pytest
 
+from core.application_state import ApplicationState
 from core.events import ExtractionEvent
 from core.pipelines import execute_extraction
 from ui.app_ui import AppUI
-from core.application_state import ApplicationState
 
 
 @pytest.fixture

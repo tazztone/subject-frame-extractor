@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-import copy
-from typing import TYPE_CHECKING, List, Dict, Deque, Optional, Tuple
 from pathlib import Path
+from typing import TYPE_CHECKING, Optional
+
 import gradio as gr
 
+from core.application_state import ApplicationState
 from core.models import Scene, SceneState
 from core.scene_utils import (
     _create_analysis_context,
@@ -15,7 +16,6 @@ from core.scene_utils import (
     toggle_scene_status,
 )
 from ui.gallery_utils import build_scene_gallery_items
-from core.application_state import ApplicationState
 
 if TYPE_CHECKING:
     from ui.app_ui import AppUI
@@ -43,15 +43,15 @@ class SceneHandler:
                 current_page = int(page_num) if page_num else 1
             except (ValueError, TypeError):
                 current_page = 1
-            
+
             items, index_map, total_pages = build_scene_gallery_items(
                 app_state.scenes, view, app_state.extracted_frames_dir, page_num=current_page, config=self.config
             )
             # Generate page choices for dropdown
             page_choices = [str(i) for i in range(1, total_pages + 1)] if total_pages > 0 else ["1"]
-            
+
             app_state.scene_gallery_index_map = index_map
-            
+
             return (
                 app_state,
                 gr.update(value=items),
@@ -94,9 +94,9 @@ class SceneHandler:
             # Note: The prompt input is passed as `txt`.
             # We need to construct scene objects
             scenes_objs = [Scene(**s) for s in app_state.scenes]
-            
+
             app_state.push_history(app_state.scenes) # Save history before recompute
-            
+
             scenes_objs, gallery_items, index_map, status, _ = _wire_recompute_handler(
                 self.config,
                 self.logger,
@@ -111,11 +111,11 @@ class SceneHandler:
                 self.app.cuda_available,
                 self.model_registry,
             )
-            
+
             # Update state
             app_state.scenes = [s.model_dump() for s in scenes_objs]
             app_state.scene_gallery_index_map = index_map
-            
+
             return (
                 app_state,
                 gr.update(value=gallery_items),
@@ -124,7 +124,7 @@ class SceneHandler:
 
 
         # --- Wire existing components ---
-        
+
         # NOTE: We assume c["application_state"] exists.
 
         c["scene_gallery_view_toggle"].change(
@@ -251,7 +251,7 @@ class SceneHandler:
                 c["sceneeditorstatusmd"],
             ],
         )
-        
+
         # State change handler? app_state change trigger?
         # c["scenes_state"].change ...
         # If we change app_state, do we need to trigger updates?
@@ -262,9 +262,9 @@ class SceneHandler:
         # In current arch, AnalysisPipeline updates `scenes_state`.
         # We need to make sure AnalysisPipeline updates `app_state.scenes` and then triggers an update.
         # But that's usually done via event returns.
-        
+
         # Dropping c["scenes_state"].change because we handle updates explicitly in handlers.
-        
+
         # New Subject Selection Gallery Handler
         def on_subject_gallery_select(evt: gr.SelectData):
             return str(evt.index + 1)
@@ -312,7 +312,7 @@ class SceneHandler:
     def _undo_last_action(self, app_state: ApplicationState, view: str) -> tuple:
         """Reverts the last action by popping from the history stack."""
         prev_scenes = app_state.pop_history()
-        
+
         if prev_scenes is None:
             # Return current state unchanged
             items, index_map, _ = build_scene_gallery_items(
@@ -323,7 +323,7 @@ class SceneHandler:
         # Restore state
         app_state.scenes = prev_scenes
         save_scene_seeds([Scene(**s) for s in prev_scenes], app_state.extracted_frames_dir, self.logger)
-        
+
         gallery_items, index_map, _ = build_scene_gallery_items(
             prev_scenes, view, app_state.extracted_frames_dir, config=self.config
         )
@@ -337,7 +337,7 @@ class SceneHandler:
             app_state.push_history(app_state.scenes)
             shot_id = app_state.selected_scene_id
             outdir = app_state.analysis_output_dir
-            
+
             scene_idx = next((i for i, s in enumerate(app_state.scenes) if s["shot_id"] == shot_id), None)
             if scene_idx is None:
                 return app_state, gr.update(), "Scene not found."
@@ -367,7 +367,7 @@ class SceneHandler:
             _recompute_single_preview(scene_state, masker, {}, self.thumbnail_manager, self.logger)
             app_state.scenes[scene_idx] = scene_state.data
             save_scene_seeds([Scene(**s) for s in app_state.scenes], outdir, self.logger)
-            
+
             gallery_items, index_map, _ = build_scene_gallery_items(
                 app_state.scenes, view, outdir, config=self.config
             )
@@ -383,7 +383,7 @@ class SceneHandler:
     def on_select_for_edit(self, app_state: ApplicationState, view: str, event: Optional[gr.SelectData] = None):
         """Handles selection of a scene from the gallery for editing."""
         sel_idx = getattr(event, "index", None) if event else None
-        
+
         # Guard: invalid selection
         if sel_idx is None or not app_state.scenes:
             return (
@@ -407,15 +407,15 @@ class SceneHandler:
         scene_idx_in_state = app_state.scene_gallery_index_map[sel_idx]
         scene = app_state.scenes[scene_idx_in_state]
         shotid = scene.get("shot_id")
-        
+
         # Update selected ID in state
         app_state.selected_scene_id = shotid
-        
+
         previews_dir = Path(app_state.analysis_output_dir) / "previews"
         thumb_path = previews_dir / f"scene_{shotid:05d}.jpg"
         gallery_image = self.thumbnail_manager.get(thumb_path) if thumb_path.exists() else None
         gallery_shape = gallery_image.shape[:2] if gallery_image is not None else None
-        
+
         # Update image state
         app_state.gallery_image = gallery_image
         app_state.gallery_shape = gallery_shape
@@ -450,16 +450,16 @@ class SceneHandler:
     def on_editor_toggle(self, app_state: ApplicationState, view: str, new_status: str):
         """Toggles the included/excluded status of a scene."""
         app_state.push_history(app_state.scenes)
-        
+
         selected_shotid = app_state.selected_scene_id
         outputfolder = app_state.extracted_frames_dir
-        
+
         scenes_objs = [Scene(**s) for s in app_state.scenes]
         scenes_objs, status_text, _, button_update = toggle_scene_status(
             scenes_objs, selected_shotid, new_status, outputfolder, self.logger
         )
         app_state.scenes = [s.model_dump() for s in scenes_objs]
-        
+
         items, index_map, _ = build_scene_gallery_items(
             app_state.scenes, view, outputfolder, config=self.config
         )
@@ -470,9 +470,9 @@ class SceneHandler:
     ):
         """Applies bulk filters to scenes based on metric thresholds."""
         app_state.push_history(app_state.scenes)
-        
+
         output_dir = app_state.extracted_frames_dir
-        
+
         changed_count = 0
         min_mask_pct = float(min_mask_pct) if min_mask_pct is not None else 0.0
         min_face_sim = float(min_face_sim) if min_face_sim is not None else 0.0
