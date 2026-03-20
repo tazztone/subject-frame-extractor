@@ -1378,7 +1378,8 @@ def execute_propagation(
         
         scenes_to_process = _load_analysis_scenes(event.scenes, is_folder_mode)
         if not scenes_to_process:
-            yield {"unified_log": "No scenes were included for processing. Nothing to do."}
+            progress_queue.put({"log": "[INFO] No scenes were included for processing. Nothing to do."})
+            yield {"done": True}
             return
 
         tracker = AdvancedProgressTracker(progress, progress_queue, logger, ui_stage_name="Analysis")
@@ -1437,7 +1438,8 @@ def execute_analysis(
         
         scenes_to_process = _load_analysis_scenes(event.scenes, is_folder_mode)
         if not scenes_to_process:
-            yield {"unified_log": "No scenes to analyze. Nothing to do."}
+            progress_queue.put({"log": "[INFO] No scenes to analyze. Nothing to do."})
+            yield {"done": True}
             return
 
         video_info = VideoManager.get_video_info(params.video_path)
