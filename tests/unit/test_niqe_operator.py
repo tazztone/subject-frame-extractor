@@ -20,7 +20,9 @@ class TestNiqeOperator:
         assert cfg.category == "quality"
 
     def test_uninitialized_execution_fails(self, operator):
-        ctx = OperatorContext(image_rgb=np.zeros((100, 100, 3), dtype=np.uint8))
+        img = np.zeros((100, 100, 3), dtype=np.uint8)
+        img_tensor = torch.from_numpy(img).float().permute(2, 0, 1).unsqueeze(0)
+        ctx = OperatorContext(image_rgb=img, image_tensor=img_tensor)
         result = operator.execute(ctx)
         assert result.success is False
         assert "not initialized" in result.error
@@ -48,7 +50,9 @@ class TestNiqeOperator:
         operator.initialize(mock_config)
 
         img = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
-        ctx = OperatorContext(image_rgb=img, config=mock_config)
+        # Mock pre-computed tensor
+        img_tensor = torch.from_numpy(img).float().permute(2, 0, 1).unsqueeze(0)
+        ctx = OperatorContext(image_rgb=img, image_tensor=img_tensor, config=mock_config)
 
         result = operator.execute(ctx)
 
@@ -71,7 +75,8 @@ class TestNiqeOperator:
         operator.initialize(mock_config)
 
         img = np.zeros((100, 100, 3), dtype=np.uint8)
-        ctx = OperatorContext(image_rgb=img, config=mock_config)
+        img_tensor = torch.from_numpy(img).float().permute(2, 0, 1).unsqueeze(0)
+        ctx = OperatorContext(image_rgb=img, image_tensor=img_tensor, config=mock_config)
 
         result = operator.execute(ctx)
 

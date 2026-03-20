@@ -43,6 +43,7 @@ class OperatorConfig:
         default_enabled: Whether operator runs by default
         requires_mask: Whether operator benefits from subject mask
         requires_face: Whether operator requires face detection
+        requires_tensor: Whether operator prefers Torch tensor input
         min_value: Minimum expected value (for UI sliders)
         max_value: Maximum expected value (for UI sliders)
         description: Tooltip/help text for UI
@@ -54,6 +55,7 @@ class OperatorConfig:
     default_enabled: bool = True
     requires_mask: bool = False
     requires_face: bool = False
+    requires_tensor: bool = False
     min_value: float = 0.0
     max_value: float = 100.0
     description: str = ""
@@ -66,7 +68,9 @@ class OperatorContext:
     
     Attributes:
         image_rgb: Input image as RGB numpy array (H, W, 3)
+        image_tensor: Optional input image as Torch tensor (1, 3, H, W) on GPU/CPU
         mask: Optional subject mask as grayscale array (H, W)
+        mask_tensor: Optional subject mask as Torch tensor (1, 1, H, W)
         config: Global application Config object
         model_registry: Registry for lazy loading ML models
         logger: Application logger
@@ -75,7 +79,9 @@ class OperatorContext:
     """
 
     image_rgb: np.ndarray
+    image_tensor: Optional[Any] = None  # Using Any to avoid mandatory torch import here
     mask: Optional[np.ndarray] = None
+    mask_tensor: Optional[Any] = None
     config: Optional[Any] = None
     model_registry: Optional[Any] = None
     logger: Optional[Any] = None

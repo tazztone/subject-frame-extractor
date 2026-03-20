@@ -21,7 +21,17 @@
 **Status**: ✅ Complete
 **Objective**: Fix the immediate crashes and workflow disruptions.
 
-### Phase 2: ARW Resource Optimization & Pipeline Safety
+### Phase 2: Refactoring & Architecture
+**Status**: ✅ Complete
+**Objective**: Reduce the 2000-line monolithic `AppUI` and optimize the I/O pipeline.
+
+**Tasks:**
+- [x] **Decouple Logic**: Extract face clustering and system health reporting from `AppUI` to `core/`.
+- [x] **Componentize UI**: Break down `AppUI` into smaller, reusable Gradio component classes (e.g., `LogViewer`).
+- [x] **I/O Standardization**: Unify internal data formats (Torch/Numpy) across pipelines. (Done for NIQE and shared context).
+- [x] **State Reducer**: Implement centralized state transition logic to replace manual dictionary updates.
+
+### Phase 3: ARW Resource Optimization & Pipeline Safety
 **Status**: ✅ Complete
 **Objective**: Reduce storage/memory footprint and fix pipeline crashes.
 
