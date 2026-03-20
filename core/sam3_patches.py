@@ -69,6 +69,51 @@ def set_image_patched(self, image):
     return self.transform(image)
 
 
+def patch_sam3_dtype():
+    """
+    Force SAM3 to use float32 to avoid BFloat16/float32 bias mismatch on Ampere+ GPUs.
+    This patches the model builder and the high-level predictor.
+    """
+    try:
+        import sam3.model_builder as mb
+        from sam3.model.sam3_video_predictor import Sam3VideoPredictor
+
+        # 1. Patch build_sam3_video_model in model_builder
+        original_build_model = mb.build_sam3_video_model
+
+        def build_sam3_video_model_patched(*args, **kwargs):
+            model = original_build_model(*args, **kwargs)
+            # Ensure model is float32
+            if hasattr(model, "to"):
+                # We don't change device here, just ensure dtype
+                model = model.to(dtype=torch.float32)
+            return model
+
+        mb.build_sam3_video_model = build_sam3_video_model_patched
+
+        # 2. Patch Sam3VideoPredictor.__init__ to avoid hardcoded .cuda() call
+        # which might reset the dtype if not careful, and to be safer.
+        original_predictor_init = Sam3VideoPredictor.__init__
+
+        def predictor_init_patched(self, *args, **kwargs):
+            # We need to temporarily patch build_sam3_video_model AGAIN inside here
+            # because Sam3VideoPredictor imports it locally in __init__
+            import sam3.model.sam3_video_predictor as svp
+            svp.build_sam3_video_model = build_sam3_video_model_patched
+            
+            # Now call original init
+            original_predictor_init(self, *args, **kwargs)
+            
+            # After init, ensure the model is indeed float32 and on the right device
+            if hasattr(self, "model") and hasattr(self.model, "to"):
+                self.model = self.model.to(device="cuda", dtype=torch.float32)
+
+        Sam3VideoPredictor.__init__ = predictor_init_patched
+
+    except ImportError:
+        pass
+
+
 def apply_patches():
     """Apply monkey patches to SAM3 if Triton is not available, AND fix image processing."""
     # Always patch the image processor to fix HWC handling
@@ -77,6 +122,9 @@ def apply_patches():
         Sam3Processor.set_image = set_image_patched
     except ImportError:
         pass
+
+    # Apply dtype patches for Ampere+ stability
+    patch_sam3_dtype()
 
     try:
         import triton  # noqa: F401
