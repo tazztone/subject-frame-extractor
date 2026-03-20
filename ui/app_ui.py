@@ -1,12 +1,8 @@
 from __future__ import annotations
 
 import re
-import shutil
-import subprocess
-import sys
 import threading
 import time
-from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from queue import Empty, Queue
@@ -37,6 +33,7 @@ from core.scene_utils import (
     get_scene_status_text,
 )
 from core.utils import is_image_folder
+from ui.components.log_viewer import LogViewer
 from ui.gallery_utils import (
     auto_set_thresholds,
     build_scene_gallery_items,
@@ -147,7 +144,8 @@ class AppUI:
         self.batch_manager = BatchManager()
         self.components, self.cuda_available = {}, torch.cuda.is_available()
         self.ui_registry = {}
-        self.performance_metrics, self.log_filter_level, self.all_logs = {}, "INFO", []
+        self.performance_metrics = {}
+        self.log_viewer = LogViewer(logger, progress_queue, self.LOG_LEVEL_CHOICES)
         self.last_run_args = None
         self.ext_ui_map_keys = [
             "source_path",
@@ -441,27 +439,8 @@ class AppUI:
                         self._create_component("pause_button", "button", {"value": "⏸️ Pause", "interactive": False})
                         self._create_component("cancel_button", "button", {"value": "⏹️ Cancel", "interactive": False})
                 with gr.Column(scale=3):
-                    with gr.Accordion("📋 System Logs", open=False):
-                        self._create_component(
-                            "unified_log",
-                            "textbox",
-                            {
-                                "lines": 15,
-                                "interactive": False,
-                                "autoscroll": True,
-                                "elem_classes": ["log-container"],
-                                "elem_id": "unified_log",
-                                "value": "Ready. Operations will be logged here.",
-                            },
-                        )
-                        with gr.Row():
-                            self._create_component(
-                                "show_debug_logs", "checkbox", {"label": "Show Debug Logs", "value": False}
-                            )
-                            # Hidden refresh button, now handled by Timer
-                            self._create_component("refresh_logs_button", "button", {"value": "🔄 Refresh", "scale": 1, "visible": True})
-                            self._create_component("clear_logs_button", "button", {"value": "🗑️ Clear", "scale": 1})
-                            self._create_component("export_logs_button", "button", {"value": "📥 Export to File", "scale": 1, "visible": False})
+                    self.log_viewer.build()
+                    self.components.update(self.log_viewer.components)
 
         with gr.Accordion("❓ Help / Troubleshooting", open=False):
             gr.Markdown("Run checks for GPU availability, missing libraries, and path permissions.")
@@ -532,40 +511,10 @@ class AppUI:
             ],
             outputs=c["pause_button"],
         )
-        c["clear_logs_button"].click(lambda: (self.all_logs.clear(), "")[1], [], c["unified_log"])
+        c["clear_logs_button"].click(lambda: (self.log_viewer.all_logs.clear(), "")[1], [], c["unified_log"])
 
-        # New Log Handlers
-        def update_logs(filter_debug):
-            """Refreshes log display by draining queue and applying filter."""
-            # First drain any pending log messages from the queue
-            while not self.progress_queue.empty():
-                try:
-                    msg = self.progress_queue.get_nowait()
-                    if "log" in msg:
-                        self.all_logs.append(msg["log"])
-                    if "ui_update" in msg:
-                        yield msg["ui_update"]
-                except Exception:
-                    break
-
-            level = "DEBUG" if filter_debug else "INFO"
-            setattr(self, "log_filter_level", level)
-            log_level_map = {l: i for i, l in enumerate(self.LOG_LEVEL_CHOICES)}
-            current_filter_level = log_level_map.get(level.upper(), 1)
-            filtered_logs = [
-                l
-                for l in self.all_logs
-                if any(f"[{lvl}]" in l for lvl in self.LOG_LEVEL_CHOICES[current_filter_level:])
-            ]
-            yield {self.components["unified_log"]: "\n".join(filtered_logs[-1000:])}
-
-        c["show_debug_logs"].change(update_logs, inputs=[c["show_debug_logs"]], outputs=self.all_outputs)
-        # Log Auto-Refresh (every 1s)
-        self.components["log_timer"] = gr.Timer(1.0)
-        self.components["log_timer"].tick(update_logs, inputs=[c["show_debug_logs"]], outputs=self.all_outputs)
-
-        # Keep manual refresh just in case, though hidden
-        c["refresh_logs_button"].click(update_logs, inputs=[c["show_debug_logs"]], outputs=self.all_outputs)
+        # Use LogViewer to setup its own handlers
+        self.log_viewer.setup_handlers(self.all_outputs)
 
         # Stepper Handler (Removed)
 
@@ -635,15 +584,7 @@ class AppUI:
                     if "ui_update" in msg:
                         update_dict.update(msg["ui_update"])
                     if "log" in msg:
-                        self.all_logs.append(msg["log"])
-                        log_level_map = {level: i for i, level in enumerate(self.LOG_LEVEL_CHOICES)}
-                        current_filter_level = log_level_map.get(self.log_filter_level.upper(), 1)
-                        filtered_logs = [
-                            l
-                            for l in self.all_logs
-                            if any(f"[{level}]" in l for level in self.LOG_LEVEL_CHOICES[current_filter_level:])
-                        ]
-                        update_dict[self.components["unified_log"]] = "\n".join(filtered_logs[-1000:])
+                        update_dict.update(self.log_viewer.get_log_update_dict(msg["log"]))
                     if "progress" in msg:
                         from core.progress import ProgressEvent
 
@@ -667,15 +608,7 @@ class AppUI:
                     if "ui_update" in msg:
                         update_dict.update(msg["ui_update"])
                     if "log" in msg:
-                        self.all_logs.append(msg["log"])
-                        log_level_map = {level: i for i, level in enumerate(self.LOG_LEVEL_CHOICES)}
-                        current_filter_level = log_level_map.get(self.log_filter_level.upper(), 1)
-                        filtered_logs = [
-                            l
-                            for l in self.all_logs
-                            if any(f"[{level}]" in l for level in self.LOG_LEVEL_CHOICES[current_filter_level:])
-                        ]
-                        update_dict[self.components["unified_log"]] = "\n".join(filtered_logs[-1000:])
+                        update_dict.update(self.log_viewer.get_log_update_dict(msg["log"]))
                     if update_dict:
                         yield update_dict
                 except Empty:
@@ -695,180 +628,57 @@ class AppUI:
             return "▶️ Resume"
 
     def run_system_diagnostics(self) -> Generator[str, None, None]:
-        """Runs a comprehensive suite of system checks and a dry run."""
+        """Runs a comprehensive suite of system checks and a dry run via core.system_health."""
         self.logger.info("Starting system diagnostics...")
-        report = ["\n\n--- System Diagnostics Report ---", "\n[SECTION 1: System & Environment]"]
-        try:
-            report.append(
-                f"  - Python Version: OK ({sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro})"
-            )
-        except Exception as e:
-            report.append(f"  - Python Version: FAILED ({e})")
-        try:
-            report.append(f"  - PyTorch Version: OK ({torch.__version__})")
-            if torch.cuda.is_available():
-                report.append(f"  - CUDA: OK (Version: {torch.version.cuda}, GPU: {torch.cuda.get_device_name(0)})")
-            else:
-                report.append("  - CUDA: NOT AVAILABLE (Running in CPU mode)")
-        except Exception as e:
-            report.append(f"  - PyTorch/CUDA Check: FAILED ({e})")
-        report.append("\n[SECTION 2: Core Dependencies]")
-        for dep in ["cv2", "gradio", "imagehash", "mediapipe", "sam3"]:
-            try:
-                __import__(dep.split(".")[0])
-                report.append(f"  - {dep}: OK")
-            except ImportError:
-                report.append(f"  - {dep}: FAILED (Not Installed)")
-        report.append("\n[SECTION 3: Paths & Assets]")
+        from core.system_health import generate_full_diagnostic_report
 
-        # Check ExifTool
-        exiftool_path = shutil.which("exiftool")
-        if exiftool_path:
-            try:
-                ver = subprocess.run([exiftool_path, "-ver"], capture_output=True, text=True).stdout.strip()
-                report.append(f"  - ExifTool: OK (Version: {ver})")
-            except Exception:
-                report.append(f"  - ExifTool: FOUND but check failed (Path: {exiftool_path})")
-        else:
-            report.append("  - ExifTool: FAILED (Not Found - Required for Photo Mode)")
+        return generate_full_diagnostic_report(
+            self.config,
+            self.logger,
+            self.progress_queue,
+            self.cancel_event,
+            self.thumbnail_manager,
+            self.cuda_available,
+        )
 
-        for name, path in {
-            "Models Directory": Path(self.config.models_dir),
-            "Dry Run Assets": Path("dry-run-assets"),
-            "Sample Video": Path("dry-run-assets/sample.mp4"),
-            "Sample Image": Path("dry-run-assets/sample.jpg"),
-        }.items():
-            report.append(f"  - {name}: {'OK' if path.exists() else 'FAILED'} (Path: {path})")
-        report.append("\n[SECTION 4: Model Loading Simulation]")
-        report.append("  - Skipping Model Loading Simulation (Models loaded on demand)")
-        report.append("\n[SECTION 5: E2E Pipeline Simulation]")
-        temp_output_dir = Path(self.config.downloads_dir) / "dry_run_output"
-        shutil.rmtree(temp_output_dir, ignore_errors=True)
-        temp_output_dir.mkdir(parents=True, exist_ok=True)
-        try:
-            report.append("  - Stage 1: Frame Extraction...")
-            ext_event = ExtractionEvent(
-                source_path="dry-run-assets/sample.mp4",
-                method="interval",
-                interval="1.0",
-                max_resolution="720",
-                thumbnails_only=True,
-                thumb_megapixels=0.2,
-                scene_detect=True,
-            )
-            ext_result = deque(
-                execute_extraction(ext_event, self.progress_queue, self.cancel_event, self.logger, self.config),
-                maxlen=1,
-            )[0]
-            if not ext_result.get("done"):
-                raise RuntimeError("Extraction failed")
-            report[-1] += " OK"
-            report.append("  - Stage 2: Pre-analysis...")
-            pre_ana_event = PreAnalysisEvent(
-                output_folder=ext_result["extracted_frames_dir_state"],
-                video_path=ext_result["extracted_video_path_state"],
-                scene_detect=True,
-                pre_analysis_enabled=True,
-                pre_sample_nth=1,
-                primary_seed_strategy="🧑‍🤝‍🧑 Find Prominent Person",
-                face_model_name="buffalo_l",
-                tracker_model_name="sam3",
-                min_mask_area_pct=1.0,
-                sharpness_base_scale=2500.0,
-                edge_strength_base_scale=100.0,
-            )
-            pre_ana_result = deque(
-                execute_pre_analysis(
-                    pre_ana_event,
-                    self.progress_queue,
-                    self.cancel_event,
-                    self.logger,
-                    self.config,
-                    self.thumbnail_manager,
-                    self.cuda_available,
-                ),
-                maxlen=1,
-            )[0]
-            if not pre_ana_result.get("done"):
-                raise RuntimeError(f"Pre-analysis failed: {pre_ana_result}")
-            report[-1] += " OK"
-            scenes = pre_ana_result["scenes"]
-            report.append("  - Stage 3: Mask Propagation...")
-            prop_event = PropagationEvent(
-                output_folder=pre_ana_result["output_dir"],
-                video_path=ext_result["extracted_video_path_state"],
-                scenes=scenes,
-                analysis_params=pre_ana_event,
-            )
-            prop_result = deque(
-                execute_propagation(
-                    prop_event,
-                    self.progress_queue,
-                    self.cancel_event,
-                    self.logger,
-                    self.config,
-                    self.thumbnail_manager,
-                    self.cuda_available,
-                ),
-                maxlen=1,
-            )[0]
-            if not prop_result.get("done"):
-                raise RuntimeError("Propagation failed")
-            report[-1] += " OK"
-            report.append("  - Stage 4: Frame Analysis...")
-            ana_result = deque(
-                execute_analysis(
-                    prop_event,
-                    self.progress_queue,
-                    self.cancel_event,
-                    self.logger,
-                    self.config,
-                    self.thumbnail_manager,
-                    self.cuda_available,
-                ),
-                maxlen=1,
-            )[0]
-            if not ana_result.get("done"):
-                raise RuntimeError("Analysis failed")
-            report[-1] += " OK"
-            output_dir = ana_result["output_dir"]
-            from core.filtering import apply_all_filters_vectorized, load_and_prep_filter_data
+    def get_ui_updates_from_state(self, state: ApplicationState) -> dict:
+        """
+        Centralized reducer that maps ApplicationState to Gradio component updates.
+        
+        This reduces manual dictionary creation in event handlers and ensures
+        the UI stays in sync with the source of truth.
+        """
+        c = self.components
+        updates = {}
 
-            all_frames, _ = load_and_prep_filter_data(output_dir, self.get_all_filter_keys, self.config)
-            report.append("  - Stage 5: Filtering...")
-            kept, _, _, _ = apply_all_filters_vectorized(
-                all_frames,
-                {"require_face_match": False, "dedup_thresh": -1},
-                self.config,
-                output_dir=ana_result["output_dir"],
-            )
-            report[-1] += f" OK (kept {len(kept)} frames)"
-            report.append("  - Stage 6: Export...")
-            export_event = ExportEvent(
-                all_frames_data=all_frames,
-                output_dir=ana_result["output_dir"],
-                video_path=ext_result["extracted_video_path_state"],
-                enable_crop=False,
-                crop_ars="",
-                crop_padding=0,
-                filter_args={"require_face_match": False, "dedup_thresh": -1},
-            )
-            export_msg = export_kept_frames(
-                export_event, self.config, self.logger, self.thumbnail_manager, self.cancel_event
-            )
-            if "Error" in export_msg:
-                raise RuntimeError(f"Export failed: {export_msg}")
-            report[-1] += " OK"
-        except Exception as e:
-            error_message = f"FAILED ({e})"
-            if "..." in report[-1]:
-                report[-1] += error_message
-            else:
-                report.append(f"  - Pipeline Simulation: {error_message}")
-            self.logger.error("Dry run pipeline failed", exc_info=True)
-        final_report = "\n".join(report)
-        self.logger.info(final_report)
-        yield final_report
+        # Source & Environment
+        if state.extracted_video_path:
+            updates[c["source_input"]] = gr.update(value=state.extracted_video_path)
+
+        # Analysis State
+        if state.analysis_output_dir:
+            updates[c["results_group"]] = gr.update(visible=True)
+            updates[c["export_group"]] = gr.update(visible=True)
+            updates[c["filtering_tab"]] = gr.update(interactive=True)
+
+        # Tabs interactive state
+        if state.extracted_frames_dir:
+            updates[c["scene_selection_tab"]] = gr.update(interactive=True)
+
+        if state.scenes:
+            updates[c["metrics_tab"]] = gr.update(interactive=True)
+
+        # Seeding
+        if state.discovered_faces:
+            updates[c["seeding_results_column"]] = gr.update(visible=True)
+            updates[c["propagation_group"]] = gr.update(visible=True)
+
+        # Photo Mode
+        if state.photos:
+            # Future: updates[c["photo_gallery"]] = ...
+            pass
+
+        return updates
 
     def _create_pre_analysis_event(self, state: ApplicationState, *args: Any) -> "PreAnalysisEvent":
         """Helper to construct a PreAnalysisEvent from UI arguments."""
@@ -1369,25 +1179,21 @@ class AppUI:
         all_faces = state.discovered_faces
         if not all_faces:
             return []
-        from sklearn.cluster import DBSCAN
 
-        embeddings = np.array([face["embedding"] for face in all_faces])
-        clustering = DBSCAN(eps=1.0 - confidence, min_samples=2, metric="cosine").fit(embeddings)
-        unique_labels = sorted(list(set(clustering.labels_)))
+        from core.face_clustering import cluster_faces
+        labels, cluster_map = cluster_faces(all_faces, confidence)
+        self.gallery_to_cluster_map = cluster_map
+
         gallery_items = []
-        self.gallery_to_cluster_map = {}
-        idx = 0
-        for label in unique_labels:
-            if label == -1:
-                continue
-            self.gallery_to_cluster_map[idx] = label
-            idx += 1
-            cluster_faces = [all_faces[i] for i, l in enumerate(clustering.labels_) if l == label]
-            best_face = max(cluster_faces, key=lambda x: x["det_score"])
+        for idx, label in cluster_map.items():
+            cluster_faces_list = [all_faces[i] for i, l in enumerate(labels) if l == label]
+            best_face = max(cluster_faces_list, key=lambda x: x["det_score"])
+
             thumb_rgb = self.thumbnail_manager.get(Path(best_face["thumb_path"]))
             x1, y1, x2, y2 = best_face["bbox"].astype(int)
             face_crop = thumb_rgb[y1:y2, x1:x2]
             gallery_items.append((face_crop, f"Person {label}"))
+
         return gr.update(value=gallery_items)
 
     @safe_ui_callback("Face Selection")
@@ -1398,34 +1204,21 @@ class AppUI:
         all_faces = state.discovered_faces
         if not all_faces or evt is None or evt.index is None:
             return "", None, "⚠️ Selection Failed"
+
         selected_label = self.gallery_to_cluster_map.get(evt.index)
         if selected_label is None:
             return "", None, "⚠️ Selection Failed"
 
-        from sklearn.cluster import DBSCAN
+        from core.face_clustering import cluster_faces, get_cluster_representative
+        labels, _ = cluster_faces(all_faces, confidence)
 
-        embeddings = np.array([face["embedding"] for face in all_faces])
-        clustering = DBSCAN(eps=1.0 - confidence, min_samples=2, metric="cosine").fit(embeddings)
-        cluster_faces = [all_faces[i] for i, l in enumerate(clustering.labels_) if l == selected_label]
-        if not cluster_faces:
-            return "", None, "⚠️ Cluster not found"
-        best_face = max(cluster_faces, key=lambda x: x["det_score"])
-
-        cap = cv2.VideoCapture(state.extracted_video_path)
-        cap.set(cv2.CAP_PROP_POS_FRAMES, best_face["frame_num"])
-        ret, frame = cap.read()
-        cap.release()
-        if not ret:
-            return "", None, "⚠️ Could not read video frame"
-        x1, y1, x2, y2 = best_face["bbox"].astype(int)
-        thumb_rgb = self.thumbnail_manager.get(Path(best_face["thumb_path"]))
-        h, w, _ = thumb_rgb.shape
-        fh, fw, _ = frame.shape
-        x1, y1, x2, y2 = int(x1 * fw / w), int(y1 * fh / h), int(x2 * fw / w), int(y2 * fh / h)
-        face_crop = frame[y1:y2, x1:x2]
-        face_crop_path = Path(state.extracted_frames_dir) / "reference_face.png"
-        cv2.imwrite(str(face_crop_path), face_crop)
-        return str(face_crop_path), face_crop, f"✅ **Selected Person {selected_label}**"
+        return get_cluster_representative(
+            all_faces,
+            labels,
+            selected_label,
+            state.extracted_video_path,
+            state.extracted_frames_dir
+        )
 
     @safe_ui_callback("Face Discovery")
     def on_find_people_from_video(self, current_state: ApplicationState, *args) -> tuple[str, gr.update, gr.update, float, ApplicationState]:

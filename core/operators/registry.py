@@ -12,8 +12,6 @@ import pkgutil
 import time
 from typing import TYPE_CHECKING, Any, Optional, Type
 
-import torch
-
 from core.operators.base import Operator, OperatorConfig, OperatorContext, OperatorResult
 
 if TYPE_CHECKING:
@@ -206,6 +204,20 @@ def run_operators(
         operator_names = OperatorRegistry.list_names()
     else:
         operator_names = operators
+
+    # Lazily compute Torch tensors if any operator requires them
+    for name in operator_names:
+        op = OperatorRegistry.get(name)
+        if op and getattr(op.config, "requires_tensor", False):
+            import torch
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            # (H, W, C) -> (C, H, W) -> (1, C, H, W)
+            tensor = torch.from_numpy(image_rgb).float() / 255.0
+            ctx.image_tensor = tensor.permute(2, 0, 1).unsqueeze(0).to(device)
+            if mask is not None:
+                m_tensor = torch.from_numpy(mask).float() / 255.0
+                ctx.mask_tensor = m_tensor.unsqueeze(0).unsqueeze(0).to(device)
+            break
 
     # Sort operator_names to ensure quality_score runs last if present
     if "quality_score" in operator_names:

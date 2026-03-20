@@ -1,4 +1,3 @@
-import numpy as np
 import torch
 
 from core.operators import OperatorConfig, OperatorContext, OperatorResult, register_operator
@@ -19,7 +18,8 @@ class NiqeOperator:
             description="Natural Image Quality Evaluator (no-reference). Score 0-100 (higher is better).",
             min_value=0.0,
             max_value=100.0,
-            requires_mask=False, # Masking handled internally if provided
+            requires_mask=False,
+            requires_tensor=True,
         )
 
     def initialize(self, config):
@@ -48,68 +48,37 @@ class NiqeOperator:
 
     def execute(self, ctx: OperatorContext) -> OperatorResult:
         if self.model is None:
-            # Try initializing if missing? Or fail?
-            # Lifecycle implies initialize called explicitly.
-            # If still None, it failed or wasn't called.
             return OperatorResult(error="NIQE not initialized or pyiqa missing")
 
+        if ctx.image_tensor is None:
+            return OperatorResult(error="NIQE requires Torch tensor input (pre-computation failed)")
+
         try:
-            # Preprocess: RGB numpy (H, W, C) -> Tensor (1, C, H, W)
-            # Normalize to 0-1
-            img_rgb = ctx.image_rgb
+            img_tensor = ctx.image_tensor
 
             # Handle masking if provided
-            if ctx.mask is not None:
-                # Mask is (H, W) uint8 0 or 255
-                # We need to zero out non-subject areas?
-                # NIQE is global. If we mask, we might introduce artifacts at boundaries.
-                # Project legacy logic matches mask by zeroing out background?
-                # Legacy:
-                # active_mask_full = (cv2.resize(mask...) > 128)
-                # rgb_image = np.where(mask_3ch, rgb_image, 0)
-                # Yes, zero out background.
-                import cv2
-                mask_h, mask_w = ctx.mask.shape
-                img_h, img_w = img_rgb.shape[:2]
-
-                if (mask_h, mask_w) != (img_h, img_w):
-                     # Resize mask to fit image (e.g. if mask is low res)
-                     # Although usually they match in frame processing.
-                     mask_resized = cv2.resize(ctx.mask, (img_w, img_h), interpolation=cv2.INTER_NEAREST)
-                else:
-                     mask_resized = ctx.mask
-
-                active_mask = (mask_resized > 128)
-                # Apply mask (broadcasting)
-                img_rgb = img_rgb * active_mask[:, :, np.newaxis]
-
-            # Convert to tensor
-            img_tensor = torch.from_numpy(img_rgb).float() / 255.0
-            # (H, W, C) -> (C, H, W) -> (1, C, H, W)
-            img_tensor = img_tensor.permute(2, 0, 1).unsqueeze(0)
-
-            # Move to device
-            device_obj = self.device
-            # Note: self.model might have its own device concept if pyiqa wraps it?
-            # But we passed device to create_metric.
+            if ctx.mask_tensor is not None:
+                # Optimized Torch masking
+                # ctx.mask_tensor is (1, 1, H, W) in range [0, 1]
+                # ctx.image_tensor is (1, 3, H, W) in range [0, 1]
+                mask_binary = (ctx.mask_tensor > 0.5).float()
+                img_tensor = img_tensor * mask_binary
 
             with torch.no_grad():
                 # PyIQA forward
-                # Depending on pyiqa version, it might expect different scale.
-                # Usually 0-1 float.
-                res = self.model(img_tensor.to(device_obj))
-                niqe_raw = float(res)
+                # It expects 0-1 float on the correct device
+                res = self.model(img_tensor)
+                niqe_raw = float(res.item())
 
             # Normalization
             # Plan Default: 100 - (raw * 2)
-            # Allow overrides
-            offset = 100.0 # From plan: implied max
-            scale = 2.0    # From plan
+            offset = 100.0
+            scale = 2.0
 
             if ctx.config:
                 if hasattr(ctx.config, "quality_niqe_offset"):
                     offset = ctx.config.quality_niqe_offset
-                elif hasattr(ctx.config, "niqe_offset"): # Alternative naming?
+                elif hasattr(ctx.config, "niqe_offset"):
                     offset = ctx.config.niqe_offset
 
                 if hasattr(ctx.config, "quality_niqe_scale_factor"):

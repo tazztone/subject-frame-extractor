@@ -802,7 +802,7 @@ class AnalysisPipeline(Pipeline):
                         total_vram = torch.cuda.get_device_properties(0).total_memory
                         if gpu_mem_raw / total_vram > 0.85:
                             vram_pressure = True
-                    except Exception: 
+                    except Exception:
                         pass
 
                 if vram_pressure:
@@ -1441,7 +1441,6 @@ def execute_analysis(
             yield {"done": True}
             return
 
-        video_info = VideoManager.get_video_info(params.video_path)
         tracker = AdvancedProgressTracker(progress, progress_queue, logger, ui_stage_name="Analyzing")
         tracker.start(sum(s.end_frame - s.start_frame for s in scenes_to_process), desc="Analyzing Frames")
 

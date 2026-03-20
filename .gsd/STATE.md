@@ -1,24 +1,31 @@
 # STATE.md — Project Memory
 
-> **Last Updated**: 2026-03-20T13:30:00+01:00
+> **Last Updated**: 2026-03-20T18:15:00+01:00
 > **Session Status**: Active
 
 ## Current Position
 - **Milestone**: v0.9.1-stabilization
-- **Phase**: 1 (Planning & Final Fixes)
-- **Task**: Resolved critical UI crashes and model loading issues.
-- **Status**: Verified
+- **Phase**: 2 (Refactoring & Architecture)
+- **Task**: Completed AppUI refactoring and I/O optimization.
+- **Status**: FINALIZED
 
 ## Last Session Summary
-Resolved a critical `ValueError` in the Gradio UI and addressed several stabilization issues identified in the audit.
-- **UI Stabilization**: Fixed `ValueError` caused by the log timer yielding component updates not specified in `outputs`. Implemented `self.all_outputs` to handle dynamic UI updates globally.
-- **Handler Contract Alignment**: Updated `_run_task_with_progress` to use component-object keys instead of string keys, ensuring Gradio correctly routes updates.
-- **SAM3 Resiliency (Submodule Clean)**: Implemented `torch.float32` forcing via monkey-patching in `core/sam3_patches.py` instead of direct edits to `SAM3_repo`. This ensures stability on Ampere+ GPUs while keeping the submodule directory clean.
-- **Batch Processing**: Fixed potential `ValueError` in `stop_batch_handler` by adding missing `outputs`.
-- **Verification**: Verified fixes via `tests/ui/test_handler_contracts.py` and `tests/unit/test_pipeline_result_schemas.py` with 100% pass rate.
+Performed a major architectural cleanup of the `AppUI` class and optimized the I/O data flow for ML operators.
+- **Domain Extraction**: 
+    - Moved face clustering and representative selection to `core/face_clustering.py`.
+    - Moved system health diagnostics and E2E simulation to `core/system_health.py`.
+- **UI Componentization**:
+    - Extracted the log viewer, background update timer, and dispatching logic to a new `LogViewer` component in `ui/components/log_viewer.py`.
+    - Integrated `LogViewer` into `AppUI`, reducing redundant log handling code in `_run_task_with_progress`.
+- **I/O Optimization**:
+    - Standardized `OperatorContext` to include optional `image_tensor` and `mask_tensor` (Torch tensors).
+    - Updated `run_operators` in `core/operators/registry.py` to lazily compute and share these tensors once per frame if any operator requires them.
+    - Refactored `NiqeOperator` to use pre-computed Torch tensors and Torch-based masking, eliminating redundant CPU-GPU transfers and Numpy-Tensor conversions.
+- **Architecture**:
+    - Implemented a basic **State Reducer** in `AppUI.get_ui_updates_from_state` to centralize state-to-UI transitions.
 
 ## In-Progress Work
-- None. Stabilization fixes are complete and verified.
+- Transitioning to v1.0-photo-mode foundation.
 
 ## Blockers
 - None.
@@ -26,18 +33,18 @@ Resolved a critical `ValueError` in the Gradio UI and addressed several stabiliz
 ## Context Dump
 
 ### Decisions Made
-- **Global All Outputs**: Defined `self.all_outputs` containing all UI components to simplify dynamic updates from background threads/timers.
-- **Strict Component Keys**: Enforced using `self.components[key]` instead of string keys in all UI-update dictionaries.
+- **Lazy Tensor Computation**: Tensors are only created if at least one operator in the current run-set has `requires_tensor=True`.
+- **Component-Level Handlers**: `LogViewer` manages its own timer and event handlers, reducing the clutter in `AppUI._create_event_handlers`.
 
 ### Approaches Tried
-- **Mocking for Contract Tests**: Used fast Python-level tests to verify handler contracts without needing a browser or GPU.
+- **Universal Tensor Conversion**: Rejected due to overhead for pure Numpy/CV operators. Lazy conversion is more efficient.
 
 ### Files of Interest
-- `ui/app_ui.py`: Core UI logic and event handlers.
-- `SAM3_repo/sam3/model/sam3_video_predictor.py`: SAM3 model initialization.
-- `SAM3_repo/sam3/model_builder.py`: SAM3 model builder.
+- `core/face_clustering.py`: New face domain logic.
+- `core/system_health.py`: New diagnostic domain logic.
+- `ui/components/log_viewer.py`: New reusable UI component.
+- `core/operators/base.py` & `registry.py`: Updated for I/O standardization.
 
 ## Next Steps
-1. Final end-to-end manual verification.
-2. Update documentation if any public APIs changed (none so far).
-3. Proceed with v1.0-photo-mode foundation if no regressions are found.
+1. Final verification of refactored UI behavior.
+2. Begin Phase 1 of v1.0-photo-mode: Foundation (Ingest & Interop).
