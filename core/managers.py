@@ -75,9 +75,9 @@ try:
 
     from core import sam3_patches
 
-    # Apply patches to replace triton functions with CPU fallbacks
-    if _triton_mocked:
-        sam3_patches.apply_patches()
+    # Always apply patches to handle HWC inputs and ensure float32 stability.
+    # It also handles triton fallbacks if triton is missing.
+    sam3_patches.apply_patches()
 except ImportError as e:
     # This might fail if run in isolation without path setup or missing dependencies
     logging.getLogger(__name__).warning(f"Failed to import SAM3 dependencies: {e}")

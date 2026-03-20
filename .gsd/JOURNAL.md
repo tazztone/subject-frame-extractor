@@ -1,5 +1,37 @@
 # JOURNAL
 
+## Session: 2026-03-20 13:35
+
+### Objective
+Resolve critical Gradio `ValueError` and complete stabilization fixes.
+
+### Accomplished
+- **UI Crash Fix**: Resolved `ValueError: Returned component not specified as output` in `update_logs`. 
+  - Implemented `self.all_outputs` containing all UI components to handle dynamic dictionary-based updates globally.
+  - Updated timer and button event handlers to include all potential outputs.
+- **Handler Contract Alignment**:
+  - Converted string-keyed yield dictionaries in `_run_task_with_progress` to use proper component-object keys (`self.components[key]`).
+  - This ensures Gradio correctly routes background thread updates to the UI instead of silently ignoring them.
+- **Batch Processing Robustness**:
+  - Fixed a hidden `ValueError` in `stop_batch_handler` by adding `unified_log` as an output for its status message.
+- **SAM3 Hardware Compatibility (Submodule Clean)**:
+  - Implemented `torch.float32` forcing via monkey-patching in `core/sam3_patches.py` (hooked into `core/managers.py`).
+  - This avoids a common "BFloat16 / float32 bias mismatch" crash on Ampere and newer GPUs without modifying the `SAM3_repo` source files directly.
+
+### Verification
+- [x] `uv run pytest tests/ui/test_handler_contracts.py` passed (100%).
+- [x] `uv run pytest tests/unit/test_pipeline_result_schemas.py` passed (100%).
+- [x] Verified `self.all_outputs` definition in `build_ui` covers all relevant components.
+
+### Paused Because
+- Immediate stabilization goals reached. System is now robust against identified UI and model loading crashes.
+
+### Handoff Notes
+- The "Stabilization" milestone (v0.9.1) is now complete.
+- Future work can safely proceed to P1/P2 goals in `SPEC.md` without recurring UI contract crashes.
+
+---
+
 ## Session: 2026-02-08 18:30
 
 ### Objective

@@ -313,6 +313,10 @@ class AppUI:
 
             self._build_main_tabs()
             self._build_footer()
+            
+            # Global outputs for dynamic UI updates
+            self.all_outputs = [v for v in self.components.values() if hasattr(v, "_id")]
+            
             self._create_event_handlers()
 
             # Trigger preloading on load
@@ -566,13 +570,13 @@ class AppUI:
             ]
             yield {self.components["unified_log"]: "\n".join(filtered_logs[-1000:])}
 
-        c["show_debug_logs"].change(update_logs, inputs=[c["show_debug_logs"]], outputs=None)
+        c["show_debug_logs"].change(update_logs, inputs=[c["show_debug_logs"]], outputs=self.all_outputs)
         # Log Auto-Refresh (every 1s)
         self.components["log_timer"] = gr.Timer(1.0)
-        self.components["log_timer"].tick(update_logs, inputs=[c["show_debug_logs"]], outputs=None)
+        self.components["log_timer"].tick(update_logs, inputs=[c["show_debug_logs"]], outputs=self.all_outputs)
         
         # Keep manual refresh just in case, though hidden
-        c["refresh_logs_button"].click(update_logs, inputs=[c["show_debug_logs"]], outputs=None)
+        c["refresh_logs_button"].click(update_logs, inputs=[c["show_debug_logs"]], outputs=self.all_outputs)
 
         # Stepper Handler (Removed)
 
@@ -619,7 +623,7 @@ class AppUI:
                     self.progress_queue.put({"ui_update": res})
             except Exception as e:
                 self.app_logger.error(f"Task failed: {e}", exc_info=True)
-                self.progress_queue.put({"ui_update": {"unified_log": f"[CRITICAL] Task failed: {e}"}})
+                self.progress_queue.put({"ui_update": {self.components["unified_log"]: f"[CRITICAL] Task failed: {e}"}})
 
         with ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(run_and_capture)
@@ -1295,13 +1299,12 @@ class AppUI:
     def _setup_pipeline_handlers(self):
         """Configures event handlers for starting main processing pipelines."""
         c = self.components
-        all_outputs = [v for v in c.values() if hasattr(v, "_id")]
 
         # Load Session
         c["load_session_button"].click(
             fn=self.run_session_load_wrapper,
             inputs=[c["session_path_input"], c["application_state"]],
-            outputs=all_outputs,
+            outputs=self.all_outputs,
             show_progress="hidden",
         )
 
@@ -1316,24 +1319,24 @@ class AppUI:
 
         # Pipeline Handlers
         c["start_extraction_button"].click(
-            fn=self.run_extraction_wrapper, inputs=ext_inputs, outputs=all_outputs, show_progress="hidden"
+            fn=self.run_extraction_wrapper, inputs=ext_inputs, outputs=self.all_outputs, show_progress="hidden"
         )
         c["start_pre_analysis_button"].click(
             fn=self.run_pre_analysis_wrapper,
             inputs=self.ana_input_components,
-            outputs=all_outputs,
+            outputs=self.all_outputs,
             show_progress="hidden",
         )
         c["propagate_masks_button"].click(
             fn=self._propagation_button_handler,
             inputs=self.ana_input_components,
-            outputs=all_outputs, 
+            outputs=self.all_outputs, 
             show_progress="hidden"
         )
         c["start_analysis_button"].click(
             fn=self._analysis_button_handler,
             inputs=self.ana_input_components,
-            outputs=all_outputs,
+            outputs=self.all_outputs,
             show_progress="hidden",
         )
 
@@ -1345,7 +1348,7 @@ class AppUI:
         c["start_batch_button"].click(
             self.start_batch_wrapper, inputs=[c["batch_workers_slider"]], outputs=[c["batch_queue_dataframe"]]
         )
-        c["stop_batch_button"].click(self.stop_batch_handler, inputs=[], outputs=[])
+        c["stop_batch_button"].click(self.stop_batch_handler, inputs=[], outputs=[c["unified_log"]])
         
         c["find_people_button"].click(
             self.on_find_people_from_video,
