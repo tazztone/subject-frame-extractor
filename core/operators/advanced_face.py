@@ -1,8 +1,6 @@
 import math
 
-import cv2
 import numpy as np
-import torch
 
 from core.operators import OperatorConfig, OperatorContext, OperatorResult, register_operator
 
@@ -22,38 +20,13 @@ class FaceSimilarityOperator:
         )
 
     def execute(self, ctx: OperatorContext) -> OperatorResult:
-        if not ctx.model_registry:
-            return OperatorResult(error="Missing model registry")
-
         ref_emb = ctx.params.get("reference_embedding")
         if ref_emb is None:
             return OperatorResult(metrics={}, warnings=["Missing reference face embedding"])
 
         try:
-            # We need the full face analyzer result to get embeddings
-            # _get_face_data only gets landmarks. We need insightface here.
-            # But wait, FaceLandmarker (MediaPipe) is different from FaceAnalysis (InsightFace).
-            # The project uses InsightFace for similarity and MediaPipe for pose/blink.
-
-            # Get face analyzer from registry
-            from core.managers import get_face_analyzer
-            face_model_name = getattr(ctx.config, "default_face_model_name", "buffalo_l")
-            models_path = str(getattr(ctx.config, "models_dir", "models"))
-            det_size = tuple(getattr(ctx.config, "model_face_analyzer_det_size", [640, 640]))
-
-            analyzer = get_face_analyzer(
-                model_name=face_model_name,
-                models_path=models_path,
-                det_size_tuple=det_size,
-                logger=ctx.logger,
-                model_registry=ctx.model_registry,
-                device="cuda" if torch.cuda.is_available() else "cpu"
-            )
-
-            # Run analyzer
-            image_bgr = cv2.cvtColor(ctx.image_rgb, cv2.COLOR_RGB2BGR)
-            faces = analyzer.get(image_bgr)
-
+            # Consume pre-detected faces from pipeline to ensure thread-safety
+            faces = ctx.params.get("faces")
             if not faces:
                 return OperatorResult(metrics={"face_sim": 0.0}, warnings=["No faces detected"])
 

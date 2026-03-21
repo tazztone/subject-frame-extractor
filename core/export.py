@@ -319,15 +319,6 @@ def export_kept_frames(
                 return str(e)
 
         return f"Exported {len(kept)} items to {export_dir.name}."
-    except subprocess.CalledProcessError as e:
-        logger.error("FFmpeg export failed", exc_info=True, extra={"stderr": e.stderr})
-        return "Error during export: FFmpeg failed. Check logs."
-    except Exception as e:
-        logger.error("Error during export process", exc_info=True)
-        return f"Error during export: {e}"
-    except subprocess.CalledProcessError as e:
-        logger.error("FFmpeg export failed", exc_info=True, extra={"stderr": e.stderr})
-        return "Error during export: FFmpeg failed. Check logs."
     except Exception as e:
         logger.error("Error during export process", exc_info=True)
         return f"Error during export: {e}"

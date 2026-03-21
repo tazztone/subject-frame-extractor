@@ -11,14 +11,29 @@
 │   ├── config.py           # Pydantic BaseSettings (Global Config)
 │   ├── pipelines.py        # Pipeline orchestration (Extraction, Analysis)
 │   ├── managers.py         # Resource/Model lifecycle management
+│   ├── events.py           # Pydantic UIEvent models
 │   ├── models.py           # Pydantic data models (Frame, Scene)
+│   ├── enums.py            # [NEW] Status and Direction enums
+│   ├── filtering.py        # Vectorized metric filtering and deduplication
+│   ├── export.py           # FFmpeg extraction, cropping, and XMP export
 │   ├── operators/          # Quality metric plugins (Face, Sharpness, etc.)
 │   ├── scene_utils/        # Low-level ML wrappers (SubjectMasker, SAM3Wrapper)
-│   └── database.py         # SQLite metadata persistence
+│   ├── database.py         # SQLite metadata persistence
+│   ├── utils.py            # Path, image, and hash utilities
+│   ├── shared.py           # Cross-cutting shared utilities
+│   ├── error_handling.py   # Retry/fallback decorators
+│   ├── progress.py         # Progress tracking infrastructure
+│   ├── fingerprint.py      # Run-skipping logic
+│   ├── system_health.py    # Diagnostic runner
+│   ├── application_state.py# Unified UI state reducer
+│   ├── batch_manager.py    # Multi-video batch queue management
+│   └── sam3_patches.py     # SAM3 submodule runtime patches
 ├── ui/                     # Modular Gradio interface
 │   ├── app_ui.py           # Main layout and tab composition
 │   ├── gallery_utils.py    # Gallery logic and filtering handlers
-│   └── components/         # Reusable Gradio components (if any)
+│   ├── handlers/           # Tab-specific event handlers (SceneHandler)
+│   ├── tabs/               # Modular Tab builders (ExtractionTabBuilder, etc.)
+│   └── components/         # Reusable Gradio components
 ├── tests/                  # Multi-tier test suite
 │   ├── unit/               # Fast, mocked logic tests
 │   ├── integration/        # Hardware-dependent pipeline tests

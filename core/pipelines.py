@@ -875,10 +875,10 @@ class AnalysisPipeline(Pipeline):
                             (thumb_image_rgb.shape[1], thumb_image_rgb.shape[0]),
                             interpolation=cv2.INTER_NEAREST,
                         )
+            faces = None
             face_bbox = None
             if self.params.compute_face_sim and self.face_analyzer:
-                # We still run face detection once here to get the bbox for other operators
-                # although advanced operators could do it themselves too.
+                # We run face detection once here and pass the results to operators
                 try:
                     image_bgr = cv2.cvtColor(thumb_image_rgb, cv2.COLOR_RGB2BGR)
                     with self.processing_lock:
@@ -887,7 +887,7 @@ class AnalysisPipeline(Pipeline):
                         best_face = max(faces, key=lambda x: x.det_score)
                         face_bbox = best_face.bbox.astype(int)
                 except Exception as e:
-                    self.logger.warning(f"Initial face detection failed: {e}")
+                    self.logger.warning(f"Face detection failed: {e}")
 
             # --- OPERATOR ENGINE EXECUTION (Phase 2.5 / Finalized) ---
             if any(metrics_to_compute.values()) or self.params.compute_niqe:
@@ -901,6 +901,7 @@ class AnalysisPipeline(Pipeline):
                         logger=self.logger,
                         params={
                             "face_bbox": face_bbox,
+                            "faces": faces,
                             "reference_embedding": self.reference_embedding,
                             "mask_meta": mask_meta
                         },

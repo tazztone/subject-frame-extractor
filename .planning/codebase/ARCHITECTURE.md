@@ -25,10 +25,18 @@ The processing flow is split into three distinct phases to allow for checkpoints
 - **Coordinate System**: UI coordinates (pixels) are normalized to [0.0, 1.0] before being passed to the `SAM3Wrapper`.
 - **Output**: Binary masks stored as compressed `.png` or `.webp` files in the `masks/` directory.
 
-### 3. Analysis Phase (`AnalysisPipeline` via `Operators`)
+### 3. Pre-Analysis Phase (`execute_pre_analysis`)
+- **Seeding**: Automatically selects the "Best Frame" per scene based on quality metrics and face similarity.
+- **Subject Discovery**: Runs face detection or open-vocabulary object detection (SAM3) to initialize tracking seeds.
+
+### 4. Analysis Phase (`AnalysisPipeline` via `Operators`)
 - **Metric Loop**: Parallel execution of "Operators" (Action/Quality metrics).
 - **Concurrency**: Uses `ThreadPoolExecutor` with a pool size limited by `analysis_default_workers` to prevent CPU RAM exhaustion.
 - **Persistence**: Final metrics are flushed to a SQLite `metadata.db` for fast filtering and export.
+
+### 5. Filtering & Export Phase (`core/export.py`)
+- **Refinement**: Applies vectorized thresholds and deduplication (pHash/LPIPS) to selection.
+- **Rendering**: Final high-res extraction via FFmpeg and sidecar generation (XMP, JSON, CSV).
 
 ## Resource Management & Stability
 
@@ -50,7 +58,10 @@ Large ML models (SAM3, InsightFace) are managed by a central registry:
 | `frame_map.json` | Extraction | Analysis, UI | Maps file index to original video frame index. |
 | `scenes.json` | Extraction | Analysis, UI | Defines shot boundaries and status (`pending`, `included`). |
 | `metadata.db` | Analysis | UI, Export | Queryable frame quality and metadata. |
+| `mask_metadata.json` | Analysis | Pipeline | Mapping frame indices to mask file paths and metrics. |
 | `video_lowres.mp4`| Extraction | SAM3 | High-speed frame source for mask propagation. |
+| `run_config.json` | Core | Core | Persistent storage of session parameters. |
+| `run_fingerprint.json`| Core | Core | Enables hash-based skipping of already processed videos. |
 
 ---
 

@@ -10,6 +10,8 @@ if TYPE_CHECKING:
     from core.config import Config
     from core.logger import AppLogger
 
+from core.enums import SceneStatus
+
 
 def _coerce(val: Any, to_type: type) -> Any:
     """Helper to strictly coerce values to the target type."""
@@ -98,7 +100,7 @@ class Scene(BaseModel):
     shot_id: int
     start_frame: int
     end_frame: int
-    status: str = "pending"
+    status: SceneStatus = SceneStatus.PENDING
     best_frame: Optional[int] = None
     seed_metrics: dict = Field(default_factory=dict)
     rejection_reasons: Optional[List[str]] = Field(default_factory=list)
@@ -151,7 +153,7 @@ class SceneState:
         if not self._scene.seed_config:
             self._scene.seed_config = {}
         self._scene.seed_config["override_source"] = source
-        self._scene.status = "included"
+        self._scene.status = SceneStatus.INCLUDED
         self._scene.manual_status_change = True
 
     def reset(self):
@@ -163,12 +165,12 @@ class SceneState:
 
     def include(self):
         """Marks the scene as included."""
-        self._scene.status = "included"
+        self._scene.status = SceneStatus.INCLUDED
         self._scene.manual_status_change = True
 
     def exclude(self):
         """Marks the scene as excluded."""
-        self._scene.status = "excluded"
+        self._scene.status = SceneStatus.EXCLUDED
         self._scene.manual_status_change = True
 
     def update_seed_result(self, bbox: Optional[list[int]], details: dict):

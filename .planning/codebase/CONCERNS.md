@@ -10,9 +10,10 @@
 - **Mitigation**: The `ModelRegistry` triggers `torch.cuda.empty_cache()` and attempts a CPU fallback for heavy models. However, CPU fallback is ~10-20x slower.
 - **Warning**: Users with < 8GB VRAM will struggle with propagation on high-resolution videos.
 
-### 2. Face Analysis Thread-Safety
-- **Concern**: `InsightFace` and `MediaPipe` are not natively thread-safe. Concurrent calls to `execute_analysis` with multiple workers can cause segfaults or corrupted results.
-- **Mitigation**: The system uses a `ModelRegistry` lock, but high-concurrency analysis (`analysis_default_workers > 4`) is risky on low-RAM systems.
+### 2. Face Analysis Thread-Safety 🔴
+- **Concern**: `InsightFace` (FaceAnalysis) is not natively thread-safe. While the `ModelRegistry` has a lock, the `AnalysisPipeline` uses a `ThreadPoolExecutor` and calls `analyzer.get()` inside operators without a shared lock.
+- **Impact**: Concurrent inference calls on the same instance can cause segfaults or corrupted metadata.
+- **Fix**: Consolidate face detection to run once in the pipeline and pass results to operators.
 
 ## Performance Bottlenecks
 
@@ -39,8 +40,9 @@
 
 ## Maintenance Debt
 
-- **String-based Status**: Scene and Task statuses (e.g., `"pending"`, `"success"`) are strings. Refactoring to Enums is needed to prevent typos in core logic.
-- **XMP Complexity**: Exporting to XMP (Adobe/Lightroom) involves XML manipulation which is currently fragile and lacks comprehensive unit testing.
+- **String-based Status**: Scene and Task statuses (e.g., `"pending"`, `"success"`) are currently strings. Refinement to Enums is needed to ensure type safety.
+- **Duplicate Logic (Maintenance)**: `core/export.py` contains duplicate unreachable `except` blocks for FFmpeg errors.
+- **XMP Robustness**: XMP export uses `xml.etree.ElementTree`, which is robust, but the logic lacks comprehensive unit tests for different sidecar scenarios.
 
 ---
 
