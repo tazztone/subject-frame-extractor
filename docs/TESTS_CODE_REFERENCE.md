@@ -13,37 +13,45 @@ This file contains auto-generated code skeletons for the test suite.
 ### `📄 tests/conftest.py`
 
 ```python
-"""Centralized pytest fixtures for Frame Extractor & Analyzer tests."""
-def _create_mock_torch():
-    """Create a comprehensive mock for torch and its submodules."""
-def _create_mock_torch_submodules(mock_torch):
-    """Create mocks for torch submodules like nn, optim, utils."""
-def _create_mock_torchvision():
-    """Create a mock for torchvision."""
-def _create_mock_psutil():
-    """Create a mock for psutil with expected return values."""
-def _create_mock_matplotlib():
-    """Create a mock for matplotlib."""
-def _create_mock_scenedetect():
-    """Create a mock for scenedetect with proper Exception classes."""
-def build_modules_to_mock():
-    """Build the complete dictionary of modules to mock."""
-def _should_apply_mocks():
-    """Check if we should apply mocks (skip for integration/smoke/signature/gpu_e2e ..."""
-@pytest.fixture(scope='session')
-def mock_torch():
-    """Session-scoped mock for torch module."""
+"""Shared pytest fixtures and configuration."""
+@pytest.fixture(autouse=True)
+def clean_registry():
+    """Ensure OperatorRegistry is clean before each test."""
 @pytest.fixture
-def mock_config(tmp_path):
-    """Provides a test Config with temporary directories."""
+def mock_logger():
+    """Mock Application Logger."""
 @pytest.fixture
-def mock_logger(mock_config):
-    """Provides a mock AppLogger for testing."""
+def sample_image():
+    """100x100 RGB image with random noise (seed 42 for consistency)."""
 @pytest.fixture
-def mock_thumbnail_manager(mock_logger, mock_config):
+def sample_mask():
+    """100x100 grayscale mask (center region active)."""
+@pytest.fixture
+def sharp_image():
+    """High-frequency checkerboard pattern (sharp)."""
+@pytest.fixture
+def blurry_image():
+    """Gaussian blurred uniform gray (blurry)."""
+@pytest.fixture
+def mock_config():
+    """Mock Config object with common parameters."""
+@pytest.fixture
+def mock_config_simple(mock_config):
+    """Alias for mock_config used by some tests."""
+@pytest.fixture
+def sample_frames_data():
+    """Provides sample frame metadata for filtering tests."""
+@pytest.fixture
+def mock_ui_state():
+    """Provides a dictionary with default values for UI-related event models."""
+@pytest.fixture
+def mock_params(mock_ui_state):
+    """Provides an AnalysisParameters instance for testing."""
+@pytest.fixture
+def mock_thumbnail_manager():
     """Provides a mock ThumbnailManager."""
 @pytest.fixture
-def mock_model_registry(mock_logger):
+def mock_model_registry():
     """Provides a mock ModelRegistry."""
 @pytest.fixture
 def mock_progress_queue():
@@ -52,26 +60,42 @@ def mock_progress_queue():
 def mock_cancel_event():
     """Provides a mock cancel event."""
 @pytest.fixture
-def mock_ui_state():
-    """Provides a dictionary with default values for UI-related event models."""
-@pytest.fixture
-def sample_frames_data():
-    """Provides sample frame metadata for filtering tests."""
-@pytest.fixture
 def sample_scenes():
-    """Provides sample Scene objects for scene-related tests."""
+    """Provides a list of sample Scene objects."""
+def pytest_addoption(parser):
+    """Add command line options."""
+```
+
+### `📄 tests/e2e/e2e_run.py`
+
+```python
+class Logger(object):
+    def __init__(self, filename): ...
+    def write(self, message): ...
+    def flush(self): ...
+def run_e2e_verification(): ...
+```
+
+### `📄 tests/e2e/test_photo_cli.py`
+
+```python
+"""E2E CLI Tests for Photo Mode."""
 @pytest.fixture
-def sample_image_rgb():
-    """Provides a sample RGB image for testing."""
-@pytest.fixture
-def sample_mask():
-    """Provides a sample binary mask for testing."""
-@pytest.fixture
-def mock_params(tmp_path):
-    """Provides mock AnalysisParameters for pipeline tests."""
-@pytest.fixture
-def mock_config_simple(tmp_path):
-    """Provides a MagicMock config for tests needing attribute flexibility."""
+def photo_test_dir(tmp_path):
+    """Creates a temporary directory with dummy JPEG photos."""
+def run_cli(args):
+    """Helper to run cli.py."""
+class TestPhotoCLI:
+    """End-to-end tests for the modern unified CLI workflow."""
+    def test_full_photo_cli_workflow(self, photo_test_dir, tmp_path): ...
+    def test_extract_invalid_folder(self, tmp_path): ...
+    def test_analyze_missing_session(self, tmp_path): ...
+```
+
+### `📄 tests/e2e/verify_simple.py`
+
+```python
+def verify_ui_simple(): ...
 ```
 
 ### `📄 tests/integration/test_real_workflow.py`
@@ -102,11 +126,16 @@ def mock_pre_analysis_execution(event, progress_queue, cancel_event, logger, con
     """Mocks execute_pre_analysis generator."""
 def mock_propagation_execution(event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress=None, model_registry=None): ...
 def mock_analysis_execution(event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress=None, model_registry=None): ...
+def mock_ingest_folder(folder_path, output_dir): ...
+def mock_apply_scores_to_photos(photos, weights): ...
+def mock_export_xmps_for_photos(photos, thresholds=None): ...
 core.pipelines.ExtractionPipeline._run_impl = mock_extraction_run
-ui.app_ui.AppUI.preload_models = MagicMock(side_effect=lambda self: setattr(s...
+ui.app_ui.AppUI.preload_models = MagicMock(side_effect=lambda *args: None)
 core.pipelines.execute_pre_analysis = ui.app_ui.execute_pre_analysis = mock_p...
 core.pipelines.execute_propagation = ui.app_ui.execute_propagation = mock_pro...
 core.pipelines.execute_analysis = ui.app_ui.execute_analysis = mock_analysis_...
+core.photo_utils.ingest_folder = mock_ingest_folder
+core.xmp_writer.export_xmps_for_photos = mock_export_xmps_for_photos
 core.utils.download_model = MagicMock()
 core.managers.download_model = MagicMock()
 ```
@@ -115,6 +144,13 @@ core.managers.download_model = MagicMock()
 
 ```python
 def test_ui_init(): ...
+```
+
+### `📄 tests/test_application_state.py`
+
+```python
+def test_push_pop_history(): ...
+def test_history_max_depth(): ...
 ```
 
 ### `📄 tests/ui/ai_ux_analyzer.py`
@@ -175,7 +211,7 @@ def full_analysis_session(analyzed_session):
 
 ```python
 """Accessibility audit tests using axe-core."""
-pytestmark = [pytest.mark.e2e, pytest.mark.accessibility, pytest.mark.audit]
+pytestmark = [pytest.mark.e2e, pytest.mark.accessibility, pytest.mark.audit, ...
 AXE_CORE_URL = "<REDACTED_STRING>"
 def inject_axe(page: Page) -> bool:
     """Inject axe-core into the page for accessibility testing."""
@@ -223,7 +259,7 @@ class TestAdvancedWorkflow:
 
 ```python
 """AI-powered UX audit tests."""
-pytestmark = [pytest.mark.e2e, pytest.mark.ux_audit, pytest.mark.audit]
+pytestmark = [pytest.mark.e2e, pytest.mark.ux_audit, pytest.mark.audit, pytes...
 @pytest.fixture
 def use_ai():
     """Check if AI analysis should be used (API key available)."""
@@ -414,6 +450,30 @@ class TestFullWorkflowMocked:
         """Robustly switch tabs in Gradio."""
 ```
 
+### `📄 tests/ui/test_handler_contracts.py`
+
+```python
+@pytest.fixture
+def mock_app(): ...
+def test_pagination_contract(mock_app):
+    """Verify that pagination handlers return exactly 4 values as wired."""
+def test_pipeline_wrappers_yield_component_keys(mock_app):
+    """Verify that pipeline wrappers yield dictionaries with component-object keys."""
+```
+
+### `📄 tests/ui/test_photo_flow.py`
+
+```python
+"""Playwright UI Tests for Photo Mode."""
+pytestmark = pytest.mark.e2e
+def switch_to_tab(page: Page, tab_name: str):
+    """Switch tabs in Gradio."""
+class TestPhotoWorkflow:
+    """End-to-end Photo Mode UI workflow tests."""
+    def test_photo_mode_full_flow(self, page: Page, app_server):
+        """Tests: Ingest -> Refresh Gallery -> Recalculate -> Export."""
+```
+
 ### `📄 tests/ui/test_session_lifecycle.py`
 
 ```python
@@ -577,10 +637,10 @@ class TestAppUI:
     def test_run_pre_analysis_wrapper(self, app_ui, app_state, tmp_path): ...
     def test_on_extraction_success(self, app_ui, app_state): ...
     def test_on_pre_analysis_success(self, app_ui, app_state, tmp_path): ...
-    def test_push_history(self, app_ui): ...
-    def test_undo_last_action(self, app_ui, tmp_path): ...
+    def test_push_history(self, app_state): ...
+    def test_undo_last_action(self, app_ui, app_state, tmp_path): ...
     def test_get_smart_mode_updates(self, app_ui): ...
-    def test_on_apply_bulk_scene_filters_extended(self, app_ui, tmp_path): ...
+    def test_on_apply_bulk_scene_filters_extended(self, app_ui, app_state, tmp_path): ...
     def test_on_reset_filters(self, app_ui, app_state, tmp_path): ...
     def test_on_auto_set_thresholds(self, app_ui): ...
     @patch('ui.app_ui.execute_session_load')
@@ -635,8 +695,6 @@ class TestAppLogger:
     def test_auto_set_thresholds(self): ...
     def test_apply_all_filters_with_face_and_mask(self, sample_frames_data, mock_config):
         """Verify filtering by face similarity and mask area."""
-    def test_calculate_quality_metrics_with_niqe(self, mock_config):
-        """Test quality metrics calculation including NIQE."""
 class TestPreAnalysisEvent:
     def test_face_ref_validation(self, tmp_path, mock_ui_state):
         """Test the custom validator for face_ref_img_path."""
@@ -703,7 +761,7 @@ class TestFrameEdgeCases:
     """Tests for Frame model edge cases."""
     def test_frame_with_none_image(self):
         """Test Frame with None image data (some workflows don't need images)."""
-    def test_frame_with_image_data(self, sample_image_rgb):
+    def test_frame_with_image_data(self, sample_image):
         """Test Frame stores image data correctly."""
 class TestFilteringEdgeCases:
     """Tests for filtering with edge cases and empty data."""
@@ -719,14 +777,8 @@ class TestAnalysisParametersValidation:
         """Test AnalysisParameters with minimal required fields."""
     def test_params_full(self, tmp_path):
         """Test AnalysisParameters with all fields."""
-class TestQualityConfigEdgeCases:
-    """Tests for QualityConfig edge cases."""
-    def test_quality_config_with_required_fields(self):
-        """Test QualityConfig with required fields."""
-    def test_quality_config_niqe_disabled(self):
-        """Test QualityConfig with NIQE disabled."""
-    def test_quality_config_custom_scales(self):
-        """Test QualityConfig with custom scales."""
+    def test_params_from_ui(self, mock_config):
+        """Test AnalysisParameters.from_ui factory method."""
 class TestErrorHandlerDecorators:
     """Tests for ErrorHandler.with_retry and with_fallback decorators."""
     def test_with_retry_success_first_try(self, mock_logger):
@@ -816,6 +868,35 @@ class TestExportAdvanced:
     @patch('cv2.findContours')
     def test_crop_exported_frames_empty_mask(self, mock_findContours, mock_imread, tmp_path):
         """Test handling of empty masks."""
+```
+
+### `📄 tests/unit/test_face_operators.py`
+
+```python
+class TestEyesOpenOperator:
+    @pytest.fixture
+    def operator(self): ...
+    @pytest.fixture
+    def sample_image(self): ...
+    def test_config(self, operator): ...
+    def test_missing_data_returns_warning(self, operator, sample_image): ...
+    def test_eyes_open(self, operator, sample_image):
+        """Blink 0.0 -> Score 100."""
+    def test_eyes_closed(self, operator, sample_image):
+        """Blink 1.0 -> Score 0."""
+    def test_mixed_blink(self, operator, sample_image):
+        """Max(left, right) used."""
+class TestFacePoseOperator:
+    @pytest.fixture
+    def operator(self): ...
+    @pytest.fixture
+    def sample_image(self): ...
+    def test_config(self, operator): ...
+    def test_missing_matrix(self, operator, sample_image): ...
+    def test_identity_matrix(self, operator, sample_image):
+        """Identity matrix -> all 0 angles."""
+    def test_yaw_rotation(self, operator, sample_image):
+        """Rotate around Y axis (approx)."""
 ```
 
 ### `📄 tests/unit/test_filtering.py`
@@ -956,12 +1037,12 @@ class TestMaskPropagatorE2E:
     @requires_sam3
     def test_mask_propagator_bidirectional(self, tmp_path):
         """MaskPropagator.propagate() works bidirectionally from middle frame."""
-class TestQualityMetricsE2E:
-    """Tests for quality metric calculation with real images."""
-    def test_calculate_quality_metrics_real(self, test_image, tmp_path):
-        """Frame quality metrics can be calculated on real image."""
-    def test_niqe_metric_calculation(self, test_image, tmp_path):
-        """NIQE metric can be calculated (requires pyiqa)."""
+class TestOperatorE2E:
+    """Tests for quality metric calculation using the Operator framework."""
+    def test_run_operators_real(self, test_image, tmp_path):
+        """Standard operators can be executed on a real image."""
+    def test_niqe_operator_real(self, test_image, tmp_path):
+        """NIQE operator can be executed (requires pyiqa and GPU)."""
 class TestExportE2E:
     """E2E tests for export pipeline."""
     def test_export_pipeline_initialization(self, tmp_path):
@@ -1120,9 +1201,6 @@ class TestManagers:
     def test_model_registry_get_or_load(self, mock_logger): ...
     def test_model_registry_get_or_load_error(self, mock_logger): ...
     def test_model_registry_clear(self, mock_logger): ...
-    @patch('core.managers.psutil.virtual_memory')
-    @patch('core.managers.torch.cuda')
-    def test_model_registry_memory_watchdog(self, mock_cuda, mock_psutil, mock_logger, mock_config): ...
     @patch('core.managers.download_model')
     @patch('core.managers.SAM3Wrapper')
     @patch('torch.cuda.is_available', return_value=True)
@@ -1192,6 +1270,164 @@ class TestMaskPropagatorLogic:
         """Test that progress tracker is updated."""
 ```
 
+### `📄 tests/unit/test_niqe_operator.py`
+
+```python
+class TestNiqeOperator:
+    @pytest.fixture
+    def operator(self): ...
+    def test_config(self, operator): ...
+    def test_uninitialized_execution_fails(self, operator): ...
+    @patch('pyiqa.create_metric')
+    def test_initialize_loads_model(self, mock_create, operator): ...
+    @patch('pyiqa.create_metric')
+    def test_execute_flow(self, mock_create, operator): ...
+    @patch('pyiqa.create_metric')
+    def test_execute_with_config_overrides(self, mock_create, operator): ...
+```
+
+### `📄 tests/unit/test_operators.py`
+
+```python
+"""Unit tests for the Operator framework."""
+@pytest.fixture
+def sample_image():
+    """100x100 RGB image with random noise."""
+@pytest.fixture
+def sample_mask():
+    """100x100 grayscale mask (center region active)."""
+@pytest.fixture
+def mock_config():
+    """Mock Config object with sharpness_base_scale."""
+@pytest.fixture
+def sharp_image():
+    """High-frequency checkerboard pattern (sharp)."""
+@pytest.fixture
+def blurry_image():
+    """Gaussian blurred uniform gray (blurry)."""
+@pytest.fixture(autouse=True)
+def clear_registry():
+    """Clear operator registry before each test."""
+class TestOperatorConfig:
+    """Tests for OperatorConfig dataclass."""
+    def test_required_fields(self):
+        """Config requires name and display_name."""
+    def test_default_values(self):
+        """Config has sensible defaults."""
+    def test_ui_metadata(self):
+        """Config supports UI metadata fields."""
+class TestOperatorContext:
+    """Tests for OperatorContext dataclass."""
+    def test_minimal_creation(self, sample_image):
+        """Context can be created with just image_rgb."""
+    def test_all_fields(self, sample_image, sample_mask, mock_config):
+        """Context supports all optional fields."""
+class TestOperatorResult:
+    """Tests for OperatorResult dataclass."""
+    def test_success_case(self):
+        """Result with metrics only indicates success."""
+    def test_error_case(self):
+        """Result with error indicates failure."""
+    def test_warnings(self):
+        """Result can include non-fatal warnings."""
+class TestOperatorRegistry:
+    """Tests for OperatorRegistry."""
+    def test_register_and_get(self, sample_image):
+        """Can register and retrieve an operator."""
+    def test_get_unknown_returns_none(self):
+        """Getting unknown operator returns None."""
+    def test_list_all(self):
+        """list_all returns all operator configs."""
+    def test_initialize_all(self, mock_config):
+        """initialize_all calls initialize on operators."""
+    def test_cleanup_all(self):
+        """cleanup_all calls cleanup on initialized operators."""
+class TestRegisterDecorator:
+    """Tests for @register_operator decorator."""
+    def test_decorator_registers(self):
+        """Decorator registers the operator."""
+class TestRunOperators:
+    """Tests for run_operators bridge function."""
+    def test_runs_all_operators(self, sample_image):
+        """run_operators executes all registered operators."""
+    def test_runs_specific_operators(self, sample_image):
+        """run_operators can run specific operators only."""
+    def test_error_isolation(self, sample_image):
+        """One operator failing doesn't break others."""
+    def test_unknown_operator_error(self, sample_image):
+        """Requesting unknown operator returns error result."""
+class TestOperatorProtocol:
+    """Tests for Operator Protocol compliance."""
+    def test_protocol_is_runtime_checkable(self):
+        """Operator Protocol is runtime checkable."""
+    def test_minimal_implementation(self):
+        """Operator works with just config and execute."""
+class TestSharpnessOperator:
+    """Tests for the SharpnessOperator implementation."""
+    @pytest.fixture
+    def sharpness_operator(self):
+        """Fresh SharpnessOperator instance."""
+    def test_config_values(self, sharpness_operator):
+        """Config has expected values."""
+    def test_execute_returns_operator_result(self, sharpness_operator, sample_image):
+        """Execute returns OperatorResult type."""
+    def test_execute_has_sharpness_score(self, sharpness_operator, sample_image):
+        """Result contains sharpness_score metric."""
+    def test_score_in_valid_range(self, sharpness_operator, sample_image):
+        """Score is between 0 and 100."""
+    def test_sharp_higher_than_blurry(self, sharpness_operator, sharp_image, blurry_image):
+        """Sharp image scores higher than blurry image."""
+    def test_with_mask_changes_score(self, sharpness_operator, sample_mask):
+        """Score differs with mask vs without mask."""
+    def test_error_handling(self, sharpness_operator):
+        """Invalid input returns OperatorResult with error."""
+    def test_uses_config_scale(self, sharpness_operator, sample_image):
+        """Operator uses sharpness_base_scale from config."""
+class TestAutoDiscovery:
+    """Tests for automatic operator discovery."""
+    def test_discover_finds_known_operators(self):
+        """discover_operators finds standard operators."""
+    def test_discover_skips_infrastructure(self):
+        """Infrastructure modules are not discovered as operators."""
+```
+
+### `📄 tests/unit/test_phase1_logic.py`
+
+```python
+class TestPhase1Logic(unittest.TestCase):
+    def setUp(self): ...
+    @patch('ui.app_ui.is_image_folder')
+    @patch('ui.app_ui.get_scene_status_text')
+    def test_on_pre_analysis_success_image_folder(self, mock_get_status, mock_is_image_folder): ...
+    @patch('ui.app_ui.is_image_folder')
+    @patch('ui.app_ui.get_scene_status_text')
+    def test_on_pre_analysis_success_video_folder(self, mock_get_status, mock_is_image_folder): ...
+    def test_propagation_button_handler_guard(self): ...
+```
+
+### `📄 tests/unit/test_phase2_logic.py`
+
+```python
+class TestPhase2Logic(unittest.TestCase):
+    @patch('core.photo_utils.shutil.which')
+    @patch('core.photo_utils.subprocess.run')
+    @patch('core.photo_utils.Image.open')
+    def test_extract_preview_priority_thumbnails_only(self, mock_image_open, mock_run, mock_which): ...
+    @patch('core.photo_utils.shutil.which')
+    @patch('core.photo_utils.subprocess.run')
+    @patch('core.photo_utils.Image.open')
+    def test_extract_preview_resize(self, mock_image_open, mock_run, mock_which): ...
+```
+
+### `📄 tests/unit/test_pipeline_result_schemas.py`
+
+```python
+def test_execute_analysis_schema():
+    """Verify that execute_analysis yields the expected metadata_path."""
+def test_execute_extraction_schema():
+    """Verify that execute_extraction yields the expected keys."""
+```
+
 ### `📄 tests/unit/test_pipelines.py`
 
 ```python
@@ -1200,34 +1436,23 @@ class TestPipelines:
     def mock_logger(self): ...
     @pytest.fixture
     def mock_config(self, tmp_path): ...
-    @pytest.fixture
-    def mock_params(self, tmp_path): ...
-    @pytest.fixture
-    def mock_queue(self): ...
-    @pytest.fixture
-    def mock_cancel_event(self): ...
-    def test_process_ffmpeg_stream(self): ...
-    def test_process_ffmpeg_showinfo(self): ...
+    def test_process_ffmpeg_stream(self, mock_logger, mock_config): ...
+    def test_process_ffmpeg_showinfo(self, mock_logger): ...
     @patch('subprocess.Popen')
-    def test_run_ffmpeg_extraction(self, mock_popen, mock_params, mock_queue, mock_cancel_event, mock_logger, mock_config, tmp_path): ...
+    def test_run_ffmpeg_extraction(self, mock_popen, mock_logger, mock_config, tmp_path): ...
     @patch('core.pipelines.run_ffmpeg_extraction')
-    @patch('core.managers.VideoManager')
-    def test_extraction_pipeline_run_video(self, mock_vm_cls, mock_ffmpeg, mock_params, mock_queue, mock_cancel_event, mock_logger, mock_config): ...
-    @patch('core.pipelines.make_photo_thumbs')
-    def test_extraction_pipeline_run_folder(self, mock_make_thumbs, mock_params, mock_queue, mock_cancel_event, mock_logger, mock_config): ...
+    @patch('core.pipelines.VideoManager.get_video_info')
+    @patch('core.managers.validate_video_file')
+    def test_extraction_pipeline_run_video(self, mock_val, mock_info, mock_run_ffmpeg, mock_logger, mock_config, tmp_path): ...
+    @patch('core.pipelines.ingest_folder')
+    def test_extraction_pipeline_run_folder(self, mock_ingest, mock_logger, mock_config, tmp_path): ...
+    @patch('core.pipelines.initialize_analysis_models')
     @patch('core.pipelines.SubjectMasker')
+    def test_run_full_analysis(self, mock_masker, mock_init, mock_logger, mock_config, tmp_path): ...
     @patch('core.pipelines.initialize_analysis_models')
-    @patch('core.pipelines.create_frame_map')
-    def test_run_full_analysis(self, mock_frame_map, mock_init_models, mock_masker_cls, mock_params, mock_queue, mock_cancel_event, mock_logger, mock_config, tmp_path): ...
-    @patch('core.pipelines.create_frame_map')
-    @patch('core.pipelines.initialize_analysis_models')
-    def test_run_analysis_only(self, mock_init, mock_frame_map, mock_params, mock_queue, mock_cancel_event, mock_logger, mock_config, tmp_path): ...
-    @patch('core.pipelines.ExtractionPipeline')
-    @patch('core.pipelines.shutil.copy2')
-    def test_execute_extraction(self, mock_copy, mock_pipeline_cls, mock_logger, mock_config): ...
+    def test_run_analysis_only(self, mock_init, mock_logger, mock_config, tmp_path): ...
+    def test_execute_extraction(self, mock_config, mock_logger, tmp_path): ...
     def test_validate_session_dir(self, tmp_path): ...
-    def test_execute_session_load_invalid(self, mock_logger): ...
-    def test_execute_session_load_valid(self, mock_logger, tmp_path): ...
 ```
 
 ### `📄 tests/unit/test_pipelines_extended.py`
@@ -1500,6 +1725,46 @@ class TestManagerClasses:
     def test_model_registry_has_get_or_load(self): ...
     def test_thumbnail_manager_has_get(self): ...
     def test_video_manager_has_get_video_info(self): ...
+```
+
+### `📄 tests/unit/test_simple_cv_operators.py`
+
+```python
+class TestEdgeStrengthOperator:
+    @pytest.fixture
+    def operator(self): ...
+    def test_config(self, operator):
+        """Config values are correct."""
+    def test_solid_color_is_zero(self, operator):
+        """Solid color image has zero edge strength."""
+    def test_edges_are_detected(self, operator, sharp_image):
+        """Image with strong edges has >0 edge strength."""
+    def test_scaling(self, operator, sharp_image, mock_config):
+        """Config scale affects score."""
+class TestContrastOperator:
+    @pytest.fixture
+    def operator(self): ...
+    def test_config(self, operator): ...
+    def test_uniform_image_zero_contrast(self, operator):
+        """Uniform image has zero contrast."""
+    def test_high_contrast_pattern(self, operator):
+        """Black and white image has high contrast."""
+    def test_masking_affects_contrast(self, operator, sample_mask):
+        """Masking changes calculation to include only masked pixels."""
+class TestBrightnessOperator:
+    @pytest.fixture
+    def operator(self): ...
+    def test_black_image(self, operator): ...
+    def test_white_image(self, operator): ...
+    def test_gray_image(self, operator): ...
+class TestEntropyOperator:
+    @pytest.fixture
+    def operator(self): ...
+    def test_config(self, operator): ...
+    def test_uniform_image_zero_entropy(self, operator):
+        """Uniform image has 0 entropy."""
+    def test_random_noise_high_entropy(self, operator, sample_image):
+        """Random noise has high entropy."""
 ```
 
 ### `📄 tests/unit/test_smoke.py`
