@@ -8,28 +8,46 @@ description: Auto-generated code skeletons for the main application.
 > Do not edit manually. Run `python scripts/update_agents_md.py` to regenerate.
 
 This file contains auto-generated code skeletons for the main application.
-For test references, see [tests/TESTS_CODE_REFERENCE.md](tests/TESTS_CODE_REFERENCE.md).
-For developer guidelines, see [AGENTS.md](AGENTS.md).
+For test references, see [TESTS_CODE_REFERENCE.md](TESTS_CODE_REFERENCE.md).
+For developer guidelines, see [AGENTS.md](../AGENTS.md).
 
 ## Project Structure
 
 ```text
 .
+├── AGENTS.md
+├── CHANGELOG.md
 ├── README.md
 ├── app.py
-├── changelog.md
+├── cli.py
 ├── core
 │   ├── __init__.py
+│   ├── application_state.py
 │   ├── batch_manager.py
 │   ├── config.py
 │   ├── database.py
 │   ├── error_handling.py
 │   ├── events.py
 │   ├── export.py
+│   ├── face_clustering.py
 │   ├── filtering.py
+│   ├── fingerprint.py
 │   ├── logger.py
 │   ├── managers.py
 │   ├── models.py
+│   ├── operators
+│   │   ├── __init__.py
+│   │   ├── advanced_face.py
+│   │   ├── base.py
+│   │   ├── entropy.py
+│   │   ├── face_metrics.py
+│   │   ├── mask_operators.py
+│   │   ├── niqe.py
+│   │   ├── quality_score.py
+│   │   ├── registry.py
+│   │   ├── sharpness.py
+│   │   └── simple_cv.py
+│   ├── photo_utils.py
 │   ├── pipelines.py
 │   ├── progress.py
 │   ├── sam3_patches.py
@@ -41,29 +59,49 @@ For developer guidelines, see [AGENTS.md](AGENTS.md).
 │   │   ├── seed_selector.py
 │   │   └── subject_masker.py
 │   ├── shared.py
-│   └── utils.py
-├── requirements.txt
+│   ├── system_health.py
+│   ├── utils.py
+│   └── xmp_writer.py
+├── docs
+│   └── TESTS_CODE_REFERENCE.md
+├── examples
+│   ├── __init__.py
+│   └── operators
+│       ├── __init__.py
+│       ├── pixel_count.py
+│       └── test_pixel_count.py
+├── out
+├── run_config.json
 ├── scripts
 │   ├── jules_setup_script.sh
 │   ├── linux_run_app.sh
 │   ├── run_ux_audit.py
 │   ├── take_screenshot.py
 │   ├── update_agents_md.py
-│   ├── verification
-│   │   ├── e2e_run.py
-│   │   └── verify_simple.py
 │   └── verify_quality.py
 ├── subject_frame_extractor.egg-info
 │   ├── SOURCES.txt
 │   ├── dependency_links.txt
 │   ├── requires.txt
 │   └── top_level.txt
+├── test_logging_output
+│   ├── frame_map.json
+│   ├── mask_metadata.json
+│   ├── masks
+│   ├── previews
+│   ├── progress.json
+│   ├── run_config.json
+│   ├── run_fingerprint.json
+│   ├── scene_seeds.json
+│   ├── scenes.json
+│   └── thumbs
 ├── tests
-│   ├── README.md
-│   ├── TESTING.md
-│   ├── TESTS_CODE_REFERENCE.md
 │   ├── assets
 │   ├── conftest.py
+│   ├── e2e
+│   │   ├── e2e_run.py
+│   │   ├── test_photo_cli.py
+│   │   └── verify_simple.py
 │   ├── integration
 │   │   ├── __init__.py
 │   │   ├── e2e_output_debug
@@ -78,11 +116,18 @@ For developer guidelines, see [AGENTS.md](AGENTS.md).
 │   │   │   └── thumbs
 │   │   └── test_real_workflow.py
 │   ├── mock_app.py
+│   ├── regression
+│   ├── research
+│   ├── results
+│   │   ├── e2e_output
+│   │   └── screenshots
 │   ├── smoke_test_ui_init.py
+│   ├── test_application_state.py
 │   ├── ui
 │   │   ├── __init__.py
 │   │   ├── ai_ux_analyzer.py
 │   │   ├── conftest.py
+│   │   ├── mock_photos
 │   │   ├── test_accessibility.py
 │   │   ├── test_advanced_workflow.py
 │   │   ├── test_ai_ux_audit.py
@@ -92,6 +137,8 @@ For developer guidelines, see [AGENTS.md](AGENTS.md).
 │   │   ├── test_export_flow.py
 │   │   ├── test_filters_real.py
 │   │   ├── test_full_workflow_mocked.py
+│   │   ├── test_handler_contracts.py
+│   │   ├── test_photo_flow.py
 │   │   ├── test_session_lifecycle.py
 │   │   ├── test_ui_interactions.py
 │   │   ├── test_visual_regression.py
@@ -107,6 +154,7 @@ For developer guidelines, see [AGENTS.md](AGENTS.md).
 │       ├── test_error_handling.py
 │       ├── test_export.py
 │       ├── test_export_advanced.py
+│       ├── test_face_operators.py
 │       ├── test_filtering.py
 │       ├── test_gallery_utils.py
 │       ├── test_gpu_e2e.py
@@ -117,6 +165,11 @@ For developer guidelines, see [AGENTS.md](AGENTS.md).
 │       ├── test_managers.py
 │       ├── test_managers_extended.py
 │       ├── test_mask_propagator_logic.py
+│       ├── test_niqe_operator.py
+│       ├── test_operators.py
+│       ├── test_phase1_logic.py
+│       ├── test_phase2_logic.py
+│       ├── test_pipeline_result_schemas.py
 │       ├── test_pipelines.py
 │       ├── test_pipelines_extended.py
 │       ├── test_progress.py
@@ -126,36 +179,28 @@ For developer guidelines, see [AGENTS.md](AGENTS.md).
 │       ├── test_scene_utils_helpers.py
 │       ├── test_shared.py
 │       ├── test_signatures.py
+│       ├── test_simple_cv_operators.py
 │       ├── test_smoke.py
 │       ├── test_subject_masker_coverage.py
 │       ├── test_ui_unit.py
 │       └── test_utils.py
-├── ui
-│   ├── __init__.py
-│   ├── app_ui.py
-│   ├── gallery_utils.py
-│   ├── handlers
-│   │   ├── __init__.py
-│   │   └── scene_handler.py
-│   └── tabs
-│       ├── __init__.py
-│       ├── extraction_tab.py
-│       ├── filtering_tab.py
-│       ├── metrics_tab.py
-│       ├── scene_tab.py
-│       └── subject_tab.py
-└── verification
-    └── e2e_output
-        ├── frame_map.json
-        ├── mask_metadata.json
-        ├── masks
-        ├── previews
-        ├── progress.json
-        ├── run_config.json
-        ├── scene_seeds.json
-        ├── scenes.json
-        ├── terminal_log.txt
-        └── thumbs
+└── ui
+    ├── __init__.py
+    ├── app_ui.py
+    ├── components
+    │   ├── __init__.py
+    │   └── log_viewer.py
+    ├── gallery_utils.py
+    ├── handlers
+    │   ├── __init__.py
+    │   └── scene_handler.py
+    └── tabs
+        ├── __init__.py
+        ├── extraction_tab.py
+        ├── filtering_tab.py
+        ├── metrics_tab.py
+        ├── scene_tab.py
+        └── subject_tab.py
 ```
 
 ## Code Skeleton Reference
@@ -171,6 +216,23 @@ def parse_args():
     """Parses command-line arguments."""
 def main():
     """Main entry point for the application."""
+```
+
+### `📄 core/__init__.py`
+
+```python
+"""Core module for Subject Frame Extractor."""
+```
+
+### `📄 core/application_state.py`
+
+```python
+class ApplicationState(BaseModel):
+    """Consolidated state model for the application."""
+    def push_history(self, scenes: List[dict]):
+        """Push a snapshot of scenes to history."""
+    def pop_history(self) -> Optional[List[dict]]:
+        """Pop the last snapshot from history."""
 ```
 
 ### `📄 core/batch_manager.py`
@@ -236,7 +298,7 @@ class Config(BaseSettings):
 ```python
 class Database:
     CURRENT_VERSION = 2
-    def __init__(self, db_path: Path, batch_size: int=50):
+    def __init__(self, db_path: Path, batch_size: int=50, logger: Optional[logging.Logger]=None):
         """Initializes the Database manager."""
     def connect(self):
         """Connects to the SQLite database."""
@@ -296,6 +358,8 @@ class UIEvent(BaseModel):
     model_config = ConfigDict(validate_assignment=True, extra='ignore', str_strip...
 class ExtractionEvent(UIEvent):
     """Data model for frame extraction events."""
+    @model_validator(mode='after')
+    def validate_source(self) -> 'ExtractionEvent': ...
 class PreAnalysisEvent(UIEvent):
     """Data model for pre-analysis configuration and execution."""
     @field_validator('face_ref_img_path')
@@ -324,6 +388,16 @@ def _export_metadata(kept_frames: list, export_dir: Path, logger: 'AppLogger'): 
 def _crop_exported_frames(kept_frames: list, export_dir: Path, crop_ars: str, crop_padding: int, masks_root: Path, logger: 'AppLogger', cancel_event) -> int: ...
 def export_kept_frames(event: ExportEvent, config: 'Config', logger: 'AppLogger', thumbnail_manager, cancel_event) -> str: ...
 def dry_run_export(event: ExportEvent, config: 'Config') -> str: ...
+```
+
+### `📄 core/face_clustering.py`
+
+```python
+"""Face clustering and representative selection logic."""
+def cluster_faces(all_faces: List[Dict[str, Any]], confidence: float=0.5) -> Tuple[np.ndarray, Dict[int, int]]:
+    """Groups detected faces into clusters based on embedding similarity."""
+def get_cluster_representative(all_faces: List[Dict[str, Any]], labels: np.ndarray, target_label: int, video_path: str, output_dir: str) -> Tuple[Optional[str], Optional[np.ndarray], str]:
+    """Finds the best quality face in a cluster and saves a reference crop."""
 ```
 
 ### `📄 core/filtering.py`
@@ -355,6 +429,24 @@ def apply_lpips_dedup(all_frames_data: list[dict], filters: dict, dedup_mask: np
     """Applies LPIPS-based deduplication."""
 ```
 
+### `📄 core/fingerprint.py`
+
+```python
+@dataclass
+class RunFingerprint:
+    def __post_init__(self): ...
+def _hash_dict(data: Dict[str, Any]) -> str:
+    """Create a stable hash of a dictionary."""
+def create_fingerprint(video_path: str, extraction_settings: Dict[str, Any], analysis_settings: Optional[Dict[str, Any]]=None) -> RunFingerprint:
+    """Create a fingerprint for a run."""
+def save_fingerprint(fingerprint: RunFingerprint, output_dir: str) -> None:
+    """Save fingerprint to run_fingerprint.json in output directory."""
+def load_fingerprint(output_dir: str) -> Optional[RunFingerprint]:
+    """Load fingerprint from run_fingerprint.json if it exists."""
+def fingerprints_match(new: RunFingerprint, existing: RunFingerprint) -> bool:
+    """Check if extraction component of fingerprints match."""
+```
+
 ### `📄 core/logger.py`
 
 ```python
@@ -362,33 +454,33 @@ def apply_lpips_dedup(all_frames_data: list[dict], filters: dict, dedup_mask: np
 SUCCESS_LEVEL_NUM = 25
 class LogEvent(BaseModel):
     """Represents a structured log entry."""
+class GradioQueueHandler(logging.Handler):
+    """Logging handler that redirects logs to a Gradio progress queue."""
+    def __init__(self, queue: Queue): ...
+    def emit(self, record: logging.LogRecord): ...
 class ColoredFormatter(logging.Formatter):
     """Custom formatter that adds colors to log levels."""
     COLORS = {'DEBUG': '\x1b[36m', 'INFO': '\x1b[37m', 'WARNING': '\x1b[33m', 'ER...
     def format(self, record: logging.LogRecord) -> str:
         """Formats the log record with color codes."""
-class JsonFormatter(logging.Formatter):
-    """Formatter that outputs logs as JSON strings."""
-    def format(self, record: logging.LogRecord) -> str:
-        """Formats the log record as a JSON string."""
+def setup_logging(config: 'Config', log_dir: Optional[Path]=None, log_to_console: bool=True, progress_queue: Optional[Queue]=None):
+    """Sets up the global logging configuration using dictConfig."""
 class AppLogger:
-    """A streamlined logger for the application, consolidating output into a single ..."""
-    def __init__(self, config: 'Config', log_dir: Optional[Path]=None, log_to_file: bool=True, log_to_console: bool=True):
-        """Initializes the AppLogger."""
-    def set_progress_queue(self, queue: Queue):
-        """Sets the queue used for sending logs to the UI."""
-    def _create_log_event(self, level: str, message: str, component: str, **kwargs) -> LogEvent:
-        """Helper to create a structured LogEvent object."""
-    def _log_event(self, event: LogEvent):
-        """Dispatches the LogEvent to standard logging and the UI queue."""
+    """A streamlined interface for the application's logging."""
+    def __init__(self, config: 'Config', **kwargs):
+        """Initializes the AppLogger. setup_logging() MUST be called once before this."""
+    def _log(self, level: str, message: str, component: str, **kwargs):
+        """Helper to create a structured log and pass to standard logger."""
     def debug(self, message: str, component: str='system', **kwargs): ...
     def info(self, message: str, component: str='system', **kwargs): ...
     def warning(self, message: str, component: str='system', **kwargs): ...
     def error(self, message: str, component: str='system', **kwargs): ...
     def success(self, message: str, component: str='system', **kwargs): ...
     def critical(self, message: str, component: str='system', **kwargs): ...
+    def set_progress_queue(self, queue: Queue):
+        """No longer used. UI should call setup_logging with progress_queue."""
     def copy_log_to_output(self, output_dir: Path):
-        """No longer needed with consolidated logging."""
+        """No longer needed."""
 ```
 
 ### `📄 core/managers.py`
@@ -411,16 +503,13 @@ class ThumbnailManager:
 class ModelRegistry:
     """Thread-safe registry for lazy loading and caching of heavy ML models."""
     def __init__(self, logger: Optional['AppLogger']=None): ...
-    def lock(self, key: str):
-        """Prevents a model from being cleared by the watchdog."""
-    def unlock(self, key: str):
-        """Allows a model to be cleared by the watchdog again."""
+    @contextlib.contextmanager
+    def locked(self, key: str):
+        """No-op context manager for backward compatibility."""
     def get_or_load(self, key: str, loader_fn: Callable[[], Any]) -> Any:
         """Retrieves a model by key, loading it via loader_fn if not present."""
-    def check_memory_usage(self, config: 'Config'):
-        """Monitors system and GPU memory usage. """
-    def clear(self, force: bool=True):
-        """Clears loaded models from the registry."""
+    def clear(self):
+        """Clears all loaded models from the registry."""
     def get_tracker(self, model_name: str, models_path: str, user_agent: str, retry_params: tuple, config: 'Config') -> Optional['SAM3Wrapper']:
         """Gets or loads the SAM3 tracker, handling CPU fallback on CUDA OOM."""
     def _load_tracker_impl(self, model_name: str, models_path: str, user_agent: str, retry_params: tuple, device: str, config: 'Config') -> 'SAM3Wrapper': ...
@@ -465,7 +554,7 @@ class VideoManager:
     def prepare_video(self, logger: 'AppLogger') -> str:
         """Prepares the video for processing."""
     @staticmethod
-    def get_video_info(video_path: str) -> dict:
+    def get_video_info(video_path: Optional[str]) -> dict:
         """Extracts metadata (FPS, dimensions, frame count) from the video file."""
 ```
 
@@ -483,8 +572,6 @@ class FrameMetrics(BaseModel):
 class Frame(BaseModel):
     """Represents a single video frame and its associated metadata."""
     model_config = ConfigDict(arbitrary_types_allowed=True)
-    def calculate_quality_metrics(self, thumb_image_rgb: np.ndarray, quality_config: 'QualityConfig', logger: 'AppLogger', mask: Optional[np.ndarray]=None, niqe_metric: Optional[Callable]=None, main_config: Optional['Config']=None, face_landmarker: Optional[Callable]=None, face_bbox: Optional[List[int]]=None, metrics_to_compute: Optional[Dict[str, bool]]=None):
-        """Computes various image quality metrics (sharpness, contrast, NIQE, etc.) for ..."""
 class Scene(BaseModel):
     """Represents a detected scene or shot in the video."""
 class SceneState:
@@ -515,11 +602,213 @@ class MaskingResult(BaseModel):
     """Result of the mask propagation process for a frame."""
 ```
 
+### `📄 core/operators/__init__.py`
+
+```python
+"""Extensible Operator Framework for Image Analysis."""
+__all__ = ['Operator', 'OperatorConfig', 'OperatorContext', 'OperatorResult',...
+```
+
+### `📄 core/operators/advanced_face.py`
+
+```python
+@register_operator
+class FaceSimilarityOperator:
+    @property
+    def config(self) -> OperatorConfig: ...
+    def execute(self, ctx: OperatorContext) -> OperatorResult: ...
+@register_operator
+class FaceProminenceOperator:
+    @property
+    def config(self) -> OperatorConfig: ...
+    def execute(self, ctx: OperatorContext) -> OperatorResult: ...
+```
+
+### `📄 core/operators/base.py`
+
+```python
+"""Operator Protocol and Base Types for Analysis Operators."""
+@dataclass
+class OperatorConfig:
+    """Configuration and metadata for an operator."""
+@dataclass
+class OperatorContext:
+    """Execution context passed to operators."""
+@dataclass
+class OperatorResult:
+    """Standardized result from operator execution."""
+    @property
+    def success(self) -> bool:
+        """Returns True if no error occurred."""
+@runtime_checkable
+class Operator(Protocol):
+    """Protocol defining the operator interface."""
+    @property
+    def config(self) -> OperatorConfig:
+        """Returns operator configuration and metadata."""
+    def execute(self, ctx: OperatorContext) -> OperatorResult:
+        """Execute the operator on the given context."""
+    def initialize(self, config: Any) -> None:
+        """Optional: Initialize operator with app config."""
+    def cleanup(self) -> None:
+        """Optional: Clean up operator resources."""
+```
+
+### `📄 core/operators/entropy.py`
+
+```python
+@register_operator
+class EntropyOperator:
+    @property
+    def config(self) -> OperatorConfig: ...
+    def execute(self, ctx: OperatorContext) -> OperatorResult: ...
+```
+
+### `📄 core/operators/face_metrics.py`
+
+```python
+def _get_face_data(ctx: OperatorContext) -> tuple[Optional[dict], Optional[np.ndarray]]:
+    """Helper to get or compute face landmarks and blendshapes."""
+@register_operator
+class EyesOpenOperator:
+    @property
+    def config(self) -> OperatorConfig: ...
+    def execute(self, ctx: OperatorContext) -> OperatorResult: ...
+@register_operator
+class FacePoseOperator:
+    @property
+    def config(self) -> OperatorConfig: ...
+    def execute(self, ctx: OperatorContext) -> OperatorResult: ...
+```
+
+### `📄 core/operators/mask_operators.py`
+
+```python
+@register_operator
+class PhashOperator:
+    @property
+    def config(self) -> OperatorConfig: ...
+    def execute(self, ctx: OperatorContext) -> OperatorResult: ...
+@register_operator
+class SubjectMaskAreaOperator:
+    @property
+    def config(self) -> OperatorConfig: ...
+    def execute(self, ctx: OperatorContext) -> OperatorResult: ...
+```
+
+### `📄 core/operators/niqe.py`
+
+```python
+@register_operator
+class NiqeOperator:
+    def __init__(self): ...
+    @property
+    def config(self) -> OperatorConfig: ...
+    def initialize(self, config):
+        """Load pyiqa model."""
+    def cleanup(self):
+        """Release resources."""
+    def execute(self, ctx: OperatorContext) -> OperatorResult: ...
+```
+
+### `📄 core/operators/quality_score.py`
+
+```python
+@register_operator
+class QualityScoreOperator:
+    @property
+    def config(self) -> OperatorConfig: ...
+    def execute(self, ctx: OperatorContext) -> OperatorResult: ...
+```
+
+### `📄 core/operators/registry.py`
+
+```python
+"""Operator Registry for managing and discovering operators."""
+class OperatorRegistry:
+    """Central registry for operator instances."""
+    @classmethod
+    def register(cls, operator: Operator) -> None:
+        """Register an operator instance."""
+    @classmethod
+    def get(cls, name: str) -> Optional[Operator]:
+        """Get an operator by name."""
+    @classmethod
+    def list_all(cls) -> list[OperatorConfig]:
+        """List all registered operator configs."""
+    @classmethod
+    def list_names(cls) -> list[str]:
+        """List all registered operator names."""
+    @classmethod
+    def initialize_all(cls, config: Any) -> None:
+        """Initialize all registered operators."""
+    @classmethod
+    def cleanup_all(cls) -> None:
+        """Clean up all registered operators."""
+    @classmethod
+    def clear(cls) -> None:
+        """Clear all registrations (useful for testing)."""
+def discover_operators(package_path: str='core.operators') -> list[str]:
+    """Auto-discover and register operators from a package."""
+def register_operator(cls: Type[Operator]) -> Type[Operator]:
+    """Decorator to register an operator class."""
+def run_operators(image_rgb: Any, mask: Optional[Any]=None, config: Optional[Any]=None, operators: Optional[list[str]]=None, params: Optional[dict]=None, model_registry: Optional[Any]=None, logger: Optional[Any]=None, shared_data: Optional[dict]=None) -> dict[str, OperatorResult]:
+    """Bridge function to run operators on an image."""
+```
+
+### `📄 core/operators/sharpness.py`
+
+```python
+"""Sharpness Operator - Measures image sharpness using Laplacian variance."""
+@register_operator
+class SharpnessOperator:
+    """Computes sharpness score using Laplacian variance."""
+    @property
+    def config(self) -> OperatorConfig:
+        """Returns operator configuration."""
+    def execute(self, ctx: OperatorContext) -> OperatorResult:
+        """Compute sharpness score from image."""
+    def initialize(self, config: Any) -> None:
+        """No initialization needed (stateless operator)."""
+    def cleanup(self) -> None:
+        """No cleanup needed (stateless operator)."""
+```
+
+### `📄 core/operators/simple_cv.py`
+
+```python
+@register_operator
+class EdgeStrengthOperator:
+    @property
+    def config(self) -> OperatorConfig: ...
+    def execute(self, ctx: OperatorContext) -> OperatorResult: ...
+@register_operator
+class ContrastOperator:
+    @property
+    def config(self) -> OperatorConfig: ...
+    def execute(self, ctx: OperatorContext) -> OperatorResult: ...
+@register_operator
+class BrightnessOperator:
+    @property
+    def config(self) -> OperatorConfig: ...
+    def execute(self, ctx: OperatorContext) -> OperatorResult: ...
+```
+
+### `📄 core/photo_utils.py`
+
+```python
+logger = logging.getLogger(__name__)
+def extract_preview(raw_path: Path, output_dir: Path, thumbnails_only: bool=True) -> Optional[Path]:
+    """Extracts the embedded JPEG preview from a RAW file using ExifTool."""
+def ingest_folder(folder_path: Path, output_dir: Path, recursive: bool=False, thumbnails_only: bool=True) -> List[Dict[str, Any]]:
+    """Scans a folder for images, extracting previews for RAW files."""
+```
+
 ### `📄 core/pipelines.py`
 
 ```python
-def _process_ffmpeg_stream(stream, tracker: Optional['AdvancedProgressTracker'], desc: str, total_duration_s: float):
-    """Parses FFmpeg progress stream and updates the tracker."""
+def _process_ffmpeg_stream(stream, tracker: Optional['AdvancedProgressTracker'], desc: str, total_duration_s: float, start_time_s: float=0):
+    """Parses FFmpeg progress stream and updates the tracker with optional time offset."""
 def _process_ffmpeg_showinfo(stream, fps: float) -> tuple[list, str]:
     """Parses FFmpeg stderr for 'showinfo' frame timestamps to map back to original ..."""
 def run_ffmpeg_extraction(video_path: str, output_dir: Path, video_info: dict, params: 'AnalysisParameters', progress_queue: Queue, cancel_event: threading.Event, logger: 'AppLogger', config: 'Config', tracker: Optional['AdvancedProgressTracker']=None):
@@ -550,13 +839,11 @@ class AnalysisPipeline(Pipeline):
     def _run_image_folder_analysis(self, tracker: Optional['AdvancedProgressTracker']=None) -> dict:
         """Specialized execution path for image folder inputs."""
     def _run_analysis_loop(self, scenes_to_process: list['Scene'], metrics_to_compute: dict, tracker: Optional['AdvancedProgressTracker']=None):
-        """Orchestrates the parallel processing of frames for metric calculation."""
+        """Orchestrates the parallel processing of frames with dynamic batch sizing."""
     def _process_batch(self, batch_paths: list[Path], metrics_to_compute: dict) -> int:
         """Processes a batch of frame files."""
     def _process_single_frame(self, thumb_path: Path, metrics_to_compute: dict):
         """Analyzes a single frame: computes metrics, face similarity, and stores metadata."""
-    def _analyze_face_similarity(self, frame: 'Frame', image_rgb: np.ndarray) -> Optional[list[int]]:
-        """Computes face similarity and confidence against the reference face."""
 def _handle_extraction_uploads(event_dict: dict, config: 'Config') -> dict:
     """Handles video file uploads and updates the event dictionary."""
 def _initialize_extraction_params(event_dict: dict, config: 'Config', logger: 'AppLogger') -> tuple[AnalysisParameters, AdvancedProgressTracker]:
@@ -628,15 +915,19 @@ class AdvancedProgressTracker:
 ### `📄 core/sam3_patches.py`
 
 ```python
-"""SAM3 Compatibility Patches for Windows"""
+"""SAM3 Compatibility Patches"""
 def edt_triton_fallback(data):
     """OpenCV-based fallback for Euclidean Distance Transform when Triton unavailable"""
 def connected_components_fallback(input_tensor):
     """CPU-based fallback for connected components when Triton unavailable"""
 def set_image_patched(self, image):
     """Patched version of Sam3Processor.set_image to handle HWC inputs correctly."""
+def patch_sam3_dtype():
+    """Force SAM3 to use float32 to avoid BFloat16/float32 bias mismatch on Ampere+ ..."""
+def patch_sam3_resources():
+    """Monkey patch pkg_resources within sam3.model_builder to use importlib.resources."""
 def apply_patches():
-    """Apply monkey patches to SAM3 if Triton is not available, AND fix image proces..."""
+    """Apply all monkey patches to SAM3."""
 ```
 
 ### `📄 core/scene_utils/__init__.py`
@@ -778,6 +1069,22 @@ def build_scene_gallery_items(scenes: List[Union[dict, 'Scene']], view: str, out
     """Build gallery items for scene display."""
 ```
 
+### `📄 core/system_health.py`
+
+```python
+"""System health checks and diagnostic report generation."""
+def check_environment() -> List[str]:
+    """Checks the basic Python and PyTorch/CUDA environment."""
+def check_dependencies() -> List[str]:
+    """Checks for the presence of core dependencies."""
+def check_paths_and_assets(config: Any) -> List[str]:
+    """Checks for required paths and assets."""
+def simulate_pipeline(config: Any, logger: Any, progress_queue: Any, cancel_event: Any, thumbnail_manager: Any, cuda_available: bool) -> List[str]:
+    """Simulates the E2E pipeline with sample assets."""
+def generate_full_diagnostic_report(config: Any, logger: Any, progress_queue: Any, cancel_event: Any, thumbnail_manager: Any, cuda_available: bool) -> Generator[str, None, None]:
+    """Generates a full diagnostic report as a generator."""
+```
+
 ### `📄 core/utils.py`
 
 ```python
@@ -798,8 +1105,10 @@ def safe_resource_cleanup(device: str='cpu'):
     """Context manager to ensure garbage collection and CUDA cache clearing."""
 def is_image_folder(p: Union[str, Path]) -> bool:
     """Checks if the path points to a directory."""
-def list_images(p: Union[str, Path], cfg: Config) -> list[Path]:
-    """Lists all valid image files in a directory."""
+def list_images(p: Union[str, Path], cfg: Config, recursive: bool=False) -> list[Path]:
+    """Lists all valid image files in a directory (optionally recursive)."""
+def detect_hwaccel(logger: 'AppLogger') -> tuple[Optional[str], Optional[str]]:
+    """Probes FFmpeg for hardware acceleration support."""
 @njit
 def compute_entropy(hist: np.ndarray, entropy_norm: float) -> float:
     """Computes normalized entropy from a histogram using Numba."""
@@ -820,6 +1129,16 @@ def draw_bbox(img_rgb: np.ndarray, xywh: list, config: 'Config', color: Optional
     """Draws a bounding box and optional label on an image."""
 ```
 
+### `📄 core/xmp_writer.py`
+
+```python
+logger = logging.getLogger(__name__)
+def write_xmp_sidecar(source_path: Path, rating: int, label: str) -> Optional[Path]:
+    """Writes an XMP sidecar file compatible with Adobe Lightroom/Bridge."""
+def export_xmps_for_photos(photos: List[Dict], star_thresholds: List[int]=None) -> int:
+    """Writes XMP sidecars for all photos in the list."""
+```
+
 ### `📄 scripts/run_ux_audit.py`
 
 ```python
@@ -835,22 +1154,6 @@ def main(): ...
 
 ```python
 async def main(): ...
-```
-
-### `📄 scripts/verification/e2e_run.py`
-
-```python
-class Logger(object):
-    def __init__(self, filename): ...
-    def write(self, message): ...
-    def flush(self): ...
-def run_e2e_verification(): ...
-```
-
-### `📄 scripts/verification/verify_simple.py`
-
-```python
-def verify_ui_simple(): ...
 ```
 
 ### `📄 scripts/verify_quality.py`
@@ -869,8 +1172,6 @@ class QualityVerifier:
 ### `📄 ui/app_ui.py`
 
 ```python
-class ApplicationState(BaseModel):
-    """Consolidated state model for the application."""
 class AppUI:
     """Main UI class for the Frame Extractor & Analyzer application."""
     def __init__(self, config: 'Config', logger: 'AppLogger', progress_queue: Queue, cancel_event: threading.Event, thumbnail_manager: 'ThumbnailManager', model_registry: 'ModelRegistry'):
@@ -909,7 +1210,9 @@ class AppUI:
     def _toggle_pause(self, tracker: 'AdvancedProgressTracker') -> str:
         """Toggles the pause state of the current running task."""
     def run_system_diagnostics(self) -> Generator[str, None, None]:
-        """Runs a comprehensive suite of system checks and a dry run."""
+        """Runs a comprehensive suite of system checks and a dry run via core.system_hea..."""
+    def get_ui_updates_from_state(self, state: ApplicationState) -> dict:
+        """Centralized reducer that maps ApplicationState to Gradio component updates."""
     def _create_pre_analysis_event(self, state: ApplicationState, *args: Any) -> 'PreAnalysisEvent':
         """Helper to construct a PreAnalysisEvent from UI arguments."""
     def _run_pipeline(self, pipeline_func: Callable, event: Any, progress: Callable, success_callback: Optional[Callable]=None, *args):
@@ -934,6 +1237,10 @@ class AppUI:
         """Callback for successful pre-analysis."""
     def run_pre_analysis_wrapper(self, current_state: ApplicationState, *args, progress=None):
         """Wrapper to execute the pre-analysis pipeline."""
+    def _propagation_button_handler(self, current_state: ApplicationState, *args, progress=None):
+        """Button handler for propagation that properly yields from the generator."""
+    def _analysis_button_handler(self, current_state: ApplicationState, *args, progress=None):
+        """Button handler for analysis that properly yields from the generator."""
     def run_propagation_wrapper(self, scenes, current_state: ApplicationState, *args, progress=None):
         """Wrapper to execute the mask propagation pipeline."""
     def _on_propagation_success(self, result: dict, current_state: ApplicationState) -> dict:
@@ -979,23 +1286,37 @@ class AppUI:
     def on_auto_set_thresholds(self, per_metric_values: dict, p: int, *checkbox_values: bool) -> list[gr.update]:
         """Automatically sets filter thresholds based on data percentiles."""
     @safe_ui_callback('Export')
-    def export_kept_frames_wrapper(self, state: ApplicationState, enable_crop: bool, crop_ars: str, crop_padding: int, require_face_match: bool, dedup_thresh: int, dedup_method_ui: str, *slider_values: float) -> str:
+    def export_kept_frames_wrapper(self, state: ApplicationState, enable_crop: bool, crop_ars: str, crop_padding: int, enable_xmp_export: bool, require_face_match: bool, dedup_thresh: int, dedup_method_ui: str, *slider_values: float) -> str:
         """Wrapper to execute the final frame export."""
     @safe_ui_callback('Export Dry Run')
-    def dry_run_export_wrapper(self, state: ApplicationState, enable_crop: bool, crop_ars: str, crop_padding: int, require_face_match: bool, dedup_thresh: int, dedup_method_ui: str, *slider_values: float) -> str:
+    def dry_run_export_wrapper(self, state: ApplicationState, enable_crop: bool, crop_ars: str, crop_padding: int, enable_xmp_export: bool, require_face_match: bool, dedup_thresh: int, dedup_method_ui: str, *slider_values: float) -> str:
         """Wrapper to perform a dry run of the export."""
-    def on_auto_set_thresholds(self, per_metric_values: dict, p: int, *checkbox_values: bool) -> list[gr.update]:
-        """Automatically sets filter thresholds based on data percentiles."""
-    def export_kept_frames_wrapper(self, all_frames_data: list, output_dir: str, video_path: str, enable_crop: bool, crop_ars: str, crop_padding: int, require_face_match: bool, dedup_thresh: int, dedup_method_ui: str, *slider_values: float) -> str:
-        """Wrapper to execute the final frame export."""
-    def dry_run_export_wrapper(self, all_frames_data: list, output_dir: str, video_path: str, enable_crop: bool, crop_ars: str, crop_padding: int, require_face_match: bool, dedup_thresh: int, dedup_method_ui: str, *slider_values: float) -> str:
-        """Wrapper to perform a dry run of the export."""
+```
+
+### `📄 ui/components/log_viewer.py`
+
+```python
+"""Log viewer component for the Gradio UI."""
+class LogViewer:
+    """Encapsulates the log viewing accordion and its background update logic."""
+    def __init__(self, logger: Any, progress_queue: Any, log_level_choices: List[str]): ...
+    def build(self) -> gr.Accordion:
+        """Constructs the log viewer UI components."""
+    def get_log_update_dict(self, new_log_msg: str=None) -> Dict[Any, str]:
+        """Returns a Gradio update dictionary for the unified log component."""
+    def setup_handlers(self, all_outputs: List[Any]):
+        """Sets up background log refresh and filter toggles."""
 ```
 
 ### `📄 ui/gallery_utils.py`
 
 ```python
 __all__ = ['build_scene_gallery_items', 'render_mask_overlay', 'on_filters_ch...
+@lru_cache(maxsize=256)
+def _load_mask_cached(mask_path: str) -> Optional[np.ndarray]:
+    """Loads a mask from disk with LRU caching."""
+def clear_mask_cache():
+    """Clears the mask LRU cache."""
 def _update_gallery(all_frames_data: list[dict], filters: dict, output_dir: str, gallery_view: str, show_overlay: bool, overlay_alpha: float, thumbnail_manager: Any, config: Any, logger: Any) -> tuple[str, gr.update]:
     """Updates the Gradio gallery based on applied filters."""
 def on_filters_changed(event: FilterEvent, thumbnail_manager: Any, config: Any, logger: Any) -> dict:
@@ -1019,17 +1340,15 @@ class SceneHandler:
     def __init__(self, app: 'AppUI'): ...
     def setup_handlers(self):
         """Configures event handlers for the scene selection tab (pagination, bulk actio..."""
-    def _push_history(self, scenes: List[Dict], history: Deque) -> Deque:
-        """Pushes the current scene state to the history stack for undo support."""
-    def _undo_last_action(self, scenes: List[Dict], history: Deque, output_dir: str, view: str) -> tuple:
+    def _undo_last_action(self, app_state: ApplicationState, view: str) -> tuple:
         """Reverts the last action by popping from the history stack."""
-    def on_reset_scene_wrapper(self, scenes, shot_id, outdir, view, history, *ana_args):
+    def on_reset_scene_wrapper(self, app_state: ApplicationState, view: str, *ana_args):
         """Resets a scene's manual overrides to its initial state."""
-    def on_select_for_edit(self, scenes, view, indexmap, outputdir, event: Optional[gr.EventData]=None):
+    def on_select_for_edit(self, app_state: ApplicationState, view: str, event: Optional[gr.SelectData]=None):
         """Handles selection of a scene from the gallery for editing."""
-    def on_editor_toggle(self, scenes, selected_shotid, outputfolder, view, new_status, history):
+    def on_editor_toggle(self, app_state: ApplicationState, view: str, new_status: str):
         """Toggles the included/excluded status of a scene."""
-    def on_apply_bulk_scene_filters_extended(self, scenes, min_mask_pct, min_face_sim, min_quality, enable_face_filter, output_dir, view, history):
+    def on_apply_bulk_scene_filters_extended(self, app_state: ApplicationState, min_mask_pct, min_face_sim, min_quality, enable_face_filter, view):
         """Applies bulk filters to scenes based on metric thresholds."""
 ```
 

@@ -282,8 +282,8 @@ description: Auto-generated code skeletons for the main application.
 > Do not edit manually. Run `python scripts/update_agents_md.py` to regenerate.
 
 This file contains auto-generated code skeletons for the main application.
-For test references, see [tests/TESTS_CODE_REFERENCE.md](tests/TESTS_CODE_REFERENCE.md).
-For developer guidelines, see [AGENTS.md](AGENTS.md).
+For test references, see [TESTS_CODE_REFERENCE.md](TESTS_CODE_REFERENCE.md).
+For developer guidelines, see [AGENTS.md](../AGENTS.md).
 
 {file_tree}
 """
@@ -306,7 +306,7 @@ description: Auto-generated code skeletons for the test suite.
 This file contains auto-generated code skeletons for the test suite.
 """
 
-    tests_ref_path = Path("tests/TESTS_CODE_REFERENCE.md")
+    tests_ref_path = Path("docs/TESTS_CODE_REFERENCE.md")
     tests_ref_path.parent.mkdir(exist_ok=True)
     tests_ref_path.write_text(header_tests + tests_skeleton, encoding="utf-8")
     print(f"Successfully updated {tests_ref_path}")
