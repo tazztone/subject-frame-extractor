@@ -454,6 +454,7 @@ class TestSharpnessOperator:
         """Fresh SharpnessOperator instance."""
         # Import here to avoid registration conflicts with autouse fixture
         from core.operators.sharpness import SharpnessOperator
+
         return SharpnessOperator()
 
     def test_config_values(self, sharpness_operator):
@@ -550,6 +551,7 @@ class TestAutoDiscovery:
         """discover_operators finds standard operators."""
         # Force unload of operator modules to allow re-discovery
         import sys
+
         for mod in list(sys.modules.keys()):
             # Unload simple_cv, sharpness, etc. but keep base/registry
             if mod.startswith("core.operators.") and mod not in (

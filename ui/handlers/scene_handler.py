@@ -66,7 +66,12 @@ class SceneHandler:
             )
             app_state.scene_gallery_index_map = index_map
             page_choices = [str(i) for i in range(1, total_pages + 1)] if total_pages > 0 else ["1"]
-            return app_state, gr.update(value=items), f"/ {total_pages} pages", gr.update(choices=page_choices, value="1")
+            return (
+                app_state,
+                gr.update(value=items),
+                f"/ {total_pages} pages",
+                gr.update(choices=page_choices, value="1"),
+            )
 
         def on_next_page(app_state: ApplicationState, view: str, page_num):
             """Go to next page (clamped to max)."""
@@ -95,7 +100,7 @@ class SceneHandler:
             # We need to construct scene objects
             scenes_objs = [Scene(**s) for s in app_state.scenes]
 
-            app_state.push_history(app_state.scenes) # Save history before recompute
+            app_state.push_history(app_state.scenes)  # Save history before recompute
 
             scenes_objs, gallery_items, index_map, status, _ = _wire_recompute_handler(
                 self.config,
@@ -119,9 +124,8 @@ class SceneHandler:
             return (
                 app_state,
                 gr.update(value=gallery_items),
-                status, # sceneeditorstatusmd
+                status,  # sceneeditorstatusmd
             )
-
 
         # --- Wire existing components ---
 
@@ -169,7 +173,9 @@ class SceneHandler:
             outputs=[
                 c["application_state"],
                 c["scene_filter_status"],
-                c["scene_gallery"], # Updates just in case but usually not needed for select? Actually on_select_for_edit returns update() for gallery.
+                c[
+                    "scene_gallery"
+                ],  # Updates just in case but usually not needed for select? Actually on_select_for_edit returns update() for gallery.
                 c["sceneeditorstatusmd"],
                 c["sceneeditorpromptinput"],
                 c["scene_editor_group"],
@@ -368,9 +374,7 @@ class SceneHandler:
             app_state.scenes[scene_idx] = scene_state.data
             save_scene_seeds([Scene(**s) for s in app_state.scenes], outdir, self.logger)
 
-            gallery_items, index_map, _ = build_scene_gallery_items(
-                app_state.scenes, view, outdir, config=self.config
-            )
+            gallery_items, index_map, _ = build_scene_gallery_items(app_state.scenes, view, outdir, config=self.config)
             return (
                 app_state,
                 gr.update(value=gallery_items),
@@ -400,9 +404,11 @@ class SceneHandler:
 
         # Retrieve scene from mapped index
         if sel_idx >= len(app_state.scene_gallery_index_map):
-            self.logger.warning(f"Selection index {sel_idx} out of range for map (len {len(app_state.scene_gallery_index_map)})")
+            self.logger.warning(
+                f"Selection index {sel_idx} out of range for map (len {len(app_state.scene_gallery_index_map)})"
+            )
             # If map is stale, fallback or return empty? Return empty for safety
-            return (app_state, *[gr.update() for _ in range(8)]) # Sloppy but safe
+            return (app_state, *[gr.update() for _ in range(8)])  # Sloppy but safe
 
         scene_idx_in_state = app_state.scene_gallery_index_map[sel_idx]
         scene = app_state.scenes[scene_idx_in_state]
@@ -460,9 +466,7 @@ class SceneHandler:
         )
         app_state.scenes = [s.model_dump() for s in scenes_objs]
 
-        items, index_map, _ = build_scene_gallery_items(
-            app_state.scenes, view, outputfolder, config=self.config
-        )
+        items, index_map, _ = build_scene_gallery_items(app_state.scenes, view, outputfolder, config=self.config)
         return app_state, status_text, gr.update(value=items), button_update
 
     def on_apply_bulk_scene_filters_extended(
@@ -515,9 +519,7 @@ class SceneHandler:
                 changed_count += 1
 
         save_scene_seeds([Scene(**s) for s in app_state.scenes], output_dir, self.logger)
-        items, index_map, _ = build_scene_gallery_items(
-            app_state.scenes, view, output_dir, config=self.config
-        )
+        items, index_map, _ = build_scene_gallery_items(app_state.scenes, view, output_dir, config=self.config)
         status_text, button_update = get_scene_status_text([Scene(**s) for s in app_state.scenes])
 
         app_state.scene_gallery_index_map = index_map

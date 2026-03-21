@@ -34,9 +34,7 @@ def check_environment() -> List[str]:
     try:
         report.append(f"  - PyTorch Version: OK ({torch.__version__})")
         if torch.cuda.is_available():
-            report.append(
-                f"  - CUDA: OK (Version: {torch.version.cuda}, GPU: {torch.cuda.get_device_name(0)})"
-            )
+            report.append(f"  - CUDA: OK (Version: {torch.version.cuda}, GPU: {torch.cuda.get_device_name(0)})")
         else:
             report.append("  - CUDA: NOT AVAILABLE (Running in CPU mode)")
     except Exception as e:
@@ -64,9 +62,7 @@ def check_paths_and_assets(config: Any) -> List[str]:
     exiftool_path = shutil.which("exiftool")
     if exiftool_path:
         try:
-            ver = subprocess.run(
-                [exiftool_path, "-ver"], capture_output=True, text=True
-            ).stdout.strip()
+            ver = subprocess.run([exiftool_path, "-ver"], capture_output=True, text=True).stdout.strip()
             report.append(f"  - ExifTool: OK (Version: {ver})")
         except Exception:
             report.append(f"  - ExifTool: FOUND but check failed (Path: {exiftool_path})")
@@ -204,9 +200,7 @@ def simulate_pipeline(
         # Stage 5: Filtering
         from core.filtering import apply_all_filters_vectorized, load_and_prep_filter_data
 
-        all_frames, _ = load_and_prep_filter_data(
-            output_dir, lambda: ["quality_score", "face_sim"], config
-        )
+        all_frames, _ = load_and_prep_filter_data(output_dir, lambda: ["quality_score", "face_sim"], config)
         report.append("  - Stage 5: Filtering...")
         kept, _, _, _ = apply_all_filters_vectorized(
             all_frames,
@@ -227,9 +221,7 @@ def simulate_pipeline(
             crop_padding=0,
             filter_args={"require_face_match": False, "dedup_thresh": -1},
         )
-        export_msg = export_kept_frames(
-            export_event, config, logger, thumbnail_manager, cancel_event
-        )
+        export_msg = export_kept_frames(export_event, config, logger, thumbnail_manager, cancel_event)
         if "Error" in export_msg:
             raise RuntimeError(f"Export failed: {export_msg}")
         report[-1] += " OK"

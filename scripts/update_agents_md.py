@@ -229,8 +229,8 @@ def generate_skeleton_section(source_dirs):
             continue
 
         if root_path.is_file():
-             if root_path.suffix == ".py":
-                 files.append(root_path)
+            if root_path.suffix == ".py":
+                files.append(root_path)
         else:
             for root, dirs, filenames in os.walk(root_path):
                 # Exclude hidden and venv dirs even within whitelisted sources
@@ -268,8 +268,6 @@ def main():
 
     # Tests skeleton
     tests_skeleton = generate_skeleton_section(["tests"])
-
-
 
     # Generate AGENTS_CODE_REFERENCE.md
     header_main = """---

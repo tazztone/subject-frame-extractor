@@ -29,6 +29,7 @@ from core.pipelines import (
 VIDEO_PATH = Path("downloads/example clip 720p 2x.mov")
 FACE_PATH = Path("downloads/example face.png")
 
+
 @pytest.mark.integration
 @pytest.mark.slow
 def test_real_end_to_end_workflow(tmp_path):
@@ -74,7 +75,7 @@ def test_real_end_to_end_workflow(tmp_path):
         thumbnails_only=True,
         thumb_megapixels=0.2,
         scene_detect=True,
-        output_folder=str(output_dir)
+        output_folder=str(output_dir),
     )
 
     ext_gen = execute_extraction(
@@ -116,19 +117,25 @@ def test_real_end_to_end_workflow(tmp_path):
         compute_face_sim=True,
         compute_subject_mask_area=True,
         compute_niqe=False,
-        compute_phash=True
+        compute_phash=True,
     )
 
     # Check for CUDA availability for the test
     import torch
+
     cuda_available = torch.cuda.is_available()
     if not cuda_available:
         print("⚠️ CUDA not available, some models might be slow or fail if they require GPU.")
 
     pre_ana_gen = execute_pre_analysis(
-        pre_ana_event, progress_queue, cancel_event, logger, config, thumbnail_manager,
+        pre_ana_event,
+        progress_queue,
+        cancel_event,
+        logger,
+        config,
+        thumbnail_manager,
         cuda_available=cuda_available,
-        model_registry=model_registry
+        model_registry=model_registry,
     )
 
     pre_ana_result = deque(pre_ana_gen, maxlen=1)[0]
@@ -141,15 +148,18 @@ def test_real_end_to_end_workflow(tmp_path):
     # 4. Propagation
     print("\n--- [STAGE 3: MASK PROPAGATION] ---")
     prop_event = PropagationEvent(
-        output_folder=str(output_dir),
-        video_path=str(VIDEO_PATH),
-        scenes=scenes,
-        analysis_params=pre_ana_event
+        output_folder=str(output_dir), video_path=str(VIDEO_PATH), scenes=scenes, analysis_params=pre_ana_event
     )
 
     prop_gen = execute_propagation(
-        prop_event, progress_queue, cancel_event, logger, config, thumbnail_manager,
-        cuda_available=cuda_available, model_registry=model_registry
+        prop_event,
+        progress_queue,
+        cancel_event,
+        logger,
+        config,
+        thumbnail_manager,
+        cuda_available=cuda_available,
+        model_registry=model_registry,
     )
 
     prop_result = deque(prop_gen, maxlen=1)[0]
@@ -159,8 +169,14 @@ def test_real_end_to_end_workflow(tmp_path):
     # 5. Analysis
     print("\n--- [STAGE 4: FRAME ANALYSIS] ---")
     ana_gen = execute_analysis(
-        prop_event, progress_queue, cancel_event, logger, config, thumbnail_manager,
-        cuda_available=cuda_available, model_registry=model_registry
+        prop_event,
+        progress_queue,
+        cancel_event,
+        logger,
+        config,
+        thumbnail_manager,
+        cuda_available=cuda_available,
+        model_registry=model_registry,
     )
 
     ana_result = deque(ana_gen, maxlen=1)[0]
@@ -181,6 +197,7 @@ def test_real_end_to_end_workflow(tmp_path):
     sys.path.append(str(Path(__file__).parent.parent.parent / "scripts"))
     try:
         from verify_quality import QualityVerifier
+
         verifier = QualityVerifier(output_dir)
         report = verifier.verify()
 
@@ -191,6 +208,7 @@ def test_real_end_to_end_workflow(tmp_path):
         print("⚠️ Could not import QualityVerifier script. Skipping deep analysis.")
 
     print("\n🎉 E2E VERIFICATION SUCCESSFUL!")
+
 
 if __name__ == "__main__":
     # Allow running this file directly for debugging

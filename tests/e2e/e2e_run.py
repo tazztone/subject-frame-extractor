@@ -42,6 +42,7 @@ class Logger(object):
         self.terminal.flush()
         self.log.flush()
 
+
 def run_e2e_verification():
     output_dir = Path(__file__).parent.parent / "results" / "e2e_output"
     if output_dir.exists():
@@ -59,7 +60,7 @@ def run_e2e_verification():
     config = Config()
     # Disable memory watchdog for E2E test to prevent model unloading
     config.monitoring_memory_critical_threshold_mb = 64000
-    config.log_level = "DEBUG" # Enable verbose logging
+    config.log_level = "DEBUG"  # Enable verbose logging
 
     # AppLogger now automatically creates 'run.log' in the output_dir
     logger = AppLogger(config, log_dir=output_dir, log_to_file=True)
@@ -77,14 +78,14 @@ def run_e2e_verification():
     print("\n--- [STAGE 1: EXTRACTION] ---")
     ext_event = ExtractionEvent(
         source_path=video_path,
-        method="every_nth_frame", # CORRECTED: Get every 3rd frame
+        method="every_nth_frame",  # CORRECTED: Get every 3rd frame
         interval="1.0",
         nth_frame=3,
-        max_resolution="480", # 480p source for high-quality thumbs
+        max_resolution="480",  # 480p source for high-quality thumbs
         thumbnails_only=True,
-        thumb_megapixels=0.5, # INCREASED: 0.5MP for better face recognition
+        thumb_megapixels=0.5,  # INCREASED: 0.5MP for better face recognition
         scene_detect=True,
-        output_folder=str(output_dir)
+        output_folder=str(output_dir),
     )
 
     ext_gen = execute_extraction(
@@ -136,18 +137,23 @@ def run_e2e_verification():
         compute_face_sim=True,
         compute_subject_mask_area=True,
         compute_niqe=True,
-        compute_phash=True
+        compute_phash=True,
     )
 
     # Enable Half-Precision for E2E if CUDA is available
     if torch.cuda.is_available():
         print("💡 Enabling half-precision (FP16/BF16) optimizations for verification.")
-        torch.set_float32_matmul_precision("medium") # Balance speed/precision
+        torch.set_float32_matmul_precision("medium")  # Balance speed/precision
 
     pre_ana_gen = execute_pre_analysis(
-        pre_ana_event, progress_queue, cancel_event, logger, config, thumbnail_manager,
+        pre_ana_event,
+        progress_queue,
+        cancel_event,
+        logger,
+        config,
+        thumbnail_manager,
         cuda_available=torch.cuda.is_available(),
-        model_registry=model_registry
+        model_registry=model_registry,
     )
 
     pre_ana_result = deque(pre_ana_gen, maxlen=1)[0]
@@ -163,21 +169,25 @@ def run_e2e_verification():
         seed = scene.get("seed_result", {})
         bbox = seed.get("bbox")
         details = seed.get("details", {})
-        print(f"  Scene {i}: best_frame={scene.get('best_frame')}, bbox={bbox}, type={details.get('type')}, face_sim={details.get('seed_face_sim')}")
-
+        print(
+            f"  Scene {i}: best_frame={scene.get('best_frame')}, bbox={bbox}, type={details.get('type')}, face_sim={details.get('seed_face_sim')}"
+        )
 
     # 3. Propagation
     print("\n--- [STAGE 3: MASK PROPAGATION] ---")
     prop_event = PropagationEvent(
-        output_folder=str(output_dir),
-        video_path=video_path,
-        scenes=scenes,
-        analysis_params=pre_ana_event
+        output_folder=str(output_dir), video_path=video_path, scenes=scenes, analysis_params=pre_ana_event
     )
 
     prop_gen = execute_propagation(
-        prop_event, progress_queue, cancel_event, logger, config, thumbnail_manager,
-        cuda_available=True, model_registry=model_registry
+        prop_event,
+        progress_queue,
+        cancel_event,
+        logger,
+        config,
+        thumbnail_manager,
+        cuda_available=True,
+        model_registry=model_registry,
     )
 
     prop_result = deque(prop_gen, maxlen=1)[0]
@@ -189,8 +199,14 @@ def run_e2e_verification():
     # 4. Analysis
     print("\n--- [STAGE 4: FRAME ANALYSIS] ---")
     ana_gen = execute_analysis(
-        prop_event, progress_queue, cancel_event, logger, config, thumbnail_manager,
-        cuda_available=True, model_registry=model_registry
+        prop_event,
+        progress_queue,
+        cancel_event,
+        logger,
+        config,
+        thumbnail_manager,
+        cuda_available=True,
+        model_registry=model_registry,
     )
 
     ana_result = deque(ana_gen, maxlen=1)[0]
@@ -219,6 +235,7 @@ def run_e2e_verification():
     print("\n🎉 E2E VERIFICATION SUCCESSFUL!")
     print(f"📝 Full terminal log saved to: {log_file}")
     return True
+
 
 if __name__ == "__main__":
     success = run_e2e_verification()

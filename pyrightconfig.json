@@ -1,0 +1,5 @@
+{
+  "pythonVersion": "3.10",
+  "typeCheckingMode": "basic",
+  "exclude": ["SAM3_repo", "venv", ".git", "**/__pycache__"]
+}

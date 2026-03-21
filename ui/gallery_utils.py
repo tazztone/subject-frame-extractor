@@ -17,12 +17,14 @@ from core.utils import render_mask_overlay
 
 __all__ = ["build_scene_gallery_items", "render_mask_overlay", "on_filters_changed", "auto_set_thresholds"]
 
+
 @lru_cache(maxsize=256)
 def _load_mask_cached(mask_path: str) -> Optional[np.ndarray]:
     """Loads a mask from disk with LRU caching."""
     if not Path(mask_path).exists():
         return None
     return cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
+
 
 def clear_mask_cache():
     """Clears the mask LRU cache."""

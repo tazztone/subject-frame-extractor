@@ -119,10 +119,15 @@ def mock_pre_analysis_execution(
             end_frame=50,
             status="included",
             seed_result={"bbox": [10, 10, 100, 100], "details": {"type": "mock"}},
-            seed_metrics={"score": 10.0, "best_face_sim": 0.9}
+            seed_metrics={"score": 10.0, "best_face_sim": 0.9},
         ).model_dump(),
-        Scene(shot_id=2, start_frame=51, end_frame=100, status="included",
-              seed_metrics={"score": 5.0, "best_face_sim": 0.5}).model_dump(),
+        Scene(
+            shot_id=2,
+            start_frame=51,
+            end_frame=100,
+            status="included",
+            seed_metrics={"score": 5.0, "best_face_sim": 0.5},
+        ).model_dump(),
     ]
 
     output_dir = os.path.join(config.downloads_dir, "mock_video")
@@ -154,7 +159,7 @@ def mock_propagation_execution(
         "output_dir": event.output_folder,
         "done": True,
         "scenes": event.scenes,  # Pass back scenes
-        "metadata_path": os.path.join(event.output_folder, "metadata.db") # Add for compatibility
+        "metadata_path": os.path.join(event.output_folder, "metadata.db"),  # Add for compatibility
     }
 
 
@@ -190,7 +195,7 @@ def mock_ingest_folder(folder_path, output_dir):
             "preview": dummy_path,
             "type": "raw",
             "status": "unreviewed",
-            "scores": {}
+            "scores": {},
         }
         for i in range(1, 6)
     ]

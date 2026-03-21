@@ -13,12 +13,7 @@ class QualityVerifier:
         self.db_path = output_dir / "metadata.db"
         self.scenes_path = output_dir / "scenes.json"
 
-        self.report = {
-            "status": "PASS",
-            "warnings": [],
-            "errors": [],
-            "metrics": {}
-        }
+        self.report = {"status": "PASS", "warnings": [], "errors": [], "metrics": {}}
 
     def verify(self) -> Dict[str, Any]:
         print(f"🔍 Analyzing results in {self.output_dir}...")
@@ -115,7 +110,9 @@ class QualityVerifier:
                             metrics = metrics["metrics"]
 
                         # Check for niqe_score or quality_score or sharpness
-                        score = metrics.get("niqe_score") or metrics.get("quality_score") or metrics.get("sharpness_score")
+                        score = (
+                            metrics.get("niqe_score") or metrics.get("quality_score") or metrics.get("sharpness_score")
+                        )
                         if score is not None:
                             niqe_scores.append(float(score))
                     except json.JSONDecodeError:
@@ -154,21 +151,26 @@ class QualityVerifier:
             with open(history_path, "a", newline="") as f:
                 writer = csv.writer(f)
                 if not file_exists:
-                    writer.writerow(["Timestamp", "Output Dir", "Status", "Mask Yield", "Avg NIQE", "Avg Face Sim", "Errors"])
+                    writer.writerow(
+                        ["Timestamp", "Output Dir", "Status", "Mask Yield", "Avg NIQE", "Avg Face Sim", "Errors"]
+                    )
 
                 timestamp = datetime.datetime.now().isoformat()
-                writer.writerow([
-                    timestamp,
-                    str(self.output_dir),
-                    self.report["status"],
-                    self.report["metrics"].get("mask_yield", "N/A"),
-                    self.report["metrics"].get("avg_niqe", "N/A"),
-                    self.report["metrics"].get("avg_face_sim", "N/A"),
-                    "; ".join(self.report["errors"])
-                ])
+                writer.writerow(
+                    [
+                        timestamp,
+                        str(self.output_dir),
+                        self.report["status"],
+                        self.report["metrics"].get("mask_yield", "N/A"),
+                        self.report["metrics"].get("avg_niqe", "N/A"),
+                        self.report["metrics"].get("avg_face_sim", "N/A"),
+                        "; ".join(self.report["errors"]),
+                    ]
+                )
                 print(f"📝 Logged results to {history_path}")
         except Exception as e:
             print(f"⚠️ Failed to log history: {e}")
+
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:

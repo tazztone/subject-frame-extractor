@@ -16,7 +16,15 @@ class TestAppUIHandlers:
     """Tests for AppUI event handlers."""
 
     @pytest.fixture
-    def app_ui(self, mock_config, mock_logger, mock_thumbnail_manager, mock_model_registry, mock_progress_queue, mock_cancel_event):
+    def app_ui(
+        self,
+        mock_config,
+        mock_logger,
+        mock_thumbnail_manager,
+        mock_model_registry,
+        mock_progress_queue,
+        mock_cancel_event,
+    ):
         """Create an AppUI instance for testing."""
         app = AppUI(
             config=mock_config,
@@ -24,7 +32,7 @@ class TestAppUIHandlers:
             progress_queue=mock_progress_queue,
             cancel_event=mock_cancel_event,
             thumbnail_manager=mock_thumbnail_manager,
-            model_registry=mock_model_registry
+            model_registry=mock_model_registry,
         )
         # Manually initialize critical components for testing
         app.components["application_state"] = MagicMock()
@@ -102,7 +110,7 @@ class TestAppUIHandlers:
         # but we can test the underlying logic if needed or the wrapped call
         updates = app_ui.on_reset_filters(current_state)
 
-        new_state = updates[0] # Returns a tuple
+        new_state = updates[0]  # Returns a tuple
         assert new_state.smart_filter_enabled is False
 
     @patch("ui.app_ui.on_filters_changed")
@@ -116,11 +124,9 @@ class TestAppUIHandlers:
 
         # We need to ensure sliders are in components for zip to work if it uses them
         # In current impl it uses sorted(self.components['metric_sliders'].keys())
-        app_ui.components['metric_sliders'] = {} # Empty for simple test
+        app_ui.components["metric_sliders"] = {}  # Empty for simple test
 
-        status, gallery = app_ui.on_filters_changed_wrapper(
-            state, "Kept", False, 0.6, False, 5, "pHash", *slider_vals
-        )
+        status, gallery = app_ui.on_filters_changed_wrapper(state, "Kept", False, 0.6, False, 5, "pHash", *slider_vals)
 
         assert status == "OK"
         mock_on_filters.assert_called_once()

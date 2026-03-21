@@ -193,9 +193,6 @@ class SubjectMasker:
         mask_metadata = {}
 
         # 1. Consolidate all frames and seeds from all scenes
-        all_target_frame_numbers = []
-        all_seeds = []
-        scene_lookup = {} # Map frame_number -> Scene for metadata association
 
         lowres_video_path = Path(frames_dir) / "video_lowres.mp4"
         thumb_dir = Path(frames_dir) / "thumbs"
@@ -204,19 +201,23 @@ class SubjectMasker:
             self.logger.info("Using bounded video-based propagation per scene.")
 
             # Detect actual frame size from thumbnails to ensure correct SAM3 normalization
-            frame_size = (640, 480) # Fallback
+            frame_size = (640, 480)  # Fallback
             if self.frame_map:
                 sample_fname = list(self.frame_map.values())[0]
                 sample_thumb = self.thumbnail_manager.get(thumb_dir / sample_fname)
                 if sample_thumb is not None:
                     frame_size = (sample_thumb.shape[1], sample_thumb.shape[0])
-                    self.logger.info(f"Targeting propagation frame size: {frame_size[0]}x{frame_size[1]}", component="propagator")
+                    self.logger.info(
+                        f"Targeting propagation frame size: {frame_size[0]}x{frame_size[1]}", component="propagator"
+                    )
 
             for scene in scenes_to_process:
-                if self.cancel_event.is_set(): break
+                if self.cancel_event.is_set():
+                    break
 
                 shot_frames_data = self._load_shot_frames(frames_dir, thumb_dir, scene.start_frame, scene.end_frame)
-                if not shot_frames_data: continue
+                if not shot_frames_data:
+                    continue
 
                 target_fns = [f[0] for f in shot_frames_data]
                 bbox = scene.seed_result.get("bbox")
@@ -238,7 +239,8 @@ class SubjectMasker:
                 # Distribute results for this scene
                 for fn in target_fns:
                     fname_webp = self.frame_map.get(fn)
-                    if not fname_webp: continue
+                    if not fname_webp:
+                        continue
 
                     fname_png = f"{Path(fname_webp).stem}.png"
                     mask_path = self.mask_dir / fname_png
@@ -253,7 +255,7 @@ class SubjectMasker:
                         "seed_face_sim": scene.seed_result.get("details", {}).get("seed_face_sim"),
                         "mask_area_pct": area,
                         "mask_empty": is_empty,
-                        "error": errors_dict.get(fn)
+                        "error": errors_dict.get(fn),
                     }
 
                     if mask is not None and np.any(mask):
@@ -262,7 +264,10 @@ class SubjectMasker:
                     else:
                         res["mask_path"] = None
                         if not errors_dict.get(fn):
-                            self.logger.error(f"Failed to generate mask for {fname_png} (frame {fn}). Subject lost.", component="propagator")
+                            self.logger.error(
+                                f"Failed to generate mask for {fname_png} (frame {fn}). Subject lost.",
+                                component="propagator",
+                            )
 
                     mask_metadata[fname_png] = res
         else:
@@ -276,6 +281,7 @@ class SubjectMasker:
         try:
             mask_metadata_path = Path(frames_dir) / "mask_metadata.json"
             from core.utils import _to_json_safe
+
             with mask_metadata_path.open("w", encoding="utf-8") as f:
                 json.dump(_to_json_safe(mask_metadata), f, indent=2)
         except Exception as e:

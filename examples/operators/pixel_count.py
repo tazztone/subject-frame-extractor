@@ -1,4 +1,5 @@
 """Example operator demonstrating the plugin pattern."""
+
 import numpy as np
 
 from core.operators import OperatorConfig, OperatorContext, OperatorResult, register_operator
@@ -19,7 +20,7 @@ class PixelCountOperator:
         # Sum across channels to find non-black pixels
         # Any pixel where sum > 0 is considered non-black
         if ctx.image_rgb.size == 0:
-             return OperatorResult(metrics={"pixel_count": 0.0})
+            return OperatorResult(metrics={"pixel_count": 0.0})
 
         count = np.count_nonzero(ctx.image_rgb.sum(axis=-1))
         return OperatorResult(metrics={"pixel_count": float(count)})

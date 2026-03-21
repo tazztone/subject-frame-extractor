@@ -175,7 +175,6 @@ class TestAppUI:
 
     # --- UI Helpers ---
 
-
     def test_fix_strategy_visibility(self, app_ui):
         updates = app_ui._fix_strategy_visibility("👤 By Face")
         assert updates[app_ui.components["face_seeding_group"]]["visible"] is True
@@ -208,25 +207,25 @@ class TestAppUI:
             # Ana keys: resume (index 0), then checks/params...
             # Removed: output_folder, video_path
             args = [
-                False,          # resume
-                False,          # enable_face_filter
-                "",             # face_ref_img_path
-                None,           # face_ref_img_upload
-                "buffalo_l",    # face_model_name
-                True,           # enable_subject_mask
-                "sam3",         # tracker_model_name
-                "Largest",      # best_frame_strategy
-                True,           # scene_detect
-                "",             # text_prompt
-                1.0,            # min_mask_area_pct
-                2500.0,         # sharpness_base_scale
-                100.0,          # edge_strength_base_scale
-                True,           # pre_analysis_enabled
-                1,              # pre_sample_nth
-                "Auto",         # primary_seed_strategy
-                True,           # compute_quality_score
-                True,           # compute_sharpness
-            ] + [True] * 11     # remaining compute_... metrics
+                False,  # resume
+                False,  # enable_face_filter
+                "",  # face_ref_img_path
+                None,  # face_ref_img_upload
+                "buffalo_l",  # face_model_name
+                True,  # enable_subject_mask
+                "sam3",  # tracker_model_name
+                "Largest",  # best_frame_strategy
+                True,  # scene_detect
+                "",  # text_prompt
+                1.0,  # min_mask_area_pct
+                2500.0,  # sharpness_base_scale
+                100.0,  # edge_strength_base_scale
+                True,  # pre_analysis_enabled
+                1,  # pre_sample_nth
+                "Auto",  # primary_seed_strategy
+                True,  # compute_quality_score
+                True,  # compute_sharpness
+            ] + [True] * 11  # remaining compute_... metrics
 
             app_state.extracted_video_path = "vid.mp4"
             app_state.analysis_output_dir = out_dir
@@ -285,9 +284,7 @@ class TestAppUI:
             patch("ui.handlers.scene_handler.build_scene_gallery_items", return_value=([], [], 1)),
             patch("ui.handlers.scene_handler.get_scene_status_text", return_value=("Stat", "Btn")),
         ):
-            new_state, gal, msg = app_ui.scene_handler._undo_last_action(
-                app_state, "Kept"
-            )
+            new_state, gal, msg = app_ui.scene_handler._undo_last_action(app_state, "Kept")
 
             assert len(new_state.scenes) == 1
             assert new_state.scenes[0]["shot_id"] == 1

@@ -30,14 +30,18 @@ def mock_app():
         app.demo = demo
     return app
 
+
 def test_pagination_contract(mock_app):
     """Verify that pagination handlers return exactly 4 values as wired."""
     # Find dependencies for next_page_button.click
     next_btn_id = mock_app.components["next_page_button"]._id
 
     # In Gradio 6, introspection is via demo.config["dependencies"] and demo.fns
-    dep_config = next(d for d in mock_app.demo.config["dependencies"]
-                      if any(t[0] == next_btn_id and t[1] == "click" for t in d["targets"]))
+    dep_config = next(
+        d
+        for d in mock_app.demo.config["dependencies"]
+        if any(t[0] == next_btn_id and t[1] == "click" for t in d["targets"])
+    )
 
     # Sanity check: verify wiring says 4 outputs
     assert len(dep_config["outputs"]) == 4
@@ -55,6 +59,7 @@ def test_pagination_contract(mock_app):
     assert isinstance(result, tuple)
     assert len(result) == 4
     assert isinstance(result[0], ApplicationState)
+
 
 def test_pipeline_wrappers_yield_component_keys(mock_app):
     """Verify that pipeline wrappers yield dictionaries with component-object keys."""

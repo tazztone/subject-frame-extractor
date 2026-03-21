@@ -675,7 +675,7 @@ class TestOperatorE2E:
             image_rgb=test_image,
             config=config,
             operators=["sharpness", "edge_strength", "contrast", "brightness"],
-            logger=logger
+            logger=logger,
         )
 
         assert "sharpness" in results
@@ -687,11 +687,12 @@ class TestOperatorE2E:
     def test_niqe_operator_real(self, test_image, tmp_path):
         """NIQE operator can be executed (requires pyiqa and GPU)."""
         import torch
+
         if not torch.cuda.is_available():
             pytest.skip("CUDA not available")
 
         try:
-            import pyiqa
+            import pyiqa  # noqa: F401
         except ImportError:
             pytest.skip("pyiqa not installed")
 
@@ -711,12 +712,7 @@ class TestOperatorE2E:
         niqe_op.initialize(config)
 
         try:
-            results = run_operators(
-                image_rgb=test_image,
-                config=config,
-                operators=["niqe"],
-                logger=logger
-            )
+            results = run_operators(image_rgb=test_image, config=config, operators=["niqe"], logger=logger)
 
             assert "niqe" in results
             assert results["niqe"].success is True

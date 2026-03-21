@@ -119,7 +119,7 @@ class MaskPropagator:
             user_context={
                 "num_targets": len(frame_numbers),
                 "num_prompts": len(prompts),
-                "video": Path(video_path).name
+                "video": Path(video_path).name,
             },
         )
 
@@ -136,7 +136,11 @@ class MaskPropagator:
                 start_frame_idx = prompts[0]["frame"]
                 # Use provided text prompt or default to "person" to enable tracking in grounding mode.
                 # SAM3 grounding requires allow_new_detections=True which is tied to presence of text prompts.
-                text_hint = self.params.text_prompt if (hasattr(self.params, "text_prompt") and self.params.text_prompt) else "person"
+                text_hint = (
+                    self.params.text_prompt
+                    if (hasattr(self.params, "text_prompt") and self.params.text_prompt)
+                    else "person"
+                )
                 for p in prompts:
                     fn = p["frame"]
                     mask = self.dam_tracker.add_bbox_prompt(
@@ -157,11 +161,14 @@ class MaskPropagator:
             # --- Pass 1: Forward Propagation ---
             fwd_steps = max_fn - start_frame_idx
             if fwd_steps > 0:
-                self.logger.debug(f"Tracking forward from {start_frame_idx} to {max_fn} ({fwd_steps} steps)", component="propagator")
+                self.logger.debug(
+                    f"Tracking forward from {start_frame_idx} to {max_fn} ({fwd_steps} steps)", component="propagator"
+                )
                 for frame_idx, obj_id, pred_mask in self.dam_tracker.propagate(
                     start_idx=start_frame_idx, direction="forward", max_frames=fwd_steps
                 ):
-                    if self.cancel_event.is_set(): break
+                    if self.cancel_event.is_set():
+                        break
 
                     if frame_idx in target_frames:
                         # Protect existing seeds or better masks
@@ -174,11 +181,14 @@ class MaskPropagator:
             # --- Pass 2: Backward Propagation ---
             bwd_steps = start_frame_idx - min_fn
             if bwd_steps > 0:
-                self.logger.debug(f"Tracking backward from {start_frame_idx} to {min_fn} ({bwd_steps} steps)", component="propagator")
+                self.logger.debug(
+                    f"Tracking backward from {start_frame_idx} to {min_fn} ({bwd_steps} steps)", component="propagator"
+                )
                 for frame_idx, obj_id, pred_mask in self.dam_tracker.propagate(
                     start_idx=start_frame_idx, direction="backward", max_frames=bwd_steps
                 ):
-                    if self.cancel_event.is_set(): break
+                    if self.cancel_event.is_set():
+                        break
 
                     if frame_idx in target_frames:
                         if pred_mask is not None and np.any(pred_mask):

@@ -190,5 +190,11 @@ class SceneTabBuilder:
             self.app._create_component(
                 "propagate_masks_button",
                 "button",
-                {"value": "⚡ Propagate Masks to All Frames", "variant": "primary", "interactive": False, "size": "lg", "visible": False},
+                {
+                    "value": "⚡ Propagate Masks to All Frames",
+                    "variant": "primary",
+                    "interactive": False,
+                    "size": "lg",
+                    "visible": False,
+                },
             )

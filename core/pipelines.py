@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import json
 import math
 import os
@@ -14,12 +12,15 @@ from queue import Queue
 from typing import TYPE_CHECKING, Callable, Generator, Optional, Union
 
 import cv2
-import gradio as gr
+
+# import gradio as gr moved to lazy-import in execute_pre_analysis
 import numpy as np
 import torch
 
 # Note: Scene uses Pydantic (Scene.model_fields.keys()), not dataclass.fields()
 from PIL import Image
+
+from core.enums import SceneStatus
 
 if TYPE_CHECKING:
     from core.config import Config
@@ -48,7 +49,9 @@ from core.utils import (
 )
 
 
-def _process_ffmpeg_stream(stream, tracker: Optional["AdvancedProgressTracker"], desc: str, total_duration_s: float, start_time_s: float = 0):
+def _process_ffmpeg_stream(
+    stream, tracker: Optional["AdvancedProgressTracker"], desc: str, total_duration_s: float, start_time_s: float = 0
+):
     """Parses FFmpeg progress stream and updates the tracker with optional time offset."""
     progress_data = {}
     for line in iter(stream.readline, ""):
@@ -116,6 +119,7 @@ def run_ffmpeg_extraction(
 
     # 1. Hardware Acceleration Detection
     from core.utils import detect_hwaccel
+
     hwaccel_type = None
     if config.ffmpeg_hwaccel != "off":
         if config.ffmpeg_hwaccel == "auto":
@@ -162,7 +166,9 @@ def run_ffmpeg_extraction(
                 files = sorted(list(thumb_dir.glob(f"frame_*{ext}")))
                 if len(files) > 0:
                     start_frame_idx = len(files)
-                    logger.info(f"Resuming extraction from frame {start_frame_idx + 1} (Found {len(files)} existing frames)")
+                    logger.info(
+                        f"Resuming extraction from frame {start_frame_idx + 1} (Found {len(files)} existing frames)"
+                    )
         except Exception as e:
             logger.warning(f"Could not load existing frame map for resume: {e}")
 
@@ -174,50 +180,68 @@ def run_ffmpeg_extraction(
     vf_select = select_map.get(params.method, f"fps={fps}")
 
     # Build Seek Argument
+    # --- RESUME LOGIC (VFR-SAFE) ---
+    # We avoid fragile -ss seeking for resume.
+    # Instead, we rely on -start_number and FFmpeg naming consistency.
+    # If the user wants to resume, we skip already extracted frames by starting
+    # the name counter at the correct offset.
+    # Note: This still decodes from the beginning, but ensures frame mapping
+    # and filenames remain contiguous and accurate for VFR videos.
+    # In the future, we could use -ss with caution or -copyts.
     seek_args = []
-    if start_frame_idx > 0:
-        # Heuristic: estimate timestamp for seek
-        # This is tricky for variable frame rate or complex selections
-        # For 'every_nth_frame', it's (start_frame_idx * N) / fps
-        if params.method == "every_nth_frame":
-            timestamp = (start_frame_idx * N) / fps
-            seek_args = ["-ss", f"{timestamp:.3f}"]
-        elif params.method == "all":
-            timestamp = start_frame_idx / fps
-            seek_args = ["-ss", f"{timestamp:.3f}"]
-        # For keyframes, seeking is too hard to estimate precisely, we'll start from 0 or implement better logic
-        # For now, only resume simple methods
+
+    # We still use start_frame_idx for the -start_number argument
 
     if params.thumbnails_only:
-        vf = f"{vf_select},{vf_scale_thumb},showinfo" # Use thumb scale
+        vf = f"{vf_select},{vf_scale_thumb},showinfo"  # Use thumb scale
         cmd = ["ffmpeg", "-y"]
-        if hwaccel_type: cmd.extend(["-hwaccel", hwaccel_type])
-        if seek_args: cmd.extend(seek_args)
+        if hwaccel_type:
+            cmd.extend(["-hwaccel", hwaccel_type])
+        if seek_args:
+            cmd.extend(seek_args)
 
-        cmd.extend([
-            "-i", str(video_path),
-            "-vf", vf,
-            "-c:v", "libwebp",
-            "-lossless", "0",
-            "-quality", str(config.ffmpeg_thumbnail_quality),
-            "-vsync", "vfr",
-            "-start_number", str(start_frame_idx + 1),
-            str(thumb_dir / "frame_%06d.webp"),
-        ])
+        cmd.extend(
+            [
+                "-i",
+                str(video_path),
+                "-vf",
+                vf,
+                "-c:v",
+                "libwebp",
+                "-lossless",
+                "0",
+                "-quality",
+                str(config.ffmpeg_thumbnail_quality),
+                "-vsync",
+                "vfr",
+                "-start_number",
+                str(start_frame_idx + 1),
+                str(thumb_dir / "frame_%06d.webp"),
+            ]
+        )
     else:
         vf = f"{vf_select},showinfo"
         cmd = ["ffmpeg", "-y"]
-        if hwaccel_type: cmd.extend(["-hwaccel", hwaccel_type])
-        if seek_args: cmd.extend(seek_args)
+        if hwaccel_type:
+            cmd.extend(["-hwaccel", hwaccel_type])
+        if seek_args:
+            cmd.extend(seek_args)
 
-        cmd.extend([
-            "-i", str(video_path),
-            "-vf", vf,
-            "-c:v", "png",
-            "-vsync", "vfr",
-            "-start_number", str(start_frame_idx + 1),
-            str(thumb_dir / "frame_%06d.png"),
-        ])
+        cmd.extend(
+            [
+                "-i",
+                str(video_path),
+                "-vf",
+                vf,
+                "-c:v",
+                "png",
+                "-vsync",
+                "vfr",
+                "-start_number",
+                str(start_frame_idx + 1),
+                str(thumb_dir / "frame_%06d.png"),
+            ]
+        )
 
     process = subprocess.Popen(
         cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", bufsize=1
@@ -236,7 +260,9 @@ def run_ffmpeg_extraction(
                 start_time_s = start_frame_idx / fps
 
         stdout_thread = threading.Thread(
-            target=lambda: _process_ffmpeg_stream(process.stdout, tracker, "Extracting frames", total_duration_s, start_time_s)
+            target=lambda: _process_ffmpeg_stream(
+                process.stdout, tracker, "Extracting frames", total_duration_s, start_time_s
+            )
         )
 
         def process_stderr_and_store():
@@ -251,10 +277,13 @@ def run_ffmpeg_extraction(
         stderr_thread.start()
 
         while process.poll() is None:
-            if cancel_event.is_set():
-                process.terminate()
-                break
-            time.sleep(0.1)
+            try:
+                # Use wait instead of sleep to be more responsive to process completion
+                process.wait(timeout=0.1)
+            except subprocess.TimeoutExpired:
+                if cancel_event.is_set():
+                    process.terminate()
+                    break
 
         stdout_thread.join()
         stderr_thread.join()
@@ -283,23 +312,25 @@ def run_ffmpeg_extraction(
         if hwaccel_type:
             lowres_cmd.extend(["-hwaccel", hwaccel_type])
 
-        lowres_cmd.extend([
-            "-i",
-            str(video_path),
-            "-hide_banner",
-            "-loglevel",
-            "warning",
-            "-vf",
-            vf_scale_video,
-            "-c:v",
-            "libx264",
-            "-preset",
-            "fast",
-            "-crf",
-            "23",
-            "-an",  # No audio needed
-            str(lowres_video_path),
-        ])
+        lowres_cmd.extend(
+            [
+                "-i",
+                str(video_path),
+                "-hide_banner",
+                "-loglevel",
+                "warning",
+                "-vf",
+                vf_scale_video,
+                "-c:v",
+                "libx264",
+                "-preset",
+                "fast",
+                "-crf",
+                "23",
+                "-an",  # No audio needed
+                str(lowres_video_path),
+            ]
+        )
         try:
             lowres_proc = subprocess.run(lowres_cmd, capture_output=True, text=True, timeout=600)
             if lowres_proc.returncode == 0:
@@ -328,6 +359,9 @@ class Pipeline:
         self.params = params
         self.progress_queue = progress_queue
         self.cancel_event = cancel_event
+        self.error_handler = ErrorHandler(
+            self.logger, self.config.retry_max_attempts, self.config.retry_backoff_seconds
+        )
 
 
 class ExtractionPipeline(Pipeline):
@@ -347,9 +381,6 @@ class ExtractionPipeline(Pipeline):
     ):
         super().__init__(config, logger, params, progress_queue, cancel_event)
         self.model_registry = model_registry
-        self.error_handler = ErrorHandler(
-            self.logger, self.config.retry_max_attempts, self.config.retry_backoff_seconds
-        )
         self.run = self.error_handler.with_retry()(self._run_impl)
 
     def _run_impl(self, tracker: Optional["AdvancedProgressTracker"] = None) -> dict:
@@ -415,7 +446,7 @@ class ExtractionPipeline(Pipeline):
                 json.dump(scenes, f)
 
             with (output_dir / "frame_map.json").open("w", encoding="utf-8") as f:
-                json.dump(list(frame_map.keys()), f) # Video workflow expects list of original frame numbers
+                json.dump(list(frame_map.keys()), f)  # Video workflow expects list of original frame numbers
 
             with (output_dir / "source_map.json").open("w", encoding="utf-8") as f:
                 json.dump(source_map, f)
@@ -518,7 +549,8 @@ class AnalysisPipeline(Pipeline):
     ):
         super().__init__(config, logger, params, progress_queue, cancel_event)
         self.output_dir = Path(self.params.output_folder)
-        self.db = Database(self.output_dir / "metadata.db")
+        self.db = Database(self.output_dir / "metadata.db", logger=self.logger)
+        self.db.error_handler = self.error_handler
         self.thumb_dir = self.output_dir / "thumbs"
         self.masks_dir = self.output_dir / "masks"
         self.processing_lock = threading.Lock()
@@ -747,7 +779,7 @@ class AnalysisPipeline(Pipeline):
             return {"done": False, "log": "No scenes found for analysis."}
 
         # Filter included scenes if not resuming
-        scenes_to_process = [s for s in scenes if s.status == "included" or not self.params.resume]
+        scenes_to_process = [s for s in scenes if s.status == SceneStatus.INCLUDED or not self.params.resume]
 
         if tracker:
             tracker.set_stage("Analyzing images")
@@ -835,7 +867,19 @@ class AnalysisPipeline(Pipeline):
                         f.cancel()
                     break
 
-                time.sleep(0.1) # Prevent tight loop
+                if futures:
+                    from concurrent.futures import FIRST_COMPLETED, wait
+
+                    done, _ = wait(futures, timeout=0.1, return_when=FIRST_COMPLETED)
+                    # Clear finished futures from the list
+                    futures = [f for f in futures if not f.done()]
+                    for f in done:
+                        try:
+                            f.result()  # Raise any exceptions occurred in threads
+                        except Exception as e:
+                            self.logger.error(f"Frame processing error: {e}")
+                else:
+                    time.sleep(0.01)
 
     def _process_batch(self, batch_paths: list[Path], metrics_to_compute: dict) -> int:
         """Processes a batch of frame files."""
@@ -857,7 +901,7 @@ class AnalysisPipeline(Pipeline):
             if thumb_image_rgb is None:
                 raise ValueError("Could not read thumbnail.")
             frame, base_filename = Frame(image_data=thumb_image_rgb, frame_number=-1), thumb_path.name
-            meta = {"filename": base_filename, "metrics": {}} # Metrics will be updated after operators
+            meta = {"filename": base_filename, "metrics": {}}  # Metrics will be updated after operators
 
             # Use optimized stem-based lookup
             mask_meta = self.mask_metadata.get(thumb_path.stem, {})
@@ -875,60 +919,58 @@ class AnalysisPipeline(Pipeline):
                             (thumb_image_rgb.shape[1], thumb_image_rgb.shape[0]),
                             interpolation=cv2.INTER_NEAREST,
                         )
-            faces = None
-            face_bbox = None
-            if self.params.compute_face_sim and self.face_analyzer:
-                # We run face detection once here and pass the results to operators
-                try:
-                    image_bgr = cv2.cvtColor(thumb_image_rgb, cv2.COLOR_RGB2BGR)
-                    with self.processing_lock:
+            with self.processing_lock:
+                faces = None
+                face_bbox = None
+                if self.params.compute_face_sim and self.face_analyzer:
+                    try:
+                        image_bgr = cv2.cvtColor(thumb_image_rgb, cv2.COLOR_RGB2BGR)
                         faces = self.face_analyzer.get(image_bgr)
-                    if faces:
-                        best_face = max(faces, key=lambda x: x.det_score)
-                        face_bbox = best_face.bbox.astype(int)
-                except Exception as e:
-                    self.logger.warning(f"Face detection failed: {e}")
+                        if faces:
+                            best_face = max(faces, key=lambda x: x.det_score)
+                            face_bbox = best_face.bbox.astype(int)
+                    except Exception as e:
+                        self.logger.warning(f"Face detection failed: {e}")
 
-            # --- OPERATOR ENGINE EXECUTION (Phase 2.5 / Finalized) ---
-            if any(metrics_to_compute.values()) or self.params.compute_niqe:
-                try:
-                    # Run Operators with rich context
-                    op_results = run_operators(
-                        image_rgb=thumb_image_rgb,
-                        mask=mask_thumb,
-                        config=self.config,
-                        model_registry=self.model_registry,
-                        logger=self.logger,
-                        params={
-                            "face_bbox": face_bbox,
-                            "faces": faces,
-                            "reference_embedding": self.reference_embedding,
-                            "mask_meta": mask_meta
-                        },
-                    )
+                if any(metrics_to_compute.values()) or self.params.compute_niqe:
+                    try:
+                        # Run Operators with rich context
+                        op_results = run_operators(
+                            image_rgb=thumb_image_rgb,
+                            mask=mask_thumb,
+                            config=self.config,
+                            model_registry=self.model_registry,
+                            logger=self.logger,
+                            params={
+                                "face_bbox": face_bbox,
+                                "faces": faces,
+                                "reference_embedding": self.reference_embedding,
+                                "face_landmarker": self.face_landmarker,
+                                "mask_meta": mask_meta,
+                            },
+                        )
 
-                    # Populate frame metrics from results
-                    for name, result in op_results.items():
-                        if result.success:
-                            # Handle numerical metrics
-                            for key, value in result.metrics.items():
-                                # Handle top-level Frame attributes (mapped from face_sim op)
-                                if key == "face_sim":
-                                    frame.face_similarity_score = value
-                                elif key == "face_conf":
-                                    frame.max_face_confidence = value
-                                # Handle FrameMetrics attributes
-                                elif hasattr(frame.metrics, key):
-                                    setattr(frame.metrics, key, value)
+                        # Populate frame metrics from results
+                        for name, result in op_results.items():
+                            if result.success:
+                                # Handle numerical metrics
+                                for key, value in result.metrics.items():
+                                    # Handle top-level Frame attributes
+                                    if key == "face_sim":
+                                        frame.face_similarity_score = value
+                                    elif key == "face_conf":
+                                        frame.max_face_confidence = value
+                                    # Handle FrameMetrics attributes
+                                    elif hasattr(frame.metrics, key):
+                                        setattr(frame.metrics, key, value)
 
-                            # Handle non-numerical data (like phash)
-                            if result.data:
-                                for key, value in result.data.items():
-                                    if key == "phash":
-                                        meta["phash"] = value
-
-                except Exception as e:
-                    self.logger.error(f"Operator execution failed: {e}")
+                                # Handle non-numerical data (like phash)
+                                if result.data:
+                                    for key, value in result.data.items():
+                                        if key == "phash":
+                                            meta["phash"] = value
+                    except Exception as e:
+                        self.logger.error(f"Operator engine execution failed: {e}", exc_info=True)
 
             meta["metrics"] = frame.metrics.model_dump()
 
@@ -955,7 +997,9 @@ class AnalysisPipeline(Pipeline):
                 meta["error"] = frame.error
                 self.logger.error(f"Analysis error for {thumb_path.name}: {frame.error}", component="analysis")
             elif meta.get("mask_empty"):
-                self.logger.warning(f"Empty mask for {thumb_path.name} (Subject lost or not found)", component="analysis")
+                self.logger.warning(
+                    f"Empty mask for {thumb_path.name} (Subject lost or not found)", component="analysis"
+                )
 
             if meta.get("mask_path"):
                 meta["mask_path"] = Path(meta["mask_path"]).name
@@ -1011,12 +1055,15 @@ def execute_extraction(
         params = _initialize_extraction_params(event_dict, config, logger)
 
         tracker = AdvancedProgressTracker(progress, progress_queue, logger, ui_stage_name="Extracting")
-        pipeline = ExtractionPipeline(config, logger, params, progress_queue, cancel_event, model_registry=model_registry)
+        pipeline = ExtractionPipeline(
+            config, logger, params, progress_queue, cancel_event, model_registry=model_registry
+        )
         result = pipeline.run(tracker=tracker)
 
         if result and result.get("done"):
             try:
                 from core.fingerprint import create_fingerprint, save_fingerprint
+
                 fp_vid_path = result.get("video_path")
                 fp_out_dir = result.get("output_dir")
 
@@ -1030,10 +1077,7 @@ def execute_extraction(
                         "thumb_megapixels": params.thumb_megapixels,
                     }
 
-                    fingerprint = create_fingerprint(
-                        video_path=fp_vid_path,
-                        extraction_settings=ext_settings
-                    )
+                    fingerprint = create_fingerprint(video_path=fp_vid_path, extraction_settings=ext_settings)
                     save_fingerprint(fingerprint, fp_out_dir)
                     logger.info("Run fingerprint saved")
             except Exception as e:
@@ -1086,10 +1130,7 @@ def _load_scenes(output_dir: Path) -> list[Scene]:
     with scenes_path.open("r", encoding="utf-8") as f:
         scenes_data = json.load(f)
 
-    return [
-        Scene(shot_id=i, start_frame=s, end_frame=e)
-        for i, (s, e) in enumerate(scenes_data)
-    ]
+    return [Scene(shot_id=i, start_frame=s, end_frame=e) for i, (s, e) in enumerate(scenes_data)]
 
 
 class PreAnalysisPipeline(Pipeline):
@@ -1150,11 +1191,14 @@ class PreAnalysisPipeline(Pipeline):
 
     def _initialize_niqe_if_needed(self, device: str, is_folder_mode: bool):
         """Lazy initialization of NIQE for seeding."""
-        if (not is_folder_mode and
-            self.params.pre_analysis_enabled and
-            self.params.primary_seed_strategy != "🧑‍🤝‍🧑 Find Prominent Person"):
+        if (
+            not is_folder_mode
+            and self.params.pre_analysis_enabled
+            and self.params.primary_seed_strategy != "🧑‍🤝‍🧑 Find Prominent Person"
+        ):
             try:
                 import pyiqa
+
                 return pyiqa.create_metric("niqe", device=device)
             except (ImportError, Exception):
                 pass
@@ -1190,6 +1234,7 @@ class PreAnalysisPipeline(Pipeline):
 
         # Generate preview overlay
         from core.utils import render_mask_overlay
+
         overlay_rgb = (
             render_mask_overlay(thumb_rgb, mask, 0.6, logger=self.logger)
             if mask is not None
@@ -1216,6 +1261,8 @@ def execute_pre_analysis(
     """
     Orchestrates the pre-analysis phase (scene detection, subject seeding).
     """
+    import gradio as gr
+
     try:
         tracker = AdvancedProgressTracker(progress, progress_queue, logger, ui_stage_name="Pre-Analysis")
 
@@ -1251,9 +1298,6 @@ def execute_pre_analysis(
             final_yield["final_face_ref_path"] = params.face_ref_img_path
         yield final_yield
 
-    except Exception as e:
-        logger.error("Pre-analysis execution failed", exc_info=True)
-        yield {"unified_log": f"[ERROR] Pre-analysis failed unexpectedly: {e}", "done": False}
     except Exception as e:
         logger.error("Pre-analysis execution failed", exc_info=True)
         yield {"unified_log": f"[ERROR] Pre-analysis failed unexpectedly: {e}", "done": False}
@@ -1355,17 +1399,15 @@ def _initialize_analysis_pipeline(
     model_registry: "ModelRegistry",
 ) -> AnalysisPipeline:
     """Creates and returns an AnalysisPipeline instance."""
-    return AnalysisPipeline(
-        config, logger, params, progress_queue, cancel_event, thumbnail_manager, model_registry
-    )
+    return AnalysisPipeline(config, logger, params, progress_queue, cancel_event, thumbnail_manager, model_registry)
 
 
 def execute_propagation(
     event: PropagationEvent,
     progress_queue: Queue,
     cancel_event: threading.Event,
-    logger: AppLogger,
-    config: Config,
+    logger: "AppLogger",
+    config: "Config",
     thumbnail_manager,
     cuda_available,
     progress=None,
@@ -1424,8 +1466,8 @@ def execute_analysis(
     event: PropagationEvent,
     progress_queue: Queue,
     cancel_event: threading.Event,
-    logger: AppLogger,
-    config: Config,
+    logger: "AppLogger",
+    config: "Config",
     thumbnail_manager,
     cuda_available,
     progress=None,

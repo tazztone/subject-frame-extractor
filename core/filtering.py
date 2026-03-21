@@ -146,7 +146,7 @@ def _extract_metric_arrays(all_frames_data: list[dict], config: "Config") -> dic
         # Ensure we return a 1D array of floats with correct length
         arr = np.array(vals, dtype=np.float32)
         if arr.size == 0 and num_frames > 0:
-             arr = np.full(num_frames, np.nan, dtype=np.float32)
+            arr = np.full(num_frames, np.nan, dtype=np.float32)
         metric_arrays[key] = arr
     return metric_arrays
 
@@ -376,8 +376,8 @@ def _apply_metric_filters(
             continue
         f_defaults = getattr(config, f"filter_default_{key}", {})
         if not isinstance(f_defaults, dict):
-             # Handle cases where it might be a mocked object or other type
-             f_defaults = {}
+            # Handle cases where it might be a mocked object or other type
+            f_defaults = {}
 
         if f_type == "range":
             def_min = f_defaults.get("default_min")
@@ -391,8 +391,10 @@ def _apply_metric_filters(
             max_v = filters.get(f"{key}_max", def_max)
 
             # Final sanity check for UI-provided values which might be wrong types
-            if not isinstance(min_v, (int, float, np.number)): min_v = -np.inf
-            if not isinstance(max_v, (int, float, np.number)): max_v = np.inf
+            if not isinstance(min_v, (int, float, np.number)):
+                min_v = -np.inf
+            if not isinstance(max_v, (int, float, np.number)):
+                max_v = np.inf
 
             nan_fill = def_min if def_min != -np.inf else 0.0
             mask = (np.nan_to_num(arr, nan=nan_fill) >= min_v) & (np.nan_to_num(arr, nan=nan_fill) <= max_v)
@@ -403,7 +405,8 @@ def _apply_metric_filters(
                 def_min = -np.inf
 
             min_v = filters.get(f"{key}_min", def_min)
-            if not isinstance(min_v, (int, float, np.number)): min_v = -np.inf
+            if not isinstance(min_v, (int, float, np.number)):
+                min_v = -np.inf
 
             nan_fill = def_min if def_min != -np.inf else 0.0
             if key == "face_sim":
@@ -432,8 +435,10 @@ def _apply_metric_filters(
                 max_v = filters.get(f"{key}_max", f_defaults.get("default_max", np.inf))
 
                 # Ensure they are scalars for comparison
-                if not np.isscalar(min_v): min_v = -np.inf
-                if not np.isscalar(max_v): max_v = np.inf
+                if not np.isscalar(min_v):
+                    min_v = -np.inf
+                if not np.isscalar(max_v):
+                    max_v = np.inf
 
                 if not np.isnan(v):
                     reason = f_def.get("reason_range")
@@ -443,7 +448,8 @@ def _apply_metric_filters(
                         reasons[filenames[i]].append(reason or f_def.get("reason_high", f"{key}_high"))
             elif f_type == "min":
                 min_v = filters.get(f"{key}_min", f_defaults.get("default_min", -np.inf))
-                if not np.isscalar(min_v): min_v = -np.inf
+                if not np.isscalar(min_v):
+                    min_v = -np.inf
 
                 if not np.isnan(v) and v < min_v:
                     reasons[filenames[i]].append(f_def.get("reason_low", f"{key}_low"))

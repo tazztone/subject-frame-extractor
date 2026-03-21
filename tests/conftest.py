@@ -106,6 +106,7 @@ def mock_config():
     }
     return config
 
+
 @pytest.fixture
 def mock_config_simple(mock_config):
     """Alias for mock_config used by some tests."""
@@ -170,11 +171,14 @@ def mock_ui_state():
         "compute_phash": True,
     }
 
+
 @pytest.fixture
 def mock_params(mock_ui_state):
     """Provides an AnalysisParameters instance for testing."""
     from core.models import AnalysisParameters
+
     return AnalysisParameters(**mock_ui_state)
+
 
 @pytest.fixture
 def mock_thumbnail_manager():
@@ -183,25 +187,30 @@ def mock_thumbnail_manager():
     tm.get.return_value = np.zeros((100, 100, 3), dtype=np.uint8)
     return tm
 
+
 @pytest.fixture
 def mock_model_registry():
     """Provides a mock ModelRegistry."""
     return MagicMock()
+
 
 @pytest.fixture
 def mock_progress_queue():
     """Provides a mock progress queue."""
     return Queue()
 
+
 @pytest.fixture
 def mock_cancel_event():
     """Provides a mock cancel event."""
     return threading.Event()
 
+
 @pytest.fixture
 def sample_scenes():
     """Provides a list of sample Scene objects."""
     from core.models import Scene
+
     return [
         Scene(shot_id=1, start_frame=0, end_frame=100, status="pending"),
         Scene(shot_id=2, start_frame=101, end_frame=200, status="included"),

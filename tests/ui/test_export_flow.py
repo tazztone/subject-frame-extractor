@@ -33,7 +33,7 @@ class TestExportFlow:
 
         # In Gradio, tab content visibility is handled by JS toggling display style
         # We can check if the filter preset dropdown is visible, which is in the Export tab
-        presets = page.locator("#filter_preset_dropdown")
+        page.locator("#filter_preset_dropdown")
         # Try to use a more generic check if ID isn't set, but we set names in create_component
         # But create_component doesn't set elem_id to name automatically.
         # Let's check for the label text more broadly

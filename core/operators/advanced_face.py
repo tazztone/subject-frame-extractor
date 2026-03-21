@@ -34,10 +34,7 @@ class FaceSimilarityOperator:
             distance = 1 - np.dot(best_face.normed_embedding, ref_emb)
             similarity = 1.0 - float(distance)
 
-            return OperatorResult(metrics={
-                "face_sim": similarity,
-                "face_conf": float(best_face.det_score)
-            })
+            return OperatorResult(metrics={"face_sim": similarity, "face_conf": float(best_face.det_score)})
 
         except Exception as e:
             return OperatorResult(error=str(e))
@@ -64,8 +61,8 @@ class FaceProminenceOperator:
 
         face_bbox = ctx.params.get("face_bbox")
         if not face_bbox:
-             # Try to find it via analyzer if not passed
-             return OperatorResult(metrics={"face_prominence_score": 0.0}, warnings=["No face bbox provided"])
+            # Try to find it via analyzer if not passed
+            return OperatorResult(metrics={"face_prominence_score": 0.0}, warnings=["No face bbox provided"])
 
         x1, y1, x2, y2 = face_bbox
         face_w, face_h = x2 - x1, y2 - y1
@@ -77,8 +74,8 @@ class FaceProminenceOperator:
 
         # Centrality
         face_cx, face_cy = (x1 + x2) / 2, (y1 + y2) / 2
-        dist_from_center = math.sqrt(((face_cx - img_w/2)/img_w)**2 + ((face_cy - img_h/2)/img_h)**2)
-        centrality = 1.0 - min(1.0, dist_from_center * 2) # 1.0 at center, 0.0 at edges
+        dist_from_center = math.sqrt(((face_cx - img_w / 2) / img_w) ** 2 + ((face_cy - img_h / 2) / img_h) ** 2)
+        centrality = 1.0 - min(1.0, dist_from_center * 2)  # 1.0 at center, 0.0 at edges
 
         # Weighted score
         prominence = (area_pct * 0.7) + (centrality * 30.0)

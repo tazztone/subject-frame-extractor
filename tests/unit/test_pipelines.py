@@ -39,7 +39,9 @@ class TestPipelines:
     @patch("core.pipelines.run_ffmpeg_extraction")
     @patch("core.pipelines.VideoManager.get_video_info")
     @patch("core.managers.validate_video_file")
-    def test_extraction_pipeline_run_video(self, mock_val, mock_info, mock_run_ffmpeg, mock_logger, mock_config, tmp_path):
+    def test_extraction_pipeline_run_video(
+        self, mock_val, mock_info, mock_run_ffmpeg, mock_logger, mock_config, tmp_path
+    ):
         mock_info.return_value = {"fps": 30, "frame_count": 300}
 
         event = ExtractionEvent(
@@ -51,7 +53,7 @@ class TestPipelines:
             thumbnails_only=True,
             thumb_megapixels=0.5,
             scene_detect=False,
-            output_folder=str(tmp_path)
+            output_folder=str(tmp_path),
         )
 
         pipeline = ExtractionPipeline(mock_config, mock_logger, event, Queue(), threading.Event())
@@ -69,7 +71,7 @@ class TestPipelines:
         mock_ingest.return_value = [{"id": "1", "source": "1.jpg", "preview": "1.jpg"}]
 
         event = ExtractionEvent(
-            source_path=str(photos_dir), # MUST be an existing dir
+            source_path=str(photos_dir),  # MUST be an existing dir
             method="all",
             interval=1.0,
             nth_frame=1,
@@ -77,7 +79,7 @@ class TestPipelines:
             thumbnails_only=True,
             thumb_megapixels=0.5,
             scene_detect=False,
-            output_folder=str(tmp_path)
+            output_folder=str(tmp_path),
         )
 
         pipeline = ExtractionPipeline(mock_config, mock_logger, event, Queue(), threading.Event())

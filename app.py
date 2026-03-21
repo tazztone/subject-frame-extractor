@@ -88,11 +88,7 @@ def main():
             "ssl_keyfile": config.ssl_keyfile,
             "ssl_certfile": config.ssl_certfile,
             "ssl_verify": config.ssl_verify,
-            "allowed_paths": [
-                str(project_root),
-                str(Path(config.downloads_dir).resolve()),
-                *config.allowed_paths
-            ]
+            "allowed_paths": [str(project_root), str(Path(config.downloads_dir).resolve()), *config.allowed_paths],
         }
 
         if config.auth:

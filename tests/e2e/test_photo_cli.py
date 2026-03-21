@@ -26,14 +26,18 @@ def photo_test_dir(tmp_path):
 
     return photo_dir
 
+
 def run_cli(args):
     """Helper to run cli.py."""
     cmd = [sys.executable, "cli.py"] + args
     res = subprocess.run(cmd, capture_output=True, text=True)
     # Always print output for debugging in -s mode
-    if res.stdout: print(f"CLI STDOUT:\n{res.stdout}")
-    if res.stderr: print(f"CLI STDERR:\n{res.stderr}")
+    if res.stdout:
+        print(f"CLI STDOUT:\n{res.stdout}")
+    if res.stderr:
+        print(f"CLI STDERR:\n{res.stderr}")
     return res
+
 
 class TestPhotoCLI:
     """End-to-end tests for the modern unified CLI workflow."""
@@ -61,6 +65,7 @@ class TestPhotoCLI:
 
         # Verify database content (basic check)
         from core.database import Database
+
         db = Database(db_path)
         metadata = db.load_all_metadata()
         db.close()

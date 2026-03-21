@@ -174,9 +174,9 @@ class TestAnalysisParametersValidation:
         logger = MagicMock()
         ui_kwargs = {
             "source_path": "test.mp4",
-            "compute_sharpness": "true", # Should be coerced to bool
-            "interval": "2.5", # Should be coerced to float
-            "pre_sample_nth": "10", # Should be coerced to int
+            "compute_sharpness": "true",  # Should be coerced to bool
+            "interval": "2.5",  # Should be coerced to float
+            "pre_sample_nth": "10",  # Should be coerced to int
         }
         params = AnalysisParameters.from_ui(logger, mock_config, **ui_kwargs)
 
@@ -346,4 +346,5 @@ class TestErrorSeverityAndRecoveryStrategy:
 
 if __name__ == "__main__":
     import pytest
+
     pytest.main([__file__, "-v"])

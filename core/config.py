@@ -54,7 +54,7 @@ class Config(BaseSettings):
     ffmpeg_log_level: str = "info"
     ffmpeg_thumbnail_quality: int = 80
     ffmpeg_scene_threshold: float = 0.4
-    ffmpeg_hwaccel: str = "auto" # auto, cuda, vaapi, videotoolbox, off
+    ffmpeg_hwaccel: str = "auto"  # auto, cuda, vaapi, videotoolbox, off
 
     # Cache
     cache_size: int = 200
@@ -165,7 +165,8 @@ class Config(BaseSettings):
     # TODO: Add automatic memory cleanup when approaching critical threshold
     monitoring_memory_warning_threshold_mb: int = 8192
     monitoring_memory_critical_threshold_mb: int = 16384
-    monitoring_gpu_memory_critical_threshold_mb: int = 7168 # Protect 8GB cards
+    monitoring_memory_watchdog_enabled: bool = True
+    monitoring_gpu_memory_critical_threshold_mb: int = 7168  # Protect 8GB cards
     monitoring_cpu_warning_threshold_percent: float = 90.0
     monitoring_gpu_memory_warning_threshold_percent: int = 90
     monitoring_memory_limit_mb: int = 8192
@@ -195,7 +196,21 @@ class Config(BaseSettings):
     # Utility Defaults
     utility_max_filename_length: int = 50
     utility_video_extensions: List[str] = Field(default_factory=lambda: [".mp4", ".mov", ".mkv", ".avi", ".webm"])
-    utility_image_extensions: List[str] = Field(default_factory=lambda: [".png", ".jpg", ".jpeg", ".webp", ".bmp", ".cr2", ".nef", ".arw", ".dng", ".orf", ".raf"])
+    utility_image_extensions: List[str] = Field(
+        default_factory=lambda: [
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".webp",
+            ".bmp",
+            ".cr2",
+            ".nef",
+            ".arw",
+            ".dng",
+            ".orf",
+            ".raf",
+        ]
+    )
 
     # PostProcessing
     postprocessing_mask_fill_kernel_size: int = 5
@@ -228,7 +243,9 @@ class Config(BaseSettings):
     ssl_keyfile: Optional[str] = None
     ssl_certfile: Optional[str] = None
     ssl_verify: bool = True
-    allowed_paths: List[str] = Field(default_factory=list, description="Additional paths allowed for Gradio file serving")
+    allowed_paths: List[str] = Field(
+        default_factory=list, description="Additional paths allowed for Gradio file serving"
+    )
 
     def model_post_init(self, __context: Any) -> None:
         """Post-initialization hook to validate paths."""

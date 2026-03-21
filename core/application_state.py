@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 class ApplicationState(BaseModel):
     """Consolidated state model for the application."""
+
     extracted_video_path: str = ""
     extracted_frames_dir: str = ""
     analysis_output_dir: str = ""

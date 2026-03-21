@@ -10,10 +10,7 @@ import numpy as np
 from sklearn.cluster import DBSCAN
 
 
-def cluster_faces(
-    all_faces: List[Dict[str, Any]],
-    confidence: float = 0.5
-) -> Tuple[np.ndarray, Dict[int, int]]:
+def cluster_faces(all_faces: List[Dict[str, Any]], confidence: float = 0.5) -> Tuple[np.ndarray, Dict[int, int]]:
     """
     Groups detected faces into clusters based on embedding similarity.
 
@@ -41,11 +38,7 @@ def cluster_faces(
 
 
 def get_cluster_representative(
-    all_faces: List[Dict[str, Any]],
-    labels: np.ndarray,
-    target_label: int,
-    video_path: str,
-    output_dir: str
+    all_faces: List[Dict[str, Any]], labels: np.ndarray, target_label: int, video_path: str, output_dir: str
 ) -> Tuple[Optional[str], Optional[np.ndarray], str]:
     """
     Finds the best quality face in a cluster and saves a reference crop.

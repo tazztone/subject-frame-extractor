@@ -225,19 +225,22 @@ class AppUI:
         self.logger.error(error_msg, exc_info=True)
         return {
             self.components["unified_log"]: error_msg,
-            self.components["unified_status"]: f"❌ **{context} Failed.** Check logs for details."
+            self.components["unified_status"]: f"❌ **{context} Failed.** Check logs for details.",
         }
 
     @staticmethod
     def safe_ui_callback(context: str):
         """Decorator to wrap UI callbacks with error handling."""
+
         def decorator(func: Callable):
             def wrapper(self, *args, **kwargs):
                 try:
                     return func(self, *args, **kwargs)
                 except Exception as e:
                     return self._handle_exception(e, context)
+
             return wrapper
+
         return decorator
 
     def preload_models(self):
@@ -268,7 +271,6 @@ class AppUI:
                 )
 
         threading.Thread(target=_load, daemon=True).start()
-
 
     def build_ui(self) -> gr.Blocks:
         """
@@ -446,11 +448,7 @@ class AppUI:
             gr.Markdown("Run checks for GPU availability, missing libraries, and path permissions.")
             self._create_component("run_diagnostics_button", "button", {"value": "Run System Diagnostics"})
 
-
             # This group is populated/used by the propagation logic, ensuring it exists is enough here.
-
-
-
 
     def get_all_filter_keys(self) -> list[str]:
         """Returns a list of all available filter metric keys."""
@@ -488,8 +486,6 @@ class AppUI:
         # Unified Application State - MOVED TO build_ui
         # self.components["application_state"] = gr.State(ApplicationState())
 
-
-
         self._setup_visibility_toggles()
         self._setup_pipeline_handlers()
         self._setup_filtering_handlers()
@@ -520,9 +516,6 @@ class AppUI:
 
         # Hidden radio for scene editor state compatibility
         c["run_diagnostics_button"].click(self.run_system_diagnostics, inputs=[], outputs=[c["unified_log"]])
-
-
-
 
     def _run_task_with_progress(
         self, task_func: Callable, output_components: list, progress: Callable, *args
@@ -614,10 +607,6 @@ class AppUI:
                 except Empty:
                     break
 
-
-
-
-
     def _toggle_pause(self, tracker: "AdvancedProgressTracker") -> str:
         """Toggles the pause state of the current running task."""
         if tracker.pause_event.is_set():
@@ -644,7 +633,7 @@ class AppUI:
     def get_ui_updates_from_state(self, state: ApplicationState) -> dict:
         """
         Centralized reducer that maps ApplicationState to Gradio component updates.
-        
+
         This reduces manual dictionary creation in event handlers and ensures
         the UI stays in sync with the source of truth.
         """
@@ -753,13 +742,15 @@ class AppUI:
             self.app_logger.error(f"Validation failed: {e}", exc_info=True)
             yield {
                 self.components["unified_log"]: f"[ERROR] Validation failed: {e}",
-                self.components["unified_status"]: "❌ **Validation Failed.** Check inputs."
+                self.components["unified_status"]: "❌ **Validation Failed.** Check inputs.",
             }
             return
 
         yield from self._run_pipeline(
-            execute_extraction, event, progress or gr.Progress(),
-            lambda res: self._on_extraction_success(res, current_state)
+            execute_extraction,
+            event,
+            progress or gr.Progress(),
+            lambda res: self._on_extraction_success(res, current_state),
         )
 
     def add_to_queue_handler(self, *args):
@@ -849,7 +840,10 @@ class AppUI:
             if isinstance(button_update, dict):
                 button_update["visible"] = True
             else:
-                button_update = gr.update(visible=True, interactive=button_update.interactive if hasattr(button_update, "interactive") else True)
+                button_update = gr.update(
+                    visible=True,
+                    interactive=button_update.interactive if hasattr(button_update, "interactive") else True,
+                )
 
         msg = f"""<div class="success-card">
         <h3>✅ Pre-Analysis Complete</h3>
@@ -869,8 +863,10 @@ class AppUI:
         """Wrapper to execute the pre-analysis pipeline."""
         event = self._create_pre_analysis_event(current_state, *args)
         yield from self._run_pipeline(
-            execute_pre_analysis, event, progress or gr.Progress(),
-            lambda res: self._on_pre_analysis_success(res, current_state)
+            execute_pre_analysis,
+            event,
+            progress or gr.Progress(),
+            lambda res: self._on_pre_analysis_success(res, current_state),
         )
 
     def _propagation_button_handler(self, current_state: ApplicationState, *args, progress=None):
@@ -894,8 +890,10 @@ class AppUI:
             output_folder=params.output_folder, video_path=params.video_path, scenes=scenes, analysis_params=params
         )
         yield from self._run_pipeline(
-            execute_propagation, event, progress or gr.Progress(),
-            lambda res: self._on_propagation_success(res, current_state)
+            execute_propagation,
+            event,
+            progress or gr.Progress(),
+            lambda res: self._on_propagation_success(res, current_state),
         )
 
     def _on_propagation_success(self, result: dict, current_state: ApplicationState) -> dict:
@@ -920,8 +918,10 @@ class AppUI:
             output_folder=params.output_folder, video_path=params.video_path, scenes=scenes, analysis_params=params
         )
         yield from self._run_pipeline(
-            execute_analysis, event, progress or gr.Progress(),
-            lambda res: self._on_analysis_success(res, current_state)
+            execute_analysis,
+            event,
+            progress or gr.Progress(),
+            lambda res: self._on_analysis_success(res, current_state),
         )
 
     def _on_analysis_success(self, result: dict, current_state: ApplicationState) -> dict:
@@ -1007,9 +1007,7 @@ class AppUI:
         if scenes_data and output_dir:
             scenes = [Scene(**s) for s in scenes_data]
             status_text, button_update = get_scene_status_text(scenes)
-            gallery_items, index_map, _ = build_scene_gallery_items(
-                scenes, "Kept", str(output_dir), config=self.config
-            )
+            gallery_items, index_map, _ = build_scene_gallery_items(scenes, "Kept", str(output_dir), config=self.config)
             new_state.scenes = [s.model_dump() for s in scenes]
             new_state.scene_gallery_index_map = index_map
 
@@ -1130,7 +1128,7 @@ class AppUI:
             fn=self._propagation_button_handler,
             inputs=self.ana_input_components,
             outputs=self.all_outputs,
-            show_progress="hidden"
+            show_progress="hidden",
         )
         c["start_analysis_button"].click(
             fn=self._analysis_button_handler,
@@ -1141,7 +1139,9 @@ class AppUI:
 
         # Helper Handlers
         c["add_to_queue_button"].click(
-            self.add_to_queue_handler, inputs=self.get_inputs(self.ext_ui_map_keys), outputs=[c["batch_queue_dataframe"]]
+            self.add_to_queue_handler,
+            inputs=self.get_inputs(self.ext_ui_map_keys),
+            outputs=[c["batch_queue_dataframe"]],
         )
         c["clear_queue_button"].click(self.clear_queue_handler, inputs=[], outputs=[c["batch_queue_dataframe"]])
         c["start_batch_button"].click(
@@ -1181,6 +1181,7 @@ class AppUI:
             return []
 
         from core.face_clustering import cluster_faces
+
         labels, cluster_map = cluster_faces(all_faces, confidence)
         self.gallery_to_cluster_map = cluster_map
 
@@ -1210,18 +1211,17 @@ class AppUI:
             return "", None, "⚠️ Selection Failed"
 
         from core.face_clustering import cluster_faces, get_cluster_representative
+
         labels, _ = cluster_faces(all_faces, confidence)
 
         return get_cluster_representative(
-            all_faces,
-            labels,
-            selected_label,
-            state.extracted_video_path,
-            state.extracted_frames_dir
+            all_faces, labels, selected_label, state.extracted_video_path, state.extracted_frames_dir
         )
 
     @safe_ui_callback("Face Discovery")
-    def on_find_people_from_video(self, current_state: ApplicationState, *args) -> tuple[str, gr.update, gr.update, float, ApplicationState]:
+    def on_find_people_from_video(
+        self, current_state: ApplicationState, *args
+    ) -> tuple[str, gr.update, gr.update, float, ApplicationState]:
         """Scans the video for faces to populate the discovery gallery.
 
         Returns: (status_message, group_visibility, gallery_update, slider_value, new_state)
@@ -1298,7 +1298,6 @@ class AppUI:
             new_state,
         )
 
-
     def _get_smart_mode_updates(self, is_enabled: bool) -> list[gr.update]:
         """Calculates slider updates when toggling 'Smart Mode'."""
         updates = []
@@ -1350,7 +1349,12 @@ class AppUI:
         fast_filter_outputs = [c["filter_status_text"], c["results_gallery"]]
 
         c["smart_filter_checkbox"].change(
-            lambda state, e: (state.model_copy(update={"smart_filter_enabled": e}), e, *self._get_smart_mode_updates(e), f"Smart Mode: {'On' if e else 'Off'}"),
+            lambda state, e: (
+                state.model_copy(update={"smart_filter_enabled": e}),
+                e,
+                *self._get_smart_mode_updates(e),
+                f"Smart Mode: {'On' if e else 'Off'}",
+            ),
             inputs=[c["application_state"], c["smart_filter_checkbox"]],
             outputs=[c["application_state"], c["application_state"]] + slider_comps + [c["filter_status_text"]],
         )
@@ -1501,7 +1505,9 @@ class AppUI:
         c["filter_preset_dropdown"].change(
             self.on_preset_changed,
             [c["filter_preset_dropdown"]],
-            [c["application_state"]] + slider_comps + [c["smart_filter_checkbox"]], # Note: this is a bit broken as we need state to update
+            [c["application_state"]]
+            + slider_comps
+            + [c["smart_filter_checkbox"]],  # Note: this is a bit broken as we need state to update
         ).then(self.on_filters_changed_wrapper, fast_filter_inputs, fast_filter_outputs)
 
         # Visual Diff
@@ -1700,7 +1706,11 @@ class AppUI:
         new_state.smart_filter_enabled = False
 
         return tuple(
-            [new_state] + slider_updates + [5, False, "Filters Reset.", gr.update(), "Fast (pHash)"] + acc_updates + [False]
+            [new_state]
+            + slider_updates
+            + [5, False, "Filters Reset.", gr.update(), "Fast (pHash)"]
+            + acc_updates
+            + [False]
         )
 
     def on_auto_set_thresholds(self, per_metric_values: dict, p: int, *checkbox_values: bool) -> list[gr.update]:

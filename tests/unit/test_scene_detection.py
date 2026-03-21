@@ -78,9 +78,7 @@ class TestSceneDetection:
         result = run_scene_detection("/nonexistent/video.mp4", tmp_path, mock_logger)
 
         assert result == []
-        mock_logger.error.assert_called_with(
-            "Video file not found: /nonexistent/video.mp4", component="video"
-        )
+        mock_logger.error.assert_called_with("Video file not found: /nonexistent/video.mp4", component="video")
 
     @patch("core.scene_utils.detection.detect")
     def test_run_scene_detection_permission_error(self, mock_detect, tmp_path):
@@ -93,9 +91,7 @@ class TestSceneDetection:
         result = run_scene_detection("/path/to/video.mp4", tmp_path, mock_logger)
 
         assert result == []
-        mock_logger.error.assert_called_with(
-            "Permission denied accessing video: /path/to/video.mp4", component="video"
-        )
+        mock_logger.error.assert_called_with("Permission denied accessing video: /path/to/video.mp4", component="video")
 
     @patch("core.scene_utils.detection.detect")
     def test_run_scene_detection_video_open_failure(self, mock_detect, tmp_path):
