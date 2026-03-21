@@ -6,7 +6,14 @@ import logging
 import threading
 from collections import OrderedDict, defaultdict
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Dict,
+    Optional,
+    Union,
+)
 
 import cv2
 import lpips
@@ -16,6 +23,8 @@ import yt_dlp as ytdlp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 from PIL import Image
+
+from core.enums import PropagationDirection
 
 # SAM3 imports
 # On Windows, Triton is not available. We need to mock it BEFORE importing SAM3
@@ -433,9 +442,9 @@ class SAM3Wrapper:
         if self.session_id is None:
             return
 
-        if direction not in ["forward", "backward", "both"]:
+        if direction not in [d.value for d in PropagationDirection]:
             logging.getLogger(__name__).warning(f"Invalid propagation direction: {direction}. Defaulting to 'forward'.")
-            direction = "forward"
+            direction = PropagationDirection.FORWARD
 
         for response in self.predictor.handle_stream_request(
             request=dict(
