@@ -1,73 +1,47 @@
-# Codebase Concerns
+# Technical Concerns & Risks
 
 **Analysis Date:** 2026-03-21
+**Deep Dive Refinement:** Detailed resource constraints and pipeline fragilities.
 
-## Tech Debt
+## Resource Management (VRAM / RAM)
 
-**Status Field Typing:**
-- Issue: Scene status (`pending`, `included`, `excluded`) is currently handled as strings.
-- Files: `core/models.py`, `core/events.py`
-- Impact: Lack of type safety can lead to silent bugs or typos in status transitions.
-- Fix approach: Transition to a Python `Enum`.
+### 1. SAM3 VRAM Fragmentation
+- **Concern**: SAM3's video predictor maintains a temporal memory of objects. Long videos or multiple tracked objects can lead to VRAM fragmentation and eventual "CUDA Out of Memory".
+- **Mitigation**: The `ModelRegistry` triggers `torch.cuda.empty_cache()` and attempts a CPU fallback for heavy models. However, CPU fallback is ~10-20x slower.
+- **Warning**: Users with < 8GB VRAM will struggle with propagation on high-resolution videos.
 
-**Resource-Aware Scheduling:**
-- Issue: Batch manager starts tasks without checking available GPU RAM or system memory.
-- Files: `core/batch_manager.py`
-- Impact: Risk of OOM (Out of Memory) crashes on machines with lower specs.
-- Fix approach: Implement a resource-aware queue that waits for sufficient VRAM/RAM availability.
-
-**Parallel Export:**
-- Issue: Frame export is currently serial (one frame at a time).
-- Files: `core/export.py`
-- Impact: Slow export for large jobs (e.g., thousands of frames).
-- Fix approach: Implement multi-threaded frame saving and processing.
-
-## Known Bugs
-
-**Gradio Dropdown "Value Error":**
-- Symptoms: App crashes or UI hangs when updating `gr.Dropdown` with a value not in the initial `choices`.
-- Trigger: Dynamically updating lists (like scene names) before setting the value.
-- Mitigation: Always update the `choices` list *before* or *simultaneously* with the `value`.
-
-## Security Considerations
-
-**Path Traversal:**
-- Risk: While video paths are validated, export folder creation and filename sanitization must be strictly enforced to prevent writing outside designated project folders.
-- Files: `core/export.py`, `core/utils.py`
-- Recommendations: Audit `sanitize_filename` and ensure all absolute paths are resolved against a restricted root.
+### 2. Face Analysis Thread-Safety
+- **Concern**: `InsightFace` and `MediaPipe` are not natively thread-safe. Concurrent calls to `execute_analysis` with multiple workers can cause segfaults or corrupted results.
+- **Mitigation**: The system uses a `ModelRegistry` lock, but high-concurrency analysis (`analysis_default_workers > 4`) is risky on low-RAM systems.
 
 ## Performance Bottlenecks
 
-**Hardware Acceleration:**
-- Problem: Downscaling and thumbnail extraction currently rely on CPU-based FFmpeg.
-- Measurement: Extraction takes ~15-30% of total processing time on high-res videos.
-- Cause: Lack of NVENC/VAAPI configuration in the command-line builder.
-- Improvement path: Detect GPU type and add `-hwaccel` flags to the FFmpeg command in `core/pipelines.py`.
+### 1. FFmpeg `showinfo` Overhead
+- **Concern**: Precisely mapping frames back to timestamps requires parsing FFmpeg stderr from the `showinfo` filter.
+- **Impact**: For extremely long videos (1hr+), this parsing overhead can become significant, potentially slowing down the extraction phase.
 
-**Preview Generation:**
-- Problem: UI previews for scenes are generated synchronously during tab transitions.
-- Measurement: 100-500ms lag when switching to the gallery if previews aren't cached.
-- Improvement path: Move preview generation to an async background task or use the `ThumbnailManager` more aggressively.
+### 2. JPEG Decompression (Legacy Mode)
+- **Concern**: In "Legacy Full-Frame" mode, the `SubjectMasker` reads high-res JPEGs for every frame.
+- **Impact**: I/O bound. The "Recommended Thumbnails" mode mitigates this by using `video_lowres.mp4`.
 
-## Fragile Areas
+## Pipeline Fragility
 
-**Gradio Protocol (IO Mismatch):**
-- Why fragile: Gradio event handlers MUST return the exact number of values specified in the `outputs` list.
-- Common failures: Adding a new UI component and forgetting to update the return tuple in `app_ui.py` or handlers.
-- Safe modification: Always verify the function signature against the `.then()` or `.click()` call.
+### 1. Gradio Event IO Mismatch 🔴
+- **Concern**: Gradio requires that the number of inputs/outputs in `.click()` or `.change()` exactly matches the function signature.
+- **Impact**: Adding a new UI control without updating the corresponding pipeline wrapper results in a silent crash where the UI simply stops responding.
 
-**SAM3 Submodule Dependency:**
-- Why fragile: `SAM3_repo` is an external dependency. Updating it might break the `SAM3Wrapper` if the internal API changes.
-- Safe modification: Treat it as read-only. Use heavy mocking in unit tests to avoid dependency on the submodule state.
+### 2. SAM3 Submodule Dependency
+- **Concern**: The project treats `SAM3_repo` as read-only, but its internal imports are sensitive to the Python path.
+- **Risk**: Environment changes (different `PYTHONPATH`) can break the link between `core/managers.py` and the submodule.
 
-## Test Coverage Gaps
+### 3. Mask Persistence Integrity
+- **Concern**: Masks are stored as separate `.png` files. If the user deletes the `masks/` directory manually, the `metadata.db` becomes inconsistent, leading to "File Not Found" errors during export.
 
-**Integration Testing for Multi-GPU:**
-- What's not tested: Behavior when multiple NVIDIA GPUs are present (device selection logic).
-- Risk: Logic might default to `cuda:0` regardless of configuration.
-- Priority: Medium.
+## Maintenance Debt
+
+- **String-based Status**: Scene and Task statuses (e.g., `"pending"`, `"success"`) are strings. Refactoring to Enums is needed to prevent typos in core logic.
+- **XMP Complexity**: Exporting to XMP (Adobe/Lightroom) involves XML manipulation which is currently fragile and lacks comprehensive unit testing.
 
 ---
 
-*Concerns audit: 2026-03-21*
-*Update as issues are fixed or new ones discovered*
+*Refined concerns: 2026-03-21*

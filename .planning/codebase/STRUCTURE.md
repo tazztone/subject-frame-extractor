@@ -1,116 +1,62 @@
-# Codebase Structure
+# Project Structure
 
 **Analysis Date:** 2026-03-21
+**Deep Dive Refinement:** Detailed internal data structures and file roles.
 
 ## Directory Layout
 
+```text
+.
+├── core/                   # Business logic and heavy lifting
+│   ├── config.py           # Pydantic BaseSettings (Global Config)
+│   ├── pipelines.py        # Pipeline orchestration (Extraction, Analysis)
+│   ├── managers.py         # Resource/Model lifecycle management
+│   ├── models.py           # Pydantic data models (Frame, Scene)
+│   ├── operators/          # Quality metric plugins (Face, Sharpness, etc.)
+│   ├── scene_utils/        # Low-level ML wrappers (SubjectMasker, SAM3Wrapper)
+│   └── database.py         # SQLite metadata persistence
+├── ui/                     # Modular Gradio interface
+│   ├── app_ui.py           # Main layout and tab composition
+│   ├── gallery_utils.py    # Gallery logic and filtering handlers
+│   └── components/         # Reusable Gradio components (if any)
+├── tests/                  # Multi-tier test suite
+│   ├── unit/               # Fast, mocked logic tests
+│   ├── integration/        # Hardware-dependent pipeline tests
+│   └── ui/                 # Playwright E2E browser tests
+├── scripts/                # Utility and verification scripts
+│   └── verification/       # E2E health check scripts
+├── SAM3_repo/              # READ-ONLY Git Submodule (SAM3 official) 🔴
+└── .planning/              # GSD Project Management (Context & Roadmaps)
 ```
-subject-frame-extractor/
-├── core/               # Business logic, pipelines, and managers
-│   ├── operators/      # Quality metric plugins
-│   ├── config.py       # Pydantic settings
-│   ├── database.py     # SQLite management
-│   ├── managers.py     # Resource lifecycles (ModelRegistry, SAM3)
-│   ├── models.py       # Pydantic schemas and domain models
-│   └── pipelines.py    # Orchestration logic
-├── ui/                 # Gradio interface and UI helpers
-│   ├── app_ui.py       # Tab-specific layouts
-│   └── gallery_utils.py # Image gallery and state utilities
-├── SAM3_repo/          # Segment Anything Model 3 submodule (Read-only)
-├── tests/              # Multi-tier test suite
-│   ├── unit/           # Fast, mocked logic tests
-│   ├── integration/    # Real backend/pipeline tests
-│   └── ui/             # Browser-based Playwright tests
-├── scripts/            # Verification and maintenance scripts
-├── docs/               # Technical and user documentation
-├── models/             # Local cache for ML model weights
-├── logs/               # Application runtime logs
-├── app.py              # Main Gradio entry point
-└── cli.py              # Headless CLI entry point
-```
 
-## Directory Purposes
+## Key File Roles
 
-**core/**:
-- Purpose: The "Brain" of the application. Handles all ML processing, data management, and orchestration.
-- Contains: `*.py` logic files, sub-packages like `operators/`.
-- Key files: `pipelines.py` (orchestration), `managers.py` (resource management), `database.py` (persistence).
+### Orchestration
+- **`app.py`**: The "Glue". Initializes the `ModelRegistry`, `ThumbnailManager`, and `Database`. Sets up the Gradio event loop.
+- **`core/pipelines.py`**: The "Brain". Orchestrates FFmpeg, SAM3, and Operator loops. It is the primary consumer of `AnalysisParameters`.
 
-**ui/**:
-- Purpose: The "Face" of the application. Manages layout, state updates, and visual components.
-- Contains: `*.py` Gradio-specific code.
-- Key files: `app_ui.py` (layout), `gallery_utils.py` (image grid management).
+### Resources
+- **`core/managers.py`**: The "Gatekeeper". Contains `ModelRegistry` (prevents VRAM leaks) and `SAM3Wrapper` (adapts the submodule API).
+- **`core/config.py`**: The "Manifest". Defines all thresholds, weights, and model URLs.
 
-**tests/**:
-- Purpose: Quality assurance across all layers.
-- Contains: `pytest` suites organized by test type.
-- Subdirectories: `unit/`, `integration/`, `ui/`, `signature/`, `smoke/`.
+### Data & State
+- **`metadata.db`**: Persistent SQLite storage for frame metrics. Allows the Gallery to filter thousands of frames instantly.
+- **`run_config.json`**: Generated in each output folder; stores the exact parameters used for that run (essential for resumability).
+- **`frame_map.json`**: The translation layer between filesystem image names (`frame_000001.png`) and original video indices.
 
-**scripts/**:
-- Purpose: Developer utilities and automated verification tasks.
-- Contains: `python` scripts for UX audits, E2E runs, and metadata updates.
+## Naming Conventions (Refined)
 
-## Key File Locations
+- **Pipelines**: Class names should end in `Pipeline` (e.g., `ExtractionPipeline`).
+- **Managers**: Class names should end in `Manager` (e.g., `ThumbnailManager`).
+- **Mocks**: In tests, use the `mock_` prefix (e.g., `mock_config`, `mock_logger`).
+- **Events**: Event models in `core/events.py` should follow the `[Action]Event` pattern.
 
-**Entry Points:**
-- `app.py`: Main Gradio web application.
-- `cli.py`: Command-line interface for batch processing.
+## Rule of Thirds (Code Placement)
 
-**Configuration:**
-- `core/config.py`: Primary application settings and quality weights.
-- `pyproject.toml`: Dependency management and tool configuration (Ruff, Pytest).
-- `.env_example`: Template for environment-specific secrets.
-
-**Core Logic:**
-- `core/pipelines.py`: Workflow definitions (Extraction, Analysis, Export).
-- `core/database.py`: SQLite schema and migration logic.
-
-**Testing:**
-- `tests/conftest.py`: Shared pytest fixtures and mocks.
-- `pytest.ini` (inline in `pyproject.toml`): Test runner configuration.
-
-## Naming Conventions
-
-**Files:**
-- `snake_case.py`: All Python modules.
-- `test_*.py`: Pytest discovery pattern.
-- `*.md`: Documentation and planning artifacts.
-
-**Directories:**
-- `snake_case`: Standard Python package and resource directories.
-- `__pycache__`: Python bytecode cache (ignored).
-
-**Special Patterns:**
-- `[Component]Pipeline`: Classes in `core/pipelines.py`.
-- `[Component]Manager`: Classes in `core/managers.py`.
-
-## Where to Add New Code
-
-**New Quality Metric:**
-- Implementation: `core/operators/[metric_name].py`.
-- Registration: Use `@register_operator` decorator.
-
-**New UI Tab:**
-- Layout: Add to `ui/app_ui.py`.
-- Callbacks: Define in `ui/app_ui.py` or `CORE` depending on complexity.
-
-**New Core Logic:**
-- Module: `core/[domain].py`.
-- Integration: Add to appropriate pipeline in `core/pipelines.py`.
-
-## Special Directories
-
-**SAM3_repo/**:
-- Purpose: External dependency managed as a submodule.
-- Status: **READ-ONLY**. Under no circumstances should this be modified directly.
-- Committed: Yes (as submodule reference).
-
-**.planning/**:
-- Purpose: GSD (Get Shit Done) context and roadmap documents.
-- Status: Internal to development process.
-- Committed: Yes.
+1.  **If it touches Gradio components**: Put it in `ui/`.
+2.  **If it touches ML models or high-volume data**: Put it in `core/`.
+3.  **If it's a reusable math or path utility**: Put it in `core/utils.py`.
 
 ---
 
-*Structure analysis: 2026-03-21*
-*Update when directory structure changes*
+*Refined structure: 2026-03-21*
