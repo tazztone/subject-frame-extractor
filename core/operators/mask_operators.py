@@ -18,6 +18,7 @@ class PhashOperator:
     def execute(self, ctx: OperatorContext) -> OperatorResult:
         try:
             import imagehash
+
             pil_img = Image.fromarray(ctx.image_rgb)
             phash = str(imagehash.phash(pil_img))
 

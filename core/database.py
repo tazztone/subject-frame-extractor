@@ -3,7 +3,10 @@ import logging
 import sqlite3
 import threading
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
+
+if TYPE_CHECKING:
+    from core.error_handling import ErrorHandler
 
 
 class Database:
@@ -24,6 +27,7 @@ class Database:
         self.batch_size = batch_size
         self.logger = logger or logging.getLogger(__name__)
         self.lock = threading.Lock()
+        self.error_handler: Optional["ErrorHandler"] = None
         self.columns = [
             "filename",
             "face_sim",
@@ -213,19 +217,16 @@ class Database:
             self._flush_buffer()
 
     def _flush_buffer(self):
-        """Internal method to write buffered records to the database."""
+        """Internal method to write buffered records to the database with retry logic."""
         if not self.buffer:
             return
 
-        # Helper to ensure connection - though it should be open
-        if not self.conn:
-            self.connect()
-
-        cursor = self.conn.cursor()
-        placeholders = ", ".join(["?"] * len(self.columns))
-        columns_str = ", ".join(self.columns)
-
-        try:
+        def _execute_flush():
+            if not self.conn:
+                self.connect()
+            cursor = self.conn.cursor()
+            placeholders = ", ".join(["?"] * len(self.columns))
+            columns_str = ", ".join(self.columns)
             cursor.executemany(
                 f"""
                 INSERT OR REPLACE INTO metadata ({columns_str})
@@ -235,12 +236,18 @@ class Database:
             )
             self.conn.commit()
             self.buffer.clear()
+
+        try:
+            if self.error_handler:
+                self.error_handler.with_retry(recoverable_exceptions=(sqlite3.OperationalError, sqlite3.DatabaseError))(
+                    _execute_flush
+                )()
+            else:
+                _execute_flush()
         except sqlite3.Error as e:
-            # TODO: Implement proper error recovery strategy (retry with backoff)
-            self.logger.error(f"Database error during flush: {e}", exc_info=True)
-            # Optional: Decide whether to clear buffer or retry?
-            # For now, we clear to avoid getting stuck, but log error.
-            self.buffer.clear()
+            self.logger.error(f"Failed to flush database buffer after retries: {e}", exc_info=True)
+            # We do NOT clear the buffer here to prevent data loss on transient errors.
+            raise
 
     def load_all_metadata(self) -> List[Dict[str, Any]]:
         """Loads all metadata from the database."""

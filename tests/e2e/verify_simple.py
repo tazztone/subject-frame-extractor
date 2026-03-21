@@ -29,6 +29,7 @@ def verify_ui_simple():
 
         print("Taking screenshot...")
         from pathlib import Path
+
         output_dir = Path(__file__).parent.parent / "results" / "screenshots"
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = output_dir / "simple_check.png"
@@ -39,6 +40,7 @@ def verify_ui_simple():
         print(f"Page Title: {title}")
 
         browser.close()
+
 
 if __name__ == "__main__":
     verify_ui_simple()

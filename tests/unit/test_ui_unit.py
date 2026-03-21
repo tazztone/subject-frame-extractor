@@ -31,10 +31,9 @@ def app_ui(
         return app
 
 
-
-
 def test_run_extraction_wrapper(app_ui):
     from ui.app_ui import ApplicationState
+
     state = ApplicationState()
     with patch.object(app_ui, "_run_pipeline", return_value=iter([])) as mock_run_pipeline:
         # Args matching ext_ui_map_keys:

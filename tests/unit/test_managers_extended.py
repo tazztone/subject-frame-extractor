@@ -1,4 +1,3 @@
-
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -7,10 +6,9 @@ from core.managers import ModelRegistry, ThumbnailManager
 
 
 class TestManagersExtended:
-
     def test_model_registry_basic_load(self):
         """Test basic ModelRegistry load (retry logic is in get_tracker/etc, not get_or_load)."""
-        logger = MagicMock() # Use mock logger that accepts success
+        logger = MagicMock()  # Use mock logger that accepts success
         registry = ModelRegistry(logger=logger)
         mock_loader = MagicMock(return_value="Success")
 
@@ -28,12 +26,13 @@ class TestManagersExtended:
     def test_thumbnail_manager_eviction_logic(self, tmp_path):
         """Test LRU eviction in ThumbnailManager."""
         config = Config()
-        config.cache_size = 2 # Small size for testing
+        config.cache_size = 2  # Small size for testing
         manager = ThumbnailManager(MagicMock(), config)
 
         # Fake images
         import numpy as np
-        img1 = np.zeros((10,10,3), dtype=np.uint8)
+
+        img1 = np.zeros((10, 10, 3), dtype=np.uint8)
 
         # Patch PIL.Image.open to return context manager that yields fake image
         with patch("PIL.Image.open") as mock_open:

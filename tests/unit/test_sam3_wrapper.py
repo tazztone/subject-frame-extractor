@@ -83,6 +83,7 @@ class TestSAM3WrapperAPICompleteness:
         import inspect
 
         from core.managers import SAM3Wrapper
+
         method = SAM3Wrapper.add_text_prompt
         sig = inspect.signature(method)
         params = list(sig.parameters.keys())
@@ -187,14 +188,18 @@ class TestSAM3WrapperMethodBehavior:
     @patch("core.managers.torch.cuda.is_available", return_value=True)
     @patch("core.managers.torch.cuda.empty_cache")
     @patch("core.managers.gc.collect")
-    def test_shutdown_cleans_up_resources(self, mock_gc_collect, mock_empty_cache, mock_cuda_available, behavior_mock_wrapper):
+    def test_shutdown_cleans_up_resources(
+        self, mock_gc_collect, mock_empty_cache, mock_cuda_available, behavior_mock_wrapper
+    ):
         """shutdown should call close_session, predictor.shutdown, delete predictor and clear cache."""
         # Store a reference to the original predictor mock, ensuring it has a shutdown mock
         original_predictor = behavior_mock_wrapper.predictor
         original_predictor.shutdown = MagicMock()
 
         # Spy on the close_session method to verify it gets called
-        with patch.object(behavior_mock_wrapper, "close_session", wraps=behavior_mock_wrapper.close_session) as mock_close_session:
+        with patch.object(
+            behavior_mock_wrapper, "close_session", wraps=behavior_mock_wrapper.close_session
+        ) as mock_close_session:
             assert hasattr(behavior_mock_wrapper, "predictor")
 
             # Execute the shutdown

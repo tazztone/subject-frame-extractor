@@ -86,10 +86,7 @@ class NiqeOperator:
 
             niqe_score = max(0.0, min(100.0, (offset - niqe_raw) * scale))
 
-            return OperatorResult(metrics={
-                "niqe": niqe_score / 100.0,
-                "niqe_score": niqe_score
-            })
+            return OperatorResult(metrics={"niqe": niqe_score / 100.0, "niqe_score": niqe_score})
 
         except Exception as e:
             return OperatorResult(error=str(e))

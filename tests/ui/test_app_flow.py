@@ -57,7 +57,7 @@ class TestMainWorkflow:
 
         # Select Every Nth for speed in mock (though it doesn't matter for mock)
         page.get_by_role("button", name="🚀 Start Extraction").click()
-        time.sleep(1) # Wait for event loop to register click
+        time.sleep(1)  # Wait for event loop to register click
 
         # Wait for "complete" in the status area (always visible)
         expect(page.locator("#unified_status")).to_contain_text("Extraction Complete", timeout=30000)
@@ -165,7 +165,7 @@ class TestMainWorkflow:
         except Exception:
             print("  - Run Analysis button not ready, trying tab switch...")
             page.screenshot(path=str(screenshot_dir / "before_metrics_retry.png"))
-             # Switch away and back to force render
+            # Switch away and back to force render
             switch_to_tab(page, "Scenes")
             page.wait_for_timeout(500)
             switch_to_tab(page, "Metrics")
@@ -255,8 +255,9 @@ class TestErrorHandling:
         # Give mock app a moment to yield the error
         # Target the textarea specifically for value check
         try:
-             expect(page.locator("#unified_log textarea")).to_have_value(re.compile("Error|Validation failed"), timeout=10000)
+            expect(page.locator("#unified_log textarea")).to_have_value(
+                re.compile("Error|Validation failed"), timeout=10000
+            )
         except AssertionError:
-             # Fallback/Debug: check unified_status as well since we update both
-             expect(page.locator("#unified_status")).to_contain_text("Validation Failed", timeout=5000)
-
+            # Fallback/Debug: check unified_status as well since we update both
+            expect(page.locator("#unified_status")).to_contain_text("Validation Failed", timeout=5000)

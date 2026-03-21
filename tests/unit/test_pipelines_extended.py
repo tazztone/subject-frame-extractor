@@ -197,7 +197,9 @@ class TestPreAnalysisPipeline:
     @patch("core.pipelines.SubjectMasker")
     @patch("core.pipelines.save_scene_seeds")
     @patch("PIL.Image.fromarray")
-    def test_pre_analysis_run(self, mock_img_save, mock_save_seeds, mock_masker_cls, mock_init_models, pre_pipeline, tmp_path):
+    def test_pre_analysis_run(
+        self, mock_img_save, mock_save_seeds, mock_masker_cls, mock_init_models, pre_pipeline, tmp_path
+    ):
         # Setup mocks
         mock_init_models.return_value = {
             "face_analyzer": MagicMock(),
@@ -232,7 +234,9 @@ class TestExecutePreAnalysis:
     @patch("core.pipelines._load_scenes")
     @patch("core.pipelines._initialize_pre_analysis_params")
     @patch("core.pipelines._handle_pre_analysis_uploads")
-    def test_execute_pre_analysis_success(self, mock_handle_uploads, mock_init_params, mock_load_scenes, mock_pipeline_cls, tmp_path):
+    def test_execute_pre_analysis_success(
+        self, mock_handle_uploads, mock_init_params, mock_load_scenes, mock_pipeline_cls, tmp_path
+    ):
         # Setup
         mock_event = MagicMock(spec=PreAnalysisEvent)
         mock_event.model_dump.return_value = {}
@@ -259,7 +263,7 @@ class TestExecutePreAnalysis:
             logger=MagicMock(),
             config=MagicMock(),
             thumbnail_manager=MagicMock(),
-            cuda_available=False
+            cuda_available=False,
         )
         results = list(gen)
 

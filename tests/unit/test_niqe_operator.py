@@ -32,6 +32,7 @@ class TestNiqeOperator:
         mock_config = MagicMock()
         operator.initialize(mock_config)
         from unittest.mock import ANY
+
         mock_create.assert_called_once_with("niqe", device=ANY)
         assert operator.model is not None
 
@@ -39,7 +40,7 @@ class TestNiqeOperator:
     def test_execute_flow(self, mock_create, operator):
         # Setup mock model
         mock_model = MagicMock()
-        mock_model.return_value = torch.tensor([5.0]) # Lower NIQE is better
+        mock_model.return_value = torch.tensor([5.0])  # Lower NIQE is better
         mock_model.device = torch.device("cpu")
         mock_create.return_value = mock_model
 
@@ -84,10 +85,8 @@ class TestNiqeOperator:
         assert result.metrics["niqe_score"] == 10.0
 
         def test_cleanup_clears_model(self, operator):
-
             operator.model = MagicMock()
 
             operator.cleanup()
 
             assert operator.model is None
-

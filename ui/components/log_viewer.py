@@ -32,12 +32,8 @@ class LogViewer:
                 value="Ready. Operations will be logged here.",
             )
             with gr.Row():
-                self.components["show_debug_logs"] = gr.Checkbox(
-                    label="Show Debug Logs", value=False
-                )
-                self.components["refresh_logs_button"] = gr.Button(
-                    "🔄 Refresh", scale=1, visible=True
-                )
+                self.components["show_debug_logs"] = gr.Checkbox(label="Show Debug Logs", value=False)
+                self.components["refresh_logs_button"] = gr.Button("🔄 Refresh", scale=1, visible=True)
                 self.components["clear_logs_button"] = gr.Button("🗑️ Clear", scale=1)
 
         return accordion
@@ -52,9 +48,7 @@ class LogViewer:
         filtered_logs = [
             l
             for l in self.all_logs
-            if any(
-                f"[{level}]" in l for level in self.log_level_choices[current_filter_level:]
-            )
+            if any(f"[{level}]" in l for level in self.log_level_choices[current_filter_level:])
         ]
         return {self.components["unified_log"]: "\n".join(filtered_logs[-1000:])}
 
@@ -86,21 +80,13 @@ class LogViewer:
             yield {self.components["unified_log"]: "\n".join(filtered_logs[-1000:])}
 
         c = self.components
-        c["clear_logs_button"].click(
-            lambda: (self.all_logs.clear(), "")[1], [], c["unified_log"]
-        )
+        c["clear_logs_button"].click(lambda: (self.all_logs.clear(), "")[1], [], c["unified_log"])
 
-        c["show_debug_logs"].change(
-            update_logs, inputs=[c["show_debug_logs"]], outputs=all_outputs
-        )
+        c["show_debug_logs"].change(update_logs, inputs=[c["show_debug_logs"]], outputs=all_outputs)
 
         # Log Auto-Refresh (every 1s)
         self.components["log_timer"] = gr.Timer(1.0)
-        self.components["log_timer"].tick(
-            update_logs, inputs=[c["show_debug_logs"]], outputs=all_outputs
-        )
+        self.components["log_timer"].tick(update_logs, inputs=[c["show_debug_logs"]], outputs=all_outputs)
 
         # Keep manual refresh just in case
-        c["refresh_logs_button"].click(
-            update_logs, inputs=[c["show_debug_logs"]], outputs=all_outputs
-        )
+        c["refresh_logs_button"].click(update_logs, inputs=[c["show_debug_logs"]], outputs=all_outputs)

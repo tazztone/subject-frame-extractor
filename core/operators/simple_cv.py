@@ -51,7 +51,7 @@ class EdgeStrengthOperator:
             edge_strength = float(mean_val)
 
             # Scaling
-            base_scale = 100.0 # Default
+            base_scale = 100.0  # Default
             if ctx.config and hasattr(ctx.config, "edge_strength_base_scale"):
                 base_scale = ctx.config.edge_strength_base_scale
 
@@ -59,10 +59,9 @@ class EdgeStrengthOperator:
                 raw_normalized = min(1.0, edge_strength / base_scale)
                 edge_strength = raw_normalized * 100.0
 
-            return OperatorResult(metrics={
-                "edge_strength": float(raw_normalized),
-                "edge_strength_score": edge_strength
-            })
+            return OperatorResult(
+                metrics={"edge_strength": float(raw_normalized), "edge_strength_score": edge_strength}
+            )
 
         except Exception as e:
             return OperatorResult(success=False, error=str(e))
@@ -108,10 +107,7 @@ class ContrastOperator:
             contrast_val = float(contrast)
             raw_normalized = min(contrast_val, contrast_clamp) / contrast_clamp
 
-            return OperatorResult(metrics={
-                "contrast": float(raw_normalized),
-                "contrast_score": raw_normalized * 100.0
-            })
+            return OperatorResult(metrics={"contrast": float(raw_normalized), "contrast_score": raw_normalized * 100.0})
 
         except Exception as e:
             return OperatorResult(success=False, error=str(e))
@@ -147,10 +143,7 @@ class BrightnessOperator:
             # Legacy: float(mean_br) / 255.0
             raw_normalized = float(mean_br) / 255.0
 
-            return OperatorResult(metrics={
-                "brightness": raw_normalized,
-                "brightness_score": raw_normalized * 100.0
-            })
+            return OperatorResult(metrics={"brightness": raw_normalized, "brightness_score": raw_normalized * 100.0})
 
         except Exception as e:
             return OperatorResult(success=False, error=str(e))

@@ -376,8 +376,7 @@ class SeedSelector:
                     # InsightFace bbox is usually xyxy
                     face_cx = (face.bbox[0] + face.bbox[2]) / 2
                     face_cy = (face.bbox[1] + face.bbox[3]) / 2
-                    if (person_bbox[0] <= face_cx <= person_bbox[2] and
-                        person_bbox[1] <= face_cy <= person_bbox[3]):
+                    if person_bbox[0] <= face_cx <= person_bbox[2] and person_bbox[1] <= face_cy <= person_bbox[3]:
                         sim = np.dot(face.normed_embedding, self.reference_embedding)
                         if sim > best_face_sim_in_box:
                             best_face_sim_in_box = sim
@@ -386,7 +385,7 @@ class SeedSelector:
         return self._xyxy_to_xywh(best_person["bbox"], frame_rgb.shape), {
             "type": f"person_{strategy.lower().replace(' ', '_')}",
             "conf": best_person["conf"],
-            "seed_face_sim": seed_face_sim if seed_face_sim > 0 else None
+            "seed_face_sim": seed_face_sim if seed_face_sim > 0 else None,
         }
 
     # TODO: Cache transform for reuse across multiple frames
@@ -458,7 +457,7 @@ class SeedSelector:
     def _xyxy_to_xywh(self, box: list, img_shape: Optional[tuple] = None) -> list[int]:
         """
         Convert box from xyxy to xywh format with optional padding and clamping.
-        
+
         Args:
             box: [x1, y1, x2, y2]
             img_shape: (height, width) for clamping

@@ -11,6 +11,7 @@ from PIL import Image
 # Configure logger
 logger = logging.getLogger(__name__)
 
+
 def extract_preview(raw_path: Path, output_dir: Path, thumbnails_only: bool = True) -> Optional[Path]:
     """
     Extracts the embedded JPEG preview from a RAW file using ExifTool.
@@ -82,7 +83,10 @@ def extract_preview(raw_path: Path, output_dir: Path, thumbnails_only: bool = Tr
     logger.warning(f"Could not extract any preview from {raw_path}")
     return None
 
-def ingest_folder(folder_path: Path, output_dir: Path, recursive: bool = False, thumbnails_only: bool = True) -> List[Dict[str, Any]]:
+
+def ingest_folder(
+    folder_path: Path, output_dir: Path, recursive: bool = False, thumbnails_only: bool = True
+) -> List[Dict[str, Any]]:
     """
     Scans a folder for images, extracting previews for RAW files.
 
@@ -122,27 +126,31 @@ def ingest_folder(folder_path: Path, output_dir: Path, recursive: bool = False, 
         photo_id = file_path.stem
 
         if ext in jpeg_exts:
-            ingested_photos.append({
-                "id": photo_id,
-                "source": file_path,
-                "preview": file_path,
-                "type": "jpeg",
-                "status": "unreviewed",
-                "scores": {}
-            })
+            ingested_photos.append(
+                {
+                    "id": photo_id,
+                    "source": file_path,
+                    "preview": file_path,
+                    "type": "jpeg",
+                    "status": "unreviewed",
+                    "scores": {},
+                }
+            )
 
         elif ext in raw_exts:
             # Extract preview
             preview = extract_preview(file_path, output_dir, thumbnails_only=thumbnails_only)
             if preview:
-                ingested_photos.append({
-                    "id": photo_id,
-                    "source": file_path,
-                    "preview": preview,
-                    "type": "raw",
-                    "status": "unreviewed",
-                    "scores": {}
-                })
+                ingested_photos.append(
+                    {
+                        "id": photo_id,
+                        "source": file_path,
+                        "preview": preview,
+                        "type": "raw",
+                        "status": "unreviewed",
+                        "scores": {},
+                    }
+                )
 
     logger.info(f"Ingested {len(ingested_photos)} photos from {folder_path}")
     return ingested_photos

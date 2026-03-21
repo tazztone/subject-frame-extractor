@@ -30,8 +30,7 @@ def test_execute_analysis_schema():
                     mock_init.return_value = mock_pipe
 
                     gen = execute_analysis(
-                        event, MagicMock(), threading.Event(), MagicMock(),
-                        MagicMock(), MagicMock(), True
+                        event, MagicMock(), threading.Event(), MagicMock(), MagicMock(), MagicMock(), True
                     )
 
                     results = list(gen)
@@ -40,6 +39,7 @@ def test_execute_analysis_schema():
                     assert success_yield["done"] is True
                     assert "metadata_path" in success_yield
                     assert success_yield["metadata_path"].endswith("metadata.db")
+
 
 def test_execute_extraction_schema():
     """Verify that execute_extraction yields the expected keys."""
@@ -57,8 +57,7 @@ def test_execute_extraction_schema():
                 mock_pipe_class.return_value = mock_pipe
 
                 gen = execute_extraction(
-                    event, MagicMock(), threading.Event(), MagicMock(),
-                    MagicMock(), MagicMock(), True
+                    event, MagicMock(), threading.Event(), MagicMock(), MagicMock(), MagicMock(), True
                 )
 
                 results = list(gen)

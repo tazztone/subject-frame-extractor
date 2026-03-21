@@ -176,7 +176,7 @@ import subprocess
 def detect_hwaccel(logger: "AppLogger") -> tuple[Optional[str], Optional[str]]:
     """
     Probes FFmpeg for hardware acceleration support.
-    
+
     Returns:
         tuple: (hwaccel_type, decoder_name) or (None, None)
     """
@@ -188,7 +188,7 @@ def detect_hwaccel(logger: "AppLogger") -> tuple[Optional[str], Optional[str]]:
         # Check for CUDA (Nvidia)
         if "cuda" in hwaccels or "cuvid" in hwaccels:
             logger.info("Hardware acceleration detected: NVIDIA (CUDA/CUVID)")
-            return "cuda", None # FFmpeg can usually pick the right decoder with -hwaccel cuda
+            return "cuda", None  # FFmpeg can usually pick the right decoder with -hwaccel cuda
 
         # Check for VAAPI (Intel/AMD on Linux)
         if "vaapi" in hwaccels:

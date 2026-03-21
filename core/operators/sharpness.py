@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 class SharpnessOperator:
     """
     Computes sharpness score using Laplacian variance.
-    
+
     Higher variance in the Laplacian indicates more edges and detail,
     which corresponds to a sharper image. Blurry images have low variance.
     """
@@ -46,10 +46,10 @@ class SharpnessOperator:
     def execute(self, ctx: OperatorContext) -> OperatorResult:
         """
         Compute sharpness score from image.
-        
+
         Args:
             ctx: OperatorContext with image_rgb and optional mask
-            
+
         Returns:
             OperatorResult with "sharpness_score" metric (0-100)
         """
@@ -87,10 +87,7 @@ class SharpnessOperator:
             score = raw_normalized * 100.0
             score = max(0.0, score)  # Ensure non-negative
 
-            return OperatorResult(metrics={
-                "sharpness": float(raw_normalized),
-                "sharpness_score": score
-            })
+            return OperatorResult(metrics={"sharpness": float(raw_normalized), "sharpness_score": score})
 
         except Exception as e:
             return OperatorResult(

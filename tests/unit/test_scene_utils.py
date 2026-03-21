@@ -182,7 +182,10 @@ class TestSubjectMasker:
         with patch("core.scene_utils.subject_masker.MaskPropagator") as MockPropagator:
             instance = MockPropagator.return_value
             instance.propagate_video.return_value = (
-                {0: np.ones((10, 10), dtype=np.uint8)}, {0: 100.0}, {0: False}, {0: None}
+                {0: np.ones((10, 10), dtype=np.uint8)},
+                {0: 100.0},
+                {0: False},
+                {0: None},
             )
 
             masker = SubjectMasker(
@@ -192,7 +195,7 @@ class TestSubjectMasker:
                 mock_config_simple,
                 logger=mock_logger,
                 model_registry=mock_model_registry,
-                thumbnail_manager=MagicMock()
+                thumbnail_manager=MagicMock(),
             )
             masker.frame_map = {0: "frame_0.png"}
 

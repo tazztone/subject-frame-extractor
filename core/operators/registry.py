@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 class OperatorRegistry:
     """
     Central registry for operator instances.
-    
+
     Manages operator registration, lifecycle (initialize/cleanup),
     and provides discovery mechanisms.
     """
@@ -33,7 +33,7 @@ class OperatorRegistry:
     def register(cls, operator: Operator) -> None:
         """
         Register an operator instance.
-        
+
         Args:
             operator: Operator instance to register
         """
@@ -44,10 +44,10 @@ class OperatorRegistry:
     def get(cls, name: str) -> Optional[Operator]:
         """
         Get an operator by name.
-        
+
         Args:
             name: Operator name (from config.name)
-            
+
         Returns:
             Operator instance or None if not found
         """
@@ -57,7 +57,7 @@ class OperatorRegistry:
     def list_all(cls) -> list[OperatorConfig]:
         """
         List all registered operator configs.
-        
+
         Returns:
             List of OperatorConfig for all registered operators
         """
@@ -67,7 +67,7 @@ class OperatorRegistry:
     def list_names(cls) -> list[str]:
         """
         List all registered operator names.
-        
+
         Returns:
             List of operator names
         """
@@ -77,9 +77,9 @@ class OperatorRegistry:
     def initialize_all(cls, config: Any) -> None:
         """
         Initialize all registered operators.
-        
+
         Calls initialize() on operators that haven't been initialized yet.
-        
+
         Args:
             config: Application Config object to pass to operators
         """
@@ -96,7 +96,7 @@ class OperatorRegistry:
     def cleanup_all(cls) -> None:
         """
         Clean up all registered operators.
-        
+
         Calls cleanup() on all initialized operators.
         """
         for name in list(cls._initialized):
@@ -142,12 +142,13 @@ def discover_operators(package_path: str = "core.operators") -> list[str]:
 
     return OperatorRegistry.list_names()
 
+
 def register_operator(cls: Type[Operator]) -> Type[Operator]:
     """
     Decorator to register an operator class.
-    
+
     Instantiates the class and registers it with OperatorRegistry.
-    
+
     Usage:
         @register_operator
         class MyOperator:
@@ -170,9 +171,9 @@ def run_operators(
 ) -> dict[str, OperatorResult]:
     """
     Bridge function to run operators on an image.
-    
+
     This is the integration point for the analysis pipeline.
-    
+
     Args:
         image_rgb: Input image as RGB numpy array
         mask: Optional subject mask
@@ -182,7 +183,7 @@ def run_operators(
         model_registry: Optional model registry for lazy loading
         logger: Optional logger
         shared_data: Optional dictionary for sharing data between operators
-        
+
     Returns:
         Dict mapping operator names to their OperatorResult
     """
@@ -210,6 +211,7 @@ def run_operators(
         op = OperatorRegistry.get(name)
         if op and getattr(op.config, "requires_tensor", False):
             import torch
+
             device = "cuda" if torch.cuda.is_available() else "cpu"
             # (H, W, C) -> (C, H, W) -> (1, C, H, W)
             tensor = torch.from_numpy(image_rgb).float() / 255.0
@@ -251,12 +253,14 @@ def run_operators(
                     for m_name, m_val in result.metrics.items():
                         if not m_name.endswith("_score") and m_name not in ["yaw", "pitch", "roll", "blink_prob"]:
                             ctx.shared_data["normalized_metrics"][m_name] = m_val
-                break # Success, exit retry loop
+                break  # Success, exit retry loop
 
             except Exception as e:
                 if attempt < max_retries:
                     if logger:
-                        logger.warning(f"Operator '{name}' failed (attempt {attempt + 1}), retrying...", extra={"error": e})
+                        logger.warning(
+                            f"Operator '{name}' failed (attempt {attempt + 1}), retrying...", extra={"error": e}
+                        )
                     if "cuda" in str(e).lower() and torch.cuda.is_available():
                         torch.cuda.empty_cache()
                     time.sleep(0.5 * (attempt + 1))

@@ -104,7 +104,7 @@ def setup_logging(
     config: "Config",
     log_dir: Optional[Path] = None,
     log_to_console: bool = True,
-    progress_queue: Optional[Queue] = None
+    progress_queue: Optional[Queue] = None,
 ):
     """
     Sets up the global logging configuration using dictConfig.

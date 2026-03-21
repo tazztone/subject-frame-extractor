@@ -81,7 +81,7 @@ class TestMaskPropagatorLogic:
             frame_numbers=frame_numbers,
             prompts=prompts,
             frame_size=frame_size,
-            frame_map=frame_map
+            frame_map=frame_map,
         )
 
         # Verify SAM3 calls
@@ -118,7 +118,7 @@ class TestMaskPropagatorLogic:
             frame_numbers=[0, 1],
             prompts=[{"frame": 0, "bbox": [0, 0, 10, 10]}],
             frame_size=(100, 100),
-            frame_map={0: "a.webp", 1: "b.webp"}
+            frame_map={0: "a.webp", 1: "b.webp"},
         )
 
         # Should return blank masks, not None
@@ -147,7 +147,7 @@ class TestMaskPropagatorLogic:
             frame_numbers=[0, 1, 2],
             prompts=[{"frame": 0, "bbox": [0, 0, 10, 10]}],
             frame_size=(100, 100),
-            frame_map={0: "a.webp", 1: "b.webp", 2: "c.webp"}
+            frame_map={0: "a.webp", 1: "b.webp", 2: "c.webp"},
         )
 
         # Verify it didn't crash
@@ -229,7 +229,7 @@ class TestMaskPropagatorLogic:
                         frame_numbers=[0],
                         prompts=[{"frame": 0, "bbox": [0, 0, 10, 10]}],
                         frame_size=(100, 100),
-                        frame_map={0: "a.webp"}
+                        frame_map={0: "a.webp"},
                     )
 
                     mock_empty_cache.assert_called()

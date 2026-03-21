@@ -9,12 +9,12 @@ This module defines the core abstractions for the extensible operator pattern:
 
 Example usage:
     from core.operators import Operator, OperatorContext, OperatorResult, OperatorConfig
-    
+
     class MyOperator:
         @property
         def config(self) -> OperatorConfig:
             return OperatorConfig(name="my_metric", display_name="My Metric")
-        
+
         def execute(self, ctx: OperatorContext) -> OperatorResult:
             score = compute_something(ctx.image_rgb)
             return OperatorResult(metrics={"my_metric_score": score})
@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 class OperatorConfig:
     """
     Configuration and metadata for an operator.
-    
+
     Attributes:
         name: Machine-readable identifier (e.g., "sharpness")
         display_name: Human-readable label for UI (e.g., "Sharpness Score")
@@ -65,7 +65,7 @@ class OperatorConfig:
 class OperatorContext:
     """
     Execution context passed to operators.
-    
+
     Attributes:
         image_rgb: Input image as RGB numpy array (H, W, 3)
         image_tensor: Optional input image as Torch tensor (1, 3, H, W) on GPU/CPU
@@ -93,7 +93,7 @@ class OperatorContext:
 class OperatorResult:
     """
     Standardized result from operator execution.
-    
+
     Attributes:
         metrics: Dict of computed numerical values (e.g., {"sharpness_score": 85.2})
         data: Dict of non-numerical data (e.g., {"phash": "a1b2c3d4"})
@@ -116,11 +116,11 @@ class OperatorResult:
 class Operator(Protocol):
     """
     Protocol defining the operator interface.
-    
+
     All analysis operators must implement:
     - config: Property returning OperatorConfig metadata
     - execute: Method computing metrics from OperatorContext
-    
+
     Optionally implement for stateful operators:
     - initialize: Called once with app config for model loading
     - cleanup: Called on shutdown for resource cleanup
@@ -134,10 +134,10 @@ class Operator(Protocol):
     def execute(self, ctx: OperatorContext) -> OperatorResult:
         """
         Execute the operator on the given context.
-        
+
         Args:
             ctx: OperatorContext with image and optional mask/config
-            
+
         Returns:
             OperatorResult with computed metrics or error
         """
@@ -146,7 +146,7 @@ class Operator(Protocol):
     def initialize(self, config: Any) -> None:
         """
         Optional: Initialize operator with app config.
-        
+
         Called once before first execution. Use for loading ML models.
         Default implementation does nothing.
         """
@@ -155,7 +155,7 @@ class Operator(Protocol):
     def cleanup(self) -> None:
         """
         Optional: Clean up operator resources.
-        
+
         Called on application shutdown. Use for releasing GPU memory.
         Default implementation does nothing.
         """

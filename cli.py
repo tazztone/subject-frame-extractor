@@ -19,6 +19,7 @@ import sys
 import threading
 from pathlib import Path
 from queue import Queue
+from typing import Optional
 
 import click
 import torch
@@ -40,7 +41,7 @@ from core.pipelines import (
 def _setup_runtime(output_dir: Path, verbose: bool = False):
     """Initialize shared runtime components."""
     config = Config()
-    config.monitoring_memory_critical_threshold_mb = 64000  # Disable watchdog for CLI
+    config.monitoring_memory_watchdog_enabled = False  # Disable watchdog for CLI
     config.log_level = "DEBUG" if verbose else "INFO"
 
     progress_queue = Queue()
@@ -65,10 +66,10 @@ def _run_pipeline(generator, stage_name: str) -> dict:
                 click.echo(f"  {update['unified_log']}")
 
     if not result or not result.get("done"):
-        click.secho(f"❌ {stage_name} failed.", fg="red")
         if result:
-            click.echo(f"   Error: {result.get('unified_log', 'Unknown error')}")
-        sys.exit(1)
+            raise click.ClickException(f"{stage_name} failed: {result.get('unified_log', 'Unknown error')}")
+        else:
+            raise click.ClickException(f"{stage_name} failed unexpectedly.")
 
     click.secho(f"✓ {stage_name} complete.", fg="green")
     return result
@@ -82,11 +83,31 @@ def cli():
 
 
 @cli.command()
-@click.option("--source", "-s", required=True, type=click.Path(exists=True), help="Path to input video file or image folder.")
+@click.option(
+    "--source", "-s", required=True, type=click.Path(exists=True), help="Path to input video file or image folder."
+)
 @click.option("--output", "-o", required=True, type=click.Path(), help="Output directory for extracted frames.")
-@click.option("--method", "-m", default="every_nth_frame", type=click.Choice(["every_nth_frame", "all", "keyframes"]), help="Extraction method (ignored for folders).")
-@click.option("--nth-frame", "-n", default=3, type=int, help="Extract every Nth frame (for every_nth_frame method).")
-@click.option("--max-resolution", "-r", default="1080", type=click.Choice(["480", "720", "1080", "1440", "2160"]), help="Max video resolution.")
+@click.option(
+    "--method",
+    "-m",
+    default="every_nth_frame",
+    type=click.Choice(["every_nth_frame", "all", "keyframes"]),
+    help="Extraction method (ignored for folders).",
+)
+@click.option(
+    "--nth-frame",
+    "-n",
+    default=3,
+    type=click.IntRange(min=1),
+    help="Extract every Nth frame (for every_nth_frame method).",
+)
+@click.option(
+    "--max-resolution",
+    "-r",
+    default="1080",
+    type=click.Choice(["480", "720", "1080", "1440", "2160"]),
+    help="Max video resolution.",
+)
 @click.option("--thumb-mp", default=0.5, type=float, help="Thumbnail megapixels.")
 @click.option("--scene-detect/--no-scene-detect", default=True, help="Enable scene detection (ignored for folders).")
 @click.option("--verbose", is_flag=True, help="Enable verbose logging.")
@@ -95,7 +116,7 @@ def cli():
 def extract(source, output, method, nth_frame, max_resolution, thumb_mp, scene_detect, verbose, clean, force):
     """
     Extract frames from a video file or ingest an image folder.
-    
+
     This is the first step in the pipeline. It extracts thumbnails from the source
     and prepares it for analysis.
     """
@@ -138,7 +159,9 @@ def extract(source, output, method, nth_frame, max_resolution, thumb_mp, scene_d
     if is_video:
         click.echo(f"   Method: {method} (every {nth_frame} frames)")
 
-    config, logger, progress_queue, cancel_event, model_registry, thumbnail_manager = _setup_runtime(output_dir, verbose)
+    config, logger, progress_queue, cancel_event, model_registry, thumbnail_manager = _setup_runtime(
+        output_dir, verbose
+    )
 
     event = ExtractionEvent(
         source_path=str(source),
@@ -152,7 +175,9 @@ def extract(source, output, method, nth_frame, max_resolution, thumb_mp, scene_d
         output_folder=str(output_dir),
     )
 
-    gen = execute_extraction(event, progress_queue, cancel_event, logger, config, thumbnail_manager, model_registry=model_registry)
+    gen = execute_extraction(
+        event, progress_queue, cancel_event, logger, config, thumbnail_manager, model_registry=model_registry
+    )
     _run_pipeline(gen, "Extraction" if is_video else "Ingestion")
 
     # Verify output
@@ -161,12 +186,18 @@ def extract(source, output, method, nth_frame, max_resolution, thumb_mp, scene_d
         frame_map = json.loads(frame_map_path.read_text())
         click.echo(f"   📊 Processed {len(frame_map)} frames/images")
 
-    click.secho(f"\n✅ {'Extraction' if is_video else 'Ingestion'} complete. Output: {output_dir}", fg="green", bold=True)
+    click.secho(
+        f"\n✅ {'Extraction' if is_video else 'Ingestion'} complete. Output: {output_dir}", fg="green", bold=True
+    )
 
 
 @cli.command()
-@click.option("--session", "-s", required=True, type=click.Path(exists=True), help="Path to extraction output directory.")
-@click.option("--source", "-v", required=True, type=click.Path(exists=True), help="Path to original video file or image folder.")
+@click.option(
+    "--session", "-s", required=True, type=click.Path(exists=True), help="Path to extraction output directory."
+)
+@click.option(
+    "--source", "-v", required=True, type=click.Path(exists=True), help="Path to original video file or image folder."
+)
 @click.option("--face-ref", "-f", type=click.Path(exists=True), help="Path to reference face image for tracking.")
 @click.option("--strategy", default="🧑‍🤝‍🧑 Find Prominent Person", help="Primary seed strategy.")
 @click.option("--verbose", is_flag=True, help="Enable verbose logging.")
@@ -175,7 +206,7 @@ def extract(source, output, method, nth_frame, max_resolution, thumb_mp, scene_d
 def analyze(session, source, face_ref, strategy, verbose, resume, force):
     """
     Run full analysis pipeline on extracted frames or ingested photos.
-    
+
     This runs pre-analysis (seed detection), mask propagation (video only), and metric analysis.
     Requires extraction/ingestion to have been run first.
     """
@@ -189,40 +220,12 @@ def analyze(session, source, face_ref, strategy, verbose, resume, force):
     if face_ref:
         click.echo(f"   Face Ref: {face_ref}")
 
-    config, logger, progress_queue, cancel_event, model_registry, thumbnail_manager = _setup_runtime(output_dir, verbose)
+    config, logger, progress_queue, cancel_event, model_registry, thumbnail_manager = _setup_runtime(
+        output_dir, verbose
+    )
 
     # Build PreAnalysisEvent
-    pre_event = PreAnalysisEvent(
-        output_folder=str(output_dir),
-        video_path=str(source) if is_video else "",
-        resume=resume,
-        enable_face_filter=bool(face_ref),
-        face_ref_img_path=str(face_ref) if face_ref else "",
-        face_model_name="buffalo_l",
-        enable_subject_mask=True,
-        tracker_model_name="sam3",
-        best_frame_strategy="Largest Person",
-        scene_detect=True if is_video else False,
-        min_mask_area_pct=1.0,
-        sharpness_base_scale=2500.0,
-        edge_strength_base_scale=100.0,
-        pre_analysis_enabled=True,
-        pre_sample_nth=1,
-        primary_seed_strategy=strategy,
-        compute_quality_score=True,
-        compute_sharpness=True,
-        compute_edge_strength=True,
-        compute_contrast=True,
-        compute_brightness=True,
-        compute_entropy=True,
-        compute_eyes_open=True,
-        compute_yaw=True,
-        compute_pitch=True,
-        compute_face_sim=True,
-        compute_subject_mask_area=True,
-        compute_niqe=True,
-        compute_phash=True,
-    )
+    pre_event = _build_pre_analysis_event(output_dir, source, is_video, face_ref, strategy, resume)
 
     cuda_available = torch.cuda.is_available()
     if cuda_available:
@@ -231,7 +234,17 @@ def analyze(session, source, face_ref, strategy, verbose, resume, force):
 
     # Stage 1: Pre-Analysis
     click.secho("\n📍 Stage 1: Pre-Analysis (Seed Detection)", fg="yellow")
-    gen = execute_pre_analysis(pre_event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress=None, model_registry=model_registry)
+    gen = execute_pre_analysis(
+        pre_event,
+        progress_queue,
+        cancel_event,
+        logger,
+        config,
+        thumbnail_manager,
+        cuda_available,
+        progress=None,
+        model_registry=model_registry,
+    )
     pre_result = _run_pipeline(gen, "Pre-Analysis")
 
     scenes = pre_result.get("scenes", [])
@@ -247,14 +260,34 @@ def analyze(session, source, face_ref, strategy, verbose, resume, force):
 
     if is_video:
         click.secho("\n📍 Stage 2: Mask Propagation", fg="yellow")
-        gen = execute_propagation(prop_event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress=None, model_registry=model_registry)
+        gen = execute_propagation(
+            prop_event,
+            progress_queue,
+            cancel_event,
+            logger,
+            config,
+            thumbnail_manager,
+            cuda_available,
+            progress=None,
+            model_registry=model_registry,
+        )
         _run_pipeline(gen, "Propagation")
     else:
         click.secho("\n📍 Stage 2: Mask Propagation (Skipped for Folder)", fg="yellow")
 
     # Stage 3: Analysis
     click.secho("\n📍 Stage 3: Metric Analysis", fg="yellow")
-    gen = execute_analysis(prop_event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress=None, model_registry=model_registry)
+    gen = execute_analysis(
+        prop_event,
+        progress_queue,
+        cancel_event,
+        logger,
+        config,
+        thumbnail_manager,
+        cuda_available,
+        progress=None,
+        model_registry=model_registry,
+    )
     _run_pipeline(gen, "Analysis")
 
     # Verify outputs
@@ -270,7 +303,9 @@ def analyze(session, source, face_ref, strategy, verbose, resume, force):
 
 
 @cli.command()
-@click.option("--source", "-v", required=True, type=click.Path(exists=True), help="Path to input video file or image folder.")
+@click.option(
+    "--source", "-v", required=True, type=click.Path(exists=True), help="Path to input video file or image folder."
+)
 @click.option("--output", "-o", required=True, type=click.Path(), help="Output directory.")
 @click.option("--face-ref", "-f", type=click.Path(exists=True), help="Path to reference face image.")
 @click.option("--nth-frame", "-n", default=3, type=int, help="Extract every Nth frame (video only).")
@@ -282,7 +317,7 @@ def analyze(session, source, face_ref, strategy, verbose, resume, force):
 def full(source, output, face_ref, nth_frame, max_resolution, verbose, clean, resume, force):
     """
     Run the complete pipeline: extraction/ingestion + analysis.
-    
+
     This is equivalent to running 'extract' followed by 'analyze'.
     """
     output_dir = Path(output)
@@ -299,7 +334,9 @@ def full(source, output, face_ref, nth_frame, max_resolution, verbose, clean, re
     click.echo(f"   Source: {source}")
     click.echo(f"   Output: {output_dir}")
 
-    config, logger, progress_queue, cancel_event, model_registry, thumbnail_manager = _setup_runtime(output_dir, verbose)
+    config, logger, progress_queue, cancel_event, model_registry, thumbnail_manager = _setup_runtime(
+        output_dir, verbose
+    )
     cuda_available = torch.cuda.is_available()
 
     # --- EXTRACTION / INGESTION ---
@@ -315,43 +352,27 @@ def full(source, output, face_ref, nth_frame, max_resolution, verbose, clean, re
         scene_detect=True if is_video else False,
         output_folder=str(output_dir),
     )
-    gen = execute_extraction(ext_event, progress_queue, cancel_event, logger, config, thumbnail_manager, model_registry=model_registry)
+    gen = execute_extraction(
+        ext_event, progress_queue, cancel_event, logger, config, thumbnail_manager, model_registry=model_registry
+    )
     _run_pipeline(gen, "Extraction" if is_video else "Ingestion")
 
     # --- PRE-ANALYSIS ---
     click.secho("\n━━━ STAGE: PRE-ANALYSIS ━━━", fg="cyan", bold=True)
-    pre_event = PreAnalysisEvent(
-        output_folder=str(output_dir),
-        video_path=str(source) if is_video else "",
-        resume=resume,
-        enable_face_filter=bool(face_ref),
-        face_ref_img_path=str(face_ref) if face_ref else "",
-        face_model_name="buffalo_l",
-        enable_subject_mask=True,
-        tracker_model_name="sam3",
-        best_frame_strategy="Largest Person",
-        scene_detect=True if is_video else False,
-        min_mask_area_pct=1.0,
-        sharpness_base_scale=2500.0,
-        edge_strength_base_scale=100.0,
-        pre_analysis_enabled=True,
-        pre_sample_nth=1,
-        primary_seed_strategy="🧑‍🤝‍🧑 Find Prominent Person",
-        compute_quality_score=True,
-        compute_sharpness=True,
-        compute_edge_strength=True,
-        compute_contrast=True,
-        compute_brightness=True,
-        compute_entropy=True,
-        compute_eyes_open=True,
-        compute_yaw=True,
-        compute_pitch=True,
-        compute_face_sim=True,
-        compute_subject_mask_area=True,
-        compute_niqe=True,
-        compute_phash=True,
+    pre_event = _build_pre_analysis_event(
+        output_dir, source, is_video, face_ref, "🧑‍🤝‍🧑 Find Prominent Person", resume
     )
-    gen = execute_pre_analysis(pre_event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress=None, model_registry=model_registry)
+    gen = execute_pre_analysis(
+        pre_event,
+        progress_queue,
+        cancel_event,
+        logger,
+        config,
+        thumbnail_manager,
+        cuda_available,
+        progress=None,
+        model_registry=model_registry,
+    )
     pre_result = _run_pipeline(gen, "Pre-Analysis")
     scenes = pre_result.get("scenes", [])
     click.echo(f"   📊 Found {len(scenes)} scenes")
@@ -365,7 +386,17 @@ def full(source, output, face_ref, nth_frame, max_resolution, verbose, clean, re
             scenes=scenes,
             analysis_params=pre_event,
         )
-        gen = execute_propagation(prop_event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress=None, model_registry=model_registry)
+        gen = execute_propagation(
+            prop_event,
+            progress_queue,
+            cancel_event,
+            logger,
+            config,
+            thumbnail_manager,
+            cuda_available,
+            progress=None,
+            model_registry=model_registry,
+        )
         _run_pipeline(gen, "Propagation")
     else:
         click.secho("\n━━━ STAGE: PROPAGATION (Skipped for Folder) ━━━", fg="cyan", bold=True)
@@ -378,7 +409,17 @@ def full(source, output, face_ref, nth_frame, max_resolution, verbose, clean, re
 
     # --- ANALYSIS ---
     click.secho("\n━━━ STAGE: ANALYSIS ━━━", fg="cyan", bold=True)
-    gen = execute_analysis(prop_event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress=None, model_registry=model_registry)
+    gen = execute_analysis(
+        prop_event,
+        progress_queue,
+        cancel_event,
+        logger,
+        config,
+        thumbnail_manager,
+        cuda_available,
+        progress=None,
+        model_registry=model_registry,
+    )
     _run_pipeline(gen, "Analysis")
 
     click.secho("\n🎉 PIPELINE COMPLETE", fg="green", bold=True)
@@ -393,7 +434,7 @@ def full(source, output, face_ref, nth_frame, max_resolution, verbose, clean, re
 def status(session):
     """
     Show the status of a processing session.
-    
+
     Displays what stages have been completed and what data is available.
     """
     output_dir = Path(session)
@@ -402,6 +443,7 @@ def status(session):
 
     # Check for fingerprint
     from core.fingerprint import load_fingerprint
+
     fp = load_fingerprint(str(output_dir))
     if fp:
         click.secho(f"   ✓ Fingerprint: {fp.created_at}", fg="green")
@@ -447,7 +489,9 @@ def status(session):
 @click.option("--quality-min", type=float, help="Minimum quality score (0-100).")
 @click.option("--face-min", type=float, help="Minimum face similarity/match score (0-1).")
 @click.option("--dedup/--no-dedup", default=True, help="Enable deduplication.")
-@click.option("--dedup-method", type=click.Choice(["pHash", "SSIM", "LPIPS"]), default="pHash", help="Deduplication method.")
+@click.option(
+    "--dedup-method", type=click.Choice(["pHash", "SSIM", "LPIPS"]), default="pHash", help="Deduplication method."
+)
 @click.option("--dedup-thresh", type=float, help="Deduplication threshold.")
 @click.option("--verbose", is_flag=True, help="Enable verbose logging.")
 def filter(session, quality_min, face_min, dedup, dedup_method, dedup_thresh, verbose):
@@ -466,7 +510,9 @@ def filter(session, quality_min, face_min, dedup, dedup_method, dedup_thresh, ve
 
     click.secho(f"\n🔍 FILTERING: {output_dir}", fg="cyan", bold=True)
 
-    config, logger, progress_queue, cancel_event, model_registry, thumbnail_manager = _setup_runtime(output_dir, verbose)
+    config, logger, progress_queue, cancel_event, model_registry, thumbnail_manager = _setup_runtime(
+        output_dir, verbose
+    )
 
     # Load all frames from DB
     db = Database(db_path)
@@ -479,7 +525,9 @@ def filter(session, quality_min, face_min, dedup, dedup_method, dedup_thresh, ve
 
     # Build filter dict
     filters = {
-        "quality_score_min": quality_min if quality_min is not None else config.filter_default_quality_score["default_min"],
+        "quality_score_min": quality_min
+        if quality_min is not None
+        else config.filter_default_quality_score["default_min"],
         "face_sim_min": face_min if face_min is not None else config.filter_default_face_sim["default_min"],
         "enable_dedup": dedup,
         "dedup_method": dedup_method,
@@ -495,11 +543,7 @@ def filter(session, quality_min, face_min, dedup, dedup_method, dedup_thresh, ve
         click.echo(f"      - Dedup: {dedup_method} (thresh: {filters['dedup_thresh']})")
 
     kept, rejected, rejection_counts, reasons = apply_all_filters_vectorized(
-        all_frames,
-        filters,
-        config,
-        thumbnail_manager=thumbnail_manager,
-        output_dir=str(output_dir)
+        all_frames, filters, config, thumbnail_manager=thumbnail_manager, output_dir=str(output_dir)
     )
 
     click.secho("\n✅ Filtering complete:", fg="green", bold=True)
@@ -510,6 +554,48 @@ def filter(session, quality_min, face_min, dedup, dedup_method, dedup_thresh, ve
         click.echo("\n   Rejection Reasons:")
         for reason, count in rejection_counts.most_common():
             click.echo(f"      - {reason}: {count}")
+
+
+def _build_pre_analysis_event(
+    output_dir: Path,
+    source: str,
+    is_video: bool,
+    face_ref: Optional[str],
+    strategy: str,
+    resume: bool,
+) -> PreAnalysisEvent:
+    """Helper to build consistent PreAnalysisEvent for CLI commands."""
+    return PreAnalysisEvent(
+        output_folder=str(output_dir),
+        video_path=str(source) if is_video else "",
+        resume=resume,
+        enable_face_filter=bool(face_ref),
+        face_ref_img_path=str(face_ref) if face_ref else "",
+        face_model_name="buffalo_l",
+        enable_subject_mask=True,
+        tracker_model_name="sam3",
+        best_frame_strategy="Largest Person",
+        scene_detect=True if is_video else False,
+        min_mask_area_pct=1.0,
+        sharpness_base_scale=2500.0,
+        edge_strength_base_scale=100.0,
+        pre_analysis_enabled=True,
+        pre_sample_nth=1,
+        primary_seed_strategy=strategy,
+        compute_quality_score=True,
+        compute_sharpness=True,
+        compute_edge_strength=True,
+        compute_contrast=True,
+        compute_brightness=True,
+        compute_entropy=True,
+        compute_eyes_open=True,
+        compute_yaw=True,
+        compute_pitch=True,
+        compute_face_sim=True,
+        compute_subject_mask_area=True,
+        compute_niqe=True,
+        compute_phash=True,
+    )
 
 
 if __name__ == "__main__":

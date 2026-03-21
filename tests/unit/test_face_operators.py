@@ -1,4 +1,3 @@
-
 import numpy as np
 import pytest
 
@@ -28,12 +27,7 @@ class TestEyesOpenOperator:
 
     def test_eyes_open(self, operator, sample_image):
         """Blink 0.0 -> Score 100."""
-        params = {
-            "face_blendshapes": {
-                "eyeBlinkLeft": 0.0,
-                "eyeBlinkRight": 0.0
-            }
-        }
+        params = {"face_blendshapes": {"eyeBlinkLeft": 0.0, "eyeBlinkRight": 0.0}}
         ctx = OperatorContext(image_rgb=sample_image, params=params)
         result = operator.execute(ctx)
 
@@ -42,12 +36,7 @@ class TestEyesOpenOperator:
 
     def test_eyes_closed(self, operator, sample_image):
         """Blink 1.0 -> Score 0."""
-        params = {
-            "face_blendshapes": {
-                "eyeBlinkLeft": 1.0,
-                "eyeBlinkRight": 1.0
-            }
-        }
+        params = {"face_blendshapes": {"eyeBlinkLeft": 1.0, "eyeBlinkRight": 1.0}}
         ctx = OperatorContext(image_rgb=sample_image, params=params)
         result = operator.execute(ctx)
 
@@ -56,12 +45,7 @@ class TestEyesOpenOperator:
 
     def test_mixed_blink(self, operator, sample_image):
         """Max(left, right) used."""
-        params = {
-            "face_blendshapes": {
-                "eyeBlinkLeft": 0.2,
-                "eyeBlinkRight": 0.8
-            }
-        }
+        params = {"face_blendshapes": {"eyeBlinkLeft": 0.2, "eyeBlinkRight": 0.8}}
         ctx = OperatorContext(image_rgb=sample_image, params=params)
         result = operator.execute(ctx)
 
@@ -114,8 +98,8 @@ class TestFacePoseOperator:
         # Let's trust the math implementation is consistent with models.py
         # Test distinct values
         matrix = np.eye(4)
-        matrix[0,0] = 0.5
-        matrix[1,0] = 0.5
+        matrix[0, 0] = 0.5
+        matrix[1, 0] = 0.5
         # atan2(0.5, 0.5) = 45 degrees
 
         params = {"face_matrix": matrix}

@@ -1,4 +1,3 @@
-
 import cv2
 import numpy as np
 
@@ -50,10 +49,7 @@ class EntropyOperator:
             raw_normalized = min(1.0, max(0.0, entropy / 8.0))
             entropy_score = raw_normalized * 100.0
 
-            return OperatorResult(metrics={
-                "entropy": float(raw_normalized),
-                "entropy_score": entropy_score
-            })
+            return OperatorResult(metrics={"entropy": float(raw_normalized), "entropy_score": entropy_score})
 
         except Exception as e:
             return OperatorResult(success=False, error=str(e))

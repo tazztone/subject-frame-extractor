@@ -13,6 +13,7 @@ from .conftest import BASE_URL
 # Mark all tests as e2e (requires app running)
 pytestmark = pytest.mark.e2e
 
+
 def switch_to_tab(page: Page, tab_name: str):
     """Switch tabs in Gradio."""
     tab_btn = page.get_by_role("tab", name=tab_name)
@@ -21,6 +22,7 @@ def switch_to_tab(page: Page, tab_name: str):
         tab_btn.click(force=True)
         expect(tab_btn).to_have_attribute("aria-selected", "true", timeout=10000)
     time.sleep(1.5)
+
 
 class TestPhotoWorkflow:
     """End-to-end Photo Mode UI workflow tests."""
@@ -36,6 +38,7 @@ class TestPhotoWorkflow:
         # 2. Ingest Folder
         print("Step 2: Ingesting Folder")
         import os
+
         mock_folder = "tests/ui/mock_photos"
         os.makedirs(mock_folder, exist_ok=True)
 
@@ -69,7 +72,7 @@ class TestPhotoWorkflow:
         # 4. Recalculate Scores
         print("Step 4: Recalculating Scores")
         # Adjust a slider
-        slider = page.get_by_label("Sharpness")
+        page.get_by_label("Sharpness")
         # Gradio sliders are complex, but can often be set via fill or type if they have an input
         # Or just click a button that uses them
         recalc_btn = page.get_by_role("button", name="Recalculate Scores")

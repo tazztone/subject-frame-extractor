@@ -8,7 +8,7 @@ Quick Start:
     # Create a new operator
     from core.operators import Operator, OperatorConfig, OperatorContext, OperatorResult
     from core.operators import register_operator
-    
+
     @register_operator
     class MyMetricOperator:
         @property
@@ -17,7 +17,7 @@ Quick Start:
                 name="my_metric",
                 display_name="My Custom Metric",
             )
-        
+
         def execute(self, ctx: OperatorContext) -> OperatorResult:
             score = compute_score(ctx.image_rgb)
             return OperatorResult(metrics={"my_metric_score": score})
@@ -31,7 +31,6 @@ Quick Start:
     from core.operators import run_operators
     results = run_operators(image_rgb, mask=None, config=app_config)
 """
-
 
 from core.operators.base import (
     Operator,

@@ -69,7 +69,9 @@ class SubjectTabBuilder:
 
                 # Tab 2: Scan Video (Discovery)
                 with gr.Tab("🔍 Scan Video for People"):
-                    gr.Markdown("### 1. Scan Video\nClick **'Scan Video Now'**. The AI will find people in the footage.")
+                    gr.Markdown(
+                        "### 1. Scan Video\nClick **'Scan Video Now'**. The AI will find people in the footage."
+                    )
 
                     with gr.Row():
                         self.app._create_component(
@@ -95,7 +97,9 @@ class SubjectTabBuilder:
 
                     with gr.Group(visible=False) as discovered_people_group:
                         self.app.components["discovered_people_group"] = discovered_people_group
-                        gr.Markdown("### 2. Select Person\n**Click on a face** below to select your subject. A confirmation will appear.")
+                        gr.Markdown(
+                            "### 2. Select Person\n**Click on a face** below to select your subject. A confirmation will appear."
+                        )
                         self.app._create_component(
                             "discovered_faces_gallery",
                             "gallery",

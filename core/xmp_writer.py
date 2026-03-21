@@ -7,6 +7,7 @@ from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+
 def write_xmp_sidecar(source_path: Path, rating: int, label: str) -> Optional[Path]:
     """
     Writes an XMP sidecar file compatible with Adobe Lightroom/Bridge.
@@ -30,17 +31,20 @@ def write_xmp_sidecar(source_path: Path, rating: int, label: str) -> Optional[Pa
     ET.register_namespace("xmp", NS_XMP)
 
     # Root: <x:xmpmeta>
-    xmpmeta = ET.Element("{adobe:ns:meta/}xmpmeta", attrib={"{adobe:ns:meta/}xmptk": "Adobe XMP Core 5.6-c140 79.160451, 2017/05/06-01:08:21"})
+    xmpmeta = ET.Element(
+        "{adobe:ns:meta/}xmpmeta",
+        attrib={"{adobe:ns:meta/}xmptk": "Adobe XMP Core 5.6-c140 79.160451, 2017/05/06-01:08:21"},
+    )
 
     # RDF Wrapper
     rdf = ET.SubElement(xmpmeta, f"{{{NS_RDF}}}RDF")
 
     # Description
-    desc = ET.SubElement(rdf, f"{{{NS_RDF}}}Description", attrib={
-        f"{{{NS_RDF}}}about": "",
-        f"{{{NS_XMP}}}Rating": str(rating),
-        f"{{{NS_XMP}}}Label": label
-    })
+    ET.SubElement(
+        rdf,
+        f"{{{NS_RDF}}}Description",
+        attrib={f"{{{NS_RDF}}}about": "", f"{{{NS_XMP}}}Rating": str(rating), f"{{{NS_XMP}}}Label": label},
+    )
 
     try:
         tree = ET.ElementTree(xmpmeta)
@@ -50,15 +54,16 @@ def write_xmp_sidecar(source_path: Path, rating: int, label: str) -> Optional[Pa
         logger.error(f"Failed to write XMP for {source_path}: {e}")
         return None
 
+
 def export_xmps_for_photos(photos: List[Dict], star_thresholds: List[int] = None) -> int:
     """
     Writes XMP sidecars for all photos in the list.
-    
+
     Args:
         photos: List of photo metadata dicts.
         star_thresholds: Optional list of score thresholds for 1-5 stars.
                          Video-centric default: [20, 40, 60, 80, 90]
-    
+
     Returns:
         Count of successfully written XMP files.
     """

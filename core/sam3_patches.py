@@ -99,6 +99,7 @@ def patch_sam3_dtype():
             # We need to temporarily patch build_sam3_video_model AGAIN inside here
             # because Sam3VideoPredictor imports it locally in __init__
             import sam3.model.sam3_video_predictor as svp
+
             svp.build_sam3_video_model = build_sam3_video_model_patched
 
             # Now call original init
@@ -152,6 +153,7 @@ def apply_patches():
     # 2. Image processor patches (HWC handling)
     try:
         from sam3.model.sam3_image_processor import Sam3Processor
+
         Sam3Processor.set_image = set_image_patched
     except ImportError:
         pass
@@ -166,6 +168,7 @@ def apply_patches():
         try:
             import sam3.model.edt as edt_module
             import sam3.perflib.connected_components as cc_module
+
             edt_module.edt_triton = edt_triton_fallback
             cc_module.connected_components = connected_components_fallback
         except ImportError:

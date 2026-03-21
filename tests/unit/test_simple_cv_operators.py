@@ -9,6 +9,7 @@ from core.operators.simple_cv import BrightnessOperator, ContrastOperator, EdgeS
 # EdgeStrengthOperator
 # ============================================================================
 
+
 class TestEdgeStrengthOperator:
     @pytest.fixture
     def operator(self):
@@ -58,6 +59,7 @@ class TestEdgeStrengthOperator:
 # ContrastOperator
 # ============================================================================
 
+
 class TestContrastOperator:
     @pytest.fixture
     def operator(self):
@@ -106,6 +108,7 @@ class TestContrastOperator:
 # BrightnessOperator
 # ============================================================================
 
+
 class TestBrightnessOperator:
     @pytest.fixture
     def operator(self):
@@ -134,6 +137,7 @@ class TestBrightnessOperator:
 # ============================================================================
 # EntropyOperator
 # ============================================================================
+
 
 class TestEntropyOperator:
     @pytest.fixture
