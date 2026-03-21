@@ -1,86 +1,57 @@
-# Architecture
+# Architecture Detail
 
 **Analysis Date:** 2026-03-21
+**Deep Dive Refinement:** Added detailed data flow and resource management logic.
 
-## Pattern Overview
+## Core/UI Separation
 
-**Overall:** Core/UI Separated ML Application (Gradio)
+The system follows a strict isolation pattern:
+- **UI (Gradio)**: Collects user parameters and displays results. It is prohibited from executing heavy logic directly.
+- **Core (Pipelines)**: Receives an `AnalysisParameters` object (Pydantic) and executes long-running tasks in background threads.
 
-**Key Characteristics:**
-- **Modular Pipeline-Driven:** Heavy tasks are encapsulated in pipelines (Extraction, Analysis, Propagation, Export).
-- **Lazy Loading Singleton:** `ModelRegistry` manages heavy PyTorch/ONNX models to avoid VRAM OOM.
-- **Async-Aware UI:** Gradio event handlers interact with long-running core processes via state and progress updates.
-- **Plugin-Based Metrics:** Quality metrics are implemented as "Operators" using auto-discovery.
+## Pipeline Orchestration
 
-## Layers
+The processing flow is split into three distinct phases to allow for checkpoints and resumability:
 
-**UI Layer (`ui/`, `app.py`):**
-- Purpose: User interaction, layout management, and visualization.
-- Contains: Gradio components, `gallery_utils.py` for image display logic, `app_ui.py` for tab layouts.
-- Depends on: `core/` (via pipelines and shared state).
+### 1. Extraction Phase (`ExtractionPipeline`)
+- **Input**: Video file or Image folder.
+- **FFmpeg Integration**: Uses a complex filter chain (`scale`, `showinfo`) to extract frames.
+- **Frame Mapping**: Captures `pts_time` from FFmpeg stderr to create `frame_map.json`. This ensures that even with variable frame rates, the pipeline can accurately map extracted images back to original video timestamps.
+- **Optimization**: Automatically generates a `video_lowres.mp4` (360p) for SAM3. This avoids slow JPEG I/O during the propagation phase.
 
-**Orchestration Layer (`core/pipelines.py`):**
-- Purpose: Coordinating complex multi-step workflows.
-- Contains: `ExtractionPipeline`, `PreAnalysisPipeline`, `AnalysisPipeline`, `ExportPipeline`.
-- Depends on: `core/managers.py`, `core/models.py`, `core/database.py`.
+### 2. Propagation Phase (`AnalysisPipeline` via `SubjectMasker`)
+- **Model**: SAM3 (Segment Anything Model v3).
+- **Temporal Memory**: SAM3 uses a session-based approach where it tracks objects across frames.
+- **Coordinate System**: UI coordinates (pixels) are normalized to [0.0, 1.0] before being passed to the `SAM3Wrapper`.
+- **Output**: Binary masks stored as compressed `.png` or `.webp` files in the `masks/` directory.
 
-**Resource Management Layer (`core/managers.py`):**
-- Purpose: Handling lifecycle and thread-safety of external assets.
-- Contains: `ModelRegistry` (singleton), `SAM3Wrapper` (predictor abstraction), `ThumbnailManager` (LRU cache).
-- Depends on: ML libraries (`sam3`, `insightface`), filesystem.
+### 3. Analysis Phase (`AnalysisPipeline` via `Operators`)
+- **Metric Loop**: Parallel execution of "Operators" (Action/Quality metrics).
+- **Concurrency**: Uses `ThreadPoolExecutor` with a pool size limited by `analysis_default_workers` to prevent CPU RAM exhaustion.
+- **Persistence**: Final metrics are flushed to a SQLite `metadata.db` for fast filtering and export.
 
-**Data & Logic Layer (`core/`):**
-- Purpose: Pure business logic, persistence, and domain models.
-- Contains: `database.py` (SQLite), `models.py` (Pydantic schemas), `config.py` (settings), `filtering.py` (logic).
-- Depends on: Python standard libraries, `pydantic`.
+## Resource Management & Stability
 
-## Data Flow
+### Thread-Safe Model Loading (`ModelRegistry`)
+Large ML models (SAM3, InsightFace) are managed by a central registry:
+- **Lazy Loading**: Models are only loaded into VRAM when first requested.
+- **Locking**: Uses a reentrant `RLock` for the registry state and individual `threading.Lock` per model to prevent race conditions during initialization.
+- **OOM Recovery**: If a `RuntimeError` with "out of memory" is caught during initialization, the registry automatically clears the CUDA cache and retries the load on the CPU.
 
-**Frame Propagation Flow:**
-1. **Trigger:** User provides a box/point prompt on a frame in the UI.
-2. **Setup:** `AnalysisPipeline` prepares `SAM3Wrapper` with the selected frames and prompts.
-3. **Execution:** `SAM3Wrapper.propagate()` yields masks and metrics frame-by-frame.
-4. **Persistence:** `Database.insert_metadata()` buffers and flushes results to `metadata.db`.
-5. **Update:** UI receives completion signals and refreshes the gallery using `GalleryManager`.
+### Image Caching (`ThumbnailManager`)
+- **Pattern**: Least Recently Used (LRU) cache.
+- **Cleanup**: Triggers eviction when the cache exceeds `cache_size * cache_cleanup_threshold` (default 90%).
 
-**State Management:**
-- **Ephemeral State:** `gr.State` handles session-specific parameters (current scene, selected object ID).
-- **Persistent State:** `metadata.db` (SQLite) stores all per-frame metrics and processing status.
-- **Global State:** `ModelRegistry` maintains loaded model instances across the application lifetime.
+## Data Flow Contract
 
-## Key Abstractions
-
-**Pipeline:**
-- Purpose: High-level task execution with progress reporting.
-- Pattern: Strategy/Command-like classes in `core/pipelines.py`.
-
-**Operator:**
-- Purpose: Discrete image/frame analysis logic (e.g., Blur Detection, Face Detection).
-- Pattern: Plugin architecture with decorator-based registration (`@register_operator`).
-
-**Wrapper:**
-- Purpose: Isolating complex external APIs (like SAM3) from core business logic.
-- Example: `SAM3Wrapper` in `core/managers.py`.
-
-## Entry Points
-
-**Web UI (`app.py`):**
-- Location: Root `app.py`.
-- Triggers: `python app.py` or `gradio app.py`.
-- Responsibilities: Building the UI tree, registering callbacks, launching server.
-
-**CLI (`cli.py`):**
-- Location: Root `cli.py`.
-- Triggers: `python cli.py [COMMAND]`.
-- Responsibilities: Headless execution of pipelines (e.g., batch extraction or export).
-
-## Error Handling
-
-**Strategy:** 
-- Centralized logging via `logging`.
-- Processing errors are caught within pipelines and recorded in the database (`error` and `error_severity` fields) to allow "Export skipping" of failed frames.
+| Artifact | Producer | Consumer | Purpose |
+|----------|----------|-----------|---------|
+| `AnalysisParameters` | UI | All Pipelines | Configuration and user intent. |
+| `frame_map.json` | Extraction | Analysis, UI | Maps file index to original video frame index. |
+| `scenes.json` | Extraction | Analysis, UI | Defines shot boundaries and status (`pending`, `included`). |
+| `metadata.db` | Analysis | UI, Export | Queryable frame quality and metadata. |
+| `video_lowres.mp4`| Extraction | SAM3 | High-speed frame source for mask propagation. |
 
 ---
 
-*Architecture analysis: 2026-03-21*
-*Update when major patterns change*
+*Refined architecture: 2026-03-21*

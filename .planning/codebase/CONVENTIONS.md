@@ -1,79 +1,45 @@
 # Coding Conventions
 
 **Analysis Date:** 2026-03-21
+**Deep Dive Refinement:** Standardized UI safety and data validation patterns.
 
-## Naming Patterns
+## UI Event Patterns
 
-**Files:**
-- `snake_case.py` for all Python modules (e.g., `pipelines.py`, `gallery_utils.py`).
-- `test_*.py` for test files, located in the `tests/` hierarchy.
-- `AGENTS.md`, `README.md` (UPPERCASE) for root-level documentation.
+### 1. The "Safe Callback" Decorator
+All UI logic in `AppUI` should be wrapped with `@AppUI.safe_ui_callback("Context Name")`.
+- **Purpose**: Prevents the entire Gradio app from crashing on unhandled exceptions.
+- **Behavior**: Catches exceptions, logs them with `self.logger.error`, and returns a standardized error message to the "Unified Status" and "Unified Log" components.
 
-**Classes:**
-- `PascalCase` for all classes (e.g., `ExtractionPipeline`, `SAM3Wrapper`, `AppUI`).
-- `[Component]Pipeline` for orchestration logic.
-- `[Component]Manager` for resource lifecycle management.
+### 2. The event-Pipeline Pattern
+Never pass raw Gradio arguments directly to core logic.
+- **UI**: Collects `*args`.
+- **Mapping**: Create a dictionary and validate it into a Pydantic `UIEvent` model (e.g., `ExtractionEvent`).
+- **Pipeline**: Processes the validated event object.
 
-**Functions:**
-- `snake_case` for all functions and methods.
-- `_prefix` for private methods and internal helper functions (e.g., `_build_header`, `_process_ffmpeg_stream`).
-- `on_event_name` for UI event handlers in `ui/gallery_utils.py`.
+## Metadata & Validation (Pydantic)
 
-**Variables:**
-- `snake_case` for local variables and instance attributes.
-- `UPPER_SNAKE_CASE` for class-level constants and global configuration defaults.
+- **Strict Validation**: Use `model_config = ConfigDict(validate_assignment=True)` in base events.
+- **Cross-Field Checks**: Use `@model_validator(mode='after')` for logic that depends on multiple fields (e.g., ensuring a face reference image exists if `enable_face_filter` is True).
+- **Auto-Stripping**: String fields should automatically strip whitespace.
 
-**Types:**
-- Use Python Type Hints for all function signatures and complex variables.
-- Pydantic models for data schemas (e.g., `Frame`, `Scene`).
+## Gradio Update Protocol (Gradio 5+)
 
-## Code Style
+When a function returns updates to multiple components, it MUST return a dictionary mapping the component object (or its key) to its new value or `gr.update(...)`.
+- **Consistency**: Always prefer updating the `value` through `gr.update(value=...)` for clarity.
+- **Visibility**: Toggle visibility via `gr.update(visible=True/False)`.
 
-**Formatting:**
-- **Tool:** `ruff` is the primary linter and formatter.
-- **Line Length:** 120 characters (configured in `pyproject.toml`).
-- **Quotes:** Double quotes preferred for strings (Ruff default).
-- **Indentation:** 4 spaces.
+## Concurrency & Threading
 
-**Linting:**
-- **Tool:** `ruff` with `E`, `F`, `W`, `I` rules enabled.
-- **Strictness:** Type checking is encouraged but not enforced via MyPy yet (though type hints are prevalent).
+- **Background Tasks**: Long-running pipelines must run in a background thread to keep the UI responsive.
+- **Yielding Updates**: Generators should `yield` update dictionaries frequently. The UI logic uses a `Queue` to bridge between the background thread and the Gradio event loop.
+- **Singleton Locks**: Always acquire the appropriate lock from `ModelRegistry` or `ThumbnailManager` before modifying shared model states.
 
-## Import Organization
+## Typing & Documentation
 
-**Order:**
-1. `from __future__ import annotations` (if needed)
-2. Standard library imports (e.g., `json`, `os`)
-3. Third-party library imports (e.g., `gradio`, `numpy`, `torch`)
-4. Local application imports (e.g., `core.models`, `ui.app_ui`)
-
-**Grouping:**
-- Blank line between standard, third-party, and local blocks.
-- Alphabetical sorting within groups (handled by Ruff `I` rules).
-
-## Error Handling
-
-**Strategy:**
-- **Pipelines:** Use the `ErrorHandler` wrapper for automated retries on transient failures.
-- **UI:** Use the `@AppUI.safe_ui_callback` decorator to catch and log exceptions, returning user-friendly error messages to the Gradio log.
-- **Validation:** Use Pydantic `model_validator` and `field_validator` for configuration and event data.
-
-**Logging:**
-- Use the centralized `AppLogger` for structured logging.
-- Log levels: `DEBUG`, `INFO`, `SUCCESS`, `WARNING`, `ERROR`, `CRITICAL`.
-- Avoid naked `print()` statements; use `logger.info()` instead.
-
-## Function Design
-
-**Size:**
-- Aim for modularity. Highly complex logic (like FFmpeg filter construction) is extracted into specialized helper functions.
-- Entry point methods (like `_run_impl`) handle orchestration, while helpers handle mechanical steps.
-
-**Parameters:**
-- Use Pydantic objects (`AnalysisParameters`, `ExtractionEvent`) for functions taking more than 4-5 arguments.
-- Prefer explicit type hints for all parameters.
+- **Type Hints**: Mandatory for all function signatures and class members.
+- **Docstrings**: Google-style docstrings used throughout.
+- **Forward References**: Use `"ClassName"` or `from __future__ import annotations` to handle circular dependencies in type hints.
 
 ---
 
-*Convention analysis: 2026-03-21*
-*Update when patterns change*
+*Refined conventions: 2026-03-21*
