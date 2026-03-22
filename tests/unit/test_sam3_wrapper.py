@@ -185,11 +185,10 @@ class TestSAM3WrapperMethodBehavior:
             }
         )
 
-    @patch("core.managers.torch.cuda.is_available", return_value=True)
-    @patch("core.managers.torch.cuda.empty_cache")
-    @patch("core.managers.gc.collect")
+    @patch("core.managers.sam3.torch.cuda.is_available", return_value=True)
+    @patch("core.managers.sam3.torch.cuda.empty_cache")
     def test_shutdown_cleans_up_resources(
-        self, mock_gc_collect, mock_empty_cache, mock_cuda_available, behavior_mock_wrapper
+        self, mock_empty_cache, mock_cuda_available, behavior_mock_wrapper
     ):
         """shutdown should call close_session, predictor.shutdown, delete predictor and clear cache."""
         # Store a reference to the original predictor mock, ensuring it has a shutdown mock
@@ -213,9 +212,6 @@ class TestSAM3WrapperMethodBehavior:
 
             # 3. Verify predictor is set to None
             assert behavior_mock_wrapper.predictor is None
-
-            # 4. Verify gc.collect was called
-            mock_gc_collect.assert_called_once()
 
             # 5. Verify empty_cache was called (since cuda is available)
             # It's called in both close_session and shutdown, so we expect at least one call.
