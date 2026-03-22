@@ -99,7 +99,7 @@ class TestMinConfidenceFilter:
         # Mock logger and other dependencies
         app_ui.logger = MagicMock()
 
-        with patch("ui.app_ui.save_scene_seeds"):
+        with patch("core.scene_utils.save_scene_seeds"):
             with patch("ui.app_ui.build_scene_gallery_items", return_value=([], [], 1)):
                 with patch("ui.app_ui.get_scene_status_text", return_value=("Status", MagicMock())):
                     state = ApplicationState(scenes=scenes, extracted_frames_dir="/tmp/test")
@@ -138,7 +138,7 @@ class TestMinConfidenceFilter:
 
         app_ui.logger = MagicMock()
 
-        with patch("ui.app_ui.save_scene_seeds"):
+        with patch("core.scene_utils.save_scene_seeds"):
             with patch("ui.app_ui.build_scene_gallery_items", return_value=([], [], 1)):
                 with patch("ui.app_ui.get_scene_status_text", return_value=("Status", MagicMock())):
                     state = ApplicationState(scenes=scenes, extracted_frames_dir="/tmp/test")
@@ -172,7 +172,7 @@ class TestMinConfidenceFilter:
 
         app_ui.logger = MagicMock()
 
-        with patch("ui.app_ui.save_scene_seeds"):
+        with patch("core.scene_utils.save_scene_seeds"):
             with patch("ui.app_ui.build_scene_gallery_items", return_value=([], [], 1)):
                 with patch("ui.app_ui.get_scene_status_text", return_value=("Status", MagicMock())):
                     state = ApplicationState(scenes=scenes, extracted_frames_dir="/tmp/test")
