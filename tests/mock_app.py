@@ -64,16 +64,12 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 # --- 2. Import App and Core Modules ---
 import core
-import core.sam3_patches
-core.sam3_patches.apply_patches = MagicMock()
 import app
 import core.managers
 import core.photo_utils
 import core.pipelines
 import core.utils
 import core.xmp_writer
-import core.sam3_patches
-core.sam3_patches.apply_patches = MagicMock()
 from core.models import Scene
 
 # --- 3. Patch Pipeline Logic for E2E Speed ---
@@ -239,15 +235,6 @@ core.managers.download_model = MagicMock()
 
 # --- 4. Launch App ---
 
-def mock_find_people(self, current_state, *args):
-    print("[Mock] Finding People...")
-    from core.application_state import ApplicationState
-    import gradio as gr
-    new_state = current_state.model_copy()
-    new_state.discovered_faces = [{"frame_num": 1, "det_score": 0.9, "thumb_path": "mock", "bbox": [0,0,10,10], "embedding": [0]}]
-    return "✅ Found **1 unique people**", gr.update(visible=True), [(None, "Person 0")], 0.5, new_state
-
-ui.app_ui.AppUI.on_find_people_from_video = mock_find_people
 if __name__ == "__main__":
     print("Starting Mock App for E2E Testing...")
     # Use a specific port for testing
