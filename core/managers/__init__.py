@@ -1,3 +1,5 @@
+import gc
+
 from .face import get_face_analyzer, get_face_landmarker
 from .models import get_lpips_metric, initialize_analysis_models
 from .registry import ModelRegistry

@@ -60,7 +60,7 @@ class TestManagers:
         assert tm.max_size == 10
         assert isinstance(tm.cache, dict)
 
-    @patch("core.managers.Image.open")
+    @patch("core.managers.thumbnails.Image.open", create=True)
     @patch("pathlib.Path.exists", return_value=True)
     def test_thumbnail_manager_get_miss(self, mock_exists, mock_open, mock_logger, mock_config):
         tm = ThumbnailManager(mock_logger, mock_config)
@@ -116,7 +116,7 @@ class TestManagers:
 
         # Let's mock _cleanup_old_entries to verify call
         with patch.object(tm, "_cleanup_old_entries") as mock_clean:
-            with patch("core.managers.Image.open"), patch("pathlib.Path.exists", return_value=True):
+            with patch("core.managers.thumbnails.Image.open", create=True), patch("pathlib.Path.exists", return_value=True):
                 tm.get(p3)
                 mock_clean.assert_called_once()
 
@@ -133,7 +133,7 @@ class TestManagers:
         # Add 3rd via manual insertion logic simulation or force add
         # The get method enforces max_size at the end.
 
-        with patch("core.managers.Image.open"), patch("pathlib.Path.exists", return_value=True):
+        with patch("core.managers.thumbnails.Image.open", create=True), patch("pathlib.Path.exists", return_value=True):
             # This will add p3. size becomes 3.
             # Then loop `while len > max_size: popitem(last=False)`
 
@@ -180,53 +180,46 @@ class TestManagers:
         registry.clear()
         assert len(registry._models) == 0
 
-    @patch("core.managers.download_model")
-    @patch("core.managers.SAM3Wrapper")
-    @patch("torch.cuda.is_available", return_value=True)
-    def test_get_tracker_success(self, mock_cuda, mock_wrapper, mock_download, mock_logger, mock_config):
-        # We test the case where file exists to avoid complex Path patching
+    @patch("core.managers.registry.ModelRegistry._load_tracker_impl")
+    def test_get_tracker_success(self, mock_load, mock_logger, mock_config):
+        mock_load.return_value = "mock_tracker"
         registry = ModelRegistry(mock_logger)
         registry._models = {}
 
-        with patch("pathlib.Path.exists", return_value=True):
-            tracker = registry.get_tracker("sam3", "/tmp/models", "agent", (1,), mock_config)
+        tracker = registry.get_tracker("sam3", "/tmp/models", "agent", (1,), mock_config)
 
-        # Download should NOT be called
-        mock_download.assert_not_called()
+        mock_load.assert_called_once()
+        assert tracker == "mock_tracker"
 
-        # Wrapper should be called
-        mock_wrapper.assert_called_once()
-        assert tracker == mock_wrapper.return_value
-
-    @patch("core.managers.SAM3Wrapper")
-    @patch("torch.cuda.is_available", return_value=True)
-    def test_get_tracker_oom_fallback(self, mock_cuda, mock_wrapper, mock_logger, mock_config):
+    @patch("core.managers.registry.ModelRegistry._load_tracker_impl")
+    @patch("core.managers.registry.torch.cuda.empty_cache", create=True)
+    @patch("core.managers.registry.torch.cuda.is_available", return_value=True, create=True)
+    def test_get_tracker_oom_fallback(self, mock_cuda, mock_empty, mock_load, mock_logger, mock_config):
         registry = ModelRegistry(mock_logger)
 
         # First call raises OOM
-        mock_wrapper.side_effect = [RuntimeError("out of memory"), MagicMock()]
+        mock_load.side_effect = [RuntimeError("out of memory"), "mock_tracker_cpu"]
 
-        with patch("pathlib.Path.exists", return_value=True):
-            registry.get_tracker("sam3", "/tmp/models", "agent", (1,), mock_config)
+        tracker = registry.get_tracker("sam3", "/tmp/models", "agent", (1,), mock_config)
 
         # Should have tried twice: once cuda, once cpu
-        assert mock_wrapper.call_count == 2
-        # Use simple assert because call args involve path strings which might vary if we don't mock Path
-        assert mock_wrapper.call_args_list[0][1]["device"] == "cuda"
-        assert mock_wrapper.call_args_list[1][1]["device"] == "cpu"
+        assert mock_load.call_count == 2
+        assert mock_load.call_args_list[0][0][4] == "cuda"
+        assert mock_load.call_args_list[1][0][4] == "cpu"
 
+        assert tracker == "mock_tracker_cpu"
         assert registry.runtime_device_override == "cpu"
 
     # --- VideoManager Tests ---
 
     def test_video_manager_prepare_local(self, mock_config):
         vm = VideoManager("test.mp4", mock_config)
-        with patch("core.managers.validate_video_file") as mock_val:
+        with patch("core.managers.video.validate_video_file", return_value="test.mp4") as mock_val:
             path = vm.prepare_video(MagicMock())
             mock_val.assert_called_once()
             assert path == "test.mp4"
 
-    @patch("core.managers.ytdlp.YoutubeDL")
+    @patch("core.managers.video.ytdlp.YoutubeDL")
     def test_video_manager_prepare_youtube(self, mock_ytdl, mock_config, mock_logger):
         vm = VideoManager("https://youtube.com/watch?v=123", mock_config)
 
@@ -234,7 +227,8 @@ class TestManagers:
         mock_instance.extract_info.return_value = {}
         mock_instance.prepare_filename.return_value = "downloaded.mp4"
 
-        path = vm.prepare_video(mock_logger)
+        with patch("core.managers.video.validate_video_file", return_value="downloaded.mp4"):
+            path = vm.prepare_video(mock_logger)
 
         assert path == "downloaded.mp4"
         mock_instance.extract_info.assert_called_once()
@@ -243,11 +237,11 @@ class TestManagers:
         # Invalid URL/File
         vm = VideoManager("invalid_file.mp4", mock_config)
         # Assuming validate_video_file raises FileNotFoundError
-        with patch("core.managers.validate_video_file", side_effect=FileNotFoundError):
+        with patch("core.managers.video.validate_video_file", side_effect=FileNotFoundError):
             with pytest.raises(FileNotFoundError):
                 vm.prepare_video(mock_logger)
 
-    @patch("core.managers.ytdlp")
+    @patch("core.managers.video.ytdlp")
     def test_video_manager_youtube_error(self, mock_ytdlp_module, mock_config, mock_logger):
         # We need to make sure the DownloadError class in the mocked module is a real exception class
         class MockDownloadError(Exception):
@@ -281,9 +275,9 @@ class TestManagers:
 
     # --- Face Model Tests ---
 
-    @patch("core.managers.vision.FaceLandmarker")
-    @patch("core.managers.python.BaseOptions")
-    @patch("core.managers.vision.FaceLandmarkerOptions")
+    @patch("core.managers.face.vision.FaceLandmarker")
+    @patch("core.managers.face.python.BaseOptions")
+    @patch("core.managers.face.vision.FaceLandmarkerOptions")
     def test_get_face_landmarker(self, mock_opts, mock_base, mock_cls, mock_logger):
         # Reset thread local if necessary (using a fresh thread is cleaner but let's try direct)
         # We need to access the thread_local object in the module.
