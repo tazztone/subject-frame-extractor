@@ -285,3 +285,28 @@ class TestPipelines:
 
     def test_validate_session_dir(self, tmp_path):
         pass
+
+    @patch("core.pipelines.shutil.copy2")
+    def test_handle_extraction_uploads(self, mock_copy, mock_config):
+        from core.pipelines import _handle_extraction_uploads
+
+        event_dict = {"upload_video": "/tmp/upload.mp4"}
+        mock_config.downloads_dir = "/tmp/downloads"
+
+        res = _handle_extraction_uploads(event_dict, mock_config)
+
+        mock_copy.assert_called_once_with("/tmp/upload.mp4", "/tmp/downloads/upload.mp4")
+        assert res["source_path"] == "/tmp/downloads/upload.mp4"
+        assert "upload_video" not in res
+
+    def test_initialize_extraction_params(self, mock_config, mock_logger):
+        from core.pipelines import _initialize_extraction_params
+
+        event_dict = {"source_path": "/tmp/test.mp4", "method": "keyframes"}
+
+        with patch("core.models.AnalysisParameters.from_ui") as mock_from_ui:
+            mock_from_ui.return_value = "mock_params"
+            res = _initialize_extraction_params(event_dict, mock_config, mock_logger)
+
+            mock_from_ui.assert_called_once_with(mock_logger, mock_config, **event_dict)
+            assert res == "mock_params"

@@ -287,13 +287,14 @@ class TestManagers:
         mock_cls.create_from_options.assert_called()
         assert detector == mock_cls.create_from_options.return_value
 
-    @patch("core.managers.get_face_analyzer")
-    @patch("core.managers.download_model")
+    @patch("core.managers.models.get_face_analyzer")
+    @patch("core.managers.models.download_model")
     @patch("pathlib.Path.exists", return_value=True)
     @patch("pathlib.Path.is_file", return_value=True)
+    @patch("core.managers.models.get_face_landmarker")
     @patch("cv2.imread", return_value=np.zeros((100, 100, 3)))
     def test_initialize_analysis_models(
-        self, mock_imread, mock_isfile, mock_exists, mock_download, mock_get_analyzer, mock_config, mock_logger
+        self, mock_imread, mock_get_landmarker, mock_isfile, mock_exists, mock_download, mock_get_analyzer, mock_config, mock_logger
     ):
         params = MagicMock()
         params.enable_face_filter = True
@@ -337,7 +338,7 @@ class TestManagers:
         assert mock_instance_gpu.prepare.called
         assert mock_instance_cpu.prepare.called
 
-    @patch("core.managers.Image.open")
+    @patch("core.managers.thumbnails.Image.open")
     @patch("pathlib.Path.exists", return_value=True)
     def test_thumbnail_manager_corrupt_file(self, mock_exists, mock_open, mock_logger, mock_config):
         tm = ThumbnailManager(mock_logger, mock_config)
@@ -347,3 +348,15 @@ class TestManagers:
         assert result is None
         # Should verify warning log
         mock_logger.warning.assert_called()
+
+    @patch("core.managers.models.lpips.LPIPS")
+    def test_get_lpips_metric(self, mock_lpips):
+        mock_instance = mock_lpips.return_value
+        mock_instance.to.return_value = mock_instance
+
+        from core.managers.models import get_lpips_metric
+        metric = get_lpips_metric(model_name="alex", device="cpu")
+
+        mock_lpips.assert_called_once_with(net="alex")
+        mock_instance.to.assert_called_once_with("cpu")
+        assert metric == mock_instance
