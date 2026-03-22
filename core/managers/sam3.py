@@ -117,6 +117,53 @@ class SAM3Wrapper:
                     m = m[0]
                 yield frame_idx, oid, m > 0
 
+    def detect_objects(self, frame_rgb: np.ndarray, prompt: str) -> list:
+        """Detect objects in a frame using a text prompt."""
+        if not prompt or not prompt.strip():
+            return []
+        req = dict(type="detect_objects", image=frame_rgb, text=prompt)
+        resp = self.predictor.handle_request(req)
+        return resp.get("outputs", [])
+
+    def add_text_prompt(self, frame_idx: int, text: str):
+        """Add a text prompt to the current session."""
+        if not self.session_id:
+            raise RuntimeError("init_video must be called before adding prompts")
+        req = dict(type="add_prompt", session_id=self.session_id, frame_index=frame_idx, text=text)
+        return self.predictor.handle_request(request=req)
+
+    def add_point_prompt(self, frame_idx: int, obj_id: int, points: list, labels: list, img_size: tuple):
+        """Add point prompts to the current session."""
+        if not self.session_id:
+            raise RuntimeError("init_video must be called before adding prompts")
+        req = dict(
+            type="add_prompt",
+            session_id=self.session_id,
+            frame_index=frame_idx,
+            obj_id=obj_id,
+            points=np.array(points, dtype=np.float32),
+            point_labels=np.array(labels, dtype=np.int32),
+        )
+        return self.predictor.handle_request(request=req)
+
+    def remove_object(self, obj_id: int):
+        """Remove an object from the current session."""
+        if not self.session_id:
+            return
+        req = dict(type="remove_object", session_id=self.session_id, obj_id=obj_id)
+        return self.predictor.handle_request(request=req)
+
+    def reset_session(self):
+        """Reset the current tracking session."""
+        self.close_session()
+
+    def clear_prompts(self):
+        """Clear all prompts in the current session."""
+        if not self.session_id:
+            return
+        req = dict(type="clear_prompts", session_id=self.session_id)
+        return self.predictor.handle_request(request=req)
+
     def close_session(self):
         if self.session_id:
             try:
@@ -128,7 +175,9 @@ class SAM3Wrapper:
             torch.cuda.empty_cache()
 
     def shutdown(self):
+        import gc
         self.close_session()
         if hasattr(self.predictor, "shutdown"):
             self.predictor.shutdown()
         self.predictor = None
+        gc.collect()
