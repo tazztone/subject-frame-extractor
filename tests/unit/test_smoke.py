@@ -100,34 +100,23 @@ class TestImportSmoke:
 class TestCriticalSymbols:
     """Verify critical symbols exist in modules (catches missing imports)."""
 
+    @pytest.mark.skip(reason="PIL.Image is imported inside functions for startup performance")
     def test_pipelines_has_image(self):
-        """PIL.Image was missing - caused NameError."""
-        from core import pipelines
+        pass
 
-        assert hasattr(pipelines, "Image"), "PIL.Image not imported in pipelines.py"
-
-    @pytest.mark.skip(reason="gradio is lazy loaded")
-    def test_pipelines_has_gradio(self):
-
-        """gradio was missing - caused NameError."""
-        from core import pipelines
-
-        assert hasattr(pipelines, "gr"), "gradio not imported in pipelines.py"
-
+    @pytest.mark.skip(reason="torch is imported inside functions for startup performance")
     def test_pipelines_has_torch(self):
-        from core import pipelines
-
-        assert hasattr(pipelines, "torch"), "torch not imported in pipelines.py"
+        pass
 
     def test_pipelines_has_json(self):
         from core import pipelines
 
         assert hasattr(pipelines, "json"), "json not imported in pipelines.py"
 
-    def test_export_has_subprocess(self):
-        from core import export
+    def test_ffmpeg_has_subprocess(self):
+        from core.scene_utils import ffmpeg
 
-        assert hasattr(export, "subprocess"), "subprocess not imported in export.py"
+        assert hasattr(ffmpeg, "subprocess"), "subprocess not imported in ffmpeg.py"
 
 
 class TestDependencyImports:

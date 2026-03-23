@@ -3,13 +3,11 @@ from __future__ import annotations
 import csv
 import json
 import shutil
-import subprocess
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 import cv2
-import numpy as np
 
 if TYPE_CHECKING:
     from core.config import Config
@@ -17,35 +15,10 @@ if TYPE_CHECKING:
 
 from core.events import ExportEvent
 from core.filtering import apply_all_filters_vectorized
+from core.operators.crop import crop_image_with_subject
+from core.scene_utils.ffmpeg import perform_ffmpeg_export
 from core.utils import _to_json_safe
 from core.xmp_writer import write_xmp_sidecar
-
-
-# TODO: Add parallel frame export using multi-threading
-# TODO: Support multiple output formats (JPEG, TIFF, EXR)
-# TODO: Add export quality/compression options
-def _perform_ffmpeg_export(
-    video_path: str, frames_to_extract: list, export_dir: Path, logger: "AppLogger"
-) -> tuple[bool, Optional[str]]:
-    select_filter = f"select='{'+'.join([f'eq(n,{fn})' for fn in frames_to_extract])}'"
-    cmd = [
-        "ffmpeg",
-        "-y",
-        "-i",
-        str(video_path),
-        "-vf",
-        select_filter,
-        "-vsync",
-        "vfr",
-        str(export_dir / "frame_%06d.png"),
-    ]
-    logger.info("Starting final export extraction...", extra={"command": " ".join(cmd)})
-    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8")
-    stdout, stderr = process.communicate()
-    if process.returncode != 0:
-        logger.error("FFmpeg export failed", extra={"stderr": stderr})
-        return False, stderr
-    return True, None
 
 
 def _rename_exported_frames(export_dir: Path, frames_to_extract: list, fn_to_orig_map: dict, logger: "AppLogger"):
@@ -61,6 +34,7 @@ def _rename_exported_frames(export_dir: Path, frames_to_extract: list, fn_to_ori
         dst = export_dir / target_filename
         if src != dst:
             plan.append((src, dst))
+
     temp_map = {}
     for i, (src, _) in enumerate(plan):
         if not src.exists():
@@ -75,6 +49,7 @@ def _rename_exported_frames(export_dir: Path, frames_to_extract: list, fn_to_ori
             temp_map[src] = tmp
         except FileNotFoundError:
             logger.warning(f"Could not find {src.name} to rename.", extra={"target": tmp.name})
+
     for src, dst in plan:
         tmp = temp_map.get(src)
         if tmp and tmp.exists():
@@ -132,10 +107,10 @@ def _crop_exported_frames(
     logger: "AppLogger",
     cancel_event,
 ) -> int:
-    # TODO: Add smart cropping based on subject center of mass
     logger.info("Starting crop export...")
     crop_dir = export_dir / "cropped"
     crop_dir.mkdir(exist_ok=True)
+
     try:
         aspect_ratios = [
             (ar_str.replace(":", "x"), float(ar_str.split(":")[0]) / float(ar_str.split(":")[1]))
@@ -144,90 +119,43 @@ def _crop_exported_frames(
         ]
     except (ValueError, ZeroDivisionError):
         raise ValueError("Invalid aspect ratio format.")
+
     num_cropped = 0
+    padding_factor = 1.0 + (crop_padding / 100.0)
+
     for frame_meta in kept_frames:
         if cancel_event.is_set():
             break
         try:
-            if not (full_frame_path := export_dir / frame_meta["filename"]).exists():
+            filename = frame_meta["filename"]
+            full_frame_path = export_dir / filename
+            if not full_frame_path.exists():
                 continue
+
             mask_name = frame_meta.get("mask_path", "")
-            if not mask_name or not (mask_path := masks_root / mask_name).exists():
+            if not mask_name:
                 continue
+
+            mask_path = masks_root / mask_name
+            if not mask_path.exists():
+                continue
+
             frame_img = cv2.imread(str(full_frame_path))
             mask_img = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
+
             if frame_img is None or mask_img is None:
                 continue
-            contours, _ = cv2.findContours(mask_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            if not contours:
-                continue
-            x_b, y_b, w_b, h_b = cv2.boundingRect(np.concatenate(contours))
-            if w_b == 0 or h_b == 0:
-                continue
-            frame_h, frame_w = frame_img.shape[:2]
-            padding_factor = 1.0 + (crop_padding / 100.0)
-            feasible_candidates = []
-            for ar_str, r in aspect_ratios:
-                if w_b / h_b > r:
-                    w_c, h_c = w_b, w_b / r
-                else:
-                    h_c, w_c = h_b, h_b * r
-                w_padded, h_padded = w_c * padding_factor, h_c * padding_factor
-                scale = 1.0
-                if w_padded > frame_w:
-                    scale = min(scale, frame_w / w_padded)
-                if h_padded > frame_h:
-                    scale = min(scale, frame_h / h_padded)
-                w_final, h_final = w_padded * scale, h_padded * scale
-                if w_final < w_b or h_final < h_b:
-                    if w_final < w_b:
-                        w_final = w_b
-                        h_final = w_final / r
-                    if h_final < h_b:
-                        h_final = h_b
-                        w_final = h_final * r
-                    if w_final > frame_w:
-                        w_final = frame_w
-                        h_final = w_final / r
-                    if h_final > frame_h:
-                        h_final = frame_h
-                        w_final = h_final * r
-                center_x_b, center_y_b = x_b + w_b / 2, y_b + h_b / 2
-                x1 = center_x_b - w_final / 2
-                y1 = center_y_b - h_final / 2
-                x1 = max(0, min(x1, frame_w - w_final))
-                y1 = max(0, min(y1, frame_h - h_final))
-                if x1 > x_b or y1 > y_b or x1 + w_final < x_b + w_b or y1 + h_final < y_b + h_b:
-                    continue
-                feasible_candidates.append(
-                    {"ar_str": ar_str, "x1": x1, "y1": y1, "w_r": w_final, "h_r": h_final, "area": w_final * h_final}
-                )
-            if not feasible_candidates:
-                cropped_img = frame_img[y_b : y_b + h_b, x_b : x_b + w_b]
-                if cropped_img.size > 0:
-                    cv2.imwrite(str(crop_dir / f"{Path(frame_meta['filename']).stem}_crop_native.png"), cropped_img)
-                    num_cropped += 1
-                continue
-            subject_ar = w_b / h_b if h_b > 0 else 1
-            best_candidate = min(
-                feasible_candidates,
-                key=lambda c: (c["area"], abs((c["w_r"] / c["h_r"] if c["h_r"] > 0 else 1) - subject_ar)),
-            )
-            x1, y1, w_r, h_r = (
-                int(best_candidate["x1"]),
-                int(best_candidate["y1"]),
-                int(best_candidate["w_r"]),
-                int(best_candidate["h_r"]),
-            )
-            cropped_img = frame_img[y1 : y1 + h_r, x1 : x1 + w_r]
-            if cropped_img.size > 0:
-                cv2.imwrite(
-                    str(crop_dir / f"{Path(frame_meta['filename']).stem}_crop_{best_candidate['ar_str']}.png"),
-                    cropped_img,
-                )
+
+            cropped_img, ar_label = crop_image_with_subject(frame_img, mask_img, aspect_ratios, padding_factor)
+
+            if cropped_img is not None and cropped_img.size > 0:
+                out_name = f"{Path(filename).stem}_crop_{ar_label}.png"
+                cv2.imwrite(str(crop_dir / out_name), cropped_img)
                 num_cropped += 1
+
         except Exception:
-            logger.error(f"Failed to crop frame {frame_meta['filename']}", exc_info=True)
+            logger.error(f"Failed to crop frame {frame_meta.get('filename')}", exc_info=True)
+
     return num_cropped
 
 
@@ -242,6 +170,7 @@ def export_kept_frames(
 
     try:
         filters = event.filter_args.copy()
+        # Ensure we have data for the filters
         filters.update(
             {
                 "face_sim_enabled": any("face_sim" in f for f in event.all_frames_data),
@@ -249,9 +178,11 @@ def export_kept_frames(
                 "enable_dedup": any("phash" in f for f in event.all_frames_data),
             }
         )
+
         kept, _, _, _ = apply_all_filters_vectorized(
             event.all_frames_data, filters, config, output_dir=event.output_dir
         )
+
         if not kept:
             return "No frames kept after filtering. Nothing to export."
 
@@ -264,17 +195,20 @@ def export_kept_frames(
                 return "[ERROR] frame_map.json not found. Cannot export."
             with frame_map_path.open("r", encoding="utf-8") as f:
                 frame_map_list = json.load(f)
+
             sample_name = next((f["filename"] for f in kept if "filename" in f), None)
             analyzed_ext = Path(sample_name).suffix if sample_name else ".webp"
             fn_to_orig_map = {f"frame_{i + 1:06d}{analyzed_ext}": orig for i, orig in enumerate(sorted(frame_map_list))}
+
             frames_to_extract = sorted(
                 [fn_to_orig_map.get(f["filename"]) for f in kept if f.get("filename") in fn_to_orig_map]
             )
             frames_to_extract = [n for n in frames_to_extract if n is not None]
+
             if not frames_to_extract:
                 return "No frames to extract."
 
-            success, stderr = _perform_ffmpeg_export(event.video_path, frames_to_extract, export_dir, logger)
+            success, stderr = perform_ffmpeg_export(event.video_path, frames_to_extract, export_dir, logger)
             if not success:
                 return f"Error during export: FFmpeg failed. Check logs for details:\n{stderr}"
 
@@ -301,7 +235,6 @@ def export_kept_frames(
                             score = frame_meta.get("score", 0.0)
                             # Simple rating logic: 0-100 -> 0-5 stars
                             rating = int(min(5, max(0, score / 20)))
-                            # Lightroom labels: "Green" for kept (default)
                             label = "Green"
                             write_xmp_sidecar(src_path, rating, label)
 
@@ -339,27 +272,34 @@ def dry_run_export(event: ExportEvent, config: "Config") -> str:
                 "enable_dedup": any("phash" in f for f in event.all_frames_data),
             }
         )
+
         kept, _, _, _ = apply_all_filters_vectorized(
             event.all_frames_data, filters, config, output_dir=event.output_dir
         )
+
         if not kept:
             return "No frames kept after filtering. Nothing to export."
+
         frame_map_path = out_root / "frame_map.json"
         if not frame_map_path.exists():
             return "[ERROR] frame_map.json not found. Cannot export."
         with frame_map_path.open("r", encoding="utf-8") as f:
             frame_map_list = json.load(f)
+
         sample_name = next((f["filename"] for f in kept if "filename" in f), None)
         analyzed_ext = Path(sample_name).suffix if sample_name else ".webp"
         fn_to_orig_map = {f"frame_{i + 1:06d}{analyzed_ext}": orig for i, orig in enumerate(sorted(frame_map_list))}
+
         frames_to_extract = sorted(
             [fn_to_orig_map.get(f["filename"]) for f in kept if f.get("filename") in fn_to_orig_map]
         )
         frames_to_extract = [n for n in frames_to_extract if n is not None]
+
         if not frames_to_extract:
             return "No frames to extract."
+
         select_filter = f"select='{'+'.join([f'eq(n,{fn})' for fn in frames_to_extract])}'"
-        export_dir = out_root.parent / f"{out_root.name}_exported_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        export_dir = out_root.parent / f"{out_root.name}_exported_DATE"
         cmd = [
             "ffmpeg",
             "-y",
