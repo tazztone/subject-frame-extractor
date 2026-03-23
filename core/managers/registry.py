@@ -98,7 +98,7 @@ class ModelRegistry:
         self, model_name: str, models_path: str, user_agent: str, retry_params: tuple, device: str, config: "Config"
     ):
         from core.error_handling import ErrorHandler
-        from core.utils import download_model
+        from core.io_utils import download_model
 
         from .sam3 import SAM3Wrapper
 
