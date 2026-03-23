@@ -10,7 +10,6 @@ from unittest.mock import MagicMock, patch
 mock_torch = MagicMock(name="torch")
 mock_torch.cuda.is_available.return_value = False
 
-import sys
 sys.modules["torch"] = mock_torch
 mock_torch.__version__ = "2.0.0"
 # Mock torch classes used in type hints or inheritance
@@ -63,8 +62,8 @@ patch.dict(sys.modules, modules_to_mock).start()
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 # --- 2. Import App and Core Modules ---
-import core
 import app
+import core
 import core.managers
 import core.photo_utils
 import core.pipelines
