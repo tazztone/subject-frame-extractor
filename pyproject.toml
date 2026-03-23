@@ -70,7 +70,7 @@ testpaths = ["tests"]
 python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
-addopts = "-v --tb=short --cov=core --cov-report=term-missing --cov-fail-under=60 --ignore=tests/e2e/ -m 'not integration and not gpu_e2e and not audit and not slow'"
+addopts = "-v --tb=short --cov=core --cov-report=term-missing --cov-fail-under=80 --ignore=tests/e2e/ -m 'not integration and not gpu_e2e and not audit and not slow'"
 markers = [
     "unit: Unit tests (fast, isolated, use mocks)",
     "smoke: Import smoke tests (no mocks, catches missing imports)",
@@ -79,6 +79,23 @@ markers = [
     "gpu_e2e: GPU E2E tests (real inference, catches runtime errors)",
     "e2e: End-to-end tests (require app running)",
     "slow: Tests that take longer to run",
+]
+
+[tool.coverage.run]
+source = ["core"]
+branch = true
+omit = [
+    "core/sam3_patches.py", # External repo patches
+]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 80
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
 ]
 
 [tool.ruff]

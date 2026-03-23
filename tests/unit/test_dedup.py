@@ -10,7 +10,8 @@ import imagehash
 import numpy as np
 import pytest
 
-from core.filtering import _apply_deduplication_filter, _run_batched_lpips
+from core.operators.dedup import _run_batched_lpips
+from core.operators.dedup import apply_deduplication_filter as _apply_deduplication_filter
 
 
 @pytest.fixture
@@ -115,7 +116,7 @@ def test_run_batched_lpips(mock_thumbnail_manager):
 
     mock_loss_fn.forward.return_value = mock_tensor
 
-    with patch("core.filtering.get_lpips_metric", return_value=mock_loss_fn):
+    with patch("core.operators.dedup.get_lpips_metric", return_value=mock_loss_fn):
         all_frames = [
             {"filename": "f1.jpg", "metrics": {"quality_score": 10}},
             {"filename": "f2.jpg", "metrics": {"quality_score": 20}},

@@ -87,6 +87,20 @@ def mock_config():
     config.visualization_bbox_color = (255, 0, 0)
     config.visualization_bbox_thickness = 2
 
+    # Filter defaults
+    config.filter_default_quality_score = {"default_min": 0.0, "default_max": 100.0}
+    config.filter_default_face_sim = {"default_min": 0.0, "default_max": 1.0}
+    config.filter_default_mask_area_pct = {"default_min": 0.0}
+    config.filter_default_eyes_open = {"default_min": 0.0}
+    config.filter_default_sharpness = {"default_min": 0.0, "default_max": 100.0}
+    config.filter_default_edge_strength = {"default_min": 0.0, "default_max": 100.0}
+    config.filter_default_contrast = {"default_min": 0.0, "default_max": 100.0}
+    config.filter_default_brightness = {"default_min": 0.0, "default_max": 100.0}
+    config.filter_default_entropy = {"default_min": 0.0, "default_max": 100.0}
+    config.filter_default_niqe = {"default_min": 0.0, "default_max": 100.0}
+    config.filter_default_yaw = {"min": -180, "max": 180}
+    config.filter_default_pitch = {"min": -180, "max": 180}
+
     # Mock model_dump
     config.model_dump.return_value = {
         "sharpness_base_scale": 2500.0,
