@@ -15,15 +15,13 @@ import re
 import shutil
 
 from core.error_handling import ErrorHandler
+from core.io_utils import is_image_folder
 from core.managers.video import VideoManager
 from core.models import AnalysisParameters
 from core.photo_utils import ingest_folder
 from core.progress import AdvancedProgressTracker
 from core.scene_utils import run_scene_detection
-from core.utils import (
-    estimate_totals,
-    is_image_folder,
-)
+from core.utils import estimate_totals
 
 
 def _process_ffmpeg_stream(
@@ -81,7 +79,7 @@ def run_ffmpeg_extraction(
     tracker: Optional["AdvancedProgressTracker"] = None,
 ):
     """Executes FFmpeg command to extract frames/thumbnails."""
-    from core.utils import detect_hwaccel
+    from core.io_utils import detect_hwaccel
 
     hwaccel_type = None
     if config.ffmpeg_hwaccel != "off":

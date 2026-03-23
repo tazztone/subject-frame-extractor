@@ -20,11 +20,12 @@ if TYPE_CHECKING:
 from core.database import Database
 from core.enums import SceneStatus
 from core.error_handling import ErrorHandler
+from core.io_utils import create_frame_map
 from core.models import AnalysisParameters, Frame, Scene
 from core.operators import OperatorRegistry, run_operators
 from core.progress import AdvancedProgressTracker
 from core.scene_utils import SubjectMasker, save_scene_seeds
-from core.utils import _to_json_safe, create_frame_map
+from core.utils import _to_json_safe
 
 from .models import initialize_analysis_models
 
@@ -122,8 +123,10 @@ class PreAnalysisPipeline(Pipeline):
                 import pyiqa
 
                 return pyiqa.create_metric("niqe", device=device)
+            except ImportError:
+                self.logger.debug("pyiqa not installed, NIQE metrics disabled")
             except Exception:
-                pass
+                self.logger.warning("Failed to initialize NIQE metric", exc_info=True)
         return None
 
     def _process_single_scene(self, scene: Scene, masker: SubjectMasker, previews_dir: Path, is_folder_mode: bool):
@@ -145,7 +148,7 @@ class PreAnalysisPipeline(Pipeline):
             if mask is not None and mask.size > 0:
                 h, w = mask.shape[:2]
                 scene.seed_result["details"]["mask_area_pct"] = (np.sum(mask > 0) / (h * w) * 100) if h * w > 0 else 0.0
-        from core.utils import render_mask_overlay
+        from core.image_utils import render_mask_overlay
 
         overlay_rgb = (
             render_mask_overlay(thumb_rgb, mask, 0.6, logger=self.logger)
@@ -190,8 +193,10 @@ class AnalysisPipeline(Pipeline):
                 import pyiqa
 
                 self.niqe_metric = pyiqa.create_metric("niqe", device=self.device)
+            except ImportError:
+                self.logger.debug("pyiqa not installed, NIQE metrics disabled")
             except Exception:
-                pass
+                self.logger.warning("Failed to initialize NIQE metric", exc_info=True)
 
     def run_full_analysis(
         self, scenes_to_process: List[Scene], tracker: Optional["AdvancedProgressTracker"] = None
@@ -306,7 +311,9 @@ class AnalysisPipeline(Pipeline):
                 with progress_file.open("r") as f:
                     progress_data = json.load(f)
             except Exception:
-                pass
+                self.logger.warning(
+                    f"Failed to read progress file {progress_file}, it may be corrupted.", exc_info=True
+                )
         progress_data["completed_scenes"] = sorted(
             list(set(progress_data.get("completed_scenes", [])) | set(completed_scene_ids))
         )
@@ -425,7 +432,7 @@ class AnalysisPipeline(Pipeline):
                         if faces:
                             bbox = max(faces, key=lambda x: x.det_score).bbox.astype(int)
                     except Exception:
-                        pass
+                        self.logger.warning("Face analysis failed for frame", exc_info=True)
                 if any(metrics.values()) or self.params.compute_niqe:
                     res = run_operators(
                         image_rgb=img,
