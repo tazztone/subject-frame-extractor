@@ -80,6 +80,7 @@ markers = [
     "gpu_e2e: GPU E2E tests (real inference, catches runtime errors)",
     "e2e: End-to-end tests (require app running)",
     "slow: Tests that take longer to run",
+    "sam3: Tests for SAM3-specific logic and patches",
 ]
 
 [tool.coverage.run]

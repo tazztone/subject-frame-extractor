@@ -123,3 +123,56 @@ def test_safe_resource_cleanup():
             pass
         assert mock_gc.called
         assert mock_empty.called
+
+
+def test_monitor_memory_usage_low():
+    logger = MagicMock()
+    with (
+        patch("torch.cuda.is_available", return_value=True),
+        patch("torch.cuda.memory_allocated", return_value=1000 * 1024**2),
+        patch("torch.cuda.empty_cache") as mock_empty,
+    ):
+        monitor_memory_usage(logger, "cuda", threshold_mb=8000)
+        assert not logger.warning.called
+        assert not mock_empty.called
+
+
+def test_handle_common_errors_gen_exceptions():
+    @handle_common_errors
+    def gen_fail(exc_type):
+        yield 1
+        raise exc_type("fail")
+
+    # Test FileNotFoundError
+    it = gen_fail(FileNotFoundError)
+    assert next(it) == 1
+    res = next(it)
+    assert "File not found" in res["status_message"]
+
+    # Test RuntimeError (non-CUDA)
+    it = gen_fail(RuntimeError)
+    assert next(it) == 1
+    res = next(it)
+    assert "Processing error" in res["status_message"]
+
+    # Test Generic Exception
+    it = gen_fail(Exception)
+    assert next(it) == 1
+    res = next(it)
+    assert "Critical error" in res["status_message"]
+
+
+def test_handle_common_errors_non_gen_exceptions():
+    @handle_common_errors
+    def fail_func(exc_type):
+        raise exc_type("fail")
+
+    assert "Runtime error" in fail_func(RuntimeError)["log"]
+    assert "Unexpected error" in fail_func(Exception)["log"]
+
+
+def test_estimate_totals_default():
+    params = AnalysisParameters(method="unknown")
+    video_info = {"frame_count": 100}
+    totals = estimate_totals(params, video_info, None)
+    assert totals["extraction"] == 100

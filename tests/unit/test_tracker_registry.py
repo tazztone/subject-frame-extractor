@@ -19,6 +19,7 @@ def mock_config():
     config.retry_backoff_seconds = [1, 2]
     config.user_agent = "test-agent"
     config.huggingface_token = "test-token"
+    config.default_tracker_model_name = "sam2"
     return config
 
 

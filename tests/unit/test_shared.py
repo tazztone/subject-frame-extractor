@@ -2,7 +2,7 @@
 Tests for shared utilities in core/shared.py.
 """
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 
@@ -104,3 +104,51 @@ class TestSharedUtils:
         )
         assert len(items) == 1
         assert total_pages == 2
+
+    def test_scene_matches_view_invalid(self):
+        scene = Scene(shot_id=1, start_frame=0, end_frame=1)
+        assert not scene_matches_view(scene, "InvalidView")
+
+    def test_create_scene_thumbnail_with_badge_config(self):
+        img = np.zeros((100, 100, 3), dtype=np.uint8)
+        config = MagicMock()
+        config.visualization_badge_excluded_color = [255, 0, 0]
+        config.visualization_badge_text_color = [0, 0, 0]
+
+        res = create_scene_thumbnail_with_badge(img, 1, True, config=config)
+        # Check if border color is applied (Blue in RGB if config says [255, 0, 0])
+        # Wait, cv2 draws in BGR if color is a tuple?
+        # The code does `tuple(config.visualization_badge_excluded_color)`
+        # If config is [255, 0, 0], border is (255, 0, 0).
+        # Pixel (0,0) should be (255, 0, 0)
+        assert np.array_equal(res[0, 0], [255, 0, 0])
+
+    def test_scene_caption_dict(self):
+        scene = {"shot_id": 1, "start_frame": 0, "end_frame": 10, "status": "excluded", "rejection_reasons": ["test"]}
+        cap = scene_caption(scene)
+        assert "Scene 1" in cap
+        assert "❌" in cap
+        assert "(test)" in cap
+
+    def test_build_scene_gallery_items_empty(self):
+        items, index_map, total_pages = build_scene_gallery_items([], "All", "/tmp")
+        assert items == []
+        assert total_pages == 1
+
+    @patch("cv2.imread")
+    def test_build_scene_gallery_items_missing_file(self, mock_imread, tmp_path):
+        output_dir = tmp_path / "output"
+        scenes = [Scene(shot_id=1, start_frame=0, end_frame=10)]
+        items, _, _ = build_scene_gallery_items(scenes, "All", str(output_dir))
+        assert len(items) == 0  # Previews dir doesn't exist yet
+
+    @patch("cv2.imread")
+    def test_build_scene_gallery_items_error(self, mock_imread, tmp_path):
+        output_dir = tmp_path / "output"
+        (output_dir / "previews").mkdir(parents=True)
+        (output_dir / "previews" / "scene_00001.jpg").touch()
+        mock_imread.side_effect = Exception("Read error")
+
+        scenes = [Scene(shot_id=1, start_frame=0, end_frame=10)]
+        items, _, _ = build_scene_gallery_items(scenes, "All", str(output_dir))
+        assert len(items) == 0

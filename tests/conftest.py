@@ -156,7 +156,7 @@ def mock_ui_state():
         "face_ref_img_path": "",
         "face_model_name": "ghostface",
         "enable_subject_mask": False,
-        "tracker_model_name": "sam3",
+        "tracker_model_name": "sam2",
         "best_frame_strategy": "🤖 Automatic",
         "scene_detect": True,
         "nth_frame": 1,

@@ -4,6 +4,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 import torch
 
+# Mark all tests in this module as SAM3-specific
+pytestmark = pytest.mark.sam3
+
 
 @pytest.fixture(autouse=True)
 def skip_if_mocked():

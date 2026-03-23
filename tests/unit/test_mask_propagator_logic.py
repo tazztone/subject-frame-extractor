@@ -163,8 +163,8 @@ class TestMaskPropagatorLogic:
             iter([(2, 1, np.ones((100, 100), dtype=bool))]),  # Backward
         ]
 
-        # Patch core.utils.rgb_to_pil since it is imported inside the method
-        with patch("core.utils.rgb_to_pil") as mock_rgb_to_pil:
+        # Patch core.scene_utils.mask_propagator.rgb_to_pil or core.image_utils.rgb_to_pil
+        with patch("core.scene_utils.mask_propagator.rgb_to_pil") as mock_rgb_to_pil:
             mock_pil_img = MagicMock()
             mock_rgb_to_pil.return_value = mock_pil_img
 
