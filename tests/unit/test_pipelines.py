@@ -26,9 +26,10 @@ class TestPipelines:
         return config
 
     def test_process_ffmpeg_stream(self, mock_logger, mock_config):
-        from core.pipelines import _process_ffmpeg_stream
-        from io import StringIO
         import textwrap
+        from io import StringIO
+
+        from core.pipelines import _process_ffmpeg_stream
 
         mock_stream = StringIO(textwrap.dedent("""\
             frame=10
@@ -72,9 +73,10 @@ class TestPipelines:
         assert tracker.set.call_args_list[2][0][0] == 100
 
     def test_process_ffmpeg_stream_no_duration(self, mock_logger, mock_config):
-        from core.pipelines import _process_ffmpeg_stream
-        from io import StringIO
         import textwrap
+        from io import StringIO
+
+        from core.pipelines import _process_ffmpeg_stream
 
         mock_stream = StringIO(textwrap.dedent("""\
             frame=10
@@ -100,9 +102,10 @@ class TestPipelines:
         assert tracker.set.call_args_list[2][0][0] == 100
 
     def test_process_ffmpeg_showinfo(self, mock_logger):
-        from core.pipelines import _process_ffmpeg_showinfo
-        from io import StringIO
         import textwrap
+        from io import StringIO
+
+        from core.pipelines import _process_ffmpeg_showinfo
 
         mock_stream = StringIO(textwrap.dedent("""\
             [Parsed_showinfo_0 @ 0x7f8b9c004400] n:   0 pts:      0 pts_time:0       pos:      123 fmt:yuv420p sar:1/1 s:1920x1080 i:P iskey:1 type:I checksum:1A2B3C4D plane_checksum:[1A2B3C4D] mean:[128 128 128] stdev:[50 50 50]
@@ -122,8 +125,9 @@ class TestPipelines:
     @patch("core.pipelines.subprocess.Popen")
     @patch("core.utils.detect_hwaccel", return_value=(None, None))
     def test_run_ffmpeg_extraction(self, mock_detect, mock_popen, mock_logger, mock_config, tmp_path):
-        from core.pipelines import run_ffmpeg_extraction
         import threading
+
+        from core.pipelines import run_ffmpeg_extraction
 
         mock_config.ffmpeg_hwaccel = "auto"
         mock_config.ffmpeg_thumbnail_quality = 80
@@ -222,9 +226,9 @@ class TestPipelines:
     @patch("core.pipelines.create_frame_map")
     @patch("core.pipelines.Database")
     def test_run_full_analysis(self, mock_db, mock_cfm, mock_masker, mock_init, mock_logger, mock_config, tmp_path):
-        from core.models import Scene
         import json
-        from pathlib import Path
+
+        from core.models import Scene
 
         # Setup mocks
         mock_init.return_value = {"face_analyzer": None, "ref_emb": None, "face_landmarker": None, "device": "cpu"}
@@ -285,3 +289,28 @@ class TestPipelines:
 
     def test_validate_session_dir(self, tmp_path):
         pass
+
+    @patch("core.pipelines.shutil.copy2")
+    def test_handle_extraction_uploads(self, mock_copy, mock_config):
+        from core.pipelines import _handle_extraction_uploads
+
+        event_dict = {"upload_video": "/tmp/upload.mp4"}
+        mock_config.downloads_dir = "/tmp/downloads"
+
+        res = _handle_extraction_uploads(event_dict, mock_config)
+
+        mock_copy.assert_called_once_with("/tmp/upload.mp4", "/tmp/downloads/upload.mp4")
+        assert res["source_path"] == "/tmp/downloads/upload.mp4"
+        assert "upload_video" not in res
+
+    def test_initialize_extraction_params(self, mock_config, mock_logger):
+        from core.pipelines import _initialize_extraction_params
+
+        event_dict = {"source_path": "/tmp/test.mp4", "method": "keyframes"}
+
+        with patch("core.models.AnalysisParameters.from_ui") as mock_from_ui:
+            mock_from_ui.return_value = "mock_params"
+            res = _initialize_extraction_params(event_dict, mock_config, mock_logger)
+
+            mock_from_ui.assert_called_once_with(mock_logger, mock_config, **event_dict)
+            assert res == "mock_params"
