@@ -187,9 +187,7 @@ class TestSAM3WrapperMethodBehavior:
 
     @patch("core.managers.sam3.torch.cuda.is_available", return_value=True)
     @patch("core.managers.sam3.torch.cuda.empty_cache")
-    def test_shutdown_cleans_up_resources(
-        self, mock_empty_cache, mock_cuda_available, behavior_mock_wrapper
-    ):
+    def test_shutdown_cleans_up_resources(self, mock_empty_cache, mock_cuda_available, behavior_mock_wrapper):
         """shutdown should call close_session, predictor.shutdown, delete predictor and clear cache."""
         # Store a reference to the original predictor mock, ensuring it has a shutdown mock
         original_predictor = behavior_mock_wrapper.predictor
