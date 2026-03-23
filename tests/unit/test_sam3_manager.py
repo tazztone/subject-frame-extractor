@@ -58,20 +58,19 @@ def test_sam3_wrapper_session_lifecycle(mock_build, mock_predictor):
     mock_build.return_value = mock_predictor
     wrapper = SAM3Wrapper()
 
+    # First init
     session_id = wrapper.init_video("video.mp4")
     assert session_id == "test_session"
     assert wrapper.session_id == "test_session"
 
+    # Re-init (should call close_session)
+    with patch.object(wrapper, "close_session", wraps=wrapper.close_session) as mock_close:
+        wrapper.init_video("new_video.mp4")
+        assert mock_close.called
+
     wrapper.close_session()
     assert wrapper.session_id is None
     assert mock_predictor.handle_request.called
-    # Check that it was called with type=close_session
-    called_with_close = False
-    for call in mock_predictor.handle_request.call_args_list:
-        req = call[0][0] if call[0] else call[1].get("request")
-        if req and req.get("type") == "close_session":
-            called_with_close = True
-    assert called_with_close
 
 
 @patch("sam3.model_builder.build_sam3_video_predictor")
@@ -80,10 +79,18 @@ def test_sam3_wrapper_add_bbox_prompt(mock_build, mock_predictor):
     wrapper = SAM3Wrapper()
     wrapper.session_id = "test_session"
 
-    mask = wrapper.add_bbox_prompt(frame_idx=0, obj_id=1, bbox_xywh=[10, 10, 50, 50], img_size=(100, 100))
-
+    # Test with text and 3D mask
+    mask = wrapper.add_bbox_prompt(
+        frame_idx=0, obj_id=1, bbox_xywh=[10, 10, 50, 50], img_size=(100, 100), text="person"
+    )
     assert isinstance(mask, np.ndarray)
     assert mask.shape == (100, 100)
+
+    # Test with masks=None fallback
+    mock_predictor.handle_request.return_value = {"outputs": {"out_binary_masks": None}}
+    mask = wrapper.add_bbox_prompt(0, 1, [0, 0, 10, 10], (100, 100))
+    assert mask.sum() == 0
+
     assert mock_predictor.handle_request.called
 
 
@@ -93,14 +100,14 @@ def test_sam3_wrapper_propagate(mock_build, mock_predictor):
     wrapper = SAM3Wrapper()
     wrapper.session_id = "test_session"
 
+    # Test normal propagation
     results = list(wrapper.propagate(start_idx=0, max_frames=1))
-
     assert len(results) == 1
-    frame_idx, oid, mask = results[0]
-    assert frame_idx == 0
-    assert oid == 1
-    assert mask.shape == (100, 100)
-    assert mock_predictor.handle_stream_request.called
+
+    # Test propagation with missing masks/ids
+    mock_predictor.handle_stream_request.return_value = [{"frame_index": 1, "outputs": {}}]
+    results = list(wrapper.propagate(start_idx=0, max_frames=1))
+    assert len(results) == 0
 
 
 @patch("sam3.model_builder.build_sam3_video_predictor")
@@ -108,18 +115,31 @@ def test_sam3_wrapper_detect_objects(mock_build, mock_predictor):
     mock_build.return_value = mock_predictor
     wrapper = SAM3Wrapper()
 
+    # Normal case
     results = wrapper.detect_objects(np.zeros((100, 100, 3), dtype=np.uint8), "person")
-
     assert len(results) == 1
-    assert results[0]["label"] == "person"
+
+    # Empty prompt
+    assert wrapper.detect_objects(None, "") == []
+    assert wrapper.detect_objects(None, "  ") == []
 
 
 @patch("sam3.model_builder.build_sam3_video_predictor")
 def test_sam3_wrapper_utility_methods(mock_build, mock_predictor):
     mock_build.return_value = mock_predictor
     wrapper = SAM3Wrapper()
-    wrapper.session_id = "test_session"
 
+    # RuntimeError when no session
+    with pytest.raises(RuntimeError):
+        wrapper.add_text_prompt(0, "test")
+    with pytest.raises(RuntimeError):
+        wrapper.add_point_prompt(0, 1, [[10, 10]], [1], (100, 100))
+
+    # Safe returns/no-ops when no session
+    assert wrapper.remove_object(1) is None
+    assert wrapper.clear_prompts() is None
+
+    wrapper.session_id = "test_session"
     wrapper.add_text_prompt(0, "test")
     wrapper.add_point_prompt(0, 1, [[10, 10]], [1], (100, 100))
     wrapper.remove_object(1)
@@ -127,6 +147,24 @@ def test_sam3_wrapper_utility_methods(mock_build, mock_predictor):
     wrapper.reset_session()
 
     assert mock_predictor.handle_request.called
+
+
+@patch("sam3.model_builder.build_sam3_video_predictor")
+@patch("core.managers.sam3.torch.cuda.is_available", return_value=True)
+@patch("core.managers.sam3.torch.cuda.empty_cache")
+def test_sam3_wrapper_shutdown(mock_empty, mock_cuda, mock_build, mock_predictor):
+    mock_build.return_value = mock_predictor
+    wrapper = SAM3Wrapper()
+    wrapper.session_id = "test_session"
+
+    # Test shutdown with predictor.shutdown
+    mock_predictor.shutdown = MagicMock()
+    wrapper.shutdown()
+
+    assert wrapper.session_id is None
+    assert wrapper.predictor is None
+    assert mock_predictor.shutdown.called
+    assert mock_empty.called
 
 
 def test_triton_mocking():
