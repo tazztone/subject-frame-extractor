@@ -45,7 +45,7 @@ def check_environment() -> List[str]:
 def check_dependencies() -> List[str]:
     """Checks for the presence of core dependencies."""
     report = ["\n[SECTION 2: Core Dependencies]"]
-    for dep in ["cv2", "gradio", "imagehash", "mediapipe", "sam3"]:
+    for dep in ["cv2", "gradio", "imagehash", "mediapipe", "sam2", "sam3"]:
         try:
             __import__(dep.split(".")[0])
             report.append(f"  - {dep}: OK")
@@ -132,7 +132,7 @@ def simulate_pipeline(
             primary_seed_strategy="🧑‍🤝‍🧑 Find Prominent Person",
             best_frame_strategy="Largest Person",
             face_model_name="buffalo_l",
-            tracker_model_name="sam3",
+            tracker_model_name=config.default_tracker_model_name,
             min_mask_area_pct=1.0,
             sharpness_base_scale=2500.0,
             edge_strength_base_scale=100.0,

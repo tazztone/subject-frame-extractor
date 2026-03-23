@@ -480,7 +480,7 @@ class SeedSelector:
         return [int(x1), int(y1), w, h]
 
     def _get_mask_for_bbox(self, frame_rgb_small: np.ndarray, bbox_xywh: list) -> Optional[np.ndarray]:
-        """Generate a mask for the given bounding box using SAM3."""
+        """Generate a mask for the given bounding box using the active tracker."""
         if not self.tracker or bbox_xywh is None:
             return None
 
@@ -490,11 +490,11 @@ class SeedSelector:
         try:
             # Use TemporaryDirectory for automatic cleanup
             with tempfile.TemporaryDirectory() as temp_dir:
-                # Save frame to temp directory for SAM3 init_state
+                # Save frame to temp directory for tracker init_state
                 pil_img = rgb_to_pil(frame_rgb_small)
                 pil_img.save(os.path.join(temp_dir, "00000.jpg"))
 
-                # Use SAM3 API
+                # Use tracker API
                 h, w = frame_rgb_small.shape[:2]
                 self.tracker.init_video(temp_dir)
                 mask = self.tracker.add_bbox_prompt(frame_idx=0, obj_id=1, bbox_xywh=bbox_xywh, img_size=(w, h))

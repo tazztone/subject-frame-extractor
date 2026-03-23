@@ -37,6 +37,7 @@ dependencies = [
     "triton-windows; sys_platform == 'win32'",
     "triton; sys_platform != 'win32'",
     "sam3",
+    "sam2>=1.0",
     "psutil",
 ]
 

@@ -26,8 +26,8 @@ class MaskPropagator:
     """
     Propagates segmentation masks from a seed frame to surrounding frames.
 
-    Uses SAM3 (Segment Anything Model 3) to propagate masks forward and backward
-    from a seed frame where the subject was initially identified.
+    Uses a subject tracker (e.g., SAM2.1 or SAM3) to propagate masks forward
+    and backward from a seed frame where the subject was initially identified.
     """
 
     # TODO: Add temporal consistency smoothing between frames
