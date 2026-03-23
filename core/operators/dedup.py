@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from core.config import Config
     from core.managers import ThumbnailManager
 
-from core.managers import get_lpips_metric
+from core.managers.models import get_lpips_metric
 
 
 def _run_batched_lpips(

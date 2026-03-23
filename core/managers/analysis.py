@@ -20,12 +20,13 @@ if TYPE_CHECKING:
 from core.database import Database
 from core.enums import SceneStatus
 from core.error_handling import ErrorHandler
-from core.managers import initialize_analysis_models
 from core.models import AnalysisParameters, Frame, Scene
 from core.operators import OperatorRegistry, run_operators
 from core.progress import AdvancedProgressTracker
 from core.scene_utils import SubjectMasker, save_scene_seeds
 from core.utils import _to_json_safe, create_frame_map
+
+from .models import initialize_analysis_models
 
 
 class Pipeline:

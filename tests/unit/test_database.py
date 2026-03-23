@@ -1,9 +1,11 @@
+import logging
 import sqlite3
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from core.database import Database
+from core.db_schema import CURRENT_VERSION, migrate_database
 
 
 @pytest.fixture
@@ -14,7 +16,6 @@ def db_path(tmp_path):
 @pytest.fixture
 def db(db_path):
     db = Database(db_path, batch_size=2)
-    # connect and migrate are called in __init__
     yield db
     db.close()
 
@@ -27,7 +28,7 @@ def test_initial_schema(db, db_path):
 
     # Check current version in schema_versions
     cursor.execute("SELECT MAX(version) FROM schema_versions")
-    assert cursor.fetchone()[0] == Database.CURRENT_VERSION
+    assert cursor.fetchone()[0] == CURRENT_VERSION
 
 
 def test_insert_metadata_and_flush(db):
@@ -86,11 +87,85 @@ def test_count_errors(db):
     assert db.count_errors() == 0
 
 
-def test_migration_v1_v2(tmp_path):
-    db_path = tmp_path / "v1.db"
+def test_metrics_json_parsing(db):
+    # Store complex dict in metrics
+    metrics = {"nested": {"value": 42}, "list": [1, 2, 3]}
+    db.insert_metadata({"filename": "metrics.jpg", "metrics": metrics})
+    db.flush()
+
+    results = db.load_all_metadata()
+    assert results[0]["nested"]["value"] == 42
+    assert results[0]["list"] == [1, 2, 3]
+
+
+def test_load_all_metadata_json_error(db):
+    # Manually insert invalid JSON into metrics
+    cursor = db.conn.cursor()
+    cursor.execute("INSERT INTO metadata (filename, metrics) VALUES (?, ?)", ("invalid.jpg", "{invalid json"))
+    db.conn.commit()
+
+    results = db.load_all_metadata()
+    assert len(results) == 1
+    assert results[0]["filename"] == "invalid.jpg"
+    assert results[0]["metrics"] == "{invalid json"
+
+
+def test_error_handler_integration(db_path):
+    mock_handler = MagicMock()
+    # Mock with_retry to return the original function (no-op decorator)
+    mock_handler.with_retry.return_value = lambda x: x
+
+    db = Database(db_path, batch_size=1)
+    db.error_handler = mock_handler
+
+    db.insert_metadata({"filename": "retry.jpg"})
+    # Should call with_retry during _flush_buffer
+    assert mock_handler.with_retry.called
+
+
+def test_flush_exception_logging(db_path):
+    logger = MagicMock()
+
+    with patch("sqlite3.connect") as mock_connect:
+        mock_conn = MagicMock()
+        mock_connect.return_value = mock_conn
+        mock_cursor = mock_conn.cursor.return_value
+
+        # Mock schema version check
+        mock_cursor.fetchone.return_value = [CURRENT_VERSION]
+
+        # Trigger failure during executemany
+        mock_cursor.executemany.side_effect = sqlite3.Error("Mock error")
+
+        db = Database(db_path, logger=logger)
+        db.insert_metadata({"filename": "error.jpg"})
+        with pytest.raises(sqlite3.Error):
+            db.flush()
+        assert logger.error.called
+
+
+def test_close_calls_flush(db_path):
+    db = Database(db_path, batch_size=10)
+    db.insert_metadata({"filename": "close.jpg"})
+    assert len(db.buffer) == 1
+
+    db.close()
+
+    # Reopen and check
+    db2 = Database(db_path)
+    results = db2.load_all_metadata()
+    assert len(results) == 1
+    assert results[0]["filename"] == "close.jpg"
+    db2.close()
+
+
+def test_migration_v1_v2_logic(tmp_path):
+    """Test the migration logic in db_schema directly."""
+    db_path = tmp_path / "migration_test.db"
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-    # Manual v1 schema
+
+    # Setup v1 schema manually
     cursor.execute("""
         CREATE TABLE metadata (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -109,80 +184,17 @@ def test_migration_v1_v2(tmp_path):
         )
     """)
     conn.commit()
-    conn.close()
 
-    db = Database(db_path)
-    # It should detect version 1 and migrate to CURRENT_VERSION
-    cursor = db.conn.cursor()
+    # Run migration
+    logger = logging.getLogger("test")
+    migrate_database(conn, logger)
+
+    # Verify v2 column exists
     cursor.execute("PRAGMA table_info(metadata)")
     columns = [info[1] for info in cursor.fetchall()]
     assert "error_severity" in columns
 
+    # Verify version recorded
     cursor.execute("SELECT MAX(version) FROM schema_versions")
-    assert cursor.fetchone()[0] == Database.CURRENT_VERSION
-    db.close()
-
-
-@patch.object(Database, "migrate")
-def test_detect_legacy_version_0(mock_migrate, tmp_path):
-    db_path = tmp_path / "empty.db"
-    db = Database(db_path)
-    cursor = db.conn.cursor()
-    # Should be 0 because no tables were created
-    assert db._detect_legacy_version(cursor) == 0
-    db.close()
-
-
-def test_metrics_json_parsing(db):
-    data = {"filename": "test.jpg", "custom_data": {"nested": "value"}}
-    db.insert_metadata(data)
-    db.flush()
-
-    results = db.load_all_metadata()
-    assert results[0]["custom_data"] == {"nested": "value"}
-
-
-def test_load_all_metadata_json_error(db):
-    # Manually insert invalid JSON
-    db.flush()
-    cursor = db.conn.cursor()
-    cursor.execute("INSERT INTO metadata (filename, metrics) VALUES (?, ?)", ("bad.jpg", "{invalid json}"))
-    db.conn.commit()
-
-    results = db.load_all_metadata()
-    assert len(results) == 1
-    assert results[0]["filename"] == "bad.jpg"
-    assert results[0]["metrics"] == "{invalid json}"
-
-
-def test_error_handler_integration(db_path):
-    mock_handler = MagicMock()
-    # with_retry should return a decorator
-    mock_handler.with_retry.return_value = lambda x: x
-
-    db = Database(db_path)
-    db.error_handler = mock_handler
-
-    db.insert_metadata({"filename": "retry.jpg"})
-    db.flush()
-
-    mock_handler.with_retry.assert_called()
-
-
-def test_flush_exception_logging(db_path):
-    # Cause a flush error by closing connection prematurely or mocking
-    db = Database(db_path)
-    db.buffer = [["test.jpg"] + [None] * 12]  # Correct length
-
-    with patch.object(db, "conn") as mock_conn:
-        mock_conn.cursor.side_effect = sqlite3.Error("Test error")
-        with pytest.raises(sqlite3.Error):
-            db.flush()
-    db.close()
-
-
-def test_close_calls_flush(db_path):
-    db = Database(db_path)
-    with patch.object(db, "_flush_buffer") as mock_flush:
-        db.close()
-        mock_flush.assert_called_once()
+    assert cursor.fetchone()[0] == CURRENT_VERSION
+    conn.close()

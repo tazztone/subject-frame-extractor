@@ -14,7 +14,7 @@ def histogram_svg(hist_data: Tuple[list, list], title: str = "", logger: Optiona
     """Generates an SVG string of a histogram plot."""
     if not plt:
         return """<svg width="100" height="20" xmlns="http://www.w3.org/2000/svg"><text x="5" y="15" font-family="sans-serif" font-size="10" fill="orange">Matplotlib missing</text></svg>"""
-    if not hist_data:
+    if not hist_data or not any(len(d) > 0 for d in hist_data if hasattr(d, "__len__")):
         return ""
     try:
         counts, bins = hist_data

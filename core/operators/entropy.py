@@ -52,4 +52,4 @@ class EntropyOperator:
             return OperatorResult(metrics={"entropy": float(raw_normalized), "entropy_score": entropy_score})
 
         except Exception as e:
-            return OperatorResult(success=False, error=str(e))
+            return OperatorResult(error=str(e))
