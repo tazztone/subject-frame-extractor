@@ -24,9 +24,11 @@ if TYPE_CHECKING:
     from core.models import AnalysisParameters, Scene
     from core.progress import AdvancedProgressTracker
 
+from core.image_utils import draw_bbox
+from core.io_utils import create_frame_map
 from core.scene_utils.mask_propagator import MaskPropagator
 from core.scene_utils.seed_selector import SeedSelector
-from core.utils import create_frame_map, draw_bbox
+from core.utils import _to_json_safe
 
 
 class SubjectMasker:
@@ -280,7 +282,7 @@ class SubjectMasker:
         # Save metadata
         try:
             mask_metadata_path = Path(frames_dir) / "mask_metadata.json"
-            from core.utils import _to_json_safe
+            # from core.utils import _to_json_safe # Already imported at module level
 
             with mask_metadata_path.open("w", encoding="utf-8") as f:
                 json.dump(_to_json_safe(mask_metadata), f, indent=2)

@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from core.managers import SAM3Wrapper
     from core.models import AnalysisParameters, Scene
 
-from core.utils import postprocess_mask, rgb_to_pil
+from core.image_utils import postprocess_mask, rgb_to_pil
 
 
 class SeedSelector:

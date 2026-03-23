@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 import yt_dlp as ytdlp
 
-from core.utils import validate_video_file
+from core.io_utils import validate_video_file
 
 if TYPE_CHECKING:
     from core.config import Config

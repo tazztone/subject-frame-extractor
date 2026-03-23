@@ -6,7 +6,7 @@ import lpips
 import torch
 
 from core.error_handling import ErrorHandler
-from core.utils import download_model
+from core.io_utils import download_model
 
 from .face import get_face_analyzer, get_face_landmarker
 

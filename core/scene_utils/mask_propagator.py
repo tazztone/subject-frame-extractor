@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from core.models import AnalysisParameters
     from core.progress import AdvancedProgressTracker
 
-from core.utils import postprocess_mask
+from core.image_utils import postprocess_mask, rgb_to_pil
 
 
 class MaskPropagator:
@@ -271,7 +271,7 @@ class MaskPropagator:
         import os
         import tempfile
 
-        from core.utils import rgb_to_pil
+        # from core.image_utils import rgb_to_pil # Already imported at module level
 
         if not self.dam_tracker or not shot_frames_rgb:
             err_msg = "Tracker not initialized" if not self.dam_tracker else "No frames"
