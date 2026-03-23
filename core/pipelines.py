@@ -86,8 +86,8 @@ def execute_extraction(
                 create_fingerprint(video_path=result.get("video_path"), extraction_settings=ext_settings),
                 result.get("output_dir"),
             )
-        except Exception:
-            logger.warning("Failed to save fingerprint for extraction session", exc_info=True)
+        except Exception as e:
+            logger.warning(f"Failed to save fingerprint for extraction session: {e}", exc_info=True)
 
         yield {
             "unified_log": "Extraction complete.",

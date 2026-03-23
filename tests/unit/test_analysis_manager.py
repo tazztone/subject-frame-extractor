@@ -43,7 +43,8 @@ def analysis_params():
     )
 
 
-def test_analysis_pipeline_initialization(mock_deps, analysis_params):
+@patch("core.managers.analysis.Database")
+def test_analysis_pipeline_initialization(mock_db, mock_deps, analysis_params):
     pipeline = AnalysisPipeline(
         mock_deps["config"],
         mock_deps["logger"],
@@ -133,7 +134,7 @@ def test_run_analysis_only_success(mock_init_models, mock_run_ops, mock_deps, an
         scenes = [Scene(shot_id=1, start_frame=1, end_frame=1)]
         result = pipeline.run_analysis_only(scenes)
 
-    assert result["done"] is True
+    assert result.get("done") is True
     assert mock_run_ops.called
 
 
@@ -229,7 +230,8 @@ def test_process_reference_face_logic(mock_init_models, mock_imread, mock_deps, 
 
 
 @patch("core.managers.analysis.run_operators")
-def test_process_single_frame_complex_meta(mock_run_ops, mock_deps, analysis_params, tmp_path):
+@patch("core.managers.analysis.Database")
+def test_process_single_frame_complex_meta(mock_db, mock_run_ops, mock_deps, analysis_params, tmp_path):
     pipeline = AnalysisPipeline(
         mock_deps["config"],
         mock_deps["logger"],
@@ -265,7 +267,8 @@ def test_process_single_frame_complex_meta(mock_run_ops, mock_deps, analysis_par
     assert meta["mask_path"] == "frame_000001.png"
 
 
-def test_analysis_loop_batch_error(mock_deps, analysis_params):
+@patch("core.managers.analysis.Database")
+def test_analysis_loop_batch_error(mock_db, mock_deps, analysis_params, tmp_path):
     pipeline = AnalysisPipeline(
         mock_deps["config"],
         mock_deps["logger"],
@@ -317,7 +320,8 @@ def test_image_folder_analysis_trigger(mock_create_map, mock_deps, analysis_para
         assert mock_run.called
 
 
-def test_filter_completed_scenes(mock_deps, analysis_params):
+@patch("core.managers.analysis.Database")
+def test_filter_completed_scenes(mock_db, mock_deps, analysis_params):
     pipeline = AnalysisPipeline(
         mock_deps["config"],
         mock_deps["logger"],
@@ -336,7 +340,8 @@ def test_filter_completed_scenes(mock_deps, analysis_params):
     assert filtered[0].shot_id == 2
 
 
-def test_save_progress_bulk(mock_deps, analysis_params, tmp_path):
+@patch("core.managers.analysis.Database")
+def test_save_progress_bulk(mock_db, mock_deps, analysis_params, tmp_path):
     pipeline = AnalysisPipeline(
         mock_deps["config"],
         mock_deps["logger"],
@@ -389,7 +394,8 @@ def test_pre_analysis_pipeline_run(
     assert mock_save_seeds.called
 
 
-def test_niqe_initialization_failures(mock_deps, analysis_params):
+@patch("core.managers.analysis.Database")
+def test_niqe_initialization_failures(mock_db, mock_deps, analysis_params):
     pipeline = AnalysisPipeline(
         mock_deps["config"],
         mock_deps["logger"],
@@ -412,7 +418,8 @@ def test_niqe_initialization_failures(mock_deps, analysis_params):
         mock_deps["logger"].warning.assert_called()
 
 
-def test_save_progress_bulk_read_failure(mock_deps, analysis_params, tmp_path):
+@patch("core.managers.analysis.Database")
+def test_save_progress_bulk_read_failure(mock_db, mock_deps, analysis_params, tmp_path):
     pipeline = AnalysisPipeline(
         mock_deps["config"],
         mock_deps["logger"],
@@ -434,7 +441,8 @@ def test_save_progress_bulk_read_failure(mock_deps, analysis_params, tmp_path):
         assert data["completed_scenes"] == [1]
 
 
-def test_process_reference_face_failures(mock_deps, analysis_params, tmp_path):
+@patch("core.managers.analysis.Database")
+def test_process_reference_face_failures(mock_db, mock_deps, analysis_params, tmp_path):
     pipeline = AnalysisPipeline(
         mock_deps["config"],
         mock_deps["logger"],
@@ -462,7 +470,8 @@ def test_process_reference_face_failures(mock_deps, analysis_params, tmp_path):
             pipeline._process_reference_face()
 
 
-def test_process_single_frame_edge_cases(mock_deps, analysis_params, tmp_path):
+@patch("core.managers.analysis.Database")
+def test_process_single_frame_edge_cases(mock_db, mock_deps, analysis_params, tmp_path):
     pipeline = AnalysisPipeline(
         mock_deps["config"],
         mock_deps["logger"],
@@ -587,7 +596,8 @@ def test_initialize_niqe_success(mock_deps, analysis_params):
         assert mock_create.called
 
 
-def test_process_single_frame_full_meta(mock_deps, analysis_params, tmp_path):
+@patch("core.managers.analysis.Database")
+def test_process_single_frame_full_meta(mock_db, mock_deps, analysis_params, tmp_path):
     pipeline = AnalysisPipeline(
         mock_deps["config"],
         mock_deps["logger"],
