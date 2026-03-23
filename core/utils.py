@@ -29,31 +29,82 @@ if TYPE_CHECKING:
 
 # TODO: Add specific exception types for better error handling
 # TODO: Consider using a proper Result type instead of dict returns
+import inspect
+
+
 def handle_common_errors(func: Callable) -> Callable:
-    """Decorator to catch common exceptions and return a standardized error dictionary."""
+    """Decorator to catch common exceptions and return a standardized error dictionary or yield it if a generator."""
 
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
+        is_gen = inspect.isgeneratorfunction(func)
         try:
-            return func(*args, **kwargs)
+            res = func(*args, **kwargs)
+            return res
         except FileNotFoundError as e:
-            return {"log": f"[ERROR] File not found: {e}", "status_message": "File not found", "error_message": str(e)}
+            err = {
+                "log": f"[ERROR] File not found: {e}",
+                "status_message": "File not found",
+                "error_message": str(e),
+                "done": False,
+            }
+            if is_gen:
+
+                def gen():
+                    yield err
+
+                return gen()
+            return err
         except (ValueError, TypeError) as e:
-            return {"log": f"[ERROR] Invalid input: {e}", "status_message": "Invalid input", "error_message": str(e)}
+            err = {
+                "log": f"[ERROR] Invalid input: {e}",
+                "status_message": "Invalid input",
+                "error_message": str(e),
+                "done": False,
+            }
+            if is_gen:
+
+                def gen():
+                    yield err
+
+                return gen()
+            return err
         except RuntimeError as e:
             if "CUDA out of memory" in str(e):
-                return {
+                err = {
                     "log": "[ERROR] CUDA OOM",
                     "status_message": "GPU memory error",
                     "error_message": "CUDA out of memory",
+                    "done": False,
                 }
-            return {"log": f"[ERROR] Runtime error: {e}", "status_message": "Processing error", "error_message": str(e)}
+            else:
+                err = {
+                    "log": f"[ERROR] Runtime error: {e}",
+                    "status_message": "Processing error",
+                    "error_message": str(e),
+                    "done": False,
+                }
+            if is_gen:
+
+                def gen():
+                    yield err
+
+                return gen()
+            return err
         except Exception as e:
-            return {
+            err = {
                 "log": f"[CRITICAL] Unexpected error: {e}\n{traceback.format_exc()}",
                 "status_message": "Critical error",
                 "error_message": str(e),
+                "done": False,
             }
+            if is_gen:
+
+                def gen():
+                    yield err
+
+                return gen()
+            return err
 
     return wrapper
 

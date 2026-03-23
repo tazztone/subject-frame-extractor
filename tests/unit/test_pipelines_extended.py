@@ -9,6 +9,12 @@ from core.models import AnalysisParameters, Scene
 from core.pipelines import AnalysisPipeline, PreAnalysisEvent, PreAnalysisPipeline, execute_pre_analysis
 
 
+@pytest.fixture(autouse=True)
+def mock_download_model():
+    with patch("core.utils.download_model"), patch("core.managers.models.download_model"):
+        yield
+
+
 class TestPipelinesExtended:
     @pytest.fixture
     def mock_logger(self):
@@ -65,7 +71,7 @@ class TestPipelinesExtended:
         mock_cancel.is_set.return_value = False
 
         # Patch Database because AnalysisPipeline instantiates it in __init__
-        with patch("core.pipelines.Database", return_value=mock_db):
+        with patch("core.managers.analysis.Database", return_value=mock_db):
             pipeline = AnalysisPipeline(
                 config=mock_config,
                 logger=mock_logger,
@@ -77,8 +83,8 @@ class TestPipelinesExtended:
             )
         return pipeline
 
-    @patch("core.pipelines.initialize_analysis_models")
-    @patch("core.pipelines.SubjectMasker")
+    @patch("core.managers.analysis.initialize_analysis_models")
+    @patch("core.managers.analysis.SubjectMasker")
     def test_run_full_analysis_propagation(self, mock_masker_cls, mock_init_models, pipeline, mock_params):
         # Setup mocks
         mock_models = {
@@ -115,7 +121,7 @@ class TestPipelinesExtended:
         mock_masker.run_propagation.assert_called()
         assert pipeline.mask_metadata == {"frame_0.png": {"mask_path": "path"}}
 
-    @patch("core.pipelines.initialize_analysis_models")
+    @patch("core.managers.analysis.initialize_analysis_models")
     def test_run_analysis_only(self, mock_init_models, pipeline, mock_params):
         # Setup mocks
         mock_models = {
@@ -157,10 +163,10 @@ class TestPipelinesExtended:
 
         # Mock dependencies to reach cancellation check
         with patch(
-            "core.pipelines.initialize_analysis_models",
+            "core.managers.analysis.initialize_analysis_models",
             return_value={"face_analyzer": None, "ref_emb": None, "face_landmarker": None, "device": "cpu"},
         ):
-            with patch("core.pipelines.SubjectMasker"):
+            with patch("core.managers.analysis.SubjectMasker"):
                 # Should return early or log cancellation
                 result = pipeline.run_full_analysis(scenes)
 
@@ -193,9 +199,9 @@ class TestPreAnalysisPipeline:
             model_registry=mock_registry,
         )
 
-    @patch("core.pipelines.initialize_analysis_models")
-    @patch("core.pipelines.SubjectMasker")
-    @patch("core.pipelines.save_scene_seeds")
+    @patch("core.managers.analysis.initialize_analysis_models")
+    @patch("core.managers.analysis.SubjectMasker")
+    @patch("core.managers.analysis.save_scene_seeds")
     @patch("PIL.Image.fromarray")
     def test_pre_analysis_run(
         self, mock_img_save, mock_save_seeds, mock_masker_cls, mock_init_models, pre_pipeline, tmp_path
@@ -232,10 +238,10 @@ class TestPreAnalysisPipeline:
 class TestExecutePreAnalysis:
     @patch("core.pipelines.PreAnalysisPipeline")
     @patch("core.pipelines._load_scenes")
-    @patch("core.pipelines._initialize_pre_analysis_params")
+    @patch("core.models.AnalysisParameters.from_ui")
     @patch("core.pipelines._handle_pre_analysis_uploads")
     def test_execute_pre_analysis_success(
-        self, mock_handle_uploads, mock_init_params, mock_load_scenes, mock_pipeline_cls, tmp_path
+        self, mock_handle_uploads, mock_from_ui, mock_load_scenes, mock_pipeline_cls, tmp_path
     ):
         # Setup
         mock_event = MagicMock(spec=PreAnalysisEvent)
@@ -248,7 +254,7 @@ class TestExecutePreAnalysis:
         params.output_folder = str(tmp_path)
         params.video_path = "video.mp4"
         params.face_ref_img_path = None
-        mock_init_params.return_value = (params, tmp_path)
+        mock_from_ui.return_value = params
 
         mock_load_scenes.return_value = [Scene(shot_id=0, start_frame=0, end_frame=10)]
 
