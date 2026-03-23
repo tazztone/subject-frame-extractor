@@ -116,7 +116,10 @@ class TestManagers:
 
         # Let's mock _cleanup_old_entries to verify call
         with patch.object(tm, "_cleanup_old_entries") as mock_clean:
-            with patch("core.managers.thumbnails.Image.open", create=True), patch("pathlib.Path.exists", return_value=True):
+            with (
+                patch("core.managers.thumbnails.Image.open", create=True),
+                patch("pathlib.Path.exists", return_value=True),
+            ):
                 tm.get(p3)
                 mock_clean.assert_called_once()
 
@@ -294,7 +297,15 @@ class TestManagers:
     @patch("core.managers.models.get_face_landmarker")
     @patch("cv2.imread", return_value=np.zeros((100, 100, 3)))
     def test_initialize_analysis_models(
-        self, mock_imread, mock_get_landmarker, mock_isfile, mock_exists, mock_download, mock_get_analyzer, mock_config, mock_logger
+        self,
+        mock_imread,
+        mock_get_landmarker,
+        mock_isfile,
+        mock_exists,
+        mock_download,
+        mock_get_analyzer,
+        mock_config,
+        mock_logger,
     ):
         params = MagicMock()
         params.enable_face_filter = True
@@ -355,6 +366,7 @@ class TestManagers:
         mock_instance.to.return_value = mock_instance
 
         from core.managers.models import get_lpips_metric
+
         metric = get_lpips_metric(model_name="alex", device="cpu")
 
         mock_lpips.assert_called_once_with(net="alex")

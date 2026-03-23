@@ -176,6 +176,7 @@ class SAM3Wrapper:
 
     def shutdown(self):
         import gc
+
         self.close_session()
         if hasattr(self.predictor, "shutdown"):
             self.predictor.shutdown()
