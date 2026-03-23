@@ -15,6 +15,21 @@ if TYPE_CHECKING:
     from core.models import AnalysisParameters, Scene
 
 # Re-export from specialized modules for backward compatibility
+from core.image_utils import (  # noqa: F401
+    draw_bbox,
+    postprocess_mask,
+    render_mask_overlay,
+    rgb_to_pil,
+)
+from core.io_utils import (  # noqa: F401
+    create_frame_map,
+    detect_hwaccel,
+    download_model,
+    is_image_folder,
+    list_images,
+    sanitize_filename,
+    validate_video_file,
+)
 
 
 def handle_common_errors(func: Callable) -> Callable:

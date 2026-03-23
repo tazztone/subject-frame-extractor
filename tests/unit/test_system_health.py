@@ -88,6 +88,46 @@ def test_simulate_pipeline_failure(logger=MagicMock()):
                 assert any("FAILED" in line for line in report)
 
 
+def test_check_environment_failure():
+    """Test environment check logic with failures."""
+    with patch("torch.cuda.is_available", side_effect=Exception("CUDA Fail")):
+        report = check_environment()
+        assert any("FAILED" in line for line in report)
+
+
+def test_check_dependencies_failure():
+    """Test dependency check logic with missing dependencies."""
+    with patch("builtins.__import__", side_effect=ImportError("Missing")):
+        report = check_dependencies()
+        assert any("FAILED" in line for line in report)
+
+
+@patch("core.system_health.shutil.which")
+@patch("core.system_health.subprocess.run")
+def test_check_paths_and_assets_exiftool_fail(mock_run, mock_which):
+    """Test paths and assets check when exiftool check fails."""
+    mock_which.return_value = "/usr/bin/exiftool"
+    mock_run.side_effect = Exception("Subprocess Fail")
+
+    config = MagicMock()
+    config.models_dir = "models"
+
+    with patch("core.system_health.Path.exists", return_value=True):
+        report = check_paths_and_assets(config)
+        assert any("FOUND but check failed" in line for line in report)
+
+
+@patch("core.system_health.shutil.which")
+def test_check_paths_and_assets_no_exiftool(mock_which):
+    """Test paths and assets check when exiftool is missing."""
+    mock_which.return_value = None
+    config = MagicMock()
+    config.models_dir = "models"
+    with patch("core.system_health.Path.exists", return_value=True):
+        report = check_paths_and_assets(config)
+        assert any("ExifTool: FAILED" in line for line in report)
+
+
 def test_generate_full_diagnostic_report():
     """Test full diagnostic report generation (generator)."""
     config = MagicMock()

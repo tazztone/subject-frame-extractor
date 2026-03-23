@@ -47,7 +47,7 @@ def test_execute_extraction_schema():
     event.model_dump.return_value = {}
 
     with patch("core.pipelines._handle_extraction_uploads", return_value={}):
-        with patch("core.pipelines._initialize_extraction_params") as mock_init_p:
+        with patch("core.pipelines.AnalysisParameters.from_ui") as mock_init_p:
             mock_p = MagicMock()
             mock_init_p.return_value = mock_p
 

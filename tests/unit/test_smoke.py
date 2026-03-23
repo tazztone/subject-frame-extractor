@@ -96,6 +96,16 @@ class TestImportSmoke:
 
         assert gallery_utils is not None
 
+    def test_import_tracker_factory(self):
+        from core.managers.tracker_factory import build_tracker
+
+        assert callable(build_tracker)
+
+    def test_import_sam21_wrapper(self):
+        from core.managers.sam21 import SAM21Wrapper
+
+        assert SAM21Wrapper is not None
+
 
 class TestCriticalSymbols:
     """Verify critical symbols exist in modules (catches missing imports)."""

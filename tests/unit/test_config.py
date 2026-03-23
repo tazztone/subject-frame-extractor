@@ -14,6 +14,9 @@ def test_config_defaults():
     assert config.quality_weights_sharpness == 25
     assert "sharpness" in config.quality_weights
     assert config.quality_weights["sharpness"] == 25
+    # SAM2 Migration
+    assert config.default_tracker_model_name == "sam2"
+    assert "sam2.1" in config.sam2_checkpoint_url
 
 
 def test_config_env_overrides():
@@ -22,6 +25,19 @@ def test_config_env_overrides():
         config = Config()
         assert config.logs_dir == "custom_logs"
         assert config.ffmpeg_thumbnail_quality == 95
+
+
+def test_config_has_sam2_checkpoint_url():
+    """Test that sam2_checkpoint_url is present and points to a SAM2.1 model."""
+    config = Config()
+    assert hasattr(config, "sam2_checkpoint_url")
+    assert "sam2.1" in config.sam2_checkpoint_url  # points to hiera-tiny
+
+
+def test_config_default_tracker_is_sam2():
+    """Test that the default tracker is now SAM2."""
+    config = Config()
+    assert config.default_tracker_model_name == "sam2"
 
 
 def test_config_invalid_quality_weights():

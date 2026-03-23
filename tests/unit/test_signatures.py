@@ -123,6 +123,28 @@ class TestManagerClasses:
 
         assert hasattr(VideoManager, "get_video_info")
 
+    def test_sam21_matches_sam3_interface(self):
+        """Verify SAM2 and SAM3 wrappers share the same public interface."""
+        from core.managers.sam3 import SAM3Wrapper
+        from core.managers.sam21 import SAM21Wrapper
+
+        required_methods = [
+            "init_video",
+            "add_bbox_prompt",
+            "propagate",
+            "add_point_prompt",
+            "close_session",
+            "reset_session",
+            "clear_prompts",
+            "remove_object",
+            "detect_objects",
+            "add_text_prompt",
+            "shutdown",
+        ]
+        for method in required_methods:
+            assert hasattr(SAM21Wrapper, method), f"SAM21Wrapper missing method: {method}"
+            assert hasattr(SAM3Wrapper, method), f"SAM3Wrapper missing method: {method}"
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
