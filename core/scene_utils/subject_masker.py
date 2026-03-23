@@ -36,7 +36,7 @@ class SubjectMasker:
     Coordinates subject detection and mask propagation for video frames.
 
     This class orchestrates:
-    - SAM3 tracker initialization
+    - Tracker initialization (SAM2.1 or SAM3)
     - Seed frame selection
     - Bounding box detection via SeedSelector
     - Mask propagation via MaskPropagator

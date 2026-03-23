@@ -11,8 +11,6 @@ if TYPE_CHECKING:
     from core.config import Config
     from core.logger import AppLogger
 
-    from .sam3 import SAM3Wrapper
-
 
 class ModelRegistry:
     """Thread-safe registry for lazy loading and caching of heavy ML models."""
@@ -70,8 +68,8 @@ class ModelRegistry:
 
     def get_tracker(
         self, model_name: str, models_path: str, user_agent: str, retry_params: tuple, config: "Config"
-    ) -> Optional["SAM3Wrapper"]:
-        """Loads SAM3 tracker with CPU fallback on OOM."""
+    ) -> Optional[Any]:
+        """Loads subject tracker with CPU fallback on OOM."""
         # Imports moved to inner functions or re-exports in __init__.py
 
         key = f"tracker_{model_name}"
@@ -100,20 +98,29 @@ class ModelRegistry:
         from core.error_handling import ErrorHandler
         from core.io_utils import download_model
 
-        from .sam3 import SAM3Wrapper
+        from .tracker_factory import build_tracker
 
-        checkpoint_path = Path(models_path) / "sam3.pt"
-        if not checkpoint_path.exists():
+        if model_name == "sam2":
+            checkpoint_filename = "sam2.1_hiera_tiny.pt"
+            url = config.sam2_checkpoint_url
+            description = "SAM2.1 Model"
+        else:
+            # Fallback to sam3 for any other name or "sam3"
+            checkpoint_filename = "sam3.pt"
             url = config.sam3_checkpoint_url
+            description = "SAM3 Model"
+
+        checkpoint_path = Path(models_path) / checkpoint_filename
+        if not checkpoint_path.exists():
             if ".safetensors" in url:
                 url = url.replace(".safetensors", ".pt")
             download_model(
                 url=url,
                 dest_path=checkpoint_path,
-                description="SAM3 Model",
+                description=description,
                 logger=self.logger,
                 error_handler=ErrorHandler(self.logger, *retry_params),
                 user_agent=user_agent,
                 token=config.huggingface_token,
             )
-        return SAM3Wrapper(str(checkpoint_path), device=device)
+        return build_tracker(model_name, str(checkpoint_path), device=device)

@@ -43,6 +43,7 @@ class Config(BaseSettings):
     )
     face_landmarker_sha256: str = "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff"
     sam3_checkpoint_url: str = "https://huggingface.co/1038lab/sam3/resolve/main/sam3.pt"
+    sam2_checkpoint_url: str = "https://huggingface.co/facebook/sam2.1-hiera-tiny/resolve/main/sam2.1_hiera_tiny.pt"
 
     # YouTube-DL
     ytdl_output_template: str = "%(id)s_%(title).40s_%(height)sp.%(ext)s"
@@ -87,7 +88,7 @@ class Config(BaseSettings):
     default_enable_face_filter: bool = True
     default_face_model_name: str = "buffalo_l"
     default_enable_subject_mask: bool = True
-    default_tracker_model_name: str = "sam3"
+    default_tracker_model_name: str = "sam2"
     default_primary_seed_strategy: str = "🧑‍🤝‍🧑 Find Prominent Person"
     default_seed_strategy: str = "Largest Person"
     default_text_prompt: str = "a person"
