@@ -109,7 +109,8 @@ def patch_sam3_dtype():
             if hasattr(self, "model") and hasattr(self.model, "to"):
                 self.model = self.model.to(device="cuda", dtype=torch.float32)
 
-        Sam3VideoPredictor.__init__ = predictor_init_patched
+        if not hasattr(Sam3VideoPredictor, '_mock_name'):
+            Sam3VideoPredictor.__init__ = predictor_init_patched
 
     except ImportError:
         pass
