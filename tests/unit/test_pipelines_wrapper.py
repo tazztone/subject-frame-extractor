@@ -2,26 +2,9 @@ import threading
 from queue import Queue
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from core.events import ExtractionEvent, PreAnalysisEvent, PropagationEvent
 from core.models import Scene
 from core.pipelines import execute_analysis, execute_extraction, execute_pre_analysis, execute_propagation
-
-
-@pytest.fixture
-def mock_logger():
-    return MagicMock()
-
-
-@pytest.fixture
-def mock_config(tmp_path):
-    config = MagicMock()
-    config.logs_dir = str(tmp_path / "logs")
-    config.downloads_dir = str(tmp_path / "downloads")
-    config.retry_max_attempts = 1
-    config.retry_backoff_seconds = 0
-    return config
 
 
 @patch("core.pipelines.ExtractionPipeline")

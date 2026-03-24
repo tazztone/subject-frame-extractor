@@ -10,20 +10,6 @@ from core.managers.registry import ModelRegistry
 
 
 @pytest.fixture
-def mock_config():
-    config = MagicMock()
-    config.sam2_checkpoint_url = "http://example.com/sam2.pt"
-    config.sam3_checkpoint_url = "http://example.com/sam3.safetensors"  # Test safetensors replacement
-    config.models_dir = "models"
-    config.retry_max_attempts = 3
-    config.retry_backoff_seconds = [1, 2]
-    config.user_agent = "test-agent"
-    config.huggingface_token = "test-token"
-    config.default_tracker_model_name = "sam2"
-    return config
-
-
-@pytest.fixture
 def registry():
     # ModelRegistry uses standard logging by default, but we can pass a mock logger
     mock_logger = MagicMock()

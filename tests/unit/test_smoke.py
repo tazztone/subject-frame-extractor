@@ -19,12 +19,16 @@ class TestImportSmoke:
     def test_import_core_config(self):
         from core import config
 
-        assert config.Config is not None
+        c = config.Config()
+        assert c.logs_dir == "logs"
+        assert "sharpness" in c.quality_weights
 
-    def test_import_core_database(self):
+    def test_import_core_database(self, tmp_path):
         from core import database
 
-        assert database.Database is not None
+        db = database.Database(tmp_path / "test.db")
+        assert db is not None
+        db.close()
 
     def test_import_core_events(self):
         from core import events

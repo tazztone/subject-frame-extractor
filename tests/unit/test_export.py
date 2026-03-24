@@ -115,6 +115,40 @@ class TestExportKeptFrames:
 
     @patch("subprocess.Popen")
     @patch("core.export.apply_all_filters_vectorized")
+    def test_export_ffmpeg_timeout(self, mock_filter, mock_popen, mock_config, mock_logger, tmp_path):
+        """Test export handles FFmpeg timeout."""
+        import subprocess
+
+        mock_filter.return_value = ([{"filename": "frame_000001.webp"}], [], [], [])
+
+        process = MagicMock()
+        process.communicate.side_effect = subprocess.TimeoutExpired(cmd=["ffmpeg"], timeout=300)
+        mock_popen.return_value = process
+
+        video_path = tmp_path / "video.mp4"
+        video_path.touch()
+        output_dir = tmp_path / "out"
+        output_dir.mkdir()
+
+        (output_dir / "frame_map.json").write_text("[0, 1, 2]")
+
+        event = ExportEvent(
+            all_frames_data=[{"filename": "frame_000001.webp"}],
+            video_path=str(video_path),
+            output_dir=str(output_dir),
+            filter_args={},
+            enable_crop=False,
+            crop_ars="1:1",
+            crop_padding=10,
+        )
+
+        result = export_kept_frames(event, mock_config, mock_logger, None, None)
+
+        assert "timed out" in result.lower()
+        process.kill.assert_called()
+
+    @patch("subprocess.Popen")
+    @patch("core.export.apply_all_filters_vectorized")
     def test_export_metadata_creation(self, mock_filter, mock_popen, mock_config, mock_logger, tmp_path):
         """Test that metadata files are created during export."""
         mock_filter.return_value = (

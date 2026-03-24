@@ -1,40 +1,12 @@
 from unittest.mock import MagicMock, patch
 
 import numpy as np
-import pytest
 
 from core.events import FilterEvent
 from ui.gallery_utils import _update_gallery, auto_set_thresholds, on_filters_changed
 
 
 class TestGalleryUtils:
-    @pytest.fixture
-    def mock_logger(self):
-        return MagicMock()
-
-    @pytest.fixture
-    def mock_config(self):
-        config = MagicMock()
-        # Setup config defaults if needed by apply_all_filters_vectorized
-        config.model_dump.return_value = {}
-        config.filter_default_quality_score = {"default_min": 0.0, "default_max": 100.0}
-        config.filter_default_face_sim = {"default_min": 0.0, "default_max": 1.0}
-        return config
-
-    @pytest.fixture
-    def mock_thumbnail_manager(self):
-        tm = MagicMock()
-        tm.get.return_value = np.zeros((100, 100, 3), dtype=np.uint8)
-        return tm
-
-    @pytest.fixture
-    def sample_frames_data(self):
-        return [
-            {"filename": "f1.webp", "metrics": {"quality_score": 90}},
-            {"filename": "f2.webp", "metrics": {"quality_score": 80}},
-            {"filename": "f3.webp", "metrics": {"quality_score": 70}},
-        ]
-
     # --- _update_gallery ---
 
     @patch("ui.gallery_utils.apply_all_filters_vectorized")

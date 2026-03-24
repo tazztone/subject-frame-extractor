@@ -159,6 +159,47 @@ def test_close_calls_flush(db_path):
     db2.close()
 
 
+def test_database_corruption_resilience(db_path):
+    """Test behavior when the database file is corrupted (truncated)."""
+    db = Database(db_path, batch_size=1)
+    db.insert_metadata({"filename": "good.jpg"})
+    db.flush()
+    db.close()
+
+    # Corrupt the file by truncating it
+    with open(db_path, "wb") as f:
+        f.write(b"NOT A SQLITE FILE")
+
+    # Attempting to open and use it should raise an error or handle it
+    with pytest.raises(sqlite3.DatabaseError):
+        db2 = Database(db_path)
+        db2.load_all_metadata()
+
+
+def test_database_partial_write_failure(db_path):
+    """Test behavior when flush fails mid-way."""
+    with patch("sqlite3.connect") as mock_connect:
+        mock_conn = MagicMock()
+        mock_connect.return_value = mock_conn
+
+        # Mock cursor and schema check
+        mock_cursor = mock_conn.cursor.return_value
+        mock_cursor.fetchone.return_value = [CURRENT_VERSION]
+
+        db = Database(db_path, batch_size=2)
+        db.insert_metadata({"filename": "1.jpg"})
+
+        # Set side effect BEFORE it's triggered
+        mock_conn.commit.side_effect = sqlite3.OperationalError("Disk full")
+
+        with pytest.raises(sqlite3.OperationalError):
+            db.insert_metadata({"filename": "2.jpg"})  # This triggers flush
+
+        assert mock_conn.commit.called
+        # Buffer should still have the data if flush failed before clearing
+        assert len(db.buffer) == 2
+
+
 def test_migration_v1_v2_logic(tmp_path):
     """Test the migration logic in db_schema directly."""
     db_path = tmp_path / "migration_test.db"

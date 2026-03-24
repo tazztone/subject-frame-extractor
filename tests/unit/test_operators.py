@@ -1,5 +1,3 @@
-from unittest.mock import MagicMock
-
 import cv2
 import numpy as np
 import pytest
@@ -9,24 +7,6 @@ from core.operators.entropy import EntropyOperator
 from core.operators.mask_operators import SubjectMaskAreaOperator
 from core.operators.quality_score import QualityScoreOperator
 from core.operators.sharpness import SharpnessOperator
-
-
-@pytest.fixture
-def mock_config():
-    cfg = MagicMock()
-    cfg.metric_entropy_norm = 8.0
-    cfg.sharpness_base_scale = 2500.0
-    # Attributes used by QualityScoreOperator
-    cfg.quality_weights_sharpness = 40
-    cfg.quality_weights_edge_strength = 0
-    cfg.quality_weights_contrast = 0
-    cfg.quality_weights_brightness = 0
-    cfg.quality_weights_entropy = 30
-    cfg.quality_weights_niqe = 30
-
-    cfg.visualization_bbox_color = [255, 0, 0]
-    cfg.visualization_bbox_thickness = 2
-    return cfg
 
 
 def test_entropy_operator(mock_config):

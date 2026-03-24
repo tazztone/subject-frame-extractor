@@ -216,7 +216,13 @@ def mock_export_xmps_for_photos(photos, thresholds=None):
     return len(photos)
 
 
+def mock_export_kept_frames(*args, **kwargs):
+    print("[Mock] Running Export...")
+    return "✅ Exported 10 items (MOCKED)."
+
+
 # Apply patches
+import core.export
 import ui.app_ui
 
 core.pipelines.ExtractionPipeline._run_impl = mock_extraction_run
@@ -225,6 +231,8 @@ ui.app_ui.AppUI.preload_models = MagicMock(side_effect=lambda *args: None)
 core.pipelines.execute_pre_analysis = ui.app_ui.execute_pre_analysis = mock_pre_analysis_execution
 core.pipelines.execute_propagation = ui.app_ui.execute_propagation = mock_propagation_execution
 core.pipelines.execute_analysis = ui.app_ui.execute_analysis = mock_analysis_execution
+ui.app_ui.export_kept_frames = mock_export_kept_frames
+core.export.export_kept_frames = mock_export_kept_frames
 core.photo_utils.ingest_folder = mock_ingest_folder
 core.xmp_writer.export_xmps_for_photos = mock_export_xmps_for_photos
 # Patch download_model to avoid network calls

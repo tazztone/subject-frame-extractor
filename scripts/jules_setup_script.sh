@@ -19,7 +19,7 @@ pip install uv
 
 # Install project deps from lockfile (single source of truth for torch)
 # Use --no-install-project to avoid redundant registrations
-uv sync --frozen --no-install-project
+uv sync --active --frozen --no-install-project
 
 # Explicitly exclude SAM3_repo from Python path to prevent double-init
 export PYTHONPATH=$(python -c "
@@ -33,5 +33,5 @@ echo "--- Jules Environment Complete ---"
 # Verify torch imports cleanly before running full suite
 echo "--- Jules Health Check ---"
 python -c "import torch; print(f'Torch OK: {torch.__version__}')" && \
-uv run pytest tests/unit/ --import-mode=importlib -q --tb=short
+uv run --active pytest tests/unit/ --import-mode=importlib -q --tb=short
 

@@ -1,15 +1,8 @@
 import json
 from unittest.mock import MagicMock
 
-import pytest
-
 from core.managers.session import _load_analysis_scenes, execute_session_load, validate_session_dir
 from core.models import Scene
-
-
-@pytest.fixture
-def mock_logger():
-    return MagicMock()
 
 
 def test_validate_session_dir(tmp_path):

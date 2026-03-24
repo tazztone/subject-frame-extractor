@@ -4,8 +4,6 @@ from io import StringIO
 from queue import Queue
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from core.managers.extraction import (
     ExtractionPipeline,
     _process_ffmpeg_showinfo,
@@ -13,23 +11,6 @@ from core.managers.extraction import (
     run_ffmpeg_extraction,
 )
 from core.models import AnalysisParameters
-
-
-@pytest.fixture
-def mock_logger():
-    return MagicMock()
-
-
-@pytest.fixture
-def mock_config(tmp_path):
-    config = MagicMock()
-    config.logs_dir = str(tmp_path / "logs")
-    config.downloads_dir = str(tmp_path / "downloads")
-    config.ffmpeg_hwaccel = "off"
-    config.ffmpeg_thumbnail_quality = 80
-    config.retry_max_attempts = 1
-    config.retry_backoff_seconds = 0
-    return config
 
 
 def test_process_ffmpeg_stream(mock_logger, mock_config):

@@ -44,6 +44,17 @@ def test_registry_register_get():
     assert OperatorRegistry.list_all()[0].name == "test"
 
 
+def test_registry_duplicate_registration_warns():
+    op1 = MockOperator("dup")
+    op2 = MockOperator("dup")
+    with patch("core.operators.registry.logger") as mock_logger:
+        OperatorRegistry.register(op1)
+        OperatorRegistry.register(op2)
+        assert mock_logger.warning.called
+        assert "already registered" in mock_logger.warning.call_args[0][0]
+    assert OperatorRegistry.get("dup") == op2
+
+
 def test_registry_initialize_cleanup():
     op = MockOperator("test")
     OperatorRegistry.register(op)
