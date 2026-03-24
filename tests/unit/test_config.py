@@ -81,7 +81,8 @@ def test_config_boundary_quality_weights():
 @patch("core.config.Path.unlink")
 def test_config_path_validation(mock_unlink, mock_touch, mock_mkdir):
     """Test that Config correctly validates and creates directories on initialization."""
-    Config(logs_dir="test_logs", models_dir="test_models", downloads_dir="test_downloads")
+    cfg = Config(logs_dir="test_logs", models_dir="test_models", downloads_dir="test_downloads")
+    cfg.validate()
 
     # Check that mkdir was called for each directory
     assert mock_mkdir.call_count >= 3
@@ -98,8 +99,11 @@ def test_config_path_validation_failure(mock_touch, mock_mkdir):
     mock_touch.side_effect = PermissionError("No permission")
 
     with patch("builtins.print") as mock_print:
-        Config(logs_dir="readonly_dir")
+        cfg = Config(logs_dir="readonly_dir")
+        cfg.validate()
         # Should have printed a warning
+        assert mock_print.called
+        # Verify the specific message
         mock_print.assert_any_call("WARNING: Directory readonly_dir is not writable.")
 
 

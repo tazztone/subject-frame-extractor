@@ -42,6 +42,7 @@ def test_execute_pre_analysis(mock_load, mock_pipeline_cls, mock_config, mock_lo
         min_mask_area_pct=0.1,
         sharpness_base_scale=1.0,
         edge_strength_base_scale=1.0,
+        pre_sample_nth=1,
         primary_seed_strategy="first",
     )
 
@@ -70,6 +71,7 @@ def test_execute_propagation(mock_vinfo, mock_load, mock_pipeline_cls, mock_conf
         min_mask_area_pct=0.1,
         sharpness_base_scale=1.0,
         edge_strength_base_scale=1.0,
+        pre_sample_nth=1,
         primary_seed_strategy="first",
     )
     event = PropagationEvent(scenes=[], analysis_params=mock_params, output_folder=str(tmp_path), video_path="test.mp4")
@@ -94,6 +96,7 @@ def test_execute_analysis(mock_load, mock_pipeline_cls, mock_config, mock_logger
         min_mask_area_pct=0.1,
         sharpness_base_scale=1.0,
         edge_strength_base_scale=1.0,
+        pre_sample_nth=1,
         primary_seed_strategy="first",
     )
     event = PropagationEvent(scenes=[], analysis_params=mock_params, output_folder=str(tmp_path), video_path="test.mp4")

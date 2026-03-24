@@ -387,3 +387,11 @@ class MaskPropagator:
             final_errors.append(error)
 
         return final_masks, final_areas, final_empties, final_errors
+
+    def close(self):
+        """Release tracker resources."""
+        if self.dam_tracker:
+            try:
+                self.dam_tracker.close_session()
+            except Exception:
+                pass

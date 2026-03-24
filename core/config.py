@@ -61,6 +61,7 @@ class Config(BaseSettings):
     cache_size: int = 200
     cache_eviction_factor: float = 0.2
     cache_cleanup_threshold: float = 0.8
+    thumbnail_cache_max_mb: int = 512
 
     # Retry
     retry_max_attempts: int = 3
@@ -248,9 +249,10 @@ class Config(BaseSettings):
         default_factory=list, description="Additional paths allowed for Gradio file serving"
     )
 
-    def model_post_init(self, __context: Any) -> None:
-        """Post-initialization hook to validate paths."""
+    def validate(self):
+        """Explicitly validates the configuration."""
         self._validate_paths()
+        # Additional validation logic can be added here
 
     def _validate_paths(self):
         """Ensures critical directories exist and are writable."""

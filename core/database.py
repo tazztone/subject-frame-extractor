@@ -1,3 +1,4 @@
+import atexit
 import json
 import logging
 import sqlite3
@@ -38,6 +39,14 @@ class Database:
         ]
         self.connect()
         self.migrate()
+        # Register atexit handler to ensure flush on shutdown
+        atexit.register(self.close)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
 
     def connect(self):
         """Connects to the SQLite database."""
@@ -53,9 +62,18 @@ class Database:
 
     def close(self):
         """Closes the database connection."""
-        self.flush()
         if self.conn:
-            self.conn.close()
+            try:
+                self.flush()
+            except Exception:
+                # Avoid logging here as it might fail during interpreter shutdown
+                pass
+
+            try:
+                self.conn.close()
+            except Exception:
+                pass
+            self.conn = None
 
     def clear_metadata(self):
         """Deletes all records from the metadata table."""
@@ -142,7 +160,11 @@ class Database:
             else:
                 _execute_flush()
         except sqlite3.Error as e:
-            self.logger.error(f"Failed to flush database buffer: {e}", exc_info=True)
+            try:
+                self.logger.error(f"Failed to flush database buffer: {e}", exc_info=True)
+            except Exception:
+                # Logger might be closed during shutdown
+                pass
             raise
 
     def load_all_metadata(self) -> List[Dict[str, Any]]:

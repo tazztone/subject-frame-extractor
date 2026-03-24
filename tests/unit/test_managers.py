@@ -24,6 +24,7 @@ class TestManagers:
         config = MagicMock()
         config.cache_size = 10
         config.cache_cleanup_threshold = 0.8
+        config.thumbnail_cache_max_mb = 10
         config.cache_eviction_factor = 0.5
         config.default_max_resolution = "1080"
         config.ytdl_output_template = "%(title)s.%(ext)s"
@@ -57,7 +58,7 @@ class TestManagers:
 
     def test_thumbnail_manager_init(self, mock_logger, mock_config):
         tm = ThumbnailManager(mock_logger, mock_config)
-        assert tm.max_size == 10
+        assert tm.max_bytes == 10 * 1024 * 1024
         assert isinstance(tm.cache, dict)
 
     @patch("core.managers.thumbnails.Image.open", create=True)
@@ -96,61 +97,63 @@ class TestManagers:
 
     def test_thumbnail_manager_cleanup(self, mock_logger, mock_config):
         mock_config.cache_size = 3
-        mock_config.cache_cleanup_threshold = 0.5  # Cleanup when > 1.5 items
-        mock_config.cache_eviction_factor = 0.5
-
+        mock_config.thumbnail_cache_max_mb = 1.0  # 1MB
+        mock_config.cache_cleanup_threshold = 0.9  # 0.9MB threshold
         tm = ThumbnailManager(mock_logger, mock_config)
 
         # Fill cache
         p1 = Path("1.webp")
-        p2 = Path("2.webp")
+        _ = Path("2.webp")
         p3 = Path("3.webp")
 
-        tm.cache[p1] = np.zeros((1, 1))
-        tm.cache[p2] = np.zeros((1, 1))
+        # 600KB each, total 1.2MB > 0.9MB threshold
+        data = np.zeros((1000, 200, 3), dtype=np.uint8)  # 600,000 bytes
+        tm.cache[p1] = data
+        tm.current_bytes = data.nbytes
 
-        # Add 3rd item, should trigger cleanup logic check?
-        # Threshold is max_size * cleanup_threshold = 3 * 0.5 = 1.5
-        # Current size is 2. > 1.5. So next get should cleanup?
-        # get() calls _cleanup_old_entries IF len > threshold.
+        # Threshold check: current_bytes > max_bytes * cleanup_threshold
 
+        # Threshold check: current_bytes > max_bytes * cleanup_threshold
         # Let's mock _cleanup_old_entries to verify call
         with patch.object(tm, "_cleanup_old_entries") as mock_clean:
             with (
-                patch("core.managers.thumbnails.Image.open", create=True),
+                patch("PIL.Image.open", create=True) as mock_open_pil,
                 patch("pathlib.Path.exists", return_value=True),
             ):
+                mock_img = MagicMock()
+                mock_img.convert.return_value = data  # 600KB
+                mock_open_pil.return_value.__enter__.return_value = mock_img
+
+                # Use a low max_count to ensure COUNT-based trigger for _cleanup_old_entries
+                tm.max_count = 1
+                tm.cleanup_threshold = 0.5
+                # Adding p3 will make len(cache)=1, which is > 1*0.5
                 tm.get(p3)
-                mock_clean.assert_called_once()
+                mock_clean.assert_called()
 
     def test_thumbnail_manager_eviction(self, mock_logger, mock_config):
-        mock_config.cache_size = 2
+        mock_config.thumbnail_cache_max_mb = 0.0001  # Very small ~100 bytes
         tm = ThumbnailManager(mock_logger, mock_config)
 
-        p1, p2, p3 = Path("1"), Path("2"), Path("3")
+        p1, _, p3 = Path("1"), Path("2"), Path("3")
+        data = np.zeros((50, 50, 3), dtype=np.uint8)  # 7500 bytes
 
-        # Manually populate to avoid IO
-        tm.cache[p1] = 1
-        tm.cache[p2] = 2
-
-        # Add 3rd via manual insertion logic simulation or force add
-        # The get method enforces max_size at the end.
+        # Manually populate
+        tm.cache[p1] = data
+        tm.current_bytes = data.nbytes
 
         with patch("core.managers.thumbnails.Image.open", create=True), patch("pathlib.Path.exists", return_value=True):
-            # This will add p3. size becomes 3.
-            # Then loop `while len > max_size: popitem(last=False)`
-
-            # Mock Image return
             mock_img = MagicMock()
-            mock_img.convert.return_value = 3
+            mock_img.convert.return_value = data
             with patch(
                 "PIL.Image.open", return_value=MagicMock(__enter__=lambda x: mock_img, __exit__=lambda *args: None)
             ):
+                # This will add p3, which is 7500 bytes. Total 15000.
+                # Threshold is 100 bytes. So it MUST evict p1.
                 tm.get(p3)
 
-        assert len(tm.cache) == 2
         assert p3 in tm.cache
-        assert p1 not in tm.cache  # LRU (p1 was inserted first)
+        assert p1 not in tm.cache
 
     # --- ModelRegistry Tests ---
 

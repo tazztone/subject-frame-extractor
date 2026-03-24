@@ -322,17 +322,19 @@ class TestManagersThumbnailManager:
         # Create a test image
         test_thumb = tmp_path / "test_thumb.webp"
         test_image = np.zeros((50, 50, 3), dtype=np.uint8)
-        test_image[10:40, 10:40] = [255, 0, 0]  # Red square
+        # Mocking Image.open to avoid actual disk read which might fail in CI
+        with patch("PIL.Image.open") as mock_open:
+            mock_img = MagicMock()
+            mock_img.convert.return_value = test_image
+            mock_open.return_value.__enter__.return_value = mock_img
+            # First get - should load from disk
+            manager.clear_cache()
+            with patch("pathlib.Path.exists", return_value=True):
+                result1 = manager.get(test_thumb)
+            assert manager.current_bytes == test_image.nbytes
 
-        from PIL import Image
-
-        Image.fromarray(test_image).save(test_thumb)
-
-        # First get - should load from disk
-        result1 = manager.get(test_thumb)
-
-        # Second get - should return from cache
-        result2 = manager.get(test_thumb)
+            # Second get - should return from cache
+            result2 = manager.get(test_thumb)
 
         assert result1 is not None
         assert result2 is not None
@@ -365,6 +367,7 @@ class TestManagersThumbnailManager:
 
         manager.clear_cache()
         assert len(manager.cache) == 0
+        assert manager.current_bytes == 0
 
 
 class TestModelRegistry:

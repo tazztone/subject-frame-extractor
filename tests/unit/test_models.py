@@ -109,3 +109,44 @@ def test_analysis_parameters_from_ui():
 def test_quality_config():
     qc = QualityConfig(sharpness_base_scale=100.0, edge_strength_base_scale=50.0)
     assert qc.enable_niqe is True
+
+
+def test_scene_state_dict_and_initial_bbox():
+    # Test initialization from dict (Line 126)
+    data = {"shot_id": 1, "start_frame": 0, "end_frame": 10, "seed_result": {"bbox": [0, 0, 10, 10]}}
+    state = SceneState(data)  # Line 126
+    # Line 132-133: initial_bbox should be set from seed_result if missing
+    assert state.scene.initial_bbox == [0, 0, 10, 10]
+    assert state.scene.selected_bbox == [0, 0, 10, 10]
+
+    # Line 138: data property
+    assert state.data["shot_id"] == 1
+
+    # Line 151: reset is_overridden if bbox match
+    state.set_manual_bbox([0, 0, 10, 10], "reset")
+    assert state.scene.is_overridden is False
+
+
+def test_analysis_parameters_optional_coercion():
+    # Line 280-282: Handle Optional types in from_ui
+    logger = MagicMock()
+    config = MagicMock()
+    config.model_dump.return_value = {}
+    # thumb_megapixels is float
+    params = AnalysisParameters.from_ui(logger, config, thumb_megapixels=1.2)
+    assert params.thumb_megapixels == 1.2
+
+
+def test_coerce_more():
+    assert _coerce("1", bool) is True
+    assert _coerce("yes", bool) is True
+    assert _coerce("on", bool) is True
+    assert _coerce("0", bool) is False
+    assert _coerce(True, bool) is True
+
+
+def test_frame_metrics_defaults():
+    from core.models import FrameMetrics
+
+    metrics = FrameMetrics()
+    assert metrics.quality_score == 0.0

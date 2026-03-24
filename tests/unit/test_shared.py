@@ -152,3 +152,14 @@ class TestSharedUtils:
         scenes = [Scene(shot_id=1, start_frame=0, end_frame=10)]
         items, _, _ = build_scene_gallery_items(scenes, "All", str(output_dir))
         assert len(items) == 0
+
+    @patch("cv2.imread")
+    def test_build_scene_gallery_items_imread_none(self, mock_imread, tmp_path):
+        output_dir = tmp_path / "output"
+        (output_dir / "previews").mkdir(parents=True)
+        (output_dir / "previews" / "scene_00001.jpg").touch()
+        mock_imread.return_value = None  # Trigger the 'continue' on line 185
+
+        scenes = [Scene(shot_id=1, start_frame=0, end_frame=10)]
+        items, _, _ = build_scene_gallery_items(scenes, "All", str(output_dir))
+        assert len(items) == 0

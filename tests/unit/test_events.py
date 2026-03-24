@@ -16,6 +16,7 @@ def test_extraction_event_validation():
         max_resolution="1080p",
         thumb_megapixels=0.5,
         scene_detect=True,
+        output_folder="out",
     )
     assert event.source_path == "video.mp4"
 
@@ -30,6 +31,7 @@ def test_extraction_event_validation():
             max_resolution="1080p",
             thumb_megapixels=0.5,
             scene_detect=True,
+            output_folder="out",
         )
 
 
@@ -45,6 +47,7 @@ def test_pre_analysis_event_validation():
         "sharpness_base_scale": 2500.0,
         "edge_strength_base_scale": 100.0,
         "primary_seed_strategy": "Find Prominent Person",
+        "pre_sample_nth": 1,
     }
 
     # Valid event
