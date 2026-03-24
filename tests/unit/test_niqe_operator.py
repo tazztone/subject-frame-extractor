@@ -84,9 +84,21 @@ class TestNiqeOperator:
         # (12.0 - 10.0) * 5.0 = 10.0
         assert result.metrics["niqe_score"] == 10.0
 
-        def test_cleanup_clears_model(self, operator):
-            operator.model = MagicMock()
+    def test_cleanup_clears_model(self, operator):
+        operator.model = MagicMock()
+        operator.cleanup()
+        assert operator.model is None
 
-            operator.cleanup()
+    @patch("pyiqa.create_metric")
+    def test_execute_error_paths(self, mock_create, operator):
+        # Case 1: Model returns NaN or error (simulated via exception)
+        mock_model = MagicMock()
+        mock_model.side_effect = Exception("NIQE failure")
+        mock_model.device = torch.device("cpu")
+        mock_create.return_value = mock_model
 
-            assert operator.model is None
+        operator.initialize(MagicMock())
+        ctx = OperatorContext(image_rgb=np.zeros((10, 10, 3)), image_tensor=torch.zeros((1, 3, 10, 10)))
+        result = operator.execute(ctx)
+        assert result.success is False
+        assert "NIQE failure" in result.error

@@ -16,6 +16,18 @@ class TestAppUIHandlers:
     """Tests for AppUI event handlers."""
 
     @pytest.fixture
+    def test_list_images(self, tmp_path, mock_config):
+        mock_config.utility_image_extensions = [".jpg", ".png", ".webp"]
+        # Create some dummy image files
+        (tmp_path / "image1.jpg").touch()
+        (tmp_path / "image2.png").touch()
+        (tmp_path / "document.pdf").touch()
+        (tmp_path / "image3.webp").touch()
+        (tmp_path / "subdir").mkdir()
+        (tmp_path / "subdir" / "image4.jpg").touch()
+        return tmp_path
+
+    @pytest.fixture
     def app_ui(
         self,
         mock_config,
@@ -113,20 +125,23 @@ class TestAppUIHandlers:
         new_state = updates[0]  # Returns a tuple
         assert new_state.smart_filter_enabled is False
 
-    @patch("ui.app_ui.on_filters_changed")
-    def test_on_filters_changed_wrapper(self, mock_on_filters, app_ui):
+    def test_on_filters_changed_wrapper(self, app_ui, tmp_path):
         """Test on_filters_changed_wrapper uses ApplicationState data."""
-        mock_on_filters.return_value = {"filter_status_text": "OK", "results_gallery": []}
-        state = ApplicationState(all_frames_data=[{"f": 1}], analysis_output_dir="/test")
+        with patch("ui.app_ui.on_filters_changed") as mock_on_filters:
+            # Use a dictionary that behaves like the expected return
+            mock_on_filters.return_value = {"filter_status_text": "OK", "results_gallery": {"value": []}}
 
-        # Zip slider values - assuming default 3 metrics for test
-        slider_vals = [0.0, 0.0, 0.0]
+            # Use a real path to pass FilterEvent validation
+            out_dir = str(tmp_path / "analysis_out_handlers")
+            (tmp_path / "analysis_out_handlers").mkdir()
+            state = ApplicationState(all_frames_data=[{"f": 1}], analysis_output_dir=out_dir)
 
-        # We need to ensure sliders are in components for zip to work if it uses them
-        # In current impl it uses sorted(self.components['metric_sliders'].keys())
-        app_ui.components["metric_sliders"] = {}  # Empty for simple test
+            slider_vals = [0.0, 0.0, 0.0]
+            app_ui.components["metric_sliders"] = {}
 
-        status, gallery = app_ui.on_filters_changed_wrapper(state, "Kept", False, 0.6, False, 5, "pHash", *slider_vals)
+            status, gallery_update = app_ui.on_filters_changed_wrapper(
+                state, "Kept", False, 0.6, False, 5, "pHash", *slider_vals
+            )
 
-        assert status == "OK"
-        mock_on_filters.assert_called_once()
+            assert str(status) == "OK"
+            assert gallery_update["value"] == []

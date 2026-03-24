@@ -199,83 +199,86 @@ class SubjectMasker:
         lowres_video_path = Path(frames_dir) / "video_lowres.mp4"
         thumb_dir = Path(frames_dir) / "thumbs"
 
-        if lowres_video_path.exists():
-            self.logger.info("Using bounded video-based propagation per scene.")
+        try:
+            if lowres_video_path.exists():
+                self.logger.info("Using bounded video-based propagation per scene.")
 
-            # Detect actual frame size from thumbnails to ensure correct SAM3 normalization
-            frame_size = (640, 480)  # Fallback
-            if self.frame_map:
-                sample_fname = list(self.frame_map.values())[0]
-                sample_thumb = self.thumbnail_manager.get(thumb_dir / sample_fname)
-                if sample_thumb is not None:
-                    frame_size = (sample_thumb.shape[1], sample_thumb.shape[0])
-                    self.logger.info(
-                        f"Targeting propagation frame size: {frame_size[0]}x{frame_size[1]}", component="propagator"
-                    )
+                # Detect actual frame size from thumbnails to ensure correct SAM3 normalization
+                frame_size = (640, 480)  # Fallback
+                if self.frame_map:
+                    sample_fname = list(self.frame_map.values())[0]
+                    sample_thumb = self.thumbnail_manager.get(thumb_dir / sample_fname)
+                    if sample_thumb is not None:
+                        frame_size = (sample_thumb.shape[1], sample_thumb.shape[0])
+                        self.logger.info(
+                            f"Targeting propagation frame size: {frame_size[0]}x{frame_size[1]}", component="propagator"
+                        )
 
-            for scene in scenes_to_process:
-                if self.cancel_event.is_set():
-                    break
+                for scene in scenes_to_process:
+                    if self.cancel_event.is_set():
+                        break
 
-                shot_frames_data = self._load_shot_frames(frames_dir, thumb_dir, scene.start_frame, scene.end_frame)
-                if not shot_frames_data:
-                    continue
-
-                target_fns = [f[0] for f in shot_frames_data]
-                bbox = scene.seed_result.get("bbox")
-                if not bbox:
-                    self.logger.warning(f"No seed for scene {scene.shot_id}, skipping.")
-                    continue
-
-                prop_seeds = [{"frame": scene.best_frame, "bbox": bbox, "obj_id": 1}]
-
-                masks_dict, areas_dict, empties_dict, errors_dict = self.mask_propagator.propagate_video(
-                    str(lowres_video_path),
-                    target_fns,
-                    prop_seeds,
-                    frame_size,
-                    self.frame_map,
-                    tracker=tracker,
-                )
-
-                # Distribute results for this scene
-                for fn in target_fns:
-                    fname_webp = self.frame_map.get(fn)
-                    if not fname_webp:
+                    shot_frames_data = self._load_shot_frames(frames_dir, thumb_dir, scene.start_frame, scene.end_frame)
+                    if not shot_frames_data:
                         continue
 
-                    fname_png = f"{Path(fname_webp).stem}.png"
-                    mask_path = self.mask_dir / fname_png
+                    target_fns = [f[0] for f in shot_frames_data]
+                    bbox = scene.seed_result.get("bbox")
+                    if not bbox:
+                        self.logger.warning(f"No seed for scene {scene.shot_id}, skipping.")
+                        continue
 
-                    mask = masks_dict.get(fn)
-                    area = areas_dict.get(fn, 0.0)
-                    is_empty = empties_dict.get(fn, True)
+                    prop_seeds = [{"frame": scene.best_frame, "bbox": bbox, "obj_id": 1}]
 
-                    res = {
-                        "shot_id": scene.shot_id,
-                        "seed_type": scene.seed_result.get("details", {}).get("type"),
-                        "seed_face_sim": scene.seed_result.get("details", {}).get("seed_face_sim"),
-                        "mask_area_pct": area,
-                        "mask_empty": is_empty,
-                        "error": errors_dict.get(fn),
-                    }
+                    masks_dict, areas_dict, empties_dict, errors_dict = self.mask_propagator.propagate_video(
+                        str(lowres_video_path),
+                        target_fns,
+                        prop_seeds,
+                        frame_size,
+                        self.frame_map,
+                        tracker=tracker,
+                    )
 
-                    if mask is not None and np.any(mask):
-                        cv2.imwrite(str(mask_path), mask)
-                        res["mask_path"] = str(mask_path)
-                    else:
-                        res["mask_path"] = None
-                        if not errors_dict.get(fn):
-                            self.logger.error(
-                                f"Failed to generate mask for {fname_png} (frame {fn}). Subject lost.",
-                                component="propagator",
-                            )
+                    # Distribute results for this scene
+                    for fn in target_fns:
+                        fname_webp = self.frame_map.get(fn)
+                        if not fname_webp:
+                            continue
 
-                    mask_metadata[fname_png] = res
-        else:
-            self.logger.warning("video_lowres.mp4 not found, falling back to legacy mode.")
-            # Legacy fallback omitted or can be re-implemented if needed.
-            pass
+                        fname_png = f"{Path(fname_webp).stem}.png"
+                        mask_path = self.mask_dir / fname_png
+
+                        mask = masks_dict.get(fn)
+                        area = areas_dict.get(fn, 0.0)
+                        is_empty = empties_dict.get(fn, True)
+
+                        res = {
+                            "shot_id": scene.shot_id,
+                            "seed_type": scene.seed_result.get("details", {}).get("type"),
+                            "seed_face_sim": scene.seed_result.get("details", {}).get("seed_face_sim"),
+                            "mask_area_pct": area,
+                            "mask_empty": is_empty,
+                            "error": errors_dict.get(fn),
+                        }
+
+                        if mask is not None and np.any(mask):
+                            cv2.imwrite(str(mask_path), mask)
+                            res["mask_path"] = str(mask_path)
+                        else:
+                            res["mask_path"] = None
+                            if not errors_dict.get(fn):
+                                self.logger.error(
+                                    f"Failed to generate mask for {fname_png} (frame {fn}). Subject lost.",
+                                    component="propagator",
+                                )
+
+                        mask_metadata[fname_png] = res
+            else:
+                self.logger.warning("video_lowres.mp4 not found, falling back to legacy mode.")
+                # Legacy fallback omitted or can be re-implemented if needed.
+                pass
+        finally:
+            self.close()
 
         self.logger.success(f"Subject masking complete for {len(mask_metadata)} frames.")
 
@@ -458,3 +461,13 @@ class SubjectMasker:
         """Create a frame map for the output directory."""
         ext = ".webp" if self.params.thumbnails_only else ".png"
         return create_frame_map(Path(output_dir), self.logger, ext=ext)
+
+    def close(self):
+        """Release tracker resources."""
+        if self.dam_tracker:
+            try:
+                self.dam_tracker.close_session()
+            except Exception:
+                pass
+        if self.mask_propagator:
+            self.mask_propagator.close()

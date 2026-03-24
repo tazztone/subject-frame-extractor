@@ -704,8 +704,9 @@ class AppUI:
             progress: Gradio progress callback.
             success_callback: Optional callback to run on successful completion.
         """
+        generator = None
         try:
-            for result in pipeline_func(
+            generator = pipeline_func(
                 event,
                 self.progress_queue,
                 self.cancel_event,
@@ -715,19 +716,26 @@ class AppUI:
                 self.cuda_available,
                 progress=progress,
                 model_registry=self.model_registry,
-            ):
+            )
+            for result in generator:
                 if isinstance(result, dict):
                     if self.cancel_event.is_set():
-                        yield {self.components["unified_log"]: "Cancelled."}
+                        yield {self.components["unified_log"]: "Cancelled by user."}
                         return
                     if result.get("done"):
                         if success_callback:
                             yield success_callback(result)
                         return
-            yield {self.components["unified_log"]: "❌ Failed."}
+            yield {self.components["unified_log"]: "❌ Pipeline failed unexpectedly."}
         except Exception as e:
-            self.app_logger.error("Pipeline failed", exc_info=True)
-            yield {self.components["unified_log"]: f"[ERROR] {e}"}
+            self.app_logger.error(f"Pipeline execution failed: {e}", exc_info=True)
+            yield {
+                self.components["unified_log"]: f"❌ **Error:** {e}",
+                self.components["unified_status"]: f"⚠️ Failure in {pipeline_func.__name__}",
+            }
+        finally:
+            if generator and hasattr(generator, "close"):
+                generator.close()
 
     def run_extraction_wrapper(self, current_state: ApplicationState, *args, progress=None):
         """Wrapper to execute the extraction pipeline."""

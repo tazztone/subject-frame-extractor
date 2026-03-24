@@ -176,3 +176,22 @@ def test_estimate_totals_default():
     video_info = {"frame_count": 100}
     totals = estimate_totals(params, video_info, None)
     assert totals["extraction"] == 100
+
+
+def test_estimate_totals_all():
+    params = AnalysisParameters(method="all")
+    video_info = {"frame_count": 100}
+    totals = estimate_totals(params, video_info, None)
+    assert totals["extraction"] == 100
+
+
+def test_safe_resource_cleanup_no_cuda():
+    with (
+        patch("gc.collect") as mock_gc,
+        patch("torch.cuda.is_available", return_value=False),
+        patch("torch.cuda.empty_cache") as mock_empty,
+    ):
+        with safe_resource_cleanup(device="cuda"):
+            pass
+        assert mock_gc.called
+        assert not mock_empty.called

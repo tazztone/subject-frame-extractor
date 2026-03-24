@@ -285,6 +285,24 @@ class TestAppUI:
 
     # --- Auto Thresholds ---
 
+    def test_on_filters_changed_wrapper(self, app_ui, tmp_path):
+        """Test on_filters_changed_wrapper uses ApplicationState data."""
+        mock_ret = {"filter_status_text": "OK", "results_gallery": {"value": []}}
+
+        with patch("ui.app_ui.on_filters_changed", return_value=mock_ret):
+            out_dir = str(tmp_path / "analysis_out")
+            (tmp_path / "analysis_out").mkdir()
+            state = ApplicationState(all_frames_data=[{"f": 1}], analysis_output_dir=out_dir)
+            slider_vals = [0.0, 0.0, 0.0]
+            app_ui.components["metric_sliders"] = {}
+
+            status, gallery_update = app_ui.on_filters_changed_wrapper(
+                state, "Kept", False, 0.6, False, 5, "pHash", *slider_vals
+            )
+
+            assert str(status) == "OK"
+            assert gallery_update["value"] == []
+
     def test_on_auto_set_thresholds(self, app_ui):
         app_ui.components["metric_auto_threshold_cbs"] = {"quality_score": MagicMock()}
 
@@ -298,7 +316,7 @@ class TestAppUI:
     # --- Integration-ish Wrapper Tests ---
 
     @patch("ui.app_ui.execute_session_load")
-    def test_run_session_load_wrapper(self, mock_load, app_ui, app_state):
+    def test_run_session_load_wrapper(self, mock_load, app_ui, app_state, tmp_path):
         mock_load.return_value = {
             "run_config": {"source_path": "test.mp4"},
             "session_path": "/session",
@@ -306,7 +324,10 @@ class TestAppUI:
             "metadata_exists": True,
         }
 
-        gen = app_ui.run_session_load_wrapper("/session", app_state)
+        # Create a dummy session directory for the wrapper to find
+        session_path = str(tmp_path / "session")
+        (tmp_path / "session").mkdir()  # Ensure it exists
+        gen = app_ui.run_session_load_wrapper(session_path, app_state)
 
         # First yield is status update
         next(gen)

@@ -93,6 +93,7 @@ def mock_config():
     config.cache_cleanup_threshold = 0.9
     config.cache_size = 100
     config.cache_thumbnail_max_size = 100
+    config.thumbnail_cache_max_mb = 100
     config.cache_eviction_factor = 0.5
     config.seeding_iou_threshold = 0.5
     # Analysis params
@@ -101,6 +102,10 @@ def mock_config():
     # System params
     config.downloads_dir = "/tmp/downloads"
     config.retry_max_attempts = 1
+    config.utility_max_filename_length = 100
+    config.utility_image_extensions = [".jpg", ".png", ".webp", ".jpeg"]
+    config.image_extensions = config.utility_image_extensions  # Fallback
+    config.filename_max_length = config.utility_max_filename_length  # Fallback
 
     # Utils params
     config.masking_close_kernel_size = 3

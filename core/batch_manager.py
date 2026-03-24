@@ -104,7 +104,8 @@ class BatchManager:
         self.stop_event.clear()
         self.is_running = True
 
-        pending_items = [item for item in self.queue if item.status == BatchStatus.PENDING]
+        with self.lock:
+            pending_items = [item for item in self.queue if item.status == BatchStatus.PENDING]
         if not pending_items:
             self.is_running = False
             return

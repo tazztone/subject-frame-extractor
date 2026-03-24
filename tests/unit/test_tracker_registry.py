@@ -5,6 +5,7 @@ Unit tests for ModelRegistry tracker loading.
 from unittest.mock import MagicMock, patch
 
 import pytest
+import torch
 
 from core.managers.registry import ModelRegistry
 
@@ -61,6 +62,7 @@ def test_get_tracker_sam3_safetensors(mock_exists, mock_build, mock_download, re
     mock_download.assert_not_called()  # Because exists=True
 
     # To test replacement we need exists=False
+    mock_config.sam3_checkpoint_url = "http://example.com/model.safetensors"
     with patch("core.managers.registry.Path.exists", return_value=False), patch("core.managers.registry.Path.mkdir"):
         registry.get_tracker(
             model_name="sam3_new",  # different key to avoid cache
@@ -109,7 +111,7 @@ def test_get_tracker_oom_fallback(registry, mock_config):
         patch("core.managers.registry.torch.cuda.empty_cache") as mock_empty,
     ):
         # First call raises OOM
-        mock_load.side_effect = [RuntimeError("out of memory"), MagicMock(name="CPUTracker")]
+        mock_load.side_effect = [torch.cuda.OutOfMemoryError("CUDA out of memory"), MagicMock(name="CPUTracker")]
 
         tracker = registry.get_tracker(
             model_name="sam2_oom",

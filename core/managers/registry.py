@@ -36,7 +36,21 @@ class ModelRegistry:
             if self.logger:
                 self.logger.info(f"Loading model '{key}'...")
 
-            val = loader_fn()
+            try:
+                val = loader_fn()
+            except torch.cuda.OutOfMemoryError:
+                if self.logger:
+                    self.logger.warning(f"CUDA OOM loading '{key}'. Clearing models and retrying...")
+                self.clear()
+                val = loader_fn()
+            except Exception as e:
+                if "out of memory" in str(e).lower():
+                    if self.logger:
+                        self.logger.warning(f"Potential OOM loading '{key}'. Clearing models and retrying...")
+                    self.clear()
+                    val = loader_fn()
+                else:
+                    raise e
 
             with self._registry_lock:
                 self._models[key] = val

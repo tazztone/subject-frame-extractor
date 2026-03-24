@@ -33,12 +33,20 @@ def _setup_runtime(output_dir: Path, verbose: bool = False):
 def _run_pipeline(generator, stage_name: str) -> dict:
     """Consume a pipeline generator and return the final result."""
     result = None
-    for update in generator:
-        if isinstance(update, dict):
-            result = update
-            # Print progress if available
-            if "unified_log" in update:
-                click.echo(f"  {update['unified_log']}")
+    try:
+        for update in generator:
+            if isinstance(update, dict):
+                result = update
+                # Print progress if available
+                if "unified_log" in update:
+                    click.echo(f"  {update['unified_log']}")
+    except Exception as e:
+        click.secho(f"Critial error in {stage_name}: {e}", fg="red")
+        raise click.ClickException(f"{stage_name} aborted due to unexpected error: {e}")
+    finally:
+        # If the generator has a close method, call it
+        if hasattr(generator, "close"):
+            generator.close()
 
     if not result or not result.get("done"):
         if result:

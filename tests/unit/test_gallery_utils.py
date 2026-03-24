@@ -19,7 +19,7 @@ class TestGalleryUtils:
         rejected = [sample_frames_data[2]]
         counts = MagicMock()
         counts.most_common.return_value = [("low_quality", 1)]
-        reasons = {"f3.webp": ["low_quality"]}
+        reasons = {"frame_03.png": ["low_quality"]}
 
         mock_apply.return_value = (kept, rejected, counts, reasons)
 
@@ -39,7 +39,7 @@ class TestGalleryUtils:
             mock_logger,
         )
 
-        assert "Kept:** 2/3" in status
+        assert f"Kept:** 2/{len(sample_frames_data)}" in status
         assert "Rejections:** low_quality: 1" in status
         assert len(update["value"]) == 2
         mock_thumbnail_manager.get.assert_called()
@@ -50,7 +50,7 @@ class TestGalleryUtils:
     ):
         kept = sample_frames_data[:2]
         rejected = [sample_frames_data[2]]
-        reasons = {"f3.webp": ["low_quality"]}
+        reasons = {"frame_03.png": ["low_quality"]}
         mock_apply.return_value = (kept, rejected, MagicMock(), reasons)
 
         status, update = _update_gallery(

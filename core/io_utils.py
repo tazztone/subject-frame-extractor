@@ -148,8 +148,19 @@ def download_model(
         if token:
             headers["Authorization"] = f"Bearer {token}"
         req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=180) as resp, open(dest_path, "wb") as out:
-            shutil.copyfileobj(resp, out)
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            content_length = resp.getheader("Content-Length")
+            if content_length:
+                size = int(content_length)
+                logger.info(f"Reported size for {description}: {size / (1024 * 1024):.1f}MB")
+                if min_size and size < min_size:
+                    raise RuntimeError(
+                        f"Remote file for {description} is too small ({size} bytes). "
+                        f"Expected at least {min_size} bytes."
+                    )
+
+            with open(dest_path, "wb") as out:
+                shutil.copyfileobj(resp, out)
 
         if not dest_path.exists():
             raise RuntimeError(f"Download of {description} failed (file not found after download).")

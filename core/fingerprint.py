@@ -1,8 +1,8 @@
 import hashlib
 import json
-import os
 from dataclasses import asdict, dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 
@@ -31,10 +31,11 @@ def create_fingerprint(
     video_path: str, extraction_settings: Dict[str, Any], analysis_settings: Optional[Dict[str, Any]] = None
 ) -> RunFingerprint:
     """Create a fingerprint for a run."""
-    stat = os.stat(video_path)
+    p = Path(video_path)
+    stat = p.stat()
 
     return RunFingerprint(
-        video_path=os.path.abspath(video_path),
+        video_path=str(p.resolve()),
         video_size=stat.st_size,
         video_mtime=stat.st_mtime,
         extraction_hash=_hash_dict(extraction_settings),
@@ -44,20 +45,21 @@ def create_fingerprint(
 
 def save_fingerprint(fingerprint: RunFingerprint, output_dir: str) -> None:
     """Save fingerprint to run_fingerprint.json in output directory."""
-    os.makedirs(output_dir, exist_ok=True)
-    path = os.path.join(output_dir, "run_fingerprint.json")
-    with open(path, "w") as f:
+    p = Path(output_dir)
+    p.mkdir(parents=True, exist_ok=True)
+    path = p / "run_fingerprint.json"
+    with open(path, "w", encoding="utf-8") as f:
         json.dump(asdict(fingerprint), f, indent=2)
 
 
 def load_fingerprint(output_dir: str) -> Optional[RunFingerprint]:
     """Load fingerprint from run_fingerprint.json if it exists."""
-    path = os.path.join(output_dir, "run_fingerprint.json")
-    if not os.path.exists(path):
+    path = Path(output_dir) / "run_fingerprint.json"
+    if not path.exists():
         return None
 
     try:
-        with open(path, "r") as f:
+        with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
         return RunFingerprint(**data)
     except (json.JSONDecodeError, TypeError, KeyError):
@@ -66,9 +68,9 @@ def load_fingerprint(output_dir: str) -> Optional[RunFingerprint]:
 
 def fingerprints_match(new: RunFingerprint, existing: RunFingerprint) -> bool:
     """Check if extraction component of fingerprints match."""
-    # Use os.path.abspath to normalize paths
-    new_path = os.path.abspath(new.video_path)
-    existing_path = os.path.abspath(existing.video_path)
+    # Use resolve() to normalize paths
+    new_path = str(Path(new.video_path).resolve())
+    existing_path = str(Path(existing.video_path).resolve())
 
     return (
         new_path == existing_path

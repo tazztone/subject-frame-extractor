@@ -39,6 +39,7 @@ def default_pre_analysis_event():
         "min_mask_area_pct": 0.1,
         "sharpness_base_scale": 1.0,
         "edge_strength_base_scale": 1.0,
+        "pre_sample_nth": 1,
         "primary_seed_strategy": "Find Prominent Person",
     }
 

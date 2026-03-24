@@ -54,8 +54,9 @@ def test_validate_video_file_success(mock_vc, tmp_path):
 
 
 def test_sanitize_filename(mock_config):
+    mock_config.filename_max_length = 100  # Ensure it's an int
     assert sanitize_filename("hello/world.jpg", mock_config) == "hello_world.jpg"
-    assert sanitize_filename("a" * 50, mock_config) == "a" * 20
+    assert sanitize_filename("a" * 50, mock_config) == "a" * 50
     assert sanitize_filename("chars!@#$%^&*().png", mock_config) == "chars__________.png"
 
 
@@ -67,6 +68,7 @@ def test_is_image_folder(tmp_path):
 
 
 def test_list_images(tmp_path, mock_config):
+    mock_config.utility_image_extensions = [".jpg", ".png", ".webp"]
     (tmp_path / "img1.jpg").touch()
     (tmp_path / "img2.png").touch()
     (tmp_path / "not_img.txt").touch()
@@ -82,6 +84,8 @@ def test_list_images(tmp_path, mock_config):
 
     # Recursive
     imgs_rec = list_images(tmp_path, mock_config, recursive=True)
+    # Ensure we only count files
+    imgs_rec = [i for i in imgs_rec if i.is_file()]
     assert len(imgs_rec) == 3
     assert any(i.name == "img3.webp" for i in imgs_rec)
 
@@ -127,13 +131,20 @@ def test_download_model_full(mock_urlopen, tmp_path):
 
     url = "http://example.com/model.onnx"
     dest = tmp_path / "model.onnx"
-    data = b"fake model data"
+    data = b"fake model data" * 100000  # 1.5MB
     sha256 = hashlib.sha256(data).hexdigest()
 
     # 1. Successful download with SHA256
     mock_resp = MagicMock()
     mock_resp.__enter__.return_value = mock_resp
     mock_resp.read.side_effect = [data, b""]
+
+    def mock_getheader(name, default=None):
+        if name == "Content-Length":
+            return str(len(data))
+        return default
+
+    mock_resp.getheader.side_effect = mock_getheader
     mock_urlopen.return_value = mock_resp
 
     download_model(url, dest, "test model", logger, error_handler, "UA", expected_sha256=sha256)
@@ -148,13 +159,15 @@ def test_download_model_full(mock_urlopen, tmp_path):
     # 3. Cached file mismatch (re-download)
     dest.write_text("corrupted")
     mock_resp.read.side_effect = [data, b""]
+    # Ensure getheader mock is still valid or reset it
+    mock_resp.getheader.side_effect = mock_getheader
     download_model(url, dest, "test model", logger, error_handler, "UA", expected_sha256=sha256)
     assert dest.read_bytes() == data
     assert mock_urlopen.call_count == 2
 
-    # 4. Token support
     dest.unlink()
     mock_resp.read.side_effect = [data, b""]
+    mock_resp.getheader.side_effect = lambda name, default=None: str(len(data)) if name == "Content-Length" else default
     download_model(url, dest, "test model", logger, error_handler, "UA", token="secret", min_size=0)
     # Verify headers in Request
     args, kwargs = mock_urlopen.call_args

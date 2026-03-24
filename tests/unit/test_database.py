@@ -195,6 +195,7 @@ def test_database_partial_write_failure(db_path):
         with pytest.raises(sqlite3.OperationalError):
             db.insert_metadata({"filename": "2.jpg"})  # This triggers flush
 
+        mock_conn.commit.side_effect = None  # Clear for teardown
         assert mock_conn.commit.called
         # Buffer should still have the data if flush failed before clearing
         assert len(db.buffer) == 2
