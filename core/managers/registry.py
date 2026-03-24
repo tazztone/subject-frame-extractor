@@ -3,7 +3,7 @@ import logging
 import threading
 from collections import defaultdict
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Set
 
 import torch
 
@@ -17,6 +17,7 @@ class ModelRegistry:
 
     def __init__(self, logger: Optional["AppLogger"] = None):
         self._models: Dict[str, Any] = {}
+        self._failed_models: Set[str] = set()
         self._locks: Dict[str, threading.Lock] = defaultdict(threading.Lock)
         self._registry_lock = threading.RLock()
         self.logger = logger or logging.getLogger(__name__)
@@ -27,6 +28,9 @@ class ModelRegistry:
         with self._registry_lock:
             if key in self._models:
                 return self._models[key]
+
+            if key in self._failed_models:
+                return None
 
         with self._locks[key]:
             with self._registry_lock:
@@ -50,6 +54,8 @@ class ModelRegistry:
                     self.clear()
                     val = loader_fn()
                 else:
+                    with self._registry_lock:
+                        self._failed_models.add(key)
                     raise e
 
             with self._registry_lock:

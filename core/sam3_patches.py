@@ -5,9 +5,19 @@ Provides fallback implementations for SAM3 operations that require Triton,
 fixes image processing issues, and addresses deprecation warnings.
 """
 
+import hashlib
+import logging
+from pathlib import Path
+
 import cv2
 import numpy as np
 import torch
+
+logger = logging.getLogger(__name__)
+
+# Expected hash of SAM3_repo/sam3/model/sam3_video_predictor.py
+# to ensure manual patches align with the library version.
+SAM3_PREDICTOR_HASH = "a229bb66a1b3ee4a8db9b51b5a2b9b998cb7b87546cd3cf7612f31e42ce578db"
 
 
 def edt_triton_fallback(data):
@@ -147,7 +157,25 @@ def patch_sam3_resources():
 
 
 def apply_patches():
-    """Apply all monkey patches to SAM3."""
+    """Apply all monkey patches to SAM3 with version safety check."""
+    # 0. Version Safety Check
+    try:
+        import sam3.model.sam3_video_predictor as svp
+
+        predictor_path = Path(svp.__file__)
+        if predictor_path.exists():
+            with open(predictor_path, "rb") as f:
+                current_hash = hashlib.sha256(f.read()).hexdigest()
+
+            if current_hash != SAM3_PREDICTOR_HASH:
+                logger.warning(
+                    f"SAM3 version mismatch (hash: {current_hash[:8]}...). "
+                    f"Monkey patches may be unstable. Expected: {SAM3_PREDICTOR_HASH[:8]}...",
+                    extra={"component": "patcher"},
+                )
+    except Exception as e:
+        logger.debug(f"SAM3 version check skipped: {e}")
+
     # 1. Resource patches (pkg_resources deprecation)
     patch_sam3_resources()
 

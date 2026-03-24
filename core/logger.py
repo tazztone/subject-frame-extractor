@@ -97,6 +97,58 @@ class ColoredFormatter(logging.Formatter):
             record.levelname = original_levelname
 
 
+class JSONFormatter(logging.Formatter):
+    """Formatter that outputs structured JSON for each log record."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        """Formats the log record as a JSON string based on LogEvent."""
+        timestamp = datetime.fromtimestamp(record.created).isoformat()
+
+        # Build custom fields from 'extra' attributes
+        # Standard logging.LogRecord attributes to skip
+        skip_attrs = {
+            "name",
+            "msg",
+            "args",
+            "levelname",
+            "levelno",
+            "pathname",
+            "filename",
+            "module",
+            "exc_info",
+            "exc_text",
+            "stack_info",
+            "lineno",
+            "funcName",
+            "created",
+            "msecs",
+            "relativeCreated",
+            "thread",
+            "threadName",
+            "processName",
+            "process",
+            "message",
+        }
+
+        custom_fields = {k: v for k, v in record.__dict__.items() if k not in skip_attrs and not k.startswith("_")}
+
+        # Component is usually passed via 'extra'
+        component = custom_fields.pop("component", "system")
+
+        event = LogEvent(
+            timestamp=timestamp,
+            level=record.levelname,
+            message=record.getMessage(),
+            component=component,
+            error_type=record.exc_info[0].__name__ if record.exc_info else None,
+            stack_trace=self.formatException(record.exc_info) if record.exc_info else None,
+            custom_fields=custom_fields if custom_fields else None,
+        )
+
+        # We use LogEvent.model_dump_json() for clean serialization
+        return event.model_dump_json()
+
+
 # --- LOGGER ---
 
 
@@ -140,6 +192,9 @@ def setup_logging(
                 "()": ColoredFormatter,
                 "format": config.log_format,
             },
+            "json": {
+                "()": JSONFormatter,
+            },
         },
         "handlers": {
             "console": {
@@ -154,15 +209,22 @@ def setup_logging(
                 "formatter": "standard",
                 "level": "DEBUG",
             },
+            "structured": {
+                "class": "logging.FileHandler",
+                "filename": str(Path(config.logs_dir) / config.log_structured_path),
+                "encoding": "utf-8",
+                "formatter": "json",
+                "level": "INFO",
+            },
         },
         "loggers": {
             "": {  # Root logger
-                "handlers": ["console", "file"],
+                "handlers": ["console", "file", "structured"],
                 "level": "DEBUG",
                 "propagate": True,
             },
             "app_logger": {
-                "handlers": ["console", "file"],
+                "handlers": ["console", "file", "structured"],
                 "level": "DEBUG",
                 "propagate": False,
             },

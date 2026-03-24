@@ -4,9 +4,11 @@ I/O and File System Utilities for Subject Frame Extractor
 
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
+import tempfile
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -37,6 +39,28 @@ def validate_video_file(video_path: str) -> bool:
     except Exception as e:
         raise ValueError(f"Invalid video file: {e}")
     return True
+
+
+def atomic_write_text(path: Union[str, Path], content: str, encoding: str = "utf-8"):
+    """
+    Writes content to a file atomically by writing to a temporary file
+    and then renaming it to the target path.
+    """
+    path = Path(path)
+    # Ensure directory exists
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Create temp file in the SAME directory to ensure atomic rename (same filesystem)
+    fd, temp_path = tempfile.mkstemp(dir=str(path.parent), prefix=f"{path.name}.tmp")
+    try:
+        with os.fdopen(fd, "w", encoding=encoding) as f:
+            f.write(content)
+        # Final atomic replacement
+        os.replace(temp_path, str(path))
+    except Exception:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+        raise
 
 
 def sanitize_filename(name: str, config: "Config", max_length: Optional[int] = None) -> str:
