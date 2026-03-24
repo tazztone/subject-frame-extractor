@@ -133,9 +133,13 @@ def parse_file_to_skeleton(file_path):
     return result
 
 
-def generate_file_tree(root_dir):
+def generate_file_tree(
+    root_dir, root_name=".", title="Project Structure", use_links=False, prefix_path="", linkable_files=None
+):
     """Generate a visual file tree of the project."""
-    output = ["## Project Structure\n", "```text"]
+    output = [f"## {title}\n"]
+    if not use_links:
+        output.append("```text")
 
     exclude_dirs = {
         ".git",
@@ -155,7 +159,6 @@ def generate_file_tree(root_dir):
         "ux_reports",
         "test_results",
         ".pytest_cache",
-        "__pycache__",
     }
 
     exclude_files = {
@@ -172,47 +175,70 @@ def generate_file_tree(root_dir):
 
     tree_lines = []
 
-    def walk(directory, prefix=""):
+    def walk(directory, prefix="", rel_prefix=""):
         try:
             items = os.listdir(directory)
         except OSError:
             return
 
         items.sort()
-
-        # Filter items
         filtered_items = []
         for item in items:
-            if item in exclude_files:
+            if item in exclude_files or item.startswith("."):
                 continue
-            if item.startswith("."):  # Skip dotfiles mostly
-                continue
-
             path = os.path.join(directory, item)
             if os.path.isdir(path):
                 if item not in exclude_dirs:
                     filtered_items.append(item)
-            else:
-                # Include relevant source files
-                if item.endswith((".py", ".md", ".json", ".txt", ".cfg", ".yml", ".yaml", ".sh")):
-                    filtered_items.append(item)
+            elif item.endswith((".py", ".md", ".json", ".txt", ".cfg", ".yml", ".yaml", ".sh")):
+                filtered_items.append(item)
 
         count = len(filtered_items)
         for i, item in enumerate(filtered_items):
             path = os.path.join(directory, item)
+            current_rel_path = os.path.join(rel_prefix, item) if rel_prefix else item
+
             is_last = i == count - 1
             connector = "└── " if is_last else "├── "
 
-            tree_lines.append(f"{prefix}{connector}{item}")
+            if use_links and not os.path.isdir(path):
+                project_rel_path = os.path.join(prefix_path, current_rel_path) if prefix_path else current_rel_path
+
+                # Only link if the file is in the linkable_files list (has a skeleton)
+                if linkable_files is None or project_rel_path in linkable_files:
+                    anchor = f"-{project_rel_path.lower().replace('/', '').replace('.', '').replace(' ', '-')}"
+                    display_name = f"[`{item}`](#{anchor})"
+                else:
+                    display_name = item
+            else:
+                display_name = item
+
+            tree_lines.append(f"{prefix}{connector}{display_name}")
 
             if os.path.isdir(path):
                 extension = "    " if is_last else "│   "
-                walk(path, prefix + extension)
+                walk(path, prefix + extension, current_rel_path)
 
-    output.append(".")
+    output.append(root_name + "  ")
     walk(root_dir)
-    output.extend(tree_lines)
-    output.append("```\n")
+
+    # Process tree_lines for Markdown formatting if needed
+    if use_links:
+        # For links (interactive tree), we must use &nbsp; for the visual indent/tree connectors
+        # to ensure they align, but avoid replacing spaces inside the filename link itself.
+        def format_line(line):
+            if "[`" in line:
+                tree_visual, link_content = line.split("[`", 1)
+                return tree_visual.replace(" ", "&nbsp;") + "[`" + link_content + "  "
+            else:
+                return line.replace(" ", "&nbsp;") + "  "
+
+        formatted_lines = [format_line(line) for line in tree_lines]
+        output.extend(formatted_lines)
+    else:
+        output.extend(tree_lines)
+        output.append("```\n")
+
     return "\n".join(output)
 
 
@@ -254,20 +280,26 @@ def generate_skeleton_section(source_dirs):
         output.append(skeleton)
         output.append("```\n")
 
-    return "\n".join(output)
+    return "\n".join(output), files
 
 
 def main():
     print("Generating file tree...")
-    file_tree = generate_file_tree(".")
+    file_tree = generate_file_tree(".", ".", "Table of Contents", use_links=True)
 
     print("Generating code skeletons...")
     # Safe Whitelist of source directories
     source_dirs = ["app.py", "core", "ui", "scripts"]
-    main_skeleton = generate_skeleton_section(source_dirs)
+    main_skeleton, main_files = generate_skeleton_section(source_dirs)
+    main_files_set = {str(f) for f in main_files}
+    file_tree = generate_file_tree(".", ".", "Table of Contents", use_links=True, linkable_files=main_files_set)
 
     # Tests skeleton
-    tests_skeleton = generate_skeleton_section(["tests"])
+    tests_skeleton, tests_files = generate_skeleton_section(["tests"])
+    tests_files_set = {str(f) for f in tests_files}
+    tests_toc_str = generate_file_tree(
+        "tests", "tests", "Table of Contents", use_links=True, prefix_path="tests", linkable_files=tests_files_set
+    )
 
     # Generate AGENTS_CODE_REFERENCE.md
     header_main = """---
@@ -283,11 +315,11 @@ This file contains auto-generated code skeletons for the main application.
 For test references, see [TESTS_CODE_REFERENCE.md](TESTS_CODE_REFERENCE.md).
 For developer guidelines, see [AGENTS.md](../AGENTS.md).
 
-{file_tree}
+{toc}
 """
 
     Path("docs/AGENTS_CODE_REFERENCE.md").write_text(
-        header_main.format(file_tree=file_tree) + main_skeleton, encoding="utf-8"
+        header_main.format(toc=file_tree) + main_skeleton, encoding="utf-8"
     )
     print("Successfully updated AGENTS_CODE_REFERENCE.md")
 
@@ -302,11 +334,13 @@ description: Auto-generated code skeletons for the test suite.
 > Do not edit manually.
 
 This file contains auto-generated code skeletons for the test suite.
+
+{toc}
 """
 
     tests_ref_path = Path("docs/TESTS_CODE_REFERENCE.md")
     tests_ref_path.parent.mkdir(exist_ok=True)
-    tests_ref_path.write_text(header_tests + tests_skeleton, encoding="utf-8")
+    tests_ref_path.write_text(header_tests.format(toc=tests_toc_str) + tests_skeleton, encoding="utf-8")
     print(f"Successfully updated {tests_ref_path}")
 
 

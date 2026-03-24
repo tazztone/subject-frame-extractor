@@ -8,6 +8,133 @@ description: Auto-generated code skeletons for the test suite.
 > Do not edit manually.
 
 This file contains auto-generated code skeletons for the test suite.
+
+## Table of Contents
+
+tests  
+├──&nbsp;assets  
+├──&nbsp;[`conftest.py`](#-testsconftestpy)  
+├──&nbsp;e2e  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`e2e_run.py`](#-testse2ee2e_runpy)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_photo_cli.py`](#-testse2etest_photo_clipy)  
+│&nbsp;&nbsp;&nbsp;└──&nbsp;[`verify_simple.py`](#-testse2everify_simplepy)  
+├──&nbsp;integration  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`__init__.py`](#-testsintegration__init__py)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;e2e_output_debug  
+│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;frame_map.json  
+│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;mask_metadata.json  
+│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;masks  
+│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;previews  
+│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;progress.json  
+│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;run_config.json  
+│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;scene_seeds.json  
+│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;scenes.json  
+│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;thumbs  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_gpu_e2e.py`](#-testsintegrationtest_gpu_e2epy)  
+│&nbsp;&nbsp;&nbsp;└──&nbsp;[`test_real_workflow.py`](#-testsintegrationtest_real_workflowpy)  
+├──&nbsp;[`mock_app.py`](#-testsmock_apppy)  
+├──&nbsp;regression  
+├──&nbsp;research  
+├──&nbsp;results  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;e2e_output  
+│&nbsp;&nbsp;&nbsp;└──&nbsp;screenshots  
+├──&nbsp;[`test_application_state.py`](#-teststest_application_statepy)  
+├──&nbsp;ui  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`__init__.py`](#-testsui__init__py)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`ai_ux_analyzer.py`](#-testsuiai_ux_analyzerpy)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`conftest.py`](#-testsuiconftestpy)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;mock_photos  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_accessibility.py`](#-testsuitest_accessibilitypy)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_advanced_workflow.py`](#-testsuitest_advanced_workflowpy)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_ai_ux_audit.py`](#-testsuitest_ai_ux_auditpy)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_app_flow.py`](#-testsuitest_app_flowpy)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_bug_regression.py`](#-testsuitest_bug_regressionpy)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_component_verification.py`](#-testsuitest_component_verificationpy)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_export_flow.py`](#-testsuitest_export_flowpy)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_filters_real.py`](#-testsuitest_filters_realpy)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_full_workflow_mocked.py`](#-testsuitest_full_workflow_mockedpy)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_handler_contracts.py`](#-testsuitest_handler_contractspy)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_photo_flow.py`](#-testsuitest_photo_flowpy)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_session_lifecycle.py`](#-testsuitest_session_lifecyclepy)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_smoke_ui_init.py`](#-testsuitest_smoke_ui_initpy)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_ui_interactions.py`](#-testsuitest_ui_interactionspy)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_visual_regression.py`](#-testsuitest_visual_regressionpy)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_with_sample_data.py`](#-testsuitest_with_sample_datapy)  
+│&nbsp;&nbsp;&nbsp;└──&nbsp;[`visual_test_utils.py`](#-testsuivisual_test_utilspy)  
+└──&nbsp;unit  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`__init__.py`](#-testsunit__init__py)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_advanced_face.py`](#-testsunittest_advanced_facepy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_analysis.py`](#-testsunittest_analysispy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_analysis_manager.py`](#-testsunittest_analysis_managerpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_app.py`](#-testsunittest_apppy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_app_ui_logic.py`](#-testsunittest_app_ui_logicpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_batch_manager.py`](#-testsunittest_batch_managerpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_bug_fixes.py`](#-testsunittest_bug_fixespy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_cli.py`](#-testsunittest_clipy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_config.py`](#-testsunittest_configpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_core.py`](#-testsunittest_corepy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_database.py`](#-testsunittest_databasepy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_dedup.py`](#-testsunittest_deduppy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_entropy.py`](#-testsunittest_entropypy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_enums.py`](#-testsunittest_enumspy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_error_handling.py`](#-testsunittest_error_handlingpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_events.py`](#-testsunittest_eventspy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_export.py`](#-testsunittest_exportpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_export_advanced.py`](#-testsunittest_export_advancedpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_extraction.py`](#-testsunittest_extractionpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_extraction_manager.py`](#-testsunittest_extraction_managerpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_face_clustering.py`](#-testsunittest_face_clusteringpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_face_operators.py`](#-testsunittest_face_operatorspy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_filtering.py`](#-testsunittest_filteringpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_fingerprint.py`](#-testsunittest_fingerprintpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_gallery_utils.py`](#-testsunittest_gallery_utilspy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_handlers.py`](#-testsunittest_handlerspy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_image_utils.py`](#-testsunittest_image_utilspy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_integration.py`](#-testsunittest_integrationpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_integration_sam3_patches.py`](#-testsunittest_integration_sam3_patchespy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_integration_smoke.py`](#-testsunittest_integration_smokepy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_io_utils.py`](#-testsunittest_io_utilspy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_launch_config.py`](#-testsunittest_launch_configpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_logger.py`](#-testsunittest_loggerpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_managers.py`](#-testsunittest_managerspy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_managers_extended.py`](#-testsunittest_managers_extendedpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_mask_operators.py`](#-testsunittest_mask_operatorspy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_mask_propagator_logic.py`](#-testsunittest_mask_propagator_logicpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_models.py`](#-testsunittest_modelspy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_niqe_operator.py`](#-testsunittest_niqe_operatorpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_operators.py`](#-testsunittest_operatorspy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_operators_registry.py`](#-testsunittest_operators_registrypy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_phase1_logic.py`](#-testsunittest_phase1_logicpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_phase2_logic.py`](#-testsunittest_phase2_logicpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_photo_utils.py`](#-testsunittest_photo_utilspy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_pipeline_result_schemas.py`](#-testsunittest_pipeline_result_schemaspy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_pipelines.py`](#-testsunittest_pipelinespy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_pipelines_extended.py`](#-testsunittest_pipelines_extendedpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_pipelines_wrapper.py`](#-testsunittest_pipelines_wrapperpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_progress.py`](#-testsunittest_progresspy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_quality_score.py`](#-testsunittest_quality_scorepy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_sam21.py`](#-testsunittest_sam21py)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_sam21_wrapper.py`](#-testsunittest_sam21_wrapperpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_sam3_manager.py`](#-testsunittest_sam3_managerpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_sam3_wrapper.py`](#-testsunittest_sam3_wrapperpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_scene_detection.py`](#-testsunittest_scene_detectionpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_scene_utils.py`](#-testsunittest_scene_utilspy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_scene_utils_helpers.py`](#-testsunittest_scene_utils_helperspy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_session.py`](#-testsunittest_sessionpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_shared.py`](#-testsunittest_sharedpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_sharpness.py`](#-testsunittest_sharpnesspy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_signatures.py`](#-testsunittest_signaturespy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_simple_cv_operators.py`](#-testsunittest_simple_cv_operatorspy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_smoke.py`](#-testsunittest_smokepy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_subject_masker_coverage.py`](#-testsunittest_subject_masker_coveragepy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_subject_masker_simple.py`](#-testsunittest_subject_masker_simplepy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_system_health.py`](#-testsunittest_system_healthpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_tracker_factory.py`](#-testsunittest_tracker_factorypy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_tracker_registry.py`](#-testsunittest_tracker_registrypy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_ui_unit.py`](#-testsunittest_ui_unitpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_utils.py`](#-testsunittest_utilspy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_viz.py`](#-testsunittest_vizpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;└──&nbsp;[`test_xmp_writer.py`](#-testsunittest_xmp_writerpy)  
 ## Code Skeleton Reference
 
 ### `📄 tests/conftest.py`
@@ -98,6 +225,134 @@ class TestPhotoCLI:
 def verify_ui_simple(): ...
 ```
 
+### `📄 tests/integration/test_gpu_e2e.py`
+
+```python
+"""GPU E2E Tests - Real inference with actual models."""
+pytestmark = [pytest.mark.gpu_e2e, pytest.mark.slow]
+def _create_test_image(width=256, height=256):
+    """Create a simple test image with a rectangle (simulates an object)."""
+def _create_test_image_with_face(width=256, height=256):
+    """Create a test image with a face-like pattern."""
+def _create_test_frames_dir(tmp_path, num_frames=5, width=256, height=256):
+    """Create a directory with test frames for SAM3 video processing."""
+def _is_sam3_available():
+    """Check if SAM3 is properly installed and can be imported."""
+requires_sam3 = pytest.mark.skipif(not _is_sam3_available(), reason='SAM3 not...
+@pytest.fixture
+def test_image():
+    """Provides a simple test image."""
+@pytest.fixture
+def test_image_with_face():
+    """Provides a test image with face-like features."""
+@pytest.fixture
+def test_frames_dir(tmp_path):
+    """Provides a directory with test frames for video processing."""
+class TestCUDAAvailability:
+    """Verify CUDA is available and working before running GPU tests."""
+    def test_cuda_available(self):
+        """CUDA must be available for GPU E2E tests."""
+    def test_cuda_memory_available(self):
+        """Verify sufficient GPU memory (~4GB needed)."""
+class TestSAM3Inference:
+    """Real SAM3 inference tests - catches BFloat16 and other runtime errors."""
+    @requires_sam3
+    def test_sam3_wrapper_initialization(self, tmp_path):
+        """SAM3Wrapper can be initialized without errors."""
+    @requires_sam3
+    def test_sam3_init_video(self, test_frames_dir):
+        """SAM3 init_video() initializes inference state correctly."""
+    @requires_sam3
+    def test_sam3_add_bbox_prompt(self, test_frames_dir):
+        """SAM3 add_bbox_prompt() returns valid mask."""
+    @requires_sam3
+    def test_sam3_propagate_forward(self, test_frames_dir):
+        """SAM3 propagate() forward generator yields valid results."""
+    @requires_sam3
+    def test_sam3_propagate_bidirectional(self, tmp_path):
+        """SAM3 propagate() works bidirectionally from middle frame."""
+    @requires_sam3
+    def test_sam3_clear_prompts(self, test_frames_dir):
+        """SAM3 clear_prompts() resets session state."""
+class TestInsightFaceInference:
+    """Real InsightFace inference tests."""
+    def test_insightface_initialization(self, tmp_path):
+        """InsightFace can be initialized."""
+    def test_face_detection_on_image(self, test_image_with_face, tmp_path):
+        """InsightFace can process an image without errors."""
+class TestPipelineE2E:
+    """End-to-end pipeline tests with real execution."""
+    def test_extraction_pipeline_creates_output(self, tmp_path):
+        """ExtractionPipeline initializes correctly with real config."""
+    def test_analysis_pipeline_initializes_with_real_managers(self, tmp_path):
+        """AnalysisPipeline initializes with real ThumbnailManager and ModelRegistry."""
+class TestVideoE2E:
+    """End-to-end tests with real video processing."""
+    @pytest.fixture
+    def test_video_path(self, tmp_path):
+        """Create a small test video (5 frames, 256x256)."""
+    @pytest.fixture
+    def test_frames_dir(self, tmp_path, test_video_path):
+        """Create directory with extracted frames and required files."""
+    def test_extraction_pipeline_on_real_video(self, test_video_path, tmp_path):
+        """ExtractionPipeline can process a real video file."""
+    def test_pre_analysis_with_sam3(self, test_frames_dir, tmp_path):
+        """Pre-analysis can run SAM3 on extracted frames."""
+class TestMaskPropagatorE2E:
+    """Tests for MaskPropagator with real SAM3 inference."""
+    @requires_sam3
+    def test_mask_propagator_propagate(self, tmp_path):
+        """MaskPropagator.propagate() works with new SAM3 API."""
+    @requires_sam3
+    def test_mask_propagator_bidirectional(self, tmp_path):
+        """MaskPropagator.propagate() works bidirectionally from middle frame."""
+class TestOperatorE2E:
+    """Tests for quality metric calculation using the Operator framework."""
+    def test_run_operators_real(self, test_image, tmp_path):
+        """Standard operators can be executed on a real image."""
+    def test_niqe_operator_real(self, test_image, tmp_path):
+        """NIQE operator can be executed (requires pyiqa and GPU)."""
+class TestExportE2E:
+    """E2E tests for export pipeline."""
+    def test_export_pipeline_initialization(self, tmp_path):
+        """ExportPipeline can be initialized with real config."""
+    def test_export_with_real_frames(self, tmp_path):
+        """Export can process frames from a real directory."""
+    def test_export_dry_run_mode(self, tmp_path):
+        """Dry run export mode works without creating files."""
+class TestCancellationE2E:
+    """E2E tests for cancel operations during pipeline execution."""
+    @requires_sam3
+    def test_propagation_with_cancel_event(self, tmp_path):
+        """MaskPropagator handles cancel event during propagation."""
+    def test_analysis_pipeline_cancel(self, tmp_path):
+        """AnalysisPipeline handles cancel event gracefully."""
+class TestMediaPipeLandmarkerE2E:
+    """E2E tests for MediaPipe Face Landmarker."""
+    def test_face_landmarker_import(self):
+        """MediaPipe face landmarker can be imported."""
+    def test_face_landmarker_model_download(self, tmp_path):
+        """Face landmarker model can be downloaded."""
+class TestLargeVideoE2E:
+    """E2E tests for handling larger videos/frame sequences."""
+    def test_many_frames_processing(self, tmp_path):
+        """Test processing a larger number of frames."""
+    @requires_sam3
+    def test_sam3_with_many_frames(self, tmp_path):
+        """SAM3 can process a larger sequence."""
+class TestMaskGenerationE2E:
+    """E2E tests for mask generation to catch silent failures."""
+    @requires_sam3
+    def test_get_mask_for_bbox_e2e(self, test_frames_dir, tmp_path):
+        """Test SeedSelector._get_mask_for_bbox with real SAM3."""
+    @requires_sam3
+    def test_identity_first_seed_e2e(self, test_image_with_face, tmp_path):
+        """Test 'By Face' seeding strategy with real models."""
+    @requires_sam3
+    def test_pre_analysis_mask_generation_e2e(self, test_frames_dir, tmp_path):
+        """Test the full pre-analysis flow including mask generation."""
+```
+
 ### `📄 tests/integration/test_real_workflow.py`
 
 ```python
@@ -114,6 +369,7 @@ def test_real_end_to_end_workflow(tmp_path):
 ```python
 mock_torch = MagicMock(name='torch')
 mock_torch.cuda.is_available.return_value = False
+sys.modules['torch'] = mock_torch
 mock_torch.__version__ = "<REDACTED_STRING>"
 mock_torch.nn.Module = MagicMock
 mock_torch.Tensor = MagicMock
@@ -138,12 +394,6 @@ core.photo_utils.ingest_folder = mock_ingest_folder
 core.xmp_writer.export_xmps_for_photos = mock_export_xmps_for_photos
 core.utils.download_model = MagicMock()
 core.managers.download_model = MagicMock()
-```
-
-### `📄 tests/smoke_test_ui_init.py`
-
-```python
-def test_ui_init(): ...
 ```
 
 ### `📄 tests/test_application_state.py`
@@ -247,12 +497,9 @@ def app_server_url(app_server):
     """Returns the URL of the running app server."""
 class TestAdvancedWorkflow:
     """Advanced E2E tests covering edge cases, settings changes, and error handling."""
-    def test_navigation_restrictions(self, page: Page, app_server_url):
-        """Verify that users cannot proceed to later stages without completing earlier o..."""
-    def test_extraction_settings_change(self, page: Page, app_server_url):
-        """Verify that changing extraction settings works in the UI."""
-    def test_filtering_ui(self, page: Page, app_server_url):
-        """Test the Metrics/Filtering tab UI controls."""
+    def test_navigation_restrictions(self, page: Page, app_server_url): ...
+    def test_extraction_settings_change(self, page: Page, app_server_url): ...
+    def test_filtering_ui(self, page: Page, app_server_url): ...
 ```
 
 ### `📄 tests/ui/test_ai_ux_audit.py`
@@ -427,8 +674,7 @@ pytestmark = pytest.mark.e2e
 SAMPLE_VIDEO = "<REDACTED_STRING>"
 class TestRealFilters:
     @pytest.fixture(autouse=True)
-    def setup_with_analysis(self, page: Page, app_server):
-        """Setup state: Extracted and Pre-Analyzed sample video."""
+    def setup_with_analysis(self, page: Page, app_server): ...
     def test_apply_filter_reduces_count(self, page: Page):
         """Test that increasing a filter threshold reduces the number of kept frames."""
     def test_deduplication_toggle(self, page: Page):
@@ -497,6 +743,12 @@ class TestWorkflowState:
         """Verify Subject tab becomes usable after extraction."""
     def test_workflow_progress_tracking(self, page: Page, app_server):
         """Verify workflow progress is tracked."""
+```
+
+### `📄 tests/ui/test_smoke_ui_init.py`
+
+```python
+def test_ui_init(): ...
 ```
 
 ### `📄 tests/ui/test_ui_interactions.py`
@@ -610,6 +862,120 @@ def cleanup_diffs():
     """Remove all temporary diff screenshots."""
 ```
 
+### `📄 tests/unit/test_advanced_face.py`
+
+```python
+def test_face_similarity_success():
+    """Test successful face similarity calculation."""
+def test_face_similarity_missing_params():
+    """Test missing parameters."""
+def test_face_prominence_calculation():
+    """Test face prominence based on area and centrality."""
+def test_face_prominence_off_center():
+    """Test face prominence when face is at the edge."""
+```
+
+### `📄 tests/unit/test_analysis.py`
+
+```python
+@pytest.fixture
+def mock_logger(): ...
+@pytest.fixture
+def mock_config(tmp_path): ...
+@patch('core.managers.analysis.initialize_analysis_models')
+@patch('core.managers.analysis.SubjectMasker')
+@patch('core.managers.analysis.save_scene_seeds')
+def test_pre_analysis_pipeline(mock_save, mock_masker, mock_init, mock_logger, mock_config, tmp_path): ...
+@patch('core.managers.analysis.initialize_analysis_models')
+@patch('core.managers.analysis.SubjectMasker')
+@patch('core.managers.analysis.Database')
+@patch('core.managers.analysis.create_frame_map')
+def test_analysis_pipeline_full(mock_cfm, mock_db, mock_masker, mock_init, mock_logger, mock_config, tmp_path): ...
+@patch('core.managers.analysis.initialize_analysis_models')
+@patch('core.managers.analysis.Database')
+def test_analysis_pipeline_only(mock_db, mock_init, mock_logger, mock_config, tmp_path): ...
+```
+
+### `📄 tests/unit/test_analysis_manager.py`
+
+```python
+@pytest.fixture
+def mock_deps(): ...
+@pytest.fixture
+def analysis_params(): ...
+@patch('core.managers.analysis.Database')
+def test_analysis_pipeline_initialization(mock_db, mock_deps, analysis_params): ...
+def test_load_scenes_failure(tmp_path): ...
+def test_load_scenes_success(tmp_path): ...
+@patch('core.managers.analysis.SubjectMasker')
+@patch('core.managers.analysis.initialize_analysis_models')
+def test_run_full_analysis_success(mock_init_models, mock_masker_cls, mock_deps, analysis_params, tmp_path): ...
+@patch('core.managers.analysis.run_operators')
+@patch('core.managers.analysis.initialize_analysis_models')
+def test_run_analysis_only_success(mock_init_models, mock_run_ops, mock_deps, analysis_params, tmp_path): ...
+@patch('core.managers.analysis.initialize_analysis_models')
+@patch('core.managers.analysis.SubjectMasker')
+def test_pre_analysis_run_cancellation(mock_masker_cls, mock_init_models, mock_deps, analysis_params, tmp_path): ...
+@patch('core.managers.analysis.initialize_analysis_models')
+def test_analysis_run_resume_logic(mock_init_models, mock_deps, analysis_params, tmp_path): ...
+@patch('core.managers.analysis.cv2.imread')
+@patch('core.managers.analysis.initialize_analysis_models')
+def test_process_reference_face_logic(mock_init_models, mock_imread, mock_deps, analysis_params, tmp_path): ...
+@patch('core.managers.analysis.run_operators')
+@patch('core.managers.analysis.Database')
+def test_process_single_frame_complex_meta(mock_db, mock_run_ops, mock_deps, analysis_params, tmp_path): ...
+@patch('core.managers.analysis.Database')
+def test_analysis_loop_batch_error(mock_db, mock_deps, analysis_params, tmp_path): ...
+@patch('core.managers.analysis.create_frame_map')
+def test_image_folder_analysis_trigger(mock_create_map, mock_deps, analysis_params, tmp_path): ...
+@patch('core.managers.analysis.Database')
+def test_filter_completed_scenes(mock_db, mock_deps, analysis_params): ...
+@patch('core.managers.analysis.Database')
+def test_save_progress_bulk(mock_db, mock_deps, analysis_params, tmp_path): ...
+@patch('core.managers.analysis.initialize_analysis_models')
+@patch('core.managers.analysis.SubjectMasker')
+@patch('core.managers.analysis.save_scene_seeds')
+def test_pre_analysis_pipeline_run(mock_save_seeds, mock_masker_cls, mock_init_models, mock_deps, analysis_params, tmp_path): ...
+@patch('core.managers.analysis.Database')
+def test_niqe_initialization_failures(mock_db, mock_deps, analysis_params): ...
+@patch('core.managers.analysis.Database')
+def test_save_progress_bulk_read_failure(mock_db, mock_deps, analysis_params, tmp_path): ...
+@patch('core.managers.analysis.Database')
+def test_process_reference_face_failures(mock_db, mock_deps, analysis_params, tmp_path): ...
+@patch('core.managers.analysis.Database')
+def test_process_single_frame_edge_cases(mock_db, mock_deps, analysis_params, tmp_path): ...
+@patch('core.managers.analysis._load_scenes')
+def test_image_folder_analysis_resume(mock_load, mock_deps, analysis_params, tmp_path): ...
+def test_pre_analysis_process_single_scene(mock_deps, analysis_params, tmp_path): ...
+def test_initialize_niqe_success(mock_deps, analysis_params): ...
+@patch('core.managers.analysis.Database')
+def test_process_single_frame_full_meta(mock_db, mock_deps, analysis_params, tmp_path): ...
+```
+
+### `📄 tests/unit/test_app.py`
+
+```python
+project_root = str(Path(__file__).parent.parent.parent)
+def test_parse_args(): ...
+def test_cleanup_models(): ...
+@patch('app.AppUI')
+@patch('app.setup_logging')
+@patch('app.AppLogger')
+@patch('app.ModelRegistry')
+@patch('app.ThumbnailManager')
+@patch('app.Config')
+def test_main_success(mock_config, mock_thumb, mock_registry, mock_logger, mock_setup_logging, mock_ui): ...
+@patch('app.AppUI')
+@patch('app.setup_logging')
+@patch('app.AppLogger')
+def test_main_keyboard_interrupt(mock_logger, mock_setup, mock_ui): ...
+@patch('app.AppUI')
+@patch('app.setup_logging')
+@patch('app.AppLogger')
+@patch('sys.exit')
+def test_main_exception(mock_exit, mock_logger, mock_setup, mock_ui): ...
+```
+
 ### `📄 tests/unit/test_app_ui_logic.py`
 
 ```python
@@ -650,9 +1016,19 @@ class TestAppUI:
 ### `📄 tests/unit/test_batch_manager.py`
 
 ```python
-def test_batch_manager_add(): ...
-def test_batch_manager_processing(): ...
-def test_batch_manager_failure(): ...
+@pytest.fixture
+def bm(): ...
+def test_batch_manager_add(bm): ...
+def test_batch_manager_get_queue_snapshot(bm): ...
+def test_batch_manager_get_status_list(bm): ...
+def test_batch_manager_clear_completed(bm): ...
+def test_batch_manager_clear_all(bm): ...
+def test_batch_manager_update_progress(bm): ...
+def test_batch_manager_set_status(bm): ...
+def test_batch_manager_processing(bm): ...
+def test_batch_manager_failure(bm): ...
+def test_batch_manager_stop_processing(bm): ...
+def test_batch_manager_start_empty(bm): ...
 ```
 
 ### `📄 tests/unit/test_bug_fixes.py`
@@ -673,6 +1049,70 @@ class TestFilterSlidersFix:
     """Tests for filter slider separation (Bug 4)."""
     def test_seed_metrics_score_range(self):
         """Seed metrics score should be in 0-20 range (NIQE + face composite)."""
+```
+
+### `📄 tests/unit/test_cli.py`
+
+```python
+project_root = str(Path(__file__).parent.parent.parent)
+@pytest.fixture
+def runner(): ...
+@pytest.fixture
+def mock_pipeline_result(): ...
+@patch('core.cli_commands.execute_extraction')
+@patch('core.cli_commands._setup_runtime')
+def test_extract_video(mock_setup, mock_execute, runner, tmp_path, mock_pipeline_result): ...
+@patch('core.cli_commands.execute_extraction')
+@patch('core.cli_commands._setup_runtime')
+def test_extract_folder(mock_setup, mock_execute, runner, tmp_path, mock_pipeline_result): ...
+@patch('core.cli_commands.execute_analysis')
+@patch('core.cli_commands.execute_propagation')
+@patch('core.cli_commands.execute_pre_analysis')
+@patch('core.cli_commands._setup_runtime')
+@patch('torch.cuda.is_available', return_value=False)
+def test_analyze(mock_cuda, mock_setup, mock_pre, mock_prop, mock_analysis, runner, tmp_path, mock_pipeline_result): ...
+def test_status_non_existent(runner, tmp_path): ...
+def test_status_exists(runner, tmp_path): ...
+@patch('core.cli_commands._setup_runtime')
+@patch('core.cli_commands.Database')
+@patch('core.cli_commands.apply_all_filters_vectorized')
+def test_filter(mock_apply, mock_db, mock_setup, runner, tmp_path): ...
+@pytest.mark.parametrize('command', ['extract', 'analyze', 'status', 'filter'])
+def test_cli_help_commands(runner, command): ...
+def test_extract_invalid_source(runner, tmp_path): ...
+@patch('core.cli_commands.execute_analysis')
+@patch('core.cli_commands.execute_pre_analysis')
+@patch('core.cli_commands._setup_runtime')
+@patch('torch.cuda.is_available', return_value=False)
+def test_analyze_folder(mock_cuda, mock_setup, mock_pre, mock_analysis, runner, tmp_path, mock_pipeline_result): ...
+```
+
+### `📄 tests/unit/test_config.py`
+
+```python
+def test_config_defaults():
+    """Test that Config initializes with expected default values."""
+def test_config_env_overrides():
+    """Test that environment variables correctly override default values."""
+def test_config_has_sam2_checkpoint_url():
+    """Test that sam2_checkpoint_url is present and points to a SAM2.1 model."""
+def test_config_default_tracker_is_sam2():
+    """Test that the default tracker is now SAM2."""
+def test_config_invalid_quality_weights():
+    """Test that Config raises a validation error if all quality weights are zero."""
+@patch('core.config.Path.mkdir')
+@patch('core.config.Path.touch')
+@patch('core.config.Path.unlink')
+def test_config_path_validation(mock_unlink, mock_touch, mock_mkdir):
+    """Test that Config correctly validates and creates directories on initialization."""
+@patch('core.config.Path.mkdir')
+@patch('core.config.Path.touch')
+def test_config_path_validation_failure(mock_touch, mock_mkdir):
+    """Test that Config handles directory writability failures gracefully (prints wa..."""
+def test_config_json_source():
+    """Test loading configuration from a JSON file."""
+def test_quality_weights_property():
+    """Test the quality_weights property helper."""
 ```
 
 ### `📄 tests/unit/test_core.py`
@@ -709,13 +1149,17 @@ def db_path(tmp_path): ...
 def db(db_path): ...
 def test_initial_schema(db, db_path): ...
 def test_insert_metadata_and_flush(db): ...
+def test_insert_metadata_replaces_duplicate(db): ...
 def test_insert_metadata_batch_flush(db): ...
 def test_clear_metadata(db): ...
 def test_count_errors(db): ...
-def test_migration_adds_column(tmp_path): ...
 def test_metrics_json_parsing(db): ...
-def test_mask_empty_conversion(db): ...
-def test_wal_mode_enabled(db): ...
+def test_load_all_metadata_json_error(db): ...
+def test_error_handler_integration(db_path): ...
+def test_flush_exception_logging(db_path): ...
+def test_close_calls_flush(db_path): ...
+def test_migration_v1_v2_logic(tmp_path):
+    """Test the migration logic in db_schema directly."""
 ```
 
 ### `📄 tests/unit/test_dedup.py`
@@ -730,6 +1174,30 @@ def test_dedup_phash_no_replacement(sample_frames_for_dedup, mock_thumbnail_mana
 def test_dedup_disabled(sample_frames_for_dedup, mock_thumbnail_manager, mock_config): ...
 def test_dedup_threshold(sample_frames_for_dedup, mock_thumbnail_manager, mock_config): ...
 def test_run_batched_lpips(mock_thumbnail_manager): ...
+```
+
+### `📄 tests/unit/test_entropy.py`
+
+```python
+def test_entropy_solid_color():
+    """Entropy of a solid color image should be 0."""
+def test_entropy_random_noise():
+    """Entropy of random noise should be high."""
+def test_entropy_with_mask():
+    """Test entropy with a mask that isolates a specific region."""
+def test_entropy_empty_mask():
+    """Test entropy when the mask excludes all pixels."""
+def test_entropy_error_handling():
+    """Test error handling with invalid input."""
+```
+
+### `📄 tests/unit/test_enums.py`
+
+```python
+def test_scene_status():
+    """Test SceneStatus enum."""
+def test_propagation_direction():
+    """Test PropagationDirection enum."""
 ```
 
 ### `📄 tests/unit/test_error_handling.py`
@@ -803,6 +1271,17 @@ class TestErrorSeverityAndRecoveryStrategy:
         """Test RecoveryStrategy enum values exist."""
 ```
 
+### `📄 tests/unit/test_events.py`
+
+```python
+def test_extraction_event_validation():
+    """Test ExtractionEvent validation logic."""
+def test_pre_analysis_event_validation():
+    """Test PreAnalysisEvent validation logic."""
+def test_ui_event_extra_ignore():
+    """Test that UIEvent ignores extra fields as configured."""
+```
+
 ### `📄 tests/unit/test_export.py`
 
 ```python
@@ -870,6 +1349,75 @@ class TestExportAdvanced:
         """Test handling of empty masks."""
 ```
 
+### `📄 tests/unit/test_extraction.py`
+
+```python
+@pytest.fixture
+def mock_logger(): ...
+@pytest.fixture
+def mock_config(tmp_path): ...
+def test_process_ffmpeg_stream(mock_logger, mock_config): ...
+def test_process_ffmpeg_showinfo(mock_logger): ...
+@patch('core.managers.extraction.subprocess.Popen')
+@patch('core.utils.detect_hwaccel', return_value=(None, None))
+def test_run_ffmpeg_extraction(mock_detect, mock_popen, mock_logger, mock_config, tmp_path): ...
+@patch('core.managers.extraction.run_ffmpeg_extraction')
+@patch('core.managers.extraction.VideoManager')
+def test_extraction_pipeline_run_video(mock_vm_cls, mock_run_ffmpeg, mock_logger, mock_config, tmp_path): ...
+@patch('core.managers.extraction.ingest_folder')
+@patch('core.managers.extraction.is_image_folder', return_value=True)
+def test_extraction_pipeline_run_folder(mock_is_img, mock_ingest, mock_logger, mock_config, tmp_path): ...
+```
+
+### `📄 tests/unit/test_extraction_manager.py`
+
+```python
+@pytest.fixture
+def mock_deps(): ...
+@pytest.fixture
+def analysis_params(): ...
+def test_process_ffmpeg_stream(mock_deps): ...
+def test_process_ffmpeg_showinfo(): ...
+@patch('core.managers.extraction.subprocess.Popen')
+@patch('core.managers.extraction.detect_hwaccel', create=True)
+def test_run_ffmpeg_extraction_success(mock_detect, mock_popen_cls, mock_deps, analysis_params, tmp_path): ...
+@patch('core.managers.extraction.is_image_folder', return_value=True)
+@patch('core.managers.extraction.ingest_folder')
+def test_extraction_pipeline_image_folder(mock_ingest, mock_is_img, mock_deps, analysis_params, tmp_path): ...
+@patch('core.managers.extraction.VideoManager')
+@patch('core.managers.extraction.run_ffmpeg_extraction')
+def test_extraction_pipeline_video(mock_run_ffmpeg, mock_vid_manager_cls, mock_deps, analysis_params, tmp_path): ...
+@patch('core.managers.extraction.subprocess.Popen')
+@patch('core.managers.extraction.detect_hwaccel', create=True)
+def test_run_ffmpeg_extraction_resume(mock_detect, mock_popen_cls, mock_deps, analysis_params, tmp_path): ...
+@patch('core.managers.extraction.subprocess.Popen')
+def test_run_ffmpeg_extraction_cancellation(mock_popen_cls, mock_deps, analysis_params, tmp_path): ...
+```
+
+### `📄 tests/unit/test_face_clustering.py`
+
+```python
+def test_cluster_faces_empty():
+    """Test clustering with no faces."""
+@patch('core.face_clustering.DBSCAN')
+def test_cluster_faces_logic(mock_dbscan):
+    """Test clustering logic with mocked DBSCAN."""
+@patch('core.face_clustering.cv2.VideoCapture')
+@patch('core.face_clustering.cv2.imread')
+@patch('core.face_clustering.cv2.imwrite')
+def test_get_cluster_representative(mock_imwrite, mock_imread, mock_video_capture):
+    """Test finding and saving a cluster representative."""
+def test_get_cluster_representative_not_found():
+    """Test representative selection when cluster label is missing."""
+@patch('core.face_clustering.cv2.VideoCapture')
+@patch('core.face_clustering.cv2.imread')
+def test_get_cluster_representative_thumb_fail(mock_imread, mock_video_capture):
+    """Test representative selection when thumbnail read fails."""
+@patch('core.face_clustering.cv2.VideoCapture')
+def test_get_cluster_representative_read_fail(mock_video_capture):
+    """Test representative selection when video frame read fails."""
+```
+
 ### `📄 tests/unit/test_face_operators.py`
 
 ```python
@@ -914,17 +1462,36 @@ class TestFiltering:
     @patch('core.filtering.Database')
     @patch('pathlib.Path.exists', return_value=True)
     def test_load_and_prep_filter_data(self, mock_exists, mock_db_cls, mock_config, sample_frames): ...
-    @patch('core.filtering.plt')
+    @patch('core.operators.viz.plt')
     def test_histogram_svg(self, mock_plt, mock_logger): ...
     def test_extract_metric_arrays(self, sample_frames, mock_config): ...
-    @patch('core.filtering.get_lpips_metric')
+    @patch('core.operators.dedup.get_lpips_metric')
     @patch('torch.stack')
     def test_run_batched_lpips(self, mock_stack, mock_get_lpips, sample_frames, mock_thumbnail_manager): ...
     def test_apply_deduplication_filter_phash(self, sample_frames, mock_config): ...
-    @patch('core.filtering._run_batched_lpips')
+    @patch('core.operators.dedup._run_batched_lpips')
     def test_apply_deduplication_filter_lpips(self, mock_run_lpips, sample_frames, mock_config, mock_thumbnail_manager): ...
     def test_apply_metric_filters(self, sample_frames, mock_config): ...
     def test_apply_all_filters_vectorized(self, sample_frames, mock_config): ...
+```
+
+### `📄 tests/unit/test_fingerprint.py`
+
+```python
+def test_run_fingerprint_init():
+    """Test RunFingerprint initialization and post_init."""
+@patch('os.stat')
+@patch('os.path.abspath')
+def test_create_fingerprint(mock_abspath, mock_stat):
+    """Test create_fingerprint function."""
+def test_save_load_fingerprint(tmp_path):
+    """Test saving and loading fingerprint."""
+def test_load_fingerprint_none():
+    """Test loading non-existent fingerprint."""
+def test_load_fingerprint_invalid_json(tmp_path):
+    """Test loading invalid fingerprint JSON."""
+def test_fingerprints_match():
+    """Test fingerprints_match logic."""
 ```
 
 ### `📄 tests/unit/test_gallery_utils.py`
@@ -956,134 +1523,6 @@ class TestGalleryUtils:
     def test_auto_set_thresholds_empty(self): ...
 ```
 
-### `📄 tests/unit/test_gpu_e2e.py`
-
-```python
-"""GPU E2E Tests - Real inference with actual models."""
-pytestmark = [pytest.mark.gpu_e2e, pytest.mark.slow]
-def _create_test_image(width=256, height=256):
-    """Create a simple test image with a rectangle (simulates an object)."""
-def _create_test_image_with_face(width=256, height=256):
-    """Create a test image with a face-like pattern."""
-def _create_test_frames_dir(tmp_path, num_frames=5, width=256, height=256):
-    """Create a directory with test frames for SAM3 video processing."""
-def _is_sam3_available():
-    """Check if SAM3 is properly installed and can be imported."""
-requires_sam3 = pytest.mark.skipif(not _is_sam3_available(), reason='SAM3 not...
-@pytest.fixture
-def test_image():
-    """Provides a simple test image."""
-@pytest.fixture
-def test_image_with_face():
-    """Provides a test image with face-like features."""
-@pytest.fixture
-def test_frames_dir(tmp_path):
-    """Provides a directory with test frames for video processing."""
-class TestCUDAAvailability:
-    """Verify CUDA is available and working before running GPU tests."""
-    def test_cuda_available(self):
-        """CUDA must be available for GPU E2E tests."""
-    def test_cuda_memory_available(self):
-        """Verify sufficient GPU memory (~4GB needed)."""
-class TestSAM3Inference:
-    """Real SAM3 inference tests - catches BFloat16 and other runtime errors."""
-    @requires_sam3
-    def test_sam3_wrapper_initialization(self, tmp_path):
-        """SAM3Wrapper can be initialized without errors."""
-    @requires_sam3
-    def test_sam3_init_video(self, test_frames_dir):
-        """SAM3 init_video() initializes inference state correctly."""
-    @requires_sam3
-    def test_sam3_add_bbox_prompt(self, test_frames_dir):
-        """SAM3 add_bbox_prompt() returns valid mask."""
-    @requires_sam3
-    def test_sam3_propagate_forward(self, test_frames_dir):
-        """SAM3 propagate() forward generator yields valid results."""
-    @requires_sam3
-    def test_sam3_propagate_bidirectional(self, tmp_path):
-        """SAM3 propagate() works bidirectionally from middle frame."""
-    @requires_sam3
-    def test_sam3_clear_prompts(self, test_frames_dir):
-        """SAM3 clear_prompts() resets session state."""
-class TestInsightFaceInference:
-    """Real InsightFace inference tests."""
-    def test_insightface_initialization(self, tmp_path):
-        """InsightFace can be initialized."""
-    def test_face_detection_on_image(self, test_image_with_face, tmp_path):
-        """InsightFace can process an image without errors."""
-class TestPipelineE2E:
-    """End-to-end pipeline tests with real execution."""
-    def test_extraction_pipeline_creates_output(self, tmp_path):
-        """ExtractionPipeline initializes correctly with real config."""
-    def test_analysis_pipeline_initializes_with_real_managers(self, tmp_path):
-        """AnalysisPipeline initializes with real ThumbnailManager and ModelRegistry."""
-class TestVideoE2E:
-    """End-to-end tests with real video processing."""
-    @pytest.fixture
-    def test_video_path(self, tmp_path):
-        """Create a small test video (5 frames, 256x256)."""
-    @pytest.fixture
-    def test_frames_dir(self, tmp_path, test_video_path):
-        """Create directory with extracted frames and required files."""
-    def test_extraction_pipeline_on_real_video(self, test_video_path, tmp_path):
-        """ExtractionPipeline can process a real video file."""
-    def test_pre_analysis_with_sam3(self, test_frames_dir, tmp_path):
-        """Pre-analysis can run SAM3 on extracted frames."""
-class TestMaskPropagatorE2E:
-    """Tests for MaskPropagator with real SAM3 inference."""
-    @requires_sam3
-    def test_mask_propagator_propagate(self, tmp_path):
-        """MaskPropagator.propagate() works with new SAM3 API."""
-    @requires_sam3
-    def test_mask_propagator_bidirectional(self, tmp_path):
-        """MaskPropagator.propagate() works bidirectionally from middle frame."""
-class TestOperatorE2E:
-    """Tests for quality metric calculation using the Operator framework."""
-    def test_run_operators_real(self, test_image, tmp_path):
-        """Standard operators can be executed on a real image."""
-    def test_niqe_operator_real(self, test_image, tmp_path):
-        """NIQE operator can be executed (requires pyiqa and GPU)."""
-class TestExportE2E:
-    """E2E tests for export pipeline."""
-    def test_export_pipeline_initialization(self, tmp_path):
-        """ExportPipeline can be initialized with real config."""
-    def test_export_with_real_frames(self, tmp_path):
-        """Export can process frames from a real directory."""
-    def test_export_dry_run_mode(self, tmp_path):
-        """Dry run export mode works without creating files."""
-class TestCancellationE2E:
-    """E2E tests for cancel operations during pipeline execution."""
-    @requires_sam3
-    def test_propagation_with_cancel_event(self, tmp_path):
-        """MaskPropagator handles cancel event during propagation."""
-    def test_analysis_pipeline_cancel(self, tmp_path):
-        """AnalysisPipeline handles cancel event gracefully."""
-class TestMediaPipeLandmarkerE2E:
-    """E2E tests for MediaPipe Face Landmarker."""
-    def test_face_landmarker_import(self):
-        """MediaPipe face landmarker can be imported."""
-    def test_face_landmarker_model_download(self, tmp_path):
-        """Face landmarker model can be downloaded."""
-class TestLargeVideoE2E:
-    """E2E tests for handling larger videos/frame sequences."""
-    def test_many_frames_processing(self, tmp_path):
-        """Test processing a larger number of frames."""
-    @requires_sam3
-    def test_sam3_with_many_frames(self, tmp_path):
-        """SAM3 can process a larger sequence."""
-class TestMaskGenerationE2E:
-    """E2E tests for mask generation to catch silent failures."""
-    @requires_sam3
-    def test_get_mask_for_bbox_e2e(self, test_frames_dir, tmp_path):
-        """Test SeedSelector._get_mask_for_bbox with real SAM3."""
-    @requires_sam3
-    def test_identity_first_seed_e2e(self, test_image_with_face, tmp_path):
-        """Test 'By Face' seeding strategy with real models."""
-    @requires_sam3
-    def test_pre_analysis_mask_generation_e2e(self, test_frames_dir, tmp_path):
-        """Test the full pre-analysis flow including mask generation."""
-```
-
 ### `📄 tests/unit/test_handlers.py`
 
 ```python
@@ -1106,6 +1545,22 @@ class TestAppUIHandlers:
     @patch('ui.app_ui.on_filters_changed')
     def test_on_filters_changed_wrapper(self, mock_on_filters, app_ui):
         """Test on_filters_changed_wrapper uses ApplicationState data."""
+```
+
+### `📄 tests/unit/test_image_utils.py`
+
+```python
+@pytest.fixture
+def mock_config(): ...
+def test_postprocess_mask_basic(mock_config): ...
+def test_postprocess_mask_empty(mock_config): ...
+def test_render_mask_overlay_basic(): ...
+def test_render_mask_overlay_resize(): ...
+def test_render_mask_overlay_invalid_shape(): ...
+def test_render_mask_overlay_none(): ...
+def test_rgb_to_pil(): ...
+def test_draw_bbox(mock_config): ...
+def test_compute_entropy(): ...
 ```
 
 ### `📄 tests/unit/test_integration.py`
@@ -1162,6 +1617,7 @@ class TestPipelineIntegration:
 ### `📄 tests/unit/test_integration_sam3_patches.py`
 
 ```python
+pytestmark = pytest.mark.sam3
 @pytest.fixture(autouse=True)
 def skip_if_mocked(): ...
 def test_edt_triton_fallback(): ...
@@ -1170,6 +1626,39 @@ def test_connected_components_fallback_3d_input(): ...
 @pytest.mark.skip(reason='Flaky due to global mocks in conftest.py')
 def test_apply_patches_triton_missing(): ...
 def test_apply_patches_triton_present(): ...
+```
+
+### `📄 tests/unit/test_integration_smoke.py`
+
+```python
+@patch('core.pipelines.ExtractionPipeline')
+@patch('core.pipelines.PreAnalysisPipeline')
+@patch('core.pipelines.AnalysisPipeline')
+def test_execute_extraction_smoke(mock_analysis, mock_pre_analysis, mock_extraction, mock_ui_state):
+    """End-to-end mock test for execute_extraction to ensure manager wiring succeeds."""
+```
+
+### `📄 tests/unit/test_io_utils.py`
+
+```python
+@pytest.fixture
+def mock_config(): ...
+def test_validate_video_file_not_found(): ...
+def test_validate_video_file_empty(tmp_path): ...
+@patch('cv2.VideoCapture')
+def test_validate_video_file_invalid(mock_vc, tmp_path): ...
+@patch('cv2.VideoCapture')
+def test_validate_video_file_success(mock_vc, tmp_path): ...
+def test_sanitize_filename(mock_config): ...
+def test_is_image_folder(tmp_path): ...
+def test_list_images(tmp_path, mock_config): ...
+@patch('subprocess.run')
+def test_detect_hwaccel_variants(mock_run): ...
+def test_compute_sha256(tmp_path): ...
+@patch('urllib.request.urlopen')
+def test_download_model_full(mock_urlopen, tmp_path): ...
+def test_create_frame_map(tmp_path): ...
+def test_create_frame_map_error(tmp_path): ...
 ```
 
 ### `📄 tests/unit/test_launch_config.py`
@@ -1181,6 +1670,36 @@ def test_parse_args(): ...
 def test_parse_args_defaults(): ...
 ```
 
+### `📄 tests/unit/test_logger.py`
+
+```python
+def test_log_event_model():
+    """Test LogEvent Pydantic model."""
+def test_gradio_queue_handler():
+    """Test GradioQueueHandler emits to queue."""
+def test_colored_formatter():
+    """Test ColoredFormatter adds color codes."""
+@patch('logging.config.dictConfig')
+def test_setup_logging(mock_dict_config, tmp_path):
+    """Test setup_logging configuration logic."""
+@patch('logging.config.dictConfig')
+def test_setup_logging_with_queue(mock_dict_config, tmp_path):
+    """Test setup_logging with a progress queue."""
+def test_app_logger_all_methods():
+    """Test all AppLogger proxy methods."""
+@patch('logging.config.dictConfig')
+def test_setup_logging_no_console(mock_dict_config, tmp_path):
+    """Test setup_logging with console logging disabled."""
+def test_app_logger_unused_methods():
+    """Test unused/deprecated AppLogger methods for coverage."""
+@patch('core.logger.Path.mkdir')
+@patch('logging.config.dictConfig')
+def test_setup_logging_mkdir(mock_dict_config, mock_mkdir, tmp_path):
+    """Test setup_logging calls mkdir."""
+def test_gradio_queue_handler_error():
+    """Test GradioQueueHandler error handling."""
+```
+
 ### `📄 tests/unit/test_managers.py`
 
 ```python
@@ -1190,7 +1709,7 @@ class TestManagers:
     @pytest.fixture
     def mock_config(self): ...
     def test_thumbnail_manager_init(self, mock_logger, mock_config): ...
-    @patch('core.managers.Image.open')
+    @patch('core.managers.thumbnails.Image.open', create=True)
     @patch('pathlib.Path.exists', return_value=True)
     def test_thumbnail_manager_get_miss(self, mock_exists, mock_open, mock_logger, mock_config): ...
     def test_thumbnail_manager_get_hit(self, mock_logger, mock_config): ...
@@ -1201,36 +1720,38 @@ class TestManagers:
     def test_model_registry_get_or_load(self, mock_logger): ...
     def test_model_registry_get_or_load_error(self, mock_logger): ...
     def test_model_registry_clear(self, mock_logger): ...
-    @patch('core.managers.download_model')
-    @patch('core.managers.SAM3Wrapper')
-    @patch('torch.cuda.is_available', return_value=True)
-    def test_get_tracker_success(self, mock_cuda, mock_wrapper, mock_download, mock_logger, mock_config): ...
-    @patch('core.managers.SAM3Wrapper')
-    @patch('torch.cuda.is_available', return_value=True)
-    def test_get_tracker_oom_fallback(self, mock_cuda, mock_wrapper, mock_logger, mock_config): ...
+    @patch('core.managers.registry.ModelRegistry._load_tracker_impl')
+    def test_get_tracker_success(self, mock_load, mock_logger, mock_config): ...
+    @patch('core.managers.registry.ModelRegistry._load_tracker_impl')
+    @patch('core.managers.registry.torch.cuda.empty_cache', create=True)
+    @patch('core.managers.registry.torch.cuda.is_available', return_value=True, create=True)
+    def test_get_tracker_oom_fallback(self, mock_cuda, mock_empty, mock_load, mock_logger, mock_config): ...
     def test_video_manager_prepare_local(self, mock_config): ...
-    @patch('core.managers.ytdlp.YoutubeDL')
+    @patch('core.managers.video.ytdlp.YoutubeDL')
     def test_video_manager_prepare_youtube(self, mock_ytdl, mock_config, mock_logger): ...
     def test_video_manager_invalid_inputs(self, mock_config, mock_logger): ...
-    @patch('core.managers.ytdlp')
+    @patch('core.managers.video.ytdlp')
     def test_video_manager_youtube_error(self, mock_ytdlp_module, mock_config, mock_logger): ...
     @patch('cv2.VideoCapture')
     def test_get_video_info(self, mock_cap): ...
-    @patch('core.managers.vision.FaceLandmarker')
-    @patch('core.managers.python.BaseOptions')
-    @patch('core.managers.vision.FaceLandmarkerOptions')
+    @patch('core.managers.face.vision.FaceLandmarker')
+    @patch('core.managers.face.python.BaseOptions')
+    @patch('core.managers.face.vision.FaceLandmarkerOptions')
     def test_get_face_landmarker(self, mock_opts, mock_base, mock_cls, mock_logger): ...
-    @patch('core.managers.get_face_analyzer')
-    @patch('core.managers.download_model')
+    @patch('core.managers.models.get_face_analyzer')
+    @patch('core.managers.models.download_model')
     @patch('pathlib.Path.exists', return_value=True)
     @patch('pathlib.Path.is_file', return_value=True)
+    @patch('core.managers.models.get_face_landmarker')
     @patch('cv2.imread', return_value=np.zeros((100, 100, 3)))
-    def test_initialize_analysis_models(self, mock_imread, mock_isfile, mock_exists, mock_download, mock_get_analyzer, mock_config, mock_logger): ...
+    def test_initialize_analysis_models(self, mock_imread, mock_get_landmarker, mock_isfile, mock_exists, mock_download, mock_get_analyzer, mock_config, mock_logger): ...
     @patch('insightface.app.FaceAnalysis')
     def test_get_face_analyzer_retry_logic(self, mock_face_analysis_cls, mock_logger): ...
-    @patch('core.managers.Image.open')
+    @patch('core.managers.thumbnails.Image.open')
     @patch('pathlib.Path.exists', return_value=True)
     def test_thumbnail_manager_corrupt_file(self, mock_exists, mock_open, mock_logger, mock_config): ...
+    @patch('core.managers.models.lpips.LPIPS')
+    def test_get_lpips_metric(self, mock_lpips): ...
 ```
 
 ### `📄 tests/unit/test_managers_extended.py`
@@ -1241,6 +1762,19 @@ class TestManagersExtended:
         """Test basic ModelRegistry load (retry logic is in get_tracker/etc, not get_or_..."""
     def test_thumbnail_manager_eviction_logic(self, tmp_path):
         """Test LRU eviction in ThumbnailManager."""
+```
+
+### `📄 tests/unit/test_mask_operators.py`
+
+```python
+def test_phash_operator():
+    """Test phash generation."""
+def test_subject_mask_area_full():
+    """Test 100% mask area."""
+def test_subject_mask_area_half():
+    """Test 50% mask area."""
+def test_subject_mask_area_missing():
+    """Test with missing mask."""
 ```
 
 ### `📄 tests/unit/test_mask_propagator_logic.py`
@@ -1270,6 +1804,19 @@ class TestMaskPropagatorLogic:
         """Test that progress tracker is updated."""
 ```
 
+### `📄 tests/unit/test_models.py`
+
+```python
+def test_coerce_none(): ...
+def test_analysis_parameters_from_ui_empty_string(): ...
+def test_coerce(): ...
+def test_frame_model(): ...
+def test_sanitize_face_ref(tmp_path): ...
+def test_scene_state(): ...
+def test_analysis_parameters_from_ui(): ...
+def test_quality_config(): ...
+```
+
 ### `📄 tests/unit/test_niqe_operator.py`
 
 ```python
@@ -1289,106 +1836,38 @@ class TestNiqeOperator:
 ### `📄 tests/unit/test_operators.py`
 
 ```python
-"""Unit tests for the Operator framework."""
 @pytest.fixture
-def sample_image():
-    """100x100 RGB image with random noise."""
-@pytest.fixture
-def sample_mask():
-    """100x100 grayscale mask (center region active)."""
-@pytest.fixture
-def mock_config():
-    """Mock Config object with sharpness_base_scale."""
-@pytest.fixture
-def sharp_image():
-    """High-frequency checkerboard pattern (sharp)."""
-@pytest.fixture
-def blurry_image():
-    """Gaussian blurred uniform gray (blurry)."""
+def mock_config(): ...
+def test_entropy_operator(mock_config): ...
+def test_quality_score_operator(mock_config): ...
+def test_sharpness_operator(mock_config): ...
+def test_mask_area_operator(mock_config): ...
+```
+
+### `📄 tests/unit/test_operators_registry.py`
+
+```python
+class MockOperator(Operator):
+    def __init__(self, name='mock_op', requires_tensor=False): ...
+    @property
+    def config(self) -> OperatorConfig: ...
+    def initialize(self, config): ...
+    def execute(self, ctx): ...
+    def cleanup(self): ...
 @pytest.fixture(autouse=True)
-def clear_registry():
-    """Clear operator registry before each test."""
-class TestOperatorConfig:
-    """Tests for OperatorConfig dataclass."""
-    def test_required_fields(self):
-        """Config requires name and display_name."""
-    def test_default_values(self):
-        """Config has sensible defaults."""
-    def test_ui_metadata(self):
-        """Config supports UI metadata fields."""
-class TestOperatorContext:
-    """Tests for OperatorContext dataclass."""
-    def test_minimal_creation(self, sample_image):
-        """Context can be created with just image_rgb."""
-    def test_all_fields(self, sample_image, sample_mask, mock_config):
-        """Context supports all optional fields."""
-class TestOperatorResult:
-    """Tests for OperatorResult dataclass."""
-    def test_success_case(self):
-        """Result with metrics only indicates success."""
-    def test_error_case(self):
-        """Result with error indicates failure."""
-    def test_warnings(self):
-        """Result can include non-fatal warnings."""
-class TestOperatorRegistry:
-    """Tests for OperatorRegistry."""
-    def test_register_and_get(self, sample_image):
-        """Can register and retrieve an operator."""
-    def test_get_unknown_returns_none(self):
-        """Getting unknown operator returns None."""
-    def test_list_all(self):
-        """list_all returns all operator configs."""
-    def test_initialize_all(self, mock_config):
-        """initialize_all calls initialize on operators."""
-    def test_cleanup_all(self):
-        """cleanup_all calls cleanup on initialized operators."""
-class TestRegisterDecorator:
-    """Tests for @register_operator decorator."""
-    def test_decorator_registers(self):
-        """Decorator registers the operator."""
-class TestRunOperators:
-    """Tests for run_operators bridge function."""
-    def test_runs_all_operators(self, sample_image):
-        """run_operators executes all registered operators."""
-    def test_runs_specific_operators(self, sample_image):
-        """run_operators can run specific operators only."""
-    def test_error_isolation(self, sample_image):
-        """One operator failing doesn't break others."""
-    def test_unknown_operator_error(self, sample_image):
-        """Requesting unknown operator returns error result."""
-class TestOperatorProtocol:
-    """Tests for Operator Protocol compliance."""
-    def test_protocol_is_runtime_checkable(self):
-        """Operator Protocol is runtime checkable."""
-    def test_minimal_implementation(self):
-        """Operator works with just config and execute."""
-class TestSharpnessOperator:
-    """Tests for the SharpnessOperator implementation."""
-    @pytest.fixture
-    def sharpness_operator(self):
-        """Fresh SharpnessOperator instance."""
-    def test_config_values(self, sharpness_operator):
-        """Config has expected values."""
-    def test_execute_returns_operator_result(self, sharpness_operator, sample_image):
-        """Execute returns OperatorResult type."""
-    def test_execute_has_sharpness_score(self, sharpness_operator, sample_image):
-        """Result contains sharpness_score metric."""
-    def test_score_in_valid_range(self, sharpness_operator, sample_image):
-        """Score is between 0 and 100."""
-    def test_sharp_higher_than_blurry(self, sharpness_operator, sharp_image, blurry_image):
-        """Sharp image scores higher than blurry image."""
-    def test_with_mask_changes_score(self, sharpness_operator, sample_mask):
-        """Score differs with mask vs without mask."""
-    def test_error_handling(self, sharpness_operator):
-        """Invalid input returns OperatorResult with error."""
-    def test_uses_config_scale(self, sharpness_operator, sample_image):
-        """Operator uses sharpness_base_scale from config."""
-class TestAutoDiscovery:
-    """Tests for automatic operator discovery."""
-    def test_discover_finds_known_operators(self):
-        """discover_operators finds standard operators."""
-    def test_discover_skips_infrastructure(self):
-        """Infrastructure modules are not discovered as operators."""
+def clear_registry(): ...
+def test_registry_register_get(): ...
+def test_registry_initialize_cleanup(): ...
+def test_register_operator_decorator(): ...
+@patch('importlib.import_module')
+@patch('pkgutil.iter_modules')
+def test_discover_operators(mock_iter, mock_import): ...
+def test_run_operators_basic(): ...
+def test_run_operators_not_found(): ...
+def test_run_operators_retry_logic(): ...
+@patch('torch.cuda.is_available', return_value=False)
+def test_run_operators_with_tensor(mock_cuda): ...
+def test_run_operators_quality_score_last(): ...
 ```
 
 ### `📄 tests/unit/test_phase1_logic.py`
@@ -1419,6 +1898,36 @@ class TestPhase2Logic(unittest.TestCase):
     def test_extract_preview_resize(self, mock_image_open, mock_run, mock_which): ...
 ```
 
+### `📄 tests/unit/test_photo_utils.py`
+
+```python
+@patch('core.photo_utils.shutil.which')
+@patch('core.photo_utils.subprocess.run')
+def test_extract_preview_success(mock_run, mock_which, tmp_path):
+    """Test successful preview extraction using ExifTool."""
+@patch('core.photo_utils.shutil.which')
+def test_extract_preview_no_exiftool(mock_which, tmp_path):
+    """Test extraction failure when ExifTool is missing."""
+@patch('core.photo_utils.shutil.which')
+@patch('core.photo_utils.subprocess.run')
+def test_extract_preview_fail_all_tags(mock_run, mock_which, tmp_path):
+    """Test extraction failure when all tags fail or return small data."""
+def test_ingest_folder(tmp_path):
+    """Test ingesting a folder with mixed JPEG and RAW files."""
+def test_extract_preview_exists(tmp_path):
+    """Test extract_preview when output file already exists."""
+@patch('core.photo_utils.shutil.which')
+@patch('core.photo_utils.subprocess.run')
+def test_extract_preview_high_quality(mock_run, mock_which, tmp_path):
+    """Test extract_preview with thumbnails_only=False."""
+def test_ingest_folder_recursive(tmp_path):
+    """Test recursive folder ingestion."""
+def test_extract_preview_resize_exception(tmp_path):
+    """Test handling of resizing exceptions."""
+def test_ingest_folder_nonexistent():
+    """Test ingesting a non-existent folder."""
+```
+
 ### `📄 tests/unit/test_pipeline_result_schemas.py`
 
 ```python
@@ -1431,33 +1940,32 @@ def test_execute_extraction_schema():
 ### `📄 tests/unit/test_pipelines.py`
 
 ```python
-class TestPipelines:
-    @pytest.fixture
-    def mock_logger(self): ...
-    @pytest.fixture
-    def mock_config(self, tmp_path): ...
-    def test_process_ffmpeg_stream(self, mock_logger, mock_config): ...
-    def test_process_ffmpeg_showinfo(self, mock_logger): ...
-    @patch('subprocess.Popen')
-    def test_run_ffmpeg_extraction(self, mock_popen, mock_logger, mock_config, tmp_path): ...
-    @patch('core.pipelines.run_ffmpeg_extraction')
-    @patch('core.pipelines.VideoManager.get_video_info')
-    @patch('core.managers.validate_video_file')
-    def test_extraction_pipeline_run_video(self, mock_val, mock_info, mock_run_ffmpeg, mock_logger, mock_config, tmp_path): ...
-    @patch('core.pipelines.ingest_folder')
-    def test_extraction_pipeline_run_folder(self, mock_ingest, mock_logger, mock_config, tmp_path): ...
-    @patch('core.pipelines.initialize_analysis_models')
-    @patch('core.pipelines.SubjectMasker')
-    def test_run_full_analysis(self, mock_masker, mock_init, mock_logger, mock_config, tmp_path): ...
-    @patch('core.pipelines.initialize_analysis_models')
-    def test_run_analysis_only(self, mock_init, mock_logger, mock_config, tmp_path): ...
-    def test_execute_extraction(self, mock_config, mock_logger, tmp_path): ...
-    def test_validate_session_dir(self, tmp_path): ...
+@pytest.fixture
+def default_extraction_event(): ...
+@pytest.fixture
+def default_pre_analysis_event(): ...
+@pytest.fixture
+def mock_runtime(): ...
+def test_execute_extraction_success(mock_runtime, tmp_path, default_extraction_event): ...
+def test_execute_extraction_pipeline_failure(mock_runtime, default_extraction_event): ...
+def test_execute_extraction_upload_copy(mock_runtime, tmp_path, default_extraction_event): ...
+def test_execute_pre_analysis_success(mock_runtime, tmp_path, default_pre_analysis_event): ...
+def test_execute_propagation_no_scenes(mock_runtime, default_pre_analysis_event): ...
+def test_execute_analysis_success(mock_runtime, tmp_path, default_pre_analysis_event): ...
+def test_execute_pre_analysis_with_upload(mock_runtime, tmp_path, default_pre_analysis_event): ...
+def test_validate_session_dir_and_load(mock_runtime): ...
+def test_execute_propagation_success(mock_runtime, tmp_path, default_pre_analysis_event): ...
+def test_execute_propagation_failure(mock_runtime, default_pre_analysis_event): ...
+def test_execute_analysis_failure(mock_runtime, default_pre_analysis_event): ...
+def test_execute_propagation_is_folder(mock_runtime, default_pre_analysis_event): ...
+def test_fingerprint_failure_is_silent(mock_runtime, tmp_path, default_extraction_event): ...
 ```
 
 ### `📄 tests/unit/test_pipelines_extended.py`
 
 ```python
+@pytest.fixture(autouse=True)
+def mock_download_model(): ...
 class TestPipelinesExtended:
     @pytest.fixture
     def mock_logger(self): ...
@@ -1471,32 +1979,153 @@ class TestPipelinesExtended:
     def mock_thumbnail_manager(self): ...
     @pytest.fixture
     def pipeline(self, mock_params, mock_logger, mock_config, mock_db, mock_thumbnail_manager): ...
-    @patch('core.pipelines.initialize_analysis_models')
-    @patch('core.pipelines.SubjectMasker')
+    @patch('core.managers.analysis.initialize_analysis_models')
+    @patch('core.managers.analysis.SubjectMasker')
     def test_run_full_analysis_propagation(self, mock_masker_cls, mock_init_models, pipeline, mock_params): ...
-    @patch('core.pipelines.initialize_analysis_models')
+    @patch('core.managers.analysis.initialize_analysis_models')
     def test_run_analysis_only(self, mock_init_models, pipeline, mock_params): ...
     def test_cancellation_in_propagation(self, pipeline, mock_params): ...
 class TestPreAnalysisPipeline:
     @pytest.fixture
     def pre_pipeline(self, mock_params, mock_logger, mock_config, mock_thumbnail_manager): ...
-    @patch('core.pipelines.initialize_analysis_models')
-    @patch('core.pipelines.SubjectMasker')
-    @patch('core.pipelines.save_scene_seeds')
+    @patch('core.managers.analysis.initialize_analysis_models')
+    @patch('core.managers.analysis.SubjectMasker')
+    @patch('core.managers.analysis.save_scene_seeds')
     @patch('PIL.Image.fromarray')
     def test_pre_analysis_run(self, mock_img_save, mock_save_seeds, mock_masker_cls, mock_init_models, pre_pipeline, tmp_path): ...
 class TestExecutePreAnalysis:
     @patch('core.pipelines.PreAnalysisPipeline')
     @patch('core.pipelines._load_scenes')
-    @patch('core.pipelines._initialize_pre_analysis_params')
+    @patch('core.models.AnalysisParameters.from_ui')
     @patch('core.pipelines._handle_pre_analysis_uploads')
-    def test_execute_pre_analysis_success(self, mock_handle_uploads, mock_init_params, mock_load_scenes, mock_pipeline_cls, tmp_path): ...
+    def test_execute_pre_analysis_success(self, mock_handle_uploads, mock_from_ui, mock_load_scenes, mock_pipeline_cls, tmp_path): ...
+```
+
+### `📄 tests/unit/test_pipelines_wrapper.py`
+
+```python
+@pytest.fixture
+def mock_logger(): ...
+@pytest.fixture
+def mock_config(tmp_path): ...
+@patch('core.pipelines.ExtractionPipeline')
+def test_execute_extraction(mock_pipeline_cls, mock_config, mock_logger): ...
+@patch('core.pipelines.PreAnalysisPipeline')
+@patch('core.pipelines._load_scenes', return_value=[])
+def test_execute_pre_analysis(mock_load, mock_pipeline_cls, mock_config, mock_logger, tmp_path): ...
+@patch('core.pipelines.AnalysisPipeline')
+@patch('core.pipelines._load_analysis_scenes')
+@patch('core.pipelines.VideoManager.get_video_info', return_value={'fps': 30, 'frame_count': 100})
+def test_execute_propagation(mock_vinfo, mock_load, mock_pipeline_cls, mock_config, mock_logger, tmp_path): ...
+@patch('core.pipelines.AnalysisPipeline')
+@patch('core.pipelines._load_analysis_scenes')
+def test_execute_analysis(mock_load, mock_pipeline_cls, mock_config, mock_logger, tmp_path): ...
 ```
 
 ### `📄 tests/unit/test_progress.py`
 
 ```python
-def test_progress_tracker(): ...
+def test_progress_event_model():
+    """Test the Pydantic model for progress events."""
+def test_tracker_initialization():
+    """Test tracker initialization and default values."""
+def test_tracker_start():
+    """Test the start method resets state."""
+def test_tracker_step_and_eta():
+    """Test stepping through progress and ETA estimation."""
+def test_tracker_throttling():
+    """Test that updates are throttled."""
+def test_tracker_set_and_done():
+    """Test set() and done_stage() methods."""
+def test_fmt_eta_static():
+    """Test the static _fmt_eta helper."""
+def test_tracker_pause_resume():
+    """Test that stepping honors the pause event."""
+```
+
+### `📄 tests/unit/test_quality_score.py`
+
+```python
+def test_quality_score_missing_config():
+    """Test behavior when config is missing."""
+def test_quality_score_calculation():
+    """Test that quality score is calculated correctly from weights and metrics."""
+def test_quality_score_all_zeros():
+    """Test with all zeros."""
+def test_quality_score_empty_shared_data():
+    """Test with weights but no metrics."""
+```
+
+### `📄 tests/unit/test_sam21.py`
+
+```python
+@pytest.fixture
+def mock_sam2_predictor(): ...
+@pytest.fixture
+def mock_cuda(): ...
+def test_sam21_wrapper_init(mock_sam2_predictor):
+    """Test initialization logic and lazy loading."""
+@patch('core.managers.sam21.torch.inference_mode')
+def test_sam21_init_video(mock_inference_mode, mock_sam2_predictor):
+    """Test that init_video calls the underlying predictor."""
+@patch('core.managers.sam21.torch.inference_mode')
+def test_sam21_propagate_in_video(mock_inference_mode, mock_sam2_predictor):
+    """Test the propagate generator logic."""
+def test_sam21_close_session(mock_sam2_predictor, mock_cuda):
+    """Test the cleanup logic in close_session."""
+```
+
+### `📄 tests/unit/test_sam21_wrapper.py`
+
+```python
+"""Unit tests for SAM21Wrapper API completeness and functionality."""
+@pytest.fixture
+def mock_predictor(): ...
+@patch('core.managers.sam21.build_sam2_video_predictor')
+@patch('core.managers.sam21.torch.cuda.is_available', return_value=False)
+def test_sam21_wrapper_init(mock_cuda, mock_build, mock_predictor): ...
+@patch('core.managers.sam21.build_sam2_video_predictor')
+def test_sam21_wrapper_session_lifecycle(mock_build, mock_predictor): ...
+@patch('core.managers.sam21.build_sam2_video_predictor')
+def test_sam21_wrapper_add_bbox_prompt(mock_build, mock_predictor): ...
+@patch('core.managers.sam21.build_sam2_video_predictor')
+def test_sam21_wrapper_propagate(mock_build, mock_predictor): ...
+@patch('core.managers.sam21.build_sam2_video_predictor')
+def test_sam21_wrapper_add_point_prompt(mock_build, mock_predictor): ...
+@patch('core.managers.sam21.build_sam2_video_predictor')
+def test_sam21_wrapper_stubs_and_utility(mock_build, mock_predictor): ...
+@patch('core.managers.sam21.build_sam2_video_predictor')
+@patch('core.managers.sam21.torch.cuda.is_available', return_value=True)
+@patch('core.managers.sam21.torch.cuda.empty_cache')
+def test_sam21_wrapper_shutdown(mock_empty_cache, mock_cuda, mock_build, mock_predictor): ...
+```
+
+### `📄 tests/unit/test_sam3_manager.py`
+
+```python
+mock_sam3 = MagicMock()
+sys.modules['sam3'] = mock_sam3
+sys.modules['sam3.model_builder'] = mock_sam3.model_builder
+@pytest.fixture
+def mock_predictor(): ...
+@patch('sam3.model_builder.build_sam3_video_predictor')
+@patch('core.managers.sam3.torch.cuda.is_available', return_value=False)
+def test_sam3_wrapper_init(mock_cuda, mock_build, mock_predictor): ...
+@patch('sam3.model_builder.build_sam3_video_predictor')
+def test_sam3_wrapper_session_lifecycle(mock_build, mock_predictor): ...
+@patch('sam3.model_builder.build_sam3_video_predictor')
+def test_sam3_wrapper_add_bbox_prompt(mock_build, mock_predictor): ...
+@patch('sam3.model_builder.build_sam3_video_predictor')
+def test_sam3_wrapper_propagate(mock_build, mock_predictor): ...
+@patch('sam3.model_builder.build_sam3_video_predictor')
+def test_sam3_wrapper_detect_objects(mock_build, mock_predictor): ...
+@patch('sam3.model_builder.build_sam3_video_predictor')
+def test_sam3_wrapper_utility_methods(mock_build, mock_predictor): ...
+@patch('sam3.model_builder.build_sam3_video_predictor')
+@patch('core.managers.sam3.torch.cuda.is_available', return_value=True)
+@patch('core.managers.sam3.torch.cuda.empty_cache')
+def test_sam3_wrapper_shutdown(mock_empty, mock_cuda, mock_build, mock_predictor): ...
+def test_triton_mocking(): ...
 ```
 
 ### `📄 tests/unit/test_sam3_wrapper.py`
@@ -1538,10 +2167,9 @@ class TestSAM3WrapperMethodBehavior:
         """close_session should clear session_id."""
     def test_remove_object_calls_predictor(self, behavior_mock_wrapper):
         """remove_object should call predictor handle_request."""
-    @patch('core.managers.torch.cuda.is_available', return_value=True)
-    @patch('core.managers.torch.cuda.empty_cache')
-    @patch('core.managers.gc.collect')
-    def test_shutdown_cleans_up_resources(self, mock_gc_collect, mock_empty_cache, mock_cuda_available, behavior_mock_wrapper):
+    @patch('core.managers.sam3.torch.cuda.is_available', return_value=True)
+    @patch('core.managers.sam3.torch.cuda.empty_cache')
+    def test_shutdown_cleans_up_resources(self, mock_empty_cache, mock_cuda_available, behavior_mock_wrapper):
         """shutdown should call close_session, predictor.shutdown, delete predictor and ..."""
 class TestSeedSelectorTrackerInterface:
     """Tests that verify SeedSelector's expected tracker interface."""
@@ -1679,6 +2307,16 @@ class TestSceneUtilsHelpers:
     def test_wire_recompute_handler_no_prompt(self, mock_logger): ...
 ```
 
+### `📄 tests/unit/test_session.py`
+
+```python
+@pytest.fixture
+def mock_logger(): ...
+def test_validate_session_dir(tmp_path): ...
+def test_execute_session_load(mock_logger, tmp_path): ...
+def test_load_analysis_scenes(): ...
+```
+
 ### `📄 tests/unit/test_shared.py`
 
 ```python
@@ -1689,6 +2327,29 @@ class TestSharedUtils:
     def test_scene_caption(self): ...
     @patch('cv2.imread')
     def test_build_scene_gallery_items(self, mock_imread, tmp_path): ...
+    def test_scene_matches_view_invalid(self): ...
+    def test_create_scene_thumbnail_with_badge_config(self): ...
+    def test_scene_caption_dict(self): ...
+    def test_build_scene_gallery_items_empty(self): ...
+    @patch('cv2.imread')
+    def test_build_scene_gallery_items_missing_file(self, mock_imread, tmp_path): ...
+    @patch('cv2.imread')
+    def test_build_scene_gallery_items_error(self, mock_imread, tmp_path): ...
+```
+
+### `📄 tests/unit/test_sharpness.py`
+
+```python
+def test_sharpness_blurry():
+    """Blurry image should have low sharpness."""
+def test_sharpness_focused():
+    """Focused image (checkerboard) should have higher sharpness."""
+def test_sharpness_with_mask():
+    """Test sharpness focusing on a masked region."""
+def test_sharpness_custom_scale():
+    """Test sharpness with a custom scale in config."""
+def test_sharpness_empty_region():
+    """Test sharpness with a mask that has too few pixels."""
 ```
 
 ### `📄 tests/unit/test_signatures.py`
@@ -1725,6 +2386,8 @@ class TestManagerClasses:
     def test_model_registry_has_get_or_load(self): ...
     def test_thumbnail_manager_has_get(self): ...
     def test_video_manager_has_get_video_info(self): ...
+    def test_sam21_matches_sam3_interface(self):
+        """Verify SAM2 and SAM3 wrappers share the same public interface."""
 ```
 
 ### `📄 tests/unit/test_simple_cv_operators.py`
@@ -1790,15 +2453,16 @@ class TestImportSmoke:
     def test_import_core_scene_utils(self): ...
     def test_import_ui_app_ui(self): ...
     def test_import_ui_gallery_utils(self): ...
+    def test_import_tracker_factory(self): ...
+    def test_import_sam21_wrapper(self): ...
 class TestCriticalSymbols:
     """Verify critical symbols exist in modules (catches missing imports)."""
-    def test_pipelines_has_image(self):
-        """PIL.Image was missing - caused NameError."""
-    def test_pipelines_has_gradio(self):
-        """gradio was missing - caused NameError."""
+    @pytest.mark.skip(reason='PIL.Image is imported inside functions for startup performance')
+    def test_pipelines_has_image(self): ...
+    @pytest.mark.skip(reason='torch is imported inside functions for startup performance')
     def test_pipelines_has_torch(self): ...
     def test_pipelines_has_json(self): ...
-    def test_export_has_subprocess(self): ...
+    def test_ffmpeg_has_subprocess(self): ...
 class TestDependencyImports:
     """Verify external dependencies are available."""
     def test_pil_available(self): ...
@@ -1832,6 +2496,90 @@ class TestSubjectMasker:
         """Test propagation fails if tracker cannot be initialized."""
 ```
 
+### `📄 tests/unit/test_subject_masker_simple.py`
+
+```python
+def test_subject_masker_init(): ...
+def test_subject_masker_draw_bbox(): ...
+def test_subject_masker_get_thumb_for_frame(): ...
+def test_subject_masker_create_frame_map(): ...
+def test_subject_masker_load_shot_frames(): ...
+```
+
+### `📄 tests/unit/test_system_health.py`
+
+```python
+def test_check_environment():
+    """Test environment check logic."""
+def test_check_dependencies():
+    """Test dependency check logic."""
+@patch('core.system_health.shutil.which')
+@patch('core.system_health.subprocess.run')
+def test_check_paths_and_assets(mock_run, mock_which):
+    """Test paths and assets check logic."""
+@patch('core.system_health.execute_extraction')
+@patch('core.system_health.execute_pre_analysis')
+@patch('core.system_health.execute_propagation')
+@patch('core.system_health.execute_analysis')
+@patch('core.system_health.export_kept_frames')
+def test_simulate_pipeline(mock_export, mock_ana, mock_prop, mock_pre, mock_ext):
+    """Test the E2E pipeline simulation logic."""
+def test_simulate_pipeline_failure(logger=MagicMock()):
+    """Test simulate_pipeline failure handling."""
+def test_check_environment_failure():
+    """Test environment check logic with failures."""
+def test_check_dependencies_failure():
+    """Test dependency check logic with missing dependencies."""
+@patch('core.system_health.shutil.which')
+@patch('core.system_health.subprocess.run')
+def test_check_paths_and_assets_exiftool_fail(mock_run, mock_which):
+    """Test paths and assets check when exiftool check fails."""
+@patch('core.system_health.shutil.which')
+def test_check_paths_and_assets_no_exiftool(mock_which):
+    """Test paths and assets check when exiftool is missing."""
+def test_generate_full_diagnostic_report():
+    """Test full diagnostic report generation (generator)."""
+```
+
+### `📄 tests/unit/test_tracker_factory.py`
+
+```python
+@patch('core.managers.sam21.SAM21Wrapper')
+def test_selects_sam21(mock_sam21):
+    """Test that SAM21Wrapper is selected when SAM2 is requested."""
+@patch('core.managers.sam3.SAM3Wrapper')
+def test_selects_sam3(mock_sam3):
+    """Test that SAM3Wrapper is selected when SAM3 is requested."""
+def test_selects_invalid_tracker():
+    """Test that an invalid tracker backend raises ValueError."""
+```
+
+### `📄 tests/unit/test_tracker_registry.py`
+
+```python
+"""Unit tests for ModelRegistry tracker loading."""
+@pytest.fixture
+def mock_config(): ...
+@pytest.fixture
+def registry(): ...
+@patch('core.io_utils.download_model')
+@patch('core.managers.tracker_factory.build_tracker')
+@patch('core.managers.registry.Path.exists', return_value=True)
+def test_get_tracker_sam2(mock_exists, mock_build, mock_download, registry, mock_config):
+    """Test loading SAM2 tracker and cache hit."""
+@patch('core.io_utils.download_model')
+@patch('core.managers.tracker_factory.build_tracker')
+@patch('core.managers.registry.Path.exists', return_value=True)
+def test_get_tracker_sam3_safetensors(mock_exists, mock_build, mock_download, registry, mock_config):
+    """Test loading SAM3 tracker with safetensors replacement."""
+def test_clear_registry(registry):
+    """Test clearing the registry and shutting down models."""
+def test_get_tracker_failure_path(registry, mock_config):
+    """Test error handling when loader fails."""
+def test_get_tracker_oom_fallback(registry, mock_config):
+    """Test CPU fallback on CUDA OOM."""
+```
+
 ### `📄 tests/unit/test_ui_unit.py`
 
 ```python
@@ -1858,89 +2606,43 @@ class TestTextStrategyWarning:
 ### `📄 tests/unit/test_utils.py`
 
 ```python
-"""Tests for core utility functions."""
-pytestmark = pytest.mark.unit
-class TestValidateVideoFile:
-    """Tests for validate_video_file function."""
-    def test_nonexistent_file_raises(self):
-        """Test validation raises FileNotFoundError for non-existent file."""
-    def test_empty_file_raises(self, tmp_path):
-        """Test validation raises ValueError for empty file."""
-    @pytest.mark.integration
-    def test_valid_video_file(self, tmp_path):
-        """Test validation of a valid video file (requires OpenCV)."""
-class TestSanitizeFilename:
-    """Tests for sanitize_filename function."""
-    def test_basic_sanitization(self, mock_config):
-        """Test basic filename sanitization."""
-    def test_special_characters(self, mock_config):
-        """Test removal of special characters."""
-    def test_max_length(self, mock_config):
-        """Test filename truncation at max length."""
-    def test_empty_string(self, mock_config):
-        """Test sanitization of empty string."""
-class TestIsImageFolder:
-    """Tests for is_image_folder function."""
-    def test_valid_directory(self, tmp_path):
-        """Test detection of valid directory."""
-    def test_file_not_folder(self, tmp_path):
-        """Test returns False for file."""
-    def test_nonexistent_path(self):
-        """Test returns False for non-existent path."""
-    def test_string_path(self, tmp_path):
-        """Test works with string path."""
-class TestListImages:
-    """Tests for list_images function."""
-    def test_lists_image_files(self, tmp_path, mock_config):
-        """Test listing of image files in directory."""
-    def test_empty_directory(self, tmp_path, mock_config):
-        """Test returns empty list for empty directory."""
-class TestCreateFrameMap:
-    """Tests for create_frame_map function."""
-    def test_creates_frame_map(self, tmp_path, mock_logger):
-        """Test frame map creation from directory."""
-    def test_empty_thumbs_directory(self, tmp_path, mock_logger):
-        """Test returns empty dict for empty thumbs directory."""
-class TestPostprocessMask:
-    """Tests for postprocess_mask function."""
-    def test_basic_mask_processing(self, mock_config):
-        """Test basic mask postprocessing."""
-    def test_empty_mask(self, mock_config):
-        """Test processing of empty mask."""
-    def test_full_mask(self, mock_config):
-        """Test processing of full mask."""
-class TestRenderMaskOverlay:
-    """Tests for render_mask_overlay function."""
-    def test_basic_overlay(self, mock_logger):
-        """Test basic mask overlay on image."""
-    def test_empty_mask_overlay(self, mock_logger):
-        """Test overlay with empty mask doesn't crash."""
-class TestRgbToPil:
-    """Tests for rgb_to_pil function."""
-    def test_basic_conversion(self):
-        """Test basic RGB to PIL conversion."""
-    def test_grayscale_raises(self):
-        """Test that 2D array handling."""
-class TestDrawBbox:
-    """Tests for draw_bbox function."""
-    def test_basic_bbox(self, mock_config):
-        """Test basic bounding box drawing."""
-    def test_bbox_with_label(self, mock_config):
-        """Test bounding box with label."""
-    def test_bbox_with_color(self, mock_config):
-        """Test bounding box with custom color."""
-class TestToJsonSafe:
-    """Tests for _to_json_safe function."""
-    def test_numpy_int(self):
-        """Test conversion of numpy int."""
-    def test_numpy_float(self):
-        """Test conversion of numpy float."""
-    def test_numpy_array(self):
-        """Test conversion of numpy array."""
-    def test_path_conversion(self):
-        """Test conversion of Path objects."""
-    def test_plain_dict(self):
-        """Test plain dict passes through."""
-    def test_nested_structures(self):
-        """Test conversion of nested structures."""
+def test_handle_common_errors_success(): ...
+def test_handle_common_errors_file_not_found(): ...
+def test_handle_common_errors_value_error(): ...
+def test_handle_common_errors_cuda_oom(): ...
+def test_handle_common_errors_generator(): ...
+def test_monitor_memory_usage(): ...
+def test_estimate_totals(): ...
+def test_estimate_totals_keyframes(): ...
+class MockModel(BaseModel): ...
+def test_to_json_safe(): ...
+def test_safe_resource_cleanup(): ...
+def test_monitor_memory_usage_low(): ...
+def test_handle_common_errors_gen_exceptions(): ...
+def test_handle_common_errors_non_gen_exceptions(): ...
+def test_estimate_totals_default(): ...
+```
+
+### `📄 tests/unit/test_viz.py`
+
+```python
+def test_histogram_svg_basic():
+    """Test standard SVG generation."""
+def test_histogram_svg_empty():
+    """Test with empty data."""
+def test_histogram_svg_missing_matplotlib():
+    """Test behavior when matplotlib is not installed."""
+def test_histogram_svg_error():
+    """Test error handling during plotting."""
+```
+
+### `📄 tests/unit/test_xmp_writer.py`
+
+```python
+def test_write_xmp_sidecar(tmp_path):
+    """Test writing a single XMP sidecar file."""
+def test_export_xmps_for_photos(tmp_path):
+    """Test exporting XMPs for multiple photos."""
+def test_write_xmp_sidecar_fail(tmp_path):
+    """Test handling of write failures."""
 ```
