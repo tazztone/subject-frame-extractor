@@ -100,18 +100,12 @@ class MaskPropagator:
             )
 
         w, h = frame_size
-        masks = {}
-        areas = {}
-        empties = {}
-        errors = {}
-        all_propagated = {}
-
-        # We only care about masks for these specific frames
+        masks = {fn: np.zeros((h, w), dtype=np.uint8) for fn in frame_numbers}
+        areas = {fn: 0.0 for fn in frame_numbers}
+        empties = {fn: True for fn in frame_numbers}
+        errors = {fn: None for fn in frame_numbers}
+        all_propagated = {fn: None for fn in frame_numbers}
         target_frames = set(frame_numbers)
-
-        # Initialize all target frames with None/Empty to ensure alignment
-        for fn in frame_numbers:
-            all_propagated[fn] = None
 
         self.logger.info(
             "Propagating masks with SAM3 (video mode)",
@@ -134,14 +128,17 @@ class MaskPropagator:
             start_frame_idx = frame_numbers[0]
             if prompts:
                 start_frame_idx = prompts[0]["frame"]
-                # Use provided text prompt or default to "person" to enable tracking in grounding mode.
-                # SAM3 grounding requires allow_new_detections=True which is tied to presence of text prompts.
+                if self.cancel_event.is_set():
+                    return masks, areas, empties, errors
+
                 text_hint = (
                     self.params.text_prompt
                     if (hasattr(self.params, "text_prompt") and self.params.text_prompt)
                     else "person"
                 )
                 for p in prompts:
+                    if self.cancel_event.is_set():
+                        return masks, areas, empties, errors
                     fn = p["frame"]
                     mask = self.dam_tracker.add_bbox_prompt(
                         frame_idx=fn, obj_id=p.get("obj_id", 1), bbox_xywh=p["bbox"], img_size=(w, h), text=text_hint
@@ -153,6 +150,9 @@ class MaskPropagator:
 
             if tracker:
                 tracker.step(1, desc="Prompts added")
+
+            if self.cancel_event.is_set():
+                return masks, areas, empties, errors
 
             # Determine boundaries for progress bar and max_frames
             min_fn = min(frame_numbers)
@@ -178,6 +178,17 @@ class MaskPropagator:
                         if tracker:
                             tracker.step(1, desc="Propagation (→)")
 
+                        # Heartbeat every 50 frames
+                        if frame_idx % 50 == 0:
+                            self.logger.info(
+                                f"Forward propagation heartbeat: frame {frame_idx}",
+                                component="propagator",
+                                user_context={"current_frame": frame_idx, "direction": "forward"},
+                            )
+
+            if self.cancel_event.is_set():
+                return masks, areas, empties, errors
+
             # --- Pass 2: Backward Propagation ---
             bwd_steps = start_frame_idx - min_fn
             if bwd_steps > 0:
@@ -196,6 +207,14 @@ class MaskPropagator:
 
                         if tracker:
                             tracker.step(1, desc="Propagation (←)")
+
+                        # Heartbeat every 50 frames
+                        if frame_idx % 50 == 0:
+                            self.logger.info(
+                                f"Backward propagation heartbeat: frame {frame_idx}",
+                                component="propagator",
+                                user_context={"current_frame": frame_idx, "direction": "backward"},
+                            )
 
             # Process all gathered masks (seeds + propagated)
             img_area = h * w
@@ -221,22 +240,24 @@ class MaskPropagator:
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
             for fn in frame_numbers:
-                if fn not in masks:
-                    masks[fn] = np.zeros((h, w), dtype=np.uint8)
-                    areas[fn] = 0.0
-                    empties[fn] = True
-                    errors[fn] = err_msg
+                masks[fn] = np.zeros((h, w), dtype=np.uint8)
+                areas[fn] = 0.0
+                empties[fn] = True
+                errors[fn] = err_msg
         except Exception as e:
             err_msg = f"Propagation error: {e}"
             self.logger.error(err_msg, component="propagator", exc_info=True)
             for fn in frame_numbers:
-                if fn not in masks:
-                    masks[fn] = np.zeros((h, w), dtype=np.uint8)
-                    areas[fn] = 0.0
-                    empties[fn] = True
-                    errors[fn] = err_msg
+                masks[fn] = np.zeros((h, w), dtype=np.uint8)
+                areas[fn] = 0.0
+                empties[fn] = True
+                errors[fn] = err_msg
         finally:
-            self.dam_tracker.close_session()
+            try:
+                if hasattr(self.dam_tracker, "close_session"):
+                    self.dam_tracker.close_session()
+            except Exception as e:
+                self.logger.debug(f"Error during SAM3 session cleanup: {e}", component="propagator")
 
         return masks, areas, empties, errors
 

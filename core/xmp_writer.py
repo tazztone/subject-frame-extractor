@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import os
+import tempfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -47,11 +49,23 @@ def write_xmp_sidecar(source_path: Path, rating: int, label: str) -> Optional[Pa
     )
 
     try:
-        tree = ET.ElementTree(xmpmeta)
-        tree.write(xmp_path, encoding="utf-8", xml_declaration=True)
+        # Create temp file in the same directory to ensure atomic rename (same filesystem)
+        fd, temp_path = tempfile.mkstemp(dir=str(xmp_path.parent), prefix=f"{xmp_path.name}.tmp")
+        try:
+            tree = ET.ElementTree(xmpmeta)
+            # ElementTree.write can take a file descriptor or path
+            with os.fdopen(fd, "wb") as f:
+                tree.write(f, encoding="utf-8", xml_declaration=True)
+            # Atomic replacement
+            os.replace(temp_path, str(xmp_path))
+        except Exception:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+            raise
+
         return xmp_path
     except Exception as e:
-        logger.error(f"Failed to write XMP for {source_path}: {e}")
+        logger.error(f"Failed to write XMP sidecar atomically for {source_path}: {e}")
         return None
 
 
