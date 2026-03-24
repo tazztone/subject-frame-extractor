@@ -1,4 +1,3 @@
-import threading
 from queue import Queue
 from unittest.mock import MagicMock, patch
 
@@ -10,66 +9,8 @@ from ui.app_ui import ApplicationState, AppUI
 
 class TestAppUI:
     @pytest.fixture
-    def mock_config(self, tmp_path):
-        config = MagicMock()
-        config.default_max_resolution = "1080"
-        config.default_thumb_megapixels = 0.5
-        config.default_scene_detect = True
-        config.default_method = "scene"
-        config.default_interval = 1.0
-        config.default_nth_frame = 10
-        config.default_primary_seed_strategy = "🤖 Automatic"
-        config.default_text_prompt = ""
-        config.default_seed_strategy = "Largest Person"
-        config.default_enable_face_filter = False
-        config.default_pre_analysis_enabled = True
-        config.default_pre_sample_nth = 1
-        config.default_face_model_name = "buffalo_l"
-        config.default_tracker_model_name = "sam3"
-        config.default_resume = False
-        config.default_enable_subject_mask = True
-        config.default_min_mask_area_pct = 1.0
-        config.default_sharpness_base_scale = 2500.0
-        config.default_edge_strength_base_scale = 100.0
-        config.gradio_auto_pctl_input = 10
-        config.export_enable_crop = False
-        config.export_crop_padding = 0
-        config.export_crop_ars = ""
-        config.gradio_show_mask_overlay = False
-        config.gradio_overlay_alpha = 0.5
-
-        # Filter defaults
-        config.filter_default_dedup_thresh = {"min": 0, "max": 10, "default_min": 5, "step": 1}
-        config.filter_default_quality_score = {"min": 0, "max": 100, "default_min": 0, "step": 1}
-        config.filter_default_face_sim = {"min": 0, "max": 1, "default_min": 0, "step": 0.05}
-
-        config.quality_weights = {"quality_score": 1.0}
-
-        # Paths
-        config.models_dir = tmp_path / "models"
-        config.downloads_dir = tmp_path / "downloads"
-
-        return config
-
-    @pytest.fixture
-    def mock_logger(self):
-        return MagicMock()
-
-    @pytest.fixture
     def mock_queue(self):
         return Queue()
-
-    @pytest.fixture
-    def mock_cancel_event(self):
-        return threading.Event()
-
-    @pytest.fixture
-    def mock_thumbnail_manager(self):
-        return MagicMock()
-
-    @pytest.fixture
-    def mock_model_registry(self):
-        return MagicMock()
 
     @pytest.fixture
     def app_state(self):

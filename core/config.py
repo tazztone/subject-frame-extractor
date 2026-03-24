@@ -88,7 +88,7 @@ class Config(BaseSettings):
     default_enable_face_filter: bool = True
     default_face_model_name: str = "buffalo_l"
     default_enable_subject_mask: bool = True
-    default_tracker_model_name: str = "sam2"
+    default_tracker_model_name: str = "sam3"
     default_primary_seed_strategy: str = "🧑‍🤝‍🧑 Find Prominent Person"
     default_seed_strategy: str = "Largest Person"
     default_text_prompt: str = "a person"
@@ -267,20 +267,20 @@ class Config(BaseSettings):
 
     @model_validator(mode="after")
     def _validate_config(self) -> "Config":
-        """Validates that at least one quality weight is non-zero."""
-        if (
-            sum(
-                [
-                    self.quality_weights_sharpness,
-                    self.quality_weights_edge_strength,
-                    self.quality_weights_contrast,
-                    self.quality_weights_brightness,
-                    self.quality_weights_entropy,
-                    self.quality_weights_niqe,
-                ]
-            )
-            == 0
-        ):
+        """Validates quality weights."""
+        weights = [
+            self.quality_weights_sharpness,
+            self.quality_weights_edge_strength,
+            self.quality_weights_contrast,
+            self.quality_weights_brightness,
+            self.quality_weights_entropy,
+            self.quality_weights_niqe,
+        ]
+
+        if any(w < 0 for w in weights):
+            raise ValueError("Quality weights cannot be negative.")
+
+        if sum(weights) == 0:
             raise ValueError("The sum of quality_weights cannot be zero.")
         return self
 

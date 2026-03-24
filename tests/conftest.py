@@ -24,6 +24,27 @@ def clean_registry():
     OperatorRegistry.clear()
 
 
+@pytest.fixture(scope="session")
+def requires_cuda():
+    """Skip test if CUDA is not available."""
+    import torch
+
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA not available")
+
+
+@pytest.fixture(scope="session")
+def check_assets():
+    """Ensure E2E sample assets exist."""
+    from pathlib import Path
+
+    assets_dir = Path("tests/assets")
+    required = ["sample.mp4", "sample.jpg"]
+    missing = [f for f in required if not (assets_dir / f).exists()]
+    if missing:
+        pytest.skip(f"Missing required test assets: {', '.join(missing)}")
+
+
 @pytest.fixture
 def mock_logger():
     """Mock Application Logger."""

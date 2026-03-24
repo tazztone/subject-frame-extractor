@@ -7,16 +7,6 @@ from PIL import Image
 from core.image_utils import compute_entropy, draw_bbox, postprocess_mask, render_mask_overlay, rgb_to_pil
 
 
-@pytest.fixture
-def mock_config():
-    config = MagicMock()
-    config.masking_close_kernel_size = 3
-    config.masking_keep_largest_only = True
-    config.visualization_bbox_color = [255, 0, 0]
-    config.visualization_bbox_thickness = 2
-    return config
-
-
 def test_postprocess_mask_basic(mock_config):
     # Simple binary mask with two blobs
     mask = np.zeros((100, 100), dtype=np.uint8)

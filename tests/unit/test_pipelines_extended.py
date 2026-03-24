@@ -17,29 +17,6 @@ def mock_download_model():
 
 class TestPipelinesExtended:
     @pytest.fixture
-    def mock_logger(self):
-        return MagicMock()
-
-    @pytest.fixture
-    def mock_config(self):
-        config = MagicMock()
-        config.seeding_iou_threshold = 0.5
-        config.seeding_face_contain_score = 10
-        config.seeding_confidence_score_multiplier = 1
-        config.seeding_iou_bonus = 5
-        config.seeding_balanced_score_weights = {"area": 1, "confidence": 1, "edge": 1}
-        config.seeding_face_to_body_expansion_factors = [1.5, 3.0, 1.0]
-        config.seeding_final_fallback_box = [0.25, 0.25, 0.75, 0.75]
-        config.analysis_default_batch_size = 1
-        config.retry_max_attempts = 1
-        config.retry_backoff_seconds = (0.1,)
-        config.downloads_dir = "downloads"
-        config.model_face_analyzer_det_size = [640, 640]
-        config.sharpness_base_scale = 1000
-        config.edge_strength_base_scale = 100
-        return config
-
-    @pytest.fixture
     def mock_db(self):
         db = MagicMock(spec=Database)
         db.count_errors.return_value = 0
@@ -58,10 +35,6 @@ class TestPipelinesExtended:
             face_model_name="buffalo_l",
             face_ref_img_path="ref.jpg",
         )
-
-    @pytest.fixture
-    def mock_thumbnail_manager(self):
-        return MagicMock()
 
     @pytest.fixture
     def pipeline(self, mock_params, mock_logger, mock_config, mock_db, mock_thumbnail_manager):

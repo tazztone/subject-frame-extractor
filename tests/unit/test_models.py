@@ -84,7 +84,7 @@ def test_scene_state():
 def test_analysis_parameters_from_ui():
     logger = MagicMock()
     config = MagicMock()
-    config.model_dump.return_value = {"default_tracker_model_name": "sam2", "filter_default_quality_score": True}
+    config.model_dump.return_value = {"default_tracker_model_name": "sam3", "filter_default_quality_score": True}
     config.default_thumb_megapixels = 0.5
 
     # Test basic UI creation

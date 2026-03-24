@@ -16,22 +16,6 @@ from core.operators.viz import histogram_svg
 
 class TestFiltering:
     @pytest.fixture
-    def mock_logger(self):
-        return MagicMock()
-
-    @pytest.fixture
-    def mock_config(self):
-        config = MagicMock()
-        config.filter_default_yaw = {"min": -45, "max": 45, "default_min": -45, "default_max": 45}
-        config.filter_default_pitch = {"min": -45, "max": 45, "default_min": -45, "default_max": 45}
-        config.model_dump.return_value = {}
-        config.filter_default_quality_score = {"default_min": 0.0, "default_max": 100.0}
-        config.filter_default_face_sim = {"default_min": 0.0, "default_max": 1.0}
-        config.filter_default_mask_area_pct = {"default_min": 0.0}
-        config.filter_default_eyes_open = {"default_min": 0.0}
-        return config
-
-    @pytest.fixture
     def mock_thumbnail_manager(self):
         return MagicMock()
 

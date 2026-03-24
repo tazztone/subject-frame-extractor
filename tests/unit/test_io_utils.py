@@ -16,14 +16,6 @@ from core.io_utils import (
 )
 
 
-@pytest.fixture
-def mock_config():
-    config = MagicMock()
-    config.utility_max_filename_length = 20
-    config.utility_image_extensions = [".jpg", ".png", ".webp"]
-    return config
-
-
 def test_validate_video_file_not_found():
     with pytest.raises(FileNotFoundError):
         validate_video_file("non_existent_file.mp4")

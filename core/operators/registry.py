@@ -8,6 +8,7 @@ for integrating operators with the analysis pipeline.
 from __future__ import annotations
 
 import importlib
+import logging
 import pkgutil
 import time
 from typing import TYPE_CHECKING, Any, Optional, Type
@@ -16,6 +17,8 @@ from core.operators.base import Operator, OperatorConfig, OperatorContext, Opera
 
 if TYPE_CHECKING:
     pass
+
+logger = logging.getLogger(__name__)
 
 
 class OperatorRegistry:
@@ -38,6 +41,8 @@ class OperatorRegistry:
             operator: Operator instance to register
         """
         name = operator.config.name
+        if name in cls._operators:
+            logger.warning(f"Operator '{name}' is already registered and will be overwritten.")
         cls._operators[name] = operator
 
     @classmethod

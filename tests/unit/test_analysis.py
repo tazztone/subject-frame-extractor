@@ -3,27 +3,9 @@ from queue import Queue
 from unittest.mock import MagicMock, patch
 
 import numpy as np
-import pytest
 
 from core.managers.analysis import AnalysisPipeline, PreAnalysisPipeline
 from core.models import AnalysisParameters, Scene
-
-
-@pytest.fixture
-def mock_logger():
-    return MagicMock()
-
-
-@pytest.fixture
-def mock_config(tmp_path):
-    config = MagicMock()
-    config.logs_dir = str(tmp_path / "logs")
-    config.downloads_dir = str(tmp_path / "downloads")
-    config.analysis_default_workers = 1
-    config.analysis_default_batch_size = 1
-    config.retry_max_attempts = 1
-    config.retry_backoff_seconds = 0
-    return config
 
 
 @patch("core.managers.analysis.initialize_analysis_models")
