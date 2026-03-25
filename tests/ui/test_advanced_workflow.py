@@ -3,14 +3,16 @@ import re
 import pytest
 from playwright.sync_api import Page, expect
 
+from .conftest import BASE_URL
+
 
 @pytest.fixture(scope="module")
 def app_server_url(app_server):
     """
     Returns the URL of the running app server.
-    app_server fixture from tests/e2e/conftest.py starts the server if needed.
+    app_server fixture from tests/ui/conftest.py starts the server if needed.
     """
-    return "http://127.0.0.1:7860"
+    return BASE_URL
 
 
 class TestAdvancedWorkflow:

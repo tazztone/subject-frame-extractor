@@ -110,7 +110,7 @@ class TestGallerySliderInteractions:
         time.sleep(1)
 
         # Find Columns slider
-        columns_slider = page.get_by_label("Columns")
+        columns_slider = page.get_by_label("Columns").first
         if columns_slider.is_visible():
             # Get initial value
             initial_value = columns_slider.input_value()
@@ -142,7 +142,7 @@ class TestGallerySliderInteractions:
         time.sleep(1)
 
         # Find Height slider
-        height_slider = page.get_by_label("Gallery Height")
+        height_slider = page.get_by_label("Gallery Height").first
         if height_slider.is_visible():
             initial_value = height_slider.input_value()
             print(f"Initial height value: {initial_value}")
