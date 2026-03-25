@@ -40,6 +40,18 @@ def pytest_sessionstart(session):
 
 This ensures that even third-party libraries that import `torch` at top-level will receive the mock instead of triggering a VRAM allocation.
 
+### Gradio & Matplotlib Mocking
+When mocking `matplotlib` for a Gradio-based application (as in `tests/mock_app.py`), you MUST satisfy Gradio's internal `MatplotlibBackendMananger`. The mock must include at minimum:
+- `matplotlib.get_backend()` (return a string like "agg")
+- `matplotlib.use()`
+- `matplotlib.rcParams` (dictionary)
+
+Failure to provide these will cause silent "Error" prefixes in UI status components.
+
+### Exception Identity & Sub-module Mocks
+If a module uses `from scenedetect import VideoOpenFailure`, and you mock `scenedetect` globally, the class identity might mismatch if the module was loaded prematurely or if the mock structure doesn't match the library's re-exports.
+- **Best Practice**: Use a scoped `patch("module.under.test.VideoOpenFailure", VideoOpenFailure)` in the test method to ensure the `except` block in the target module perfectly matches the exception raised by the mock.
+
 ### Robust `MockTensor` Support
 For tests involving mask processing (e.g., SAM3/SAM2.1), `conftest.py` provides a `MockTensor` class that simulates `torch.Tensor` behavior:
 - **Shape Propagation**: Returns correctly shaped numpy arrays via `.cpu().numpy()`.

@@ -25,6 +25,12 @@ class OutOfMemoryError(RuntimeError):
     pass
 
 
+class VideoOpenFailure(RuntimeError):
+    """Mock PySceneDetect VideoOpenFailure."""
+
+    pass
+
+
 @pytest.fixture(autouse=True)
 def clean_registry():
     """Ensure OperatorRegistry is clean before each test."""
@@ -284,6 +290,9 @@ def pytest_sessionstart(session):
     mock_torch = MagicMock(name="torch")
     mock_torch.cuda.is_available.return_value = False
     mock_torch.cuda.device_count.return_value = 0
+    mock_torch.cuda.get_device_name = MagicMock(return_value="Mock GPU")
+    mock_torch.cuda.empty_cache = MagicMock()
+    mock_torch.cuda.memory_summary = MagicMock(return_value="Mock Memory Summary")
 
     mock_torch.cuda.OutOfMemoryError = OutOfMemoryError
 
@@ -427,8 +436,14 @@ def pytest_sessionstart(session):
         "pyiqa": MagicMock(),
         "lpips": _create_mock_module("lpips", {"LPIPS": MagicMock()}),
         "skimage.metrics": MagicMock(),
-        "scenedetect": _create_mock_module("scenedetect", {"detect": MagicMock(), "VideoOpenFailure": Exception}),
+        "scenedetect": _create_mock_module(
+            "scenedetect",
+            {"detect": MagicMock(), "VideoOpenFailure": VideoOpenFailure, "__all__": ["VideoOpenFailure"]},
+        ),
         "scenedetect.detectors": _create_mock_module("scenedetect.detectors", {"ContentDetector": MagicMock()}),
+        "scenedetect.video_stream": _create_mock_module(
+            "scenedetect.video_stream", {"VideoOpenFailure": VideoOpenFailure}
+        ),
         "torchvision.transforms": MagicMock(),
     }
 
