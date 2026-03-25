@@ -34,6 +34,9 @@ class TestPhase1Logic(unittest.TestCase):
                 "scene_filter_status": gr.Markdown(),
                 "unified_status": gr.Markdown(),
                 "unified_log": gr.Textbox(),
+                "scene_gallery": gr.Gallery(),
+                "total_pages_label": gr.Markdown(),
+                "page_number_input": gr.Dropdown(),
             }
 
     @patch("ui.app_ui.is_image_folder")

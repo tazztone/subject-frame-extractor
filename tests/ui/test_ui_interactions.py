@@ -31,12 +31,15 @@ class TestInteractiveComponents:
         page.wait_for_timeout(2000)
 
         switch_to_tab(page, Labels.TAB_SUBJECT)
+        expect(page.locator(Selectors.SEED_STRATEGY)).to_be_visible(timeout=5000)
 
-        # Select Face strategy
-        page.get_by_text(Labels.STRATEGY_FACE, exact=False).click()
+        # Select Face strategy - use a more robust click on the radio input
+        face_radio = page.locator(f"{Selectors.SEED_STRATEGY} input[value='{Labels.STRATEGY_FACE}']")
+        face_radio.check(force=True)
+        page.wait_for_timeout(1000)  # Wait for visibility toggle
 
         # Click the "Scan Video for People" sub-tab
-        page.locator(Selectors.SCAN_VIDEO_TAB).click()
+        page.get_by_role("tab", name="🔍 Scan Video for People", exact=False).click()
 
         # Find People button should be visible
         btn = page.get_by_role("button", name=Labels.SCAN_VIDEO_BUTTON, exact=False)
@@ -65,7 +68,8 @@ class TestWorkflowInteractions:
         switch_to_tab(page, Labels.TAB_SUBJECT)
 
         # Select Face
-        page.get_by_text(Labels.STRATEGY_FACE, exact=False).click()
+        page.locator(f"{Selectors.SEED_STRATEGY} input[value='{Labels.STRATEGY_FACE}']").check(force=True)
+        page.wait_for_timeout(500)
 
         # Check for photo upload text
         expect(page.get_by_text("Upload Reference Photo", exact=False)).to_be_visible()
@@ -78,7 +82,8 @@ class TestWorkflowInteractions:
         switch_to_tab(page, Labels.TAB_SUBJECT)
 
         # Select Text
-        page.get_by_text(Labels.STRATEGY_TEXT, exact=False).click()
+        page.locator(f"{Selectors.SEED_STRATEGY} input[value='{Labels.STRATEGY_TEXT}']").check(force=True)
+        page.wait_for_timeout(500)
 
         # Check for prompt placeholder
         expect(page.get_by_placeholder("e.g., 'a man in a blue suit'")).to_be_visible()
@@ -95,10 +100,11 @@ class TestErrorScenarios:
         switch_to_tab(page, Labels.TAB_SUBJECT)
 
         # Select "By Face" strategy to make the group visible
-        page.get_by_text(Labels.STRATEGY_FACE, exact=False).click()
+        page.locator(f"{Selectors.SEED_STRATEGY} input[value='{Labels.STRATEGY_FACE}']").check(force=True)
+        page.wait_for_timeout(1000)
 
         # Ensure we are on Scan Video tab
-        page.locator(Selectors.SCAN_VIDEO_TAB).click()
+        page.get_by_role("tab", name="🔍 Scan Video for People", exact=False).click()
 
         # Click without setting an input
         page.get_by_role("button", name=Labels.SCAN_VIDEO_BUTTON, exact=False).click()

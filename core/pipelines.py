@@ -89,15 +89,19 @@ def execute_extraction(
         except Exception as e:
             logger.warning(f"Failed to save fingerprint for extraction session: {e}", exc_info=True)
 
+        msg = "Extraction complete."
+        logger.info(msg)
         yield {
-            "unified_log": "Extraction complete.",
+            "unified_log": msg,
             "extracted_video_path_state": result.get("video_path", ""),
             "extracted_frames_dir_state": result["output_dir"],
             "done": True,
         }
     else:
         error_log = result.get("log") if result else "Unknown error"
-        yield {"unified_log": f"Extraction failed: {error_log}", "done": False}
+        msg = f"Extraction failed: {error_log}"
+        logger.error(msg)
+        yield {"unified_log": msg, "done": False}
 
 
 @handle_common_errors
@@ -136,8 +140,10 @@ def execute_pre_analysis(
     )
     processed = pipeline.run(scenes, tracker=tracker)
 
+    msg = "Pre-Analysis complete."
+    logger.info(msg)
     res: dict[str, Any] = {
-        "unified_log": "Pre-analysis complete.",
+        "unified_log": msg,
         "scenes": [s.model_dump() for s in processed],
         "output_dir": str(out_dir),
         "done": True,
@@ -191,14 +197,18 @@ def execute_propagation(
     if result and result.get("done"):
         masks_dir = Path(result["output_dir"]) / "masks"
         n = len(list(masks_dir.glob("*.png"))) if masks_dir.exists() else 0
+        msg = f"Propagation complete. {n} masks generated."
+        logger.info(msg)
         yield {
-            "unified_log": f"Propagation complete. {n} masks generated.",
+            "unified_log": msg,
             "output_dir": result["output_dir"],
             "done": True,
         }
     else:
         error_msg = result.get("error") if result else "Unknown error"
-        yield {"unified_log": f"Propagation failed: {error_msg}", "done": False}
+        msg = f"Propagation failed: {error_msg}"
+        logger.error(msg)
+        yield {"unified_log": msg, "done": False}
 
 
 @handle_common_errors
@@ -227,8 +237,10 @@ def execute_analysis(
     result = pipeline.run_analysis_only(scenes, tracker=tracker)
 
     if result and result.get("done"):
+        msg = "Analysis complete."
+        logger.info(msg)
         yield {
-            "unified_log": "Analysis complete.",
+            "unified_log": msg,
             "output_dir": result["output_dir"],
             "metadata_path": str(Path(result["output_dir"]) / "metadata.db"),
             "done": True,

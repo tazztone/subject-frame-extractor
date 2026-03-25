@@ -5,7 +5,7 @@ import json
 import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 import cv2
 
@@ -251,13 +251,16 @@ def export_kept_frames(
             except ValueError as e:
                 return str(e)
 
-        return f"Exported {len(kept)} items to {export_dir.name}."
+        msg = f"✅ Export Complete. Exported {len(kept)} items to: {export_dir.name}"
+        logger.info(msg)
+        return msg
     except Exception as e:
-        logger.error("Error during export process", exc_info=True)
-        return f"Error during export: {e}"
+        err_msg = f"❌ Export Failed: {e}"
+        logger.error(err_msg, exc_info=True)
+        return err_msg
 
 
-def dry_run_export(event: ExportEvent, config: "Config") -> str:
+def dry_run_export(event: ExportEvent, config: "Config", logger: Optional["AppLogger"] = None) -> str:
     if not event.all_frames_data:
         return "No metadata to export."
     if not event.video_path or not Path(event.video_path).exists():
@@ -311,6 +314,9 @@ def dry_run_export(event: ExportEvent, config: "Config") -> str:
             "vfr",
             str(export_dir / "frame_%06d.png"),
         ]
-        return f"Dry Run: {len(frames_to_extract)} frames to be exported.\n\nFFmpeg command:\n{' '.join(cmd)}"
+        msg = f"Dry Run: {len(frames_to_extract)} frames to be exported.\n\nFFmpeg command:\n{' '.join(cmd)}"
+        if logger:
+            logger.info(msg)
+        return msg
     except Exception as e:
         return f"Error during dry run: {e}"

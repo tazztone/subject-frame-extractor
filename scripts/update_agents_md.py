@@ -303,7 +303,7 @@ def main():
 
     # Generate AGENTS_CODE_REFERENCE.md
     header_main = """---
-description: Auto-generated code skeletons for the main application.
+description: Auto-generated code skeletons for the main application. do not edit manually.
 ---
 
 # Code Skeleton Reference

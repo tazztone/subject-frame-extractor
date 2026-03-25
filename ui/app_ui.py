@@ -859,6 +859,14 @@ class AppUI:
         <p>Found <strong>{len(scenes_objs)}</strong> scenes.</p>
         <p><strong>Next:</strong> {"Review scenes and compute metrics." if is_image_folder(result["output_dir"]) else "Review scenes and propagate masks."}</p>
         </div>"""
+
+        # Build gallery items for the first page
+        items, index_map, total_pages = build_scene_gallery_items(
+            new_state.scenes, "Kept", new_state.extracted_frames_dir, page_num=1, config=self.config
+        )
+        new_state.scene_gallery_index_map = index_map
+        page_choices = [str(i) for i in range(1, total_pages + 1)] if total_pages > 0 else ["1"]
+
         return {
             self.components["application_state"]: new_state,
             self.components["seeding_results_column"]: gr.update(visible=True),
@@ -866,6 +874,9 @@ class AppUI:
             self.components["propagate_masks_button"]: button_update,
             self.components["scene_filter_status"]: status_text,
             self.components["unified_status"]: msg,
+            self.components["scene_gallery"]: gr.update(value=items),
+            self.components["total_pages_label"]: f"/ {total_pages} pages",
+            self.components["page_number_input"]: gr.update(choices=page_choices, value="1"),
         }
 
     def run_pre_analysis_wrapper(self, current_state: ApplicationState, *args, progress=None):
@@ -1162,6 +1173,7 @@ class AppUI:
             self.on_find_people_from_video,
             inputs=self.ana_input_components,
             outputs=[
+                c["unified_status"],
                 c["find_people_status"],
                 c["discovered_people_group"],
                 c["discovered_faces_gallery"],
@@ -1230,10 +1242,10 @@ class AppUI:
     @safe_ui_callback("Face Discovery")
     def on_find_people_from_video(
         self, current_state: ApplicationState, *args
-    ) -> tuple[str, gr.update, gr.update, float, ApplicationState]:
+    ) -> tuple[str, str, gr.update, gr.update, float, ApplicationState]:
         """Scans the video for faces to populate the discovery gallery.
 
-        Returns: (status_message, group_visibility, gallery_update, slider_value, new_state)
+        Returns: (unified_status, find_people_status, group_visibility, gallery_update, slider_value, new_state)
         """
         new_state = current_state.model_copy()
         self.logger.info("Scan Video for Faces clicked")
@@ -1242,7 +1254,15 @@ class AppUI:
         self.logger.info(f"Output dir: {output_dir}, exists: {output_dir.exists()}")
         if not output_dir.exists():
             self.logger.warning("Output directory does not exist - run extraction first")
-            return "⚠️ **Run extraction first** - No video frames found.", gr.update(visible=False), [], 0.5, new_state
+            msg = "⚠️ **Run extraction first** - No video frames found."
+            return (
+                "❌ **Face Discovery Failed.** Run extraction first.",
+                msg,
+                gr.update(visible=False),
+                [],
+                0.5,
+                new_state,
+            )
 
         from core.managers import initialize_analysis_models
         from core.utils import create_frame_map
@@ -1251,8 +1271,10 @@ class AppUI:
         face_analyzer = models["face_analyzer"]
         if not face_analyzer:
             self.logger.warning("Face analyzer not available")
+            msg = "⚠️ **Face analyzer unavailable** - Check model installation."
             return (
-                "⚠️ **Face analyzer unavailable** - Check model installation.",
+                "❌ **Face Discovery Failed.** Face analyzer unavailable.",
+                msg,
                 gr.update(visible=False),
                 [],
                 0.5,
@@ -1261,7 +1283,15 @@ class AppUI:
         frame_map = create_frame_map(output_dir, self.logger)
         self.logger.info(f"Frame map has {len(frame_map)} frames")
         if not frame_map:
-            return "⚠️ **No frames found** - Run extraction first.", gr.update(visible=False), [], 0.5, new_state
+            msg = "⚠️ **No frames found** - Run extraction first."
+            return (
+                "❌ **Face Discovery Failed.** No video frames found.",
+                msg,
+                gr.update(visible=False),
+                [],
+                0.5,
+                new_state,
+            )
 
         all_faces = []
         thumb_dir = output_dir / "thumbs"
@@ -1288,8 +1318,10 @@ class AppUI:
 
         if not all_faces:
             self.logger.info("No faces found in sampled frames")
+            msg = "ℹ️ **No faces detected** in sampled frames. Try adjusting sample rate."
             return (
-                "ℹ️ **No faces detected** in sampled frames. Try adjusting sample rate.",
+                "⚠️ **Face Discovery Finished.** No faces found.",
+                msg,
                 gr.update(visible=False),
                 [],
                 0.5,
@@ -1299,8 +1331,10 @@ class AppUI:
         # Get clustered faces for gallery
         gallery_items = self.on_identity_confidence_change(0.5, new_state)
         n_people = len(self.gallery_to_cluster_map) if hasattr(self, "gallery_to_cluster_map") else 0
+        success_msg = f"✅ Found **{n_people} unique people** from {len(all_faces)} face detections."
         return (
-            f"✅ Found **{n_people} unique people** from {len(all_faces)} face detections.",
+            success_msg,
+            success_msg,
             gr.update(visible=True),
             gallery_items,
             0.5,
@@ -1468,7 +1502,7 @@ class AppUI:
                 c["dedup_method_input"],
             ]
             + slider_comps,
-            c["unified_log"],
+            [c["unified_status"]],
         )
         c["dry_run_button"].click(
             self.dry_run_export_wrapper,
@@ -1483,7 +1517,7 @@ class AppUI:
                 c["dedup_method_input"],
             ]
             + slider_comps,
-            c["unified_log"],
+            [c["unified_status"]],
         )
 
         # Reset Filters
@@ -1744,7 +1778,7 @@ class AppUI:
         dedup_thresh: int,
         dedup_method_ui: str,
         *slider_values: float,
-    ) -> str:
+    ) -> dict:
         """Wrapper to execute the final frame export."""
         all_frames_data = state.all_frames_data
         output_dir = state.analysis_output_dir
@@ -1767,7 +1801,7 @@ class AppUI:
                 "enable_dedup": dedup_method != "None",
             }
         )
-        return export_kept_frames(
+        msg = export_kept_frames(
             ExportEvent(
                 all_frames_data=all_frames_data,
                 output_dir=output_dir,
@@ -1783,6 +1817,9 @@ class AppUI:
             self.thumbnail_manager,
             self.cancel_event,
         )
+        return {
+            self.components["unified_status"]: msg,
+        }
 
     @safe_ui_callback("Export Dry Run")
     def dry_run_export_wrapper(
@@ -1796,7 +1833,7 @@ class AppUI:
         dedup_thresh: int,
         dedup_method_ui: str,
         *slider_values: float,
-    ) -> str:
+    ) -> dict:
         """Wrapper to perform a dry run of the export."""
         all_frames_data = state.all_frames_data
         output_dir = state.analysis_output_dir
@@ -1819,7 +1856,7 @@ class AppUI:
                 "enable_dedup": dedup_method != "None",
             }
         )
-        return dry_run_export(
+        msg = dry_run_export(
             ExportEvent(
                 all_frames_data=all_frames_data,
                 output_dir=output_dir,
@@ -1831,4 +1868,8 @@ class AppUI:
                 filter_args=filter_args,
             ),
             self.config,
+            self.logger,
         )
+        return {
+            self.components["unified_status"]: msg,
+        }

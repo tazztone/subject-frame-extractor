@@ -61,6 +61,9 @@ class TestAppUIHandlers:
         app.components["propagation_group"] = MagicMock()
         app.components["propagate_masks_button"] = MagicMock()
         app.components["scene_filter_status"] = MagicMock()
+        app.components["scene_gallery"] = MagicMock()
+        app.components["total_pages_label"] = MagicMock()
+        app.components["page_number_input"] = MagicMock()
         app.components["metric_sliders"] = {}
         app.components["metric_accs"] = {}
         return app
