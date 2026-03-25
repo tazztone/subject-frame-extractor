@@ -29,12 +29,18 @@ mock_sam3 = MagicMock(name="sam3")
 mock_sam3.model_builder = MagicMock()
 
 
-# Create OutOfMemoryError class for registry testing
+# Create Stable exception classes
 class OutOfMemoryError(RuntimeError):
     pass
 
 
+class VideoOpenFailure(RuntimeError):
+    pass
+
+
 mock_torch.cuda.OutOfMemoryError = OutOfMemoryError
+mock_torch.cuda.get_device_name = MagicMock(return_value="Mock GPU")
+mock_torch.cuda.empty_cache = MagicMock()
 
 # Define the modules to mock and their structure
 # We use ModuleType to avoid "Environment Pollution" (MagicMock in sys.modules)
@@ -49,6 +55,9 @@ modules_map = {
             "device": MagicMock(),
             "float": MagicMock(),
             "uint8": MagicMock(),
+            "float32": MagicMock(),
+            "int64": MagicMock(),
+            "from_numpy": MagicMock(side_effect=lambda x: MagicMock()),
         },
     ),
     "torch.cuda": mock_torch.cuda,
@@ -67,14 +76,23 @@ modules_map = {
     "mediapipe.tasks.python.vision": MagicMock(),
     "pyiqa": MagicMock(),
     "scenedetect": create_mock_module(
-        "scenedetect", {"detect": MagicMock(), "VideoOpenFailure": Exception, "ContentDetector": MagicMock()}
+        "scenedetect", {"detect": MagicMock(), "VideoOpenFailure": VideoOpenFailure, "ContentDetector": MagicMock()}
     ),
     "scenedetect.detectors": create_mock_module("scenedetect.detectors", {"ContentDetector": MagicMock()}),
     "yt_dlp": MagicMock(),
     "numba": create_mock_module("numba", {"njit": lambda f: f, "jit": lambda f: f, "cuda": MagicMock()}),
     "lpips": MagicMock(),
     "matplotlib": create_mock_module(
-        "matplotlib", {"pyplot": MagicMock(), "ticker": MagicMock(), "figure": MagicMock(), "backends": MagicMock()}
+        "matplotlib",
+        {
+            "pyplot": MagicMock(),
+            "ticker": MagicMock(),
+            "figure": MagicMock(),
+            "backends": MagicMock(),
+            "get_backend": MagicMock(return_value="agg"),
+            "use": MagicMock(),
+            "rcParams": {},
+        },
     ),
     "matplotlib.pyplot": MagicMock(),
     "matplotlib.ticker": MagicMock(),
@@ -162,7 +180,14 @@ def mock_extraction_run(self, tracker=None):
     if hasattr(self, "logger") and self.logger:
         self.logger.info(msg)
 
-    return {"done": True, "output_dir": output_dir, "video_path": "mock_video.mp4"}
+    return {
+        "done": True,
+        "output_dir": output_dir,
+        "video_path": "mock_video.mp4",
+        "extracted_frames_dir_state": output_dir,
+        "extracted_video_path_state": "mock_video.mp4",
+        "unified_status_state": "Extraction Complete.",
+    }
 
 
 def mock_pre_analysis_execution(

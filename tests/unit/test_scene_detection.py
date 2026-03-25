@@ -101,9 +101,10 @@ class TestSceneDetection:
         from core.scene_utils.detection import run_scene_detection
 
         mock_logger = MagicMock()
-        mock_detect.side_effect = VideoOpenFailure("Open failed")
-
-        result = run_scene_detection("/path/to/video.mp4", tmp_path, mock_logger)
+        # Patch the class identity in the module to match what we raise
+        with patch("core.scene_utils.detection.VideoOpenFailure", VideoOpenFailure):
+            mock_detect.side_effect = VideoOpenFailure("Open failed")
+            result = run_scene_detection("/path/to/video.mp4", tmp_path, mock_logger)
 
         assert result == []
         mock_logger.error.assert_called_with(
