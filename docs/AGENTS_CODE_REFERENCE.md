@@ -93,6 +93,7 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;pixel_count.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└──&nbsp;test_pixel_count.py  
 ├──&nbsp;patch.py  
+├──&nbsp;previews  
 ├──&nbsp;pyrightconfig.json  
 ├──&nbsp;run_config.json  
 ├──&nbsp;scripts  

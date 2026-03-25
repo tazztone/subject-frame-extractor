@@ -66,27 +66,37 @@ def test_check_environment_torch_exception():
         assert any("PyTorch/CUDA Check: FAILED" in line for line in report)
 
 
-def test_simulate_pipeline_success():
+def test_simulate_pipeline_success(tmp_path):
     config = MagicMock()
-    config.downloads_dir = "downloads"
+    config.downloads_dir = str(tmp_path / "downloads")
     config.default_tracker_model_name = "sam3"
     logger = MagicMock()
     queue = MagicMock()
     cancel = MagicMock()
     tm = MagicMock()
 
+    out_dir_path = tmp_path / "out"
+    out_dir_path.mkdir(parents=True, exist_ok=True)
+    out_dir = str(out_dir_path)
+
+    video_path_obj = tmp_path / "v.mp4"
+    video_path_obj.write_text("dummy")
+    video_path = str(video_path_obj)
+
     # Mocking all execute_* functions in core.system_health
     with (
         patch(
             "core.system_health.execute_extraction",
-            return_value=[{"done": True, "extracted_frames_dir_state": "out", "extracted_video_path_state": "v.mp4"}],
+            return_value=[
+                {"done": True, "extracted_frames_dir_state": out_dir, "extracted_video_path_state": video_path}
+            ],
         ),
         patch(
             "core.system_health.execute_pre_analysis",
-            return_value=[{"done": True, "scenes": [{"shot_id": 1, "status": "included"}], "output_dir": "out"}],
+            return_value=[{"done": True, "scenes": [{"shot_id": 1, "status": "included"}], "output_dir": out_dir}],
         ),
-        patch("core.system_health.execute_propagation", return_value=[{"done": True, "output_dir": "out"}]),
-        patch("core.system_health.execute_analysis", return_value=[{"done": True, "output_dir": "out"}]),
+        patch("core.system_health.execute_propagation", return_value=[{"done": True, "output_dir": out_dir}]),
+        patch("core.system_health.execute_analysis", return_value=[{"done": True, "output_dir": out_dir}]),
         patch("core.system_health.export_kept_frames", return_value="Export successful"),
         patch("core.filtering.load_and_prep_filter_data", return_value=([{"f": 1}], {})),
         patch("core.filtering.apply_all_filters_vectorized", return_value=([{"f": 1}], [], [], [])),

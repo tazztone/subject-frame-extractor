@@ -83,7 +83,7 @@ def test_execute_extraction_success(mock_runtime, tmp_path, default_extraction_e
 
     assert len(results) == 1
     assert results[0]["done"] is True
-    assert "Extraction complete" in results[0]["unified_log"]
+    assert "Extraction Complete" in results[0]["unified_log"]
     assert results[0]["extracted_frames_dir_state"] == str(tmp_path / "out")
 
 
@@ -161,7 +161,7 @@ def test_execute_pre_analysis_success(mock_runtime, tmp_path, default_pre_analys
         results = list(gen)
 
     assert results[0]["done"] is True
-    assert "Pre-analysis complete" in results[0]["unified_log"]
+    assert "Pre-Analysis Complete" in results[0]["unified_log"]
 
 
 def test_execute_propagation_no_scenes(mock_runtime, default_pre_analysis_event):

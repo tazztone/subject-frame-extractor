@@ -3,8 +3,6 @@ Playwright UI Tests for Photo Mode.
 Verified with mock_app.py.
 """
 
-import time
-
 import pytest
 from playwright.sync_api import Page, expect
 
@@ -21,7 +19,7 @@ def switch_to_tab(page: Page, tab_name: str):
     if tab_btn.get_attribute("aria-selected") != "true":
         tab_btn.click(force=True)
         expect(tab_btn).to_have_attribute("aria-selected", "true", timeout=10000)
-    time.sleep(1.5)
+    page.wait_for_timeout(1500)
 
 
 class TestPhotoWorkflow:
@@ -55,9 +53,7 @@ class TestPhotoWorkflow:
         print("  ✓ Ingest Complete")
 
         # 3. Verify Gallery
-        print("Step 3: Verifying Gallery")
-        # Gradio gallery might take a moment to render thumbnails
-        time.sleep(3)
+        page.wait_for_timeout(3000)
 
         # Take a screenshot for visual debug
         page.screenshot(path="tests/ui/gallery_debug.png")
@@ -72,7 +68,8 @@ class TestPhotoWorkflow:
         # 4. Recalculate Scores
         print("Step 4: Recalculating Scores")
         # Adjust a slider
-        page.get_by_label("Sharpness").first
+        page.get_by_placeholder("Min", exact=True).first.fill("80")
+        page.wait_for_timeout(3000)
         # Gradio sliders are complex, but can often be set via fill or type if they have an input
         # Or just click a button that uses them
         recalc_btn = page.get_by_role("button", name="Recalculate Scores")

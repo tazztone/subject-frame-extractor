@@ -249,4 +249,4 @@ class TestExecutePreAnalysis:
         # Assert
         assert len(results) == 1
         assert results[0]["done"] is True
-        assert "Pre-analysis complete" in results[0]["unified_log"]
+        assert "Pre-Analysis Complete" in results[0]["unified_log"]

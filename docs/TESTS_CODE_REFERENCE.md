@@ -383,15 +383,16 @@ def test_real_end_to_end_workflow(tmp_path):
 ### `📄 tests/mock_app.py`
 
 ```python
+def create_mock_module(name, attributes=None):
+    """Creates a proper ModuleType instance populated with mocks/attributes."""
 mock_torch = MagicMock(name='torch')
 mock_torch.cuda.is_available.return_value = False
-sys.modules['torch'] = mock_torch
 mock_torch.__version__ = "<REDACTED_STRING>"
 mock_torch.nn.Module = MagicMock
 mock_torch.Tensor = MagicMock
 mock_sam3 = MagicMock(name='sam3')
 mock_sam3.model_builder = MagicMock()
-modules_to_mock = {'torch': mock_torch, 'torchvision': MagicMock(), 'torchvis...
+modules_map = {'torch': create_mock_module('torch', {'cuda': mock_torch.cuda,...
 def mock_extraction_run(self, tracker=None):
     """Mocks the extraction process."""
 def mock_pre_analysis_execution(event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress=None, model_registry=None):
@@ -2633,7 +2634,7 @@ def test_check_dependencies(): ...
 def test_check_paths_and_assets(): ...
 def test_generate_full_diagnostic_report(): ...
 def test_check_environment_torch_exception(): ...
-def test_simulate_pipeline_success(): ...
+def test_simulate_pipeline_success(tmp_path): ...
 ```
 
 ### `📄 tests/unit/test_tracker_factory.py`

@@ -26,9 +26,21 @@ Use the `ModuleType` stub pattern in `conftest.py`:
 
 ```python
 import sys, types
-sys.modules["torch"] = types.ModuleType("torch")
-sys.modules["torch.cuda"] = types.ModuleType("torch.cuda")
+from unittest.mock import MagicMock
+
+# Create a proper module shell
+torch_mod = types.ModuleType("torch")
+torch_mod.cuda = types.ModuleType("torch.cuda")
+
+# Attach mocks/attributes as needed
+torch_mod.cuda.is_available = MagicMock(return_value=True)
+
+# Inject into sys.modules
+sys.modules["torch"] = torch_mod
+sys.modules["torch.cuda"] = torch_mod.cuda
 ```
+
+This prevents downstream libraries from crashing when they perform `isinstance(mod, types.ModuleType)` checks.
 
 ### Refactoring for Testability
 Avoid complex `sys.modules` hacking to test functions that perform inline imports. Instead, **extract the logic into a standalone function** that takes simple types (like `Path` or `str`) and test that function directly. 
@@ -68,6 +80,25 @@ def test_my_metric_operator_golden(mock_config, sample_image, mock_logger):
     assert "my_metric_score" in result.metrics
     assert 0.0 <= result.metrics["my_metric_score"] <= 100.0
     mock_logger.error.assert_not_called()
+
+## Deep Property-Based Testing (Hypothesis)
+
+Don't settle for "no-crash" tests. Use `hypothesis` to define mathematical invariants for geometry logic.
+
+**Example: BBox Normalization**
+When converting pixel coordinates to relative `[0, 1]` coordinates for SAM3:
+- **Invariant**: The output coordinates *must* stay within `[0, 1]` regardless of the image size or input pixel value (even if input is slightly out of bounds).
+- **Outcome**: This pattern surfaced a critical division-by-zero risk in the early SAM3 implementation.
+
+```python
+@given(
+    x=st.floats(min_value=-1000, max_value=5000),
+    img_w=st.integers(min_value=1, max_value=8000)
+)
+def test_bbox_normalization_invariant(x, img_w):
+    rel_x = normalize_coord(x, img_w)
+    assert 0.0 <= rel_x <= 1.0  # Mathematical guarantee
+```
 ```
 
 ## Regression Testing (`--capture-golden`)
