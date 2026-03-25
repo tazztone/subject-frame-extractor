@@ -85,7 +85,7 @@ def switch_to_tab(page: Page, tab_name: str):
     if tab_btn.get_attribute("aria-selected") != "true":
         tab_btn.click(force=True)
         expect(tab_btn).to_have_attribute("aria-selected", "true", timeout=5000)
-        time.sleep(1.0)  # Gradio animation/content load buffer
+        page.wait_for_timeout(1000)  # Gradio animation/content load buffer
 
 
 def cleanup_port(port: int):
@@ -174,7 +174,7 @@ def extracted_session(page, app_server):
 
     # Wait for completion
     expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text("Extraction Complete", timeout=30000)
-    time.sleep(1)
+    page.wait_for_timeout(1000)
 
     return page
 
@@ -203,7 +203,7 @@ def analyzed_session(extracted_session):
 
     # Wait for completion (check status)
     expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text("Pre-Analysis Complete", timeout=30000)
-    time.sleep(1)
+    page.wait_for_timeout(1000)
 
     return page
 
@@ -225,7 +225,7 @@ def full_analysis_session(analyzed_session):
     propagate_btn.click()
 
     expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text("Propagation Complete", timeout=30000)
-    time.sleep(1)
+    page.wait_for_timeout(1000)
 
     # Analyze (Metrics tab)
     switch_to_tab(page, Labels.TAB_METRICS)
@@ -235,6 +235,6 @@ def full_analysis_session(analyzed_session):
     analyze_btn.click()
 
     expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text("Analysis Complete", timeout=30000)
-    time.sleep(1)
+    page.wait_for_timeout(1000)
 
     return page
