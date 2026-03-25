@@ -13,39 +13,20 @@ Update baselines:
     python -m pytest tests/e2e/test_visual_regression.py -v --update-baselines
 """
 
-import time
-
 import pytest
 from playwright.sync_api import Page
 
-from .conftest import BASE_URL
+from .conftest import BASE_URL, open_accordion, switch_to_tab, wait_for_app_ready
+from .ui_locators import Labels
 
 try:
-    from .visual_test_utils import capture_state_screenshot, cleanup_diffs, compare_with_baseline, save_as_baseline
+    from .visual_test_utils import capture_state_screenshot, compare_with_baseline, save_as_baseline
 
     HAS_UTILS = True
 except ImportError:
     HAS_UTILS = False
 
 pytestmark = [pytest.mark.e2e, pytest.mark.visual]
-
-
-def pytest_addoption(parser):
-    """Add --update-baselines option."""
-    parser.addoption(
-        "--update-baselines",
-        action="store_true",
-        default=False,
-        help="Update baseline screenshots instead of comparing",
-    )
-
-
-@pytest.fixture(scope="module", autouse=True)
-def cleanup_before_run():
-    """Clean up diff screenshots before test run."""
-    if HAS_UTILS:
-        cleanup_diffs()
-    yield
 
 
 class TestVisualRegression:
@@ -55,15 +36,18 @@ class TestVisualRegression:
     # Format: (state_name, setup_action)
     UI_STATES = [
         ("01_source_tab_initial", None),
-        ("02_source_tab_with_input", lambda p: p.get_by_label("Video URL or Local Path").fill("sample_video.mp4")),
-        ("03_subject_tab_initial", lambda p: p.get_by_role("tab", name="Subject").click(force=True)),
+        (
+            "02_source_tab_with_input",
+            lambda p: p.get_by_placeholder(Labels.SOURCE_PLACEHOLDER).fill("sample_video.mp4"),
+        ),
+        ("03_subject_tab_initial", lambda p: switch_to_tab(p, Labels.TAB_SUBJECT)),
         ("04_subject_face_strategy", lambda p: _click_strategy(p, "Face")),
         ("05_subject_text_strategy", lambda p: _click_strategy(p, "Text")),
-        ("06_scenes_tab_initial", lambda p: p.get_by_role("tab", name="Scenes").click(force=True)),
-        ("07_metrics_tab_initial", lambda p: p.get_by_role("tab", name="Metrics").click(force=True)),
-        ("08_export_tab_initial", lambda p: p.get_by_role("tab", name="Export").click(force=True)),
-        ("09_logs_accordion_open", lambda p: _open_logs(p)),
-        ("10_help_accordion_open", lambda p: _open_help(p)),
+        ("06_scenes_tab_initial", lambda p: switch_to_tab(p, Labels.TAB_SCENES)),
+        ("07_metrics_tab_initial", lambda p: switch_to_tab(p, Labels.TAB_METRICS)),
+        ("08_export_tab_initial", lambda p: switch_to_tab(p, Labels.TAB_EXPORT)),
+        ("09_logs_accordion_open", lambda p: open_accordion(p, Labels.SYSTEM_LOGS)),
+        ("10_help_accordion_open", lambda p: open_accordion(p, Labels.HELP_ACCORDION)),
     ]
 
     @pytest.mark.skipif(not HAS_UTILS, reason="visual_test_utils dependencies not installed")
@@ -71,14 +55,13 @@ class TestVisualRegression:
     def test_ui_state_visual(self, page: Page, app_server, state_name, action, request):
         """Capture and compare UI state screenshot."""
         page.goto(BASE_URL)
-        page.wait_for_load_state("networkidle")
-        time.sleep(1)  # Wait for initial render
+        wait_for_app_ready(page)
 
         # Execute setup action if provided
         if action:
             try:
                 action(page)
-                time.sleep(0.5)  # Wait for state change
+                page.wait_for_timeout(1000)  # Wait for state change/animation
             except Exception as e:
                 pytest.skip(f"Setup action failed: {e}")
 
@@ -117,20 +100,17 @@ class TestUIStateConsistency:
     def test_tab_switching_preserves_state(self, page: Page, app_server):
         """Switching tabs and back should preserve visual state."""
         page.goto(BASE_URL)
-        page.wait_for_load_state("networkidle")
-        time.sleep(1)
+        wait_for_app_ready(page)
 
         # Fill in some data on Source tab
-        page.get_by_label("Video URL or Local Path").fill("test_video.mp4")
+        page.get_by_placeholder(Labels.SOURCE_PLACEHOLDER).fill("test_video.mp4")
 
         # Capture initial state
         initial = capture_state_screenshot(page, "consistency_initial")
 
         # Switch away and back
-        page.get_by_role("tab", name="Subject").click(force=True)
-        time.sleep(0.3)
-        page.get_by_role("tab", name="Source").click(force=True)
-        time.sleep(0.3)
+        switch_to_tab(page, Labels.TAB_SUBJECT)
+        switch_to_tab(page, Labels.TAB_SOURCE)
 
         # Capture return state
         returned = capture_state_screenshot(page, "consistency_returned")
@@ -149,29 +129,12 @@ class TestUIStateConsistency:
 # Helper functions for test setup
 def _click_strategy(page: Page, strategy_keyword: str):
     """Click a strategy radio button containing keyword."""
-    page.get_by_role("tab", name="Subject").click(force=True)
-    time.sleep(0.3)
-    radios = page.locator("input[type='radio']")
-    for i in range(radios.count()):
-        label = radios.nth(i).locator("..").text_content()
-        if strategy_keyword.lower() in label.lower():
-            radios.nth(i).click()
-            return
-    # Try clicking by text
-    page.get_by_text(strategy_keyword, exact=False).first.click()
+    switch_to_tab(page, Labels.TAB_SUBJECT)
 
+    if "face" in strategy_keyword.lower():
+        label = Labels.STRATEGY_FACE
+    else:
+        label = Labels.STRATEGY_TEXT
 
-def _open_logs(page: Page):
-    """Open the System Logs accordion."""
-    logs = page.get_by_text("System Logs")
-    if logs.is_visible():
-        logs.click()
-        time.sleep(0.3)
-
-
-def _open_help(page: Page):
-    """Open the Help accordion."""
-    help_btn = page.get_by_text("Help / Troubleshooting")
-    if help_btn.is_visible():
-        help_btn.click()
-        time.sleep(0.3)
+    page.get_by_text(label, exact=False).first.click()
+    page.wait_for_timeout(500)

@@ -53,7 +53,11 @@ class TestExportFlow:
         dry_run_btn.click()
 
         # Check logs for success message
-        log = page.locator("#unified_log")
+        # Open logs accordion because it's closed by default
+        page.get_by_text("System Logs").click()
+        time.sleep(0.5)
+
+        log = page.locator("#unified_log textarea")
         # Wait for log to update
         time.sleep(2)
         expect(log).to_be_visible()

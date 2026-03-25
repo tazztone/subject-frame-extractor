@@ -183,4 +183,6 @@ class MetricsTabBuilder:
                 ),
             )
 
-        self.app.components["start_analysis_button"] = gr.Button("⚡ Run Analysis", variant="primary", size="lg")
+        self.app.components["start_analysis_button"] = gr.Button(
+            "⚡ Run Analysis", variant="primary", size="lg", elem_id="start_analysis_button"
+        )

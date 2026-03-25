@@ -1,102 +1,89 @@
 """
-Component-level verification tests.
+Component-level verification tests using stable elem_id selectors.
 
-Tests that each UI component (sliders, dropdowns, filters, logs) actually functions
+Tests that each UI component (sliders, dropdowns, buttons, logs) actually functions
 correctly, not just renders. This catches "does nothing" type bugs.
 
 Run with:
-    python -m pytest tests/e2e/test_component_verification.py -v -s
+    uv run pytest tests/ui/test_component_verification.py -v
 """
-
-import time
 
 import pytest
 from playwright.sync_api import Page, expect
 
-from .conftest import BASE_URL
+from .conftest import BASE_URL, switch_to_tab
 
 pytestmark = [pytest.mark.e2e, pytest.mark.component]
 
 
+# Sliders to verify: (Tab, Selector)
+SLIDERS_BY_TAB = [
+    ("Source", "#thumb_megapixels_input"),
+    ("Scenes", "#scene_mask_area_min_input"),
+    ("Scenes", "#scene_quality_score_min_input"),
+    ("Export", "#dedup_thresh_input"),
+]
+
+
 class TestSliderFunctionality:
-    """Verify all sliders are functional and update values."""
+    """Verify sliders are visible and interactive."""
 
-    SLIDERS_BY_TAB = [
-        # (tab_name, accordion_to_open, slider_label_partial)
-        ("Source", "Advanced Extraction", "Thumbnail Size"),
-        ("Scenes", "Scene Filtering", "Min Mask Area"),
-        ("Scenes", "Scene Filtering", "Min Confidence"),
-        ("Export", "Deduplication", "Threshold"),
-    ]
+    @pytest.mark.parametrize("tab,selector", SLIDERS_BY_TAB)
+    def test_slider_value_changes(self, page: Page, app_server, tab, selector):
+        """Moving a slider should update its internal value."""
+        page.goto(BASE_URL, wait_until="domcontentloaded")
 
-    @pytest.mark.parametrize("tab,accordion,slider_label", SLIDERS_BY_TAB)
-    def test_slider_value_changes(self, page: Page, app_server, tab, accordion, slider_label):
-        """Slider value changes when interacted with."""
-        page.goto(BASE_URL)
-        page.wait_for_load_state("networkidle")
-        time.sleep(1)
+        switch_to_tab(page, tab)
 
-        # Navigate to tab
-        tab_btn = page.get_by_role("tab", name=tab)
-        if tab_btn.is_visible():
-            tab_btn.click(force=True)
-            time.sleep(0.5)
+        # Force open accordions to ensure visibility
+        if tab == "Source" and selector == "#thumb_megapixels_input":
+            page.get_by_text("Advanced Processing Settings").click()
+        elif tab == "Scenes":
+            # Elements are in Batch Filter accordion - click it to ensure it's open
+            page.get_by_text("Batch Filter Scenes").first.click()
+        elif tab == "Export" and selector == "#dedup_thresh_input":
+            # Only click if not visible. Use flexible substring to avoid emoji issues.
+            slider_locator = page.locator(f"{selector} input[type=range]")
+            if not slider_locator.is_visible():
+                page.get_by_text("Deduplication", exact=False).first.click()
+                page.wait_for_timeout(500)
 
-        # Open accordion if needed
-        if accordion:
-            acc_btn = page.get_by_text(accordion)
-            if acc_btn.is_visible():
-                acc_btn.click()
-                time.sleep(0.3)
-
-        # Find slider by label
-        slider_container = page.locator(f"label:has-text('{slider_label}')").locator("..")
-        slider_input = slider_container.locator("input[type='range']")
-
-        if not slider_input.is_visible(timeout=3000):
-            pytest.skip(f"Slider '{slider_label}' not visible on {tab} tab")
+        # For sliders, we need the actual range input inside the wrapper
+        slider_input = page.locator(f"{selector} input[type=range]")
+        expect(slider_input).to_be_visible(timeout=5000)
 
         # Get initial value
-        slider_input.input_value()
+        initial_value = slider_input.input_value()
 
-        # Change slider value (move to middle)
-        slider_input.fill("50")
-        time.sleep(0.2)
+        # Change slider value using keyboard
+        slider_input.focus()
+        page.keyboard.press("ArrowRight")
 
-        slider_input.input_value()
+        # Verify it changed
+        expect(slider_input).not_to_have_value(initial_value, timeout=2000)
 
-        # Value should change (unless already at 50)
-        # Note: This test verifies the slider is interactive
-        assert slider_input.is_enabled(), f"Slider '{slider_label}' should be enabled"
+
+# Dropdowns to verify: (Tab, Selector)
+DROPDOWNS_BY_TAB = [
+    ("Source", "#max_resolution"),
+    ("Source", "#method_input"),
+    ("Subject", "#best_frame_strategy_input"),
+    ("Export", "#filter_preset_dropdown"),
+]
 
 
 class TestDropdownFunctionality:
-    """Verify dropdowns can be opened and selections work."""
+    """Verify dropdowns exist and are interactive."""
 
-    DROPDOWNS_BY_TAB = [
-        ("Source", "Max Download Resolution"),
-        ("Source", "Frame Selection Method"),
-        ("Subject", "Best Person Selection Rule"),
-        ("Export", "Filter Presets"),
-    ]
+    @pytest.mark.parametrize("tab,selector", DROPDOWNS_BY_TAB)
+    def test_dropdown_is_interactive(self, page: Page, app_server, tab, selector):
+        """Dropdowns should be visible and enabled."""
+        page.goto(BASE_URL, wait_until="domcontentloaded")
 
-    @pytest.mark.parametrize("tab,dropdown_label", DROPDOWNS_BY_TAB)
-    def test_dropdown_is_interactive(self, page: Page, app_server, tab, dropdown_label):
-        """Dropdowns can be clicked and show options."""
-        page.goto(BASE_URL)
-        page.wait_for_load_state("networkidle")
-        time.sleep(1)
+        switch_to_tab(page, tab)
 
-        # Navigate to tab
-        page.get_by_role("tab", name=tab).click(force=True)
-        time.sleep(0.5)
-
-        # Find dropdown by label
-        dropdown = page.get_by_label(dropdown_label)
-
-        if not dropdown.is_visible(timeout=3000):
-            pytest.skip(f"Dropdown '{dropdown_label}' not visible on {tab} tab")
-
+        dropdown = page.locator(selector)
+        expect(dropdown).to_be_visible(timeout=5000)
         expect(dropdown).to_be_enabled()
 
 
@@ -105,29 +92,16 @@ class TestFiltersFunctionality:
 
     def test_scene_gallery_view_toggle(self, page: Page, app_server):
         """View toggle changes displayed scenes."""
-        page.goto(BASE_URL)
-        page.wait_for_load_state("networkidle")
+        page.goto(BASE_URL, wait_until="domcontentloaded")
 
-        # Navigate to scenes tab
-        page.get_by_role("tab", name="Scenes").click(force=True)
-        time.sleep(0.5)
+        switch_to_tab(page, "Scenes")
 
-        # Find view toggle
-        view_toggle = page.locator("label:has-text('View')").locator("..")
+        view_toggle = page.locator("#scene_gallery_view_toggle")
+        expect(view_toggle).to_be_visible(timeout=5000)
 
-        if view_toggle.is_visible():
-            # Click different options
-            all_btn = page.get_by_text("All", exact=True)
-            if all_btn.is_visible():
-                all_btn.click()
-                time.sleep(0.3)
-
-            kept_btn = page.get_by_text("Kept", exact=True)
-            if kept_btn.is_visible():
-                kept_btn.click()
-                time.sleep(0.3)
-
-            # No assertion needed - test passes if no errors
+        # Click options
+        page.get_by_label("All", exact=True).click()
+        page.get_by_label("Kept", exact=True).click()
 
 
 class TestLogsFunctionality:
@@ -135,117 +109,90 @@ class TestLogsFunctionality:
 
     def test_logs_visible_in_accordion(self, page: Page, app_server):
         """System Logs accordion contains a textbox."""
-        page.goto(BASE_URL)
-        page.wait_for_load_state("networkidle")
+        page.goto(BASE_URL, wait_until="domcontentloaded")
 
         # Find and open logs accordion
         logs_accordion = page.get_by_text("System Logs")
         expect(logs_accordion).to_be_visible()
         logs_accordion.click()
-        time.sleep(0.3)
 
-        # Log textbox should be visible
-        log_textbox = page.locator("#unified_log")
-        expect(log_textbox).to_be_visible()
+        # Log textbox (inside the wrapper) should be visible
+        log_textarea = page.locator("#unified_log textarea")
+        expect(log_textarea).to_be_visible()
 
     def test_logs_have_initial_content(self, page: Page, app_server):
         """Logs should show initial ready message."""
-        page.goto(BASE_URL)
-        page.wait_for_load_state("networkidle")
+        page.goto(BASE_URL, wait_until="domcontentloaded")
 
         # Open logs
         page.get_by_text("System Logs").click()
-        time.sleep(0.3)
 
-        log_textbox = page.locator("#unified_log")
-        log_content = log_textbox.input_value()
-
-        # After Phase 0 fix, should have initial message
-        assert len(log_content) > 0, "Logs should have initial content"
+        log_textarea = page.locator("#unified_log textarea")
+        # Wait for content from mock app
+        expect(log_textarea).not_to_have_value("", timeout=5000)
 
     def test_clear_logs_button(self, page: Page, app_server):
         """Clear button empties log content."""
-        page.goto(BASE_URL)
-        page.wait_for_load_state("networkidle")
+        page.goto(BASE_URL, wait_until="domcontentloaded")
 
         # Open logs
         page.get_by_text("System Logs").click()
-        time.sleep(0.3)
 
-        # Click clear
         clear_btn = page.get_by_role("button", name="Clear")
         if clear_btn.is_visible():
             clear_btn.click()
-            time.sleep(0.3)
-
-            log_textbox = page.locator("#unified_log")
-            log_content = log_textbox.input_value()
-
-            assert log_content == "", "Logs should be empty after clear"
+            log_textarea = page.locator("#unified_log textarea")
+            expect(log_textarea).to_have_value("", timeout=2000)
 
 
 class TestPaginationFunctionality:
     """Verify pagination controls work correctly."""
 
-    def test_pagination_dropdown_exists(self, page: Page, app_server):
-        """Page selector should be a dropdown (after Phase 0 fix)."""
-        page.goto(BASE_URL)
-        page.wait_for_load_state("networkidle")
+    def test_pagination_row_exists(self, page: Page, app_server):
+        """Pagination row should exist."""
+        page.goto(BASE_URL, wait_until="domcontentloaded")
 
-        # Go to Scenes tab
-        page.get_by_role("tab", name="Scenes").click(force=True)
-        time.sleep(0.5)
+        switch_to_tab(page, "Scenes")
 
-        # Find pagination area
-        page_selector = page.get_by_label("Page")
-
-        # Should be present (visible depends on if scenes are loaded)
-        # We just check it exists in DOM
-        assert page_selector.count() > 0 or True, "Page selector should exist"
+        pagination_row = page.locator("#pagination_row")
+        expect(pagination_row).to_be_visible(timeout=5000)
 
     def test_prev_next_buttons_exist(self, page: Page, app_server):
         """Previous and Next pagination buttons should exist."""
-        page.goto(BASE_URL)
-        page.wait_for_load_state("networkidle")
+        page.goto(BASE_URL, wait_until="domcontentloaded")
 
-        page.get_by_role("tab", name="Scenes").click(force=True)
-        time.sleep(0.5)
+        switch_to_tab(page, "Scenes")
 
-        prev_btn = page.get_by_role("button", name="Previous")
-        next_btn = page.get_by_role("button", name="Next")
-
-        # Buttons should exist in the DOM
-        expect(prev_btn).to_be_visible()
-        expect(next_btn).to_be_visible()
+        expect(page.locator("#prev_page_button")).to_be_visible()
+        expect(page.locator("#next_page_button")).to_be_visible()
 
 
 class TestButtonsFunctionality:
     """Verify buttons are clickable and perform actions."""
 
     CRITICAL_BUTTONS = [
-        ("Source", "🚀 Start Single Extraction"),
-        ("Source", "➕ Add to Batch Queue"),
-        ("Subject", "🌱 Find & Preview Best Frames"),
-        ("Metrics", "Analyze Selected Frames"),
-        ("Export", "Export Kept Frames"),
+        ("Source", "#start_extraction_button"),
+        ("Source", "#add_to_queue_button"),
+        ("Subject", "#start_pre_analysis_button"),
+        ("Metrics", "#start_analysis_button"),
+        ("Export", "#export_button"),
     ]
 
-    @pytest.mark.parametrize("tab,button_name", CRITICAL_BUTTONS)
-    def test_button_is_clickable(self, page: Page, app_server, tab, button_name):
-        """Critical buttons should be visible and enabled."""
-        page.goto(BASE_URL)
-        page.wait_for_load_state("networkidle")
-        time.sleep(1)
+    @pytest.mark.parametrize("tab,selector", CRITICAL_BUTTONS)
+    def test_button_is_visible(self, page: Page, app_server, tab, selector):
+        """Critical buttons should be attached to the DOM on their respective tabs."""
+        page.goto(BASE_URL, wait_until="domcontentloaded")
 
-        page.get_by_role("tab", name=tab).click(force=True)
-        time.sleep(0.5)
+        switch_to_tab(page, tab)
 
-        button = page.get_by_role("button", name=button_name)
+        button = page.locator(selector)
+        # Some buttons (like Export) are hidden in groups until a session is loaded.
+        # We check for attachment to verify they were at least built.
+        expect(button).to_be_attached(timeout=5000)
 
-        if button.is_visible(timeout=3000):
-            # Button should be visible
-            expect(button).to_be_visible()
-            # Note: Some buttons may be disabled until prerequisites are met
+        # If it's not the Export button, it should also be visible
+        if selector != "#export_button":
+            expect(button).to_be_visible(timeout=2000)
 
 
 class TestStrategyVisibility:
@@ -253,36 +200,22 @@ class TestStrategyVisibility:
 
     def test_face_strategy_shows_face_options(self, page: Page, app_server):
         """Selecting Face strategy should show face-specific options."""
-        page.goto(BASE_URL)
-        page.wait_for_load_state("networkidle")
+        page.goto(BASE_URL, wait_until="domcontentloaded")
 
-        page.get_by_role("tab", name="Subject").click(force=True)
-        time.sleep(0.5)
+        switch_to_tab(page, "Subject")
 
-        # Click face strategy
-        face_option = page.get_by_text("👤 By Face", exact=False)
-        if face_option.is_visible():
-            face_option.click()
-            time.sleep(0.3)
+        # Use get_by_label to avoid text matching in info description
+        page.locator("#primary_seed_strategy_input").get_by_label("👤 By Face").click()
 
-            # Face reference upload should become visible
-            page.get_by_text("Reference Image", exact=False)
-            # This may or may not be visible depending on implementation
+        # Check for child element in the group
+        expect(page.get_by_text("Upload Reference Photo")).to_be_visible(timeout=5000)
 
     def test_text_strategy_shows_text_options(self, page: Page, app_server):
         """Selecting Text strategy should show text prompt and warning."""
-        page.goto(BASE_URL)
-        page.wait_for_load_state("networkidle")
+        page.goto(BASE_URL, wait_until="domcontentloaded")
 
-        page.get_by_role("tab", name="Subject").click(force=True)
-        time.sleep(0.5)
+        switch_to_tab(page, "Subject")
 
-        # Click text strategy (now with warning label after Phase 0 fix)
-        text_option = page.get_by_text("📝 By Text", exact=False)
-        if text_option.is_visible():
-            text_option.click()
-            time.sleep(0.3)
-
-            # Warning should be visible (Phase 0 fix)
-            page.get_by_text("limited accuracy", exact=False)
-            # May or may not be in view depending on accordion state
+        # Use get_by_label for consistency
+        page.locator("#primary_seed_strategy_input").get_by_label("📝 By Text", exact=False).click()
+        expect(page.get_by_placeholder("e.g., 'a man in a blue suit'")).to_be_visible(timeout=5000)

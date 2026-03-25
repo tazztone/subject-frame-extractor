@@ -248,6 +248,7 @@ class Config(BaseSettings):
     allowed_paths: List[str] = Field(
         default_factory=list, description="Additional paths allowed for Gradio file serving"
     )
+    debug_mode: bool = False
 
     def validate(self):
         """Explicitly validates the configuration."""

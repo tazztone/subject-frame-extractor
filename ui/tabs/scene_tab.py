@@ -94,6 +94,7 @@ class SceneTabBuilder:
                             "value": self.config.default_min_mask_area_pct,
                             "step": 0.1,
                             "info": "Remove scenes where subject is too small.",
+                            "elem_id": "scene_mask_area_min_input",
                         },
                     )
                     self.app._create_component(
@@ -106,6 +107,7 @@ class SceneTabBuilder:
                             "value": 0.0,
                             "step": 0.05,
                             "info": "Strictness of identity match.",
+                            "elem_id": "scene_face_sim_min_input",
                         },
                     )
                     self.app._create_component(
@@ -118,6 +120,7 @@ class SceneTabBuilder:
                             "value": 0.0,
                             "step": 0.5,
                             "info": "Remove blurry/bad composition.",
+                            "elem_id": "scene_quality_score_min_input",
                         },
                     )
 
@@ -135,12 +138,15 @@ class SceneTabBuilder:
                                 "value": "Kept",
                                 "container": False,
                                 "show_label": False,
+                                "elem_id": "scene_gallery_view_toggle",
                             },
                         )
                     with gr.Column(scale=3):
                         with gr.Row():
                             self.app._create_component(
-                                "prev_page_button", "button", {"value": "⬅️ Previous", "size": "sm"}
+                                "prev_page_button",
+                                "button",
+                                {"value": "⬅️ Previous", "size": "sm", "elem_id": "prev_page_button"},
                             )
                             self.app._create_component(
                                 "page_number_input",
@@ -157,7 +163,11 @@ class SceneTabBuilder:
                                 },
                             )
                             self.app._create_component("total_pages_label", "markdown", {"value": "/ 1 pages"})
-                            self.app._create_component("next_page_button", "button", {"value": "Next ➡️", "size": "sm"})
+                            self.app._create_component(
+                                "next_page_button",
+                                "button",
+                                {"value": "Next ➡️", "size": "sm", "elem_id": "next_page_button"},
+                            )
                     with gr.Column(scale=1):
                         self.app._create_component("sceneundobutton", "button", {"value": "↩️ Undo", "size": "sm"})
 
@@ -170,6 +180,7 @@ class SceneTabBuilder:
                     allow_preview=False,
                     container=True,
                     object_fit="contain",
+                    elem_id="scene_gallery",
                 )
 
                 with gr.Accordion("Display Settings", open=False):
@@ -177,12 +188,26 @@ class SceneTabBuilder:
                         self.app._create_component(
                             "scene_gallery_columns",
                             "slider",
-                            {"label": "Columns", "minimum": 2, "maximum": 12, "value": 8, "step": 1},
+                            {
+                                "label": "Columns",
+                                "minimum": 2,
+                                "maximum": 12,
+                                "value": 8,
+                                "step": 1,
+                                "elem_id": "scene_gallery_columns",
+                            },
                         )
                         self.app._create_component(
                             "scene_gallery_height",
                             "slider",
-                            {"label": "Gallery Height (px)", "minimum": 200, "maximum": 1000, "value": 600, "step": 40},
+                            {
+                                "label": "Gallery Height (px)",
+                                "minimum": 200,
+                                "maximum": 1000,
+                                "value": 600,
+                                "step": 40,
+                                "elem_id": "scene_gallery_height",
+                            },
                         )
 
             # 4. Action
