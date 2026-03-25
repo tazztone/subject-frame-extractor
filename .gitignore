@@ -226,3 +226,6 @@ tests/integration/e2e_output_debug/
 cli_test_output/*
 
 test_logging_output/
+ux_reports/*
+tests/ui/diffs/*.png
+tests/ui/baselines/*.png

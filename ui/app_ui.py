@@ -142,6 +142,7 @@ class AppUI:
         self.thumbnail_manager = thumbnail_manager
         self.model_registry = model_registry
         self.batch_manager = BatchManager()
+        self.debug_mode = config.debug_mode
         self.components, self.cuda_available = {}, torch.cuda.is_available()
         self.ui_registry = {}
         self.performance_metrics = {}

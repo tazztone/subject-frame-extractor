@@ -28,6 +28,7 @@ class FilteringTabBuilder:
                             "label": "Use a Preset",
                             "choices": ["None"] + list(self.app.FILTER_PRESETS.keys()),
                             "info": "Apply standard settings for common use-cases.",
+                            "elem_id": "filter_preset_dropdown",
                         },
                     )
                 with gr.Column(scale=3):
@@ -98,6 +99,7 @@ class FilteringTabBuilder:
                             "value": 5,
                             "step": 1,
                             "info": "Lower = stricter (keeps more similar frames), Higher = removes more.",
+                            "elem_id": "dedup_thresh_input",
                         },
                     )
                     # Hidden inputs
@@ -196,7 +198,7 @@ class FilteringTabBuilder:
 
             # Right Column: Results & Export
             with gr.Column(scale=2):
-                with gr.Group(visible=False) as results_group:
+                with gr.Group(visible=self.app.debug_mode) as results_group:
                     self.app.components["results_group"] = results_group
                     gr.Markdown("#### 🖼️ Results Preview")
                     with gr.Row():
@@ -243,7 +245,7 @@ class FilteringTabBuilder:
                         },
                     )
 
-                with gr.Group(visible=False) as export_group:
+                with gr.Group(visible=self.app.debug_mode) as export_group:
                     self.app.components["export_group"] = export_group
                     gr.Markdown("#### 📤 Export Dataset")
 
@@ -280,7 +282,13 @@ class FilteringTabBuilder:
                         self.app._create_component(
                             "export_button",
                             "button",
-                            {"value": "💾 Export Kept Frames", "variant": "primary", "scale": 2, "size": "lg"},
+                            {
+                                "value": "💾 Export Kept Frames",
+                                "variant": "primary",
+                                "scale": 2,
+                                "size": "lg",
+                                "elem_id": "export_button",
+                            },
                         )
                         self.app._create_component(
                             "dry_run_button", "button", {"value": "Dry Run", "scale": 1, "size": "lg"}

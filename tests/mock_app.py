@@ -89,7 +89,20 @@ def mock_extraction_run(self, tracker=None):
     # Create fake output
     output_dir = os.path.join(self.config.downloads_dir, "mock_video")
     os.makedirs(output_dir, exist_ok=True)
-    os.makedirs(os.path.join(output_dir, "thumbs"), exist_ok=True)
+    thumb_dir = os.path.join(output_dir, "thumbs")
+    os.makedirs(thumb_dir, exist_ok=True)
+
+    # Create actual dummy thumbnail files so ThumbnailManager can load them
+    import numpy as np
+    from PIL import Image
+
+    for i in range(1, 11):
+        thumb_path = os.path.join(thumb_dir, f"frame_{i:06d}.webp")
+        if not os.path.exists(thumb_path):
+            # Create a small random image
+            img_data = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
+            img = Image.fromarray(img_data)
+            img.save(thumb_path, "WEBP")
 
     # Create fake frame map
     import json
@@ -119,17 +132,35 @@ def mock_pre_analysis_execution(
         Scene(
             shot_id=1,
             start_frame=0,
-            end_frame=50,
+            end_frame=25,
             status="included",
+            filename="frame_000001.webp",
             seed_result={"bbox": [10, 10, 100, 100], "details": {"type": "mock"}},
             seed_metrics={"score": 10.0, "best_face_sim": 0.9},
         ).model_dump(),
         Scene(
             shot_id=2,
+            start_frame=26,
+            end_frame=50,
+            status="included",
+            filename="frame_000003.webp",
+            seed_metrics={"score": 5.0, "best_face_sim": 0.5},
+        ).model_dump(),
+        Scene(
+            shot_id=3,
             start_frame=51,
+            end_frame=75,
+            status="included",
+            filename="frame_000005.webp",
+            seed_metrics={"score": 8.0, "best_face_sim": 0.7},
+        ).model_dump(),
+        Scene(
+            shot_id=4,
+            start_frame=76,
             end_frame=100,
             status="included",
-            seed_metrics={"score": 5.0, "best_face_sim": 0.5},
+            filename="frame_000007.webp",
+            seed_metrics={"score": 12.0, "best_face_sim": 0.95},
         ).model_dump(),
     ]
 
@@ -244,6 +275,7 @@ core.managers.download_model = MagicMock()
 
 if __name__ == "__main__":
     print("Starting Mock App for E2E Testing...")
-    # Use a specific port for testing
-    os.environ["GRADIO_SERVER_PORT"] = "7860"
+    import os
+
+    os.environ["APP_DEBUG_MODE"] = "true"
     app.main()

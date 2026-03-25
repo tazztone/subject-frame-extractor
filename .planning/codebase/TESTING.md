@@ -1,7 +1,7 @@
 # Testing Strategy & Patterns
 
-**Analysis Date:** 2026-03-24
-**Deep Dive Refinement:** Standardized mocking, SAM2.1 migration patterns, and coverage enforcement.
+**Analysis Date:** 2026-03-25
+**Deep Dive Refinement:** Standardized mocking, SAM2.1 migration patterns, UI interaction stability, and refactoring for testability.
 
 ## The "Mock-First" Philosophy
 
@@ -30,7 +30,10 @@ sys.modules["torch"] = types.ModuleType("torch")
 sys.modules["torch.cuda"] = types.ModuleType("torch.cuda")
 ```
 
-This must be applied **before any core module is imported** to prevent double-init errors.
+### Refactoring for Testability
+Avoid complex `sys.modules` hacking to test functions that perform inline imports. Instead, **extract the logic into a standalone function** that takes simple types (like `Path` or `str`) and test that function directly. 
+
+**Example**: Instead of mocking the entire `import sam3` chain to check a file hash in `apply_patches()`, extract `_check_sam3_version(path)` as a pure function and test it with a real temp file and a single `patch("logger")`.
 
 ## Coverage Requirements
 
@@ -75,10 +78,14 @@ The system supports a "Golden Reference" workflow for ML metrics:
 
 ## E2E Testing (Playwright)
 
-Located in `tests/ui/`, these tests use Playwright to:
-- Verify that clicking "Run Extraction" triggers the `unified_status` update.
-- Ensure that the "Cancel" button successfully sends the `cancel_event`.
-- **Note**: Always use `page.wait_for_selector` for dynamic Gradio elements which may take time to render.
+- **Use Stable ID Selectors**: Always prefer ID-based CSS selectors (`#elem_id`) over fragile text labels. Target nested elements specifically:
+    - Textboxes/Logs: `#unified_log textarea`
+    - Sliders: `#my_slider input[type=range]`
+- **Navigation Optimization**: Use `wait_until="domcontentloaded"` in `page.goto()`. Avoid `networkidle` as Gradio's persistent WebSockets and heavy payloads cause timeouts.
+- **Fail Fast**: Set a short global timeout (e.g., 5000ms) in `conftest.py` to ensure fast feedback.
+- **Accordion Orchestration**: Explicitly click accordion headers to open them before interacting with nested components. Check `is_visible()` first to avoid accidental toggling.
+- **Flexible Text Selectors**: Avoid `exact=True` for text-based selectors that include emojis or dynamic labels (e.g., Gradio's accordion headers). Use `exact=False` substring matching to improve robustness.
+- **Strict Mode**: Use `get_by_label` or scoped locators to avoid multiple matches for common terms (e.g., "By Face" in both labels and help text).
 
 ## Performance Benchmarking
 
@@ -91,4 +98,4 @@ Use `test_integration_smoke.py` to verify manager wiring without real ML inferen
 
 ---
 
-*Refined testing: 2026-03-24*
+*Refined testing: 2026-03-25*

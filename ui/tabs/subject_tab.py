@@ -31,6 +31,7 @@ class SubjectTabBuilder:
                         "label": "How to find the subject?",
                         "info": "Choose 'Automatic' for general people, 'By Face' for specific identity.",
                         "show_label": False,
+                        "elem_id": "primary_seed_strategy_input",
                     },
                 ),
             )
@@ -57,6 +58,7 @@ class SubjectTabBuilder:
                                         "type": "filepath",
                                         "height": 100,
                                         "file_types": ["image"],
+                                        "elem_id": "face_ref_img_upload_input",
                                     },
                                 ),
                             )
@@ -68,7 +70,7 @@ class SubjectTabBuilder:
                             )
 
                 # Tab 2: Scan Video (Discovery)
-                with gr.Tab("🔍 Scan Video for People"):
+                with gr.Tab("🔍 Scan Video for People", elem_id="scan_video_tab"):
                     gr.Markdown(
                         "### 1. Scan Video\nClick **'Scan Video Now'**. The AI will find people in the footage."
                     )
@@ -77,7 +79,12 @@ class SubjectTabBuilder:
                         self.app._create_component(
                             "find_people_button",
                             "button",
-                            {"value": "🔍 Scan Video Now", "variant": "secondary", "scale": 1},
+                            {
+                                "value": "🔍 Scan Video Now",
+                                "variant": "secondary",
+                                "scale": 1,
+                                "elem_id": "find_people_button",
+                            },
                         )
                         self.app._create_component(
                             "identity_confidence_slider",
@@ -162,6 +169,7 @@ class SubjectTabBuilder:
                             "value": self.config.default_seed_strategy,
                             "label": "Best Shot Selection Rule",
                             "info": "When multiple frames exist, which one is the 'anchor'?",
+                            "elem_id": "best_frame_strategy_input",
                         },
                     ),
                 )

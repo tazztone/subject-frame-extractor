@@ -38,6 +38,7 @@ class ExtractionTabBuilder:
                                         "show_label": False,
                                         "container": False,
                                         "scale": 4,
+                                        "elem_id": "source_input",
                                     },
                                 ),
                             )
@@ -55,6 +56,7 @@ class ExtractionTabBuilder:
                                         "show_label": True,
                                         "container": True,
                                         "scale": 1,
+                                        "elem_id": "max_resolution",
                                     },
                                 ),
                             )
@@ -90,6 +92,7 @@ class ExtractionTabBuilder:
                                 "value": self.config.default_method,
                                 "label": "Extraction Method",
                                 "info": "How frames are selected from the video.",
+                                "elem_id": "method_input",
                             },
                         ),
                     )
@@ -156,6 +159,7 @@ class ExtractionTabBuilder:
                             "step": 0.1,
                             "value": self.config.default_thumb_megapixels,
                             "info": "Lower = Faster, Higher = Better small object detection. Default 0.5 is usually good.",
+                            "elem_id": "thumb_megapixels_input",
                         },
                     ),
                 )
@@ -163,12 +167,18 @@ class ExtractionTabBuilder:
         # 4. Action Area
         with gr.Row(elem_id="extraction_actions"):
             self.app.components["start_extraction_button"] = gr.Button(
-                "🚀 Start Extraction", variant="primary", scale=2, size="lg"
+                "🚀 Start Extraction", variant="primary", scale=2, size="lg", elem_id="start_extraction_button"
             )
             self.app._create_component(
                 "add_to_queue_button",
                 "button",
-                {"value": "➕ Queue for Batch", "variant": "secondary", "scale": 1, "size": "lg"},
+                {
+                    "value": "➕ Queue for Batch",
+                    "variant": "secondary",
+                    "scale": 1,
+                    "size": "lg",
+                    "elem_id": "add_to_queue_button",
+                },
             )
 
         # 5. Batch Queue

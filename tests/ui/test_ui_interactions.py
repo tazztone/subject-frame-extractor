@@ -1,223 +1,197 @@
 """
-Automated UI Interaction Tests using Playwright.
+Playwright E2E Tests for specific UI interactions.
 
-These tests verify that UI interactions work correctly by:
-1. Clicking buttons and verifying log output appears
-2. Adjusting sliders and verifying UI updates
-3. Monitoring console/terminal for expected messages
+Tests individual component behaviors:
+- Accordion toggling
+- Strategy selection visibility
+- Slider interactions
+- Log refresh mechanism
+- Error message displays
 
-Run with:
-    python tests/mock_app.py &
-    python -m pytest tests/e2e/test_ui_interactions.py -v -s
+Run with: python -m pytest tests/ui/test_ui_interactions.py -v -s
 """
 
 import re
-import time
 
 import pytest
-from playwright.sync_api import ConsoleMessage, Page, expect
+from playwright.sync_api import Page, expect
 
-from .conftest import BASE_URL
+from .conftest import BASE_URL, open_accordion, switch_to_tab
+from .ui_locators import Labels, Selectors
 
-# Mark all tests as e2e
 pytestmark = pytest.mark.e2e
 
 
-class TestFindPeopleButtonInteraction:
-    """Tests for Find People in Video button - verifies button click works."""
+class TestInteractiveComponents:
+    """Tests for individual interactive components."""
 
-    def test_find_people_button_clickable(self, page: Page, app_server):
-        """Button should be clickable and not crash the app."""
+    def test_find_people_button_visibility(self, page: Page, app_server):
+        """Verify the Find People button appears when face strategy is selected."""
         page.goto(BASE_URL)
-        time.sleep(2)
+        page.wait_for_timeout(2000)
 
-        # Navigate to Subject tab
-        subject_tab = page.get_by_role("tab", name="Subject")
-        if not subject_tab.is_visible():
-            pytest.skip("Subject tab not visible")
-        subject_tab.click(force=True)
-        time.sleep(1)
-
-        # Select Face strategy to reveal the button
-        face_option = page.get_by_text("👤 By Face")
-        if face_option.is_visible():
-            face_option.click()
-            time.sleep(0.5)
-
-        # Find and click the button (new name after fix)
-        find_people_btn = page.get_by_role("button", name="Scan Video for Faces")
-        if find_people_btn.is_visible():
-            # Click and verify no crash
-            find_people_btn.click()
-            time.sleep(2)  # Wait for processing
-
-            # App should still be responsive
-            expect(page.locator("body")).to_be_visible()
-
-            # Check status for error message (since we haven't extracted video)
-            status_text = page.locator("#find_people_status")
-            if status_text.is_visible():
-                # Allow for different error states (missing frames or missing model)
-                text = status_text.inner_text()
-                assert (
-                    "Run extraction first" in text or "Face analyzer unavailable" in text or "No video frames" in text
-                )
-
-            print("✓ Find People button clicked successfully")
-        else:
-            pytest.skip("Find People button not visible")
-
-    def test_find_people_graceful_error_handling(self, page: Page, app_server):
-        """Verify graceful error handling when prerequisites are missing."""
-        page.goto(BASE_URL)
-        time.sleep(2)
-
-        # Navigate to Subject tab
-        page.get_by_role("tab", name="Subject").click(force=True)
-        time.sleep(1)
+        switch_to_tab(page, Labels.TAB_SUBJECT)
 
         # Select Face strategy
-        page.get_by_text("👤 By Face").click()
-        time.sleep(0.5)
+        page.get_by_text(Labels.STRATEGY_FACE, exact=False).click()
 
-        # Click Scan Video for Faces without providing a video
-        page.get_by_role("button", name="Scan Video for Faces").click()
-        time.sleep(1)
+        # Click the "Scan Video for People" sub-tab
+        page.locator(Selectors.SCAN_VIDEO_TAB).click()
 
-        # We expect a warning or error, not a crash
-        # The app logic returns a warning status if output dir doesn't exist
-        status = page.locator("#find_people_status")
-        expect(status).to_be_visible()
+        # Find People button should be visible
+        btn = page.get_by_role("button", name=Labels.SCAN_VIDEO_BUTTON, exact=False)
+        expect(btn).to_be_visible(timeout=5000)
 
-        # Allow for different error states (missing frames or missing model)
-        text = status.inner_text()
+    def test_logs_accordion_works(self, page: Page, app_server):
+        """Verify the System Logs accordion opens and shows content."""
+        page.goto(BASE_URL)
+        page.wait_for_timeout(2000)
+
+        # Find and open logs accordion
+        open_accordion(page, Labels.SYSTEM_LOGS)
+
+        # Verify log textarea is visible
+        expect(page.locator(Selectors.LOG_TEXTAREA)).to_be_visible(timeout=5000)
+
+
+class TestWorkflowInteractions:
+    """Tests for cross-component interactions."""
+
+    def test_face_strategy_shows_upload(self, page: Page, app_server):
+        """Verify that selecting Face strategy shows upload component."""
+        page.goto(BASE_URL)
+        page.wait_for_timeout(2000)
+
+        switch_to_tab(page, Labels.TAB_SUBJECT)
+
+        # Select Face
+        page.get_by_text(Labels.STRATEGY_FACE, exact=False).click()
+
+        # Check for photo upload text
+        expect(page.get_by_text("Upload Reference Photo", exact=False)).to_be_visible()
+
+    def test_text_strategy_shows_prompt(self, page: Page, app_server):
+        """Verify that selecting Text strategy shows prompt input."""
+        page.goto(BASE_URL)
+        page.wait_for_timeout(2000)
+
+        switch_to_tab(page, Labels.TAB_SUBJECT)
+
+        # Select Text
+        page.get_by_text(Labels.STRATEGY_TEXT, exact=False).click()
+
+        # Check for prompt placeholder
+        expect(page.get_by_placeholder("e.g., 'a man in a blue suit'")).to_be_visible()
+
+
+class TestErrorScenarios:
+    """Tests for graceful error handling in UI."""
+
+    def test_find_people_graceful_error_handling(self, page: Page, app_server):
+        """Verify that Scan Video Now handles errors gracefully when no source is set."""
+        page.goto(BASE_URL)
+        page.wait_for_timeout(2000)
+
+        switch_to_tab(page, Labels.TAB_SUBJECT)
+
+        # Select "By Face" strategy to make the group visible
+        page.get_by_text(Labels.STRATEGY_FACE, exact=False).click()
+
+        # Ensure we are on Scan Video tab
+        page.locator(Selectors.SCAN_VIDEO_TAB).click()
+
+        # Click without setting an input
+        page.get_by_role("button", name=Labels.SCAN_VIDEO_BUTTON, exact=False).click()
+
+        # Should show error in status or logs
+        expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text("Failed", timeout=10000)
+
+        # Verify status message content
+        text = page.locator(Selectors.UNIFIED_STATUS).inner_text()
         assert "Run extraction first" in text or "Face analyzer unavailable" in text or "No video frames" in text
 
 
 class TestGallerySliderInteractions:
-    """Tests for gallery size sliders - verifies sliders affect gallery."""
+    """Tests for gallery size sliders."""
 
     def test_columns_slider_exists_and_interactive(self, page: Page, app_server):
         """Columns slider should exist and be draggable."""
         page.goto(BASE_URL)
-        time.sleep(2)
+        page.wait_for_timeout(2000)
 
-        # Navigate to Scenes tab
-        scenes_tab = page.get_by_role("tab", name="Scenes")
-        if not scenes_tab.is_visible():
-            pytest.skip("Scenes tab not visible")
-        scenes_tab.click(force=True)
-        time.sleep(1)
+        switch_to_tab(page, Labels.TAB_SCENES)
 
-        # Find Columns slider
-        columns_slider = page.get_by_label("Columns").first
-        if columns_slider.is_visible():
-            # Get initial value
-            initial_value = columns_slider.input_value()
-            print(f"Initial columns value: {initial_value}")
+        # Change the slider value
+        open_accordion(page, "Display Settings")
 
-            # Try to change the slider value
-            columns_slider.fill("4")  # Set to 4 columns
-            columns_slider.press("Enter")
-            time.sleep(0.5)
+        columns_slider = page.locator("#scene_gallery_columns input[type=range]")
+        expect(columns_slider).to_be_visible(timeout=5000)
 
-            # Trigger the release event by clicking elsewhere
-            page.locator("body").click()
-            time.sleep(0.5)
-
-            print("✓ Columns slider interaction completed")
-        else:
-            pytest.skip("Columns slider not visible")
+        columns_slider.fill("4")
+        columns_slider.press("Enter")
+        page.wait_for_timeout(500)
 
     def test_height_slider_exists_and_interactive(self, page: Page, app_server):
         """Height slider should exist and be adjustable."""
         page.goto(BASE_URL)
-        time.sleep(2)
+        page.wait_for_timeout(2000)
 
-        # Navigate to Scenes tab
-        scenes_tab = page.get_by_role("tab", name="Scenes")
-        if not scenes_tab.is_visible():
-            pytest.skip("Scenes tab not visible")
-        scenes_tab.click(force=True)
-        time.sleep(1)
+        switch_to_tab(page, Labels.TAB_SCENES)
 
         # Find Height slider
-        height_slider = page.get_by_label("Gallery Height").first
-        if height_slider.is_visible():
-            initial_value = height_slider.input_value()
-            print(f"Initial height value: {initial_value}")
+        open_accordion(page, "Display Settings")
 
-            # Change the slider
-            height_slider.fill("400")  # Set to 400px
-            height_slider.press("Enter")
-            time.sleep(0.5)
+        height_slider = page.locator("#scene_gallery_height input[type=range]")
+        expect(height_slider).to_be_visible(timeout=5000)
 
-            page.locator("body").click()
-            time.sleep(0.5)
-
-            print("✓ Height slider interaction completed")
-        else:
-            pytest.skip("Height slider not visible")
+        # Change the slider
+        height_slider.fill("400")
+        height_slider.press("Enter")
+        page.wait_for_timeout(500)
 
 
 class TestLogRefreshMechanism:
-    """Tests for log display - verifies logs can be refreshed."""
+    """Tests for log display."""
 
     def test_refresh_button_updates_logs(self, page: Page, app_server):
         """Clicking Refresh should drain log queue and update display."""
         page.goto(BASE_URL)
-        time.sleep(2)
+        page.wait_for_timeout(2000)
 
         # Open logs accordion
-        logs_accordion = page.get_by_text("📋 System Logs")
-        expect(logs_accordion).to_be_visible(timeout=5000)
-        logs_accordion.click()
-        time.sleep(0.5)
+        open_accordion(page, Labels.SYSTEM_LOGS)
 
-        # Get initial log content
-        log_area = page.locator("#unified_log textarea")
-        log_area.input_value() if log_area.count() > 0 else ""
+        # Verify log area
+        expect(page.locator(Selectors.LOG_TEXTAREA)).to_be_visible(timeout=5000)
 
         # Click Refresh
-        refresh_btn = page.get_by_role("button", name="🔄 Refresh")
+        refresh_btn = page.get_by_role("button", name="Refresh", exact=False)
         expect(refresh_btn).to_be_visible(timeout=5000)
         refresh_btn.click()
-        time.sleep(1)
+        page.wait_for_timeout(1000)
 
-        # Log area should still be visible and functional
-        expect(page.locator("#unified_log")).to_be_visible()
-        print("✓ Log refresh works without errors")
+        expect(page.locator(Selectors.LOG_TEXTAREA)).to_be_visible()
 
 
 class TestPropagationErrorHandling:
-    """Tests for propagation - verifies graceful error handling."""
+    """Tests for propagation error handling."""
 
     def test_propagation_without_scenes_no_crash(self, page: Page, app_server):
         """Clicking propagate without scenes should not crash."""
         page.goto(BASE_URL)
-        time.sleep(2)
+        page.wait_for_timeout(2000)
 
-        # Navigate to Scenes tab
-        scenes_tab = page.get_by_role("tab", name="Scenes")
-        if not scenes_tab.is_visible():
-            pytest.skip("Scenes tab not visible")
-        scenes_tab.click(force=True)
-        time.sleep(1)
+        switch_to_tab(page, Labels.TAB_SCENES)
 
-        # Find propagate button (should be disabled but let's try)
-        propagate_btns = page.get_by_role("button", name=re.compile("Propagate"))
-        if propagate_btns.count() > 0:
-            btn = propagate_btns.first
-            if btn.is_visible():
-                try:
-                    btn.click(timeout=2000)
-                    time.sleep(2)
-                except:
-                    pass  # Button might be disabled, which is fine
+        # Find propagate button (should be disabled but let's try regex)
+        prop_btn = page.get_by_role("button", name=re.compile("Propagate", re.I))
+        if prop_btn.count() > 0 and prop_btn.first.is_visible():
+            try:
+                prop_btn.first.click(timeout=1000)
+            except:
+                pass  # Expected if disabled
 
-                # App should still be responsive
-                expect(page.locator("body")).to_be_visible()
-                print("✓ Propagation button click handled gracefully")
+        expect(page.locator("body")).to_be_visible()
 
 
 class TestUIConsoleErrors:
@@ -226,41 +200,26 @@ class TestUIConsoleErrors:
     def test_no_console_errors_on_load(self, page: Page, app_server):
         """Page should load without JavaScript errors."""
         console_errors = []
+        page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
 
-        def handle_console(msg: ConsoleMessage):
-            if msg.type == "error":
-                console_errors.append(msg.text)
-
-        page.on("console", handle_console)
         page.goto(BASE_URL)
-        time.sleep(3)
+        page.wait_for_timeout(3000)
 
         # Filter out known benign errors
         critical_errors = [e for e in console_errors if "gradio" not in e.lower()]
-
-        if critical_errors:
-            print(f"Console errors found: {critical_errors}")
-
-        # We don't fail on errors, just report them
-        print(f"✓ Page loaded. Console errors: {len(console_errors)}")
+        assert len(critical_errors) == 0, f"Critical console errors found: {critical_errors}"
 
     def test_no_errors_during_tab_navigation(self, page: Page, app_server):
         """Navigating through tabs should not cause errors."""
         console_errors = []
+        page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
 
-        def handle_console(msg: ConsoleMessage):
-            if msg.type == "error":
-                console_errors.append(msg.text)
-
-        page.on("console", handle_console)
         page.goto(BASE_URL)
-        time.sleep(2)
+        page.wait_for_timeout(2000)
 
-        tabs = ["Extract", "Subject", "Scenes", "Metrics", "Export"]
+        tabs = [Labels.TAB_SOURCE, Labels.TAB_SUBJECT, Labels.TAB_SCENES, Labels.TAB_METRICS, Labels.TAB_EXPORT]
         for tab_name in tabs:
-            tab = page.get_by_role("tab", name=tab_name)
-            if tab.is_visible():
-                tab.click(force=True)
-                time.sleep(0.5)
+            switch_to_tab(page, tab_name)
 
-        print(f"✓ Tab navigation complete. Errors during navigation: {len(console_errors)}")
+        critical_errors = [e for e in console_errors if "gradio" not in e.lower()]
+        assert len(critical_errors) == 0, f"Critical console errors during nav: {critical_errors}"
