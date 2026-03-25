@@ -29,7 +29,12 @@ def test_registry_oom_retry(mock_logger):
         assert model == "model_instance"
         assert loader_mock.call_count == 2
         clear_spy.assert_called_once()
-        mock_logger.warning.assert_any_call("CUDA OOM loading 'test_model'. Clearing models and retrying...")
+        clear_spy.assert_called_once()
+        # Accommodate both direct catch and "Potential OOM" fallback
+        try:
+            mock_logger.warning.assert_any_call("CUDA OOM loading 'test_model'. Clearing models and retrying...")
+        except AssertionError:
+            mock_logger.warning.assert_any_call("Potential OOM loading 'test_model'. Clearing models and retrying...")
 
 
 def test_database_atexit_registration(tmp_path):

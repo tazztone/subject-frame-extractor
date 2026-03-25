@@ -11,7 +11,8 @@ from typing import TYPE_CHECKING, Optional
 
 import cv2
 from PIL import Image
-from scenedetect import ContentDetector, VideoOpenFailure, detect
+from scenedetect import VideoOpenFailure, detect
+from scenedetect.detectors import ContentDetector
 
 if TYPE_CHECKING:
     from core.config import Config

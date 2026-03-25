@@ -28,12 +28,31 @@ mock_torch.Tensor = MagicMock
 mock_sam3 = MagicMock(name="sam3")
 mock_sam3.model_builder = MagicMock()
 
+
+# Create OutOfMemoryError class for registry testing
+class OutOfMemoryError(RuntimeError):
+    pass
+
+
+mock_torch.cuda.OutOfMemoryError = OutOfMemoryError
+
 # Define the modules to mock and their structure
 # We use ModuleType to avoid "Environment Pollution" (MagicMock in sys.modules)
 modules_map = {
     "torch": create_mock_module(
-        "torch", {"cuda": mock_torch.cuda, "nn": mock_torch.nn, "Tensor": mock_torch.Tensor, "__version__": "2.0.0"}
+        "torch",
+        {
+            "cuda": mock_torch.cuda,
+            "nn": mock_torch.nn,
+            "Tensor": mock_torch.Tensor,
+            "__version__": "2.0.0",
+            "device": MagicMock(),
+            "float": MagicMock(),
+            "uint8": MagicMock(),
+        },
     ),
+    "torch.cuda": mock_torch.cuda,
+    "torch.nn": mock_torch.nn,
     "torchvision": create_mock_module("torchvision", {"ops": MagicMock(), "transforms": MagicMock()}),
     "torchvision.ops": MagicMock(),
     "torchvision.transforms": MagicMock(),
@@ -47,9 +66,12 @@ modules_map = {
     "mediapipe.tasks.python": create_mock_module("mediapipe.tasks.python", {"vision": MagicMock()}),
     "mediapipe.tasks.python.vision": MagicMock(),
     "pyiqa": MagicMock(),
-    "scenedetect": MagicMock(),
+    "scenedetect": create_mock_module(
+        "scenedetect", {"detect": MagicMock(), "VideoOpenFailure": Exception, "ContentDetector": MagicMock()}
+    ),
+    "scenedetect.detectors": create_mock_module("scenedetect.detectors", {"ContentDetector": MagicMock()}),
     "yt_dlp": MagicMock(),
-    "numba": MagicMock(),
+    "numba": create_mock_module("numba", {"njit": lambda f: f, "jit": lambda f: f, "cuda": MagicMock()}),
     "lpips": MagicMock(),
     "matplotlib": create_mock_module(
         "matplotlib", {"pyplot": MagicMock(), "ticker": MagicMock(), "figure": MagicMock(), "backends": MagicMock()}
@@ -60,7 +82,7 @@ modules_map = {
     "matplotlib.backends": MagicMock(),
     "matplotlib.backends.backend_agg": MagicMock(),
     "skimage": create_mock_module("skimage", {"metrics": MagicMock()}),
-    "skimage.metrics": MagicMock(),
+    "skimage.metrics": create_mock_module("skimage.metrics", {"structural_similarity": MagicMock()}),
     "safetensors": create_mock_module("safetensors", {"torch": MagicMock()}),
     "safetensors.torch": MagicMock(),
     "ftfy": MagicMock(),
@@ -73,14 +95,15 @@ modules_map = {
 # Patch sys.modules with proper ModuleType objects where possible
 for mod_name, mod_obj in modules_map.items():
     if not isinstance(mod_obj, types.ModuleType):
-        # Fallback to MagicMock for submodules if needed, but wrap them if they represent a package
+        # Fallback to MagicMock wrapped in ModuleType if it represents a package
         mock_val = mod_obj
         mod_obj = types.ModuleType(mod_name)
-        # If it's a simple mock, we might want it to be callable if it's a function,
-        # but here we focus on module structure.
-        sys.modules[mod_name] = mod_obj
-    else:
-        sys.modules[mod_name] = mod_obj
+        # Populate the module with common attributes from the mock if it's a MagicMock
+        if isinstance(mock_val, MagicMock):
+            for attr in dir(mock_val):
+                if not attr.startswith("__"):
+                    setattr(mod_obj, attr, getattr(mock_val, attr))
+    sys.modules[mod_name] = mod_obj
 
 # Add project root to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))

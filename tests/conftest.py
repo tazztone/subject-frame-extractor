@@ -18,6 +18,13 @@ import pytest
 from core.operators import OperatorRegistry
 
 
+# Stable exception class for OOM testing
+class OutOfMemoryError(RuntimeError):
+    """Mock CUDA OutOfMemoryError."""
+
+    pass
+
+
 @pytest.fixture(autouse=True)
 def clean_registry():
     """Ensure OperatorRegistry is clean before each test."""
@@ -278,10 +285,6 @@ def pytest_sessionstart(session):
     mock_torch.cuda.is_available.return_value = False
     mock_torch.cuda.device_count.return_value = 0
 
-    # Add OutOfMemoryError as a real exception class
-    class OutOfMemoryError(RuntimeError):
-        pass
-
     mock_torch.cuda.OutOfMemoryError = OutOfMemoryError
 
     mock_torch.__version__ = "2.0.0"
@@ -424,6 +427,9 @@ def pytest_sessionstart(session):
         "pyiqa": MagicMock(),
         "lpips": _create_mock_module("lpips", {"LPIPS": MagicMock()}),
         "skimage.metrics": MagicMock(),
+        "scenedetect": _create_mock_module("scenedetect", {"detect": MagicMock(), "VideoOpenFailure": Exception}),
+        "scenedetect.detectors": _create_mock_module("scenedetect.detectors", {"ContentDetector": MagicMock()}),
+        "torchvision.transforms": MagicMock(),
     }
 
     session.original_modules = {}
