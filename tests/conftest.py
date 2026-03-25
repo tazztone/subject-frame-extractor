@@ -15,10 +15,20 @@ import cv2
 import numpy as np
 import pytest
 
-from core.operators import OperatorRegistry
+# --- 1. Global Mocking Infrastructure (Run immediately on import) ---
 
 
-# Stable exception class for OOM testing
+# Module creation helper
+def _create_mock_module(name, attributes=None):
+    """Creates a proper ModuleType instance populated with mocks/attributes."""
+    mock_mod = types.ModuleType(name)
+    if attributes:
+        for attr, val in attributes.items():
+            setattr(mock_mod, attr, val)
+    return mock_mod
+
+
+# Stable exception classes
 class OutOfMemoryError(RuntimeError):
     """Mock CUDA OutOfMemoryError."""
 
@@ -29,6 +39,162 @@ class VideoOpenFailure(RuntimeError):
     """Mock PySceneDetect VideoOpenFailure."""
 
     pass
+
+
+# Build the base torch mock
+mock_torch = MagicMock(name="torch")
+mock_torch.cuda.is_available.return_value = False
+mock_torch.cuda.device_count.return_value = 0
+mock_torch.cuda.get_device_name = MagicMock(return_value="Mock GPU")
+mock_torch.cuda.empty_cache = MagicMock()
+mock_torch.cuda.memory_summary = MagicMock(return_value="Mock Memory Summary")
+mock_torch.cuda.OutOfMemoryError = OutOfMemoryError
+mock_torch.__version__ = "2.0.0"
+mock_torch.nn.Module = MagicMock
+mock_torch.Tensor = MagicMock
+mock_torch.device = MagicMock
+mock_torch.float = MagicMock()
+mock_torch.uint8 = MagicMock()
+mock_torch.version = MagicMock()
+mock_torch.version.cuda = "12.1"
+
+
+# Stub torch creation functions to return mocks with correct shape
+def _create_mock_tensor(name="tensor", shape=None, **kwargs):
+    class MockTensor(MagicMock):
+        def __len__(self):
+            if hasattr(self, "_mock_shape") and self._mock_shape is not None:
+                return self._mock_shape[0] if len(self._mock_shape) > 0 else 0
+            return 0
+
+        def __getitem__(self, idx):
+            new_shape = None
+            if hasattr(self, "_mock_shape") and self._mock_shape is not None:
+                if len(self._mock_shape) > 0:
+                    new_shape = self._mock_shape[1:]
+            return _create_mock_tensor(f"{self._mock_name}[{idx}]", shape=new_shape)
+
+        def __gt__(self, other):
+            return _create_mock_tensor(f"{self._mock_name} > {other}", shape=getattr(self, "_mock_shape", None))
+
+        def __bool__(self):
+            return True
+
+        def cpu(self):
+            return self
+
+        def numpy(self):
+            s = getattr(self, "_mock_shape", None)
+            if s is None:
+                s = (100, 100)
+            if isinstance(s, int):
+                s = (s,)
+            return np.zeros(s, dtype=np.float32)
+
+        def __repr__(self):
+            return f"MockTensor(name={self._mock_name}, shape={getattr(self, '_mock_shape', None)})"
+
+        @property
+        def ndim(self):
+            s = getattr(self, "_mock_shape", None)
+            return len(s) if s is not None else 0
+
+    mock_t = MockTensor(name=name)
+    mock_t._mock_shape = shape
+    if shape is not None:
+        mock_t.shape = shape
+    mock_t.device = mock_torch.device("cpu")
+    mock_t.dtype = mock_torch.float32
+    mock_t.size.side_effect = lambda dim=None: shape if dim is None else shape[dim]
+    mock_t.__mul__ = MagicMock(return_value=mock_t)
+    mock_t.__add__ = MagicMock(return_value=mock_t)
+    mock_t.__sub__ = MagicMock(return_value=mock_t)
+    mock_t.__truediv__ = MagicMock(return_value=mock_t)
+    mock_t.item.return_value = 1.0
+    return mock_t
+
+
+mock_torch.from_numpy = MagicMock(side_effect=lambda np_arr: _create_mock_tensor("from_numpy", np_arr.shape))
+mock_torch.zeros = MagicMock(side_effect=lambda shape, **kwargs: _create_mock_tensor("zeros", shape))
+mock_torch.ones = MagicMock(side_effect=lambda shape, **kwargs: _create_mock_tensor("ones", shape))
+mock_torch.rand = MagicMock(side_effect=lambda *shape, **kwargs: _create_mock_tensor("rand", shape))
+mock_torch.randn = MagicMock(side_effect=lambda *shape, **kwargs: _create_mock_tensor("randn", shape))
+mock_torch.tensor = MagicMock(
+    side_effect=lambda data, **kwargs: _create_mock_tensor("tensor", getattr(data, "shape", ()))
+)
+mock_torch.no_grad = MagicMock()
+mock_torch.no_grad.return_value.__enter__ = MagicMock()
+mock_torch.no_grad.return_value.__exit__ = MagicMock()
+mock_torch.SymFloat = MagicMock
+mock_torch.SymInt = MagicMock
+
+# Patch sys.modules globally and immediately
+modules_to_mock = {
+    "torch": _create_mock_module(
+        "torch",
+        {
+            "cuda": mock_torch.cuda,
+            "nn": mock_torch.nn,
+            "version": mock_torch.version,
+            "Tensor": mock_torch.Tensor,
+            "device": mock_torch.device,
+            "from_numpy": mock_torch.from_numpy,
+            "zeros": mock_torch.zeros,
+            "ones": mock_torch.ones,
+            "tensor": mock_torch.tensor,
+            "stack": MagicMock(side_effect=lambda tensors, **kwargs: MagicMock(name="stacked")),
+            "cat": MagicMock(side_effect=lambda tensors, **kwargs: MagicMock(name="catted")),
+            "rand": MagicMock(side_effect=lambda *args, **kwargs: MagicMock(name="rand")),
+            "randn": MagicMock(side_effect=lambda *args, **kwargs: MagicMock(name="randn")),
+            "float": mock_torch.float,
+            "float32": MagicMock(),
+            "uint8": mock_torch.uint8,
+            "int64": MagicMock(),
+            "no_grad": mock_torch.no_grad,
+            "SymFloat": mock_torch.SymFloat,
+            "SymInt": mock_torch.SymInt,
+            "__version__": "2.0.0",
+            "manual_seed": MagicMock(),
+        },
+    ),
+    "torch.cuda": mock_torch.cuda,
+    "torch.nn": mock_torch.nn,
+    "torch.version": mock_torch.version,
+    "torchvision": _create_mock_module("torchvision", {"ops": MagicMock(), "transforms": MagicMock()}),
+    "torchvision.ops": MagicMock(),
+    "insightface": _create_mock_module("insightface", {"app": MagicMock()}),
+    "insightface.app": MagicMock(),
+    "sam3": _create_mock_module("sam3", {"model_builder": MagicMock()}),
+    "sam3.model_builder": MagicMock(),
+    "sam2": _create_mock_module("sam2", {"build_sam2": MagicMock()}),
+    "sam2.build_sam": MagicMock(),
+    "sam2.build_sam_video_predictor": MagicMock(),
+    "mediapipe": _create_mock_module("mediapipe", {"tasks": MagicMock()}),
+    "mediapipe.tasks": _create_mock_module("mediapipe.tasks", {"python": MagicMock()}),
+    "mediapipe.tasks.python": _create_mock_module("mediapipe.tasks.python", {"vision": MagicMock()}),
+    "pyiqa": MagicMock(),
+    "lpips": _create_mock_module("lpips", {"LPIPS": MagicMock()}),
+    "skimage.metrics": MagicMock(),
+    "scenedetect": _create_mock_module(
+        "scenedetect",
+        {
+            "detect": MagicMock(),
+            "VideoOpenFailure": VideoOpenFailure,
+            "ContentDetector": MagicMock(),
+            "__all__": ["VideoOpenFailure", "ContentDetector"],
+        },
+    ),
+    "scenedetect.detectors": _create_mock_module("scenedetect.detectors", {"ContentDetector": MagicMock()}),
+    "scenedetect.video_stream": _create_mock_module("scenedetect.video_stream", {"VideoOpenFailure": VideoOpenFailure}),
+    "torchvision.transforms": MagicMock(),
+}
+
+for mod_name, mod_obj in modules_to_mock.items():
+    sys.modules[mod_name] = mod_obj
+
+
+# NOW import application modules
+from core.operators import OperatorRegistry
 
 
 @pytest.fixture(autouse=True)
@@ -273,185 +439,9 @@ def sample_scenes():
     ]
 
 
-def _create_mock_module(name, attributes=None):
-    """Creates a proper ModuleType instance populated with mocks/attributes."""
-    mock_mod = types.ModuleType(name)
-    if attributes:
-        for attr, val in attributes.items():
-            setattr(mock_mod, attr, val)
-    return mock_mod
-
-
 def pytest_sessionstart(session):
-    """
-    Globally mock heavy dependencies (torch, sam3, insightface) for all unit tests
-    at the very beginning of the session, before any test modules are imported.
-    """
-    mock_torch = MagicMock(name="torch")
-    mock_torch.cuda.is_available.return_value = False
-    mock_torch.cuda.device_count.return_value = 0
-    mock_torch.cuda.get_device_name = MagicMock(return_value="Mock GPU")
-    mock_torch.cuda.empty_cache = MagicMock()
-    mock_torch.cuda.memory_summary = MagicMock(return_value="Mock Memory Summary")
-
-    mock_torch.cuda.OutOfMemoryError = OutOfMemoryError
-
-    mock_torch.__version__ = "2.0.0"
-    mock_torch.nn.Module = MagicMock
-    mock_torch.Tensor = MagicMock
-    mock_torch.device = MagicMock
-    mock_torch.float = MagicMock()
-    mock_torch.uint8 = MagicMock()
-
-    # Stub torch creation functions to return mocks with correct shape
-    def _create_mock_tensor(name="tensor", shape=None, **kwargs):
-        # We use a subclass of MagicMock to support dunder methods better
-        class MockTensor(MagicMock):
-            def __len__(self):
-                if hasattr(self, "_mock_shape") and self._mock_shape is not None:
-                    return self._mock_shape[0] if len(self._mock_shape) > 0 else 0
-                return 0
-
-            def __getitem__(self, idx):
-                # Simple slicing support
-                new_shape = None
-                if hasattr(self, "_mock_shape") and self._mock_shape is not None:
-                    if len(self._mock_shape) > 0:
-                        new_shape = self._mock_shape[1:]
-                return _create_mock_tensor(f"{self._mock_name}[{idx}]", shape=new_shape)
-
-            def __gt__(self, other):
-                # To support masks > 0 returning a boolean-like mock tensor
-                return _create_mock_tensor(f"{self._mock_name} > {other}", shape=getattr(self, "_mock_shape", None))
-
-            def __bool__(self):
-                return True
-
-            def cpu(self):
-                return self
-
-            def numpy(self):
-                s = getattr(self, "_mock_shape", None)
-                if s is None:
-                    s = (100, 100)
-                # If s is an int (from slicing), wrap it in a tuple
-                if isinstance(s, int):
-                    s = (s,)
-                return np.zeros(s, dtype=np.float32)
-
-            def __repr__(self):
-                return f"MockTensor(name={self._mock_name}, shape={getattr(self, '_mock_shape', None)})"
-
-            @property
-            def ndim(self):
-                s = getattr(self, "_mock_shape", None)
-                return len(s) if s is not None else 0
-
-        mock_t = MockTensor(name=name)
-        mock_t._mock_shape = shape
-        if shape is not None:
-            mock_t.shape = shape
-        mock_t.device = mock_torch.device("cpu")
-        mock_t.dtype = mock_torch.float32
-        mock_t.size.side_effect = lambda dim=None: shape if dim is None else shape[dim]
-        # Support arithmetic
-        mock_t.__mul__ = MagicMock(return_value=mock_t)
-        mock_t.__add__ = MagicMock(return_value=mock_t)
-        mock_t.__sub__ = MagicMock(return_value=mock_t)
-        mock_t.__truediv__ = MagicMock(return_value=mock_t)
-        # item() support - default to 1.0 but can be overriden
-        mock_t.item.return_value = 1.0
-        return mock_t
-
-    def mock_tensor_fn(data, **kwargs):
-        shape = None
-        item_val = 1.0
-        if hasattr(data, "shape"):
-            shape = data.shape
-        elif isinstance(data, (list, tuple)):
-            shape = (len(data),)
-            if len(data) == 1 and isinstance(data[0], (int, float)):
-                item_val = float(data[0])
-        elif isinstance(data, (int, float)):
-            shape = ()
-            item_val = float(data)
-
-        t = _create_mock_tensor("tensor", shape)
-        t.item.return_value = item_val
-        return t
-
-    mock_torch.from_numpy = MagicMock(side_effect=lambda np_arr: _create_mock_tensor("from_numpy", np_arr.shape))
-    mock_torch.zeros = MagicMock(side_effect=lambda shape, **kwargs: _create_mock_tensor("zeros", shape))
-    mock_torch.ones = MagicMock(side_effect=lambda shape, **kwargs: _create_mock_tensor("ones", shape))
-    mock_torch.rand = MagicMock(side_effect=lambda *shape, **kwargs: _create_mock_tensor("rand", shape))
-    mock_torch.randn = MagicMock(side_effect=lambda *shape, **kwargs: _create_mock_tensor("randn", shape))
-    mock_torch.tensor = MagicMock(side_effect=mock_tensor_fn)
-
-    mock_torch.no_grad = MagicMock()
-    mock_torch.no_grad.return_value.__enter__ = MagicMock()
-    mock_torch.no_grad.return_value.__exit__ = MagicMock()
-    mock_torch.SymFloat = MagicMock
-    mock_torch.SymInt = MagicMock
-    mock_torch.version = MagicMock()
-    mock_torch.version.cuda = "12.1"
-
-    modules_to_mock = {
-        "torch": _create_mock_module(
-            "torch",
-            {
-                "cuda": mock_torch.cuda,
-                "nn": mock_torch.nn,
-                "version": mock_torch.version,
-                "Tensor": mock_torch.Tensor,
-                "device": mock_torch.device,
-                "from_numpy": mock_torch.from_numpy,
-                "zeros": mock_torch.zeros,
-                "ones": mock_torch.ones,
-                "tensor": mock_torch.tensor,
-                "stack": MagicMock(side_effect=lambda tensors, **kwargs: MagicMock(name="stacked")),
-                "cat": MagicMock(side_effect=lambda tensors, **kwargs: MagicMock(name="catted")),
-                "rand": MagicMock(side_effect=lambda *args, **kwargs: MagicMock(name="rand")),
-                "randn": MagicMock(side_effect=lambda *args, **kwargs: MagicMock(name="randn")),
-                "float": mock_torch.float,
-                "float32": MagicMock(),
-                "uint8": mock_torch.uint8,
-                "int64": MagicMock(),
-                "no_grad": mock_torch.no_grad,
-                "SymFloat": mock_torch.SymFloat,
-                "SymInt": mock_torch.SymInt,
-                "__version__": "2.0.0",
-                "manual_seed": MagicMock(),
-            },
-        ),
-        "torch.cuda": mock_torch.cuda,
-        "torch.nn": mock_torch.nn,
-        "torch.version": mock_torch.version,
-        "torchvision": _create_mock_module("torchvision", {"ops": MagicMock(), "transforms": MagicMock()}),
-        "torchvision.ops": MagicMock(),
-        "insightface": _create_mock_module("insightface", {"app": MagicMock()}),
-        "insightface.app": MagicMock(),
-        "sam3": _create_mock_module("sam3", {"model_builder": MagicMock()}),
-        "sam2": _create_mock_module("sam2", {"build_sam2": MagicMock()}),
-        "mediapipe": _create_mock_module("mediapipe", {"tasks": MagicMock()}),
-        "pyiqa": MagicMock(),
-        "lpips": _create_mock_module("lpips", {"LPIPS": MagicMock()}),
-        "skimage.metrics": MagicMock(),
-        "scenedetect": _create_mock_module(
-            "scenedetect",
-            {"detect": MagicMock(), "VideoOpenFailure": VideoOpenFailure, "__all__": ["VideoOpenFailure"]},
-        ),
-        "scenedetect.detectors": _create_mock_module("scenedetect.detectors", {"ContentDetector": MagicMock()}),
-        "scenedetect.video_stream": _create_mock_module(
-            "scenedetect.video_stream", {"VideoOpenFailure": VideoOpenFailure}
-        ),
-        "torchvision.transforms": MagicMock(),
-    }
-
-    session.original_modules = {}
-    for mod_name, mod_obj in modules_to_mock.items():
-        if mod_name in sys.modules:
-            session.original_modules[mod_name] = sys.modules[mod_name]
-        sys.modules[mod_name] = mod_obj
+    """Mocks are now initialized at the module level for early interception."""
+    pass
 
 
 def pytest_sessionfinish(session, exitstatus):
