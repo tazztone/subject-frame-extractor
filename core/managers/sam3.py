@@ -55,8 +55,6 @@ class SAM3Wrapper:
 
         with patch("sam3.model_builder.download_ckpt_from_hf", return_value=None):
             self.predictor = build_sam3_video_predictor(checkpoint_path=checkpoint_path, gpus_to_use=gpus)
-        if device == "cuda" and hasattr(self.predictor, "model"):
-            self.predictor.model.to(dtype=torch.float32)
         self.session_id = None
 
     def init_video(self, video_resource: Union[str, list]):
