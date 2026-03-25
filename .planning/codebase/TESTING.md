@@ -87,6 +87,18 @@ The system supports a "Golden Reference" workflow for ML metrics:
 - **Flexible Text Selectors**: Avoid `exact=True` for text-based selectors that include emojis or dynamic labels (e.g., Gradio's accordion headers). Use `exact=False` substring matching to improve robustness.
 - **Strict Mode**: Use `get_by_label` or scoped locators to avoid multiple matches for common terms (e.g., "By Face" in both labels and help text).
 
+### Mandatory E2E Patterns
+
+- **Log Persistence vs. UI Updates**:
+    - **Observation**: In Gradio, updating a component via a return value in an event handler (like `.click()`) replaces the value.
+    - **Mandate**: Never return log strings directly to `unified_log` for long-running processes. Instead, use `logger.info()`. The `LogViewer` component periodically polls the log queue and appends content, preserving the history that E2E tests rely on for "Log Trail" verification.
+- **Mock Side-Effect Consistency**:
+    - **Requirement**: Mocks for pipelines (Extraction, Analysis, etc.) must not only return the expected dictionary but also trigger a `logger.info()` call. Without this, the UI log viewer remains empty or missing stages during E2E runs, leading to assertion failures in tests that verify the workflow's history.
+- **Status Bar Priority**:
+    - **Design Pattern**: The `unified_status` component is the primary target for E2E assertions. Any major backend operation should update this component immediately upon completion/failure to provide a clear signal to Playwright's `expect()` locators.
+- **Case Sensitivity in E2E**:
+    - **Rule**: E2E tests are extremely fragile regarding status strings. "Pre-Analysis" (Title Case) vs "Pre-analysis" (Sentence Case) will cause a test failure if the log scraper is looking for a specific marker. Always use **Title Case** for major pipeline milestones.
+
 ## Performance Benchmarking
 
 Integration tests in `tests/integration/` track execution time and VRAM usage.

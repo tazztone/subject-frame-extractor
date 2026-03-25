@@ -58,7 +58,8 @@ class TestSampleDataWorkflow:
         switch_to_tab(page, Labels.TAB_SUBJECT)
 
         # Choose Text strategy
-        page.get_by_text(Labels.STRATEGY_TEXT, exact=False).click()
+        page.locator(f"{Selectors.SEED_STRATEGY} input[value='{Labels.STRATEGY_TEXT}']").check(force=True)
+        page.wait_for_timeout(500)
         page.get_by_placeholder("e.g., 'a man in a blue suit'").fill("protagonist")
 
         # Start pre-analysis
@@ -110,7 +111,8 @@ class TestSeedingOptions:
         switch_to_tab(page, Labels.TAB_SUBJECT)
 
         # Face strategy is default or click it
-        page.get_by_text(Labels.STRATEGY_FACE, exact=False).click()
+        page.locator(f"{Selectors.SEED_STRATEGY} input[value='{Labels.STRATEGY_FACE}']").check(force=True)
+        page.wait_for_timeout(500)
 
         # Find upload component by elem_id
         file_input = page.locator("#face_ref_img_upload_input input[type=file]")
@@ -128,7 +130,8 @@ class TestSeedingOptions:
         switch_to_tab(page, Labels.TAB_SUBJECT)
 
         # Select Text
-        page.get_by_text(Labels.STRATEGY_TEXT, exact=False).click()
+        page.locator(f"{Selectors.SEED_STRATEGY} input[value='{Labels.STRATEGY_TEXT}']").check(force=True)
+        page.wait_for_timeout(500)
 
         # Fill prompt
         prompt = page.get_by_placeholder("e.g., 'a man in a blue suit'")

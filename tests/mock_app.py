@@ -111,6 +111,10 @@ def mock_extraction_run(self, tracker=None):
     with open(os.path.join(output_dir, "frame_map.json"), "w") as f:
         json.dump(list(frame_map.keys()), f)
 
+    msg = "Extraction complete."
+    if hasattr(self, "logger") and self.logger:
+        self.logger.info(msg)
+
     return {"done": True, "output_dir": output_dir, "video_path": "mock_video.mp4"}
 
 
@@ -165,10 +169,27 @@ def mock_pre_analysis_execution(
     ]
 
     output_dir = os.path.join(config.downloads_dir, "mock_video")
+    previews_dir = os.path.join(output_dir, "previews")
+    os.makedirs(previews_dir, exist_ok=True)
+
+    # Create dummy preview files
+    import numpy as np
+    from PIL import Image
+
+    for s_dict in scenes:
+        shot_id = s_dict["shot_id"]
+        preview_path = os.path.join(previews_dir, f"scene_{shot_id:05d}.jpg")
+        if not os.path.exists(preview_path):
+            img_data = np.random.randint(0, 255, (200, 300, 3), dtype=np.uint8)
+            img = Image.fromarray(img_data)
+            img.save(preview_path, "JPEG")
 
     # Yield progress update
+    msg = "Pre-Analysis complete."
+    if logger:
+        logger.info(msg)
     yield {
-        "unified_log": "Pre-analysis complete (MOCKED).",
+        "unified_log": msg,
         "scenes": scenes,
         "output_dir": output_dir,
         "done": True,
@@ -188,8 +209,11 @@ def mock_propagation_execution(
     model_registry=None,
 ):
     print("[Mock] Running Propagation...")
+    msg = "Propagation complete."
+    if logger:
+        logger.info(msg)
     yield {
-        "unified_log": "Propagation complete (MOCKED).",
+        "unified_log": msg,
         "output_dir": event.output_folder,
         "done": True,
         "scenes": event.scenes,  # Pass back scenes
@@ -211,8 +235,11 @@ def mock_analysis_execution(
     print("[Mock] Running Analysis...")
     output_dir = event.output_folder
     metadata_path = os.path.join(output_dir, "metadata.db")
+    msg = "Analysis complete."
+    if logger:
+        logger.info(msg)
     yield {
-        "unified_log": "Analysis complete (MOCKED).",
+        "unified_log": msg,
         "output_dir": output_dir,
         "metadata_path": metadata_path,
         "done": True,
@@ -249,7 +276,16 @@ def mock_export_xmps_for_photos(photos, thresholds=None):
 
 def mock_export_kept_frames(*args, **kwargs):
     print("[Mock] Running Export...")
-    return "✅ Exported 10 items (MOCKED)."
+    logger = None
+    if len(args) > 2:
+        logger = args[2]
+    elif "logger" in kwargs:
+        logger = kwargs["logger"]
+
+    msg = "✅ Export Complete. Exported 10 items (MOCKED)."
+    if logger:
+        logger.info(msg)
+    return msg
 
 
 # Apply patches

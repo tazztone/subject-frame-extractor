@@ -56,4 +56,4 @@ class Labels:
 
     # Strategy Options
     STRATEGY_FACE = "👤 By Face"
-    STRATEGY_TEXT = "📝 By Text"
+    STRATEGY_TEXT = "📝 By Text (⚠️ Limited)"

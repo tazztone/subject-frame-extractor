@@ -43,7 +43,9 @@ tests
 ├──&nbsp;ui  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`__init__.py`](#-testsui__init__py)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`ai_ux_analyzer.py`](#-testsuiai_ux_analyzerpy)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;baselines  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`conftest.py`](#-testsuiconftestpy)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;diffs  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;mock_photos  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_accessibility.py`](#-testsuitest_accessibilitypy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_advanced_workflow.py`](#-testsuitest_advanced_workflowpy)  
@@ -61,6 +63,7 @@ tests
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_ui_interactions.py`](#-testsuitest_ui_interactionspy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_visual_regression.py`](#-testsuitest_visual_regressionpy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_with_sample_data.py`](#-testsuitest_with_sample_datapy)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`ui_locators.py`](#-testsuiui_locatorspy)  
 │&nbsp;&nbsp;&nbsp;└──&nbsp;[`visual_test_utils.py`](#-testsuivisual_test_utilspy)  
 └──&nbsp;unit  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`__init__.py`](#-testsunit__init__py)  
@@ -469,13 +472,21 @@ def generate_issue_report(issues: List[UXIssue], title: str='UX Analysis Report'
 ### `📄 tests/ui/conftest.py`
 
 ```python
-"""Shared fixtures for Playwright E2E tests."""
-PORT = 7860
+PORT = 8765
 BASE_URL = f'http://127.0.0.1:{PORT}'
+@pytest.fixture(autouse=True)
+def setup_playwright_timeout(page: Page):
+    """Set a baseline timeout for all Playwright actions."""
 def wait_for_server(url, timeout=60):
     """Wait for the server to be responsive."""
+def wait_for_app_ready(page: Page):
+    """Robustly wait for the Gradio app to be interactive."""
+def open_accordion(page: Page, text: str):
+    """Robustly opens an accordion by partial text match, no-ops if already open."""
 def switch_to_tab(page: Page, tab_name: str):
     """Robustly switch tabs in Gradio."""
+def cleanup_port(port: int):
+    """Forcefully kill any process using the specified port."""
 @pytest.fixture(scope='module')
 def app_server():
     """Starts the mock app server before tests and kills it after."""
@@ -628,20 +639,20 @@ class TestPropagationErrorHandling:
 ### `📄 tests/ui/test_component_verification.py`
 
 ```python
-"""Component-level verification tests."""
+"""Component-level verification tests using stable elem_id selectors."""
 pytestmark = [pytest.mark.e2e, pytest.mark.component]
+SLIDERS_BY_TAB = [('Source', '#thumb_megapixels_input'), ('Scenes', '#scene_m...
 class TestSliderFunctionality:
-    """Verify all sliders are functional and update values."""
-    SLIDERS_BY_TAB = [('Source', 'Advanced Extraction', 'Thumbnail Size'), ('Scen...
-    @pytest.mark.parametrize('tab,accordion,slider_label', SLIDERS_BY_TAB)
-    def test_slider_value_changes(self, page: Page, app_server, tab, accordion, slider_label):
-        """Slider value changes when interacted with."""
+    """Verify sliders are visible and interactive."""
+    @pytest.mark.parametrize('tab,selector', SLIDERS_BY_TAB)
+    def test_slider_value_changes(self, page: Page, app_server, tab, selector):
+        """Moving a slider should update its internal value."""
+DROPDOWNS_BY_TAB = [('Source', '#max_resolution'), ('Source', '#method_input'...
 class TestDropdownFunctionality:
-    """Verify dropdowns can be opened and selections work."""
-    DROPDOWNS_BY_TAB = [('Source', 'Max Download Resolution'), ('Source', 'Frame ...
-    @pytest.mark.parametrize('tab,dropdown_label', DROPDOWNS_BY_TAB)
-    def test_dropdown_is_interactive(self, page: Page, app_server, tab, dropdown_label):
-        """Dropdowns can be clicked and show options."""
+    """Verify dropdowns exist and are interactive."""
+    @pytest.mark.parametrize('tab,selector', DROPDOWNS_BY_TAB)
+    def test_dropdown_is_interactive(self, page: Page, app_server, tab, selector):
+        """Dropdowns should be visible and enabled."""
 class TestFiltersFunctionality:
     """Verify filter components actually filter content."""
     def test_scene_gallery_view_toggle(self, page: Page, app_server):
@@ -656,16 +667,16 @@ class TestLogsFunctionality:
         """Clear button empties log content."""
 class TestPaginationFunctionality:
     """Verify pagination controls work correctly."""
-    def test_pagination_dropdown_exists(self, page: Page, app_server):
-        """Page selector should be a dropdown (after Phase 0 fix)."""
+    def test_pagination_row_exists(self, page: Page, app_server):
+        """Pagination row should exist."""
     def test_prev_next_buttons_exist(self, page: Page, app_server):
         """Previous and Next pagination buttons should exist."""
 class TestButtonsFunctionality:
     """Verify buttons are clickable and perform actions."""
-    CRITICAL_BUTTONS = [('Source', '🚀 Start Single Extraction'), ('Source', '➕ Ad...
-    @pytest.mark.parametrize('tab,button_name', CRITICAL_BUTTONS)
-    def test_button_is_clickable(self, page: Page, app_server, tab, button_name):
-        """Critical buttons should be visible and enabled."""
+    CRITICAL_BUTTONS = [('Source', '#start_extraction_button'), ('Source', '#add_...
+    @pytest.mark.parametrize('tab,selector', CRITICAL_BUTTONS)
+    def test_button_is_visible(self, page: Page, app_server, tab, selector):
+        """Critical buttons should be attached to the DOM on their respective tabs."""
 class TestStrategyVisibility:
     """Verify strategy selection shows/hides appropriate UI groups."""
     def test_face_strategy_shows_face_options(self, page: Page, app_server):
@@ -743,7 +754,7 @@ def test_pipeline_wrappers_yield_component_keys(mock_app):
 
 ```python
 """Playwright UI Tests for Photo Mode."""
-pytestmark = pytest.mark.e2e
+pytestmark = [pytest.mark.e2e, pytest.mark.skip(reason='Photo Mode is not yet...
 def switch_to_tab(page: Page, tab_name: str):
     """Switch tabs in Gradio."""
 class TestPhotoWorkflow:
@@ -755,7 +766,6 @@ class TestPhotoWorkflow:
 ### `📄 tests/ui/test_session_lifecycle.py`
 
 ```python
-"""Playwright E2E Tests for session lifecycle."""
 pytestmark = pytest.mark.e2e
 class TestSessionPersistence:
     """Tests for session state persistence."""
@@ -786,26 +796,36 @@ def test_ui_init(): ...
 ### `📄 tests/ui/test_ui_interactions.py`
 
 ```python
-"""Automated UI Interaction Tests using Playwright."""
+"""Playwright E2E Tests for specific UI interactions."""
 pytestmark = pytest.mark.e2e
-class TestFindPeopleButtonInteraction:
-    """Tests for Find People in Video button - verifies button click works."""
-    def test_find_people_button_clickable(self, page: Page, app_server):
-        """Button should be clickable and not crash the app."""
+class TestInteractiveComponents:
+    """Tests for individual interactive components."""
+    def test_find_people_button_visibility(self, page: Page, app_server):
+        """Verify the Find People button appears when face strategy is selected."""
+    def test_logs_accordion_works(self, page: Page, app_server):
+        """Verify the System Logs accordion opens and shows content."""
+class TestWorkflowInteractions:
+    """Tests for cross-component interactions."""
+    def test_face_strategy_shows_upload(self, page: Page, app_server):
+        """Verify that selecting Face strategy shows upload component."""
+    def test_text_strategy_shows_prompt(self, page: Page, app_server):
+        """Verify that selecting Text strategy shows prompt input."""
+class TestErrorScenarios:
+    """Tests for graceful error handling in UI."""
     def test_find_people_graceful_error_handling(self, page: Page, app_server):
-        """Verify graceful error handling when prerequisites are missing."""
+        """Verify that Scan Video Now handles errors gracefully when no source is set."""
 class TestGallerySliderInteractions:
-    """Tests for gallery size sliders - verifies sliders affect gallery."""
+    """Tests for gallery size sliders."""
     def test_columns_slider_exists_and_interactive(self, page: Page, app_server):
         """Columns slider should exist and be draggable."""
     def test_height_slider_exists_and_interactive(self, page: Page, app_server):
         """Height slider should exist and be adjustable."""
 class TestLogRefreshMechanism:
-    """Tests for log display - verifies logs can be refreshed."""
+    """Tests for log display."""
     def test_refresh_button_updates_logs(self, page: Page, app_server):
         """Clicking Refresh should drain log queue and update display."""
 class TestPropagationErrorHandling:
-    """Tests for propagation - verifies graceful error handling."""
+    """Tests for propagation error handling."""
     def test_propagation_without_scenes_no_crash(self, page: Page, app_server):
         """Clicking propagate without scenes should not crash."""
 class TestUIConsoleErrors:
@@ -821,11 +841,6 @@ class TestUIConsoleErrors:
 ```python
 """Visual regression tests - captures UI states and compares to baselines."""
 pytestmark = [pytest.mark.e2e, pytest.mark.visual]
-def pytest_addoption(parser):
-    """Add --update-baselines option."""
-@pytest.fixture(scope='module', autouse=True)
-def cleanup_before_run():
-    """Clean up diff screenshots before test run."""
 class TestVisualRegression:
     """Screenshot-based visual regression tests."""
     UI_STATES = [('01_source_tab_initial', None), ('02_source_tab_with_input', la...
@@ -840,38 +855,70 @@ class TestUIStateConsistency:
         """Switching tabs and back should preserve visual state."""
 def _click_strategy(page: Page, strategy_keyword: str):
     """Click a strategy radio button containing keyword."""
-def _open_logs(page: Page):
-    """Open the System Logs accordion."""
-def _open_help(page: Page):
-    """Open the Help accordion."""
 ```
 
 ### `📄 tests/ui/test_with_sample_data.py`
 
 ```python
-"""E2E Tests with Sample Data - Full Integration Tests."""
+"""E2E tests using sample data to verify the full app workflow."""
 pytestmark = pytest.mark.e2e
 SAMPLE_VIDEO = str(Path(__file__).parent.parent / 'assets' / 'sample.mp4')
 SAMPLE_IMAGE = str(Path(__file__).parent.parent / 'assets' / 'sample.jpg')
 @pytest.fixture
 def extracted_video_session(page: Page, app_server):
-    """Fixture that extracts frames from sample.mp4 before tests."""
-class TestGallerySlidersWithData:
-    """Tests for gallery sliders after data is loaded."""
-    def test_columns_slider_changes_gallery(self, extracted_video_session):
-        """Columns slider should change gallery layout when scenes exist."""
-    def test_height_slider_changes_gallery(self, extracted_video_session):
-        """Height slider should change gallery height when scenes exist."""
-class TestFindPeopleWithData:
-    """Tests for Find People feature with actual video."""
-    def test_scan_video_finds_faces(self, extracted_video_session):
-        """Scan Video for Faces should detect people in sample video."""
-    def test_upload_reference_face(self, extracted_video_session):
-        """Upload sample.jpg as reference face for Face strategy."""
-class TestFullWorkflowWithSampleVideo:
-    """Complete workflow test using sample video."""
-    def test_extract_to_scenes(self, page: Page, app_server):
-        """Test extraction followed by scene detection."""
+    """Fixture that brings the app to an 'extracted' state."""
+class TestSampleDataWorkflow:
+    """Verifies the complete workflow using real sample data (mocked)."""
+    def test_full_workflow_with_sample_video(self, page: Page, app_server):
+        """Test extraction -> seeding -> analysis -> export with a mock sample."""
+class TestSeedingOptions:
+    """Tests different seeding options with sample data."""
+    def test_face_upload_flow(self, page: Page, app_server):
+        """Test uploading a reference face image."""
+    def test_text_prompt_flow(self, page: Page, app_server):
+        """Test entering a text prompt."""
+```
+
+### `📄 tests/ui/ui_locators.py`
+
+```python
+"""Centralized UI locators — single place to update when the UI changes."""
+class Selectors:
+    """elem_id-based CSS selectors (most resilient to label changes)."""
+    UNIFIED_LOG = "<REDACTED_STRING>"
+    UNIFIED_STATUS = "<REDACTED_STRING>"
+    LOG_TEXTAREA = "<REDACTED_STRING>"
+    SOURCE_INPUT = "<REDACTED_STRING>"
+    START_EXTRACTION = "<REDACTED_STRING>"
+    ADD_TO_QUEUE = "<REDACTED_STRING>"
+    THUMB_MEGAPIXELS = "<REDACTED_STRING>"
+    SEED_STRATEGY = "<REDACTED_STRING>"
+    START_PRE_ANALYSIS = "<REDACTED_STRING>"
+    SCAN_VIDEO_TAB = "<REDACTED_STRING>"
+    SCENE_GALLERY = "<REDACTED_STRING>"
+    VIEW_TOGGLE = "<REDACTED_STRING>"
+    MASK_AREA_MIN = "<REDACTED_STRING>"
+    QUALITY_SCORE_MIN = "<REDACTED_STRING>"
+    PREV_PAGE = "<REDACTED_STRING>"
+    NEXT_PAGE = "<REDACTED_STRING>"
+    PAGINATION_ROW = "<REDACTED_STRING>"
+    START_ANALYSIS = "<REDACTED_STRING>"
+    FILTER_PRESET = "<REDACTED_STRING>"
+    DEDUP_THRESH = "<REDACTED_STRING>"
+    EXPORT_BUTTON = "<REDACTED_STRING>"
+class Labels:
+    """Text/label-based locators (used when elem_id isn't available)."""
+    TAB_SOURCE = "<REDACTED_STRING>"
+    TAB_SUBJECT = "<REDACTED_STRING>"
+    TAB_SCENES = "<REDACTED_STRING>"
+    TAB_METRICS = "<REDACTED_STRING>"
+    TAB_EXPORT = "<REDACTED_STRING>"
+    SOURCE_PLACEHOLDER = "<REDACTED_STRING>"
+    SYSTEM_LOGS = "<REDACTED_STRING>"
+    HELP_ACCORDION = "<REDACTED_STRING>"
+    SCAN_VIDEO_BUTTON = "<REDACTED_STRING>"
+    STRATEGY_FACE = "<REDACTED_STRING>"
+    STRATEGY_TEXT = "<REDACTED_STRING>"
 ```
 
 ### `📄 tests/ui/visual_test_utils.py`
@@ -1963,9 +2010,7 @@ class TestRobustnessPhase2:
     def test_setup_logging_structured(self, temp_dir): ...
     def test_atomic_write_text(self, temp_dir): ...
     def test_xmp_writer_atomic(self, temp_dir): ...
-    @patch('core.sam3_patches.hashlib.sha256')
-    @patch('core.sam3_patches.logger')
-    def test_sam3_patch_hash_mismatch(self, mock_logger, mock_hash_cls, temp_dir): ...
+    def test_sam3_patch_hash_mismatch(self, temp_dir): ...
     def test_model_registry_sticky_failure(self): ...
 ```
 

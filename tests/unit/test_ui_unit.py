@@ -26,6 +26,15 @@ def app_ui(
             "text_seeding_group": MagicMock(),
             "auto_seeding_group": MagicMock(),
             "enable_face_filter_input": MagicMock(),
+            "application_state": MagicMock(),
+            "scene_gallery": MagicMock(),
+            "total_pages_label": MagicMock(),
+            "page_number_input": MagicMock(),
+            "seeding_results_column": MagicMock(),
+            "propagation_group": MagicMock(),
+            "propagate_masks_button": MagicMock(),
+            "scene_filter_status": MagicMock(),
+            "unified_status": MagicMock(),
         }
         app.ana_input_components = []
         return app

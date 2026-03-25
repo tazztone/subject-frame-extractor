@@ -1,5 +1,5 @@
 ---
-description: Auto-generated code skeletons for the main application.
+description: Auto-generated code skeletons for the main application. do not edit manually.
 ---
 
 # Code Skeleton Reference
@@ -103,6 +103,8 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;pixel_count.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└──&nbsp;test_pixel_count.py  
 ├──&nbsp;out  
+├──&nbsp;patch.py  
+├──&nbsp;previews  
 ├──&nbsp;pyrightconfig.json  
 ├──&nbsp;run_config.json  
 ├──&nbsp;scripts  
@@ -160,7 +162,9 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;├──&nbsp;ui  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;__init__.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;ai_ux_analyzer.py  
+│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;baselines  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;conftest.py  
+│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;diffs  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;mock_photos  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_accessibility.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_advanced_workflow.py  
@@ -178,6 +182,7 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_ui_interactions.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_visual_regression.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_with_sample_data.py  
+│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;ui_locators.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;visual_test_utils.py  
 │&nbsp;&nbsp;&nbsp;└──&nbsp;unit  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;__init__.py  
@@ -586,7 +591,7 @@ def _rename_exported_frames(export_dir: Path, frames_to_extract: list, fn_to_ori
 def _export_metadata(kept_frames: list, export_dir: Path, logger: 'AppLogger'): ...
 def _crop_exported_frames(kept_frames: list, export_dir: Path, crop_ars: str, crop_padding: int, masks_root: Path, logger: 'AppLogger', cancel_event) -> int: ...
 def export_kept_frames(event: ExportEvent, config: 'Config', logger: 'AppLogger', thumbnail_manager, cancel_event) -> str: ...
-def dry_run_export(event: ExportEvent, config: 'Config') -> str: ...
+def dry_run_export(event: ExportEvent, config: 'Config', logger: Optional['AppLogger']=None) -> str: ...
 ```
 
 ### `📄 core/face_clustering.py`
@@ -1223,6 +1228,8 @@ def patch_sam3_dtype():
     """Force SAM3 to use float32 to avoid BFloat16/float32 bias mismatch on Ampere+ ..."""
 def patch_sam3_resources():
     """Monkey patch pkg_resources within sam3.model_builder to use importlib.resources."""
+def _check_sam3_version(predictor_path: Path) -> bool:
+    """Check if the SAM3 predictor file matches the expected hash."""
 def apply_patches():
     """Apply all monkey patches to SAM3 with version safety check."""
 ```
@@ -1549,7 +1556,7 @@ class AppUI:
     def on_discovered_face_select(self, state: ApplicationState, confidence: float, evt: gr.SelectData=None) -> tuple[str, Optional[np.ndarray], str]:
         """Handles selection of a face cluster from the discovery gallery."""
     @safe_ui_callback('Face Discovery')
-    def on_find_people_from_video(self, current_state: ApplicationState, *args) -> tuple[str, gr.update, gr.update, float, ApplicationState]:
+    def on_find_people_from_video(self, current_state: ApplicationState, *args) -> tuple[str, str, gr.update, gr.update, float, ApplicationState]:
         """Scans the video for faces to populate the discovery gallery."""
     def _get_smart_mode_updates(self, is_enabled: bool) -> list[gr.update]:
         """Calculates slider updates when toggling 'Smart Mode'."""
@@ -1569,10 +1576,10 @@ class AppUI:
     def on_auto_set_thresholds(self, per_metric_values: dict, p: int, *checkbox_values: bool) -> list[gr.update]:
         """Automatically sets filter thresholds based on data percentiles."""
     @safe_ui_callback('Export')
-    def export_kept_frames_wrapper(self, state: ApplicationState, enable_crop: bool, crop_ars: str, crop_padding: int, enable_xmp_export: bool, require_face_match: bool, dedup_thresh: int, dedup_method_ui: str, *slider_values: float) -> str:
+    def export_kept_frames_wrapper(self, state: ApplicationState, enable_crop: bool, crop_ars: str, crop_padding: int, enable_xmp_export: bool, require_face_match: bool, dedup_thresh: int, dedup_method_ui: str, *slider_values: float) -> dict:
         """Wrapper to execute the final frame export."""
     @safe_ui_callback('Export Dry Run')
-    def dry_run_export_wrapper(self, state: ApplicationState, enable_crop: bool, crop_ars: str, crop_padding: int, enable_xmp_export: bool, require_face_match: bool, dedup_thresh: int, dedup_method_ui: str, *slider_values: float) -> str:
+    def dry_run_export_wrapper(self, state: ApplicationState, enable_crop: bool, crop_ars: str, crop_padding: int, enable_xmp_export: bool, require_face_match: bool, dedup_thresh: int, dedup_method_ui: str, *slider_values: float) -> dict:
         """Wrapper to perform a dry run of the export."""
 ```
 
