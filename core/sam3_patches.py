@@ -156,23 +156,39 @@ def patch_sam3_resources():
         pass
 
 
+def _check_sam3_version(predictor_path: Path) -> bool:
+    """
+    Check if the SAM3 predictor file matches the expected hash.
+    Returns True if version matches or file doesn't exist, False on mismatch.
+    """
+    if not predictor_path.exists():
+        return True
+
+    try:
+        with open(predictor_path, "rb") as f:
+            current_hash = hashlib.sha256(f.read()).hexdigest()
+
+        if current_hash != SAM3_PREDICTOR_HASH:
+            logger.warning(
+                f"SAM3 version mismatch (hash: {current_hash[:8]}...). "
+                f"Monkey patches may be unstable. Expected: {SAM3_PREDICTOR_HASH[:8]}...",
+                extra={"component": "patcher"},
+            )
+            return False
+    except Exception as e:
+        logger.debug(f"SAM3 version check failed to read file: {e}")
+        return True
+
+    return True
+
+
 def apply_patches():
     """Apply all monkey patches to SAM3 with version safety check."""
     # 0. Version Safety Check
     try:
         import sam3.model.sam3_video_predictor as svp
 
-        predictor_path = Path(svp.__file__)
-        if predictor_path.exists():
-            with open(predictor_path, "rb") as f:
-                current_hash = hashlib.sha256(f.read()).hexdigest()
-
-            if current_hash != SAM3_PREDICTOR_HASH:
-                logger.warning(
-                    f"SAM3 version mismatch (hash: {current_hash[:8]}...). "
-                    f"Monkey patches may be unstable. Expected: {SAM3_PREDICTOR_HASH[:8]}...",
-                    extra={"component": "patcher"},
-                )
+        _check_sam3_version(Path(svp.__file__))
     except Exception as e:
         logger.debug(f"SAM3 version check skipped: {e}")
 

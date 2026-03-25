@@ -10,7 +10,6 @@ import pytest
 from core.io_utils import atomic_write_text
 from core.logger import JSONFormatter, setup_logging
 from core.managers.registry import ModelRegistry
-from core.sam3_patches import apply_patches
 from core.xmp_writer import write_xmp_sidecar
 
 
@@ -92,27 +91,19 @@ class TestRobustnessPhase2:
 
     # --- 3. SAM3 Patch Safety Tests ---
 
-    @patch("core.sam3_patches.hashlib.sha256")
-    @patch("core.sam3_patches.logger")
-    def test_sam3_patch_hash_mismatch(self, mock_logger, mock_hash_cls, temp_dir):
-        # Mocking import of sam3
-        mock_svp = MagicMock()
-        mock_svp.__file__ = str(temp_dir / "fake_predictor.py")
-        Path(mock_svp.__file__).touch()
+    def test_sam3_patch_hash_mismatch(self, temp_dir):
+        # Setup a fake predictor file that won't match the hash
+        fake_file = temp_dir / "fake_predictor.py"
+        fake_file.write_text("# dummy content that won't match the hash")
 
-        mock_hash_obj = MagicMock()
-        mock_hash_obj.hexdigest.return_value = "WRONG_HASH"
-        mock_hash_cls.return_value = mock_hash_obj
+        # Directly test the version check function
+        with patch("core.sam3_patches.logger") as mock_logger:
+            from core.sam3_patches import _check_sam3_version
 
-        # Isolate from existing sys.modules
-        module_name = "sam3.model.sam3_video_predictor"
-        with patch.dict("sys.modules", {module_name: mock_svp}):
-            # Force apply_patches to see the mock
-            with patch("importlib.import_module", return_value=mock_svp):
-                apply_patches()
+            result = _check_sam3_version(fake_file)
 
-        # Should warning about mismatch
-        mock_logger.warning.assert_called()
+        assert result is False
+        assert mock_logger.warning.called
         assert "SAM3 version mismatch" in mock_logger.warning.call_args[0][0]
 
     # --- 4. ML Model Sticky Failures ---

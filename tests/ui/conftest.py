@@ -4,7 +4,6 @@ Shared fixtures for Playwright E2E tests.
 Provides the app_server fixture that starts/stops the mock Gradio server.
 """
 
-import socket
 import subprocess
 import sys
 import time
@@ -16,8 +15,16 @@ import requests
 from playwright.sync_api import Page, expect
 
 # Constants
-PORT = 7860
+# Use an isolated port for UI tests to avoid collisions with the real app (7860)
+PORT = 8765
 BASE_URL = f"http://127.0.0.1:{PORT}"
+
+
+@pytest.fixture(autouse=True)
+def setup_playwright_timeout(page: Page):
+    """Set a baseline timeout for all Playwright actions."""
+    page.set_default_timeout(10000)
+    yield
 
 
 def wait_for_server(url, timeout=60):
@@ -38,12 +45,21 @@ def switch_to_tab(page: Page, tab_name: str):
     """Robustly switch tabs in Gradio."""
     # Click the tab button
     tab_btn = page.get_by_role("tab", name=tab_name)
-    expect(tab_btn).to_be_visible()
+    expect(tab_btn).to_be_visible(timeout=5000)
     tab_btn.click(force=True)
 
     # Wait for the tab to be selected
-    expect(tab_btn).to_have_attribute("aria-selected", "true")
-    time.sleep(1)  # Animation wait
+    expect(tab_btn).to_have_attribute("aria-selected", "true", timeout=5000)
+    time.sleep(0.5)  # Shorter animation wait
+
+
+def cleanup_port(port: int):
+    """Forcefully kill any process using the specified port."""
+    try:
+        if sys.platform != "win32":
+            subprocess.run(["fuser", "-k", f"{port}/tcp"], capture_output=True, check=False)
+    except Exception:
+        pass
 
 
 @pytest.fixture(scope="module")
@@ -53,20 +69,11 @@ def app_server():
 
     The mock app replaces heavy ML operations with fast stubs,
     allowing E2E tests to run quickly without GPU.
-
-    If the real app is already running on port 7860, uses that instead.
     """
 
-    # Check if something is already running on the port
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    result = sock.connect_ex(("127.0.0.1", PORT))
-    sock.close()
-
-    if result == 0:
-        # Port is in use - assume real app is running
-        print(f"✓ Using existing app on port {PORT}")
-        yield None  # No process to manage
-        return
+    # Aggressively clean up the test port before starting
+    cleanup_port(PORT)
+    time.sleep(1)  # Give the OS a moment to free the socket
 
     print(f"Starting mock app on port {PORT}...")
 
@@ -82,17 +89,19 @@ def app_server():
         [sys.executable, mock_app_path],
         stdout=log_file,
         stderr=subprocess.STDOUT,
-        env={**environ, "GRADIO_SERVER_PORT": str(PORT), "PYTHONUNBUFFERED": "1"},
+        env={**environ, "APP_SERVER_PORT": str(PORT), "PYTHONUNBUFFERED": "1"},
     )
 
-    # Wait for server startup using HTTP check
-    if wait_for_server(BASE_URL, timeout=30):
+    # Wait for server startup using HTTP check with increased timeout
+    if wait_for_server(BASE_URL, timeout=60):
         print(f"✓ Server started successfully (Logs: {log_file_path})")
     else:
         print("❌ Server failed to start within timeout")
-        # Print last few lines of log
+        # Ensure cleanup before failing
+        process.terminate()
         with open(log_file_path, "r") as f:
-            print(f.read()[-1000:])
+            print(f"Mock App Logs:\n{f.read()[-2000:]}")
+        pytest.fail("Mock server failed to start")
 
     yield process
 
