@@ -42,25 +42,25 @@ class VideoOpenFailure(RuntimeError):
 
 
 # Build the base torch mock
-mock_torch = MagicMock(name="torch")
-mock_torch.cuda.is_available.return_value = False
-mock_torch.cuda.device_count.return_value = 0
-mock_torch.cuda.get_device_name = MagicMock(return_value="Mock GPU")
-mock_torch.cuda.empty_cache = MagicMock()
-mock_torch.cuda.memory_summary = MagicMock(return_value="Mock Memory Summary")
-mock_torch.cuda.OutOfMemoryError = OutOfMemoryError
-mock_torch.__version__ = "2.0.0"
-mock_torch.nn.Module = MagicMock
-mock_torch.Tensor = MagicMock
-mock_torch.device = MagicMock
-mock_torch.float = MagicMock()
-mock_torch.uint8 = MagicMock()
-mock_torch.version = MagicMock()
-mock_torch.version.cuda = "12.1"
+_mock_torch_obj = MagicMock(name="torch")
+_mock_torch_obj.cuda.is_available.return_value = False
+_mock_torch_obj.cuda.device_count.return_value = 0
+_mock_torch_obj.cuda.get_device_name = MagicMock(return_value="Mock GPU")
+_mock_torch_obj.cuda.empty_cache = MagicMock()
+_mock_torch_obj.cuda.memory_summary = MagicMock(return_value="Mock Memory Summary")
+_mock_torch_obj.cuda.OutOfMemoryError = OutOfMemoryError
+_mock_torch_obj.__version__ = "2.0.0"
+_mock_torch_obj.nn.Module = MagicMock
+_mock_torch_obj.Tensor = MagicMock
+_mock_torch_obj.device = MagicMock
+_mock_torch_obj.float = MagicMock()
+_mock_torch_obj.uint8 = MagicMock()
+_mock_torch_obj.version = MagicMock()
+_mock_torch_obj.version.cuda = "12.1"
 
 
 # Stub torch creation functions to return mocks with correct shape
-def _create_mock_tensor(name="tensor", shape=None, **kwargs):
+def _create_mock_tensor(name="tensor", shape=None, value=None, **kwargs):
     class MockTensor(MagicMock):
         def __len__(self):
             if hasattr(self, "_mock_shape") and self._mock_shape is not None:
@@ -103,63 +103,82 @@ def _create_mock_tensor(name="tensor", shape=None, **kwargs):
     mock_t._mock_shape = shape
     if shape is not None:
         mock_t.shape = shape
-    mock_t.device = mock_torch.device("cpu")
-    mock_t.dtype = mock_torch.float32
+    mock_t.device = _mock_torch_obj.device("cpu")
+    mock_t.dtype = _mock_torch_obj.float32
     mock_t.size.side_effect = lambda dim=None: shape if dim is None else shape[dim]
     mock_t.__mul__ = MagicMock(return_value=mock_t)
     mock_t.__add__ = MagicMock(return_value=mock_t)
     mock_t.__sub__ = MagicMock(return_value=mock_t)
     mock_t.__truediv__ = MagicMock(return_value=mock_t)
-    mock_t.item.return_value = 1.0
+    if value is not None:
+        if hasattr(value, "__getitem__") and len(value) > 0:
+            try:
+                # Handle nested lists/arrays
+                flat_val = value
+                while hasattr(flat_val, "__getitem__") and not isinstance(flat_val, (str, bytes)):
+                    flat_val = flat_val[0]
+                mock_t.item.return_value = flat_val
+            except Exception:
+                mock_t.item.return_value = 1.0
+        else:
+            mock_t.item.return_value = value
+    else:
+        mock_t.item.return_value = 1.0
     return mock_t
 
 
-mock_torch.from_numpy = MagicMock(side_effect=lambda np_arr: _create_mock_tensor("from_numpy", np_arr.shape))
-mock_torch.zeros = MagicMock(side_effect=lambda shape, **kwargs: _create_mock_tensor("zeros", shape))
-mock_torch.ones = MagicMock(side_effect=lambda shape, **kwargs: _create_mock_tensor("ones", shape))
-mock_torch.rand = MagicMock(side_effect=lambda *shape, **kwargs: _create_mock_tensor("rand", shape))
-mock_torch.randn = MagicMock(side_effect=lambda *shape, **kwargs: _create_mock_tensor("randn", shape))
-mock_torch.tensor = MagicMock(
-    side_effect=lambda data, **kwargs: _create_mock_tensor("tensor", getattr(data, "shape", ()))
+_mock_torch_obj.from_numpy = MagicMock(side_effect=lambda np_arr: _create_mock_tensor("from_numpy", np_arr.shape))
+_mock_torch_obj.zeros = MagicMock(side_effect=lambda shape, **kwargs: _create_mock_tensor("zeros", shape))
+_mock_torch_obj.ones = MagicMock(side_effect=lambda shape, **kwargs: _create_mock_tensor("ones", shape))
+_mock_torch_obj.rand = MagicMock(side_effect=lambda *shape, **kwargs: _create_mock_tensor("rand", shape))
+_mock_torch_obj.randn = MagicMock(side_effect=lambda *shape, **kwargs: _create_mock_tensor("randn", shape))
+_mock_torch_obj.tensor = MagicMock(
+    side_effect=lambda data, **kwargs: _create_mock_tensor(
+        "tensor",
+        getattr(data, "shape", getattr(data, "__len__", lambda: (1,))() if hasattr(data, "__len__") else ()),
+        data,
+    )
 )
-mock_torch.no_grad = MagicMock()
-mock_torch.no_grad.return_value.__enter__ = MagicMock()
-mock_torch.no_grad.return_value.__exit__ = MagicMock()
-mock_torch.SymFloat = MagicMock
-mock_torch.SymInt = MagicMock
+_mock_torch_obj.no_grad = MagicMock()
+_mock_torch_obj.no_grad.return_value.__enter__ = MagicMock()
+_mock_torch_obj.no_grad.return_value.__exit__ = MagicMock(return_value=False)
+_mock_torch_obj.SymFloat = MagicMock
+_mock_torch_obj.SymInt = MagicMock
 
 # Patch sys.modules globally and immediately
 modules_to_mock = {
     "torch": _create_mock_module(
         "torch",
         {
-            "cuda": mock_torch.cuda,
-            "nn": mock_torch.nn,
-            "version": mock_torch.version,
-            "Tensor": mock_torch.Tensor,
-            "device": mock_torch.device,
-            "from_numpy": mock_torch.from_numpy,
-            "zeros": mock_torch.zeros,
-            "ones": mock_torch.ones,
-            "tensor": mock_torch.tensor,
+            "cuda": _mock_torch_obj.cuda,
+            "nn": _mock_torch_obj.nn,
+            "version": _mock_torch_obj.version,
+            "Tensor": _mock_torch_obj.Tensor,
+            "device": _mock_torch_obj.device,
+            "from_numpy": _mock_torch_obj.from_numpy,
+            "zeros": _mock_torch_obj.zeros,
+            "ones": _mock_torch_obj.ones,
+            "tensor": _mock_torch_obj.tensor,
             "stack": MagicMock(side_effect=lambda tensors, **kwargs: MagicMock(name="stacked")),
             "cat": MagicMock(side_effect=lambda tensors, **kwargs: MagicMock(name="catted")),
             "rand": MagicMock(side_effect=lambda *args, **kwargs: MagicMock(name="rand")),
             "randn": MagicMock(side_effect=lambda *args, **kwargs: MagicMock(name="randn")),
-            "float": mock_torch.float,
+            "float": _mock_torch_obj.float,
             "float32": MagicMock(),
-            "uint8": mock_torch.uint8,
+            "uint8": _mock_torch_obj.uint8,
             "int64": MagicMock(),
-            "no_grad": mock_torch.no_grad,
-            "SymFloat": mock_torch.SymFloat,
-            "SymInt": mock_torch.SymInt,
+            "no_grad": _mock_torch_obj.no_grad,
+            "inference_mode": _mock_torch_obj.no_grad,
+            "set_float32_matmul_precision": MagicMock(),
+            "SymFloat": _mock_torch_obj.SymFloat,
+            "SymInt": _mock_torch_obj.SymInt,
             "__version__": "2.0.0",
             "manual_seed": MagicMock(),
         },
     ),
-    "torch.cuda": mock_torch.cuda,
-    "torch.nn": mock_torch.nn,
-    "torch.version": mock_torch.version,
+    "torch.cuda": _mock_torch_obj.cuda,
+    "torch.nn": _mock_torch_obj.nn,
+    "torch.version": _mock_torch_obj.version,
     "torchvision": _create_mock_module("torchvision", {"ops": MagicMock(), "transforms": MagicMock()}),
     "torchvision.ops": MagicMock(),
     "insightface": _create_mock_module("insightface", {"app": MagicMock()}),
