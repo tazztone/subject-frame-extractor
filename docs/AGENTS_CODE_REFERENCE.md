@@ -151,6 +151,7 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;test_real_workflow.py  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;mock_app.py  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;regression  
+│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;test_robustness.py  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;research  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;results  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;e2e_output  
@@ -188,6 +189,7 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_batch_manager.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_bug_fixes.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_cli.py  
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_concurrency.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_config.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_core.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_database.py  
@@ -202,10 +204,12 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_extraction_manager.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_face_clustering.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_face_operators.py  
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_ffmpeg_logic.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_filtering.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_fingerprint.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_gallery_utils.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_handlers.py  
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_helpers_extended.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_image_utils.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_integration.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_integration_sam3_patches.py  
@@ -218,11 +222,13 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_mask_operators.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_mask_propagator_logic.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_models.py  
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_models_property.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_niqe_operator.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_operators.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_operators_registry.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_phase1_logic.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_phase2_logic.py  
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_phase2_robustness.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_photo_utils.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_pipeline_result_schemas.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_pipelines.py  
@@ -428,13 +434,13 @@ def json_config_settings_source() -> Dict[str, Any]:
 class Config(BaseSettings):
     """Manages the application's configuration settings."""
     model_config = SettingsConfigDict(env_file='.env', env_prefix='APP_', env_nes...
-    def model_post_init(self, __context: Any) -> None:
-        """Post-initialization hook to validate paths."""
+    def validate(self):
+        """Explicitly validates the configuration."""
     def _validate_paths(self):
         """Ensures critical directories exist and are writable."""
     @model_validator(mode='after')
     def _validate_config(self) -> 'Config':
-        """Validates that at least one quality weight is non-zero."""
+        """Validates quality weights."""
     @property
     def quality_weights(self) -> Dict[str, int]:
         """Returns a dictionary of quality metric weights."""
@@ -446,6 +452,8 @@ class Config(BaseSettings):
 class Database:
     def __init__(self, db_path: Path, batch_size: int=50, logger: Optional[logging.Logger]=None):
         """Initializes the Database manager."""
+    def __enter__(self): ...
+    def __exit__(self, exc_type, exc_val, exc_tb): ...
     def connect(self):
         """Connects to the SQLite database."""
     def migrate(self):
@@ -528,12 +536,20 @@ class ErrorHandler:
 class UIEvent(BaseModel):
     """Base class for all UI-triggered events."""
     model_config = ConfigDict(validate_assignment=True, extra='ignore', str_strip...
+def validate_writable_directory(v: str, field_name: str) -> str:
+    """Helper to validate that a directory path is writable."""
 class ExtractionEvent(UIEvent):
     """Data model for frame extraction events."""
+    @field_validator('output_folder')
+    @classmethod
+    def validate_output_folder(cls, v: Optional[str]) -> Optional[str]: ...
     @model_validator(mode='after')
     def validate_source(self) -> 'ExtractionEvent': ...
 class PreAnalysisEvent(UIEvent):
     """Data model for pre-analysis configuration and execution."""
+    @field_validator('output_folder')
+    @classmethod
+    def validate_out(cls, v: str) -> str: ...
     @field_validator('face_ref_img_path')
     @classmethod
     def validate_face_ref(cls, v: str, info) -> str:
@@ -543,12 +559,24 @@ class PreAnalysisEvent(UIEvent):
         """Ensures that dependent settings (like face filter) are consistent with availa..."""
 class PropagationEvent(UIEvent):
     """Data model for the mask propagation stage."""
+    @field_validator('output_folder')
+    @classmethod
+    def validate_out(cls, v: str) -> str: ...
 class FilterEvent(UIEvent):
     """Data model for filtering and gallery update events."""
+    @field_validator('output_dir')
+    @classmethod
+    def validate_out(cls, v: str) -> str: ...
 class ExportEvent(UIEvent):
     """Data model for exporting filtered frames."""
+    @field_validator('output_dir')
+    @classmethod
+    def validate_out(cls, v: str) -> str: ...
 class SessionLoadEvent(UIEvent):
     """Data model for loading a previous session."""
+    @field_validator('session_path')
+    @classmethod
+    def validate_session_path(cls, v: str) -> str: ...
 ```
 
 ### `📄 core/export.py`
@@ -622,6 +650,8 @@ def compute_entropy(hist: np.ndarray, entropy_norm: float) -> float:
 """I/O and File System Utilities for Subject Frame Extractor"""
 def validate_video_file(video_path: str) -> bool:
     """Checks if the video file exists, is not empty, and can be opened by OpenCV."""
+def atomic_write_text(path: Union[str, Path], content: str, encoding: str='utf-8'):
+    """Writes content to a file atomically by writing to a temporary file"""
 def sanitize_filename(name: str, config: 'Config', max_length: Optional[int]=None) -> str:
     """Sanitizes a string to be safe for use as a filename."""
 def is_image_folder(p: Union[str, Path]) -> bool:
@@ -654,6 +684,10 @@ class ColoredFormatter(logging.Formatter):
     COLORS = {'DEBUG': '\x1b[36m', 'INFO': '\x1b[37m', 'WARNING': '\x1b[33m', 'ER...
     def format(self, record: logging.LogRecord) -> str:
         """Formats the log record with color codes."""
+class JSONFormatter(logging.Formatter):
+    """Formatter that outputs structured JSON for each log record."""
+    def format(self, record: logging.LogRecord) -> str:
+        """Formats the log record as a JSON string based on LogEvent."""
 def setup_logging(config: 'Config', log_dir: Optional[Path]=None, log_to_console: bool=True, progress_queue: Optional[Queue]=None):
     """Sets up the global logging configuration using dictConfig."""
 class AppLogger:
@@ -823,9 +857,9 @@ def _load_analysis_scenes(scenes_data: List[dict], is_folder_mode: bool, include
 
 ```python
 class ThumbnailManager:
-    """Manages an in-memory LRU cache for image thumbnails."""
+    """Manages an in-memory LRU cache for image thumbnails with size limits."""
     def __init__(self, logger: 'AppLogger', config: 'Config'):
-        """Initializes the manager with a configurable cache size."""
+        """Initializes the manager with a configurable cache size and memory limit."""
     def get(self, thumb_path: Path) -> Optional[np.ndarray]:
         """Retrieves a thumbnail from cache or loads it from disk."""
     def clear_cache(self):
@@ -1039,6 +1073,7 @@ class QualityScoreOperator:
 
 ```python
 """Operator Registry for managing and discovering operators."""
+logger = logging.getLogger(__name__)
 class OperatorRegistry:
     """Central registry for operator instances."""
     @classmethod
@@ -1176,6 +1211,8 @@ class AdvancedProgressTracker:
 
 ```python
 """SAM3 Compatibility Patches"""
+logger = logging.getLogger(__name__)
+SAM3_PREDICTOR_HASH = "<REDACTED_STRING>"
 def edt_triton_fallback(data):
     """OpenCV-based fallback for Euclidean Distance Transform when Triton unavailable"""
 def connected_components_fallback(input_tensor):
@@ -1187,7 +1224,7 @@ def patch_sam3_dtype():
 def patch_sam3_resources():
     """Monkey patch pkg_resources within sam3.model_builder to use importlib.resources."""
 def apply_patches():
-    """Apply all monkey patches to SAM3."""
+    """Apply all monkey patches to SAM3 with version safety check."""
 ```
 
 ### `📄 core/scene_utils/__init__.py`
@@ -1211,8 +1248,10 @@ def make_photo_thumbs(image_paths: list[Path], out_dir: Path, params: 'AnalysisP
 
 ```python
 """FFmpeg-specific utilities for video processing and export."""
-def perform_ffmpeg_export(video_path: str, frames_to_extract: list[int], export_dir: Path, logger: 'AppLogger') -> tuple[bool, Optional[str]]:
+def perform_ffmpeg_export(video_path: str, frames_to_extract: list[int], export_dir: Path, logger: 'AppLogger', timeout: int=300) -> tuple[bool, Optional[str]]:
     """Execute FFmpeg command to extract specific frames from a video."""
+def _cleanup_partial_export(export_dir: Path):
+    """Remove partially extracted frames from export directory."""
 ```
 
 ### `📄 core/scene_utils/helpers.py`
@@ -1247,6 +1286,8 @@ class MaskPropagator:
         """Propagate masks using the video file directly (no temp JPEG I/O)."""
     def propagate(self, shot_frames_rgb: list[np.ndarray], seed_idx: int, bbox_xywh: list[int], tracker: Optional['AdvancedProgressTracker']=None, additional_seeds: Optional[list[dict]]=None, frame_numbers: Optional[list[int]]=None) -> tuple[list, list, list, list]:
         """Legacy method: Propagate masks from a seed frame using in-memory frames."""
+    def close(self):
+        """Release tracker resources."""
 ```
 
 ### `📄 core/scene_utils/seed_selector.py`
@@ -1321,6 +1362,8 @@ class SubjectMasker:
         """Draw a bounding box on an image."""
     def _create_frame_map(self, output_dir: str) -> dict:
         """Create a frame map for the output directory."""
+    def close(self):
+        """Release tracker resources."""
 ```
 
 ### `📄 core/shared.py`

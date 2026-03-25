@@ -34,6 +34,7 @@ tests
 │&nbsp;&nbsp;&nbsp;└──&nbsp;[`test_real_workflow.py`](#-testsintegrationtest_real_workflowpy)  
 ├──&nbsp;[`mock_app.py`](#-testsmock_apppy)  
 ├──&nbsp;regression  
+│&nbsp;&nbsp;&nbsp;└──&nbsp;[`test_robustness.py`](#-testsregressiontest_robustnesspy)  
 ├──&nbsp;research  
 ├──&nbsp;results  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;e2e_output  
@@ -71,6 +72,7 @@ tests
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_batch_manager.py`](#-testsunittest_batch_managerpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_bug_fixes.py`](#-testsunittest_bug_fixespy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_cli.py`](#-testsunittest_clipy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_concurrency.py`](#-testsunittest_concurrencypy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_config.py`](#-testsunittest_configpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_core.py`](#-testsunittest_corepy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_database.py`](#-testsunittest_databasepy)  
@@ -85,10 +87,12 @@ tests
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_extraction_manager.py`](#-testsunittest_extraction_managerpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_face_clustering.py`](#-testsunittest_face_clusteringpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_face_operators.py`](#-testsunittest_face_operatorspy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_ffmpeg_logic.py`](#-testsunittest_ffmpeg_logicpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_filtering.py`](#-testsunittest_filteringpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_fingerprint.py`](#-testsunittest_fingerprintpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_gallery_utils.py`](#-testsunittest_gallery_utilspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_handlers.py`](#-testsunittest_handlerspy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_helpers_extended.py`](#-testsunittest_helpers_extendedpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_image_utils.py`](#-testsunittest_image_utilspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_integration.py`](#-testsunittest_integrationpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_integration_sam3_patches.py`](#-testsunittest_integration_sam3_patchespy)  
@@ -101,11 +105,13 @@ tests
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_mask_operators.py`](#-testsunittest_mask_operatorspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_mask_propagator_logic.py`](#-testsunittest_mask_propagator_logicpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_models.py`](#-testsunittest_modelspy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_models_property.py`](#-testsunittest_models_propertypy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_niqe_operator.py`](#-testsunittest_niqe_operatorpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_operators.py`](#-testsunittest_operatorspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_operators_registry.py`](#-testsunittest_operators_registrypy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_phase1_logic.py`](#-testsunittest_phase1_logicpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_phase2_logic.py`](#-testsunittest_phase2_logicpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_phase2_robustness.py`](#-testsunittest_phase2_robustnesspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_photo_utils.py`](#-testsunittest_photo_utilspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_pipeline_result_schemas.py`](#-testsunittest_pipeline_result_schemaspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_pipelines.py`](#-testsunittest_pipelinespy)  
@@ -144,6 +150,12 @@ tests
 @pytest.fixture(autouse=True)
 def clean_registry():
     """Ensure OperatorRegistry is clean before each test."""
+@pytest.fixture(scope='session')
+def requires_cuda():
+    """Skip test if CUDA is not available."""
+@pytest.fixture(scope='session')
+def check_assets():
+    """Ensure E2E sample assets exist."""
 @pytest.fixture
 def mock_logger():
     """Mock Application Logger."""
@@ -385,15 +397,36 @@ def mock_analysis_execution(event, progress_queue, cancel_event, logger, config,
 def mock_ingest_folder(folder_path, output_dir): ...
 def mock_apply_scores_to_photos(photos, weights): ...
 def mock_export_xmps_for_photos(photos, thresholds=None): ...
+def mock_export_kept_frames(*args, **kwargs): ...
 core.pipelines.ExtractionPipeline._run_impl = mock_extraction_run
 ui.app_ui.AppUI.preload_models = MagicMock(side_effect=lambda *args: None)
 core.pipelines.execute_pre_analysis = ui.app_ui.execute_pre_analysis = mock_p...
 core.pipelines.execute_propagation = ui.app_ui.execute_propagation = mock_pro...
 core.pipelines.execute_analysis = ui.app_ui.execute_analysis = mock_analysis_...
+ui.app_ui.export_kept_frames = mock_export_kept_frames
+core.export.export_kept_frames = mock_export_kept_frames
 core.photo_utils.ingest_folder = mock_ingest_folder
 core.xmp_writer.export_xmps_for_photos = mock_export_xmps_for_photos
 core.utils.download_model = MagicMock()
 core.managers.download_model = MagicMock()
+```
+
+### `📄 tests/regression/test_robustness.py`
+
+```python
+@pytest.fixture
+def mock_error_handler():
+    """Mock ErrorHandler."""
+def test_registry_oom_retry(mock_logger):
+    """Verify that ModelRegistry retries on OOM after clearing cache."""
+def test_database_atexit_registration(tmp_path):
+    """Verify that Database registers an atexit handler."""
+def test_thumbnail_memory_limit(mock_logger, mock_config, tmp_path):
+    """Verify ThumbnailManager evicts based on byte size."""
+def test_download_content_length_abort(mock_logger, mock_error_handler):
+    """Verify that download_model aborts early if Content-Length is too small."""
+def test_extraction_event_validation():
+    """Verify Pydantic validation for ExtractionEvent."""
 ```
 
 ### `📄 tests/test_application_state.py`
@@ -689,7 +722,6 @@ def app_server_url(app_server):
     """Returns the URL of the running app server."""
 class TestFullWorkflowMocked:
     """Comprehensive E2E test simulating a full user journey using Playwright"""
-    @pytest.mark.xfail(reason='Flaky button visibility in mock environment')
     def test_full_user_journey(self, page: Page, app_server_url):
         """Simulates:"""
     def switch_to_tab(self, page: Page, tab_name: str):
@@ -878,10 +910,6 @@ def test_face_prominence_off_center():
 ### `📄 tests/unit/test_analysis.py`
 
 ```python
-@pytest.fixture
-def mock_logger(): ...
-@pytest.fixture
-def mock_config(tmp_path): ...
 @patch('core.managers.analysis.initialize_analysis_models')
 @patch('core.managers.analysis.SubjectMasker')
 @patch('core.managers.analysis.save_scene_seeds')
@@ -981,17 +1009,7 @@ def test_main_exception(mock_exit, mock_logger, mock_setup, mock_ui): ...
 ```python
 class TestAppUI:
     @pytest.fixture
-    def mock_config(self, tmp_path): ...
-    @pytest.fixture
-    def mock_logger(self): ...
-    @pytest.fixture
     def mock_queue(self): ...
-    @pytest.fixture
-    def mock_cancel_event(self): ...
-    @pytest.fixture
-    def mock_thumbnail_manager(self): ...
-    @pytest.fixture
-    def mock_model_registry(self): ...
     @pytest.fixture
     def app_state(self): ...
     @pytest.fixture
@@ -1008,9 +1026,11 @@ class TestAppUI:
     def test_get_smart_mode_updates(self, app_ui): ...
     def test_on_apply_bulk_scene_filters_extended(self, app_ui, app_state, tmp_path): ...
     def test_on_reset_filters(self, app_ui, app_state, tmp_path): ...
+    def test_on_filters_changed_wrapper(self, app_ui, tmp_path):
+        """Test on_filters_changed_wrapper uses ApplicationState data."""
     def test_on_auto_set_thresholds(self, app_ui): ...
     @patch('ui.app_ui.execute_session_load')
-    def test_run_session_load_wrapper(self, mock_load, app_ui, app_state): ...
+    def test_run_session_load_wrapper(self, mock_load, app_ui, app_state, tmp_path): ...
 ```
 
 ### `📄 tests/unit/test_batch_manager.py`
@@ -1087,6 +1107,15 @@ def test_extract_invalid_source(runner, tmp_path): ...
 def test_analyze_folder(mock_cuda, mock_setup, mock_pre, mock_analysis, runner, tmp_path, mock_pipeline_result): ...
 ```
 
+### `📄 tests/unit/test_concurrency.py`
+
+```python
+def test_application_state_concurrent_updates():
+    """Test concurrent updates to ApplicationState (stress test)."""
+def test_thumbnail_manager_concurrent_access(tmp_path):
+    """Test concurrent access to ThumbnailManager's LRU cache."""
+```
+
 ### `📄 tests/unit/test_config.py`
 
 ```python
@@ -1096,10 +1125,12 @@ def test_config_env_overrides():
     """Test that environment variables correctly override default values."""
 def test_config_has_sam2_checkpoint_url():
     """Test that sam2_checkpoint_url is present and points to a SAM2.1 model."""
-def test_config_default_tracker_is_sam2():
-    """Test that the default tracker is now SAM2."""
+def test_config_default_tracker_is_sam3():
+    """Test that the default tracker is now SAM3."""
 def test_config_invalid_quality_weights():
     """Test that Config raises a validation error if all quality weights are zero."""
+def test_config_boundary_quality_weights():
+    """Test extreme boundary values for quality weights."""
 @patch('core.config.Path.mkdir')
 @patch('core.config.Path.touch')
 @patch('core.config.Path.unlink')
@@ -1158,6 +1189,10 @@ def test_load_all_metadata_json_error(db): ...
 def test_error_handler_integration(db_path): ...
 def test_flush_exception_logging(db_path): ...
 def test_close_calls_flush(db_path): ...
+def test_database_corruption_resilience(db_path):
+    """Test behavior when the database file is corrupted (truncated)."""
+def test_database_partial_write_failure(db_path):
+    """Test behavior when flush fails mid-way."""
 def test_migration_v1_v2_logic(tmp_path):
     """Test the migration logic in db_schema directly."""
 ```
@@ -1302,6 +1337,10 @@ class TestExportKeptFrames:
         """Test export handles FFmpeg failure gracefully."""
     @patch('subprocess.Popen')
     @patch('core.export.apply_all_filters_vectorized')
+    def test_export_ffmpeg_timeout(self, mock_filter, mock_popen, mock_config, mock_logger, tmp_path):
+        """Test export handles FFmpeg timeout."""
+    @patch('subprocess.Popen')
+    @patch('core.export.apply_all_filters_vectorized')
     def test_export_metadata_creation(self, mock_filter, mock_popen, mock_config, mock_logger, tmp_path):
         """Test that metadata files are created during export."""
 class TestDryRunExport:
@@ -1352,10 +1391,6 @@ class TestExportAdvanced:
 ### `📄 tests/unit/test_extraction.py`
 
 ```python
-@pytest.fixture
-def mock_logger(): ...
-@pytest.fixture
-def mock_config(tmp_path): ...
 def test_process_ffmpeg_stream(mock_logger, mock_config): ...
 def test_process_ffmpeg_showinfo(mock_logger): ...
 @patch('core.managers.extraction.subprocess.Popen')
@@ -1447,14 +1482,19 @@ class TestFacePoseOperator:
         """Rotate around Y axis (approx)."""
 ```
 
+### `📄 tests/unit/test_ffmpeg_logic.py`
+
+```python
+def test_perform_ffmpeg_export_timeout(tmp_path):
+    """Test perform_ffmpeg_export handling of timeout and cleanup."""
+def test_perform_ffmpeg_export_failure(tmp_path):
+    """Test perform_ffmpeg_export handling of non-zero exit code and cleanup."""
+```
+
 ### `📄 tests/unit/test_filtering.py`
 
 ```python
 class TestFiltering:
-    @pytest.fixture
-    def mock_logger(self): ...
-    @pytest.fixture
-    def mock_config(self): ...
     @pytest.fixture
     def mock_thumbnail_manager(self): ...
     @pytest.fixture
@@ -1498,14 +1538,6 @@ def test_fingerprints_match():
 
 ```python
 class TestGalleryUtils:
-    @pytest.fixture
-    def mock_logger(self): ...
-    @pytest.fixture
-    def mock_config(self): ...
-    @pytest.fixture
-    def mock_thumbnail_manager(self): ...
-    @pytest.fixture
-    def sample_frames_data(self): ...
     @patch('ui.gallery_utils.apply_all_filters_vectorized')
     @patch('ui.gallery_utils.render_mask_overlay')
     def test_update_gallery_kept(self, mock_render, mock_apply, sample_frames_data, mock_thumbnail_manager, mock_config, mock_logger): ...
@@ -1530,6 +1562,8 @@ class TestGalleryUtils:
 class TestAppUIHandlers:
     """Tests for AppUI event handlers."""
     @pytest.fixture
+    def test_list_images(self, tmp_path, mock_config): ...
+    @pytest.fixture
     def app_ui(self, mock_config, mock_logger, mock_thumbnail_manager, mock_model_registry, mock_progress_queue, mock_cancel_event):
         """Create an AppUI instance for testing."""
     def test_on_extraction_success(self, app_ui):
@@ -1542,16 +1576,22 @@ class TestAppUIHandlers:
         """Test _on_analysis_success updates ApplicationState correctly."""
     def test_on_reset_filters(self, app_ui):
         """Test on_reset_filters resets ApplicationState."""
-    @patch('ui.app_ui.on_filters_changed')
-    def test_on_filters_changed_wrapper(self, mock_on_filters, app_ui):
+    def test_on_filters_changed_wrapper(self, app_ui, tmp_path):
         """Test on_filters_changed_wrapper uses ApplicationState data."""
+```
+
+### `📄 tests/unit/test_helpers_extended.py`
+
+```python
+"""Extended tests for scene helpers to increase coverage."""
+def test_toggle_scene_status_no_scene(): ...
+def test_create_analysis_context_invalid_folder(): ...
+def test_recompute_single_preview_errors(): ...
 ```
 
 ### `📄 tests/unit/test_image_utils.py`
 
 ```python
-@pytest.fixture
-def mock_config(): ...
 def test_postprocess_mask_basic(mock_config): ...
 def test_postprocess_mask_empty(mock_config): ...
 def test_render_mask_overlay_basic(): ...
@@ -1641,8 +1681,6 @@ def test_execute_extraction_smoke(mock_analysis, mock_pre_analysis, mock_extract
 ### `📄 tests/unit/test_io_utils.py`
 
 ```python
-@pytest.fixture
-def mock_config(): ...
 def test_validate_video_file_not_found(): ...
 def test_validate_video_file_empty(tmp_path): ...
 @patch('cv2.VideoCapture')
@@ -1815,6 +1853,21 @@ def test_sanitize_face_ref(tmp_path): ...
 def test_scene_state(): ...
 def test_analysis_parameters_from_ui(): ...
 def test_quality_config(): ...
+def test_scene_state_dict_and_initial_bbox(): ...
+def test_analysis_parameters_optional_coercion(): ...
+def test_coerce_more(): ...
+def test_frame_metrics_defaults(): ...
+```
+
+### `📄 tests/unit/test_models_property.py`
+
+```python
+@given(shot_id=st.integers(min_value=-1000, max_value=10000), start_frame=st.integers(min_value=-1000, max_value=1000000), end_frame=st.integers(min_value=-1000, max_value=1000000), status=st.text(min_size=0, max_size=50))
+def test_scene_model_properties(shot_id, start_frame, end_frame, status):
+    """Property-based test for Scene model."""
+@given(source_path=st.text(min_size=1), interval=st.floats(min_value=-1.0, max_value=100.0), max_resolution=st.text())
+def test_analysis_parameters_properties(source_path, interval, max_resolution):
+    """Property-based test for AnalysisParameters model."""
 ```
 
 ### `📄 tests/unit/test_niqe_operator.py`
@@ -1831,13 +1884,14 @@ class TestNiqeOperator:
     def test_execute_flow(self, mock_create, operator): ...
     @patch('pyiqa.create_metric')
     def test_execute_with_config_overrides(self, mock_create, operator): ...
+    def test_cleanup_clears_model(self, operator): ...
+    @patch('pyiqa.create_metric')
+    def test_execute_error_paths(self, mock_create, operator): ...
 ```
 
 ### `📄 tests/unit/test_operators.py`
 
 ```python
-@pytest.fixture
-def mock_config(): ...
 def test_entropy_operator(mock_config): ...
 def test_quality_score_operator(mock_config): ...
 def test_sharpness_operator(mock_config): ...
@@ -1857,6 +1911,7 @@ class MockOperator(Operator):
 @pytest.fixture(autouse=True)
 def clear_registry(): ...
 def test_registry_register_get(): ...
+def test_registry_duplicate_registration_warns(): ...
 def test_registry_initialize_cleanup(): ...
 def test_register_operator_decorator(): ...
 @patch('importlib.import_module')
@@ -1896,6 +1951,22 @@ class TestPhase2Logic(unittest.TestCase):
     @patch('core.photo_utils.subprocess.run')
     @patch('core.photo_utils.Image.open')
     def test_extract_preview_resize(self, mock_image_open, mock_run, mock_which): ...
+```
+
+### `📄 tests/unit/test_phase2_robustness.py`
+
+```python
+@pytest.fixture
+def temp_dir(): ...
+class TestRobustnessPhase2:
+    def test_json_formatter(self): ...
+    def test_setup_logging_structured(self, temp_dir): ...
+    def test_atomic_write_text(self, temp_dir): ...
+    def test_xmp_writer_atomic(self, temp_dir): ...
+    @patch('core.sam3_patches.hashlib.sha256')
+    @patch('core.sam3_patches.logger')
+    def test_sam3_patch_hash_mismatch(self, mock_logger, mock_hash_cls, temp_dir): ...
+    def test_model_registry_sticky_failure(self): ...
 ```
 
 ### `📄 tests/unit/test_photo_utils.py`
@@ -1968,15 +2039,9 @@ def test_fingerprint_failure_is_silent(mock_runtime, tmp_path, default_extractio
 def mock_download_model(): ...
 class TestPipelinesExtended:
     @pytest.fixture
-    def mock_logger(self): ...
-    @pytest.fixture
-    def mock_config(self): ...
-    @pytest.fixture
     def mock_db(self): ...
     @pytest.fixture
     def mock_params(self, tmp_path): ...
-    @pytest.fixture
-    def mock_thumbnail_manager(self): ...
     @pytest.fixture
     def pipeline(self, mock_params, mock_logger, mock_config, mock_db, mock_thumbnail_manager): ...
     @patch('core.managers.analysis.initialize_analysis_models')
@@ -2004,10 +2069,6 @@ class TestExecutePreAnalysis:
 ### `📄 tests/unit/test_pipelines_wrapper.py`
 
 ```python
-@pytest.fixture
-def mock_logger(): ...
-@pytest.fixture
-def mock_config(tmp_path): ...
 @patch('core.pipelines.ExtractionPipeline')
 def test_execute_extraction(mock_pipeline_cls, mock_config, mock_logger): ...
 @patch('core.pipelines.PreAnalysisPipeline')
@@ -2310,8 +2371,6 @@ class TestSceneUtilsHelpers:
 ### `📄 tests/unit/test_session.py`
 
 ```python
-@pytest.fixture
-def mock_logger(): ...
 def test_validate_session_dir(tmp_path): ...
 def test_execute_session_load(mock_logger, tmp_path): ...
 def test_load_analysis_scenes(): ...
@@ -2335,6 +2394,8 @@ class TestSharedUtils:
     def test_build_scene_gallery_items_missing_file(self, mock_imread, tmp_path): ...
     @patch('cv2.imread')
     def test_build_scene_gallery_items_error(self, mock_imread, tmp_path): ...
+    @patch('cv2.imread')
+    def test_build_scene_gallery_items_imread_none(self, mock_imread, tmp_path): ...
 ```
 
 ### `📄 tests/unit/test_sharpness.py`
@@ -2438,7 +2499,7 @@ pytestmark = pytest.mark.smoke
 class TestImportSmoke:
     """Verify all modules import correctly without mocks."""
     def test_import_core_config(self): ...
-    def test_import_core_database(self): ...
+    def test_import_core_database(self, tmp_path): ...
     def test_import_core_events(self): ...
     def test_import_core_export(self): ...
     def test_import_core_filtering(self): ...
@@ -2509,36 +2570,14 @@ def test_subject_masker_load_shot_frames(): ...
 ### `📄 tests/unit/test_system_health.py`
 
 ```python
-def test_check_environment():
-    """Test environment check logic."""
-def test_check_dependencies():
-    """Test dependency check logic."""
-@patch('core.system_health.shutil.which')
-@patch('core.system_health.subprocess.run')
-def test_check_paths_and_assets(mock_run, mock_which):
-    """Test paths and assets check logic."""
-@patch('core.system_health.execute_extraction')
-@patch('core.system_health.execute_pre_analysis')
-@patch('core.system_health.execute_propagation')
-@patch('core.system_health.execute_analysis')
-@patch('core.system_health.export_kept_frames')
-def test_simulate_pipeline(mock_export, mock_ana, mock_prop, mock_pre, mock_ext):
-    """Test the E2E pipeline simulation logic."""
-def test_simulate_pipeline_failure(logger=MagicMock()):
-    """Test simulate_pipeline failure handling."""
-def test_check_environment_failure():
-    """Test environment check logic with failures."""
-def test_check_dependencies_failure():
-    """Test dependency check logic with missing dependencies."""
-@patch('core.system_health.shutil.which')
-@patch('core.system_health.subprocess.run')
-def test_check_paths_and_assets_exiftool_fail(mock_run, mock_which):
-    """Test paths and assets check when exiftool check fails."""
-@patch('core.system_health.shutil.which')
-def test_check_paths_and_assets_no_exiftool(mock_which):
-    """Test paths and assets check when exiftool is missing."""
-def test_generate_full_diagnostic_report():
-    """Test full diagnostic report generation (generator)."""
+"""Tests for system health diagnostics."""
+def test_check_environment(): ...
+def test_check_environment_no_cuda(): ...
+def test_check_dependencies(): ...
+def test_check_paths_and_assets(): ...
+def test_generate_full_diagnostic_report(): ...
+def test_check_environment_torch_exception(): ...
+def test_simulate_pipeline_success(): ...
 ```
 
 ### `📄 tests/unit/test_tracker_factory.py`
@@ -2558,8 +2597,6 @@ def test_selects_invalid_tracker():
 
 ```python
 """Unit tests for ModelRegistry tracker loading."""
-@pytest.fixture
-def mock_config(): ...
 @pytest.fixture
 def registry(): ...
 @patch('core.io_utils.download_model')
@@ -2621,6 +2658,8 @@ def test_monitor_memory_usage_low(): ...
 def test_handle_common_errors_gen_exceptions(): ...
 def test_handle_common_errors_non_gen_exceptions(): ...
 def test_estimate_totals_default(): ...
+def test_estimate_totals_all(): ...
+def test_safe_resource_cleanup_no_cuda(): ...
 ```
 
 ### `📄 tests/unit/test_viz.py`

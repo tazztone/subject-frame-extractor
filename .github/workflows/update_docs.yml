@@ -16,14 +16,21 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version-file: "pyproject.toml"
 
       - name: Run Update Script
-        run: python scripts/update_agents_md.py
+        run: uv run python scripts/update_agents_md.py
 
       - name: Commit changes
         # stefanzweifel/git-auto-commit-action v5.2.0
