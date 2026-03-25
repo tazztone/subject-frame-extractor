@@ -157,34 +157,34 @@ class OutOfMemoryError(RuntimeError):
     """Mock CUDA OutOfMemoryError."""
 class VideoOpenFailure(RuntimeError):
     """Mock PySceneDetect VideoOpenFailure."""
-mock_torch = MagicMock(name='torch')
-mock_torch.cuda.is_available.return_value = False
-mock_torch.cuda.device_count.return_value = 0
-mock_torch.cuda.get_device_name = MagicMock(return_value='Mock GPU')
-mock_torch.cuda.empty_cache = MagicMock()
-mock_torch.cuda.memory_summary = MagicMock(return_value='Mock Memory Summary')
-mock_torch.cuda.OutOfMemoryError = OutOfMemoryError
-mock_torch.__version__ = "<REDACTED_STRING>"
-mock_torch.nn.Module = MagicMock
-mock_torch.Tensor = MagicMock
-mock_torch.device = MagicMock
-mock_torch.float = MagicMock()
-mock_torch.uint8 = MagicMock()
-mock_torch.version = MagicMock()
-mock_torch.version.cuda = "<REDACTED_STRING>"
-def _create_mock_tensor(name='tensor', shape=None, **kwargs): ...
-mock_torch.from_numpy = MagicMock(side_effect=lambda np_arr: _create_mock_ten...
-mock_torch.zeros = MagicMock(side_effect=lambda shape, **kwargs: _create_mock...
-mock_torch.ones = MagicMock(side_effect=lambda shape, **kwargs: _create_mock_...
-mock_torch.rand = MagicMock(side_effect=lambda *shape, **kwargs: _create_mock...
-mock_torch.randn = MagicMock(side_effect=lambda *shape, **kwargs: _create_moc...
-mock_torch.tensor = MagicMock(side_effect=lambda data, **kwargs: _create_mock...
-mock_torch.no_grad = MagicMock()
-mock_torch.no_grad.return_value.__enter__ = MagicMock()
-mock_torch.no_grad.return_value.__exit__ = MagicMock()
-mock_torch.SymFloat = MagicMock
-mock_torch.SymInt = MagicMock
-modules_to_mock = {'torch': _create_mock_module('torch', {'cuda': mock_torch....
+_mock_torch_obj = MagicMock(name='torch')
+_mock_torch_obj.cuda.is_available.return_value = False
+_mock_torch_obj.cuda.device_count.return_value = 0
+_mock_torch_obj.cuda.get_device_name = MagicMock(return_value='Mock GPU')
+_mock_torch_obj.cuda.empty_cache = MagicMock()
+_mock_torch_obj.cuda.memory_summary = MagicMock(return_value='Mock Memory Sum...
+_mock_torch_obj.cuda.OutOfMemoryError = OutOfMemoryError
+_mock_torch_obj.__version__ = "<REDACTED_STRING>"
+_mock_torch_obj.nn.Module = MagicMock
+_mock_torch_obj.Tensor = MagicMock
+_mock_torch_obj.device = MagicMock
+_mock_torch_obj.float = MagicMock()
+_mock_torch_obj.uint8 = MagicMock()
+_mock_torch_obj.version = MagicMock()
+_mock_torch_obj.version.cuda = "<REDACTED_STRING>"
+def _create_mock_tensor(name='tensor', shape=None, value=None, **kwargs): ...
+_mock_torch_obj.from_numpy = MagicMock(side_effect=lambda np_arr: _create_moc...
+_mock_torch_obj.zeros = MagicMock(side_effect=lambda shape, **kwargs: _create...
+_mock_torch_obj.ones = MagicMock(side_effect=lambda shape, **kwargs: _create_...
+_mock_torch_obj.rand = MagicMock(side_effect=lambda *shape, **kwargs: _create...
+_mock_torch_obj.randn = MagicMock(side_effect=lambda *shape, **kwargs: _creat...
+_mock_torch_obj.tensor = MagicMock(side_effect=lambda data, **kwargs: _create...
+_mock_torch_obj.no_grad = MagicMock()
+_mock_torch_obj.no_grad.return_value.__enter__ = MagicMock()
+_mock_torch_obj.no_grad.return_value.__exit__ = MagicMock(return_value=False)
+_mock_torch_obj.SymFloat = MagicMock
+_mock_torch_obj.SymInt = MagicMock
+modules_to_mock = {'torch': _create_mock_module('torch', {'cuda': _mock_torch...
 @pytest.fixture(autouse=True)
 def clean_registry():
     """Ensure OperatorRegistry is clean before each test."""
