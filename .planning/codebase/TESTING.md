@@ -1,7 +1,7 @@
 # Testing Strategy & Patterns
 
 **Analysis Date:** 2026-03-25
-**Deep Dive Refinement:** Standardized mocking, SAM2.1 migration patterns, UI interaction stability, and refactoring for testability.
+**Deep Dive Refinement:** Standardized monkeypatch testing, exhaustive torch dtype mocking, and transparent context manager patterns.
 
 ## The "Mock-First" Philosophy
 
@@ -40,6 +40,23 @@ def pytest_sessionstart(session):
 
 This ensures that even third-party libraries that import `torch` at top-level will receive the mock instead of triggering a VRAM allocation.
 
+### Exhaustive Dtype Mocking
+Global `torch` mocks must provide standard `dtype` attributes to avoid `AttributeError` during test collection or execution of type-sensitive logic.
+- **Requirement**: `tests/conftest.py` must include `float32`, `float16`, `bfloat16`, and `uint8` in the `sys.modules["torch"]` mock.
+- **Dummy Support**: If a test involves `BFloat16` but the environment (CPU/Mock) doesn't support it natively, the mock must provide a dummy attribute so `tgt.dtype == torch.bfloat16` can still be evaluated.
+
+### Transparent Context Managers
+When mocking `torch.inference_mode()` or `torch.no_grad()`, ensure the mock returns a context manager that is "transparent"—meaning it returns the decorated function or allows the `with` block to proceed without returning a `MagicMock` that might swallow or replace the actual return values of the code under test.
+
+```python
+class TransparentContext:
+    def __enter__(self): return self
+    def __exit__(self, *args): pass
+    def __call__(self, func=None):
+        if func: return func
+        return self
+```
+
 ### Gradio & Matplotlib Mocking
 When mocking `matplotlib` for a Gradio-based application (as in `tests/mock_app.py`), you MUST satisfy Gradio's internal `MatplotlibBackendMananger`. The mock must include at minimum:
 - `matplotlib.get_backend()` (return a string like "agg")
@@ -51,6 +68,12 @@ Failure to provide these will cause silent "Error" prefixes in UI status compone
 ### Exception Identity & Sub-module Mocks
 If a module uses `from scenedetect import VideoOpenFailure`, and you mock `scenedetect` globally, the class identity might mismatch if the module was loaded prematurely or if the mock structure doesn't match the library's re-exports.
 - **Best Practice**: Use a scoped `patch("module.under.test.VideoOpenFailure", VideoOpenFailure)` in the test method to ensure the `except` block in the target module perfectly matches the exception raised by the mock.
+
+## Testing Monkeypatches
+
+When testing runtime monkeypatches (like those in `core/sam3_patches.py`), standard `unittest.mock.patch` can be brittle because the patcher may capture a reference to the "original" method before your monkeypatch is applied, or after a previous test already modified the class.
+- **Fresh Class Pattern**: Use a fresh class definition within the test (or in a module-level base) for monkeypatch unit tests. Manually assign this clean class to the target module, apply the patch, and then verify.
+- **Verification**: Always verify that the patched method correctly calls the "captured original" logic (e.g., by using a spy or checking side effects like `self.last_tgt`).
 
 ### Robust `MockTensor` Support
 For tests involving mask processing (e.g., SAM3/SAM2.1), `conftest.py` provides a `MockTensor` class that simulates `torch.Tensor` behavior:
@@ -110,7 +133,10 @@ def test_bbox_normalization_invariant(x, img_w):
     rel_x = normalize_coord(x, img_w)
     assert 0.0 <= rel_x <= 1.0  # Mathematical guarantee
 ```
-```
+
+### Floating Point Precision in BBoxes
+When converting pixel coordinates to relative `[0, 1]` coordinates or back:
+- **Mandate**: Always use `pytest.approx` for coordinate assertions. Normalization math often introduces minor precision errors (e.g., `60.00000000000001` vs `60.0`) that cause exact comparisons to fail.
 
 ## Regression Testing (`--capture-golden`)
 

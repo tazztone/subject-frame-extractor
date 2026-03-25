@@ -182,6 +182,94 @@ def _check_sam3_version(predictor_path: Path) -> bool:
     return True
 
 
+def patch_sam3_bf16_stability():
+    """
+    Patch TransformerDecoderLayer.forward_ffn to handle BFloat16 inputs
+    correctly when autocast is disabled.
+    """
+    try:
+        from sam3.model.decoder import TransformerDecoderLayer
+
+        original_forward_ffn = TransformerDecoderLayer.forward_ffn
+
+        def forward_ffn_patched(self, tgt):
+            # If input is bfloat16, ensure it's float32 before entering
+            # the disabled-autocast block to avoid type mismatch with float32 weights
+            if isinstance(tgt, torch.Tensor) and tgt.dtype == torch.bfloat16:
+                tgt = tgt.to(torch.float32)
+            return original_forward_ffn(self, tgt)
+
+        TransformerDecoderLayer.forward_ffn = forward_ffn_patched
+    except ImportError:
+        pass
+
+
+def patch_sam3_detect_objects():
+    """Add detect_objects capability to Sam3VideoPredictor classes."""
+    try:
+        from PIL import Image
+        from sam3.model.sam3_video_predictor import Sam3VideoPredictor, Sam3VideoPredictorMultiGPU
+
+        def detect_objects(self, image: np.ndarray, text: str):
+            """Detect objects in a frame using a text prompt."""
+            # Use init_state with a list containing one PIL image
+            pil_img = Image.fromarray(image)
+            # Important: init_state is available on self.model
+            inference_state = self.model.init_state(resource_path=[pil_img])
+
+            # Add the text prompt
+            _, outputs = self.model.add_prompt(inference_state=inference_state, frame_idx=0, text_str=text)
+
+            # outputs contains out_boxes_xywh (normalized)
+            boxes_xywh = outputs.get("out_boxes_xywh", [])
+            probs = outputs.get("out_probs", [])
+
+            # Convert to absolute xyxy as expected by seed_selector.py
+            h, w = image.shape[:2]
+            results = []
+            for box, prob in zip(boxes_xywh, probs):
+                x, y, bw, bh = box
+                xyxy = [x * w, y * h, (x + bw) * w, (y + bh) * h]
+                results.append({"bbox": xyxy, "conf": float(prob), "type": "detection"})
+
+            # Clean up session/inference_state
+            self.model.reset_state(inference_state)
+            return {"outputs": results}
+
+        # Patch the base handle_request to support the new type
+        original_handle_request = Sam3VideoPredictor.handle_request
+
+        @torch.inference_mode()
+        def handle_request_patched(self, request):
+            if request["type"] == "detect_objects":
+                return self.detect_objects(request["image"], request["text"])
+            return original_handle_request(self, request)
+
+        Sam3VideoPredictor.detect_objects = detect_objects
+        Sam3VideoPredictor.handle_request = handle_request_patched
+
+        # Sam3VideoPredictorMultiGPU also overrides handle_request, so patch it too
+        if hasattr(Sam3VideoPredictorMultiGPU, "handle_request"):
+            original_multi_handle_request = Sam3VideoPredictorMultiGPU.handle_request
+
+            @torch.inference_mode()
+            def multi_handle_request_patched(self, request):
+                if request["type"] == "detect_objects":
+                    # For detect_objects, we use the base implementation on rank 0
+                    if self.world_size > 1 and self.rank == 0:
+                        for rank in range(1, self.world_size):
+                            self.command_queues[rank].put((request, False))
+
+                    return Sam3VideoPredictor.handle_request(self, request)
+
+                return original_multi_handle_request(self, request)
+
+            Sam3VideoPredictorMultiGPU.handle_request = multi_handle_request_patched
+
+    except ImportError:
+        pass
+
+
 def apply_patches():
     """Apply all monkey patches to SAM3 with version safety check."""
     # 0. Version Safety Check
@@ -203,10 +291,14 @@ def apply_patches():
     except ImportError:
         pass
 
-    # 3. Dtype patches (Ampere+ stability)
+    # 3. Dtype and stability patches
     patch_sam3_dtype()
+    patch_sam3_bf16_stability()
 
-    # 4. Triton fallbacks
+    # 4. Feature patches
+    patch_sam3_detect_objects()
+
+    # 5. Triton fallbacks
     try:
         import triton  # noqa: F401
     except ImportError:

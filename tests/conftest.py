@@ -165,6 +165,8 @@ modules_to_mock = {
             "randn": MagicMock(side_effect=lambda *args, **kwargs: MagicMock(name="randn")),
             "float": _mock_torch_obj.float,
             "float32": MagicMock(),
+            "float16": MagicMock(),
+            "bfloat16": MagicMock(),
             "uint8": _mock_torch_obj.uint8,
             "int64": MagicMock(),
             "no_grad": _mock_torch_obj.no_grad,
