@@ -5,7 +5,6 @@ Provides screenshot capture and comparison against baselines using perceptual ha
 Used to detect unintended UI changes across development cycles.
 """
 
-import time
 from pathlib import Path
 from typing import Optional
 
@@ -34,7 +33,7 @@ def capture_state_screenshot(page, name: str, wait_ms: int = 500) -> Path:
     Returns:
         Path to the captured screenshot
     """
-    time.sleep(wait_ms / 1000)
+    page.wait_for_timeout(wait_ms)
     screenshot_path = DIFF_DIR / f"{name}.png"
     screenshot_path.parent.mkdir(exist_ok=True, parents=True)
     page.screenshot(path=str(screenshot_path), full_page=True)

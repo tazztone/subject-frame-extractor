@@ -129,7 +129,7 @@ def simulate_pipeline(
             scene_detect=True,
             pre_analysis_enabled=True,
             pre_sample_nth=1,
-            primary_seed_strategy="🧑‍🤝‍🧑 Find Prominent Person",
+            primary_seed_strategy="Find Prominent Person",
             best_frame_strategy="Largest Person",
             face_model_name="buffalo_l",
             tracker_model_name=config.default_tracker_model_name,

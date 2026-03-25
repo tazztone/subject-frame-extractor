@@ -5,7 +5,6 @@ Restructured for Gradio 5 and robust status tracking.
 """
 
 import re
-import time
 from pathlib import Path
 
 import pytest
@@ -29,7 +28,7 @@ def switch_to_tab(page: Page, tab_name: str):
         # Wait for tab activation
         expect(tab_btn).to_have_attribute("aria-selected", "true", timeout=10000)
 
-    time.sleep(1.5)  # Allow time for tab content to render
+    page.wait_for_timeout(1500)  # Allow time for tab content to render
 
 
 def open_logs(page: Page):
@@ -37,7 +36,7 @@ def open_logs(page: Page):
     logs_acc = page.get_by_text(re.compile("System Logs"))
     if logs_acc.is_visible():
         logs_acc.click()
-        time.sleep(1)
+        page.wait_for_timeout(1000)
 
 
 class TestMainWorkflow:
@@ -57,7 +56,7 @@ class TestMainWorkflow:
 
         # Select Every Nth for speed in mock (though it doesn't matter for mock)
         page.get_by_role("button", name="🚀 Start Extraction").click()
-        time.sleep(1)  # Wait for event loop to register click
+        page.wait_for_timeout(1000)  # Wait for event loop to register click
 
         # Wait for "complete" in the status area (always visible)
         expect(page.locator("#unified_status")).to_contain_text("Extraction Complete", timeout=30000)
@@ -120,6 +119,7 @@ class TestMainWorkflow:
             print(f"  ❌ Timeout waiting for Confirm Subject button. Screenshot saved. Error: {e}")
             raise
         btn.click()
+        page.wait_for_timeout(2000)
 
         expect(page.locator("body")).to_contain_text("Pre-Analysis Complete", timeout=30000)
         print("  ✓ Pre-Analysis Complete")
@@ -213,7 +213,7 @@ class TestTabNavigation:
     def test_all_tabs_accessible(self, page: Page, app_server):
         """Verify all main tabs can be accessed and show expected content."""
         page.goto(BASE_URL)
-        time.sleep(2)
+        page.wait_for_timeout(2000)
 
         tabs = ["Source", "Subject", "Scenes", "Metrics", "Export"]
 
@@ -228,7 +228,7 @@ class TestTabNavigation:
     def test_tab_state_preserved(self, page: Page, app_server):
         """Verify tab state is preserved when switching tabs."""
         page.goto(BASE_URL)
-        time.sleep(2)
+        page.wait_for_timeout(2000)
 
         source_input = page.get_by_placeholder("Paste YouTube URL or local path")
         source_input.fill("test_video.mp4")
@@ -245,10 +245,10 @@ class TestErrorHandling:
     def test_empty_source_shows_message(self, page: Page, app_server):
         """Verify appropriate message when no source is provided."""
         page.goto(BASE_URL)
-        time.sleep(2)
+        page.wait_for_timeout(2000)
 
         page.get_by_role("button", name=re.compile("Start Extraction")).click()
-        time.sleep(1)
+        page.wait_for_timeout(1000)
 
         # Check logs for Error
         open_logs(page)

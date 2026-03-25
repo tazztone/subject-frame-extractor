@@ -43,6 +43,6 @@ def test_histogram_svg_missing_matplotlib():
 
 def test_histogram_svg_error():
     """Test error handling during plotting."""
-    with patch("matplotlib.pyplot.subplots", side_effect=Exception("Plot Error")):
+    with patch("core.operators.viz.plt.subplots", side_effect=Exception("Plot Error")):
         svg = histogram_svg(([1], [0, 1]))
         assert "Plotting failed" in svg

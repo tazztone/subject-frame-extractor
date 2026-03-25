@@ -10,8 +10,6 @@ Tests the export functionality including:
 Run with: python -m pytest tests/e2e/test_export_flow.py -v -s
 """
 
-import time
-
 import pytest
 from playwright.sync_api import Page, expect
 
@@ -26,7 +24,7 @@ class TestExportFlow:
     def test_export_tab_accessible(self, page: Page, app_server):
         """Verify export tab is accessible and shows expected elements."""
         page.goto(BASE_URL)
-        time.sleep(2)
+        page.wait_for_timeout(2000)
 
         # Navigate to Export tab
         switch_to_tab(page, "Export")
@@ -55,11 +53,11 @@ class TestExportFlow:
         # Check logs for success message
         # Open logs accordion because it's closed by default
         page.get_by_text("System Logs").click()
-        time.sleep(0.5)
+        page.wait_for_timeout(500)
 
         log = page.locator("#unified_log textarea")
         # Wait for log to update
-        time.sleep(2)
+        page.wait_for_timeout(2000)
         expect(log).to_be_visible()
 
     def test_export_button_visibility(self, full_analysis_session):
@@ -81,7 +79,7 @@ class TestFilteringBeforeExport:
     def test_filter_sliders_visible(self, page: Page, app_server):
         """Verify filtering sliders are visible in export tab."""
         page.goto(BASE_URL)
-        time.sleep(2)
+        page.wait_for_timeout(2000)
 
         # Navigate to Export tab
         switch_to_tab(page, "Export")
@@ -92,7 +90,7 @@ class TestFilteringBeforeExport:
     def test_smart_filter_toggle(self, page: Page, app_server):
         """Test Smart Filtering toggle."""
         page.goto(BASE_URL)
-        time.sleep(2)
+        page.wait_for_timeout(2000)
 
         # Navigate to Export tab
         switch_to_tab(page, "Export")
@@ -100,7 +98,7 @@ class TestFilteringBeforeExport:
         smart_filter = page.get_by_label("Smart Filtering")
         if smart_filter.is_visible():
             smart_filter.check()
-            time.sleep(0.5)
+            page.wait_for_timeout(500)
             assert smart_filter.is_checked()
 
 

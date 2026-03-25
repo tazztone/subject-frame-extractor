@@ -1,52 +1,67 @@
 import os
 import sys
 import time
+import types
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 # --- 1. Mock Heavy Dependencies ---
 # We must mock these BEFORE importing app.py
 
+
+def create_mock_module(name, attributes=None):
+    """Creates a proper ModuleType instance populated with mocks/attributes."""
+    mock_mod = types.ModuleType(name)
+    if attributes:
+        for attr, val in attributes.items():
+            setattr(mock_mod, attr, val)
+    return mock_mod
+
+
+# Initialize mock objects
 mock_torch = MagicMock(name="torch")
 mock_torch.cuda.is_available.return_value = False
-
-sys.modules["torch"] = mock_torch
 mock_torch.__version__ = "2.0.0"
-# Mock torch classes used in type hints or inheritance
 mock_torch.nn.Module = MagicMock
 mock_torch.Tensor = MagicMock
 
 mock_sam3 = MagicMock(name="sam3")
 mock_sam3.model_builder = MagicMock()
 
-modules_to_mock = {
-    "torch": mock_torch,
-    "torchvision": MagicMock(),
+# Define the modules to mock and their structure
+# We use ModuleType to avoid "Environment Pollution" (MagicMock in sys.modules)
+modules_map = {
+    "torch": create_mock_module(
+        "torch", {"cuda": mock_torch.cuda, "nn": mock_torch.nn, "Tensor": mock_torch.Tensor, "__version__": "2.0.0"}
+    ),
+    "torchvision": create_mock_module("torchvision", {"ops": MagicMock(), "transforms": MagicMock()}),
     "torchvision.ops": MagicMock(),
     "torchvision.transforms": MagicMock(),
-    "insightface": MagicMock(),
+    "insightface": create_mock_module("insightface", {"app": MagicMock()}),
     "insightface.app": MagicMock(),
-    "sam3": mock_sam3,
+    "sam3": create_mock_module("sam3", {"model_builder": mock_sam3.model_builder}),
     "sam3.model_builder": mock_sam3.model_builder,
     "sam3.model.sam3_video_predictor": MagicMock(),
-    "mediapipe": MagicMock(),
-    "mediapipe.tasks": MagicMock(),
-    "mediapipe.tasks.python": MagicMock(),
+    "mediapipe": create_mock_module("mediapipe", {"tasks": MagicMock()}),
+    "mediapipe.tasks": create_mock_module("mediapipe.tasks", {"python": MagicMock()}),
+    "mediapipe.tasks.python": create_mock_module("mediapipe.tasks.python", {"vision": MagicMock()}),
     "mediapipe.tasks.python.vision": MagicMock(),
     "pyiqa": MagicMock(),
     "scenedetect": MagicMock(),
     "yt_dlp": MagicMock(),
     "numba": MagicMock(),
     "lpips": MagicMock(),
-    "matplotlib": MagicMock(),
+    "matplotlib": create_mock_module(
+        "matplotlib", {"pyplot": MagicMock(), "ticker": MagicMock(), "figure": MagicMock(), "backends": MagicMock()}
+    ),
     "matplotlib.pyplot": MagicMock(),
     "matplotlib.ticker": MagicMock(),
     "matplotlib.figure": MagicMock(),
     "matplotlib.backends": MagicMock(),
     "matplotlib.backends.backend_agg": MagicMock(),
-    "skimage": MagicMock(),
+    "skimage": create_mock_module("skimage", {"metrics": MagicMock()}),
     "skimage.metrics": MagicMock(),
-    "safetensors": MagicMock(),
+    "safetensors": create_mock_module("safetensors", {"torch": MagicMock()}),
     "safetensors.torch": MagicMock(),
     "ftfy": MagicMock(),
     "regex": MagicMock(),
@@ -55,8 +70,17 @@ modules_to_mock = {
     "onnxruntime": MagicMock(),
 }
 
-# Patch sys.modules
-patch.dict(sys.modules, modules_to_mock).start()
+# Patch sys.modules with proper ModuleType objects where possible
+for mod_name, mod_obj in modules_map.items():
+    if not isinstance(mod_obj, types.ModuleType):
+        # Fallback to MagicMock for submodules if needed, but wrap them if they represent a package
+        mock_val = mod_obj
+        mod_obj = types.ModuleType(mod_name)
+        # If it's a simple mock, we might want it to be callable if it's a function,
+        # but here we focus on module structure.
+        sys.modules[mod_name] = mod_obj
+    else:
+        sys.modules[mod_name] = mod_obj
 
 # Add project root to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))

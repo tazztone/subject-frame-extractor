@@ -42,8 +42,10 @@ The application enforces a strict **Core/UI separation** to ensure maintainabili
 - **Gradio Protocol**: **ALWAYS** ensure the number of return values in event handlers matches the `outputs` list. Mismatches cause silent app crashes.
 - **Unhashable Config**: **NEVER** use `@lru_cache` on functions taking the `Config` object. Use `model_registry.get_or_load` instead.
 - **Path Hygiene**: **ALWAYS** use `pathlib.Path`. Do not use string concatenation or `os.path`.
-- **Hermetic Testing**: **ALWAYS** mock external dependencies (SAM3, InsightFace, Torch) in unit tests.
-- **Mock Integrity Role**: **NEVER** update a core pipeline signature without updating its `mock_app.py` equivalent. Run `test_signatures.py` to verify.
+- **Mock Integrity**: **NEVER** update a core pipeline signature without updating its `mock_app.py` equivalent. Run `test_signatures.py` to verify (Zero Drift Policy).
+- **Environmental Isolation**: **ALWAYS** use `types.ModuleType` for injecting heavy mocks (Torch/SAM3) into `sys.modules`. Never inject raw `MagicMock` objects directly, as it breaks type-checking in downstream libraries.
+- **UI Wait Strategy**: **ALWAYS** use `page.wait_for_timeout()` in Playwright tests. **NEVER** use `time.sleep()`, which blocks the Python event loop and causes flakiness.
+- **Milestone Reporting**: **ALWAYS** use **Title Case** for major pipeline milestones (e.g., "Extraction Complete."). E2E status scrapers are case-sensitive.
 
 ### 🟡 WARNING (Potential Pitfalls)
 - **Mask Validation**: Always verify masks exist on disk before triggering export or batch processing.

@@ -89,7 +89,7 @@ def execute_extraction(
         except Exception as e:
             logger.warning(f"Failed to save fingerprint for extraction session: {e}", exc_info=True)
 
-        msg = "Extraction complete."
+        msg = "Extraction Complete."
         logger.info(msg)
         yield {
             "unified_log": msg,
@@ -140,7 +140,7 @@ def execute_pre_analysis(
     )
     processed = pipeline.run(scenes, tracker=tracker)
 
-    msg = "Pre-Analysis complete."
+    msg = "Pre-Analysis Complete."
     logger.info(msg)
     res: dict[str, Any] = {
         "unified_log": msg,
@@ -197,7 +197,7 @@ def execute_propagation(
     if result and result.get("done"):
         masks_dir = Path(result["output_dir"]) / "masks"
         n = len(list(masks_dir.glob("*.png"))) if masks_dir.exists() else 0
-        msg = f"Propagation complete. {n} masks generated."
+        msg = f"Propagation Complete. {n} masks generated."
         logger.info(msg)
         yield {
             "unified_log": msg,
@@ -237,7 +237,7 @@ def execute_analysis(
     result = pipeline.run_analysis_only(scenes, tracker=tracker)
 
     if result and result.get("done"):
-        msg = "Analysis complete."
+        msg = "Analysis Complete."
         logger.info(msg)
         yield {
             "unified_log": msg,

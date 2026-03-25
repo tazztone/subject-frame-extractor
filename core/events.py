@@ -72,18 +72,18 @@ class PreAnalysisEvent(UIEvent):
     enable_face_filter: bool = False
     face_ref_img_path: str = ""
     face_ref_img_upload: Optional[str] = None
-    face_model_name: str
+    face_model_name: str = "buffalo_l"
     enable_subject_mask: bool = False
-    tracker_model_name: str
-    best_frame_strategy: str
+    tracker_model_name: str = "sam3"
+    best_frame_strategy: str = "sharpness"
     scene_detect: bool = True
     text_prompt: str = ""
-    min_mask_area_pct: float = Field(gt=0, le=100)
-    sharpness_base_scale: float = Field(gt=0)
-    edge_strength_base_scale: float = Field(gt=0)
+    min_mask_area_pct: float = Field(default=1.0, gt=0, le=100)
+    sharpness_base_scale: float = Field(default=2500.0, gt=0)
+    edge_strength_base_scale: float = Field(default=100.0, gt=0)
     pre_analysis_enabled: bool = True
-    pre_sample_nth: int = Field(gt=0)
-    primary_seed_strategy: str
+    pre_sample_nth: int = Field(default=1, gt=0)
+    primary_seed_strategy: str = "🤖 Automatic"
     compute_quality_score: bool = True
     compute_sharpness: bool = True
     compute_edge_strength: bool = True

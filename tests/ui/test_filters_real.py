@@ -7,7 +7,6 @@ These tests use the sample video to verify that:
 3. Smart filtering toggle works.
 """
 
-import time
 from pathlib import Path
 
 import pytest
@@ -76,7 +75,7 @@ class TestRealFilters:
 
         # Open a metric accordion, e.g., Quality Score
         page.get_by_text("Quality Score").click()
-        time.sleep(0.5)
+        page.wait_for_timeout(500)
 
         # Find slider for quality score min
         page.locator("input[type='range']").first  # This is risky, but quality score is first
@@ -90,13 +89,13 @@ class TestRealFilters:
         # Let's use Smart Filtering which is easier to toggle
         smart_toggle = page.get_by_label("Smart Filtering")
         smart_toggle.check()
-        time.sleep(1)
+        page.wait_for_timeout(1000)
 
         # Set percentile to 50%
         pctl_slider = page.get_by_label("Auto-Threshold Percentile")
         pctl_slider.fill("90")  # Keep top 10%
         page.get_by_role("button", name="Apply").click()
-        time.sleep(2)
+        page.wait_for_timeout(2000)
 
         # Status text should update
         # "Kept X / Y frames"
@@ -124,7 +123,7 @@ class TestRealFilters:
 
         # Change to "Off"
         dedup_dropdown.select_option("Off")
-        time.sleep(2)
+        page.wait_for_timeout(2000)
 
         status_text = page.locator("#filter_status_text")
         text_off = status_text.inner_text()
@@ -135,7 +134,7 @@ class TestRealFilters:
         # Set threshold high to ensure dupes are found
         thresh_slider = page.get_by_label("Threshold")
         thresh_slider.fill("10")  # 10 is loose
-        time.sleep(2)
+        page.wait_for_timeout(2000)
 
         text_on = status_text.inner_text()
 
