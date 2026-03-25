@@ -7,7 +7,7 @@
 
 To ensure fast execution and hardware independence, all **Unit Tests** must completely mock the following:
 - **ML Models**: Mock `ModelRegistry.get_tracker`, `get_face_analyzer`, and `TrackerFactory`.
-- **GPU/Torch**: Use `MagicMock(name="torch")` in `conftest.py` to prevent real imports. (Note: Older docs mentioned `ModuleType`, but `MagicMock` is the current standard).
+- **GPU/Torch**: Use `pytest_sessionstart` in `tests/conftest.py` to globally intercept `torch`, `sam3`, and `insightface` before any imports occur.
 - **File I/O**: Use `sample_image` and `sample_mask` fixtures instead of reading from disk.
 
 ## Core Fixtures (`tests/conftest.py`)
@@ -22,30 +22,29 @@ Always reuse these base fixtures to ensure consistency across the suite:
 ## Torch & Heavy Dependency Mocking
 
 Unit tests must never import real `torch`, `sam2`, or `insightface`.
-Use the `ModuleType` stub pattern in `conftest.py`:
+We use a global interception pattern in `tests/conftest.py` via the `pytest_sessionstart` hook:
 
 ```python
-import sys, types
-from unittest.mock import MagicMock
-
-# Create a proper module shell
-torch_mod = types.ModuleType("torch")
-torch_mod.cuda = types.ModuleType("torch.cuda")
-
-# Attach mocks/attributes as needed
-torch_mod.cuda.is_available = MagicMock(return_value=True)
-
-# Inject into sys.modules
-sys.modules["torch"] = torch_mod
-sys.modules["torch.cuda"] = torch_mod.cuda
+def pytest_sessionstart(session):
+    # 1. Create robust mock shells for heavy modules
+    mock_torch = MagicMock(name="torch")
+    # 2. Inject OutOfMemoryError for registry robustness
+    class OutOfMemoryError(RuntimeError): pass
+    mock_torch.cuda.OutOfMemoryError = OutOfMemoryError
+    
+    # 3. Use sys.modules to shadow the real libraries
+    sys.modules["torch"] = mock_torch
+    sys.modules["sam3"] = types.ModuleType("sam3")
+    ...
 ```
 
-This prevents downstream libraries from crashing when they perform `isinstance(mod, types.ModuleType)` checks.
+This ensures that even third-party libraries that import `torch` at top-level will receive the mock instead of triggering a VRAM allocation.
 
-### Refactoring for Testability
-Avoid complex `sys.modules` hacking to test functions that perform inline imports. Instead, **extract the logic into a standalone function** that takes simple types (like `Path` or `str`) and test that function directly. 
-
-**Example**: Instead of mocking the entire `import sam3` chain to check a file hash in `apply_patches()`, extract `_check_sam3_version(path)` as a pure function and test it with a real temp file and a single `patch("logger")`.
+### Robust `MockTensor` Support
+For tests involving mask processing (e.g., SAM3/SAM2.1), `conftest.py` provides a `MockTensor` class that simulates `torch.Tensor` behavior:
+- **Shape Propagation**: Returns correctly shaped numpy arrays via `.cpu().numpy()`.
+- **Dunder Support**: Implements `__len__`, `__getitem__`, and `__gt__` for filtering logic.
+- **Arithmetic**: Supports scalar operations used in quality metrics.
 
 ## Coverage Requirements
 
