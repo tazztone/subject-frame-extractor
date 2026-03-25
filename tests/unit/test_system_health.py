@@ -15,12 +15,14 @@ def test_check_environment():
     ):
         report = check_environment()
         assert any("CUDA: OK" in line for line in report)
+        assert any("CUDA: OK" in line for line in report)
         assert any("Test GPU" in line for line in report)
 
 
 def test_check_environment_no_cuda():
     with patch("torch.cuda.is_available", return_value=False):
         report = check_environment()
+        assert any("Running in CPU mode" in line for line in report)
         assert any("Running in CPU mode" in line for line in report)
 
 

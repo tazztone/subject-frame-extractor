@@ -62,9 +62,9 @@ def test_handle_common_errors_generator():
 def test_monitor_memory_usage():
     logger = MagicMock()
     with (
-        patch("torch.cuda.is_available", return_value=True),
-        patch("torch.cuda.memory_allocated", return_value=9000 * 1024**2),
-        patch("torch.cuda.empty_cache") as mock_empty,
+        patch("core.utils.torch.cuda.is_available", return_value=True),
+        patch("core.utils.torch.cuda.memory_allocated", return_value=9000 * 1024**2),
+        patch("core.utils.torch.cuda.empty_cache") as mock_empty,
     ):
         monitor_memory_usage(logger, "cuda", threshold_mb=8000)
         assert logger.warning.called
@@ -116,8 +116,8 @@ def test_to_json_safe():
 def test_safe_resource_cleanup():
     with (
         patch("gc.collect") as mock_gc,
-        patch("torch.cuda.is_available", return_value=True),
-        patch("torch.cuda.empty_cache") as mock_empty,
+        patch("core.utils.torch.cuda.is_available", return_value=True),
+        patch("core.utils.torch.cuda.empty_cache") as mock_empty,
     ):
         with safe_resource_cleanup(device="cuda"):
             pass
@@ -128,9 +128,9 @@ def test_safe_resource_cleanup():
 def test_monitor_memory_usage_low():
     logger = MagicMock()
     with (
-        patch("torch.cuda.is_available", return_value=True),
-        patch("torch.cuda.memory_allocated", return_value=1000 * 1024**2),
-        patch("torch.cuda.empty_cache") as mock_empty,
+        patch("core.utils.torch.cuda.is_available", return_value=True),
+        patch("core.utils.torch.cuda.memory_allocated", return_value=1000 * 1024**2),
+        patch("core.utils.torch.cuda.empty_cache") as mock_empty,
     ):
         monitor_memory_usage(logger, "cuda", threshold_mb=8000)
         assert not logger.warning.called
@@ -161,6 +161,12 @@ def test_handle_common_errors_gen_exceptions():
     res = next(it)
     assert "Critical error" in res["status_message"]
 
+    # Test ValueError
+    it = gen_fail(ValueError)
+    assert next(it) == 1
+    res = next(it)
+    assert "Invalid input" in res["status_message"]
+
 
 def test_handle_common_errors_non_gen_exceptions():
     @handle_common_errors
@@ -188,10 +194,30 @@ def test_estimate_totals_all():
 def test_safe_resource_cleanup_no_cuda():
     with (
         patch("gc.collect") as mock_gc,
-        patch("torch.cuda.is_available", return_value=False),
-        patch("torch.cuda.empty_cache") as mock_empty,
+        patch("core.utils.torch.cuda.is_available", return_value=False),
+        patch("core.utils.torch.cuda.empty_cache") as mock_empty,
     ):
         with safe_resource_cleanup(device="cuda"):
             pass
         assert mock_gc.called
         assert not mock_empty.called
+
+
+def test_handle_common_errors_gen_cuda_oom():
+    @handle_common_errors
+    def gen_oom():
+        yield 1
+        raise RuntimeError("CUDA out of memory")
+
+    it = gen_oom()
+    assert next(it) == 1
+    res = next(it)
+    assert "GPU memory error" in res["status_message"]
+
+
+def test_monitor_memory_usage_no_cuda():
+    # Test fallback path when cuda is not available
+    logger = MagicMock()
+    with patch("core.utils.torch.cuda.is_available", return_value=False):
+        monitor_memory_usage(logger, "cuda")
+        assert not logger.warning.called
