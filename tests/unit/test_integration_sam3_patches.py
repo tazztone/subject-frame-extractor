@@ -10,8 +10,8 @@ pytestmark = pytest.mark.sam3
 
 @pytest.fixture(autouse=True)
 def skip_if_mocked():
-    if isinstance(torch, MagicMock) or hasattr(torch, "reset_mock"):
-        pytest.skip("Skipping integration test because torch is mocked")
+    # In unit tests, torch is ALWAYS mocked by conftest.py
+    pytest.skip("Skipping integration test in unit test suite")
 
 
 def test_edt_triton_fallback():

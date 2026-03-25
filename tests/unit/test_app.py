@@ -19,7 +19,11 @@ def test_parse_args():
 
 def test_cleanup_models():
     mock_registry = MagicMock()
-    with patch("torch.cuda.empty_cache") as mock_empty_cache, patch("gc.collect") as mock_gc:
+    with (
+        patch("torch.cuda.is_available", return_value=True),
+        patch("torch.cuda.empty_cache") as mock_empty_cache,
+        patch("gc.collect") as mock_gc,
+    ):
         app.cleanup_models(mock_registry)
         mock_registry.clear.assert_called_once()
         mock_empty_cache.assert_called_once()
