@@ -1,0 +1,45 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-03-25T08:55:42.357Z",
+  "phase": "UI Hardening",
+  "phase_name": "UI Hardening & Coverage Stabilization",
+  "phase_dir": ".planning/phases/ui-hardening",
+  "plan": 1,
+  "task": 10,
+  "total_tasks": 11,
+  "status": "in_progress",
+  "completed_tasks": [
+    {"id": 1, "name": "Audit UI components and implement stable `elem_id` attributes", "status": "done"},
+    {"id": 2, "name": "Refactor `test_component_verification.py` to use CSS ID selectors", "status": "done"},
+    {"id": 3, "name": "Optimize infrastructure (reduce timeouts, use `domcontentloaded`)", "status": "done"},
+    {"id": 4, "name": "Implement robust accordion and tab handling logic", "status": "done"},
+    {"id": 5, "name": "Achieve 80%+ code coverage (Current: 80.08% ✅)", "status": "done"},
+    {"id": 6, "name": "Fix unit test pollution (sys.modules purge)", "status": "done"},
+    {"id": 7, "name": "Implement bulletproof port isolation (Port 8765 + setup teardown)", "status": "done"},
+    {"id": 8, "name": "Fix log-capturing robustness in regression tests (using reloads)", "status": "done"},
+    {"id": 9, "name": "Enable debug_mode for E2E in Mock App", "status": "done"}
+  ],
+  "remaining_tasks": [
+    {"id": 10, "name": "Achieve 100% pass rate on final verification suite (Fix hidden Export slider)", "status": "in_progress"},
+    {"id": 11, "name": "Document best practices in `TESTING.md`", "status": "not_started"}
+  ],
+  "blockers": [
+    {"description": "The 'dedup_thresh_input' slider is hidden which fails visibility checks; need to click its parent accordion first.", "type": "technical", "workaround": "Click 'Deduplication' accordion on the Export tab."}
+  ],
+  "human_actions_pending": [],
+  "decisions": [
+    {"decision": "Switch to CSS IDs (#id)", "rationale": "Label-based tests are too fragile for rapid UI iteration.", "phase": "UI Hardening"},
+    {"decision": "Port 8765 for tests", "rationale": "Prevent collisions with other local Gradio instances on 7860.", "phase": "UI Hardening"},
+    {"decision": "Force module reload in tests", "rationale": "Captured logger mocks were failing due to early binding; reload ensures fresh mocks.", "phase": "UI Hardening"}
+  ],
+  "uncommitted_files": [
+    "tests/unit/test_phase2_robustness.py",
+    "tests/ui/conftest.py",
+    "ui/tabs/filtering_tab.py",
+    "tests/mock_app.py",
+    "core/config.py",
+    "ui/app_ui.py"
+  ],
+  "next_action": "Apply the 'Deduplication' accordion click fix to `tests/ui/test_component_verification.py` and run the final pytest sweep.",
+  "context_notes": "We are very close. Coverage is over 80%. All unit tests pass except for the final regression check which was just fixed by the reload pattern. Only one UI slider visibility failure remains."
+}
