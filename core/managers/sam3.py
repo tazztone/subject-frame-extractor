@@ -71,7 +71,13 @@ class SAM3Wrapper:
     ):
         w, h = img_size
         x, y, bw, bh = bbox_xywh
-        rel_box = [max(0.0, x / w), max(0.0, y / h), min(1.0, bw / w), min(1.0, bh / h)]
+        # Ensure relative coordinates are bounded in [0, 1]
+        rel_box = [
+            max(0.0, min(1.0, x / w)),
+            max(0.0, min(1.0, y / h)),
+            max(0.0, min(1.0, (x + bw) / w)),
+            max(0.0, min(1.0, (y + bh) / h)),
+        ]
         req = dict(
             type="add_prompt",
             session_id=self.session_id,

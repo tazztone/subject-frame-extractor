@@ -12,6 +12,7 @@ This file contains auto-generated code skeletons for the test suite.
 ## Table of Contents
 
 tests  
+├──&nbsp;[`__init__.py`](#-tests__init__py)  
 ├──&nbsp;assets  
 ├──&nbsp;[`conftest.py`](#-testsconftestpy)  
 ├──&nbsp;e2e  
@@ -1909,12 +1910,18 @@ def test_frame_metrics_defaults(): ...
 ### `📄 tests/unit/test_models_property.py`
 
 ```python
-@given(shot_id=st.integers(min_value=-1000, max_value=10000), start_frame=st.integers(min_value=-1000, max_value=1000000), end_frame=st.integers(min_value=-1000, max_value=1000000), status=st.text(min_size=0, max_size=50))
+@given(shot_id=st.integers(min_value=1, max_value=10000), start_frame=st.integers(min_value=0, max_value=1000000), end_frame=st.integers(min_value=0, max_value=1000000), status=st.sampled_from(['pending', 'included', 'excluded']))
 def test_scene_model_properties(shot_id, start_frame, end_frame, status):
     """Property-based test for Scene model."""
-@given(source_path=st.text(min_size=1), interval=st.floats(min_value=-1.0, max_value=100.0), max_resolution=st.text())
+@given(start=st.integers(min_value=0, max_value=1000), duration=st.integers(min_value=1, max_value=1000))
+def test_scene_ordering_invariant(start, duration):
+    """In any valid scene, start_frame must be <= end_frame."""
+@given(source_path=st.text(min_size=1, alphabet=st.characters(whitelist_categories=('Lu', 'Ll', 'Nd', 'Pd', 'Zs'))), interval=st.floats(min_value=0.1, max_value=100.0), max_resolution=st.sampled_from(['720p', '1080p', '4k']))
 def test_analysis_parameters_properties(source_path, interval, max_resolution):
     """Property-based test for AnalysisParameters model."""
+@given(x=st.floats(min_value=-1000.0, max_value=5000.0), y=st.floats(min_value=-1000.0, max_value=5000.0), w=st.floats(min_value=0.0, max_value=5000.0), h=st.floats(min_value=0.0, max_value=5000.0), img_w=st.integers(min_value=1, max_value=4000), img_h=st.integers(min_value=1, max_value=4000))
+def test_bbox_normalization_invariant(x, y, w, h, img_w, img_h):
+    """Normalization logic in SAM3Wrapper.add_bbox_prompt must always"""
 ```
 
 ### `📄 tests/unit/test_niqe_operator.py`
@@ -2494,6 +2501,10 @@ class TestManagerClasses:
     def test_video_manager_has_get_video_info(self): ...
     def test_sam21_matches_sam3_interface(self):
         """Verify SAM2 and SAM3 wrappers share the same public interface."""
+class TestMockAppSyncValidation:
+    """Validate that mock_app.py stubs match production signatures."""
+    def test_mock_app_function_signatures(self):
+        """Compare mock_app.py stubs against real function signatures."""
 ```
 
 ### `📄 tests/unit/test_simple_cv_operators.py`

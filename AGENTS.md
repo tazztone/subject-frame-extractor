@@ -43,6 +43,7 @@ The application enforces a strict **Core/UI separation** to ensure maintainabili
 - **Unhashable Config**: **NEVER** use `@lru_cache` on functions taking the `Config` object. Use `model_registry.get_or_load` instead.
 - **Path Hygiene**: **ALWAYS** use `pathlib.Path`. Do not use string concatenation or `os.path`.
 - **Hermetic Testing**: **ALWAYS** mock external dependencies (SAM3, InsightFace, Torch) in unit tests.
+- **Mock Integrity Role**: **NEVER** update a core pipeline signature without updating its `mock_app.py` equivalent. Run `test_signatures.py` to verify.
 
 ### 🟡 WARNING (Potential Pitfalls)
 - **Mask Validation**: Always verify masks exist on disk before triggering export or batch processing.
@@ -190,7 +191,7 @@ uv run pytest tests/
 ### 🟡 Layer 2: End-to-End (E2E) Verification
 Validates the full processing pipeline using real video data and ML models (no mocks).
 ```bash
-uv run python tests/verification/e2e_run.py
+uv run python tests/e2e/e2e_run.py
 ```
 
 ### 🔵 Layer 3: UX Audit & Visual Regression

@@ -146,5 +146,57 @@ class TestManagerClasses:
             assert hasattr(SAM3Wrapper, method), f"SAM3Wrapper missing method: {method}"
 
 
+class TestMockAppSyncValidation:
+    """Validate that mock_app.py stubs match production signatures."""
+
+    def test_mock_app_function_signatures(self):
+        """Compare mock_app.py stubs against real function signatures."""
+        import inspect
+
+        import core.export
+        import core.photo_utils
+        import core.pipelines
+        import core.xmp_writer
+
+        # We import the mock functions from mock_app.py
+        # Since mock_app.py patches them on import, we need to be careful
+        # but here we just want to check parameter counts and names
+        from tests import mock_app
+
+        sync_targets = [
+            (core.pipelines.ExtractionPipeline._run_impl, mock_app.mock_extraction_run),
+            (core.pipelines.execute_pre_analysis, mock_app.mock_pre_analysis_execution),
+            (core.pipelines.execute_propagation, mock_app.mock_propagation_execution),
+            (core.pipelines.execute_analysis, mock_app.mock_analysis_execution),
+            (core.photo_utils.ingest_folder, mock_app.mock_ingest_folder),
+            (core.xmp_writer.export_xmps_for_photos, mock_app.mock_export_xmps_for_photos),
+            (core.export.export_kept_frames, mock_app.mock_export_kept_frames),
+        ]
+
+        for real_fn, mock_fn in sync_targets:
+            # Get underlying function if it's a bound method or decorated
+            if hasattr(real_fn, "__wrapped__"):
+                real_fn = real_fn.__wrapped__
+
+            real_sig = inspect.signature(real_fn)
+            mock_sig = inspect.signature(mock_fn)
+
+            real_params = list(real_sig.parameters.keys())
+            mock_params = list(mock_sig.parameters.keys())
+
+            # Check if all required real params exist in mock
+            # (Mock might have fewer if it uses *args/**kwargs, but we prefer explicit match)
+            for p in real_params:
+                assert p in mock_params, f"Mock {mock_fn.__name__} missing parameter: {p}"
+
+            # Check for name mismatches in non-variadic params
+            for p in mock_params:
+                if p not in ["args", "kwargs"] and p not in real_params:
+                    # Allow 'self' in mock if patching instance methods
+                    if p == "self":
+                        continue
+                    assert p in real_params, f"Mock {mock_fn.__name__} has extra parameter: {p}"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

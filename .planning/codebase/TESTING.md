@@ -7,7 +7,7 @@
 
 To ensure fast execution and hardware independence, all **Unit Tests** must completely mock the following:
 - **ML Models**: Mock `ModelRegistry.get_tracker`, `get_face_analyzer`, and `TrackerFactory`.
-- **GPU/Torch**: Use the `ModuleType` spoofing pattern in `conftest.py` to prevent double-init errors.
+- **GPU/Torch**: Use `MagicMock(name="torch")` in `conftest.py` to prevent real imports. (Note: Older docs mentioned `ModuleType`, but `MagicMock` is the current standard).
 - **File I/O**: Use `sample_image` and `sample_mask` fixtures instead of reading from disk.
 
 ## Core Fixtures (`tests/conftest.py`)
@@ -98,6 +98,16 @@ The system supports a "Golden Reference" workflow for ML metrics:
     - **Design Pattern**: The `unified_status` component is the primary target for E2E assertions. Any major backend operation should update this component immediately upon completion/failure to provide a clear signal to Playwright's `expect()` locators.
 - **Case Sensitivity in E2E**:
     - **Rule**: E2E tests are extremely fragile regarding status strings. "Pre-Analysis" (Title Case) vs "Pre-analysis" (Sentence Case) will cause a test failure if the log scraper is looking for a specific marker. Always use **Title Case** for major pipeline milestones.
+
+- **Standardized Wait Strategy**:
+    - **Rule**: Always use `page.wait_for_timeout(ms)` for arbitrary buffers in Playwright tests. Never use `time.sleep(s)` inside test functions or Playwright-managed fixtures as it blocks the Python event loop and contributes to flakiness.
+    - **Exception**: `time.sleep()` is permitted in infrastructure setup (like `wait_for_server` or `cleanup_port`) where no browser context is active.
+
+## Signature Validation & Mock Sync
+
+To prevent "mock drift" where `mock_app.py` or unit test mocks become outdated relative to production code:
+- **Mandate**: Use `inspect.signature()` in `tests/unit/test_signatures.py` to compare mocked interfaces against real implementations.
+- **Scope**: All `execute_*` pipeline functions and `SAM3Wrapper` methods must be validated for parameter-for-parameter matching.
 
 ## Performance Benchmarking
 

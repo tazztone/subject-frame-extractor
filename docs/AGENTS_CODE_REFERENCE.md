@@ -16,15 +16,6 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 .  
 ├──&nbsp;AGENTS.md  
 ├──&nbsp;CHANGELOG.md  
-├──&nbsp;MagicMock  
-│&nbsp;&nbsp;&nbsp;└──&nbsp;mock.models_dir  
-│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;124150714952512  
-│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;124150715170208  
-│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;124150716644960  
-│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;125008514913280  
-│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;125008556608928  
-│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;125008577838208  
-│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└──&nbsp;125008578049424  
 ├──&nbsp;README.md  
 ├──&nbsp;[`app.py`](#-apppy)  
 ├──&nbsp;cli.py  
@@ -93,7 +84,6 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`system_health.py`](#-coresystem_healthpy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`utils.py`](#-coreutilspy)  
 │&nbsp;&nbsp;&nbsp;└──&nbsp;[`xmp_writer.py`](#-corexmp_writerpy)  
-├──&nbsp;custom_logs  
 ├──&nbsp;docs  
 │&nbsp;&nbsp;&nbsp;└──&nbsp;TESTS_CODE_REFERENCE.md  
 ├──&nbsp;examples  
@@ -102,9 +92,7 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;__init__.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;pixel_count.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└──&nbsp;test_pixel_count.py  
-├──&nbsp;out  
 ├──&nbsp;patch.py  
-├──&nbsp;previews  
 ├──&nbsp;pyrightconfig.json  
 ├──&nbsp;run_config.json  
 ├──&nbsp;scripts  
@@ -131,6 +119,7 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;├──&nbsp;scenes.json  
 │&nbsp;&nbsp;&nbsp;└──&nbsp;thumbs  
 ├──&nbsp;tests  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;__init__.py  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;assets  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;conftest.py  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;e2e  
