@@ -12,7 +12,6 @@ This file contains auto-generated code skeletons for the test suite.
 ## Table of Contents
 
 tests  
-├──&nbsp;[`__init__.py`](#-tests__init__py)  
 ├──&nbsp;assets  
 ├──&nbsp;[`conftest.py`](#-testsconftestpy)  
 ├──&nbsp;e2e  
@@ -76,6 +75,7 @@ tests
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_batch_manager.py`](#-testsunittest_batch_managerpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_bug_fixes.py`](#-testsunittest_bug_fixespy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_cli.py`](#-testsunittest_clipy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_cli_utils.py`](#-testsunittest_cli_utilspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_concurrency.py`](#-testsunittest_concurrencypy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_config.py`](#-testsunittest_configpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_core.py`](#-testsunittest_corepy)  
@@ -151,6 +151,40 @@ tests
 
 ```python
 """Shared pytest fixtures and configuration."""
+def _create_mock_module(name, attributes=None):
+    """Creates a proper ModuleType instance populated with mocks/attributes."""
+class OutOfMemoryError(RuntimeError):
+    """Mock CUDA OutOfMemoryError."""
+class VideoOpenFailure(RuntimeError):
+    """Mock PySceneDetect VideoOpenFailure."""
+mock_torch = MagicMock(name='torch')
+mock_torch.cuda.is_available.return_value = False
+mock_torch.cuda.device_count.return_value = 0
+mock_torch.cuda.get_device_name = MagicMock(return_value='Mock GPU')
+mock_torch.cuda.empty_cache = MagicMock()
+mock_torch.cuda.memory_summary = MagicMock(return_value='Mock Memory Summary')
+mock_torch.cuda.OutOfMemoryError = OutOfMemoryError
+mock_torch.__version__ = "<REDACTED_STRING>"
+mock_torch.nn.Module = MagicMock
+mock_torch.Tensor = MagicMock
+mock_torch.device = MagicMock
+mock_torch.float = MagicMock()
+mock_torch.uint8 = MagicMock()
+mock_torch.version = MagicMock()
+mock_torch.version.cuda = "<REDACTED_STRING>"
+def _create_mock_tensor(name='tensor', shape=None, **kwargs): ...
+mock_torch.from_numpy = MagicMock(side_effect=lambda np_arr: _create_mock_ten...
+mock_torch.zeros = MagicMock(side_effect=lambda shape, **kwargs: _create_mock...
+mock_torch.ones = MagicMock(side_effect=lambda shape, **kwargs: _create_mock_...
+mock_torch.rand = MagicMock(side_effect=lambda *shape, **kwargs: _create_mock...
+mock_torch.randn = MagicMock(side_effect=lambda *shape, **kwargs: _create_moc...
+mock_torch.tensor = MagicMock(side_effect=lambda data, **kwargs: _create_mock...
+mock_torch.no_grad = MagicMock()
+mock_torch.no_grad.return_value.__enter__ = MagicMock()
+mock_torch.no_grad.return_value.__exit__ = MagicMock()
+mock_torch.SymFloat = MagicMock
+mock_torch.SymInt = MagicMock
+modules_to_mock = {'torch': _create_mock_module('torch', {'cuda': mock_torch....
 @pytest.fixture(autouse=True)
 def clean_registry():
     """Ensure OperatorRegistry is clean before each test."""
@@ -205,6 +239,13 @@ def mock_cancel_event():
 @pytest.fixture
 def sample_scenes():
     """Provides a list of sample Scene objects."""
+def pytest_sessionstart(session):
+    """Mocks are now initialized at the module level for early interception."""
+def pytest_sessionfinish(session, exitstatus):
+    """Restore original modules after the session."""
+@pytest.fixture
+def mock_torch():
+    """Fixture to access the mocked torch module."""
 def pytest_addoption(parser):
     """Add command line options."""
 ```
@@ -392,6 +433,11 @@ mock_torch.nn.Module = MagicMock
 mock_torch.Tensor = MagicMock
 mock_sam3 = MagicMock(name='sam3')
 mock_sam3.model_builder = MagicMock()
+class OutOfMemoryError(RuntimeError): ...
+class VideoOpenFailure(RuntimeError): ...
+mock_torch.cuda.OutOfMemoryError = OutOfMemoryError
+mock_torch.cuda.get_device_name = MagicMock(return_value='Mock GPU')
+mock_torch.cuda.empty_cache = MagicMock()
 modules_map = {'torch': create_mock_module('torch', {'cuda': mock_torch.cuda,...
 def mock_extraction_run(self, tracker=None):
     """Mocks the extraction process."""
@@ -1154,6 +1200,17 @@ def test_extract_invalid_source(runner, tmp_path): ...
 @patch('core.cli_commands._setup_runtime')
 @patch('torch.cuda.is_available', return_value=False)
 def test_analyze_folder(mock_cuda, mock_setup, mock_pre, mock_analysis, runner, tmp_path, mock_pipeline_result): ...
+```
+
+### `📄 tests/unit/test_cli_utils.py`
+
+```python
+def test_setup_runtime(tmp_path): ...
+def test_run_pipeline_success(): ...
+def test_run_pipeline_error_in_gen(): ...
+def test_run_pipeline_failed_result(): ...
+def test_run_pipeline_no_result(): ...
+def test_run_pipeline_close_generator(): ...
 ```
 
 ### `📄 tests/unit/test_concurrency.py`
@@ -2426,7 +2483,10 @@ class TestSceneUtilsHelpers:
 ```python
 def test_validate_session_dir(tmp_path): ...
 def test_execute_session_load(mock_logger, tmp_path): ...
-def test_load_analysis_scenes(): ...
+def test_execute_session_load_errors(mock_logger, tmp_path): ...
+def test_execute_session_load_with_seeds(mock_logger, tmp_path): ...
+def test_load_analysis_scenes_folder_mode(): ...
+def test_validate_session_dir_exception(): ...
 ```
 
 ### `📄 tests/unit/test_shared.py`
@@ -2717,6 +2777,8 @@ def test_handle_common_errors_non_gen_exceptions(): ...
 def test_estimate_totals_default(): ...
 def test_estimate_totals_all(): ...
 def test_safe_resource_cleanup_no_cuda(): ...
+def test_handle_common_errors_gen_cuda_oom(): ...
+def test_monitor_memory_usage_no_cuda(): ...
 ```
 
 ### `📄 tests/unit/test_viz.py`
