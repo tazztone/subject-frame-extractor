@@ -89,20 +89,20 @@ class SeedSelector:
         """
         params_source = current_params if current_params is not None else self.params
         p = params_source
-        primary_strategy = self._get_param(params_source, "primary_seed_strategy", "🤖 Automatic")
+        primary_strategy = self._get_param(params_source, "primary_seed_strategy", "Automatic Detection")
         use_face_filter = self._get_param(params_source, "enable_face_filter", False)
 
-        if primary_strategy == "👤 By Face":
+        if primary_strategy == "Source Face Reference":
             if self.face_analyzer and self.reference_embedding is not None and use_face_filter:
                 self.logger.info("Starting 'Identity-First' seeding.")
                 return self._identity_first_seed(frame_rgb, p, scene)
             else:
                 self.logger.warning("Face strategy selected but no reference face provided.")
                 return self._object_first_seed(frame_rgb, p, scene)
-        elif primary_strategy == "📝 By Text":
+        elif primary_strategy == "Text Description (Limited)":
             self.logger.info("Starting 'Object-First' seeding.")
             return self._object_first_seed(frame_rgb, p, scene)
-        elif primary_strategy == "🔄 Face + Text Fallback":
+        elif primary_strategy == "Face + Text Fallback":
             self.logger.info("Starting 'Face-First with Text Fallback' seeding.")
             return self._face_with_text_fallback_seed(frame_rgb, p, scene)
         else:
@@ -356,7 +356,14 @@ class SeedSelector:
             "Best Face": best_face_score,
         }
         score = score_funcs.get(strategy, score_funcs["Largest Person"])
-        best_person = sorted(boxes, key=lambda b: (score(b), b["conf"], area(b)), reverse=True)[0]
+
+        # Safety check: boxes could be a MagicMock in tests or unexpectedly empty
+        actual_boxes = list(boxes) if not isinstance(boxes, list) else boxes
+        if not actual_boxes:
+            self.logger.warning(f"No candidates found for strategy: {strategy}")
+            return self._final_fallback_box(frame_rgb.shape), {"type": "strategy_fallback_empty"}
+
+        best_person = sorted(actual_boxes, key=lambda b: (score(b), b["conf"], area(b)), reverse=True)[0]
 
         # Post-selection: Try to calculate face similarity for the chosen person
         seed_face_sim = 0.0

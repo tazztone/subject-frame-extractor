@@ -56,7 +56,7 @@ class SceneTabBuilder:
                             self.app._create_component(
                                 "sceneincludebutton",
                                 "button",
-                                {"value": "✅ Include", "variant": "secondary", "scale": 1},
+                                {"value": "Include", "variant": "secondary", "scale": 1},
                             )
                             self.app._create_component(
                                 "sceneexcludebutton", "button", {"value": "Exclude", "variant": "stop", "scale": 1}

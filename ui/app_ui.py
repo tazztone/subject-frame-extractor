@@ -224,13 +224,13 @@ class AppUI:
                     config=self.config,
                 )
                 self.progress_queue.put(
-                    {"ui_update": {self.components["model_status_indicator"]: "🟢 All Models Ready"}}
+                    {"ui_update": {self.components["model_status_indicator"]: "**Status: Models Ready**"}}
                 )
                 self.logger.success("Async model preloading complete.")
             except Exception as e:
                 self.logger.error(f"Async model preloading failed: {e}")
                 self.progress_queue.put(
-                    {"ui_update": {self.components["model_status_indicator"]: "🔴 Model Load Failed"}}
+                    {"ui_update": {self.components["model_status_indicator"]: "*Status: Load Failed*"}}
                 )
 
         threading.Thread(target=_load, daemon=True).start()
@@ -252,13 +252,27 @@ class AppUI:
         }
         .system-status-bar {
             border-top: 1px solid var(--border-color-primary);
-            padding-top: 10px;
-            margin-top: 20px;
+            padding-top: 12px;
+            margin-top: 24px;
+            display: flex;
+            gap: 16px;
+        }
+        .success-card {
+            border-left: 4px solid var(--button-primary-background-fill, #2196F3);
+            padding-left: 12px;
+            margin: 8px 0;
+        }
+        .success-card h3 {
+            margin-top: 0;
+            color: var(--button-primary-background-fill, #2196F3);
         }
         /* Ensure focused interactive elements have a clear outline */
         :focus-visible {
             outline: 2px solid var(--button-primary-background-fill, #2196F3) !important;
             outline-offset: 2px;
+        }
+        #unified_status {
+            min-height: 60px;
         }
         """
         with gr.Blocks(css=css, title="Frame Extractor & Analyzer") as demo:
@@ -267,7 +281,7 @@ class AppUI:
 
             self._build_header()
 
-            with gr.Accordion("🔄 Resume previous Session", open=False):
+            with gr.Accordion("Resume previous Session", open=False):
                 with gr.Row():
                     self._create_component(
                         "session_path_input",
@@ -276,10 +290,11 @@ class AppUI:
                             "label": "Load previous run",
                             "placeholder": "Path to a previous run's output folder...",
                             "info": "Paste the path to a folder from a previous extraction to resume work.",
+                            "scale": 3,
                         },
                     )
-                    self._create_component("load_session_button", "button", {"value": "📂 Load Session"})
-                    self._create_component("save_config_button", "button", {"value": "💾 Save Current Config"})
+                    self._create_component("load_session_button", "button", {"value": "Load Session", "scale": 1})
+                    self._create_component("save_config_button", "button", {"value": "Save Current Config", "scale": 1})
 
             self._build_main_tabs()
             self._build_footer()
@@ -364,23 +379,22 @@ class AppUI:
                 gr.Markdown("# Frame Extractor & Analyzer v4.0.0")
                 gr.Markdown("#### Professional AI-Powered Dataset Curation Tool")
             with gr.Column(scale=1):
-                self._create_component("model_status_indicator", "markdown", {"value": "🟡 **System Initializing...**"})
+                self._create_component("model_status_indicator", "markdown", {"value": "**Status: Initializing...**"})
 
-        with gr.Accordion("📘 Guide: How to use this tool", open=False):
+        with gr.Accordion("Guide: How to use this tool", open=False):
             gr.Markdown("""
-            ### 🚀 Workflow
+            ### Workflow
             1.  **Source**: Import video from a file or URL.
-            2.  **Subject**: Tell the AI what to look for (a specific person, object, or just everything).
+            2.  **Subject**: Specify target for tracking and extraction.
             3.  **Scenes**: Review detected scenes and choose the best shots.
-            4.  **Metrics**: Analyze frames for quality (sharpness, lighting, composition).
+            4.  **Metrics**: Analyze frames for quality and composition.
             5.  **Export**: Filter the best frames and save your dataset.
             """)
 
-        status_color = "🟢" if self.cuda_available else "⚠️"
-        status_text = "GPU Accelerated (CUDA)" if self.cuda_available else "CPU Mode (Slow)"
+        status_text = "GPU Accelerated (CUDA)" if self.cuda_available else "CPU Mode (Standard)"
 
         with gr.Row(elem_classes="system-status-bar"):
-            gr.Markdown(f"**System Status:** {status_color} {status_text}")
+            gr.Markdown(f"**Acceleration:** {status_text}")
             if not self.cuda_available:
                 gr.Markdown("*Tip: A GPU is highly recommended for faster processing.*")
 
@@ -412,20 +426,20 @@ class AppUI:
                     self._create_component(
                         "unified_status",
                         "markdown",
-                        {"label": "📊 Status", "value": "Welcome! Ready to start.", "elem_id": "unified_status"},
+                        {"label": "Status", "value": "Ready.", "elem_id": "unified_status"},
                     )
                     # self.components['progress_bar'] = gr.Progress()
                     self._create_component(
                         "progress_details", "html", {"value": "", "elem_classes": ["progress-details"]}
                     )
                     with gr.Row():
-                        self._create_component("pause_button", "button", {"value": "⏸️ Pause", "interactive": False})
-                        self._create_component("cancel_button", "button", {"value": "⏹️ Cancel", "interactive": False})
+                        self._create_component("pause_button", "button", {"value": "Pause", "interactive": False})
+                        self._create_component("cancel_button", "button", {"value": "Cancel", "interactive": False})
                 with gr.Column(scale=3):
                     self.log_viewer.build()
                     self.components.update(self.log_viewer.components)
 
-        with gr.Accordion("❓ Help / Troubleshooting", open=False):
+        with gr.Accordion("Help / Troubleshooting", open=False):
             gr.Markdown("Run checks for GPU availability, missing libraries, and path permissions.")
             self._create_component("run_diagnostics_button", "button", {"value": "Run System Diagnostics"})
 
@@ -522,7 +536,7 @@ class AppUI:
         yield {
             self.components["cancel_button"]: gr.update(interactive=True),
             self.components["pause_button"]: gr.update(interactive=True),
-            self.components["unified_status"]: f"🚀 **Starting: {op_name}...**",
+            self.components["unified_status"]: f"**Starting: {op_name}...**",
         }
 
         def run_and_capture():
@@ -550,7 +564,7 @@ class AppUI:
                     future.cancel()
                     break
                 if tracker_instance and not tracker_instance.pause_event.is_set():
-                    yield {self.components["unified_status"]: f"⏸️ **Paused: {op_name}**"}
+                    yield {self.components["unified_status"]: f"**Paused: {op_name}**"}
                     time.sleep(0.2)
                     continue
                 try:
@@ -593,10 +607,10 @@ class AppUI:
         """Toggles the pause state of the current running task."""
         if tracker.pause_event.is_set():
             tracker.pause_event.clear()
-            return "⏸️ Paused"
+            return "Paused"
         else:
             tracker.pause_event.set()
-            return "▶️ Resume"
+            return "Resume"
 
     @safe_ui_callback("Diagnostics")
     def run_system_diagnostics(self) -> Generator[str, None, None]:
@@ -663,10 +677,23 @@ class AppUI:
         clean_args["output_folder"] = str(out_dir)
         clean_args["video_path"] = str(state.extracted_video_path)
 
+        # Map legacy emoji-based strategies to new professional names
+        LEGACY_STRATEGY_MAP = {
+            "👤 By Face": "Source Face Reference",
+            "📝 By Text": "Text Description (Limited)",
+            "🔄 Face + Text Fallback": "Face + Text Fallback",
+            "🤖 Automatic": "Automatic Detection",
+            "Auto": "Automatic Detection",
+        }
+
         strategy = clean_args.get("primary_seed_strategy", self.config.default_primary_seed_strategy)
-        if strategy == "👤 By Face":
+        # Apply mapping if needed
+        strategy = LEGACY_STRATEGY_MAP.get(strategy, strategy)
+        clean_args["primary_seed_strategy"] = strategy
+
+        if strategy == "Source Face Reference":
             clean_args.update({"enable_face_filter": True, "text_prompt": ""})
-        elif strategy == "📝 By Text":
+        elif strategy == "Text Description (Limited)":
             clean_args.update({"enable_face_filter": False, "face_ref_img_path": ""})
         return PreAnalysisEvent.model_validate(clean_args)
 
@@ -775,9 +802,10 @@ class AppUI:
 
     def _fix_strategy_visibility(self, strategy: str) -> dict:
         """Adjusts UI component visibility based on the selected seed strategy."""
-        is_face = "By Face" in strategy or "Fallback" in strategy
-        is_text = "By Text" in strategy or "Fallback" in strategy
-        is_auto = "Prominent Person" in strategy
+        # Use new professional name substrings
+        is_face = "Face Reference" in strategy or "Fallback" in strategy
+        is_text = "Text Description" in strategy or "Fallback" in strategy
+        is_auto = "Automatic" in strategy or "Discovery" in strategy
         return {
             self.components["face_seeding_group"]: gr.update(visible=is_face),
             self.components["text_seeding_group"]: gr.update(visible=is_text),
@@ -934,7 +962,7 @@ class AppUI:
 
         selected_label = self.gallery_to_cluster_map.get(evt.index)
         if selected_label is None:
-            return "", None, "⚠️ Selection Failed"
+            return "", None, "Selection Failed"
 
         from core.face_clustering import cluster_faces, get_cluster_representative
 
@@ -959,9 +987,9 @@ class AppUI:
         self.logger.info(f"Output dir: {output_dir}, exists: {output_dir.exists()}")
         if not output_dir.exists():
             self.logger.warning("Output directory does not exist - run extraction first")
-            msg = "⚠️ **Run extraction first** - No video frames found."
+            msg = "**Run extraction first** - No video frames found."
             return (
-                "❌ **Face Discovery Failed.** Run extraction first.",
+                "**Face Discovery Failed.** Run extraction first.",
                 msg,
                 gr.update(visible=False),
                 [],
@@ -976,9 +1004,9 @@ class AppUI:
         face_analyzer = models["face_analyzer"]
         if not face_analyzer:
             self.logger.warning("Face analyzer not available")
-            msg = "⚠️ **Face analyzer unavailable** - Check model installation."
+            msg = "**Face analyzer unavailable** - Check model installation."
             return (
-                "❌ **Face Discovery Failed.** Face analyzer unavailable.",
+                "**Face Discovery Failed.** Face analyzer unavailable.",
                 msg,
                 gr.update(visible=False),
                 [],
@@ -988,9 +1016,9 @@ class AppUI:
         frame_map = create_frame_map(output_dir, self.logger)
         self.logger.info(f"Frame map has {len(frame_map)} frames")
         if not frame_map:
-            msg = "⚠️ **No frames found** - Run extraction first."
+            msg = "**No frames found** - Run extraction first."
             return (
-                "❌ **Face Discovery Failed.** No video frames found.",
+                "**Face Discovery Failed.** No video frames found.",
                 msg,
                 gr.update(visible=False),
                 [],
@@ -1023,9 +1051,9 @@ class AppUI:
 
         if not all_faces:
             self.logger.info("No faces found in sampled frames")
-            msg = "ℹ️ **No faces detected** in sampled frames. Try adjusting sample rate."
+            msg = "**No faces detected** in sampled frames. Try adjusting sample rate."
             return (
-                "⚠️ **Face Discovery Finished.** No faces found.",
+                "**Face Discovery Finished.** No faces found.",
                 msg,
                 gr.update(visible=False),
                 [],
@@ -1036,7 +1064,7 @@ class AppUI:
         # Get clustered faces for gallery
         gallery_items = self.on_identity_confidence_change(0.5, new_state)
         n_people = len(self.gallery_to_cluster_map) if hasattr(self, "gallery_to_cluster_map") else 0
-        success_msg = f"✅ Found **{n_people} unique people** from {len(all_faces)} face detections."
+        success_msg = f"Found **{n_people} unique people** from {len(all_faces)} face detections."
         return (
             success_msg,
             success_msg,

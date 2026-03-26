@@ -112,7 +112,7 @@ def get_scene_status_text(scenes_list: list["Scene"]) -> tuple[str, Any]:
         reasons_summary = ", ".join(f"{reason}: {count}" for reason, count in rejection_counts.items())
         status_text += f" (Rejected: {reasons_summary})"
 
-    button_text = f"🔬 Propagate Masks on {ready_for_propagation_count} Ready Scenes"
+    button_text = f"Propagate Masks on {ready_for_propagation_count} Ready Scenes"
     return status_text, gr.update(value=button_text, interactive=ready_for_propagation_count > 0)
 
 

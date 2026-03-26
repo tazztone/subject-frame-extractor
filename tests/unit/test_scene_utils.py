@@ -61,7 +61,7 @@ class TestSeedSelector:
         assert bbox == [79, 0, 11, 99]
 
     def test_identity_first_seed(self, selector):
-        selector.params.primary_seed_strategy = "👤 By Face"
+        selector.params.primary_seed_strategy = "Source Face Reference"
         selector.params.enable_face_filter = True
         selector.reference_embedding = np.ones(128)
 
@@ -80,7 +80,7 @@ class TestSeedSelector:
         assert details.get("face_contained") is True
 
     def test_face_with_text_fallback_seed_success(self, selector):
-        selector.params.primary_seed_strategy = "🔄 Face + Text Fallback"
+        selector.params.primary_seed_strategy = "Face + Text Fallback"
         selector.reference_embedding = np.ones(128)
         with patch.object(selector, "_identity_first_seed") as mock_face_seed:
             mock_face_seed.return_value = ([0, 0, 10, 10], {})
@@ -90,7 +90,7 @@ class TestSeedSelector:
             mock_face_seed.assert_called_once()
 
     def test_face_with_text_fallback_seed_fallback(self, selector):
-        selector.params.primary_seed_strategy = "🔄 Face + Text Fallback"
+        selector.params.primary_seed_strategy = "Face + Text Fallback"
         selector.reference_embedding = np.ones(128)
         with patch.object(selector, "_identity_first_seed", return_value=(None, {})):
             with patch.object(selector, "_object_first_seed") as mock_obj_seed:

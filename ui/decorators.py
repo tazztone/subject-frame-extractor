@@ -52,6 +52,6 @@ def _handle_ui_exception(app: Any, e: Exception, context: str = "Operation") -> 
         if "unified_log" in app.components:
             updates[app.components["unified_log"]] = error_msg
         if "unified_status" in app.components:
-            updates[app.components["unified_status"]] = f"❌ **{context} Failed.** Check logs."
+            updates[app.components["unified_status"]] = f"**{context} Failed.** Check logs."
 
     return updates
