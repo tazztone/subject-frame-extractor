@@ -22,7 +22,7 @@ class LogViewer:
 
     def build(self) -> gr.Accordion:
         """Constructs the log viewer UI components."""
-        with gr.Accordion("📋 System Logs", open=False) as accordion:
+        with gr.Accordion("System Logs", open=False) as accordion:
             self.components["unified_log"] = gr.Textbox(
                 lines=15,
                 interactive=False,
@@ -33,8 +33,8 @@ class LogViewer:
             )
             with gr.Row():
                 self.components["show_debug_logs"] = gr.Checkbox(label="Show Debug Logs", value=False)
-                self.components["refresh_logs_button"] = gr.Button("🔄 Refresh", scale=1, visible=True)
-                self.components["clear_logs_button"] = gr.Button("🗑️ Clear", scale=1)
+                self.components["refresh_logs_button"] = gr.Button("Refresh", scale=1, visible=True)
+                self.components["clear_logs_button"] = gr.Button("Clear", scale=1)
 
         return accordion
 

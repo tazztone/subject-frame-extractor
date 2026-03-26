@@ -59,11 +59,9 @@ class FilteringTabBuilder:
                     self.app._create_component(
                         "apply_auto_button",
                         "button",
-                        {"value": "⚡ Auto-Threshold", "size": "sm", "variant": "secondary"},
+                        {"value": "Auto-Threshold", "size": "sm", "variant": "secondary"},
                     )
-                    self.app._create_component(
-                        "reset_filters_button", "button", {"value": "🔄 Reset All", "size": "sm"}
-                    )
+                    self.app._create_component("reset_filters_button", "button", {"value": "Reset All", "size": "sm"})
 
         with gr.Row():
             # Left Column: Controls (Filters)
@@ -77,7 +75,7 @@ class FilteringTabBuilder:
                 self.app.components["metric_auto_threshold_cbs"] = {}
 
                 # 2. Deduplication Accordion
-                with gr.Accordion("👯 Deduplication (Remove Duplicates)", open=True) as dedup_acc:
+                with gr.Accordion("Deduplication (Remove Duplicates)", open=True) as dedup_acc:
                     self.app.components["metric_accs"]["dedup"] = dedup_acc
                     self.app._create_component(
                         "dedup_method_input",
@@ -112,9 +110,7 @@ class FilteringTabBuilder:
                             "checkbox",
                             {"label": "Show Diff", "value": False, "visible": False},
                         )
-                        self.app._create_component(
-                            "calculate_diff_button", "button", {"value": "🔍 Inspect Duplicates"}
-                        )
+                        self.app._create_component("calculate_diff_button", "button", {"value": "Inspect Duplicates"})
                     self.app._create_component("visual_diff_image", "image", {"label": "Visual Diff", "visible": False})
 
                 # 3. Dynamic Metric Accordions
@@ -200,7 +196,7 @@ class FilteringTabBuilder:
             with gr.Column(scale=2):
                 with gr.Group(visible=self.app.debug_mode) as results_group:
                     self.app.components["results_group"] = results_group
-                    gr.Markdown("#### 🖼️ Results Preview")
+                    gr.Markdown("#### Results Preview")
                     with gr.Row():
                         self.app._create_component(
                             "gallery_view_toggle",
@@ -235,31 +231,32 @@ class FilteringTabBuilder:
                         "results_gallery",
                         "gallery",
                         {
-                            "columns": [4, 6, 8],
+                            "columns": [2, 4, 8],
                             "rows": 2,
                             "height": "auto",
                             "preview": True,
                             "allow_preview": True,
                             "object_fit": "contain",
                             "show_label": False,
+                            "lazy_loading": True,
                         },
                     )
 
                 with gr.Group(visible=self.app.debug_mode) as export_group:
                     self.app.components["export_group"] = export_group
-                    gr.Markdown("#### 📤 Export Dataset")
+                    gr.Markdown("#### Export Dataset")
 
                     with gr.Accordion("Advanced Export Options", open=False):
                         with gr.Row():
                             self.app._create_component(
                                 "enable_crop_input",
                                 "checkbox",
-                                {"label": "✂️ Crop to Subject", "value": self.config.export_enable_crop},
+                                {"label": "Crop to Subject", "value": self.config.export_enable_crop},
                             )
                             self.app._create_component(
                                 "enable_xmp_export_input",
                                 "checkbox",
-                                {"label": "📝 Write XMP Sidecars (Photos)", "value": False},
+                                {"label": "Write XMP Sidecars (Photos)", "value": False},
                             )
 
                         with gr.Row():
@@ -283,7 +280,7 @@ class FilteringTabBuilder:
                             "export_button",
                             "button",
                             {
-                                "value": "💾 Export Kept Frames",
+                                "value": "Export Kept Frames",
                                 "variant": "primary",
                                 "scale": 2,
                                 "size": "lg",
