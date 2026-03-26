@@ -119,7 +119,7 @@ class SubjectTabBuilder:
                             },
                         )
 
-            with gr.Accordion("📂 Advanced: Use Local File Path", open=False):
+            with gr.Accordion("Advanced: Use Local File Path", open=False):
                 self.app._reg(
                     "face_ref_img_path",
                     self.app._create_component(

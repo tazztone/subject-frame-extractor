@@ -65,7 +65,7 @@ class PipelineHandler:
         new_state.extracted_frames_dir = result["extracted_frames_dir_state"]
 
         msg = f"""<div class="success-card">
-        <h3>✅ Extraction Complete</h3>
+        <h3>Extraction Complete</h3>
         <p>Frames extracted to: <code>{result["extracted_frames_dir_state"]}</code></p>
         <p><strong>Next:</strong> Review and begin pre-analysis.</p>
         </div>"""
@@ -109,13 +109,13 @@ class PipelineHandler:
 
         if not new_state.extracted_video_path:
             msg = f"""<div class="success-card">
-            <h3>✅ Pre-Analysis Complete</h3>
+            <h3>Pre-Analysis Complete</h3>
             <p>Found <strong>{len(scenes_objs)}</strong> scenes in image folder.</p>
             <p><strong>Next:</strong> Review scenes or click "Compute Metrics" to continue.</p>
             </div>"""
         else:
             msg = f"""<div class="success-card">
-            <h3>✅ Pre-Analysis Complete</h3>
+            <h3>Pre-Analysis Complete</h3>
             <p>Found <strong>{len(scenes_objs)}</strong> scenes.</p>
             <p><strong>Next:</strong> Review seeds or click "Propagate Masks".</p>
             </div>"""
@@ -144,7 +144,7 @@ class PipelineHandler:
             yield {
                 self.app.components[
                     "unified_log"
-                ]: "💡 Propagation is not needed for image folders. Jump straight to Compute Metrics."
+                ]: "Note: Propagation is not needed for image folders. Proceed to Compute Metrics."
             }
             return
 
@@ -171,7 +171,7 @@ class PipelineHandler:
 
     def _on_propagation_success(self, result: dict, current_state: ApplicationState) -> dict:
         """Callback for successful propagation."""
-        msg = """<div class="success-card"><h3>✅ Mask Propagation Complete</h3></div>"""
+        msg = """<div class="success-card"><h3>Mask Propagation Complete</h3></div>"""
         return {
             self.app.components["application_state"]: current_state,
             self.app.components["unified_status"]: msg,
@@ -201,7 +201,7 @@ class PipelineHandler:
         new_state.analysis_metadata_path = result["metadata_path"]
         self.app._save_session_log(str(Path(result["metadata_path"]).parent))
 
-        msg = """<div class="success-card"><h3>✅ Analysis Complete</h3></div>"""
+        msg = """<div class="success-card"><h3>Analysis Complete</h3></div>"""
         return {
             self.app.components["application_state"]: new_state,
             self.app.components["unified_status"]: msg,
@@ -211,7 +211,7 @@ class PipelineHandler:
     def run_session_load_wrapper(self, session_path: str, current_state: ApplicationState):
         """Loads a previous session and updates the UI state."""
         event = SessionLoadEvent(session_path=session_path)
-        yield {self.app.components["unified_status"]: "🔄 Loading Session..."}
+        yield {self.app.components["unified_status"]: "Loading Session..."}
 
         result = execute_session_load(event, self.logger)
         if result.get("error"):
@@ -314,7 +314,7 @@ class PipelineHandler:
             {
                 self.app.components["application_state"]: new_state,
                 self.app.components["unified_log"]: f"Successfully loaded session from: {session_path}",
-                self.app.components["unified_status"]: "✅ Session Loaded.",
+                self.app.components["unified_status"]: "Session Loaded.",
             }
         )
         yield updates

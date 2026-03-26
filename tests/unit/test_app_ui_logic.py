@@ -113,7 +113,7 @@ class TestAppUI:
     # --- UI Helpers ---
 
     def test_fix_strategy_visibility(self, app_ui):
-        updates = app_ui._fix_strategy_visibility("👤 By Face")
+        updates = app_ui._fix_strategy_visibility("Source Face Reference")
         assert updates[app_ui.components["face_seeding_group"]]["visible"] is True
         assert updates[app_ui.components["text_seeding_group"]]["visible"] is False
 
@@ -159,7 +159,7 @@ class TestAppUI:
                 100.0,  # edge_strength_base_scale
                 True,  # pre_analysis_enabled
                 1,  # pre_sample_nth
-                "Auto",  # primary_seed_strategy
+                "Automatic Detection",  # primary_seed_strategy
                 True,  # compute_quality_score
                 True,  # compute_sharpness
             ] + [True] * 11  # remaining compute_... metrics
@@ -331,4 +331,4 @@ class TestAppUI:
         updates = next(gen)
 
         assert updates[app_ui.components["source_input"]]["value"] == "test.mp4"
-        assert updates[app_ui.components["unified_status"]] == "✅ Session Loaded."
+        assert updates[app_ui.components["unified_status"]] == "Session Loaded."
