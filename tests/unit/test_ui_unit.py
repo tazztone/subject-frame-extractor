@@ -73,7 +73,7 @@ def test_fix_strategy_visibility_text(app_ui):
 
 
 def test_get_metric_description(app_ui):
-    desc = app_ui.get_metric_description("quality_score")
+    desc = app_ui._get_metric_description("quality_score")
     assert "score" in desc
 
 

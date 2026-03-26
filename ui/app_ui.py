@@ -1439,7 +1439,7 @@ class AppUI:
                 c["results_group"],
                 c["export_group"],
             ]
-            + [c["metric_plots"].get(k) for k in self.get_all_filter_keys() if c["metric_plots"].get(k)]
+            + [c["metric_plots"].get(k) for k in self._get_all_filter_keys() if c["metric_plots"].get(k)]
             + slider_comps
             + [c["require_face_match_input"]]
             + [c["metric_accs"].get(k) for k in sorted(c["metric_accs"].keys()) if c["metric_accs"].get(k)]
@@ -1463,7 +1463,7 @@ class AppUI:
                 c["results_group"]: gr.update(visible=True),
                 c["export_group"]: gr.update(visible=True),
             }
-            for k in self.get_all_filter_keys():
+            for k in self._get_all_filter_keys():
                 acc = c["metric_accs"].get(k)
                 has_data = k in metric_values and metric_values.get(k)
                 if acc:

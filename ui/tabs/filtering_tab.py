@@ -141,7 +141,7 @@ class FilteringTabBuilder:
                         metric_name.replace("_", " ").title(), open=metric_config["open"], visible=False
                     ) as acc:
                         self.app.components["metric_accs"][metric_name] = acc
-                        gr.Markdown(self.app.get_metric_description(metric_name), elem_classes="metric-description")
+                        gr.Markdown(self.app._get_metric_description(metric_name), elem_classes="metric-description")
                         with gr.Column(elem_classes="plot-and-slider-column"):
                             self.app.components["metric_plots"][metric_name] = self.app._create_component(
                                 f"plot_{metric_name}", "html", {"visible": True}
