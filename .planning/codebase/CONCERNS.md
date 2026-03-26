@@ -31,6 +31,11 @@
 - **Concern**: Gradio requires that the number of inputs/outputs in `.click()` or `.change()` exactly matches the function signature.
 - **Impact**: Adding a new UI control without updating the corresponding pipeline wrapper results in a silent crash where the UI simply stops responding.
 
+### 2. UI Decorator & Generator Protocol 🔴
+- **Concern**: Applying a synchronous `try/except` decorator to a generator function (like `run_extraction_wrapper`) allows exceptions inside the generator body to bypass the decorator's error handler. It also breaks Gradio's streaming protocol if the decorator returns a `dict` instead of yielding one.
+- **Impact**: Silent failures or "stuck" UI status during long-running pipelines (Extraction, Analysis).
+- **Fix**: The `@safe_ui_callback` decorator uses `inspect.isgeneratorfunction` to provide a `yield from` bridge for iterables. Any future refactor of this decorator MUST maintain this generator-aware logic.
+
 ### 2. SAM3 Submodule Dependency
 - **Concern**: The project treats `SAM3_repo` as read-only, but its internal imports are sensitive to the Python path.
 - **Risk**: Environment changes (different `PYTHONPATH`) can break the link between `core/managers.py` and the submodule.
