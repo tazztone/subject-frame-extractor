@@ -171,7 +171,7 @@ def test_analyze_folder(mock_cuda, mock_setup, mock_orch, runner, tmp_path, mock
     source_dir.mkdir()
 
     # For folders, Propagation should be skipped
-    with patch("core.cli_commands.execute_propagation") as mock_prop:
+    with patch("core.pipelines.execute_propagation") as mock_prop:
         result = runner.invoke(cli, ["analyze", "--session", str(session_dir), "--source", str(source_dir)])
         assert result.exit_code == 0
         assert "Mask Propagation (Skipped for Folder)" in result.output
