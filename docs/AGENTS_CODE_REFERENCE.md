@@ -44,9 +44,9 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`analysis.py`](#-coremanagersanalysispy)  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`extraction.py`](#-coremanagersextractionpy)  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`face.py`](#-coremanagersfacepy)  
-│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`models.py`](#-coremanagersmodelspy)  
+│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`model_loader.py`](#-coremanagersmodel_loaderpy)  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`registry.py`](#-coremanagersregistrypy)  
-│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`sam21.py`](#-coremanagerssam21py)  
+│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`sam2.py`](#-coremanagerssam2py)  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`sam3.py`](#-coremanagerssam3py)  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`session.py`](#-coremanagerssessionpy)  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`thumbnails.py`](#-coremanagersthumbnailspy)  
@@ -99,10 +99,17 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 ├──&nbsp;scripts  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;jules_setup_script.sh  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;linux_run_app.sh  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;linux_setup_playwright.sh  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;linux_test_all.sh  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;linux_test_cov.sh  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;linux_test_ui.sh  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;linux_test_unit.sh  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;run_unit_tests.sh  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`run_ux_audit.py`](#-scriptsrun_ux_auditpy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`take_screenshot.py`](#-scriptstake_screenshotpy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;update_agents_md.py  
 │&nbsp;&nbsp;&nbsp;└──&nbsp;[`verify_quality.py`](#-scriptsverify_qualitypy)  
+├──&nbsp;skills-lock.json  
 ├──&nbsp;subject_frame_extractor.egg-info  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;SOURCES.txt  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;dependency_links.txt  
@@ -120,6 +127,7 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;├──&nbsp;scenes.json  
 │&nbsp;&nbsp;&nbsp;└──&nbsp;thumbs  
 ├──&nbsp;tests  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;__init__.py  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;assets  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;conftest.py  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;e2e  
@@ -186,6 +194,7 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_cli_utils.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_concurrency.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_config.py  
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_context_adherence.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_core.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_database.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_dedup.py  
@@ -231,13 +240,14 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_pipelines_wrapper.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_progress.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_quality_score.py  
-│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_sam21.py  
-│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_sam21_wrapper.py  
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_sam2.py  
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_sam2_wrapper.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_sam3_manager.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_sam3_wrapper.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_scene_detection.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_scene_utils.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_scene_utils_helpers.py  
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_seed_selector_extended.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_session.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_shared.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_sharpness.py  
@@ -259,9 +269,11 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;components  
 &nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`__init__.py`](#-uicomponents__init__py)  
 &nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;[`log_viewer.py`](#-uicomponentslog_viewerpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`decorators.py`](#-uidecoratorspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`gallery_utils.py`](#-uigallery_utilspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;handlers  
 &nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`__init__.py`](#-uihandlers__init__py)  
+&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`pipeline_handlers.py`](#-uihandlerspipeline_handlerspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;[`scene_handler.py`](#-uihandlersscene_handlerpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;└──&nbsp;tabs  
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`__init__.py`](#-uitabs__init__py)  
@@ -275,7 +287,7 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 ### `📄 app.py`
 
 ```python
-"""Frame Extractor & Analyzer v2.0"""
+"""Frame Extractor & Analyzer v4.0.0"""
 project_root = Path(__file__).parent
 def cleanup_models(model_registry):
     """Clears the model registry and performs garbage collection."""
@@ -706,7 +718,7 @@ class AppLogger:
 ### `📄 core/managers/__init__.py`
 
 ```python
-__all__ = ['ThumbnailManager', 'ModelRegistry', 'SAM3Wrapper', 'SAM21Wrapper'...
+__all__ = ['ThumbnailManager', 'ModelRegistry', 'SAM3Wrapper', 'SAM2Wrapper',...
 ```
 
 ### `📄 core/managers/analysis.py`
@@ -763,7 +775,7 @@ def get_face_analyzer(model_name: str, models_path: str, det_size_tuple: tuple, 
     """Gets or loads the InsightFace FaceAnalysis app, with OOM handling."""
 ```
 
-### `📄 core/managers/models.py`
+### `📄 core/managers/model_loader.py`
 
 ```python
 def get_lpips_metric(model_name: str='alex', device: str='cpu'):
@@ -787,10 +799,10 @@ class ModelRegistry:
     def _load_tracker_impl(self, model_name: str, models_path: str, user_agent: str, retry_params: tuple, device: str, config: 'Config'): ...
 ```
 
-### `📄 core/managers/sam21.py`
+### `📄 core/managers/sam2.py`
 
 ```python
-class SAM21Wrapper:
+class SAM2Wrapper:
     """SAM2.1 hiera-tiny via pip install sam2. Apache 2.0, ~38MB."""
     def __init__(self, checkpoint_path: str, device: str='cuda'): ...
     def init_video(self, video_resource: Union[str, list]):
@@ -813,7 +825,6 @@ class SAM21Wrapper:
 ### `📄 core/managers/sam3.py`
 
 ```python
-def _setup_triton_mock(): ...
 _triton_mocked = _setup_triton_mock()
 class SAM3Wrapper:
     """SAM3 Tracker using official Sam3VideoPredictor API."""
@@ -890,8 +901,6 @@ def _coerce(val: Any, to_type: type) -> Any:
     """Helper to strictly coerce values to the target type."""
 def _sanitize_face_ref(kwargs: dict, logger: 'AppLogger') -> tuple[str, bool]:
     """Validates the face reference image path."""
-class QualityConfig(BaseModel):
-    """Configuration for quality metric normalization."""
 class FrameMetrics(BaseModel):
     """Container for calculated quality scores for a frame."""
 class Frame(BaseModel):
@@ -899,6 +908,8 @@ class Frame(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 class Scene(BaseModel):
     """Represents a detected scene or shot in the video."""
+    @property
+    def duration_frames(self) -> int: ...
 class SceneState:
     """Wrapper to manage state transitions and updates for a Scene object."""
     def __init__(self, scene_data: Union[dict, Scene]): ...
@@ -1172,6 +1183,12 @@ def execute_session_load(event: dict, logger: 'AppLogger') -> dict: ...
 def execute_propagation(event: PropagationEvent, progress_queue: Queue, cancel_event: threading.Event, logger: 'AppLogger', config: 'Config', thumbnail_manager: 'ThumbnailManager', cuda_available: bool, progress: Optional[Callable]=None, model_registry: Optional['ModelRegistry']=None) -> Generator[dict, None, None]: ...
 @handle_common_errors
 def execute_analysis(event: PropagationEvent, progress_queue: Queue, cancel_event: threading.Event, logger: 'AppLogger', config: 'Config', thumbnail_manager: 'ThumbnailManager', cuda_available: bool, progress: Optional[Callable]=None, model_registry: Optional['ModelRegistry']=None) -> Generator[dict, None, None]: ...
+@handle_common_errors
+def execute_analysis_orchestrator(event: 'PreAnalysisEvent', progress_queue: Queue, cancel_event: threading.Event, logger: 'AppLogger', config: 'Config', thumbnail_manager: 'ThumbnailManager', cuda_available: bool, progress: Optional[Callable]=None, model_registry: Optional['ModelRegistry']=None) -> Generator[dict, None, None]:
+    """Orchestrates Pre-Analysis, Propagation, and Analysis stages."""
+@handle_common_errors
+def execute_full_pipeline(event: 'ExtractionEvent', progress_queue: Queue, cancel_event: threading.Event, logger: 'AppLogger', config: 'Config', thumbnail_manager: 'ThumbnailManager', cuda_available: bool, progress: Optional[Callable]=None, model_registry: Optional['ModelRegistry']=None) -> Generator[dict, None, None]:
+    """Orchestrates the entire flow: Extraction -> Pre-Analysis -> Propagation -> An..."""
 ```
 
 ### `📄 core/progress.py`
@@ -1220,6 +1237,10 @@ def patch_sam3_resources():
     """Monkey patch pkg_resources within sam3.model_builder to use importlib.resources."""
 def _check_sam3_version(predictor_path: Path) -> bool:
     """Check if the SAM3 predictor file matches the expected hash."""
+def patch_sam3_bf16_stability():
+    """Patch TransformerDecoderLayer.forward_ffn to handle BFloat16 inputs"""
+def patch_sam3_detect_objects():
+    """Add detect_objects capability to Sam3VideoPredictor classes."""
 def apply_patches():
     """Apply all monkey patches to SAM3 with version safety check."""
 ```
@@ -1396,6 +1417,8 @@ def generate_full_diagnostic_report(config: Any, logger: Any, progress_queue: An
 ### `📄 core/utils.py`
 
 ```python
+def _setup_triton_mock():
+    """Mocks the Triton library if it's missing (e.g., on Windows or non-CUDA enviro..."""
 def handle_common_errors(func: Callable) -> Callable:
     """Decorator to catch common exceptions and return a standardized error dictiona..."""
 def monitor_memory_usage(logger: 'AppLogger', device: str, threshold_mb: int=8000):
@@ -1456,11 +1479,6 @@ class AppUI:
     """Main UI class for the Frame Extractor & Analyzer application."""
     def __init__(self, config: 'Config', logger: 'AppLogger', progress_queue: Queue, cancel_event: threading.Event, thumbnail_manager: 'ThumbnailManager', model_registry: 'ModelRegistry'):
         """Initialize the AppUI."""
-    def _handle_exception(self, e: Exception, context: str='Operation') -> dict:
-        """Standardized exception handling for UI callbacks."""
-    @staticmethod
-    def safe_ui_callback(context: str):
-        """Decorator to wrap UI callbacks with error handling."""
     def preload_models(self):
         """Asynchronously preloads heavy models (SAM3) in a background thread."""
     def build_ui(self) -> gr.Blocks:
@@ -1471,7 +1489,7 @@ class AppUI:
         """Registers a component for later retrieval by UI mapping key."""
     def _create_component(self, name: str, comp_type: str, kwargs: dict) -> gr.components.Component:
         """Helper to create and register a Gradio component."""
-    def _create_section_header(self, title: str, subtitle: str=None, icon: str='📂'):
+    def _create_section_header(self, title: str, subtitle: str=None, icon: str=None):
         """Creates a standardized section header."""
     def _build_header(self):
         """Builds the UI header section with title and status indicators."""
@@ -1479,63 +1497,48 @@ class AppUI:
         """Constructs the main tabbed interface."""
     def _build_footer(self):
         """Builds the footer with status bar, logs, and help section."""
-    def get_all_filter_keys(self) -> list[str]:
+    def _get_all_filter_keys(self) -> list[str]:
         """Returns a list of all available filter metric keys."""
-    def get_metric_description(self, metric_name: str) -> str:
+    def _get_metric_description(self, metric_name: str) -> str:
         """Returns a user-friendly description for a given metric."""
     def _create_event_handlers(self):
         """Sets up all global event listeners and state management."""
     def _run_task_with_progress(self, task_func: Callable, output_components: list, progress: Callable, *args) -> Generator[dict, None, None]:
         """Executes a background task while streaming progress updates to the UI."""
+    @safe_ui_callback('Toggle Pause')
     def _toggle_pause(self, tracker: 'AdvancedProgressTracker') -> str:
         """Toggles the pause state of the current running task."""
+    @safe_ui_callback('Diagnostics')
     def run_system_diagnostics(self) -> Generator[str, None, None]:
         """Runs a comprehensive suite of system checks and a dry run via core.system_hea..."""
-    def get_ui_updates_from_state(self, state: ApplicationState) -> dict:
+    def _get_ui_updates_from_state(self, state: ApplicationState) -> dict:
         """Centralized reducer that maps ApplicationState to Gradio component updates."""
     def _create_pre_analysis_event(self, state: ApplicationState, *args: Any) -> 'PreAnalysisEvent':
         """Helper to construct a PreAnalysisEvent from UI arguments."""
     def _run_pipeline(self, pipeline_func: Callable, event: Any, progress: Callable, success_callback: Optional[Callable]=None, *args):
         """Generic wrapper to run a pipeline function and handle progress/errors."""
-    def run_extraction_wrapper(self, current_state: ApplicationState, *args, progress=None):
-        """Wrapper to execute the extraction pipeline."""
+    @safe_ui_callback('Extraction')
+    @safe_ui_callback('Add to Queue')
     def add_to_queue_handler(self, *args):
         """Adds a job to the batch processing queue."""
+    @safe_ui_callback('Clear Queue')
     def clear_queue_handler(self):
         """Clears all items from the batch queue."""
     def _batch_processor(self, item: BatchItem, progress_callback: Callable):
         """Callback to process a single item in the batch queue."""
+    @safe_ui_callback('Start Batch')
     def start_batch_wrapper(self, workers: float):
         """Starts processing the batch queue with specified number of workers."""
+    @safe_ui_callback('Stop Batch')
     def stop_batch_handler(self):
         """Stops the batch processing."""
     def _save_session_log(self, output_dir_str: str):
         """Helper to save logs to the result directory."""
-    def _on_extraction_success(self, result: dict, current_state: ApplicationState) -> dict:
-        """Callback for successful extraction."""
-    def _on_pre_analysis_success(self, result: dict, current_state: ApplicationState) -> dict:
-        """Callback for successful pre-analysis."""
-    def run_pre_analysis_wrapper(self, current_state: ApplicationState, *args, progress=None):
-        """Wrapper to execute the pre-analysis pipeline."""
-    def _propagation_button_handler(self, current_state: ApplicationState, *args, progress=None):
-        """Button handler for propagation that properly yields from the generator."""
-    def _analysis_button_handler(self, current_state: ApplicationState, *args, progress=None):
-        """Button handler for analysis that properly yields from the generator."""
-    def run_propagation_wrapper(self, scenes, current_state: ApplicationState, *args, progress=None):
-        """Wrapper to execute the mask propagation pipeline."""
-    def _on_propagation_success(self, result: dict, current_state: ApplicationState) -> dict:
-        """Callback for successful propagation."""
-    def run_analysis_wrapper(self, scenes, current_state: ApplicationState, *args, progress=None):
-        """Wrapper to execute the full analysis pipeline."""
-    def _on_analysis_success(self, result: dict, current_state: ApplicationState) -> dict:
-        """Callback for successful analysis."""
-    def run_session_load_wrapper(self, session_path: str, current_state: ApplicationState):
-        """Loads a previous session and updates the UI state."""
     def _fix_strategy_visibility(self, strategy: str) -> dict:
         """Adjusts UI component visibility based on the selected seed strategy."""
     def _setup_visibility_toggles(self):
         """Configures dynamic visibility logic for UI components."""
-    def get_inputs(self, keys: list[str]) -> list[gr.components.Component]:
+    def _get_inputs(self, keys: list[str]) -> list[gr.components.Component]:
         """Retrieves a list of UI components based on their registry keys."""
     def _setup_pipeline_handlers(self):
         """Configures event handlers for starting main processing pipelines."""
@@ -1552,6 +1555,7 @@ class AppUI:
         """Calculates slider updates when toggling 'Smart Mode'."""
     def _setup_filtering_handlers(self):
         """Configures event handlers for the filtering and export tab."""
+    @safe_ui_callback('Preset Change')
     def on_preset_changed(self, preset_name: str) -> list[Any]:
         """Updates filter sliders when a preset is selected."""
     @safe_ui_callback('Filter Change')
@@ -1563,6 +1567,7 @@ class AppUI:
     @safe_ui_callback('Reset Filters')
     def on_reset_filters(self, state: ApplicationState) -> tuple:
         """Resets all filter settings to their defaults."""
+    @safe_ui_callback('Auto Thresholds')
     def on_auto_set_thresholds(self, per_metric_values: dict, p: int, *checkbox_values: bool) -> list[gr.update]:
         """Automatically sets filter thresholds based on data percentiles."""
     @safe_ui_callback('Export')
@@ -1588,6 +1593,15 @@ class LogViewer:
         """Sets up background log refresh and filter toggles."""
 ```
 
+### `📄 ui/decorators.py`
+
+```python
+def safe_ui_callback(context: str):
+    """Decorator to wrap UI callbacks with error handling, supporting both returns a..."""
+def _handle_ui_exception(app: Any, e: Exception, context: str='Operation') -> dict:
+    """Standardized exception handling for UI callbacks."""
+```
+
 ### `📄 ui/gallery_utils.py`
 
 ```python
@@ -1609,7 +1623,40 @@ def auto_set_thresholds(per_metric_values: dict, p: int, slider_keys: list[str],
 
 ```python
 """UI Handlers package for Frame Extractor."""
-__all__ = ['SceneHandler']
+__all__ = ['SceneHandler', 'PipelineHandler']
+```
+
+### `📄 ui/handlers/pipeline_handlers.py`
+
+```python
+class PipelineHandler:
+    """Handles pipeline execution triggers and callbacks for the UI."""
+    def __init__(self, app: 'AppUI'): ...
+    @safe_ui_callback('Extraction')
+    def run_extraction_wrapper(self, current_state: ApplicationState, *args, progress=None):
+        """Wrapper to execute the frame extraction pipeline."""
+    def _on_extraction_success(self, result: dict, current_state: ApplicationState) -> dict:
+        """Callback for successful extraction."""
+    @safe_ui_callback('Pre-Analysis')
+    def run_pre_analysis_wrapper(self, current_state: ApplicationState, *args, progress=None):
+        """Wrapper to execute the pre-analysis pipeline."""
+    def _on_pre_analysis_success(self, result: dict, current_state: ApplicationState) -> dict:
+        """Callback for successful pre-analysis."""
+    def _propagation_button_handler(self, current_state: ApplicationState):
+        """Unified guard for propagation button."""
+    @safe_ui_callback('Propagation')
+    def run_propagation_wrapper(self, current_state: ApplicationState, *args, progress=None):
+        """Wrapper to execute the mask propagation pipeline."""
+    def _on_propagation_success(self, result: dict, current_state: ApplicationState) -> dict:
+        """Callback for successful propagation."""
+    @safe_ui_callback('Analysis')
+    def run_analysis_wrapper(self, current_state: ApplicationState, *args, progress=None):
+        """Wrapper to execute the full analysis pipeline."""
+    def _on_analysis_success(self, result: dict, current_state: ApplicationState) -> dict:
+        """Callback for successful analysis."""
+    @safe_ui_callback('Load Session')
+    def run_session_load_wrapper(self, session_path: str, current_state: ApplicationState):
+        """Loads a previous session and updates the UI state."""
 ```
 
 ### `📄 ui/handlers/scene_handler.py`

@@ -98,7 +98,7 @@ def main():
                 logger.warning(f"Invalid auth format '{config.auth}'. Expected 'username:password'. Auth disabled.")
 
         logger.info(f"Launching on {config.server_name}:{config.server_port} (Share: {config.share})")
-        demo.launch(**launch_kwargs)
+        demo.launch(css=app_ui.css, **launch_kwargs)
     except KeyboardInterrupt:
         if "logger" in locals():
             logger.info("\nApplication stopped by user")

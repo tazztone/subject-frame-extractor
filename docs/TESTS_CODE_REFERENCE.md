@@ -12,6 +12,7 @@ This file contains auto-generated code skeletons for the test suite.
 ## Table of Contents
 
 tests  
+├──&nbsp;[`__init__.py`](#-tests__init__py)  
 ├──&nbsp;assets  
 ├──&nbsp;[`conftest.py`](#-testsconftestpy)  
 ├──&nbsp;e2e  
@@ -78,6 +79,7 @@ tests
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_cli_utils.py`](#-testsunittest_cli_utilspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_concurrency.py`](#-testsunittest_concurrencypy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_config.py`](#-testsunittest_configpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_context_adherence.py`](#-testsunittest_context_adherencepy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_core.py`](#-testsunittest_corepy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_database.py`](#-testsunittest_databasepy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_dedup.py`](#-testsunittest_deduppy)  
@@ -123,13 +125,14 @@ tests
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_pipelines_wrapper.py`](#-testsunittest_pipelines_wrapperpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_progress.py`](#-testsunittest_progresspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_quality_score.py`](#-testsunittest_quality_scorepy)  
-&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_sam21.py`](#-testsunittest_sam21py)  
-&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_sam21_wrapper.py`](#-testsunittest_sam21_wrapperpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_sam2.py`](#-testsunittest_sam2py)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_sam2_wrapper.py`](#-testsunittest_sam2_wrapperpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_sam3_manager.py`](#-testsunittest_sam3_managerpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_sam3_wrapper.py`](#-testsunittest_sam3_wrapperpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_scene_detection.py`](#-testsunittest_scene_detectionpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_scene_utils.py`](#-testsunittest_scene_utilspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_scene_utils_helpers.py`](#-testsunittest_scene_utils_helperspy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_seed_selector_extended.py`](#-testsunittest_seed_selector_extendedpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_session.py`](#-testsunittest_sessionpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_shared.py`](#-testsunittest_sharedpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_sharpness.py`](#-testsunittest_sharpnesspy)  
@@ -157,6 +160,11 @@ class OutOfMemoryError(RuntimeError):
     """Mock CUDA OutOfMemoryError."""
 class VideoOpenFailure(RuntimeError):
     """Mock PySceneDetect VideoOpenFailure."""
+class TransparentContext:
+    """Empty context manager that does nothing but allows 'with' blocks."""
+    def __enter__(self, *args, **kwargs): ...
+    def __exit__(self, *args, **kwargs): ...
+    def __call__(self, func=None): ...
 _mock_torch_obj = MagicMock(name='torch')
 _mock_torch_obj.cuda.is_available.return_value = False
 _mock_torch_obj.cuda.device_count.return_value = 0
@@ -168,8 +176,12 @@ _mock_torch_obj.__version__ = "<REDACTED_STRING>"
 _mock_torch_obj.nn.Module = MagicMock
 _mock_torch_obj.Tensor = MagicMock
 _mock_torch_obj.device = MagicMock
-_mock_torch_obj.float = MagicMock()
-_mock_torch_obj.uint8 = MagicMock()
+_mock_torch_obj.float = MagicMock(name='torch.float')
+_mock_torch_obj.float32 = MagicMock(name='torch.float32')
+_mock_torch_obj.float16 = MagicMock(name='torch.float16')
+_mock_torch_obj.bfloat16 = MagicMock(name='torch.bfloat16')
+_mock_torch_obj.uint8 = MagicMock(name='torch.uint8')
+_mock_torch_obj.int64 = MagicMock(name='torch.int64')
 _mock_torch_obj.version = MagicMock()
 _mock_torch_obj.version.cuda = "<REDACTED_STRING>"
 def _create_mock_tensor(name='tensor', shape=None, value=None, **kwargs): ...
@@ -178,10 +190,10 @@ _mock_torch_obj.zeros = MagicMock(side_effect=lambda shape, **kwargs: _create...
 _mock_torch_obj.ones = MagicMock(side_effect=lambda shape, **kwargs: _create_...
 _mock_torch_obj.rand = MagicMock(side_effect=lambda *shape, **kwargs: _create...
 _mock_torch_obj.randn = MagicMock(side_effect=lambda *shape, **kwargs: _creat...
+_mock_torch_obj.empty = MagicMock(side_effect=lambda *shape, **kwargs: _creat...
 _mock_torch_obj.tensor = MagicMock(side_effect=lambda data, **kwargs: _create...
-_mock_torch_obj.no_grad = MagicMock()
-_mock_torch_obj.no_grad.return_value.__enter__ = MagicMock()
-_mock_torch_obj.no_grad.return_value.__exit__ = MagicMock(return_value=False)
+_mock_torch_obj.no_grad = TransparentContext
+_mock_torch_obj.inference_mode = TransparentContext
 _mock_torch_obj.SymFloat = MagicMock
 _mock_torch_obj.SymInt = MagicMock
 modules_to_mock = {'torch': _create_mock_module('torch', {'cuda': _mock_torch...
@@ -435,9 +447,28 @@ mock_sam3 = MagicMock(name='sam3')
 mock_sam3.model_builder = MagicMock()
 class OutOfMemoryError(RuntimeError): ...
 class VideoOpenFailure(RuntimeError): ...
+class TransparentContext:
+    """Empty context manager that does nothing but allows 'with' blocks."""
+    def __enter__(self, *args, **kwargs): ...
+    def __exit__(self, *args, **kwargs): ...
+    def __call__(self, func=None): ...
+def _create_mock_tensor(name='tensor', shape=None, value=None, **kwargs): ...
 mock_torch.cuda.OutOfMemoryError = OutOfMemoryError
 mock_torch.cuda.get_device_name = MagicMock(return_value='Mock GPU')
 mock_torch.cuda.empty_cache = MagicMock()
+mock_torch.float = MagicMock(name='torch.float')
+mock_torch.float32 = MagicMock(name='torch.float32')
+mock_torch.float16 = MagicMock(name='torch.float16')
+mock_torch.bfloat16 = MagicMock(name='torch.bfloat16')
+mock_torch.uint8 = MagicMock(name='torch.uint8')
+mock_torch.int64 = MagicMock(name='torch.int64')
+mock_torch.device = MagicMock()
+mock_torch.from_numpy = MagicMock(side_effect=lambda np_arr: _create_mock_ten...
+mock_torch.zeros = MagicMock(side_effect=lambda shape, **kwargs: _create_mock...
+mock_torch.ones = MagicMock(side_effect=lambda shape, **kwargs: _create_mock_...
+mock_torch.tensor = MagicMock(side_effect=lambda data, **kwargs: _create_mock...
+mock_torch.no_grad = TransparentContext
+mock_torch.inference_mode = TransparentContext
 modules_map = {'torch': create_mock_module('torch', {'cuda': mock_torch.cuda,...
 def mock_extraction_run(self, tracker=None):
     """Mocks the extraction process."""
@@ -445,15 +476,18 @@ def mock_pre_analysis_execution(event, progress_queue, cancel_event, logger, con
     """Mocks execute_pre_analysis generator."""
 def mock_propagation_execution(event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress=None, model_registry=None): ...
 def mock_analysis_execution(event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress=None, model_registry=None): ...
+def mock_analysis_orchestrator(event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress=None, model_registry=None):
+    """Mocks the analysis orchestrator workflow."""
+def mock_full_pipeline_execution(event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress=None, model_registry=None):
+    """Mocks the full pipeline orchestrator workflow."""
 def mock_ingest_folder(folder_path, output_dir): ...
 def mock_apply_scores_to_photos(photos, weights): ...
 def mock_export_xmps_for_photos(photos, thresholds=None): ...
 def mock_export_kept_frames(*args, **kwargs): ...
 core.pipelines.ExtractionPipeline._run_impl = mock_extraction_run
 ui.app_ui.AppUI.preload_models = MagicMock(side_effect=lambda *args: None)
-core.pipelines.execute_pre_analysis = ui.app_ui.execute_pre_analysis = mock_p...
-core.pipelines.execute_propagation = ui.app_ui.execute_propagation = mock_pro...
-core.pipelines.execute_analysis = ui.app_ui.execute_analysis = mock_analysis_...
+core.fingerprint.create_fingerprint = MagicMock(return_value={})
+core.fingerprint.save_fingerprint = MagicMock()
 ui.app_ui.export_kept_frames = mock_export_kept_frames
 core.export.export_kept_frames = mock_export_kept_frames
 core.photo_utils.ingest_folder = mock_ingest_folder
@@ -1124,7 +1158,7 @@ class TestAppUI:
     def test_on_filters_changed_wrapper(self, app_ui, tmp_path):
         """Test on_filters_changed_wrapper uses ApplicationState data."""
     def test_on_auto_set_thresholds(self, app_ui): ...
-    @patch('ui.app_ui.execute_session_load')
+    @patch('ui.handlers.pipeline_handlers.execute_session_load')
     def test_run_session_load_wrapper(self, mock_load, app_ui, app_state, tmp_path): ...
 ```
 
@@ -1180,12 +1214,10 @@ def test_extract_video(mock_setup, mock_execute, runner, tmp_path, mock_pipeline
 @patch('core.cli_commands.execute_extraction')
 @patch('core.cli_commands._setup_runtime')
 def test_extract_folder(mock_setup, mock_execute, runner, tmp_path, mock_pipeline_result): ...
-@patch('core.cli_commands.execute_analysis')
-@patch('core.cli_commands.execute_propagation')
-@patch('core.cli_commands.execute_pre_analysis')
+@patch('core.cli_commands.execute_analysis_orchestrator')
 @patch('core.cli_commands._setup_runtime')
 @patch('torch.cuda.is_available', return_value=False)
-def test_analyze(mock_cuda, mock_setup, mock_pre, mock_prop, mock_analysis, runner, tmp_path, mock_pipeline_result): ...
+def test_analyze(mock_cuda, mock_setup, mock_orch, runner, tmp_path, mock_pipeline_result): ...
 def test_status_non_existent(runner, tmp_path): ...
 def test_status_exists(runner, tmp_path): ...
 @patch('core.cli_commands._setup_runtime')
@@ -1195,11 +1227,10 @@ def test_filter(mock_apply, mock_db, mock_setup, runner, tmp_path): ...
 @pytest.mark.parametrize('command', ['extract', 'analyze', 'status', 'filter'])
 def test_cli_help_commands(runner, command): ...
 def test_extract_invalid_source(runner, tmp_path): ...
-@patch('core.cli_commands.execute_analysis')
-@patch('core.cli_commands.execute_pre_analysis')
+@patch('core.cli_commands.execute_analysis_orchestrator')
 @patch('core.cli_commands._setup_runtime')
 @patch('torch.cuda.is_available', return_value=False)
-def test_analyze_folder(mock_cuda, mock_setup, mock_pre, mock_analysis, runner, tmp_path, mock_pipeline_result): ...
+def test_analyze_folder(mock_cuda, mock_setup, mock_orch, runner, tmp_path, mock_pipeline_result): ...
 ```
 
 ### `📄 tests/unit/test_cli_utils.py`
@@ -1250,6 +1281,25 @@ def test_config_json_source():
     """Test loading configuration from a JSON file."""
 def test_quality_weights_property():
     """Test the quality_weights property helper."""
+```
+
+### `📄 tests/unit/test_context_adherence.py`
+
+```python
+pytestmark = pytest.mark.context_eval
+def get_python_files(directory): ...
+class TestArchitecturalIsolation:
+    """Rule: NEVER import from ui/ inside core/."""
+    def test_core_does_not_import_from_ui(self): ...
+class TestConfigSafety:
+    """Rule: NEVER use @lru_cache on functions taking the Config object."""
+    def test_no_lru_cache_on_config_functions(self): ...
+class TestUISafety:
+    """Rule: UI event handlers in app_ui.py MUST be wrapped in @AppUI.safe_ui_callback."""
+    def test_ui_handlers_have_safe_callback(self): ...
+class TestMilestoneCase:
+    """Rule: ALWAYS use Title Case for major pipeline milestones."""
+    def test_milestone_strings_are_title_case(self): ...
 ```
 
 ### `📄 tests/unit/test_core.py`
@@ -1882,11 +1932,11 @@ class TestManagers:
     @patch('core.managers.face.python.BaseOptions')
     @patch('core.managers.face.vision.FaceLandmarkerOptions')
     def test_get_face_landmarker(self, mock_opts, mock_base, mock_cls, mock_logger): ...
-    @patch('core.managers.models.get_face_analyzer')
-    @patch('core.managers.models.download_model')
+    @patch('core.managers.model_loader.get_face_analyzer')
+    @patch('core.managers.model_loader.download_model')
     @patch('pathlib.Path.exists', return_value=True)
     @patch('pathlib.Path.is_file', return_value=True)
-    @patch('core.managers.models.get_face_landmarker')
+    @patch('core.managers.model_loader.get_face_landmarker')
     @patch('cv2.imread', return_value=np.zeros((100, 100, 3)))
     def test_initialize_analysis_models(self, mock_imread, mock_get_landmarker, mock_isfile, mock_exists, mock_download, mock_get_analyzer, mock_config, mock_logger): ...
     @patch('insightface.app.FaceAnalysis')
@@ -1894,7 +1944,7 @@ class TestManagers:
     @patch('core.managers.thumbnails.Image.open')
     @patch('pathlib.Path.exists', return_value=True)
     def test_thumbnail_manager_corrupt_file(self, mock_exists, mock_open, mock_logger, mock_config): ...
-    @patch('core.managers.models.lpips.LPIPS')
+    @patch('core.managers.model_loader.lpips.LPIPS')
     def test_get_lpips_metric(self, mock_lpips): ...
 ```
 
@@ -1958,7 +2008,6 @@ def test_frame_model(): ...
 def test_sanitize_face_ref(tmp_path): ...
 def test_scene_state(): ...
 def test_analysis_parameters_from_ui(): ...
-def test_quality_config(): ...
 def test_scene_state_dict_and_initial_bbox(): ...
 def test_analysis_parameters_optional_coercion(): ...
 def test_coerce_more(): ...
@@ -2042,12 +2091,10 @@ def test_run_operators_quality_score_last(): ...
 ```python
 class TestPhase1Logic(unittest.TestCase):
     def setUp(self): ...
-    @patch('ui.app_ui.is_image_folder')
-    @patch('ui.app_ui.get_scene_status_text')
-    def test_on_pre_analysis_success_image_folder(self, mock_get_status, mock_is_image_folder): ...
-    @patch('ui.app_ui.is_image_folder')
-    @patch('ui.app_ui.get_scene_status_text')
-    def test_on_pre_analysis_success_video_folder(self, mock_get_status, mock_is_image_folder): ...
+    @patch('ui.handlers.pipeline_handlers.get_scene_status_text')
+    def test_on_pre_analysis_success_image_folder(self, mock_get_status): ...
+    @patch('ui.handlers.pipeline_handlers.get_scene_status_text')
+    def test_on_pre_analysis_success_video_folder(self, mock_get_status): ...
     def test_propagation_button_handler_guard(self): ...
 ```
 
@@ -2227,7 +2274,7 @@ def test_quality_score_empty_shared_data():
     """Test with weights but no metrics."""
 ```
 
-### `📄 tests/unit/test_sam21.py`
+### `📄 tests/unit/test_sam2.py`
 
 ```python
 @pytest.fixture
@@ -2236,39 +2283,39 @@ def mock_sam2_predictor(): ...
 def mock_cuda(): ...
 def test_sam21_wrapper_init(mock_sam2_predictor):
     """Test initialization logic and lazy loading."""
-@patch('core.managers.sam21.torch.inference_mode')
+@patch('core.managers.sam2.torch.inference_mode')
 def test_sam21_init_video(mock_inference_mode, mock_sam2_predictor):
     """Test that init_video calls the underlying predictor."""
-@patch('core.managers.sam21.torch.inference_mode')
+@patch('core.managers.sam2.torch.inference_mode')
 def test_sam21_propagate_in_video(mock_inference_mode, mock_sam2_predictor):
     """Test the propagate generator logic."""
 def test_sam21_close_session(mock_sam2_predictor, mock_cuda):
     """Test the cleanup logic in close_session."""
 ```
 
-### `📄 tests/unit/test_sam21_wrapper.py`
+### `📄 tests/unit/test_sam2_wrapper.py`
 
 ```python
-"""Unit tests for SAM21Wrapper API completeness and functionality."""
+"""Unit tests for SAM2Wrapper API completeness and functionality."""
 @pytest.fixture
 def mock_predictor(): ...
-@patch('core.managers.sam21.build_sam2_video_predictor')
-@patch('core.managers.sam21.torch.cuda.is_available', return_value=False)
-def test_sam21_wrapper_init(mock_cuda, mock_build, mock_predictor): ...
-@patch('core.managers.sam21.build_sam2_video_predictor')
-def test_sam21_wrapper_session_lifecycle(mock_build, mock_predictor): ...
-@patch('core.managers.sam21.build_sam2_video_predictor')
-def test_sam21_wrapper_add_bbox_prompt(mock_build, mock_predictor): ...
-@patch('core.managers.sam21.build_sam2_video_predictor')
-def test_sam21_wrapper_propagate(mock_build, mock_predictor): ...
-@patch('core.managers.sam21.build_sam2_video_predictor')
-def test_sam21_wrapper_add_point_prompt(mock_build, mock_predictor): ...
-@patch('core.managers.sam21.build_sam2_video_predictor')
-def test_sam21_wrapper_stubs_and_utility(mock_build, mock_predictor): ...
-@patch('core.managers.sam21.build_sam2_video_predictor')
-@patch('core.managers.sam21.torch.cuda.is_available', return_value=True)
-@patch('core.managers.sam21.torch.cuda.empty_cache')
-def test_sam21_wrapper_shutdown(mock_empty_cache, mock_cuda, mock_build, mock_predictor): ...
+@patch('core.managers.sam2.build_sam2_video_predictor')
+@patch('core.managers.sam2.torch.cuda.is_available', return_value=False)
+def test_sam2_wrapper_init(mock_cuda, mock_build, mock_predictor): ...
+@patch('core.managers.sam2.build_sam2_video_predictor')
+def test_sam2_wrapper_session_lifecycle(mock_build, mock_predictor): ...
+@patch('core.managers.sam2.build_sam2_video_predictor')
+def test_sam2_wrapper_add_bbox_prompt(mock_build, mock_predictor): ...
+@patch('core.managers.sam2.build_sam2_video_predictor')
+def test_sam2_wrapper_propagate(mock_build, mock_predictor): ...
+@patch('core.managers.sam2.build_sam2_video_predictor')
+def test_sam2_wrapper_add_point_prompt(mock_build, mock_predictor): ...
+@patch('core.managers.sam2.build_sam2_video_predictor')
+def test_sam2_wrapper_stubs_and_utility(mock_build, mock_predictor): ...
+@patch('core.managers.sam2.build_sam2_video_predictor')
+@patch('core.managers.sam2.torch.cuda.is_available', return_value=True)
+@patch('core.managers.sam2.torch.cuda.empty_cache')
+def test_sam2_wrapper_shutdown(mock_empty_cache, mock_cuda, mock_build, mock_predictor): ...
 ```
 
 ### `📄 tests/unit/test_sam3_manager.py`
@@ -2476,6 +2523,23 @@ class TestSceneUtilsHelpers:
     @patch('core.scene_utils.helpers.build_scene_gallery_items')
     def test_wire_recompute_handler(self, mock_build_gallery, mock_save, mock_recompute, mock_create_context, mock_config, mock_logger, mock_scene): ...
     def test_wire_recompute_handler_no_prompt(self, mock_logger): ...
+```
+
+### `📄 tests/unit/test_seed_selector_extended.py`
+
+```python
+"""Extended tests for SeedSelector to improve coverage."""
+class TestSeedSelectorExtended:
+    @pytest.fixture
+    def selector(self, mock_config_simple, mock_logger, mock_params): ...
+    def test_identity_first_seed_no_face(self, selector): ...
+    def test_object_first_seed_success(self, selector): ...
+    def test_find_target_face_match(self, selector): ...
+    def test_expand_face_to_body(self, selector): ...
+    def test_xyxy_to_xywh_padding(self, selector): ...
+    def test_choose_person_by_strategy_fallback(self, selector): ...
+    def test_calculate_iou(self, selector): ...
+    def test_box_contains(self, selector): ...
 ```
 
 ### `📄 tests/unit/test_session.py`
@@ -2700,7 +2764,7 @@ def test_simulate_pipeline_success(tmp_path): ...
 ### `📄 tests/unit/test_tracker_factory.py`
 
 ```python
-@patch('core.managers.sam21.SAM21Wrapper')
+@patch('core.managers.sam2.SAM2Wrapper')
 def test_selects_sam21(mock_sam21):
     """Test that SAM21Wrapper is selected when SAM2 is requested."""
 @patch('core.managers.sam3.SAM3Wrapper')

@@ -41,6 +41,21 @@ class VideoOpenFailure(RuntimeError):
     pass
 
 
+class TransparentContext:
+    """Empty context manager that does nothing but allows 'with' blocks."""
+
+    def __enter__(self, *args, **kwargs):
+        return self
+
+    def __exit__(self, *args, **kwargs):
+        pass
+
+    def __call__(self, func=None):
+        if func is not None:
+            return func
+        return self
+
+
 # Build the base torch mock
 _mock_torch_obj = MagicMock(name="torch")
 _mock_torch_obj.cuda.is_available.return_value = False
@@ -53,8 +68,12 @@ _mock_torch_obj.__version__ = "2.0.0"
 _mock_torch_obj.nn.Module = MagicMock
 _mock_torch_obj.Tensor = MagicMock
 _mock_torch_obj.device = MagicMock
-_mock_torch_obj.float = MagicMock()
-_mock_torch_obj.uint8 = MagicMock()
+_mock_torch_obj.float = MagicMock(name="torch.float")
+_mock_torch_obj.float32 = MagicMock(name="torch.float32")
+_mock_torch_obj.float16 = MagicMock(name="torch.float16")
+_mock_torch_obj.bfloat16 = MagicMock(name="torch.bfloat16")
+_mock_torch_obj.uint8 = MagicMock(name="torch.uint8")
+_mock_torch_obj.int64 = MagicMock(name="torch.int64")
 _mock_torch_obj.version = MagicMock()
 _mock_torch_obj.version.cuda = "12.1"
 
@@ -132,6 +151,7 @@ _mock_torch_obj.zeros = MagicMock(side_effect=lambda shape, **kwargs: _create_mo
 _mock_torch_obj.ones = MagicMock(side_effect=lambda shape, **kwargs: _create_mock_tensor("ones", shape))
 _mock_torch_obj.rand = MagicMock(side_effect=lambda *shape, **kwargs: _create_mock_tensor("rand", shape))
 _mock_torch_obj.randn = MagicMock(side_effect=lambda *shape, **kwargs: _create_mock_tensor("randn", shape))
+_mock_torch_obj.empty = MagicMock(side_effect=lambda *shape, **kwargs: _create_mock_tensor("empty", shape))
 _mock_torch_obj.tensor = MagicMock(
     side_effect=lambda data, **kwargs: _create_mock_tensor(
         "tensor",
@@ -139,9 +159,8 @@ _mock_torch_obj.tensor = MagicMock(
         data,
     )
 )
-_mock_torch_obj.no_grad = MagicMock()
-_mock_torch_obj.no_grad.return_value.__enter__ = MagicMock()
-_mock_torch_obj.no_grad.return_value.__exit__ = MagicMock(return_value=False)
+_mock_torch_obj.no_grad = TransparentContext
+_mock_torch_obj.inference_mode = TransparentContext
 _mock_torch_obj.SymFloat = MagicMock
 _mock_torch_obj.SymInt = MagicMock
 
