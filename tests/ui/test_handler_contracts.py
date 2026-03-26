@@ -72,7 +72,7 @@ def test_pipeline_wrappers_yield_component_keys(mock_app):
         mock_exec.side_effect = Exception("Test Error")
 
         # The wrapper catch-block yields the error dict
-        gen = mock_app.run_extraction_wrapper(state)
+        gen = mock_app.pipeline_handler.run_extraction_wrapper(state)
         first_yield = next(gen)
 
         assert isinstance(first_yield, dict)

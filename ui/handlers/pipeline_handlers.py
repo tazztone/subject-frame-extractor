@@ -73,10 +73,6 @@ class PipelineHandler:
         return {
             self.app.components["application_state"]: new_state,
             self.app.components["unified_status"]: msg,
-            self.app.components["extracted_video_path_state"]: gr.update(
-                value=result.get("extracted_video_path_state", "")
-            ),
-            self.app.components["extracted_frames_dir_state"]: gr.update(value=result["extracted_frames_dir_state"]),
         }
 
     @safe_ui_callback("Pre-Analysis")
@@ -156,8 +152,9 @@ class PipelineHandler:
         yield {self.app.components["application_state"]: current_state}
 
     @safe_ui_callback("Propagation")
-    def run_propagation_wrapper(self, scenes, current_state: ApplicationState, *args, progress=None):
+    def run_propagation_wrapper(self, current_state: ApplicationState, *args, progress=None):
         """Wrapper to execute the mask propagation pipeline."""
+        scenes = current_state.scenes
         if not scenes:
             yield {self.app.components["unified_log"]: "No scenes."}
             return
@@ -181,8 +178,9 @@ class PipelineHandler:
         }
 
     @safe_ui_callback("Analysis")
-    def run_analysis_wrapper(self, scenes, current_state: ApplicationState, *args, progress=None):
+    def run_analysis_wrapper(self, current_state: ApplicationState, *args, progress=None):
         """Wrapper to execute the full analysis pipeline."""
+        scenes = current_state.scenes
         if not scenes:
             yield {self.app.components["unified_log"]: "No scenes."}
             return
