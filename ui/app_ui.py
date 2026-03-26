@@ -4,6 +4,7 @@ import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from inspect import isgeneratorfunction
 from pathlib import Path
 from queue import Empty, Queue
 from typing import Any, Callable, Dict, Generator, List, Optional
@@ -231,16 +232,27 @@ class AppUI:
 
     @staticmethod
     def safe_ui_callback(context: str):
-        """Decorator to wrap UI callbacks with error handling."""
+        """Decorator to wrap UI callbacks with error handling, supporting both returns and generators."""
 
         def decorator(func: Callable):
-            def wrapper(self, *args, **kwargs):
-                try:
-                    return func(self, *args, **kwargs)
-                except Exception as e:
-                    return self._handle_exception(e, context)
+            if isgeneratorfunction(func):
 
-            return wrapper
+                def generator_wrapper(self, *args, **kwargs):
+                    try:
+                        yield from func(self, *args, **kwargs)
+                    except Exception as e:
+                        yield self._handle_exception(e, context)
+
+                return generator_wrapper
+            else:
+
+                def sync_wrapper(self, *args, **kwargs):
+                    try:
+                        return func(self, *args, **kwargs)
+                    except Exception as e:
+                        return self._handle_exception(e, context)
+
+                return sync_wrapper
 
         return decorator
 
