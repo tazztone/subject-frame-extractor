@@ -275,7 +275,8 @@ class AppUI:
             min-height: 60px;
         }
         """
-        with gr.Blocks(css=css, title="Frame Extractor & Analyzer") as demo:
+        self.css = css
+        with gr.Blocks(title="Frame Extractor & Analyzer") as demo:
             # Unified Application State (Must be first for tab builders)
             self.components["application_state"] = gr.State(ApplicationState())
 

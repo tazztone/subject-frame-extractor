@@ -38,9 +38,114 @@ class VideoOpenFailure(RuntimeError):
     pass
 
 
+class TransparentContext:
+    """Empty context manager that does nothing but allows 'with' blocks."""
+
+    def __enter__(self, *args, **kwargs):
+        return self
+
+    def __exit__(self, *args, **kwargs):
+        pass
+
+    def __call__(self, func=None):
+        if func is not None:
+            return func
+        return self
+
+
+# Stub torch creation functions to return mocks with correct shape
+import numpy as np
+
+
+def _create_mock_tensor(name="tensor", shape=None, value=None, **kwargs):
+    class MockTensor(MagicMock):
+        def __len__(self):
+            if hasattr(self, "_mock_shape") and self._mock_shape is not None:
+                return self._mock_shape[0] if len(self._mock_shape) > 0 else 0
+            return 0
+
+        def __getitem__(self, idx):
+            new_shape = None
+            if hasattr(self, "_mock_shape") and self._mock_shape is not None:
+                if len(self._mock_shape) > 0:
+                    new_shape = self._mock_shape[1:]
+            return _create_mock_tensor(f"{self._mock_name}[{idx}]", shape=new_shape)
+
+        def __gt__(self, other):
+            return _create_mock_tensor(f"{self._mock_name} > {other}", shape=getattr(self, "_mock_shape", None))
+
+        def __bool__(self):
+            return True
+
+        def cpu(self):
+            return self
+
+        def numpy(self):
+            s = getattr(self, "_mock_shape", None)
+            if s is None:
+                s = (100, 100)
+            if isinstance(s, int):
+                s = (s,)
+            return np.zeros(s, dtype=np.float32)
+
+        def __repr__(self):
+            return f"MockTensor(name={self._mock_name}, shape={getattr(self, '_mock_shape', None)})"
+
+        @property
+        def ndim(self):
+            s = getattr(self, "_mock_shape", None)
+            return len(s) if s is not None else 0
+
+    mock_t = MockTensor(name=name)
+    mock_t._mock_shape = shape
+    if shape is not None:
+        mock_t.shape = shape
+    mock_t.device = mock_torch.device("cpu")
+    mock_t.dtype = mock_torch.float32
+    mock_t.size.side_effect = lambda dim=None: shape if dim is None else shape[dim]
+    mock_t.__mul__ = MagicMock(return_value=mock_t)
+    mock_t.__add__ = MagicMock(return_value=mock_t)
+    mock_t.__sub__ = MagicMock(return_value=mock_t)
+    mock_t.__truediv__ = MagicMock(return_value=mock_t)
+    if value is not None:
+        if hasattr(value, "__getitem__") and len(value) > 0:
+            try:
+                # Handle nested lists/arrays
+                flat_val = value
+                while hasattr(flat_val, "__getitem__") and not isinstance(flat_val, (str, bytes)):
+                    flat_val = flat_val[0]
+                mock_t.item.return_value = flat_val
+            except Exception:
+                mock_t.item.return_value = 1.0
+        else:
+            mock_t.item.return_value = value
+    else:
+        mock_t.item.return_value = 1.0
+    return mock_t
+
+
 mock_torch.cuda.OutOfMemoryError = OutOfMemoryError
 mock_torch.cuda.get_device_name = MagicMock(return_value="Mock GPU")
 mock_torch.cuda.empty_cache = MagicMock()
+mock_torch.float = MagicMock(name="torch.float")
+mock_torch.float32 = MagicMock(name="torch.float32")
+mock_torch.float16 = MagicMock(name="torch.float16")
+mock_torch.bfloat16 = MagicMock(name="torch.bfloat16")
+mock_torch.uint8 = MagicMock(name="torch.uint8")
+mock_torch.int64 = MagicMock(name="torch.int64")
+mock_torch.device = MagicMock()
+mock_torch.from_numpy = MagicMock(side_effect=lambda np_arr: _create_mock_tensor("from_numpy", np_arr.shape))
+mock_torch.zeros = MagicMock(side_effect=lambda shape, **kwargs: _create_mock_tensor("zeros", shape))
+mock_torch.ones = MagicMock(side_effect=lambda shape, **kwargs: _create_mock_tensor("ones", shape))
+mock_torch.tensor = MagicMock(
+    side_effect=lambda data, **kwargs: _create_mock_tensor(
+        "tensor",
+        getattr(data, "shape", getattr(data, "__len__", lambda: (1,))() if hasattr(data, "__len__") else ()),
+        data,
+    )
+)
+mock_torch.no_grad = TransparentContext
+mock_torch.inference_mode = TransparentContext
 
 # Define the modules to mock and their structure
 # We use ModuleType to avoid "Environment Pollution" (MagicMock in sys.modules)
@@ -52,12 +157,19 @@ modules_map = {
             "nn": mock_torch.nn,
             "Tensor": mock_torch.Tensor,
             "__version__": "2.0.0",
-            "device": MagicMock(),
-            "float": MagicMock(),
-            "uint8": MagicMock(),
-            "float32": MagicMock(),
-            "int64": MagicMock(),
-            "from_numpy": MagicMock(side_effect=lambda x: MagicMock()),
+            "device": mock_torch.device,
+            "float": mock_torch.float,
+            "uint8": mock_torch.uint8,
+            "float32": mock_torch.float32,
+            "float16": mock_torch.float16,
+            "bfloat16": mock_torch.bfloat16,
+            "int64": mock_torch.int64,
+            "from_numpy": mock_torch.from_numpy,
+            "zeros": mock_torch.zeros,
+            "ones": mock_torch.ones,
+            "tensor": mock_torch.tensor,
+            "no_grad": mock_torch.no_grad,
+            "inference_mode": mock_torch.inference_mode,
         },
     ),
     "torch.cuda": mock_torch.cuda,

@@ -66,7 +66,7 @@ class SubjectTabBuilder:
                             self.app._create_component(
                                 "face_ref_image",
                                 "image",
-                                {"label": "Preview", "interactive": False, "max_height": 150, "show_label": False},
+                                {"label": "Preview", "interactive": False, "height": 150, "show_label": False},
                             )
 
                 # Tab 2: Scan Video (Discovery)
