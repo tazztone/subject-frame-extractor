@@ -16,14 +16,14 @@ class ExtractionTabBuilder:
     def build(self):
         """Creates the content for the 'Source' tab."""
         self.app._create_section_header(
-            "Step 1: Input & Extraction", "Select your video or image folder source and how you want to process it."
+            "Step 1: Input & Extraction", "Select your video source and preferred processing method."
         )
 
         # 1. Source Selection
         with gr.Group():
-            gr.Markdown("#### 📂 Source Selection")
+            gr.Markdown("#### Source Selection")
             with gr.Tabs():
-                with gr.Tab("🔗 Path / URL"):
+                with gr.Tab("Path / URL"):
                     with gr.Row():
                         with gr.Column(scale=4):
                             self.app._reg(
@@ -34,7 +34,6 @@ class ExtractionTabBuilder:
                                     {
                                         "label": "Input Path or URL",
                                         "placeholder": "Paste YouTube URL or local path (file/folder)...",
-                                        "info": "Enter a path to a video file, a folder of images, or a YouTube link.",
                                         "show_label": False,
                                         "container": False,
                                         "scale": 4,
@@ -61,7 +60,7 @@ class ExtractionTabBuilder:
                                 ),
                             )
 
-                with gr.Tab("⬆️ Upload File"):
+                with gr.Tab("Upload File"):
                     self.app._reg(
                         "upload_video",
                         self.app._create_component(
@@ -79,7 +78,7 @@ class ExtractionTabBuilder:
 
         # 2. Strategy & Settings
         with gr.Group():
-            gr.Markdown("#### ⚙️ Extraction Strategy")
+            gr.Markdown("#### Extraction Strategy")
             with gr.Row(equal_height=True):
                 with gr.Column(scale=2):
                     self.app._reg(
@@ -91,7 +90,7 @@ class ExtractionTabBuilder:
                                 "choices": self.app.METHOD_CHOICES,
                                 "value": self.config.default_method,
                                 "label": "Extraction Method",
-                                "info": "How frames are selected from the video.",
+                                "info": "Selection method for frame anchors.",
                                 "elem_id": "method_input",
                             },
                         ),
@@ -105,7 +104,7 @@ class ExtractionTabBuilder:
                             {
                                 "label": "Split by Scenes",
                                 "value": self.config.default_scene_detect,
-                                "info": "Detect shot changes (cuts) automatically.",
+                                "info": "Divide video into distinct shots.",
                             },
                         ),
                     )
@@ -138,13 +137,13 @@ class ExtractionTabBuilder:
                             "minimum": 1,
                             "step": 1,
                             "visible": self.config.default_method in ["every_nth_frame", "nth_plus_keyframes"],
-                            "info": "Extract every Nth frame (e.g., 10 = 10% of video).",
+                            "info": "Extract every Nth frame (e.g., 10 = 10% sample).",
                         },
                     ),
                 )
 
         # 3. Advanced Settings (Hidden by default)
-        with gr.Accordion("🔧 Advanced Processing Settings", open=False):
+        with gr.Accordion("Advanced Processing Settings", open=False):
             with gr.Group(visible=True) as thumbnail_group:
                 self.app.components["thumbnail_group"] = thumbnail_group
                 self.app._reg(
@@ -158,7 +157,7 @@ class ExtractionTabBuilder:
                             "maximum": 2.0,
                             "step": 0.1,
                             "value": self.config.default_thumb_megapixels,
-                            "info": "Lower = Faster, Higher = Better small object detection. Default 0.5 is usually good.",
+                            "info": "Lower is faster; 0.5 MP is usually optimal.",
                             "elem_id": "thumb_megapixels_input",
                         },
                     ),
@@ -167,13 +166,13 @@ class ExtractionTabBuilder:
         # 4. Action Area
         with gr.Row(elem_id="extraction_actions"):
             self.app.components["start_extraction_button"] = gr.Button(
-                "🚀 Start Extraction", variant="primary", scale=2, size="lg", elem_id="start_extraction_button"
+                "Start Extraction", variant="primary", scale=2, size="lg", elem_id="start_extraction_button"
             )
             self.app._create_component(
                 "add_to_queue_button",
                 "button",
                 {
-                    "value": "➕ Queue for Batch",
+                    "value": "Queue for Batch",
                     "variant": "secondary",
                     "scale": 1,
                     "size": "lg",
@@ -182,7 +181,7 @@ class ExtractionTabBuilder:
             )
 
         # 5. Batch Queue
-        with gr.Accordion("📚 Batch Queue", open=False) as batch_accordion:
+        with gr.Accordion("Batch Queue", open=False) as batch_accordion:
             self.app.components["batch_accordion"] = batch_accordion
             gr.Markdown("*Process multiple videos in the background.*")
             self.app._create_component(
@@ -196,11 +195,9 @@ class ExtractionTabBuilder:
                 },
             )
             with gr.Row():
-                self.app._create_component(
-                    "start_batch_button", "button", {"value": "▶️ Run Queue", "variant": "primary"}
-                )
-                self.app._create_component("stop_batch_button", "button", {"value": "⏹️ Stop Queue", "variant": "stop"})
-                self.app._create_component("clear_queue_button", "button", {"value": "🗑️ Clear Queue"})
+                self.app._create_component("start_batch_button", "button", {"value": "Run Queue", "variant": "primary"})
+                self.app._create_component("stop_batch_button", "button", {"value": "Stop Queue", "variant": "stop"})
+                self.app._create_component("clear_queue_button", "button", {"value": "Clear Queue"})
             self.app._create_component(
                 "batch_workers_slider",
                 "slider",

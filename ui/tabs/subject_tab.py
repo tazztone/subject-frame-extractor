@@ -15,11 +15,11 @@ class SubjectTabBuilder:
 
     def build(self):
         """Creates the content for the 'Subject' tab."""
-        self.app._create_section_header("Step 2: Define Subject", "Tell the AI who or what to track.")
+        self.app._create_section_header("Step 2: Define Subject", "Specify the target for tracking and extraction.")
 
         # 1. Strategy Selection (Always Visible)
         with gr.Group():
-            gr.Markdown("#### 🎯 1. Tracking Strategy")
+            gr.Markdown("#### 1. Tracking Strategy")
             self.app._reg(
                 "primary_seed_strategy",
                 self.app._create_component(
@@ -41,11 +41,11 @@ class SubjectTabBuilder:
         # --- A. Face Seeding Group ---
         with gr.Group(visible=False) as face_seeding_group:
             self.app.components["face_seeding_group"] = face_seeding_group
-            gr.Markdown("#### 👤 2. Provide Face Reference")
+            gr.Markdown("#### 2. Provide Face Reference")
 
             with gr.Tabs():
                 # Tab 1: Upload
-                with gr.Tab("⬆️ Upload Photo"):
+                with gr.Tab("Upload Photo"):
                     with gr.Row():
                         with gr.Column(scale=3):
                             self.app._reg(
@@ -66,11 +66,11 @@ class SubjectTabBuilder:
                             self.app._create_component(
                                 "face_ref_image",
                                 "image",
-                                {"label": "Preview", "interactive": False, "height": 120, "show_label": False},
+                                {"label": "Preview", "interactive": False, "max_height": 150, "show_label": False},
                             )
 
                 # Tab 2: Scan Video (Discovery)
-                with gr.Tab("🔍 Scan Video for People", elem_id="scan_video_tab"):
+                with gr.Tab("Scan Video for People", elem_id="scan_video_tab"):
                     gr.Markdown(
                         "### 1. Scan Video\nClick **'Scan Video Now'**. The AI will find people in the footage."
                     )
@@ -80,7 +80,7 @@ class SubjectTabBuilder:
                             "find_people_button",
                             "button",
                             {
-                                "value": "🔍 Scan Video Now",
+                                "value": "Scan Video Now",
                                 "variant": "secondary",
                                 "scale": 1,
                                 "elem_id": "find_people_button",
@@ -112,7 +112,7 @@ class SubjectTabBuilder:
                             "gallery",
                             {
                                 "label": "Detected People (Click to Select)",
-                                "columns": 6,
+                                "columns": [2, 4, 6],
                                 "height": "auto",
                                 "allow_preview": False,
                                 "object_fit": "cover",
@@ -137,7 +137,7 @@ class SubjectTabBuilder:
         # --- B. Text Seeding Group ---
         with gr.Group(visible=False) as text_seeding_group:
             self.app.components["text_seeding_group"] = text_seeding_group
-            gr.Markdown("#### 📝 2. Text Description")
+            gr.Markdown("#### 2. Text Description")
             self.app._reg(
                 "text_prompt",
                 self.app._create_component(
@@ -247,7 +247,7 @@ class SubjectTabBuilder:
             "start_pre_analysis_button",
             "button",
             {
-                "value": "✅ Confirm Subject & Find Scenes (Next Step)",
+                "value": "Confirm Subject & Find Scenes (Next Step)",
                 "variant": "primary",
                 "size": "lg",
                 "elem_id": "start_pre_analysis_button",
@@ -255,7 +255,7 @@ class SubjectTabBuilder:
         )
 
         # 5. Advanced Configuration Accordion
-        with gr.Accordion("🧠 Advanced Model Configuration", open=False):
+        with gr.Accordion("Advanced Model Configuration", open=False):
             with gr.Row():
                 self.app._reg(
                     "tracker_model_name",

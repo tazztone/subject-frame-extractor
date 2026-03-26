@@ -23,7 +23,7 @@ class SceneTabBuilder:
             # 1. Editor Panel (Top, for easier access when selected)
             with gr.Group(visible=False, elem_classes="scene-editor") as scene_editor_group:
                 self.app.components["scene_editor_group"] = scene_editor_group
-                gr.Markdown("#### ✏️ Scene Editor")
+                gr.Markdown("#### Scene Editor")
                 with gr.Row():
                     # Left: Preview
                     with gr.Column(scale=3):
@@ -59,25 +59,25 @@ class SceneTabBuilder:
                                 {"value": "✅ Include", "variant": "secondary", "scale": 1},
                             )
                             self.app._create_component(
-                                "sceneexcludebutton", "button", {"value": "❌ Exclude", "variant": "stop", "scale": 1}
+                                "sceneexcludebutton", "button", {"value": "Exclude", "variant": "stop", "scale": 1}
                             )
-                            self.app._create_component("sceneresetbutton", "button", {"value": "🔄 Reset", "scale": 1})
+                            self.app._create_component("sceneresetbutton", "button", {"value": "Reset", "scale": 1})
 
-                        with gr.Accordion("🛠️ Manual Override", open=False):
+                        with gr.Accordion("Manual Override", open=False):
                             self.app._create_component(
                                 "sceneeditorpromptinput",
                                 "textbox",
                                 {"label": "Manual Text Prompt", "info": "Type what to track if auto-detection fails."},
                             )
                             self.app._create_component(
-                                "scenerecomputebutton", "button", {"value": "▶️ Recompute with Prompt"}
+                                "scenerecomputebutton", "button", {"value": "Recompute with Prompt"}
                             )
                             self.app._create_component(
                                 "scene_editor_subject_id", "textbox", {"visible": False, "value": ""}
                             )
 
             # 2. Filters
-            with gr.Accordion("🔍 Batch Filter Scenes", open=False):
+            with gr.Accordion("Batch Filter Scenes", open=False):
                 self.app._create_component(
                     "scene_filter_status",
                     "markdown",
@@ -146,7 +146,7 @@ class SceneTabBuilder:
                             self.app._create_component(
                                 "prev_page_button",
                                 "button",
-                                {"value": "⬅️ Previous", "size": "sm", "elem_id": "prev_page_button"},
+                                {"value": "Previous", "size": "sm", "elem_id": "prev_page_button"},
                             )
                             self.app._create_component(
                                 "page_number_input",
@@ -166,16 +166,16 @@ class SceneTabBuilder:
                             self.app._create_component(
                                 "next_page_button",
                                 "button",
-                                {"value": "Next ➡️", "size": "sm", "elem_id": "next_page_button"},
+                                {"value": "Next", "size": "sm", "elem_id": "next_page_button"},
                             )
                     with gr.Column(scale=1):
-                        self.app._create_component("sceneundobutton", "button", {"value": "↩️ Undo", "size": "sm"})
+                        self.app._create_component("sceneundobutton", "button", {"value": "Undo", "size": "sm"})
 
                 self.app.components["scene_gallery"] = gr.Gallery(
                     label="Scene Overview",
-                    columns=8,
+                    columns=[2, 4, 8],
                     rows=2,
-                    height=600,
+                    height="auto",
                     show_label=False,
                     allow_preview=False,
                     container=True,
@@ -211,12 +211,12 @@ class SceneTabBuilder:
                         )
 
             # 4. Action
-            gr.Markdown("### 🚀 Ready?")
+            gr.Markdown("### Ready?")
             self.app._create_component(
                 "propagate_masks_button",
                 "button",
                 {
-                    "value": "⚡ Propagate Masks to All Frames",
+                    "value": "Propagate Masks to All Frames",
                     "variant": "primary",
                     "interactive": False,
                     "size": "lg",

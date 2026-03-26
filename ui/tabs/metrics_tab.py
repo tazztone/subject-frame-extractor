@@ -22,7 +22,7 @@ class MetricsTabBuilder:
         with gr.Row():
             with gr.Column():
                 with gr.Group():
-                    gr.Markdown("#### ✨ Visual Quality")
+                    gr.Markdown("#### Visual Quality")
                     self.app._reg(
                         "compute_quality_score",
                         self.app._create_component(
@@ -66,7 +66,7 @@ class MetricsTabBuilder:
 
             with gr.Column():
                 with gr.Group():
-                    gr.Markdown("#### 👤 Subject & Content")
+                    gr.Markdown("#### Subject & Content")
                     self.app._reg(
                         "compute_face_sim",
                         self.app._create_component(
@@ -106,7 +106,7 @@ class MetricsTabBuilder:
 
             with gr.Column():
                 with gr.Group():
-                    gr.Markdown("#### 📐 Geometry & Composition")
+                    gr.Markdown("#### Geometry & Composition")
                     self.app._reg(
                         "compute_yaw",
                         self.app._create_component(
@@ -132,7 +132,7 @@ class MetricsTabBuilder:
                         ),
                     )
 
-        with gr.Accordion("🔧 Advanced / Legacy Metrics", open=False):
+        with gr.Accordion("Advanced / Legacy Metrics", open=False):
             with gr.Row():
                 with gr.Column():
                     self.app._reg(
@@ -169,7 +169,7 @@ class MetricsTabBuilder:
                         ),
                     )
 
-        with gr.Accordion("📂 Deduplication Preparation", open=False):
+        with gr.Accordion("Deduplication Preparation", open=False):
             self.app._reg(
                 "compute_phash",
                 self.app._create_component(
@@ -184,5 +184,5 @@ class MetricsTabBuilder:
             )
 
         self.app.components["start_analysis_button"] = gr.Button(
-            "⚡ Run Analysis", variant="primary", size="lg", elem_id="start_analysis_button"
+            "Run Analysis", variant="primary", size="lg", elem_id="start_analysis_button"
         )
