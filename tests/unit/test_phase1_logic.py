@@ -39,10 +39,8 @@ class TestPhase1Logic(unittest.TestCase):
                 "page_number_input": gr.Dropdown(),
             }
 
-    @patch("ui.handlers.pipeline_handlers.is_image_folder")
     @patch("ui.handlers.pipeline_handlers.get_scene_status_text")
-    def test_on_pre_analysis_success_image_folder(self, mock_get_status, mock_is_image_folder):
-        mock_is_image_folder.return_value = True
+    def test_on_pre_analysis_success_image_folder(self, mock_get_status):
         mock_get_status.return_value = ("status", gr.update(interactive=True))
 
         result = {"scenes": [], "output_dir": "/mock/images"}
@@ -59,10 +57,8 @@ class TestPhase1Logic(unittest.TestCase):
             status_msg = updates[self.app.components["unified_status"]]
             self.assertIn("Compute Metrics", status_msg)
 
-    @patch("ui.handlers.pipeline_handlers.is_image_folder")
     @patch("ui.handlers.pipeline_handlers.get_scene_status_text")
-    def test_on_pre_analysis_success_video_folder(self, mock_get_status, mock_is_image_folder):
-        mock_is_image_folder.return_value = False
+    def test_on_pre_analysis_success_video_folder(self, mock_get_status):
         mock_get_status.return_value = ("status", gr.update(interactive=True))
 
         result = {"scenes": [], "output_dir": "/mock/video"}
