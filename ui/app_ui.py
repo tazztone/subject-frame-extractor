@@ -451,7 +451,7 @@ class AppUI:
 
             # This group is populated/used by the propagation logic, ensuring it exists is enough here.
 
-    def get_all_filter_keys(self) -> list[str]:
+    def _get_all_filter_keys(self) -> list[str]:
         """Returns a list of all available filter metric keys."""
         return list(self.config.quality_weights.keys()) + [
             "quality_score",
@@ -462,7 +462,7 @@ class AppUI:
             "pitch",
         ]
 
-    def get_metric_description(self, metric_name: str) -> str:
+    def _get_metric_description(self, metric_name: str) -> str:
         """Returns a user-friendly description for a given metric."""
         descriptions = {
             "quality_score": "Overall 'goodness' score.",
@@ -608,6 +608,7 @@ class AppUI:
                 except Empty:
                     break
 
+    @safe_ui_callback("Toggle Pause")
     def _toggle_pause(self, tracker: "AdvancedProgressTracker") -> str:
         """Toggles the pause state of the current running task."""
         if tracker.pause_event.is_set():
@@ -617,6 +618,7 @@ class AppUI:
             tracker.pause_event.set()
             return "▶️ Resume"
 
+    @safe_ui_callback("Diagnostics")
     def run_system_diagnostics(self) -> Generator[str, None, None]:
         """Runs a comprehensive suite of system checks and a dry run via core.system_health."""
         self.logger.info("Starting system diagnostics...")
@@ -631,7 +633,7 @@ class AppUI:
             self.cuda_available,
         )
 
-    def get_ui_updates_from_state(self, state: ApplicationState) -> dict:
+    def _get_ui_updates_from_state(self, state: ApplicationState) -> dict:
         """
         Centralized reducer that maps ApplicationState to Gradio component updates.
 
@@ -738,6 +740,7 @@ class AppUI:
             if generator and hasattr(generator, "close"):
                 generator.close()
 
+    @safe_ui_callback("Extraction")
     def run_extraction_wrapper(self, current_state: ApplicationState, *args, progress=None):
         """Wrapper to execute the extraction pipeline."""
         ui_args = dict(zip(self.ext_ui_map_keys, args))
@@ -762,11 +765,13 @@ class AppUI:
             lambda res: self._on_extraction_success(res, current_state),
         )
 
+    @safe_ui_callback("Add to Queue")
     def add_to_queue_handler(self, *args):
         """Adds a job to the batch processing queue."""
         # ... (keep existing logic)
         return gr.update(value=self.batch_manager.get_status_list())
 
+    @safe_ui_callback("Clear Queue")
     def clear_queue_handler(self):
         """Clears all items from the batch queue."""
         self.batch_manager.clear_all()
@@ -792,6 +797,7 @@ class AppUI:
             raise RuntimeError(result.get("unified_log", "Unknown failure"))
         return result
 
+    @safe_ui_callback("Start Batch")
     def start_batch_wrapper(self, workers: float):
         """Starts processing the batch queue with specified number of workers."""
         self.batch_manager.start_processing(self._batch_processor, max_workers=int(workers))
@@ -800,6 +806,7 @@ class AppUI:
             time.sleep(1.0)
         yield self.batch_manager.get_status_list()
 
+    @safe_ui_callback("Stop Batch")
     def stop_batch_handler(self):
         """Stops the batch processing."""
         self.batch_manager.stop_processing()
@@ -879,6 +886,7 @@ class AppUI:
             self.components["page_number_input"]: gr.update(choices=page_choices, value="1"),
         }
 
+    @safe_ui_callback("Pre-Analysis")
     def run_pre_analysis_wrapper(self, current_state: ApplicationState, *args, progress=None):
         """Wrapper to execute the pre-analysis pipeline."""
         event = self._create_pre_analysis_event(current_state, *args)
@@ -889,6 +897,7 @@ class AppUI:
             lambda res: self._on_pre_analysis_success(res, current_state),
         )
 
+    @safe_ui_callback("Propagation")
     def _propagation_button_handler(self, current_state: ApplicationState, *args, progress=None):
         """Button handler for propagation that properly yields from the generator."""
         if not current_state.extracted_video_path:
@@ -896,10 +905,12 @@ class AppUI:
             return
         yield from self.run_propagation_wrapper(current_state.scenes, current_state, *args, progress=progress)
 
+    @safe_ui_callback("Analysis")
     def _analysis_button_handler(self, current_state: ApplicationState, *args, progress=None):
         """Button handler for analysis that properly yields from the generator."""
         yield from self.run_analysis_wrapper(current_state.scenes, current_state, *args, progress=progress)
 
+    @safe_ui_callback("Propagation")
     def run_propagation_wrapper(self, scenes, current_state: ApplicationState, *args, progress=None):
         """Wrapper to execute the mask propagation pipeline."""
         if not scenes:
@@ -928,6 +939,7 @@ class AppUI:
             self.components["unified_status"]: msg,
         }
 
+    @safe_ui_callback("Analysis")
     def run_analysis_wrapper(self, scenes, current_state: ApplicationState, *args, progress=None):
         """Wrapper to execute the full analysis pipeline."""
         if not scenes:
@@ -961,6 +973,7 @@ class AppUI:
             self.components["unified_status"]: msg,
         }
 
+    @safe_ui_callback("Load Session")
     def run_session_load_wrapper(self, session_path: str, current_state: ApplicationState):
         """Loads a previous session and updates the UI state."""
         event = SessionLoadEvent(session_path=session_path)
@@ -1109,7 +1122,7 @@ class AppUI:
             ],
         )
 
-    def get_inputs(self, keys: list[str]) -> list[gr.components.Component]:
+    def _get_inputs(self, keys: list[str]) -> list[gr.components.Component]:
         """Retrieves a list of UI components based on their registry keys."""
         return [self.ui_registry[k] for k in keys if k in self.ui_registry]
 
@@ -1125,8 +1138,8 @@ class AppUI:
             show_progress="hidden",
         )
 
-        ext_inputs = [c["application_state"]] + self.get_inputs(self.ext_ui_map_keys)
-        self.ana_input_components = [c["application_state"]] + self.get_inputs(self.ana_ui_map_keys)
+        ext_inputs = [c["application_state"]] + self._get_inputs(self.ext_ui_map_keys)
+        self.ana_input_components = [c["application_state"]] + self._get_inputs(self.ana_ui_map_keys)
 
         # Propagation and Analysis also need scenes
         def get_prop_inputs(state):
@@ -1160,7 +1173,7 @@ class AppUI:
         # Helper Handlers
         c["add_to_queue_button"].click(
             self.add_to_queue_handler,
-            inputs=self.get_inputs(self.ext_ui_map_keys),
+            inputs=self._get_inputs(self.ext_ui_map_keys),
             outputs=[c["batch_queue_dataframe"]],
         )
         c["clear_queue_button"].click(self.clear_queue_handler, inputs=[], outputs=[c["batch_queue_dataframe"]])
@@ -1438,8 +1451,8 @@ class AppUI:
                 return [gr.update()] * len(load_outputs)
             from core.filtering import build_all_metric_svgs, load_and_prep_filter_data
 
-            all_frames, metric_values = load_and_prep_filter_data(output_dir, self.get_all_filter_keys, self.config)
-            svgs = build_all_metric_svgs(metric_values, self.get_all_filter_keys, self.logger)
+            all_frames, metric_values = load_and_prep_filter_data(output_dir, self._get_all_filter_keys, self.config)
+            svgs = build_all_metric_svgs(metric_values, self._get_all_filter_keys, self.logger)
 
             new_state = state.model_copy()
             new_state.all_frames_data = all_frames
@@ -1567,6 +1580,7 @@ class AppUI:
             [c["visual_diff_image"]],
         ).then(lambda: gr.update(visible=True), None, c["visual_diff_image"])
 
+    @safe_ui_callback("Preset Change")
     def on_preset_changed(self, preset_name: str) -> list[Any]:
         """Updates filter sliders when a preset is selected."""
         is_preset_active = preset_name != "None" and preset_name in self.FILTER_PRESETS
@@ -1756,6 +1770,7 @@ class AppUI:
             + [False]
         )
 
+    @safe_ui_callback("Auto Thresholds")
     def on_auto_set_thresholds(self, per_metric_values: dict, p: int, *checkbox_values: bool) -> list[gr.update]:
         """Automatically sets filter thresholds based on data percentiles."""
         slider_keys = sorted(self.components["metric_sliders"].keys())

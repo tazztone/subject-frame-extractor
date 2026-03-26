@@ -162,9 +162,21 @@ uv run python cli.py photo export --session ./photo_session
 
 ---
 
-# 🧑‍💻 Developer Guide
-
 For detailed information on architecture, critical rules (Agent Memory), development workflows, and testing, please refer to the [AGENTS.md](AGENTS.md).
+
+## ⚙️ Configuration Reference
+
+See `core/config.py` for the full schema.
+
+| Category | Key Fields | Default |
+|----------|------------|---------|
+| **Paths** | `logs_dir`, `models_dir`, `downloads_dir` | `logs`, `models`, `downloads` |
+| **Models** | `face_model_name`, `tracker_model_name` | `buffalo_l`, `sam3` |
+| **Performance** | `analysis_default_workers`, `cache_size` | `4`, `200` |
+| **Quality** | `quality_weights_*` | (Variable Weights) |
+
+---
+
 
 ---
 

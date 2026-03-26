@@ -3,7 +3,35 @@
 **Analysis Date:** 2026-03-25
 **Deep Dive Refinement:** Standardized monkeypatch testing, exhaustive torch dtype mocking, and transparent context manager patterns.
 
+## Tiered Testing Strategy
+
+| Layer | Directory | Description | Runner |
+|-------|-----------|-------------|--------|
+| **Unit** | `tests/unit/` | Fast tests for core logic. Function-level, heavily mocked. | `pytest` |
+| **Integration** | `tests/integration/` | Real backend pipeline tests. Uses real PyTorch models but executes full logic. | `pytest` |
+| **UI (E2E)** | `tests/ui/` | Browser automation using Playwright. Mocks the backend to test UI flows. | `pytest + playwright` |
+| **Verification**| `scripts/verification/` | Manual scripts to run against a live server for ad-hoc checks. | `python` |
+
+## Setup & Execution
+
+All tests should be run using `uv` to ensure the correct environment.
+
+1. **Unit Tests (Fast)**: `uv run pytest tests/unit/`
+2. **Integration Tests (Slow)**: `uv run pytest tests/integration/`
+3. **UI / E2E Tests (Browser)**: 
+   - Setup: `uv run playwright install chromium`
+   - Run: `uv run pytest tests/ui/`
+4. **Coverage Report**: `uv run pytest --cov=core --cov=ui tests/`
+
+## Writing Tests: Where does it go?
+
+- **New Utility/Helper?** -> `tests/unit/test_utils.py`
+- **New UI Component/Action?** -> `tests/ui/test_ui_interactions.py` (Mock the backend!)
+- **New ML Pipeline Step?** -> `tests/integration/test_real_workflow.py`
+- **New Feature/Process?** -> Create a corresponding `tests/unit/test_<feature>.py`
+
 ## The "Mock-First" Philosophy
+
 
 To ensure fast execution and hardware independence, all **Unit Tests** must completely mock the following:
 - **ML Models**: Mock `ModelRegistry.get_tracker`, `get_face_analyzer`, and `TrackerFactory`.

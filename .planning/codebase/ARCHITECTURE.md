@@ -63,6 +63,60 @@ Large ML models (SAM3, InsightFace) are managed by a central registry:
 | `run_config.json` | Core | Core | Persistent storage of session parameters. |
 | `run_fingerprint.json`| Core | Core | Enables hash-based skipping of already processed videos. |
 
+## Directory Responsibilities
+
+- **`app.py`**: The main entry point. Assembles the Gradio interface and manages layout.
+- **`core/`**: Business logic and heavy lifting (Pipelines, Managers, Models, Database).
+- **`ui/`**: Modular UI components and gallery generation logic.
+- **`SAM3_repo/`**: **Read-only** official SAM3 submodule.
+- **`tests/`**: Comprehensive test suite (Unit, Integration, E2E).
+
+---
+
+## Extensibility: Adding New Quality Metrics (Operators)
+
+The system uses an **auto-discovery** plugin pattern for quality metrics. You can add new analysis logic by creating a file in `core/operators/` and registering your class.
+
+### Implementation Checklist
+
+1. **Create the File**: Add a Python file in `core/operators/` (e.g., `exposure.py`).
+2. **Implement the Protocol**: Implementation must include a `config` property and an `execute(ctx)` method.
+3. **Register**: Use the `@register_operator` decorator.
+4. **Context Access**: Use `ctx.image_rgb`, `ctx.mask`, `ctx.config`, and `ctx.params` (e.g., face landmarks).
+
+### Quick Start (Copy-Paste Template)
+
+```python
+from core.operators import Operator, OperatorConfig, OperatorContext, OperatorResult
+from core.operators import register_operator
+
+@register_operator
+class MyMetricOperator:
+    @property
+    def config(self) -> OperatorConfig:
+        return OperatorConfig(
+            name="my_metric",
+            display_name="My Custom Metric",
+            category="quality",
+            description="Measures something amazing.",
+            min_value=0.0,
+            max_value=100.0,
+        )
+
+    def execute(self, ctx: OperatorContext) -> OperatorResult:
+        # Access image as numpy array (RGB)
+        image = ctx.image_rgb
+        
+        # Compute your score (simulated here)
+        score = 85.0 
+        
+        return OperatorResult(metrics={"my_metric_score": score})
+```
+
+### Advanced: Heavy Models
+If your operator requires a heavy model (neural net), implement `initialize(self, config)` to load it once and `cleanup(self)` to release it.
+
+
 ---
 
 *Refined architecture: 2026-03-21*
