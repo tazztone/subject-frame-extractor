@@ -293,11 +293,11 @@ class TestManagers:
         mock_cls.create_from_options.assert_called()
         assert detector == mock_cls.create_from_options.return_value
 
-    @patch("core.managers.models.get_face_analyzer")
-    @patch("core.managers.models.download_model")
+    @patch("core.managers.model_loader.get_face_analyzer")
+    @patch("core.managers.model_loader.download_model")
     @patch("pathlib.Path.exists", return_value=True)
     @patch("pathlib.Path.is_file", return_value=True)
-    @patch("core.managers.models.get_face_landmarker")
+    @patch("core.managers.model_loader.get_face_landmarker")
     @patch("cv2.imread", return_value=np.zeros((100, 100, 3)))
     def test_initialize_analysis_models(
         self,
@@ -363,12 +363,12 @@ class TestManagers:
         # Should verify warning log
         mock_logger.warning.assert_called()
 
-    @patch("core.managers.models.lpips.LPIPS")
+    @patch("core.managers.model_loader.lpips.LPIPS")
     def test_get_lpips_metric(self, mock_lpips):
         mock_instance = mock_lpips.return_value
         mock_instance.to.return_value = mock_instance
 
-        from core.managers.models import get_lpips_metric
+        from core.managers.model_loader import get_lpips_metric
 
         metric = get_lpips_metric(model_name="alex", device="cpu")
 

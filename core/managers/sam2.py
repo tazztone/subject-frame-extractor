@@ -1,4 +1,4 @@
-# core/managers/sam21.py
+# core/managers/sam2.py
 from __future__ import annotations
 
 import gc
@@ -9,7 +9,7 @@ import torch
 from sam2.build_sam import build_sam2_video_predictor
 
 
-class SAM21Wrapper:
+class SAM2Wrapper:
     """SAM2.1 hiera-tiny via pip install sam2. Apache 2.0, ~38MB."""
 
     def __init__(self, checkpoint_path: str, device: str = "cuda"):

@@ -11,7 +11,7 @@ from core.pipelines import AnalysisPipeline, PreAnalysisEvent, PreAnalysisPipeli
 
 @pytest.fixture(autouse=True)
 def mock_download_model():
-    with patch("core.utils.download_model"), patch("core.managers.models.download_model"):
+    with patch("core.utils.download_model"), patch("core.managers.model_loader.download_model"):
         yield
 
 

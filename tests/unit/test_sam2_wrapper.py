@@ -1,5 +1,5 @@
 """
-Unit tests for SAM21Wrapper API completeness and functionality.
+Unit tests for SAM2Wrapper API completeness and functionality.
 """
 
 from unittest.mock import MagicMock, patch
@@ -8,8 +8,8 @@ import numpy as np
 import pytest
 import torch
 
-# We will patch the build function directly where it is used in SAM21Wrapper
-from core.managers.sam21 import SAM21Wrapper
+# We will patch the build function directly where it is used in SAM2Wrapper
+from core.managers.sam2 import SAM2Wrapper
 
 
 @pytest.fixture
@@ -25,21 +25,21 @@ def mock_predictor():
     return predictor
 
 
-@patch("core.managers.sam21.build_sam2_video_predictor")
-@patch("core.managers.sam21.torch.cuda.is_available", return_value=False)
-def test_sam21_wrapper_init(mock_cuda, mock_build, mock_predictor):
+@patch("core.managers.sam2.build_sam2_video_predictor")
+@patch("core.managers.sam2.torch.cuda.is_available", return_value=False)
+def test_sam2_wrapper_init(mock_cuda, mock_build, mock_predictor):
     mock_build.return_value = mock_predictor
 
-    wrapper = SAM21Wrapper(checkpoint_path="dummy.pt", device="cpu")
+    wrapper = SAM2Wrapper(checkpoint_path="dummy.pt", device="cpu")
     assert wrapper.device == "cpu"
     assert mock_build.called
     assert wrapper.predictor == mock_predictor
 
 
-@patch("core.managers.sam21.build_sam2_video_predictor")
-def test_sam21_wrapper_session_lifecycle(mock_build, mock_predictor):
+@patch("core.managers.sam2.build_sam2_video_predictor")
+def test_sam2_wrapper_session_lifecycle(mock_build, mock_predictor):
     mock_build.return_value = mock_predictor
-    wrapper = SAM21Wrapper(checkpoint_path="dummy.pt")
+    wrapper = SAM2Wrapper(checkpoint_path="dummy.pt")
 
     # First init
     session_id = wrapper.init_video("video_dir")
@@ -57,10 +57,10 @@ def test_sam21_wrapper_session_lifecycle(mock_build, mock_predictor):
     assert mock_predictor.reset_state.called
 
 
-@patch("core.managers.sam21.build_sam2_video_predictor")
-def test_sam21_wrapper_add_bbox_prompt(mock_build, mock_predictor):
+@patch("core.managers.sam2.build_sam2_video_predictor")
+def test_sam2_wrapper_add_bbox_prompt(mock_build, mock_predictor):
     mock_build.return_value = mock_predictor
-    wrapper = SAM21Wrapper(checkpoint_path="dummy.pt")
+    wrapper = SAM2Wrapper(checkpoint_path="dummy.pt")
     wrapper._state = "test_state"
 
     # Test with 3D mask output (ndim == 3)
@@ -79,10 +79,10 @@ def test_sam21_wrapper_add_bbox_prompt(mock_build, mock_predictor):
     assert np.array_equal(kwargs["box"], np.array([10, 10, 60, 60], dtype=np.float32))
 
 
-@patch("core.managers.sam21.build_sam2_video_predictor")
-def test_sam21_wrapper_propagate(mock_build, mock_predictor):
+@patch("core.managers.sam2.build_sam2_video_predictor")
+def test_sam2_wrapper_propagate(mock_build, mock_predictor):
     mock_build.return_value = mock_predictor
-    wrapper = SAM21Wrapper(checkpoint_path="dummy.pt")
+    wrapper = SAM2Wrapper(checkpoint_path="dummy.pt")
     wrapper._state = "test_state"
 
     # Mock 3D masks in propagate
@@ -99,10 +99,10 @@ def test_sam21_wrapper_propagate(mock_build, mock_predictor):
     assert kwargs["reverse"] is True
 
 
-@patch("core.managers.sam21.build_sam2_video_predictor")
-def test_sam21_wrapper_add_point_prompt(mock_build, mock_predictor):
+@patch("core.managers.sam2.build_sam2_video_predictor")
+def test_sam2_wrapper_add_point_prompt(mock_build, mock_predictor):
     mock_build.return_value = mock_predictor
-    wrapper = SAM21Wrapper(checkpoint_path="dummy.pt")
+    wrapper = SAM2Wrapper(checkpoint_path="dummy.pt")
     wrapper._state = "test_state"
 
     mock_predictor.add_new_points_or_box.return_value = (None, None, torch.zeros((1, 1, 100, 100)))
@@ -112,10 +112,10 @@ def test_sam21_wrapper_add_point_prompt(mock_build, mock_predictor):
     assert mock_predictor.add_new_points_or_box.called
 
 
-@patch("core.managers.sam21.build_sam2_video_predictor")
-def test_sam21_wrapper_stubs_and_utility(mock_build, mock_predictor):
+@patch("core.managers.sam2.build_sam2_video_predictor")
+def test_sam2_wrapper_stubs_and_utility(mock_build, mock_predictor):
     mock_build.return_value = mock_predictor
-    wrapper = SAM21Wrapper(checkpoint_path="dummy.pt")
+    wrapper = SAM2Wrapper(checkpoint_path="dummy.pt")
     wrapper._state = "test_state"
 
     # Test stubs
@@ -133,12 +133,12 @@ def test_sam21_wrapper_stubs_and_utility(mock_build, mock_predictor):
     assert wrapper._state is None
 
 
-@patch("core.managers.sam21.build_sam2_video_predictor")
-@patch("core.managers.sam21.torch.cuda.is_available", return_value=True)
-@patch("core.managers.sam21.torch.cuda.empty_cache")
-def test_sam21_wrapper_shutdown(mock_empty_cache, mock_cuda, mock_build, mock_predictor):
+@patch("core.managers.sam2.build_sam2_video_predictor")
+@patch("core.managers.sam2.torch.cuda.is_available", return_value=True)
+@patch("core.managers.sam2.torch.cuda.empty_cache")
+def test_sam2_wrapper_shutdown(mock_empty_cache, mock_cuda, mock_build, mock_predictor):
     mock_build.return_value = mock_predictor
-    wrapper = SAM21Wrapper(checkpoint_path="dummy.pt")
+    wrapper = SAM2Wrapper(checkpoint_path="dummy.pt")
     wrapper._state = "test_state"
 
     wrapper.shutdown()

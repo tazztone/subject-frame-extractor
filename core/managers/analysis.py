@@ -27,7 +27,7 @@ from core.progress import AdvancedProgressTracker
 from core.scene_utils import SubjectMasker, save_scene_seeds
 from core.utils import _to_json_safe
 
-from .models import initialize_analysis_models
+from .model_loader import initialize_analysis_models
 
 
 class Pipeline:

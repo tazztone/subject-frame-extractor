@@ -5,7 +5,7 @@ import pytest
 
 @pytest.fixture
 def mock_sam2_predictor():
-    with patch("core.managers.sam21.build_sam2_video_predictor") as mock_build:
+    with patch("core.managers.sam2.build_sam2_video_predictor") as mock_build:
         predictor = MagicMock()
         mock_build.return_value = predictor
         yield predictor
@@ -13,43 +13,43 @@ def mock_sam2_predictor():
 
 @pytest.fixture
 def mock_cuda():
-    with patch("core.managers.sam21.torch.cuda") as mock:
+    with patch("core.managers.sam2.torch.cuda") as mock:
         yield mock
 
 
 def test_sam21_wrapper_init(mock_sam2_predictor):
     """Test initialization logic and lazy loading."""
-    from core.managers.sam21 import SAM21Wrapper
+    from core.managers.sam2 import SAM2Wrapper
 
-    wrapper = SAM21Wrapper("/tmp/model.pt", "cuda")
+    wrapper = SAM2Wrapper("/tmp/model.pt", "cuda")
 
     assert wrapper.device == "cuda"
     assert wrapper.predictor is mock_sam2_predictor
-    import core.managers.sam21
+    import core.managers.sam2
 
-    core.managers.sam21.build_sam2_video_predictor.assert_called_once_with(
+    core.managers.sam2.build_sam2_video_predictor.assert_called_once_with(
         config_file="configs/sam2.1/sam2.1_hiera_t.yaml", ckpt_path="/tmp/model.pt", device="cuda"
     )
 
 
-@patch("core.managers.sam21.torch.inference_mode")
+@patch("core.managers.sam2.torch.inference_mode")
 def test_sam21_init_video(mock_inference_mode, mock_sam2_predictor):
     """Test that init_video calls the underlying predictor."""
-    from core.managers.sam21 import SAM21Wrapper
+    from core.managers.sam2 import SAM2Wrapper
 
-    wrapper = SAM21Wrapper("/tmp/model.pt", "cuda")
+    wrapper = SAM2Wrapper("/tmp/model.pt", "cuda")
     wrapper.init_video("/tmp/frames")
 
     mock_sam2_predictor.init_state.assert_called_once_with(video_path="/tmp/frames")
     assert wrapper._state == mock_sam2_predictor.init_state.return_value
 
 
-@patch("core.managers.sam21.torch.inference_mode")
+@patch("core.managers.sam2.torch.inference_mode")
 def test_sam21_propagate_in_video(mock_inference_mode, mock_sam2_predictor):
     """Test the propagate generator logic."""
-    from core.managers.sam21 import SAM21Wrapper
+    from core.managers.sam2 import SAM2Wrapper
 
-    wrapper = SAM21Wrapper("/tmp/model.pt", "cuda")
+    wrapper = SAM2Wrapper("/tmp/model.pt", "cuda")
     wrapper._state = MagicMock()
 
     import numpy as np
@@ -72,9 +72,9 @@ def test_sam21_propagate_in_video(mock_inference_mode, mock_sam2_predictor):
 
 def test_sam21_close_session(mock_sam2_predictor, mock_cuda):
     """Test the cleanup logic in close_session."""
-    from core.managers.sam21 import SAM21Wrapper
+    from core.managers.sam2 import SAM2Wrapper
 
-    wrapper = SAM21Wrapper("/tmp/model.pt", "cuda")
+    wrapper = SAM2Wrapper("/tmp/model.pt", "cuda")
     original_state = MagicMock()
     wrapper._state = original_state
 

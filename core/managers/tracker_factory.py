@@ -19,9 +19,9 @@ def build_tracker(backend: TrackerBackend, checkpoint_path: str, device: str = "
         An instance of the selected tracker wrapper.
     """
     if backend == "sam2":
-        from .sam21 import SAM21Wrapper
+        from .sam2 import SAM2Wrapper
 
-        return SAM21Wrapper(checkpoint_path, device)
+        return SAM2Wrapper(checkpoint_path, device)
     elif backend == "sam3":
         # Lazy import ensures SAM3's Triton mocks only run when sam3 is selected
         from .sam3 import SAM3Wrapper

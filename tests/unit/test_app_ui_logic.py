@@ -133,7 +133,7 @@ class TestAppUI:
             args = ["vid.mp4", None, "interval", 1.0, 1, "1080", 0.5, True]
 
             # Consume generator
-            list(app_ui.run_extraction_wrapper(app_state, *args))
+            list(app_ui.pipeline_handler.run_extraction_wrapper(app_state, *args))
 
             mock_run.assert_called_once()
             # Verify event creation
@@ -171,7 +171,7 @@ class TestAppUI:
             app_state.extracted_video_path = "vid.mp4"
             app_state.analysis_output_dir = out_dir
 
-            list(app_ui.run_pre_analysis_wrapper(app_state, *args))
+            list(app_ui.pipeline_handler.run_pre_analysis_wrapper(app_state, *args))
             mock_run.assert_called_once()
             event = mock_run.call_args[0][1]
             assert event.output_folder == out_dir
@@ -181,7 +181,7 @@ class TestAppUI:
 
     def test_on_extraction_success(self, app_ui, app_state):
         res = {"extracted_video_path_state": "v.mp4", "extracted_frames_dir_state": "/frames"}
-        updates = app_ui._on_extraction_success(res, app_state)
+        updates = app_ui.pipeline_handler._on_extraction_success(res, app_state)
 
         new_state = updates[app_ui.components["application_state"]]
         assert new_state.extracted_video_path == "v.mp4"
@@ -199,8 +199,8 @@ class TestAppUI:
         ]
         res = {"scenes": scenes, "output_dir": str(tmp_path / "out")}
 
-        with patch("ui.app_ui.get_scene_status_text", return_value=("Status", "Button")):
-            updates = app_ui._on_pre_analysis_success(res, app_state)
+        with patch("ui.handlers.pipeline_handlers.get_scene_status_text", return_value=("Status", "Button")):
+            updates = app_ui.pipeline_handler._on_pre_analysis_success(res, app_state)
 
         new_state = updates[app_ui.components["application_state"]]
         assert new_state.scenes == scenes
@@ -315,7 +315,7 @@ class TestAppUI:
 
     # --- Integration-ish Wrapper Tests ---
 
-    @patch("ui.app_ui.execute_session_load")
+    @patch("ui.handlers.pipeline_handlers.execute_session_load")
     def test_run_session_load_wrapper(self, mock_load, app_ui, app_state, tmp_path):
         mock_load.return_value = {
             "run_config": {"source_path": "test.mp4"},
@@ -327,7 +327,7 @@ class TestAppUI:
         # Create a dummy session directory for the wrapper to find
         session_path = str(tmp_path / "session")
         (tmp_path / "session").mkdir()  # Ensure it exists
-        gen = app_ui.run_session_load_wrapper(session_path, app_state)
+        gen = app_ui.pipeline_handler.run_session_load_wrapper(session_path, app_state)
 
         # First yield is status update
         next(gen)

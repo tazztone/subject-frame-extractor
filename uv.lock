@@ -3703,7 +3703,7 @@ requires-dist = [
     { name = "mediapipe" },
     { name = "ml-dtypes", specifier = ">=0.5.0" },
     { name = "numba" },
-    { name = "numpy", specifier = "==1.26.0" },
+    { name = "numpy", specifier = ">=1.26.0,<2.0.0" },
     { name = "onnxruntime-gpu" },
     { name = "opencv-python" },
     { name = "pillow" },

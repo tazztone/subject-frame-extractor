@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 
 from core.image_utils import render_mask_overlay
 from core.io_utils import create_frame_map
-from core.managers.models import initialize_analysis_models
+from core.managers.model_loader import initialize_analysis_models
 from core.scene_utils.subject_masker import SubjectMasker
 from core.shared import build_scene_gallery_items
 from core.utils import _to_json_safe

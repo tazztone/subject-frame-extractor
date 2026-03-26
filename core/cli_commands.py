@@ -13,13 +13,12 @@ import torch
 
 from core.cli_utils import _run_pipeline, _setup_runtime
 from core.database import Database
-from core.events import ExtractionEvent, PreAnalysisEvent, PropagationEvent
+from core.events import ExtractionEvent, PreAnalysisEvent
 from core.filtering import apply_all_filters_vectorized
 from core.pipelines import (
-    execute_analysis,
+    execute_analysis_orchestrator,
     execute_extraction,
-    execute_pre_analysis,
-    execute_propagation,
+    execute_full_pipeline,
 )
 
 
@@ -115,8 +114,7 @@ def run_analyze(session, source, face_ref, strategy, verbose, resume, force):
         click.echo("   🚀 CUDA available, using GPU acceleration")
         torch.set_float32_matmul_precision("medium")
 
-    click.secho("\n📍 Stage 1: Pre-Analysis (Seed Detection)", fg="yellow")
-    gen = execute_pre_analysis(
+    gen = execute_analysis_orchestrator(
         pre_event,
         progress_queue,
         cancel_event,
@@ -127,48 +125,7 @@ def run_analyze(session, source, face_ref, strategy, verbose, resume, force):
         progress=None,
         model_registry=model_registry,
     )
-    pre_result = _run_pipeline(gen, "Pre-Analysis")
-
-    scenes = pre_result.get("scenes", [])
-    click.echo(f"   📊 Found {len(scenes)} scenes")
-
-    prop_event = PropagationEvent(
-        output_folder=str(output_dir),
-        video_path=str(source) if is_video else "",
-        scenes=scenes,
-        analysis_params=pre_event,
-    )
-
-    if is_video:
-        click.secho("\n📍 Stage 2: Mask Propagation", fg="yellow")
-        gen = execute_propagation(
-            prop_event,
-            progress_queue,
-            cancel_event,
-            logger,
-            config,
-            thumbnail_manager,
-            cuda_available,
-            progress=None,
-            model_registry=model_registry,
-        )
-        _run_pipeline(gen, "Propagation")
-    else:
-        click.secho("\n📍 Stage 2: Mask Propagation (Skipped for Folder)", fg="yellow")
-
-    click.secho("\n📍 Stage 3: Metric Analysis", fg="yellow")
-    gen = execute_analysis(
-        prop_event,
-        progress_queue,
-        cancel_event,
-        logger,
-        config,
-        thumbnail_manager,
-        cuda_available,
-        progress=None,
-        model_registry=model_registry,
-    )
-    _run_pipeline(gen, "Analysis")
+    _run_pipeline(gen, "Analysis Workflow")
 
     db_path = output_dir / "metadata.db"
     mask_dir = output_dir / "masks"
@@ -292,8 +249,6 @@ def run_full(source, output, face_ref, nth_frame, max_resolution, verbose, clean
     )
     cuda_available = torch.cuda.is_available()
 
-    # --- EXTRACTION / INGESTION ---
-    click.secho(f"\n━━━ STAGE: {'EXTRACTION' if is_video else 'INGESTION'} ━━━", fg="cyan", bold=True)
     ext_event = ExtractionEvent(
         source_path=str(source),
         method="every_nth_frame",
@@ -305,18 +260,8 @@ def run_full(source, output, face_ref, nth_frame, max_resolution, verbose, clean
         scene_detect=True if is_video else False,
         output_folder=str(output_dir),
     )
-    gen = execute_extraction(
-        ext_event, progress_queue, cancel_event, logger, config, thumbnail_manager, model_registry=model_registry
-    )
-    _run_pipeline(gen, "Extraction" if is_video else "Ingestion")
-
-    # --- PRE-ANALYSIS ---
-    click.secho("\n━━━ STAGE: PRE-ANALYSIS ━━━", fg="cyan", bold=True)
-    pre_event = _build_pre_analysis_event(
-        output_dir, source, is_video, face_ref, "🧑‍🤝‍🧑 Find Prominent Person", resume
-    )
-    gen = execute_pre_analysis(
-        pre_event,
+    gen = execute_full_pipeline(
+        ext_event,
         progress_queue,
         cancel_event,
         logger,
@@ -326,54 +271,7 @@ def run_full(source, output, face_ref, nth_frame, max_resolution, verbose, clean
         progress=None,
         model_registry=model_registry,
     )
-    pre_result = _run_pipeline(gen, "Pre-Analysis")
-    scenes = pre_result.get("scenes", [])
-    click.echo(f"   📊 Found {len(scenes)} scenes")
-
-    # --- PROPAGATION ---
-    if is_video:
-        click.secho("\n━━━ STAGE: PROPAGATION ━━━", fg="cyan", bold=True)
-        prop_event = PropagationEvent(
-            output_folder=str(output_dir),
-            video_path=str(source),
-            scenes=scenes,
-            analysis_params=pre_event,
-        )
-        gen = execute_propagation(
-            prop_event,
-            progress_queue,
-            cancel_event,
-            logger,
-            config,
-            thumbnail_manager,
-            cuda_available,
-            progress=None,
-            model_registry=model_registry,
-        )
-        _run_pipeline(gen, "Propagation")
-    else:
-        click.secho("\n━━━ STAGE: PROPAGATION (Skipped for Folder) ━━━", fg="cyan", bold=True)
-        prop_event = PropagationEvent(
-            output_folder=str(output_dir),
-            video_path="",
-            scenes=scenes,
-            analysis_params=pre_event,
-        )
-
-    # --- ANALYSIS ---
-    click.secho("\n━━━ STAGE: ANALYSIS ━━━", fg="cyan", bold=True)
-    gen = execute_analysis(
-        prop_event,
-        progress_queue,
-        cancel_event,
-        logger,
-        config,
-        thumbnail_manager,
-        cuda_available,
-        progress=None,
-        model_registry=model_registry,
-    )
-    _run_pipeline(gen, "Analysis")
+    _run_pipeline(gen, "Full Pipeline")
 
     click.secho("\n🎉 PIPELINE COMPLETE", fg="green", bold=True)
     click.echo(f"   Results: {output_dir}")

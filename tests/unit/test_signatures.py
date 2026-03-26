@@ -125,8 +125,8 @@ class TestManagerClasses:
 
     def test_sam21_matches_sam3_interface(self):
         """Verify SAM2 and SAM3 wrappers share the same public interface."""
+        from core.managers.sam2 import SAM2Wrapper
         from core.managers.sam3 import SAM3Wrapper
-        from core.managers.sam21 import SAM21Wrapper
 
         required_methods = [
             "init_video",
@@ -142,7 +142,7 @@ class TestManagerClasses:
             "shutdown",
         ]
         for method in required_methods:
-            assert hasattr(SAM21Wrapper, method), f"SAM21Wrapper missing method: {method}"
+            assert hasattr(SAM2Wrapper, method), f"SAM21Wrapper missing method: {method}"
             assert hasattr(SAM3Wrapper, method), f"SAM3Wrapper missing method: {method}"
 
 
