@@ -17,7 +17,7 @@ echo "----------------------------------------"
 # Ensure Playwright is installed (can be slow, but avoids crashes)
 # uv run playwright install chromium
 
-uv run --no-sync pytest tests/ui/ "$@"
+uv run --no-sync pytest tests/ui/ -o "addopts=-v --tb=short" "$@"
 
 if [ $? -ne 0 ]; then
     echo ""
