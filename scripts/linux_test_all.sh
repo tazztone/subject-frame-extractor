@@ -18,13 +18,13 @@ if [ $? -ne 0 ]; then exit 1; fi
 # 2. Integration Tests
 echo ""
 echo "--- Stage 2: Integration Tests ---"
-uv run --no-sync pytest tests/integration/
+uv run --no-sync pytest tests/integration/ -o "addopts=-v --tb=short" -m "integration or gpu_e2e" --no-cov
 if [ $? -ne 0 ]; then exit 1; fi
 
 # 3. UI/E2E Tests
 echo ""
 echo "--- Stage 3: UI/E2E Tests ---"
-bash "$SCRIPT_DIR/linux_test_ui.sh"
+bash "$SCRIPT_DIR/linux_test_ui.sh" -o "addopts=-v --tb=short" --no-cov
 if [ $? -ne 0 ]; then exit 1; fi
 
 echo ""
