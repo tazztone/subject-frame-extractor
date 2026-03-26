@@ -430,15 +430,31 @@ def mock_export_kept_frames(*args, **kwargs):
 # Apply patches
 import core.export
 import ui.app_ui
+import ui.handlers.pipeline_handlers
 
 core.pipelines.ExtractionPipeline._run_impl = mock_extraction_run
 # We mock the `execute_*` functions directly as they are what the UI calls via `_run_pipeline`
 ui.app_ui.AppUI.preload_models = MagicMock(side_effect=lambda *args: None)
-core.pipelines.execute_pre_analysis = ui.app_ui.execute_pre_analysis = mock_pre_analysis_execution
-core.pipelines.execute_propagation = ui.app_ui.execute_propagation = mock_propagation_execution
-core.pipelines.execute_analysis = ui.app_ui.execute_analysis = mock_analysis_execution
-core.pipelines.execute_analysis_orchestrator = ui.app_ui.execute_analysis_orchestrator = mock_analysis_orchestrator
-core.pipelines.execute_full_pipeline = ui.app_ui.execute_full_pipeline = mock_full_pipeline_execution
+
+# Patch in all locations where these are imported/used
+for target in [core.pipelines, ui.app_ui, ui.handlers.pipeline_handlers]:
+    if hasattr(target, "execute_pre_analysis"):
+        target.execute_pre_analysis = mock_pre_analysis_execution
+    if hasattr(target, "execute_propagation"):
+        target.execute_propagation = mock_propagation_execution
+    if hasattr(target, "execute_analysis"):
+        target.execute_analysis = mock_analysis_execution
+    if hasattr(target, "execute_analysis_orchestrator"):
+        target.execute_analysis_orchestrator = mock_analysis_orchestrator
+    if hasattr(target, "execute_full_pipeline"):
+        target.execute_full_pipeline = mock_full_pipeline_execution
+
+# Patch fingerprinting to avoid FileNotFoundError in mock tests
+import core.fingerprint
+
+core.fingerprint.create_fingerprint = MagicMock(return_value={})
+core.fingerprint.save_fingerprint = MagicMock()
+
 ui.app_ui.export_kept_frames = mock_export_kept_frames
 core.export.export_kept_frames = mock_export_kept_frames
 core.photo_utils.ingest_folder = mock_ingest_folder

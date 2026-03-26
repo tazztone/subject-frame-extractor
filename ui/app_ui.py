@@ -55,11 +55,11 @@ class AppUI:
         ("Keyframes (Cuts/Scene Changes)", "keyframes"),
     ]
     PRIMARY_SEED_STRATEGY_CHOICES: List[str] = [
-        "🤖 Automatic",
-        "👤 By Face",
-        "📝 By Text (⚠️ Limited)",
-        "🔄 Face + Text Fallback",
-        "🧑‍🤝‍🧑 Find Prominent Person",
+        "Automatic Detection",
+        "Source Face Reference",
+        "Text Description (Limited)",
+        "Face + Text Fallback",
+        "Primary Person Discovery",
     ]
     SEED_STRATEGY_CHOICES: List[str] = [
         "Largest Person",
@@ -242,8 +242,26 @@ class AppUI:
         Returns:
             The Gradio Blocks instance containing the application UI.
         """
-        # css argument is deprecated in Gradio 5+
-        with gr.Blocks() as demo:
+        # Gradio 5+ supports CSS in Blocks constructor
+        css = """
+        .section-subtitle {
+            color: var(--body-text-color-subdued, #666);
+            font-size: 0.9em;
+            display: block;
+            margin-top: -4px;
+        }
+        .system-status-bar {
+            border-top: 1px solid var(--border-color-primary);
+            padding-top: 10px;
+            margin-top: 20px;
+        }
+        /* Ensure focused interactive elements have a clear outline */
+        :focus-visible {
+            outline: 2px solid var(--button-primary-background-fill, #2196F3) !important;
+            outline-offset: 2px;
+        }
+        """
+        with gr.Blocks(css=css, title="Frame Extractor & Analyzer") as demo:
             # Unified Application State (Must be first for tab builders)
             self.components["application_state"] = gr.State(ApplicationState())
 
@@ -332,19 +350,19 @@ class AppUI:
         self.components[name] = comp_map[comp_type](**kwargs)
         return self.components[name]
 
-    def _create_section_header(self, title: str, subtitle: str = None, icon: str = "📂"):
+    def _create_section_header(self, title: str, subtitle: str = None, icon: str = None):
         """Creates a standardized section header."""
-        md = f"### {icon} {title}"
+        header_text = f"### {icon} {title}" if icon else f"### {title}"
         if subtitle:
-            md += f"\n<span style='color: #666; font-size: 0.9em;'>{subtitle}</span>"
-        gr.Markdown(md)
+            header_text += f"\n<span class='section-subtitle'>{subtitle}</span>"
+        gr.Markdown(header_text)
 
     def _build_header(self):
         """Builds the UI header section with title and status indicators."""
         with gr.Row(elem_id="header_row", equal_height=True):
             with gr.Column(scale=4):
-                gr.Markdown("# 🎨 Frame Extractor & Analyzer v4.0.0")
-                gr.Markdown("*Professional AI-Powered Dataset Curation Tool*")
+                gr.Markdown("# Frame Extractor & Analyzer v4.0.0")
+                gr.Markdown("#### Professional AI-Powered Dataset Curation Tool")
             with gr.Column(scale=1):
                 self._create_component("model_status_indicator", "markdown", {"value": "🟡 **System Initializing...**"})
 
@@ -832,13 +850,13 @@ class AppUI:
         )
         c["propagate_masks_button"].click(
             # Using current_state.scenes from application_state
-            fn=lambda state, *args: self.pipeline_handler.run_propagation_wrapper(state.scenes, state, *args),
+            fn=self.pipeline_handler.run_propagation_wrapper,
             inputs=self.ana_input_components,
             outputs=self.all_outputs,
             show_progress="hidden",
         )
         c["start_analysis_button"].click(
-            fn=lambda state, *args: self.pipeline_handler.run_analysis_wrapper(state.scenes, state, *args),
+            fn=self.pipeline_handler.run_analysis_wrapper,
             inputs=self.ana_input_components,
             outputs=self.all_outputs,
             show_progress="hidden",
