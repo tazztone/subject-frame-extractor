@@ -40,6 +40,16 @@ When a function returns updates to multiple components, it MUST return a diction
 - **Docstrings**: Google-style docstrings used throughout.
 - **Forward References**: Use `"ClassName"` or `from __future__ import annotations` to handle circular dependencies in type hints.
 
+## Development Workflows
+
+### Bug Fix Workflow
+1. **Reproduce**: Create a minimal test case in `tests/unit/` or `tests/integration/`.
+2. **Trace**: Use `logger.debug()` or `logger.info()` to inspect state during pipeline execution.
+3. **Fix**: Implement the fix in the appropriate `core/` or `ui/` module.
+4. **Verify**: Run the full suite with `uv run pytest tests/`.
+5. **Clean**: Remove any temporary debug artifacts or print statements.
+
 ---
+
 
 *Refined conventions: 2026-03-21*

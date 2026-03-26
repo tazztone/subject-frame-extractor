@@ -44,6 +44,32 @@
 - **Duplicate Logic (Maintenance)**: `core/export.py` contains duplicate unreachable `except` blocks for FFmpeg errors.
 - **XMP Robustness**: XMP export uses `xml.etree.ElementTree`, which is robust, but the logic lacks comprehensive unit tests for different sidecar scenarios.
 
+## Performance & Memory Management
+
+- **VRAM Requirements**: SAM3 typically requires ~8GB VRAM. If exceeded, the system falls back to CPU (extremely slow).
+- **Caching**: `ThumbnailManager` implements an LRU cache in RAM. Max size is configurable in `core/config.py`.
+- **Processing**: We use `ThreadPoolExecutor` for batch analysis. Limit `analysis_default_workers` if CPU RAM OOM occurs.
+- **Optimization**: Extraction generates `video_lowres.mp4` at thumbnail resolution. `MaskPropagator` uses this directly during propagation to eliminate redundant JPEG I/O.
+
+## Troubleshooting & Known Issues
+
+### Common Errors
+- **"CUDA out of memory"**: Triggered during SAM3 init or NIQE analysis. **Fix**: Use `ModelRegistry.clear()` or set `APP_HUGGINGFACE_TOKEN` correctly.
+- **"ModuleNotFoundError: sam3"**: Submodule missing. **Fix**: `git submodule update --init --recursive`.
+- **"ValueError: ... is not in list" (Gradio)**: Occurs when updating `gr.Dropdown` values. **Fix**: Update `choices` list before the `value`.
+
+### Environment Gotchas
+- **PyTorch 2.9+**: May show TF32 deprecation warnings; these are safe to ignore.
+- **venv pip**: Some environments may have path issues with venv `pip`. Use `python -m pip` or `uv pip`.
+- **Ruff Format**: Ruff is aggressive. If code "disappears," check `__all__` re-exports or logic that might look like dead code to a static analyzer.
+
+## Security & Compliance
+
+- **Integrity**: All model downloads are verified via SHA256 hashes (`core/utils._compute_sha256`).
+- **Input Sanitization**: Video paths are validated via `validate_video_file()`. Export filenames are sanitized for path traversal.
+- **Model Loading**: We prefer `.safetensors` over `.pt` for improved security.
+
 ---
+
 
 *Refined concerns: 2026-03-21*
