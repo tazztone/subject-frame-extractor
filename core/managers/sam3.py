@@ -3,40 +3,7 @@ from typing import Optional, Union
 import numpy as np
 import torch
 
-
-# Triton Mocking Logic
-def _setup_triton_mock():
-    import sys
-
-    try:
-        import triton  # noqa: F401
-
-        return False
-    except ImportError:
-        pass
-    import types
-    from importlib.machinery import ModuleSpec
-    from unittest.mock import MagicMock
-
-    mock_triton = types.ModuleType("triton")
-    mock_triton.__spec__ = ModuleSpec("triton", None)
-    mock_triton.__path__ = []
-    mock_triton.jit = lambda fn: fn
-    mock_triton.language = types.ModuleType("triton.language")
-
-    class MockTL:
-        constexpr = lambda x: x
-        program_id = MagicMock(return_value=0)
-        load = MagicMock(return_value=0)
-        store = MagicMock()
-
-    for attr in dir(MockTL):
-        if not attr.startswith("_"):
-            setattr(mock_triton.language, attr, getattr(MockTL, attr))
-    sys.modules["triton"] = mock_triton
-    sys.modules["triton.language"] = mock_triton.language
-    return True
-
+from core.utils import _setup_triton_mock
 
 _triton_mocked = _setup_triton_mock()
 

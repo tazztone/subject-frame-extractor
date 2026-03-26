@@ -1,15 +1,14 @@
 """
-Frame Extractor & Analyzer v2.0
+Frame Extractor & Analyzer v4.0.0
 """
 
 import argparse
 import sys
 from pathlib import Path
 
-# Ensure project root and SAM3_repo are in path
+# Ensure project root is in path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
-sys.path.insert(0, str(project_root / "SAM3_repo"))
 
 import gc
 import threading
@@ -38,7 +37,7 @@ def cleanup_models(model_registry):
 
 def parse_args():
     """Parses command-line arguments."""
-    parser = argparse.ArgumentParser(description="Frame Extractor & Analyzer v2.0")
+    parser = argparse.ArgumentParser(description="Frame Extractor & Analyzer v4.0.0")
 
     # Server Configuration
     parser.add_argument("--server-name", type=str, help="Server host (e.g., 0.0.0.0)")
@@ -78,7 +77,7 @@ def main():
 
         app_ui = AppUI(config, logger, progress_queue, cancel_event, thumbnail_manager, model_registry)
         demo = app_ui.build_ui()
-        logger.info("Frame Extractor & Analyzer v2.0\nStarting application...")
+        logger.info("Frame Extractor & Analyzer v4.0.0\nStarting application...")
 
         # Prepare launch parameters
         launch_kwargs = {

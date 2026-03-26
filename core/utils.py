@@ -10,6 +10,42 @@ from typing import TYPE_CHECKING, Any, Callable, Optional
 import numpy as np
 import torch
 
+
+def _setup_triton_mock():
+    """Mocks the Triton library if it's missing (e.g., on Windows or non-CUDA environments)."""
+    import sys
+    import types
+    from importlib.machinery import ModuleSpec
+    from unittest.mock import MagicMock
+
+    try:
+        import triton  # noqa: F401
+
+        return False
+    except ImportError:
+        pass
+
+    mock_triton = types.ModuleType("triton")
+    mock_triton.__spec__ = ModuleSpec("triton", None)
+    mock_triton.__path__ = []
+    mock_triton.jit = lambda fn: fn
+    mock_triton.language = types.ModuleType("triton.language")
+
+    class MockTL:
+        constexpr = lambda x: x
+        program_id = MagicMock(return_value=0)
+        load = MagicMock(return_value=0)
+        store = MagicMock()
+
+    for attr in dir(MockTL):
+        if not attr.startswith("_"):
+            setattr(mock_triton.language, attr, getattr(MockTL, attr))
+
+    sys.modules["triton"] = mock_triton
+    sys.modules["triton.language"] = mock_triton.language
+    return True
+
+
 if TYPE_CHECKING:
     from core.logger import AppLogger
     from core.models import AnalysisParameters, Scene

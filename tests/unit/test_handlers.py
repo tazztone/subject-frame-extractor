@@ -76,7 +76,7 @@ class TestAppUIHandlers:
             "extracted_frames_dir_state": "/path/to/frames",
         }
 
-        updates = app_ui._on_extraction_success(result, current_state)
+        updates = app_ui.pipeline_handler._on_extraction_success(result, current_state)
 
         new_state = updates[app_ui.components["application_state"]]
         assert new_state.extracted_video_path == "/path/to/video.mp4"
@@ -90,7 +90,7 @@ class TestAppUIHandlers:
             "output_dir": "/test/output",
         }
 
-        updates = app_ui._on_pre_analysis_success(result, current_state)
+        updates = app_ui.pipeline_handler._on_pre_analysis_success(result, current_state)
 
         new_state = updates[app_ui.components["application_state"]]
         assert len(new_state.scenes) == 1
@@ -101,7 +101,7 @@ class TestAppUIHandlers:
         current_state = ApplicationState(analysis_output_dir="/test")
         result = {"output_dir": "/test"}
 
-        updates = app_ui._on_propagation_success(result, current_state)
+        updates = app_ui.pipeline_handler._on_propagation_success(result, current_state)
 
         assert updates[app_ui.components["application_state"]] == current_state
 
@@ -112,7 +112,7 @@ class TestAppUIHandlers:
             "metadata_path": "/test/metadata.db",
         }
 
-        updates = app_ui._on_analysis_success(result, current_state)
+        updates = app_ui.pipeline_handler._on_analysis_success(result, current_state)
 
         new_state = updates[app_ui.components["application_state"]]
         assert new_state.analysis_metadata_path == "/test/metadata.db"

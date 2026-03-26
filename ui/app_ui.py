@@ -4,7 +4,6 @@ import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from inspect import isgeneratorfunction
 from pathlib import Path
 from queue import Empty, Queue
 from typing import Any, Callable, Dict, Generator, List, Optional
@@ -17,30 +16,16 @@ import torch
 from core.application_state import ApplicationState
 from core.batch_manager import BatchItem, BatchManager
 from core.config import Config
-from core.events import ExportEvent, ExtractionEvent, FilterEvent, PreAnalysisEvent, PropagationEvent, SessionLoadEvent
+from core.events import ExportEvent, ExtractionEvent, FilterEvent, PreAnalysisEvent
 from core.export import dry_run_export, export_kept_frames
 from core.logger import AppLogger
 from core.managers import ModelRegistry, ThumbnailManager
-from core.models import Scene
-from core.pipelines import (
-    AdvancedProgressTracker,
-    execute_analysis,
-    execute_extraction,
-    execute_pre_analysis,
-    execute_propagation,
-    execute_session_load,
-)
-from core.scene_utils import (
-    get_scene_status_text,
-)
+from core.pipelines import AdvancedProgressTracker, execute_extraction
 from core.utils import is_image_folder
 from ui.components.log_viewer import LogViewer
-from ui.gallery_utils import (
-    auto_set_thresholds,
-    build_scene_gallery_items,
-    on_filters_changed,
-)
-from ui.handlers import SceneHandler
+from ui.decorators import safe_ui_callback
+from ui.gallery_utils import auto_set_thresholds, on_filters_changed
+from ui.handlers import PipelineHandler, SceneHandler
 from ui.tabs import (
     ExtractionTabBuilder,
     FilteringTabBuilder,
@@ -217,44 +202,9 @@ class AppUI:
             "scene_gallery",
         ]
 
-        # Undo/Redo History
-        self.history_depth = 10
+        # Handlers
         self.scene_handler = SceneHandler(self)
-
-    def _handle_exception(self, e: Exception, context: str = "Operation") -> dict:
-        """Standardized exception handling for UI callbacks."""
-        error_msg = f"[ERROR] {context} failed: {e}"
-        self.logger.error(error_msg, exc_info=True)
-        return {
-            self.components["unified_log"]: error_msg,
-            self.components["unified_status"]: f"❌ **{context} Failed.** Check logs for details.",
-        }
-
-    @staticmethod
-    def safe_ui_callback(context: str):
-        """Decorator to wrap UI callbacks with error handling, supporting both returns and generators."""
-
-        def decorator(func: Callable):
-            if isgeneratorfunction(func):
-
-                def generator_wrapper(self, *args, **kwargs):
-                    try:
-                        yield from func(self, *args, **kwargs)
-                    except Exception as e:
-                        yield self._handle_exception(e, context)
-
-                return generator_wrapper
-            else:
-
-                def sync_wrapper(self, *args, **kwargs):
-                    try:
-                        return func(self, *args, **kwargs)
-                    except Exception as e:
-                        return self._handle_exception(e, context)
-
-                return sync_wrapper
-
-        return decorator
+        self.pipeline_handler = PipelineHandler(self)
 
     def preload_models(self):
         """
@@ -393,7 +343,7 @@ class AppUI:
         """Builds the UI header section with title and status indicators."""
         with gr.Row(elem_id="header_row", equal_height=True):
             with gr.Column(scale=4):
-                gr.Markdown("# 🎨 Frame Extractor & Analyzer v2.0")
+                gr.Markdown("# 🎨 Frame Extractor & Analyzer v4.0.0")
                 gr.Markdown("*Professional AI-Powered Dataset Curation Tool*")
             with gr.Column(scale=1):
                 self._create_component("model_status_indicator", "markdown", {"value": "🟡 **System Initializing...**"})
@@ -753,30 +703,6 @@ class AppUI:
                 generator.close()
 
     @safe_ui_callback("Extraction")
-    def run_extraction_wrapper(self, current_state: ApplicationState, *args, progress=None):
-        """Wrapper to execute the extraction pipeline."""
-        ui_args = dict(zip(self.ext_ui_map_keys, args))
-        if isinstance(ui_args.get("upload_video"), list):
-            ui_args["upload_video"] = ui_args["upload_video"][0] if ui_args["upload_video"] else None
-        clean_args = {k: v for k, v in ui_args.items() if v is not None}
-
-        try:
-            event = ExtractionEvent.model_validate(clean_args)
-        except Exception as e:
-            self.app_logger.error(f"Validation failed: {e}", exc_info=True)
-            yield {
-                self.components["unified_log"]: f"[ERROR] Validation failed: {e}",
-                self.components["unified_status"]: "❌ **Validation Failed.** Check inputs.",
-            }
-            return
-
-        yield from self._run_pipeline(
-            execute_extraction,
-            event,
-            progress or gr.Progress(),
-            lambda res: self._on_extraction_success(res, current_state),
-        )
-
     @safe_ui_callback("Add to Queue")
     def add_to_queue_handler(self, *args):
         """Adds a job to the batch processing queue."""
@@ -828,268 +754,6 @@ class AppUI:
         """Helper to save logs to the result directory."""
         if output_dir_str:
             self.logger.copy_log_to_output(Path(output_dir_str))
-
-    def _on_extraction_success(self, result: dict, current_state: ApplicationState) -> dict:
-        """Callback for successful extraction."""
-        new_state = current_state.model_copy()
-        new_state.extracted_video_path = result["extracted_video_path_state"]
-        new_state.extracted_frames_dir = result["extracted_frames_dir_state"]
-
-        # Auto-save logs
-        self._save_session_log(result["extracted_frames_dir_state"])
-
-        msg = f"""<div class="success-card">
-        <h3>✅ Frame Extraction Complete</h3>
-        <p>Frames have been saved to <code>{result["extracted_frames_dir_state"]}</code></p>
-        <p><strong>Next:</strong> Define the subject you want to track.</p>
-        </div>"""
-        return {
-            self.components["application_state"]: new_state,
-            self.components["unified_status"]: msg,
-        }
-
-    def _on_pre_analysis_success(self, result: dict, current_state: ApplicationState) -> dict:
-        """Callback for successful pre-analysis."""
-        new_state = current_state.model_copy()
-        new_state.scenes = result["scenes"]
-        new_state.analysis_output_dir = result["output_dir"]
-
-        # Auto-save logs
-        self._save_session_log(result["output_dir"])
-
-        scenes_objs = [Scene(**s) for s in result["scenes"]]
-        status_text, button_update = get_scene_status_text(scenes_objs)
-
-        # Hide propagation for image-only folders
-        if not new_state.extracted_video_path:
-            button_update = gr.update(visible=False)
-        else:
-            # Ensure visible for videos
-            if isinstance(button_update, dict):
-                button_update["visible"] = True
-            else:
-                button_update = gr.update(
-                    visible=True,
-                    interactive=button_update.interactive if hasattr(button_update, "interactive") else True,
-                )
-
-        msg = f"""<div class="success-card">
-        <h3>✅ Pre-Analysis Complete</h3>
-        <p>Found <strong>{len(scenes_objs)}</strong> scenes.</p>
-        <p><strong>Next:</strong> {"Review scenes and compute metrics." if is_image_folder(result["output_dir"]) else "Review scenes and propagate masks."}</p>
-        </div>"""
-
-        # Build gallery items for the first page
-        items, index_map, total_pages = build_scene_gallery_items(
-            new_state.scenes, "Kept", new_state.extracted_frames_dir, page_num=1, config=self.config
-        )
-        new_state.scene_gallery_index_map = index_map
-        page_choices = [str(i) for i in range(1, total_pages + 1)] if total_pages > 0 else ["1"]
-
-        return {
-            self.components["application_state"]: new_state,
-            self.components["seeding_results_column"]: gr.update(visible=True),
-            self.components["propagation_group"]: gr.update(visible=True),
-            self.components["propagate_masks_button"]: button_update,
-            self.components["scene_filter_status"]: status_text,
-            self.components["unified_status"]: msg,
-            self.components["scene_gallery"]: gr.update(value=items),
-            self.components["total_pages_label"]: f"/ {total_pages} pages",
-            self.components["page_number_input"]: gr.update(choices=page_choices, value="1"),
-        }
-
-    @safe_ui_callback("Pre-Analysis")
-    def run_pre_analysis_wrapper(self, current_state: ApplicationState, *args, progress=None):
-        """Wrapper to execute the pre-analysis pipeline."""
-        event = self._create_pre_analysis_event(current_state, *args)
-        yield from self._run_pipeline(
-            execute_pre_analysis,
-            event,
-            progress or gr.Progress(),
-            lambda res: self._on_pre_analysis_success(res, current_state),
-        )
-
-    @safe_ui_callback("Propagation")
-    def _propagation_button_handler(self, current_state: ApplicationState, *args, progress=None):
-        """Button handler for propagation that properly yields from the generator."""
-        if not current_state.extracted_video_path:
-            yield {self.components["unified_log"]: "ℹ️ Propagation is not needed for image folders."}
-            return
-        yield from self.run_propagation_wrapper(current_state.scenes, current_state, *args, progress=progress)
-
-    @safe_ui_callback("Analysis")
-    def _analysis_button_handler(self, current_state: ApplicationState, *args, progress=None):
-        """Button handler for analysis that properly yields from the generator."""
-        yield from self.run_analysis_wrapper(current_state.scenes, current_state, *args, progress=progress)
-
-    @safe_ui_callback("Propagation")
-    def run_propagation_wrapper(self, scenes, current_state: ApplicationState, *args, progress=None):
-        """Wrapper to execute the mask propagation pipeline."""
-        if not scenes:
-            yield {self.components["unified_log"]: "No scenes."}
-            return
-        params = self._create_pre_analysis_event(current_state, *args)
-        event = PropagationEvent(
-            output_folder=params.output_folder, video_path=params.video_path, scenes=scenes, analysis_params=params
-        )
-        yield from self._run_pipeline(
-            execute_propagation,
-            event,
-            progress or gr.Progress(),
-            lambda res: self._on_propagation_success(res, current_state),
-        )
-
-    def _on_propagation_success(self, result: dict, current_state: ApplicationState) -> dict:
-        """Callback for successful propagation."""
-        msg = """<div class="success-card">
-        <h3>✅ Mask Propagation Complete</h3>
-        <p>Masks have been propagated to all frames in kept scenes.</p>
-        <p><strong>Next:</strong> Compute metrics.</p>
-        </div>"""
-        return {
-            self.components["application_state"]: current_state,
-            self.components["unified_status"]: msg,
-        }
-
-    @safe_ui_callback("Analysis")
-    def run_analysis_wrapper(self, scenes, current_state: ApplicationState, *args, progress=None):
-        """Wrapper to execute the full analysis pipeline."""
-        if not scenes:
-            yield {self.components["unified_log"]: "No scenes."}
-            return
-        params = self._create_pre_analysis_event(current_state, *args)
-        event = PropagationEvent(
-            output_folder=params.output_folder, video_path=params.video_path, scenes=scenes, analysis_params=params
-        )
-        yield from self._run_pipeline(
-            execute_analysis,
-            event,
-            progress or gr.Progress(),
-            lambda res: self._on_analysis_success(res, current_state),
-        )
-
-    def _on_analysis_success(self, result: dict, current_state: ApplicationState) -> dict:
-        """Callback for successful analysis."""
-        new_state = current_state.model_copy()
-        new_state.analysis_metadata_path = result["metadata_path"]
-
-        # Auto-save logs (Analysis output dir is usually same as extraction, but ensuring correctness)
-        self._save_session_log(str(Path(result["metadata_path"]).parent))
-
-        msg = """<div class="success-card">
-        <h3>✅ Analysis Complete</h3>
-        <p>Metadata saved. You can now filter and export.</p>
-        </div>"""
-        return {
-            self.components["application_state"]: new_state,
-            self.components["unified_status"]: msg,
-        }
-
-    @safe_ui_callback("Load Session")
-    def run_session_load_wrapper(self, session_path: str, current_state: ApplicationState):
-        """Loads a previous session and updates the UI state."""
-        event = SessionLoadEvent(session_path=session_path)
-        yield {self.components["unified_status"]: "🔄 Loading Session..."}
-
-        # Call core function directly
-        result = execute_session_load(event, self.logger)
-
-        if result.get("error"):
-            yield {self.components["unified_log"]: f"[ERROR] {result['error']}"}
-            return
-
-        run_config = result["run_config"]
-        session_path = Path(result["session_path"])
-        scenes_data = result["scenes"]
-        metadata_exists = result["metadata_exists"]
-
-        def _resolve_output_dir(base: Path, output_folder: str | None) -> Path | None:
-            if not output_folder:
-                return None
-            p = Path(output_folder)
-            if p.exists():
-                return p.resolve()
-            if not p.is_absolute():
-                return (base / p).resolve()
-            return p
-
-        output_dir = _resolve_output_dir(session_path, run_config.get("output_folder")) or session_path
-
-        new_state = current_state.model_copy()
-        new_state.extracted_video_path = run_config.get("video_path", "")
-        new_state.extracted_frames_dir = str(output_dir)
-        new_state.analysis_output_dir = str(output_dir.resolve() if output_dir else "")
-
-        updates = {
-            self.components["source_input"]: gr.update(value=run_config.get("source_path", "")),
-            self.components["max_resolution"]: gr.update(value=run_config.get("max_resolution", "1080")),
-            self.components["thumb_megapixels_input"]: gr.update(value=run_config.get("thumb_megapixels", 0.5)),
-            self.components["ext_scene_detect_input"]: gr.update(value=run_config.get("scene_detect", True)),
-            self.components["method_input"]: gr.update(value=run_config.get("method", "scene")),
-            self.components["pre_analysis_enabled_input"]: gr.update(
-                value=run_config.get("pre_analysis_enabled", True)
-            ),
-            self.components["pre_sample_nth_input"]: gr.update(value=run_config.get("pre_sample_nth", 1)),
-            self.components["enable_face_filter_input"]: gr.update(value=run_config.get("enable_face_filter", False)),
-            self.components["face_model_name_input"]: gr.update(value=run_config.get("face_model_name", "buffalo_l")),
-            self.components["face_ref_img_path_input"]: gr.update(value=run_config.get("face_ref_img_path", "")),
-            self.components["text_prompt_input"]: gr.update(value=run_config.get("text_prompt", "")),
-            self.components["best_frame_strategy_input"]: gr.update(
-                value=run_config.get("best_frame_strategy", "Largest Person")
-            ),
-            self.components["tracker_model_name_input"]: gr.update(value=run_config.get("tracker_model_name", "sam3")),
-            self.components["application_state"]: new_state,
-        }
-
-        # Handle Seed Strategy mismatch (UI vs Config key)
-        if "seed_strategy" in run_config:
-            updates[self.components["best_frame_strategy_input"]] = gr.update(value=run_config["seed_strategy"])
-        if "primary_seed_strategy" in run_config:
-            updates[self.components["primary_seed_strategy_input"]] = gr.update(
-                value=run_config["primary_seed_strategy"]
-            )
-
-        if scenes_data and output_dir:
-            scenes = [Scene(**s) for s in scenes_data]
-            status_text, button_update = get_scene_status_text(scenes)
-            gallery_items, index_map, _ = build_scene_gallery_items(scenes, "Kept", str(output_dir), config=self.config)
-            new_state.scenes = [s.model_dump() for s in scenes]
-            new_state.scene_gallery_index_map = index_map
-
-            updates.update(
-                {
-                    self.components["propagate_masks_button"]: button_update,
-                    self.components["seeding_results_column"]: gr.update(visible=True),
-                    self.components["propagation_group"]: gr.update(visible=True),
-                    self.components["scene_filter_status"]: status_text,
-                    self.components["scene_face_sim_min_input"]: gr.update(
-                        visible=any((s.seed_metrics or {}).get("best_face_sim") is not None for s in scenes)
-                    ),
-                    self.components["scene_gallery"]: gr.update(value=gallery_items),
-                }
-            )
-
-        if metadata_exists:
-            new_state.analysis_output_dir = str(session_path)
-            new_state.analysis_metadata_path = str(session_path / "metadata.db")
-            updates.update(
-                {
-                    self.components["filtering_tab"]: gr.update(interactive=True),
-                }
-            )
-
-        for metric in self.ana_ui_map_keys:
-            if metric.startswith("compute_") and metric in self.components:
-                updates[self.components[metric]] = gr.update(value=run_config.get(metric, True))
-
-        updates.update(
-            {
-                self.components["application_state"]: new_state,
-                self.components["unified_log"]: f"Successfully loaded session from: {session_path}",
-                self.components["unified_status"]: "✅ Session Loaded.",
-            }
-        )
-        yield updates
 
     def _fix_strategy_visibility(self, strategy: str) -> dict:
         """Adjusts UI component visibility based on the selected seed strategy."""
@@ -1144,7 +808,7 @@ class AppUI:
 
         # Load Session
         c["load_session_button"].click(
-            fn=self.run_session_load_wrapper,
+            fn=self.pipeline_handler.run_session_load_wrapper,
             inputs=[c["session_path_input"], c["application_state"]],
             outputs=self.all_outputs,
             show_progress="hidden",
@@ -1153,30 +817,28 @@ class AppUI:
         ext_inputs = [c["application_state"]] + self._get_inputs(self.ext_ui_map_keys)
         self.ana_input_components = [c["application_state"]] + self._get_inputs(self.ana_ui_map_keys)
 
-        # Propagation and Analysis also need scenes
-        def get_prop_inputs(state):
-            # This is a bit tricky with current wrapper signature,
-            # let's simplify wrapper to take state and extract scenes
-            pass
-
         # Pipeline Handlers
         c["start_extraction_button"].click(
-            fn=self.run_extraction_wrapper, inputs=ext_inputs, outputs=self.all_outputs, show_progress="hidden"
+            fn=self.pipeline_handler.run_extraction_wrapper,
+            inputs=ext_inputs,
+            outputs=self.all_outputs,
+            show_progress="hidden",
         )
         c["start_pre_analysis_button"].click(
-            fn=self.run_pre_analysis_wrapper,
+            fn=self.pipeline_handler.run_pre_analysis_wrapper,
             inputs=self.ana_input_components,
             outputs=self.all_outputs,
             show_progress="hidden",
         )
         c["propagate_masks_button"].click(
-            fn=self._propagation_button_handler,
+            # Using current_state.scenes from application_state
+            fn=lambda state, *args: self.pipeline_handler.run_propagation_wrapper(state.scenes, state, *args),
             inputs=self.ana_input_components,
             outputs=self.all_outputs,
             show_progress="hidden",
         )
         c["start_analysis_button"].click(
-            fn=self._analysis_button_handler,
+            fn=lambda state, *args: self.pipeline_handler.run_analysis_wrapper(state.scenes, state, *args),
             inputs=self.ana_input_components,
             outputs=self.all_outputs,
             show_progress="hidden",

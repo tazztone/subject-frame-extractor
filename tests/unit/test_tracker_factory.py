@@ -8,7 +8,7 @@ from core.managers.tracker_factory import build_tracker
 # Previously uncovered: SAM2.1 selection and missing fallback tests
 
 
-@patch("core.managers.sam21.SAM21Wrapper")
+@patch("core.managers.sam2.SAM2Wrapper")
 def test_selects_sam21(mock_sam21):
     """Test that SAM21Wrapper is selected when SAM2 is requested."""
     tracker = build_tracker("sam2", "/tmp/model.pt", "cuda")

@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from core.enums import SceneStatus
-from core.models import AnalysisParameters, Frame, QualityConfig, Scene, SceneState, _coerce, _sanitize_face_ref
+from core.models import AnalysisParameters, Frame, Scene, SceneState, _coerce, _sanitize_face_ref
 
 
 def test_coerce_none():
@@ -104,11 +104,6 @@ def test_analysis_parameters_from_ui():
     # Test invalid pre_sample_nth
     params3 = AnalysisParameters.from_ui(logger, config, pre_sample_nth="0")
     assert params3.pre_sample_nth == 1
-
-
-def test_quality_config():
-    qc = QualityConfig(sharpness_base_scale=100.0, edge_strength_base_scale=50.0)
-    assert qc.enable_niqe is True
 
 
 def test_scene_state_dict_and_initial_bbox():

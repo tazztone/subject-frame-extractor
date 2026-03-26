@@ -47,24 +47,9 @@ def _sanitize_face_ref(kwargs: dict, logger: "AppLogger") -> tuple[str, bool]:
     return str(p), True
 
 
-class QualityConfig(BaseModel):
-    """
-    Configuration for quality metric normalization.
-    DEPRECATED: Replaced by AnalysisParameters and Operator logic.
-    Included for backward compatibility with existing tests.
-    """
-
-    sharpness_base_scale: float
-    edge_strength_base_scale: float
-    enable_niqe: bool = True
-
-
 class FrameMetrics(BaseModel):
     """Container for calculated quality scores for a frame."""
 
-    # TODO: Add histogram-based metrics (color distribution, etc.)
-    # TODO: Consider adding temporal metrics (motion blur, etc.)
-    # TODO: Add confidence intervals for each metric
     quality_score: float = 0.0
     sharpness_score: float = 0.0
     edge_strength_score: float = 0.0
@@ -94,9 +79,10 @@ class Frame(BaseModel):
 class Scene(BaseModel):
     """Represents a detected scene or shot in the video."""
 
-    # TODO: Use Enum for status field (pending, included, excluded)
-    # TODO: Add duration_seconds computed property
-    # TODO: Add scene type classification field
+    @property
+    def duration_frames(self) -> int:
+        return self.end_frame - self.start_frame
+
     shot_id: int
     start_frame: int
     end_frame: int

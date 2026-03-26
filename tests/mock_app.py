@@ -318,6 +318,73 @@ def mock_analysis_execution(
     }
 
 
+def mock_analysis_orchestrator(
+    event,
+    progress_queue,
+    cancel_event,
+    logger,
+    config,
+    thumbnail_manager,
+    cuda_available,
+    progress=None,
+    model_registry=None,
+):
+    """Mocks the analysis orchestrator workflow."""
+    print("[Mock] Running Analysis Orchestrator...")
+    # 1. Pre-Analysis
+    pre_gen = mock_pre_analysis_execution(
+        event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress, model_registry
+    )
+    for res in pre_gen:
+        yield res
+
+    # 2. Propagation
+    yield from mock_propagation_execution(
+        event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress, model_registry
+    )
+
+    # 3. Analysis
+    yield from mock_analysis_execution(
+        event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress, model_registry
+    )
+
+
+def mock_full_pipeline_execution(
+    event,
+    progress_queue,
+    cancel_event,
+    logger,
+    config,
+    thumbnail_manager,
+    cuda_available,
+    progress=None,
+    model_registry=None,
+):
+    """Mocks the full pipeline orchestrator workflow."""
+    print("[Mock] Running Full Pipeline Orchestrator...")
+    # 1. Extraction
+    # We need a dummy object that has .run because mock_extraction_run is patched on the class
+    # Actually, we can just call it or simulate it.
+    yield {"unified_log": "Starting Full Pipeline (Mock)...", "done": False}
+
+    # Simulate Extraction
+    output_dir = os.path.join(config.downloads_dir, "mock_video")
+    os.makedirs(output_dir, exist_ok=True)
+    yield {
+        "unified_log": "Extraction Complete (Mock)",
+        "extracted_video_path_state": "mock_video.mp4",
+        "extracted_frames_dir_state": output_dir,
+        "done": True,
+    }
+
+    yield {"unified_log": "Moving to Analysis stages...", "done": False}
+
+    # Chain to Analysis Orchestrator
+    yield from mock_analysis_orchestrator(
+        event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress, model_registry
+    )
+
+
 def mock_ingest_folder(folder_path, output_dir):
     print(f"[Mock] Ingesting folder: {folder_path}")
     dummy_path = str(Path(__file__).parent / "ui" / "dummy.jpg")
@@ -370,6 +437,8 @@ ui.app_ui.AppUI.preload_models = MagicMock(side_effect=lambda *args: None)
 core.pipelines.execute_pre_analysis = ui.app_ui.execute_pre_analysis = mock_pre_analysis_execution
 core.pipelines.execute_propagation = ui.app_ui.execute_propagation = mock_propagation_execution
 core.pipelines.execute_analysis = ui.app_ui.execute_analysis = mock_analysis_execution
+core.pipelines.execute_analysis_orchestrator = ui.app_ui.execute_analysis_orchestrator = mock_analysis_orchestrator
+core.pipelines.execute_full_pipeline = ui.app_ui.execute_full_pipeline = mock_full_pipeline_execution
 ui.app_ui.export_kept_frames = mock_export_kept_frames
 core.export.export_kept_frames = mock_export_kept_frames
 core.photo_utils.ingest_folder = mock_ingest_folder

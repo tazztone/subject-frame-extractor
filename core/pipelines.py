@@ -143,7 +143,7 @@ def execute_pre_analysis(
     msg = "Pre-Analysis Complete."
     logger.info(msg)
     res: dict[str, Any] = {
-        "unified_log": msg,
+        "unified_log": "Pre-Analysis Complete. (Compute Metrics to continue)",
         "scenes": [s.model_dump() for s in processed],
         "output_dir": str(out_dir),
         "done": True,
@@ -248,3 +248,131 @@ def execute_analysis(
     else:
         error_msg = result.get("error") if result else "Unknown error"
         yield {"unified_log": f"Analysis failed: {error_msg}", "done": False}
+
+
+@handle_common_errors
+def execute_analysis_orchestrator(
+    event: "PreAnalysisEvent",
+    progress_queue: Queue,
+    cancel_event: threading.Event,
+    logger: "AppLogger",
+    config: "Config",
+    thumbnail_manager: "ThumbnailManager",
+    cuda_available: bool,
+    progress: Optional[Callable] = None,
+    model_registry: Optional["ModelRegistry"] = None,
+) -> Generator[dict, None, None]:
+    """Orchestrates Pre-Analysis, Propagation, and Analysis stages."""
+    # 1. Pre-Analysis
+    pre_gen = execute_pre_analysis(
+        event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress, model_registry
+    )
+    pre_result = {}
+    for res in pre_gen:
+        yield res
+        if res.get("done"):
+            pre_result = res
+
+    if not pre_result or not pre_result.get("done"):
+        return
+
+    scenes = pre_result.get("scenes", [])
+    is_video = bool(event.video_path)
+
+    # 2. Propagation (if video)
+    prop_event = PropagationEvent(
+        output_folder=event.output_folder,
+        video_path=event.video_path,
+        scenes=scenes,
+        analysis_params=event,
+    )
+
+    if is_video:
+        prop_gen = execute_propagation(
+            prop_event,
+            progress_queue,
+            cancel_event,
+            logger,
+            config,
+            thumbnail_manager,
+            cuda_available,
+            progress,
+            model_registry,
+        )
+        for res in prop_gen:
+            yield res
+            if not res.get("done"):
+                # If a step fails, we might still want to continue to analysis if possible?
+                # Usually better to stop if propagation fails in a video.
+                pass
+    else:
+        msg = "Mask Propagation (Skipped for Folder)"
+        logger.info(msg)
+        yield {"unified_log": msg}
+
+    # 3. Analysis
+    ana_gen = execute_analysis(
+        prop_event,
+        progress_queue,
+        cancel_event,
+        logger,
+        config,
+        thumbnail_manager,
+        cuda_available,
+        progress,
+        model_registry,
+    )
+    for res in ana_gen:
+        yield res
+
+
+@handle_common_errors
+def execute_full_pipeline(
+    event: "ExtractionEvent",
+    progress_queue: Queue,
+    cancel_event: threading.Event,
+    logger: "AppLogger",
+    config: "Config",
+    thumbnail_manager: "ThumbnailManager",
+    cuda_available: bool,
+    progress: Optional[Callable] = None,
+    model_registry: Optional["ModelRegistry"] = None,
+) -> Generator[dict, None, None]:
+    """Orchestrates the entire flow: Extraction -> Pre-Analysis -> Propagation -> Analysis."""
+    # 1. Extraction
+    ext_gen = execute_extraction(
+        event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress, model_registry
+    )
+    ext_result = {}
+    for res in ext_gen:
+        yield res
+        if res.get("done"):
+            ext_result = res
+
+    if not ext_result or not ext_result.get("done"):
+        return
+
+    # 2. Build Pre-Analysis Event from Extraction Result
+    # This logic matches run_full's behavior in cli_commands.py
+    pre_event = PreAnalysisEvent(
+        output_folder=ext_result["extracted_frames_dir_state"],
+        video_path=ext_result["extracted_video_path_state"],
+        face_ref_img_path="",  # Default to "Find Prominent Person" unless provided
+        face_selection_mode="🧑‍🤝‍🧑 Find Prominent Person",
+        resume=False,
+    )
+
+    yield {"unified_log": "Moving to Analysis stages...", "done": False}
+
+    # 3. Chain to Analysis Orchestrator
+    yield from execute_analysis_orchestrator(
+        pre_event,
+        progress_queue,
+        cancel_event,
+        logger,
+        config,
+        thumbnail_manager,
+        cuda_available,
+        progress,
+        model_registry,
+    )

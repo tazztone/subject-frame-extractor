@@ -49,7 +49,7 @@ def test_run_extraction_wrapper(app_ui):
         # ['source_path', 'upload_video', 'method', 'interval', 'nth_frame', 'max_resolution', 'thumb_megapixels', 'scene_detect']
         args = ["video.mp4", None, "interval", 1.0, 1, "1080", 0.5, True]
 
-        gen = app_ui.run_extraction_wrapper(state, *args)
+        gen = app_ui.pipeline_handler.run_extraction_wrapper(state, *args)
         list(gen)
 
         mock_run_pipeline.assert_called_once()
@@ -108,9 +108,9 @@ class TestMinConfidenceFilter:
         # Mock logger and other dependencies
         app_ui.logger = MagicMock()
 
-        with patch("core.scene_utils.save_scene_seeds"):
-            with patch("ui.app_ui.build_scene_gallery_items", return_value=([], [], 1)):
-                with patch("ui.app_ui.get_scene_status_text", return_value=("Status", MagicMock())):
+        with patch("ui.handlers.scene_handler.save_scene_seeds"):
+            with patch("ui.handlers.scene_handler.build_scene_gallery_items", return_value=([], [], 1)):
+                with patch("ui.handlers.scene_handler.get_scene_status_text", return_value=("Status", MagicMock())):
                     state = ApplicationState(scenes=scenes, extracted_frames_dir="/tmp/test")
                     result = app_ui.scene_handler.on_apply_bulk_scene_filters_extended(
                         state,
@@ -147,9 +147,9 @@ class TestMinConfidenceFilter:
 
         app_ui.logger = MagicMock()
 
-        with patch("core.scene_utils.save_scene_seeds"):
-            with patch("ui.app_ui.build_scene_gallery_items", return_value=([], [], 1)):
-                with patch("ui.app_ui.get_scene_status_text", return_value=("Status", MagicMock())):
+        with patch("ui.handlers.scene_handler.save_scene_seeds"):
+            with patch("ui.handlers.scene_handler.build_scene_gallery_items", return_value=([], [], 1)):
+                with patch("ui.handlers.scene_handler.get_scene_status_text", return_value=("Status", MagicMock())):
                     state = ApplicationState(scenes=scenes, extracted_frames_dir="/tmp/test")
                     result = app_ui.scene_handler.on_apply_bulk_scene_filters_extended(
                         state,
@@ -181,9 +181,9 @@ class TestMinConfidenceFilter:
 
         app_ui.logger = MagicMock()
 
-        with patch("core.scene_utils.save_scene_seeds"):
-            with patch("ui.app_ui.build_scene_gallery_items", return_value=([], [], 1)):
-                with patch("ui.app_ui.get_scene_status_text", return_value=("Status", MagicMock())):
+        with patch("ui.handlers.scene_handler.save_scene_seeds"):
+            with patch("ui.handlers.scene_handler.build_scene_gallery_items", return_value=([], [], 1)):
+                with patch("ui.handlers.scene_handler.get_scene_status_text", return_value=("Status", MagicMock())):
                     state = ApplicationState(scenes=scenes, extracted_frames_dir="/tmp/test")
                     result = app_ui.scene_handler.on_apply_bulk_scene_filters_extended(
                         state,

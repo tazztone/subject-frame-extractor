@@ -39,8 +39,8 @@ class TestPhase1Logic(unittest.TestCase):
                 "page_number_input": gr.Dropdown(),
             }
 
-    @patch("ui.app_ui.is_image_folder")
-    @patch("ui.app_ui.get_scene_status_text")
+    @patch("ui.handlers.pipeline_handlers.is_image_folder")
+    @patch("ui.handlers.pipeline_handlers.get_scene_status_text")
     def test_on_pre_analysis_success_image_folder(self, mock_get_status, mock_is_image_folder):
         mock_is_image_folder.return_value = True
         mock_get_status.return_value = ("status", gr.update(interactive=True))
@@ -48,8 +48,8 @@ class TestPhase1Logic(unittest.TestCase):
         result = {"scenes": [], "output_dir": "/mock/images"}
         current_state = ApplicationState()
 
-        with patch("ui.app_ui.Scene", side_effect=lambda **kwargs: kwargs):
-            updates = self.app._on_pre_analysis_success(result, current_state)
+        with patch("ui.handlers.pipeline_handlers.Scene", side_effect=lambda **kwargs: kwargs):
+            updates = self.app.pipeline_handler._on_pre_analysis_success(result, current_state)
 
             # Check if propagate_masks_button is hidden
             button_update = updates[self.app.components["propagate_masks_button"]]
@@ -57,10 +57,10 @@ class TestPhase1Logic(unittest.TestCase):
 
             # Check success message
             status_msg = updates[self.app.components["unified_status"]]
-            self.assertIn("compute metrics", status_msg)
+            self.assertIn("Compute Metrics", status_msg)
 
-    @patch("ui.app_ui.is_image_folder")
-    @patch("ui.app_ui.get_scene_status_text")
+    @patch("ui.handlers.pipeline_handlers.is_image_folder")
+    @patch("ui.handlers.pipeline_handlers.get_scene_status_text")
     def test_on_pre_analysis_success_video_folder(self, mock_get_status, mock_is_image_folder):
         mock_is_image_folder.return_value = False
         mock_get_status.return_value = ("status", gr.update(interactive=True))
@@ -68,8 +68,8 @@ class TestPhase1Logic(unittest.TestCase):
         result = {"scenes": [], "output_dir": "/mock/video"}
         current_state = ApplicationState(extracted_video_path="/mock/video.mp4")
 
-        with patch("ui.app_ui.Scene", side_effect=lambda **kwargs: kwargs):
-            updates = self.app._on_pre_analysis_success(result, current_state)
+        with patch("ui.handlers.pipeline_handlers.Scene", side_effect=lambda **kwargs: kwargs):
+            updates = self.app.pipeline_handler._on_pre_analysis_success(result, current_state)
 
             # Check if propagate_masks_button is visible
             button_update = updates[self.app.components["propagate_masks_button"]]
@@ -77,12 +77,12 @@ class TestPhase1Logic(unittest.TestCase):
 
             # Check success message
             status_msg = updates[self.app.components["unified_status"]]
-            self.assertIn("propagate masks", status_msg)
+            self.assertIn("Propagate Masks", status_msg)
 
     def test_propagation_button_handler_guard(self):
         current_state = ApplicationState(extracted_video_path="")  # Image mode
 
-        gen = self.app._propagation_button_handler(current_state)
+        gen = self.app.pipeline_handler._propagation_button_handler(current_state)
         updates = next(gen)
 
         self.assertIn("not needed for image folders", updates[self.app.components["unified_log"]])

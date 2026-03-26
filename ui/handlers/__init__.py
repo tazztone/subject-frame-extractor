@@ -7,8 +7,10 @@ extracted from the monolithic AppUI class to improve maintainability.
 
 from __future__ import annotations
 
+from ui.handlers.pipeline_handlers import PipelineHandler
 from ui.handlers.scene_handler import SceneHandler
 
 __all__ = [
     "SceneHandler",
+    "PipelineHandler",
 ]

@@ -79,12 +79,10 @@ def test_extract_folder(mock_setup, mock_execute, runner, tmp_path, mock_pipelin
     mock_execute.assert_called_once()
 
 
-@patch("core.cli_commands.execute_analysis")
-@patch("core.cli_commands.execute_propagation")
-@patch("core.cli_commands.execute_pre_analysis")
+@patch("core.cli_commands.execute_analysis_orchestrator")
 @patch("core.cli_commands._setup_runtime")
 @patch("torch.cuda.is_available", return_value=False)
-def test_analyze(mock_cuda, mock_setup, mock_pre, mock_prop, mock_analysis, runner, tmp_path, mock_pipeline_result):
+def test_analyze(mock_cuda, mock_setup, mock_orch, runner, tmp_path, mock_pipeline_result):
     mock_setup.return_value = (
         MagicMock(),  # config
         MagicMock(),  # logger
@@ -93,9 +91,7 @@ def test_analyze(mock_cuda, mock_setup, mock_pre, mock_prop, mock_analysis, runn
         MagicMock(),  # model_registry
         MagicMock(),  # thumbnail_manager
     )
-    mock_pre.return_value = [{"done": True, "unified_log": "Pre-Analysis Complete", "scenes": []}]
-    mock_prop.return_value = [mock_pipeline_result]
-    mock_analysis.return_value = [mock_pipeline_result]
+    mock_orch.return_value = [{"done": True, "unified_log": "Analysis Complete"}]
 
     # Create session dir
     session_dir = tmp_path / "session"
@@ -158,14 +154,16 @@ def test_extract_invalid_source(runner, tmp_path):
     assert result.exit_code != 0
 
 
-@patch("core.cli_commands.execute_analysis")
-@patch("core.cli_commands.execute_pre_analysis")
+@patch("core.cli_commands.execute_analysis_orchestrator")
 @patch("core.cli_commands._setup_runtime")
 @patch("torch.cuda.is_available", return_value=False)
-def test_analyze_folder(mock_cuda, mock_setup, mock_pre, mock_analysis, runner, tmp_path, mock_pipeline_result):
+def test_analyze_folder(mock_cuda, mock_setup, mock_orch, runner, tmp_path, mock_pipeline_result):
     mock_setup.return_value = (MagicMock(), MagicMock(), MagicMock(), MagicMock(), MagicMock(), MagicMock())
-    mock_pre.return_value = [{"done": True, "unified_log": "Pre Complete", "scenes": []}]
-    mock_analysis.return_value = [mock_pipeline_result]
+    mock_orch.return_value = [
+        {"unified_log": "Pre-Analysis Complete."},
+        {"unified_log": "Mask Propagation (Skipped for Folder)"},
+        {"done": True, "unified_log": "Analysis Complete"},
+    ]
 
     session_dir = tmp_path / "session"
     session_dir.mkdir()
