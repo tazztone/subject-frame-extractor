@@ -5,3 +5,21 @@ repos:
       - id: ruff
         args: [--fix]
       - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: pytest-fast
+        name: pytest-fast
+        entry: uv run pytest tests/unit/
+        language: system
+        pass_filenames: false
+        always_run: true
+        description: Run fast unit tests before commit.
+
+      - id: update-agents-md
+        name: update-agents-md
+        entry: uv run python scripts/update_agents_md.py
+        language: system
+        pass_filenames: false
+        always_run: true
+        description: Keep AGENTS_CODE_REFERENCE.md in sync with the codebase.
