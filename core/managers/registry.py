@@ -62,7 +62,10 @@ class ModelRegistry:
                 self._models[key] = val
 
             if self.logger:
-                self.logger.success(f"Model '{key}' loaded successfully.")
+                if hasattr(self.logger, "success"):
+                    self.logger.success(f"Model '{key}' loaded successfully.")
+                else:
+                    self.logger.info(f"Model '{key}' loaded successfully.")
         return val
 
     def clear(self):
@@ -87,23 +90,37 @@ class ModelRegistry:
             torch.cuda.empty_cache()
 
     def get_tracker(
-        self, model_name: str, models_path: str, user_agent: str, retry_params: tuple, config: "Config"
+        self,
+        model_name: str,
+        models_path: Optional[str] = None,
+        user_agent: Optional[str] = None,
+        retry_params: Optional[tuple] = None,
+        config: Optional["Config"] = None,
     ) -> Optional[Any]:
         """Loads subject tracker with CPU fallback on OOM."""
         # Imports moved to inner functions or re-exports in __init__.py
+
+        # Fallback to self.logger.config if not provided
+        _config = config
+        if _config is None and hasattr(self.logger, "config"):
+            _config = self.logger.config
+
+        _models_path = models_path or (str(_config.models_dir) if _config else None)
+        _user_agent = user_agent or (_config.user_agent if _config else "SubjectFrameExtractor")
+        _retry_params = retry_params or (1, [1])
 
         key = f"tracker_{model_name}"
 
         def _loader():
             device = self.runtime_device_override or ("cuda" if torch.cuda.is_available() else "cpu")
             try:
-                return self._load_tracker_impl(model_name, models_path, user_agent, retry_params, device, config)
+                return self._load_tracker_impl(model_name, _models_path, _user_agent, _retry_params, device, _config)
             except RuntimeError as e:
                 if "out of memory" in str(e) and device == "cuda":
                     self.logger.warning("CUDA OOM during tracker init. Switching to CPU.")
                     torch.cuda.empty_cache()
                     self.runtime_device_override = "cpu"
-                    return self._load_tracker_impl(model_name, models_path, user_agent, retry_params, "cpu", config)
+                    return self._load_tracker_impl(model_name, _models_path, _user_agent, _retry_params, "cpu", _config)
                 raise e
 
         try:
@@ -113,7 +130,13 @@ class ModelRegistry:
             return None
 
     def _load_tracker_impl(
-        self, model_name: str, models_path: str, user_agent: str, retry_params: tuple, device: str, config: "Config"
+        self,
+        model_name: str,
+        models_path: str,
+        user_agent: str,
+        retry_params: tuple,
+        device: str,
+        config: Optional["Config"] = None,
     ):
         from core.error_handling import ErrorHandler
         from core.io_utils import download_model
@@ -122,18 +145,24 @@ class ModelRegistry:
 
         if model_name == "sam2":
             checkpoint_filename = "sam2.1_hiera_tiny.pt"
-            url = config.sam2_checkpoint_url
+            url = config.sam2_checkpoint_url if config else ""
             description = "SAM2.1 Model"
         else:
             # Fallback to sam3 for any other name or "sam3"
             checkpoint_filename = "sam3.pt"
-            url = config.sam3_checkpoint_url
+            url = config.sam3_checkpoint_url if config else ""
             description = "SAM3 Model"
 
         checkpoint_path = Path(models_path) / checkpoint_filename
         if not checkpoint_path.exists():
-            if ".safetensors" in url:
+            if url and ".safetensors" in url:
                 url = url.replace(".safetensors", ".pt")
+
+            if not url:
+                raise ValueError(
+                    f"No checkpoint URL provided for {model_name} and local file {checkpoint_path} not found."
+                )
+
             download_model(
                 url=url,
                 dest_path=checkpoint_path,
@@ -141,6 +170,6 @@ class ModelRegistry:
                 logger=self.logger,
                 error_handler=ErrorHandler(self.logger, *retry_params),
                 user_agent=user_agent,
-                token=config.huggingface_token,
+                token=config.huggingface_token if config else None,
             )
         return build_tracker(model_name, str(checkpoint_path), device=device)

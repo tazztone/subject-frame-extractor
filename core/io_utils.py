@@ -197,7 +197,7 @@ def download_model(
                 )
         elif dest_path.stat().st_size < min_size:
             raise RuntimeError(f"Downloaded {description} seems incomplete (file size too small).")
-        logger.success(f"{description} downloaded and verified successfully.")
+        logger.info(f"{description} downloaded and verified successfully.")
 
     try:
         download_func()

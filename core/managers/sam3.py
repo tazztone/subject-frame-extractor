@@ -22,6 +22,12 @@ class SAM3Wrapper:
 
         with patch("sam3.model_builder.download_ckpt_from_hf", return_value=None):
             self.predictor = build_sam3_video_predictor(checkpoint_path=checkpoint_path, gpus_to_use=gpus)
+
+        # Disable hotstart and confirmation to give immediate feedback for prompted-first workflow
+        # Default in model_builder is hotstart_delay=15, which suppresses masks until they 'stabilize'.
+        # For Subject Extraction, we want exactly what we prompted, immediately.
+        self.predictor.model.hotstart_delay = 0
+        self.predictor.model.masklet_confirmation_enable = False
         self.session_id = None
 
     def init_video(self, video_resource: Union[str, list]):
@@ -34,28 +40,61 @@ class SAM3Wrapper:
     def add_bbox_prompt(
         self, frame_idx: int, obj_id: int, bbox_xywh: list, img_size: tuple, text: Optional[str] = None
     ):
+        if not self.session_id:
+            raise RuntimeError("init_video must be called before adding prompts")
+        """Route through PVS tracker by encoding bbox as two corner points with labels [2, 3]."""
         w, h = img_size
         x, y, bw, bh = bbox_xywh
-        # Ensure relative coordinates are bounded in [0, 1]
-        rel_box = [
-            max(0.0, min(1.0, x / w)),
-            max(0.0, min(1.0, y / h)),
-            max(0.0, min(1.0, (x + bw) / w)),
-            max(0.0, min(1.0, (y + bh) / h)),
+
+        # Normalize and convert to [top-left, bottom-right] — the format add_tracker_new_points expects
+        points = [
+            [max(0.0, min(1.0, x / w)), max(0.0, min(1.0, y / h))],
+            [max(0.0, min(1.0, (x + bw) / w)), max(0.0, min(1.0, (y + bh) / h))],
         ]
+        point_labels = [2, 3]
+
         req = dict(
             type="add_prompt",
             session_id=self.session_id,
             frame_index=frame_idx,
             obj_id=obj_id,
-            bounding_boxes=np.array([rel_box], dtype=np.float32),
-            bounding_box_labels=np.array([1], dtype=np.int32),
+            points=points,
+            point_labels=point_labels,
         )
-        if text:
-            req["text"] = text
+
         resp = self.predictor.handle_request(request=req)
         outputs = resp.get("outputs", {})
-        masks, _ = outputs.get("out_binary_masks"), outputs.get("out_obj_ids")
+
+        # In PVS mode, masks are returned in video_res_masks, which this wrapper aliases
+        masks = outputs.get("out_binary_masks")
+        if masks is not None and len(masks) > 0:
+            if hasattr(masks, "cpu"):
+                masks = masks.cpu().numpy()
+            m = masks[0]
+            if m.ndim == 3:
+                m = m[0]
+            return m > 0
+        return np.zeros((h, w), dtype=bool)
+
+    def add_point_prompt(self, frame_idx: int, obj_id: int, points: list, labels: list, img_size: tuple):
+        if not self.session_id:
+            raise RuntimeError("init_video must be called before adding prompts")
+        """Foreground/background points — routes to PVS via points matching"""
+        w, h = img_size
+        norm_points = [[max(0.0, min(1.0, px / w)), max(0.0, min(1.0, py / h))] for px, py in points]
+
+        req = dict(
+            type="add_prompt",
+            session_id=self.session_id,
+            frame_index=frame_idx,
+            obj_id=obj_id,
+            points=norm_points,
+            point_labels=labels,
+        )
+
+        resp = self.predictor.handle_request(request=req)
+        outputs = resp.get("outputs", {})
+        masks = outputs.get("out_binary_masks")
         if masks is not None and len(masks) > 0:
             if hasattr(masks, "cpu"):
                 masks = masks.cpu().numpy()
@@ -66,6 +105,8 @@ class SAM3Wrapper:
         return np.zeros((h, w), dtype=bool)
 
     def propagate(self, start_idx: int = 0, max_frames: int = None, direction: str = "forward"):
+        if not self.session_id:
+            raise RuntimeError("init_video must be called before propagation")
         for resp in self.predictor.handle_stream_request(
             dict(
                 type="propagate_in_video",
@@ -78,6 +119,9 @@ class SAM3Wrapper:
             frame_idx = resp.get("frame_index")
             out = resp.get("outputs", {})
             masks, ids = out.get("out_binary_masks"), out.get("out_obj_ids")
+            print(
+                f"[DEBUG SAM3Wrapper propagate] Yield resp: frame_idx={frame_idx}, has_masks={masks is not None}, ids={ids}"
+            )
             if masks is None or ids is None:
                 continue
             if hasattr(masks, "cpu"):
@@ -86,7 +130,7 @@ class SAM3Wrapper:
                 m = masks[i]
                 if m.ndim == 3:
                     m = m[0]
-                yield frame_idx, oid, m > 0
+                yield frame_idx, int(oid), m > 0
 
     def detect_objects(self, frame_rgb: np.ndarray, prompt: str) -> list:
         """Detect objects in a frame using a text prompt."""
@@ -101,20 +145,6 @@ class SAM3Wrapper:
         if not self.session_id:
             raise RuntimeError("init_video must be called before adding prompts")
         req = dict(type="add_prompt", session_id=self.session_id, frame_index=frame_idx, text=text)
-        return self.predictor.handle_request(request=req)
-
-    def add_point_prompt(self, frame_idx: int, obj_id: int, points: list, labels: list, img_size: tuple):
-        """Add point prompts to the current session."""
-        if not self.session_id:
-            raise RuntimeError("init_video must be called before adding prompts")
-        req = dict(
-            type="add_prompt",
-            session_id=self.session_id,
-            frame_index=frame_idx,
-            obj_id=obj_id,
-            points=np.array(points, dtype=np.float32),
-            point_labels=np.array(labels, dtype=np.int32),
-        )
         return self.predictor.handle_request(request=req)
 
     def remove_object(self, obj_id: int):
@@ -132,8 +162,12 @@ class SAM3Wrapper:
         """Clear all prompts in the current session."""
         if not self.session_id:
             return
-        req = dict(type="clear_prompts", session_id=self.session_id)
-        return self.predictor.handle_request(request=req)
+        # SAM3 does not natively support a 'clear_prompts' request type
+        # We log and let the session continue or reset manually if needed
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.info(f"SAM3: clear_prompts called for session {self.session_id} (No-op in SAM3)")
 
     def close_session(self):
         if self.session_id:

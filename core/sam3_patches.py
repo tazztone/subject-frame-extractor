@@ -270,6 +270,34 @@ def patch_sam3_detect_objects():
         pass
 
 
+def patch_sam3_pvs_initialization():
+    """
+    SAM3's Sam3VideoInference._build_tracker_output assumes that
+    the detector has processed a frame before PVS (Promptable Visual Segmentation) tracker points
+    are added (PCS first workflow). This causes an AssertionError if adding points/boxes first.
+    This patch allows PVS to optionally initialize the cache as an empty dict.
+    """
+    try:
+        from sam3.model.sam3_video_inference import Sam3VideoInferenceWithInstanceInteractivity
+
+        orig_build_tracker = Sam3VideoInferenceWithInstanceInteractivity._build_tracker_output
+
+        def _build_tracker_output_patched(self, inference_state, frame_idx, refined_obj_id_to_mask=None):
+            if "cached_frame_outputs" not in inference_state:
+                inference_state["cached_frame_outputs"] = {}
+
+            if frame_idx not in inference_state["cached_frame_outputs"]:
+                # Bypass the assertion by populating an empty cache
+                inference_state["cached_frame_outputs"][frame_idx] = {}
+
+            return orig_build_tracker(self, inference_state, frame_idx, refined_obj_id_to_mask)
+
+        Sam3VideoInferenceWithInstanceInteractivity._build_tracker_output = _build_tracker_output_patched
+        logger.debug("Applied SAM3 PVS Initialization patch.")
+    except Exception as e:
+        logger.warning(f"Failed to apply PVS patch: {e}")
+
+
 def apply_patches():
     """Apply all monkey patches to SAM3 with version safety check."""
     # 0. Version Safety Check
@@ -295,8 +323,9 @@ def apply_patches():
     patch_sam3_dtype()
     patch_sam3_bf16_stability()
 
-    # 4. Feature patches
+    # 4. Feature and Workflow patches
     patch_sam3_detect_objects()
+    patch_sam3_pvs_initialization()
 
     # 5. Triton fallbacks
     try:

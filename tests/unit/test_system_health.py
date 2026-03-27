@@ -71,7 +71,7 @@ def test_check_environment_torch_exception():
 def test_simulate_pipeline_success(tmp_path):
     config = MagicMock()
     config.downloads_dir = str(tmp_path / "downloads")
-    config.default_tracker_model_name = "sam3"
+    config.default_tracker_model_name = "sam2"
     logger = MagicMock()
     queue = MagicMock()
     cancel = MagicMock()

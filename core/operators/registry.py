@@ -10,6 +10,7 @@ from __future__ import annotations
 import importlib
 import logging
 import pkgutil
+import sys
 import time
 from typing import TYPE_CHECKING, Any, Optional, Type
 
@@ -140,10 +141,14 @@ def discover_operators(package_path: str = "core.operators") -> list[str]:
             # Skip infrastructure modules to avoid circular imports or re-registration loops
             if modname not in ("base", "registry", "__init__"):
                 try:
-                    importlib.import_module(f"{package_path}.{modname}")
-                except Exception:
+                    full_modname = f"{package_path}.{modname}"
+                    if full_modname in sys.modules:
+                        importlib.reload(sys.modules[full_modname])
+                    else:
+                        importlib.import_module(full_modname)
+                except Exception as e:
                     # Log error but continue discovery
-                    pass
+                    logger.error(f"Failed to discover operator in {modname}: {e}")
 
     return OperatorRegistry.list_names()
 

@@ -23,6 +23,7 @@ These are complex, opinionated patterns that correct behaviors the agent natural
 *   **Thread-Safe Model Access**: Models (like InsightFace) are NOT thread-safe. You MUST use specific locks if running inside `ThreadPoolExecutor`.
 *   **Milestone Logging**: Use **Title Case** for major pipeline milestones or the downstream E2E scraper logs will break.
 *   **Immutable Submodule**: NEVER edit files in `SAM3_repo`. It is an external dependency.
+*   **SAM2.1 Default Baseline**: **SAM2.1 Hiera Tiny** is the project's default tracker and baseline for all integration tests. SAM3 is considered an experimental alternative.
 
 ---
 *Rule Validation Status: Evals are enforced via `uv run pytest tests/unit/test_context_adherence.py`*

@@ -8,6 +8,8 @@ import numpy as np
 import pytest
 import torch
 
+pytestmark = [pytest.mark.sam2]
+
 # We will patch the build function directly where it is used in SAM2Wrapper
 from core.managers.sam2 import SAM2Wrapper
 

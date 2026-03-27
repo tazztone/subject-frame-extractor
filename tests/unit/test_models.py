@@ -84,15 +84,15 @@ def test_scene_state():
 def test_analysis_parameters_from_ui():
     logger = MagicMock()
     config = MagicMock()
-    config.model_dump.return_value = {"default_tracker_model_name": "sam3", "filter_default_quality_score": True}
+    config.model_dump.return_value = {"default_tracker_model_name": "sam2", "filter_default_quality_score": True}
     config.default_thumb_megapixels = 0.5
 
     # Test basic UI creation
     params = AnalysisParameters.from_ui(
-        logger, config, tracker_model_name="sam3", thumb_megapixels="0.8", compute_niqe="true"
+        logger, config, tracker_model_name="sam2", thumb_megapixels="0.8", compute_niqe="true"
     )
     # The default from config is used initially, then overridden by kwargs
-    assert params.tracker_model_name == "sam3"
+    assert params.tracker_model_name == "sam2"
     assert params.thumb_megapixels == 0.8
     assert params.compute_niqe is True
     assert params.compute_quality_score is True  # From config filter_default

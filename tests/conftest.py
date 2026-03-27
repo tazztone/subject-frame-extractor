@@ -229,8 +229,21 @@ modules_to_mock = {
     "torchvision.transforms": MagicMock(),
 }
 
-for mod_name, mod_obj in modules_to_mock.items():
-    sys.modules[mod_name] = mod_obj
+# Patch sys.modules globally ONLY if we are in a mock-safe environment (unit tests)
+# Integration and UI tests MUST use real dependencies.
+import os
+
+# Check if we should skip global mocking (e.g. for integration tests)
+_skip_mocks = os.environ.get("PYTEST_INTEGRATION_MODE") == "true" or any(
+    arg for arg in sys.argv if "tests/integration" in arg or "tests/ui" in arg
+)
+
+if not _skip_mocks:
+    for mod_name, mod_obj in modules_to_mock.items():
+        sys.modules[mod_name] = mod_obj
+else:
+    # Optional: log that we are in "Real Mode"
+    print("\n[PyTest] Integration/UI Mode detected: Global mocks DISABLED.")
 
 
 # NOW import application modules
