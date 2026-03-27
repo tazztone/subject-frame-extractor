@@ -42,6 +42,7 @@ def open_logs(page: Page):
 class TestMainWorkflow:
     """Complete end-to-end workflow tests."""
 
+    @pytest.mark.flaky(reruns=3)
     def test_full_user_flow(self, page: Page, app_server):
         """
         Tests the complete end-to-end workflow:

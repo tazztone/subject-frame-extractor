@@ -102,11 +102,14 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;├──&nbsp;linux_setup_playwright.sh  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;linux_test_all.sh  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;linux_test_cov.sh  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;linux_test_sam2.sh  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;linux_test_sam3.sh  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;linux_test_ui.sh  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;linux_test_unit.sh  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;run_unit_tests.sh  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`run_ux_audit.py`](#-scriptsrun_ux_auditpy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`take_screenshot.py`](#-scriptstake_screenshotpy)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;test.sh  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;update_agents_md.py  
 │&nbsp;&nbsp;&nbsp;└──&nbsp;[`verify_quality.py`](#-scriptsverify_qualitypy)  
 ├──&nbsp;skills-lock.json  
@@ -115,6 +118,7 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;├──&nbsp;dependency_links.txt  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;requires.txt  
 │&nbsp;&nbsp;&nbsp;└──&nbsp;top_level.txt  
+├──&nbsp;test_debug.py  
 ├──&nbsp;test_logging_output  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;frame_map.json  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;mask_metadata.json  
@@ -127,6 +131,7 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;├──&nbsp;scenes.json  
 │&nbsp;&nbsp;&nbsp;└──&nbsp;thumbs  
 ├──&nbsp;tests  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;README.md  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;__init__.py  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;assets  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;conftest.py  
@@ -147,6 +152,7 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;scenes.json  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;thumbs  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_gpu_e2e.py  
+│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_integration_smoke.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;test_real_workflow.py  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;mock_app.py  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;regression  
@@ -204,6 +210,7 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_events.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_export.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_export_advanced.py  
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_export_extended.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_extraction.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_extraction_manager.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_face_clustering.py  
@@ -229,6 +236,7 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_models_property.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_niqe_operator.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_operators.py  
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_operators_extended.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_operators_registry.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_phase1_logic.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_phase2_logic.py  
@@ -794,9 +802,9 @@ class ModelRegistry:
         """Retrieves a model by key, loading it via loader_fn if not present."""
     def clear(self):
         """Clears all models and triggers memory cleanup."""
-    def get_tracker(self, model_name: str, models_path: str, user_agent: str, retry_params: tuple, config: 'Config') -> Optional[Any]:
+    def get_tracker(self, model_name: str, models_path: Optional[str]=None, user_agent: Optional[str]=None, retry_params: Optional[tuple]=None, config: Optional['Config']=None) -> Optional[Any]:
         """Loads subject tracker with CPU fallback on OOM."""
-    def _load_tracker_impl(self, model_name: str, models_path: str, user_agent: str, retry_params: tuple, device: str, config: 'Config'): ...
+    def _load_tracker_impl(self, model_name: str, models_path: str, user_agent: str, retry_params: tuple, device: str, config: Optional['Config']=None): ...
 ```
 
 ### `📄 core/managers/sam2.py`
@@ -808,7 +816,7 @@ class SAM2Wrapper:
     def init_video(self, video_resource: Union[str, list]):
         """Accepts a frame-directory path (list → tempdir logic lives in caller)."""
     def add_bbox_prompt(self, frame_idx: int, obj_id: int, bbox_xywh: list, img_size: tuple, text: Optional[str]=None) -> np.ndarray: ...
-    def propagate(self, start_idx: int=0, max_frames: int=None, direction: str='forward'): ...
+    def propagate(self, start_idx: int=0, max_frames: int=None, reverse: bool=False): ...
     def add_point_prompt(self, frame_idx, obj_id, points, labels, img_size): ...
     def close_session(self): ...
     def reset_session(self): ...
@@ -831,13 +839,12 @@ class SAM3Wrapper:
     def __init__(self, checkpoint_path=None, device='cuda'): ...
     def init_video(self, video_resource: Union[str, list]): ...
     def add_bbox_prompt(self, frame_idx: int, obj_id: int, bbox_xywh: list, img_size: tuple, text: Optional[str]=None): ...
-    def propagate(self, start_idx: int=0, max_frames: int=None, direction: str='forward'): ...
+    def add_point_prompt(self, frame_idx: int, obj_id: int, points: list, labels: list, img_size: tuple): ...
+    def propagate(self, start_idx: int=0, max_frames: int=None, reverse: bool=False): ...
     def detect_objects(self, frame_rgb: np.ndarray, prompt: str) -> list:
         """Detect objects in a frame using a text prompt."""
     def add_text_prompt(self, frame_idx: int, text: str):
         """Add a text prompt to the current session."""
-    def add_point_prompt(self, frame_idx: int, obj_id: int, points: list, labels: list, img_size: tuple):
-        """Add point prompts to the current session."""
     def remove_object(self, obj_id: int):
         """Remove an object from the current session."""
     def reset_session(self):
@@ -1116,7 +1123,7 @@ def run_operators(image_rgb: Any, mask: Optional[Any]=None, config: Optional[Any
 ```python
 """Sharpness Operator - Measures image sharpness using Laplacian variance."""
 @register_operator
-class SharpnessOperator:
+class SharpnessOperator(Operator):
     """Computes sharpness score using Laplacian variance."""
     @property
     def config(self) -> OperatorConfig:
@@ -1241,6 +1248,8 @@ def patch_sam3_bf16_stability():
     """Patch TransformerDecoderLayer.forward_ffn to handle BFloat16 inputs"""
 def patch_sam3_detect_objects():
     """Add detect_objects capability to Sam3VideoPredictor classes."""
+def patch_sam3_pvs_initialization():
+    """SAM3's Sam3VideoInference._build_tracker_output assumes that"""
 def apply_patches():
     """Apply all monkey patches to SAM3 with version safety check."""
 ```

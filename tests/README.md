@@ -1,6 +1,6 @@
 # Testing Strategy & Patterns
 
-**Note:** `tests/README.md` is the primary developer-facing source of truth for running and writing tests. This file mirrors that content for architectural reference.
+**Note:** This is the primary developer-facing source of truth for running and writing tests.
 
 **Analysis Date:** 2026-03-25
 **Deep Dive Refinement:** Standardized monkeypatch testing, exhaustive torch dtype mocking, and transparent context manager patterns.
@@ -17,6 +17,20 @@
 ## Setup & Execution
 
 All tests should be run using `uv` to ensure the correct environment.
+
+### Primary Entry Points (`scripts/`)
+
+| Script | Purpose | Usage |
+| :--- | :--- | :--- |
+| `scripts/test.sh` | **Standard Quality Pass**. Runs Ruff, Unit Tests, and Integration Smoke Tests. | `./scripts/test.sh` |
+| `scripts/linux_test_all.sh` | Runs the full suite: Unit, Integration (Real), and UI/E2E tests. | `./scripts/linux_test_all.sh` |
+| `scripts/linux_test_unit.sh` | Runs only fast, mocked unit tests in `tests/unit/`. | `./scripts/linux_test_unit.sh` |
+| `scripts/linux_test_ui.sh` | Runs Playwright browser automation tests in `tests/ui/`. | `./scripts/linux_test_ui.sh` |
+| `scripts/linux_test_cov.sh` | Runs unit tests and generates a detailed coverage report. | `./scripts/linux_test_cov.sh` |
+| `scripts/linux_test_sam2.sh` | Targeted tests for SAM2 integration and patches. | `./scripts/linux_test_sam2.sh` |
+| `scripts/linux_test_sam3.sh` | Targeted tests for SAM3 logic and patches. | `./scripts/linux_test_sam3.sh` |
+| `scripts/run_ux_audit.py` | Automated UX quality audit (visuals, accessibility, performance). | `uv run python scripts/run_ux_audit.py` |
+| `scripts/verify_quality.py` | Verifies ML output quality (mask yield, tracking drops) post-execution. | `uv run python scripts/verify_quality.py` |
 
 1. **Unit Tests (Fast)**: `uv run pytest tests/unit/`
 2. **Integration Tests (Slow)**: `uv run pytest tests/integration/`

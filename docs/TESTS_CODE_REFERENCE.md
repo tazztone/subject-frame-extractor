@@ -12,6 +12,7 @@ This file contains auto-generated code skeletons for the test suite.
 ## Table of Contents
 
 tests  
+├──&nbsp;README.md  
 ├──&nbsp;[`__init__.py`](#-tests__init__py)  
 ├──&nbsp;assets  
 ├──&nbsp;[`conftest.py`](#-testsconftestpy)  
@@ -32,6 +33,7 @@ tests
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;scenes.json  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;thumbs  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_gpu_e2e.py`](#-testsintegrationtest_gpu_e2epy)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_integration_smoke.py`](#-testsintegrationtest_integration_smokepy)  
 │&nbsp;&nbsp;&nbsp;└──&nbsp;[`test_real_workflow.py`](#-testsintegrationtest_real_workflowpy)  
 ├──&nbsp;[`mock_app.py`](#-testsmock_apppy)  
 ├──&nbsp;regression  
@@ -89,6 +91,7 @@ tests
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_events.py`](#-testsunittest_eventspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_export.py`](#-testsunittest_exportpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_export_advanced.py`](#-testsunittest_export_advancedpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_export_extended.py`](#-testsunittest_export_extendedpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_extraction.py`](#-testsunittest_extractionpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_extraction_manager.py`](#-testsunittest_extraction_managerpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_face_clustering.py`](#-testsunittest_face_clusteringpy)  
@@ -114,6 +117,7 @@ tests
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_models_property.py`](#-testsunittest_models_propertypy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_niqe_operator.py`](#-testsunittest_niqe_operatorpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_operators.py`](#-testsunittest_operatorspy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_operators_extended.py`](#-testsunittest_operators_extendedpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_operators_registry.py`](#-testsunittest_operators_registrypy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_phase1_logic.py`](#-testsunittest_phase1_logicpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_phase2_logic.py`](#-testsunittest_phase2_logicpy)  
@@ -197,6 +201,7 @@ _mock_torch_obj.inference_mode = TransparentContext
 _mock_torch_obj.SymFloat = MagicMock
 _mock_torch_obj.SymInt = MagicMock
 modules_to_mock = {'torch': _create_mock_module('torch', {'cuda': _mock_torch...
+_skip_mocks = os.environ.get('PYTEST_INTEGRATION_MODE') == 'true' or any((arg...
 @pytest.fixture(autouse=True)
 def clean_registry():
     """Ensure OperatorRegistry is clean before each test."""
@@ -269,7 +274,7 @@ class Logger(object):
     def __init__(self, filename): ...
     def write(self, message): ...
     def flush(self): ...
-def run_e2e_verification(): ...
+def run_e2e_verification(tracker_model='sam2'): ...
 ```
 
 ### `📄 tests/e2e/test_photo_cli.py`
@@ -299,15 +304,23 @@ def verify_ui_simple(): ...
 ```python
 """GPU E2E Tests - Real inference with actual models."""
 pytestmark = [pytest.mark.gpu_e2e, pytest.mark.slow]
-def _create_test_image(width=256, height=256):
-    """Create a simple test image with a rectangle (simulates an object)."""
+@pytest.fixture(scope='module')
+def module_model_registry():
+    """Module-scoped model registry to avoid reloading weights between tests."""
+def _create_test_image(width=256, height=256, frame_idx=0):
+    """Create a high-entropy test image with a noise-textured complex object (simula..."""
 def _create_test_image_with_face(width=256, height=256):
     """Create a test image with a face-like pattern."""
+REAL_VIDEO_PATH = Path('/home/tazztone/_coding/subject-frame-extractor/downlo...
+REAL_BBOX = [652, 207, 71, 102]
 def _create_test_frames_dir(tmp_path, num_frames=5, width=256, height=256):
-    """Create a directory with test frames for SAM3 video processing."""
+    """Create a directory with high-entropy test frames for robust tracking tests."""
 def _is_sam3_available():
     """Check if SAM3 is properly installed and can be imported."""
 requires_sam3 = pytest.mark.skipif(not _is_sam3_available(), reason='SAM3 not...
+def _is_sam2_available():
+    """Check if SAM2 is properly installed and can be imported."""
+requires_sam2 = pytest.mark.skipif(not _is_sam2_available(), reason='SAM2 not...
 @pytest.fixture
 def test_image():
     """Provides a simple test image."""
@@ -317,44 +330,66 @@ def test_image_with_face():
 @pytest.fixture
 def test_frames_dir(tmp_path):
     """Provides a directory with test frames for video processing."""
+@pytest.mark.gpu_e2e
 class TestCUDAAvailability:
     """Verify CUDA is available and working before running GPU tests."""
     def test_cuda_available(self):
         """CUDA must be available for GPU E2E tests."""
     def test_cuda_memory_available(self):
         """Verify sufficient GPU memory (~4GB needed)."""
+@pytest.mark.gpu_e2e
+@pytest.mark.sam3
 class TestSAM3Inference:
     """Real SAM3 inference tests - catches BFloat16 and other runtime errors."""
     @requires_sam3
     def test_sam3_wrapper_initialization(self, tmp_path):
         """SAM3Wrapper can be initialized without errors."""
     @requires_sam3
-    def test_sam3_init_video(self, test_frames_dir):
+    def test_sam3_init_video(self, tmp_path):
         """SAM3 init_video() initializes inference state correctly."""
     @requires_sam3
-    def test_sam3_add_bbox_prompt(self, test_frames_dir):
+    def test_sam3_add_bbox_prompt(self, tmp_path, module_model_registry):
         """SAM3 add_bbox_prompt() returns valid mask."""
     @requires_sam3
-    def test_sam3_propagate_forward(self, test_frames_dir):
-        """SAM3 propagate() forward generator yields valid results."""
+    def test_sam3_propagate_forward(self, tmp_path, module_model_registry):
+        """SAM3 propagate() forward generator yields valid results with real media."""
     @requires_sam3
-    def test_sam3_propagate_bidirectional(self, tmp_path):
-        """SAM3 propagate() works bidirectionally from middle frame."""
+    def test_sam3_propagate_bidirectional(self, tmp_path, module_model_registry):
+        """SAM3 propagate() works bidirectionally from middle frame with real media."""
     @requires_sam3
     def test_sam3_clear_prompts(self, test_frames_dir):
         """SAM3 clear_prompts() resets session state."""
+@pytest.mark.gpu_e2e
+@pytest.mark.sam2
+class TestSAM2Inference:
+    """Real SAM2 inference tests - catches BFloat16 and other runtime errors."""
+    @requires_sam2
+    def test_sam2_wrapper_initialization(self, tmp_path, module_model_registry):
+        """SAM2Wrapper can be initialized without errors via ModelRegistry."""
+    @requires_sam2
+    def test_sam2_init_video(self, test_frames_dir, module_model_registry):
+        """SAM2 init_video() initializes inference state correctly."""
+    @requires_sam2
+    def test_sam2_add_bbox_prompt(self, tmp_path, module_model_registry):
+        """SAM2 add_bbox_prompt() returns valid mask."""
+    @requires_sam2
+    def test_sam2_propagate_forward(self, test_frames_dir, module_model_registry):
+        """SAM2 propagate() forward generator yields valid results."""
+@pytest.mark.gpu_e2e
 class TestInsightFaceInference:
     """Real InsightFace inference tests."""
     def test_insightface_initialization(self, tmp_path):
         """InsightFace can be initialized."""
     def test_face_detection_on_image(self, test_image_with_face, tmp_path):
         """InsightFace can process an image without errors."""
+@pytest.mark.gpu_e2e
 class TestPipelineE2E:
     """End-to-end pipeline tests with real execution."""
     def test_extraction_pipeline_creates_output(self, tmp_path):
         """ExtractionPipeline initializes correctly with real config."""
     def test_analysis_pipeline_initializes_with_real_managers(self, tmp_path):
         """AnalysisPipeline initializes with real ThumbnailManager and ModelRegistry."""
+@pytest.mark.gpu_e2e
 class TestVideoE2E:
     """End-to-end tests with real video processing."""
     @pytest.fixture
@@ -365,8 +400,10 @@ class TestVideoE2E:
         """Create directory with extracted frames and required files."""
     def test_extraction_pipeline_on_real_video(self, test_video_path, tmp_path):
         """ExtractionPipeline can process a real video file."""
-    def test_pre_analysis_with_sam3(self, test_frames_dir, tmp_path):
+    @requires_sam3
+    def test_pre_analysis_with_sam3(self, test_frames_dir, module_model_registry):
         """Pre-analysis can run SAM3 on extracted frames."""
+@pytest.mark.gpu_e2e
 class TestMaskPropagatorE2E:
     """Tests for MaskPropagator with real SAM3 inference."""
     @requires_sam3
@@ -375,12 +412,14 @@ class TestMaskPropagatorE2E:
     @requires_sam3
     def test_mask_propagator_bidirectional(self, tmp_path):
         """MaskPropagator.propagate() works bidirectionally from middle frame."""
+@pytest.mark.gpu_e2e
 class TestOperatorE2E:
     """Tests for quality metric calculation using the Operator framework."""
     def test_run_operators_real(self, test_image, tmp_path):
         """Standard operators can be executed on a real image."""
     def test_niqe_operator_real(self, test_image, tmp_path):
         """NIQE operator can be executed (requires pyiqa and GPU)."""
+@pytest.mark.gpu_e2e
 class TestExportE2E:
     """E2E tests for export pipeline."""
     def test_export_pipeline_initialization(self, tmp_path):
@@ -389,6 +428,7 @@ class TestExportE2E:
         """Export can process frames from a real directory."""
     def test_export_dry_run_mode(self, tmp_path):
         """Dry run export mode works without creating files."""
+@pytest.mark.gpu_e2e
 class TestCancellationE2E:
     """E2E tests for cancel operations during pipeline execution."""
     @requires_sam3
@@ -396,19 +436,23 @@ class TestCancellationE2E:
         """MaskPropagator handles cancel event during propagation."""
     def test_analysis_pipeline_cancel(self, tmp_path):
         """AnalysisPipeline handles cancel event gracefully."""
+@pytest.mark.gpu_e2e
 class TestMediaPipeLandmarkerE2E:
     """E2E tests for MediaPipe Face Landmarker."""
     def test_face_landmarker_import(self):
         """MediaPipe face landmarker can be imported."""
     def test_face_landmarker_model_download(self, tmp_path):
         """Face landmarker model can be downloaded."""
+@pytest.mark.gpu_e2e
 class TestLargeVideoE2E:
     """E2E tests for handling larger videos/frame sequences."""
     def test_many_frames_processing(self, tmp_path):
         """Test processing a larger number of frames."""
     @requires_sam3
-    def test_sam3_with_many_frames(self, tmp_path):
+    @pytest.mark.sam3
+    def test_sam3_with_many_frames(self, tmp_path, module_model_registry):
         """SAM3 can process a larger sequence."""
+@pytest.mark.gpu_e2e
 class TestMaskGenerationE2E:
     """E2E tests for mask generation to catch silent failures."""
     @requires_sam3
@@ -417,9 +461,17 @@ class TestMaskGenerationE2E:
     @requires_sam3
     def test_identity_first_seed_e2e(self, test_image_with_face, tmp_path):
         """Test 'By Face' seeding strategy with real models."""
-    @requires_sam3
     def test_pre_analysis_mask_generation_e2e(self, test_frames_dir, tmp_path):
         """Test the full pre-analysis flow including mask generation."""
+```
+
+### `📄 tests/integration/test_integration_smoke.py`
+
+```python
+def test_integration_smoke_flow(mock_config, mock_logger, mock_model_registry):
+    """Smoke test to verify the integration of BatchManager and Pipelines."""
+def test_pipeline_wiring(mock_config, mock_logger, mock_model_registry):
+    """Verify Pipeline wiring with mocks."""
 ```
 
 ### `📄 tests/integration/test_real_workflow.py`
@@ -427,9 +479,14 @@ class TestMaskGenerationE2E:
 ```python
 VIDEO_PATH = Path('downloads/example clip 720p 2x.mov')
 FACE_PATH = Path('downloads/example face.png')
+def _is_sam3_available():
+    """Check if SAM3 is properly installed and can be imported."""
+def _is_sam2_available():
+    """Check if SAM2 is properly installed and can be imported."""
 @pytest.mark.integration
 @pytest.mark.slow
-def test_real_end_to_end_workflow(tmp_path):
+@pytest.mark.parametrize('tracker_model', ['sam2', 'sam3'])
+def test_real_end_to_end_workflow(tmp_path, tracker_model):
     """Automated version of tests/verification/e2e_run.py."""
 ```
 
@@ -665,6 +722,7 @@ def open_logs(page: Page):
     """Opens the system logs accordion if it's closed."""
 class TestMainWorkflow:
     """Complete end-to-end workflow tests."""
+    @pytest.mark.flaky(reruns=3)
     def test_full_user_flow(self, page: Page, app_server):
         """Tests the complete end-to-end workflow:"""
 class TestTabNavigation:
@@ -815,10 +873,10 @@ def app_server_url(app_server):
     """Returns the URL of the running app server."""
 class TestFullWorkflowMocked:
     """Comprehensive E2E test simulating a full user journey using Playwright"""
-    def test_full_user_journey(self, page: Page, app_server_url):
-        """Simulates:"""
     def switch_to_tab(self, page: Page, tab_name: str):
         """Robustly switch tabs in Gradio."""
+    def test_full_user_journey(self, page: Page, app_server_url):
+        """Simulates:"""
 ```
 
 ### `📄 tests/ui/test_handler_contracts.py`
@@ -984,6 +1042,7 @@ class Selectors:
     PREV_PAGE = "<REDACTED_STRING>"
     NEXT_PAGE = "<REDACTED_STRING>"
     PAGINATION_ROW = "<REDACTED_STRING>"
+    PROPAGATE_MASKS = "<REDACTED_STRING>"
     START_ANALYSIS = "<REDACTED_STRING>"
     FILTER_PRESET = "<REDACTED_STRING>"
     DEDUP_THRESH = "<REDACTED_STRING>"
@@ -1262,8 +1321,8 @@ def test_config_env_overrides():
     """Test that environment variables correctly override default values."""
 def test_config_has_sam2_checkpoint_url():
     """Test that sam2_checkpoint_url is present and points to a SAM2.1 model."""
-def test_config_default_tracker_is_sam3():
-    """Test that the default tracker is now SAM3."""
+def test_config_default_tracker_is_sam2():
+    """Test that the default tracker is SAM2 per AGENTS.md."""
 def test_config_invalid_quality_weights():
     """Test that Config raises a validation error if all quality weights are zero."""
 def test_config_boundary_quality_weights():
@@ -1300,6 +1359,10 @@ class TestUISafety:
 class TestMilestoneCase:
     """Rule: ALWAYS use Title Case for major pipeline milestones."""
     def test_milestone_strings_are_title_case(self): ...
+class TestSAM2DefaultBaseline:
+    """Rule: SAM2.1 Hiera Tiny is the project's default tracker."""
+    def test_config_default_is_sam2(self): ...
+    def test_agents_md_prescribes_sam2_default(self): ...
 ```
 
 ### `📄 tests/unit/test_core.py`
@@ -1542,6 +1605,17 @@ class TestExportAdvanced:
     @patch('cv2.findContours')
     def test_crop_exported_frames_empty_mask(self, mock_findContours, mock_imread, tmp_path):
         """Test handling of empty masks."""
+```
+
+### `📄 tests/unit/test_export_extended.py`
+
+```python
+def test_export_metadata_logic(tmp_path, mock_logger):
+    """Test the internal _export_metadata function."""
+def test_export_kept_frames_no_data(mock_config, mock_logger):
+    """Test export with no data."""
+def test_export_kept_frames_folder_mode(tmp_path, mock_config, mock_logger):
+    """Test export in folder mode (copying files)."""
 ```
 
 ### `📄 tests/unit/test_extraction.py`
@@ -2059,6 +2133,17 @@ def test_sharpness_operator(mock_config): ...
 def test_mask_area_operator(mock_config): ...
 ```
 
+### `📄 tests/unit/test_operators_extended.py`
+
+```python
+def test_eyes_open_operator_basic(mock_config, sample_image, mock_logger):
+    """Test EyesOpenOperator with mock MediaPipe blendshapes."""
+def test_face_pose_operator_basic(mock_config, sample_image, mock_logger):
+    """Test FacePoseOperator with mock transformation matrix."""
+def test_dedup_phash_basic(mock_config, mock_logger):
+    """Test pHash deduplication filter logic."""
+```
+
 ### `📄 tests/unit/test_operators_registry.py`
 
 ```python
@@ -2277,6 +2362,7 @@ def test_quality_score_empty_shared_data():
 ### `📄 tests/unit/test_sam2.py`
 
 ```python
+pytestmark = [pytest.mark.sam2]
 @pytest.fixture
 def mock_sam2_predictor(): ...
 @pytest.fixture
@@ -2297,6 +2383,7 @@ def test_sam21_close_session(mock_sam2_predictor, mock_cuda):
 
 ```python
 """Unit tests for SAM2Wrapper API completeness and functionality."""
+pytestmark = [pytest.mark.sam2]
 @pytest.fixture
 def mock_predictor(): ...
 @patch('core.managers.sam2.build_sam2_video_predictor')

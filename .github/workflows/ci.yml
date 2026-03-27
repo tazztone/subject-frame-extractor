@@ -33,5 +33,8 @@ jobs:
       - name: Run Ruff
         run: uv run ruff check core/ ui/ tests/
 
-      - name: Run tests with pytest
-        run: uv run pytest tests/ -m "not integration and not gpu_e2e and not e2e and not slow" --cov=core --cov-report=xml --cov-report=term-missing
+      - name: Run unit tests with pytest
+        run: uv run pytest tests/unit/ --cov=core --cov-report=xml --cov-report=term-missing
+
+      - name: Run integration smoke tests
+        run: uv run pytest tests/integration/test_integration_smoke.py --no-cov
