@@ -31,7 +31,7 @@ class Config(BaseSettings):
     )
 
     # Paths
-    logs_dir: str = "logs"
+    logs_dir: str = "outputs/logs"
     models_dir: str = "models"
     downloads_dir: str = "downloads"
 

@@ -106,7 +106,7 @@ def simulate_pipeline(
         ext_event = ExtractionEvent(
             source_path="dry-run-assets/sample.mp4",
             method="interval",
-            interval="1.0",
+            interval=1.0,
             nth_frame=5,
             max_resolution="720",
             thumbnails_only=True,

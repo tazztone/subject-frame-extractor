@@ -37,18 +37,18 @@ from core.utils import (
 def _handle_extraction_uploads(event_dict: dict, config: "Config") -> dict:
     """Helper to move uploaded video to downloads directory."""
     if event_dict.get("upload_video"):
-        source = event_dict.pop("upload_video")
-        dest = str(Path(config.downloads_dir) / Path(source).name)
+        source = Path(event_dict.pop("upload_video"))
+        dest = Path(config.downloads_dir) / source.name
         shutil.copy2(source, dest)
-        event_dict["source_path"] = dest
+        event_dict["source_path"] = str(dest)
     return event_dict
 
 
 def _handle_pre_analysis_uploads(event_dict: dict, config: "Config") -> dict:
     """Helper to move uploaded face reference image to downloads directory."""
     if event_dict.get("face_ref_img_upload"):
-        ref = event_dict.pop("face_ref_img_upload")
-        dest = Path(config.downloads_dir) / Path(ref).name
+        ref = Path(event_dict.pop("face_ref_img_upload"))
+        dest = Path(config.downloads_dir) / ref.name
         shutil.copy2(ref, dest)
         event_dict["face_ref_img_path"] = str(dest)
     return event_dict

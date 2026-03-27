@@ -134,6 +134,8 @@ class PreAnalysisPipeline(Pipeline):
             scene.best_frame = scene.start_frame
         elif not scene.best_frame:
             masker._select_best_frame_in_scene(scene, str(self.output_dir))
+        if not masker.frame_map:
+            return
         fname = masker.frame_map.get(scene.best_frame)
         if not fname:
             return
@@ -153,7 +155,7 @@ class PreAnalysisPipeline(Pipeline):
         overlay_rgb = (
             render_mask_overlay(thumb_rgb, mask, 0.6, logger=self.logger)
             if mask is not None
-            else masker.draw_bbox(thumb_rgb, bbox)
+            else (masker.draw_bbox(thumb_rgb, bbox) if bbox else thumb_rgb)
         )
         preview_path = previews_dir / f"scene_{scene.shot_id:05d}.jpg"
         Image.fromarray(overlay_rgb).save(preview_path)
@@ -470,7 +472,7 @@ class AnalysisPipeline(Pipeline):
             if meta.get("shot_id") is not None and (s := self.scene_map.get(meta["shot_id"])) and s.seed_metrics:
                 meta["seed_face_sim"] = s.seed_metrics.get("best_face_sim")
             if hasattr(self.params, "dedup_thresh"):
-                meta["dedup_thresh"] = self.params.dedup_thresh
+                meta["dedup_thresh"] = self.params.dedup_thresh  # type: ignore
             if frame.error:
                 meta["error"] = frame.error
             if meta.get("mask_path"):

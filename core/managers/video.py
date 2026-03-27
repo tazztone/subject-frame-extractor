@@ -2,8 +2,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 import cv2
-import numpy as np
 import yt_dlp as ytdlp
+from yt_dlp.utils import DownloadError
 
 from core.io_utils import validate_video_file
 
@@ -43,7 +43,7 @@ class VideoManager:
                 with ytdlp.YoutubeDL(ydl_opts) as ydl:
                     info = ydl.extract_info(self.source_path, download=True)
                     return str(Path(ydl.prepare_filename(info)))
-            except ytdlp.utils.DownloadError as e:
+            except DownloadError as e:
                 raise RuntimeError(f"Download failed: {e}") from e
 
         local_path = Path(self.source_path)
@@ -58,13 +58,11 @@ class VideoManager:
         cap = cv2.VideoCapture(str(video_path))
         if not cap.isOpened():
             raise IOError(f"Could not open video: {video_path}")
-        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-        if not np.isfinite(fps) or fps <= 0:
-            fps = 30.0
+
         info = {
             "width": int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
             "height": int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
-            "fps": fps,
+            "fps": float(cap.get(cv2.CAP_PROP_FPS)),
             "frame_count": int(cap.get(cv2.CAP_PROP_FRAME_COUNT)),
         }
         cap.release()

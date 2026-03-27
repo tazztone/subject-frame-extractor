@@ -93,7 +93,7 @@ class OperatorRegistry:
             if name not in cls._initialized:
                 if hasattr(operator, "initialize"):
                     try:
-                        operator.initialize(config)
+                        operator.initialize(config)  # type: ignore
                     except Exception:
                         pass  # Operators handle their own errors
                 cls._initialized.add(name)
@@ -101,7 +101,7 @@ class OperatorRegistry:
     @classmethod
     def cleanup_all(cls) -> None:
         """
-        Clean up all registered operators.
+        Clean up all initialized operators.
 
         Calls cleanup() on all initialized operators.
         """
@@ -109,10 +109,11 @@ class OperatorRegistry:
             operator = cls._operators.get(name)
             if operator and hasattr(operator, "cleanup"):
                 try:
-                    operator.cleanup()
+                    operator.cleanup()  # type: ignore
                 except Exception:
                     pass
-            cls._initialized.discard(name)
+            if name in cls._initialized:
+                cls._initialized.remove(name)
 
     @classmethod
     def clear(cls) -> None:

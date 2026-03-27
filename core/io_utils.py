@@ -19,10 +19,12 @@ import cv2
 if TYPE_CHECKING:
     from core.config import Config
     from core.error_handling import ErrorHandler
-    from core.logger import AppLogger
+    from core.logger import LoggerLike
+
+from core.logger import log_with_component
 
 
-def validate_video_file(video_path: str) -> bool:
+def validate_video_file(video_path: str | Path) -> bool:
     """Checks if the video file exists, is not empty, and can be opened by OpenCV."""
     path = Path(video_path)
     if not path.exists():
@@ -91,7 +93,7 @@ def list_images(p: Union[str, Path], cfg: "Config", recursive: bool = False) -> 
     return sorted([f for f in p.iterdir() if f.suffix.lower() in exts and f.is_file()])
 
 
-def detect_hwaccel(logger: "AppLogger") -> tuple[Optional[str], Optional[str]]:
+def detect_hwaccel(logger: "LoggerLike") -> tuple[Optional[str], Optional[str]]:
     """
     Probes FFmpeg for hardware acceleration support.
 
@@ -137,7 +139,7 @@ def download_model(
     url: str,
     dest_path: Union[str, Path],
     description: str,
-    logger: "AppLogger",
+    logger: "LoggerLike",
     error_handler: "ErrorHandler",
     user_agent: str,
     min_size: int = 1_000_000,
@@ -208,9 +210,9 @@ def download_model(
         raise RuntimeError(f"Failed to download required model: {description}") from e
 
 
-def create_frame_map(output_dir: Path, logger: "AppLogger", ext: str = ".webp") -> dict:
+def create_frame_map(output_dir: Path, logger: "LoggerLike", ext: str = ".webp") -> dict:
     """Creates a mapping from original frame numbers to extracted filenames."""
-    logger.info("Loading frame map...", component="frames")
+    log_with_component(logger, "info", "Loading frame map...", component="frames")
     frame_map_path = output_dir / "frame_map.json"
     try:
         with open(frame_map_path, "r", encoding="utf-8") as f:

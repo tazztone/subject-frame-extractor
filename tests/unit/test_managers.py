@@ -247,17 +247,12 @@ class TestManagers:
             with pytest.raises(FileNotFoundError):
                 vm.prepare_video(mock_logger)
 
+    @patch("core.managers.video.DownloadError", new_callable=lambda: type("DownloadError", (Exception,), {}))
     @patch("core.managers.video.ytdlp")
-    def test_video_manager_youtube_error(self, mock_ytdlp_module, mock_config, mock_logger):
-        # We need to make sure the DownloadError class in the mocked module is a real exception class
-        class MockDownloadError(Exception):
-            pass
-
-        mock_ytdlp_module.utils.DownloadError = MockDownloadError
-
+    def test_video_manager_youtube_error(self, mock_ytdlp_module, mock_download_error_cls, mock_config, mock_logger):
         # Setup the YoutubeDL context manager mock
         mock_ctx = mock_ytdlp_module.YoutubeDL.return_value.__enter__.return_value
-        mock_ctx.extract_info.side_effect = MockDownloadError("Failed")
+        mock_ctx.extract_info.side_effect = mock_download_error_cls("Failed")
 
         vm = VideoManager("https://youtube.com/watch?v=bad", mock_config)
 
@@ -270,7 +265,21 @@ class TestManagers:
     def test_get_video_info(self, mock_cap):
         instance = mock_cap.return_value
         instance.isOpened.return_value = True
-        instance.get.side_effect = [30.0, 1920, 1080, 100]  # FPS, W, H, Count
+
+        import cv2
+
+        def get_side_effect(prop):
+            if prop == cv2.CAP_PROP_FRAME_WIDTH:
+                return 1920
+            if prop == cv2.CAP_PROP_FRAME_HEIGHT:
+                return 1080
+            if prop == cv2.CAP_PROP_FPS:
+                return 30.0
+            if prop == cv2.CAP_PROP_FRAME_COUNT:
+                return 100
+            return 0
+
+        instance.get.side_effect = get_side_effect
 
         info = VideoManager.get_video_info("test.mp4")
 
@@ -326,8 +335,14 @@ class TestManagers:
         mock_face.normed_embedding = np.zeros(512)
         mock_analyzer.get.return_value = [mock_face]
 
-        with patch("torch.cuda.is_available", return_value=False):
-            models = initialize_analysis_models(params, mock_config, mock_logger, model_registry)
+        import torch
+
+        if not hasattr(torch.cuda, "is_available"):
+            torch.cuda.is_available = MagicMock(return_value=False)
+        else:
+            torch.cuda.is_available.return_value = False
+
+        models = initialize_analysis_models(params, mock_config, mock_logger, model_registry)
 
         assert models["face_analyzer"] == mock_analyzer
         assert models["ref_emb"] is not None

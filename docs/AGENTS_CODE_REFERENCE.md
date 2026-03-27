@@ -92,9 +92,20 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;__init__.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;pixel_count.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└──&nbsp;test_pixel_count.py  
-├──&nbsp;patch.py  
+├──&nbsp;outputs  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;previews  
+│&nbsp;&nbsp;&nbsp;└──&nbsp;test_logging_output  
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;frame_map.json  
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;mask_metadata.json  
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;masks  
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;previews  
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;progress.json  
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;run_config.json  
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;run_fingerprint.json  
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;scene_seeds.json  
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;scenes.json  
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└──&nbsp;thumbs  
 ├──&nbsp;previews  
-├──&nbsp;pyrightconfig.json  
 ├──&nbsp;run_config.json  
 ├──&nbsp;scripts  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;jules_setup_script.sh  
@@ -106,10 +117,8 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;├──&nbsp;linux_test_sam3.sh  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;linux_test_ui.sh  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;linux_test_unit.sh  
-│&nbsp;&nbsp;&nbsp;├──&nbsp;run_unit_tests.sh  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`run_ux_audit.py`](#-scriptsrun_ux_auditpy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`take_screenshot.py`](#-scriptstake_screenshotpy)  
-│&nbsp;&nbsp;&nbsp;├──&nbsp;test.sh  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;update_agents_md.py  
 │&nbsp;&nbsp;&nbsp;└──&nbsp;[`verify_quality.py`](#-scriptsverify_qualitypy)  
 ├──&nbsp;skills-lock.json  
@@ -118,18 +127,6 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;├──&nbsp;dependency_links.txt  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;requires.txt  
 │&nbsp;&nbsp;&nbsp;└──&nbsp;top_level.txt  
-├──&nbsp;test_debug.py  
-├──&nbsp;test_logging_output  
-│&nbsp;&nbsp;&nbsp;├──&nbsp;frame_map.json  
-│&nbsp;&nbsp;&nbsp;├──&nbsp;mask_metadata.json  
-│&nbsp;&nbsp;&nbsp;├──&nbsp;masks  
-│&nbsp;&nbsp;&nbsp;├──&nbsp;previews  
-│&nbsp;&nbsp;&nbsp;├──&nbsp;progress.json  
-│&nbsp;&nbsp;&nbsp;├──&nbsp;run_config.json  
-│&nbsp;&nbsp;&nbsp;├──&nbsp;run_fingerprint.json  
-│&nbsp;&nbsp;&nbsp;├──&nbsp;scene_seeds.json  
-│&nbsp;&nbsp;&nbsp;├──&nbsp;scenes.json  
-│&nbsp;&nbsp;&nbsp;└──&nbsp;thumbs  
 ├──&nbsp;tests  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;README.md  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;__init__.py  
@@ -158,6 +155,7 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;├──&nbsp;regression  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;test_robustness.py  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;research  
+│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;test_debug_sam3.py  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;results  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;e2e_output  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;screenshots  
@@ -228,6 +226,7 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_io_utils.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_launch_config.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_logger.py  
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_logger_interop.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_managers.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_managers_extended.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_mask_operators.py  
@@ -465,7 +464,7 @@ class Config(BaseSettings):
 
 ```python
 class Database:
-    def __init__(self, db_path: Path, batch_size: int=50, logger: Optional[logging.Logger]=None):
+    def __init__(self, db_path: Path, batch_size: int=50, logger: Optional[Union[logging.Logger, 'AppLogger']]=None):
         """Initializes the Database manager."""
     def __enter__(self): ...
     def __exit__(self, exc_type, exc_val, exc_tb): ...
@@ -494,7 +493,7 @@ class Database:
 ```python
 """Database schema and migration logic for SQLite."""
 CURRENT_VERSION = 2
-def migrate_database(conn: sqlite3.Connection, logger: logging.Logger):
+def migrate_database(conn: sqlite3.Connection, logger: Union[logging.Logger, 'AppLogger']):
     """Applies database migrations to reach the current version."""
 def _detect_legacy_version(cursor) -> int:
     """Detects the schema version of a legacy database."""
@@ -536,8 +535,10 @@ class RecoveryStrategy(Enum):
     SKIP = "<REDACTED_STRING>"
     ABORT = "<REDACTED_STRING>"
 class ErrorHandler:
-    def __init__(self, logger: 'AppLogger', max_attempts: int, backoff_seconds: list):
+    def __init__(self, logger: 'LoggerLike', max_attempts: int, backoff_seconds: list):
         """Initializes the ErrorHandler."""
+    def _log_with_component(self, level: str, message: str, component: str, **kwargs):
+        """Helper to call logger with or without component support."""
     def with_retry(self, max_attempts: Optional[int]=None, backoff_seconds: Optional[list]=None, recoverable_exceptions: tuple=(Exception,)):
         """Decorator that retries the function call upon failure."""
     def with_fallback(self, fallback_func: Callable):
@@ -663,7 +664,7 @@ def compute_entropy(hist: np.ndarray, entropy_norm: float) -> float:
 
 ```python
 """I/O and File System Utilities for Subject Frame Extractor"""
-def validate_video_file(video_path: str) -> bool:
+def validate_video_file(video_path: str | Path) -> bool:
     """Checks if the video file exists, is not empty, and can be opened by OpenCV."""
 def atomic_write_text(path: Union[str, Path], content: str, encoding: str='utf-8'):
     """Writes content to a file atomically by writing to a temporary file"""
@@ -673,13 +674,13 @@ def is_image_folder(p: Union[str, Path]) -> bool:
     """Checks if the path points to a directory."""
 def list_images(p: Union[str, Path], cfg: 'Config', recursive: bool=False) -> list[Path]:
     """Lists all valid image files in a directory (optionally recursive)."""
-def detect_hwaccel(logger: 'AppLogger') -> tuple[Optional[str], Optional[str]]:
+def detect_hwaccel(logger: 'LoggerLike') -> tuple[Optional[str], Optional[str]]:
     """Probes FFmpeg for hardware acceleration support."""
 def _compute_sha256(path: Path) -> str:
     """Computes SHA256 hash of a file."""
-def download_model(url: str, dest_path: Union[str, Path], description: str, logger: 'AppLogger', error_handler: 'ErrorHandler', user_agent: str, min_size: int=1000000, expected_sha256: Optional[str]=None, token: Optional[str]=None):
+def download_model(url: str, dest_path: Union[str, Path], description: str, logger: 'LoggerLike', error_handler: 'ErrorHandler', user_agent: str, min_size: int=1000000, expected_sha256: Optional[str]=None, token: Optional[str]=None):
     """Downloads a file from a URL with retries, validation, and progress logging."""
-def create_frame_map(output_dir: Path, logger: 'AppLogger', ext: str='.webp') -> dict:
+def create_frame_map(output_dir: Path, logger: 'LoggerLike', ext: str='.webp') -> dict:
     """Creates a mapping from original frame numbers to extracted filenames."""
 ```
 
@@ -687,6 +688,9 @@ def create_frame_map(output_dir: Path, logger: 'AppLogger', ext: str='.webp') ->
 
 ```python
 """Logging Infrastructure for Frame Extractor & Analyzer"""
+LoggerLike = Union['AppLogger', logging.Logger]
+def log_with_component(logger: LoggerLike, level: str, message: str, component: str='system', **kwargs):
+    """Helper to call a logger method with a component name,"""
 SUCCESS_LEVEL_NUM = 25
 class LogEvent(BaseModel):
     """Represents a structured log entry."""
@@ -703,7 +707,7 @@ class JSONFormatter(logging.Formatter):
     """Formatter that outputs structured JSON for each log record."""
     def format(self, record: logging.LogRecord) -> str:
         """Formats the log record as a JSON string based on LogEvent."""
-def setup_logging(config: 'Config', log_dir: Optional[Path]=None, log_to_console: bool=True, progress_queue: Optional[Queue]=None):
+def setup_logging(config: 'Config', log_dir: Optional[Path]=None, log_to_console: bool=True, progress_queue: Optional[Queue]=None, stable_log_name: bool=False):
     """Sets up the global logging configuration using dictConfig."""
 class AppLogger:
     """A streamlined interface for the application's logging."""
@@ -711,16 +715,12 @@ class AppLogger:
         """Initializes the AppLogger. setup_logging() MUST be called once before this."""
     def _log(self, level: str, message: str, component: str, **kwargs):
         """Helper to create a structured log and pass to standard logger."""
-    def debug(self, message: str, component: str='system', **kwargs): ...
-    def info(self, message: str, component: str='system', **kwargs): ...
-    def warning(self, message: str, component: str='system', **kwargs): ...
-    def error(self, message: str, component: str='system', **kwargs): ...
-    def success(self, message: str, component: str='system', **kwargs): ...
-    def critical(self, message: str, component: str='system', **kwargs): ...
-    def set_progress_queue(self, queue: Queue):
-        """No longer used. UI should call setup_logging with progress_queue."""
-    def copy_log_to_output(self, output_dir: Path):
-        """No longer needed."""
+    def debug(self, message: str, **kwargs): ...
+    def info(self, message: str, **kwargs): ...
+    def warning(self, message: str, **kwargs): ...
+    def error(self, message: str, **kwargs): ...
+    def success(self, message: str, **kwargs): ...
+    def critical(self, message: str, **kwargs): ...
 ```
 
 ### `📄 core/managers/__init__.py`
@@ -765,7 +765,7 @@ def _process_ffmpeg_stream(stream, tracker: Optional['AdvancedProgressTracker'],
     """Parses FFmpeg progress stream and updates the tracker with optional time offset."""
 def _process_ffmpeg_showinfo(stream, fps: float) -> tuple[list, str]:
     """Parses FFmpeg stderr for 'showinfo' frame timestamps to map back to original ..."""
-def run_ffmpeg_extraction(video_path: str, output_dir: Path, video_info: dict, params: 'AnalysisParameters', progress_queue: Queue, cancel_event: threading.Event, logger: 'AppLogger', config: 'Config', tracker: Optional['AdvancedProgressTracker']=None):
+def run_ffmpeg_extraction(video_path: str | Path, output_dir: Path, video_info: dict, params: 'AnalysisParameters', progress_queue: Queue, cancel_event: threading.Event, logger: 'AppLogger', config: 'Config', tracker: Optional['AdvancedProgressTracker']=None):
     """Executes FFmpeg command to extract frames/thumbnails."""
 class ExtractionPipeline:
     """Pipeline for extracting frames from video or processing image folders."""
@@ -797,7 +797,7 @@ def initialize_analysis_models(params: 'AnalysisParameters', config: 'Config', l
 ```python
 class ModelRegistry:
     """Thread-safe registry for lazy loading and caching of heavy ML models."""
-    def __init__(self, logger: Optional['AppLogger']=None): ...
+    def __init__(self, logger: Optional['LoggerLike']=None): ...
     def get_or_load(self, key: str, loader_fn: Callable[[], Any]) -> Any:
         """Retrieves a model by key, loading it via loader_fn if not present."""
     def clear(self):
@@ -991,10 +991,6 @@ class Operator(Protocol):
         """Returns operator configuration and metadata."""
     def execute(self, ctx: OperatorContext) -> OperatorResult:
         """Execute the operator on the given context."""
-    def initialize(self, config: Any) -> None:
-        """Optional: Initialize operator with app config."""
-    def cleanup(self) -> None:
-        """Optional: Clean up operator resources."""
 ```
 
 ### `📄 core/operators/crop.py`
@@ -1106,7 +1102,7 @@ class OperatorRegistry:
         """Initialize all registered operators."""
     @classmethod
     def cleanup_all(cls) -> None:
-        """Clean up all registered operators."""
+        """Clean up all initialized operators."""
     @classmethod
     def clear(cls) -> None:
         """Clear all registrations (useful for testing)."""
@@ -1130,10 +1126,6 @@ class SharpnessOperator(Operator):
         """Returns operator configuration."""
     def execute(self, ctx: OperatorContext) -> OperatorResult:
         """Compute sharpness score from image."""
-    def initialize(self, config: Any) -> None:
-        """No initialization needed (stateless operator)."""
-    def cleanup(self) -> None:
-        """No cleanup needed (stateless operator)."""
 ```
 
 ### `📄 core/operators/simple_cv.py`
@@ -1381,7 +1373,7 @@ class SubjectMasker:
         """Retrieve a thumbnail for a specific frame number."""
     def _select_best_frame_in_scene(self, scene: 'Scene', frames_dir: str) -> None:
         """Select the best frame in a scene for seeding."""
-    def get_seed_for_frame(self, frame_rgb: np.ndarray, seed_config: dict=None, scene: Optional['Scene']=None) -> tuple[Optional[list], dict]:
+    def get_seed_for_frame(self, frame_rgb: np.ndarray, seed_config: Union[dict, 'AnalysisParameters', None]=None, scene: Optional['Scene']=None) -> tuple[Optional[list], dict]:
         """Get seed bounding box for a frame."""
     def get_mask_for_bbox(self, frame_rgb_small: np.ndarray, bbox_xywh: list) -> Optional[np.ndarray]:
         """Generate a mask for a bounding box."""

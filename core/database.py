@@ -1,19 +1,27 @@
+from __future__ import annotations
+
 import atexit
 import json
 import logging
 import sqlite3
 import threading
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
 if TYPE_CHECKING:
     from core.error_handling import ErrorHandler
+    from core.logger import AppLogger
 
 from core.db_schema import migrate_database
 
 
 class Database:
-    def __init__(self, db_path: Path, batch_size: int = 50, logger: Optional[logging.Logger] = None):
+    def __init__(
+        self,
+        db_path: Path,
+        batch_size: int = 50,
+        logger: Optional[Union[logging.Logger, "AppLogger"]] = None,
+    ):
         """Initializes the Database manager."""
         self.db_path = db_path
         self.conn = None
@@ -58,6 +66,7 @@ class Database:
         """Migrates the database to the latest schema version."""
         if not self.conn:
             self.connect()
+        assert self.conn is not None
         migrate_database(self.conn, self.logger)
 
     def close(self):
@@ -81,6 +90,7 @@ class Database:
             self.buffer.clear()
             if not self.conn:
                 self.connect()
+            assert self.conn is not None
             cursor = self.conn.cursor()
             cursor.execute("DELETE FROM metadata")
             self.conn.commit()
@@ -139,6 +149,7 @@ class Database:
         def _execute_flush():
             if not self.conn:
                 self.connect()
+            assert self.conn is not None
             cursor = self.conn.cursor()
             placeholders = ", ".join(["?"] * len(self.columns))
             columns_str = ", ".join(self.columns)
@@ -172,6 +183,7 @@ class Database:
         self.flush()
         if not self.conn:
             self.connect()
+        assert self.conn is not None
         cursor = self.conn.cursor()
         cursor.execute("SELECT * FROM metadata")
         rows = cursor.fetchall()
@@ -192,6 +204,7 @@ class Database:
         self.flush()
         if not self.conn:
             self.connect()
+        assert self.conn is not None
         cursor = self.conn.cursor()
         cursor.execute("SELECT COUNT(*) FROM metadata WHERE error IS NOT NULL")
         result = cursor.fetchone()
