@@ -43,7 +43,7 @@ class Logger(object):
         self.log.flush()
 
 
-def run_e2e_verification():
+def run_e2e_verification(tracker_model="sam2"):
     output_dir = Path(__file__).parent.parent / "results" / "e2e_output"
     if output_dir.exists():
         shutil.rmtree(output_dir)
@@ -54,7 +54,7 @@ def run_e2e_verification():
     sys.stdout = Logger(log_file)
     sys.stderr = sys.stdout
 
-    print("🚀 Starting E2E Verification with real data...")
+    print(f"🚀 Starting E2E Verification with {tracker_model}...")
     print(f"📝 Logging to: {log_file}")
 
     config = Config()
@@ -118,7 +118,7 @@ def run_e2e_verification():
         primary_seed_strategy="👤 By Face",
         face_ref_img_path=face_path,
         face_model_name="buffalo_l",
-        tracker_model_name="sam3",
+        tracker_model_name=tracker_model,
         best_frame_strategy="Largest Person",
         enable_face_filter=True,
         enable_subject_mask=True,
@@ -238,5 +238,6 @@ def run_e2e_verification():
 
 
 if __name__ == "__main__":
-    success = run_e2e_verification()
+    tracker = sys.argv[1] if len(sys.argv) > 1 else "sam2"
+    success = run_e2e_verification(tracker_model=tracker)
     sys.exit(0 if success else 1)

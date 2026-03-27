@@ -30,9 +30,30 @@ VIDEO_PATH = Path("downloads/example clip 720p 2x.mov")
 FACE_PATH = Path("downloads/example face.png")
 
 
+def _is_sam3_available():
+    """Check if SAM3 is properly installed and can be imported."""
+    try:
+        from sam3.model_builder import build_sam3_video_model  # noqa: F401
+
+        return True
+    except ImportError:
+        return False
+
+
+def _is_sam2_available():
+    """Check if SAM2 is properly installed and can be imported."""
+    try:
+        import sam2.build_sam  # noqa: F401
+
+        return True
+    except ImportError:
+        return False
+
+
 @pytest.mark.integration
 @pytest.mark.slow
-def test_real_end_to_end_workflow(tmp_path):
+@pytest.mark.parametrize("tracker_model", ["sam2", "sam3"])
+def test_real_end_to_end_workflow(tmp_path, tracker_model):
     """
     Automated version of tests/verification/e2e_run.py.
     Runs the full extraction -> pre-analysis -> propagation -> analysis pipeline
@@ -40,12 +61,17 @@ def test_real_end_to_end_workflow(tmp_path):
     """
 
     # 1. Setup & Checks
+    if tracker_model == "sam3" and not _is_sam3_available():
+        pytest.skip("SAM3 not available")
+    if tracker_model == "sam2" and not _is_sam2_available():
+        pytest.skip("SAM2 not available")
+
     if not VIDEO_PATH.exists():
         pytest.skip(f"Test video not found at {VIDEO_PATH}. Skip integration test.")
     if not FACE_PATH.exists():
         pytest.skip(f"Test face image not found at {FACE_PATH}. Skip integration test.")
 
-    print(f"\n🚀 Starting E2E Verification with real data at {tmp_path}...")
+    print(f"\n🚀 Starting E2E Verification with {tracker_model} at {tmp_path}...")
 
     # Use a fixed path for debugging artifacts
     output_dir = Path(__file__).parent / "e2e_output_debug"
@@ -98,7 +124,7 @@ def test_real_end_to_end_workflow(tmp_path):
         primary_seed_strategy="🤖 Automatic",
         face_ref_img_path=str(FACE_PATH),
         face_model_name="buffalo_l",
-        tracker_model_name="sam3",
+        tracker_model_name=tracker_model,
         best_frame_strategy="Largest Person",
         enable_face_filter=True,
         enable_subject_mask=True,

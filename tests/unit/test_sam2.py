@@ -2,6 +2,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+pytestmark = [pytest.mark.sam2]
+
 
 @pytest.fixture
 def mock_sam2_predictor():

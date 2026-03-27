@@ -170,5 +170,24 @@ class TestMilestoneCase:
         pass
 
 
+class TestSAM2DefaultBaseline:
+    """Rule: SAM2.1 Hiera Tiny is the project's default tracker."""
+
+    def test_config_default_is_sam2(self):
+        from core.config import Config
+
+        config = Config()
+        assert config.default_tracker_model_name == "sam2", "Default tracker in config.py must be 'sam2'"
+
+    def test_agents_md_prescribes_sam2_default(self):
+        agents_md_path = pathlib.Path("AGENTS.md")
+        if not agents_md_path.exists():
+            pytest.skip("AGENTS.md not found")
+
+        content = agents_md_path.read_text()
+        assert "SAM2.1 Hiera Tiny" in content, "AGENTS.md must mention SAM2.1 Hiera Tiny as the default baseline"
+        assert "default tracker" in content.lower(), "AGENTS.md must specify the default tracker"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

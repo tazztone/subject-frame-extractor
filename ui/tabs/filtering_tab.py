@@ -238,7 +238,6 @@ class FilteringTabBuilder:
                             "allow_preview": True,
                             "object_fit": "contain",
                             "show_label": False,
-                            "lazy_loading": True,
                         },
                     )
 

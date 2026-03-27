@@ -14,8 +14,8 @@ def test_config_defaults():
     assert config.quality_weights_sharpness == 25
     assert "sharpness" in config.quality_weights
     assert config.quality_weights["sharpness"] == 25
-    # SAM2 Migration
-    assert config.default_tracker_model_name == "sam3"
+    # SAM2.1 Hiera Tiny is the project default (AGENTS.md)
+    assert config.default_tracker_model_name == "sam2"
     assert "sam2.1" in config.sam2_checkpoint_url
 
 
@@ -34,10 +34,10 @@ def test_config_has_sam2_checkpoint_url():
     assert "sam2.1" in config.sam2_checkpoint_url  # points to hiera-tiny
 
 
-def test_config_default_tracker_is_sam3():
-    """Test that the default tracker is now SAM3."""
+def test_config_default_tracker_is_sam2():
+    """Test that the default tracker is SAM2 per AGENTS.md."""
     config = Config()
-    assert config.default_tracker_model_name == "sam3"
+    assert config.default_tracker_model_name == "sam2"
 
 
 def test_config_invalid_quality_weights():

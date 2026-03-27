@@ -154,7 +154,7 @@ class SubjectMasker:
                 config=self.config,
             )
             if self.dam_tracker is None:
-                self.logger.error("SAM3 tracker initialization returned None/failed")
+                self.logger.error(f"Tracker '{self.params.tracker_model_name}' initialization returned None/failed")
                 return False
 
             # Update child components with the new tracker
@@ -163,10 +163,12 @@ class SubjectMasker:
             if self.mask_propagator:
                 self.mask_propagator.dam_tracker = self.dam_tracker
 
-            self.logger.success("SAM3 tracker initialized successfully")
+            self.logger.success(f"Tracker '{self.params.tracker_model_name}' initialized successfully")
             return True
         except Exception as e:
-            self.logger.error(f"Exception during SAM3 tracker initialization: {e}", exc_info=True)
+            self.logger.error(
+                f"Exception during '{self.params.tracker_model_name}' tracker initialization: {e}", exc_info=True
+            )
             return False
 
     def run_propagation(
@@ -188,8 +190,10 @@ class SubjectMasker:
         self.logger.info(f"Starting subject mask propagation for {len(scenes_to_process)} scenes...")
 
         if not self._initialize_tracker():
-            self.logger.error("SAM3 tracker could not be initialized; mask propagation failed.")
-            return {"error": "SAM3 tracker initialization failed", "completed": False}
+            self.logger.error(
+                f"Tracker '{self.params.tracker_model_name}' could not be initialized; mask propagation failed."
+            )
+            return {"error": f"{self.params.tracker_model_name} tracker initialization failed", "completed": False}
 
         thumb_dir = Path(frames_dir) / "thumbs"
         mask_metadata = {}

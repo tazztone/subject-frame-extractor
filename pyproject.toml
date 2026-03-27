@@ -83,6 +83,12 @@ markers = [
     "component: Component-level verification tests",
     "slow: Tests that take longer to run",
     "sam3: Tests for SAM3-specific logic and patches",
+    "sam2: Tests for SAM2-specific logic and integration",
+    "accessibility: Accessibility quality markers",
+    "audit: Main quality audit marker",
+    "ux_audit: UX-specific audit metrics",
+    "visual: Visual consistency and regression tests",
+    "context_eval: Context-adherence and AST-based checks",
 ]
 
 [tool.coverage.run]

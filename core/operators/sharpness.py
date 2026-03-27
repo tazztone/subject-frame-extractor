@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 import cv2
 import numpy as np
 
-from core.operators.base import OperatorConfig, OperatorContext, OperatorResult
+from core.operators.base import Operator, OperatorConfig, OperatorContext, OperatorResult
 from core.operators.registry import register_operator
 
 if TYPE_CHECKING:
@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
 
 @register_operator
-class SharpnessOperator:
+class SharpnessOperator(Operator):
     """
     Computes sharpness score using Laplacian variance.
 

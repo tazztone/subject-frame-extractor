@@ -10,8 +10,12 @@ pytestmark = pytest.mark.sam3
 
 @pytest.fixture(autouse=True)
 def skip_if_mocked():
-    # In unit tests, torch is ALWAYS mocked by conftest.py
-    pytest.skip("Skipping integration test in unit test suite")
+    import os
+
+    # In regular unit tests, torch is ALWAYS mocked by conftest.py.
+    # Only run these tests if explicitly in integration mode.
+    if os.environ.get("PYTEST_INTEGRATION_MODE") != "true":
+        pytest.skip("Skipping integration-style test in unit test suite (Real Torch required)")
 
 
 def test_edt_triton_fallback():

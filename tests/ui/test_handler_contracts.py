@@ -10,7 +10,7 @@ from ui.app_ui import AppUI
 @pytest.fixture
 def mock_app():
     config = MagicMock()
-    config.default_tracker_model_name = "sam3"
+    config.default_tracker_model_name = "sam2"
     config.models_dir = "/tmp/models"
     config.user_agent = "test"
     config.retry_max_attempts = 1
