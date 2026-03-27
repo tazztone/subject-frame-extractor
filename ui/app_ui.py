@@ -55,11 +55,11 @@ class AppUI:
         ("Keyframes (Cuts/Scene Changes)", "keyframes"),
     ]
     PRIMARY_SEED_STRATEGY_CHOICES: List[str] = [
-        "Automatic Detection",
-        "Source Face Reference",
-        "Text Description (Limited)",
-        "Face + Text Fallback",
-        "Primary Person Discovery",
+        "🤖 Automatic Detection",
+        "👤 Source Face Reference",
+        "📝 Text Description (Limited)",
+        "🔄 Face + Text Fallback",
+        "🧑\u200d🤝\u200d🧑 Find Prominent Person",
     ]
     SEED_STRATEGY_CHOICES: List[str] = [
         "Largest Person",
@@ -73,7 +73,7 @@ class AppUI:
         "Best Face",
     ]
     FACE_MODEL_NAME_CHOICES: List[str] = ["buffalo_l", "buffalo_s"]
-    TRACKER_MODEL_CHOICES: List[str] = ["sam3"]  # SAM3 model
+    TRACKER_MODEL_CHOICES: List[str] = ["sam2", "sam3"]
     GALLERY_VIEW_CHOICES: List[str] = ["Kept", "Rejected"]
     LOG_LEVEL_CHOICES: List[str] = ["DEBUG", "INFO", "WARNING", "ERROR", "SUCCESS", "CRITICAL"]
     SCENE_GALLERY_VIEW_CHOICES: List[str] = ["Kept", "Rejected", "All"]

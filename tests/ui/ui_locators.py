@@ -28,6 +28,7 @@ class Selectors:
     PREV_PAGE = "#prev_page_button"
     NEXT_PAGE = "#next_page_button"
     PAGINATION_ROW = "#pagination_row"
+    PROPAGATE_MASKS = "#propagate_masks_button"
 
     # Metrics Tab
     START_ANALYSIS = "#start_analysis_button"

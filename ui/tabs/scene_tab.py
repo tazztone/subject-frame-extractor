@@ -221,5 +221,6 @@ class SceneTabBuilder:
                     "interactive": False,
                     "size": "lg",
                     "visible": False,
+                    "elem_id": "propagate_masks_button",
                 },
             )

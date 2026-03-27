@@ -2,8 +2,9 @@ import pytest
 from playwright.sync_api import Page, expect
 
 # This test requires the app to be running (mock or real).
-# The conftest.py in tests/e2e handles starting the mock app server.
+# The conftest.py in tests/ui/conftest.py handles starting the mock app server.
 from .conftest import BASE_URL
+from .ui_locators import Labels, Selectors
 
 
 @pytest.fixture(scope="module")
@@ -23,6 +24,16 @@ class TestFullWorkflowMocked:
     The mock app simulates backend processing without needing heavy models/GPU.
     """
 
+    def switch_to_tab(self, page: Page, tab_name: str):
+        """Robustly switch tabs in Gradio."""
+        tab_btn = page.get_by_role("tab", name=tab_name)
+        expect(tab_btn).to_be_visible()
+        tab_btn.click(force=True)
+
+        # Wait for the tab to be selected
+        expect(tab_btn).to_have_attribute("aria-selected", "true")
+        page.wait_for_timeout(1000)
+
     def test_full_user_journey(self, page: Page, app_server_url):
         """
         Simulates:
@@ -38,101 +49,62 @@ class TestFullWorkflowMocked:
 
         # --- 1. Source Tab ---
         # Wait for page load
-        # Gradio loads with "Frame Extractor & Analyzer"
-        # Increase timeout for slow startup
-        expect(page.get_by_role("heading", name="Frame Extractor & Analyzer")).to_be_visible(timeout=30000)
+        expect(page.get_by_text("Frame Extractor & Analyzer")).to_be_visible(timeout=30000)
 
-        # Enter video path (mock app handles "test.mp4")
-        source_input = page.get_by_placeholder("Paste YouTube URL or local path")
-        # Fallback if label name changed or using internal name
+        # Enter video path
+        source_input = page.get_by_placeholder(Labels.SOURCE_PLACEHOLDER)
         if not source_input.is_visible():
-            source_input = page.locator("textarea").first
+            source_input = page.locator(Selectors.SOURCE_INPUT)
 
         source_input.fill("test.mp4")
 
         # Click Extract Frames
-        extract_btn = page.get_by_role("button", name="🚀 Start Extraction")
-        if not extract_btn.is_visible():
-            extract_btn = page.get_by_role("button", name="Extract Frames")
-
+        extract_btn = page.locator(Selectors.START_EXTRACTION)
         expect(extract_btn).to_be_visible()
         extract_btn.click()
 
         # Wait for extraction to complete
-        unified_status = page.locator("#unified_status")
+        unified_status = page.locator(Selectors.UNIFIED_STATUS)
+        # We wait for "Extraction Complete" to appear in the status area.
+        # Gradio 5 might wrap this in a container with a timer.
         expect(unified_status).to_contain_text("Extraction Complete", timeout=30000)
 
         # --- 2. Subject Tab ---
-        self.switch_to_tab(page, "Subject")
-        page.wait_for_timeout(1000)  # Give Gradio a moment to render the tab content
+        self.switch_to_tab(page, Labels.TAB_SUBJECT)
 
         # Click "Pre-Analyze Scenes"
-        # Using ID for robustness
-        pre_analyze_btn = page.locator("#start_pre_analysis_button")
-
-        # Ensure it's visible with generous timeout
+        pre_analyze_btn = page.locator(Selectors.START_PRE_ANALYSIS)
         expect(pre_analyze_btn).to_be_visible(timeout=10000)
         pre_analyze_btn.click()
 
-        # Wait for pre-analysis to complete
         expect(unified_status).to_contain_text("Pre-Analysis Complete", timeout=30000)
 
-        # --- 3. Scenes Tab (Correction) ---
-        self.switch_to_tab(page, "Scenes")
-        page.wait_for_timeout(1000)
+        # --- 3. Scenes Tab ---
+        self.switch_to_tab(page, Labels.TAB_SCENES)
 
         # Click "Propagate Masks to All Frames"
-        propagate_btn = page.get_by_role("button", name="⚡ Propagate Masks to All Frames")
-        if not propagate_btn.is_visible():
-            propagate_btn = page.get_by_role("button", name="Propagate Masks")
-
-        expect(propagate_btn).to_be_visible()
+        propagate_btn = page.locator(Selectors.PROPAGATE_MASKS)
+        expect(propagate_btn).to_be_visible(timeout=10000)
         propagate_btn.click()
 
-        # Wait for propagation complete
         expect(unified_status).to_contain_text("Propagation Complete", timeout=30000)
 
         # --- 4. Metrics Tab ---
-        self.switch_to_tab(page, "Metrics")
-        page.wait_for_timeout(1000)
+        self.switch_to_tab(page, Labels.TAB_METRICS)
 
         # Click "Run Analysis"
-        run_analysis_btn = page.get_by_role("button", name="⚡ Run Analysis")
-        if not run_analysis_btn.is_visible():
-            run_analysis_btn = page.get_by_role("button", name="Run Analysis")
-
-        expect(run_analysis_btn).to_be_visible()
+        run_analysis_btn = page.locator(Selectors.START_ANALYSIS)
+        expect(run_analysis_btn).to_be_visible(timeout=10000)
         run_analysis_btn.click()
 
-        # Wait for analysis complete
         expect(unified_status).to_contain_text("Analysis Complete", timeout=30000)
 
         # --- 5. Export Tab ---
-        self.switch_to_tab(page, "Export")
-        page.wait_for_timeout(1000)
+        self.switch_to_tab(page, Labels.TAB_EXPORT)
 
         # Click "Export Frames"
-        export_btn = page.get_by_role("button", name="💾 Export Kept Frames")
-        if not export_btn.is_visible():
-            export_btn = page.get_by_role("button", name="Export Kept Frames")
-
-        expect(export_btn).to_be_visible()
+        export_btn = page.locator(Selectors.EXPORT_BUTTON)
+        expect(export_btn).to_be_visible(timeout=10000)
         export_btn.click()
 
-        # Wait for export complete
-        # In mock environment, we've verified up to analysis.
-        # Export updates unified_log which can be hidden in accordion.
-        page.wait_for_timeout(2000)
-
-    def switch_to_tab(self, page: Page, tab_name: str):
-        """Robustly switch tabs in Gradio."""
-        tab_btn = page.get_by_role("tab", name=tab_name)
-        expect(tab_btn).to_be_visible()
-        tab_btn.click(force=True)
-
-        # Wait for the tab to be selected
-        expect(tab_btn).to_have_attribute("aria-selected", "true")
-
-        # Wait for some content within the tab to be visible if possible
-        # Since tab content is dynamic, we'll just wait for the aria-selected state.
-        # Removing networkidle as it's unreliable in some environments.
+        expect(unified_status).to_contain_text("Export Complete", timeout=30000)

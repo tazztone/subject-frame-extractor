@@ -174,9 +174,8 @@ The system supports a "Golden Reference" workflow for ML metrics:
 
 ## E2E Testing (Playwright)
 
-- **Use Stable ID Selectors**: Always prefer ID-based CSS selectors (`#elem_id`) over fragile text labels. Target nested elements specifically:
-    - Textboxes/Logs: `#unified_log textarea`
-    - Sliders: `#my_slider input[type=range]`
+- **Use Stable ID Selectors**: Always prefer ID-based CSS selectors (`#elem_id`) over fragile text labels.
+    - **Reliability**: Gradio status overlays (loading spinners) can mask button text. Assigning `elem_id="my_btn"` and targeting `#my_btn` ensures Playwright can interact even during status transitions.
 - **Navigation Optimization**: Use `wait_until="domcontentloaded"` in `page.goto()`. Avoid `networkidle` as Gradio's persistent WebSockets and heavy payloads cause timeouts.
 - **Fail Fast**: Set a short global timeout (e.g., 5000ms) in `conftest.py` to ensure fast feedback.
 - **Accordion Orchestration**: Explicitly click accordion headers to open them before interacting with nested components. Check `is_visible()` first to avoid accidental toggling.
@@ -189,7 +188,9 @@ The system supports a "Golden Reference" workflow for ML metrics:
     - **Observation**: In Gradio, updating a component via a return value in an event handler (like `.click()`) replaces the value.
     - **Mandate**: Never return log strings directly to `unified_log` for long-running processes. Instead, use `logger.info()`. The `LogViewer` component periodically polls the log queue and appends content, preserving the history that E2E tests rely on for "Log Trail" verification.
 - **Mock Side-Effect Consistency**:
-    - **Requirement**: Mocks for pipelines (Extraction, Analysis, etc.) must not only return the expected dictionary but also trigger a `logger.info()` call. Without this, the UI log viewer remains empty or missing stages during E2E runs, leading to assertion failures in tests that verify the workflow's history.
+    - **Requirement**: Mocks for pipelines (Extraction, Analysis, etc.) must not only return the expected dictionary but also trigger a `logger.info()` call.
+    - **State Persistence**: Mocks must return the updated `ApplicationState` (e.g., `extracted_video_path_state`) to match Gradio 5 behavior, ensuring UI components (like visibility) update correctly during tests.
+    - **Mandate**: Without this, the UI log viewer remains empty or missing stages during E2E runs, leading to assertion failures in tests that verify the workflow's history.
 - **Status Bar Priority**:
     - **Design Pattern**: The `unified_status` component is the primary target for E2E assertions. Any major backend operation should update this component immediately upon completion/failure to provide a clear signal to Playwright's `expect()` locators.
 - **Case Sensitivity in E2E**:

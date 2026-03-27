@@ -64,7 +64,7 @@ def test_sam21_propagate_in_video(mock_inference_mode, mock_sam2_predictor):
         (0, [1], mock_mask),
     ]
 
-    results = list(wrapper.propagate(start_idx=0, max_frames=10, direction="forward"))
+    results = list(wrapper.propagate(start_idx=0, max_frames=10, reverse=False))
 
     assert len(results) == 1
     mock_sam2_predictor.propagate_in_video.assert_called_once_with(

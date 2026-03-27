@@ -92,8 +92,8 @@ class TestMaskPropagatorLogic:
 
         # Verify propagation calls
         assert mock_sam3_wrapper.propagate.call_count == 2
-        mock_sam3_wrapper.propagate.assert_any_call(start_idx=seed_frame, direction="forward", max_frames=1)
-        mock_sam3_wrapper.propagate.assert_any_call(start_idx=seed_frame, direction="backward", max_frames=1)
+        mock_sam3_wrapper.propagate.assert_any_call(start_idx=seed_frame, reverse=False, max_frames=1)
+        mock_sam3_wrapper.propagate.assert_any_call(start_idx=seed_frame, reverse=True, max_frames=1)
 
         # Verify results
         assert len(masks) == 3

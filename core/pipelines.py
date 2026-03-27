@@ -146,6 +146,7 @@ def execute_pre_analysis(
         "unified_log": "Pre-Analysis Complete. (Compute Metrics to continue)",
         "scenes": [s.model_dump() for s in processed],
         "output_dir": str(out_dir),
+        "video_path": params.video_path,
         "done": True,
     }
     if gr:

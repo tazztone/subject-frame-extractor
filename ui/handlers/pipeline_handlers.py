@@ -51,12 +51,15 @@ class PipelineHandler:
                 if not Path(src).exists():
                     event.source_path = up
 
-        yield from self.app._run_pipeline(
+        for update in self.app._run_pipeline(
             execute_extraction,
             event,
             progress or gr.Progress(),
             lambda res: self._on_extraction_success(res, current_state),
-        )
+        ):
+            if isinstance(update, dict) and self.app.components["application_state"] in update:
+                current_state = update[self.app.components["application_state"]]
+            yield update
 
     def _on_extraction_success(self, result: dict, current_state: ApplicationState) -> dict:
         """Callback for successful extraction."""
@@ -73,24 +76,31 @@ class PipelineHandler:
         return {
             self.app.components["application_state"]: new_state,
             self.app.components["unified_status"]: msg,
+            self.app.components["unified_log"]: result.get("unified_log", "Extraction Complete."),
         }
 
     @safe_ui_callback("Pre-Analysis")
     def run_pre_analysis_wrapper(self, current_state: ApplicationState, *args, progress=None):
         """Wrapper to execute the pre-analysis pipeline."""
         event = self.app._create_pre_analysis_event(current_state, *args)
-        yield from self.app._run_pipeline(
+        for update in self.app._run_pipeline(
             execute_pre_analysis,
             event,
             progress or gr.Progress(),
             lambda res: self._on_pre_analysis_success(res, current_state),
-        )
+        ):
+            if isinstance(update, dict) and self.app.components["application_state"] in update:
+                current_state = update[self.app.components["application_state"]]
+            yield update
 
     def _on_pre_analysis_success(self, result: dict, current_state: ApplicationState) -> dict:
         """Callback for successful pre-analysis."""
         new_state = current_state.model_copy()
         new_state.scenes = result["scenes"]
         new_state.analysis_output_dir = result["output_dir"]
+        # Ensure video path is preserved
+        if "video_path" in result:
+            new_state.extracted_video_path = result["video_path"]
 
         # Auto-save logs
         self.app._save_session_log(result["output_dir"])
@@ -126,17 +136,28 @@ class PipelineHandler:
         new_state.scene_gallery_index_map = index_map
         page_choices = [str(i) for i in range(1, total_pages + 1)] if total_pages > 0 else ["1"]
 
-        return {
+        # Merged updates
+        updates = {
             self.app.components["application_state"]: new_state,
-            self.app.components["seeding_results_column"]: gr.update(visible=True),
-            self.app.components["propagation_group"]: gr.update(visible=True),
-            self.app.components["propagate_masks_button"]: button_update,
             self.app.components["scene_filter_status"]: status_text,
             self.app.components["unified_status"]: msg,
             self.app.components["scene_gallery"]: gr.update(value=items),
             self.app.components["total_pages_label"]: f"/ {total_pages} pages",
             self.app.components["page_number_input"]: gr.update(choices=page_choices, value="1"),
+            self.app.components["unified_log"]: result.get("unified_log", "Pre-Analysis Complete."),
         }
+
+        # Include any explicit UI updates from the pipeline result (e.g. visibility toggles)
+        for k, v in result.items():
+            if k in self.app.components:
+                updates[self.app.components[k]] = v
+
+        # These specific components must be visible for the next step
+        updates[self.app.components["seeding_results_column"]] = gr.update(visible=True)
+        updates[self.app.components["propagation_group"]] = gr.update(visible=True)
+        updates[self.app.components["propagate_masks_button"]] = button_update
+
+        return updates
 
     def _propagation_button_handler(self, current_state: ApplicationState):
         """Unified guard for propagation button."""
@@ -175,6 +196,7 @@ class PipelineHandler:
         return {
             self.app.components["application_state"]: current_state,
             self.app.components["unified_status"]: msg,
+            self.app.components["unified_log"]: result.get("unified_log", "Propagation Complete."),
         }
 
     @safe_ui_callback("Analysis")
@@ -205,6 +227,7 @@ class PipelineHandler:
         return {
             self.app.components["application_state"]: new_state,
             self.app.components["unified_status"]: msg,
+            self.app.components["unified_log"]: result.get("unified_log", "Analysis Complete."),
         }
 
     @safe_ui_callback("Load Session")
