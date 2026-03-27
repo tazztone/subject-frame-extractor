@@ -68,7 +68,7 @@ def _process_ffmpeg_showinfo(stream, fps: float) -> tuple[list, str]:
 
 
 def run_ffmpeg_extraction(
-    video_path: str,
+    video_path: str | Path,
     output_dir: Path,
     video_info: dict,
     params: "AnalysisParameters",
@@ -157,6 +157,8 @@ def run_ffmpeg_extraction(
     )
     stderr_results = {}
 
+    assert process.stdout is not None
+    assert process.stderr is not None
     with process.stdout, process.stderr:
         total_duration_s = video_info.get("frame_count", 0) / max(0.01, video_info.get("fps", 30))
         start_time_s = 0
@@ -279,14 +281,14 @@ class ExtractionPipeline:
             video_path = Path(vid_manager.prepare_video(self.logger))
             output_dir = Path(self.params.output_folder or Path(self.config.downloads_dir) / video_path.stem)
             output_dir.mkdir(exist_ok=True, parents=True)
-            video_info = VideoManager.get_video_info(video_path)
+            video_info = VideoManager.get_video_info(str(video_path))
             if tracker:
                 totals = estimate_totals(self.params, video_info, None)
                 tracker.start(totals["extraction"], desc="Extracting frames")
             if self.params.scene_detect:
-                run_scene_detection(video_path, output_dir, self.logger)
+                run_scene_detection(str(video_path), output_dir, self.logger)
             run_ffmpeg_extraction(
-                video_path,
+                str(video_path),
                 output_dir,
                 video_info,
                 self.params,

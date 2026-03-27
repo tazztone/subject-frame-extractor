@@ -9,7 +9,7 @@ import warnings
 from datetime import datetime
 from pathlib import Path
 from queue import Queue
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional, Union
 
 from pydantic import BaseModel
 
@@ -26,6 +26,31 @@ warnings.filterwarnings("ignore", category=UserWarning, module="pydantic")
 
 if TYPE_CHECKING:
     from core.config import Config
+
+# --- TYPES ---
+
+LoggerLike = Union["AppLogger", logging.Logger]
+
+
+def log_with_component(logger: LoggerLike, level: str, message: str, component: str = "system", **kwargs):
+    """
+    Helper to call a logger method with a component name,
+    supporting both AppLogger and standard logging.Logger.
+    """
+    log_fn = getattr(logger, level.lower())
+    if isinstance(logger, AppLogger):
+        log_fn(message, component=component, **kwargs)
+    else:
+        # For standard logger, put component in 'extra'
+        extra = kwargs.pop("extra", {})
+        extra["component"] = component
+        # Note: standard loggers don't support custom methods like 'success' unless specifically added.
+        # If level is success, we might need special handling if it's a standard logger.
+        if level.upper() == "SUCCESS" and not hasattr(logger, "success"):
+            logger.log(SUCCESS_LEVEL_NUM, f"{message} [{component}]", extra=extra, **kwargs)
+        else:
+            log_fn(message, extra=extra, **kwargs)
+
 
 # --- CONSTANTS ---
 
@@ -140,7 +165,7 @@ class JSONFormatter(logging.Formatter):
             level=record.levelname,
             message=record.getMessage(),
             component=component,
-            error_type=record.exc_info[0].__name__ if record.exc_info else None,
+            error_type=record.exc_info[0].__name__ if record.exc_info and record.exc_info[0] else None,
             stack_trace=self.formatException(record.exc_info) if record.exc_info else None,
             custom_fields=custom_fields if custom_fields else None,
         )
@@ -157,6 +182,7 @@ def setup_logging(
     log_dir: Optional[Path] = None,
     log_to_console: bool = True,
     progress_queue: Optional[Queue] = None,
+    stable_log_name: bool = False,
 ):
     """
     Sets up the global logging configuration using dictConfig.
@@ -171,7 +197,7 @@ def setup_logging(
 
     # Use a consistent 'run.log' name if log_dir is a session folder,
     # otherwise use a timestamped name.
-    if "e2e_output" in str(log_dir) or "test_logging_output" in str(log_dir):
+    if stable_log_name:
         session_log_file = log_dir / "run.log"
     else:
         session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -297,28 +323,26 @@ class AppLogger:
 
         self.logger.log(log_level, f"{message} [{component}]", extra=extra, exc_info=exc_info)
 
-    def debug(self, message: str, component: str = "system", **kwargs):
+    def debug(self, message: str, **kwargs):
+        component = kwargs.pop("component", "system")
         self._log("DEBUG", message, component, **kwargs)
 
-    def info(self, message: str, component: str = "system", **kwargs):
+    def info(self, message: str, **kwargs):
+        component = kwargs.pop("component", "system")
         self._log("INFO", message, component, **kwargs)
 
-    def warning(self, message: str, component: str = "system", **kwargs):
+    def warning(self, message: str, **kwargs):
+        component = kwargs.pop("component", "system")
         self._log("WARNING", message, component, **kwargs)
 
-    def error(self, message: str, component: str = "system", **kwargs):
+    def error(self, message: str, **kwargs):
+        component = kwargs.pop("component", "system")
         self._log("ERROR", message, component, **kwargs)
 
-    def success(self, message: str, component: str = "system", **kwargs):
+    def success(self, message: str, **kwargs):
+        component = kwargs.pop("component", "system")
         self._log("SUCCESS", message, component, **kwargs)
 
-    def critical(self, message: str, component: str = "system", **kwargs):
+    def critical(self, message: str, **kwargs):
+        component = kwargs.pop("component", "system")
         self._log("CRITICAL", message, component, **kwargs)
-
-    def set_progress_queue(self, queue: Queue):
-        """No longer used. UI should call setup_logging with progress_queue."""
-        pass
-
-    def copy_log_to_output(self, output_dir: Path):
-        """No longer needed."""
-        pass

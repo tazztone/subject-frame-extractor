@@ -68,7 +68,7 @@ def run_extract(source, output, method, nth_frame, max_resolution, thumb_mp, sce
     event = ExtractionEvent(
         source_path=str(source),
         method=method,
-        interval="1.0",
+        interval=1.0,
         nth_frame=nth_frame,
         max_resolution=max_resolution,
         thumbnails_only=True,
@@ -252,7 +252,7 @@ def run_full(source, output, face_ref, nth_frame, max_resolution, verbose, clean
     ext_event = ExtractionEvent(
         source_path=str(source),
         method="every_nth_frame",
-        interval="1.0",
+        interval=1.0,
         nth_frame=nth_frame,
         max_resolution=max_resolution,
         thumbnails_only=True,

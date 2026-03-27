@@ -8,7 +8,7 @@ import json
 import threading
 from pathlib import Path
 from queue import Queue
-from typing import TYPE_CHECKING, Callable, Optional
+from typing import TYPE_CHECKING, Callable, Optional, Union
 
 import cv2
 import numpy as np
@@ -414,7 +414,10 @@ class SubjectMasker:
         }
 
     def get_seed_for_frame(
-        self, frame_rgb: np.ndarray, seed_config: dict = None, scene: Optional["Scene"] = None
+        self,
+        frame_rgb: np.ndarray,
+        seed_config: Union[dict, "AnalysisParameters", None] = None,
+        scene: Optional["Scene"] = None,
     ) -> tuple[Optional[list], dict]:
         """
         Get seed bounding box for a frame.

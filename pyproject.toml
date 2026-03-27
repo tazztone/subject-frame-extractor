@@ -72,7 +72,7 @@ testpaths = ["tests"]
 python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
-norecursedirs = ["SAM3_repo", ".agent", "scripts", "examples"]
+norecursedirs = ["SAM3_repo", ".agent", "scripts", "examples", "outputs"]
 addopts = "-v --tb=short --cov=core --cov-report=term-missing --cov-fail-under=80 --ignore=tests/e2e/ -m 'not integration and not gpu_e2e and not audit and not slow'"
 markers = [
     "unit: Unit tests (fast, isolated, use mocks)",
@@ -115,6 +115,7 @@ line-length = 120
 target-version = "py310"
 exclude = [
     "SAM3_repo",
+    "outputs",
     "venv",
     ".git",
     "__pycache__",
@@ -138,3 +139,8 @@ quote-style = "double"
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["E722", "E712"]  # E722=bare except, E712=equality to True/False (needed for numpy bools)
+
+[tool.pyright]
+pythonVersion = "3.10"
+typeCheckingMode = "basic"
+exclude = ["SAM3_repo", "outputs", "venv", ".git", "**/__pycache__"]

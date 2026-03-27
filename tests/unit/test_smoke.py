@@ -20,7 +20,7 @@ class TestImportSmoke:
         from core import config
 
         c = config.Config()
-        assert c.logs_dir == "logs"
+        assert c.logs_dir == "outputs/logs"
         assert "sharpness" in c.quality_weights
 
     def test_import_core_database(self, tmp_path):

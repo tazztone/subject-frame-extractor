@@ -1,5 +1,4 @@
 import logging
-from pathlib import Path
 from queue import Queue
 from unittest.mock import MagicMock, patch
 
@@ -108,15 +107,6 @@ def test_setup_logging_no_console(mock_dict_config, tmp_path):
     assert mock_dict_config.called
     conf = mock_dict_config.call_args[0][0]
     assert conf["handlers"]["console"]["level"] == "CRITICAL"
-
-
-def test_app_logger_unused_methods():
-    """Test unused/deprecated AppLogger methods for coverage."""
-    config = MagicMock()
-    logger = AppLogger(config)
-    # These should just return None/do nothing
-    assert logger.set_progress_queue(Queue()) is None
-    assert logger.copy_log_to_output(Path(".")) is None
 
 
 @patch("core.logger.Path.mkdir")

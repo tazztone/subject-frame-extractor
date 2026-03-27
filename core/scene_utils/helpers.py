@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from core.managers import ModelRegistry, ThumbnailManager
     from core.models import Scene, SceneState
 
+from core.enums import SceneStatus
 from core.image_utils import render_mask_overlay
 from core.io_utils import create_frame_map
 from core.managers.model_loader import initialize_analysis_models
@@ -141,7 +142,7 @@ def toggle_scene_status(
 
     scene_to_update = next((s for s in scenes_list if s.shot_id == selected_shot_id), None)
     if scene_to_update:
-        scene_to_update.status = new_status
+        scene_to_update.status = SceneStatus(new_status)
         scene_to_update.manual_status_change = True
         save_scene_seeds(scenes_list, output_folder, logger)
         status_text, button_update = get_scene_status_text(scenes_list)

@@ -126,7 +126,7 @@ def main():
         }
 
         # Generate report
-        report_dir = project_root / "ux_reports"
+        report_dir = project_root / "outputs" / "ux_reports"
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         report_path = report_dir / f"ux_audit_{timestamp}.md"
         generate_report(results, report_path)

@@ -1,4 +1,4 @@
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 import numpy as np
 import torch
@@ -21,7 +21,7 @@ class SAM3Wrapper:
         from unittest.mock import patch
 
         with patch("sam3.model_builder.download_ckpt_from_hf", return_value=None):
-            self.predictor = build_sam3_video_predictor(checkpoint_path=checkpoint_path, gpus_to_use=gpus)
+            self.predictor: Any = build_sam3_video_predictor(checkpoint_path=checkpoint_path, gpus_to_use=gpus)
 
         # Disable hotstart and confirmation to give immediate feedback for prompted-first workflow
         # Default in model_builder is hotstart_delay=15, which suppresses masks until they 'stabilize'.

@@ -7,7 +7,7 @@ operator pattern for image quality metrics.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import cv2
 import numpy as np
@@ -94,11 +94,3 @@ class SharpnessOperator(Operator):
                 metrics={},
                 error=f"Sharpness calculation failed: {e}",
             )
-
-    def initialize(self, config: Any) -> None:
-        """No initialization needed (stateless operator)."""
-        pass
-
-    def cleanup(self) -> None:
-        """No cleanup needed (stateless operator)."""
-        pass

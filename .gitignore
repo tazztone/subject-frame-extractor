@@ -229,3 +229,4 @@ test_logging_output/
 ux_reports/*
 tests/ui/diffs/*.png
 tests/ui/baselines/*.png
+outputs/

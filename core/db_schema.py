@@ -4,11 +4,15 @@ Database schema and migration logic for SQLite.
 
 import logging
 import sqlite3
+from typing import TYPE_CHECKING, Union
+
+if TYPE_CHECKING:
+    from core.logger import AppLogger
 
 CURRENT_VERSION = 2
 
 
-def migrate_database(conn: sqlite3.Connection, logger: logging.Logger):
+def migrate_database(conn: sqlite3.Connection, logger: Union[logging.Logger, "AppLogger"]):
     """Applies database migrations to reach the current version."""
     cursor = conn.cursor()
 

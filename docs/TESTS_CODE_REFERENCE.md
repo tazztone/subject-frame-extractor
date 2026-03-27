@@ -39,6 +39,7 @@ tests
 ├──&nbsp;regression  
 │&nbsp;&nbsp;&nbsp;└──&nbsp;[`test_robustness.py`](#-testsregressiontest_robustnesspy)  
 ├──&nbsp;research  
+│&nbsp;&nbsp;&nbsp;└──&nbsp;[`test_debug_sam3.py`](#-testsresearchtest_debug_sam3py)  
 ├──&nbsp;results  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;e2e_output  
 │&nbsp;&nbsp;&nbsp;└──&nbsp;screenshots  
@@ -109,6 +110,7 @@ tests
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_io_utils.py`](#-testsunittest_io_utilspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_launch_config.py`](#-testsunittest_launch_configpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_logger.py`](#-testsunittest_loggerpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_logger_interop.py`](#-testsunittest_logger_interoppy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_managers.py`](#-testsunittest_managerspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_managers_extended.py`](#-testsunittest_managers_extendedpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_mask_operators.py`](#-testsunittest_mask_operatorspy)  
@@ -569,6 +571,16 @@ def test_download_content_length_abort(mock_logger, mock_error_handler):
     """Verify that download_model aborts early if Content-Length is too small."""
 def test_extraction_event_validation():
     """Verify Pydantic validation for ExtractionEvent."""
+```
+
+### `📄 tests/research/test_debug_sam3.py`
+
+```python
+sys.modules['triton'] = MagicMock()
+sys.modules['triton.language'] = MagicMock()
+REAL_VIDEO_PATH = Path('downloads/example clip 720p 2x.mp4')
+REAL_BBOX = [77, 51, 102, 153]
+def test_debug_sam3(): ...
 ```
 
 ### `📄 tests/test_application_state.py`
@@ -1958,14 +1970,20 @@ def test_app_logger_all_methods():
 @patch('logging.config.dictConfig')
 def test_setup_logging_no_console(mock_dict_config, tmp_path):
     """Test setup_logging with console logging disabled."""
-def test_app_logger_unused_methods():
-    """Test unused/deprecated AppLogger methods for coverage."""
 @patch('core.logger.Path.mkdir')
 @patch('logging.config.dictConfig')
 def test_setup_logging_mkdir(mock_dict_config, mock_mkdir, tmp_path):
     """Test setup_logging calls mkdir."""
 def test_gradio_queue_handler_error():
     """Test GradioQueueHandler error handling."""
+```
+
+### `📄 tests/unit/test_logger_interop.py`
+
+```python
+def test_logger_interop(tmp_path): ...
+def test_create_frame_map_interop(tmp_path): ...
+def test_setup_logging_stable_name(tmp_path): ...
 ```
 
 ### `📄 tests/unit/test_managers.py`
@@ -1998,8 +2016,9 @@ class TestManagers:
     @patch('core.managers.video.ytdlp.YoutubeDL')
     def test_video_manager_prepare_youtube(self, mock_ytdl, mock_config, mock_logger): ...
     def test_video_manager_invalid_inputs(self, mock_config, mock_logger): ...
+    @patch('core.managers.video.DownloadError', new_callable=lambda: type('DownloadError', (Exception,), {}))
     @patch('core.managers.video.ytdlp')
-    def test_video_manager_youtube_error(self, mock_ytdlp_module, mock_config, mock_logger): ...
+    def test_video_manager_youtube_error(self, mock_ytdlp_module, mock_download_error_cls, mock_config, mock_logger): ...
     @patch('cv2.VideoCapture')
     def test_get_video_info(self, mock_cap): ...
     @patch('core.managers.face.vision.FaceLandmarker')

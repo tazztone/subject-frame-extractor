@@ -9,7 +9,7 @@ from core.config import Config
 def test_config_defaults():
     """Test that Config initializes with expected default values."""
     config = Config()
-    assert config.logs_dir == "logs"
+    assert config.logs_dir == "outputs/logs"
     assert config.ffmpeg_thumbnail_quality == 80
     assert config.quality_weights_sharpness == 25
     assert "sharpness" in config.quality_weights

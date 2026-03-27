@@ -120,10 +120,6 @@ class Operator(Protocol):
     All analysis operators must implement:
     - config: Property returning OperatorConfig metadata
     - execute: Method computing metrics from OperatorContext
-
-    Optionally implement for stateful operators:
-    - initialize: Called once with app config for model loading
-    - cleanup: Called on shutdown for resource cleanup
     """
 
     @property
@@ -140,23 +136,5 @@ class Operator(Protocol):
 
         Returns:
             OperatorResult with computed metrics or error
-        """
-        ...
-
-    def initialize(self, config: Any) -> None:
-        """
-        Optional: Initialize operator with app config.
-
-        Called once before first execution. Use for loading ML models.
-        Default implementation does nothing.
-        """
-        ...
-
-    def cleanup(self) -> None:
-        """
-        Optional: Clean up operator resources.
-
-        Called on application shutdown. Use for releasing GPU memory.
-        Default implementation does nothing.
         """
         ...

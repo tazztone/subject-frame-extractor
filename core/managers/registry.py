@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import gc
 import logging
 import threading
@@ -9,18 +11,18 @@ import torch
 
 if TYPE_CHECKING:
     from core.config import Config
-    from core.logger import AppLogger
+    from core.logger import LoggerLike
 
 
 class ModelRegistry:
     """Thread-safe registry for lazy loading and caching of heavy ML models."""
 
-    def __init__(self, logger: Optional["AppLogger"] = None):
+    def __init__(self, logger: Optional["LoggerLike"] = None):
         self._models: Dict[str, Any] = {}
         self._failed_models: Set[str] = set()
         self._locks: Dict[str, threading.Lock] = defaultdict(threading.Lock)
         self._registry_lock = threading.RLock()
-        self.logger = logger or logging.getLogger(__name__)
+        self.logger: "LoggerLike" = logger or logging.getLogger(__name__)
         self.runtime_device_override: Optional[str] = None
 
     def get_or_load(self, key: str, loader_fn: Callable[[], Any]) -> Any:
@@ -63,7 +65,7 @@ class ModelRegistry:
 
             if self.logger:
                 if hasattr(self.logger, "success"):
-                    self.logger.success(f"Model '{key}' loaded successfully.")
+                    self.logger.success(f"Model '{key}' loaded successfully.")  # type: ignore
                 else:
                     self.logger.info(f"Model '{key}' loaded successfully.")
         return val
@@ -103,7 +105,7 @@ class ModelRegistry:
         # Fallback to self.logger.config if not provided
         _config = config
         if _config is None and hasattr(self.logger, "config"):
-            _config = self.logger.config
+            _config = self.logger.config  # type: ignore
 
         _models_path = models_path or (str(_config.models_dir) if _config else None)
         _user_agent = user_agent or (_config.user_agent if _config else "SubjectFrameExtractor")

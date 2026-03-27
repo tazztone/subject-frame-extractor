@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import gc
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 import numpy as np
 import torch
@@ -19,7 +19,7 @@ class SAM2Wrapper:
 
         # SAM2.1 hiera-tiny config is usually built-in or provided by the package
         # We assume the config name matches the model type.
-        self.predictor = build_sam2_video_predictor(
+        self.predictor: Any = build_sam2_video_predictor(
             config_file="configs/sam2.1/sam2.1_hiera_t.yaml",
             ckpt_path=checkpoint_path,
             device=device,
