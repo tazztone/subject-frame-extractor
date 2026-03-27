@@ -21,7 +21,8 @@ The processing flow is split into three distinct phases to allow for checkpoints
 
 ### 2. Propagation Phase (`AnalysisPipeline` via `SubjectMasker`)
 - **Model**: SAM3 (Segment Anything Model v3).
-- **Temporal Memory**: SAM3 uses a session-based approach where it tracks objects across frames.
+- **Temporal Memory**: SAM3 uses a session-based approach where it tracks objects across frames. 
+- **PVS vs. PCS Protocol**: The system strictly uses the **PVS (Promptable Visual Segmentation)** tracker path instead of the PCS (Semantic) path. This ensures tracking state persistence across frames and avoids the automatic `reset_state()` calls triggered by high-level BBox APIs.
 - **Coordinate System**: UI coordinates (pixels) are normalized to [0.0, 1.0] before being passed to the `SAM3Wrapper`.
 - **Output**: Binary masks stored as compressed `.png` or `.webp` files in the `masks/` directory.
 
@@ -44,6 +45,7 @@ The processing flow is split into three distinct phases to allow for checkpoints
 Large ML models (SAM3, InsightFace) are managed by a central registry:
 - **Lazy Loading**: Models are only loaded into VRAM when first requested.
 - **Locking**: Uses a reentrant `RLock` for the registry state and individual `threading.Lock` per model to prevent race conditions during initialization.
+- **Path Safety**: The registry strictly validates `models_path`. If `models_path` is `None` (common in misconfigured environments), it logs an error and returns `None` instead of crashing with a `Path` instantiation error.
 - **OOM Recovery**: If a `RuntimeError` with "out of memory" is caught during initialization, the registry automatically clears the CUDA cache and retries the load on the CPU.
 
 ### Image Caching (`ThumbnailManager`)

@@ -117,7 +117,7 @@ class PreAnalysisPipeline(Pipeline):
         if (
             not is_folder_mode
             and self.params.pre_analysis_enabled
-            and self.params.primary_seed_strategy != "🧑‍🤝‍🧑 Find Prominent Person"
+            and self.params.primary_seed_strategy != "🧑\u200d🤝\u200d🧑 Find Prominent Person"
         ):
             try:
                 import pyiqa

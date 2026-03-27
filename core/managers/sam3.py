@@ -104,9 +104,10 @@ class SAM3Wrapper:
             return m > 0
         return np.zeros((h, w), dtype=bool)
 
-    def propagate(self, start_idx: int = 0, max_frames: int = None, direction: str = "forward"):
+    def propagate(self, start_idx: int = 0, max_frames: int = None, reverse: bool = False):
         if not self.session_id:
             raise RuntimeError("init_video must be called before propagation")
+        direction = "backward" if reverse else "forward"
         for resp in self.predictor.handle_stream_request(
             dict(
                 type="propagate_in_video",

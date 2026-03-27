@@ -31,7 +31,15 @@
 - **Concern**: Gradio requires that the number of inputs/outputs in `.click()` or `.change()` exactly matches the function signature.
 - **Impact**: Adding a new UI control without updating the corresponding pipeline wrapper results in a silent crash where the UI simply stops responding.
 
-### 2. UI Decorator & Generator Protocol 🔴
+### 2. Gradio 5 State Loss (Stale UI) 🔴
+- **Concern**: In Gradio 5, state objects (`gr.State`) that are not explicitly yielded or returned in an event handler (or success callback) revert to their previous value.
+- **Impact**: If a handler triggers multiple pipeline steps, the `ApplicationState` may be lost between steps, causing the UI to "stale" (e.g., buttons remaining invisible after pre-analysis).
+
+### 3. Emoji/ZWJ String Mismatch 🔴
+- **Concern**: Hidden **Zero Width Joiner (\u200d)** characters in emojis cause string comparison failures.
+- **Impact**: Gradio throws `gradio.exceptions.Error` (Choice not in list) if the `value` doesn't match the raw bytes of the `choices` list exactly. Backend logic using simple equality checks (e.g., `strategy != "🧑‍🤝‍🧑 Find Prominent Person"`) will also fail if the hidden characters don't match.
+
+### 4. UI Decorator & Generator Protocol 🔴
 - **Concern**: Applying a synchronous `try/except` decorator to a generator function (like `run_extraction_wrapper`) allows exceptions inside the generator body to bypass the decorator's error handler. It also breaks Gradio's streaming protocol if the decorator returns a `dict` instead of yielding one.
 - **Impact**: Silent failures or "stuck" UI status during long-running pipelines (Extraction, Analysis).
 - **Fix**: The `@safe_ui_callback` decorator uses `inspect.isgeneratorfunction` to provide a `yield from` bridge for iterables. Any future refactor of this decorator MUST maintain this generator-aware logic.
@@ -42,6 +50,11 @@
 
 ### 3. Mask Persistence Integrity
 - **Concern**: Masks are stored as separate `.png` files. If the user deletes the `masks/` directory manually, the `metadata.db` becomes inconsistent, leading to "File Not Found" errors during export.
+
+### 4. SAM3 State Reset Risks 🔴
+- **Concern**: The `predictor.add_prompt` API in SAM3 triggers an unconditional `self.reset_state()` if a `boxes_xywh` argument is provided. 
+- **Impact**: This destroys the tracking history for all other objects in the session, making multi-object propagation impossible after any manual BBox prompt.
+- **Mitigation**: The `SAM3Wrapper` avoids the `boxes_xywh` field entirely. It maps bounding boxes to the `points` argument with corner labels `[2, 3]` to force the PVS (Tracker) path which preserves session state.
 
 ## Maintenance Debt
 

@@ -376,6 +376,7 @@ def mock_pre_analysis_execution(
         "unified_log": msg,
         "scenes": scenes,
         "output_dir": output_dir,
+        "video_path": event.video_path,
         "done": True,
         # Omit UI updates to let app.py use defaults (gr.update)
     }

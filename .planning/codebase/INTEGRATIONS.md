@@ -67,6 +67,11 @@ for frame_idx, obj_id, mask in wrapper.propagate(start_idx=0, direction="both"):
 | `close_session()` | Release GPU resources. |
 | `shutdown()` | Shutdown the predictor, release memory, and clean up all resources. |
 
+#### Patch Dependencies
+The project uses `core/sam3_patches.py` to fix several upstream limitations:
+- **PVS Initialization**: Bypasses an `AssertionError` that occurrs when starting a session with manual Tracker (PVS) points before any detector (PCS) pass has been run.
+- **Resource Management**: Patches `pkg_resources` calls to avoid deprecation warnings and performance overhead in `model_builder`.
+
 ---
 
 

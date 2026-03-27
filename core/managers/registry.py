@@ -109,6 +109,10 @@ class ModelRegistry:
         _user_agent = user_agent or (_config.user_agent if _config else "SubjectFrameExtractor")
         _retry_params = retry_params or (1, [1])
 
+        if not _models_path:
+            self.logger.error("get_tracker: models_path is None and no config provided — cannot locate checkpoint.")
+            return None
+
         key = f"tracker_{model_name}"
 
         def _loader():

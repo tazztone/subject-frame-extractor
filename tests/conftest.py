@@ -426,7 +426,7 @@ def mock_ui_state():
         "thumb_megapixels": 0.5,
         "pre_analysis_enabled": True,
         "pre_sample_nth": 1,
-        "primary_seed_strategy": "🧑‍🤝‍🧑 Find Prominent Person",
+        "primary_seed_strategy": "🧑\u200d🤝\u200d🧑 Find Prominent Person",
         "min_mask_area_pct": 1.0,
         "sharpness_base_scale": 2500.0,
         "edge_strength_base_scale": 100.0,

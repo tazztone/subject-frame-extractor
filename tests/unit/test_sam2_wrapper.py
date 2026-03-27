@@ -91,12 +91,12 @@ def test_sam2_wrapper_propagate(mock_build, mock_predictor):
     mock_predictor.propagate_in_video.return_value = [
         (0, [1], torch.zeros((1, 1, 100, 100))),
     ]
-    results = list(wrapper.propagate(start_idx=0, max_frames=None, direction="forward"))
+    results = list(wrapper.propagate(start_idx=0, max_frames=None, reverse=False))
     assert len(results) == 1
     assert results[0][2].shape[-2:] == (100, 100)
 
     # Check reverse parameter for backward direction
-    list(wrapper.propagate(start_idx=5, direction="backward"))
+    list(wrapper.propagate(start_idx=5, reverse=True))
     args, kwargs = mock_predictor.propagate_in_video.call_args
     assert kwargs["reverse"] is True
 

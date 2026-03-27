@@ -165,7 +165,7 @@ class MaskPropagator:
                     f"Tracking forward from {start_frame_idx} to {max_fn} ({fwd_steps} steps)", component="propagator"
                 )
                 for frame_idx, obj_id, pred_mask in self.dam_tracker.propagate(
-                    start_idx=start_frame_idx, direction="forward", max_frames=fwd_steps
+                    start_idx=start_frame_idx, reverse=False, max_frames=fwd_steps
                 ):
                     if self.cancel_event.is_set():
                         break
@@ -196,7 +196,7 @@ class MaskPropagator:
                     f"Tracking backward from {start_frame_idx} to {min_fn} ({bwd_steps} steps)", component="propagator"
                 )
                 for frame_idx, obj_id, pred_mask in self.dam_tracker.propagate(
-                    start_idx=start_frame_idx, direction="backward", max_frames=bwd_steps
+                    start_idx=start_frame_idx, reverse=True, max_frames=bwd_steps
                 ):
                     if self.cancel_event.is_set():
                         break
@@ -358,28 +358,31 @@ class MaskPropagator:
                 if tracker:
                     tracker.step(1, desc="Propagation (seed)")
 
-                # Propagate in both directions using single call
-                for frame_idx, obj_id, pred_mask in self.dam_tracker.propagate(start_idx=seed_idx, direction="both"):
-                    if frame_idx == seed_idx:
-                        continue
-                    if frame_idx < 0 or frame_idx >= len(shot_frames_rgb):
-                        continue
+                # Propagate in both directions
+                for reverse in [False, True]:
                     if self.cancel_event.is_set():
                         break
+                    for frame_idx, obj_id, pred_mask in self.dam_tracker.propagate(start_idx=seed_idx, reverse=reverse):
+                        if frame_idx == seed_idx:
+                            continue
+                        if frame_idx < 0 or frame_idx >= len(shot_frames_rgb):
+                            continue
+                        if self.cancel_event.is_set():
+                            break
 
-                    if pred_mask is not None and np.any(pred_mask):
-                        mask = postprocess_mask(
-                            (pred_mask * 255).astype(np.uint8),
-                            config=self.config,
-                            fill_holes=True,
-                            keep_largest_only=True,
-                        )
-                        masks[frame_idx] = mask
-                    else:
-                        masks[frame_idx] = np.zeros((h, w), dtype=np.uint8)
+                        if pred_mask is not None and np.any(pred_mask):
+                            mask = postprocess_mask(
+                                (pred_mask * 255).astype(np.uint8),
+                                config=self.config,
+                                fill_holes=True,
+                                keep_largest_only=True,
+                            )
+                            masks[frame_idx] = mask
+                        else:
+                            masks[frame_idx] = np.zeros((h, w), dtype=np.uint8)
 
-                    if tracker:
-                        tracker.step(1, desc="Propagation (↔)")
+                        if tracker:
+                            tracker.step(1, desc="Propagation (↔)")
 
             except (torch.cuda.OutOfMemoryError, RuntimeError) as e:
                 self.logger.error(f"GPU error in propagation: {e}", component="propagator")

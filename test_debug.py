@@ -22,7 +22,7 @@ def test_debug_sam3():
     print(f"Mask obtained from add_prompt? {mask.any()}")
 
     print("Starting propagation...")
-    propagated = list(wrapper.propagate(start_idx=0, max_frames=2, direction="forward"))
+    propagated = list(wrapper.propagate(start_idx=0, max_frames=2, reverse=False))
     print(f"Propagated frames count: {len(propagated)}")
     for f, oid, m in propagated:
         print(f"Frame {f}, Obj {oid}, Mask valid? {m.any()}")

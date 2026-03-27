@@ -52,13 +52,13 @@ class SAM2Wrapper:
             m = m[0]
         return m > 0
 
-    def propagate(self, start_idx: int = 0, max_frames: int = None, direction: str = "forward"):
+    def propagate(self, start_idx: int = 0, max_frames: int = None, reverse: bool = False):
         with torch.inference_mode():
             for frame_idx, ids, masks in self.predictor.propagate_in_video(
                 self._state,
                 start_frame_idx=start_idx,
                 max_frame_num_to_track=max_frames or 9999,
-                reverse=(direction == "backward"),
+                reverse=reverse,
             ):
                 masks_np = masks.cpu().numpy()
                 for i, oid in enumerate(ids):

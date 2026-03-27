@@ -90,7 +90,7 @@ class Config(BaseSettings):
     default_face_model_name: str = "buffalo_l"
     default_enable_subject_mask: bool = True
     default_tracker_model_name: str = "sam2"
-    default_primary_seed_strategy: str = "🧑‍🤝‍🧑 Find Prominent Person"
+    default_primary_seed_strategy: str = "🧑\u200d🤝\u200d🧑 Find Prominent Person"
     default_seed_strategy: str = "Largest Person"
     default_text_prompt: str = "a person"
     default_resume: bool = False

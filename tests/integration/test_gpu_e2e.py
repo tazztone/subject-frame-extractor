@@ -286,7 +286,7 @@ class TestSAM3Inference:
             wrapper.add_bbox_prompt(frame_idx=0, obj_id=1, bbox_xywh=REAL_BBOX, img_size=(1280, 720))
 
             # Propagate forward
-            propagated = list(wrapper.propagate(start_idx=0, direction="forward"))
+            propagated = list(wrapper.propagate(start_idx=0, reverse=False))
 
             assert len(propagated) > 0, "SAM3 forward propagation returned no masks"
             for frame_idx, obj_id, mask in propagated:
@@ -320,14 +320,14 @@ class TestSAM3Inference:
             wrapper.add_bbox_prompt(frame_idx=0, obj_id=1, bbox_xywh=REAL_BBOX, img_size=(1280, 720))
 
             # Propagate forward
-            forward = list(wrapper.propagate(start_idx=seed_frame, direction="forward"))
+            forward = list(wrapper.propagate(start_idx=seed_frame, reverse=False))
             forward_indices = [f[0] for f in forward]
 
             assert len(forward) > 0, "Forward propagation returned no masks"
             assert all(idx >= seed_frame for idx in forward_indices)
 
             # Propagate backward
-            backward = list(wrapper.propagate(start_idx=seed_frame, direction="backward"))
+            backward = list(wrapper.propagate(start_idx=seed_frame, reverse=True))
             backward_indices = [f[0] for f in backward]
 
             assert len(backward) > 0, "Backward propagation returned no masks"
@@ -438,7 +438,7 @@ class TestSAM2Inference:
             wrapper.add_bbox_prompt(frame_idx=0, obj_id=1, bbox_xywh=[77, 51, 102, 153], img_size=(256, 256))
 
             # Propagate forward
-            propagated = list(wrapper.propagate(start_idx=0, direction="forward"))
+            propagated = list(wrapper.propagate(start_idx=0, reverse=False))
 
             assert len(propagated) > 0
             for frame_idx, obj_id, mask in propagated:
@@ -1136,7 +1136,7 @@ class TestLargeVideoE2E:
             assert mask is not None
 
             # Propagate through all frames
-            propagated = list(wrapper.propagate(start_idx=0, direction="forward"))
+            propagated = list(wrapper.propagate(start_idx=0, reverse=False))
             assert len(propagated) > 0, "SAM3 propagation returned no masks"
 
         finally:
