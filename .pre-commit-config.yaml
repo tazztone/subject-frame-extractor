@@ -24,6 +24,6 @@ repos:
         entry: uv run python scripts/update_agents_md.py
         language: system
         pass_filenames: false
-        files: ^(core/|ui/|app\.py|cli\.py)
+        files: ^(core/|ui/|app\.py|cli\.py|scripts/|tests/)
         stages: [pre-commit]
         description: Keep AGENTS_CODE_REFERENCE.md in sync with the codebase.

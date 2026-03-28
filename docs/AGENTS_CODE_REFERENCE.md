@@ -160,6 +160,7 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;test_debug_sam3.py  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;results  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;e2e_output  
+│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;failures  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;screenshots  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;test_application_state.py  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;ui  
