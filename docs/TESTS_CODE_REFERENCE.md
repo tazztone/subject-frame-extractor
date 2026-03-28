@@ -42,6 +42,7 @@ tests
 │&nbsp;&nbsp;&nbsp;└──&nbsp;[`test_debug_sam3.py`](#-testsresearchtest_debug_sam3py)  
 ├──&nbsp;results  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;e2e_output  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;failures  
 │&nbsp;&nbsp;&nbsp;└──&nbsp;screenshots  
 ├──&nbsp;[`test_application_state.py`](#-teststest_application_statepy)  
 ├──&nbsp;ui  
@@ -529,6 +530,12 @@ mock_torch.tensor = MagicMock(side_effect=lambda data, **kwargs: _create_mock...
 mock_torch.no_grad = TransparentContext
 mock_torch.inference_mode = TransparentContext
 modules_map = {'torch': create_mock_module('torch', {'cuda': mock_torch.cuda,...
+modules_map['sam3.model'] = create_mock_module('sam3.model')
+modules_map['sam3.utils'] = create_mock_module('sam3.utils')
+modules_map['sam3.model.sam3_video_predictor'] = create_mock_module('sam3.mod...
+modules_map['sam3.model.sam3_video_predictor'].SAM3VideoPredictor = MagicMock()
+modules_map['sam3.model.sam3_video_inference'] = create_mock_module('sam3.mod...
+modules_map['sam3.model.sam3_video_inference'].SAM3VideoInference = MagicMock()
 def mock_extraction_run(self, tracker=None):
     """Mocks the extraction process."""
 def mock_pre_analysis_execution(event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress=None, model_registry=None):
@@ -623,11 +630,16 @@ def generate_issue_report(issues: List[UXIssue], title: str='UX Analysis Report'
 ### `📄 tests/ui/conftest.py`
 
 ```python
-PORT = 8765
+def get_test_port(): ...
+PORT = get_test_port()
 BASE_URL = f'http://127.0.0.1:{PORT}'
+FAILURES_DIR = Path(__file__).parent.parent.parent / 'tests' / 'results' / 'f...
 @pytest.fixture(autouse=True)
 def setup_playwright_timeout(page: Page):
     """Set a baseline timeout for all Playwright actions."""
+@pytest.hookimpl(tryfirst=True, hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    """Capture screenshot on test failure."""
 def wait_for_server(url, timeout=60):
     """Wait for the server to be responsive."""
 def wait_for_app_ready(page: Page):
