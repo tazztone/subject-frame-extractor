@@ -12,17 +12,23 @@ class SAM3Wrapper:
     """SAM3 Tracker using official Sam3VideoPredictor API."""
 
     def __init__(self, checkpoint_path=None, device="cuda"):
-        from pathlib import Path
-
         from sam3.model_builder import build_sam3_video_predictor  # type: ignore
 
-        # Auto-resolve checkpoint if not provided: look for models/sam3.pt in project root
-        if checkpoint_path is None:
-            # Assumes project root is 2 levels up from core/managers/sam3.py
-            project_root = Path(__file__).parents[2]
-            local_checkpoint = project_root / "models" / "sam3.pt"
-            if local_checkpoint.exists():
-                checkpoint_path = str(local_checkpoint)
+        # Detect mock leakage early — SAM3 must never be a MagicMock in real mode.
+        # This happens when conftest.py's global mocks bleed into integration workers.
+        # Fix: export PYTEST_INTEGRATION_MODE=true before running integration tests,
+        # or run via scripts/linux_test_all.sh which handles this automatically.
+        try:
+            from unittest.mock import MagicMock as _MagicMock
+
+            if isinstance(build_sam3_video_predictor, _MagicMock):
+                raise RuntimeError(
+                    "SAM3 build_sam3_video_predictor is a MagicMock — "
+                    "conftest.py has injected a mock into sys.modules['sam3.model_builder']. "
+                    "Run integration tests with: export PYTEST_INTEGRATION_MODE=true"
+                )
+        except ImportError:
+            pass
 
         self.device = device
         if torch.cuda.is_available():
@@ -30,7 +36,6 @@ class SAM3Wrapper:
 
         # Force single-GPU mode to prevent multi-process resource exhaustion in tests/Gradio
         gpus = [0] if device == "cuda" else None
-
         self.predictor = build_sam3_video_predictor(checkpoint_path=checkpoint_path, gpus_to_use=gpus)
 
         if self.predictor is None or getattr(self.predictor, "model", None) is None:

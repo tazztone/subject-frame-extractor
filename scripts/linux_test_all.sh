@@ -10,6 +10,12 @@ echo "----------------------------------------"
 echo "Subject Frame Extractor - Running ALL TESTS"
 echo "----------------------------------------"
 
+# Export integration mode so all child processes and xdist workers inherit it.
+# An inline prefix (VAR=value command) only sets the variable for that single
+# process — xdist workers are spawned as separate subprocesses and would not
+# inherit it. Using export guarantees every worker sees the variable.
+export PYTEST_INTEGRATION_MODE=true
+
 # 1. Unit Tests
 echo "--- Stage 1: Unit Tests ---"
 bash "$SCRIPT_DIR/linux_test_unit.sh"
@@ -18,13 +24,13 @@ if [ $? -ne 0 ]; then exit 1; fi
 # 2. Integration Tests
 echo ""
 echo "--- Stage 2: Integration Tests ---"
-PYTEST_INTEGRATION_MODE=true uv run --no-sync pytest tests/integration/ -o "addopts=-v --tb=short" -m "integration or gpu_e2e" --no-cov
+uv run --no-sync pytest tests/integration/ -o "addopts=-v --tb=short" -m "integration or gpu_e2e" --no-cov
 if [ $? -ne 0 ]; then exit 1; fi
 
 # 3. UI/E2E Tests
 echo ""
 echo "--- Stage 3: UI/E2E Tests ---"
-PYTEST_INTEGRATION_MODE=true bash "$SCRIPT_DIR/linux_test_ui.sh" -o "addopts=-v --tb=short" --no-cov
+bash "$SCRIPT_DIR/linux_test_ui.sh" -o "addopts=-v --tb=short" --no-cov
 if [ $? -ne 0 ]; then exit 1; fi
 
 # 4. Regression Tests

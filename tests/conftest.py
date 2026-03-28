@@ -192,7 +192,12 @@ _mock_torch_obj.inference_mode = TransparentContext
 _mock_torch_obj.SymFloat = MagicMock
 _mock_torch_obj.SymInt = MagicMock
 
-# Patch sys.modules globally and immediately
+# Patch sys.modules globally ONLY if we are in a mock-safe environment (unit tests).
+# Integration and UI tests MUST use real dependencies.
+# NOTE: SAM3 (sam3.*) is intentionally excluded from this list.
+# SAM3 is a local editable install — unit tests that need a mock SAM3 must
+# create their own local MagicMock rather than relying on global injection.
+# This prevents MagicMock leaking into xdist integration workers.
 modules_to_mock = {
     "torch": _create_mock_module(
         "torch",
@@ -232,19 +237,6 @@ modules_to_mock = {
     "torchvision.ops": MagicMock(),
     "insightface": _create_mock_module("insightface", {"app": MagicMock()}),
     "insightface.app": MagicMock(),
-    "sam3": _create_mock_module("sam3", {"model_builder": MagicMock()}),
-    "sam3.model_builder": MagicMock(),
-    "sam3.model": _create_mock_module("sam3.model", {"sam3_video_predictor": MagicMock()}),
-    "sam3.model.sam3_video_predictor": MagicMock(),
-    "sam3.model.decoder": MagicMock(),
-    "sam3.model.sam3_image_processor": MagicMock(),
-    "sam3.model.sam3_video_inference": MagicMock(),
-    "sam3.model.edt": MagicMock(),
-    "sam3.perflib": _create_mock_module("sam3.perflib", {"connected_components": MagicMock()}),
-    "sam3.perflib.connected_components": MagicMock(),
-    "sam2": _create_mock_module("sam2", {"build_sam2": MagicMock()}),
-    "sam2.build_sam": MagicMock(),
-    "sam2.build_sam_video_predictor": MagicMock(),
     "mediapipe": _create_mock_module("mediapipe", {"tasks": MagicMock()}),
     "mediapipe.tasks": _create_mock_module("mediapipe.tasks", {"python": MagicMock()}),
     "mediapipe.tasks.python": _create_mock_module("mediapipe.tasks.python", {"vision": MagicMock()}),
@@ -265,22 +257,34 @@ modules_to_mock = {
     "torchvision.transforms": MagicMock(),
 }
 
-# Patch sys.modules globally ONLY if we are in a mock-safe environment (unit tests)
-# Integration and UI tests MUST use real dependencies.
 import os
 
 
-# Check if we should skip global mocking (e.g. for integration tests)
 def _should_skip_mocks():
+    """Determine if global mocks should be disabled for real-mode execution.
+
+    Priority order:
+    1. PYTEST_INTEGRATION_MODE=true env var — authoritative signal, always wins.
+    2. PYTEST_XDIST_WORKER env var — worker inherited env from parent; if parent
+       set PYTEST_INTEGRATION_MODE, workers already matched rule 1. If a worker
+       exists but rule 1 didn't fire, the parent did NOT export the var, so we
+       stay in mock mode (safe default).
+    3. sys.argv path inspection — for direct invocations without the env var.
+    """
+    # Rule 1: Explicit environment variable — highest priority
     if os.environ.get("PYTEST_INTEGRATION_MODE") == "true":
         return True
 
-    # Only skip mocks if we are EXPLICITLY running integration, e2e, or UI tests
-    # Avoid substring matches that could hit 'tests/unit/test_integration.py'
+    # Rule 2: We are inside an xdist worker.
+    # Workers inherit the parent environment. If PYTEST_INTEGRATION_MODE wasn't
+    # set by the parent, the worker should stay in mock mode. No action needed
+    # here — fall through to argv check as a best-effort fallback.
+    # (Documented explicitly to prevent future "fixes" that break unit tests.)
+
+    # Rule 3: Direct invocation targeting integration/e2e/ui paths
     integration_paths = ["tests/integration/", "tests/e2e/", "tests/ui/"]
     for arg in sys.argv:
         if any(p in arg for p in integration_paths):
-            # Special case: don't skip mocks for unit tests even if triggered alongside integration
             if "tests/unit/" in arg:
                 continue
             return True
@@ -293,7 +297,6 @@ if not _skip_mocks:
     for mod_name, mod_obj in modules_to_mock.items():
         sys.modules[mod_name] = mod_obj
 else:
-    # Optional: log that we are in "Real Mode"
     print("\n[PyTest] Integration/UI Mode detected: Global mocks DISABLED.")
 
 
