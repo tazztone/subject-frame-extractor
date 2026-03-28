@@ -203,7 +203,8 @@ _mock_torch_obj.inference_mode = TransparentContext
 _mock_torch_obj.SymFloat = MagicMock
 _mock_torch_obj.SymInt = MagicMock
 modules_to_mock = {'torch': _create_mock_module('torch', {'cuda': _cuda_mod, ...
-def _should_skip_mocks(): ...
+def _should_skip_mocks():
+    """Determine if global mocks should be disabled for real-mode execution."""
 _skip_mocks = _should_skip_mocks()
 @pytest.fixture(autouse=True)
 def clean_registry():
