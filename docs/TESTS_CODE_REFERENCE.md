@@ -343,6 +343,7 @@ class TestCUDAAvailability:
 class TestSAM3Inference:
     """Real SAM3 inference tests - catches BFloat16 and other runtime errors."""
     @requires_sam3
+    @pytest.mark.xdist_group('sam3_isolated')
     def test_sam3_wrapper_initialization(self, tmp_path):
         """SAM3Wrapper can be initialized without errors."""
     @requires_sam3

@@ -37,6 +37,7 @@ pytestmark = [
 def module_model_registry():
     """Module-scoped model registry to avoid reloading weights between tests.
     Speeds up the integration suite significantly (5-10s per tracker test).
+    Uses the project's real models directory to avoid redundant downloads.
     """
     import tempfile
     from pathlib import Path
@@ -45,12 +46,21 @@ def module_model_registry():
     from core.logger import AppLogger
     from core.managers import ModelRegistry
 
-    # Use a persistent temp dir for this module's lifetime
+    # Get the project root to find the real models directory
+    project_root = Path(__file__).parents[2]
+    real_models_dir = project_root / "models"
+
+    if not real_models_dir.exists():
+        real_models_dir.mkdir(parents=True)
+
+    # Use a persistent temp dir for logs only
     with tempfile.TemporaryDirectory() as tmp_dir:
-        td = Path(tmp_dir)
-        (td / "logs").mkdir()
-        (td / "models").mkdir()
-        config = Config(logs_dir=str(td / "logs"), models_dir=str(td / "models"))
+        logs_dir = Path(tmp_dir) / "logs"
+        logs_dir.mkdir()
+        config = Config(
+            logs_dir=str(logs_dir),
+            models_dir=str(real_models_dir),
+        )
         logger = AppLogger(config, log_to_console=False, log_to_file=False)
         registry = ModelRegistry(logger)
         yield registry
@@ -211,6 +221,7 @@ class TestSAM3Inference:
     """Real SAM3 inference tests - catches BFloat16 and other runtime errors."""
 
     @requires_sam3
+    @pytest.mark.xdist_group("sam3_isolated")
     def test_sam3_wrapper_initialization(self, tmp_path):
         """SAM3Wrapper can be initialized without errors."""
         import torch

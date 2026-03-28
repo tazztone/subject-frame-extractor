@@ -1,4 +1,4 @@
-from typing import Any, Optional, Union
+from typing import Optional, Union
 
 import numpy as np
 import torch
@@ -23,7 +23,13 @@ class SAM3Wrapper:
         from unittest.mock import patch
 
         with patch("sam3.model_builder.download_ckpt_from_hf", return_value=None):
-            self.predictor: Any = build_sam3_video_predictor(checkpoint_path=checkpoint_path, gpus_to_use=gpus)  # type: ignore
+            self.predictor = build_sam3_video_predictor(checkpoint_path=checkpoint_path, gpus_to_use=gpus)
+
+        if self.predictor is None or getattr(self.predictor, "model", None) is None:
+            raise RuntimeError(
+                f"SAM3 model failed to load from '{checkpoint_path}'. "
+                "Ensure the checkpoint file exists and is not corrupted."
+            )
 
         # Restore overrides for Subject Extraction workflow:
         # 1. Disable hotstart (delay=0) to ensure immediate masks for all frames
