@@ -6,7 +6,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from queue import Empty, Queue
-from typing import Any, Callable, Dict, Generator, List, Optional
+from typing import Any, Callable, Dict, Generator, List, Optional, Tuple
 
 import cv2
 import gradio as gr
@@ -73,7 +73,7 @@ class AppUI:
         "Best Face",
     ]
     FACE_MODEL_NAME_CHOICES: List[str] = ["buffalo_l", "buffalo_s"]
-    TRACKER_MODEL_CHOICES: List[str] = ["sam2", "sam3"]
+    TRACKER_MODEL_CHOICES: List[Tuple[str, str]] = [("sam2", "sam2"), ("sam3 (Experimental)", "sam3")]
     GALLERY_VIEW_CHOICES: List[str] = ["Kept", "Rejected"]
     LOG_LEVEL_CHOICES: List[str] = ["DEBUG", "INFO", "WARNING", "ERROR", "SUCCESS", "CRITICAL"]
     SCENE_GALLERY_VIEW_CHOICES: List[str] = ["Kept", "Rejected", "All"]

@@ -302,7 +302,7 @@ def verify_ui_simple(): ...
 
 ```python
 """GPU E2E Tests - Real inference with actual models."""
-pytestmark = [pytest.mark.gpu_e2e, pytest.mark.slow]
+pytestmark = [pytest.mark.gpu_e2e, pytest.mark.slow, pytest.mark.skipif(not t...
 @pytest.fixture(scope='module')
 def module_model_registry():
     """Module-scoped model registry to avoid reloading weights between tests."""

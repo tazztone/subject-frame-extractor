@@ -20,11 +20,17 @@ from pathlib import Path
 import cv2
 import numpy as np
 import pytest
+import torch
 
 from core.managers import SAM3Wrapper
 
 # Mark all tests as gpu_e2e (requires GPU, slow)
-pytestmark = [pytest.mark.gpu_e2e, pytest.mark.slow]
+# Automatically skip entire file if CUDA is not available
+pytestmark = [
+    pytest.mark.gpu_e2e,
+    pytest.mark.slow,
+    pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available for GPU E2E tests"),
+]
 
 
 @pytest.fixture(scope="module")

@@ -77,3 +77,28 @@ jobs:
           name: ui-test-failures
           path: tests/results/failures/
           retention-days: 7
+
+  gpu-tests:
+    name: GPU Integration Tests (Dry Run)
+    runs-on: ubuntu-latest
+    needs: test-and-lint
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: "pyproject.toml"
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run GPU E2E Tests (Mocked Skip)
+        run: uv run pytest tests/integration/test_gpu_e2e.py -m gpu_e2e
