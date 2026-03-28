@@ -65,7 +65,7 @@ To ensure fast execution and hardware independence, all **Unit Tests** must comp
 The suite compares current UI states against baseline screenshots using perceptual hashing.
 - **Update Baselines**: To refresh baselines (e.g., after changing labels), run:
   `uv run pytest -n 0 --update-baselines tests/ui/test_visual_regression.py`
-- **Constraint**: Always use `-n 0` when updating baselines to prevent race conditions during file writes.
+- **Constraint**: Always use `-n 0` when updating baselines to prevent race conditions during file writes. Parallel execution (`-n > 0`) is strictly forbidden for updates.
 
 ## Coverage Requirements
 
