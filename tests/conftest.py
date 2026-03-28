@@ -270,7 +270,9 @@ import os
 
 # Check if we should skip global mocking (e.g. for integration tests)
 _skip_mocks = os.environ.get("PYTEST_INTEGRATION_MODE") == "true" or any(
-    arg for arg in sys.argv if (("tests/integration" in arg and "smoke" not in arg) or "tests/ui" in arg)
+    arg
+    for arg in sys.argv
+    if ((("tests/integration" in arg or "tests/e2e" in arg) and "smoke" not in arg) or "tests/ui" in arg)
 )
 
 if not _skip_mocks:

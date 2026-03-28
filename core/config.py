@@ -270,7 +270,8 @@ class Config(BaseSettings):
 
     @model_validator(mode="after")
     def _validate_config(self) -> "Config":
-        """Validates quality weights."""
+        """Validates quality weights and creates required directories."""
+        self._validate_paths()
         weights = [
             self.quality_weights_sharpness,
             self.quality_weights_edge_strength,

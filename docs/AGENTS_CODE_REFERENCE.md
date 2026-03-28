@@ -84,6 +84,7 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`system_health.py`](#-coresystem_healthpy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`utils.py`](#-coreutilspy)  
 │&nbsp;&nbsp;&nbsp;└──&nbsp;[`xmp_writer.py`](#-corexmp_writerpy)  
+├──&nbsp;custom_logs  
 ├──&nbsp;docs  
 │&nbsp;&nbsp;&nbsp;└──&nbsp;TESTS_CODE_REFERENCE.md  
 ├──&nbsp;examples  
@@ -457,7 +458,7 @@ class Config(BaseSettings):
         """Ensures critical directories exist and are writable."""
     @model_validator(mode='after')
     def _validate_config(self) -> 'Config':
-        """Validates quality weights."""
+        """Validates quality weights and creates required directories."""
     @property
     def quality_weights(self) -> Dict[str, int]:
         """Returns a dictionary of quality metric weights."""
@@ -1178,6 +1179,8 @@ def ingest_folder(folder_path: Path, output_dir: Path, recursive: bool=False, th
 ### `📄 core/pipelines.py`
 
 ```python
+Image = Image
+gr = gr
 def _handle_extraction_uploads(event_dict: dict, config: 'Config') -> dict:
     """Helper to move uploaded video to downloads directory."""
 def _handle_pre_analysis_uploads(event_dict: dict, config: 'Config') -> dict:
