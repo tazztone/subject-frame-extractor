@@ -84,6 +84,7 @@ _cuda_mod = _create_mock_module(
         "device_count": MagicMock(return_value=0),
         "get_device_name": MagicMock(return_value="Mock GPU"),
         "empty_cache": MagicMock(),
+        "synchronize": MagicMock(),
         "memory_summary": MagicMock(return_value="Mock Memory Summary"),
         "memory_allocated": MagicMock(return_value=0),
         "OutOfMemoryError": OutOfMemoryError,
@@ -268,12 +269,25 @@ modules_to_mock = {
 # Integration and UI tests MUST use real dependencies.
 import os
 
+
 # Check if we should skip global mocking (e.g. for integration tests)
-_skip_mocks = os.environ.get("PYTEST_INTEGRATION_MODE") == "true" or any(
-    arg
-    for arg in sys.argv
-    if ((("tests/integration" in arg or "tests/e2e" in arg) and "smoke" not in arg) or "tests/ui" in arg)
-)
+def _should_skip_mocks():
+    if os.environ.get("PYTEST_INTEGRATION_MODE") == "true":
+        return True
+
+    # Only skip mocks if we are EXPLICITLY running integration, e2e, or UI tests
+    # Avoid substring matches that could hit 'tests/unit/test_integration.py'
+    integration_paths = ["tests/integration/", "tests/e2e/", "tests/ui/"]
+    for arg in sys.argv:
+        if any(p in arg for p in integration_paths):
+            # Special case: don't skip mocks for unit tests even if triggered alongside integration
+            if "tests/unit/" in arg:
+                continue
+            return True
+    return False
+
+
+_skip_mocks = _should_skip_mocks()
 
 if not _skip_mocks:
     for mod_name, mod_obj in modules_to_mock.items():

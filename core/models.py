@@ -187,7 +187,7 @@ class AnalysisParameters(BaseModel):
     face_ref_img_path: str = ""
     face_model_name: str = ""
     enable_subject_mask: bool = False
-    tracker_model_name: str = ""
+    tracker_model_name: str = "sam2"
     seed_strategy: str = ""
     scene_detect: bool = False
     nth_frame: int = 0

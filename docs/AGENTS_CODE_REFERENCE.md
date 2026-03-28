@@ -220,6 +220,7 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_ffmpeg_logic.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_filtering.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_fingerprint.py  
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_fix_verification.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_gallery_utils.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_handlers.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_helpers_extended.py  
@@ -523,6 +524,14 @@ class PropagationDirection(str, Enum):
     FORWARD = "<REDACTED_STRING>"
     BACKWARD = "<REDACTED_STRING>"
     BOTH = "<REDACTED_STRING>"
+    def __str__(self) -> str: ...
+class SeedStrategy(str, Enum):
+    """Strategies for initial subject seeding."""
+    FACE_REFERENCE = "<REDACTED_STRING>"
+    TEXT_DESCRIPTION = "<REDACTED_STRING>"
+    FACE_TEXT_FALLBACK = "<REDACTED_STRING>"
+    AUTOMATIC = "<REDACTED_STRING>"
+    FIND_PROMINENT = "<REDACTED_STRING>"
     def __str__(self) -> str: ...
 ```
 

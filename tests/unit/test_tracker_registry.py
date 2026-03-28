@@ -63,9 +63,10 @@ def test_get_tracker_sam3_safetensors(mock_exists, mock_build, mock_download, re
 
     # To test replacement we need exists=False
     mock_config.sam3_checkpoint_url = "http://example.com/model.safetensors"
+    registry.clear()
     with patch("core.managers.registry.Path.exists", return_value=False), patch("core.managers.registry.Path.mkdir"):
         registry.get_tracker(
-            model_name="sam3_new",  # different key to avoid cache
+            model_name="sam3",  # valid name
             models_path="models",
             user_agent="test-agent",
             retry_params=(3, (1, 2)),

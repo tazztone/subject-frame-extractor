@@ -17,15 +17,17 @@ class SAM3Wrapper:
         self.device = device
         if torch.cuda.is_available():
             torch.set_float32_matmul_precision("high")
-        gpus = range(torch.cuda.device_count()) if device == "cuda" else None
+
+        # Force single-GPU mode to prevent multi-process resource exhaustion in tests/Gradio
+        gpus = [0] if device == "cuda" else None
         from unittest.mock import patch
 
         with patch("sam3.model_builder.download_ckpt_from_hf", return_value=None):
             self.predictor: Any = build_sam3_video_predictor(checkpoint_path=checkpoint_path, gpus_to_use=gpus)  # type: ignore
 
-        # Disable hotstart and confirmation to give immediate feedback for prompted-first workflow
-        # Default in model_builder is hotstart_delay=15, which suppresses masks until they 'stabilize'.
-        # For Subject Extraction, we want exactly what we prompted, immediately.
+        # Restore overrides for Subject Extraction workflow:
+        # 1. Disable hotstart (delay=0) to ensure immediate masks for all frames
+        # 2. Disable confirmation (False) to prevent suppressing masks for unconfirmed tracks
         self.predictor.model.hotstart_delay = 0  # type: ignore
         self.predictor.model.masklet_confirmation_enable = False  # type: ignore
         self.session_id = None
@@ -33,7 +35,13 @@ class SAM3Wrapper:
     def init_video(self, video_resource: Union[str, list]):
         if self.session_id:
             self.close_session()
-        resp = self.predictor.handle_request(dict(type="start_session", resource_path=video_resource))
+
+        # Propagate settings through the request to ensure workers receive them
+        resp = self.predictor.handle_request(
+            dict(
+                type="start_session", resource_path=video_resource, hotstart_delay=0, masklet_confirmation_enable=False
+            )
+        )
         self.session_id = resp["session_id"]
         return self.session_id
 
@@ -61,11 +69,13 @@ class SAM3Wrapper:
             points=points,
             point_labels=point_labels,
         )
+        if text:
+            req["text"] = text
 
         resp = self.predictor.handle_request(request=req)
         outputs = resp.get("outputs", {})
 
-        # In PVS mode, masks are returned in video_res_masks, which this wrapper aliases
+        # Low-res masks are in out_binary_masks
         masks = outputs.get("out_binary_masks")
         if masks is not None and len(masks) > 0:
             if hasattr(masks, "cpu"):
@@ -155,17 +165,16 @@ class SAM3Wrapper:
     def reset_session(self):
         """Reset the current tracking session."""
         self.close_session()
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+            torch.cuda.empty_cache()
 
     def clear_prompts(self):
         """Clear all prompts in the current session."""
         if not self.session_id:
             return
-        # SAM3 does not natively support a 'clear_prompts' request type
-        # We log and let the session continue or reset manually if needed
-        import logging
-
-        logger = logging.getLogger(__name__)
-        logger.info(f"SAM3: clear_prompts called for session {self.session_id} (No-op in SAM3)")
+        # Effective clear by resetting the session state
+        self.reset_session()
 
     def close_session(self):
         if self.session_id:
@@ -181,7 +190,15 @@ class SAM3Wrapper:
         import gc
 
         self.close_session()
-        if hasattr(self.predictor, "shutdown"):
-            self.predictor.shutdown()
-        self.predictor = None
+        if self.predictor is not None:
+            if hasattr(self.predictor, "shutdown"):
+                self.predictor.shutdown()
+            # Deep cleanup of the predictor and its model
+            if hasattr(self.predictor, "model"):
+                self.predictor.model = None
+            self.predictor = None
+
         gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()

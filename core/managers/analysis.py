@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from core.managers import ModelRegistry, ThumbnailManager
 
 from core.database import Database
-from core.enums import SceneStatus
+from core.enums import SceneStatus, SeedStrategy
 from core.error_handling import ErrorHandler
 from core.io_utils import create_frame_map
 from core.models import AnalysisParameters, Frame, Scene
@@ -122,7 +122,7 @@ class PreAnalysisPipeline(Pipeline):
         if (
             not is_folder_mode
             and self.params.pre_analysis_enabled
-            and self.params.primary_seed_strategy != "🧑\u200d🤝\u200d🧑 Find Prominent Person"
+            and self.params.primary_seed_strategy != SeedStrategy.FIND_PROMINENT.value
         ):
             try:
                 import pyiqa
@@ -162,7 +162,10 @@ class PreAnalysisPipeline(Pipeline):
             if mask is not None
             else (masker.draw_bbox(thumb_rgb, bbox) if bbox else thumb_rgb)
         )
-        preview_path = previews_dir / f"scene_{scene.shot_id:05d}.jpg"
+        import time
+
+        # Add timestamp to bust Gradio's image cache
+        preview_path = previews_dir / f"scene_{scene.shot_id:05d}_{int(time.time())}.jpg"
         Image.fromarray(overlay_rgb).save(preview_path)
         scene.preview_path, scene.status = str(preview_path), SceneStatus.INCLUDED
 

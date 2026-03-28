@@ -132,7 +132,13 @@ class SubjectMasker:
         if self.params.enable_face_filter and self.face_analyzer is None:
             log_with_component(self.logger, "warning", "Face analyzer is not available but face filter is enabled.")
 
-        if getattr(self.params, "need_masks_now", False) or self.params.enable_subject_mask:
+        strategy = getattr(self.params, "primary_seed_strategy", "")
+        needs_tracker_for_seeding = strategy not in ("Source Face Reference", "")
+        if (
+            needs_tracker_for_seeding
+            or getattr(self.params, "need_masks_now", False)
+            or self.params.enable_subject_mask
+        ):
             self._initialize_tracker()
 
     def _initialize_tracker(self) -> bool:

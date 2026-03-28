@@ -101,6 +101,7 @@ tests
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_ffmpeg_logic.py`](#-testsunittest_ffmpeg_logicpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_filtering.py`](#-testsunittest_filteringpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_fingerprint.py`](#-testsunittest_fingerprintpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_fix_verification.py`](#-testsunittest_fix_verificationpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_gallery_utils.py`](#-testsunittest_gallery_utilspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_handlers.py`](#-testsunittest_handlerspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_helpers_extended.py`](#-testsunittest_helpers_extendedpy)  
@@ -202,7 +203,8 @@ _mock_torch_obj.inference_mode = TransparentContext
 _mock_torch_obj.SymFloat = MagicMock
 _mock_torch_obj.SymInt = MagicMock
 modules_to_mock = {'torch': _create_mock_module('torch', {'cuda': _cuda_mod, ...
-_skip_mocks = os.environ.get('PYTEST_INTEGRATION_MODE') == 'true' or any((arg...
+def _should_skip_mocks(): ...
+_skip_mocks = _should_skip_mocks()
 @pytest.fixture(autouse=True)
 def clean_registry():
     """Ensure OperatorRegistry is clean before each test."""
@@ -344,7 +346,7 @@ class TestSAM3Inference:
     def test_sam3_wrapper_initialization(self, tmp_path):
         """SAM3Wrapper can be initialized without errors."""
     @requires_sam3
-    def test_sam3_init_video(self, tmp_path):
+    def test_sam3_init_video(self, tmp_path, module_model_registry):
         """SAM3 init_video() initializes inference state correctly."""
     @requires_sam3
     def test_sam3_add_bbox_prompt(self, tmp_path, module_model_registry):
@@ -356,7 +358,7 @@ class TestSAM3Inference:
     def test_sam3_propagate_bidirectional(self, tmp_path, module_model_registry):
         """SAM3 propagate() works bidirectionally from middle frame with real media."""
     @requires_sam3
-    def test_sam3_clear_prompts(self, test_frames_dir):
+    def test_sam3_clear_prompts(self, test_frames_dir, module_model_registry):
         """SAM3 clear_prompts() resets session state."""
 @pytest.mark.gpu_e2e
 @pytest.mark.sam2
@@ -431,7 +433,7 @@ class TestExportE2E:
 class TestCancellationE2E:
     """E2E tests for cancel operations during pipeline execution."""
     @requires_sam3
-    def test_propagation_with_cancel_event(self, tmp_path):
+    def test_propagation_with_cancel_event(self, tmp_path, test_frames_dir, module_model_registry):
         """MaskPropagator handles cancel event during propagation."""
     def test_analysis_pipeline_cancel(self, tmp_path):
         """AnalysisPipeline handles cancel event gracefully."""
@@ -458,7 +460,7 @@ class TestMaskGenerationE2E:
     def test_get_mask_for_bbox_e2e(self, test_frames_dir, tmp_path):
         """Test SeedSelector._get_mask_for_bbox with real SAM3."""
     @requires_sam3
-    def test_identity_first_seed_e2e(self, test_image_with_face, tmp_path):
+    def test_identity_first_seed_e2e(self, test_image_with_face, tmp_path, module_model_registry):
         """Test 'By Face' seeding strategy with real models."""
     def test_pre_analysis_mask_generation_e2e(self, test_frames_dir, tmp_path):
         """Test the full pre-analysis flow including mask generation."""
@@ -1782,6 +1784,17 @@ def test_load_fingerprint_invalid_json(tmp_path):
     """Test loading invalid fingerprint JSON."""
 def test_fingerprints_match():
     """Test fingerprints_match logic."""
+```
+
+### `📄 tests/unit/test_fix_verification.py`
+
+```python
+def test_tracker_model_name_defaults_to_sam2():
+    """Verify that AnalysisParameters and PreAnalysisEvent default to 'sam2'."""
+def test_face_fallback_when_no_people_detected():
+    """Verify that SeedSelector falls back to face detection when person detection f..."""
+def test_strategy_routing_with_enum():
+    """Verify that SeedSelector correctly routes strategies using the SeedStrategy e..."""
 ```
 
 ### `📄 tests/unit/test_gallery_utils.py`

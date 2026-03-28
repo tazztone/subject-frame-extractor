@@ -219,12 +219,14 @@ class TestSAM3Inference:
             pytest.skip("CUDA not available")
 
         wrapper = SAM3Wrapper(device="cuda")
-        assert wrapper is not None
-        assert wrapper.predictor is not None
-        # sam3_model attribute was removed/renamed to predictor
+        try:
+            assert wrapper is not None
+            assert wrapper.predictor is not None
+        finally:
+            wrapper.shutdown()
 
     @requires_sam3
-    def test_sam3_init_video(self, tmp_path):
+    def test_sam3_init_video(self, tmp_path, module_model_registry):
         """SAM3 init_video() initializes inference state correctly."""
         import torch
 
@@ -234,13 +236,15 @@ class TestSAM3Inference:
         # Create 40 frames to satisfy SAM3 hotstart_delay
         test_frames_dir = _create_test_frames_dir(tmp_path, num_frames=40)
 
-        wrapper = SAM3Wrapper(device="cuda")
+        wrapper = module_model_registry.get_tracker("sam3")
         try:
+            wrapper.reset_session()
             session_id = wrapper.init_video(str(test_frames_dir))
             assert session_id is not None
             assert wrapper.session_id is not None
         finally:
-            pass
+            if wrapper:
+                wrapper.close_session()
 
     @requires_sam3
     def test_sam3_add_bbox_prompt(self, tmp_path, module_model_registry):
@@ -255,10 +259,10 @@ class TestSAM3Inference:
         wrapper = module_model_registry.get_tracker("sam3")
 
         try:
+            wrapper.reset_session()
             wrapper.init_video(str(test_frames_dir))
 
             # Add bbox prompt covering the object in test image
-            # In our new complex subject (frame 0, 256x256): x=77, y=51, w=102, h=153
             mask = wrapper.add_bbox_prompt(
                 frame_idx=0,
                 obj_id=1,
@@ -271,7 +275,8 @@ class TestSAM3Inference:
             assert mask.ndim == 2  # Should be 2D (H, W) mask
             assert mask.shape == (256, 256)
         finally:
-            pass
+            if wrapper:
+                wrapper.close_session()
 
     @requires_sam3
     def test_sam3_propagate_forward(self, tmp_path, module_model_registry):
@@ -287,6 +292,7 @@ class TestSAM3Inference:
         wrapper = module_model_registry.get_tracker("sam3")
 
         try:
+            wrapper.reset_session()
             wrapper.init_video(str(REAL_VIDEO_PATH))
             # Proper BBox detected from real video
             wrapper.add_bbox_prompt(frame_idx=0, obj_id=1, bbox_xywh=REAL_BBOX, img_size=(1280, 720))
@@ -302,7 +308,8 @@ class TestSAM3Inference:
                 assert isinstance(mask, np.ndarray)
                 assert mask.ndim == 2
         finally:
-            pass
+            if wrapper:
+                wrapper.close_session()
 
     @requires_sam3
     def test_sam3_propagate_bidirectional(self, tmp_path, module_model_registry):
@@ -318,6 +325,7 @@ class TestSAM3Inference:
         wrapper = module_model_registry.get_tracker("sam3")
 
         try:
+            wrapper.reset_session()
             wrapper.init_video(str(REAL_VIDEO_PATH))
 
             # Start from middle frame (e.g. frame 30)
@@ -339,30 +347,36 @@ class TestSAM3Inference:
             assert len(backward) > 0, "Backward propagation returned no masks"
             assert all(idx <= seed_frame for idx in backward_indices)
         finally:
-            pass
+            if wrapper:
+                wrapper.close_session()
 
     @requires_sam3
-    def test_sam3_clear_prompts(self, test_frames_dir):
+    def test_sam3_clear_prompts(self, test_frames_dir, module_model_registry):
         """SAM3 clear_prompts() resets session state."""
         import torch
 
         if not torch.cuda.is_available():
             pytest.skip("CUDA not available")
 
-        wrapper = SAM3Wrapper(device="cuda")
+        wrapper = module_model_registry.get_tracker("sam3")
 
         try:
+            wrapper.reset_session()
             wrapper.init_video(str(test_frames_dir))
             wrapper.add_bbox_prompt(0, 1, [50, 50, 80, 150], (256, 256))
 
-            # Clear prompts should not raise error
+            # Clear prompts should now reset the session
             wrapper.clear_prompts()
+
+            # Since clear_prompts resets session, we MUST re-init video before adding more prompts
+            wrapper.init_video(str(test_frames_dir))
 
             # Should be able to add new prompt after clearing
             mask = wrapper.add_bbox_prompt(0, 2, [60, 60, 70, 140], (256, 256))
             assert mask is not None
         finally:
-            pass
+            if wrapper:
+                wrapper.close_session()
 
 
 @pytest.mark.gpu_e2e
@@ -396,7 +410,8 @@ class TestSAM2Inference:
             session_id = wrapper.init_video(str(test_frames_dir))
             assert session_id is not None
         finally:
-            wrapper.close_session()
+            if wrapper:
+                wrapper.close_session()
 
     @requires_sam2
     def test_sam2_add_bbox_prompt(self, tmp_path, module_model_registry):
@@ -427,7 +442,8 @@ class TestSAM2Inference:
             assert mask.shape == (256, 256)
             assert mask.any(), "Mask should not be empty"
         finally:
-            wrapper.close_session()
+            if wrapper:
+                wrapper.close_session()
 
     @requires_sam2
     def test_sam2_propagate_forward(self, test_frames_dir, module_model_registry):
@@ -454,7 +470,8 @@ class TestSAM2Inference:
                 assert isinstance(mask, np.ndarray)
                 assert mask.ndim == 2
         finally:
-            wrapper.close_session()
+            if wrapper:
+                wrapper.close_session()
 
 
 @pytest.mark.gpu_e2e
@@ -975,7 +992,7 @@ class TestCancellationE2E:
     """E2E tests for cancel operations during pipeline execution."""
 
     @requires_sam3
-    def test_propagation_with_cancel_event(self, tmp_path):
+    def test_propagation_with_cancel_event(self, tmp_path, test_frames_dir, module_model_registry):
         """MaskPropagator handles cancel event during propagation."""
         import threading
         from queue import Queue
@@ -995,10 +1012,12 @@ class TestCancellationE2E:
 
         params = AnalysisParameters(source_path="test.mp4", output_folder=str(tmp_path), min_mask_area_pct=0.01)
 
-        wrapper = SAM3Wrapper(device="cuda")
+        # Use shared tracker
+        wrapper = module_model_registry.get_tracker("sam3")
         cancel_event = threading.Event()
 
         try:
+            wrapper.reset_session()
             propagator = MaskPropagator(
                 params=params,
                 dam_tracker=wrapper,
@@ -1136,6 +1155,7 @@ class TestLargeVideoE2E:
         wrapper = module_model_registry.get_tracker("sam3")
 
         try:
+            wrapper.reset_session()
             wrapper.init_video(str(REAL_VIDEO_PATH))
             mask = wrapper.add_bbox_prompt(frame_idx=0, obj_id=1, bbox_xywh=REAL_BBOX, img_size=(1280, 720))
 
@@ -1146,7 +1166,8 @@ class TestLargeVideoE2E:
             assert len(propagated) > 0, "SAM3 propagation returned no masks"
 
         finally:
-            pass  # cleanup() removed
+            if wrapper:
+                wrapper.close_session()
 
 
 @pytest.mark.gpu_e2e
@@ -1179,7 +1200,7 @@ class TestMaskGenerationE2E:
             pass
 
     @requires_sam3
-    def test_identity_first_seed_e2e(self, test_image_with_face, tmp_path):
+    def test_identity_first_seed_e2e(self, test_image_with_face, tmp_path, module_model_registry):
         """Test 'By Face' seeding strategy with real models."""
         import torch
 
@@ -1188,18 +1209,20 @@ class TestMaskGenerationE2E:
 
         from core.config import Config
         from core.logger import AppLogger
-        from core.managers import ModelRegistry, get_face_analyzer
+        from core.managers import get_face_analyzer
         from core.models import AnalysisParameters
         from core.scene_utils.seed_selector import SeedSelector
 
         config = Config(logs_dir=str(tmp_path / "logs"))
         logger = AppLogger(config, log_to_console=False, log_to_file=False)
-        wrapper = SAM3Wrapper(device="cuda")
-        registry = ModelRegistry(logger)
+        # Use shared tracker
+        wrapper = module_model_registry.get_tracker("sam3")
 
         # Skipping buffalo_l in CI as it reliably causes OOM on integration runners
         pytest.skip("Buffalo_L face model causes OOM in ONNX CI environment")
-        face_analyzer = get_face_analyzer("buffalo_l", str(tmp_path / "models"), (640, 640), logger, registry, "cuda")
+        face_analyzer = get_face_analyzer(
+            "buffalo_l", str(tmp_path / "models"), (640, 640), logger, module_model_registry, "cuda"
+        )
 
         # Get embedding from test image
         import cv2
@@ -1211,17 +1234,22 @@ class TestMaskGenerationE2E:
 
         ref_embedding = faces[0].normed_embedding
 
-        selector = SeedSelector(
-            params=AnalysisParameters(
-                source_path="test.mp4", primary_seed_strategy="👤 By Face", enable_face_filter=True
-            ),
-            config=config,
-            face_analyzer=face_analyzer,
-            reference_embedding=ref_embedding,
-            tracker=wrapper,
-            logger=logger,
-            device="cuda",
-        )
+        try:
+            selector = SeedSelector(
+                params=AnalysisParameters(
+                    source_path="test.mp4", primary_seed_strategy="👤 By Face", enable_face_filter=True
+                ),
+                config=config,
+                face_analyzer=face_analyzer,
+                reference_embedding=ref_embedding,
+                tracker=wrapper,
+                logger=logger,
+                device="cuda",
+            )
+            assert selector is not None
+        finally:
+            if wrapper:
+                wrapper.close_session()
 
         try:
             # Test seeding
