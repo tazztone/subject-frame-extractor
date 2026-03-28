@@ -27,7 +27,7 @@ def edt_triton_fallback(data):
     data_cpu = data.cpu().numpy().astype(np.uint8)
     B, H, W = data_cpu.shape
     output = np.zeros_like(data_cpu, dtype=np.float32)
-    for b in range(B):
+    for b in range(B):  # type: ignore
         dist = cv2.distanceTransform(data_cpu[b], cv2.DIST_L2, 0)
         output[b] = dist
     return torch.from_numpy(output).to(device)
@@ -46,8 +46,8 @@ def connected_components_fallback(input_tensor):
     B, H, W = data_cpu.shape
 
     labels_list, counts_list = [], []
-    for b in range(B):
-        labels, num = sk_label(data_cpu[b], return_num=True)
+    for b in range(B):  # type: ignore
+        labels, num = sk_label(data_cpu[b], return_num=True)  # type: ignore
         counts = np.zeros_like(labels)
         for i in range(1, num + 1):
             cur_mask = labels == i
@@ -85,11 +85,11 @@ def patch_sam3_dtype():
     This patches the model builder and the high-level predictor.
     """
     try:
-        import sam3.model_builder as mb
-        from sam3.model.sam3_video_predictor import Sam3VideoPredictor
+        import sam3.model_builder as mb  # type: ignore
+        from sam3.model.sam3_video_predictor import Sam3VideoPredictor  # type: ignore
 
         # 1. Patch build_sam3_video_model in model_builder
-        original_build_model = mb.build_sam3_video_model
+        original_build_model = mb.build_sam3_video_model  # type: ignore
 
         def build_sam3_video_model_patched(*args, **kwargs):
             model = original_build_model(*args, **kwargs)
@@ -99,18 +99,18 @@ def patch_sam3_dtype():
                 model = model.to(dtype=torch.float32)
             return model
 
-        mb.build_sam3_video_model = build_sam3_video_model_patched
+        mb.build_sam3_video_model = build_sam3_video_model_patched  # type: ignore
 
         # 2. Patch Sam3VideoPredictor.__init__ to avoid hardcoded .cuda() call
         # which might reset the dtype if not careful, and to be safer.
-        original_predictor_init = Sam3VideoPredictor.__init__
+        original_predictor_init = Sam3VideoPredictor.__init__  # type: ignore
 
         def predictor_init_patched(self, *args, **kwargs):
             # We need to temporarily patch build_sam3_video_model AGAIN inside here
             # because Sam3VideoPredictor imports it locally in __init__
-            import sam3.model.sam3_video_predictor as svp
+            import sam3.model.sam3_video_predictor as svp  # type: ignore
 
-            svp.build_sam3_video_model = build_sam3_video_model_patched
+            svp.build_sam3_video_model = build_sam3_video_model_patched  # type: ignore
 
             # Now call original init
             original_predictor_init(self, *args, **kwargs)
@@ -119,8 +119,8 @@ def patch_sam3_dtype():
             if hasattr(self, "model") and hasattr(self.model, "to"):
                 self.model = self.model.to(device="cuda", dtype=torch.float32)
 
-        if not hasattr(Sam3VideoPredictor, "_mock_name"):
-            Sam3VideoPredictor.__init__ = predictor_init_patched
+        if not hasattr(Sam3VideoPredictor, "_mock_name"):  # type: ignore
+            Sam3VideoPredictor.__init__ = predictor_init_patched  # type: ignore
 
     except ImportError:
         pass
@@ -135,7 +135,7 @@ def patch_sam3_resources():
         from importlib import resources as importlib_resources
 
         import pkg_resources
-        import sam3.model_builder as mb
+        import sam3.model_builder as mb  # type: ignore
 
         # Define a replacement for resource_filename
         def patched_resource_filename(package, resource):
@@ -149,8 +149,8 @@ def patch_sam3_resources():
 
         # Apply the patch to the model_builder module's reference to pkg_resources
         # Note: We patch the attribute on the module object itself
-        if hasattr(mb, "pkg_resources"):
-            mb.pkg_resources.resource_filename = patched_resource_filename
+        if hasattr(mb, "pkg_resources"):  # type: ignore
+            mb.pkg_resources.resource_filename = patched_resource_filename  # type: ignore
 
     except (ImportError, AttributeError):
         pass
@@ -188,9 +188,9 @@ def patch_sam3_bf16_stability():
     correctly when autocast is disabled.
     """
     try:
-        from sam3.model.decoder import TransformerDecoderLayer
+        from sam3.model.decoder import TransformerDecoderLayer  # type: ignore
 
-        original_forward_ffn = TransformerDecoderLayer.forward_ffn
+        original_forward_ffn = TransformerDecoderLayer.forward_ffn  # type: ignore
 
         def forward_ffn_patched(self, tgt):
             # If input is bfloat16, ensure it's float32 before entering
@@ -199,7 +199,7 @@ def patch_sam3_bf16_stability():
                 tgt = tgt.to(torch.float32)
             return original_forward_ffn(self, tgt)
 
-        TransformerDecoderLayer.forward_ffn = forward_ffn_patched
+        TransformerDecoderLayer.forward_ffn = forward_ffn_patched  # type: ignore
     except ImportError:
         pass
 
@@ -208,7 +208,7 @@ def patch_sam3_detect_objects():
     """Add detect_objects capability to Sam3VideoPredictor classes."""
     try:
         from PIL import Image
-        from sam3.model.sam3_video_predictor import Sam3VideoPredictor, Sam3VideoPredictorMultiGPU
+        from sam3.model.sam3_video_predictor import Sam3VideoPredictor, Sam3VideoPredictorMultiGPU  # type: ignore
 
         def detect_objects(self, image: np.ndarray, text: str):
             """Detect objects in a frame using a text prompt."""
@@ -237,7 +237,7 @@ def patch_sam3_detect_objects():
             return {"outputs": results}
 
         # Patch the base handle_request to support the new type
-        original_handle_request = Sam3VideoPredictor.handle_request
+        original_handle_request = Sam3VideoPredictor.handle_request  # type: ignore
 
         @torch.inference_mode()
         def handle_request_patched(self, request):
@@ -245,12 +245,12 @@ def patch_sam3_detect_objects():
                 return self.detect_objects(request["image"], request["text"])
             return original_handle_request(self, request)
 
-        Sam3VideoPredictor.detect_objects = detect_objects
-        Sam3VideoPredictor.handle_request = handle_request_patched
+        Sam3VideoPredictor.detect_objects = detect_objects  # type: ignore
+        Sam3VideoPredictor.handle_request = handle_request_patched  # type: ignore
 
         # Sam3VideoPredictorMultiGPU also overrides handle_request, so patch it too
-        if hasattr(Sam3VideoPredictorMultiGPU, "handle_request"):
-            original_multi_handle_request = Sam3VideoPredictorMultiGPU.handle_request
+        if hasattr(Sam3VideoPredictorMultiGPU, "handle_request"):  # type: ignore
+            original_multi_handle_request = Sam3VideoPredictorMultiGPU.handle_request  # type: ignore
 
             @torch.inference_mode()
             def multi_handle_request_patched(self, request):
@@ -260,11 +260,11 @@ def patch_sam3_detect_objects():
                         for rank in range(1, self.world_size):
                             self.command_queues[rank].put((request, False))
 
-                    return Sam3VideoPredictor.handle_request(self, request)
+                    return Sam3VideoPredictor.handle_request(self, request)  # type: ignore
 
                 return original_multi_handle_request(self, request)
 
-            Sam3VideoPredictorMultiGPU.handle_request = multi_handle_request_patched
+            Sam3VideoPredictorMultiGPU.handle_request = multi_handle_request_patched  # type: ignore
 
     except ImportError:
         pass
@@ -278,9 +278,9 @@ def patch_sam3_pvs_initialization():
     This patch allows PVS to optionally initialize the cache as an empty dict.
     """
     try:
-        from sam3.model.sam3_video_inference import Sam3VideoInferenceWithInstanceInteractivity
+        from sam3.model.sam3_video_inference import Sam3VideoInferenceWithInstanceInteractivity  # type: ignore
 
-        orig_build_tracker = Sam3VideoInferenceWithInstanceInteractivity._build_tracker_output
+        orig_build_tracker = Sam3VideoInferenceWithInstanceInteractivity._build_tracker_output  # type: ignore
 
         def _build_tracker_output_patched(self, inference_state, frame_idx, refined_obj_id_to_mask=None):
             if "cached_frame_outputs" not in inference_state:
@@ -292,7 +292,7 @@ def patch_sam3_pvs_initialization():
 
             return orig_build_tracker(self, inference_state, frame_idx, refined_obj_id_to_mask)
 
-        Sam3VideoInferenceWithInstanceInteractivity._build_tracker_output = _build_tracker_output_patched
+        Sam3VideoInferenceWithInstanceInteractivity._build_tracker_output = _build_tracker_output_patched  # type: ignore
         logger.debug("Applied SAM3 PVS Initialization patch.")
     except Exception as e:
         logger.warning(f"Failed to apply PVS patch: {e}")
@@ -302,9 +302,9 @@ def apply_patches():
     """Apply all monkey patches to SAM3 with version safety check."""
     # 0. Version Safety Check
     try:
-        import sam3.model.sam3_video_predictor as svp
+        import sam3.model.sam3_video_predictor as svp  # type: ignore
 
-        _check_sam3_version(Path(svp.__file__))
+        _check_sam3_version(Path(svp.__file__))  # type: ignore
     except Exception as e:
         logger.debug(f"SAM3 version check skipped: {e}")
 
@@ -313,9 +313,9 @@ def apply_patches():
 
     # 2. Image processor patches (HWC handling)
     try:
-        from sam3.model.sam3_image_processor import Sam3Processor
+        from sam3.model.sam3_image_processor import Sam3Processor  # type: ignore
 
-        Sam3Processor.set_image = set_image_patched
+        Sam3Processor.set_image = set_image_patched  # type: ignore
     except ImportError:
         pass
 
@@ -332,10 +332,10 @@ def apply_patches():
         import triton  # noqa: F401
     except ImportError:
         try:
-            import sam3.model.edt as edt_module
-            import sam3.perflib.connected_components as cc_module
+            import sam3.model.edt as edt_module  # type: ignore
+            import sam3.perflib.connected_components as cc_module  # type: ignore
 
-            edt_module.edt_triton = edt_triton_fallback
-            cc_module.connected_components = connected_components_fallback
+            edt_module.edt_triton = edt_triton_fallback  # type: ignore
+            cc_module.connected_components = connected_components_fallback  # type: ignore
         except ImportError:
             pass

@@ -173,7 +173,7 @@ class SceneTabBuilder:
 
                 self.app.components["scene_gallery"] = gr.Gallery(
                     label="Scene Overview",
-                    columns=[2, 4, 8],
+                    columns=4,
                     rows=2,
                     height="auto",
                     show_label=False,

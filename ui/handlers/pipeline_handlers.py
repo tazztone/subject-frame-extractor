@@ -58,7 +58,9 @@ class PipelineHandler:
             lambda res: self._on_extraction_success(res, current_state),
         ):
             if isinstance(update, dict) and self.app.components["application_state"] in update:
-                current_state = update[self.app.components["application_state"]]
+                from typing import cast
+
+                current_state = cast(ApplicationState, update[self.app.components["application_state"]])
             yield update
 
     def _on_extraction_success(self, result: dict, current_state: ApplicationState) -> dict:
@@ -90,7 +92,9 @@ class PipelineHandler:
             lambda res: self._on_pre_analysis_success(res, current_state),
         ):
             if isinstance(update, dict) and self.app.components["application_state"] in update:
-                current_state = update[self.app.components["application_state"]]
+                from typing import cast
+
+                current_state = cast(ApplicationState, update[self.app.components["application_state"]])
             yield update
 
     def _on_pre_analysis_success(self, result: dict, current_state: ApplicationState) -> dict:

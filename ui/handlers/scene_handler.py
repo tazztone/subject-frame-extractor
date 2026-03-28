@@ -102,6 +102,9 @@ class SceneHandler:
 
             app_state.push_history(app_state.scenes)  # Save history before recompute
 
+            if app_state.selected_scene_id is None:
+                return app_state, gr.update(), gr.update(), "No scene selected.", gr.update()
+
             scenes_objs, gallery_items, index_map, status, _ = _wire_recompute_handler(
                 self.config,
                 self.logger,
@@ -459,6 +462,9 @@ class SceneHandler:
 
         selected_shotid = app_state.selected_scene_id
         outputfolder = app_state.extracted_frames_dir
+
+        if selected_shotid is None:
+            return app_state, "No scene selected.", gr.update(), gr.update()
 
         scenes_objs = [Scene(**s) for s in app_state.scenes]
         scenes_objs, status_text, _, button_update = toggle_scene_status(

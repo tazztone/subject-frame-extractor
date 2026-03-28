@@ -40,7 +40,9 @@ class VideoManager:
                 "quiet": True,
             }
             try:
-                with ytdlp.YoutubeDL(ydl_opts) as ydl:
+                from typing import Any, cast
+
+                with ytdlp.YoutubeDL(cast(Any, ydl_opts)) as ydl:
                     info = ydl.extract_info(self.source_path, download=True)
                     return str(Path(ydl.prepare_filename(info)))
             except DownloadError as e:

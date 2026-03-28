@@ -63,6 +63,10 @@ sources = { sam3 = { path = "SAM3_repo", editable = true } }
 [tool.setuptools]
 packages = ["core", "ui"]
 
+[tool.setuptools.package-data]
+core = ["py.typed"]
+ui = ["py.typed"]
+
 [build-system]
 requires = ["setuptools>=61", "wheel"]
 build-backend = "setuptools.build_meta"
@@ -141,6 +145,7 @@ quote-style = "double"
 "tests/**/*.py" = ["E722", "E712"]  # E722=bare except, E712=equality to True/False (needed for numpy bools)
 
 [tool.pyright]
-pythonVersion = "3.10"
+pythonVersion = "3.11"
 typeCheckingMode = "basic"
-exclude = ["SAM3_repo", "outputs", "venv", ".git", "**/__pycache__"]
+reportMissingModuleSource = "none"
+exclude = ["SAM3_repo", "outputs", "venv", ".venv", ".git", "**/__pycache__", "tests", "scripts"]

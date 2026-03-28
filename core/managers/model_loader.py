@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Union
 
 import cv2
 import lpips
@@ -24,9 +24,14 @@ def get_lpips_metric(model_name: str = "alex", device: str = "cpu"):
 
 
 def initialize_analysis_models(
-    params: "AnalysisParameters", config: "Config", logger: "AppLogger", model_registry: "ModelRegistry"
+    params: Union[dict, "AnalysisParameters"], config: "Config", logger: "AppLogger", model_registry: "ModelRegistry"
 ) -> dict:
     """Initializes all necessary analysis models based on parameters."""
+    from core.models import AnalysisParameters
+
+    if isinstance(params, dict):
+        params = AnalysisParameters(**params)
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
     face_analyzer, ref_emb, face_landmarker = None, None, None
 
@@ -51,6 +56,8 @@ def initialize_analysis_models(
                             logger.info("Reference face embedding created successfully.")
                 except Exception as e:
                     logger.error(f"Failed to process reference face: {e}")
+            else:
+                raise FileNotFoundError(f"Reference face image not found: {params.face_ref_img_path}")
 
     landmarker_path = Path(config.models_dir) / Path(config.face_landmarker_url).name
     download_model(

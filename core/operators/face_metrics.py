@@ -1,5 +1,5 @@
 import math
-from typing import Optional
+from typing import Any, cast
 
 import mediapipe as mp
 import numpy as np
@@ -7,7 +7,7 @@ import numpy as np
 from core.operators import OperatorConfig, OperatorContext, OperatorResult, register_operator
 
 
-def _get_face_data(ctx: OperatorContext) -> tuple[Optional[dict], Optional[np.ndarray]]:
+def _get_face_data(ctx: OperatorContext) -> tuple[Any, Any]:
     """Helper to get or compute face landmarks and blendshapes."""
     # Check shared data first (real inference)
     if "face_landmarker_result" in ctx.shared_data:
@@ -60,7 +60,15 @@ def _get_face_data(ctx: OperatorContext) -> tuple[Optional[dict], Optional[np.nd
         return None, None
 
     try:
-        landmarker = get_face_landmarker(str(landmarker_path), ctx.logger)
+        if ctx.logger is None:
+            import logging
+
+            logger = logging.getLogger("app_logger")
+        else:
+            logger = ctx.logger
+        from core.logger import AppLogger
+
+        landmarker = get_face_landmarker(str(landmarker_path), cast(AppLogger, logger))
 
         # Determine face image (full thumb or crop)
         face_bbox = ctx.params.get("face_bbox")

@@ -2,7 +2,7 @@
 Log viewer component for the Gradio UI.
 """
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import gradio as gr
 
@@ -38,7 +38,7 @@ class LogViewer:
 
         return accordion
 
-    def get_log_update_dict(self, new_log_msg: str = None) -> Dict[Any, str]:
+    def get_log_update_dict(self, new_log_msg: Optional[str] = None) -> Dict[Any, str]:
         """Returns a Gradio update dictionary for the unified log component."""
         if new_log_msg:
             self.all_logs.append(new_log_msg)

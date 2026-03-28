@@ -458,6 +458,8 @@ class Config(BaseSettings):
     @property
     def quality_weights(self) -> Dict[str, int]:
         """Returns a dictionary of quality metric weights."""
+    def save_config(self, path: str='config.json'):
+        """Saves the current configuration to a JSON file."""
 ```
 
 ### `📄 core/database.py`
@@ -680,7 +682,7 @@ def _compute_sha256(path: Path) -> str:
     """Computes SHA256 hash of a file."""
 def download_model(url: str, dest_path: Union[str, Path], description: str, logger: 'LoggerLike', error_handler: 'ErrorHandler', user_agent: str, min_size: int=1000000, expected_sha256: Optional[str]=None, token: Optional[str]=None):
     """Downloads a file from a URL with retries, validation, and progress logging."""
-def create_frame_map(output_dir: Path, logger: 'LoggerLike', ext: str='.webp') -> dict:
+def create_frame_map(output_dir: Path, logger: Optional['LoggerLike'], ext: str='.webp') -> dict:
     """Creates a mapping from original frame numbers to extracted filenames."""
 ```
 
@@ -689,7 +691,7 @@ def create_frame_map(output_dir: Path, logger: 'LoggerLike', ext: str='.webp') -
 ```python
 """Logging Infrastructure for Frame Extractor & Analyzer"""
 LoggerLike = Union['AppLogger', logging.Logger]
-def log_with_component(logger: LoggerLike, level: str, message: str, component: str='system', **kwargs):
+def log_with_component(logger: Optional[LoggerLike], level: str, message: str, component: str='system', **kwargs):
     """Helper to call a logger method with a component name,"""
 SUCCESS_LEVEL_NUM = 25
 class LogEvent(BaseModel):
@@ -715,12 +717,16 @@ class AppLogger:
         """Initializes the AppLogger. setup_logging() MUST be called once before this."""
     def _log(self, level: str, message: str, component: str, **kwargs):
         """Helper to create a structured log and pass to standard logger."""
+    def log(self, level: int, message: str, **kwargs):
+        """Standard logging.log compatibility."""
     def debug(self, message: str, **kwargs): ...
     def info(self, message: str, **kwargs): ...
     def warning(self, message: str, **kwargs): ...
     def error(self, message: str, **kwargs): ...
     def success(self, message: str, **kwargs): ...
     def critical(self, message: str, **kwargs): ...
+    def copy_log_to_output(self, session_dir: Union[str, Path]):
+        """Copies the session log to the output directory."""
 ```
 
 ### `📄 core/managers/__init__.py`
@@ -742,14 +748,14 @@ class PreAnalysisPipeline(Pipeline):
     def __init__(self, config: 'Config', logger: 'AppLogger', params: 'AnalysisParameters', progress_queue: Queue, cancel_event: threading.Event, thumbnail_manager: 'ThumbnailManager', model_registry: 'ModelRegistry'): ...
     def run(self, scenes: List[Scene], tracker: Optional['AdvancedProgressTracker']=None) -> List[Scene]: ...
     def _initialize_niqe_if_needed(self, device: str, is_folder_mode: bool): ...
-    def _process_single_scene(self, scene: Scene, masker: SubjectMasker, previews_dir: Path, is_folder_mode: bool): ...
+    def _process_single_scene(self, scene: Scene, masker: 'SubjectMasker', previews_dir: Path, is_folder_mode: bool): ...
 class AnalysisPipeline(Pipeline):
     """Pipeline for analyzing frames (pre-analysis, propagation, full analysis)."""
     def __init__(self, config: 'Config', logger: 'AppLogger', params: 'AnalysisParameters', progress_queue: Queue, cancel_event: threading.Event, thumbnail_manager: 'ThumbnailManager', model_registry: 'ModelRegistry'): ...
     def _initialize_niqe_metric(self): ...
     def run_full_analysis(self, scenes_to_process: List[Scene], tracker: Optional['AdvancedProgressTracker']=None) -> dict: ...
     def run_analysis_only(self, scenes_to_process: List[Scene], tracker: Optional['AdvancedProgressTracker']=None) -> dict: ...
-    def _filter_completed_scenes(self, scenes: List[Scene], progress_data: dict) -> List[Scene]: ...
+    def _filter_completed_scenes(self, scenes: List[Scene], progress_data: Optional[dict]) -> List[Scene]: ...
     def _save_progress_bulk(self, completed_scene_ids: List[int], progress_file: Path): ...
     def _process_reference_face(self): ...
     def _run_image_folder_analysis(self, tracker: Optional['AdvancedProgressTracker']=None) -> dict: ...
@@ -777,7 +783,7 @@ class ExtractionPipeline:
 
 ```python
 thread_local = threading.local()
-def get_face_landmarker(model_path: str, logger: 'AppLogger') -> vision.FaceLandmarker:
+def get_face_landmarker(model_path: str, logger: 'AppLogger') -> Any:
     """Returns a thread-local MediaPipe FaceLandmarker instance."""
 def get_face_analyzer(model_name: str, models_path: str, det_size_tuple: tuple, logger: 'AppLogger', model_registry: 'ModelRegistry', device: str='cpu') -> 'FaceAnalysis':
     """Gets or loads the InsightFace FaceAnalysis app, with OOM handling."""
@@ -788,7 +794,7 @@ def get_face_analyzer(model_name: str, models_path: str, det_size_tuple: tuple, 
 ```python
 def get_lpips_metric(model_name: str='alex', device: str='cpu'):
     """Returns the LPIPS metric model."""
-def initialize_analysis_models(params: 'AnalysisParameters', config: 'Config', logger: 'AppLogger', model_registry: 'ModelRegistry') -> dict:
+def initialize_analysis_models(params: Union[dict, 'AnalysisParameters'], config: 'Config', logger: 'AppLogger', model_registry: 'ModelRegistry') -> dict:
     """Initializes all necessary analysis models based on parameters."""
 ```
 
@@ -816,7 +822,7 @@ class SAM2Wrapper:
     def init_video(self, video_resource: Union[str, list]):
         """Accepts a frame-directory path (list → tempdir logic lives in caller)."""
     def add_bbox_prompt(self, frame_idx: int, obj_id: int, bbox_xywh: list, img_size: tuple, text: Optional[str]=None) -> np.ndarray: ...
-    def propagate(self, start_idx: int=0, max_frames: int=None, reverse: bool=False): ...
+    def propagate(self, start_idx: int=0, max_frames: Optional[int]=None, reverse: bool=False): ...
     def add_point_prompt(self, frame_idx, obj_id, points, labels, img_size): ...
     def close_session(self): ...
     def reset_session(self): ...
@@ -840,7 +846,7 @@ class SAM3Wrapper:
     def init_video(self, video_resource: Union[str, list]): ...
     def add_bbox_prompt(self, frame_idx: int, obj_id: int, bbox_xywh: list, img_size: tuple, text: Optional[str]=None): ...
     def add_point_prompt(self, frame_idx: int, obj_id: int, points: list, labels: list, img_size: tuple): ...
-    def propagate(self, start_idx: int=0, max_frames: int=None, reverse: bool=False): ...
+    def propagate(self, start_idx: int=0, max_frames: Optional[int]=None, reverse: bool=False): ...
     def detect_objects(self, frame_rgb: np.ndarray, prompt: str) -> list:
         """Detect objects in a frame using a text prompt."""
     def add_text_prompt(self, frame_idx: int, text: str):
@@ -860,7 +866,7 @@ class SAM3Wrapper:
 ```python
 def validate_session_dir(path: Union[str, Path]) -> tuple[Optional[Path], Optional[str]]:
     """Checks if the provided path is a valid session directory."""
-def execute_session_load(event, logger: 'AppLogger') -> dict:
+def execute_session_load(event: 'SessionLoadEvent', logger: 'AppLogger') -> dict:
     """Loads session state from disk."""
 def _load_analysis_scenes(scenes_data: List[dict], is_folder_mode: bool, include_only: bool=True) -> List[Scene]:
     """Converts raw scene data to Scene objects."""
@@ -904,7 +910,7 @@ class VideoManager:
 ### `📄 core/models.py`
 
 ```python
-def _coerce(val: Any, to_type: type) -> Any:
+def _coerce(val: Any, to_type: Optional[type]) -> Any:
     """Helper to strictly coerce values to the target type."""
 def _sanitize_face_ref(kwargs: dict, logger: 'AppLogger') -> tuple[str, bool]:
     """Validates the face reference image path."""
@@ -938,6 +944,7 @@ class SceneState:
         """Updates the seeding result (detected subject) for the scene."""
 class AnalysisParameters(BaseModel):
     """Aggregates all parameters for the analysis pipeline."""
+    model_config = {'extra': 'ignore'}
     @classmethod
     def from_ui(cls, logger: 'AppLogger', config: 'Config', **kwargs) -> 'AnalysisParameters':
         """Factory method to create parameters from UI arguments, handling validation an..."""
@@ -1007,8 +1014,8 @@ def crop_image_with_subject(image: np.ndarray, mask: np.ndarray, aspect_ratios: 
 
 ```python
 def _run_batched_lpips(pairs: List[Tuple[int, int]], all_frames_data: List[Dict[str, Any]], dedup_mask: np.ndarray, reasons: defaultdict, thumbnail_manager: 'ThumbnailManager', output_dir: str, threshold: float, device: str='cpu'): ...
-def apply_deduplication_filter(all_frames_data: List[Dict[str, Any]], filters: Dict[str, Any], thumbnail_manager: 'ThumbnailManager', config: 'Config', output_dir: str) -> Tuple[np.ndarray, defaultdict]: ...
-def _generic_dedup(all_frames_data: List[Dict[str, Any]], dedup_mask: np.ndarray, reasons: defaultdict, thumbnail_manager: 'ThumbnailManager', output_dir: str, compare_fn: Callable[[np.ndarray, np.ndarray], bool]): ...
+def apply_deduplication_filter(all_frames_data: List[Dict[str, Any]], filters: Dict[str, Any], thumbnail_manager: Optional['ThumbnailManager'], config: 'Config', output_dir: Optional[str]) -> Tuple[np.ndarray, Dict[str, List[str]]]: ...
+def _generic_dedup(all_frames_data: List[Dict[str, Any]], dedup_mask: np.ndarray, reasons: defaultdict, thumbnail_manager: 'ThumbnailManager', output_dir: Optional[str], compare_fn: Callable[[np.ndarray, np.ndarray], bool]): ...
 ```
 
 ### `📄 core/operators/entropy.py`
@@ -1024,7 +1031,7 @@ class EntropyOperator:
 ### `📄 core/operators/face_metrics.py`
 
 ```python
-def _get_face_data(ctx: OperatorContext) -> tuple[Optional[dict], Optional[np.ndarray]]:
+def _get_face_data(ctx: OperatorContext) -> tuple[Any, Any]:
     """Helper to get or compute face landmarks and blendshapes."""
 @register_operator
 class EyesOpenOperator:
@@ -1175,9 +1182,9 @@ def _handle_pre_analysis_uploads(event_dict: dict, config: 'Config') -> dict:
 @handle_common_errors
 def execute_extraction(event: 'ExtractionEvent', progress_queue: Queue, cancel_event: threading.Event, logger: 'AppLogger', config: 'Config', thumbnail_manager: Optional['ThumbnailManager']=None, cuda_available: Optional[bool]=None, progress: Optional[Callable]=None, model_registry: Optional['ModelRegistry']=None) -> Generator[dict, None, None]: ...
 @handle_common_errors
-def execute_pre_analysis(event: 'PreAnalysisEvent', progress_queue: Queue, cancel_event: threading.Event, logger: 'AppLogger', config: 'Config', thumbnail_manager: 'ThumbnailManager', cuda_available: bool, progress: Optional[Callable]=None, model_registry: 'ModelRegistry'=None) -> Generator[dict, None, None]: ...
+def execute_pre_analysis(event: 'PreAnalysisEvent', progress_queue: Queue, cancel_event: threading.Event, logger: 'AppLogger', config: 'Config', thumbnail_manager: 'ThumbnailManager', cuda_available: bool, progress: Optional[Callable]=None, model_registry: Optional['ModelRegistry']=None) -> Generator[dict, None, None]: ...
 def validate_session_dir(path: str) -> bool: ...
-def execute_session_load(event: dict, logger: 'AppLogger') -> dict: ...
+def execute_session_load(event: SessionLoadEvent | dict, logger: 'AppLogger') -> dict: ...
 @handle_common_errors
 def execute_propagation(event: PropagationEvent, progress_queue: Queue, cancel_event: threading.Event, logger: 'AppLogger', config: 'Config', thumbnail_manager: 'ThumbnailManager', cuda_available: bool, progress: Optional[Callable]=None, model_registry: Optional['ModelRegistry']=None) -> Generator[dict, None, None]: ...
 @handle_common_errors
@@ -1197,7 +1204,7 @@ def execute_full_pipeline(event: 'ExtractionEvent', progress_queue: Queue, cance
 class ProgressEvent(BaseModel): ...
 class AdvancedProgressTracker:
     """Tracks and estimates progress for long-running operations."""
-    def __init__(self, progress: Callable, queue: Queue, logger: 'AppLogger', ui_stage_name: str=''):
+    def __init__(self, progress: Optional[Callable]=None, queue: Queue=None, logger: 'AppLogger'=None, ui_stage_name: str=''):
         """Initializes the progress tracker."""
     def start(self, total_items: int, desc: Optional[str]=None):
         """Resets the tracker for a new operation."""
@@ -1299,7 +1306,7 @@ def _wire_recompute_handler(config: 'Config', logger: 'AppLogger', thumbnail_man
 """MaskPropagator class for propagating segmentation masks across video frames."""
 class MaskPropagator:
     """Propagates segmentation masks from a seed frame to surrounding frames."""
-    def __init__(self, params: 'AnalysisParameters', dam_tracker: 'SAM3Wrapper', cancel_event: threading.Event, progress_queue: Queue, config: 'Config', logger: 'AppLogger', device: str='cpu', model_registry: Optional['ModelRegistry']=None):
+    def __init__(self, params: 'AnalysisParameters', dam_tracker: Optional['SAM3Wrapper'], cancel_event: threading.Event, progress_queue: Queue, config: 'Config', logger: 'AppLogger', device: str='cpu', model_registry: Optional['ModelRegistry']=None):
         """Initialize the MaskPropagator."""
     def propagate_video(self, video_path: str, frame_numbers: list[int], prompts: list[dict], frame_size: tuple[int, int], frame_map: dict[int, str], tracker: Optional['AdvancedProgressTracker']=None) -> tuple[dict, dict, dict, dict]:
         """Propagate masks using the video file directly (no temp JPEG I/O)."""
@@ -1315,11 +1322,11 @@ class MaskPropagator:
 """SeedSelector class for selecting seed frames and bounding boxes for mask prop..."""
 class SeedSelector:
     """Selects seed frames and bounding boxes for mask propagation."""
-    def __init__(self, params: 'AnalysisParameters', config: 'Config', face_analyzer: 'FaceAnalysis', reference_embedding: np.ndarray, tracker: 'SAM3Wrapper', logger: 'AppLogger', device: str='cpu'):
+    def __init__(self, params: 'AnalysisParameters', config: 'Config', face_analyzer: Optional['FaceAnalysis']=None, reference_embedding: Optional[np.ndarray]=None, tracker: Optional['SAM3Wrapper']=None, logger: Optional['LoggerLike']=None, device: str='cpu'):
         """Initialize the SeedSelector."""
     def _get_param(self, source: Union[dict, object], key: str, default: Any=None) -> Any:
         """Get a parameter from either a dict or an object."""
-    def select_seed(self, frame_rgb: np.ndarray, current_params: Optional[dict]=None, scene: Optional['Scene']=None) -> tuple[Optional[list], dict]:
+    def select_seed(self, frame_rgb: np.ndarray, current_params: Union[dict, 'AnalysisParameters', None]=None, scene: Optional['Scene']=None) -> tuple[Optional[list], dict]:
         """Select a seed bounding box for the given frame."""
     def _face_with_text_fallback_seed(self, frame_rgb: np.ndarray, params: Union[dict, 'AnalysisParameters'], scene: Optional['Scene']=None) -> tuple[Optional[list], dict]:
         """Try face-first, fall back to text prompt if face not found."""
@@ -1359,7 +1366,7 @@ class SeedSelector:
 """SubjectMasker class for coordinating subject detection and mask propagation."""
 class SubjectMasker:
     """Coordinates subject detection and mask propagation for video frames."""
-    def __init__(self, params: 'AnalysisParameters', progress_queue: Queue, cancel_event: threading.Event, config: 'Config', frame_map: Optional[dict]=None, face_analyzer: Optional['FaceAnalysis']=None, reference_embedding: Optional[np.ndarray]=None, thumbnail_manager: Optional['ThumbnailManager']=None, niqe_metric: Optional[Callable]=None, logger: Optional['AppLogger']=None, face_landmarker: Optional['FaceLandmarker']=None, device: str='cpu', model_registry: 'ModelRegistry'=None):
+    def __init__(self, params: 'AnalysisParameters', progress_queue: Queue, cancel_event: threading.Event, config: 'Config', frame_map: Optional[dict]=None, face_analyzer: Optional['FaceAnalysis']=None, reference_embedding: Optional[np.ndarray]=None, thumbnail_manager: Optional['ThumbnailManager']=None, niqe_metric: Optional[Callable]=None, logger: Optional['LoggerLike']=None, face_landmarker: Optional[Any]=None, device: str='cpu', model_registry: Optional['ModelRegistry']=None):
         """Initialize SubjectMasker."""
     def initialize_models(self) -> None:
         """Initialize required models based on parameters."""
@@ -1395,7 +1402,7 @@ def create_scene_thumbnail_with_badge(thumb_img: np.ndarray, scene_idx: int, is_
     """Create a scene thumbnail with a visual badge indicating exclusion status."""
 def scene_caption(scene: Union[dict, 'Scene']) -> str:
     """Generate a caption string for a scene."""
-def build_scene_gallery_items(scenes: List[Union[dict, 'Scene']], view: str, output_dir: str, page_num: int=1, page_size: int=20, config: Optional['Config']=None) -> Tuple[List[Tuple], List[int], int]:
+def build_scene_gallery_items(scenes: Sequence[Union[dict, 'Scene']], view: str, output_dir: str, page_num: int=1, page_size: int=20, config: Optional['Config']=None) -> Tuple[List[Tuple], List[int], int]:
     """Build gallery items for scene display."""
 ```
 
@@ -1439,7 +1446,7 @@ def safe_resource_cleanup(device: str='cpu'):
 logger = logging.getLogger(__name__)
 def write_xmp_sidecar(source_path: Path, rating: int, label: str) -> Optional[Path]:
     """Writes an XMP sidecar file compatible with Adobe Lightroom/Bridge."""
-def export_xmps_for_photos(photos: List[Dict], star_thresholds: List[int]=None) -> int:
+def export_xmps_for_photos(photos: List[Dict], star_thresholds: Optional[List[int]]=None) -> int:
     """Writes XMP sidecars for all photos in the list."""
 ```
 
@@ -1484,13 +1491,13 @@ class AppUI:
         """Asynchronously preloads heavy models (SAM3) in a background thread."""
     def build_ui(self) -> gr.Blocks:
         """Constructs the entire Gradio UI layout."""
-    def _get_comp(self, name: str) -> Optional[gr.components.Component]:
+    def _get_comp(self, name: str) -> Optional[gr.Component]:
         """Retrieves a component by name from the internal registry."""
-    def _reg(self, key: str, component: gr.components.Component) -> gr.components.Component:
+    def _reg(self, key: str, component: gr.Component) -> gr.Component:
         """Registers a component for later retrieval by UI mapping key."""
-    def _create_component(self, name: str, comp_type: str, kwargs: dict) -> gr.components.Component:
+    def _create_component(self, name: str, comp_type: str, kwargs: dict) -> gr.Component:
         """Helper to create and register a Gradio component."""
-    def _create_section_header(self, title: str, subtitle: str=None, icon: str=None):
+    def _create_section_header(self, title: str, subtitle: Optional[str]=None, icon: Optional[str]=None):
         """Creates a standardized section header."""
     def _build_header(self):
         """Builds the UI header section with title and status indicators."""
@@ -1539,15 +1546,15 @@ class AppUI:
         """Adjusts UI component visibility based on the selected seed strategy."""
     def _setup_visibility_toggles(self):
         """Configures dynamic visibility logic for UI components."""
-    def _get_inputs(self, keys: list[str]) -> list[gr.components.Component]:
+    def _get_inputs(self, keys: list[str]) -> list[gr.Component]:
         """Retrieves a list of UI components based on their registry keys."""
     def _setup_pipeline_handlers(self):
         """Configures event handlers for starting main processing pipelines."""
     @safe_ui_callback('Face Clustering')
-    def on_identity_confidence_change(self, confidence: float, state: ApplicationState) -> gr.update:
+    def on_identity_confidence_change(self, confidence: float, state: ApplicationState) -> Any:
         """Updates the face discovery gallery based on clustering confidence."""
     @safe_ui_callback('Face Selection')
-    def on_discovered_face_select(self, state: ApplicationState, confidence: float, evt: gr.SelectData=None) -> tuple[str, Optional[np.ndarray], str]:
+    def on_discovered_face_select(self, state: ApplicationState, confidence: float, evt: Optional[gr.SelectData]=None) -> tuple[Optional[str], Optional[np.ndarray], str]:
         """Handles selection of a face cluster from the discovery gallery."""
     @safe_ui_callback('Face Discovery')
     def on_find_people_from_video(self, current_state: ApplicationState, *args) -> tuple[str, str, gr.update, gr.update, float, ApplicationState]:
@@ -1588,7 +1595,7 @@ class LogViewer:
     def __init__(self, logger: Any, progress_queue: Any, log_level_choices: List[str]): ...
     def build(self) -> gr.Accordion:
         """Constructs the log viewer UI components."""
-    def get_log_update_dict(self, new_log_msg: str=None) -> Dict[Any, str]:
+    def get_log_update_dict(self, new_log_msg: Optional[str]=None) -> Dict[Any, str]:
         """Returns a Gradio update dictionary for the unified log component."""
     def setup_handlers(self, all_outputs: List[Any]):
         """Sets up background log refresh and filter toggles."""

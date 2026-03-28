@@ -310,16 +310,16 @@ class AppUI:
 
         return demo
 
-    def _get_comp(self, name: str) -> Optional[gr.components.Component]:
+    def _get_comp(self, name: str) -> Optional[gr.Component]:
         """Retrieves a component by name from the internal registry."""
         return self.components.get(name)
 
-    def _reg(self, key: str, component: gr.components.Component) -> gr.components.Component:
+    def _reg(self, key: str, component: gr.Component) -> gr.Component:
         """Registers a component for later retrieval by UI mapping key."""
         self.ui_registry[key] = component
         return component
 
-    def _create_component(self, name: str, comp_type: str, kwargs: dict) -> gr.components.Component:
+    def _create_component(self, name: str, comp_type: str, kwargs: dict) -> gr.Component:
         """
         Helper to create and register a Gradio component.
 
@@ -366,7 +366,7 @@ class AppUI:
         self.components[name] = comp_map[comp_type](**kwargs)
         return self.components[name]
 
-    def _create_section_header(self, title: str, subtitle: str = None, icon: str = None):
+    def _create_section_header(self, title: str, subtitle: Optional[str] = None, icon: Optional[str] = None):
         """Creates a standardized section header."""
         header_text = f"### {icon} {title}" if icon else f"### {title}"
         if subtitle:
@@ -845,7 +845,7 @@ class AppUI:
             ],
         )
 
-    def _get_inputs(self, keys: list[str]) -> list[gr.components.Component]:
+    def _get_inputs(self, keys: list[str]) -> list[gr.Component]:
         """Retrieves a list of UI components based on their registry keys."""
         return [self.ui_registry[k] for k in keys if k in self.ui_registry]
 
@@ -929,7 +929,7 @@ class AppUI:
         )
 
     @safe_ui_callback("Face Clustering")
-    def on_identity_confidence_change(self, confidence: float, state: ApplicationState) -> gr.update:
+    def on_identity_confidence_change(self, confidence: float, state: ApplicationState) -> Any:
         """Updates the face discovery gallery based on clustering confidence."""
         all_faces = state.discovered_faces
         if not all_faces:
@@ -946,16 +946,17 @@ class AppUI:
             best_face = max(cluster_faces_list, key=lambda x: x["det_score"])
 
             thumb_rgb = self.thumbnail_manager.get(Path(best_face["thumb_path"]))
-            x1, y1, x2, y2 = best_face["bbox"].astype(int)
-            face_crop = thumb_rgb[y1:y2, x1:x2]
-            gallery_items.append((face_crop, f"Person {label}"))
+            if thumb_rgb is not None:
+                x1, y1, x2, y2 = best_face["bbox"].astype(int)
+                face_crop = thumb_rgb[y1:y2, x1:x2]
+                gallery_items.append((face_crop, f"Person {label}"))
 
         return gr.update(value=gallery_items)
 
     @safe_ui_callback("Face Selection")
     def on_discovered_face_select(
-        self, state: ApplicationState, confidence: float, evt: gr.SelectData = None
-    ) -> tuple[str, Optional[np.ndarray], str]:
+        self, state: ApplicationState, confidence: float, evt: Optional[gr.SelectData] = None
+    ) -> tuple[Optional[str], Optional[np.ndarray], str]:
         """Handles selection of a face cluster from the discovery gallery."""
         all_faces = state.discovered_faces
         if not all_faces or evt is None or evt.index is None:
@@ -1001,7 +1002,7 @@ class AppUI:
         from core.managers import initialize_analysis_models
         from core.utils import create_frame_map
 
-        models = initialize_analysis_models(params, self.config, self.logger, self.model_registry)
+        models = initialize_analysis_models(params.model_dump(), self.config, self.logger, self.model_registry)
         face_analyzer = models["face_analyzer"]
         if not face_analyzer:
             self.logger.warning("Face analyzer not available")
@@ -1418,7 +1419,7 @@ class AppUI:
         Computes a side-by-side comparison image for duplicate inspection.
         """
         all_frames_data = state.all_frames_data
-        if not gallery or not gallery.selection:
+        if not gallery or not gallery.selection:  # type: ignore
             return None
         dedup_method = (
             "pHash"
@@ -1428,7 +1429,7 @@ class AppUI:
             else "None"
         )
 
-        selected_image_index = gallery.selection["index"]
+        selected_image_index = gallery.selection["index"]  # type: ignore
         selected_frame_data = all_frames_data[selected_image_index]
         duplicate_frame_data = None
         import imagehash
@@ -1528,7 +1529,7 @@ class AppUI:
             if dedup_method_ui == "Accurate (LPIPS)"
             else "None"
         )
-        filter_args = slider_values_dict
+        filter_args: dict[str, Any] = slider_values_dict
         filter_args.update(
             {
                 "require_face_match": require_face_match,
@@ -1583,7 +1584,7 @@ class AppUI:
             if dedup_method_ui == "Accurate (LPIPS)"
             else "None"
         )
-        filter_args = slider_values_dict
+        filter_args: dict[str, Any] = slider_values_dict
         filter_args.update(
             {
                 "require_face_match": require_face_match,

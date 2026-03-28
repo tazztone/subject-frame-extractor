@@ -157,7 +157,11 @@ def _apply_metric_filters(
                 mask &= np.nan_to_num(arr, nan=float(nan_fill)) >= float(min_v)
     for i in np.where(~mask)[0]:
         for d in defs:
-            k, t, v = d["key"], d["type"], metric_arrays.get(d["key"])[i]
+            arr = metric_arrays.get(d["key"])
+            if arr is None:
+                continue
+            v = arr[i]
+            k, t = d["key"], d["type"]
             if d.get("enabled_key") and not filters.get(d["enabled_key"]):
                 continue
             defaults = getattr(config, f"filter_default_{k}", {})
@@ -190,7 +194,10 @@ def apply_all_filters_vectorized(
     if not all_frames_data:
         return [], [], Counter(), {}
     metric_arrays = _extract_metric_arrays(all_frames_data, config)
+
+    # Deduplication
     dedup_mask, reasons = apply_deduplication_filter(all_frames_data, filters, thumbnail_manager, config, output_dir)
+
     metric_mask, metric_reasons = _apply_metric_filters(all_frames_data, metric_arrays, filters, config)
     for fname, r_list in metric_reasons.items():
         reasons[fname].extend(r_list)

@@ -19,12 +19,12 @@ if TYPE_CHECKING:
     from core.logger import AppLogger
     from core.managers import ModelRegistry, ThumbnailManager
     from core.models import Scene, SceneState
+    from core.scene_utils.subject_masker import SubjectMasker
 
 from core.enums import SceneStatus
 from core.image_utils import render_mask_overlay
 from core.io_utils import create_frame_map
 from core.managers.model_loader import initialize_analysis_models
-from core.scene_utils.subject_masker import SubjectMasker
 from core.shared import build_scene_gallery_items
 from core.utils import _to_json_safe
 
@@ -163,6 +163,7 @@ def _create_analysis_context(
 ) -> "SubjectMasker":
     """Helper to initialize a SubjectMasker from UI arguments."""
     from core.models import AnalysisParameters
+    from core.scene_utils.subject_masker import SubjectMasker
 
     ui_args = dict(zip(ana_ui_map_keys, ana_input_components))
     if "outputfolder" in ui_args and "output_folder" not in ui_args:
@@ -216,6 +217,8 @@ def _recompute_single_preview(
     best_frame_num = scene.best_frame or scene.start_frame
     if best_frame_num is None:
         raise ValueError(f"Scene {scene.shot_id} has no best frame number.")
+    if masker.frame_map is None:
+        raise ValueError("SubjectMasker has no frame map initialized.")
     fname = masker.frame_map.get(int(best_frame_num))
     if not fname:
         raise FileNotFoundError(f"Best frame {best_frame_num} not found in project's frame map.")
@@ -247,7 +250,7 @@ def _recompute_single_preview(
     overlay_rgb = (
         render_mask_overlay(thumb_rgb, mask, 0.6, logger=logger)
         if mask is not None
-        else masker.draw_bbox(thumb_rgb, bbox)
+        else (masker.draw_bbox(thumb_rgb, bbox) if bbox is not None else thumb_rgb)
     )
     previews_dir = out_dir / "previews"
     previews_dir.mkdir(parents=True, exist_ok=True)

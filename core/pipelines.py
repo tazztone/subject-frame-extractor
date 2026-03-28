@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from core.logger import AppLogger
     from core.managers import ThumbnailManager
 
-from core.events import ExtractionEvent, PreAnalysisEvent, PropagationEvent
+from core.events import ExtractionEvent, PreAnalysisEvent, PropagationEvent, SessionLoadEvent
 from core.managers import (
     AnalysisPipeline,
     ExtractionPipeline,
@@ -114,7 +114,7 @@ def execute_pre_analysis(
     thumbnail_manager: "ThumbnailManager",
     cuda_available: bool,
     progress: Optional[Callable] = None,
-    model_registry: "ModelRegistry" = None,
+    model_registry: Optional["ModelRegistry"] = None,
 ) -> Generator[dict, None, None]:
     # Import gradio only when needed to keep test dependencies light
     try:
@@ -135,9 +135,11 @@ def execute_pre_analysis(
 
     scenes = _load_scenes(out_dir)
     tracker.start(len(scenes), desc="Pre-analyzing")
-    pipeline = PreAnalysisPipeline(
-        config, logger, params, progress_queue, cancel_event, thumbnail_manager, model_registry
-    )
+
+    # Ensure model_registry is not None
+    mr = model_registry or ModelRegistry(logger=logger)
+
+    pipeline = PreAnalysisPipeline(config, logger, params, progress_queue, cancel_event, thumbnail_manager, mr)
     processed = pipeline.run(scenes, tracker=tracker)
 
     msg = "Pre-Analysis Complete."
@@ -157,10 +159,13 @@ def execute_pre_analysis(
 
 
 def validate_session_dir(path: str) -> bool:
-    return _validate_session_dir(path)
+    p, err = _validate_session_dir(path)
+    return p is not None and err is None
 
 
-def execute_session_load(event: dict, logger: "AppLogger") -> dict:
+def execute_session_load(event: SessionLoadEvent | dict, logger: "AppLogger") -> dict:
+    if isinstance(event, dict):
+        event = SessionLoadEvent(**event)
     return _execute_session_load(event, logger)
 
 
@@ -192,7 +197,8 @@ def execute_propagation(
         totals = estimate_totals(params, v_info, scenes)
         tracker.start(totals.get("propagation", 0) + len(scenes), desc="Propagating Masks")
 
-    pipeline = AnalysisPipeline(config, logger, params, progress_queue, cancel_event, thumbnail_manager, model_registry)
+    mr = model_registry or ModelRegistry(logger=logger)
+    pipeline = AnalysisPipeline(config, logger, params, progress_queue, cancel_event, thumbnail_manager, mr)
     result = pipeline.run_full_analysis(scenes, tracker=tracker)
 
     if result and result.get("done"):
@@ -234,7 +240,8 @@ def execute_analysis(
     tracker = AdvancedProgressTracker(progress, progress_queue, logger, ui_stage_name="Analyzing")
     tracker.start(sum(s.end_frame - s.start_frame for s in scenes), desc="Analyzing")
 
-    pipeline = AnalysisPipeline(config, logger, params, progress_queue, cancel_event, thumbnail_manager, model_registry)
+    mr = model_registry or ModelRegistry(logger=logger)
+    pipeline = AnalysisPipeline(config, logger, params, progress_queue, cancel_event, thumbnail_manager, mr)
     result = pipeline.run_analysis_only(scenes, tracker=tracker)
 
     if result and result.get("done"):
@@ -359,7 +366,7 @@ def execute_full_pipeline(
         output_folder=ext_result["extracted_frames_dir_state"],
         video_path=ext_result["extracted_video_path_state"],
         face_ref_img_path="",  # Default to "Find Prominent Person" unless provided
-        face_selection_mode="🧑‍🤝‍🧑 Find Prominent Person",
+        primary_seed_strategy="🤖 Automatic",
         resume=False,
     )
 

@@ -249,14 +249,16 @@ def test_execute_pre_analysis_with_upload(mock_runtime, tmp_path, default_pre_an
     assert (downloads_dir / "face.jpg").exists()
 
 
-def test_validate_session_dir_and_load(mock_runtime):
+def test_validate_session_dir_and_load(mock_runtime, tmp_path):
     from core.pipelines import execute_session_load, validate_session_dir
 
-    with patch("core.pipelines._validate_session_dir", return_value=True):
+    with patch("core.pipelines._validate_session_dir", return_value=(Path("/tmp/session"), None)):
         assert validate_session_dir("/tmp/session") is True
 
     with patch("core.pipelines._execute_session_load", return_value={"ok": True}):
-        assert execute_session_load({}, mock_runtime["logger"]) == {"ok": True}
+        session_path = tmp_path / "session"
+        session_path.mkdir()
+        assert execute_session_load({"session_path": str(session_path)}, mock_runtime["logger"]) == {"ok": True}
 
 
 def test_execute_propagation_success(mock_runtime, tmp_path, default_pre_analysis_event):

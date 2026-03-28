@@ -64,7 +64,7 @@ class EdgeStrengthOperator:
             )
 
         except Exception as e:
-            return OperatorResult(success=False, error=str(e))
+            return OperatorResult(error=str(e))
 
 
 @register_operator
@@ -110,7 +110,7 @@ class ContrastOperator:
             return OperatorResult(metrics={"contrast": float(raw_normalized), "contrast_score": raw_normalized * 100.0})
 
         except Exception as e:
-            return OperatorResult(success=False, error=str(e))
+            return OperatorResult(error=str(e))
 
 
 @register_operator
@@ -146,4 +146,4 @@ class BrightnessOperator:
             return OperatorResult(metrics={"brightness": raw_normalized, "brightness_score": raw_normalized * 100.0})
 
         except Exception as e:
-            return OperatorResult(success=False, error=str(e))
+            return OperatorResult(error=str(e))

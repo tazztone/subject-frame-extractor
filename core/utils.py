@@ -28,8 +28,8 @@ def _setup_triton_mock():
     mock_triton = types.ModuleType("triton")
     mock_triton.__spec__ = ModuleSpec("triton", None)
     mock_triton.__path__ = []
-    mock_triton.jit = lambda fn: fn
-    mock_triton.language = types.ModuleType("triton.language")
+    setattr(mock_triton, "jit", lambda fn: fn)
+    setattr(mock_triton, "language", types.ModuleType("triton.language"))
 
     class MockTL:
         constexpr = lambda x: x

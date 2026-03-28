@@ -69,7 +69,7 @@ def write_xmp_sidecar(source_path: Path, rating: int, label: str) -> Optional[Pa
         return None
 
 
-def export_xmps_for_photos(photos: List[Dict], star_thresholds: List[int] = None) -> int:
+def export_xmps_for_photos(photos: List[Dict], star_thresholds: Optional[List[int]] = None) -> int:
     """
     Writes XMP sidecars for all photos in the list.
 

@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 import threading
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
@@ -14,7 +16,7 @@ if TYPE_CHECKING:
 thread_local = threading.local()
 
 
-def get_face_landmarker(model_path: str, logger: "AppLogger") -> vision.FaceLandmarker:
+def get_face_landmarker(model_path: str, logger: "AppLogger") -> Any:
     """Returns a thread-local MediaPipe FaceLandmarker instance."""
     if hasattr(thread_local, "face_landmarker_instance"):
         return thread_local.face_landmarker_instance
@@ -33,6 +35,7 @@ def get_face_landmarker(model_path: str, logger: "AppLogger") -> vision.FaceLand
         thread_local.face_landmarker_instance = detector
         logger.success("Face landmarker model initialized successfully for this thread.")
         return detector
+
     except Exception as e:
         logger.error(f"Could not initialize MediaPipe face landmarker model. Error: {e}", component="face_landmarker")
         raise RuntimeError("Could not initialize MediaPipe face landmarker model.") from e

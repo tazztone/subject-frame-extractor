@@ -453,6 +453,7 @@ def test_process_reference_face_failures(mock_db, mock_deps, analysis_params, tm
         mock_deps["model_registry"],
     )
     analysis_params.face_ref_img_path = str(tmp_path / "nonexistent.jpg")
+    pipeline.face_analyzer = MagicMock()
     with pytest.raises(FileNotFoundError):
         pipeline._process_reference_face()
 

@@ -2,7 +2,7 @@
 Advanced cropping operators and geometry calculations.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 import cv2
 import numpy as np
@@ -93,7 +93,7 @@ def crop_image_with_subject(
     if not contours:
         return None, "No subject found in mask."
 
-    bbox = cv2.boundingRect(np.concatenate(contours))
+    bbox = cast(tuple[int, int, int, int], tuple(cv2.boundingRect(np.concatenate(contours))))
     h, w = image.shape[:2]
 
     best_crop = calculate_best_crop(w, h, bbox, aspect_ratios, padding_factor)

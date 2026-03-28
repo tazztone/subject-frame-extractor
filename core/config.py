@@ -298,3 +298,8 @@ class Config(BaseSettings):
             "entropy": self.quality_weights_entropy,
             "niqe": self.quality_weights_niqe,
         }
+
+    def save_config(self, path: str = "config.json"):
+        """Saves the current configuration to a JSON file."""
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(self.model_dump(), f, indent=4)

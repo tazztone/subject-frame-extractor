@@ -37,7 +37,7 @@ class MaskPropagator:
     def __init__(
         self,
         params: "AnalysisParameters",
-        dam_tracker: "SAM3Wrapper",
+        dam_tracker: Optional["SAM3Wrapper"],
         cancel_event: threading.Event,
         progress_queue: Queue,
         config: "Config",
@@ -100,11 +100,13 @@ class MaskPropagator:
             )
 
         w, h = frame_size
+        from typing import Dict
+
         masks = {fn: np.zeros((h, w), dtype=np.uint8) for fn in frame_numbers}
-        areas = {fn: 0.0 for fn in frame_numbers}
-        empties = {fn: True for fn in frame_numbers}
-        errors = {fn: None for fn in frame_numbers}
-        all_propagated = {fn: None for fn in frame_numbers}
+        areas: Dict[int, float] = {fn: 0.0 for fn in frame_numbers}
+        empties: Dict[int, bool] = {fn: True for fn in frame_numbers}
+        errors: Dict[int, Optional[str]] = {fn: None for fn in frame_numbers}
+        all_propagated: Dict[int, Optional[np.ndarray]] = {fn: None for fn in frame_numbers}
         target_frames = set(frame_numbers)
 
         self.logger.info(
@@ -230,8 +232,8 @@ class MaskPropagator:
 
                 masks[fn] = mask
                 area_pct = (np.sum(mask > 0) / img_area) * 100 if img_area > 0 else 0.0
-                areas[fn] = area_pct
-                empties[fn] = area_pct < self.params.min_mask_area_pct
+                areas[fn] = float(area_pct)
+                empties[fn] = bool(area_pct < self.params.min_mask_area_pct)
                 errors[fn] = "Empty mask" if empties[fn] else None
 
         except (torch.cuda.OutOfMemoryError, RuntimeError) as e:
@@ -315,7 +317,7 @@ class MaskPropagator:
             },
         )
         h, w = shot_frames_rgb[0].shape[:2]
-        masks = [None] * len(shot_frames_rgb)
+        masks: list[Optional[np.ndarray]] = [None] * len(shot_frames_rgb)
 
         if tracker:
             tracker.set_stage(f"Propagating masks for {len(shot_frames_rgb)} frames")

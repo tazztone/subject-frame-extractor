@@ -101,7 +101,7 @@ def on_filters_changed(event: FilterEvent, thumbnail_manager: Any, config: Any, 
     """
     if not event.all_frames_data:
         return {"filter_status_text": "Run analysis to see results.", "results_gallery": []}
-    filters = event.slider_values.copy()
+    filters: dict[str, Any] = event.slider_values.copy()
     filters.update(
         {
             "require_face_match": event.require_face_match,

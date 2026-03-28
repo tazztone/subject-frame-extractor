@@ -5,7 +5,7 @@ SeedSelector class for selecting seed frames and bounding boxes for mask propaga
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional, Union, cast
 
 import cv2
 import numpy as np
@@ -15,11 +15,12 @@ if TYPE_CHECKING:
     from insightface.app import FaceAnalysis
 
     from core.config import Config
-    from core.logger import AppLogger
+    from core.logger import LoggerLike
     from core.managers import SAM3Wrapper
     from core.models import AnalysisParameters, Scene
 
 from core.image_utils import postprocess_mask, rgb_to_pil
+from core.logger import log_with_component
 
 
 class SeedSelector:
@@ -41,10 +42,10 @@ class SeedSelector:
         self,
         params: "AnalysisParameters",
         config: "Config",
-        face_analyzer: "FaceAnalysis",
-        reference_embedding: np.ndarray,
-        tracker: "SAM3Wrapper",
-        logger: "AppLogger",
+        face_analyzer: Optional["FaceAnalysis"] = None,
+        reference_embedding: Optional[np.ndarray] = None,
+        tracker: Optional["SAM3Wrapper"] = None,
+        logger: Optional["LoggerLike"] = None,
         device: str = "cpu",
     ):
         """
@@ -65,7 +66,9 @@ class SeedSelector:
         self.reference_embedding = reference_embedding
         self.tracker = tracker
         self._device = device
-        self.logger = logger
+        import logging
+
+        self.logger: LoggerLike = logger or logging.getLogger("app_logger")
 
     def _get_param(self, source: Union[dict, object], key: str, default: Any = None) -> Any:
         """Get a parameter from either a dict or an object."""
@@ -74,7 +77,10 @@ class SeedSelector:
         return getattr(source, key, default)
 
     def select_seed(
-        self, frame_rgb: np.ndarray, current_params: Optional[dict] = None, scene: Optional["Scene"] = None
+        self,
+        frame_rgb: np.ndarray,
+        current_params: Union[dict, "AnalysisParameters", None] = None,
+        scene: Optional["Scene"] = None,
     ) -> tuple[Optional[list], dict]:
         """
         Select a seed bounding box for the given frame.
@@ -94,19 +100,19 @@ class SeedSelector:
 
         if primary_strategy == "Source Face Reference":
             if self.face_analyzer and self.reference_embedding is not None and use_face_filter:
-                self.logger.info("Starting 'Identity-First' seeding.")
+                log_with_component(self.logger, "info", "Starting 'Identity-First' seeding.")
                 return self._identity_first_seed(frame_rgb, p, scene)
             else:
-                self.logger.warning("Face strategy selected but no reference face provided.")
+                log_with_component(self.logger, "warning", "Face strategy selected but no reference face provided.")
                 return self._object_first_seed(frame_rgb, p, scene)
         elif primary_strategy == "Text Description (Limited)":
-            self.logger.info("Starting 'Object-First' seeding.")
+            log_with_component(self.logger, "info", "Starting 'Object-First' seeding.")
             return self._object_first_seed(frame_rgb, p, scene)
         elif primary_strategy == "Face + Text Fallback":
-            self.logger.info("Starting 'Face-First with Text Fallback' seeding.")
+            log_with_component(self.logger, "info", "Starting 'Face-First with Text Fallback' seeding.")
             return self._face_with_text_fallback_seed(frame_rgb, p, scene)
         else:
-            self.logger.info("Starting 'Automatic' seeding.")
+            log_with_component(self.logger, "info", "Starting 'Automatic' seeding.")
             return self._choose_person_by_strategy(frame_rgb, p, scene)
 
     def _face_with_text_fallback_seed(
@@ -114,17 +120,22 @@ class SeedSelector:
     ) -> tuple[Optional[list], dict]:
         """Try face-first, fall back to text prompt if face not found."""
         if self.reference_embedding is None:
-            self.logger.warning(
+            log_with_component(
+                self.logger,
+                "warning",
                 "No reference face for face-first strategy, falling back to text prompt.",
                 extra={"reason": "no_ref_emb"},
             )
             return self._object_first_seed(frame_rgb, params, scene)
         box, details = self._identity_first_seed(frame_rgb, params, scene)
         if box is not None:
-            self.logger.info("Face-first strategy successful.")
+            log_with_component(self.logger, "info", "Face-first strategy successful.")
             return box, details
-        self.logger.warning(
-            "Face detection failed or no match found, falling back to text prompt strategy.", extra=details
+        log_with_component(
+            self.logger,
+            "warning",
+            "Face detection failed or no match found, falling back to text prompt strategy.",
+            extra=details,
         )
         return self._object_first_seed(frame_rgb, params, scene)
 
@@ -134,7 +145,7 @@ class SeedSelector:
         """Find subject by matching to reference face."""
         target_face, details = self._find_target_face(frame_rgb)
         if not target_face:
-            self.logger.warning("Target face not found in scene.", extra=details)
+            log_with_component(self.logger, "warning", "Target face not found in scene.", extra=details)
             return None, {"type": "no_subject_found"}
         person_boxes = self._get_person_boxes(frame_rgb, scene)
         text_boxes = self._get_text_prompt_boxes(frame_rgb, params)[0]
@@ -143,9 +154,9 @@ class SeedSelector:
             # Propagate face similarity if available
             if "seed_face_sim" in details:
                 best_details["seed_face_sim"] = details["seed_face_sim"]
-            self.logger.success("Evidence-based seed selected.", extra=best_details)
+            log_with_component(self.logger, "success", "Evidence-based seed selected.", extra=best_details)
             return best_box, best_details
-        self.logger.warning("No high-confidence body box found, expanding face box as fallback.")
+        log_with_component(self.logger, "warning", "No high-confidence body box found, expanding face box as fallback.")
         expanded_box = self._expand_face_to_body(target_face["bbox"], frame_rgb.shape)
         return expanded_box, {"type": "expanded_box_from_face", "seed_face_sim": details.get("seed_face_sim", 0)}
 
@@ -171,23 +182,27 @@ class SeedSelector:
                                 "person_conf": y_box["conf"],
                             }
                 if best_match and best_match["iou"] > self.config.seeding_iou_threshold:
-                    self.logger.info("Found high-confidence intersection.", extra=best_match)
+                    log_with_component(self.logger, "info", "Found high-confidence intersection.", extra=best_match)
                     return self._xyxy_to_xywh(best_match["bbox"], frame_rgb.shape), best_match
-            self.logger.info("Using best text box without validation.", extra=text_details)
+            log_with_component(self.logger, "info", "Using best text box without validation.", extra=text_details)
             return self._xyxy_to_xywh(text_boxes[0]["bbox"], frame_rgb.shape), text_details
-        self.logger.info("No text results, falling back to person-only strategy.")
+        log_with_component(self.logger, "info", "No text results, falling back to person-only strategy.")
         return self._choose_person_by_strategy(frame_rgb, params, scene)
 
     def _find_target_face(self, frame_rgb: np.ndarray) -> tuple[Optional[dict], dict]:
         """Find the target face in frame that matches reference embedding."""
         frame_bgr = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
+        if self.face_analyzer is None:
+            return None, {"error": "face_analyzer_not_initialized"}
         try:
             faces = self.face_analyzer.get(frame_bgr)
         except Exception as e:
-            self.logger.error("Face analysis failed.", exc_info=True)
+            log_with_component(self.logger, "error", "Face analysis failed.", exc_info=True)
             return None, {"error": str(e)}
         if not faces:
             return None, {"error": "no_faces_detected"}
+        if self.reference_embedding is None:
+            return None, {"error": "reference_embedding_not_initialized"}
         best_face, best_sim = None, 0.0
         for face in faces:
             sim = np.dot(face.normed_embedding, self.reference_embedding)
@@ -206,15 +221,16 @@ class SeedSelector:
             return scene.person_detections
         if scene and (scene.selected_bbox or scene.initial_bbox):
             xywh = scene.selected_bbox or scene.initial_bbox
-            x, y, w, h = xywh
-            xyxy = [x, y, x + w, y + h]
-            return [{"bbox": xyxy, "conf": 1.0, "type": "selected"}]
+            if xywh and len(xywh) == 4:
+                x, y, w, h = xywh
+                xyxy = [x, y, x + w, y + h]
+                return [{"bbox": xyxy, "conf": 1.0, "type": "selected"}]
         if not self.tracker:
             return []
         try:
             return self.tracker.detect_objects(frame_rgb, "person")
         except Exception:
-            self.logger.warning("Person detection failed.", exc_info=True)
+            log_with_component(self.logger, "warning", "Person detection failed.", exc_info=True)
             return []
 
     def _get_text_prompt_boxes(
@@ -227,7 +243,7 @@ class SeedSelector:
         try:
             results = self.tracker.detect_objects(frame_rgb, prompt)
         except Exception as e:
-            self.logger.error("Text prompt prediction failed.", exc_info=True)
+            log_with_component(self.logger, "error", "Text prompt prediction failed.", exc_info=True)
             return [], {"error": str(e)}
         if not results:
             return [], {"type": "text_prompt", "error": "no_boxes"}
@@ -257,7 +273,7 @@ class SeedSelector:
                 iou = self._calculate_iou(y_box["bbox"], d_box["bbox"])
                 if iou > best_iou:
                     best_iou, best_pair = iou, (y_box, d_box)
-        if best_iou > self.config.seeding_iou_threshold:
+        if best_iou > self.config.seeding_iou_threshold and best_pair is not None:
             for cand in scored_candidates:
                 if np.array_equal(cand["box"], best_pair[0]["bbox"]) or np.array_equal(
                     cand["box"], best_pair[1]["bbox"]
@@ -278,7 +294,7 @@ class SeedSelector:
         """Select person using configurable strategy."""
         boxes = self._get_person_boxes(frame_rgb, scene)
         if not boxes:
-            self.logger.warning("No people detected in scene - using fallback region")
+            log_with_component(self.logger, "warning", "No people detected in scene - using fallback region")
             fallback_box = self._final_fallback_box(frame_rgb.shape)
             return fallback_box, {
                 "type": "no_people_fallback",
@@ -360,7 +376,7 @@ class SeedSelector:
         # Safety check: boxes could be a MagicMock in tests or unexpectedly empty
         actual_boxes = list(boxes) if not isinstance(boxes, list) else boxes
         if not actual_boxes:
-            self.logger.warning(f"No candidates found for strategy: {strategy}")
+            log_with_component(self.logger, "warning", f"No candidates found for strategy: {strategy}")
             return self._final_fallback_box(frame_rgb.shape), {"type": "strategy_fallback_empty"}
 
         best_person = sorted(actual_boxes, key=lambda b: (score(b), b["conf"], area(b)), reverse=True)[0]
@@ -372,7 +388,7 @@ class SeedSelector:
                 try:
                     all_faces = self.face_analyzer.get(cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR))
                 except Exception as e:
-                    self.logger.warning(f"Face analysis failed during post-selection: {e}")
+                    log_with_component(self.logger, "warning", f"Face analysis failed during post-selection: {e}")
                     all_faces = []
 
             if all_faces:
@@ -398,6 +414,7 @@ class SeedSelector:
     # TODO: Cache transform for reuse across multiple frames
     def _load_image_from_array(self, image_rgb: np.ndarray) -> tuple[np.ndarray, torch.Tensor]:
         """Load image for model input."""
+        import torch
         from torchvision import transforms
 
         transform = transforms.Compose(
@@ -407,7 +424,8 @@ class SeedSelector:
                 transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
             ]
         )
-        return image_rgb, transform(image_rgb)
+        t_img = transform(image_rgb)
+        return image_rgb, cast(torch.Tensor, t_img)
 
     def _calculate_iou(self, box1: list, box2: list) -> float:
         """Calculate IoU between two boxes in xyxy format."""
@@ -512,10 +530,10 @@ class SeedSelector:
                     )
                 return mask
         except (torch.cuda.OutOfMemoryError, RuntimeError) as e:
-            self.logger.warning(f"GPU error in mask generation: {e}")
+            log_with_component(self.logger, "warning", f"GPU error in mask generation: {e}")
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
             return None
         except Exception as e:
-            self.logger.error(f"Unexpected error in mask generation: {type(e).__name__}: {e!r}")
+            log_with_component(self.logger, "error", f"Unexpected error in mask generation: {type(e).__name__}: {e!r}")
             return None
