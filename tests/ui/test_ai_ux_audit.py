@@ -16,7 +16,7 @@ import os
 import pytest
 from playwright.sync_api import Page
 
-from .conftest import BASE_URL
+from .conftest import BASE_URL, wait_for_app_ready
 
 try:
     from .ai_ux_analyzer import (
@@ -47,7 +47,7 @@ class TestUXAudit:
     def test_source_tab_ux(self, page: Page, app_server, use_ai, tmp_path):
         """Audit Source tab UX."""
         page.goto(BASE_URL)
-        page.wait_for_load_state("networkidle")
+        wait_for_app_ready(page)
 
         screenshot = capture_state_screenshot(page, "audit_source")
 
@@ -68,7 +68,7 @@ class TestUXAudit:
     def test_scenes_tab_ux(self, page: Page, app_server, use_ai, tmp_path):
         """Audit Scenes tab UX - where pagination issues were found."""
         page.goto(BASE_URL)
-        page.wait_for_load_state("networkidle")
+        wait_for_app_ready(page)
 
         page.get_by_role("tab", name="Scenes").click(force=True)
         page.wait_for_timeout(500)
@@ -90,7 +90,7 @@ class TestUXAudit:
     def test_export_tab_ux(self, page: Page, app_server, use_ai, tmp_path):
         """Audit Export tab UX - filter controls and results display."""
         page.goto(BASE_URL)
-        page.wait_for_load_state("networkidle")
+        wait_for_app_ready(page)
 
         page.get_by_role("tab", name="Export").click(force=True)
         page.wait_for_timeout(500)
@@ -121,7 +121,7 @@ class TestFullAppAudit:
 
         for tab in tabs:
             page.goto(BASE_URL)
-            page.wait_for_load_state("networkidle")
+            wait_for_app_ready(page)
 
             if tab != "Source":
                 tab_btn = page.get_by_role("tab", name=tab)

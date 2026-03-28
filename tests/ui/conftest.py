@@ -10,17 +10,51 @@ from playwright.sync_api import Page, expect
 
 from .ui_locators import Labels, Selectors
 
+
 # Constants
 # Use an isolated port for UI tests to avoid collisions with the real app (7860)
-PORT = 8765
+# Support parallel execution via pytest-xdist worker IDs
+def get_test_port():
+    base_port = 8765
+    worker_id = environ.get("PYTEST_XDIST_WORKER")
+    if worker_id:
+        # worker_id is 'gw0', 'gw1', etc.
+        try:
+            worker_num = int("".join(filter(str.isdigit, worker_id)))
+            return base_port + worker_num
+        except ValueError:
+            pass
+    return base_port
+
+
+PORT = get_test_port()
 BASE_URL = f"http://127.0.0.1:{PORT}"
+FAILURES_DIR = Path(__file__).parent.parent.parent / "tests" / "results" / "failures"
 
 
 @pytest.fixture(autouse=True)
 def setup_playwright_timeout(page: Page):
     """Set a baseline timeout for all Playwright actions."""
-    page.set_default_timeout(10000)
+    page.set_default_timeout(15000)  # Increased for slow CI/container runs
     yield
+
+
+@pytest.hookimpl(tryfirst=True, hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    """Capture screenshot on test failure."""
+    outcome = yield
+    report = outcome.get_result()
+
+    if report.when == "call" and report.failed:
+        page = item.funcargs.get("page")
+        if page:
+            FAILURES_DIR.mkdir(parents=True, exist_ok=True)
+            screenshot_path = FAILURES_DIR / f"{item.name}.png"
+            try:
+                page.screenshot(path=str(screenshot_path), full_page=True)
+                print(f"\n[DEBUG] Failure screenshot saved to: {screenshot_path}")
+            except Exception as e:
+                print(f"\n[DEBUG] Failed to capture screenshot: {e}")
 
 
 def wait_for_server(url, timeout=60):
@@ -114,10 +148,10 @@ def app_server():
 
     mock_app_path = str(Path(__file__).parent.parent / "mock_app.py")
 
-    # Start the mock server process
     log_dir = Path(__file__).parent.parent.parent / "tests" / "results" / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
-    log_file_path = log_dir / "mock_app_e2e.log"
+    worker_id = environ.get("PYTEST_XDIST_WORKER", "master")
+    log_file_path = log_dir / f"mock_app_e2e_{worker_id}.log"
 
     log_file = open(log_file_path, "w")
     process = subprocess.Popen(
