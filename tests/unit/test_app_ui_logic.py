@@ -21,7 +21,7 @@ class TestAppUI:
         self, mock_config, mock_logger, mock_queue, mock_cancel_event, mock_thumbnail_manager, mock_model_registry
     ):
         # We need to mock torch.cuda.is_available inside AppUI init
-        with patch("torch.cuda.is_available", return_value=False):
+        with patch("torch.cuda.is_available", return_value=False, create=True):
             ui = AppUI(
                 mock_config, mock_logger, mock_queue, mock_cancel_event, mock_thumbnail_manager, mock_model_registry
             )

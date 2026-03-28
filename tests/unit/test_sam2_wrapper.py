@@ -28,7 +28,7 @@ def mock_predictor():
 
 
 @patch("core.managers.sam2.build_sam2_video_predictor")
-@patch("core.managers.sam2.torch.cuda.is_available", return_value=False)
+@patch("core.managers.sam2.torch.cuda.is_available", return_value=False, create=True)
 def test_sam2_wrapper_init(mock_cuda, mock_build, mock_predictor):
     mock_build.return_value = mock_predictor
 
@@ -136,7 +136,7 @@ def test_sam2_wrapper_stubs_and_utility(mock_build, mock_predictor):
 
 
 @patch("core.managers.sam2.build_sam2_video_predictor")
-@patch("core.managers.sam2.torch.cuda.is_available", return_value=True)
+@patch("core.managers.sam2.torch.cuda.is_available", return_value=True, create=True)
 @patch("core.managers.sam2.torch.cuda.empty_cache")
 def test_sam2_wrapper_shutdown(mock_empty_cache, mock_cuda, mock_build, mock_predictor):
     mock_build.return_value = mock_predictor

@@ -9,7 +9,7 @@ from core.system_health import check_dependencies, check_environment, check_path
 
 def test_check_environment():
     with (
-        patch("core.system_health.torch.cuda.is_available", return_value=True),
+        patch("core.system_health.torch.cuda.is_available", return_value=True, create=True),
         patch("core.system_health.torch.cuda.get_device_name", return_value="Test GPU"),
         patch("core.system_health.torch.version.cuda", "12.1"),
     ):
@@ -20,7 +20,7 @@ def test_check_environment():
 
 
 def test_check_environment_no_cuda():
-    with patch("core.system_health.torch.cuda.is_available", return_value=False):
+    with patch("core.system_health.torch.cuda.is_available", return_value=False, create=True):
         report = check_environment()
         assert any("Running in CPU mode" in line for line in report)
         assert any("Running in CPU mode" in line for line in report)
@@ -61,7 +61,7 @@ def test_generate_full_diagnostic_report():
 
 
 def test_check_environment_torch_exception():
-    with patch("core.system_health.torch.cuda.is_available", side_effect=Exception("Torch Crash")):
+    with patch("core.system_health.torch.cuda.is_available", side_effect=Exception("Torch Crash"), create=True):
         from core.system_health import check_environment
 
         report = check_environment()

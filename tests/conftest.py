@@ -58,12 +58,23 @@ class TransparentContext:
 
 # Build the base torch mock
 _mock_torch_obj = MagicMock(name="torch")
-_mock_torch_obj.cuda.is_available.return_value = False
-_mock_torch_obj.cuda.device_count.return_value = 0
-_mock_torch_obj.cuda.get_device_name = MagicMock(return_value="Mock GPU")
-_mock_torch_obj.cuda.empty_cache = MagicMock()
-_mock_torch_obj.cuda.memory_summary = MagicMock(return_value="Mock Memory Summary")
-_mock_torch_obj.cuda.OutOfMemoryError = OutOfMemoryError
+
+
+# Promote torch.cuda to a real ModuleType instance for stable patching
+_cuda_mod = _create_mock_module(
+    "torch.cuda",
+    {
+        "is_available": MagicMock(return_value=False),
+        "device_count": MagicMock(return_value=0),
+        "get_device_name": MagicMock(return_value="Mock GPU"),
+        "empty_cache": MagicMock(),
+        "memory_summary": MagicMock(return_value="Mock Memory Summary"),
+        "memory_allocated": MagicMock(return_value=0),
+        "OutOfMemoryError": OutOfMemoryError,
+    },
+)
+
+_mock_torch_obj.cuda = _cuda_mod
 _mock_torch_obj.__version__ = "2.0.0"
 _mock_torch_obj.nn.Module = MagicMock
 _mock_torch_obj.Tensor = MagicMock
@@ -169,7 +180,7 @@ modules_to_mock = {
     "torch": _create_mock_module(
         "torch",
         {
-            "cuda": _mock_torch_obj.cuda,
+            "cuda": _cuda_mod,
             "nn": _mock_torch_obj.nn,
             "version": _mock_torch_obj.version,
             "Tensor": _mock_torch_obj.Tensor,
@@ -183,11 +194,11 @@ modules_to_mock = {
             "rand": MagicMock(side_effect=lambda *args, **kwargs: MagicMock(name="rand")),
             "randn": MagicMock(side_effect=lambda *args, **kwargs: MagicMock(name="randn")),
             "float": _mock_torch_obj.float,
-            "float32": MagicMock(),
-            "float16": MagicMock(),
-            "bfloat16": MagicMock(),
+            "float32": _mock_torch_obj.float32,
+            "float16": _mock_torch_obj.float16,
+            "bfloat16": _mock_torch_obj.bfloat16,
             "uint8": _mock_torch_obj.uint8,
-            "int64": MagicMock(),
+            "int64": _mock_torch_obj.int64,
             "no_grad": _mock_torch_obj.no_grad,
             "inference_mode": _mock_torch_obj.no_grad,
             "set_float32_matmul_precision": MagicMock(),
@@ -197,7 +208,7 @@ modules_to_mock = {
             "manual_seed": MagicMock(),
         },
     ),
-    "torch.cuda": _mock_torch_obj.cuda,
+    "torch.cuda": _cuda_mod,
     "torch.nn": _mock_torch_obj.nn,
     "torch.version": _mock_torch_obj.version,
     "torchvision": _create_mock_module("torchvision", {"ops": MagicMock(), "transforms": MagicMock()}),

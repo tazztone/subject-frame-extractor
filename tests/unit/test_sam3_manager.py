@@ -45,7 +45,7 @@ def mock_predictor():
 
 
 @patch("sam3.model_builder.build_sam3_video_predictor")
-@patch("core.managers.sam3.torch.cuda.is_available", return_value=False)
+@patch("core.managers.sam3.torch.cuda.is_available", return_value=False, create=True)
 def test_sam3_wrapper_init(mock_cuda, mock_build, mock_predictor):
     mock_build.return_value = mock_predictor
     wrapper = SAM3Wrapper(device="cpu")
@@ -150,7 +150,7 @@ def test_sam3_wrapper_utility_methods(mock_build, mock_predictor):
 
 
 @patch("sam3.model_builder.build_sam3_video_predictor")
-@patch("core.managers.sam3.torch.cuda.is_available", return_value=True)
+@patch("core.managers.sam3.torch.cuda.is_available", return_value=True, create=True)
 @patch("core.managers.sam3.torch.cuda.empty_cache")
 def test_sam3_wrapper_shutdown(mock_empty, mock_cuda, mock_build, mock_predictor):
     mock_build.return_value = mock_predictor
