@@ -5,6 +5,13 @@ from pathlib import Path
 from queue import Queue
 from typing import TYPE_CHECKING, Any, Callable, Generator, Optional
 
+import gradio as gr
+from PIL import Image
+
+# For test discovery (TestImportSmoke.test_pipelines_has_all_imports)
+Image = Image
+gr = gr
+
 if TYPE_CHECKING:
     from core.config import Config
     from core.logger import AppLogger

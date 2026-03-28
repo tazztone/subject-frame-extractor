@@ -47,7 +47,7 @@ class TestPhotoCLI:
 
         # 1. Ingestion (using 'extract' command on a folder)
         print("Running photo ingestion...")
-        res = run_cli(["extract", "--source", str(photo_test_dir), "--output", str(session_dir)])
+        res = run_cli(["extract", str(photo_test_dir), str(session_dir)])
         assert res.returncode == 0
         assert "Ingestion complete" in res.stdout
 
@@ -75,7 +75,7 @@ class TestPhotoCLI:
         assert "quality_score" in metadata[0]["metrics"]
 
     def test_extract_invalid_folder(self, tmp_path):
-        res = run_cli(["extract", "--source", "/non/existent/path", "--output", str(tmp_path)])
+        res = run_cli(["extract", "/non/existent/path", str(tmp_path)])
         # Click validates Path(exists=True) and exits with 2
         assert res.returncode == 2
         assert "does not exist" in res.stderr

@@ -35,16 +35,20 @@ The project uses GitHub Actions (`.github/workflows/ci.yml`) for automated verif
    - **Timeout**: 15 minutes.
    - **Workers**: Pinned to `-n 4` for deterministic mock server performance.
    - **Artifacts**: Screenshots of failures are uploaded automatically.
+3. **GPU Integration Tests (Dry Run)**: A `gpu-tests` job runs on standard runners to verify the `gpu_e2e` suite.
+   - **Verification**: Confirms file collection, dependency imports, and `pytest.mark.skipif` logic without requiring real hardware.
 
 ## The "Mock-First" Philosophy
 
 To ensure fast execution and hardware independence, all **Unit Tests** must completely mock the following:
 - **ML Models**: Mock `ModelRegistry.get_tracker`, `get_face_analyzer`, and `TrackerFactory`.
-- **GPU/Torch**: `tests/conftest.py` promotes `torch.cuda` to a `ModuleType` to allow stable patching.
+- **GPU/Torch**: `tests/conftest.py` promotes `torch.cuda` to a real `ModuleType` instance (not just a `MagicMock`). This provides stable access to `OutOfMemoryError` and `is_available` across parallel workers.
+- **Gradio Choice Validation**: When mocking `Config` defaults for Dropdown components, always use the **Internal ID** (e.g., `"all"`) instead of the **Display Label** (e.g., `"All Frames"`). Gradio 5+ will issue `UserWarning` if the value doesn't match the internal choice list exactly.
 - **Requirement**: Always include `create=True` in `patch("torch.cuda.is_available", ...)` to prevent worker collisions in parallel runs.
 
 ## Gradio & Pyright Resiliency
 
+- **SAM3 Experimental Status**: `sam3` is an experimental tracker. Integration tests (`tests/integration/test_gpu_e2e.py`) verify its logic, but it is **not** the baseline for regressions. The default is `sam2`.
 - **Type Hints**: For Gradio event handlers, use `Any` or `dict[str, Any]` for return type hints instead of `gr.update`. Gradio 5+ treats updates as dynamic dictionaries, and `gr.update` often causes Pyright noise.
 - **Optional Members**: Components like `AdvancedProgressTracker` should use `Optional[Queue]` and `Optional[AppLogger]` with explicit null-checks to prevent Pyright "attribute not found on None" errors.
 
@@ -55,6 +59,7 @@ To ensure fast execution and hardware independence, all **Unit Tests** must comp
 
 ## E2E Testing (Playwright)
 
+- **Port Isolation**: To prevent collisions in parallel runs (`xdist`), mock servers use the formula `8765 + worker_id`. Each worker gets a unique port (8765, 8766, etc.).
 - **Locator Protocol**: Never hardcode strings in tests. Always use `ui_locators.py` (`Labels` and `Selectors`).
 - **Emoji Sensitivity**: Playwright is sensitive to emojis. If a UI button adds an emoji (e.g., `🚀 Start`), the `Labels` entry must match exactly.
 - **Accordion Handling**: Use the `open_accordion(page, label)` helper in `conftest.py`. It uses `elem_id` (#system_logs_accordion) and JS state checks to handle Gradio's complex DOM.

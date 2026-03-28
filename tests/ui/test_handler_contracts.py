@@ -15,9 +15,10 @@ def mock_app():
     config.user_agent = "test"
     config.retry_max_attempts = 1
     config.retry_backoff_seconds = [1]
-    config.default_max_resolution = "Original (Recommended)"
-    config.default_method = "Every N-th Frame (Recommended)"
-    config.default_seed_strategy = "🤖 Automatic Detection"
+    config.default_max_resolution = "maximum available"
+    config.default_method = "all"
+    config.default_seed_strategy = "Largest Person"
+    config.default_primary_seed_strategy = "🤖 Automatic Detection"
     config.default_face_model_name = "buffalo_l"
     config.debug_mode = True
     config.gradio_auto_pctl_input = 50

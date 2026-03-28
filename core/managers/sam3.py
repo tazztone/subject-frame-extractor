@@ -120,9 +120,6 @@ class SAM3Wrapper:
             frame_idx = resp.get("frame_index")
             out = resp.get("outputs", {})
             masks, ids = out.get("out_binary_masks"), out.get("out_obj_ids")
-            print(
-                f"[DEBUG SAM3Wrapper propagate] Yield resp: frame_idx={frame_idx}, has_masks={masks is not None}, ids={ids}"
-            )
             if masks is None or ids is None:
                 continue
             if hasattr(masks, "cpu"):
