@@ -198,12 +198,13 @@ def export_kept_frames(
 
             sample_name = next((f["filename"] for f in kept if "filename" in f), None)
             analyzed_ext = Path(sample_name).suffix if sample_name else ".webp"
-            fn_to_orig_map = {f"frame_{i + 1:06d}{analyzed_ext}": orig for i, orig in enumerate(sorted(frame_map_list))}
+            sorted_frames = sorted([int(x) for x in frame_map_list if x is not None])
+            fn_to_orig_map = {f"frame_{i + 1:06d}{analyzed_ext}": orig for i, orig in enumerate(sorted_frames)}
 
-            frames_to_extract = sorted(
-                [fn_to_orig_map.get(f["filename"]) for f in kept if f.get("filename") in fn_to_orig_map]
-            )
-            frames_to_extract = [n for n in frames_to_extract if n is not None]
+            frames_to_extract_raw = [
+                fn_to_orig_map.get(f["filename"]) for f in kept if f.get("filename") in fn_to_orig_map
+            ]
+            frames_to_extract = sorted([n for n in frames_to_extract_raw if n is not None])
 
             if not frames_to_extract:
                 return "No frames to extract."
@@ -291,12 +292,11 @@ def dry_run_export(event: ExportEvent, config: "Config", logger: Optional["AppLo
 
         sample_name = next((f["filename"] for f in kept if "filename" in f), None)
         analyzed_ext = Path(sample_name).suffix if sample_name else ".webp"
-        fn_to_orig_map = {f"frame_{i + 1:06d}{analyzed_ext}": orig for i, orig in enumerate(sorted(frame_map_list))}
+        sorted_frames = sorted([int(x) for x in frame_map_list if x is not None])
+        fn_to_orig_map = {f"frame_{i + 1:06d}{analyzed_ext}": orig for i, orig in enumerate(sorted_frames)}
 
-        frames_to_extract = sorted(
-            [fn_to_orig_map.get(f["filename"]) for f in kept if f.get("filename") in fn_to_orig_map]
-        )
-        frames_to_extract = [n for n in frames_to_extract if n is not None]
+        frames_to_extract_raw = [fn_to_orig_map.get(f["filename"]) for f in kept if f.get("filename") in fn_to_orig_map]
+        frames_to_extract = sorted([n for n in frames_to_extract_raw if n is not None])
 
         if not frames_to_extract:
             return "No frames to extract."

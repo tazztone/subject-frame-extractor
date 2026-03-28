@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, List, Optional, Union
 from core.models import Scene
 
 if TYPE_CHECKING:
+    from core.events import SessionLoadEvent
     from core.logger import AppLogger
 
 
@@ -20,13 +21,13 @@ def validate_session_dir(path: Union[str, Path]) -> tuple[Optional[Path], Option
         return None, f"Invalid session path: {e}"
 
 
-def execute_session_load(event, logger: "AppLogger") -> dict:
+def execute_session_load(event: "SessionLoadEvent", logger: "AppLogger") -> dict:
     """Loads session state from disk."""
     if not event.session_path or not event.session_path.strip():
         return {"error": "Please enter a path to a session directory."}
     session_path, error = validate_session_dir(event.session_path)
-    if error:
-        return {"error": error}
+    if error or session_path is None:
+        return {"error": error or "Invalid session path"}
     config_path, scene_seeds_path, metadata_path = (
         session_path / "run_config.json",
         session_path / "scene_seeds.json",

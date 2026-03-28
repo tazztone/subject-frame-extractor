@@ -189,6 +189,7 @@ class TestPreAnalysisPipeline:
 
         mock_masker = mock_masker_cls.return_value
         mock_masker.frame_map = {1: "frame_000001.webp"}
+        mock_masker._create_frame_map.return_value = {1: "frame_000001.webp"}
         mock_masker.get_seed_for_frame.return_value = ([0, 0, 10, 10], {"score": 1.0})
         mock_masker.get_mask_for_bbox.return_value = np.zeros((100, 100), dtype=np.uint8)
         mock_masker.draw_bbox.return_value = np.zeros((100, 100, 3), dtype=np.uint8)

@@ -210,7 +210,7 @@ def download_model(
         raise RuntimeError(f"Failed to download required model: {description}") from e
 
 
-def create_frame_map(output_dir: Path, logger: "LoggerLike", ext: str = ".webp") -> dict:
+def create_frame_map(output_dir: Path, logger: Optional["LoggerLike"], ext: str = ".webp") -> dict:
     """Creates a mapping from original frame numbers to extracted filenames."""
     log_with_component(logger, "info", "Loading frame map...", component="frames")
     frame_map_path = output_dir / "frame_map.json"
@@ -220,5 +220,6 @@ def create_frame_map(output_dir: Path, logger: "LoggerLike", ext: str = ".webp")
         sorted_frames = sorted(map(int, frame_map_list))
         return {orig_num: f"frame_{i + 1:06d}{ext}" for i, orig_num in enumerate(sorted_frames)}
     except (FileNotFoundError, json.JSONDecodeError, TypeError) as e:
-        logger.error(f"Could not load or parse frame_map.json: {e}. Frame mapping will be empty.", exc_info=False)
+        if logger:
+            logger.error(f"Could not load or parse frame_map.json: {e}. Frame mapping will be empty.", exc_info=False)
         return {}

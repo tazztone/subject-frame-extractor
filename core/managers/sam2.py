@@ -52,7 +52,7 @@ class SAM2Wrapper:
             m = m[0]
         return m > 0
 
-    def propagate(self, start_idx: int = 0, max_frames: int = None, reverse: bool = False):
+    def propagate(self, start_idx: int = 0, max_frames: Optional[int] = None, reverse: bool = False):
         with torch.inference_mode():
             for frame_idx, ids, masks in self.predictor.propagate_in_video(
                 self._state,

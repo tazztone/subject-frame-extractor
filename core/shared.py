@@ -8,7 +8,7 @@ resolving circular import issues.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, List, Optional, Sequence, Tuple, Union
 
 import cv2
 import numpy as np
@@ -32,7 +32,7 @@ def scene_matches_view(scene: "Scene", view: str) -> bool:
     Returns:
         True if the scene matches the view filter
     """
-    status = scene.status if hasattr(scene, "status") else scene.get("status", SceneStatus.INCLUDED)
+    status = getattr(scene, "status", SceneStatus.INCLUDED)
     if view == "All":
         return status in (SceneStatus.INCLUDED, SceneStatus.EXCLUDED, SceneStatus.PENDING)
     if view == "Kept":
@@ -121,7 +121,7 @@ def scene_caption(scene: Union[dict, "Scene"]) -> str:
 
 
 def build_scene_gallery_items(
-    scenes: List[Union[dict, "Scene"]],
+    scenes: Sequence[Union[dict, "Scene"]],
     view: str,
     output_dir: str,
     page_num: int = 1,

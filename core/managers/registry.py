@@ -147,17 +147,19 @@ class ModelRegistry:
         from core.error_handling import ErrorHandler
         from core.io_utils import download_model
 
-        from .tracker_factory import build_tracker
+        from .tracker_factory import TrackerBackend, build_tracker
 
         if model_name == "sam2":
             checkpoint_filename = "sam2.1_hiera_tiny.pt"
             url = config.sam2_checkpoint_url if config else ""
             description = "SAM2.1 Model"
+            backend: TrackerBackend = "sam2"
         else:
             # Fallback to sam3 for any other name or "sam3"
             checkpoint_filename = "sam3.pt"
             url = config.sam3_checkpoint_url if config else ""
             description = "SAM3 Model"
+            backend: TrackerBackend = "sam3"
 
         checkpoint_path = Path(models_path) / checkpoint_filename
         if not checkpoint_path.exists():
@@ -178,4 +180,4 @@ class ModelRegistry:
                 user_agent=user_agent,
                 token=config.huggingface_token if config else None,
             )
-        return build_tracker(model_name, str(checkpoint_path), device=device)
+        return build_tracker(backend, str(checkpoint_path), device=device)

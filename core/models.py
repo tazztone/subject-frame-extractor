@@ -13,8 +13,10 @@ if TYPE_CHECKING:
 from core.enums import SceneStatus
 
 
-def _coerce(val: Any, to_type: type) -> Any:
+def _coerce(val: Any, to_type: Optional[type]) -> Any:
     """Helper to strictly coerce values to the target type."""
+    if val is None or to_type is None:
+        return val
     if to_type is bool:
         if isinstance(val, bool):
             return val
@@ -171,6 +173,8 @@ class SceneState:
 class AnalysisParameters(BaseModel):
     """Aggregates all parameters for the analysis pipeline."""
 
+    model_config = {"extra": "ignore"}
+
     source_path: str = ""
     method: str = ""
     interval: float = 0.0
@@ -241,11 +245,33 @@ class AnalysisParameters(BaseModel):
                 kwargs["pre_sample_nth"] = 1
 
         valid_keys = set(cls.model_fields.keys())
-        defaults = {f: False for f in valid_keys if f.startswith("compute_")}
+        # Initialize defaults for compute metrics
+        defaults: dict[str, Any] = {f: False for f in valid_keys if f.startswith("compute_")}
+
         config_defaults = config.model_dump()
         for key in valid_keys:
             if f"default_{key}" in config_defaults:
-                defaults[key] = config_defaults[f"default_{key}"]
+                val = config_defaults[f"default_{key}"]
+                target_type = cls.model_fields[key].annotation
+                if target_type is None:
+                    continue
+                try:
+                    # Pick the first non-None type for Optional fields
+                    import types
+
+                    is_union = (hasattr(target_type, "__origin__") and target_type.__origin__ is Union) or isinstance(
+                        target_type, types.UnionType
+                    )
+
+                    if is_union:
+                        if hasattr(target_type, "__args__"):
+                            args = target_type.__args__
+                            target_type = next((t for t in args if t is not type(None)), target_type)
+
+                    if target_type is not None:
+                        defaults[key] = _coerce(val, target_type)
+                except (ValueError, TypeError):
+                    pass
 
         for metric in [k.replace("filter_default_", "") for k in config_defaults if k.startswith("filter_default_")]:
             compute_key = f"compute_{metric}"
@@ -261,14 +287,23 @@ class AnalysisParameters(BaseModel):
                     continue
 
                 target_type = cls.model_fields[key].annotation
-                # Handle Optional types (extract the inner type)
-                if hasattr(target_type, "__origin__") and target_type.__origin__ is Union:
-                    args = target_type.__args__
-                    # Pick the first non-None type
-                    target_type = next((t for t in args if t is not type(None)), target_type)
-
+                if target_type is None:
+                    continue
                 try:
-                    setattr(instance, key, _coerce(value, target_type))
+                    # Handle Optional types (extract the inner type)
+                    import types
+
+                    is_union = (hasattr(target_type, "__origin__") and target_type.__origin__ is Union) or isinstance(
+                        target_type, types.UnionType
+                    )
+                    if is_union:
+                        if hasattr(target_type, "__args__"):
+                            args = target_type.__args__
+                            target_type = next((t for t in args if t is not type(None)), target_type)
+
+                    if target_type is not None:
+                        setattr(instance, key, _coerce(value, target_type))
+
                 except (ValueError, TypeError):
                     logger.warning(
                         f"Could not coerce UI value for '{key}' to {target_type}. Using default.",

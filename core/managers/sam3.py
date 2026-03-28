@@ -12,7 +12,7 @@ class SAM3Wrapper:
     """SAM3 Tracker using official Sam3VideoPredictor API."""
 
     def __init__(self, checkpoint_path=None, device="cuda"):
-        from sam3.model_builder import build_sam3_video_predictor
+        from sam3.model_builder import build_sam3_video_predictor  # type: ignore
 
         self.device = device
         if torch.cuda.is_available():
@@ -21,13 +21,13 @@ class SAM3Wrapper:
         from unittest.mock import patch
 
         with patch("sam3.model_builder.download_ckpt_from_hf", return_value=None):
-            self.predictor: Any = build_sam3_video_predictor(checkpoint_path=checkpoint_path, gpus_to_use=gpus)
+            self.predictor: Any = build_sam3_video_predictor(checkpoint_path=checkpoint_path, gpus_to_use=gpus)  # type: ignore
 
         # Disable hotstart and confirmation to give immediate feedback for prompted-first workflow
         # Default in model_builder is hotstart_delay=15, which suppresses masks until they 'stabilize'.
         # For Subject Extraction, we want exactly what we prompted, immediately.
-        self.predictor.model.hotstart_delay = 0
-        self.predictor.model.masklet_confirmation_enable = False
+        self.predictor.model.hotstart_delay = 0  # type: ignore
+        self.predictor.model.masklet_confirmation_enable = False  # type: ignore
         self.session_id = None
 
     def init_video(self, video_resource: Union[str, list]):
@@ -104,7 +104,7 @@ class SAM3Wrapper:
             return m > 0
         return np.zeros((h, w), dtype=bool)
 
-    def propagate(self, start_idx: int = 0, max_frames: int = None, reverse: bool = False):
+    def propagate(self, start_idx: int = 0, max_frames: Optional[int] = None, reverse: bool = False):
         if not self.session_id:
             raise RuntimeError("init_video must be called before propagation")
         direction = "backward" if reverse else "forward"

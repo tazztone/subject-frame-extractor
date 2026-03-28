@@ -32,24 +32,29 @@ if TYPE_CHECKING:
 LoggerLike = Union["AppLogger", logging.Logger]
 
 
-def log_with_component(logger: LoggerLike, level: str, message: str, component: str = "system", **kwargs):
+def log_with_component(logger: Optional[LoggerLike], level: str, message: str, component: str = "system", **kwargs):
     """
     Helper to call a logger method with a component name,
     supporting both AppLogger and standard logging.Logger.
+    Handles None by ignoring the log call.
     """
-    log_fn = getattr(logger, level.lower())
+    if logger is None:
+        return
+
+    log_fn = getattr(logger, level.lower(), None)
+    if not log_fn:
+        # Fallback for success if not defined on standard logger
+        if level.upper() == "SUCCESS" and hasattr(logger, "log"):
+            logger.log(SUCCESS_LEVEL_NUM, f"{message} [{component}]", **kwargs)  # type: ignore
+        return
+
     if isinstance(logger, AppLogger):
         log_fn(message, component=component, **kwargs)
     else:
         # For standard logger, put component in 'extra'
         extra = kwargs.pop("extra", {})
         extra["component"] = component
-        # Note: standard loggers don't support custom methods like 'success' unless specifically added.
-        # If level is success, we might need special handling if it's a standard logger.
-        if level.upper() == "SUCCESS" and not hasattr(logger, "success"):
-            logger.log(SUCCESS_LEVEL_NUM, f"{message} [{component}]", extra=extra, **kwargs)
-        else:
-            log_fn(message, extra=extra, **kwargs)
+        log_fn(message, extra=extra, **kwargs)
 
 
 # --- CONSTANTS ---
@@ -323,6 +328,13 @@ class AppLogger:
 
         self.logger.log(log_level, f"{message} [{component}]", extra=extra, exc_info=exc_info)
 
+    def log(self, level: int, message: str, **kwargs):
+        """Standard logging.log compatibility."""
+        component = kwargs.pop("component", "system")
+        # Map back from int to string level if possible
+        level_name = logging.getLevelName(level)
+        self._log(level_name, message, component, **kwargs)
+
     def debug(self, message: str, **kwargs):
         component = kwargs.pop("component", "system")
         self._log("DEBUG", message, component, **kwargs)
@@ -346,3 +358,18 @@ class AppLogger:
     def critical(self, message: str, **kwargs):
         component = kwargs.pop("component", "system")
         self._log("CRITICAL", message, component, **kwargs)
+
+    def copy_log_to_output(self, session_dir: Union[str, Path]):
+        """Copies the session log to the output directory."""
+        import shutil
+
+        try:
+            # This is a bit of a hack since we don't track the current log file in AppLogger
+            # but setup_logging returns it.
+            log_dir = Path(self.config.logs_dir)
+            # Find the newest run.log or session_*.log
+            log_files = sorted(log_dir.glob("session_*.log"), key=os.path.getmtime, reverse=True)
+            if log_files:
+                shutil.copy(log_files[0], Path(session_dir) / "session.log")
+        except Exception:
+            pass

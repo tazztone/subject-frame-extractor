@@ -31,7 +31,13 @@ class AdvancedProgressTracker:
     """
 
     # TODO: Support nested progress stages (sub-operations)
-    def __init__(self, progress: Callable, queue: Queue, logger: "AppLogger", ui_stage_name: str = ""):
+    def __init__(
+        self,
+        progress: Optional[Callable] = None,
+        queue: Queue = None,
+        logger: "AppLogger" = None,
+        ui_stage_name: str = "",
+    ):  # type: ignore
         """
         Initializes the progress tracker.
 
@@ -41,7 +47,7 @@ class AdvancedProgressTracker:
             logger: Application logger.
             ui_stage_name: Initial stage name.
         """
-        self.progress = progress
+        self.progress = progress or (lambda x, desc=None: None)
         self.queue = queue
         self.logger = logger
         self.stage = ui_stage_name or "Working"

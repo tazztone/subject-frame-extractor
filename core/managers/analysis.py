@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import os
 import threading
@@ -5,7 +7,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from queue import Queue
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, Any, List, Optional
 
 import cv2
 import numpy as np
@@ -13,6 +15,8 @@ import torch
 from PIL import Image
 
 if TYPE_CHECKING:
+    from insightface.app import FaceAnalysis
+
     from core.config import Config
     from core.logger import AppLogger
     from core.managers import ModelRegistry, ThumbnailManager
@@ -24,7 +28,8 @@ from core.io_utils import create_frame_map
 from core.models import AnalysisParameters, Frame, Scene
 from core.operators import OperatorRegistry, run_operators
 from core.progress import AdvancedProgressTracker
-from core.scene_utils import SubjectMasker, save_scene_seeds
+from core.scene_utils import save_scene_seeds
+from core.scene_utils.subject_masker import SubjectMasker
 from core.utils import _to_json_safe
 
 from .model_loader import initialize_analysis_models
@@ -129,7 +134,7 @@ class PreAnalysisPipeline(Pipeline):
                 self.logger.warning("Failed to initialize NIQE metric", exc_info=True)
         return None
 
-    def _process_single_scene(self, scene: Scene, masker: SubjectMasker, previews_dir: Path, is_folder_mode: bool):
+    def _process_single_scene(self, scene: Scene, masker: "SubjectMasker", previews_dir: Path, is_folder_mode: bool):
         if is_folder_mode:
             scene.best_frame = scene.start_frame
         elif not scene.best_frame:
@@ -182,8 +187,12 @@ class AnalysisPipeline(Pipeline):
         self.thumb_dir = self.output_dir / "thumbs"
         self.masks_dir = self.output_dir / "masks"
         self.processing_lock = threading.Lock()
-        self.face_analyzer, self.reference_embedding, self.mask_metadata, self.face_landmarker = None, None, {}, None
-        self.scene_map, self.niqe_metric = {}, None
+        self.face_analyzer: Optional["FaceAnalysis"] = None
+        self.reference_embedding: Optional[np.ndarray] = None
+        self.mask_metadata: dict = {}
+        self.face_landmarker: Optional[Any] = None
+        self.scene_map: dict = {}
+        self.niqe_metric: Optional[Any] = None
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.thumbnail_manager = thumbnail_manager
         self.model_registry = model_registry
@@ -300,7 +309,9 @@ class AnalysisPipeline(Pipeline):
             self.logger.error("Analysis failed", exc_info=True)
             return {"error": str(e), "done": False}
 
-    def _filter_completed_scenes(self, scenes: List[Scene], progress_data: dict) -> List[Scene]:
+    def _filter_completed_scenes(self, scenes: List[Scene], progress_data: Optional[dict]) -> List[Scene]:
+        if not progress_data:
+            return scenes
         completed = set(progress_data.get("completed_scenes", []))
         return [s for s in scenes if s.shot_id not in completed]
 
@@ -311,11 +322,13 @@ class AnalysisPipeline(Pipeline):
         if progress_file.exists():
             try:
                 with progress_file.open("r") as f:
-                    progress_data = json.load(f)
+                    progress_data = json.load(f) or {}
             except Exception:
                 self.logger.warning(
                     f"Failed to read progress file {progress_file}, it may be corrupted.", exc_info=True
                 )
+        if not isinstance(progress_data, dict):
+            progress_data = {}
         progress_data["completed_scenes"] = sorted(
             list(set(progress_data.get("completed_scenes", [])) | set(completed_scene_ids))
         )
@@ -326,6 +339,10 @@ class AnalysisPipeline(Pipeline):
             self.logger.error(f"Failed to save progress: {e}")
 
     def _process_reference_face(self):
+        if not self.face_analyzer:
+            self.logger.error("Face analyzer not initialized before processing reference face")
+            return
+
         ref_path = Path(self.params.face_ref_img_path)
         if not ref_path.is_file():
             raise FileNotFoundError(f"Ref face not found: {ref_path}")

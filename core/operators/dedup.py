@@ -1,6 +1,6 @@
 from collections import defaultdict
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -45,10 +45,10 @@ def _run_batched_lpips(
             continue
         img1_t, img2_t = torch.stack(img1_batch).to(device), torch.stack(img2_batch).to(device)
         with torch.no_grad():
-            distances = loss_fn.forward(img1_t, img2_t).squeeze()
-            if distances.ndim == 0:
-                distances = distances.unsqueeze(0)
-            distances = distances.cpu().numpy()
+            distances_t: torch.Tensor = loss_fn.forward(img1_t, img2_t).squeeze()  # type: ignore
+            if distances_t.ndim == 0:
+                distances_t = distances_t.unsqueeze(0)
+            distances = distances_t.cpu().numpy()
         for j, (p_idx, c_idx) in enumerate(valid_indices):
             if float(distances[j]) <= threshold:
                 p_score = all_frames_data[p_idx].get("metrics", {}).get("quality_score", 0)
@@ -66,10 +66,10 @@ def _run_batched_lpips(
 def apply_deduplication_filter(
     all_frames_data: List[Dict[str, Any]],
     filters: Dict[str, Any],
-    thumbnail_manager: "ThumbnailManager",
+    thumbnail_manager: Optional["ThumbnailManager"],
     config: "Config",
-    output_dir: str,
-) -> Tuple[np.ndarray, defaultdict]:
+    output_dir: Optional[str],
+) -> Tuple[np.ndarray, Dict[str, List[str]]]:
     import imagehash
 
     num_frames = len(all_frames_data)
@@ -187,11 +187,13 @@ def _generic_dedup(
     dedup_mask: np.ndarray,
     reasons: defaultdict,
     thumbnail_manager: "ThumbnailManager",
-    output_dir: str,
+    output_dir: Optional[str],
     compare_fn: Callable[[np.ndarray, np.ndarray], bool],
 ):
     num_frames = len(all_frames_data)
     sorted_indices = sorted(range(num_frames), key=lambda i: all_frames_data[i]["filename"])
+    if not output_dir:
+        return
     for i in range(1, len(sorted_indices)):
         c_idx, p_idx = sorted_indices[i], sorted_indices[i - 1]
         c_path = Path(output_dir) / "thumbs" / all_frames_data[c_idx]["filename"]
