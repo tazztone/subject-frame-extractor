@@ -191,7 +191,11 @@ modules_map = {
         "scenedetect", {"detect": MagicMock(), "VideoOpenFailure": VideoOpenFailure, "ContentDetector": MagicMock()}
     ),
     "scenedetect.detectors": create_mock_module("scenedetect.detectors", {"ContentDetector": MagicMock()}),
-    "yt_dlp": MagicMock(),
+    "yt_dlp": create_mock_module(
+        "yt_dlp",
+        {"utils": create_mock_module("yt_dlp.utils", {"DownloadError": type("DownloadError", (Exception,), {})})},
+    ),
+    "yt_dlp.utils": create_mock_module("yt_dlp.utils", {"DownloadError": type("DownloadError", (Exception,), {})}),
     "numba": create_mock_module("numba", {"njit": lambda f: f, "jit": lambda f: f, "cuda": MagicMock()}),
     "lpips": MagicMock(),
     "matplotlib": create_mock_module(
@@ -221,6 +225,15 @@ modules_map = {
     "decord": MagicMock(),
     "onnxruntime": MagicMock(),
 }
+
+# Ensure sam3 submodules are also mocked for patches
+modules_map["sam3.model"] = create_mock_module("sam3.model")
+modules_map["sam3.utils"] = create_mock_module("sam3.utils")
+modules_map["sam3.model.sam3_video_predictor"] = create_mock_module("sam3.model.sam3_video_predictor")
+modules_map["sam3.model.sam3_video_predictor"].SAM3VideoPredictor = MagicMock()
+modules_map["sam3.model.sam3_video_inference"] = create_mock_module("sam3.model.sam3_video_inference")
+modules_map["sam3.model.sam3_video_inference"].SAM3VideoInference = MagicMock()
+
 
 # Patch sys.modules with proper ModuleType objects where possible
 for mod_name, mod_obj in modules_map.items():

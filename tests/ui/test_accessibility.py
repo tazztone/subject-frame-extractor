@@ -19,7 +19,7 @@ import json
 import pytest
 from playwright.sync_api import Page
 
-from .conftest import BASE_URL
+from .conftest import BASE_URL, wait_for_app_ready
 
 pytestmark = [pytest.mark.e2e, pytest.mark.accessibility, pytest.mark.audit, pytest.mark.slow]
 
@@ -80,7 +80,7 @@ class TestAccessibilityAudit:
     def test_tab_accessibility(self, page: Page, app_server, tab_name, click_tab):
         """Run accessibility audit on each tab."""
         page.goto(BASE_URL)
-        page.wait_for_load_state("networkidle")
+        wait_for_app_ready(page)
 
         # Navigate to tab
         if click_tab:
@@ -114,7 +114,7 @@ class TestAccessibilityAudit:
     def test_keyboard_navigation(self, page: Page, app_server):
         """Test that main elements are keyboard accessible."""
         page.goto(BASE_URL)
-        page.wait_for_load_state("networkidle")
+        wait_for_app_ready(page)
 
         # Tab through main interface elements
         focusable_count = 0
@@ -130,7 +130,7 @@ class TestAccessibilityAudit:
     def test_color_contrast(self, page: Page, app_server):
         """Check for color contrast issues."""
         page.goto(BASE_URL)
-        page.wait_for_load_state("networkidle")
+        wait_for_app_ready(page)
 
         if not inject_axe(page):
             pytest.skip("Could not inject axe-core")
@@ -160,7 +160,7 @@ class TestAccessibilityAudit:
     def test_form_labels(self, page: Page, app_server):
         """Check that form inputs have proper labels."""
         page.goto(BASE_URL)
-        page.wait_for_load_state("networkidle")
+        wait_for_app_ready(page)
 
         if not inject_axe(page):
             pytest.skip("Could not inject axe-core")
@@ -187,7 +187,7 @@ class TestARIACompliance:
     def test_aria_roles(self, page: Page, app_server):
         """Check for proper ARIA role usage."""
         page.goto(BASE_URL)
-        page.wait_for_load_state("networkidle")
+        wait_for_app_ready(page)
 
         if not inject_axe(page):
             pytest.skip("Could not inject axe-core")
