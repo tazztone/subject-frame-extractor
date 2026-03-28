@@ -16,7 +16,7 @@ class TestPhase1Logic(unittest.TestCase):
         self.thumbnail_manager = MagicMock()
         self.model_registry = MagicMock()
 
-        with patch("ui.app_ui.torch.cuda.is_available", return_value=False):
+        with patch("ui.app_ui.torch.cuda.is_available", create=True, return_value=False):
             self.app = AppUI(
                 self.config,
                 self.logger,

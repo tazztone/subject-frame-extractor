@@ -139,7 +139,7 @@ def test_run_operators_retry_logic():
     assert logger.warning.called
 
 
-@patch("torch.cuda.is_available", return_value=False)
+@patch("torch.cuda.is_available", create=True, return_value=False)
 def test_run_operators_with_tensor(mock_cuda):
     op = MockOperator("tensor_op", requires_tensor=True)
     OperatorRegistry.register(op)
