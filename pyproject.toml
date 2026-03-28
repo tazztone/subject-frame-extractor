@@ -48,6 +48,7 @@ dev = [
     "pytest-asyncio>=1.3.0",
     "pytest-playwright>=0.7.2",
     "pytest-cov>=5.0",
+    "pytest-xdist>=3.5.0",
     "pytest-rerunfailures>=15.0",
     "pyright>=1.1.390",
     "hypothesis>=6.130",
@@ -77,7 +78,7 @@ python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
 norecursedirs = ["SAM3_repo", ".agent", "scripts", "examples", "outputs"]
-addopts = "-v --tb=short --cov=core --cov-report=term-missing --cov-fail-under=80 --ignore=tests/e2e/ -m 'not integration and not gpu_e2e and not audit and not slow'"
+addopts = "-v --tb=short --cov=core --cov-report=term-missing --cov-report=html:htmlcov --cov-fail-under=80 --ignore=tests/e2e/ -m 'not integration and not gpu_e2e and not audit and not slow'"
 markers = [
     "unit: Unit tests (fast, isolated, use mocks)",
     "smoke: Import smoke tests (no mocks, catches missing imports)",
