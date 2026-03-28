@@ -222,7 +222,7 @@ class TestMaskPropagatorLogic:
             mock_sam3_wrapper.init_video.side_effect = RuntimeError("GPU OOM Simulated")
 
             # Also ensure torch.cuda.is_available is True
-            with patch("core.scene_utils.mask_propagator.torch.cuda.is_available", return_value=True):
+            with patch("core.scene_utils.mask_propagator.torch.cuda.is_available", return_value=True, create=True):
                 with patch("core.scene_utils.mask_propagator.torch.cuda.empty_cache") as mock_empty_cache:
                     masks, areas, empties, errors = mask_propagator.propagate_video(
                         video_path="video.mp4",

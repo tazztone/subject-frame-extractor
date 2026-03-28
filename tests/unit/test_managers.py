@@ -335,14 +335,9 @@ class TestManagers:
         mock_face.normed_embedding = np.zeros(512)
         mock_analyzer.get.return_value = [mock_face]
 
-        import torch
-
-        if not hasattr(torch.cuda, "is_available"):
-            torch.cuda.is_available = MagicMock(return_value=False)
-        else:
-            torch.cuda.is_available.return_value = False
-
-        models = initialize_analysis_models(params, mock_config, mock_logger, model_registry)
+        # Use a scoped patch instead of manual mutation to avoid cross-test pollution
+        with patch("torch.cuda.is_available", return_value=False, create=True):
+            models = initialize_analysis_models(params, mock_config, mock_logger, model_registry)
 
         assert models["face_analyzer"] == mock_analyzer
         assert models["ref_emb"] is not None

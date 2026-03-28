@@ -29,7 +29,7 @@ class TestSAM3WrapperAPICompleteness:
             mock_predictor = MagicMock()
             mock_build.return_value = mock_predictor
 
-            with patch("torch.cuda.is_available", return_value=False):
+            with patch("torch.cuda.is_available", return_value=False, create=True):
                 yield SAM3Wrapper
 
     @pytest.fixture
@@ -119,7 +119,7 @@ class TestSAM3WrapperMethodBehavior:
 
             mock_build.return_value = mock_predictor
 
-            with patch("torch.cuda.is_available", return_value=False):
+            with patch("torch.cuda.is_available", return_value=False, create=True):
                 from core.managers import SAM3Wrapper
 
                 wrapper = SAM3Wrapper(device="cpu")
@@ -185,7 +185,7 @@ class TestSAM3WrapperMethodBehavior:
             }
         )
 
-    @patch("core.managers.sam3.torch.cuda.is_available", return_value=True)
+    @patch("core.managers.sam3.torch.cuda.is_available", return_value=True, create=True)
     @patch("core.managers.sam3.torch.cuda.empty_cache")
     def test_shutdown_cleans_up_resources(self, mock_empty_cache, mock_cuda_available, behavior_mock_wrapper):
         """shutdown should call close_session, predictor.shutdown, delete predictor and clear cache."""
@@ -247,7 +247,7 @@ class TestSeedSelectorTrackerInterface:
             mock_predictor = MagicMock()
             mock_build.return_value = mock_predictor
 
-            with patch("torch.cuda.is_available", return_value=False):
+            with patch("torch.cuda.is_available", return_value=False, create=True):
                 from core.managers import SAM3Wrapper
 
                 wrapper = SAM3Wrapper(device="cpu")

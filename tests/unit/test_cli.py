@@ -81,7 +81,7 @@ def test_extract_folder(mock_setup, mock_execute, runner, tmp_path, mock_pipelin
 
 @patch("core.cli_commands.execute_analysis_orchestrator")
 @patch("core.cli_commands._setup_runtime")
-@patch("torch.cuda.is_available", return_value=False)
+@patch("torch.cuda.is_available", return_value=False, create=True)
 def test_analyze(mock_cuda, mock_setup, mock_orch, runner, tmp_path, mock_pipeline_result):
     mock_setup.return_value = (
         MagicMock(),  # config
@@ -156,7 +156,7 @@ def test_extract_invalid_source(runner, tmp_path):
 
 @patch("core.cli_commands.execute_analysis_orchestrator")
 @patch("core.cli_commands._setup_runtime")
-@patch("torch.cuda.is_available", return_value=False)
+@patch("torch.cuda.is_available", return_value=False, create=True)
 def test_analyze_folder(mock_cuda, mock_setup, mock_orch, runner, tmp_path, mock_pipeline_result):
     mock_setup.return_value = (MagicMock(), MagicMock(), MagicMock(), MagicMock(), MagicMock(), MagicMock())
     mock_orch.return_value = [

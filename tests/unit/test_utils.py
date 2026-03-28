@@ -62,7 +62,7 @@ def test_handle_common_errors_generator():
 def test_monitor_memory_usage():
     logger = MagicMock()
     with (
-        patch("core.utils.torch.cuda.is_available", return_value=True),
+        patch("core.utils.torch.cuda.is_available", return_value=True, create=True),
         patch("core.utils.torch.cuda.memory_allocated", return_value=9000 * 1024**2),
         patch("core.utils.torch.cuda.empty_cache") as mock_empty,
     ):
@@ -116,7 +116,7 @@ def test_to_json_safe():
 def test_safe_resource_cleanup():
     with (
         patch("gc.collect") as mock_gc,
-        patch("core.utils.torch.cuda.is_available", return_value=True),
+        patch("core.utils.torch.cuda.is_available", return_value=True, create=True),
         patch("core.utils.torch.cuda.empty_cache") as mock_empty,
     ):
         with safe_resource_cleanup(device="cuda"):
@@ -128,7 +128,7 @@ def test_safe_resource_cleanup():
 def test_monitor_memory_usage_low():
     logger = MagicMock()
     with (
-        patch("core.utils.torch.cuda.is_available", return_value=True),
+        patch("core.utils.torch.cuda.is_available", return_value=True, create=True),
         patch("core.utils.torch.cuda.memory_allocated", return_value=1000 * 1024**2),
         patch("core.utils.torch.cuda.empty_cache") as mock_empty,
     ):
@@ -194,7 +194,7 @@ def test_estimate_totals_all():
 def test_safe_resource_cleanup_no_cuda():
     with (
         patch("gc.collect") as mock_gc,
-        patch("core.utils.torch.cuda.is_available", return_value=False),
+        patch("core.utils.torch.cuda.is_available", return_value=False, create=True),
         patch("core.utils.torch.cuda.empty_cache") as mock_empty,
     ):
         with safe_resource_cleanup(device="cuda"):
@@ -218,6 +218,6 @@ def test_handle_common_errors_gen_cuda_oom():
 def test_monitor_memory_usage_no_cuda():
     # Test fallback path when cuda is not available
     logger = MagicMock()
-    with patch("core.utils.torch.cuda.is_available", return_value=False):
+    with patch("core.utils.torch.cuda.is_available", return_value=False, create=True):
         monitor_memory_usage(logger, "cuda")
         assert not logger.warning.called
