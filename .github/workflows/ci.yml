@@ -38,3 +38,42 @@ jobs:
 
       - name: Run integration smoke tests
         run: uv run pytest tests/integration/test_integration_smoke.py --no-cov
+
+  ui-tests:
+    name: UI / E2E Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: test-and-lint
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: "pyproject.toml"
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Install Playwright Browsers
+        run: uv run playwright install --with-deps chromium
+
+      - name: Run UI Tests
+        env:
+          PYTEST_WORKERS: "4"
+        run: bash scripts/linux_test_ui.sh
+
+      - name: Upload Failure Screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-test-failures
+          path: tests/results/failures/
+          retention-days: 7

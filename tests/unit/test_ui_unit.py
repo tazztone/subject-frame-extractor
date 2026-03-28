@@ -47,7 +47,7 @@ def test_run_extraction_wrapper(app_ui):
     with patch.object(app_ui, "_run_pipeline", return_value=iter([])) as mock_run_pipeline:
         # Args matching ext_ui_map_keys:
         # ['source_path', 'upload_video', 'method', 'interval', 'nth_frame', 'max_resolution', 'thumb_megapixels', 'scene_detect']
-        args = ["video.mp4", None, "interval", 1.0, 1, "1080", 0.5, True]
+        args = ["video.mp4", None, "Every N-th Frame (Recommended)", 1.0, 1, "Original (Recommended)", 0.5, True]
 
         gen = app_ui.pipeline_handler.run_extraction_wrapper(state, *args)
         list(gen)
@@ -58,17 +58,17 @@ def test_run_extraction_wrapper(app_ui):
         event = call_args[1]
         assert isinstance(event, ExtractionEvent)
         assert event.source_path == "video.mp4"
-        assert event.method == "interval"
+        assert event.method == "Every N-th Frame (Recommended)"
 
 
 def test_fix_strategy_visibility_face_ref(app_ui):
-    res = app_ui._fix_strategy_visibility("Face (Reference)")
+    res = app_ui._fix_strategy_visibility("👤 Source Face Reference")
     assert isinstance(res, dict)
     assert len(res) > 0
 
 
 def test_fix_strategy_visibility_text(app_ui):
-    res = app_ui._fix_strategy_visibility("Text Prompt")
+    res = app_ui._fix_strategy_visibility("📝 Text Description (Limited)")
     assert isinstance(res, dict)
 
 

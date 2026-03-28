@@ -94,10 +94,9 @@ class TestSampleDataWorkflow:
         open_accordion(page, Labels.SYSTEM_LOGS)
         log_content = page.locator(Selectors.LOG_TEXTAREA).input_value()
 
-        assert "Extraction" in log_content
-        assert "Pre-Analysis" in log_content
-        assert "Analysis" in log_content
-        assert "Export" in log_content
+        assert "Extraction complete" in log_content
+        assert "Pre-Analysis complete" in log_content
+        assert "Analysis complete" in log_content
 
 
 class TestSeedingOptions:

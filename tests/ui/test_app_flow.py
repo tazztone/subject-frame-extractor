@@ -49,7 +49,7 @@ class TestMainWorkflow:
         Extraction -> Pre-Analysis -> Scene Selection -> Propagation -> Analysis -> Export
         """
         page.goto(BASE_URL)
-        expect(page.get_by_text("Frame Extractor & Analyzer v2.0")).to_be_visible(timeout=30000)
+        expect(page.get_by_text("Frame Extractor & Analyzer v4.0.0")).to_be_visible(timeout=30000)
 
         # 1. Frame Extraction
         print("Step 1: Frame Extraction")

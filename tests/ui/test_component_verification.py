@@ -12,6 +12,7 @@ import pytest
 from playwright.sync_api import Page, expect
 
 from .conftest import BASE_URL, switch_to_tab
+from .ui_locators import Labels
 
 pytestmark = [pytest.mark.e2e, pytest.mark.component]
 
@@ -202,20 +203,21 @@ class TestStrategyVisibility:
         """Selecting Face strategy should show face-specific options."""
         page.goto(BASE_URL, wait_until="domcontentloaded")
 
-        switch_to_tab(page, "Subject")
+        switch_to_tab(page, Labels.TAB_SUBJECT)
 
         # Use get_by_label to avoid text matching in info description
-        page.locator("#primary_seed_strategy_input").get_by_label("👤 By Face").click()
+        page.get_by_label(Labels.STRATEGY_FACE).click()
 
         # Check for child element in the group
-        expect(page.get_by_text("Upload Reference Photo")).to_be_visible(timeout=5000)
+        expect(page.get_by_text("Upload Reference Photo", exact=False)).to_be_visible(timeout=5000)
 
     def test_text_strategy_shows_text_options(self, page: Page, app_server):
         """Selecting Text strategy should show text prompt and warning."""
         page.goto(BASE_URL, wait_until="domcontentloaded")
 
-        switch_to_tab(page, "Subject")
+        switch_to_tab(page, Labels.TAB_SUBJECT)
 
-        # Use get_by_label for consistency
-        page.locator("#primary_seed_strategy_input").get_by_label("📝 By Text", exact=False).click()
-        expect(page.get_by_placeholder("e.g., 'a man in a blue suit'")).to_be_visible(timeout=5000)
+        page.get_by_label(Labels.STRATEGY_TEXT).click()
+
+        # Text prompt should appear
+        expect(page.get_by_text("What should we look for?", exact=False)).to_be_visible(timeout=5000)

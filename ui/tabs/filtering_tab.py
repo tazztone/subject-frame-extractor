@@ -46,7 +46,7 @@ class FilteringTabBuilder:
                             "auto_pctl_input",
                             "slider",
                             {
-                                "label": "Target %",
+                                "label": "Target Percentile",
                                 "minimum": 1,
                                 "maximum": 99,
                                 "value": self.config.gradio_auto_pctl_input,
@@ -204,7 +204,7 @@ class FilteringTabBuilder:
                             {
                                 "choices": self.app.GALLERY_VIEW_CHOICES,
                                 "value": "Kept",
-                                "label": "Show",
+                                "label": "Gallery View Mode",
                                 "container": False,
                                 "show_label": False,
                             },
@@ -218,7 +218,7 @@ class FilteringTabBuilder:
                             "overlay_alpha_slider",
                             "slider",
                             {
-                                "label": "Alpha",
+                                "label": "Overlay Transparency",
                                 "minimum": 0.0,
                                 "maximum": 1.0,
                                 "value": self.config.gradio_overlay_alpha,
@@ -279,7 +279,7 @@ class FilteringTabBuilder:
                             "export_button",
                             "button",
                             {
-                                "value": "Export Kept Frames",
+                                "value": "💾 Export Kept Frames",
                                 "variant": "primary",
                                 "scale": 2,
                                 "size": "lg",

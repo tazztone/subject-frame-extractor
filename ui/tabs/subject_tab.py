@@ -66,7 +66,12 @@ class SubjectTabBuilder:
                             self.app._create_component(
                                 "face_ref_image",
                                 "image",
-                                {"label": "Preview", "interactive": False, "height": 150, "show_label": False},
+                                {
+                                    "label": "Reference Face Preview",
+                                    "interactive": False,
+                                    "height": 150,
+                                    "show_label": False,
+                                },
                             )
 
                 # Tab 2: Scan Video (Discovery)
@@ -80,7 +85,7 @@ class SubjectTabBuilder:
                             "find_people_button",
                             "button",
                             {
-                                "value": "Scan Video Now",
+                                "value": "🔍 Scan Video Now",
                                 "variant": "secondary",
                                 "scale": 1,
                                 "elem_id": "find_people_button",

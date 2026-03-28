@@ -51,10 +51,10 @@ class Labels:
 
     # Common Labels
     SOURCE_PLACEHOLDER = "Paste YouTube URL or local path"
-    SYSTEM_LOGS = "System Logs"
-    HELP_ACCORDION = "Help / Troubleshooting"
-    SCAN_VIDEO_BUTTON = "Scan Video Now"
+    SYSTEM_LOGS = "📋 System Logs"
+    HELP_ACCORDION = "❓ Help / Troubleshooting"
+    SCAN_VIDEO_BUTTON = "🔍 Scan Video Now"
 
     # Strategy Options
-    STRATEGY_FACE = "👤 By Face"
-    STRATEGY_TEXT = "📝 By Text (⚠️ Limited)"
+    STRATEGY_FACE = "👤 Source Face Reference"
+    STRATEGY_TEXT = "📝 Text Description (Limited)"

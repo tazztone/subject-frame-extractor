@@ -1207,7 +1207,7 @@ def execute_full_pipeline(event: 'ExtractionEvent', progress_queue: Queue, cance
 class ProgressEvent(BaseModel): ...
 class AdvancedProgressTracker:
     """Tracks and estimates progress for long-running operations."""
-    def __init__(self, progress: Optional[Callable]=None, queue: Queue=None, logger: 'AppLogger'=None, ui_stage_name: str=''):
+    def __init__(self, progress: Optional[Callable]=None, queue: Optional[Queue]=None, logger: Optional['AppLogger']=None, ui_stage_name: str=''):
         """Initializes the progress tracker."""
     def start(self, total_items: int, desc: Optional[str]=None):
         """Resets the tracker for a new operation."""
@@ -1560,9 +1560,9 @@ class AppUI:
     def on_discovered_face_select(self, state: ApplicationState, confidence: float, evt: Optional[gr.SelectData]=None) -> tuple[Optional[str], Optional[np.ndarray], str]:
         """Handles selection of a face cluster from the discovery gallery."""
     @safe_ui_callback('Face Discovery')
-    def on_find_people_from_video(self, current_state: ApplicationState, *args) -> tuple[str, str, gr.update, gr.update, float, ApplicationState]:
+    def on_find_people_from_video(self, current_state: ApplicationState, *args) -> tuple[str, str, Any, Any, float, ApplicationState]:
         """Scans the video for faces to populate the discovery gallery."""
-    def _get_smart_mode_updates(self, is_enabled: bool) -> list[gr.update]:
+    def _get_smart_mode_updates(self, is_enabled: bool) -> list[Any]:
         """Calculates slider updates when toggling 'Smart Mode'."""
     def _setup_filtering_handlers(self):
         """Configures event handlers for the filtering and export tab."""
@@ -1570,7 +1570,7 @@ class AppUI:
     def on_preset_changed(self, preset_name: str) -> list[Any]:
         """Updates filter sliders when a preset is selected."""
     @safe_ui_callback('Filter Change')
-    def on_filters_changed_wrapper(self, state: ApplicationState, gallery_view: str, show_overlay: bool, overlay_alpha: float, require_face_match: bool, dedup_thresh: int, dedup_method_ui: str, *slider_values: float) -> tuple[str, gr.update]:
+    def on_filters_changed_wrapper(self, state: ApplicationState, gallery_view: str, show_overlay: bool, overlay_alpha: float, require_face_match: bool, dedup_thresh: int, dedup_method_ui: str, *slider_values: float) -> tuple[str, Any]:
         """Updates the results gallery when filters change."""
     @safe_ui_callback('Visual Diff')
     def calculate_visual_diff(self, gallery: gr.Gallery, state: ApplicationState, dedup_method_ui: str, dedup_thresh: int, ssim_thresh: float, lpips_thresh: float) -> Optional[np.ndarray]:
@@ -1579,7 +1579,7 @@ class AppUI:
     def on_reset_filters(self, state: ApplicationState) -> tuple:
         """Resets all filter settings to their defaults."""
     @safe_ui_callback('Auto Thresholds')
-    def on_auto_set_thresholds(self, per_metric_values: dict, p: int, *checkbox_values: bool) -> list[gr.update]:
+    def on_auto_set_thresholds(self, per_metric_values: dict, p: int, *checkbox_values: bool) -> list[Any]:
         """Automatically sets filter thresholds based on data percentiles."""
     @safe_ui_callback('Export')
     def export_kept_frames_wrapper(self, state: ApplicationState, enable_crop: bool, crop_ars: str, crop_padding: int, enable_xmp_export: bool, require_face_match: bool, dedup_thresh: int, dedup_method_ui: str, *slider_values: float) -> dict:
@@ -1622,7 +1622,7 @@ def _load_mask_cached(mask_path: str) -> Optional[np.ndarray]:
     """Loads a mask from disk with LRU caching."""
 def clear_mask_cache():
     """Clears the mask LRU cache."""
-def _update_gallery(all_frames_data: list[dict], filters: dict, output_dir: str, gallery_view: str, show_overlay: bool, overlay_alpha: float, thumbnail_manager: Any, config: Any, logger: Any) -> tuple[str, gr.update]:
+def _update_gallery(all_frames_data: list[dict], filters: dict, output_dir: str, gallery_view: str, show_overlay: bool, overlay_alpha: float, thumbnail_manager: Any, config: Any, logger: Any) -> tuple[str, Any]:
     """Updates the Gradio gallery based on applied filters."""
 def on_filters_changed(event: FilterEvent, thumbnail_manager: Any, config: Any, logger: Any) -> dict:
     """Event handler for when filter settings are modified."""

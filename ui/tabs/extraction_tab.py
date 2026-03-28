@@ -166,7 +166,7 @@ class ExtractionTabBuilder:
         # 4. Action Area
         with gr.Row(elem_id="extraction_actions"):
             self.app.components["start_extraction_button"] = gr.Button(
-                "Start Extraction", variant="primary", scale=2, size="lg", elem_id="start_extraction_button"
+                "🚀 Start Extraction", variant="primary", scale=2, size="lg", elem_id="start_extraction_button"
             )
             self.app._create_component(
                 "add_to_queue_button",
@@ -188,6 +188,7 @@ class ExtractionTabBuilder:
                 "batch_queue_dataframe",
                 "dataframe",
                 {
+                    "label": "Batch Processing Queue",
                     "headers": ["Path", "Status", "Progress", "Message"],
                     "datatype": ["str", "str", "number", "str"],
                     "interactive": False,

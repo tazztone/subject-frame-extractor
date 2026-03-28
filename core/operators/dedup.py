@@ -126,7 +126,7 @@ def apply_deduplication_filter(
                 return ssim(cv2.cvtColor(i1, cv2.COLOR_RGB2GRAY), cv2.cvtColor(i2, cv2.COLOR_RGB2GRAY)) >= threshold
 
             _generic_dedup(all_frames_data, dedup_mask, reasons, thumbnail_manager, output_dir, compare_fn)
-        elif dedup_method == "LPIPS" and thumbnail_manager:
+        elif dedup_method == "LPIPS" and thumbnail_manager and output_dir:
             sorted_indices = sorted(range(num_frames), key=lambda i: filenames[i])
             pairs = [(sorted_indices[i - 1], sorted_indices[i]) for i in range(1, len(sorted_indices))]
             _run_batched_lpips(
@@ -139,7 +139,7 @@ def apply_deduplication_filter(
                 filters.get("lpips_threshold", 0.1),
                 device="cuda" if torch.cuda.is_available() else "cpu",
             )
-        elif dedup_method == "pHash then LPIPS" and thumbnail_manager and imagehash:
+        elif dedup_method == "pHash then LPIPS" and thumbnail_manager and imagehash and output_dir:
             sorted_indices = sorted(range(num_frames), key=lambda i: filenames[i])
             hashes = {
                 i: imagehash.hex_to_hash(all_frames_data[i]["phash"])

@@ -380,9 +380,13 @@ class AppUI:
                 gr.Markdown("# Frame Extractor & Analyzer v4.0.0")
                 gr.Markdown("#### Professional AI-Powered Dataset Curation Tool")
             with gr.Column(scale=1):
-                self._create_component("model_status_indicator", "markdown", {"value": "**Status: Initializing...**"})
+                self._create_component(
+                    "model_status_indicator",
+                    "markdown",
+                    {"value": "**Status: Initializing...**", "label": "Model Loading Status"},
+                )
 
-        with gr.Accordion("Guide: How to use this tool", open=False):
+        with gr.Accordion("❓ Help / Troubleshooting", open=False, elem_id="help_accordion"):
             gr.Markdown("""
             ### Workflow
             1.  **Source**: Import video from a file or URL.
@@ -496,9 +500,11 @@ class AppUI:
             self._toggle_pause,
             inputs=[
                 gr.State(
-                    lambda: next((arg for arg in self.last_run_args if isinstance(arg, AdvancedProgressTracker)), None)
-                    if self.last_run_args
-                    else None
+                    lambda: (
+                        next((arg for arg in self.last_run_args if isinstance(arg, AdvancedProgressTracker)), None)
+                        if self.last_run_args
+                        else None
+                    )
                 )
             ],
             outputs=c["pause_button"],
@@ -977,7 +983,7 @@ class AppUI:
     @safe_ui_callback("Face Discovery")
     def on_find_people_from_video(
         self, current_state: ApplicationState, *args
-    ) -> tuple[str, str, gr.update, gr.update, float, ApplicationState]:
+    ) -> tuple[str, str, Any, Any, float, ApplicationState]:
         """Scans the video for faces to populate the discovery gallery.
 
         Returns: (unified_status, find_people_status, group_visibility, gallery_update, slider_value, new_state)
@@ -1076,7 +1082,7 @@ class AppUI:
             new_state,
         )
 
-    def _get_smart_mode_updates(self, is_enabled: bool) -> list[gr.update]:
+    def _get_smart_mode_updates(self, is_enabled: bool) -> list[Any]:
         """Calculates slider updates when toggling 'Smart Mode'."""
         updates = []
         slider_keys = sorted(self.components["metric_sliders"].keys())
@@ -1358,7 +1364,7 @@ class AppUI:
         dedup_thresh: int,
         dedup_method_ui: str,
         *slider_values: float,
-    ) -> tuple[str, gr.update]:
+    ) -> tuple[str, Any]:
         """
         Updates the results gallery when filters change.
         """
@@ -1493,7 +1499,7 @@ class AppUI:
         )
 
     @safe_ui_callback("Auto Thresholds")
-    def on_auto_set_thresholds(self, per_metric_values: dict, p: int, *checkbox_values: bool) -> list[gr.update]:
+    def on_auto_set_thresholds(self, per_metric_values: dict, p: int, *checkbox_values: bool) -> list[Any]:
         """Automatically sets filter thresholds based on data percentiles."""
         slider_keys = sorted(self.components["metric_sliders"].keys())
         auto_threshold_cbs_keys = sorted(self.components["metric_auto_threshold_cbs"].keys())

@@ -2,17 +2,17 @@
 
 **Note:** This is the primary developer-facing source of truth for running and writing tests.
 
-**Analysis Date:** 2026-03-25
-**Deep Dive Refinement:** Standardized monkeypatch testing, exhaustive torch dtype mocking, and transparent context manager patterns.
+**Analysis Date:** 2026-03-28
+**Deep Dive Refinement:** UI stability, accessibility hardening, and CI/CD integration.
 
 ## Tiered Testing Strategy
 
 | Layer | Directory | Description | Runner |
 |-------|-----------|-------------|--------|
 | **Unit** | `tests/unit/` | Fast tests for core logic. Function-level, heavily mocked. | `pytest` |
-| **Integration** | `tests/integration/` | Real backend pipeline tests. Uses real PyTorch models but executes full logic. | `pytest` |
-| **UI (E2E)** | `tests/ui/` | Browser automation using Playwright. Mocks the backend to test UI flows. | `pytest + playwright` |
-| **Verification**| `scripts/verification/` | Manual scripts to run against a live server for ad-hoc checks. | `python` |
+| **Integration** | `tests/integration/` | Real backend pipeline tests. Uses real PyTorch models. | `pytest` |
+| **UI (E2E)** | `tests/ui/` | Playwright automation. Mocks backend to test Gradio flows. | `pytest + playwright` |
+| **UX Audit**| `scripts/run_ux_audit.py` | Accessibility (Axe), Visuals, and Performance. | `python` |
 
 ## Setup & Execution
 
@@ -22,215 +22,56 @@ All tests should be run using `uv` to ensure the correct environment.
 
 | Script | Purpose | Usage |
 | :--- | :--- | :--- |
-| `scripts/test.sh` | **Standard Quality Pass**. Runs Ruff, Unit Tests, and Integration Smoke Tests. | `./scripts/test.sh` |
-| `scripts/linux_test_all.sh` | Runs the full suite: Unit, Integration (Real), and UI/E2E tests. | `./scripts/linux_test_all.sh` |
-| `scripts/linux_test_unit.sh` | Runs only fast, mocked unit tests in `tests/unit/`. | `./scripts/linux_test_unit.sh` |
-| `scripts/linux_test_ui.sh` | Runs Playwright browser automation tests in `tests/ui/`. | `./scripts/linux_test_ui.sh` |
-| `scripts/linux_test_cov.sh` | Runs unit tests and generates a detailed coverage report. | `./scripts/linux_test_cov.sh` |
-| `scripts/linux_test_sam2.sh` | Targeted tests for SAM2 integration and patches. | `./scripts/linux_test_sam2.sh` |
-| `scripts/linux_test_sam3.sh` | Targeted tests for SAM3 logic and patches. | `./scripts/linux_test_sam3.sh` |
-| `scripts/run_ux_audit.py` | Automated UX quality audit (visuals, accessibility, performance). | `uv run python scripts/run_ux_audit.py` |
-| `scripts/verify_quality.py` | Verifies ML output quality (mask yield, tracking drops) post-execution. | `uv run python scripts/verify_quality.py` |
+| `scripts/test.sh` | **Standard Quality Pass**. Runs Ruff, Unit Tests, and Integration Smoke. | `./scripts/test.sh` |
+| `scripts/linux_test_ui.sh` | Runs Playwright tests in `tests/ui/` with xdist. | `./scripts/linux_test_ui.sh` |
+| `scripts/linux_test_all.sh` | Runs the full suite including slow integration tests. | `./scripts/linux_test_all.sh` |
 
-1. **Unit Tests (Fast)**: `uv run pytest tests/unit/`
-2. **Integration Tests (Slow)**: `uv run pytest tests/integration/`
-3. **UI / E2E Tests (Browser)**: 
-   - Setup: `uv run playwright install chromium`
-   - Run: `uv run pytest tests/ui/`
-4. **Coverage Report**: `uv run pytest --cov=core --cov=ui tests/`
+## CI/CD Pipeline
 
-## Writing Tests: Where does it go?
-
-- **New Utility/Helper?** -> `tests/unit/test_utils.py`
-- **New UI Component/Action?** -> `tests/ui/test_ui_interactions.py` (Mock the backend!)
-- **New ML Pipeline Step?** -> `tests/integration/test_real_workflow.py`
-- **New Feature/Process?** -> Create a corresponding `tests/unit/test_<feature>.py`
+The project uses GitHub Actions (`.github/workflows/ci.yml`) for automated verification:
+1. **Unit & Lint**: Runs on every push. Checks types (Pyright), lint (Ruff), and unit coverage.
+2. **UI / E2E Tests**: Runs after unit tests pass. 
+   - **Environment**: Ubuntu Latest, Chromium.
+   - **Timeout**: 15 minutes.
+   - **Workers**: Pinned to `-n 4` for deterministic mock server performance.
+   - **Artifacts**: Screenshots of failures are uploaded automatically.
 
 ## The "Mock-First" Philosophy
 
-
 To ensure fast execution and hardware independence, all **Unit Tests** must completely mock the following:
 - **ML Models**: Mock `ModelRegistry.get_tracker`, `get_face_analyzer`, and `TrackerFactory`.
-- **GPU/Torch**: Use `pytest_sessionstart` in `tests/conftest.py` to globally intercept `torch`, `sam3`, and `insightface` before any imports occur.
-- **File I/O**: Use `sample_image` and `sample_mask` fixtures instead of reading from disk.
+- **GPU/Torch**: `tests/conftest.py` promotes `torch.cuda` to a `ModuleType` to allow stable patching.
+- **Requirement**: Always include `create=True` in `patch("torch.cuda.is_available", ...)` to prevent worker collisions in parallel runs.
 
-## Core Fixtures (`tests/conftest.py`)
+## Gradio & Pyright Resiliency
 
-Always reuse these base fixtures to ensure consistency across the suite:
-- `mock_config`: Returns a `MagicMock` with calibrated quality weights and directory paths.
-- `mock_torch`: A fixture that ensures `torch` is correctly stubbed for unit tests.
-- `sample_image`: A stable 100x100 RGB noise image (seed 42). Use for basic operator tests.
-- `sharp_image` / `blurry_image`: Predetermined patterns for validating sharpness metrics.
-- `mock_ui_state`: A baseline dictionary for validating `UIEvent` pydantic models.
+- **Type Hints**: For Gradio event handlers, use `Any` or `dict[str, Any]` for return type hints instead of `gr.update`. Gradio 5+ treats updates as dynamic dictionaries, and `gr.update` often causes Pyright noise.
+- **Optional Members**: Components like `AdvancedProgressTracker` should use `Optional[Queue]` and `Optional[AppLogger]` with explicit null-checks to prevent Pyright "attribute not found on None" errors.
 
-## Torch & Heavy Dependency Mocking
+## Accessibility (Axe-core)
 
-Unit tests must never import real `torch`, `sam2`, or `insightface`.
-We use a global interception pattern in `tests/conftest.py` via the `pytest_sessionstart` hook:
-
-```python
-def pytest_sessionstart(session):
-    # 1. Create robust mock shells for heavy modules
-    mock_torch = MagicMock(name="torch")
-    # 2. Inject OutOfMemoryError for registry robustness
-    class OutOfMemoryError(RuntimeError): pass
-    mock_torch.cuda.OutOfMemoryError = OutOfMemoryError
-    
-    # 3. Use sys.modules to shadow the real libraries
-    sys.modules["torch"] = mock_torch
-    sys.modules["sam3"] = types.ModuleType("sam3")
-    ...
-```
-
-This ensures that even third-party libraries that import `torch` at top-level will receive the mock instead of triggering a VRAM allocation.
-
-### Exhaustive Dtype Mocking
-Global `torch` mocks must provide standard `dtype` attributes to avoid `AttributeError` during test collection or execution of type-sensitive logic.
-- **Requirement**: `tests/conftest.py` must include `float32`, `float16`, `bfloat16`, and `uint8` in the `sys.modules["torch"]` mock.
-- **Dummy Support**: If a test involves `BFloat16` but the environment (CPU/Mock) doesn't support it natively, the mock must provide a dummy attribute so `tgt.dtype == torch.bfloat16` can still be evaluated.
-
-### Transparent Context Managers
-When mocking `torch.inference_mode()` or `torch.no_grad()`, ensure the mock returns a context manager that is "transparent"—meaning it returns the decorated function or allows the `with` block to proceed without returning a `MagicMock` that might swallow or replace the actual return values of the code under test.
-
-```python
-class TransparentContext:
-    def __enter__(self): return self
-    def __exit__(self, *args): pass
-    def __call__(self, func=None):
-        if func: return func
-        return self
-```
-
-### Gradio & Matplotlib Mocking
-When mocking `matplotlib` for a Gradio-based application (as in `tests/mock_app.py`), you MUST satisfy Gradio's internal `MatplotlibBackendMananger`. The mock must include at minimum:
-- `matplotlib.get_backend()` (return a string like "agg")
-- `matplotlib.use()`
-- `matplotlib.rcParams` (dictionary)
-
-Failure to provide these will cause silent "Error" prefixes in UI status components.
-
-### Exception Identity & Sub-module Mocks
-If a module uses `from scenedetect import VideoOpenFailure`, and you mock `scenedetect` globally, the class identity might mismatch if the module was loaded prematurely or if the mock structure doesn't match the library's re-exports.
-- **Best Practice**: Use a scoped `patch("module.under.test.VideoOpenFailure", VideoOpenFailure)` in the test method to ensure the `except` block in the target module perfectly matches the exception raised by the mock.
-
-## Testing Monkeypatches
-
-When testing runtime monkeypatches (like those in `core/sam3_patches.py`), standard `unittest.mock.patch` can be brittle because the patcher may capture a reference to the "original" method before your monkeypatch is applied, or after a previous test already modified the class.
-- **Fresh Class Pattern**: Use a fresh class definition within the test (or in a module-level base) for monkeypatch unit tests. Manually assign this clean class to the target module, apply the patch, and then verify.
-- **Verification**: Always verify that the patched method correctly calls the "captured original" logic (e.g., by using a spy or checking side effects like `self.last_tgt`).
-
-### Robust `MockTensor` Support
-For tests involving mask processing (e.g., SAM3/SAM2.1), `conftest.py` provides a `MockTensor` class that simulates `torch.Tensor` behavior:
-- **Shape Propagation**: Returns correctly shaped numpy arrays via `.cpu().numpy()`.
-- **Dunder Support**: Implements `__len__`, `__getitem__`, and `__gt__` for filtering logic.
-- **Arithmetic**: Supports scalar operations used in quality metrics.
-
-## Coverage Requirements
-
-- **Target**: 80% total coverage (`--cov-fail-under=80` enforced in CI)
-- **Run locally**: `uv run pytest --cov=core --cov=ui tests/unit/`
-- CI will reject PRs that drop below 80%.
-
-## Testing Tracker-Agnostic Components
-
-Since `SubjectMasker`, `MaskPropagator`, and `SeedSelector` are now tracker-agnostic, always inject via `TrackerFactory` mock — never instantiate `SAM3Wrapper` or `SAM21Wrapper` directly in unit tests.
-
-## "Golden" Test Case Example: Operator Execution
-
-A "Golden" unit test follows the Arrange-Act-Assert pattern with strict mocking:
-
-```python
-def test_my_metric_operator_golden(mock_config, sample_image, mock_logger):
-    # 1. Arrange: Setup registry and context
-    OperatorRegistry.register(MyMetricOperator)
-    ctx = OperatorContext(
-        image_rgb=sample_image,
-        config=mock_config,
-        logger=mock_logger,
-        params={}
-    )
-    
-    # 2. Act: Execute the operator
-    op = MyMetricOperator()
-    result = op.execute(ctx)
-    
-    # 3. Assert: Verify results and metric ranges
-    assert "my_metric_score" in result.metrics
-    assert 0.0 <= result.metrics["my_metric_score"] <= 100.0
-    mock_logger.error.assert_not_called()
-
-## Deep Property-Based Testing (Hypothesis)
-
-Don't settle for "no-crash" tests. Use `hypothesis` to define mathematical invariants for geometry logic.
-
-**Example: BBox Normalization**
-When converting pixel coordinates to relative `[0, 1]` coordinates for SAM3:
-- **Invariant**: The output coordinates *must* stay within `[0, 1]` regardless of the image size or input pixel value (even if input is slightly out of bounds).
-- **Outcome**: This pattern surfaced a critical division-by-zero risk in the early SAM3 implementation.
-
-```python
-@given(
-    x=st.floats(min_value=-1000, max_value=5000),
-    img_w=st.integers(min_value=1, max_value=8000)
-)
-def test_bbox_normalization_invariant(x, img_w):
-    rel_x = normalize_coord(x, img_w)
-    assert 0.0 <= rel_x <= 1.0  # Mathematical guarantee
-```
-
-### Floating Point Precision in BBoxes
-When converting pixel coordinates to relative `[0, 1]` coordinates or back:
-- **Mandate**: Always use `pytest.approx` for coordinate assertions. Normalization math often introduces minor precision errors (e.g., `60.00000000000001` vs `60.0`) that cause exact comparisons to fail.
-
-## Regression Testing (`--capture-golden`)
-
-The system supports a "Golden Reference" workflow for ML metrics:
-1.  **Capture**: Run `pytest --capture-golden` to save current metric outputs to `tests/data/golden_metrics.json`.
-2.  **Verify**: Subsequent runs compare new outputs against these stored values to detect drift in quality analysis logic.
+- **Pattern**: Always provide a `label` to interactive Gradio components, even if `show_label=False`. Gradio renders this as an ARIA label in the accessibility tree.
+- **Rule Filtering**: Accessibility tests in `tests/ui/test_accessibility.py` are configured to skip Gradio-internal violations (e.g., `aria-hidden-focus`, `color-contrast`) that cannot be fixed at the application level.
 
 ## E2E Testing (Playwright)
 
-- **Use Stable ID Selectors**: Always prefer ID-based CSS selectors (`#elem_id`) over fragile text labels.
-    - **Reliability**: Gradio status overlays (loading spinners) can mask button text. Assigning `elem_id="my_btn"` and targeting `#my_btn` ensures Playwright can interact even during status transitions.
-- **Navigation Optimization**: Use `wait_until="domcontentloaded"` in `page.goto()`. Avoid `networkidle` as Gradio's persistent WebSockets and heavy payloads cause timeouts.
-- **Fail Fast**: Set a short global timeout (e.g., 5000ms) in `conftest.py` to ensure fast feedback.
-- **Accordion Orchestration**: Explicitly click accordion headers to open them before interacting with nested components. Check `is_visible()` first to avoid accidental toggling.
-- **Flexible Text Selectors**: Avoid `exact=True` for text-based selectors that include emojis or dynamic labels (e.g., Gradio's accordion headers). Use `exact=False` substring matching to improve robustness.
-- **Strict Mode**: Use `get_by_label` or scoped locators to avoid multiple matches for common terms (e.g., "By Face" in both labels and help text).
+- **Locator Protocol**: Never hardcode strings in tests. Always use `ui_locators.py` (`Labels` and `Selectors`).
+- **Emoji Sensitivity**: Playwright is sensitive to emojis. If a UI button adds an emoji (e.g., `🚀 Start`), the `Labels` entry must match exactly.
+- **Accordion Handling**: Use the `open_accordion(page, label)` helper in `conftest.py`. It uses `elem_id` (#system_logs_accordion) and JS state checks to handle Gradio's complex DOM.
+- **Wait Strategy**: Use `page.wait_for_timeout(ms)` for UI animations. Use `expect(locator).to_be_visible()` for backend state changes.
 
-### Mandatory E2E Patterns
+## Visual Regression (`tests/ui/test_visual_regression.py`)
 
-- **Log Persistence vs. UI Updates**:
-    - **Observation**: In Gradio, updating a component via a return value in an event handler (like `.click()`) replaces the value.
-    - **Mandate**: Never return log strings directly to `unified_log` for long-running processes. Instead, use `logger.info()`. The `LogViewer` component periodically polls the log queue and appends content, preserving the history that E2E tests rely on for "Log Trail" verification.
-- **Mock Side-Effect Consistency**:
-    - **Requirement**: Mocks for pipelines (Extraction, Analysis, etc.) must not only return the expected dictionary but also trigger a `logger.info()` call.
-    - **State Persistence**: Mocks must return the updated `ApplicationState` (e.g., `extracted_video_path_state`) to match Gradio 5 behavior, ensuring UI components (like visibility) update correctly during tests.
-    - **Mandate**: Without this, the UI log viewer remains empty or missing stages during E2E runs, leading to assertion failures in tests that verify the workflow's history.
-- **Status Bar Priority**:
-    - **Design Pattern**: The `unified_status` component is the primary target for E2E assertions. Any major backend operation should update this component immediately upon completion/failure to provide a clear signal to Playwright's `expect()` locators.
-- **Case Sensitivity in E2E**:
-    - **Rule**: E2E tests are extremely fragile regarding status strings. "Pre-Analysis" (Title Case) vs "Pre-analysis" (Sentence Case) will cause a test failure if the log scraper is looking for a specific marker. Always use **Title Case** for major pipeline milestones.
+The suite compares current UI states against baseline screenshots using perceptual hashing.
+- **Update Baselines**: To refresh baselines (e.g., after changing labels), run:
+  `uv run pytest -n 0 --update-baselines tests/ui/test_visual_regression.py`
+- **Constraint**: Always use `-n 0` when updating baselines to prevent race conditions during file writes.
 
-- **Standardized Wait Strategy**:
-    - **Rule**: Always use `page.wait_for_timeout(ms)` for arbitrary buffers in Playwright tests. Never use `time.sleep(s)` inside test functions or Playwright-managed fixtures as it blocks the Python event loop and contributes to flakiness.
-    - **Exception**: `time.sleep()` is permitted in infrastructure setup (like `wait_for_server` or `cleanup_port`) where no browser context is active.
+## Coverage Requirements
 
-## Signature Validation & Mock Sync
-
-To prevent "mock drift" where `mock_app.py` or unit test mocks become outdated relative to production code:
-- **Mandate**: Use `inspect.signature()` in `tests/unit/test_signatures.py` to compare mocked interfaces against real implementations.
-- **Scope**: All `execute_*` pipeline functions and `SAM3Wrapper` methods must be validated for parameter-for-parameter matching.
-
-## Performance Benchmarking
-
-Integration tests in `tests/integration/` track execution time and VRAM usage.
-- **CI/CD**: These tests are typically skipped in standard GitHub Actions unless a runner with a GPU is specified.
-
-## Integration Smoke Tests
-
-Use `test_integration_smoke.py` to verify manager wiring without real ML inference. This catches "wiring" bugs (e.g., incorrect argument passing to pipelines) without requiring a GPU.
+- **Target**: 80% total coverage (`--cov-fail-under=80` enforced in CI).
+- **Manual Verification**: `scripts/linux_test_cov.sh`.
 
 ---
 
-*Refined testing: 2026-03-25*
+*Last Updated: 2026-03-28 (Infrastructure Stabilization)*

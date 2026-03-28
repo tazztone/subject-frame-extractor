@@ -39,7 +39,7 @@ class TestInteractiveComponents:
         page.wait_for_timeout(1000)  # Wait for visibility toggle
 
         # Click the "Scan Video for People" sub-tab
-        page.get_by_role("tab", name="🔍 Scan Video for People", exact=False).click()
+        page.get_by_role("tab", name="Scan Video for People", exact=False).click()
 
         # Find People button should be visible
         btn = page.get_by_role("button", name=Labels.SCAN_VIDEO_BUTTON, exact=False)
@@ -104,7 +104,7 @@ class TestErrorScenarios:
         page.wait_for_timeout(1000)
 
         # Ensure we are on Scan Video tab
-        page.get_by_role("tab", name="🔍 Scan Video for People", exact=False).click()
+        page.get_by_role("tab", name="Scan Video for People", exact=False).click()
 
         # Click without setting an input
         page.get_by_role("button", name=Labels.SCAN_VIDEO_BUTTON, exact=False).click()
