@@ -13,6 +13,7 @@
 | **Integration** | `tests/integration/` | Real backend pipeline tests. Uses real PyTorch models. | `pytest` |
 | **UI (E2E)** | `tests/ui/` | Playwright automation. Mocks backend to test Gradio flows. | `pytest + playwright` |
 | **UX Audit**| `scripts/run_ux_audit.py` | Accessibility (Axe), Visuals, and Performance. | `python` |
+| **GPU E2E** | `tests/integration/` | Heavy-duty SAM2/SAM3 propagation on real hardware. | `pytest (serial)` |
 
 ## Setup & Execution
 
@@ -24,7 +25,14 @@ All tests should be run using `uv` to ensure the correct environment.
 | :--- | :--- | :--- |
 | `scripts/test.sh` | **Standard Quality Pass**. Runs Ruff, Unit Tests, and Integration Smoke. | `./scripts/test.sh` |
 | `scripts/linux_test_ui.sh` | Runs Playwright tests in `tests/ui/` with xdist. | `./scripts/linux_test_ui.sh` |
-| `scripts/linux_test_all.sh` | Runs the full suite including slow integration tests. | `./scripts/linux_test_all.sh` |
+| `scripts/linux_test_all.sh` | Runs the full suite including slow integration tests **serially**. | `./scripts/linux_test_all.sh` |
+| `scripts/linux_test_integration.sh` | Specialized runner for GPU/Backend tests. | `./scripts/linux_test_integration.sh` |
+
+### GPU Concurrency Warning
+
+> [!CAUTION]
+> **NEVER run GPU-heavy integration tests with `pytest -n auto`.**
+> Loading multiple 3GB+ models (SAM2, SAM3, InsightFace) concurrently in parallel workers will exhaust VRAM and system RAM instantly, leading to a hard kernel-level system freeze. Always run `tests/integration/test_gpu_e2e.py` serially or with `-n 1`.
 
 ## CI/CD Pipeline
 
@@ -49,6 +57,8 @@ To ensure fast execution and hardware independence, all **Unit Tests** must comp
 ## Gradio & Pyright Resiliency
 
 - **SAM3 Experimental Status**: `sam3` is an experimental tracker. Integration tests (`tests/integration/test_gpu_e2e.py`) verify its logic, but it is **not** the baseline for regressions. The default is `sam2`.
+- **SAM3 Checkpoints**: SAM3 requires a local `models/sam3.pt` checkpoint. The wrapper includes a `RuntimeError` guard if the model fails to load. Never patch `download_ckpt_from_hf` as it prevents the resolver from finding local files and causes `NoneType` attribute errors.
+- **HuggingFace Access**: To avoid `401 GatedRepoError` in tests, always ensure `checkpoint_path` is explicitly passed to constructors or point registries to a directory containing the real `.pt` file.
 - **Type Hints**: For Gradio event handlers, use `Any` or `dict[str, Any]` for return type hints instead of `gr.update`. Gradio 5+ treats updates as dynamic dictionaries, and `gr.update` often causes Pyright noise.
 - **Optional Members**: Components like `AdvancedProgressTracker` should use `Optional[Queue]` and `Optional[AppLogger]` with explicit null-checks to prevent Pyright "attribute not found on None" errors.
 

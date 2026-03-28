@@ -224,12 +224,19 @@ class TestSAM3Inference:
     @pytest.mark.xdist_group("sam3_isolated")
     def test_sam3_wrapper_initialization(self, tmp_path):
         """SAM3Wrapper can be initialized without errors."""
+        from pathlib import Path
+
         import torch
 
         if not torch.cuda.is_available():
             pytest.skip("CUDA not available")
 
-        wrapper = SAM3Wrapper(device="cuda")
+        project_root = Path(__file__).parents[2]
+        real_checkpoint = project_root / "models" / "sam3.pt"
+        if not real_checkpoint.exists():
+            pytest.skip("SAM3 checkpoint not found locally")
+
+        wrapper = SAM3Wrapper(checkpoint_path=str(real_checkpoint), device="cuda")
         try:
             assert wrapper is not None
             assert wrapper.predictor is not None
@@ -769,6 +776,12 @@ class TestMaskPropagatorE2E:
 
         params = AnalysisParameters(source_path="test.mp4", output_folder=str(tmp_path), min_mask_area_pct=0.01)
 
+        from pathlib import Path
+
+        project_root = Path(__file__).parents[2]
+        if not (project_root / "models" / "sam3.pt").exists():
+            pytest.skip("SAM3 checkpoint not found locally")
+
         wrapper = SAM3Wrapper(device="cuda")
 
         try:
@@ -799,7 +812,7 @@ class TestMaskPropagatorE2E:
             assert masks[0] is not None
             assert isinstance(masks[0], np.ndarray)
         finally:
-            pass  # cleanup() removed
+            wrapper.shutdown()
 
     @requires_sam3
     def test_mask_propagator_bidirectional(self, tmp_path):
@@ -821,6 +834,12 @@ class TestMaskPropagatorE2E:
         logger = AppLogger(config, log_to_console=False, log_to_file=False)
 
         params = AnalysisParameters(source_path="test.mp4", output_folder=str(tmp_path), min_mask_area_pct=0.01)
+
+        from pathlib import Path
+
+        project_root = Path(__file__).parents[2]
+        if not (project_root / "models" / "sam3.pt").exists():
+            pytest.skip("SAM3 checkpoint not found locally")
 
         wrapper = SAM3Wrapper(device="cuda")
 
@@ -858,7 +877,7 @@ class TestMaskPropagatorE2E:
                 assert mask is not None, f"Frame {i} has no mask"
                 assert isinstance(mask, np.ndarray)
         finally:
-            pass  # cleanup() removed
+            wrapper.shutdown()
 
 
 @pytest.mark.gpu_e2e

@@ -12,7 +12,17 @@ class SAM3Wrapper:
     """SAM3 Tracker using official Sam3VideoPredictor API."""
 
     def __init__(self, checkpoint_path=None, device="cuda"):
+        from pathlib import Path
+
         from sam3.model_builder import build_sam3_video_predictor  # type: ignore
+
+        # Auto-resolve checkpoint if not provided: look for models/sam3.pt in project root
+        if checkpoint_path is None:
+            # Assumes project root is 2 levels up from core/managers/sam3.py
+            project_root = Path(__file__).parents[2]
+            local_checkpoint = project_root / "models" / "sam3.pt"
+            if local_checkpoint.exists():
+                checkpoint_path = str(local_checkpoint)
 
         self.device = device
         if torch.cuda.is_available():
@@ -20,14 +30,14 @@ class SAM3Wrapper:
 
         # Force single-GPU mode to prevent multi-process resource exhaustion in tests/Gradio
         gpus = [0] if device == "cuda" else None
-        from unittest.mock import patch
 
-        with patch("sam3.model_builder.download_ckpt_from_hf", return_value=None):
-            self.predictor = build_sam3_video_predictor(checkpoint_path=checkpoint_path, gpus_to_use=gpus)
+        self.predictor = build_sam3_video_predictor(checkpoint_path=checkpoint_path, gpus_to_use=gpus)
 
         if self.predictor is None or getattr(self.predictor, "model", None) is None:
             raise RuntimeError(
                 f"SAM3 model failed to load from '{checkpoint_path}'. "
+                f"Predictor Type: {type(self.predictor)}. "
+                f"Predictor Has Model: {hasattr(self.predictor, 'model')}. "
                 "Ensure the checkpoint file exists and is not corrupted."
             )
 
