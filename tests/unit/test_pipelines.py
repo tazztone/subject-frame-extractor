@@ -34,7 +34,7 @@ def default_pre_analysis_event():
         "output_folder": "/tmp/out",
         "video_path": "test.mp4",
         "face_model_name": "buffalo_l",
-        "tracker_model_name": "vit",
+        "tracker_model_name": "sam2",
         "best_frame_strategy": "sharpness",
         "min_mask_area_pct": 0.1,
         "sharpness_base_scale": 1.0,

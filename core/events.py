@@ -74,7 +74,7 @@ class PreAnalysisEvent(UIEvent):
     face_ref_img_upload: Optional[str] = None
     face_model_name: str = "buffalo_l"
     enable_subject_mask: bool = False
-    tracker_model_name: str = "sam3"
+    tracker_model_name: str = "sam2"
     best_frame_strategy: str = "sharpness"
     scene_detect: bool = True
     text_prompt: str = ""

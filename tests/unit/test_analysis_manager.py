@@ -34,7 +34,7 @@ def analysis_params():
         output_folder="/tmp/out",
         video_path="test.mp4",
         face_model_name="buffalo_l",
-        tracker_model_name="vit",
+        tracker_model_name="sam2",
         best_frame_strategy="sharpness",
         min_mask_area_pct=0.1,
         sharpness_base_scale=1.0,
@@ -589,8 +589,11 @@ def test_initialize_niqe_success(mock_deps, analysis_params):
         mock_deps["thumbnail_manager"],
         mock_deps["model_registry"],
     )
+    from core.enums import SeedStrategy
+
     analysis_params.pre_analysis_enabled = True
     analysis_params.video_path = "vid.mp4"
+    analysis_params.primary_seed_strategy = SeedStrategy.AUTOMATIC.value
 
     with patch("pyiqa.create_metric") as mock_create:
         pipeline._initialize_niqe_if_needed("cpu", is_folder_mode=False)

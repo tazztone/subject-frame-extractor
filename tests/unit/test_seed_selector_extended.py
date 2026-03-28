@@ -76,6 +76,7 @@ class TestSeedSelectorExtended:
 
     def test_choose_person_by_strategy_fallback(self, selector):
         selector.tracker.detect_objects.return_value = []
+        selector.face_analyzer.get.return_value = []
         frame_rgb = np.zeros((100, 100, 3), dtype=np.uint8)
         box, details = selector._choose_person_by_strategy(frame_rgb, selector.params)
         assert details["type"] == "no_people_fallback"

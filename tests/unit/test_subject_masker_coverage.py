@@ -90,6 +90,7 @@ class TestSubjectMasker:
 
     def test_run_propagation_no_tracker(self, subject_masker):
         """Test propagation fails if tracker cannot be initialized."""
+        subject_masker.dam_tracker = None
         subject_masker.model_registry.get_tracker.return_value = None
         result = subject_masker.run_propagation("/tmp", [])
         assert result.get("error") is not None

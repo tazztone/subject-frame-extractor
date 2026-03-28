@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from core.managers import SAM3Wrapper
     from core.models import AnalysisParameters, Scene
 
+from core.enums import SeedStrategy
 from core.image_utils import postprocess_mask, rgb_to_pil
 from core.logger import log_with_component
 
@@ -98,21 +99,21 @@ class SeedSelector:
         primary_strategy = self._get_param(params_source, "primary_seed_strategy", "Automatic Detection")
         use_face_filter = self._get_param(params_source, "enable_face_filter", False)
 
-        if primary_strategy == "Source Face Reference":
+        if primary_strategy == SeedStrategy.FACE_REFERENCE.value:
             if self.face_analyzer and self.reference_embedding is not None and use_face_filter:
                 log_with_component(self.logger, "info", "Starting 'Identity-First' seeding.")
                 return self._identity_first_seed(frame_rgb, p, scene)
             else:
                 log_with_component(self.logger, "warning", "Face strategy selected but no reference face provided.")
                 return self._object_first_seed(frame_rgb, p, scene)
-        elif primary_strategy == "Text Description (Limited)":
+        elif primary_strategy == SeedStrategy.TEXT_DESCRIPTION.value:
             log_with_component(self.logger, "info", "Starting 'Object-First' seeding.")
             return self._object_first_seed(frame_rgb, p, scene)
-        elif primary_strategy == "Face + Text Fallback":
+        elif primary_strategy == SeedStrategy.FACE_TEXT_FALLBACK.value:
             log_with_component(self.logger, "info", "Starting 'Face-First with Text Fallback' seeding.")
             return self._face_with_text_fallback_seed(frame_rgb, p, scene)
         else:
-            log_with_component(self.logger, "info", "Starting 'Automatic' seeding.")
+            log_with_component(self.logger, "info", f"Starting '{SeedStrategy.AUTOMATIC.value}' seeding.")
             return self._choose_person_by_strategy(frame_rgb, p, scene)
 
     def _face_with_text_fallback_seed(
@@ -294,6 +295,20 @@ class SeedSelector:
         """Select person using configurable strategy."""
         boxes = self._get_person_boxes(frame_rgb, scene)
         if not boxes:
+            # Fallback: try face detection -> expand to body box
+            if self.face_analyzer:
+                frame_bgr = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
+                faces = self.face_analyzer.get(frame_bgr)
+                if faces:
+                    best_face = max(faces, key=lambda f: f.det_score)
+                    expanded = self._expand_face_to_body(best_face.bbox.astype(int), frame_rgb.shape)
+                    log_with_component(self.logger, "info", "Used face-detection fallback for person seeding")
+                    return expanded, {
+                        "type": "face_fallback_expanded",
+                        "face_conf": float(best_face.det_score),
+                        "detection_attempted": True,
+                    }
+
             log_with_component(self.logger, "warning", "No people detected in scene - using fallback region")
             fallback_box = self._final_fallback_box(frame_rgb.shape)
             return fallback_box, {

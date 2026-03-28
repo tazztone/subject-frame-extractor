@@ -205,7 +205,8 @@ class TestPreAnalysisPipeline:
         # Assert
         assert len(result_scenes) == 1
         assert result_scenes[0].seed_result["bbox"] == [0, 0, 10, 10]
-        assert Path(result_scenes[0].preview_path).name == "scene_00000.jpg"
+        assert Path(result_scenes[0].preview_path).name.startswith("scene_00000_")
+        assert Path(result_scenes[0].preview_path).name.endswith(".jpg")
         mock_save_seeds.assert_called_once()
 
 

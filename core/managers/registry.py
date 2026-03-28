@@ -154,12 +154,13 @@ class ModelRegistry:
             url = config.sam2_checkpoint_url if config else ""
             description = "SAM2.1 Model"
             backend: TrackerBackend = "sam2"
-        else:
-            # Fallback to sam3 for any other name or "sam3"
+        elif model_name == "sam3":
             checkpoint_filename = "sam3.pt"
             url = config.sam3_checkpoint_url if config else ""
             description = "SAM3 Model"
             backend: TrackerBackend = "sam3"
+        else:
+            raise ValueError(f"Unknown tracker model '{model_name}'. Must be 'sam2' or 'sam3'.")
 
         checkpoint_path = Path(models_path) / checkpoint_filename
         if not checkpoint_path.exists():

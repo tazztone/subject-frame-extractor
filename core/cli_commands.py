@@ -297,7 +297,6 @@ def _build_pre_analysis_event(
         face_ref_img_path=str(face_ref) if face_ref else "",
         face_model_name="buffalo_l",
         enable_subject_mask=True,
-        tracker_model_name="sam3",
         best_frame_strategy="Largest Person",
         scene_detect=True if is_video else False,
         min_mask_area_pct=1.0,

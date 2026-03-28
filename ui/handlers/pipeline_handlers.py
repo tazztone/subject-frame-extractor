@@ -289,7 +289,7 @@ class PipelineHandler:
                 value=run_config.get("best_frame_strategy", "Largest Person")
             ),
             self.app.components["tracker_model_name_input"]: gr.update(
-                value=run_config.get("tracker_model_name", "sam3")
+                value=run_config.get("tracker_model_name", self.config.default_tracker_model_name)
             ),
             self.app.components["application_state"]: new_state,
         }
