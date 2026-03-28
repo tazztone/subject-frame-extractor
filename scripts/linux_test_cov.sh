@@ -9,7 +9,7 @@ cd "$SCRIPT_DIR/.."
 echo "Running tests with coverage (unit tests)..."
 echo "----------------------------------------"
 
-uv run --no-sync pytest --cov=core --cov=ui tests/unit/ "$@"
+uv run --no-sync pytest --cov=core --cov=ui --cov-report=html:htmlcov tests/unit/ "$@"
 
 if [ $? -ne 0 ]; then
     echo ""

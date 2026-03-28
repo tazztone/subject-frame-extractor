@@ -27,6 +27,12 @@ echo "--- Stage 3: UI/E2E Tests ---"
 PYTEST_INTEGRATION_MODE=true bash "$SCRIPT_DIR/linux_test_ui.sh" -o "addopts=-v --tb=short" --no-cov
 if [ $? -ne 0 ]; then exit 1; fi
 
+# 4. Regression Tests
+echo ""
+echo "--- Stage 4: Regression Tests ---"
+uv run --no-sync pytest tests/regression/ "$@"
+if [ $? -ne 0 ]; then exit 1; fi
+
 echo ""
 echo "----------------------------------------"
 echo "SUCCESS: ALL TESTS PASSED."

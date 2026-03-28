@@ -92,6 +92,8 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;__init__.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;pixel_count.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└──&nbsp;test_pixel_count.py  
+├──&nbsp;htmlcov  
+│&nbsp;&nbsp;&nbsp;└──&nbsp;status.json  
 ├──&nbsp;outputs  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;previews  
 │&nbsp;&nbsp;&nbsp;└──&nbsp;test_logging_output  

@@ -15,7 +15,7 @@ fi
 echo "Running unit tests (fast, mock-first)..."
 echo "----------------------------------------"
 
-uv run --no-sync pytest tests/unit/ "$@"
+uv run --no-sync pytest -n auto --cov-report=html:htmlcov tests/unit/ "$@"
 
 if [ $? -ne 0 ]; then
     echo ""
