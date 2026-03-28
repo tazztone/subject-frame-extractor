@@ -56,7 +56,7 @@ def test_sam3_wrapper_init(mock_cuda, mock_build, mock_predictor):
 @patch("sam3.model_builder.build_sam3_video_predictor")
 def test_sam3_wrapper_session_lifecycle(mock_build, mock_predictor):
     mock_build.return_value = mock_predictor
-    wrapper = SAM3Wrapper()
+    wrapper = SAM3Wrapper(device="cpu")
 
     # First init
     session_id = wrapper.init_video("video.mp4")
@@ -76,7 +76,7 @@ def test_sam3_wrapper_session_lifecycle(mock_build, mock_predictor):
 @patch("sam3.model_builder.build_sam3_video_predictor")
 def test_sam3_wrapper_add_bbox_prompt(mock_build, mock_predictor):
     mock_build.return_value = mock_predictor
-    wrapper = SAM3Wrapper()
+    wrapper = SAM3Wrapper(device="cpu")
     wrapper.session_id = "test_session"
 
     # Test with text and 3D mask
@@ -97,7 +97,7 @@ def test_sam3_wrapper_add_bbox_prompt(mock_build, mock_predictor):
 @patch("sam3.model_builder.build_sam3_video_predictor")
 def test_sam3_wrapper_propagate(mock_build, mock_predictor):
     mock_build.return_value = mock_predictor
-    wrapper = SAM3Wrapper()
+    wrapper = SAM3Wrapper(device="cpu")
     wrapper.session_id = "test_session"
 
     # Test normal propagation
@@ -113,7 +113,7 @@ def test_sam3_wrapper_propagate(mock_build, mock_predictor):
 @patch("sam3.model_builder.build_sam3_video_predictor")
 def test_sam3_wrapper_detect_objects(mock_build, mock_predictor):
     mock_build.return_value = mock_predictor
-    wrapper = SAM3Wrapper()
+    wrapper = SAM3Wrapper(device="cpu")
 
     # Normal case
     results = wrapper.detect_objects(np.zeros((100, 100, 3), dtype=np.uint8), "person")
@@ -127,7 +127,7 @@ def test_sam3_wrapper_detect_objects(mock_build, mock_predictor):
 @patch("sam3.model_builder.build_sam3_video_predictor")
 def test_sam3_wrapper_utility_methods(mock_build, mock_predictor):
     mock_build.return_value = mock_predictor
-    wrapper = SAM3Wrapper()
+    wrapper = SAM3Wrapper(device="cpu")
 
     # RuntimeError when no session
     with pytest.raises(RuntimeError):
@@ -154,7 +154,7 @@ def test_sam3_wrapper_utility_methods(mock_build, mock_predictor):
 @patch("core.managers.sam3.torch.cuda.empty_cache")
 def test_sam3_wrapper_shutdown(mock_empty, mock_cuda, mock_build, mock_predictor):
     mock_build.return_value = mock_predictor
-    wrapper = SAM3Wrapper()
+    wrapper = SAM3Wrapper(device="cpu")
     wrapper.session_id = "test_session"
 
     # Test shutdown with predictor.shutdown

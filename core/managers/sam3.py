@@ -14,21 +14,32 @@ class SAM3Wrapper:
     def __init__(self, checkpoint_path=None, device="cuda"):
         from sam3.model_builder import build_sam3_video_predictor  # type: ignore
 
-        # Detect mock leakage early — SAM3 must never be a MagicMock in real mode.
-        # This happens when conftest.py's global mocks bleed into integration workers.
-        # Fix: export PYTEST_INTEGRATION_MODE=true before running integration tests,
-        # or run via scripts/linux_test_all.sh which handles this automatically.
-        try:
-            from unittest.mock import MagicMock as _MagicMock
+        # Detect mock leakage — only in real GPU mode.
+        # Unit tests use device="cpu" with intentional mocks; that's fine.
+        # Integration tests use device="cuda" and must have real models.
+        if device == "cuda":
+            try:
+                from unittest.mock import MagicMock as _MagicMock
 
-            if isinstance(build_sam3_video_predictor, _MagicMock):
-                raise RuntimeError(
-                    "SAM3 build_sam3_video_predictor is a MagicMock — "
-                    "conftest.py has injected a mock into sys.modules['sam3.model_builder']. "
-                    "Run integration tests with: export PYTEST_INTEGRATION_MODE=true"
-                )
-        except ImportError:
-            pass
+                if isinstance(build_sam3_video_predictor, _MagicMock):
+                    raise RuntimeError(
+                        f"SAM3 build_sam3_video_predictor is a MagicMock (device='{device}') — "
+                        "conftest.py has injected a mock into sys.modules['sam3.model_builder']. "
+                        "Run integration tests with: export PYTEST_INTEGRATION_MODE=true"
+                    )
+            except ImportError:
+                pass
+
+        # Auto-resolve checkpoint path to local models/sam3.pt if not provided.
+        # This prevents the SAM3 library from attempting a HuggingFace download
+        # (which requires gated repo authentication we don't want in tests/prod).
+        if checkpoint_path is None:
+            from pathlib import Path
+
+            _project_root = Path(__file__).resolve().parents[2]
+            _local_ckpt = _project_root / "models" / "sam3.pt"
+            if _local_ckpt.exists():
+                checkpoint_path = str(_local_ckpt)
 
         self.device = device
         if torch.cuda.is_available():
