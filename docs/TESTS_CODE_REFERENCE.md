@@ -72,6 +72,7 @@ tests
 │&nbsp;&nbsp;&nbsp;└──&nbsp;[`visual_test_utils.py`](#-testsuivisual_test_utilspy)  
 └──&nbsp;unit  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`__init__.py`](#-testsunit__init__py)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`conftest.py`](#-testsunitconftestpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_advanced_face.py`](#-testsunittest_advanced_facepy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_analysis.py`](#-testsunittest_analysispy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_analysis_manager.py`](#-testsunittest_analysis_managerpy)  
@@ -1104,6 +1105,14 @@ def list_baselines() -> list[str]:
     """List all available baseline screenshots."""
 def cleanup_diffs():
     """Remove all temporary diff screenshots."""
+```
+
+### `📄 tests/unit/conftest.py`
+
+```python
+@pytest.fixture
+def sam3_unit():
+    """A SAM3Wrapper instance for unit tests."""
 ```
 
 ### `📄 tests/unit/test_advanced_face.py`
@@ -2450,78 +2459,34 @@ def test_sam2_wrapper_shutdown(mock_empty_cache, mock_cuda, mock_build, mock_pre
 ### `📄 tests/unit/test_sam3_manager.py`
 
 ```python
-mock_sam3 = MagicMock()
-sys.modules['sam3'] = mock_sam3
-sys.modules['sam3.model_builder'] = mock_sam3.model_builder
-@pytest.fixture
-def mock_predictor(): ...
-@patch('sam3.model_builder.build_sam3_video_predictor')
-@patch('core.managers.sam3.torch.cuda.is_available', return_value=False, create=True)
-def test_sam3_wrapper_init(mock_cuda, mock_build, mock_predictor): ...
-@patch('sam3.model_builder.build_sam3_video_predictor')
-def test_sam3_wrapper_session_lifecycle(mock_build, mock_predictor): ...
-@patch('sam3.model_builder.build_sam3_video_predictor')
-def test_sam3_wrapper_add_bbox_prompt(mock_build, mock_predictor): ...
-@patch('sam3.model_builder.build_sam3_video_predictor')
-def test_sam3_wrapper_propagate(mock_build, mock_predictor): ...
-@patch('sam3.model_builder.build_sam3_video_predictor')
-def test_sam3_wrapper_detect_objects(mock_build, mock_predictor): ...
-@patch('sam3.model_builder.build_sam3_video_predictor')
-def test_sam3_wrapper_utility_methods(mock_build, mock_predictor): ...
-@patch('sam3.model_builder.build_sam3_video_predictor')
-@patch('core.managers.sam3.torch.cuda.is_available', return_value=True, create=True)
-@patch('core.managers.sam3.torch.cuda.empty_cache')
-def test_sam3_wrapper_shutdown(mock_empty, mock_cuda, mock_build, mock_predictor): ...
+def test_sam3_wrapper_session_lifecycle(sam3_unit): ...
+def test_sam3_wrapper_add_bbox_prompt(sam3_unit): ...
+def test_sam3_wrapper_propagate(sam3_unit): ...
+def test_sam3_wrapper_detect_objects(sam3_unit): ...
+def test_sam3_wrapper_utility_methods(sam3_unit): ...
+def test_sam3_wrapper_shutdown(sam3_unit): ...
 def test_triton_mocking(): ...
 ```
 
 ### `📄 tests/unit/test_sam3_wrapper.py`
 
 ```python
-"""Unit tests for SAM3Wrapper API completeness and functionality."""
 class TestSAM3WrapperAPICompleteness:
-    """Tests to verify SAM3Wrapper has all required methods."""
-    @pytest.fixture
-    def mock_wrapper_class(self):
-        """Create a mock-free SAM3Wrapper class reference."""
-    @pytest.fixture
-    def api_mock_wrapper(self, mock_wrapper_class):
-        """Create a mocked SAM3Wrapper instance."""
-    def test_all_required_methods_exist(self, api_mock_wrapper):
-        """Verify all API methods expected by SeedSelector exist on SAM3Wrapper."""
-    def test_detect_objects_signature(self, api_mock_wrapper):
-        """Verify detect_objects has correct signature."""
-    def test_add_text_prompt_signature(self, api_mock_wrapper):
-        """Verify add_text_prompt has correct signature."""
-    def test_add_point_prompt_signature(self, api_mock_wrapper):
-        """Verify add_point_prompt has correct signature."""
+    def test_all_required_methods_exist(self, sam3_unit): ...
+    def test_detect_objects_signature(self, sam3_unit): ...
+    def test_add_text_prompt_signature(self, sam3_unit): ...
+    def test_add_point_prompt_signature(self, sam3_unit): ...
 class TestSAM3WrapperMethodBehavior:
-    """Tests for SAM3Wrapper method behavior with mocking."""
-    @pytest.fixture
-    def behavior_mock_wrapper(self):
-        """Create a fully mocked SAM3Wrapper."""
-    def test_detect_objects_returns_empty_on_empty_prompt(self, behavior_mock_wrapper):
-        """detect_objects should return empty list for empty prompt."""
-    def test_add_text_prompt_requires_init_video(self, behavior_mock_wrapper):
-        """add_text_prompt should raise if init_video not called."""
-    def test_add_point_prompt_requires_init_video(self, behavior_mock_wrapper):
-        """add_point_prompt should raise if init_video not called."""
-    def test_reset_session_with_no_state_is_safe(self, behavior_mock_wrapper):
-        """reset_session should not raise when no session is active."""
-    def test_close_session_with_no_state_is_safe(self, behavior_mock_wrapper):
-        """close_session should not raise when no session is active."""
-    def test_close_session_clears_session_id(self, behavior_mock_wrapper):
-        """close_session should clear session_id."""
-    def test_remove_object_calls_predictor(self, behavior_mock_wrapper):
-        """remove_object should call predictor handle_request."""
-    @patch('core.managers.sam3.torch.cuda.is_available', return_value=True, create=True)
-    @patch('core.managers.sam3.torch.cuda.empty_cache')
-    def test_shutdown_cleans_up_resources(self, mock_empty_cache, mock_cuda_available, behavior_mock_wrapper):
-        """shutdown should call close_session, predictor.shutdown, delete predictor and ..."""
+    def test_detect_objects_returns_empty_on_empty_prompt(self, sam3_unit): ...
+    def test_add_text_prompt_requires_init_video(self, sam3_unit): ...
+    def test_add_point_prompt_requires_init_video(self, sam3_unit): ...
+    def test_reset_session_with_no_state_is_safe(self, sam3_unit): ...
+    def test_close_session_with_no_state_is_safe(self, sam3_unit): ...
+    def test_close_session_clears_session_id(self, sam3_unit): ...
+    def test_remove_object_calls_predictor(self, sam3_unit): ...
+    def test_shutdown_cleans_up_resources(self, sam3_unit): ...
 class TestSeedSelectorTrackerInterface:
-    """Tests that verify SeedSelector's expected tracker interface."""
-    def test_seed_selector_tracker_methods_match_wrapper(self):
-        """Verify all tracker methods called by SeedSelector exist on SAM3Wrapper."""
+    def test_seed_selector_tracker_methods_match_wrapper(self, sam3_unit): ...
 ```
 
 ### `📄 tests/unit/test_scene_detection.py`
