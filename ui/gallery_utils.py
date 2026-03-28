@@ -41,7 +41,7 @@ def _update_gallery(
     thumbnail_manager: Any,
     config: Any,
     logger: Any,
-) -> tuple[str, gr.update]:
+) -> tuple[str, Any]:
     """
     Updates the Gradio gallery based on applied filters.
 

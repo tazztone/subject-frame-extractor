@@ -15,6 +15,22 @@ def mock_app():
     config.user_agent = "test"
     config.retry_max_attempts = 1
     config.retry_backoff_seconds = [1]
+    config.default_max_resolution = "Original (Recommended)"
+    config.default_method = "Every N-th Frame (Recommended)"
+    config.default_seed_strategy = "🤖 Automatic Detection"
+    config.default_face_model_name = "buffalo_l"
+    config.debug_mode = True
+    config.gradio_auto_pctl_input = 50
+    config.gradio_show_mask_overlay = True
+    config.gradio_overlay_alpha = 0.5
+    config.export_enable_crop = True
+    config.export_crop_padding = 10
+    config.export_crop_ars = "1:1, 9:16"
+    config.default_require_face_match = True
+    config.default_scene_detect = True
+    config.default_interval = 1.0
+    config.default_nth_frame = 10
+    config.filter_default_quality_score = {"min": 0, "max": 100, "step": 1, "default_min": 50}
 
     logger = MagicMock()
     progress_queue = MagicMock()

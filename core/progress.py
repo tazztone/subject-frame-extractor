@@ -34,10 +34,11 @@ class AdvancedProgressTracker:
     def __init__(
         self,
         progress: Optional[Callable] = None,
-        queue: Queue = None,
-        logger: "AppLogger" = None,
+        queue: Optional[Queue] = None,
+        logger: Optional["AppLogger"] = None,
         ui_stage_name: str = "",
-    ):  # type: ignore
+    ):
+        # type: ignore
         """
         Initializes the progress tracker.
 
@@ -116,7 +117,7 @@ class AdvancedProgressTracker:
         """Marks the current operation as complete."""
         self.done = self.total
         self._overlay(force=True)
-        if final_text:
+        if final_text and self.logger:
             self.logger.info(final_text, component="progress")
 
     def _overlay(self, force: bool = False):
@@ -144,7 +145,8 @@ class AdvancedProgressTracker:
             eta_seconds=eta_s,
             eta_formatted=eta_str,
         )
-        self.queue.put({"progress": progress_event.model_dump()})
+        if self.queue:
+            self.queue.put({"progress": progress_event.model_dump()})
 
     def _eta_seconds(self) -> Optional[float]:
         """Calculates estimated seconds remaining based on EMA."""

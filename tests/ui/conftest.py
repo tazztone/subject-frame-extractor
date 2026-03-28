@@ -85,22 +85,35 @@ def wait_for_app_ready(page: Page):
 
 
 def open_accordion(page: Page, text: str):
-    """Robustly opens an accordion by partial text match, no-ops if already open."""
-    # Try multiple ways to find the accordion toggle
-    accordion = page.get_by_text(text, exact=False).first
+    """Robustly open an accordion if it's closed."""
+    # Try multiple ways to find the accordion header
+    # 1. By text (with fuzzy match for emojis)
+    # 2. By elem_id (if we know it)
+    elem_id = None
+    if "Log" in text:
+        elem_id = "#system_logs_accordion"
+    elif "Help" in text:
+        elem_id = "#help_accordion"
 
-    # Check if a sibling or parent contains the expanded state
-    # Gradio accordions typically have an .open or aria-expanded state on a child or parent
+    if elem_id:
+        accordion = page.locator(elem_id)
+    else:
+        accordion = page.get_by_text(text, exact=False).first
+
+    expect(accordion).to_be_visible(timeout=5000)
+
+    # Check if already open
     is_open = False
     try:
-        # Check if the text matches something inside an open accordion
-        # In Gradio 5, we can often just click safely if we don't know the state,
-        # but double-clicking closes it. Let's look for the svg chevron direction if possible,
-        # or just check visibility of a known child if provided.
-        # For now, we'll use a pragmatic approach: if the log textarea is already visible,
-        # then the "System Logs" accordion is already open.
-        if text == Labels.SYSTEM_LOGS and page.locator(Selectors.LOG_TEXTAREA).is_visible():
-            is_open = True
+        # Check for Gradio open classes or aria-expanded
+        is_open = page.evaluate(
+            "(sel) => { "
+            "const el = document.querySelector(sel); "
+            "if (!el) return false; "
+            "return el.classList.contains('open') || el.getAttribute('aria-expanded') === 'true'; "
+            "}",
+            elem_id if elem_id else f"text={text}",
+        )
     except Exception:
         pass
 

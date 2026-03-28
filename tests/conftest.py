@@ -18,6 +18,22 @@ import pytest
 # --- 1. Global Mocking Infrastructure (Run immediately on import) ---
 
 
+def pytest_addoption(parser):
+    """Add custom command-line options to pytest."""
+    parser.addoption(
+        "--update-baselines",
+        action="store_true",
+        default=False,
+        help="Update visual regression baseline screenshots",
+    )
+    parser.addoption(
+        "--capture-golden",
+        action="store_true",
+        default=False,
+        help="Capture current legacy metrics as golden reference for regression tests",
+    )
+
+
 # Module creation helper
 def _create_mock_module(name, attributes=None):
     """Creates a proper ModuleType instance populated with mocks/attributes."""
@@ -527,13 +543,3 @@ def pytest_sessionfinish(session, exitstatus):
 def mock_torch():
     """Fixture to access the mocked torch module."""
     return sys.modules["torch"]
-
-
-def pytest_addoption(parser):
-    """Add command line options."""
-    parser.addoption(
-        "--capture-golden",
-        action="store_true",
-        default=False,
-        help="Capture current legacy metrics as golden reference for regression tests",
-    )

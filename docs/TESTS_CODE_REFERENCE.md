@@ -161,6 +161,8 @@ tests
 
 ```python
 """Shared pytest fixtures and configuration."""
+def pytest_addoption(parser):
+    """Add custom command-line options to pytest."""
 def _create_mock_module(name, attributes=None):
     """Creates a proper ModuleType instance populated with mocks/attributes."""
 class OutOfMemoryError(RuntimeError):
@@ -262,8 +264,6 @@ def pytest_sessionfinish(session, exitstatus):
 @pytest.fixture
 def mock_torch():
     """Fixture to access the mocked torch module."""
-def pytest_addoption(parser):
-    """Add command line options."""
 ```
 
 ### `📄 tests/e2e/e2e_run.py`
@@ -641,7 +641,7 @@ def wait_for_server(url, timeout=60):
 def wait_for_app_ready(page: Page):
     """Robustly wait for the Gradio app to be interactive."""
 def open_accordion(page: Page, text: str):
-    """Robustly opens an accordion by partial text match, no-ops if already open."""
+    """Robustly open an accordion if it's closed."""
 def switch_to_tab(page: Page, tab_name: str):
     """Robustly switch tabs in Gradio."""
 def cleanup_port(port: int):

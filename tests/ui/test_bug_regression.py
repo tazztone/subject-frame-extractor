@@ -83,7 +83,7 @@ class TestFindPeopleButtonRegression:
                 page.wait_for_timeout(500)
 
                 # Click the Scan Video tab
-                scan_tab = page.get_by_role("tab", name="🔍 Scan Video for People")
+                scan_tab = page.get_by_role("tab", name="Scan Video for People")
                 if scan_tab.is_visible():
                     scan_tab.click()
                     page.wait_for_timeout(500)
