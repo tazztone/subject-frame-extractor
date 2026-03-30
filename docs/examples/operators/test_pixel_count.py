@@ -1,7 +1,8 @@
 import numpy as np
 
 from core.operators import OperatorContext
-from examples.operators.pixel_count import PixelCountOperator
+
+from .pixel_count import PixelCountOperator
 
 
 def test_pixel_count_all_black():
