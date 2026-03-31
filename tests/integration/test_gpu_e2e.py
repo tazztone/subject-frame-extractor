@@ -536,7 +536,11 @@ class TestInsightFaceInference:
         registry = ModelRegistry(logger)
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        models_path = str(tmp_path / "models")
+
+        # Point to real models directory to avoid download
+        from pathlib import Path
+
+        models_path = str(Path(__file__).parent.parent.parent / "models")
 
         analyzer = get_face_analyzer("buffalo_l", models_path, (640, 640), logger, registry, device)
 

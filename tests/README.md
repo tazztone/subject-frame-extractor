@@ -25,7 +25,7 @@ All tests should be run using `uv` to ensure the correct environment.
 | :--- | :--- | :--- |
 | `scripts/test.sh` | **Standard Quality Pass**. Runs Ruff, Unit Tests, and Integration Smoke. | `./scripts/test.sh` |
 | `scripts/linux_test_ui.sh` | Runs Playwright tests in `tests/ui/` with xdist. | `./scripts/linux_test_ui.sh` |
-| `scripts/linux_test_all.sh` | Runs the full suite including slow integration tests **serially**. | `./scripts/linux_test_all.sh` |
+| `scripts/linux_test_all.sh` | Runs the full suite with **duration logging**. | `./scripts/linux_test_all.sh` |
 | `scripts/linux_test_integration.sh` | Specialized runner for GPU/Backend tests. | `./scripts/linux_test_integration.sh` |
 
 ### GPU Concurrency Warning
@@ -87,6 +87,33 @@ The suite compares current UI states against baseline screenshots using perceptu
 - **Target**: 80% total coverage (`--cov-fail-under=80` enforced in CI).
 - **Manual Verification**: `scripts/linux_test_cov.sh`.
 
+## Performance Monitoring
+
+The `scripts/linux_test_all.sh` script automatically tracks test durations to help identify bottlenecks.
+
+- **Log File**: Timings are saved to `tests/results/logs/test_performance.log` in a clean `[duration]s [test_name]` format.
+- **Background Tracking**: Every test is timed automatically (using `--durations=0`), but the results are kept in the log to avoid terminal clutter.
+- **Interpreting Results**: Use the "slowest durations" section at the end of each test stage to identify tests that may need better mocking or optimization.
+
+## Common Gotchas & Troubleshooting
+
+### Tests are "Deselected" (0 selected)
+If you try to run a specific test file (e.g., `tests/integration/test_gpu_e2e.py`) and see `0 selected` or many tests being deselected:
+- **Cause**: The `pyproject.toml` contains a default filter: `-m 'not integration and not gpu_e2e and not audit and not slow'`.
+- **Fix**: You **MUST** explicitly include the marker in your command.
+  ```bash
+  # Correct way to run GPU tests
+  uv run pytest tests/integration/test_gpu_e2e.py -m "gpu_e2e"
+  ```
+
+### Mocks are not disabling in Integration tests
+- **Cause**: The global mock system in `tests/conftest.py` only disables when `PYTEST_INTEGRATION_MODE=true` is set.
+- **Requirement**: Always `export` the variable before running integration/E2E tests.
+  ```bash
+  export PYTEST_INTEGRATION_MODE=true
+  uv run pytest tests/integration/ -m "integration"
+  ```
+
 ---
 
-*Last Updated: 2026-03-28 (Infrastructure Stabilization)*
+*Last Updated: 2026-03-31 (Duration Logging & Troubleshooting)*
