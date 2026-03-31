@@ -56,5 +56,5 @@ class Labels:
     SCAN_VIDEO_BUTTON = "🔍 Scan Video Now"
 
     # Strategy Options
-    STRATEGY_FACE = "👤 Source Face Reference"
-    STRATEGY_TEXT = "📝 Text Description (Limited)"
+    STRATEGY_FACE = "Source Face Reference"
+    STRATEGY_TEXT = "Text Description (Limited)"

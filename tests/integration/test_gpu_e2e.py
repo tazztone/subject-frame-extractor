@@ -496,7 +496,7 @@ class TestSAM2Inference:
 class TestInsightFaceInference:
     """Real InsightFace inference tests."""
 
-    def test_insightface_initialization(self, tmp_path):
+    def test_insightface_initialization(self, tmp_path, module_model_registry):
         """InsightFace can be initialized."""
         import torch
 
@@ -505,21 +505,24 @@ class TestInsightFaceInference:
 
         from core.config import Config
         from core.logger import AppLogger
-        from core.managers import ModelRegistry, get_face_analyzer
+        from core.managers import get_face_analyzer
 
         config = Config(logs_dir=str(tmp_path / "logs"))
         logger = AppLogger(config, log_to_console=False, log_to_file=False)
-        registry = ModelRegistry(logger)
+        registry = module_model_registry
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        models_path = str(tmp_path / "models")
+        # Point to real models directory to avoid download
+        from pathlib import Path
+
+        models_path = str(Path(__file__).parent.parent.parent / "models")
 
         # get_face_analyzer(model_name, models_path, det_size_tuple, logger, model_registry, device)
         analyzer = get_face_analyzer("buffalo_l", models_path, (640, 640), logger, registry, device)
 
         assert analyzer is not None
 
-    def test_face_detection_on_image(self, test_image_with_face, tmp_path):
+    def test_face_detection_on_image(self, test_image_with_face, tmp_path, module_model_registry):
         """InsightFace can process an image without errors."""
         import cv2
         import torch
@@ -529,11 +532,11 @@ class TestInsightFaceInference:
 
         from core.config import Config
         from core.logger import AppLogger
-        from core.managers import ModelRegistry, get_face_analyzer
+        from core.managers import get_face_analyzer
 
         config = Config(logs_dir=str(tmp_path / "logs"))
         logger = AppLogger(config, log_to_console=False, log_to_file=False)
-        registry = ModelRegistry(logger)
+        registry = module_model_registry
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -581,7 +584,7 @@ class TestPipelineE2E:
         assert pipeline is not None
         assert pipeline.config is not None
 
-    def test_analysis_pipeline_initializes_with_real_managers(self, tmp_path):
+    def test_analysis_pipeline_initializes_with_real_managers(self, tmp_path, module_model_registry):
         """AnalysisPipeline initializes with real ThumbnailManager and ModelRegistry."""
         import torch
 
@@ -593,7 +596,7 @@ class TestPipelineE2E:
 
         from core.config import Config
         from core.logger import AppLogger
-        from core.managers import ModelRegistry, ThumbnailManager
+        from core.managers import ThumbnailManager
         from core.models import AnalysisParameters
         from core.pipelines import AnalysisPipeline
 
@@ -606,7 +609,7 @@ class TestPipelineE2E:
         params = AnalysisParameters(source_path="test.mp4", output_folder=str(output_dir))
 
         tm = ThumbnailManager(logger, config)
-        registry = ModelRegistry(logger)
+        registry = module_model_registry
 
         pipeline = AnalysisPipeline(config, logger, params, Queue(), threading.Event(), tm, registry)
 
@@ -760,7 +763,7 @@ class TestMaskPropagatorE2E:
     """Tests for MaskPropagator with real SAM3 inference."""
 
     @requires_sam3
-    def test_mask_propagator_propagate(self, tmp_path):
+    def test_mask_propagator_propagate(self, tmp_path, module_model_registry):
         """MaskPropagator.propagate() works with new SAM3 API."""
         import threading
         from queue import Queue
@@ -780,13 +783,7 @@ class TestMaskPropagatorE2E:
 
         params = AnalysisParameters(source_path="test.mp4", output_folder=str(tmp_path), min_mask_area_pct=0.01)
 
-        from pathlib import Path
-
-        project_root = Path(__file__).parents[2]
-        if not (project_root / "models" / "sam3.pt").exists():
-            pytest.skip("SAM3 checkpoint not found locally")
-
-        wrapper = SAM3Wrapper(device="cuda")
+        wrapper = module_model_registry.get_tracker("sam3")
 
         try:
             propagator = MaskPropagator(
@@ -816,10 +813,11 @@ class TestMaskPropagatorE2E:
             assert masks[0] is not None
             assert isinstance(masks[0], np.ndarray)
         finally:
-            wrapper.shutdown()
+            # Note: We don't shutdown here as it's a shared registry tracker
+            wrapper.reset_session()
 
     @requires_sam3
-    def test_mask_propagator_bidirectional(self, tmp_path):
+    def test_mask_propagator_bidirectional(self, tmp_path, module_model_registry):
         """MaskPropagator.propagate() works bidirectionally from middle frame."""
         import threading
         from queue import Queue
@@ -839,13 +837,7 @@ class TestMaskPropagatorE2E:
 
         params = AnalysisParameters(source_path="test.mp4", output_folder=str(tmp_path), min_mask_area_pct=0.01)
 
-        from pathlib import Path
-
-        project_root = Path(__file__).parents[2]
-        if not (project_root / "models" / "sam3.pt").exists():
-            pytest.skip("SAM3 checkpoint not found locally")
-
-        wrapper = SAM3Wrapper(device="cuda")
+        wrapper = module_model_registry.get_tracker("sam3")
 
         try:
             propagator = MaskPropagator(
@@ -881,7 +873,7 @@ class TestMaskPropagatorE2E:
                 assert mask is not None, f"Frame {i} has no mask"
                 assert isinstance(mask, np.ndarray)
         finally:
-            wrapper.shutdown()
+            wrapper.reset_session()
 
 
 @pytest.mark.gpu_e2e
@@ -1090,7 +1082,7 @@ class TestCancellationE2E:
         finally:
             pass  # cleanup() removed
 
-    def test_analysis_pipeline_cancel(self, tmp_path):
+    def test_analysis_pipeline_cancel(self, tmp_path, module_model_registry):
         """AnalysisPipeline handles cancel event gracefully."""
         import threading
         from queue import Queue
@@ -1117,11 +1109,11 @@ class TestCancellationE2E:
         cancel_event.set()  # Pre-cancelled
 
         # Pipeline initialization should still work
-        from core.managers import ModelRegistry, ThumbnailManager
+        from core.managers import ThumbnailManager
         from core.pipelines import AnalysisPipeline
 
         tm = ThumbnailManager(logger, config)
-        registry = ModelRegistry(logger)
+        registry = module_model_registry
 
         pipeline = AnalysisPipeline(config, logger, params, Queue(), cancel_event, tm, registry)
 
@@ -1294,7 +1286,7 @@ class TestMaskGenerationE2E:
         finally:
             pass
 
-    def test_pre_analysis_mask_generation_e2e(self, test_frames_dir, tmp_path):
+    def test_pre_analysis_mask_generation_e2e(self, test_frames_dir, tmp_path, module_model_registry):
         """Test the full pre-analysis flow including mask generation."""
         import torch
 
@@ -1306,13 +1298,13 @@ class TestMaskGenerationE2E:
 
         from core.config import Config
         from core.logger import AppLogger
-        from core.managers import ModelRegistry, ThumbnailManager
+        from core.managers import ThumbnailManager
         from core.models import AnalysisParameters
         from core.scene_utils import SubjectMasker
 
         config = Config(logs_dir=str(tmp_path / "logs"), models_dir=str(tmp_path / "models"))
         logger = AppLogger(config, log_to_console=False, log_to_file=False)
-        registry = ModelRegistry(logger)
+        registry = module_model_registry
         tm = ThumbnailManager(logger, config)
 
         params = AnalysisParameters.from_ui(

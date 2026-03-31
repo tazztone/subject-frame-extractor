@@ -79,10 +79,10 @@ def test_batch_manager_processing(bm):
     bm.start_processing(processor)
 
     # Wait for completion
-    timeout = 5
+    timeout = 2
     start = time.time()
     while bm.is_running and time.time() - start < timeout:
-        time.sleep(0.1)
+        time.sleep(0.01)
 
     assert bm.queue[0].status == BatchStatus.COMPLETED
     assert bm.queue[0].progress == 0.5
@@ -97,34 +97,44 @@ def test_batch_manager_failure(bm):
 
     bm.start_processing(processor)
 
-    # Wait
-    timeout = 5
+    # Wait for completion
+    timeout = 2
     start = time.time()
     while bm.is_running and time.time() - start < timeout:
-        time.sleep(0.1)
+        time.sleep(0.01)
 
     assert bm.queue[0].status == BatchStatus.FAILED
     assert bm.queue[0].message == "Error"
 
 
 def test_batch_manager_stop_processing(bm):
+    import threading
+
+    block_event = threading.Event()
     bm.add_paths(["p1.mp4", "p2.mp4"])
 
     def slow_processor(item, progress):
-        time.sleep(1)
+        block_event.wait(timeout=5)
         return {"message": "Slow"}
 
     bm.start_processing(slow_processor)
-    time.sleep(0.1)  # Let it start
+
+    # Wait for the worker to actually start
+    timeout = 2
+    start = time.time()
+    while not bm.is_running and time.time() - start < timeout:
+        time.sleep(0.01)
+
     assert bm.is_running
 
     bm.stop_processing()
+    block_event.set()  # Release the processor
 
-    # Wait for scheduler to stop
-    timeout = 5
+    # Wait for scheduler to actually stop (is_running = False)
+    timeout = 2
     start = time.time()
     while bm.is_running and time.time() - start < timeout:
-        time.sleep(0.1)
+        time.sleep(0.01)
 
     assert not bm.is_running
     assert bm.stop_event.is_set()

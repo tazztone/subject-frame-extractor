@@ -27,8 +27,9 @@ mkdir -p tests/results/logs
 if [ $# -eq 0 ]; then
     uv run --no-sync pytest tests/ui/ -n "$WORKERS" -o "addopts=-v --tb=short"
 else
-    # Pass arguments directly to pytest
-    uv run --no-sync pytest -n "$WORKERS" -o "addopts=-v --tb=short" "$@"
+    # Pass arguments directly to pytest but ensure it's scoped to tests/ui/
+    # and excludes heavy integration/GPU tests to prevent accidental re-runs
+    uv run --no-sync pytest tests/ui/ -n "$WORKERS" -o "addopts=-v --tb=short" -m "not integration and not gpu_e2e" "$@"
 fi
 
 if [ $? -ne 0 ]; then
