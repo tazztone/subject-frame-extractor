@@ -61,7 +61,7 @@ if [ $? -ne 0 ]; then exit 1; fi
 # 4. Regression Tests
 echo ""
 echo "--- Stage 4: Regression Tests ---"
-run_and_log "Regression" uv run --no-sync pytest tests/regression/ "$@"
+run_and_log "Regression" uv run --no-sync pytest tests/regression/ --no-cov "$@"
 if [ $? -ne 0 ]; then exit 1; fi
 
 echo ""

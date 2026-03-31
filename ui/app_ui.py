@@ -914,6 +914,7 @@ class AppUI:
             inputs=self.ana_input_components,
             outputs=[
                 c["unified_status"],
+                c["unified_log"],
                 c["find_people_status"],
                 c["discovered_people_group"],
                 c["discovered_faces_gallery"],
@@ -981,14 +982,13 @@ class AppUI:
         )
 
     @safe_ui_callback("Face Discovery")
-    def on_find_people_from_video(
-        self, current_state: ApplicationState, *args
-    ) -> tuple[str, str, Any, Any, float, ApplicationState]:
+    def on_find_people_from_video(self, current_state: ApplicationState, *args) -> dict:
         """Scans the video for faces to populate the discovery gallery.
 
-        Returns: (unified_status, find_people_status, group_visibility, gallery_update, slider_value, new_state)
+        Returns: Dictionary of component updates.
         """
         new_state = current_state.model_copy()
+        c = self.components
         self.logger.info("Scan Video for Faces clicked")
         params = self._create_pre_analysis_event(current_state, *args)
         output_dir = Path(params.output_folder)
@@ -996,14 +996,14 @@ class AppUI:
         if not output_dir.exists():
             self.logger.warning("Output directory does not exist - run extraction first")
             msg = "**Run extraction first** - No video frames found."
-            return (
-                "**Face Discovery Failed.** Run extraction first.",
-                msg,
-                gr.update(visible=False),
-                [],
-                0.5,
-                new_state,
-            )
+            return {
+                c["unified_status"]: "**Face Discovery Failed.** Run extraction first.",
+                c["find_people_status"]: msg,
+                c["discovered_people_group"]: gr.update(visible=False),
+                c["discovered_faces_gallery"]: [],
+                c["identity_confidence_slider"]: 0.5,
+                c["application_state"]: new_state,
+            }
 
         from core.managers import initialize_analysis_models
         from core.utils import create_frame_map
@@ -1013,26 +1013,26 @@ class AppUI:
         if not face_analyzer:
             self.logger.warning("Face analyzer not available")
             msg = "**Face analyzer unavailable** - Check model installation."
-            return (
-                "**Face Discovery Failed.** Face analyzer unavailable.",
-                msg,
-                gr.update(visible=False),
-                [],
-                0.5,
-                new_state,
-            )
+            return {
+                c["unified_status"]: "**Face Discovery Failed.** Face analyzer unavailable.",
+                c["find_people_status"]: msg,
+                c["discovered_people_group"]: gr.update(visible=False),
+                c["discovered_faces_gallery"]: [],
+                c["identity_confidence_slider"]: 0.5,
+                c["application_state"]: new_state,
+            }
         frame_map = create_frame_map(output_dir, self.logger)
         self.logger.info(f"Frame map has {len(frame_map)} frames")
         if not frame_map:
             msg = "**No frames found** - Run extraction first."
-            return (
-                "**Face Discovery Failed.** No video frames found.",
-                msg,
-                gr.update(visible=False),
-                [],
-                0.5,
-                new_state,
-            )
+            return {
+                c["unified_status"]: "**Face Discovery Failed.** No video frames found.",
+                c["find_people_status"]: msg,
+                c["discovered_people_group"]: gr.update(visible=False),
+                c["discovered_faces_gallery"]: [],
+                c["identity_confidence_slider"]: 0.5,
+                c["application_state"]: new_state,
+            }
 
         all_faces = []
         thumb_dir = output_dir / "thumbs"
@@ -1060,27 +1060,27 @@ class AppUI:
         if not all_faces:
             self.logger.info("No faces found in sampled frames")
             msg = "**No faces detected** in sampled frames. Try adjusting sample rate."
-            return (
-                "**Face Discovery Finished.** No faces found.",
-                msg,
-                gr.update(visible=False),
-                [],
-                0.5,
-                new_state,
-            )
+            return {
+                c["unified_status"]: "**Face Discovery Finished.** No faces found.",
+                c["find_people_status"]: msg,
+                c["discovered_people_group"]: gr.update(visible=False),
+                c["discovered_faces_gallery"]: [],
+                c["identity_confidence_slider"]: 0.5,
+                c["application_state"]: new_state,
+            }
 
         # Get clustered faces for gallery
         gallery_items = self.on_identity_confidence_change(0.5, new_state)
         n_people = len(self.gallery_to_cluster_map) if hasattr(self, "gallery_to_cluster_map") else 0
         success_msg = f"Found **{n_people} unique people** from {len(all_faces)} face detections."
-        return (
-            success_msg,
-            success_msg,
-            gr.update(visible=True),
-            gallery_items,
-            0.5,
-            new_state,
-        )
+        return {
+            c["unified_status"]: success_msg,
+            c["find_people_status"]: success_msg,
+            c["discovered_people_group"]: gr.update(visible=True),
+            c["discovered_faces_gallery"]: gallery_items,
+            c["identity_confidence_slider"]: 0.5,
+            c["application_state"]: new_state,
+        }
 
     def _get_smart_mode_updates(self, is_enabled: bool) -> list[Any]:
         """Calculates slider updates when toggling 'Smart Mode'."""
