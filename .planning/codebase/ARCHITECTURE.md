@@ -32,7 +32,8 @@ The processing flow is split into three distinct phases to allow for checkpoints
 
 ### 4. Analysis Phase (`AnalysisPipeline` via `Operators`)
 - **Metric Loop**: Parallel execution of "Operators" (Action/Quality metrics).
-- **Concurrency**: Uses `ThreadPoolExecutor` with a pool size limited by `analysis_default_workers` to prevent CPU RAM exhaustion.
+- **Batch Pre-loading**: To minimize disk I/O and decoding overhead, the pipeline pre-loads all images and masks for a batch before entering the multi-threaded processing loop.
+- **Concurrency**: Uses `ThreadPoolExecutor` with a pool size limited by `analysis_default_workers`. Locking is applied surgically to non-thread-safe libraries (e.g., InsightFace) to maximize parallel throughput.
 - **Persistence**: Final metrics are flushed to a SQLite `metadata.db` for fast filtering and export.
 
 ### 5. Filtering & Export Phase (`core/export.py`)
@@ -43,6 +44,7 @@ The processing flow is split into three distinct phases to allow for checkpoints
 
 ### Thread-Safe Model Loading (`ModelRegistry`)
 Large ML models (SAM3, InsightFace) are managed by a central registry:
+- **Initialize Once, Share Everywhere**: The `execute_analysis_orchestrator` initializes required models once at the start of a run and passes the loaded instances to all sub-pipelines (Pre-Analysis, Propagation, Analysis). This eliminates redundant model loading and reduces total latency by ~30s.
 - **Lazy Loading**: Models are only loaded into VRAM when first requested.
 - **Locking**: Uses a reentrant `RLock` for the registry state and individual `threading.Lock` per model to prevent race conditions during initialization.
 - **Path Safety**: The registry strictly validates `models_path`. If `models_path` is `None` (common in misconfigured environments), it logs an error and returns `None` instead of crashing with a `Path` instantiation error.

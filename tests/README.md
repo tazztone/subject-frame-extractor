@@ -95,6 +95,20 @@ The `scripts/linux_test_all.sh` script automatically tracks test durations to he
 - **Background Tracking**: Every test is timed automatically (using `--durations=0`), but the results are kept in the log to avoid terminal clutter.
 - **Interpreting Results**: Use the "slowest durations" section at the end of each test stage to identify tests that may need better mocking or optimization.
 
+## Advanced Testing Patterns
+
+### Concurrency Regression Testing
+To verify that code intended to be multi-threaded is actually running in parallel (and not neutralized by a hidden lock):
+1. **Mock with Delays**: Patch the internal worker functions with a deterministic delay (e.g., `time.sleep(0.1)`).
+2. **Measure Wall-Clock**: Use `time.time()` to measure the total duration of a batch run.
+3. **Assert Parallelism**: If 10 workers run 10 tasks of 0.1s, the total duration should be ~0.1s (parallel) rather than 1.0s (serial). 
+   * See `tests/unit/test_concurrency_regression.py` (referenced) for the implementation of this pattern.
+
+### Infrastructure Latency Tuning
+The UI test suite relies on a mock Gradio server. To maintain fast CI/CD cycles:
+- **Server Polling**: The `wait_for_server` helper uses a 0.1s interval (reduced from 1s) to minimize idle time during test setup.
+- **Mock Delays**: Artificial sleeps in `tests/mock_app.py` are pinned to the minimum required for state transition (e.g., 0.01s) to prevent test bloat.
+
 ## Common Gotchas & Troubleshooting
 
 ### Tests are "Deselected" (0 selected)
