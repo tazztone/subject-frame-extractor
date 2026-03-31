@@ -383,16 +383,16 @@ class TestSAM2Inference:
 @pytest.mark.gpu_e2e
 class TestInsightFaceInference:
     """Real InsightFace inference tests."""
-    def test_insightface_initialization(self, tmp_path):
+    def test_insightface_initialization(self, tmp_path, module_model_registry):
         """InsightFace can be initialized."""
-    def test_face_detection_on_image(self, test_image_with_face, tmp_path):
+    def test_face_detection_on_image(self, test_image_with_face, tmp_path, module_model_registry):
         """InsightFace can process an image without errors."""
 @pytest.mark.gpu_e2e
 class TestPipelineE2E:
     """End-to-end pipeline tests with real execution."""
     def test_extraction_pipeline_creates_output(self, tmp_path):
         """ExtractionPipeline initializes correctly with real config."""
-    def test_analysis_pipeline_initializes_with_real_managers(self, tmp_path):
+    def test_analysis_pipeline_initializes_with_real_managers(self, tmp_path, module_model_registry):
         """AnalysisPipeline initializes with real ThumbnailManager and ModelRegistry."""
 @pytest.mark.gpu_e2e
 class TestVideoE2E:
@@ -412,10 +412,10 @@ class TestVideoE2E:
 class TestMaskPropagatorE2E:
     """Tests for MaskPropagator with real SAM3 inference."""
     @requires_sam3
-    def test_mask_propagator_propagate(self, tmp_path):
+    def test_mask_propagator_propagate(self, tmp_path, module_model_registry):
         """MaskPropagator.propagate() works with new SAM3 API."""
     @requires_sam3
-    def test_mask_propagator_bidirectional(self, tmp_path):
+    def test_mask_propagator_bidirectional(self, tmp_path, module_model_registry):
         """MaskPropagator.propagate() works bidirectionally from middle frame."""
 @pytest.mark.gpu_e2e
 class TestOperatorE2E:
@@ -439,7 +439,7 @@ class TestCancellationE2E:
     @requires_sam3
     def test_propagation_with_cancel_event(self, tmp_path, test_frames_dir, module_model_registry):
         """MaskPropagator handles cancel event during propagation."""
-    def test_analysis_pipeline_cancel(self, tmp_path):
+    def test_analysis_pipeline_cancel(self, tmp_path, module_model_registry):
         """AnalysisPipeline handles cancel event gracefully."""
 @pytest.mark.gpu_e2e
 class TestMediaPipeLandmarkerE2E:
@@ -466,7 +466,7 @@ class TestMaskGenerationE2E:
     @requires_sam3
     def test_identity_first_seed_e2e(self, test_image_with_face, tmp_path, module_model_registry):
         """Test 'By Face' seeding strategy with real models."""
-    def test_pre_analysis_mask_generation_e2e(self, test_frames_dir, tmp_path):
+    def test_pre_analysis_mask_generation_e2e(self, test_frames_dir, tmp_path, module_model_registry):
         """Test the full pre-analysis flow including mask generation."""
 ```
 
@@ -661,6 +661,12 @@ def extracted_session(page, app_server):
 @pytest.fixture
 def analyzed_session(extracted_session):
     """Fixture that provides a page with pre-analysis completed."""
+@pytest.fixture(scope='module')
+def shared_page(browser):
+    """Provides a module-scoped page to amortize browser/context startup."""
+@pytest.fixture(scope='module')
+def shared_analysis_session(shared_page, app_server):
+    """Provides a shared analysis session (module-scoped)."""
 @pytest.fixture
 def full_analysis_session(analyzed_session):
     """Fixture that provides a page with full analysis completed (ready for export)."""
@@ -858,21 +864,21 @@ class TestStrategyVisibility:
 pytestmark = pytest.mark.e2e
 class TestExportFlow:
     """Export workflow tests."""
-    def test_export_tab_accessible(self, page: Page, app_server):
+    def test_export_tab_accessible(self, shared_analysis_session):
         """Verify export tab is accessible and shows expected elements."""
-    def test_dry_run_export_requires_analysis(self, full_analysis_session):
+    def test_dry_run_export_requires_analysis(self, shared_analysis_session):
         """Test dry run export mode after full analysis."""
-    def test_export_button_visibility(self, full_analysis_session):
+    def test_export_button_visibility(self, shared_analysis_session):
         """Test export button becomes visible after analysis."""
 class TestFilteringBeforeExport:
     """Tests for filtering controls in export tab."""
-    def test_filter_sliders_visible(self, page: Page, app_server):
+    def test_filter_sliders_visible(self, shared_analysis_session):
         """Verify filtering sliders are visible in export tab."""
-    def test_smart_filter_toggle(self, page: Page, app_server):
+    def test_smart_filter_toggle(self, shared_analysis_session):
         """Test Smart Filtering toggle."""
 class TestExportFormats:
     """Tests for export format options."""
-    def test_export_settings_visible(self, full_analysis_session):
+    def test_export_settings_visible(self, shared_analysis_session):
         """Verify export settings are accessible after analysis."""
 ```
 

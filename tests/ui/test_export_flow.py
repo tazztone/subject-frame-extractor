@@ -11,9 +11,9 @@ Run with: python -m pytest tests/e2e/test_export_flow.py -v -s
 """
 
 import pytest
-from playwright.sync_api import Page, expect
+from playwright.sync_api import expect
 
-from .conftest import BASE_URL, switch_to_tab
+from .conftest import open_accordion, switch_to_tab
 
 pytestmark = pytest.mark.e2e
 
@@ -21,10 +21,9 @@ pytestmark = pytest.mark.e2e
 class TestExportFlow:
     """Export workflow tests."""
 
-    def test_export_tab_accessible(self, page: Page, app_server):
+    def test_export_tab_accessible(self, shared_analysis_session):
         """Verify export tab is accessible and shows expected elements."""
-        page.goto(BASE_URL)
-        page.wait_for_timeout(2000)
+        page = shared_analysis_session
 
         # Navigate to Export tab
         switch_to_tab(page, "Export")
@@ -37,9 +36,9 @@ class TestExportFlow:
         # Let's check for the label text more broadly
         expect(page.get_by_text("Use a Preset")).to_be_visible()
 
-    def test_dry_run_export_requires_analysis(self, full_analysis_session):
+    def test_dry_run_export_requires_analysis(self, shared_analysis_session):
         """Test dry run export mode after full analysis."""
-        page = full_analysis_session
+        page = shared_analysis_session
 
         # Navigate to Export tab
         switch_to_tab(page, "Export")
@@ -52,7 +51,7 @@ class TestExportFlow:
 
         # Check logs for success message
         # Open logs accordion because it's closed by default
-        page.get_by_text("System Logs").click()
+        open_accordion(page, "System Logs")
         page.wait_for_timeout(500)
 
         log = page.locator("#unified_log textarea")
@@ -60,9 +59,9 @@ class TestExportFlow:
         page.wait_for_timeout(2000)
         expect(log).to_be_visible()
 
-    def test_export_button_visibility(self, full_analysis_session):
+    def test_export_button_visibility(self, shared_analysis_session):
         """Test export button becomes visible after analysis."""
-        page = full_analysis_session
+        page = shared_analysis_session
 
         # Navigate to Export tab
         switch_to_tab(page, "Export")
@@ -76,10 +75,9 @@ class TestExportFlow:
 class TestFilteringBeforeExport:
     """Tests for filtering controls in export tab."""
 
-    def test_filter_sliders_visible(self, page: Page, app_server):
+    def test_filter_sliders_visible(self, shared_analysis_session):
         """Verify filtering sliders are visible in export tab."""
-        page.goto(BASE_URL)
-        page.wait_for_timeout(2000)
+        page = shared_analysis_session
 
         # Navigate to Export tab
         switch_to_tab(page, "Export")
@@ -87,10 +85,9 @@ class TestFilteringBeforeExport:
         # Presets dropdown should be visible
         expect(page.get_by_text("Use a Preset")).to_be_visible()
 
-    def test_smart_filter_toggle(self, page: Page, app_server):
+    def test_smart_filter_toggle(self, shared_analysis_session):
         """Test Smart Filtering toggle."""
-        page.goto(BASE_URL)
-        page.wait_for_timeout(2000)
+        page = shared_analysis_session
 
         # Navigate to Export tab
         switch_to_tab(page, "Export")
@@ -105,9 +102,9 @@ class TestFilteringBeforeExport:
 class TestExportFormats:
     """Tests for export format options."""
 
-    def test_export_settings_visible(self, full_analysis_session):
+    def test_export_settings_visible(self, shared_analysis_session):
         """Verify export settings are accessible after analysis."""
-        page = full_analysis_session
+        page = shared_analysis_session
 
         # Navigate to Export tab
         switch_to_tab(page, "Export")

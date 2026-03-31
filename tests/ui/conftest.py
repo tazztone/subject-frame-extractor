@@ -255,6 +255,61 @@ def analyzed_session(extracted_session):
     return page
 
 
+@pytest.fixture(scope="module")
+def shared_page(browser):
+    """
+    Provides a module-scoped page to amortize browser/context startup.
+    Useful for tests that share heavy setup state.
+    """
+    context = browser.new_context()
+    page = context.new_page()
+    page.set_default_timeout(15000)
+    yield page
+    context.close()
+
+
+@pytest.fixture(scope="module")
+def shared_analysis_session(shared_page, app_server):
+    """
+    Provides a shared analysis session (module-scoped).
+    Runs the full analysis pipeline once and shares the resulting state.
+    """
+    page = shared_page
+    page.goto(BASE_URL)
+    wait_for_app_ready(page)
+
+    # 1. Extraction
+    source_input = page.get_by_placeholder(Labels.SOURCE_PLACEHOLDER)
+    if not source_input.is_visible():
+        source_input = page.locator(Selectors.SOURCE_INPUT)
+    source_input.fill("dummy_video.mp4")
+    page.locator(Selectors.START_EXTRACTION).click()
+    expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text("Extraction Complete", timeout=30000)
+    page.wait_for_timeout(500)
+
+    # 2. Pre-Analysis
+    switch_to_tab(page, Labels.TAB_SUBJECT)
+    page.locator(Selectors.START_PRE_ANALYSIS).click()
+    expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text("Pre-Analysis Complete", timeout=30000)
+    page.wait_for_timeout(500)
+
+    # 3. Propagation
+    switch_to_tab(page, Labels.TAB_SCENES)
+    propagate_btn = page.get_by_role("button", name="Propagate Masks", exact=False)
+    expect(propagate_btn).to_be_visible(timeout=5000)
+    propagate_btn.click()
+    expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text("Propagation Complete", timeout=30000)
+    page.wait_for_timeout(500)
+
+    # 4. Analysis
+    switch_to_tab(page, Labels.TAB_METRICS)
+    page.locator(Selectors.START_ANALYSIS).click()
+    expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text("Analysis Complete", timeout=30000)
+    page.wait_for_timeout(500)
+
+    return page
+
+
 @pytest.fixture
 def full_analysis_session(analyzed_session):
     """
