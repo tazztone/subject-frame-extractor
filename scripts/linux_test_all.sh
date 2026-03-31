@@ -49,7 +49,7 @@ if [ $? -ne 0 ]; then exit 1; fi
 # 2. Integration Tests
 echo ""
 echo "--- Stage 2: Integration Tests ---"
-run_and_log "Integration" uv run --no-sync pytest tests/integration/ -o "addopts=-v --tb=short" -m "integration or gpu_e2e" --no-cov
+run_and_log "Integration" bash "$SCRIPT_DIR/linux_test_integration.sh"
 if [ $? -ne 0 ]; then exit 1; fi
 
 # 3. UI/E2E Tests
