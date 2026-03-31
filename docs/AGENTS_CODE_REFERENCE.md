@@ -267,6 +267,7 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_signatures.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_simple_cv_operators.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_smoke.py  
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_strategy_mapping.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_subject_masker_coverage.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_subject_masker_simple.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_system_health.py  
@@ -579,6 +580,10 @@ class ExtractionEvent(UIEvent):
     def validate_source(self) -> 'ExtractionEvent': ...
 class PreAnalysisEvent(UIEvent):
     """Data model for pre-analysis configuration and execution."""
+    @field_validator('primary_seed_strategy', mode='before')
+    @classmethod
+    def strip_emoji_from_strategy(cls, v: Any) -> str:
+        """Strip emoji prefix from the strategy string if present."""
     @field_validator('output_folder')
     @classmethod
     def validate_out(cls, v: str) -> str: ...
@@ -959,6 +964,10 @@ class SceneState:
 class AnalysisParameters(BaseModel):
     """Aggregates all parameters for the analysis pipeline."""
     model_config = {'extra': 'ignore'}
+    @field_validator('primary_seed_strategy', mode='before')
+    @classmethod
+    def strip_emoji_from_strategy(cls, v: Any) -> str:
+        """Strip emoji prefix from the strategy string if present."""
     @classmethod
     def from_ui(cls, logger: 'AppLogger', config: 'Config', **kwargs) -> 'AnalysisParameters':
         """Factory method to create parameters from UI arguments, handling validation an..."""

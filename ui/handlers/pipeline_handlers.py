@@ -297,9 +297,12 @@ class PipelineHandler:
         if "seed_strategy" in run_config:
             updates[self.app.components["best_frame_strategy_input"]] = gr.update(value=run_config["seed_strategy"])
         if "primary_seed_strategy" in run_config:
-            updates[self.app.components["primary_seed_strategy_input"]] = gr.update(
-                value=run_config["primary_seed_strategy"]
-            )
+            val = run_config["primary_seed_strategy"]
+            if isinstance(val, str):
+                import re
+
+                val = re.sub(r"^[^\w\s]+\s+", "", val)
+            updates[self.app.components["primary_seed_strategy_input"]] = gr.update(value=val)
 
         if scenes_data and output_dir:
             from core.scene_utils import get_scene_status_text

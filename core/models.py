@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, List, Optional, Union
 
 import numpy as np
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 if TYPE_CHECKING:
     from core.config import Config
@@ -175,6 +175,16 @@ class AnalysisParameters(BaseModel):
 
     model_config = {"extra": "ignore"}
 
+    @field_validator("primary_seed_strategy", mode="before")
+    @classmethod
+    def strip_emoji_from_strategy(cls, v: Any) -> str:
+        """Strip emoji prefix from the strategy string if present."""
+        if not isinstance(v, str):
+            return str(v)
+        import re
+
+        return re.sub(r"^[^\w\s]+\s+", "", v)
+
     source_path: str = ""
     method: str = ""
     interval: float = 0.0
@@ -196,7 +206,7 @@ class AnalysisParameters(BaseModel):
     thumb_megapixels: float = 0.5
     pre_analysis_enabled: bool = False
     pre_sample_nth: int = 1
-    primary_seed_strategy: str = "🤖 Automatic"
+    primary_seed_strategy: str = "Automatic Detection"
     min_mask_area_pct: float = 1.0
     sharpness_base_scale: float = 2500.0
     edge_strength_base_scale: float = 100.0

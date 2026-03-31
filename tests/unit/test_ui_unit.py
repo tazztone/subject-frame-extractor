@@ -205,6 +205,7 @@ class TestTextStrategyWarning:
     def test_text_strategy_has_warning_in_choices(self, app_ui):
         """TEXT strategy choice should include warning indicator."""
         choices = app_ui.PRIMARY_SEED_STRATEGY_CHOICES
-        text_choice = [c for c in choices if "Text" in c][0]
+        # choices are now (label, value) tuples
+        text_choice = [c[0] for c in choices if "Text" in str(c)][0]
 
         assert "⚠️" in text_choice or "Limited" in text_choice, "TEXT strategy should have warning indicator"

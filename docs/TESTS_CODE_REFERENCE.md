@@ -148,6 +148,7 @@ tests
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_signatures.py`](#-testsunittest_signaturespy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_simple_cv_operators.py`](#-testsunittest_simple_cv_operatorspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_smoke.py`](#-testsunittest_smokepy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_strategy_mapping.py`](#-testsunittest_strategy_mappingpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_subject_masker_coverage.py`](#-testsunittest_subject_masker_coveragepy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_subject_masker_simple.py`](#-testsunittest_subject_masker_simplepy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_system_health.py`](#-testsunittest_system_healthpy)  
@@ -2806,6 +2807,24 @@ class TestDependencyImports:
     def test_numpy_available(self): ...
     def test_gradio_available(self): ...
     def test_pydantic_available(self): ...
+```
+
+### `📄 tests/unit/test_strategy_mapping.py`
+
+```python
+class TestStrategyMapping:
+    @pytest.fixture
+    def mock_config(self, mock_config_simple): ...
+    @pytest.fixture
+    def mock_logger(self): ...
+    @pytest.fixture
+    def selector(self, mock_config, mock_logger, mock_params): ...
+    def test_pre_analysis_event_handles_emoji_string(self, mock_logger, mock_config):
+        """FAILING TEST: Currently, PreAnalysisEvent does not automatically strip emojis"""
+    def test_seed_selector_routes_face_correctly(self, selector):
+        """GREEN TEST: Now that AnalysisParameters has a validator, or we"""
+    def test_automatic_fallback_prefers_best_face(self, selector):
+        """GREEN TEST: In Automatic fallback, face detection now picks"""
 ```
 
 ### `📄 tests/unit/test_subject_masker_coverage.py`

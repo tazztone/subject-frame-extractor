@@ -300,7 +300,11 @@ class SeedSelector:
                 frame_bgr = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
                 faces = self.face_analyzer.get(frame_bgr)
                 if faces:
-                    best_face = max(faces, key=lambda f: f.det_score)
+                    if self.reference_embedding is not None:
+                        # Prioritize match similarity over raw detection score
+                        best_face = max(faces, key=lambda f: np.dot(f.normed_embedding, self.reference_embedding))
+                    else:
+                        best_face = max(faces, key=lambda f: f.det_score)
                     expanded = self._expand_face_to_body(best_face.bbox.astype(int), frame_rgb.shape)
                     log_with_component(self.logger, "info", "Used face-detection fallback for person seeding")
                     return expanded, {
