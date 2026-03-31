@@ -68,7 +68,7 @@ def test_strategy_routing_with_enum():
         # Test Face Reference
         params.primary_seed_strategy = SeedStrategy.FACE_REFERENCE.value
         selector.reference_embedding = np.array([0.1])
-        params.enable_face_filter = True
+        params.compute_face_sim = True
         selector.face_analyzer = MagicMock()
         selector.select_seed(frame, params)
         mock_id.assert_called_once()

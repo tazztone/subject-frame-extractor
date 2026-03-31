@@ -53,7 +53,7 @@ class TestSubjectMasker:
             output_folder="/tmp",
             video_path="test.mp4",
             primary_seed_strategy="🤖 Automatic",
-            enable_face_filter=True,  # Trigger warning path
+            compute_face_sim=True,  # Trigger warning path
         )
 
         # Ensure logger is mocked

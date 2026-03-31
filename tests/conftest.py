@@ -477,7 +477,6 @@ def mock_ui_state():
         "max_resolution": "720p",
         "disable_parallel": False,
         "resume": False,
-        "enable_face_filter": False,
         "face_ref_img_path": "",
         "face_model_name": "ghostface",
         "enable_subject_mask": False,

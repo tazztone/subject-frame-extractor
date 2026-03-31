@@ -292,7 +292,7 @@ class SceneHandler:
                     c["scene_mask_area_min_input"],
                     c["scene_face_sim_min_input"],
                     c["scene_quality_score_min_input"],
-                    c["enable_face_filter_input"],
+                    c["compute_face_sim"],
                     c["scene_gallery_view_toggle"],
                 ],
                 [
@@ -476,7 +476,7 @@ class SceneHandler:
         return app_state, status_text, gr.update(value=items), button_update
 
     def on_apply_bulk_scene_filters_extended(
-        self, app_state: ApplicationState, min_mask_pct, min_face_sim, min_quality, enable_face_filter, view
+        self, app_state: ApplicationState, min_mask_pct, min_face_sim, min_quality, compute_face_sim, view
     ):
         """Applies bulk filters to scenes based on metric thresholds."""
         app_state.push_history(app_state.scenes)
@@ -504,7 +504,7 @@ class SceneHandler:
                     reason.append(f"Area {area:.1f}% < {min_mask_pct}%")
 
             # Check Face Sim (only if enabled globally AND logic enabled)
-            if enable_face_filter and min_face_sim > 0:
+            if compute_face_sim and min_face_sim > 0:
                 sim = (scene.get("seed_result") or {}).get("face_sim", 0)
                 if sim < min_face_sim:
                     should_exclude = True

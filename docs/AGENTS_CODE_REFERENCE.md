@@ -1699,7 +1699,7 @@ class SceneHandler:
         """Handles selection of a scene from the gallery for editing."""
     def on_editor_toggle(self, app_state: ApplicationState, view: str, new_status: str):
         """Toggles the included/excluded status of a scene."""
-    def on_apply_bulk_scene_filters_extended(self, app_state: ApplicationState, min_mask_pct, min_face_sim, min_quality, enable_face_filter, view):
+    def on_apply_bulk_scene_filters_extended(self, app_state: ApplicationState, min_mask_pct, min_face_sim, min_quality, compute_face_sim, view):
         """Applies bulk filters to scenes based on metric thresholds."""
 ```
 

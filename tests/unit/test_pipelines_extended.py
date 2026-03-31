@@ -31,7 +31,7 @@ class TestPipelinesExtended:
             video_path="video.mp4",
             output_folder=str(out),
             tracker_model_name="sam3",
-            enable_face_filter=True,
+            compute_face_sim=True,
             face_model_name="buffalo_l",
             face_ref_img_path="ref.jpg",
         )

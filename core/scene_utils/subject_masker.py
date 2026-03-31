@@ -129,7 +129,7 @@ class SubjectMasker:
 
     def initialize_models(self) -> None:
         """Initialize required models based on parameters."""
-        if self.params.enable_face_filter and self.face_analyzer is None:
+        if self.params.compute_face_sim and self.face_analyzer is None:
             log_with_component(self.logger, "warning", "Face analyzer is not available but face filter is enabled.")
 
         strategy = getattr(self.params, "primary_seed_strategy", "")

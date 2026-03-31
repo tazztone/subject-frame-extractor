@@ -35,7 +35,7 @@ def initialize_analysis_models(
     device = "cuda" if torch.cuda.is_available() else "cpu"
     face_analyzer, ref_emb, face_landmarker = None, None, None
 
-    if params.enable_face_filter:
+    if params.compute_face_sim:
         face_analyzer = get_face_analyzer(
             model_name=params.face_model_name,
             models_path=str(config.models_dir),

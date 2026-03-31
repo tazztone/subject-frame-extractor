@@ -56,13 +56,13 @@ def test_pre_analysis_event_validation():
 
     # Test face_ref_img_path validation (invalid path)
     with patch("core.events.Path.is_file", return_value=False):
-        event_with_face = PreAnalysisEvent(**common_args, enable_face_filter=True, face_ref_img_path="nonexistent.jpg")
-        assert event_with_face.enable_face_filter is False
+        event_with_face = PreAnalysisEvent(**common_args, compute_face_sim=True, face_ref_img_path="nonexistent.jpg")
+        assert event_with_face.compute_face_sim is True
         assert event_with_face.face_ref_img_path == ""
 
     # Test face_ref_img_path validation (valid path)
     with patch("core.events.Path.is_file", return_value=True):
-        event_with_face = PreAnalysisEvent(**common_args, enable_face_filter=True, face_ref_img_path="existent.jpg")
+        event_with_face = PreAnalysisEvent(**common_args, compute_face_sim=True, face_ref_img_path="existent.jpg")
         assert event_with_face.face_ref_img_path == "existent.jpg"
 
     # Test face_ref_img_path same as video_path

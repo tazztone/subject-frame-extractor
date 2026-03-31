@@ -120,7 +120,6 @@ def run_e2e_verification(tracker_model="sam2"):
         face_model_name="buffalo_l",
         tracker_model_name=tracker_model,
         best_frame_strategy="Largest Person",
-        enable_face_filter=True,
         enable_subject_mask=True,
         min_mask_area_pct=1.0,
         sharpness_base_scale=2500.0,

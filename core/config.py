@@ -86,7 +86,6 @@ class Config(BaseSettings):
     default_max_resolution: str = "maximum available"
     default_pre_analysis_enabled: bool = True
     default_pre_sample_nth: int = 5
-    default_enable_face_filter: bool = True
     default_face_model_name: str = "buffalo_l"
     default_enable_subject_mask: bool = True
     default_tracker_model_name: str = "sam2"

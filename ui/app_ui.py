@@ -146,7 +146,6 @@ class AppUI:
         ]
         self.ana_ui_map_keys = [
             "resume",
-            "enable_face_filter",
             "face_ref_img_path",
             "face_ref_img_upload",
             "face_model_name",
@@ -188,7 +187,6 @@ class AppUI:
             "method_input",
             "pre_analysis_enabled_input",
             "pre_sample_nth_input",
-            "enable_face_filter_input",
             "face_ref_img_path_input",
             "text_prompt_input",
             "best_frame_strategy_input",
@@ -699,9 +697,9 @@ class AppUI:
         clean_args["primary_seed_strategy"] = strategy
 
         if strategy == "Source Face Reference":
-            clean_args.update({"enable_face_filter": True, "text_prompt": ""})
+            clean_args.update({"compute_face_sim": True, "text_prompt": ""})
         elif strategy == "Text Description (Limited)":
-            clean_args.update({"enable_face_filter": False, "face_ref_img_path": ""})
+            clean_args.update({"compute_face_sim": False, "face_ref_img_path": ""})
         return PreAnalysisEvent.model_validate(clean_args)
 
     def _run_pipeline(
@@ -813,12 +811,14 @@ class AppUI:
         is_face = "Face Reference" in strategy or "Fallback" in strategy
         is_text = "Text Description" in strategy or "Fallback" in strategy
         is_auto = "Automatic" in strategy or "Discovery" in strategy
-        return {
+        updates = {
             self.components["face_seeding_group"]: gr.update(visible=is_face),
             self.components["text_seeding_group"]: gr.update(visible=is_text),
             self.components["auto_seeding_group"]: gr.update(visible=is_auto),
-            self.components["enable_face_filter_input"]: gr.update(value=is_face, visible=is_face),
         }
+        if is_face:
+            updates[self.components["compute_face_sim"]] = gr.update(value=True)
+        return updates
 
     def _setup_visibility_toggles(self):
         """Configures dynamic visibility logic for UI components."""
@@ -841,15 +841,25 @@ class AppUI:
             [c["nth_frame_input"]],
         )
         c["primary_seed_strategy_input"].change(
-            self._fix_strategy_visibility,
+            lambda s: self._fix_strategy_visibility(s),
             inputs=c["primary_seed_strategy_input"],
             outputs=[
                 c["face_seeding_group"],
                 c["text_seeding_group"],
                 c["auto_seeding_group"],
-                c["enable_face_filter_input"],
+                c["compute_face_sim"],
             ],
         )
+
+        def auto_enable_face_sim(val):
+            if val:
+                return gr.update(value=True)
+            return gr.update()
+
+        c["face_ref_img_upload_input"].change(
+            auto_enable_face_sim, c["face_ref_img_upload_input"], c["compute_face_sim"]
+        )
+        c["face_ref_img_path_input"].change(auto_enable_face_sim, c["face_ref_img_path_input"], c["compute_face_sim"])
 
     def _get_inputs(self, keys: list[str]) -> list[gr.Component]:
         """Retrieves a list of UI components based on their registry keys."""
