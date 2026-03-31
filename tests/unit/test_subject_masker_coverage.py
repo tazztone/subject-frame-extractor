@@ -200,7 +200,7 @@ class TestSubjectMaskerCoverage:
         with (
             patch.object(masker, "_load_shot_frames", return_value=frames),
             patch("torch.from_numpy", return_value=torch.zeros((1, 3, 10, 10))),
-            patch("torch.cuda.amp.autocast"),
+            patch("core.scene_utils.subject_masker.torch.cuda.amp.autocast"),
         ):
             masker._select_best_frame_in_scene(scene, "/tmp")
 
