@@ -177,8 +177,10 @@ modules_map = {
     "torchvision": create_mock_module("torchvision", {"ops": MagicMock(), "transforms": MagicMock()}),
     "torchvision.ops": MagicMock(),
     "torchvision.transforms": MagicMock(),
-    "insightface": create_mock_module("insightface", {"app": MagicMock()}),
-    "insightface.app": MagicMock(),
+    "insightface": create_mock_module(
+        "insightface", {"app": create_mock_module("insightface.app", {"FaceAnalysis": MagicMock()})}
+    ),
+    "insightface.app": create_mock_module("insightface.app", {"FaceAnalysis": MagicMock()}),
     "sam3": create_mock_module("sam3", {"model_builder": mock_sam3.model_builder}),
     "sam3.model_builder": mock_sam3.model_builder,
     "sam3.model.sam3_video_predictor": MagicMock(),

@@ -18,6 +18,8 @@ from pydantic import BaseModel
 warnings.filterwarnings("ignore", category=UserWarning, module="pkg_resources")
 warnings.filterwarnings("ignore", category=UserWarning, module="gradio")
 warnings.filterwarnings("ignore", category=FutureWarning, module="timm")
+warnings.filterwarnings("ignore", category=DeprecationWarning, message=".*torch.jit.script.*")
+warnings.filterwarnings("ignore", category=UserWarning, message=".*pkg_resources is deprecated.*")
 # Specific message-based filters
 warnings.filterwarnings("ignore", message=".*show_label has no effect when container is False.*")
 # Pydantic 2.x warnings if any (though we use it correctly, some libs might not)

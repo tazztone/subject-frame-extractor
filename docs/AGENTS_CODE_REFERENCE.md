@@ -1583,7 +1583,7 @@ class AppUI:
     def on_discovered_face_select(self, state: ApplicationState, confidence: float, evt: Optional[gr.SelectData]=None) -> tuple[Optional[str], Optional[np.ndarray], str]:
         """Handles selection of a face cluster from the discovery gallery."""
     @safe_ui_callback('Face Discovery')
-    def on_find_people_from_video(self, current_state: ApplicationState, *args) -> tuple[str, str, Any, Any, float, ApplicationState]:
+    def on_find_people_from_video(self, current_state: ApplicationState, *args) -> dict:
         """Scans the video for faces to populate the discovery gallery."""
     def _get_smart_mode_updates(self, is_enabled: bool) -> list[Any]:
         """Calculates slider updates when toggling 'Smart Mode'."""
