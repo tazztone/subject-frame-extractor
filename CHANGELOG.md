@@ -2,6 +2,19 @@
 
 All notable changes to the Subject Frame Extractor project.
 
+## [1.6.0] - 2026-03-31
+### Added
+- **Performance Optimization Suite**: Comprehensive audit and refactor of core processing pipelines.
+- **Parallel Analysis**: Narrowed locking strategy in `AnalysisPipeline` to enable true multi-threaded execution of image quality operators.
+- **Batch Pre-loading**: Implemented batch-level image and mask pre-loading to minimize disk I/O and decoding overhead during analysis.
+- **Parallel Post-processing**: Added `ThreadPoolExecutor` to mask propagation for concurrent post-processing of results.
+
+### Changed
+- **Orchestrator Refactor**: `execute_analysis_orchestrator` now initializes models once and shares them across all stages (Pre-Analysis, Propagation, Analysis), eliminating redundant model loads.
+- **Optimized Defaults**: Increased `analysis_default_batch_size` to 50 and database `batch_size` to 100 for better throughput.
+- **Resource Management**: Reduced blocking `torch.cuda.empty_cache()` calls in `SAM3Wrapper` to improve frame-to-frame transition speed.
+- **Test Infrastructure**: Optimized UI test setup by reducing polling intervals and mock extraction delays, resulting in a >75% reduction in total test suite duration.
+
 ## [1.5.0] - 2026-02-07
 ### Added
 - **`/refine` Workflow** — Strategic Course Correction and Roadmap Reconciliation.

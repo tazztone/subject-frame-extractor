@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -78,14 +79,20 @@ class PreAnalysisPipeline(Pipeline):
         cancel_event: threading.Event,
         thumbnail_manager: "ThumbnailManager",
         model_registry: "ModelRegistry",
+        loaded_models: Optional[dict] = None,
     ):
         super().__init__(config, logger, params, progress_queue, cancel_event)
         self.thumbnail_manager = thumbnail_manager
         self.model_registry = model_registry
         self.output_dir = Path(self.params.output_folder)
+        self.loaded_models = loaded_models
 
     def run(self, scenes: List[Scene], tracker: Optional["AdvancedProgressTracker"] = None) -> List[Scene]:
-        models = initialize_analysis_models(self.params, self.config, self.logger, self.model_registry)
+        models = (
+            self.loaded_models
+            if self.loaded_models
+            else initialize_analysis_models(self.params, self.config, self.logger, self.model_registry)
+        )
         is_folder_mode = not self.params.video_path
         niqe_metric = self._initialize_niqe_if_needed(models["device"], is_folder_mode)
 
@@ -182,6 +189,7 @@ class AnalysisPipeline(Pipeline):
         cancel_event: threading.Event,
         thumbnail_manager: "ThumbnailManager",
         model_registry: "ModelRegistry",
+        loaded_models: Optional[dict] = None,
     ):
         super().__init__(config, logger, params, progress_queue, cancel_event)
         self.output_dir = Path(self.params.output_folder)
@@ -199,6 +207,7 @@ class AnalysisPipeline(Pipeline):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.thumbnail_manager = thumbnail_manager
         self.model_registry = model_registry
+        self.loaded_models = loaded_models
         OperatorRegistry.initialize_all(self.config)
 
     def _initialize_niqe_metric(self):
@@ -230,7 +239,11 @@ class AnalysisPipeline(Pipeline):
             if not self.params.resume:
                 self.db.clear_metadata()
             self.scene_map = {s.shot_id: s for s in scenes_to_process}
-            models = initialize_analysis_models(self.params, self.config, self.logger, self.model_registry)
+            models = (
+                self.loaded_models
+                if self.loaded_models
+                else initialize_analysis_models(self.params, self.config, self.logger, self.model_registry)
+            )
             self.face_analyzer, self.reference_embedding, self.face_landmarker = (
                 models["face_analyzer"],
                 models["ref_emb"],
@@ -274,7 +287,11 @@ class AnalysisPipeline(Pipeline):
             if not self.params.resume:
                 self.db.clear_metadata()
             self.scene_map = {s.shot_id: s for s in scenes_to_process}
-            models = initialize_analysis_models(self.params, self.config, self.logger, self.model_registry)
+            models = (
+                self.loaded_models
+                if self.loaded_models
+                else initialize_analysis_models(self.params, self.config, self.logger, self.model_registry)
+            )
             self.face_analyzer, self.reference_embedding, self.face_landmarker = (
                 models["face_analyzer"],
                 models["ref_emb"],
@@ -420,67 +437,94 @@ class AnalysisPipeline(Pipeline):
                     time.sleep(0.01)
 
     def _process_batch(self, paths: List[Path], metrics: dict) -> int:
+        # Pre-load all images in the batch to avoid repeated disk I/O in the loop
+        preloaded_data = []
         for p in paths:
-            self._process_single_frame(p, metrics)
+            if self.cancel_event.is_set():
+                break
+            img = self.thumbnail_manager.get(p)
+            if img is not None:
+                mask_meta = self.mask_metadata.get(p.stem, {})
+                mask_thumb = None
+                if mask_meta.get("mask_path"):
+                    mp = Path(mask_meta["mask_path"])
+                    if not mp.is_absolute():
+                        mp = self.masks_dir / mp.name
+                    if mp.exists():
+                        m = cv2.imread(str(mp), cv2.IMREAD_GRAYSCALE)
+                        if m is not None:
+                            mask_thumb = cv2.resize(m, (img.shape[1], img.shape[0]), interpolation=cv2.INTER_NEAREST)
+
+                preloaded_data.append({"path": p, "img": img, "mask_thumb": mask_thumb, "mask_meta": mask_meta})
+
+        for data in preloaded_data:
+            self._process_single_frame(data["path"], metrics, preloaded=data)
         return len(paths)
 
-    def _process_single_frame(self, path: Path, metrics: dict):
+    def _process_single_frame(self, path: Path, metrics: dict, preloaded: Optional[dict] = None):
         if self.cancel_event.is_set():
             return
         match = re.search(r"frame_(\d+)", path.name)
         if not match:
             return
         try:
-            img = self.thumbnail_manager.get(path)
-            if img is None:
-                return
+            if preloaded:
+                img = preloaded["img"]
+                mask_thumb = preloaded["mask_thumb"]
+                mask_meta = preloaded["mask_meta"]
+            else:
+                img = self.thumbnail_manager.get(path)
+                if img is None:
+                    return
+                mask_meta = self.mask_metadata.get(path.stem, {})
+                mask_thumb = None
+                if mask_meta.get("mask_path"):
+                    mp = Path(mask_meta["mask_path"])
+                    if not mp.is_absolute():
+                        mp = self.masks_dir / mp.name
+                    if mp.exists():
+                        m = cv2.imread(str(mp), cv2.IMREAD_GRAYSCALE)
+                        if m is not None:
+                            mask_thumb = cv2.resize(m, (img.shape[1], img.shape[0]), interpolation=cv2.INTER_NEAREST)
+
             frame = Frame(image_data=img, frame_number=-1)
             meta = {"filename": path.name, "metrics": {}}
-            mask_meta = self.mask_metadata.get(path.stem, {})
-            mask_thumb = None
-            if mask_meta.get("mask_path"):
-                mp = Path(mask_meta["mask_path"])
-                if not mp.is_absolute():
-                    mp = self.masks_dir / mp.name
-                if mp.exists():
-                    m = cv2.imread(str(mp), cv2.IMREAD_GRAYSCALE)
-                    if m is not None:
-                        mask_thumb = cv2.resize(m, (img.shape[1], img.shape[0]), interpolation=cv2.INTER_NEAREST)
-            with self.processing_lock:
-                faces, bbox = None, None
-                if self.params.compute_face_sim and self.face_analyzer:
+            faces, bbox = None, None
+            if self.params.compute_face_sim and self.face_analyzer:
+                with self.processing_lock:
                     try:
                         faces = self.face_analyzer.get(cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
                         if faces:
                             bbox = max(faces, key=lambda x: x.det_score).bbox.astype(int)
                     except Exception:
                         self.logger.warning("Face analysis failed for frame", exc_info=True)
-                if any(metrics.values()) or self.params.compute_niqe:
-                    res = run_operators(
-                        image_rgb=img,
-                        mask=mask_thumb,
-                        config=self.config,
-                        model_registry=self.model_registry,
-                        logger=self.logger,
-                        params={
-                            "face_bbox": bbox,
-                            "faces": faces,
-                            "reference_embedding": self.reference_embedding,
-                            "face_landmarker": self.face_landmarker,
-                            "mask_meta": mask_meta,
-                        },
-                    )
-                    for name, r in res.items():
-                        if r.success:
-                            for k, v in r.metrics.items():
-                                if k == "face_sim":
-                                    frame.face_similarity_score = v
-                                elif k == "face_conf":
-                                    frame.max_face_confidence = v
-                                elif hasattr(frame.metrics, k):
-                                    setattr(frame.metrics, k, v)
-                            if r.data and "phash" in r.data:
-                                meta["phash"] = r.data["phash"]
+
+            if any(metrics.values()) or self.params.compute_niqe:
+                res = run_operators(
+                    image_rgb=img,
+                    mask=mask_thumb,
+                    config=self.config,
+                    model_registry=self.model_registry,
+                    logger=self.logger,
+                    params={
+                        "face_bbox": bbox,
+                        "faces": faces,
+                        "reference_embedding": self.reference_embedding,
+                        "face_landmarker": self.face_landmarker,
+                        "mask_meta": mask_meta,
+                    },
+                )
+                for name, r in res.items():
+                    if r.success:
+                        for k, v in r.metrics.items():
+                            if k == "face_sim":
+                                frame.face_similarity_score = v
+                            elif k == "face_conf":
+                                frame.max_face_confidence = v
+                            elif hasattr(frame.metrics, k):
+                                setattr(frame.metrics, k, v)
+                        if r.data and "phash" in r.data:
+                            meta["phash"] = r.data["phash"]
             meta["metrics"] = frame.metrics.model_dump()
             if self.params.compute_face_sim:
                 if frame.face_similarity_score is not None:
@@ -500,6 +544,3 @@ class AnalysisPipeline(Pipeline):
             self.db.insert_metadata(_to_json_safe(meta))
         except Exception as e:
             self.db.insert_metadata({"filename": path.name, "error": f"failed: {e}", "error_severity": "ERROR"})
-
-
-import re

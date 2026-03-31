@@ -273,7 +273,7 @@ def mock_extraction_run(self, tracker=None):
     if tracker:
         tracker.start(10, desc="Mock Extraction")
         for i in range(10):
-            time.sleep(0.1)
+            time.sleep(0.01)
             tracker.step(1)
         tracker.set_stage("Extraction Complete")
         tracker.done_stage()
