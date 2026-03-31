@@ -67,7 +67,7 @@ def wait_for_server(url, timeout=60):
                 return True
         except requests.RequestException:
             pass
-        time.sleep(1)
+        time.sleep(0.1)
     return False
 
 

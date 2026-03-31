@@ -215,8 +215,6 @@ class SAM3Wrapper:
             except Exception:
                 pass
             self.session_id = None
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
 
     def shutdown(self):
         import gc

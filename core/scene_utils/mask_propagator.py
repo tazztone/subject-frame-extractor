@@ -5,6 +5,7 @@ MaskPropagator class for propagating segmentation masks across video frames.
 from __future__ import annotations
 
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from queue import Queue
 from typing import TYPE_CHECKING, Optional
@@ -218,11 +219,11 @@ class MaskPropagator:
                                 user_context={"current_frame": frame_idx, "direction": "backward"},
                             )
 
-            # Process all gathered masks (seeds + propagated)
+            # Process all gathered masks (seeds + propagated) in parallel
             img_area = h * w
-            for fn in frame_numbers:
-                pred_mask = all_propagated.get(fn)
 
+            def _process_frame(fn):
+                pred_mask = all_propagated.get(fn)
                 if pred_mask is not None and np.any(pred_mask):
                     mask = postprocess_mask(
                         (pred_mask * 255).astype(np.uint8), config=self.config, fill_holes=True, keep_largest_only=True
@@ -230,11 +231,15 @@ class MaskPropagator:
                 else:
                     mask = np.zeros((h, w), dtype=np.uint8)
 
-                masks[fn] = mask
                 area_pct = (np.sum(mask > 0) / img_area) * 100 if img_area > 0 else 0.0
-                areas[fn] = float(area_pct)
-                empties[fn] = bool(area_pct < self.params.min_mask_area_pct)
-                errors[fn] = "Empty mask" if empties[fn] else None
+                return fn, mask, float(area_pct), bool(area_pct < self.params.min_mask_area_pct)
+
+            with ThreadPoolExecutor(max_workers=min(len(frame_numbers), 8)) as executor:
+                for fn, mask, area_pct, is_empty in executor.map(_process_frame, frame_numbers):
+                    masks[fn] = mask
+                    areas[fn] = area_pct
+                    empties[fn] = is_empty
+                    errors[fn] = "Empty mask" if is_empty else None
 
         except (torch.cuda.OutOfMemoryError, RuntimeError) as e:
             err_msg = f"GPU error: {e}"
@@ -275,7 +280,7 @@ class MaskPropagator:
         frame_numbers: Optional[list[int]] = None,
     ) -> tuple[list, list, list, list]:
         """
-        Legacy method: Propagate masks from a seed frame using in-memory frames.
+        [DEPRECATED] Legacy method: Propagate masks from a seed frame using in-memory frames.
 
         This method writes frames to temp JPEGs for SAM3 processing.
         Prefer propagate_video() when a downscaled video is available.

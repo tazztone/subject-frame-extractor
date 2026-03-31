@@ -26,6 +26,7 @@ from core.managers import (
     VideoManager,
     _load_analysis_scenes,
     _load_scenes,
+    initialize_analysis_models,
 )
 from core.managers import (
     execute_session_load as _execute_session_load,
@@ -122,6 +123,7 @@ def execute_pre_analysis(
     cuda_available: bool,
     progress: Optional[Callable] = None,
     model_registry: Optional["ModelRegistry"] = None,
+    loaded_models: Optional[dict] = None,
 ) -> Generator[dict, None, None]:
     # Import gradio only when needed to keep test dependencies light
     try:
@@ -146,7 +148,9 @@ def execute_pre_analysis(
     # Ensure model_registry is not None
     mr = model_registry or ModelRegistry(logger=logger)
 
-    pipeline = PreAnalysisPipeline(config, logger, params, progress_queue, cancel_event, thumbnail_manager, mr)
+    pipeline = PreAnalysisPipeline(
+        config, logger, params, progress_queue, cancel_event, thumbnail_manager, mr, loaded_models=loaded_models
+    )
     processed = pipeline.run(scenes, tracker=tracker)
 
     msg = "Pre-Analysis Complete."
@@ -187,6 +191,7 @@ def execute_propagation(
     cuda_available: bool,
     progress: Optional[Callable] = None,
     model_registry: Optional["ModelRegistry"] = None,
+    loaded_models: Optional[dict] = None,
 ) -> Generator[dict, None, None]:
     params = AnalysisParameters.from_ui(logger, config, **event.analysis_params.model_dump())
     is_folder = not params.video_path
@@ -205,7 +210,9 @@ def execute_propagation(
         tracker.start(totals.get("propagation", 0) + len(scenes), desc="Propagating Masks")
 
     mr = model_registry or ModelRegistry(logger=logger)
-    pipeline = AnalysisPipeline(config, logger, params, progress_queue, cancel_event, thumbnail_manager, mr)
+    pipeline = AnalysisPipeline(
+        config, logger, params, progress_queue, cancel_event, thumbnail_manager, mr, loaded_models=loaded_models
+    )
     result = pipeline.run_full_analysis(scenes, tracker=tracker)
 
     if result and result.get("done"):
@@ -236,6 +243,7 @@ def execute_analysis(
     cuda_available: bool,
     progress: Optional[Callable] = None,
     model_registry: Optional["ModelRegistry"] = None,
+    loaded_models: Optional[dict] = None,
 ) -> Generator[dict, None, None]:
     params = AnalysisParameters.from_ui(logger, config, **event.analysis_params.model_dump())
     scenes = _load_analysis_scenes(event.scenes, not params.video_path)
@@ -248,7 +256,9 @@ def execute_analysis(
     tracker.start(sum(s.end_frame - s.start_frame for s in scenes), desc="Analyzing")
 
     mr = model_registry or ModelRegistry(logger=logger)
-    pipeline = AnalysisPipeline(config, logger, params, progress_queue, cancel_event, thumbnail_manager, mr)
+    pipeline = AnalysisPipeline(
+        config, logger, params, progress_queue, cancel_event, thumbnail_manager, mr, loaded_models=loaded_models
+    )
     result = pipeline.run_analysis_only(scenes, tracker=tracker)
 
     if result and result.get("done"):
@@ -278,9 +288,25 @@ def execute_analysis_orchestrator(
     model_registry: Optional["ModelRegistry"] = None,
 ) -> Generator[dict, None, None]:
     """Orchestrates Pre-Analysis, Propagation, and Analysis stages."""
+    # Ensure model_registry is not None
+    mr = model_registry or ModelRegistry(logger=logger)
+
+    # Initialize models once for all stages
+    params = AnalysisParameters.from_ui(logger, config, **event.model_dump())
+    loaded_models = initialize_analysis_models(params, config, logger, mr)
+
     # 1. Pre-Analysis
     pre_gen = execute_pre_analysis(
-        event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress, model_registry
+        event,
+        progress_queue,
+        cancel_event,
+        logger,
+        config,
+        thumbnail_manager,
+        cuda_available,
+        progress,
+        mr,
+        loaded_models=loaded_models,
     )
     pre_result = {}
     for res in pre_gen:
@@ -312,7 +338,8 @@ def execute_analysis_orchestrator(
             thumbnail_manager,
             cuda_available,
             progress,
-            model_registry,
+            mr,
+            loaded_models=loaded_models,
         )
         for res in prop_gen:
             yield res
@@ -335,7 +362,8 @@ def execute_analysis_orchestrator(
         thumbnail_manager,
         cuda_available,
         progress,
-        model_registry,
+        mr,
+        loaded_models=loaded_models,
     )
     for res in ana_gen:
         yield res

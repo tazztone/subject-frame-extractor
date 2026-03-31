@@ -142,3 +142,10 @@ def test_quality_weights_property():
     assert weights["sharpness"] == 10
     assert weights["niqe"] == 50
     assert weights["contrast"] == 15  # default
+
+
+def test_config_batch_sizes():
+    """Test that Config has the expected default batch sizes for performance."""
+    config = Config()
+    # Phase 2 goal: Increase from 25 to 50
+    assert config.analysis_default_batch_size == 50

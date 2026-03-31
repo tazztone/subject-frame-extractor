@@ -19,7 +19,7 @@ class Database:
     def __init__(
         self,
         db_path: Path,
-        batch_size: int = 50,
+        batch_size: int = 100,
         logger: Optional[Union[logging.Logger, "AppLogger"]] = None,
     ):
         """Initializes the Database manager."""

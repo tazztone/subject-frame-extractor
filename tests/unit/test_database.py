@@ -240,3 +240,11 @@ def test_migration_v1_v2_logic(tmp_path):
     cursor.execute("SELECT MAX(version) FROM schema_versions")
     assert cursor.fetchone()[0] == CURRENT_VERSION
     conn.close()
+
+
+def test_database_default_batch_size(db_path):
+    """Test that Database initializes with the optimized default batch size."""
+    db = Database(db_path)
+    # Phase 2 goal: Increase from 50 to 100
+    assert db.batch_size == 100
+    db.close()

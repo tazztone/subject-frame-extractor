@@ -1367,6 +1367,8 @@ def test_config_json_source():
     """Test loading configuration from a JSON file."""
 def test_quality_weights_property():
     """Test the quality_weights property helper."""
+def test_config_batch_sizes():
+    """Test that Config has the expected default batch sizes for performance."""
 ```
 
 ### `📄 tests/unit/test_context_adherence.py`
@@ -1441,6 +1443,8 @@ def test_database_partial_write_failure(db_path):
     """Test behavior when flush fails mid-way."""
 def test_migration_v1_v2_logic(tmp_path):
     """Test the migration logic in db_schema directly."""
+def test_database_default_batch_size(db_path):
+    """Test that Database initializes with the optimized default batch size."""
 ```
 
 ### `📄 tests/unit/test_dedup.py`

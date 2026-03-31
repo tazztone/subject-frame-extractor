@@ -223,7 +223,7 @@ class Config(BaseSettings):
     visualization_badge_text_color: List[int] = Field(default_factory=lambda: [255, 255, 255])
 
     # Analysis
-    analysis_default_batch_size: int = 25
+    analysis_default_batch_size: int = 50
     analysis_default_workers: int = 4
 
     # Validation
