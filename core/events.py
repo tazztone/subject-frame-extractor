@@ -69,7 +69,6 @@ class PreAnalysisEvent(UIEvent):
     output_folder: str
     video_path: str
     resume: bool = False
-    enable_face_filter: bool = False
     face_ref_img_path: str = ""
     face_ref_img_upload: Optional[str] = None
     face_model_name: str = "buffalo_l"
@@ -121,8 +120,9 @@ class PreAnalysisEvent(UIEvent):
     @model_validator(mode="after")
     def validate_strategy_consistency(self) -> "PreAnalysisEvent":
         """Ensures that dependent settings (like face filter) are consistent with available data."""
-        if not self.face_ref_img_path and self.enable_face_filter:
-            self.enable_face_filter = False
+        if not self.face_ref_img_path and self.compute_face_sim:
+            # We don't necessarily turn it off, but seeding might fallback
+            pass
         return self
 
 

@@ -1267,7 +1267,7 @@ class TestMaskGenerationE2E:
         try:
             selector = SeedSelector(
                 params=AnalysisParameters(
-                    source_path="test.mp4", primary_seed_strategy="👤 By Face", enable_face_filter=True
+                    source_path="test.mp4", primary_seed_strategy="👤 By Face", compute_face_sim=True
                 ),
                 config=config,
                 face_analyzer=face_analyzer,

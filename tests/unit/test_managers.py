@@ -320,7 +320,7 @@ class TestManagers:
         mock_logger,
     ):
         params = MagicMock()
-        params.enable_face_filter = True
+        params.compute_face_sim = True
         params.face_model_name = "buffalo_l"
         params.face_ref_img_path = "ref.jpg"
 

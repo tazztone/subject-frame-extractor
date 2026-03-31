@@ -54,7 +54,7 @@ class TestAppUI:
             "method_input": MagicMock(),
             "pre_analysis_enabled_input": MagicMock(),
             "pre_sample_nth_input": MagicMock(),
-            "enable_face_filter_input": MagicMock(),
+            "compute_face_sim": MagicMock(),
             "face_model_name_input": MagicMock(),
             "face_ref_img_path_input": MagicMock(),
             "text_prompt_input": MagicMock(),
@@ -145,7 +145,6 @@ class TestAppUI:
             # Removed: output_folder, video_path
             args = [
                 False,  # resume
-                False,  # enable_face_filter
                 "",  # face_ref_img_path
                 None,  # face_ref_img_upload
                 "buffalo_l",  # face_model_name
@@ -162,7 +161,7 @@ class TestAppUI:
                 "Automatic Detection",  # primary_seed_strategy
                 True,  # compute_quality_score
                 True,  # compute_sharpness
-            ] + [True] * 11  # remaining compute_... metrics
+            ] + [True] * 12  # remaining compute_... metrics (was 11+1 due to compute_face_sim being in the list)
 
             app_state.extracted_video_path = "vid.mp4"
             app_state.analysis_output_dir = out_dir
@@ -261,7 +260,7 @@ class TestAppUI:
             patch("ui.handlers.scene_handler.save_scene_seeds"),
             patch("ui.handlers.scene_handler.build_scene_gallery_items", return_value=([], [], 1)),
         ):
-            # Signature: on_apply_bulk_scene_filters_extended(self, app_state, min_mask_pct, min_face_sim, min_quality, enable_face_filter, view)
+            # Signature: on_apply_bulk_scene_filters_extended(self, app_state, min_mask_pct, min_face_sim, min_quality, compute_face_sim, view)
             new_state, _, _, _ = app_ui.scene_handler.on_apply_bulk_scene_filters_extended(
                 app_state, 60.0, 0.0, 0.0, False, "Kept"
             )

@@ -97,7 +97,7 @@ class SeedSelector:
         params_source = current_params if current_params is not None else self.params
         p = params_source
         primary_strategy = self._get_param(params_source, "primary_seed_strategy", "Automatic Detection")
-        use_face_filter = self._get_param(params_source, "enable_face_filter", False)
+        use_face_filter = self._get_param(params_source, "compute_face_sim", False)
 
         if primary_strategy == SeedStrategy.FACE_REFERENCE.value:
             if self.face_analyzer and self.reference_embedding is not None and use_face_filter:

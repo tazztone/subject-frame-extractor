@@ -183,7 +183,6 @@ class AnalysisParameters(BaseModel):
     video_path: str = ""
     disable_parallel: bool = False
     resume: bool = False
-    enable_face_filter: bool = False
     face_ref_img_path: str = ""
     face_model_name: str = ""
     enable_subject_mask: bool = False
@@ -222,7 +221,9 @@ class AnalysisParameters(BaseModel):
         if "face_ref_img_path" in kwargs or "video_path" in kwargs:
             sanitized_face_ref, face_filter_enabled = _sanitize_face_ref(kwargs, logger)
             kwargs["face_ref_img_path"] = sanitized_face_ref
-            kwargs["enable_face_filter"] = face_filter_enabled
+            # Unify enable_face_filter with compute_face_sim
+            if face_filter_enabled:
+                kwargs["compute_face_sim"] = True
 
         if "thumb_megapixels" in kwargs:
             try:

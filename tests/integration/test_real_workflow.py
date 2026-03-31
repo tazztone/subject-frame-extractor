@@ -126,7 +126,6 @@ def test_real_end_to_end_workflow(tmp_path, tracker_model):
         face_model_name="buffalo_l",
         tracker_model_name=tracker_model,
         best_frame_strategy="Largest Person",
-        enable_face_filter=True,
         enable_subject_mask=True,
         min_mask_area_pct=0.1,
         sharpness_base_scale=2500.0,

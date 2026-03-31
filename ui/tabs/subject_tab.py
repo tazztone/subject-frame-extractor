@@ -182,19 +182,6 @@ class SubjectTabBuilder:
         # 3. Hidden State Components (Required for Logic)
         self.app._create_component("person_radio", "radio", {"label": "Select Person", "choices": [], "visible": False})
         self.app._reg(
-            "enable_face_filter",
-            self.app._create_component(
-                "enable_face_filter_input",
-                "checkbox",
-                {
-                    "label": "Enable Face Similarity",
-                    "value": self.config.default_enable_face_filter,
-                    "interactive": True,
-                    "visible": False,
-                },
-            ),
-        )
-        self.app._reg(
             "resume",
             self.app._create_component(
                 "resume_input", "checkbox", {"label": "Resume", "value": self.config.default_resume, "visible": False}

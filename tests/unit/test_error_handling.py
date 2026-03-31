@@ -163,10 +163,10 @@ class TestAnalysisParametersValidation:
             output_folder=str(tmp_path),
             thumbnails_only=False,
             tracker_model_name="sam3",
-            enable_face_filter=True,
+            compute_face_sim=True,
             face_ref_img_path="face.jpg",
         )
-        assert params.enable_face_filter is True
+        assert params.compute_face_sim is True
         assert params.tracker_model_name == "sam3"
 
     def test_params_from_ui(self, mock_config):

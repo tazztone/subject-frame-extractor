@@ -277,8 +277,8 @@ class PipelineHandler:
                 value=run_config.get("pre_analysis_enabled", True)
             ),
             self.app.components["pre_sample_nth_input"]: gr.update(value=run_config.get("pre_sample_nth", 1)),
-            self.app.components["enable_face_filter_input"]: gr.update(
-                value=run_config.get("enable_face_filter", False)
+            self.app.components["compute_face_sim"]: gr.update(
+                value=run_config.get("compute_face_sim", run_config.get("enable_face_filter", False))
             ),
             self.app.components["face_model_name_input"]: gr.update(
                 value=run_config.get("face_model_name", "buffalo_l")

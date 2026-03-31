@@ -25,7 +25,7 @@ def app_ui(
             "face_seeding_group": MagicMock(),
             "text_seeding_group": MagicMock(),
             "auto_seeding_group": MagicMock(),
-            "enable_face_filter_input": MagicMock(),
+            "compute_face_sim": MagicMock(),
             "application_state": MagicMock(),
             "scene_gallery": MagicMock(),
             "total_pages_label": MagicMock(),
@@ -117,7 +117,7 @@ class TestMinConfidenceFilter:
                         min_mask_pct=0.0,
                         min_face_sim=0.0,
                         min_quality=0.5,  # Set threshold > 0
-                        enable_face_filter=False,
+                        compute_face_sim=False,
                         view="All",
                     )
 
@@ -156,7 +156,7 @@ class TestMinConfidenceFilter:
                         min_mask_pct=0.0,
                         min_face_sim=0.0,
                         min_quality=0.5,
-                        enable_face_filter=False,
+                        compute_face_sim=False,
                         view="All",
                     )
 
@@ -190,7 +190,7 @@ class TestMinConfidenceFilter:
                         min_mask_pct=0.0,
                         min_face_sim=0.0,
                         min_quality=0.9,  # High threshold
-                        enable_face_filter=False,
+                        compute_face_sim=False,
                         view="All",
                     )
 

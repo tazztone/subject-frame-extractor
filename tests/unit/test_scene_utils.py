@@ -62,7 +62,7 @@ class TestSeedSelector:
 
     def test_identity_first_seed(self, selector):
         selector.params.primary_seed_strategy = "Source Face Reference"
-        selector.params.enable_face_filter = True
+        selector.params.compute_face_sim = True
         selector.reference_embedding = np.ones(128)
 
         mock_face = MagicMock()
