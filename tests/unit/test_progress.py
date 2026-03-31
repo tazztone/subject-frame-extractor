@@ -1,4 +1,3 @@
-import time
 from queue import Queue
 from unittest.mock import MagicMock, patch
 
@@ -164,7 +163,11 @@ def test_tracker_pause_resume():
     thread = threading.Thread(target=do_step)
     thread.start()
 
-    time.sleep(0.1)
+    import time as _t
+
+    deadline = _t.monotonic() + 1.0
+    while thread.is_alive() and tracker.done == 0 and _t.monotonic() < deadline:
+        _t.sleep(0.001)
     assert tracker.done == 0
     assert thread.is_alive()
 

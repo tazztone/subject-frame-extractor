@@ -208,7 +208,7 @@ modules_to_mock = {'torch': _create_mock_module('torch', {'cuda': _cuda_mod, ...
 def _should_skip_mocks():
     """Determine if global mocks should be disabled for real-mode execution."""
 _skip_mocks = _should_skip_mocks()
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def clean_registry():
     """Ensure OperatorRegistry is clean before each test."""
 @pytest.fixture(scope='session')
@@ -250,7 +250,7 @@ def mock_params(mock_ui_state):
 @pytest.fixture
 def mock_thumbnail_manager():
     """Provides a mock ThumbnailManager."""
-@pytest.fixture
+@pytest.fixture(scope='session')
 def mock_model_registry():
     """Provides a mock ModelRegistry."""
 @pytest.fixture
@@ -1214,22 +1214,9 @@ def test_process_single_frame_full_meta(mock_db, mock_deps, analysis_params, tmp
 project_root = str(Path(__file__).parent.parent.parent)
 def test_parse_args(): ...
 def test_cleanup_models(): ...
-@patch('app.AppUI')
-@patch('app.setup_logging')
-@patch('app.AppLogger')
-@patch('app.ModelRegistry')
-@patch('app.ThumbnailManager')
-@patch('app.Config')
-def test_main_success(mock_config, mock_thumb, mock_registry, mock_logger, mock_setup_logging, mock_ui): ...
-@patch('app.AppUI')
-@patch('app.setup_logging')
-@patch('app.AppLogger')
-def test_main_keyboard_interrupt(mock_logger, mock_setup, mock_ui): ...
-@patch('app.AppUI')
-@patch('app.setup_logging')
-@patch('app.AppLogger')
-@patch('sys.exit')
-def test_main_exception(mock_exit, mock_logger, mock_setup, mock_ui): ...
+def test_main_success(): ...
+def test_main_keyboard_interrupt(): ...
+def test_main_exception(): ...
 ```
 
 ### `📄 tests/unit/test_app_ui_logic.py`

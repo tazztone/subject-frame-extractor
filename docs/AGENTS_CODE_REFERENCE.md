@@ -116,6 +116,7 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;├──&nbsp;linux_setup_playwright.sh  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;linux_test_all.sh  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;linux_test_cov.sh  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;linux_test_integration.sh  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;linux_test_sam2.sh  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;linux_test_sam3.sh  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;linux_test_ui.sh  

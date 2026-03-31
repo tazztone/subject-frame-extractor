@@ -315,7 +315,7 @@ else:
 from core.operators import OperatorRegistry
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def clean_registry():
     """Ensure OperatorRegistry is clean before each test."""
     OperatorRegistry.clear()
@@ -526,7 +526,7 @@ def mock_thumbnail_manager():
     return tm
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def mock_model_registry():
     """Provides a mock ModelRegistry."""
     return MagicMock()
