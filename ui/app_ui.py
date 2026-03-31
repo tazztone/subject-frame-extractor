@@ -54,12 +54,12 @@ class AppUI:
         ("All Frames (Maximum Quality)", "all"),
         ("Keyframes (Cuts/Scene Changes)", "keyframes"),
     ]
-    PRIMARY_SEED_STRATEGY_CHOICES: List[str] = [
-        "🤖 Automatic Detection",
-        "👤 Source Face Reference",
-        "📝 Text Description (Limited)",
-        "🔄 Face + Text Fallback",
-        "🧑\u200d🤝\u200d🧑 Find Prominent Person",
+    PRIMARY_SEED_STRATEGY_CHOICES: List[Any] = [
+        ("🤖 Automatic Detection", "Automatic Detection"),
+        ("👤 Source Face Reference", "Source Face Reference"),
+        ("📝 Text Description (Limited)", "Text Description (Limited)"),
+        ("🔄 Face + Text Fallback", "Face + Text Fallback"),
+        ("🧑‍🤝‍🧑 Find Prominent Person", "Find Prominent Person"),
     ]
     SEED_STRATEGY_CHOICES: List[str] = [
         "Largest Person",
@@ -682,18 +682,8 @@ class AppUI:
         clean_args["output_folder"] = str(out_dir)
         clean_args["video_path"] = str(state.extracted_video_path)
 
-        # Map legacy emoji-based strategies to new professional names
-        LEGACY_STRATEGY_MAP = {
-            "👤 By Face": "Source Face Reference",
-            "📝 By Text": "Text Description (Limited)",
-            "🔄 Face + Text Fallback": "Face + Text Fallback",
-            "🤖 Automatic": "Automatic Detection",
-            "Auto": "Automatic Detection",
-        }
-
         strategy = clean_args.get("primary_seed_strategy", self.config.default_primary_seed_strategy)
-        # Apply mapping if needed
-        strategy = LEGACY_STRATEGY_MAP.get(strategy, strategy)
+        # Strategy is now a clean string from the (label, value) Radio component.
         clean_args["primary_seed_strategy"] = strategy
 
         if strategy == "Source Face Reference":

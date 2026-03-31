@@ -227,7 +227,7 @@ def _recompute_single_preview(
         raise FileNotFoundError(f"Thumbnail for frame {best_frame_num} not found on disk.")
     seed_config = {**masker.params.model_dump(), **overrides}
     if overrides.get("text_prompt", "").strip():
-        seed_config["primary_seed_strategy"] = "📝 By Text"
+        seed_config["primary_seed_strategy"] = "Text Description (Limited)"
         logger.info(
             f"Recomputing scene {scene.shot_id} with text-first strategy due to override.",
             extra={"prompt": overrides.get("text_prompt")},

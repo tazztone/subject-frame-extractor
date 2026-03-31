@@ -373,7 +373,7 @@ def execute_full_pipeline(
         output_folder=ext_result["extracted_frames_dir_state"],
         video_path=ext_result["extracted_video_path_state"],
         face_ref_img_path="",  # Default to "Find Prominent Person" unless provided
-        primary_seed_strategy="🤖 Automatic",
+        primary_seed_strategy="Automatic Detection",
         resume=False,
     )
 

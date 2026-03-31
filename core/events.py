@@ -82,7 +82,7 @@ class PreAnalysisEvent(UIEvent):
     edge_strength_base_scale: float = Field(default=100.0, gt=0)
     pre_analysis_enabled: bool = True
     pre_sample_nth: int = Field(default=1, gt=0)
-    primary_seed_strategy: str = "🤖 Automatic"
+    primary_seed_strategy: str = "Automatic Detection"
     compute_quality_score: bool = True
     compute_sharpness: bool = True
     compute_edge_strength: bool = True
@@ -96,6 +96,17 @@ class PreAnalysisEvent(UIEvent):
     compute_subject_mask_area: bool = True
     compute_niqe: bool = True
     compute_phash: bool = True
+
+    @field_validator("primary_seed_strategy", mode="before")
+    @classmethod
+    def strip_emoji_from_strategy(cls, v: Any) -> str:
+        """Strip emoji prefix from the strategy string if present."""
+        if not isinstance(v, str):
+            return str(v)
+        # Remove common emoji prefixes like "🤖 ", "👤 ", etc.
+        import re
+
+        return re.sub(r"^[^\w\s]+\s+", "", v)
 
     @field_validator("output_folder")
     @classmethod
