@@ -88,6 +88,7 @@ _cuda_mod = _create_mock_module(
         "memory_summary": MagicMock(return_value="Mock Memory Summary"),
         "memory_allocated": MagicMock(return_value=0),
         "OutOfMemoryError": OutOfMemoryError,
+        "amp": _create_mock_module("torch.cuda.amp", {"autocast": TransparentContext}),
     },
 )
 
@@ -395,6 +396,13 @@ def mock_config():
     config.thumbnail_cache_max_mb = 100
     config.cache_eviction_factor = 0.5
     config.seeding_iou_threshold = 0.5
+    config.seeding_face_similarity_threshold = 0.5
+    config.seeding_face_contain_score = 10.0
+    config.seeding_confidence_score_multiplier = 1.0
+    config.seeding_iou_bonus = 5.0
+    config.seeding_face_to_body_expansion_factors = [2.0, 4.0, 1.0]
+    config.seeding_balanced_score_weights = {"area": 0.3, "confidence": 0.4, "edge": 0.3}
+
     # Analysis params
     config.analysis_default_workers = 4
     config.analysis_default_batch_size = 8

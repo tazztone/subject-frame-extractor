@@ -248,3 +248,37 @@ def test_database_default_batch_size(db_path):
     # Phase 2 goal: Increase from 50 to 100
     assert db.batch_size == 100
     db.close()
+
+
+def test_close_swallows_exception(db_path):
+    """Test that close() doesn't raise if flush() fails."""
+    db = Database(db_path)
+    db.insert_metadata({"filename": "test.jpg"})
+
+    with patch.object(db, "flush", side_effect=Exception("Flush error")):
+        # Should not raise
+        db.close()
+
+
+def test_migrate_calls_connect_if_needed(db_path):
+    """Test that migrate() calls connect() if conn is None."""
+    db = Database(db_path)
+    db.conn = None
+
+    with (
+        patch.object(db, "connect", side_effect=db.connect) as mock_connect,
+        patch("core.database.migrate_database") as mock_migrate,
+    ):
+        db.migrate()
+        mock_connect.assert_called_once()
+        mock_migrate.assert_called_once()
+
+
+def test_migrate_failure_logging(db_path):
+    """Test that migrate() logs errors from migrate_database."""
+    logger = MagicMock()
+    db = Database(db_path, logger=logger)
+
+    with patch("core.database.migrate_database", side_effect=sqlite3.Error("Migrate fail")):
+        with pytest.raises(sqlite3.Error):
+            db.migrate()
