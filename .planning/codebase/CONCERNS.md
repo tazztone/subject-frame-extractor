@@ -7,13 +7,11 @@
 
 ### 1. SAM3 VRAM Fragmentation
 - **Concern**: SAM3's video predictor maintains a temporal memory of objects. Long videos or multiple tracked objects can lead to VRAM fragmentation and eventual "CUDA Out of Memory".
-- **Mitigation**: The `ModelRegistry` triggers `torch.cuda.empty_cache()` and attempts a CPU fallback for heavy models. However, CPU fallback is ~10-20x slower.
+- **Mitigation**: The `ModelRegistry` triggers `torch.cuda.empty_cache()` and attempts a CPU fallback for heavy models. `SAM3Wrapper` performs surgical cache clearing only during session resets to minimize blocking overhead during propagation.
 - **Warning**: Users with < 8GB VRAM will struggle with propagation on high-resolution videos.
 
-### 2. Face Analysis Thread-Safety 🔴
-- **Concern**: `InsightFace` (FaceAnalysis) is not natively thread-safe. While the `ModelRegistry` has a lock, the `AnalysisPipeline` uses a `ThreadPoolExecutor` and calls `analyzer.get()` inside operators without a shared lock.
-- **Impact**: Concurrent inference calls on the same instance can cause segfaults or corrupted metadata.
-- **Fix**: Consolidate face detection to run once in the pipeline and pass results to operators.
+### 2. Face Analysis Thread-Safety (RESOLVED) ✅
+- **Resolution**: `FaceAnalysis.get()` calls are now wrapped in a dedicated `processing_lock` within `AnalysisPipeline`. Expensive quality operators remain outside the lock, enabling multi-threaded execution without risk of InsightFace segfaults.
 
 ## Performance Bottlenecks
 
