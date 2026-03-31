@@ -107,3 +107,34 @@ class TestFacePoseOperator:
         result = operator.execute(ctx)
 
         assert result.metrics["yaw"] == pytest.approx(45.0)
+
+    def test_face_pose_singular_matrix(self, operator, sample_image):
+        """Test singular matrix fallback where sy < 1e-6 (Gimbal lock)."""
+        matrix = np.eye(4)
+        # sy = sqrt(matrix[0,0]**2 + matrix[1,0]**2)
+        # To make it singular, [0,0] and [1,0] must be close to 0.
+        matrix[0, 0] = 0.0
+        matrix[1, 0] = 0.0
+        # For singular: pitch = degrees(atan2(-matrix[2, 0], sy))
+        matrix[2, 0] = -1.0
+        # sy will be 0. pitch = atan2(1.0, 0) = 90 degrees
+
+        params = {"face_matrix": matrix}
+        ctx = OperatorContext(image_rgb=sample_image, params=params)
+        result = operator.execute(ctx)
+
+        assert result.metrics["yaw"] == 0.0
+        assert result.metrics["roll"] == 0.0
+        assert result.metrics["pitch"] == pytest.approx(90.0)
+
+    def test_face_pose_exception(self, operator, sample_image):
+        """Test error handling when metric calculation raises an exception."""
+        # Provide a bad matrix shape to trigger an IndexError or TypeError
+        matrix = np.array([0])
+        params = {"face_matrix": matrix}
+        ctx = OperatorContext(image_rgb=sample_image, params=params)
+        result = operator.execute(ctx)
+
+        # Result should catch it and return error
+        assert not result.success
+        assert result.error is not None

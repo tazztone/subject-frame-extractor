@@ -167,3 +167,209 @@ class TestExportExtended:
             res = export_kept_frames(event, config, logger, None, None)
             assert "Export Complete" in res
             assert mock_xmp.called
+
+def test_rename_exported_frames_happy_path(mock_config, mock_logger, tmp_path):
+    from core.export import _rename_exported_frames
+    export_dir = tmp_path / "export"
+    logger = mock_logger
+    export_dir.mkdir()
+
+    # Create fake extracted frames
+    (export_dir / "frame_000001.png").touch()
+    (export_dir / "frame_000002.png").touch()
+
+    frames_to_extract = [10, 20]
+    fn_to_orig_map = {"orig_10.png": 10, "orig_20.png": 20}
+
+    _rename_exported_frames(export_dir, frames_to_extract, fn_to_orig_map, logger)
+
+    assert (export_dir / "orig_10.png").exists()
+    assert (export_dir / "orig_20.png").exists()
+    assert not (export_dir / "frame_000001.png").exists()
+    assert not (export_dir / "frame_000002.png").exists()
+
+def test_rename_exported_frames_collision(mock_config, mock_logger, tmp_path):
+    from core.export import _rename_exported_frames
+    export_dir = tmp_path / "export"
+    logger = mock_logger
+    export_dir.mkdir()
+
+    (export_dir / "frame_000001.png").touch()
+
+    # Pre-existing file with the target name
+    (export_dir / "orig_10.png").write_text("existing")
+
+    frames_to_extract = [10]
+    fn_to_orig_map = {"orig_10.png": 10}
+
+    _rename_exported_frames(export_dir, frames_to_extract, fn_to_orig_map, logger)
+
+    # Should rename to an alternate name like orig_10 (1).png
+    assert (export_dir / "orig_10.png").read_text() == "existing"
+    assert (export_dir / "orig_10 (1).png").exists()
+
+@patch("pathlib.Path.rename")
+def test_rename_exported_frames_missing_src(mock_rename, mock_config, mock_logger, tmp_path):
+    from core.export import _rename_exported_frames
+    export_dir = tmp_path / "export"
+    logger = mock_logger
+    export_dir.mkdir()
+
+    (export_dir / "frame_000001.png").touch()
+
+    frames_to_extract = [10]
+    fn_to_orig_map = {"target.png": 10}
+
+    # Simulate rename failing with FileNotFoundError
+    mock_rename.side_effect = FileNotFoundError
+
+    _rename_exported_frames(export_dir, frames_to_extract, fn_to_orig_map, logger)
+
+    logger.warning.assert_called()
+
+def test_export_metadata_success(mock_config, mock_logger, tmp_path):
+    from core.export import _export_metadata
+    export_dir = tmp_path / "export"
+    logger = mock_logger
+    export_dir.mkdir()
+
+    kept_frames = [
+        {"filename": "f1.png", "frame_number": 10, "score": 95.5, "extra": "data1"},
+        {"filename": "f2.png", "timestamp": 1.5, "face_sim": 0.99, "extra": "data2"}
+    ]
+
+    _export_metadata(kept_frames, export_dir, logger)
+
+    import csv
+    import json
+
+    # Check JSON
+    json_file = export_dir / "metadata.json"
+    assert json_file.exists()
+    with json_file.open("r") as f:
+        data = json.load(f)
+        assert len(data) == 2
+        assert data[0]["filename"] == "f1.png"
+
+    # Check CSV
+    csv_file = export_dir / "metadata.csv"
+    assert csv_file.exists()
+    with csv_file.open("r", newline="") as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+        assert len(rows) == 2
+        # Priority keys check
+        assert reader.fieldnames[0] == "filename"
+        assert rows[0]["filename"] == "f1.png"
+
+def test_export_metadata_empty(mock_config, mock_logger, tmp_path):
+    from core.export import _export_metadata
+    export_dir = tmp_path / "export"
+    logger = mock_logger
+    export_dir.mkdir()
+
+    _export_metadata([], export_dir, logger)
+
+    assert (export_dir / "metadata.json").exists()
+    assert not (export_dir / "metadata.csv").exists()
+
+def test_dry_run_export_no_data(mock_config, mock_logger):
+    from core.events import ExportEvent
+    from core.export import dry_run_export
+    config, logger = mock_config, mock_logger
+
+    event = ExportEvent(all_frames_data=[], video_path="v.mp4", output_dir="/tmp", filter_args={}, enable_crop=False, crop_ars="", crop_padding=0)
+    res = dry_run_export(event, config, logger)
+    assert res == "No metadata to export."
+
+def test_dry_run_export_no_video(mock_config, mock_logger):
+    from core.events import ExportEvent
+    from core.export import dry_run_export
+    config, logger = mock_config, mock_logger
+
+    event = ExportEvent(all_frames_data=[{"filename": "f"}], video_path="", output_dir="/tmp", filter_args={}, enable_crop=False, crop_ars="", crop_padding=0)
+    res = dry_run_export(event, config, logger)
+    assert "[ERROR] Original video path is required" in res
+
+@patch("core.export.apply_all_filters_vectorized")
+def test_dry_run_export_success(mock_filter, mock_config, mock_logger, tmp_path):
+    from core.events import ExportEvent
+    from core.export import dry_run_export
+    config, logger = mock_config, mock_logger
+
+    video_path = tmp_path / "v.mp4"
+    video_path.touch()
+
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+
+    import json
+    with (out_dir / "frame_map.json").open("w") as f:
+        json.dump([10, 20], f)
+
+    mock_filter.return_value = ([{"filename": "frame_000001.webp"}], [], [], [])
+
+    event = ExportEvent(
+        all_frames_data=[{"filename": "frame_000001.webp"}],
+        video_path=str(video_path),
+        output_dir=str(out_dir),
+        filter_args={},
+        enable_crop=False, crop_ars="", crop_padding=0
+    )
+
+    res = dry_run_export(event, config, logger)
+    assert "Dry Run:" in res
+    assert "ffmpeg" in res
+
+@patch("core.export.apply_all_filters_vectorized")
+def test_export_kept_frames_no_frames_kept(mock_filter, mock_config, mock_logger, tmp_path):
+    from core.events import ExportEvent
+    from core.export import export_kept_frames
+    config, logger = mock_config, mock_logger
+
+    mock_filter.return_value = ([], [], [], [])
+
+    video_path = tmp_path / "v.mp4"
+    video_path.touch()
+
+    event = ExportEvent(
+        all_frames_data=[{"filename": "f1"}],
+        video_path=str(video_path),
+        output_dir=str(tmp_path),
+        filter_args={},
+        enable_crop=False, crop_ars="", crop_padding=0
+    )
+
+    res = export_kept_frames(event, config, logger, None, None)
+    assert "No frames kept" in res
+
+@patch("core.export.apply_all_filters_vectorized")
+@patch("core.export.perform_ffmpeg_export")
+def test_export_kept_frames_ffmpeg_failure(mock_ffmpeg, mock_filter, mock_config, mock_logger, tmp_path):
+    from core.events import ExportEvent
+    from core.export import export_kept_frames
+    config, logger = mock_config, mock_logger
+
+    video_path = tmp_path / "v.mp4"
+    video_path.touch()
+
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+
+    import json
+    with (out_dir / "frame_map.json").open("w") as f:
+        json.dump([10], f)
+
+    mock_filter.return_value = ([{"filename": "frame_000001.webp"}], [], [], [])
+    mock_ffmpeg.return_value = (False, "FFmpeg error")
+
+    event = ExportEvent(
+        all_frames_data=[{"filename": "frame_000001.webp"}],
+        video_path=str(video_path),
+        output_dir=str(out_dir),
+        filter_args={},
+        enable_crop=False, crop_ars="", crop_padding=0
+    )
+
+    res = export_kept_frames(event, config, logger, None, None)
+    assert "FFmpeg failed" in res

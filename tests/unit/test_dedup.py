@@ -137,3 +137,72 @@ def test_run_batched_lpips(mock_thumbnail_manager):
         # Pair 1 (f3, f4): dist 0.2 > 0.1. No rejection.
         assert dedup_mask[2]
         assert dedup_mask[3]
+
+def test_dedup_ssim(sample_frames_for_dedup, mock_thumbnail_manager, mock_config, tmp_path):
+    filters = {"enable_dedup": True, "dedup_method": "SSIM", "ssim_threshold": 0.5}
+    mock_thumbnail_manager.get.return_value = np.zeros((10, 10, 3), dtype=np.uint8)
+
+    with patch("core.operators.dedup._generic_dedup") as mock_generic:
+        _apply_deduplication_filter(
+            sample_frames_for_dedup, filters, mock_thumbnail_manager, mock_config, str(tmp_path)
+        )
+        mock_generic.assert_called_once()
+
+def test_dedup_lpips(sample_frames_for_dedup, mock_thumbnail_manager, mock_config, tmp_path):
+    filters = {"enable_dedup": True, "dedup_method": "LPIPS", "lpips_threshold": 0.5}
+
+    with patch("core.operators.dedup._run_batched_lpips") as mock_batched:
+        _apply_deduplication_filter(
+            sample_frames_for_dedup, filters, mock_thumbnail_manager, mock_config, str(tmp_path)
+        )
+        mock_batched.assert_called_once()
+
+def test_dedup_phash_then_lpips(sample_frames_for_dedup, mock_thumbnail_manager, mock_config, tmp_path):
+    filters = {"enable_dedup": True, "dedup_method": "pHash then LPIPS", "dedup_thresh": 5, "lpips_threshold": 0.5}
+
+    with patch("core.operators.dedup._run_batched_lpips") as mock_batched:
+        _apply_deduplication_filter(
+            sample_frames_for_dedup, filters, mock_thumbnail_manager, mock_config, str(tmp_path)
+        )
+        mock_batched.assert_called_once()
+
+def test_generic_dedup_logic(mock_thumbnail_manager, tmp_path):
+    from collections import defaultdict
+
+    from core.operators.dedup import _generic_dedup
+
+    mock_thumbnail_manager.get.side_effect = [
+        np.zeros((10, 10, 3), dtype=np.uint8),  # img1
+        np.zeros((10, 10, 3), dtype=np.uint8)   # img2
+    ]
+
+    all_frames = [
+        {"filename": "f1.jpg", "metrics": {"quality_score": 10}},
+        {"filename": "f2.jpg", "metrics": {"quality_score": 20}},
+    ]
+
+    dedup_mask = np.array([True, True])
+    reasons = defaultdict(list)
+
+    # compare_fn returns True -> means they are duplicates
+    _generic_dedup(all_frames, dedup_mask, reasons, mock_thumbnail_manager, str(tmp_path), lambda i1, i2: True)
+
+    # f2 is better, so f1 is rejected
+    assert not dedup_mask[0]
+    assert dedup_mask[1]
+    assert "duplicate" in reasons["f1.jpg"]
+
+def test_generic_dedup_no_output_dir(mock_thumbnail_manager):
+    from collections import defaultdict
+
+    from core.operators.dedup import _generic_dedup
+    all_frames = [{"filename": "f1.jpg"}]
+    dedup_mask = np.array([True])
+    reasons = defaultdict(list)
+    _generic_dedup(all_frames, dedup_mask, reasons, mock_thumbnail_manager, None, lambda i1, i2: True)
+    assert dedup_mask[0]
+
+def test_run_batched_lpips_no_pairs():
+    from core.operators.dedup import _run_batched_lpips
+    # Should exit early
+    _run_batched_lpips([], [], np.array([]), MagicMock(), MagicMock(), "/tmp", 0.1)
