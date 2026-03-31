@@ -112,13 +112,20 @@ def _crop_exported_frames(
     crop_dir.mkdir(exist_ok=True)
 
     try:
-        aspect_ratios = [
-            (ar_str.replace(":", "x"), float(ar_str.split(":")[0]) / float(ar_str.split(":")[1]))
-            for ar_str in crop_ars.split(",")
-            if ":" in ar_str
-        ]
-    except (ValueError, ZeroDivisionError):
+        aspect_ratios = []
+        for ar_str in crop_ars.split(","):
+            ar_str = ar_str.strip()
+            if not ar_str:
+                continue
+            if ":" not in ar_str:
+                raise ValueError("Invalid aspect ratio format.")
+            parts = ar_str.split(":")
+            aspect_ratios.append((ar_str.replace(":", "x"), float(parts[0]) / float(parts[1])))
+    except (ValueError, ZeroDivisionError, IndexError):
         raise ValueError("Invalid aspect ratio format.")
+
+    if not aspect_ratios:
+        return 0
 
     num_cropped = 0
     padding_factor = 1.0 + (crop_padding / 100.0)

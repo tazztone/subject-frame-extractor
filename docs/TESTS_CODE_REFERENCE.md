@@ -81,6 +81,7 @@ tests
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_batch_manager.py`](#-testsunittest_batch_managerpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_bug_fixes.py`](#-testsunittest_bug_fixespy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_cli.py`](#-testsunittest_clipy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_cli_commands.py`](#-testsunittest_cli_commandspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_cli_utils.py`](#-testsunittest_cli_utilspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_concurrency.py`](#-testsunittest_concurrencypy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_config.py`](#-testsunittest_configpy)  
@@ -118,6 +119,8 @@ tests
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_managers_extended.py`](#-testsunittest_managers_extendedpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_mask_operators.py`](#-testsunittest_mask_operatorspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_mask_propagator_logic.py`](#-testsunittest_mask_propagator_logicpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_model_loader.py`](#-testsunittest_model_loaderpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_model_registry.py`](#-testsunittest_model_registrypy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_models.py`](#-testsunittest_modelspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_models_property.py`](#-testsunittest_models_propertypy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_niqe_operator.py`](#-testsunittest_niqe_operatorpy)  
@@ -1319,6 +1322,22 @@ def test_extract_invalid_source(runner, tmp_path): ...
 def test_analyze_folder(mock_cuda, mock_setup, mock_orch, runner, tmp_path, mock_pipeline_result): ...
 ```
 
+### `📄 tests/unit/test_cli_commands.py`
+
+```python
+class TestCLICommands:
+    """Tests for core/cli_commands.py"""
+    @pytest.fixture
+    def mock_runtime(self): ...
+    def test_run_extract_video(self, mock_runtime, tmp_path): ...
+    def test_run_extract_fingerprint_match(self, mock_runtime, tmp_path): ...
+    def test_run_analyze(self, mock_runtime, tmp_path): ...
+    def test_run_status(self, tmp_path): ...
+    def test_run_filter_no_db(self, tmp_path): ...
+    def test_run_filter_success(self, mock_runtime, tmp_path): ...
+    def test_run_full(self, mock_runtime, tmp_path): ...
+```
+
 ### `📄 tests/unit/test_cli_utils.py`
 
 ```python
@@ -1337,6 +1356,8 @@ def test_application_state_concurrent_updates():
     """Test concurrent updates to ApplicationState (stress test)."""
 def test_thumbnail_manager_concurrent_access(tmp_path):
     """Test concurrent access to ThumbnailManager's LRU cache."""
+def test_analysis_pipeline_concurrency(tmp_path):
+    """Test that AnalysisPipeline handles concurrent frame processing correctly."""
 ```
 
 ### `📄 tests/unit/test_config.py`
@@ -1445,6 +1466,12 @@ def test_migration_v1_v2_logic(tmp_path):
     """Test the migration logic in db_schema directly."""
 def test_database_default_batch_size(db_path):
     """Test that Database initializes with the optimized default batch size."""
+def test_close_swallows_exception(db_path):
+    """Test that close() doesn't raise if flush() fails."""
+def test_migrate_calls_connect_if_needed(db_path):
+    """Test that migrate() calls connect() if conn is None."""
+def test_migrate_failure_logging(db_path):
+    """Test that migrate() logs errors from migrate_database."""
 ```
 
 ### `📄 tests/unit/test_dedup.py`
@@ -1570,53 +1597,22 @@ def test_ui_event_extra_ignore():
 ### `📄 tests/unit/test_export.py`
 
 ```python
-"""Tests for export functionality."""
-class TestExportKeptFrames:
-    """Tests for the main export_kept_frames function."""
-    @patch('subprocess.Popen')
+class TestExportExtended:
+    """Extended tests for export.py to cover crop logic and edge cases."""
+    @pytest.fixture
+    def mock_deps(self, mock_config, mock_logger): ...
+    def test_crop_exported_frames_happy_path(self, mock_deps, tmp_path): ...
+    def test_crop_exported_frames_invalid_ar(self, mock_deps, tmp_path): ...
+    def test_crop_exported_frames_missing_files(self, mock_deps, tmp_path): ...
+    def test_crop_exported_frames_read_failure(self, mock_deps, tmp_path): ...
+    def test_crop_exported_frames_exception_handling(self, mock_deps, tmp_path): ...
+    @given(ar_w=st.floats(min_value=0.1, max_value=10.0), ar_h=st.floats(min_value=0.1, max_value=10.0), padding=st.integers(min_value=0, max_value=100))
+    def test_crop_logic_bounds_property(self, ar_w, ar_h, padding):
+        """Property-based test for crop logic bounds (using internal operator)."""
     @patch('core.export.apply_all_filters_vectorized')
-    def test_export_kept_frames_basic(self, mock_filter, mock_popen, mock_config, mock_logger, tmp_path):
-        """Test basic export functionality."""
-    @patch('subprocess.Popen')
+    def test_export_kept_frames_no_frame_map_error(self, mock_filter, mock_deps, tmp_path): ...
     @patch('core.export.apply_all_filters_vectorized')
-    def test_export_no_frames_kept(self, mock_filter, mock_popen, mock_config, mock_logger, tmp_path):
-        """Test export when no frames pass filters."""
-    @patch('subprocess.Popen')
-    @patch('core.export.apply_all_filters_vectorized')
-    def test_export_ffmpeg_failure(self, mock_filter, mock_popen, mock_config, mock_logger, tmp_path):
-        """Test export handles FFmpeg failure gracefully."""
-    @patch('subprocess.Popen')
-    @patch('core.export.apply_all_filters_vectorized')
-    def test_export_ffmpeg_timeout(self, mock_filter, mock_popen, mock_config, mock_logger, tmp_path):
-        """Test export handles FFmpeg timeout."""
-    @patch('subprocess.Popen')
-    @patch('core.export.apply_all_filters_vectorized')
-    def test_export_metadata_creation(self, mock_filter, mock_popen, mock_config, mock_logger, tmp_path):
-        """Test that metadata files are created during export."""
-class TestDryRunExport:
-    """Tests for dry_run_export function."""
-    def test_dry_run_basic(self, mock_config, tmp_path):
-        """Test basic dry run export returns expected format."""
-    def test_dry_run_no_frames(self, mock_config, tmp_path):
-        """Test dry run with no frames."""
-class TestExportEvent:
-    """Tests for ExportEvent validation."""
-    def test_event_creation_minimal(self, tmp_path):
-        """Test ExportEvent with minimal required fields."""
-    def test_event_with_crop_settings(self, tmp_path):
-        """Test ExportEvent with crop enabled."""
-class TestExportCancellation:
-    """Tests for export cancellation handling."""
-    @patch('subprocess.Popen')
-    @patch('core.export.apply_all_filters_vectorized')
-    def test_export_with_cancel_event(self, mock_filter, mock_popen, mock_config, mock_logger, tmp_path):
-        """Test export handles cancel event."""
-class TestExportWithFilters:
-    """Tests for export with various filter configurations."""
-    @patch('subprocess.Popen')
-    @patch('core.export.apply_all_filters_vectorized')
-    def test_export_with_face_filter(self, mock_filter, mock_popen, mock_config, mock_logger, tmp_path):
-        """Test export with face similarity filter."""
+    def test_export_kept_frames_folder_mode_happy_path(self, mock_filter, mock_deps, tmp_path): ...
 ```
 
 ### `📄 tests/unit/test_export_advanced.py`
@@ -2113,12 +2109,52 @@ class TestMaskPropagatorLogic:
         """Test handling of empty/missing masks from SAM3."""
     def test_propagate_video_cancellation(self, mask_propagator, mock_sam3_wrapper):
         """Test that propagation stops when cancel event is set."""
-    def test_propagate_legacy_success(self, mask_propagator, mock_sam3_wrapper):
-        """Test the legacy propagate() method with temp files."""
+    def test_propagate_video_mid_batch_cancellation(self, mask_propagator, mock_sam3_wrapper):
+        """Test cancellation within the frame processing loop."""
+    def test_propagate_video_outer_exception(self, mask_propagator, mock_sam3_wrapper):
+        """Test outer error handler in propagate_video."""
+    def test_close_with_none_tracker(self, mask_propagator):
+        """Test close() when dam_tracker is None."""
     def test_error_handling_gpu_oom(self, mask_propagator, mock_sam3_wrapper):
         """Test handling of CUDA OOM error."""
-    def test_tracker_progress(self, mask_propagator, mock_sam3_wrapper):
-        """Test that progress tracker is updated."""
+    def test_executor_cleanup_on_failure(self, mask_propagator, mock_sam3_wrapper):
+        """Test ThreadPoolExecutor cleanup on failure."""
+```
+
+### `📄 tests/unit/test_model_loader.py`
+
+```python
+class TestModelLoader:
+    """Tests for core/managers/model_loader.py and core/io_utils.py (download_model)"""
+    @pytest.fixture
+    def mock_deps(self): ...
+    def test_get_lpips_metric(self): ...
+    def test_download_model_happy_path(self, mock_deps, tmp_path): ...
+    def test_download_model_checksum_mismatch(self, mock_deps, tmp_path): ...
+    def test_download_model_cached_valid(self, mock_deps, tmp_path): ...
+    def test_download_model_directory_creation(self, mock_deps, tmp_path): ...
+    def test_initialize_analysis_models_basic(self, tmp_path): ...
+    def test_compute_sha256(self, tmp_path): ...
+```
+
+### `📄 tests/unit/test_model_registry.py`
+
+```python
+class TestModelRegistry:
+    """Tests for core/managers/registry.py"""
+    @pytest.fixture
+    def registry(self, mock_logger): ...
+    def test_get_or_load_happy_path(self, registry): ...
+    def test_get_or_load_oom_retry(self, registry):
+        """Test that OOM triggers clear() and retry."""
+    def test_sticky_failure_logic(self, registry):
+        """Test that failures are cached (sticky failure)."""
+    def test_clear_and_reload(self, registry):
+        """Test that clear() removes models and allows reload."""
+    def test_concurrent_loading(self, registry):
+        """Test that concurrent loads only call the factory once."""
+    def test_get_tracker_oom_fallback(self, registry):
+        """Test tracker init fallback to CPU on OOM."""
 ```
 
 ### `📄 tests/unit/test_models.py`
@@ -2457,13 +2493,16 @@ def test_sam2_wrapper_shutdown(mock_empty_cache, mock_cuda, mock_build, mock_pre
 ### `📄 tests/unit/test_sam3_manager.py`
 
 ```python
-def test_sam3_wrapper_session_lifecycle(sam3_unit): ...
-def test_sam3_wrapper_add_bbox_prompt(sam3_unit): ...
-def test_sam3_wrapper_propagate(sam3_unit): ...
-def test_sam3_wrapper_detect_objects(sam3_unit): ...
-def test_sam3_wrapper_utility_methods(sam3_unit): ...
-def test_sam3_wrapper_shutdown(sam3_unit): ...
-def test_triton_mocking(): ...
+@pytest.fixture
+def sam3_unit_fresh(): ...
+def test_sam3_wrapper_session_lifecycle_extended(sam3_unit_fresh): ...
+def test_sam3_wrapper_reset_session(sam3_unit_fresh): ...
+def test_sam3_wrapper_uninitialized_raises(sam3_unit_fresh): ...
+def test_sam3_wrapper_import_error_degradation():
+    """Test that SAM3Wrapper raises RuntimeError if predictor fails to load."""
+def test_sam3_wrapper_add_point_prompt(sam3_unit_fresh): ...
+def test_sam3_wrapper_remove_object(sam3_unit_fresh): ...
+def test_sam3_wrapper_clear_prompts(sam3_unit_fresh): ...
 ```
 
 ### `📄 tests/unit/test_sam3_wrapper.py`
@@ -2620,18 +2659,35 @@ class TestSceneUtilsHelpers:
 ### `📄 tests/unit/test_seed_selector_extended.py`
 
 ```python
-"""Extended tests for SeedSelector to improve coverage."""
+mock_cv2 = MagicMock()
+mock_cv2.Mat = MagicMock
+mock_cv2.mat_wrapper = MagicMock()
+mock_cv2.resize = MagicMock(return_value=np.zeros((100, 100), dtype=np.uint8))
+mock_cv2.INTER_NEAREST = 0
+mock_cv2.cvtColor = MagicMock(return_value=np.zeros((100, 100, 3), dtype=np.u...
+mock_cv2.COLOR_RGB2BGR = 1
 class TestSeedSelectorExtended:
     @pytest.fixture
-    def selector(self, mock_config_simple, mock_logger, mock_params): ...
-    def test_identity_first_seed_no_face(self, selector): ...
-    def test_object_first_seed_success(self, selector): ...
-    def test_find_target_face_match(self, selector): ...
-    def test_expand_face_to_body(self, selector): ...
-    def test_xyxy_to_xywh_padding(self, selector): ...
-    def test_choose_person_by_strategy_fallback(self, selector): ...
-    def test_calculate_iou(self, selector): ...
-    def test_box_contains(self, selector): ...
+    def selector(self, mock_config_simple, mock_logger): ...
+    @pytest.mark.parametrize('strategy', [s.value for s in SeedStrategy])
+    def test_select_seed_all_strategies(self, selector, strategy):
+        """Parametrized test for all SeedStrategy enum values."""
+    def test_identity_first_seed_no_ref(self, selector):
+        """IDENTITY_FIRST with reference_embedding=None falls back to object path."""
+    def test_identity_first_with_match(self, selector):
+        """IDENTITY_FIRST with match and person detection."""
+    def test_identity_first_no_match_fallback_expansion(self, selector):
+        """IDENTITY_FIRST finds face but no person box -> expansion."""
+    def test_object_first_seed_no_intersect(self, selector):
+        """OBJECT_FIRST with text prompt but no person validation."""
+    def test_expand_face_to_body_edge_cases(self, selector):
+        """Test expansion logic at image boundaries."""
+    def test_choose_person_by_strategy_all_variants(self, selector):
+        """Test different selection strategies in _choose_person_by_strategy."""
+    def test_choose_person_by_strategy_face_fallback(self, selector):
+        """Fallback to face detection when no people are detected."""
+    def test_get_mask_for_bbox_torch_oom(self, selector):
+        """Test OOM handling in _get_mask_for_bbox."""
 ```
 
 ### `📄 tests/unit/test_session.py`
@@ -2828,24 +2884,38 @@ class TestStrategyMapping:
 
 ```python
 mock_cv2 = MagicMock()
-mock_cv2.Mat = MagicMock
-mock_cv2.mat_wrapper = MagicMock()
-mock_cv2.resize = MagicMock(return_value=np.zeros((100, 100), dtype=np.uint8))
-mock_cv2.INTER_NEAREST = 0
+mock_cv2.imwrite = MagicMock(return_value=True)
 mock_cv2.cvtColor = MagicMock(return_value=np.zeros((100, 100, 3), dtype=np.u...
 mock_cv2.COLOR_RGB2BGR = 1
-class TestSubjectMasker:
-    """Tests for core/scene_utils/subject_masker.py"""
+mock_torch = MagicMock()
+mock_torch.cuda = MagicMock()
+mock_torch.cuda.amp = MagicMock()
+class TestSubjectMaskerCoverage:
+    """Comprehensive coverage tests for core/scene_utils/subject_masker.py"""
     @pytest.fixture
-    def mock_dependencies(self): ...
+    def mock_deps(self): ...
     @pytest.fixture
-    def subject_masker(self, mock_dependencies): ...
-    def test_initialization(self, subject_masker):
-        """Test proper initialization."""
-    def test_initialize_tracker(self, subject_masker):
-        """Test tracker initialization logic."""
-    def test_run_propagation_no_tracker(self, subject_masker):
-        """Test propagation fails if tracker cannot be initialized."""
+    def masker(self, mock_deps): ...
+    def test_run_propagation_happy_path(self, masker, tmp_path):
+        """Test full propagation loop with video_lowres.mp4 present."""
+    def test_run_propagation_cancellation(self, masker, tmp_path):
+        """Test propagation loop respects cancel_event."""
+    def test_run_propagation_no_video_fallback(self, masker, tmp_path):
+        """Test fallback warning when video_lowres.mp4 is missing."""
+    def test_load_shot_frames_missing_manager(self, masker):
+        """Test _load_shot_frames early return if thumbnail_manager is None."""
+    def test_load_shot_frames_none_from_manager(self, masker):
+        """Test _load_shot_frames skips frames where manager returns None."""
+    def test_select_best_frame_disabled(self, masker):
+        """Test _select_best_frame_in_scene when pre-analysis is disabled."""
+    def test_select_best_frame_no_frames(self, masker):
+        """Test _select_best_frame_in_scene when no frames are loaded."""
+    def test_select_best_frame_full_logic(self, masker):
+        """Test _select_best_frame_in_scene with NIQE and Face Analyzer."""
+    def test_get_seed_for_frame_manual(self, masker):
+        """Test get_seed_for_frame with manual override."""
+    def test_close_handles_exceptions(self, masker):
+        """Test close() swallows exceptions from tracker."""
 ```
 
 ### `📄 tests/unit/test_subject_masker_simple.py`

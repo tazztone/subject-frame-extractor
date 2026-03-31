@@ -15,6 +15,7 @@ from core.cli_utils import _run_pipeline, _setup_runtime
 from core.database import Database
 from core.events import ExtractionEvent, PreAnalysisEvent
 from core.filtering import apply_all_filters_vectorized
+from core.fingerprint import create_fingerprint, fingerprints_match, load_fingerprint
 from core.pipelines import (
     execute_analysis_orchestrator,
     execute_extraction,
@@ -34,12 +35,10 @@ def run_extract(source, output, method, nth_frame, max_resolution, thumb_mp, sce
     output_dir.mkdir(parents=True, exist_ok=True)
 
     if is_video:
-        from core.fingerprint import create_fingerprint, fingerprints_match, load_fingerprint
-
         ext_settings = {
             "method": method,
             "nth_frame": nth_frame,
-            "max_resolution": max_resolution,
+            "max_resolution": str(max_resolution),
             "scene_detect": scene_detect,
             "thumb_megapixels": thumb_mp,
         }
@@ -70,7 +69,7 @@ def run_extract(source, output, method, nth_frame, max_resolution, thumb_mp, sce
         method=method,
         interval=1.0,
         nth_frame=nth_frame,
-        max_resolution=max_resolution,
+        max_resolution=str(max_resolution),
         thumbnails_only=True,
         thumb_megapixels=thumb_mp,
         scene_detect=scene_detect if is_video else False,
@@ -141,8 +140,6 @@ def run_analyze(session, source, face_ref, strategy, verbose, resume, force):
 def run_status(session):
     output_dir = Path(session)
     click.secho(f"\n📋 SESSION STATUS: {output_dir}", fg="cyan", bold=True)
-
-    from core.fingerprint import load_fingerprint
 
     fp = load_fingerprint(str(output_dir))
     if fp:
@@ -254,7 +251,7 @@ def run_full(source, output, face_ref, nth_frame, max_resolution, verbose, clean
         method="every_nth_frame",
         interval=1.0,
         nth_frame=nth_frame,
-        max_resolution=max_resolution,
+        max_resolution=str(max_resolution),
         thumbnails_only=True,
         thumb_megapixels=0.5,
         scene_detect=True if is_video else False,

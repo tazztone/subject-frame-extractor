@@ -153,75 +153,52 @@ class TestMaskPropagatorLogic:
         # Verify it didn't crash
         assert 0 in masks
 
-    def test_propagate_legacy_success(self, mask_propagator, mock_sam3_wrapper):
-        """Test the legacy propagate() method with temp files."""
-        frames = [np.zeros((100, 100, 3), dtype=np.uint8) for _ in range(3)]
+    def test_propagate_video_mid_batch_cancellation(self, mask_propagator, mock_sam3_wrapper):
+        """Test cancellation within the frame processing loop."""
 
-        # Setup mocks
-        mock_sam3_wrapper.propagate.side_effect = [
-            iter([(1, 1, np.ones((100, 100), dtype=bool))]),  # Forward
-            iter([(2, 1, np.ones((100, 100), dtype=bool))]),  # Backward
-        ]
+        # Mock propagate to return some frames then we cancel
+        def gen():
+            yield (1, 1, np.ones((10, 10), dtype=bool))
+            mask_propagator.cancel_event.set()
+            yield (2, 1, np.ones((10, 10), dtype=bool))
 
-        # Patch core.scene_utils.mask_propagator.rgb_to_pil or core.image_utils.rgb_to_pil
-        with patch("core.scene_utils.mask_propagator.rgb_to_pil") as mock_rgb_to_pil:
-            mock_pil_img = MagicMock()
-            mock_rgb_to_pil.return_value = mock_pil_img
+        mock_sam3_wrapper.propagate.return_value = gen()
 
-            masks, areas, empties, errors = mask_propagator.propagate(
-                shot_frames_rgb=frames, seed_idx=0, bbox_xywh=[0, 0, 10, 10]
+        with patch("core.scene_utils.mask_propagator.postprocess_mask", side_effect=lambda x, **k: x):
+            mask_propagator.propagate_video(
+                video_path="v.mp4",
+                frame_numbers=[0, 1, 2],
+                prompts=[{"frame": 0, "bbox": [0, 0, 5, 5]}],
+                frame_size=(10, 10),
+                frame_map={0: "0.webp", 1: "1.webp", 2: "2.webp"},
             )
 
-            # Verify it saved images (assuming rgb_to_pil is used)
-            # Note: logic inside propagate does `from core.utils import rgb_to_pil`
-            # Since we patched core.utils.rgb_to_pil, the import should get the mock
-            assert mock_pil_img.save.call_count == 3
+        assert mask_propagator.cancel_event.is_set()
 
-            # Verify SAM3 init with a path
-            mock_sam3_wrapper.init_video.assert_called_once()
-            args, _ = mock_sam3_wrapper.init_video.call_args
-            assert isinstance(args[0], str)  # path
+    def test_propagate_video_outer_exception(self, mask_propagator, mock_sam3_wrapper):
+        """Test outer error handler in propagate_video."""
+        mock_sam3_wrapper.init_video.side_effect = Exception("Unexpected error")
 
-            # Verify propagation
-            assert len(masks) == 3
-            assert masks[0] is not None  # Seed
+        masks, areas, empties, errors = mask_propagator.propagate_video(
+            video_path="v.mp4",
+            frame_numbers=[0],
+            prompts=[{"frame": 0, "bbox": [0, 0, 5, 5]}],
+            frame_size=(10, 10),
+            frame_map={0: "0.webp"},
+        )
+        assert "Unexpected error" in errors[0]
+
+    def test_close_with_none_tracker(self, mask_propagator):
+        """Test close() when dam_tracker is None."""
+        mask_propagator.dam_tracker = None
+        # Should not raise
+        mask_propagator.close()
 
     def test_error_handling_gpu_oom(self, mask_propagator, mock_sam3_wrapper):
         """Test handling of CUDA OOM error."""
-
-        # The issue with TypeError: catching classes that do not inherit from BaseException
-        # is likely because conftest.py mocks torch.cuda.OutOfMemoryError but assigns it to something that isn't a class
-        # inheriting from BaseException, OR because we are importing torch inside the test
-        # but the module under test (mask_propagator.py) imported it when it was mocked by conftest.
-
-        # In conftest.py:
-        # mock_torch = MagicMock(name='torch')
-        # ...
-        # This means torch.cuda.OutOfMemoryError is a MagicMock object, which is not a type.
-
-        # The fix is to ensure torch.cuda.OutOfMemoryError is a real class (or mock class) that inherits from BaseException.
-        # But we cannot easily change conftest.py without affecting other tests.
-
-        # However, MaskPropagator also catches RuntimeError.
-        # If we raise RuntimeError, it should be caught.
-        # The traceback showed:
-        # except (torch.cuda.OutOfMemoryError, RuntimeError) as e:
-        # TypeError: catching classes that do not inherit from BaseException is not allowed
-
-        # This confirms that torch.cuda.OutOfMemoryError is NOT a valid exception class in the context of mask_propagator.py
-        # because of the mock.
-
-        # To test this, we must ensure that mask_propagator uses a valid exception class.
-        # Since we can't change the import in mask_propagator.py easily (it's already imported),
-        # We can try to patch `core.scene_utils.mask_propagator.torch.cuda.OutOfMemoryError` to be `RuntimeError`.
-
         with patch("core.scene_utils.mask_propagator.torch.cuda.OutOfMemoryError", RuntimeError):
-            # Now the except clause is effectively `except (RuntimeError, RuntimeError)` which is valid.
+            mock_sam3_wrapper.init_video.side_effect = RuntimeError("out of memory")
 
-            # We raise RuntimeError
-            mock_sam3_wrapper.init_video.side_effect = RuntimeError("GPU OOM Simulated")
-
-            # Also ensure torch.cuda.is_available is True
             with patch("core.scene_utils.mask_propagator.torch.cuda.is_available", return_value=True, create=True):
                 with patch("core.scene_utils.mask_propagator.torch.cuda.empty_cache") as mock_empty_cache:
                     masks, areas, empties, errors = mask_propagator.propagate_video(
@@ -236,20 +213,18 @@ class TestMaskPropagatorLogic:
                     assert empties[0] is True
                     assert "GPU error" in errors[0]
 
-    def test_tracker_progress(self, mask_propagator, mock_sam3_wrapper):
-        """Test that progress tracker is updated."""
-        tracker = MagicMock()
+    def test_executor_cleanup_on_failure(self, mask_propagator, mock_sam3_wrapper):
+        """Test ThreadPoolExecutor cleanup on failure."""
+        mock_sam3_wrapper.propagate.return_value = iter([(1, 1, np.ones((10, 10), dtype=bool))])
 
-        mock_sam3_wrapper.propagate.return_value = iter([(1, 1, np.ones((100, 100), dtype=bool))])
-
-        mask_propagator.propagate_video(
-            video_path="video.mp4",
-            frame_numbers=[0, 1],
-            prompts=[{"frame": 0, "bbox": [0, 0, 10, 10]}],
-            frame_size=(100, 100),
-            frame_map={0: "a.webp", 1: "b.webp"},
-            tracker=tracker,
-        )
-
-        assert tracker.set_stage.call_count >= 1
-        assert tracker.step.call_count >= 1
+        # Mock postprocess_mask to raise error for one frame
+        with patch("core.scene_utils.mask_propagator.postprocess_mask", side_effect=Exception("post failure")):
+            mask_propagator.propagate_video(
+                video_path="v.mp4",
+                frame_numbers=[0, 1],
+                prompts=[{"frame": 0, "bbox": [0, 0, 5, 5]}],
+                frame_size=(10, 10),
+                frame_map={0: "0.webp", 1: "1.webp"},
+            )
+            # Should continue and log error for that frame
+            mask_propagator.logger.error.assert_any_call("Parallel mask post-processing failed: post failure")

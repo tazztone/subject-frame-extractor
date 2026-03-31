@@ -1,7 +1,18 @@
+import sys
 from typing import Optional, Union
 
 import numpy as np
 import torch
+
+# Shim pkg_resources for vendored SAM3 that still uses the deprecated API
+try:
+    import pkg_resources  # noqa: F401
+except ImportError:
+    import types
+
+    pkg_resources = types.ModuleType("pkg_resources")
+    pkg_resources.require = lambda *a, **kw: None
+    sys.modules["pkg_resources"] = pkg_resources
 
 from core.utils import _setup_triton_mock
 

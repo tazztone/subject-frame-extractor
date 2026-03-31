@@ -223,16 +223,23 @@ class MaskPropagator:
             img_area = h * w
 
             def _process_frame(fn):
-                pred_mask = all_propagated.get(fn)
-                if pred_mask is not None and np.any(pred_mask):
-                    mask = postprocess_mask(
-                        (pred_mask * 255).astype(np.uint8), config=self.config, fill_holes=True, keep_largest_only=True
-                    )
-                else:
-                    mask = np.zeros((h, w), dtype=np.uint8)
+                try:
+                    pred_mask = all_propagated.get(fn)
+                    if pred_mask is not None and np.any(pred_mask):
+                        mask = postprocess_mask(
+                            (pred_mask * 255).astype(np.uint8),
+                            config=self.config,
+                            fill_holes=True,
+                            keep_largest_only=True,
+                        )
+                    else:
+                        mask = np.zeros((h, w), dtype=np.uint8)
 
-                area_pct = (np.sum(mask > 0) / img_area) * 100 if img_area > 0 else 0.0
-                return fn, mask, float(area_pct), bool(area_pct < self.params.min_mask_area_pct)
+                    area_pct = (np.sum(mask > 0) / img_area) * 100 if img_area > 0 else 0.0
+                    return fn, mask, float(area_pct), bool(area_pct < self.params.min_mask_area_pct)
+                except Exception as e:
+                    self.logger.error(f"Parallel mask post-processing failed: {e}")
+                    return fn, np.zeros((h, w), dtype=np.uint8), 0.0, True
 
             with ThreadPoolExecutor(max_workers=min(len(frame_numbers), 8)) as executor:
                 for fn, mask, area_pct, is_empty in executor.map(_process_frame, frame_numbers):

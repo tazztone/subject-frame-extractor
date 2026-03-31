@@ -51,7 +51,7 @@ The project uses GitHub Actions (`.github/workflows/ci.yml`) for automated verif
 To ensure fast execution and hardware independence, all **Unit Tests** must completely mock the following:
 - **ML Models**: Mock `ModelRegistry.get_tracker`, `get_face_analyzer`, and `TrackerFactory`.
 - **GPU/Torch**: `tests/conftest.py` promotes `torch.cuda` to a real `ModuleType` instance (not just a `MagicMock`). This provides stable access to `OutOfMemoryError` and `is_available` across parallel workers.
-- **Gradio Choice Validation**: When mocking `Config` defaults for Dropdown components, always use the **Internal ID** (e.g., `"all"`) instead of the **Display Label** (e.g., `"All Frames"`). Gradio 5+ will issue `UserWarning` if the value doesn't match the internal choice list exactly.
+- **High-Fidelity I/O Mocking**: When mocking standard library functions like `urllib.request.urlopen`, ensure the mock response includes all methods called by the production code (e.g., `.getheader()`). Using a simple `io.BytesIO` as a return value will cause `AttributeError`.
 - **Requirement**: Always include `create=True` in `patch("torch.cuda.is_available", ...)` to prevent worker collisions in parallel runs.
 
 ## Gradio & Pyright Resiliency
@@ -94,17 +94,30 @@ The `scripts/linux_test_all.sh` script automatically tracks test durations to he
 - **Log File**: Timings are saved to `tests/results/logs/test_performance.log` in a clean `[duration]s [test_name]` format.
 - **Background Tracking**: Every test is timed automatically (using `--durations=0`), but the results are kept in the log to avoid terminal clutter.
 - **Interpreting Results**: Use the "slowest durations" section at the end of each test stage to identify tests that may need better mocking or optimization.
-
 ## Advanced Testing Patterns
+
+### Property-Based Testing (Hypothesis)
+For logic involving coordinate math, aspect ratios, or boundary conditions (e.g., `core/export.py` or `core/operators/crop.py`), use **Hypothesis** to generate wide-ranging edge cases.
+- **Goal**: Ensure logic remains within bounds (e.g., image dimensions) and doesn't crash on extreme inputs.
+- **Pattern**: See `tests/unit/test_export.py` for usage of `@given` and `st.floats`.
+
+### CLI Orchestration Testing
+To verify CLI commands without the overhead of the ML backend:
+1. **Mock `_setup_runtime`**: This prevents the command from actually initializing models, registries, or loggers.
+2. **Mock Pipelines**: Patch `execute_extraction`, `execute_analysis_orchestrator`, etc., to return dummy generators.
+3. **Verify Orchestration**: Focus on verifying that the correct events are built and the output messages (Click) are formatted as expected.
+- **File**: `tests/unit/test_cli_commands.py`.
 
 ### Concurrency Regression Testing
 To verify that code intended to be multi-threaded is actually running in parallel (and not neutralized by a hidden lock):
 1. **Mock with Delays**: Patch the internal worker functions with a deterministic delay (e.g., `time.sleep(0.1)`).
 2. **Measure Wall-Clock**: Use `time.time()` to measure the total duration of a batch run.
 3. **Assert Parallelism**: If 10 workers run 10 tasks of 0.1s, the total duration should be ~0.1s (parallel) rather than 1.0s (serial). 
-   * See `tests/unit/test_concurrency_regression.py` (referenced) for the implementation of this pattern.
+   * See `tests/unit/test_concurrency.py` for implementation.
 
 ### Infrastructure Latency Tuning
+...
+
 The UI test suite relies on a mock Gradio server. To maintain fast CI/CD cycles:
 - **Server Polling**: The `wait_for_server` helper uses a 0.1s interval (reduced from 1s) to minimize idle time during test setup.
 - **Mock Delays**: Artificial sleeps in `tests/mock_app.py` are pinned to the minimum required for state transition (e.g., 0.01s) to prevent test bloat.
