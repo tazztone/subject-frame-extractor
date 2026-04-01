@@ -163,15 +163,15 @@ def test_tracker_pause_resume():
     thread = threading.Thread(target=do_step)
     thread.start()
 
-    import time as _t
+    # The thread should be waiting on pause_event
+    # Use a small wait to ensure it's blocked, but not 1.0s
+    import time
 
-    deadline = _t.monotonic() + 1.0
-    while thread.is_alive() and tracker.done == 0 and _t.monotonic() < deadline:
-        _t.sleep(0.001)
+    time.sleep(0.01)
     assert tracker.done == 0
     assert thread.is_alive()
 
     tracker.pause_event.set()  # Resume
-    thread.join(timeout=1.0)
+    thread.join(timeout=0.1)
     assert tracker.done == 1
     assert not thread.is_alive()

@@ -1,3 +1,5 @@
+from unittest.mock import MagicMock
+
 from hypothesis import given
 from hypothesis import strategies as st
 
@@ -70,3 +72,70 @@ def test_bbox_normalization_invariant(x, y, w, h, img_w, img_h):
     assert 0.0 <= rel_y2 <= 1.0
     assert rel_x <= rel_x2
     assert rel_y <= rel_y2
+
+
+@given(
+    x1=st.integers(0, 1000),
+    y1=st.integers(0, 1000),
+    x2=st.integers(0, 1000),
+    y2=st.integers(0, 1000),
+)
+def test_xyxy_to_xywh_roundtrip(x1, y1, x2, y2):
+    """Test that xyxy_to_xywh and its inverse (xywh_to_xyxy) work correctly."""
+    from core.scene_utils.seed_selector import SeedSelector
+
+    # Ensure x2 >= x1 and y2 >= y1
+    x1, x2 = min(x1, x2), max(x1, x2)
+    y1, y2 = min(y1, y2), max(y1, y2)
+
+    # Use a dummy selector
+    selector = SeedSelector(params=MagicMock(), config=MagicMock())
+
+    xyxy = [x1, y1, x2, y2]
+    xywh = selector._xyxy_to_xywh(xyxy)
+
+    # xywh format: [x, y, w, h]
+    assert xywh[0] == x1
+    assert xywh[1] == y1
+    assert xywh[2] == max(1, x2 - x1)
+    assert xywh[3] == max(1, y2 - y1)
+
+
+@given(
+    fx1=st.integers(0, 1000),
+    fy1=st.integers(0, 1000),
+    fx2=st.integers(0, 1000),
+    fy2=st.integers(0, 1000),
+    img_w=st.integers(1, 2000),
+    img_h=st.integers(1, 2000),
+)
+def test_expand_face_to_body_safety(fx1, fy1, fx2, fy2, img_w, img_h):
+    """Test that expand_face_to_body never produces coordinates outside image bounds."""
+    from core.scene_utils.seed_selector import SeedSelector
+
+    # Ensure fx2 >= fx1 and fy2 >= fy1
+    fx1, fx2 = min(fx1, fx2), max(fx1, fx2)
+    fy1, fy2 = min(fy1, fy2), max(fy1, fy2)
+    # Clamp to image bounds initially
+    fx1 = min(fx1, img_w - 1)
+    fx2 = min(fx2, img_w)
+    fy1 = min(fy1, img_h - 1)
+    fy2 = min(fy2, img_h)
+
+    face_bbox = [fx1, fy1, fx2, fy2]
+    img_shape = (img_h, img_w, 3)
+
+    config = MagicMock()
+    config.seeding_face_to_body_expansion_factors = [1.0, 1.0, 1.0]  # Default multipliers
+    selector = SeedSelector(params=MagicMock(), config=config)
+
+    expanded = selector._expand_face_to_body(face_bbox, img_shape)
+
+    # expanded is in xywh format? Let's check.
+    # Actually _expand_face_to_body in core/scene_utils/seed_selector.py returns xywh!
+
+    ex, ey, ew, eh = expanded
+    assert ex >= 0
+    assert ey >= 0
+    assert ex + ew <= img_w
+    assert ey + eh <= img_h

@@ -59,8 +59,8 @@ def execute_session_load(event: "SessionLoadEvent", logger: "AppLogger") -> dict
                         rec["best_frame"] = rec.get("best_frame", rec.get("best_seed_frame"))
                         s.update(rec)
                     s.setdefault("status", "included")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Could not load scene_seeds.json: {e}. Progress for individual scenes may be lost.")
         return {
             "success": True,
             "session_path": str(session_path),

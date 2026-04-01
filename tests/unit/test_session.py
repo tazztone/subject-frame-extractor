@@ -83,6 +83,40 @@ def test_execute_session_load_with_seeds(mock_logger, tmp_path):
     assert res["scenes"][0]["best_frame"] == 5
 
 
+def test_execute_session_load_corrupt_seeds(mock_logger, tmp_path):
+    session_dir = tmp_path / "session_corrupt_seeds"
+    session_dir.mkdir()
+    (session_dir / "run_config.json").write_text(json.dumps({"source_path": "test.mp4"}))
+    (session_dir / "scenes.json").write_text(json.dumps([[0, 10]]))
+    # Corrupt JSON for scene_seeds
+    (session_dir / "scene_seeds.json").write_text("{invalid")
+
+    event = MagicMock()
+    event.session_path = str(session_dir)
+
+    res = execute_session_load(event, mock_logger)
+    # Should still succeed but log warning about seeds
+    assert res["success"] is True
+    assert len(res["scenes"]) == 1
+    mock_logger.warning.assert_called()
+    assert "scene_seeds.json" in mock_logger.warning.call_args[0][0]
+
+
+def test_execute_session_load_missing_seeds_file(mock_logger, tmp_path):
+    session_dir = tmp_path / "session_no_seeds"
+    session_dir.mkdir()
+    (session_dir / "run_config.json").write_text(json.dumps({"source_path": "test.mp4"}))
+    (session_dir / "scenes.json").write_text(json.dumps([[0, 10]]))
+    # No scene_seeds.json file
+
+    event = MagicMock()
+    event.session_path = str(session_dir)
+
+    res = execute_session_load(event, mock_logger)
+    assert res["success"] is True
+    assert len(res["scenes"]) == 1
+
+
 def test_load_analysis_scenes_folder_mode():
     data = [{"shot_id": 0, "start_frame": 0, "end_frame": 10, "status": "excluded"}]
     # In folder mode, even excluded scenes are loaded regardless of include_only

@@ -92,7 +92,10 @@ def test_compute_entropy():
     hist[128] = 100
     assert compute_entropy(hist, 8.0) == pytest.approx(0.0, abs=1e-7)
 
-    # Random
-    hist = np.random.rand(256)
-    ent = compute_entropy(hist, 8.0)
-    assert 0 < ent <= 1.0
+    # Simple half-half split for deterministic entropy
+    hist = np.zeros(256)
+    hist[10] = 50
+    hist[20] = 50
+    # Expected entropy: - (0.5 * log2(0.5) + 0.5 * log2(0.5)) = 1.0
+    # Normalized: 1.0 / 8.0 = 0.125
+    assert compute_entropy(hist, 8.0) == pytest.approx(0.125)

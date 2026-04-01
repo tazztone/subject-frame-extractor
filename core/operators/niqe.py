@@ -13,38 +13,27 @@ class NiqeOperator:
     def config(self) -> OperatorConfig:
         return OperatorConfig(
             name="niqe",
-            display_name="NIQE Score",
-            category="quality",
-            description="Natural Image Quality Evaluator (no-reference). Score 0-100 (higher is better).",
-            min_value=0.0,
-            max_value=100.0,
-            requires_mask=False,
+            description="NIQE (Natural Image Quality Evaluator) no-reference metric",
+            display_name="NIQE Quality",
             requires_tensor=True,
         )
 
-    def initialize(self, config):
-        """Load pyiqa model."""
+    def initialize(self, config: OperatorConfig):
         try:
             import pyiqa
-        except ImportError:
-            # We don't fail here, but execute will fail if called
-            return
 
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        try:
-            # Create metric with device
-            self.model = pyiqa.create_metric("niqe", device=torch.device(self.device))
+            self.device = getattr(config, "device", "cpu")
+            self.model = pyiqa.create_metric("niqe", device=self.device)
+        except ImportError:
+            # logger is not easily available here, assuming initialized via pipeline
+            pass
         except Exception:
-            # Log error? Or re-raise?
-            # Operator framework swallows exceptions in execute, but initialize?
-            # We'll leave self.model as None and handle in execute.
             pass
 
     def cleanup(self):
-        """Release resources."""
         self.model = None
         if self.device == "cuda":
-            torch.cuda.empty_cache()
+            torch.cuda.empty_ok()
 
     def execute(self, ctx: OperatorContext) -> OperatorResult:
         if self.model is None:
@@ -58,24 +47,19 @@ class NiqeOperator:
 
             # Handle masking if provided
             if ctx.mask_tensor is not None:
-                # Optimized Torch masking
-                # ctx.mask_tensor is (1, 1, H, W) in range [0, 1]
-                # ctx.image_tensor is (1, 3, H, W) in range [0, 1]
-                mask_binary = (ctx.mask_tensor > 0.5).float()
-                img_tensor = img_tensor * mask_binary
+                mask = (ctx.mask_tensor > 0.5).float()
+                img_tensor = img_tensor * mask
 
             with torch.no_grad():
-                # PyIQA forward
-                # It expects 0-1 float on the correct device
-                res = self.model(img_tensor)
-                niqe_raw = float(res.item())
+                niqe_raw = self.model(img_tensor).item()
 
-            # Normalization
-            # Plan Default: 100 - (raw * 2)
-            offset = 100.0
-            scale = 2.0
+            # Normalize NIQE (lower is better, typically 0-20 for good images)
+            # Default mapping: offset=20, scale=5 -> (20 - 5)*5 = 75
+            offset = 20.0
+            scale = 5.0
 
             if ctx.config:
+                # Fallback to niqe_offset if quality_niqe_offset is missing
                 if hasattr(ctx.config, "quality_niqe_offset"):
                     offset = ctx.config.quality_niqe_offset
                 elif hasattr(ctx.config, "niqe_offset"):

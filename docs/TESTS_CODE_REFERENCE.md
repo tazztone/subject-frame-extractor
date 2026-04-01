@@ -87,7 +87,9 @@ tests
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_config.py`](#-testsunittest_configpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_context_adherence.py`](#-testsunittest_context_adherencepy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_core.py`](#-testsunittest_corepy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_crop_operator.py`](#-testsunittest_crop_operatorpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_database.py`](#-testsunittest_databasepy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_db_schema.py`](#-testsunittest_db_schemapy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_dedup.py`](#-testsunittest_deduppy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_entropy.py`](#-testsunittest_entropypy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_enums.py`](#-testsunittest_enumspy)  
@@ -95,9 +97,6 @@ tests
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_events.py`](#-testsunittest_eventspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_exit_branches.py`](#-testsunittest_exit_branchespy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_export.py`](#-testsunittest_exportpy)  
-&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_export_advanced.py`](#-testsunittest_export_advancedpy)  
-&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_export_edge_cases.py`](#-testsunittest_export_edge_casespy)  
-&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_export_extended.py`](#-testsunittest_export_extendedpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_extraction.py`](#-testsunittest_extractionpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_extraction_manager.py`](#-testsunittest_extraction_managerpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_face_clustering.py`](#-testsunittest_face_clusteringpy)  
@@ -119,7 +118,6 @@ tests
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_logger.py`](#-testsunittest_loggerpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_logger_interop.py`](#-testsunittest_logger_interoppy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_managers.py`](#-testsunittest_managerspy)  
-&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_managers_extended.py`](#-testsunittest_managers_extendedpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_mask_operators.py`](#-testsunittest_mask_operatorspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_mask_propagator_logic.py`](#-testsunittest_mask_propagator_logicpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_mask_propagator_oom.py`](#-testsunittest_mask_propagator_oompy)  
@@ -129,7 +127,6 @@ tests
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_models_property.py`](#-testsunittest_models_propertypy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_niqe_operator.py`](#-testsunittest_niqe_operatorpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_operators.py`](#-testsunittest_operatorspy)  
-&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_operators_extended.py`](#-testsunittest_operators_extendedpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_operators_registry.py`](#-testsunittest_operators_registrypy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_phase1_logic.py`](#-testsunittest_phase1_logicpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_phase2_logic.py`](#-testsunittest_phase2_logicpy)  
@@ -1205,6 +1202,9 @@ def test_save_progress_bulk(mock_db, mock_deps, analysis_params, tmp_path): ...
 def test_pre_analysis_pipeline_run(mock_save_seeds, mock_masker_cls, mock_init_models, mock_deps, analysis_params, tmp_path): ...
 @patch('core.managers.analysis.Database')
 def test_niqe_initialization_failures(mock_db, mock_deps, analysis_params): ...
+def test_pre_analysis_process_single_scene_edge_cases(mock_deps, analysis_params, tmp_path): ...
+@patch('core.managers.analysis.Database')
+def test_process_single_frame_metadata_assembly(mock_db, mock_deps, analysis_params, tmp_path): ...
 @patch('core.managers.analysis.Database')
 def test_save_progress_bulk_read_failure(mock_db, mock_deps, analysis_params, tmp_path): ...
 @patch('core.managers.analysis.Database')
@@ -1399,8 +1399,14 @@ def test_config_json_source():
     """Test loading configuration from a JSON file."""
 def test_quality_weights_property():
     """Test the quality_weights property helper."""
-def test_config_batch_sizes():
-    """Test that Config has the expected default batch sizes for performance."""
+@pytest.mark.parametrize('weight_name', ['quality_weights_sharpness', 'quality_weights_edge_strength', 'quality_weights_contrast', 'quality_weights_brightness', 'quality_weights_entropy', 'quality_weights_niqe'])
+def test_config_negative_weights_parametrized(weight_name):
+    """Test that each quality weight raises ValueError if negative."""
+@pytest.mark.parametrize('batch_size', [-1, 0, 10000])
+def test_config_batch_size_boundaries(batch_size):
+    """Test boundary values for batch size."""
+def test_config_quality_weights_sum_to_one():
+    """Test that weights are normalized if requested (if that's a feature) or just c..."""
 ```
 
 ### `📄 tests/unit/test_context_adherence.py`
@@ -1451,6 +1457,17 @@ class TestPreAnalysisEvent:
         """Test the custom validator for face_ref_img_path."""
 ```
 
+### `📄 tests/unit/test_crop_operator.py`
+
+```python
+def test_calculate_best_crop_extreme_ratios():
+    """Test crop calculation with very wide or very tall aspect ratios."""
+def test_calculate_best_crop_at_boundaries():
+    """Test crop calculation when subject is near the image edge."""
+def test_crop_image_with_subject_no_subject():
+    """Test crop function when no subject bbox is found in mask."""
+```
+
 ### `📄 tests/unit/test_database.py`
 
 ```python
@@ -1483,6 +1500,17 @@ def test_migrate_calls_connect_if_needed(db_path):
     """Test that migrate() calls connect() if conn is None."""
 def test_migrate_failure_logging(db_path):
     """Test that migrate() logs errors from migrate_database."""
+```
+
+### `📄 tests/unit/test_db_schema.py`
+
+```python
+def test_migrate_database_new(tmp_path):
+    """Test migration on a fresh database."""
+def test_migrate_database_legacy_v1(tmp_path):
+    """Test migration from a legacy v1 database (no schema_versions table)."""
+def test_migrate_database_rollback_on_failure(tmp_path):
+    """Test that migration rolls back on failure."""
 ```
 
 ### `📄 tests/unit/test_dedup.py`
@@ -1630,6 +1658,29 @@ class TestExitBranches:
 ### `📄 tests/unit/test_export.py`
 
 ```python
+class TestExportEdgeCases:
+    @given(frame_w=st.integers(100, 4096), frame_h=st.integers(100, 4096), box_x=st.integers(0, 4000), box_y=st.integers(0, 4000), box_w=st.integers(1, 4000), box_h=st.integers(1, 4000), padding_factor=st.floats(1.0, 2.0))
+    @settings(max_examples=50, deadline=None)
+    def test_calculate_best_crop_bounds_safety(self, frame_w, frame_h, box_x, box_y, box_w, box_h, padding_factor):
+        """Ensure that calculate_best_crop never returns a box exceeding frame dimension..."""
+    def test_filtering_nan_quality_scores(self, mock_config):
+        """Test filtering handles NaN or None quality scores without crashing."""
+    def test_filtering_extreme_thresholds(self, mock_config):
+        """Test filtering with extreme thresholds."""
+class TestExportAdvanced:
+    @patch('cv2.imread')
+    @patch('cv2.imwrite')
+    @patch('cv2.findContours')
+    @patch('cv2.boundingRect')
+    def test_crop_exported_frames_logic(self, mock_boundingRect, mock_findContours, mock_imwrite, mock_imread, tmp_path):
+        """Test the logic of cropping exported frames."""
+    @patch('cv2.imread')
+    def test_crop_exported_frames_missing_files(self, mock_imread, tmp_path):
+        """Test graceful handling of missing files."""
+    @patch('cv2.imread')
+    @patch('cv2.findContours')
+    def test_crop_exported_frames_empty_mask(self, mock_findContours, mock_imread, tmp_path):
+        """Test handling of empty masks."""
 class TestExportExtended:
     """Extended tests for export.py to cover crop logic and edge cases."""
     @pytest.fixture
@@ -1661,50 +1712,11 @@ def test_export_kept_frames_no_frames_kept(mock_filter, mock_config, mock_logger
 @patch('core.export.apply_all_filters_vectorized')
 @patch('core.export.perform_ffmpeg_export')
 def test_export_kept_frames_ffmpeg_failure(mock_ffmpeg, mock_filter, mock_config, mock_logger, tmp_path): ...
-```
-
-### `📄 tests/unit/test_export_advanced.py`
-
-```python
-class TestExportAdvanced:
-    @patch('cv2.imread')
-    @patch('cv2.imwrite')
-    @patch('cv2.findContours')
-    @patch('cv2.boundingRect')
-    def test_crop_exported_frames_logic(self, mock_boundingRect, mock_findContours, mock_imwrite, mock_imread, tmp_path):
-        """Test the logic of cropping exported frames."""
-    @patch('cv2.imread')
-    def test_crop_exported_frames_missing_files(self, mock_imread, tmp_path):
-        """Test graceful handling of missing files."""
-    @patch('cv2.imread')
-    @patch('cv2.findContours')
-    def test_crop_exported_frames_empty_mask(self, mock_findContours, mock_imread, tmp_path):
-        """Test handling of empty masks."""
-```
-
-### `📄 tests/unit/test_export_edge_cases.py`
-
-```python
-class TestExportEdgeCases:
-    @given(frame_w=st.integers(100, 4096), frame_h=st.integers(100, 4096), box_x=st.integers(0, 4000), box_y=st.integers(0, 4000), box_w=st.integers(1, 4000), box_h=st.integers(1, 4000), padding_factor=st.floats(1.0, 2.0))
-    @settings(max_examples=50, deadline=None)
-    def test_calculate_best_crop_bounds_safety(self, frame_w, frame_h, box_x, box_y, box_w, box_h, padding_factor):
-        """Ensure that calculate_best_crop never returns a box exceeding frame dimension..."""
-    def test_filtering_nan_quality_scores(self, mock_config):
-        """Test filtering handles NaN or None quality scores without crashing."""
-    def test_filtering_extreme_thresholds(self, mock_config):
-        """Test filtering with extreme thresholds."""
-```
-
-### `📄 tests/unit/test_export_extended.py`
-
-```python
-def test_export_metadata_logic(tmp_path, mock_logger):
-    """Test the internal _export_metadata function."""
-def test_export_kept_frames_no_data(mock_config, mock_logger):
-    """Test export with no data."""
-def test_export_kept_frames_folder_mode(tmp_path, mock_config, mock_logger):
-    """Test export in folder mode (copying files)."""
+@patch('core.export.apply_all_filters_vectorized')
+def test_dry_run_export_no_frames_kept(mock_filter, mock_config, mock_logger, tmp_path): ...
+def test_write_xmp_sidecar_rename_failure(tmp_path): ...
+@patch('core.export.cv2.imread', return_value=None)
+def test_crop_exported_frames_folder_mode_read_failure(mock_read, mock_logger, tmp_path): ...
 ```
 
 ### `📄 tests/unit/test_extraction.py`
@@ -1847,7 +1859,14 @@ class TestFiltering:
     @patch('core.operators.dedup._run_batched_lpips')
     def test_apply_deduplication_filter_lpips(self, mock_run_lpips, sample_frames, mock_config, mock_thumbnail_manager): ...
     def test_apply_metric_filters(self, sample_frames, mock_config): ...
-    def test_apply_all_filters_vectorized(self, sample_frames, mock_config): ...
+    def test_apply_all_filters_vectorized_combined(self, sample_frames, mock_config):
+        """Test combined quality + mask-area + dedup filter."""
+    def test_apply_all_filters_all_filtered_out(self, sample_frames, mock_config):
+        """Test edge case where all frames are filtered out."""
+    def test_apply_all_filters_face_sim_edge_cases(self, sample_frames, mock_config):
+        """Test face_sim filtering with require_face_match."""
+    def test_apply_all_filters_range_filter(self, sample_frames, mock_config):
+        """Test a range-based filter (e.g., yaw)."""
 ```
 
 ### `📄 tests/unit/test_fingerprint.py`
@@ -2042,7 +2061,7 @@ def test_compute_sha256(tmp_path): ...
 @patch('urllib.request.urlopen')
 def test_download_model_full(mock_urlopen, tmp_path): ...
 def test_create_frame_map(tmp_path): ...
-def test_create_frame_map_error(tmp_path): ...
+def test_create_frame_map_json_error(tmp_path): ...
 ```
 
 ### `📄 tests/unit/test_launch_config.py`
@@ -2137,21 +2156,21 @@ class TestManagers:
     @patch('cv2.imread', return_value=np.zeros((100, 100, 3)))
     def test_initialize_analysis_models(self, mock_imread, mock_get_landmarker, mock_isfile, mock_exists, mock_download, mock_get_analyzer, mock_config, mock_logger): ...
     @patch('insightface.app.FaceAnalysis')
-    def test_get_face_analyzer_retry_logic(self, mock_face_analysis_cls, mock_logger): ...
+    @patch('time.sleep', return_value=None)
+    def test_get_face_analyzer_retry_logic(self, mock_sleep, mock_face_analysis_cls, mock_logger): ...
+    @patch('insightface.app.FaceAnalysis')
+    @patch('time.sleep', return_value=None)
+    def test_get_face_analyzer_cpu_fallback_failure(self, mock_sleep, mock_face_analysis_cls, mock_logger): ...
+    @patch('core.managers.face.vision.FaceLandmarker')
+    def test_get_face_landmarker_failure(self, mock_landmarker, mock_logger): ...
     @patch('core.managers.thumbnails.Image.open')
     @patch('pathlib.Path.exists', return_value=True)
     def test_thumbnail_manager_corrupt_file(self, mock_exists, mock_open, mock_logger, mock_config): ...
     @patch('core.managers.model_loader.lpips.LPIPS')
     def test_get_lpips_metric(self, mock_lpips): ...
-```
-
-### `📄 tests/unit/test_managers_extended.py`
-
-```python
-class TestManagersExtended:
-    def test_model_registry_basic_load(self):
+    def test_model_registry_basic_load(self, mock_logger):
         """Test basic ModelRegistry load (retry logic is in get_tracker/etc, not get_or_..."""
-    def test_thumbnail_manager_eviction_logic(self, tmp_path):
+    def test_thumbnail_manager_eviction_logic(self, tmp_path, mock_logger):
         """Test LRU eviction in ThumbnailManager."""
 ```
 
@@ -2280,6 +2299,12 @@ def test_analysis_parameters_properties(source_path, interval, max_resolution):
 @given(x=st.floats(min_value=-1000.0, max_value=5000.0), y=st.floats(min_value=-1000.0, max_value=5000.0), w=st.floats(min_value=0.0, max_value=5000.0), h=st.floats(min_value=0.0, max_value=5000.0), img_w=st.integers(min_value=1, max_value=4000), img_h=st.integers(min_value=1, max_value=4000))
 def test_bbox_normalization_invariant(x, y, w, h, img_w, img_h):
     """Normalization logic in SAM3Wrapper.add_bbox_prompt must always"""
+@given(x1=st.integers(0, 1000), y1=st.integers(0, 1000), x2=st.integers(0, 1000), y2=st.integers(0, 1000))
+def test_xyxy_to_xywh_roundtrip(x1, y1, x2, y2):
+    """Test that xyxy_to_xywh and its inverse (xywh_to_xyxy) work correctly."""
+@given(fx1=st.integers(0, 1000), fy1=st.integers(0, 1000), fx2=st.integers(0, 1000), fy2=st.integers(0, 1000), img_w=st.integers(1, 2000), img_h=st.integers(1, 2000))
+def test_expand_face_to_body_safety(fx1, fy1, fx2, fy2, img_w, img_h):
+    """Test that expand_face_to_body never produces coordinates outside image bounds."""
 ```
 
 ### `📄 tests/unit/test_niqe_operator.py`
@@ -2288,17 +2313,16 @@ def test_bbox_normalization_invariant(x, y, w, h, img_w, img_h):
 class TestNiqeOperator:
     @pytest.fixture
     def operator(self): ...
-    def test_config(self, operator): ...
-    def test_uninitialized_execution_fails(self, operator): ...
-    @patch('pyiqa.create_metric')
-    def test_initialize_loads_model(self, mock_create, operator): ...
-    @patch('pyiqa.create_metric')
-    def test_execute_flow(self, mock_create, operator): ...
-    @patch('pyiqa.create_metric')
-    def test_execute_with_config_overrides(self, mock_create, operator): ...
+    def test_initialize_success(self, operator): ...
+    def test_initialize_error_paths(self, operator): ...
+    def test_execute_flow(self, operator): ...
+    def test_execute_with_config_overrides(self, operator): ...
+    def test_execute_with_various_config_attributes(self, operator):
+        """Test fallback to 'niqe_offset' if 'quality_niqe_offset' is missing."""
+    def test_execute_with_mask_tensor(self, operator):
+        """Test that mask_tensor is used in execute."""
+    def test_execute_error_paths(self, operator): ...
     def test_cleanup_clears_model(self, operator): ...
-    @patch('pyiqa.create_metric')
-    def test_execute_error_paths(self, mock_create, operator): ...
 ```
 
 ### `📄 tests/unit/test_operators.py`
@@ -2308,11 +2332,6 @@ def test_entropy_operator(mock_config): ...
 def test_quality_score_operator(mock_config): ...
 def test_sharpness_operator(mock_config): ...
 def test_mask_area_operator(mock_config): ...
-```
-
-### `📄 tests/unit/test_operators_extended.py`
-
-```python
 def test_eyes_open_operator_basic(mock_config, sample_image, mock_logger):
     """Test EyesOpenOperator with mock MediaPipe blendshapes."""
 def test_face_pose_operator_basic(mock_config, sample_image, mock_logger):
@@ -2650,6 +2669,15 @@ def test_sam3_wrapper_reset_session(sam3_unit_fresh): ...
 def test_sam3_wrapper_uninitialized_raises(sam3_unit_fresh): ...
 def test_sam3_wrapper_import_error_degradation():
     """Test that SAM3Wrapper raises RuntimeError if predictor fails to load."""
+def test_sam3_wrapper_mock_leakage_check():
+    """Test the mock leakage check when device='cuda'."""
+def test_sam3_wrapper_checkpoint_resolution():
+    """Test checkpoint auto-resolution when None is provided."""
+def test_sam3_wrapper_shutdown_cleanup():
+    """Test the shutdown method with various predictor states."""
+@pytest.mark.xfail(reason='Unstable due to global pkg_resources mock in conftest')
+def test_sam3_wrapper_pkg_resources_fallback():
+    """Test the pkg_resources fallback by forcing an ImportError."""
 def test_sam3_wrapper_add_point_prompt(sam3_unit_fresh): ...
 def test_sam3_wrapper_remove_object(sam3_unit_fresh): ...
 def test_sam3_wrapper_clear_prompts(sam3_unit_fresh): ...
@@ -2868,6 +2896,8 @@ def test_validate_session_dir(tmp_path): ...
 def test_execute_session_load(mock_logger, tmp_path): ...
 def test_execute_session_load_errors(mock_logger, tmp_path): ...
 def test_execute_session_load_with_seeds(mock_logger, tmp_path): ...
+def test_execute_session_load_corrupt_seeds(mock_logger, tmp_path): ...
+def test_execute_session_load_missing_seeds_file(mock_logger, tmp_path): ...
 def test_load_analysis_scenes_folder_mode(): ...
 def test_validate_session_dir_exception(): ...
 ```

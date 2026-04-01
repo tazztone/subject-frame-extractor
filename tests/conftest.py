@@ -155,9 +155,21 @@ def _create_mock_tensor(name="tensor", shape=None, value=None, **kwargs):
     mock_t.dtype = _mock_torch_obj.float32
     mock_t.size.side_effect = lambda dim=None: shape if dim is None else shape[dim]
     mock_t.__mul__ = MagicMock(return_value=mock_t)
+    mock_t.__rmul__ = MagicMock(return_value=mock_t)
     mock_t.__add__ = MagicMock(return_value=mock_t)
     mock_t.__sub__ = MagicMock(return_value=mock_t)
+    mock_t.__gt__ = MagicMock(return_value=mock_t)
+    mock_t.__lt__ = MagicMock(return_value=mock_t)
     mock_t.__truediv__ = MagicMock(return_value=mock_t)
+    mock_t.float = MagicMock(return_value=mock_t)
+    mock_t.to = MagicMock(return_value=mock_t)
+    mock_t.permute = MagicMock(return_value=mock_t)
+    mock_t.unsqueeze = MagicMock(return_value=mock_t)
+    mock_t.squeeze = MagicMock(return_value=mock_t)
+    # Ensure it's truthy so 'if tensor is None' or 'if tensor' checks work as expected
+    mock_t.__bool__ = MagicMock(return_value=True)
+    mock_t.__len__ = MagicMock(return_value=1)
+    mock_t.__eq__ = MagicMock(return_value=True)
     if value is not None:
         if hasattr(value, "__getitem__") and len(value) > 0:
             try:
@@ -228,6 +240,8 @@ modules_to_mock = {
             "set_float32_matmul_precision": MagicMock(),
             "SymFloat": _mock_torch_obj.SymFloat,
             "SymInt": _mock_torch_obj.SymInt,
+            "linalg": _create_mock_module("torch.linalg", {"svd": MagicMock()}),
+            "all": MagicMock(side_effect=lambda x: all(x) if hasattr(x, "__iter__") else bool(x)),
             "__version__": "2.0.0",
             "manual_seed": MagicMock(),
         },

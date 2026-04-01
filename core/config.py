@@ -285,6 +285,10 @@ class Config(BaseSettings):
 
         if sum(weights) == 0:
             raise ValueError("The sum of quality_weights cannot be zero.")
+
+        if self.analysis_default_batch_size <= 0:
+            raise ValueError("analysis_default_batch_size must be positive.")
+
         return self
 
     @property

@@ -207,7 +207,9 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_config.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_context_adherence.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_core.py  
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_crop_operator.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_database.py  
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_db_schema.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_dedup.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_entropy.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_enums.py  
@@ -215,9 +217,6 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_events.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_exit_branches.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_export.py  
-│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_export_advanced.py  
-│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_export_edge_cases.py  
-│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_export_extended.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_extraction.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_extraction_manager.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_face_clustering.py  
@@ -239,7 +238,6 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_logger.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_logger_interop.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_managers.py  
-│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_managers_extended.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_mask_operators.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_mask_propagator_logic.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_mask_propagator_oom.py  
@@ -249,7 +247,6 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_models_property.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_niqe_operator.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_operators.py  
-│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_operators_extended.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_operators_registry.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_phase1_logic.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_phase2_logic.py  
@@ -631,11 +628,15 @@ class SessionLoadEvent(UIEvent):
 ### `📄 core/export.py`
 
 ```python
-def _rename_exported_frames(export_dir: Path, frames_to_extract: list, fn_to_orig_map: dict, logger: 'AppLogger'): ...
-def _export_metadata(kept_frames: list, export_dir: Path, logger: 'AppLogger'): ...
-def _crop_exported_frames(kept_frames: list, export_dir: Path, crop_ars: str, crop_padding: int, masks_root: Path, logger: 'AppLogger', cancel_event) -> int: ...
-def export_kept_frames(event: ExportEvent, config: 'Config', logger: 'AppLogger', thumbnail_manager, cancel_event) -> str: ...
-def dry_run_export(event: ExportEvent, config: 'Config', logger: Optional['AppLogger']=None) -> str: ...
+def export_kept_frames(event: ExportEvent, config: 'Config', logger: 'AppLogger', progress_queue: Optional[any]=None, cancel_event: Optional[any]=None) -> str:
+    """Main export entry point."""
+def _crop_exported_frames(kept_frames: list, export_dir: Path, crop_ars: str, crop_padding: int, masks_root: Path, logger: 'AppLogger', cancel_event: any) -> int: ...
+def _rename_exported_frames(export_dir: Path, frames_to_extract: list, fn_to_orig: dict, logger: 'AppLogger'):
+    """Renames FFmpeg output (frame_000001.png) to more descriptive original names i..."""
+def _export_metadata(kept_frames: list, export_dir: Path, logger: 'AppLogger'):
+    """Exports frame metadata to JSON and CSV formats."""
+def dry_run_export(event: ExportEvent, config: 'Config', logger: 'AppLogger') -> str:
+    """Simulates an export and returns a summary of actions."""
 ```
 
 ### `📄 core/face_clustering.py`
@@ -1103,10 +1104,8 @@ class NiqeOperator:
     def __init__(self): ...
     @property
     def config(self) -> OperatorConfig: ...
-    def initialize(self, config):
-        """Load pyiqa model."""
-    def cleanup(self):
-        """Release resources."""
+    def initialize(self, config: OperatorConfig): ...
+    def cleanup(self): ...
     def execute(self, ctx: OperatorContext) -> OperatorResult: ...
 ```
 

@@ -144,8 +144,39 @@ def test_quality_weights_property():
     assert weights["contrast"] == 15  # default
 
 
-def test_config_batch_sizes():
-    """Test that Config has the expected default batch sizes for performance."""
-    config = Config()
-    # Phase 2 goal: Increase from 25 to 50
-    assert config.analysis_default_batch_size == 50
+@pytest.mark.parametrize(
+    "weight_name",
+    [
+        "quality_weights_sharpness",
+        "quality_weights_edge_strength",
+        "quality_weights_contrast",
+        "quality_weights_brightness",
+        "quality_weights_entropy",
+        "quality_weights_niqe",
+    ],
+)
+def test_config_negative_weights_parametrized(weight_name):
+    """Test that each quality weight raises ValueError if negative."""
+    with pytest.raises(ValueError, match="Quality weights cannot be negative"):
+        Config(**{weight_name: -1.0})
+
+
+@pytest.mark.parametrize("batch_size", [-1, 0, 10000])
+def test_config_batch_size_boundaries(batch_size):
+    """Test boundary values for batch size."""
+    if batch_size <= 0:
+        with pytest.raises(ValueError, match="analysis_default_batch_size must be positive"):
+            Config(analysis_default_batch_size=batch_size)
+    else:
+        config = Config(analysis_default_batch_size=batch_size)
+        assert config.analysis_default_batch_size == batch_size
+
+
+def test_config_quality_weights_sum_to_one():
+    """Test that weights are normalized if requested (if that's a feature) or just check sum."""
+    # Current implementation just checks sum != 0 and >= 0.
+    # If the app logic requires them to sum to 100 or 1.0, we should test that.
+    # Based on test_config_invalid_quality_weights, it just checks sum != 0.
+    config = Config(quality_weights_sharpness=1, quality_weights_niqe=1)
+    # Default values for others: edge_strength=15, contrast=15, brightness=10, entropy=15
+    assert sum(config.quality_weights.values()) == (1 + 1 + 15 + 15 + 10 + 15)

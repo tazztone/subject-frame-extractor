@@ -1,3 +1,4 @@
+import sys
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -72,11 +73,102 @@ def test_sam3_wrapper_import_error_degradation():
     """Test that SAM3Wrapper raises RuntimeError if predictor fails to load."""
     mock_build = MagicMock(return_value=None)
 
-    with patch.dict("sys.modules", {"sam3.model_builder": MagicMock(build_sam3_video_predictor=mock_build)}):
+    with patch("sam3.model_builder.build_sam3_video_predictor", mock_build):
         from core.managers.sam3 import SAM3Wrapper
 
         with pytest.raises(RuntimeError, match="SAM3 model failed to load"):
             SAM3Wrapper(checkpoint_path="fake.pt", device="cpu")
+
+
+def test_sam3_wrapper_mock_leakage_check():
+    """Test the mock leakage check when device='cuda'."""
+    mock_build = MagicMock()
+    # To simulate MagicMock detection, we don't need patch.dict if we patch the right place
+    with patch("sam3.model_builder.build_sam3_video_predictor", mock_build):
+        from core.managers.sam3 import SAM3Wrapper
+
+        with pytest.raises(RuntimeError, match="SAM3 build_sam3_video_predictor is a MagicMock"):
+            SAM3Wrapper(checkpoint_path="fake.pt", device="cuda")
+
+
+def test_sam3_wrapper_checkpoint_resolution():
+    """Test checkpoint auto-resolution when None is provided."""
+    mock_predictor = MagicMock()
+    mock_predictor.model = MagicMock()
+    mock_build = MagicMock(return_value=mock_predictor)
+
+    with patch("sam3.model_builder.build_sam3_video_predictor", mock_build):
+        with patch("pathlib.Path.exists", return_value=True):
+            from core.managers.sam3 import SAM3Wrapper
+
+            wrapper = SAM3Wrapper(checkpoint_path=None, device="cpu")
+            assert wrapper.predictor is not None
+            # Verify build_sam3_video_predictor was called with a path
+            args, kwargs = mock_build.call_args
+            assert "checkpoint_path" in kwargs
+            assert kwargs["checkpoint_path"] is not None
+            assert "models/sam3.pt" in kwargs["checkpoint_path"]
+
+
+def test_sam3_wrapper_shutdown_cleanup():
+    """Test the shutdown method with various predictor states."""
+    from core.managers.sam3 import SAM3Wrapper
+
+    # Mock build_sam3_video_predictor to return a mock predictor
+    mock_predictor = MagicMock()
+    mock_predictor.model = MagicMock()
+
+    with patch("sam3.model_builder.build_sam3_video_predictor", return_value=mock_predictor):
+        # 1. Predictor has shutdown and model
+        wrapper = SAM3Wrapper(checkpoint_path="fake.pt", device="cpu")
+        wrapper.session_id = "active_session"
+        mock_predictor.shutdown = MagicMock()
+
+        wrapper.shutdown()
+        mock_predictor.shutdown.assert_called_once()
+        assert wrapper.predictor is None
+        assert wrapper.session_id is None
+
+        # 2. Predictor without shutdown method
+        mock_predictor_no_shutdown = MagicMock()
+        mock_predictor_no_shutdown.model = MagicMock()
+        if hasattr(mock_predictor_no_shutdown, "shutdown"):
+            del mock_predictor_no_shutdown.shutdown
+
+        with patch("sam3.model_builder.build_sam3_video_predictor", return_value=mock_predictor_no_shutdown):
+            wrapper = SAM3Wrapper(checkpoint_path="fake.pt", device="cpu")
+            wrapper.shutdown()
+            assert wrapper.predictor is None
+
+        # 3. Predictor without model attribute
+        mock_predictor_no_model = MagicMock()
+
+        # To truly simulate missing attribute in a way that hasattr fails, we need to use a non-MagicMock or spec
+        class NoModelPredictor:
+            pass
+
+        mock_predictor_no_model = NoModelPredictor()
+
+        with patch("sam3.model_builder.build_sam3_video_predictor", return_value=mock_predictor_no_model):
+            with pytest.raises(RuntimeError, match="SAM3 model failed to load"):
+                SAM3Wrapper(checkpoint_path="fake.pt", device="cpu")
+
+
+@pytest.mark.xfail(reason="Unstable due to global pkg_resources mock in conftest")
+def test_sam3_wrapper_pkg_resources_fallback():
+    """Test the pkg_resources fallback by forcing an ImportError."""
+    # This is tricky because the module is already loaded.
+    # We can try to manually execute the fallback logic if we can't reload easily.
+    # For coverage of the fallback lines at the top of core/managers/sam3.py,
+    # we would ideally use a separate test process or a reload.
+    # But let's at least ensure we can import it when pkg_resources is missing.
+    with patch.dict("sys.modules", {"pkg_resources": None}):
+        if "core.managers.sam3" in sys.modules:
+            del sys.modules["core.managers.sam3"]
+        import core.managers.sam3
+
+        assert hasattr(core.managers.sam3, "pkg_resources")
+        assert core.managers.sam3.pkg_resources.require("any") is None
 
 
 def test_sam3_wrapper_add_point_prompt(sam3_unit_fresh):

@@ -75,6 +75,9 @@ def get_face_analyzer(
                     return analyzer
                 except Exception as cpu_e:
                     logger.error(f"CPU fallback also failed: {cpu_e}")
+                    raise RuntimeError(
+                        f"Could not initialize face analysis model. CPU fallback also failed: {cpu_e}"
+                    ) from cpu_e
             raise RuntimeError(f"Could not initialize face analysis model. Error: {e}") from e
 
     return model_registry.get_or_load(model_key, _loader)

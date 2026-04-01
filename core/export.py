@@ -18,84 +18,123 @@ from core.filtering import apply_all_filters_vectorized
 from core.operators.crop import crop_image_with_subject
 from core.scene_utils.ffmpeg import perform_ffmpeg_export
 from core.utils import _to_json_safe
-from core.xmp_writer import write_xmp_sidecar
 
 
-def _rename_exported_frames(export_dir: Path, frames_to_extract: list, fn_to_orig_map: dict, logger: "AppLogger"):
-    logger.info("Renaming extracted frames to match original filenames...")
-    orig_to_filename_map = {v: k for k, v in fn_to_orig_map.items()}
-    plan = []
-    for i, orig_frame_num in enumerate(frames_to_extract):
-        sequential_filename = f"frame_{i + 1:06d}.png"
-        target_filename = orig_to_filename_map.get(orig_frame_num)
-        if not target_filename:
-            continue
-        src = export_dir / sequential_filename
-        dst = export_dir / target_filename
-        if src != dst:
-            plan.append((src, dst))
+def export_kept_frames(
+    event: ExportEvent,
+    config: "Config",
+    logger: "AppLogger",
+    progress_queue: Optional[any] = None,
+    cancel_event: Optional[any] = None,
+) -> str:
+    """
+    Main export entry point.
+    Filters frames and exports them using FFmpeg or by copying/cropping.
+    """
+    if not event.all_frames_data:
+        return "No metadata to export."
 
-    temp_map = {}
-    for i, (src, _) in enumerate(plan):
-        if not src.exists():
-            continue
-        tmp = export_dir / f"__tmp_{i:06d}__{src.name}"
-        j = i
-        while tmp.exists():
-            j += 1
-            tmp = export_dir / f"__tmp_{j:06d}__{src.name}"
-        try:
-            src.rename(tmp)
-            temp_map[src] = tmp
-        except FileNotFoundError:
-            logger.warning(f"Could not find {src.name} to rename.", extra={"target": tmp.name})
+    if not event.video_path and not event.output_dir:
+        return "[ERROR] Video path or output directory required."
 
-    for src, dst in plan:
-        tmp = temp_map.get(src)
-        if tmp and tmp.exists():
-            if dst.exists():
-                stem, ext = dst.stem, dst.suffix
-                k, alt = 1, export_dir / f"{stem} (1){ext}"
-                while alt.exists():
-                    k += 1
-                    alt = export_dir / f"{stem} ({k}){ext}"
-                dst = alt
-            try:
-                tmp.rename(dst)
-            except FileNotFoundError:
-                logger.warning(f"Could not find temp file {tmp.name} to rename.", extra={"target": dst.name})
+    # 1. Apply Filters
+    kept_frames, rejected_frames, stats, reasons = apply_all_filters_vectorized(
+        event.all_frames_data, event.filter_args, config, output_dir=event.output_dir
+    )
 
+    if not kept_frames:
+        return "No frames kept after filtering."
 
-def _export_metadata(kept_frames: list, export_dir: Path, logger: "AppLogger"):
-    logger.info("Exporting metadata...")
-    safe_frames = [_to_json_safe(f) for f in kept_frames]
+    # 2. Determine Export Mode
+    is_folder_mode = not event.video_path
 
-    # JSON export
-    try:
-        with (export_dir / "metadata.json").open("w", encoding="utf-8") as f:
-            json.dump(safe_frames, f, indent=2)
-    except Exception as e:
-        logger.error(f"Failed to save metadata.json: {e}")
+    out_dir = Path(event.output_dir)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    export_dir = out_dir / f"exported_{timestamp}"
+    export_dir.mkdir(parents=True, exist_ok=True)
 
-    # CSV export
-    try:
-        if not safe_frames:
-            return
-        all_keys = set()
-        for f in safe_frames:
-            all_keys.update(f.keys())
-        fieldnames = sorted(list(all_keys))
+    if is_folder_mode:
+        source_map_path = out_dir / "source_map.json"
+        if not source_map_path.exists():
+            source_map_path = out_dir / "frame_map.json"
 
-        # Ensure common important keys are first
-        priority_keys = ["filename", "frame_number", "timestamp", "score", "face_sim"]
-        fieldnames = [k for k in priority_keys if k in fieldnames] + [k for k in fieldnames if k not in priority_keys]
+        if not source_map_path.exists():
+            return "[ERROR] source_map.json not found in output directory. Cannot map frames back to source files."
 
-        with (export_dir / "metadata.csv").open("w", encoding="utf-8", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
-            writer.writeheader()
-            writer.writerows(safe_frames)
-    except Exception as e:
-        logger.error(f"Failed to save metadata.csv: {e}")
+        with open(source_map_path, "r", encoding="utf-8") as f:
+            source_map = json.load(f)
+
+        num_exported = 0
+        for frame in kept_frames:
+            if cancel_event and cancel_event.is_set():
+                break
+            fname = frame["filename"]
+            src_path = source_map.get(fname)
+            if not src_path:
+                logger.warning(f"Could not find source path for {fname}")
+                continue
+
+            src_p = Path(src_path)
+            if src_p.exists():
+                shutil.copy2(src_p, export_dir / fname)
+                num_exported += 1
+
+        logger.info(f"Exported {num_exported} frames to {export_dir}")
+
+    else:
+        video_p = Path(event.video_path)
+        if not video_p.exists():
+            return f"[ERROR] Video file not found: {event.video_path}"
+
+        frame_map_path = out_dir / "frame_map.json"
+        if not frame_map_path.exists():
+            return "[ERROR] frame_map.json not found in output directory. Extraction required first."
+
+        with open(frame_map_path, "r", encoding="utf-8") as f:
+            frame_nums = json.load(f)
+
+        fn_to_orig = {f"frame_{i + 1:06d}.webp": num for i, num in enumerate(frame_nums)}
+        fn_to_orig.update({f"frame_{i + 1:06d}.png": num for i, num in enumerate(frame_nums)})
+
+        frames_to_extract = []
+        for f in kept_frames:
+            orig_num = fn_to_orig.get(f["filename"])
+            if orig_num is not None:
+                frames_to_extract.append(orig_num)
+
+        success, msg = perform_ffmpeg_export(str(video_p), frames_to_extract, str(export_dir), config, logger)
+        if not success:
+            return f"FFmpeg failed: {msg}"
+
+        _rename_exported_frames(export_dir, frames_to_extract, fn_to_orig, logger)
+
+    # 3. Handle Cropping
+    if event.enable_crop and event.crop_ars:
+        masks_root = out_dir / "masks"
+        num_cropped = _crop_exported_frames(
+            kept_frames, export_dir, event.crop_ars, event.crop_padding, masks_root, logger, cancel_event
+        )
+        logger.info(f"Created {num_cropped} cropped versions.")
+
+    # 4. Handle Metadata
+    _export_metadata(kept_frames, export_dir, logger)
+
+    # 5. Handle XMP sidecars
+    if event.enable_xmp_export:
+        from core.xmp_writer import export_xmps_for_photos
+
+        photos_to_xmp = []
+        for f in kept_frames:
+            p = export_dir / f["filename"]
+            if p.exists():
+                photo_meta = f.copy()
+                photo_meta["source"] = p
+                photos_to_xmp.append(photo_meta)
+
+        if photos_to_xmp:
+            export_xmps_for_photos(photos_to_xmp)
+
+    return f"Export Complete. Results in: {export_dir}"
 
 
 def _crop_exported_frames(
@@ -105,22 +144,23 @@ def _crop_exported_frames(
     crop_padding: int,
     masks_root: Path,
     logger: "AppLogger",
-    cancel_event,
+    cancel_event: any,
 ) -> int:
     logger.info("Starting crop export...")
     crop_dir = export_dir / "cropped"
     crop_dir.mkdir(exist_ok=True)
 
+    aspect_ratios = []
     try:
-        aspect_ratios = []
-        for ar_str in crop_ars.split(","):
-            ar_str = ar_str.strip()
-            if not ar_str:
-                continue
-            if ":" not in ar_str:
-                raise ValueError("Invalid aspect ratio format.")
-            parts = ar_str.split(":")
-            aspect_ratios.append((ar_str.replace(":", "x"), float(parts[0]) / float(parts[1])))
+        if crop_ars:
+            for ar_str in crop_ars.split(","):
+                ar_str = ar_str.strip()
+                if not ar_str:
+                    continue
+                if ":" not in ar_str:
+                    raise ValueError("Invalid aspect ratio format.")
+                parts = ar_str.split(":")
+                aspect_ratios.append((ar_str.replace(":", "x"), float(parts[0]) / float(parts[1])))
     except (ValueError, ZeroDivisionError, IndexError):
         raise ValueError("Invalid aspect ratio format.")
 
@@ -150,7 +190,11 @@ def _crop_exported_frames(
             frame_img = cv2.imread(str(full_frame_path))
             mask_img = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
 
-            if frame_img is None or mask_img is None:
+            if frame_img is None:
+                logger.error(f"Could not read frame for cropping: {full_frame_path}")
+                continue
+            if mask_img is None:
+                logger.error(f"Could not read mask for cropping: {mask_path}")
                 continue
 
             cropped_img, ar_label = crop_image_with_subject(frame_img, mask_img, aspect_ratios, padding_factor)
@@ -160,170 +204,105 @@ def _crop_exported_frames(
                 cv2.imwrite(str(crop_dir / out_name), cropped_img)
                 num_cropped += 1
 
-        except Exception:
-            logger.error(f"Failed to crop frame {frame_meta.get('filename')}", exc_info=True)
+        except Exception as e:
+            logger.error(f"Failed to crop {frame_meta.get('filename')}: {e}")
 
     return num_cropped
 
 
-def export_kept_frames(
-    event: ExportEvent, config: "Config", logger: "AppLogger", thumbnail_manager, cancel_event
-) -> str:
-    if not event.all_frames_data:
-        return "No metadata to export."
+def _rename_exported_frames(export_dir: Path, frames_to_extract: list, fn_to_orig: dict, logger: "AppLogger"):
+    """Renames FFmpeg output (frame_000001.png) to more descriptive original names if possible."""
+    extracted_files = sorted(export_dir.glob("frame_*.webp"))
+    if not extracted_files:
+        extracted_files = sorted(export_dir.glob("frame_*.png"))
 
-    is_video = bool(event.video_path and Path(event.video_path).exists() and not Path(event.video_path).is_dir())
-    out_root = Path(event.output_dir)
-
-    try:
-        filters = event.filter_args.copy()
-        # Ensure we have data for the filters
-        filters.update(
-            {
-                "face_sim_enabled": any("face_sim" in f for f in event.all_frames_data),
-                "mask_area_enabled": any("mask_area_pct" in f for f in event.all_frames_data),
-                "enable_dedup": any("phash" in f for f in event.all_frames_data),
-            }
+    if len(extracted_files) != len(frames_to_extract):
+        logger.warning(
+            f"Extracted file count ({len(extracted_files)}) mismatch with expected ({len(frames_to_extract)})"
         )
+        return
 
-        kept, _, _, _ = apply_all_filters_vectorized(
-            event.all_frames_data, filters, config, output_dir=event.output_dir
-        )
+    orig_to_final = {v: k for k, v in fn_to_orig.items()}
 
-        if not kept:
-            return "No frames kept after filtering. Nothing to export."
+    for i, extracted_p in enumerate(extracted_files):
+        orig_num = frames_to_extract[i]
+        final_name = orig_to_final.get(orig_num)
 
-        export_dir = out_root.parent / f"{out_root.name}_exported_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        export_dir.mkdir(exist_ok=True, parents=True)
+        if final_name and final_name != extracted_p.name:
+            target_p = export_dir / final_name
+            if target_p.exists():
+                stem, ext = target_p.stem, target_p.suffix
+                target_p = export_dir / f"{stem} (1){ext}"
 
-        if is_video:
-            frame_map_path = out_root / "frame_map.json"
-            if not frame_map_path.exists():
-                return "[ERROR] frame_map.json not found. Cannot export."
-            with frame_map_path.open("r", encoding="utf-8") as f:
-                frame_map_list = json.load(f)
-
-            sample_name = next((f["filename"] for f in kept if "filename" in f), None)
-            analyzed_ext = Path(sample_name).suffix if sample_name else ".webp"
-            sorted_frames = sorted([int(x) for x in frame_map_list if x is not None])
-            fn_to_orig_map = {f"frame_{i + 1:06d}{analyzed_ext}": orig for i, orig in enumerate(sorted_frames)}
-
-            frames_to_extract_raw = [
-                fn_to_orig_map.get(f["filename"]) for f in kept if f.get("filename") in fn_to_orig_map
-            ]
-            frames_to_extract = sorted([n for n in frames_to_extract_raw if n is not None])
-
-            if not frames_to_extract:
-                return "No frames to extract."
-
-            success, stderr = perform_ffmpeg_export(event.video_path, frames_to_extract, export_dir, logger)
-            if not success:
-                return f"Error during export: FFmpeg failed. Check logs for details:\n{stderr}"
-
-            _rename_exported_frames(export_dir, frames_to_extract, fn_to_orig_map, logger)
-        else:
-            # Folder mode: Copy original files
-            source_map_path = out_root / "source_map.json"
-            source_map = {}
-            if source_map_path.exists():
-                with source_map_path.open("r", encoding="utf-8") as f:
-                    source_map = json.load(f)
-
-            num_copied = 0
-            for frame_meta in kept:
-                filename = frame_meta.get("filename")
-                if filename in source_map:
-                    src_path = Path(source_map[filename])
-                    if src_path.exists():
-                        shutil.copy2(src_path, export_dir / src_path.name)
-                        num_copied += 1
-
-                        # Handle XMP Export
-                        if event.enable_xmp_export:
-                            score = frame_meta.get("score", 0.0)
-                            # Simple rating logic: 0-100 -> 0-5 stars
-                            rating = int(min(5, max(0, score / 20)))
-                            label = "Green"
-                            write_xmp_sidecar(src_path, rating, label)
-
-            logger.info(f"Copied {num_copied} original files to export directory.")
-
-        _export_metadata(kept, export_dir, logger)
-
-        if event.enable_crop:
             try:
-                num_cropped = _crop_exported_frames(
-                    kept, export_dir, event.crop_ars, event.crop_padding, out_root / "masks", logger, cancel_event
-                )
-                logger.info(f"Cropping complete. Saved {num_cropped} cropped images.")
-            except ValueError as e:
-                return str(e)
+                extracted_p.rename(target_p)
+            except Exception as e:
+                logger.warning(f"Failed to rename {extracted_p.name} to {final_name}: {e}")
 
-        msg = f"✅ Export Complete. Exported {len(kept)} items to: {export_dir.name}"
-        logger.info(msg)
-        return msg
+
+def _export_metadata(kept_frames: list, export_dir: Path, logger: "AppLogger"):
+    """Exports frame metadata to JSON and CSV formats."""
+    if not kept_frames:
+        with open(export_dir / "metadata.json", "w", encoding="utf-8") as f:
+            json.dump([], f)
+        return
+
+    meta_path = export_dir / "metadata.json"
+    with open(meta_path, "w", encoding="utf-8") as f:
+        json.dump(_to_json_safe(kept_frames), f, indent=4)
+
+    csv_path = export_dir / "metadata.csv"
+    try:
+        keys = []
+        priority = ["filename", "frame_number", "timestamp", "score", "quality_score", "face_sim"]
+
+        all_keys = set()
+        for f in kept_frames:
+            all_keys.update(f.keys())
+
+        for k in priority:
+            if k in all_keys:
+                keys.append(k)
+                all_keys.remove(k)
+        keys.extend(sorted(list(all_keys)))
+
+        with open(csv_path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=keys)
+            writer.writeheader()
+            writer.writerows(_to_json_safe(kept_frames))
+
     except Exception as e:
-        err_msg = f"❌ Export Failed: {e}"
-        logger.error(err_msg, exc_info=True)
-        return err_msg
+        logger.error(f"Failed to export CSV metadata: {e}")
 
 
-def dry_run_export(event: ExportEvent, config: "Config", logger: Optional["AppLogger"] = None) -> str:
+def dry_run_export(event: ExportEvent, config: "Config", logger: "AppLogger") -> str:
+    """Simulates an export and returns a summary of actions."""
     if not event.all_frames_data:
         return "No metadata to export."
-    if not event.video_path or not Path(event.video_path).exists():
-        return "[ERROR] Original video path is required for export."
-    out_root = Path(event.output_dir)
-    try:
-        filters = event.filter_args.copy()
-        filters.update(
-            {
-                "face_sim_enabled": any("face_sim" in f for f in event.all_frames_data),
-                "mask_area_enabled": any("mask_area_pct" in f for f in event.all_frames_data),
-                "enable_dedup": any("phash" in f for f in event.all_frames_data),
-            }
-        )
 
-        kept, _, _, _ = apply_all_filters_vectorized(
-            event.all_frames_data, filters, config, output_dir=event.output_dir
-        )
+    kept_frames, rejected_frames, stats, reasons = apply_all_filters_vectorized(
+        event.all_frames_data, event.filter_args, config
+    )
 
-        if not kept:
-            return "No frames kept after filtering. Nothing to export."
+    if not kept_frames:
+        return "No frames kept after filtering."
 
-        frame_map_path = out_root / "frame_map.json"
-        if not frame_map_path.exists():
-            return "[ERROR] frame_map.json not found. Cannot export."
-        with frame_map_path.open("r", encoding="utf-8") as f:
-            frame_map_list = json.load(f)
+    lines = [f"Dry Run: {len(kept_frames)} frames would be exported."]
 
-        sample_name = next((f["filename"] for f in kept if "filename" in f), None)
-        analyzed_ext = Path(sample_name).suffix if sample_name else ".webp"
-        sorted_frames = sorted([int(x) for x in frame_map_list if x is not None])
-        fn_to_orig_map = {f"frame_{i + 1:06d}{analyzed_ext}": orig for i, orig in enumerate(sorted_frames)}
+    if not event.video_path:
+        lines.append("Mode: Folder (copying existing frames)")
+    else:
+        video_p = Path(event.video_path)
+        if not video_p.exists():
+            lines.append(f"[ERROR] Original video path is required and was not found: {event.video_path}")
+        else:
+            lines.append(f"Source Video: {video_p.name}")
+            lines.append(f"Command: ffmpeg -i ... (extracting {len(kept_frames)} frames)")
 
-        frames_to_extract_raw = [fn_to_orig_map.get(f["filename"]) for f in kept if f.get("filename") in fn_to_orig_map]
-        frames_to_extract = sorted([n for n in frames_to_extract_raw if n is not None])
+    if event.enable_crop:
+        lines.append(f"Action: Generate crops for {event.crop_ars}")
 
-        if not frames_to_extract:
-            return "No frames to extract."
+    if event.enable_xmp_export:
+        lines.append("Action: Write XMP sidecar files")
 
-        select_filter = f"select='{'+'.join([f'eq(n,{fn})' for fn in frames_to_extract])}'"
-        export_dir = out_root.parent / f"{out_root.name}_exported_DATE"
-        cmd = [
-            "ffmpeg",
-            "-y",
-            "-i",
-            str(event.video_path),
-            "-vf",
-            select_filter,
-            "-vsync",
-            "vfr",
-            str(export_dir / "frame_%06d.png"),
-        ]
-        msg = f"Dry Run: {len(frames_to_extract)} frames to be exported.\n\nFFmpeg command:\n{' '.join(cmd)}"
-        if logger:
-            logger.info(msg)
-        return msg
-    except Exception as e:
-        return f"Error during dry run: {e}"
+    return "\n".join(lines)

@@ -1,5 +1,6 @@
 import hashlib
 import json
+import urllib.error
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -174,6 +175,32 @@ def test_download_model_full(mock_urlopen, tmp_path):
     req = args[0]
     assert req.get_header("Authorization") == "Bearer secret"
 
+    # 4. Content-Length mismatch (too small)
+    mock_resp.getheader.side_effect = lambda name, default=None: "100" if name == "Content-Length" else default
+    dest.unlink()
+    with pytest.raises(RuntimeError, match="Failed to download required model"):
+        download_model(url, dest, "test model", logger, error_handler, "UA", min_size=1000)
+
+    # 5. SHA256 mismatch after download
+    mock_resp.getheader.side_effect = lambda name, default=None: "1000000" if name == "Content-Length" else default
+    mock_resp.read.side_effect = [data, b""]
+    with pytest.raises(RuntimeError, match="Failed to download required model"):
+        download_model(url, dest, "test model", logger, error_handler, "UA", expected_sha256="wrong_sha")
+
+    # 6. Retry logic test
+    # We'll use a real ErrorHandler to test the sleep and retry
+    from core.error_handling import ErrorHandler
+
+    real_handler = ErrorHandler(logger, max_attempts=2, backoff_seconds=[0.001])
+
+    # First attempt fails with URLError, second succeeds
+    mock_urlopen.side_effect = [urllib.error.URLError("First Fail"), mock_resp]
+    mock_resp.read.side_effect = [data, b""]
+
+    download_model(url, dest, "retry test", logger, real_handler, "UA", min_size=0)
+    assert mock_urlopen.call_count >= 2
+    assert dest.exists()
+
 
 def test_create_frame_map(tmp_path):
     logger = MagicMock()
@@ -184,9 +211,10 @@ def test_create_frame_map(tmp_path):
     assert fmap == {5: "frame_000001.png", 10: "frame_000002.png", 20: "frame_000003.png"}
 
 
-def test_create_frame_map_error(tmp_path):
+def test_create_frame_map_json_error(tmp_path):
     logger = MagicMock()
-    # No file
+    # Corrupt JSON
+    (tmp_path / "frame_map.json").write_text("{invalid")
     fmap = create_frame_map(tmp_path, logger)
     assert fmap == {}
     assert logger.error.called

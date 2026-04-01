@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
+import torch
 
 from core.managers.analysis import AnalysisPipeline, PreAnalysisPipeline, SceneStatus, _load_scenes
 from core.models import AnalysisParameters, Scene
@@ -406,16 +407,96 @@ def test_niqe_initialization_failures(mock_db, mock_deps, analysis_params):
         mock_deps["model_registry"],
     )
 
-    with patch("pyiqa.create_metric", side_effect=ImportError("mock")):
+    # 1. ImportError
+    with patch.dict("sys.modules", {"pyiqa": None}):
+        # This will trigger ImportError inside _initialize_niqe_metric
         pipeline._initialize_niqe_metric()
         assert pipeline.niqe_metric is None
         mock_deps["logger"].debug.assert_called()
 
-    mock_deps["logger"].reset_mock()
-    with patch("pyiqa.create_metric", side_effect=RuntimeError("mock")):
+    # 2. Generic Exception
+    with patch("pyiqa.create_metric", side_effect=Exception("NIQE failed")):
         pipeline._initialize_niqe_metric()
         assert pipeline.niqe_metric is None
         mock_deps["logger"].warning.assert_called()
+
+
+def test_pre_analysis_process_single_scene_edge_cases(mock_deps, analysis_params, tmp_path):
+    from core.managers.analysis import PreAnalysisPipeline
+
+    analysis_params.output_folder = str(tmp_path)
+    pipeline = PreAnalysisPipeline(
+        mock_deps["config"],
+        mock_deps["logger"],
+        analysis_params,
+        mock_deps["progress_queue"],
+        mock_deps["cancel_event"],
+        mock_deps["thumbnail_manager"],
+        mock_deps["model_registry"],
+    )
+
+    masker = MagicMock()
+    masker.frame_map = {1: "f1.webp"}
+    scene = Scene(shot_id=1, start_frame=1, end_frame=1)
+
+    # 1. Thumbnail missing
+    mock_deps["thumbnail_manager"].get.return_value = None
+    pipeline._process_single_scene(scene, masker, tmp_path, is_folder_mode=False)
+    assert scene.seed_result == {}
+
+    # 2. Frame missing from map
+    masker.frame_map = {}
+    pipeline._process_single_scene(scene, masker, tmp_path, is_folder_mode=False)
+    assert scene.seed_result == {}
+
+    # 3. get_mask_for_bbox returns None
+    masker.frame_map = {1: "f1.webp"}
+    mock_deps["thumbnail_manager"].get.return_value = np.zeros((10, 10, 3))
+    masker.get_seed_for_frame.return_value = ([0, 0, 5, 5], {"type": "test"})
+    masker.get_mask_for_bbox.return_value = None
+    analysis_params.enable_subject_mask = True
+    pipeline._process_single_scene(scene, masker, tmp_path, is_folder_mode=False)
+    assert "details" not in scene.seed_result or "mask_area_pct" not in scene.seed_result["details"]
+
+
+@patch("core.managers.analysis.Database")
+def test_process_single_frame_metadata_assembly(mock_db, mock_deps, analysis_params, tmp_path):
+    pipeline = AnalysisPipeline(
+        mock_deps["config"],
+        mock_deps["logger"],
+        analysis_params,
+        mock_deps["progress_queue"],
+        mock_deps["cancel_event"],
+        mock_deps["thumbnail_manager"],
+        mock_deps["model_registry"],
+    )
+    pipeline.db = MagicMock()
+    # Use 'frame_000001' to match re.search(r"frame_(\d+)", path.name)
+    pipeline.mask_metadata = {"frame_000001": {"mask_path": "m1.png", "shot_id": 1}}
+    pipeline.scene_map = {1: Scene(shot_id=1, start_frame=1, end_frame=1, seed_metrics={"best_face_sim": 0.5})}
+
+    img = np.zeros((10, 10, 3), dtype=np.uint8)
+    mock_deps["thumbnail_manager"].get.return_value = img
+
+    with (
+        patch("core.managers.analysis.run_operators") as mock_run,
+        patch("core.managers.analysis.cv2.imread", return_value=np.zeros((10, 10))),
+        patch("core.managers.analysis.cv2.resize", return_value=np.zeros((10, 10))),
+    ):
+        mock_res = MagicMock()
+        mock_res.success = True
+        mock_res.metrics = {"face_sim": 0.8}
+        mock_res.data = {"phash": "hash"}
+        mock_run.return_value = {"op": mock_res}
+
+        pipeline.params.compute_face_sim = True
+        pipeline._process_single_frame(Path("frame_000001.webp"), {"op": True})
+
+    assert pipeline.db.insert_metadata.called
+    meta = pipeline.db.insert_metadata.call_args[0][0]
+    assert meta["face_sim"] == 0.8
+    assert meta["phash"] == "hash"
+    assert meta["seed_face_sim"] == 0.5
 
 
 @patch("core.managers.analysis.Database")
@@ -473,15 +554,18 @@ def test_process_reference_face_failures(mock_db, mock_deps, analysis_params, tm
 
 @patch("core.managers.analysis.Database")
 def test_process_single_frame_edge_cases(mock_db, mock_deps, analysis_params, tmp_path):
-    pipeline = AnalysisPipeline(
-        mock_deps["config"],
-        mock_deps["logger"],
-        analysis_params,
-        mock_deps["progress_queue"],
-        mock_deps["cancel_event"],
-        mock_deps["thumbnail_manager"],
-        mock_deps["model_registry"],
-    )
+    # Mock SVD if needed, but safely
+    with patch("torch.linalg.svd", create=True) as mock_svd:
+        mock_svd.return_value = (None, torch.ones(1), None)
+        pipeline = AnalysisPipeline(
+            mock_deps["config"],
+            mock_deps["logger"],
+            analysis_params,
+            mock_deps["progress_queue"],
+            mock_deps["cancel_event"],
+            mock_deps["thumbnail_manager"],
+            mock_deps["model_registry"],
+        )
     pipeline.mask_metadata = {"frame_000001": {"mask_path": "masks/m1.png"}}
     pipeline.masks_dir = tmp_path / "masks"
     pipeline.masks_dir.mkdir()

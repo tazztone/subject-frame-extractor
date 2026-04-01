@@ -344,7 +344,8 @@ class TestManagers:
         mock_download.assert_called()  # Landmarker download
 
     @patch("insightface.app.FaceAnalysis")
-    def test_get_face_analyzer_retry_logic(self, mock_face_analysis_cls, mock_logger):
+    @patch("time.sleep", return_value=None)
+    def test_get_face_analyzer_retry_logic(self, mock_sleep, mock_face_analysis_cls, mock_logger):
         # First attempt raises OOM, second attempt succeeds with CPU
         mock_instance_gpu = MagicMock()
         mock_instance_gpu.prepare.side_effect = RuntimeError("out of memory")
@@ -361,6 +362,35 @@ class TestManagers:
         # Check that we tried to load GPU first, then CPU
         assert mock_instance_gpu.prepare.called
         assert mock_instance_cpu.prepare.called
+
+    @patch("insightface.app.FaceAnalysis")
+    @patch("time.sleep", return_value=None)
+    def test_get_face_analyzer_cpu_fallback_failure(self, mock_sleep, mock_face_analysis_cls, mock_logger):
+        # GPU fails with OOM, then CPU also fails
+        mock_instance_gpu = MagicMock()
+        mock_instance_gpu.prepare.side_effect = RuntimeError("out of memory")
+
+        mock_instance_cpu = MagicMock()
+        mock_instance_cpu.prepare.side_effect = RuntimeError("CPU failure")
+
+        mock_face_analysis_cls.side_effect = [mock_instance_gpu, mock_instance_cpu]
+
+        registry = ModelRegistry(mock_logger)
+
+        with pytest.raises(RuntimeError, match="CPU fallback also failed"):
+            get_face_analyzer("buffalo_l", "/tmp", (640, 640), mock_logger, registry, device="cuda")
+
+    @patch("core.managers.face.vision.FaceLandmarker")
+    def test_get_face_landmarker_failure(self, mock_landmarker, mock_logger):
+        mock_landmarker.create_from_options.side_effect = Exception("MediaPipe fail")
+        # Ensure we don't use the thread local if it exists
+        import core.managers.face
+
+        if hasattr(core.managers.face.thread_local, "face_landmarker_instance"):
+            del core.managers.face.thread_local.face_landmarker_instance
+
+        with pytest.raises(RuntimeError, match="Could not initialize MediaPipe face landmarker model"):
+            get_face_landmarker("model.task", mock_logger)
 
     @patch("core.managers.thumbnails.Image.open")
     @patch("pathlib.Path.exists", return_value=True)
@@ -385,3 +415,56 @@ class TestManagers:
         mock_lpips.assert_called_once_with(net="alex")
         mock_instance.to.assert_called_once_with("cpu")
         assert metric == mock_instance
+
+    def test_model_registry_basic_load(self, mock_logger):
+        """Test basic ModelRegistry load (retry logic is in get_tracker/etc, not get_or_load)."""
+        registry = ModelRegistry(logger=mock_logger)
+        mock_loader = MagicMock(return_value="Success")
+
+        # get_or_load only handles locking and caching, not retries itself
+        result = registry.get_or_load("test_model", mock_loader)
+
+        assert result == "Success"
+        mock_loader.assert_called_once()
+
+        # Second call should use cache
+        result2 = registry.get_or_load("test_model", mock_loader)
+        assert result2 == "Success"
+        mock_loader.assert_called_once()
+
+    def test_thumbnail_manager_eviction_logic(self, tmp_path, mock_logger):
+        """Test LRU eviction in ThumbnailManager."""
+        from core.config import Config
+
+        config = Config()
+        config.cache_size = 2  # Small size for testing
+        manager = ThumbnailManager(mock_logger, config)
+
+        # Fake images
+        img1 = np.zeros((10, 10, 3), dtype=np.uint8)
+
+        # Patch PIL.Image.open to return context manager that yields fake image
+        with patch("PIL.Image.open") as mock_open:
+            mock_img = MagicMock()
+            mock_img.convert.return_value = img1
+            mock_open.return_value.__enter__.return_value = mock_img
+
+            (tmp_path / "1.jpg").touch()
+            (tmp_path / "2.jpg").touch()
+            (tmp_path / "3.jpg").touch()
+
+            manager.get(tmp_path / "1.jpg")
+            manager.get(tmp_path / "2.jpg")
+
+            assert len(manager.cache) == 2
+
+            # Access 1 to make it recently used
+            manager.get(tmp_path / "1.jpg")
+
+            # Add 3, should evict 2 (LRU)
+            manager.get(tmp_path / "3.jpg")
+
+            assert len(manager.cache) == 2
+            assert Path(tmp_path / "1.jpg") in manager.cache
+            assert Path(tmp_path / "3.jpg") in manager.cache
+            assert Path(tmp_path / "2.jpg") not in manager.cache

@@ -146,8 +146,21 @@ class TestFiltering:
 
     # --- Full Pipeline ---
 
-    def test_apply_all_filters_vectorized(self, sample_frames, mock_config):
-        filters = {"enable_dedup": True, "dedup_method": "pHash", "dedup_thresh": 0, "quality_score_min": 85}
+    def test_apply_all_filters_vectorized_combined(self, sample_frames, mock_config):
+        """Test combined quality + mask-area + dedup filter."""
+        # Add mask_area_pct to frames
+        for f in sample_frames:
+            f["mask_area_pct"] = 10.0
+        sample_frames[0]["mask_area_pct"] = 1.0  # Too low
+
+        filters = {
+            "enable_dedup": True,
+            "dedup_method": "pHash",
+            "dedup_thresh": 0,
+            "quality_score_min": 70,
+            "mask_area_enabled": True,
+            "mask_area_pct_min": 5.0,
+        }
 
         kept, rejected, stats, reasons = apply_all_filters_vectorized(
             sample_frames, filters, mock_config, None, "/tmp/out"
@@ -155,7 +168,57 @@ class TestFiltering:
 
         assert len(kept) == 1
         assert kept[0]["filename"] == "frame_002.png"
-        assert len(rejected) == 2
-
-        assert "quality_score_low" in reasons["frame_001.png"]
+        assert "mask_too_small" in reasons["frame_001.png"]
         assert "duplicate" in reasons["frame_003.png"]
+
+    def test_apply_all_filters_all_filtered_out(self, sample_frames, mock_config):
+        """Test edge case where all frames are filtered out."""
+        filters = {"quality_score_min": 100}
+        kept, rejected, stats, reasons = apply_all_filters_vectorized(
+            sample_frames, filters, mock_config, None, "/tmp/out"
+        )
+        assert len(kept) == 0
+        assert len(rejected) == 3
+
+    def test_apply_all_filters_face_sim_edge_cases(self, sample_frames, mock_config):
+        """Test face_sim filtering with require_face_match."""
+        sample_frames[0]["face_sim"] = 0.8
+        sample_frames[1]["face_sim"] = 0.4
+        sample_frames[2]["face_sim"] = np.nan
+
+        filters = {"face_sim_enabled": True, "face_sim_min": 0.5, "require_face_match": True}
+
+        kept, rejected, stats, reasons = apply_all_filters_vectorized(
+            sample_frames, filters, mock_config, None, "/tmp/out"
+        )
+
+        # f1: 0.8 >= 0.5 -> kept
+        # f2: 0.4 < 0.5 -> rejected
+        # f3: nan and require_face_match -> rejected
+        assert len(kept) == 1
+        assert kept[0]["filename"] == "frame_001.png"
+        assert "face_sim_low" in reasons["frame_002.png"]
+        assert "face_missing" in reasons["frame_003.png"]
+
+    def test_apply_all_filters_range_filter(self, sample_frames, mock_config):
+        """Test a range-based filter (e.g., yaw)."""
+        sample_frames[0]["metrics"]["yaw"] = -10
+        sample_frames[1]["metrics"]["yaw"] = 0
+        sample_frames[2]["metrics"]["yaw"] = 20
+
+        # Mock config to define range filter for yaw
+        mock_config.filter_default_yaw = {"type": "range", "default_min": -5, "default_max": 5}
+        # Ensure 'yaw' is in the quality weight keys or recognized
+        mock_config.model_dump.return_value = {"quality_weights_yaw": 1}
+
+        filters = {"yaw_min": -5, "yaw_max": 5}
+
+        kept, rejected, stats, reasons = apply_all_filters_vectorized(
+            sample_frames, filters, mock_config, None, "/tmp/out"
+        )
+
+        # f1: -10 < -5 -> rejected
+        # f2: 0 -> kept
+        # f3: 20 > 5 -> rejected
+        assert len(kept) == 1
+        assert kept[0]["filename"] == "frame_002.png"
