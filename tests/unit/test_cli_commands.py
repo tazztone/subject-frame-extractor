@@ -110,6 +110,41 @@ class TestCLICommands:
             mock_apply.assert_called_once()
             mock_db.close.assert_called_once()
 
+    def test_run_extract_clean(self, mock_runtime, tmp_path):
+        source = tmp_path / "test.mp4"
+        source.touch()
+        output = tmp_path / "out"
+        output.mkdir()
+        (output / "some_file.txt").touch()
+
+        with (
+            patch("core.cli_commands.execute_extraction"),
+            patch("core.cli_commands._run_pipeline"),
+            patch("core.cli_commands.shutil.rmtree") as mock_rm,
+        ):
+            run_extract(str(source), str(output), "nth", 10, 1080, 0.5, True, False, True, False)
+            mock_rm.assert_called_once_with(output)
+
+    def test_run_filter_empty_db(self, mock_runtime, tmp_path):
+        output = tmp_path / "out"
+        output.mkdir()
+        db_path = output / "metadata.db"
+        db_path.touch()
+
+        with (
+            patch("core.cli_commands.Database") as mock_db_cls,
+        ):
+            mock_db = mock_db_cls.return_value
+            mock_db.load_all_metadata.return_value = []
+
+            # Should return gracefully
+            run_filter(str(output), 0.5, 0.5, True, "pHash", 5, False)
+
+    def test_run_status_missing_session(self, tmp_path):
+        output = tmp_path / "nonexistent"
+        # Should not crash
+        run_status(str(output))
+
     def test_run_full(self, mock_runtime, tmp_path):
         source = tmp_path / "test.mp4"
         source.touch()

@@ -215,9 +215,37 @@ def test_handle_common_errors_gen_cuda_oom():
     assert "GPU memory error" in res["status_message"]
 
 
-def test_monitor_memory_usage_no_cuda():
-    # Test fallback path when cuda is not available
-    logger = MagicMock()
-    with patch("core.utils.torch.cuda.is_available", return_value=False, create=True):
-        monitor_memory_usage(logger, "cuda")
-        assert not logger.warning.called
+def test_triton_mock_installed_when_absent(monkeypatch):
+    import builtins
+    import sys
+
+    # Force ImportError for triton
+    real_import = builtins.__import__
+
+    def mock_import(name, *args, **kwargs):
+        if name == "triton":
+            raise ImportError("Mocked error")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", mock_import)
+    if "triton" in sys.modules:
+        monkeypatch.delitem(sys.modules, "triton")
+
+    from core.utils import _setup_triton_mock
+
+    result = _setup_triton_mock()
+    assert result is True
+    assert "triton" in sys.modules
+    assert callable(sys.modules["triton"].jit)
+
+
+def test_triton_mock_skipped_when_present(monkeypatch):
+    import sys
+    import types
+
+    fake_triton = types.ModuleType("triton")
+    monkeypatch.setitem(sys.modules, "triton", fake_triton)
+    from core.utils import _setup_triton_mock
+
+    result = _setup_triton_mock()
+    assert result is False

@@ -4,18 +4,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-# Mock dependencies to avoid hardware/import issues
-with patch.dict(
-    "sys.modules",
-    {
-        "lpips": MagicMock(),
-        "torch": MagicMock(),
-        "insightface": MagicMock(),
-        "cv2": MagicMock(),
-    },
-):
-    from core.io_utils import _compute_sha256, download_model
-    from core.managers.model_loader import get_lpips_metric, initialize_analysis_models
+from core.io_utils import _compute_sha256, download_model
+from core.managers.model_loader import get_lpips_metric, initialize_analysis_models
 
 
 class TestModelLoader:
@@ -32,10 +22,11 @@ class TestModelLoader:
         return logger, error_handler
 
     def test_get_lpips_metric(self):
-        import lpips
 
-        get_lpips_metric("alex", "cpu")
-        lpips.LPIPS.assert_called_with(net="alex")
+        # Rely on global mock from conftest.py
+        with patch("lpips.LPIPS") as mock_lpips:
+            get_lpips_metric("alex", "cpu")
+            mock_lpips.assert_called_with(net="alex")
 
     def test_download_model_happy_path(self, mock_deps, tmp_path):
         logger, error_handler = mock_deps

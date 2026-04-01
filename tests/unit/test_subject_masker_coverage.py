@@ -5,30 +5,8 @@ import numpy as np
 import pytest
 import torch
 
-# Completely mock dependencies to avoid hardware/import issues
-mock_cv2 = MagicMock()
-mock_cv2.imwrite = MagicMock(return_value=True)
-mock_cv2.cvtColor = MagicMock(return_value=np.zeros((100, 100, 3), dtype=np.uint8))
-mock_cv2.COLOR_RGB2BGR = 1
-
-# Create a mock for torch and its submodules
-mock_torch = MagicMock()
-mock_torch.cuda = MagicMock()
-mock_torch.cuda.amp = MagicMock()
-
-with patch.dict(
-    "sys.modules",
-    {
-        "torch": mock_torch,
-        "torch.cuda": mock_torch.cuda,
-        "torch.cuda.amp": mock_torch.cuda.amp,
-        "sam3": MagicMock(),
-        "insightface": MagicMock(),
-        "cv2": mock_cv2,
-    },
-):
-    from core.models import AnalysisParameters, Scene
-    from core.scene_utils.subject_masker import SubjectMasker
+from core.models import AnalysisParameters, Scene
+from core.scene_utils.subject_masker import SubjectMasker
 
 
 class TestSubjectMaskerCoverage:
@@ -187,6 +165,7 @@ class TestSubjectMaskerCoverage:
         scene = Scene(shot_id=1, start_frame=0, end_frame=10)
         frames = [(0, np.zeros((10, 10, 3), dtype=np.uint8), (10, 10))]
         masker.niqe_metric = MagicMock()
+        # Rely on torch from conftest.py
         masker.niqe_metric.return_value = torch.tensor([5.0])
         masker.niqe_metric.device = "cpu"
 

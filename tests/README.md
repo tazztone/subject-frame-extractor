@@ -15,6 +15,12 @@
 | **UX Audit**| `scripts/run_ux_audit.py` | Accessibility (Axe), Visuals, and Performance. | `python` |
 | **GPU E2E** | `tests/integration/` | Heavy-duty SAM2/SAM3 propagation on real hardware. | `pytest (serial)` |
 
+### Specialized Test Files
+
+| File | Purpose |
+|------|---------|
+| `test_exit_branches.py` | Groups exit-branch tests (`→exit` coverage gaps) across `batch_manager`, `db_schema`, `sam2`, `error_handling`, and `session` in one place to make systematic sweeps easy. |
+
 ## Setup & Execution
 
 All tests should be run using `uv` to ensure the correct environment.
@@ -50,9 +56,16 @@ The project uses GitHub Actions (`.github/workflows/ci.yml`) for automated verif
 
 To ensure fast execution and hardware independence, all **Unit Tests** must completely mock the following:
 - **ML Models**: Mock `ModelRegistry.get_tracker`, `get_face_analyzer`, and `TrackerFactory`.
+- **SAM3**: SAM3 **is** globally mocked in unit mode via `sys.modules` (see `conftest.py`). Integration tests that need the real SAM3 editable install must set `PYTEST_INTEGRATION_MODE=true`. Never patch `download_ckpt_from_hf` — it breaks local checkpoint resolution.
 - **GPU/Torch**: `tests/conftest.py` promotes `torch.cuda` to a real `ModuleType` instance (not just a `MagicMock`). This provides stable access to `OutOfMemoryError` and `is_available` across parallel workers.
+- **OOM Testing**: Use `from tests.conftest import OutOfMemoryError` (not `torch.cuda.OutOfMemoryError`) when testing CUDA memory exhaustion paths. The global torch mock maps `torch.cuda.OutOfMemoryError` to this class.
+- **No-op Context Managers**: `TransparentContext` (defined in `conftest.py`) replaces `torch.no_grad()` and `torch.inference_mode()` in mocked environments. Reuse it when testing code that uses these as context managers.
 - **High-Fidelity I/O Mocking**: When mocking standard library functions like `urllib.request.urlopen`, ensure the mock response includes all methods called by the production code (e.g., `.getheader()`). Using a simple `io.BytesIO` as a return value will cause `AttributeError`.
 - **Requirement**: Always include `create=True` in `patch("torch.cuda.is_available", ...)` to prevent worker collisions in parallel runs.
+
+### Mock Mode Priority Rules
+
+`_should_skip_mocks()` uses a three-rule priority chain: (1) `PYTEST_INTEGRATION_MODE=true` env var wins unconditionally; (2) xdist workers inherit the parent environment — set the var in the **parent** shell, not in individual workers; (3) `sys.argv` path inspection as a last resort for direct invocations.
 
 ## Gradio & Pyright Resiliency
 
@@ -84,7 +97,7 @@ The suite compares current UI states against baseline screenshots using perceptu
 
 ## Coverage Requirements
 
-- **Target**: 80% total coverage (`--cov-fail-under=80` enforced in CI).
+- **Current baseline**: 84.21%. **Near-term target**: 88% (enforced after Sprint 3). **Long-term target**: 90% (enforced after Sprint 5). `--cov-fail-under` in `pyproject.toml` will be bumped accordingly.
 - **Manual Verification**: `scripts/linux_test_cov.sh`.
 
 ## Performance Monitoring
@@ -99,7 +112,7 @@ The `scripts/linux_test_all.sh` script automatically tracks test durations to he
 ### Property-Based Testing (Hypothesis)
 For logic involving coordinate math, aspect ratios, or boundary conditions (e.g., `core/export.py` or `core/operators/crop.py`), use **Hypothesis** to generate wide-ranging edge cases.
 - **Goal**: Ensure logic remains within bounds (e.g., image dimensions) and doesn't crash on extreme inputs.
-- **Pattern**: See `tests/unit/test_export.py` for usage of `@given` and `st.floats`.
+- **Pattern**: See `tests/unit/test_export.py` and `tests/unit/test_seed_selector_strategies.py` for usage of `@given` and `st.floats`/`st.integers`.
 
 ### CLI Orchestration Testing
 To verify CLI commands without the overhead of the ML backend:

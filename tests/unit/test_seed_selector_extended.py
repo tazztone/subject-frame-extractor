@@ -4,24 +4,8 @@ import numpy as np
 import pytest
 
 from core.enums import SeedStrategy
+from core.models import AnalysisParameters
 from core.scene_utils.seed_selector import SeedSelector
-
-# Completely mock cv2 for isolation
-mock_cv2 = MagicMock()
-mock_cv2.Mat = MagicMock
-mock_cv2.mat_wrapper = MagicMock()
-mock_cv2.resize = MagicMock(return_value=np.zeros((100, 100), dtype=np.uint8))
-mock_cv2.INTER_NEAREST = 0
-mock_cv2.cvtColor = MagicMock(return_value=np.zeros((100, 100, 3), dtype=np.uint8))
-mock_cv2.COLOR_RGB2BGR = 1
-
-with patch.dict(
-    "sys.modules",
-    {
-        "cv2": mock_cv2,
-    },
-):
-    from core.models import AnalysisParameters
 
 
 class TestSeedSelectorExtended:
