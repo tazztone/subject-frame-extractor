@@ -228,3 +228,86 @@ class TestMaskPropagatorLogic:
             )
             # Should continue and log error for that frame
             mask_propagator.logger.error.assert_any_call("Parallel mask post-processing failed: post failure")
+
+    def test_propagate_video_no_tracker(self, mask_propagator):
+        """Test propagate_video with no tracker initialized."""
+        mask_propagator.dam_tracker = None
+        masks, areas, empties, errors = mask_propagator.propagate_video(
+            video_path="v.mp4", frame_numbers=[0, 1], prompts=[], frame_size=(10, 10), frame_map={}
+        )
+        assert masks[0] is None
+        assert errors[0] == "Tracker not initialized"
+
+    def test_propagate_video_heartbeats(self, mask_propagator, mock_sam3_wrapper):
+        """Test forward and backward propagation heartbeats."""
+        # Setup many frames to trigger frame_idx % 50 == 0
+        frames = [0, 50, 100]
+        # Forward: frame 50
+        forward_gen = iter([(50, 1, np.ones((10, 10), dtype=bool))])
+        # Backward: frame 0
+        backward_gen = iter([(0, 1, np.ones((10, 10), dtype=bool))])
+
+        mock_sam3_wrapper.propagate.side_effect = [forward_gen, backward_gen]
+
+        mask_propagator.propagate_video(
+            video_path="v.mp4",
+            frame_numbers=frames,
+            prompts=[{"frame": 50, "bbox": [0, 0, 5, 5]}],
+            frame_size=(10, 10),
+            frame_map={f: f"{f}.webp" for f in frames},
+        )
+
+        # Verify heartbeats logged
+        heartbeat_calls = [c for c in mask_propagator.logger.info.call_args_list if "heartbeat" in c[0][0]]
+        assert len(heartbeat_calls) >= 2
+
+    def test_propagate_video_finally_failure(self, mask_propagator, mock_sam3_wrapper):
+        """Test failure in close_session during finally block."""
+        mock_sam3_wrapper.close_session.side_effect = Exception("Cleanup Fail")
+
+        # This should not raise but log debug
+        mask_propagator.propagate_video(
+            video_path="v.mp4", frame_numbers=[0], prompts=[], frame_size=(10, 10), frame_map={}
+        )
+        mask_propagator.logger.debug.assert_any_call(
+            "Error during SAM3 session cleanup: Cleanup Fail", component="propagator"
+        )
+
+    def test_propagate_legacy_basic(self, mask_propagator, mock_sam3_wrapper):
+        """Test legacy propagate method success path."""
+        frames = [np.zeros((10, 10, 3), dtype=np.uint8)] * 3
+        mock_sam3_wrapper.propagate.side_effect = [
+            iter([(1, 1, np.ones((10, 10), dtype=bool))]),  # Forward from 0
+            iter([]),  # Backward
+        ]
+
+        masks, areas, empties, errors = mask_propagator.propagate(
+            shot_frames_rgb=frames, seed_idx=0, bbox_xywh=[0, 0, 5, 5]
+        )
+        assert len(masks) == 3
+        assert areas[0] > 0
+
+    def test_propagate_legacy_no_tracker(self, mask_propagator):
+        """Test legacy propagate with no tracker."""
+        mask_propagator.dam_tracker = None
+        frames = [np.zeros((10, 10, 3), dtype=np.uint8)]
+        masks, areas, empties, errors = mask_propagator.propagate(frames, 0, [0, 0, 5, 5])
+        assert errors[0] == "Tracker not initialized"
+
+    def test_propagate_legacy_error_paths(self, mask_propagator, mock_sam3_wrapper):
+        """Test legacy propagate error handling."""
+        frames = [np.zeros((10, 10, 3), dtype=np.uint8)]
+        # GPU OOM
+        with patch("core.scene_utils.mask_propagator.torch.cuda.OutOfMemoryError", RuntimeError):
+            mock_sam3_wrapper.init_video.side_effect = RuntimeError("out of memory")
+            mask_propagator.propagate(frames, 0, [0, 0, 5, 5])
+            mask_propagator.logger.error.assert_any_call(
+                "GPU error in propagation: out of memory", component="propagator"
+            )
+
+        # Generic Exception
+        mock_sam3_wrapper.init_video.side_effect = Exception("Generic Fail")
+        mask_propagator.propagate(frames, 0, [0, 0, 5, 5])
+        mask_propagator.logger.error.assert_any_call(
+            "Propagation error: Generic Fail", component="propagator", exc_info=True
+        )

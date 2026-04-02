@@ -149,6 +149,7 @@ tests
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_scene_detection.py`](#-testsunittest_scene_detectionpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_scene_utils.py`](#-testsunittest_scene_utilspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_scene_utils_helpers.py`](#-testsunittest_scene_utils_helperspy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_seed_selector_coverage.py`](#-testsunittest_seed_selector_coveragepy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_seed_selector_extended.py`](#-testsunittest_seed_selector_extendedpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_seed_selector_strategies.py`](#-testsunittest_seed_selector_strategiespy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_session.py`](#-testsunittest_sessionpy)  
@@ -2242,6 +2243,18 @@ class TestMaskPropagatorLogic:
         """Test handling of CUDA OOM error."""
     def test_executor_cleanup_on_failure(self, mask_propagator, mock_sam3_wrapper):
         """Test ThreadPoolExecutor cleanup on failure."""
+    def test_propagate_video_no_tracker(self, mask_propagator):
+        """Test propagate_video with no tracker initialized."""
+    def test_propagate_video_heartbeats(self, mask_propagator, mock_sam3_wrapper):
+        """Test forward and backward propagation heartbeats."""
+    def test_propagate_video_finally_failure(self, mask_propagator, mock_sam3_wrapper):
+        """Test failure in close_session during finally block."""
+    def test_propagate_legacy_basic(self, mask_propagator, mock_sam3_wrapper):
+        """Test legacy propagate method success path."""
+    def test_propagate_legacy_no_tracker(self, mask_propagator):
+        """Test legacy propagate with no tracker."""
+    def test_propagate_legacy_error_paths(self, mask_propagator, mock_sam3_wrapper):
+        """Test legacy propagate error handling."""
 ```
 
 ### `📄 tests/unit/test_mask_propagator_oom.py`
@@ -2862,6 +2875,33 @@ class TestSceneUtilsHelpers:
     @patch('core.scene_utils.helpers.build_scene_gallery_items')
     def test_wire_recompute_handler(self, mock_build_gallery, mock_save, mock_recompute, mock_create_context, mock_config, mock_logger, mock_scene): ...
     def test_wire_recompute_handler_no_prompt(self, mock_logger): ...
+```
+
+### `📄 tests/unit/test_seed_selector_coverage.py`
+
+```python
+@pytest.fixture
+def mock_config(): ...
+@pytest.fixture
+def mock_logger(): ...
+@pytest.fixture
+def selector(mock_config, mock_logger): ...
+def test_select_seed_identity_first_no_ref(selector):
+    """Test identity-first strategy fallback when reference embedding is missing."""
+def test_find_target_face_error_paths(selector):
+    """Test error paths in _find_target_face."""
+def test_get_person_boxes_from_scene(selector):
+    """Test getting person boxes from scene metadata."""
+def test_get_person_boxes_no_tracker(selector):
+    """Test _get_person_boxes when tracker is None."""
+def test_get_text_prompt_boxes_error_paths(selector):
+    """Test error paths in _get_text_prompt_boxes."""
+def test_choose_person_by_strategy_no_analyzer_fallback(selector):
+    """Test choose_person fallback when face_analyzer is None."""
+def test_choose_person_by_strategy_post_selection_failure(selector):
+    """Test face analysis failure during post-selection."""
+def test_get_mask_for_bbox_error_paths(selector):
+    """Test error paths in _get_mask_for_bbox."""
 ```
 
 ### `📄 tests/unit/test_seed_selector_extended.py`
