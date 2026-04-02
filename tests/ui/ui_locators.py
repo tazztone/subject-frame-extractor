@@ -54,6 +54,7 @@ class Labels:
     SYSTEM_LOGS = "📋 System Logs"
     HELP_ACCORDION = "❓ Help / Troubleshooting"
     SCAN_VIDEO_BUTTON = "🔍 Scan Video Now"
+    TAB_SCAN_VIDEO = "Scan Video for Subjects"
 
     # Strategy Options
     STRATEGY_FACE = "Source Face Reference"
