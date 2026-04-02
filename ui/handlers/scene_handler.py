@@ -507,23 +507,35 @@ class SceneHandler:
             should_exclude = False
             reason = []
 
-            # Check Subj Area
+            # Check Subj Area: Look in seed_metrics first, then seed_result details, then fallback to bbox area
             if min_mask_pct > 0:
-                area = (scene.get("seed_result") or {}).get("mask_area_pct", 0)
+                metrics = scene.get("seed_metrics") or {}
+                result_details = (scene.get("seed_result") or {}).get("details") or {}
+                area = metrics.get("mask_area_pct")
+                if area is None:
+                    area = result_details.get("mask_area_pct", 0)
                 if area < min_mask_pct:
                     should_exclude = True
                     reason.append(f"Area {area:.1f}% < {min_mask_pct}%")
 
             # Check Face Sim (only if enabled globally AND logic enabled)
             if compute_face_sim and min_face_sim > 0:
-                sim = (scene.get("seed_result") or {}).get("face_sim", 0)
+                metrics = scene.get("seed_metrics") or {}
+                result_details = (scene.get("seed_result") or {}).get("details") or {}
+                sim = metrics.get("best_face_sim")
+                if sim is None:
+                    sim = result_details.get("face_sim", 0)
                 if sim < min_face_sim:
                     should_exclude = True
                     reason.append(f"Face {sim:.2f} < {min_face_sim}")
 
-            # Check Quality
+            # Check Quality: Map 'score' or 'best_niqe' or 'quality_score' to the quality slider
             if min_quality > 0:
-                q = (scene.get("seed_metrics") or {}).get("quality_score", 0)
+                metrics = scene.get("seed_metrics") or {}
+                q = metrics.get("quality_score")
+                if q is None:
+                    # In our system 'score' is the primary pre-analysis metric
+                    q = metrics.get("score", 0)
                 if q < min_quality:
                     should_exclude = True
                     reason.append(f"Quality {q:.1f} < {min_quality}")

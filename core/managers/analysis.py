@@ -161,7 +161,11 @@ class PreAnalysisPipeline(Pipeline):
             mask = masker.get_mask_for_bbox(thumb_rgb, bbox)
             if mask is not None and mask.size > 0:
                 h, w = mask.shape[:2]
-                scene.seed_result["details"]["mask_area_pct"] = (np.sum(mask > 0) / (h * w) * 100) if h * w > 0 else 0.0
+                area_pct = (np.sum(mask > 0) / (h * w) * 100) if h * w > 0 else 0.0
+                scene.seed_result["details"]["mask_area_pct"] = area_pct
+                if not scene.seed_metrics:
+                    scene.seed_metrics = {}
+                scene.seed_metrics["mask_area_pct"] = area_pct
         from core.image_utils import render_mask_overlay
 
         overlay_rgb = (

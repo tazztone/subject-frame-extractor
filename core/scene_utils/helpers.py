@@ -71,6 +71,7 @@ def save_scene_seeds(scenes_list: list["Scene"], output_dir_str: str, logger: "A
             "seed_config": s.seed_config,
             "status": s.status,
             "seed_metrics": s.seed_metrics,
+            "seed_result": s.seed_result,
             "preview_path": s.preview_path,
         }
         scene_seeds[str(s.shot_id)] = data
