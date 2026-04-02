@@ -241,3 +241,9 @@ class TestSceneUtilsHelpers:
             MagicMock(), mock_logger, MagicMock(), [], 1, "", "", "", [], [], False, MagicMock()
         )
         assert "Enter a text prompt" in res[3]
+
+    def test_save_scene_seeds_includes_preview_path(self, mock_scene, mock_logger, tmp_path):
+        mock_scene.preview_path = "/some/path/scene_00001_12345.jpg"
+        save_scene_seeds([mock_scene], str(tmp_path), mock_logger)
+        content = json.loads((tmp_path / "scene_seeds.json").read_text())
+        assert content[str(mock_scene.shot_id)]["preview_path"] == "/some/path/scene_00001_12345.jpg"

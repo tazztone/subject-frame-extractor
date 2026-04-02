@@ -421,8 +421,19 @@ class SceneHandler:
         app_state.selected_scene_id = shotid
 
         previews_dir = Path(app_state.analysis_output_dir) / "previews"
-        thumb_path = previews_dir / f"scene_{shotid:05d}.jpg"
-        gallery_image = self.thumbnail_manager.get(thumb_path) if thumb_path.exists() else None
+        # Resolve preview: prefer stored path, then glob for timestamped files
+        thumb_path = None
+        stored_preview = scene.get("preview_path")
+        if stored_preview:
+            p = Path(stored_preview)
+            if p.exists():
+                thumb_path = p
+
+        if thumb_path is None:
+            # Glob fallback for timestamped files (e.g. scene_00000_1775129777.jpg)
+            matches = sorted(previews_dir.glob(f"scene_{shotid:05d}*.jpg"))
+            thumb_path = matches[-1] if matches else None
+        gallery_image = self.thumbnail_manager.get(thumb_path) if thumb_path else None
         gallery_shape = gallery_image.shape[:2] if gallery_image is not None else None
 
         # Update image state

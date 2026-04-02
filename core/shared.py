@@ -174,11 +174,21 @@ def build_scene_gallery_items(
     page_scenes = filtered_scenes[start_idx:end_idx]
 
     for i, s in page_scenes:
-        thumb_path = previews_dir / f"scene_{s.shot_id:05d}.jpg"
-        # TODO: Fall back to WebP if JPG doesn't exist
-        # TODO: Add placeholder image for missing previews
-        if not thumb_path.exists():
+        # Resolve preview: prefer stored path, then glob for timestamped files
+        thumb_path = None
+        if hasattr(s, "preview_path") and s.preview_path:
+            p = Path(s.preview_path)
+            if p.exists():
+                thumb_path = p
+
+        if thumb_path is None:
+            # Glob fallback for timestamped files (e.g. scene_00000_1775129777.jpg)
+            matches = sorted(previews_dir.glob(f"scene_{s.shot_id:05d}*.jpg"))
+            thumb_path = matches[-1] if matches else None
+
+        if thumb_path is None:
             continue
+
         try:
             thumb_img_np = cv2.imread(str(thumb_path))
             if thumb_img_np is None:

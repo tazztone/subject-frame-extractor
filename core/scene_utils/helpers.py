@@ -71,6 +71,7 @@ def save_scene_seeds(scenes_list: list["Scene"], output_dir_str: str, logger: "A
             "seed_config": s.seed_config,
             "status": s.status,
             "seed_metrics": s.seed_metrics,
+            "preview_path": s.preview_path,
         }
         scene_seeds[str(s.shot_id)] = data
     try:
@@ -254,12 +255,23 @@ def _recompute_single_preview(
     )
     previews_dir = out_dir / "previews"
     previews_dir.mkdir(parents=True, exist_ok=True)
-    preview_path = previews_dir / f"scene_{int(scene.shot_id):05d}.jpg"
+
+    # Clean up old previews for this scene before creating a new one
+    for old_preview in previews_dir.glob(f"scene_{int(scene.shot_id):05d}*.jpg"):
+        try:
+            old_preview.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+    import time as _time
+
+    preview_path = previews_dir / f"scene_{int(scene.shot_id):05d}_{int(_time.time())}.jpg"
+
     try:
         Image.fromarray(overlay_rgb).save(preview_path)
         scene.preview_path = str(preview_path)
-    except Exception:
-        logger.error(f"Failed to save preview for scene {scene.shot_id}", exc_info=True)
+    except Exception as e:
+        logger.error(f"Failed to save recomputed preview: {e}")
 
 
 def _wire_recompute_handler(

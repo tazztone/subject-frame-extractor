@@ -2875,6 +2875,7 @@ class TestSceneUtilsHelpers:
     @patch('core.scene_utils.helpers.build_scene_gallery_items')
     def test_wire_recompute_handler(self, mock_build_gallery, mock_save, mock_recompute, mock_create_context, mock_config, mock_logger, mock_scene): ...
     def test_wire_recompute_handler_no_prompt(self, mock_logger): ...
+    def test_save_scene_seeds_includes_preview_path(self, mock_scene, mock_logger, tmp_path): ...
 ```
 
 ### `📄 tests/unit/test_seed_selector_coverage.py`
@@ -2992,6 +2993,9 @@ class TestSharedUtils:
     def test_build_scene_gallery_items_error(self, mock_imread, tmp_path): ...
     @patch('cv2.imread')
     def test_build_scene_gallery_items_imread_none(self, mock_imread, tmp_path): ...
+    @patch('cv2.imread')
+    def test_build_scene_gallery_items_timestamped(self, mock_imread, tmp_path):
+        """Verify gallery finds timestamped preview files via glob fallback."""
 ```
 
 ### `📄 tests/unit/test_sharpness.py`

@@ -378,6 +378,7 @@ def mock_pre_analysis_execution(
     for s_dict in scenes:
         shot_id = s_dict["shot_id"]
         preview_path = os.path.join(previews_dir, f"scene_{shot_id:05d}.jpg")
+        s_dict["preview_path"] = preview_path
         if not os.path.exists(preview_path):
             img_data = np.random.randint(0, 255, (200, 300, 3), dtype=np.uint8)
             img = Image.fromarray(img_data)

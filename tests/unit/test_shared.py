@@ -163,3 +163,21 @@ class TestSharedUtils:
         scenes = [Scene(shot_id=1, start_frame=0, end_frame=10)]
         items, _, _ = build_scene_gallery_items(scenes, "All", str(output_dir))
         assert len(items) == 0
+
+    @patch("cv2.imread")
+    def test_build_scene_gallery_items_timestamped(self, mock_imread, tmp_path):
+        """Verify gallery finds timestamped preview files via glob fallback."""
+        output_dir = tmp_path / "output"
+        previews_dir = output_dir / "previews"
+        previews_dir.mkdir(parents=True)
+        (previews_dir / "scene_00001_1234567890.jpg").touch()
+
+        img = np.zeros((10, 10, 3), dtype=np.uint8)
+        mock_imread.return_value = img
+
+        scenes = [Scene(shot_id=1, start_frame=0, end_frame=10, status="included")]
+        items, index_map, total_pages = build_scene_gallery_items(
+            scenes, "All", str(output_dir), page_num=1, page_size=10
+        )
+        assert len(items) == 1
+        assert index_map == [0]

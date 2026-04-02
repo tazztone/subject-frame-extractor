@@ -37,6 +37,7 @@ class TestPhase1Logic(unittest.TestCase):
                 "scene_gallery": gr.Gallery(),
                 "total_pages_label": gr.Markdown(),
                 "page_number_input": gr.Dropdown(),
+                "main_tabs": gr.Tabs(),
             }
 
     @patch("ui.handlers.pipeline_handlers.get_scene_status_text")
@@ -55,7 +56,8 @@ class TestPhase1Logic(unittest.TestCase):
 
             # Check success message
             status_msg = updates[self.app.components["unified_status"]]
-            self.assertIn("Compute Metrics", status_msg)
+            self.assertIn("Pre-Analysis Complete", status_msg)
+            self.assertIn("image folder", status_msg)
 
     @patch("ui.handlers.pipeline_handlers.get_scene_status_text")
     def test_on_pre_analysis_success_video_folder(self, mock_get_status):
@@ -73,7 +75,8 @@ class TestPhase1Logic(unittest.TestCase):
 
             # Check success message
             status_msg = updates[self.app.components["unified_status"]]
-            self.assertIn("Propagate Masks", status_msg)
+            self.assertIn("Pre-Analysis Complete", status_msg)
+            self.assertIn("Moving to select fields", status_msg)
 
     def test_propagation_button_handler_guard(self):
         current_state = ApplicationState(extracted_video_path="")  # Image mode
