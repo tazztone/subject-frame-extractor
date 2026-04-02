@@ -416,17 +416,23 @@ class AnalysisPipeline(Pipeline):
                     current_bs = min(self.config.analysis_default_batch_size, current_bs + 2)
                 while len(futures) < num_workers and processed < len(image_files):
                     end = min(processed + current_bs, len(image_files))
-                    futures.append(executor.submit(self._process_batch, image_files[processed:end], metrics_to_compute))
+                    batch_paths = image_files[processed:end]
+                    fut = executor.submit(self._process_batch, batch_paths, metrics_to_compute)
+                    setattr(fut, "_batch_len", len(batch_paths))
+                    futures.append(fut)
                     processed = end
                 done = [f for f in futures if f.done()]
                 futures = [f for f in futures if not f.done()]
                 for f in done:
+                    # Determine batch size for this future to update tracker correctly even on failure
+                    batch_len = getattr(f, "_batch_len", current_bs)
                     try:
-                        n = f.result()
-                        if tracker:
-                            tracker.step(n)
+                        f.result()
                     except Exception as e:
                         self.logger.error(f"Batch error: {e}")
+                    finally:
+                        if tracker:
+                            tracker.step(batch_len)
                 if self.cancel_event.is_set():
                     break
                 if futures:

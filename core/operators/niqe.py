@@ -33,7 +33,7 @@ class NiqeOperator:
     def cleanup(self):
         self.model = None
         if self.device == "cuda":
-            torch.cuda.empty_ok()
+            torch.cuda.empty_cache()
 
     def execute(self, ctx: OperatorContext) -> OperatorResult:
         if self.model is None:

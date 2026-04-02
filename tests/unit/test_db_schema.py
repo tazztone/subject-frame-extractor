@@ -44,9 +44,9 @@ def test_migrate_database_legacy_v1(tmp_path):
     logger = MagicMock()
     migrate_database(conn, logger)
 
-    # Should detect v1, record it, then apply v2 (or latest)
+    # Should detect v1, record it, then apply latest migrations
     cursor.execute("SELECT MAX(version) FROM schema_versions")
-    assert cursor.fetchone()[0] == CURRENT_VERSION  # Current version
+    assert cursor.fetchone()[0] == CURRENT_VERSION  # Ensure it reached latest version
 
     # Check if error_severity was added
     cursor.execute("PRAGMA table_info(metadata)")

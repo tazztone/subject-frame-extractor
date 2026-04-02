@@ -100,6 +100,7 @@ tests
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_extraction.py`](#-testsunittest_extractionpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_extraction_manager.py`](#-testsunittest_extraction_managerpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_face_clustering.py`](#-testsunittest_face_clusteringpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_face_manager.py`](#-testsunittest_face_managerpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_face_metrics.py`](#-testsunittest_face_metricspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_face_operators.py`](#-testsunittest_face_operatorspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_ffmpeg_logic.py`](#-testsunittest_ffmpeg_logicpy)  
@@ -1188,6 +1189,8 @@ def test_process_reference_face_logic(mock_init_models, mock_imread, mock_deps, 
 @patch('core.managers.analysis.run_operators')
 @patch('core.managers.analysis.Database')
 def test_process_single_frame_complex_meta(mock_db, mock_run_ops, mock_deps, analysis_params, tmp_path): ...
+def test_process_single_frame_face_analysis_failure(mock_deps, analysis_params, tmp_path):
+    """Test that face analysis failure is caught and logged."""
 @patch('core.managers.analysis.Database')
 def test_analysis_loop_batch_error(mock_db, mock_deps, analysis_params, tmp_path): ...
 @patch('core.managers.analysis.create_frame_map')
@@ -1784,6 +1787,29 @@ def test_get_cluster_representative_read_fail(mock_video_capture):
     """Test representative selection when video frame read fails."""
 ```
 
+### `📄 tests/unit/test_face_manager.py`
+
+```python
+@pytest.fixture
+def mock_logger(): ...
+@pytest.fixture
+def mock_registry(): ...
+def test_get_face_landmarker_success(mock_logger):
+    """Test successful initialization and thread-local caching of FaceLandmarker."""
+def test_get_face_landmarker_failure(mock_logger):
+    """Test initialization failure of FaceLandmarker."""
+def test_get_face_analyzer_success(mock_logger, mock_registry):
+    """Test successful initialization of FaceAnalysis on CPU."""
+def test_get_face_analyzer_cuda_success(mock_logger, mock_registry):
+    """Test successful initialization of FaceAnalysis on CUDA."""
+def test_get_face_analyzer_cuda_oom_fallback(mock_logger, mock_registry):
+    """Test fallback to CPU when CUDA initialization fails with OOM."""
+def test_get_face_analyzer_generic_failure(mock_logger, mock_registry):
+    """Test generic initialization failure of FaceAnalysis."""
+def test_get_face_analyzer_cpu_fallback_failure(mock_logger, mock_registry):
+    """Test failure during CPU fallback."""
+```
+
 ### `📄 tests/unit/test_face_metrics.py`
 
 ```python
@@ -2323,6 +2349,10 @@ class TestNiqeOperator:
         """Test that mask_tensor is used in execute."""
     def test_execute_error_paths(self, operator): ...
     def test_cleanup_clears_model(self, operator): ...
+    def test_cleanup_cuda(self, operator):
+        """Test cleanup calls empty_cache when device is cuda."""
+    def test_initialize_without_config(self, operator):
+        """Test initialize handles empty config or None."""
 ```
 
 ### `📄 tests/unit/test_operators.py`

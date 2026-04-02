@@ -99,7 +99,7 @@ def test_execute_session_load_corrupt_seeds(mock_logger, tmp_path):
     assert res["success"] is True
     assert len(res["scenes"]) == 1
     mock_logger.warning.assert_called()
-    assert "scene_seeds.json" in mock_logger.warning.call_args[0][0]
+    assert "Could not load scene_seeds.json" in mock_logger.warning.call_args[0][0]
 
 
 def test_execute_session_load_missing_seeds_file(mock_logger, tmp_path):

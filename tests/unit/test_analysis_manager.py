@@ -268,6 +268,39 @@ def test_process_single_frame_complex_meta(mock_db, mock_run_ops, mock_deps, ana
     assert meta["mask_path"] == "frame_000001.png"
 
 
+def test_process_single_frame_face_analysis_failure(mock_deps, analysis_params, tmp_path):
+    """Test that face analysis failure is caught and logged."""
+    from core.managers.analysis import AnalysisPipeline
+
+    pipeline = AnalysisPipeline(
+        mock_deps["config"],
+        mock_deps["logger"],
+        analysis_params,
+        mock_deps["progress_queue"],
+        mock_deps["cancel_event"],
+        mock_deps["thumbnail_manager"],
+        mock_deps["model_registry"],
+    )
+
+    # Setup analyzer to fail
+    mock_analyzer = MagicMock()
+    mock_analyzer.get.side_effect = Exception("InsightFace Fail")
+    pipeline.face_analyzer = mock_analyzer
+    pipeline.params.compute_face_sim = True
+
+    # Setup data
+    img_path = Path("frame_000001.webp")
+    mock_deps["thumbnail_manager"].get.return_value = np.zeros((10, 10, 3), dtype=np.uint8)
+
+    with patch("core.managers.analysis.cv2.imread", return_value=np.zeros((10, 10), dtype=np.uint8)):
+        with patch("core.managers.analysis.Database"):  # Mock DB to avoid real calls
+            pipeline._process_single_frame(img_path, {})
+
+    # Verify logger was called
+    assert mock_deps["logger"].warning.called
+    assert "Face analysis failed" in mock_deps["logger"].warning.call_args[0][0]
+
+
 @patch("core.managers.analysis.Database")
 def test_analysis_loop_batch_error(mock_db, mock_deps, analysis_params, tmp_path):
     pipeline = AnalysisPipeline(

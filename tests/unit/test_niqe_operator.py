@@ -166,3 +166,19 @@ class TestNiqeOperator:
         operator.model = MagicMock()
         operator.cleanup()
         assert operator.model is None
+
+    def test_cleanup_cuda(self, operator):
+        """Test cleanup calls empty_cache when device is cuda."""
+        operator.device = "cuda"
+        operator.model = MagicMock()
+        with patch("torch.cuda.empty_cache") as mock_empty:
+            operator.cleanup()
+            mock_empty.assert_called_once()
+
+    def test_initialize_without_config(self, operator):
+        """Test initialize handles empty config or None."""
+        mock_pyiqa = MagicMock()
+        with patch.dict("sys.modules", {"pyiqa": mock_pyiqa}):
+            operator.initialize(None)
+            assert operator.device == "cpu"
+            mock_pyiqa.create_metric.assert_called_with("niqe", device="cpu")
