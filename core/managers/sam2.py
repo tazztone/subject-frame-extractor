@@ -109,7 +109,33 @@ class SAM2Wrapper:
         """SAM2.1 does not support text prompts."""
         raise NotImplementedError("SAM2.1 has no text prompt support")
 
+    def add_mask_prompt(
+        self,
+        frame_idx: int,
+        obj_id: int,
+        mask: np.ndarray,  # bool H×W, same resolution as the video frames
+    ) -> np.ndarray:
+        """Seed SAM2 with a pre-existing segmentation mask (e.g. from YOLO-seg).
+
+        Provides a tighter initial prompt than a bbox, especially for non-rectangular
+        subjects (hair, loose clothing, outstretched arms).
+        """
+        import torch
+
+        with torch.inference_mode():
+            _, _, masks = self.predictor.add_new_mask(
+                self._state,
+                frame_idx=frame_idx,
+                obj_id=obj_id,
+                mask=mask,  # bool numpy array, H×W
+            )
+        m = masks[0].cpu().numpy()
+        if m.ndim == 3:
+            m = m[0]
+        return m > 0
+
     def shutdown(self):
+
         self.close_session()
         self.predictor = None
         gc.collect()

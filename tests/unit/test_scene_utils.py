@@ -44,7 +44,7 @@ class TestSeedSelector:
         selector.tracker.detect_objects.return_value = detections
         frame_rgb = np.zeros((100, 100, 3), dtype=np.uint8)
 
-        selector.params.seed_strategy = "Largest Person"
+        selector.params.seed_strategy = "Largest Subject"
         bbox, _ = selector.select_seed(frame_rgb)
         assert bbox == [0, 0, 42, 42]
 
@@ -52,11 +52,11 @@ class TestSeedSelector:
         bbox, _ = selector.select_seed(frame_rgb)
         assert bbox == [39, 39, 22, 22]
 
-        selector.params.seed_strategy = "Center-most Person"
+        selector.params.seed_strategy = "Center-most Subject"
         bbox, _ = selector.select_seed(frame_rgb)
         assert bbox == [39, 39, 22, 22]
 
-        selector.params.seed_strategy = "Tallest Person"
+        selector.params.seed_strategy = "Tallest Subject"
         bbox, _ = selector.select_seed(frame_rgb)
         assert bbox == [79, 0, 11, 99]
 

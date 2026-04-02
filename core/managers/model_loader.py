@@ -18,6 +18,13 @@ if TYPE_CHECKING:
     from .registry import ModelRegistry
 
 
+def PersonDetector(*args, **kwargs):
+    """Lazy-loading proxy for PersonDetector to satisfy both tests and onnxruntime-optional environments."""
+    from .person_detector import PersonDetector as RealDetector
+
+    return RealDetector(*args, **kwargs)
+
+
 def get_lpips_metric(model_name: str = "alex", device: str = "cpu"):
     """Returns the LPIPS metric model."""
     return lpips.LPIPS(net=model_name).to(device)
@@ -72,4 +79,50 @@ def initialize_analysis_models(
     if landmarker_path.exists():
         face_landmarker = get_face_landmarker(str(landmarker_path), logger)
 
-    return {"face_analyzer": face_analyzer, "ref_emb": ref_emb, "face_landmarker": face_landmarker, "device": device}
+    # Person Detector
+    person_detector = None
+    if params.person_detector_model and params.person_detector_model != "None":
+        model_name = params.person_detector_model
+
+        # Map model name to config URL
+        url_map = {
+            "YOLO12l-Seg": config.yolo12l_seg_url,
+            "YOLO26n": config.yolo26n_url,
+            "YOLO26s": config.yolo26s_url,
+            "YOLO26m": config.yolo26m_url,
+            "YOLO26l": config.yolo26l_url,
+            "YOLO26x": config.yolo26x_url,
+        }
+
+        model_url = url_map.get(model_name)
+        if not model_url:
+            logger.error(f"No URL configured for detector model: {model_name}")
+            return {
+                "face_analyzer": face_analyzer,
+                "ref_emb": ref_emb,
+                "face_landmarker": face_landmarker,
+                "person_detector": None,
+                "device": device,
+            }
+
+        model_path = Path(config.models_dir) / Path(model_url).name
+
+        download_model(
+            model_url,
+            model_path,
+            f"Person Detector ({model_name})",
+            logger,
+            ErrorHandler(logger, config.retry_max_attempts, config.retry_backoff_seconds),
+            config.user_agent,
+        )
+
+        if model_path.exists():
+            person_detector = PersonDetector(str(model_path), logger, device=device)
+
+    return {
+        "face_analyzer": face_analyzer,
+        "ref_emb": ref_emb,
+        "face_landmarker": face_landmarker,
+        "person_detector": person_detector,
+        "device": device,
+    }

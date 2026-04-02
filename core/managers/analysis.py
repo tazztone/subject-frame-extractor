@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from core.managers import ModelRegistry, ThumbnailManager
 
 from core.database import Database
-from core.enums import SceneStatus, SeedStrategy
+from core.enums import SceneStatus
 from core.error_handling import ErrorHandler
 from core.io_utils import create_frame_map
 from core.models import AnalysisParameters, Frame, Scene
@@ -109,6 +109,7 @@ class PreAnalysisPipeline(Pipeline):
             face_landmarker=models["face_landmarker"],
             device=models["device"],
             model_registry=self.model_registry,
+            person_detector=models["person_detector"],
         )
         masker.frame_map = masker._create_frame_map(str(self.output_dir))
 
@@ -126,11 +127,7 @@ class PreAnalysisPipeline(Pipeline):
         return scenes
 
     def _initialize_niqe_if_needed(self, device: str, is_folder_mode: bool):
-        if (
-            not is_folder_mode
-            and self.params.pre_analysis_enabled
-            and self.params.primary_seed_strategy != SeedStrategy.FIND_PROMINENT.value
-        ):
+        if not is_folder_mode and self.params.pre_analysis_enabled:
             try:
                 import pyiqa
 

@@ -16,6 +16,7 @@ import torch
 from core.application_state import ApplicationState
 from core.batch_manager import BatchItem, BatchManager
 from core.config import Config
+from core.enums import ANCHOR_STRATEGIES
 from core.events import ExportEvent, ExtractionEvent, FilterEvent, PreAnalysisEvent
 from core.export import dry_run_export, export_kept_frames
 from core.logger import AppLogger
@@ -59,21 +60,19 @@ class AppUI:
         ("👤 Source Face Reference", "Source Face Reference"),
         ("📝 Text Description (Limited)", "Text Description (Limited)"),
         ("🔄 Face + Text Fallback", "Face + Text Fallback"),
-        ("🧑‍🤝‍🧑 Find Prominent Person", "Find Prominent Person"),
     ]
-    SEED_STRATEGY_CHOICES: List[str] = [
-        "Largest Person",
-        "Center-most Person",
-        "Highest Confidence",
-        "Tallest Person",
-        "Area x Confidence",
-        "Rule-of-Thirds",
-        "Edge-avoiding",
-        "Balanced",
-        "Best Face",
-    ]
+    SEED_STRATEGY_CHOICES: List[str] = ANCHOR_STRATEGIES
     FACE_MODEL_NAME_CHOICES: List[str] = ["buffalo_l", "buffalo_s"]
     TRACKER_MODEL_CHOICES: List[Tuple[str, str]] = [("sam2", "sam2"), ("sam3 (Experimental)", "sam3")]
+    PERSON_DETECTOR_MODEL_CHOICES: List[str] = [
+        "None",
+        "YOLO12l-Seg",
+        "YOLO26n",
+        "YOLO26s",
+        "YOLO26m",
+        "YOLO26l",
+        "YOLO26x",
+    ]
     GALLERY_VIEW_CHOICES: List[str] = ["Kept", "Rejected"]
     LOG_LEVEL_CHOICES: List[str] = ["DEBUG", "INFO", "WARNING", "ERROR", "SUCCESS", "CRITICAL"]
     SCENE_GALLERY_VIEW_CHOICES: List[str] = ["Kept", "Rejected", "All"]
@@ -159,6 +158,9 @@ class AppUI:
             "edge_strength_base_scale",
             "pre_analysis_enabled",
             "pre_sample_nth",
+            "person_detector_model",
+            "person_detector_class_name",
+            "person_detector_threshold",
             "primary_seed_strategy",
             "compute_quality_score",
             "compute_sharpness",
@@ -191,6 +193,9 @@ class AppUI:
             "text_prompt_input",
             "best_frame_strategy_input",
             "tracker_model_name_input",
+            "person_detector_model_input",
+            "person_detector_class_input",
+            "person_detector_threshold_input",
             "propagate_masks_button",
             "seeding_results_column",
             "propagation_group",

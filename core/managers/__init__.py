@@ -2,6 +2,7 @@ from .analysis import AnalysisPipeline, PreAnalysisPipeline, _load_scenes
 from .extraction import ExtractionPipeline, run_ffmpeg_extraction
 from .face import get_face_analyzer, get_face_landmarker
 from .model_loader import get_lpips_metric, initialize_analysis_models
+from .person_detector import PersonDetector
 from .registry import ModelRegistry
 from .sam2 import SAM2Wrapper
 from .sam3 import SAM3Wrapper
@@ -29,4 +30,5 @@ __all__ = [
     "execute_session_load",
     "validate_session_dir",
     "_load_analysis_scenes",
+    "PersonDetector",
 ]

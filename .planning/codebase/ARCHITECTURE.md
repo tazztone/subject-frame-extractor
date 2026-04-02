@@ -28,7 +28,8 @@ The processing flow is split into three distinct phases to allow for checkpoints
 
 ### 3. Pre-Analysis Phase (`execute_pre_analysis`)
 - **Seeding**: Automatically selects the "Best Frame" per scene based on quality metrics and face similarity.
-- **Subject Discovery**: Runs face detection or open-vocabulary object detection (SAM3) to initialize tracking seeds.
+- **Subject Discovery**: Runs YOLO26 (80 COCO classes) or InsightFace to initialize tracking seeds.
+- **Resolution**: Resolves class names to IDs strictly at the `AnalysisParameters.from_ui` boundary to maintain core simplicity.
 
 ### 4. Analysis Phase (`AnalysisPipeline` via `Operators`)
 - **Metric Loop**: Parallel execution of "Operators" (Action/Quality metrics).
@@ -58,7 +59,7 @@ Large ML models (SAM3, InsightFace) are managed by a central registry:
 
 | Artifact | Producer | Consumer | Purpose |
 |----------|----------|-----------|---------|
-| `AnalysisParameters` | UI | All Pipelines | Configuration and user intent. |
+| `AnalysisParameters` | UI | All Pipelines | Configuration and user intent (resolves class names to IDs). |
 | `frame_map.json` | Extraction | Analysis, UI | Maps file index to original video frame index. |
 | `scenes.json` | Extraction | Analysis, UI | Defines shot boundaries and status (`pending`, `included`). |
 | `metadata.db` | Analysis | UI, Export | Queryable frame quality and metadata. |

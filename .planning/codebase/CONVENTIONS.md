@@ -13,6 +13,8 @@ All UI logic in `AppUI` should be wrapped with `@AppUI.safe_ui_callback("Context
 ### 2. The event-Pipeline Pattern
 Never pass raw Gradio arguments directly to core logic.
 - **UI**: Collects `*args`.
+- **"Seeding"**: The initialization of a track on a specific frame (the "Anchor Frame").
+- **ID Resolution**: Always resolve class names (e.g., "dog") to COCO IDs at the ingest layer (`AnalysisParameters.from_ui`) to prevent logic duplication in core managers.
 - **Mapping**: Create a dictionary and validate it into a Pydantic `UIEvent` model (e.g., `ExtractionEvent`).
 - **Pipeline**: Processes the validated event object.
 
@@ -34,7 +36,7 @@ When a function returns updates to multiple components, it MUST return a diction
 To avoid "Choice not in list" errors in Gradio `Radio` or `Dropdown` components:
 - **Explicit Unicode**: Always use explicit unicode escape sequences (e.g., `\u200d` for Zero Width Joiners) for complex emojis in constants and comparison logic.
 - **Synchronization**: Ensure the exact same string literal (including invisible characters) is used across `core/config.py`, `ui/app_ui.py`, and any backend filtering logic.
-- **Example**: `"🧑\u200d🤝\u200d🧑 Find Prominent Person"` should be the source of truth for all references.
+- **Example**: `"🧑\u200d🤝\u200d🧑 Find Prominent Subject"` should be the source of truth for all references.
 
 ## Concurrency & Threading
 
@@ -53,6 +55,8 @@ To maintain object identity across manual prompts, never use the high-level `box
 For interactive subject selection, the model must provide immediate feedback on the seed frame.
 - **hotstart_delay**: Must be set to `0` in `SAM3Wrapper` to bypass the default 15-frame stabilization delay.
 - **masklet_confirmation**: Set to `False` to prevent the tracker from "doubting" and suppressing initial segments.
+- **"Subject" / "Anchor"**: Use these terms instead of "Person" to refer to the object being tracked, reflecting the multi-class (80 COCO classes) capabilities.
+- **"Extraction"**: The process of saving frames to disk.
 
 ## Typing & Documentation
 

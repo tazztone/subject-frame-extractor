@@ -38,8 +38,10 @@
 ## Key Dependencies
 
 **Critical:**
-- `sam3` - Segment Anything Model 3 for object tracking and segmentation (located in `SAM3_repo` submodule)
-- `insightface` - Comprehensive face analysis for subject identification
+- **SAM3**: Segment Anything Model 3 (PVS-first tracking path).
+- **YOLO26**: Multi-class (80 COCO classes) detection and segmentation (ONNX format).
+- **InsightFace**: `buffalo_l` / `buffalo_s` models for high-accuracy face embedding and quality scoring.
+- **MediaPipe**: Used for face mesh analysis (eyes-open validation, yaw/pitch estimation).
 - `opencv-python` - Essential image and video processing operations
 - `scenedetect` - Automated scene change detection for frame extraction
 - `onnxruntime-gpu` - High-performance inference engine for ML models
@@ -56,6 +58,8 @@
 - `core/config.py` - Centralized Pydantic `BaseSettings`
 
 **Build:**
+- **ONNX Runtime**: Executes YOLO26 and InsightFace models with CUDA acceleration support.
+- **DuckDB**: Used for fast, local persistent metadata storage and query during filtering.
 - `pyproject.toml` - Project metadata and dependency definitions
 - `uv.lock` - Deterministic dependency resolution
 

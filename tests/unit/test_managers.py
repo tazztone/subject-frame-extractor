@@ -302,6 +302,7 @@ class TestManagers:
         mock_cls.create_from_options.assert_called()
         assert detector == mock_cls.create_from_options.return_value
 
+    @patch("core.managers.model_loader.PersonDetector")
     @patch("core.managers.model_loader.get_face_analyzer")
     @patch("core.managers.model_loader.download_model")
     @patch("pathlib.Path.exists", return_value=True)
@@ -316,6 +317,7 @@ class TestManagers:
         mock_exists,
         mock_download,
         mock_get_analyzer,
+        mock_person_detector_cls,
         mock_config,
         mock_logger,
     ):
@@ -323,6 +325,7 @@ class TestManagers:
         params.compute_face_sim = True
         params.face_model_name = "buffalo_l"
         params.face_ref_img_path = "ref.jpg"
+        params.person_detector_model = "YOLO26n"
 
         model_registry = MagicMock()
 
@@ -341,6 +344,7 @@ class TestManagers:
 
         assert models["face_analyzer"] == mock_analyzer
         assert models["ref_emb"] is not None
+        assert "person_detector" in models
         mock_download.assert_called()  # Landmarker download
 
     @patch("insightface.app.FaceAnalysis")

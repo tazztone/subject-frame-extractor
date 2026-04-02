@@ -61,9 +61,11 @@ def test_strategy_routing_with_enum():
     frame = np.zeros((100, 100, 3), dtype=np.uint8)
 
     with (
-        patch.object(selector, "_identity_first_seed") as mock_id,
-        patch.object(selector, "_object_first_seed") as mock_obj,
-        patch.object(selector, "_choose_person_by_strategy") as mock_auto,
+        patch.object(selector, "_identity_first_seed", return_value=([10, 10, 20, 20], {"type": "id"})) as mock_id,
+        patch.object(selector, "_object_first_seed", return_value=([10, 10, 20, 20], {"type": "obj"})) as mock_obj,
+        patch.object(
+            selector, "_choose_person_by_strategy", return_value=([10, 10, 20, 20], {"type": "auto"})
+        ) as mock_auto,
     ):
         # Test Face Reference
         params.primary_seed_strategy = SeedStrategy.FACE_REFERENCE.value

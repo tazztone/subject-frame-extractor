@@ -129,6 +129,23 @@ class SAM3Wrapper:
             return m > 0
         return np.zeros((h, w), dtype=bool)
 
+    def add_mask_prompt(self, frame_idx: int, obj_id: int, mask: np.ndarray):
+        """
+        Add a mask prompt to the current session (SAM3 support is experimental).
+        """
+        if not self.session_id:
+            raise RuntimeError("init_video must be called before adding prompts")
+
+        # For now, we don't have a direct mask-to-PVS prompt path in the current shims,
+        # so we log a warning. SAM3 usually prefers points/bboxes.
+        import logging
+
+        from core.logger import log_with_component
+
+        logger = logging.getLogger("app_logger")
+        log_with_component(logger, "warning", "SAM3 mask-based seeding is not yet implemented. Falling back.")
+        return None
+
     def add_point_prompt(self, frame_idx: int, obj_id: int, points: list, labels: list, img_size: tuple):
         if not self.session_id:
             raise RuntimeError("init_video must be called before adding prompts")

@@ -4,6 +4,8 @@ from typing import TYPE_CHECKING
 
 import gradio as gr
 
+from core.enums import ANCHOR_STRATEGIES, COCO_CLASSES
+
 if TYPE_CHECKING:
     from ui.app_ui import AppUI
 
@@ -172,8 +174,8 @@ class SubjectTabBuilder:
                         {
                             "choices": self.app.SEED_STRATEGY_CHOICES,
                             "value": self.config.default_seed_strategy,
-                            "label": "Best Shot Selection Rule",
-                            "info": "When multiple frames exist, which one is the 'anchor'?",
+                            "label": "Anchor Selection Strategy",
+                            "info": "If multiple frames are candidates, which one is used as the tracking anchor?",
                             "elem_id": "best_frame_strategy_input",
                         },
                     ),
@@ -278,6 +280,51 @@ class SubjectTabBuilder:
 
             with gr.Row():
                 self.app._reg(
+                    "person_detector_model",
+                    self.app._create_component(
+                        "person_detector_model_input",
+                        "dropdown",
+                        {
+                            "choices": self.app.PERSON_DETECTOR_MODEL_CHOICES,
+                            "value": self.config.default_person_detector_model,
+                            "label": "Subject Detector Fallback",
+                            "info": "Used by SAM2 + Automatic mode.",
+                        },
+                    ),
+                )
+                self.app._reg(
+                    "person_detector_class_name",
+                    self.app._create_component(
+                        "person_detector_class_input",
+                        "dropdown",
+                        {
+                            "choices": COCO_CLASSES,
+                            "value": self.config.default_person_detector_class,
+                            "label": "Subject Class",
+                            "info": "Target object type for YOLO detection.",
+                            "visible": self.config.default_person_detector_model == "YOLO26n",
+                            "filterable": True,
+                        },
+                    ),
+                )
+                self.app._reg(
+                    "person_detector_threshold",
+                    self.app._create_component(
+                        "person_detector_threshold_input",
+                        "slider",
+                        {
+                            "label": "Detector Threshold",
+                            "minimum": 0.1,
+                            "maximum": 0.9,
+                            "step": 0.05,
+                            "value": self.config.default_person_detector_threshold,
+                            "info": "Lower = More sensitive.",
+                        },
+                    ),
+                )
+
+            with gr.Row():
+                self.app._reg(
                     "pre_analysis_enabled",
                     self.app._create_component(
                         "pre_analysis_enabled_input",
@@ -305,3 +352,33 @@ class SubjectTabBuilder:
         # 6. Propagation Placeholder (Filled later)
         with gr.Group(visible=False) as propagation_group:
             self.app.components["propagation_group"] = propagation_group
+
+        # 7. Event Handlers for Dynamic Subject Logic
+        c = self.app.components
+
+        def handle_detector_change(detector):
+            return gr.update(visible=(detector and detector.startswith("YOLO26")))
+
+        c["person_detector_model_input"].change(
+            handle_detector_change,
+            inputs=[c["person_detector_model_input"]],
+            outputs=[c["person_detector_class_input"]],
+        )
+
+        def handle_class_change(class_name, current_strategy):
+            # Only person class supports face-based seeding
+            choices = ANCHOR_STRATEGIES
+            if class_name != "person":
+                choices = [s for s in ANCHOR_STRATEGIES if s != "Best Face"]
+
+            new_val = current_strategy
+            if class_name != "person" and current_strategy == "Best Face":
+                new_val = "Largest Subject"
+
+            return gr.update(choices=choices, value=new_val)
+
+        c["person_detector_class_input"].change(
+            handle_class_change,
+            inputs=[c["person_detector_class_input"], c["best_frame_strategy_input"]],
+            outputs=[c["best_frame_strategy_input"]],
+        )

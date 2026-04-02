@@ -167,7 +167,8 @@ tests
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_ui_unit.py`](#-testsunittest_ui_unitpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_utils.py`](#-testsunittest_utilspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_viz.py`](#-testsunittest_vizpy)  
-&nbsp;&nbsp;&nbsp;&nbsp;└──&nbsp;[`test_xmp_writer.py`](#-testsunittest_xmp_writerpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_xmp_writer.py`](#-testsunittest_xmp_writerpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;└──&nbsp;[`test_yolo_expansion.py`](#-testsunittest_yolo_expansionpy)  
 ## Code Skeleton Reference
 
 ### `📄 tests/conftest.py`
@@ -1555,10 +1556,16 @@ def test_entropy_error_handling():
 ### `📄 tests/unit/test_enums.py`
 
 ```python
-def test_scene_status():
-    """Test SceneStatus enum."""
-def test_propagation_direction():
-    """Test PropagationDirection enum."""
+def test_scene_status_values():
+    """Verify SceneStatus enum values."""
+def test_propagation_direction_values():
+    """Verify PropagationDirection enum values."""
+def test_get_coco_id_basic():
+    """Verify standard class name resolution."""
+def test_get_coco_id_case_insensitive():
+    """Verify case-insensitivity in resolution."""
+def test_get_coco_id_fallback():
+    """Verify fallback to person for unknown or empty input."""
 ```
 
 ### `📄 tests/unit/test_error_handling.py`
@@ -2175,13 +2182,14 @@ class TestManagers:
     @patch('core.managers.face.python.BaseOptions')
     @patch('core.managers.face.vision.FaceLandmarkerOptions')
     def test_get_face_landmarker(self, mock_opts, mock_base, mock_cls, mock_logger): ...
+    @patch('core.managers.model_loader.PersonDetector')
     @patch('core.managers.model_loader.get_face_analyzer')
     @patch('core.managers.model_loader.download_model')
     @patch('pathlib.Path.exists', return_value=True)
     @patch('pathlib.Path.is_file', return_value=True)
     @patch('core.managers.model_loader.get_face_landmarker')
     @patch('cv2.imread', return_value=np.zeros((100, 100, 3)))
-    def test_initialize_analysis_models(self, mock_imread, mock_get_landmarker, mock_isfile, mock_exists, mock_download, mock_get_analyzer, mock_config, mock_logger): ...
+    def test_initialize_analysis_models(self, mock_imread, mock_get_landmarker, mock_isfile, mock_exists, mock_download, mock_get_analyzer, mock_person_detector_cls, mock_config, mock_logger): ...
     @patch('insightface.app.FaceAnalysis')
     @patch('time.sleep', return_value=None)
     def test_get_face_analyzer_retry_logic(self, mock_sleep, mock_face_analysis_cls, mock_logger): ...
@@ -3316,4 +3324,11 @@ def test_export_xmps_for_photos(tmp_path):
     """Test exporting XMPs for multiple photos."""
 def test_write_xmp_sidecar_fail(tmp_path):
     """Test handling of write failures."""
+```
+
+### `📄 tests/unit/test_yolo_expansion.py`
+
+```python
+def test_yolo26_model_mapping(tmp_path):
+    """Verify that all YOLO26 model versions correctly map to their config URLs."""
 ```

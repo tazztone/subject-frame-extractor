@@ -8,6 +8,7 @@
 ### 1. SAM3 VRAM Fragmentation
 - **Concern**: SAM3's video predictor maintains a temporal memory of objects. Long videos or multiple tracked objects can lead to VRAM fragmentation and eventual "CUDA Out of Memory".
 - **Mitigation**: The `ModelRegistry` triggers `torch.cuda.empty_cache()` and attempts a CPU fallback for heavy models. `SAM3Wrapper` performs surgical cache clearing only during session resets to minimize blocking overhead during propagation.
+- **YOLO26 VRAM Footprint**: YOLO26 X-Large requires ~4GB VRAM. Parallel integration tests (`-n > 1`) will cause OOM and system freezes.
 - **Warning**: Users with < 8GB VRAM will struggle with propagation on high-resolution videos.
 
 ### 2. Face Analysis Thread-Safety (RESOLVED) ✅
@@ -31,6 +32,8 @@
 
 ### 2. Gradio 5 State Loss (Stale UI) 🔴
 - **Concern**: In Gradio 5, state objects (`gr.State`) that are not explicitly yielded or returned in an event handler (or success callback) revert to their previous value.
+- **State Synchronization**: Python objects (like `ApplicationState`) must be explicitly serialized via `to_dict()` for IPC between Gradio threads.
+- **Non-Person Strategy Filtering**: Strategies like `Best Face` are nonsensical for classes like `car`. `SeedSelector` must automatically filter these to maintain UX integrity.
 - **Impact**: If a handler triggers multiple pipeline steps, the `ApplicationState` may be lost between steps, causing the UI to "stale" (e.g., buttons remaining invisible after pre-analysis).
 
 ### 3. Emoji/ZWJ String Mismatch 🔴
@@ -87,5 +90,4 @@
 
 ---
 
-
-*Refined concerns: 2026-03-21*
+*Refined concerns: 2026-04-02*

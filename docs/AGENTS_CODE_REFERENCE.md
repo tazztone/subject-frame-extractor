@@ -45,6 +45,7 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`extraction.py`](#-coremanagersextractionpy)  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`face.py`](#-coremanagersfacepy)  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`model_loader.py`](#-coremanagersmodel_loaderpy)  
+│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`person_detector.py`](#-coremanagersperson_detectorpy)  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`registry.py`](#-coremanagersregistrypy)  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`sam2.py`](#-coremanagerssam2py)  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`sam3.py`](#-coremanagerssam3py)  
@@ -287,7 +288,8 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_ui_unit.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_utils.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_viz.py  
-│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└──&nbsp;test_xmp_writer.py  
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_xmp_writer.py  
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└──&nbsp;test_yolo_expansion.py  
 └──&nbsp;ui  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`__init__.py`](#-ui__init__py)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`app_ui.py`](#-uiapp_uipy)  
@@ -544,8 +546,9 @@ class SeedStrategy(str, Enum):
     TEXT_DESCRIPTION = "<REDACTED_STRING>"
     FACE_TEXT_FALLBACK = "<REDACTED_STRING>"
     AUTOMATIC = "<REDACTED_STRING>"
-    FIND_PROMINENT = "<REDACTED_STRING>"
     def __str__(self) -> str: ...
+def get_coco_id(name: str) -> int:
+    """Safely resolves a class name to its COCO ID."""
 ```
 
 ### `📄 core/error_handling.py`
@@ -826,10 +829,30 @@ def get_face_analyzer(model_name: str, models_path: str, det_size_tuple: tuple, 
 ### `📄 core/managers/model_loader.py`
 
 ```python
+def PersonDetector(*args, **kwargs):
+    """Lazy-loading proxy for PersonDetector to satisfy both tests and onnxruntime-o..."""
 def get_lpips_metric(model_name: str='alex', device: str='cpu'):
     """Returns the LPIPS metric model."""
 def initialize_analysis_models(params: Union[dict, 'AnalysisParameters'], config: 'Config', logger: 'AppLogger', model_registry: 'ModelRegistry') -> dict:
     """Initializes all necessary analysis models based on parameters."""
+```
+
+### `📄 core/managers/person_detector.py`
+
+```python
+@dataclass
+class SubjectDetection:
+    """Standardized detection result for subject tracking."""
+    def to_dict(self) -> dict:
+        """Compatibility method for legacy SeedSelector dict-based logic."""
+PersonDetection = SubjectDetection
+class PersonDetector:
+    """GPU-accelerated subject detection and segmentation using YOLO ONNX."""
+    def __init__(self, model_path: str, logger: 'AppLogger', device: str='cuda'): ...
+    def detect(self, frame_bgr: np.ndarray, conf_threshold: float=0.45, target_class_id: int=0) -> List[SubjectDetection]:
+        """Run inference and return subject detections."""
+    def _postprocess_det(self, outputs: list, h: int, w: int, scale: float, pad_top: int, pad_left: int, conf: float, target_class_id: int) -> List[SubjectDetection]: ...
+    def _postprocess_seg(self, outputs: list, h: int, w: int, scale: float, pad_top: int, pad_left: int, conf_threshold: float, target_class_id: int) -> List[SubjectDetection]: ...
 ```
 
 ### `📄 core/managers/registry.py`
@@ -867,6 +890,8 @@ class SAM2Wrapper:
         """SAM2.1 does not have built-in text-grounded detection like SAM3."""
     def add_text_prompt(self, *a, **kw):
         """SAM2.1 does not support text prompts."""
+    def add_mask_prompt(self, frame_idx: int, obj_id: int, mask: np.ndarray) -> np.ndarray:
+        """Seed SAM2 with a pre-existing segmentation mask (e.g. from YOLO-seg)."""
     def shutdown(self): ...
 ```
 
@@ -879,6 +904,8 @@ class SAM3Wrapper:
     def __init__(self, checkpoint_path=None, device='cuda'): ...
     def init_video(self, video_resource: Union[str, list]): ...
     def add_bbox_prompt(self, frame_idx: int, obj_id: int, bbox_xywh: list, img_size: tuple, text: Optional[str]=None): ...
+    def add_mask_prompt(self, frame_idx: int, obj_id: int, mask: np.ndarray):
+        """Add a mask prompt to the current session (SAM3 support is experimental)."""
     def add_point_prompt(self, frame_idx: int, obj_id: int, points: list, labels: list, img_size: tuple): ...
     def propagate(self, start_idx: int=0, max_frames: Optional[int]=None, reverse: bool=False): ...
     def detect_objects(self, frame_rgb: np.ndarray, prompt: str) -> list:
@@ -1360,7 +1387,7 @@ class MaskPropagator:
 """SeedSelector class for selecting seed frames and bounding boxes for mask prop..."""
 class SeedSelector:
     """Selects seed frames and bounding boxes for mask propagation."""
-    def __init__(self, params: 'AnalysisParameters', config: 'Config', face_analyzer: Optional['FaceAnalysis']=None, reference_embedding: Optional[np.ndarray]=None, tracker: Optional['SAM3Wrapper']=None, logger: Optional['LoggerLike']=None, device: str='cpu'):
+    def __init__(self, params: 'AnalysisParameters', config: 'Config', face_analyzer: Optional['FaceAnalysis']=None, reference_embedding: Optional[np.ndarray]=None, tracker: Optional['SAM3Wrapper']=None, person_detector: Optional['PersonDetector']=None, logger: Optional['LoggerLike']=None, device: str='cpu'):
         """Initialize the SeedSelector."""
     def _get_param(self, source: Union[dict, object], key: str, default: Any=None) -> Any:
         """Get a parameter from either a dict or an object."""
@@ -1404,7 +1431,7 @@ class SeedSelector:
 """SubjectMasker class for coordinating subject detection and mask propagation."""
 class SubjectMasker:
     """Coordinates subject detection and mask propagation for video frames."""
-    def __init__(self, params: 'AnalysisParameters', progress_queue: Queue, cancel_event: threading.Event, config: 'Config', frame_map: Optional[dict]=None, face_analyzer: Optional['FaceAnalysis']=None, reference_embedding: Optional[np.ndarray]=None, thumbnail_manager: Optional['ThumbnailManager']=None, niqe_metric: Optional[Callable]=None, logger: Optional['LoggerLike']=None, face_landmarker: Optional[Any]=None, device: str='cpu', model_registry: Optional['ModelRegistry']=None):
+    def __init__(self, params: 'AnalysisParameters', progress_queue: Queue, cancel_event: threading.Event, config: 'Config', frame_map: Optional[dict]=None, face_analyzer: Optional['FaceAnalysis']=None, reference_embedding: Optional[np.ndarray]=None, thumbnail_manager: Optional['ThumbnailManager']=None, niqe_metric: Optional[Callable]=None, logger: Optional['LoggerLike']=None, face_landmarker: Optional[Any]=None, device: str='cpu', model_registry: Optional['ModelRegistry']=None, person_detector: Optional['PersonDetector']=None):
         """Initialize SubjectMasker."""
     def initialize_models(self) -> None:
         """Initialize required models based on parameters."""

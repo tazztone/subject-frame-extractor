@@ -16,7 +16,8 @@ Designed for content creators, dataset builders (LoRA/Dreambooth), and researche
 Traditional frame extraction is noisy. **Subject Frame Extractor** uses advanced segmentation and quality heuristics to ensure you only keep the frames that matter.
 
 *   **Intelligent Extraction**: Beyond simple intervals—use scene detection and keyframe awareness.
-*   **Subject Centric**: Automatically track and mask specific people or objects using **SAM 3**.
+*   **Multi-Class Tracking**: Automatically find and track any of 80 COCO objects (people, cars, animals, etc.) using YOLO26 and SAM3.
+*   **Scene-Level Deduplication**: Automated extraction of the single best frame per shot.
 *   **Quality First**: Filter by sharpness, contrast, and perceptual quality (**NIQE**).
 *   **Face Matching**: Find every frame of a specific person using **InsightFace**.
 
@@ -153,6 +154,7 @@ uv run python cli.py photo export --session ./photo_session
 1.  **Source**: Upload a video or paste a YouTube URL. Choose your extraction resolution.
 2.  **Extract**: Run the extraction. The tool identifies scenes and generates thumbnails.
 3.  **Define Subject**: 
+    *   **Hybrid Seeding**: Combine face reference with text descriptions and YOLO mask prompts for robust initialization.
     *   **By Face**: Upload a reference photo for similarity matching.
     *   **By Text**: Enter a description (e.g., "cat", "person in red").
     *   **Auto**: Let the AI select the most prominent subject.

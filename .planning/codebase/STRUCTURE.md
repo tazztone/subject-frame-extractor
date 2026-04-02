@@ -13,7 +13,7 @@
 │   ├── managers.py         # Resource/Model lifecycle management
 │   ├── events.py           # Pydantic UIEvent models
 │   ├── models.py           # Pydantic data models (Frame, Scene)
-│   ├── enums.py            # [NEW] Status and Direction enums
+│   ├── enums.py            # Status, Direction, Class, and Strategy enums
 │   ├── filtering.py        # Vectorized metric filtering and deduplication
 │   ├── export.py           # FFmpeg extraction, cropping, and XMP export
 │   ├── operators/          # Quality metric plugins (Face, Sharpness, etc.)

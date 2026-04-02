@@ -59,7 +59,11 @@ To ensure fast execution and hardware independence, all **Unit Tests** must comp
 - **SAM3**: SAM3 **is** globally mocked in unit mode via `sys.modules` (see `conftest.py`). Integration tests that need the real SAM3 editable install must set `PYTEST_INTEGRATION_MODE=true`. Never patch `download_ckpt_from_hf` — it breaks local checkpoint resolution.
 - **GPU/Torch**: `tests/conftest.py` promotes `torch.cuda` to a real `ModuleType` instance (not just a `MagicMock`). This provides stable access to `OutOfMemoryError` and `is_available` across parallel workers.
 - **OOM Testing**: Use `from tests.conftest import OutOfMemoryError` (not `torch.cuda.OutOfMemoryError`) when testing CUDA memory exhaustion paths. The global torch mock maps `torch.cuda.OutOfMemoryError` to this class.
-- **No-op Context Managers**: `TransparentContext` (defined in `conftest.py`) replaces `torch.no_grad()` and `torch.inference_mode()` in mocked environments. Reuse it when testing code that uses these as context managers.
+- **No-op Context Managers**: `TransparentContext` (defined in `conftest.py`) replaces `torch.no_grad()` and `torch.inference_mode()` in mocked environments.
+- `test_enums.py`: Verifies `SceneStatus`, `PropagationDirection`, and COCO ID resolution.
+- `test_yolo_expansion.py`: [NEW] Verifies detection and segmentation for multiple COCO classes (cars, birds, etc.).
+- `test_system_health.py`: Verifies diagnostic checks and environment validation.
+ Reuse it when testing code that uses these as context managers.
 - **High-Fidelity I/O Mocking**: When mocking standard library functions like `urllib.request.urlopen`, ensure the mock response includes all methods called by the production code (e.g., `.getheader()`). Using a simple `io.BytesIO` as a return value will cause `AttributeError`.
 - **Requirement**: Always include `create=True` in `patch("torch.cuda.is_available", ...)` to prevent worker collisions in parallel runs.
 

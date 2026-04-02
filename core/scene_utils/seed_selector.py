@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
     from core.config import Config
     from core.logger import LoggerLike
-    from core.managers import SAM3Wrapper
+    from core.managers import PersonDetector, SAM3Wrapper
     from core.models import AnalysisParameters, Scene
 
 from core.enums import SeedStrategy
@@ -46,6 +46,7 @@ class SeedSelector:
         face_analyzer: Optional["FaceAnalysis"] = None,
         reference_embedding: Optional[np.ndarray] = None,
         tracker: Optional["SAM3Wrapper"] = None,
+        person_detector: Optional["PersonDetector"] = None,
         logger: Optional["LoggerLike"] = None,
         device: str = "cpu",
     ):
@@ -66,6 +67,7 @@ class SeedSelector:
         self.face_analyzer = face_analyzer
         self.reference_embedding = reference_embedding
         self.tracker = tracker
+        self.person_detector = person_detector
         self._device = device
         import logging
 
@@ -102,19 +104,29 @@ class SeedSelector:
         if primary_strategy == SeedStrategy.FACE_REFERENCE.value:
             if self.face_analyzer and self.reference_embedding is not None and use_face_filter:
                 log_with_component(self.logger, "info", "Starting 'Identity-First' seeding.")
-                return self._identity_first_seed(frame_rgb, p, scene)
+                box, details = self._identity_first_seed(frame_rgb, p, scene)
             else:
                 log_with_component(self.logger, "warning", "Face strategy selected but no reference face provided.")
-                return self._object_first_seed(frame_rgb, p, scene)
+                box, details = self._object_first_seed(frame_rgb, p, scene)
         elif primary_strategy == SeedStrategy.TEXT_DESCRIPTION.value:
             log_with_component(self.logger, "info", "Starting 'Object-First' seeding.")
-            return self._object_first_seed(frame_rgb, p, scene)
+            box, details = self._object_first_seed(frame_rgb, p, scene)
         elif primary_strategy == SeedStrategy.FACE_TEXT_FALLBACK.value:
             log_with_component(self.logger, "info", "Starting 'Face-First with Text Fallback' seeding.")
-            return self._face_with_text_fallback_seed(frame_rgb, p, scene)
+            box, details = self._face_with_text_fallback_seed(frame_rgb, p, scene)
         else:
             log_with_component(self.logger, "info", f"Starting '{SeedStrategy.AUTOMATIC.value}' seeding.")
-            return self._choose_person_by_strategy(frame_rgb, p, scene)
+            box, details = self._choose_person_by_strategy(frame_rgb, p, scene)
+
+        # Centralized tracker interaction
+        if box is not None and self.tracker is not None:
+            if details.get("mask") is not None and hasattr(self.tracker, "add_mask_prompt"):
+                log_with_component(self.logger, "info", "Using YOLO mask prompt for seeding.")
+                self.tracker.add_mask_prompt(0, 1, details["mask"])
+            else:
+                self.tracker.add_bbox_prompt(0, 1, box, (frame_rgb.shape[1], frame_rgb.shape[0]))
+
+        return box, details
 
     def _face_with_text_fallback_seed(
         self, frame_rgb: np.ndarray, params: Union[dict, "AnalysisParameters"], scene: Optional["Scene"] = None
@@ -155,8 +167,14 @@ class SeedSelector:
             # Propagate face similarity if available
             if "seed_face_sim" in details:
                 best_details["seed_face_sim"] = details["seed_face_sim"]
+
+            # Transfer mask if present
+            if "mask" in best_details:
+                best_details["mask"] = best_details["mask"]
+
             log_with_component(self.logger, "success", "Evidence-based seed selected.", extra=best_details)
             return best_box, best_details
+
         log_with_component(self.logger, "warning", "No high-confidence body box found, expanding face box as fallback.")
         expanded_box = self._expand_face_to_body(target_face["bbox"], frame_rgb.shape)
         return expanded_box, {"type": "expanded_box_from_face", "seed_face_sim": details.get("seed_face_sim", 0)}
@@ -226,13 +244,39 @@ class SeedSelector:
                 x, y, w, h = xywh
                 xyxy = [x, y, x + w, y + h]
                 return [{"bbox": xyxy, "conf": 1.0, "type": "selected"}]
-        if not self.tracker:
-            return []
-        try:
-            return self.tracker.detect_objects(frame_rgb, "person")
-        except Exception:
-            log_with_component(self.logger, "warning", "Person detection failed.", exc_info=True)
-            return []
+        if self.tracker:
+            try:
+                class_name = getattr(self.params, "person_detector_class_name", "person")
+                results = self.tracker.detect_objects(frame_rgb, class_name)
+                if results:
+                    return results
+            except Exception:
+                log_with_component(
+                    self.logger, "warning", f"Tracker-native {class_name} detection failed.", exc_info=True
+                )
+
+        if self.person_detector:
+            try:
+                conf_thresh = getattr(self.params, "person_detector_threshold", 0.45)
+                class_id = getattr(self.params, "person_detector_class_id", 0)
+                detections = self.person_detector.detect(
+                    cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR), conf_threshold=conf_thresh, target_class_id=class_id
+                )
+                if detections:
+                    return [
+                        {
+                            "bbox": d.bbox,
+                            "conf": d.conf,
+                            "class_id": d.class_id,
+                            "type": d.type,
+                            "mask": d.mask,
+                        }
+                        for d in detections
+                    ]
+            except Exception as e:
+                log_with_component(self.logger, "warning", f"YOLO subject detection failed: {e}")
+
+        return []
 
     def _get_text_prompt_boxes(
         self, frame_rgb: np.ndarray, params: Union[dict, "AnalysisParameters"]
@@ -320,9 +364,13 @@ class SeedSelector:
                 "reason": "No people detected in best frame",
                 "detection_attempted": True,
             }
-        strategy = getattr(params, "seed_strategy", "Largest Person")
+        class_id = getattr(params, "person_detector_class_id", 0)
+        strategy = getattr(params, "seed_strategy", "Largest Subject")
         if isinstance(params, dict):
             strategy = params.get("seed_strategy", strategy)
+            class_id = params.get("person_detector_class_id", class_id)
+
+        is_person = class_id == 0
         h, w = frame_rgb.shape[:2]
         cx, cy = w / 2, h / 2
 
@@ -356,7 +404,7 @@ class SeedSelector:
             return weights["area"] * norm_area + weights["confidence"] * b["conf"] + weights["edge"] * norm_edge
 
         all_faces = None
-        if strategy == "Best Face" and self.face_analyzer:
+        if is_person and strategy == "Best Face" and self.face_analyzer:
             all_faces = self.face_analyzer.get(cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR))
 
         def best_face_score(b):
@@ -380,17 +428,17 @@ class SeedSelector:
             return b["conf"]
 
         score_funcs = {
-            "Largest Person": lambda b: area(b),
-            "Center-most Person": lambda b: -center_dist(b),
+            "Largest Subject": lambda b: area(b),
+            "Center-most Subject": lambda b: -center_dist(b),
             "Highest Confidence": highest_conf_score,
-            "Tallest Person": lambda b: height(b),
+            "Tallest Subject": lambda b: height(b),
             "Area x Confidence": lambda b: area(b) * b["conf"],
             "Rule-of-Thirds": lambda b: -thirds_dist(b),
             "Edge-avoiding": lambda b: min_dist_to_edge(b),
             "Balanced": balanced_score,
             "Best Face": best_face_score,
         }
-        score = score_funcs.get(strategy, score_funcs["Largest Person"])
+        score = score_funcs.get(strategy, score_funcs["Largest Subject"])
 
         # Safety check: boxes could be a MagicMock in tests or unexpectedly empty
         actual_boxes = list(boxes) if not isinstance(boxes, list) else boxes
@@ -402,7 +450,7 @@ class SeedSelector:
 
         # Post-selection: Try to calculate face similarity for the chosen person
         seed_face_sim = 0.0
-        if self.reference_embedding is not None and self.face_analyzer:
+        if is_person and self.reference_embedding is not None and self.face_analyzer:
             if not all_faces:
                 try:
                     all_faces = self.face_analyzer.get(cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR))
@@ -424,11 +472,15 @@ class SeedSelector:
                             best_face_sim_in_box = sim
                 seed_face_sim = float(best_face_sim_in_box)
 
-        return self._xyxy_to_xywh(best_person["bbox"], frame_rgb.shape), {
+        details = {
             "type": f"person_{strategy.lower().replace(' ', '_')}",
             "conf": best_person["conf"],
             "seed_face_sim": seed_face_sim if seed_face_sim > 0 else None,
         }
+        if best_person.get("mask") is not None:
+            details["mask"] = best_person["mask"]
+
+        return self._xyxy_to_xywh(best_person["bbox"], frame_rgb.shape), details
 
     # TODO: Cache transform for reuse across multiple frames
     def _load_image_from_array(self, image_rgb: np.ndarray) -> tuple[np.ndarray, torch.Tensor]:

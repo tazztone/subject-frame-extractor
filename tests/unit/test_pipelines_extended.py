@@ -65,6 +65,7 @@ class TestPipelinesExtended:
             "ref_emb": MagicMock(),
             "face_landmarker": MagicMock(),
             "device": "cpu",
+            "person_detector": MagicMock(),
         }
         mock_init_models.return_value = mock_models
 
@@ -102,6 +103,7 @@ class TestPipelinesExtended:
             "ref_emb": MagicMock(),
             "face_landmarker": MagicMock(),
             "device": "cpu",
+            "person_detector": MagicMock(),
         }
         mock_init_models.return_value = mock_models
 
@@ -185,6 +187,7 @@ class TestPreAnalysisPipeline:
             "ref_emb": MagicMock(),
             "face_landmarker": MagicMock(),
             "device": "cpu",
+            "person_detector": MagicMock(),
         }
 
         mock_masker = mock_masker_cls.return_value

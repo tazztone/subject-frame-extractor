@@ -93,7 +93,13 @@ def test_run_full_analysis_success(mock_init_models, mock_masker_cls, mock_deps,
     pipeline.db = MagicMock()
 
     scenes = [Scene(shot_id=1, start_frame=0, end_frame=10)]
-    mock_init_models.return_value = {"face_analyzer": None, "ref_emb": None, "face_landmarker": None, "device": "cpu"}
+    mock_init_models.return_value = {
+        "face_analyzer": None,
+        "ref_emb": None,
+        "face_landmarker": None,
+        "device": "cpu",
+        "person_detector": None,
+    }
 
     result = pipeline.run_full_analysis(scenes)
 
@@ -122,7 +128,13 @@ def test_run_analysis_only_success(mock_init_models, mock_run_ops, mock_deps, an
     pipeline.thumb_dir.mkdir()
     (pipeline.thumb_dir / "frame_000001.webp").write_text("dummy")
 
-    mock_init_models.return_value = {"face_analyzer": None, "ref_emb": None, "face_landmarker": None, "device": "cpu"}
+    mock_init_models.return_value = {
+        "face_analyzer": None,
+        "ref_emb": None,
+        "face_landmarker": None,
+        "device": "cpu",
+        "person_detector": None,
+    }
     mock_run_ops.return_value = {"quality": MagicMock(success=True, metrics={"quality_score": 80})}
 
     # Need a frame_map in the pipeline
@@ -153,7 +165,13 @@ def test_pre_analysis_run_cancellation(mock_masker_cls, mock_init_models, mock_d
         mock_deps["model_registry"],
     )
 
-    mock_init_models.return_value = {"face_analyzer": None, "ref_emb": None, "face_landmarker": None, "device": "cpu"}
+    mock_init_models.return_value = {
+        "face_analyzer": None,
+        "ref_emb": None,
+        "face_landmarker": None,
+        "device": "cpu",
+        "person_detector": None,
+    }
     mock_masker = mock_masker_cls.return_value
     mock_masker._create_frame_map.return_value = {1: "img1.jpg"}
 
@@ -188,7 +206,13 @@ def test_analysis_run_resume_logic(mock_init_models, mock_deps, analysis_params,
         mock_deps["model_registry"],
     )
     pipeline.db = MagicMock()
-    mock_init_models.return_value = {"face_analyzer": None, "ref_emb": None, "face_landmarker": None, "device": "cpu"}
+    mock_init_models.return_value = {
+        "face_analyzer": None,
+        "ref_emb": None,
+        "face_landmarker": None,
+        "device": "cpu",
+        "person_detector": None,
+    }
 
     scenes = [Scene(shot_id=1, start_frame=0, end_frame=10), Scene(shot_id=2, start_frame=11, end_frame=20)]
 
@@ -414,7 +438,13 @@ def test_pre_analysis_pipeline_run(
         mock_deps["model_registry"],
     )
 
-    mock_init_models.return_value = {"face_analyzer": None, "ref_emb": None, "face_landmarker": None, "device": "cpu"}
+    mock_init_models.return_value = {
+        "face_analyzer": None,
+        "ref_emb": None,
+        "face_landmarker": None,
+        "device": "cpu",
+        "person_detector": None,
+    }
     mock_masker = mock_masker_cls.return_value
     mock_masker._create_frame_map.return_value = {1: "img1.jpg"}
 

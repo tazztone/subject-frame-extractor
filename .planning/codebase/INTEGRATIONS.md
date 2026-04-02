@@ -4,6 +4,13 @@
 
 ## APIs & External Services
 
+### 2. YOLO26 (Subject Detection)
+- **Model**: YOLO26 family (n, s, m, l, x).
+- **Source**: `onnx-community` on Hugging Face (FP16/ONNX).
+- **Format**: `.onnx` for broad runtime compatibility.
+- **Provider**: `onnxruntime` (CUDA/CPU).
+- **Capability**: 80-class COCO detection and segmentation (n/l-seg).
+
 **Model Repositories:**
 - Hugging Face Hub - used for downloading pre-trained model weights for SAM3, InsightFace, and other analysis models.
   - Client: `huggingface_hub` Python package
