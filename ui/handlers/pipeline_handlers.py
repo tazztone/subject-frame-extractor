@@ -72,13 +72,14 @@ class PipelineHandler:
         msg = f"""<div class="success-card">
         <h3>Extraction Complete</h3>
         <p>Frames extracted to: <code>{result["extracted_frames_dir_state"]}</code></p>
-        <p><strong>Next:</strong> Review and begin pre-analysis.</p>
+        <p><strong>Moving to next step automatically...</strong></p>
         </div>"""
 
         return {
             self.app.components["application_state"]: new_state,
             self.app.components["unified_status"]: msg,
             self.app.components["unified_log"]: result.get("unified_log", "Extraction Complete."),
+            self.app.components["main_tabs"]: gr.update(selected=1),
         }
 
     @safe_ui_callback("Pre-Analysis")
@@ -125,13 +126,13 @@ class PipelineHandler:
             msg = f"""<div class="success-card">
             <h3>Pre-Analysis Complete</h3>
             <p>Found <strong>{len(scenes_objs)}</strong> scenes in image folder.</p>
-            <p><strong>Next:</strong> Review scenes or click "Compute Metrics" to continue.</p>
+            <p><strong>Moving to select scenes automatically...</strong></p>
             </div>"""
         else:
             msg = f"""<div class="success-card">
             <h3>Pre-Analysis Complete</h3>
             <p>Found <strong>{len(scenes_objs)}</strong> scenes.</p>
-            <p><strong>Next:</strong> Review seeds or click "Propagate Masks".</p>
+            <p><strong>Moving to select fields automatically...</strong></p>
             </div>"""
 
         items, index_map, total_pages = build_scene_gallery_items(
@@ -160,6 +161,7 @@ class PipelineHandler:
         updates[self.app.components["seeding_results_column"]] = gr.update(visible=True)
         updates[self.app.components["propagation_group"]] = gr.update(visible=True)
         updates[self.app.components["propagate_masks_button"]] = button_update
+        updates[self.app.components["main_tabs"]] = gr.update(selected=2)
 
         return updates
 

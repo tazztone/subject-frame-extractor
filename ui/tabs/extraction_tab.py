@@ -34,8 +34,9 @@ class ExtractionTabBuilder:
                                     {
                                         "label": "Input Path or URL",
                                         "placeholder": "Paste YouTube URL or local path (file/folder)...",
-                                        "show_label": False,
-                                        "container": False,
+                                        "show_label": True,
+                                        "container": True,
+                                        "max_lines": 3,
                                         "scale": 4,
                                         "elem_id": "source_input",
                                     },
