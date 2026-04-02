@@ -87,7 +87,7 @@ class TestStrategyMapping:
 
         frame_rgb = np.zeros((100, 100, 3), dtype=np.uint8)
 
-        with patch.object(selector, "_get_person_boxes", return_value=[]):
-            box, details = selector._choose_person_by_strategy(frame_rgb, selector.params)
+        with patch.object(selector, "_get_subject_boxes", return_value=[]):
+            box, details = selector._choose_subject_by_strategy(frame_rgb, selector.params)
             # face2 bbox [30, 30, 40, 40] xyxy -> xywh [30, 30, 10, 10]
             assert box == [30, 30, 10, 10]

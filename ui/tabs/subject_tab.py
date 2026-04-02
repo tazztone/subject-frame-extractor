@@ -31,7 +31,7 @@ class SubjectTabBuilder:
                         "choices": self.app.PRIMARY_SEED_STRATEGY_CHOICES,
                         "value": self.config.default_primary_seed_strategy,
                         "label": "How to find the subject?",
-                        "info": "Choose 'Automatic' for general people, 'By Face' for specific identity.",
+                        "info": "Choose 'Automatic' for general subjects, 'By Face' for specific identity.",
                         "show_label": False,
                         "elem_id": "primary_seed_strategy_input",
                     },
@@ -77,9 +77,9 @@ class SubjectTabBuilder:
                             )
 
                 # Tab 2: Scan Video (Discovery)
-                with gr.Tab("Scan Video for People", elem_id="scan_video_tab"):
+                with gr.Tab("Scan Video for Subjects", elem_id="scan_video_tab"):
                     gr.Markdown(
-                        "### 1. Scan Video\nClick **'Scan Video Now'**. The AI will find people in the footage."
+                        "### 1. Scan Video\nClick **'Scan Video Now'**. The AI will find valid subjects in the footage."
                     )
 
                     with gr.Row():
@@ -112,13 +112,13 @@ class SubjectTabBuilder:
                     with gr.Group(visible=False) as discovered_people_group:
                         self.app.components["discovered_people_group"] = discovered_people_group
                         gr.Markdown(
-                            "### 2. Select Person\n**Click on a face** below to select your subject. A confirmation will appear."
+                            "### 2. Select Subject\n**Click on an object** below to select your target. A confirmation will appear."
                         )
                         self.app._create_component(
                             "discovered_faces_gallery",
                             "gallery",
                             {
-                                "label": "Detected People (Click to Select)",
+                                "label": "Detected Subjects (Click to Select)",
                                 "columns": [2, 4, 6],
                                 "height": "auto",
                                 "allow_preview": False,
@@ -164,7 +164,7 @@ class SubjectTabBuilder:
         with gr.Group(visible=True) as auto_seeding_group:
             self.app.components["auto_seeding_group"] = auto_seeding_group
             # Only show this if strictly necessary for the strategy, otherwise it adds noise.
-            # Currently reused for 'Find Prominent Person'.
+            # Currently reused for 'Find Prominent Subject'.
             with gr.Row():
                 self.app._reg(
                     "best_frame_strategy",
@@ -280,44 +280,44 @@ class SubjectTabBuilder:
 
             with gr.Row():
                 self.app._reg(
-                    "person_detector_model",
+                    "subject_detector_model",
                     self.app._create_component(
-                        "person_detector_model_input",
+                        "subject_detector_model_input",
                         "dropdown",
                         {
-                            "choices": self.app.PERSON_DETECTOR_MODEL_CHOICES,
-                            "value": self.config.default_person_detector_model,
+                            "choices": self.app.SUBJECT_DETECTOR_MODEL_CHOICES,
+                            "value": self.config.default_subject_detector_model,
                             "label": "Subject Detector Fallback",
                             "info": "Used by SAM2 + Automatic mode.",
                         },
                     ),
                 )
                 self.app._reg(
-                    "person_detector_class_name",
+                    "subject_detector_class_name",
                     self.app._create_component(
-                        "person_detector_class_input",
+                        "subject_detector_class_input",
                         "dropdown",
                         {
                             "choices": COCO_CLASSES,
-                            "value": self.config.default_person_detector_class,
+                            "value": self.config.default_subject_detector_class,
                             "label": "Subject Class",
                             "info": "Target object type for YOLO detection.",
-                            "visible": self.config.default_person_detector_model == "YOLO26n",
+                            "visible": self.config.default_subject_detector_model == "YOLO26n",
                             "filterable": True,
                         },
                     ),
                 )
                 self.app._reg(
-                    "person_detector_threshold",
+                    "subject_detector_threshold",
                     self.app._create_component(
-                        "person_detector_threshold_input",
+                        "subject_detector_threshold_input",
                         "slider",
                         {
                             "label": "Detector Threshold",
                             "minimum": 0.1,
                             "maximum": 0.9,
                             "step": 0.05,
-                            "value": self.config.default_person_detector_threshold,
+                            "value": self.config.default_subject_detector_threshold,
                             "info": "Lower = More sensitive.",
                         },
                     ),
@@ -359,10 +359,10 @@ class SubjectTabBuilder:
         def handle_detector_change(detector):
             return gr.update(visible=(detector and detector.startswith("YOLO26")))
 
-        c["person_detector_model_input"].change(
+        c["subject_detector_model_input"].change(
             handle_detector_change,
-            inputs=[c["person_detector_model_input"]],
-            outputs=[c["person_detector_class_input"]],
+            inputs=[c["subject_detector_model_input"]],
+            outputs=[c["subject_detector_class_input"]],
         )
 
         def handle_class_change(class_name, current_strategy):
@@ -377,8 +377,8 @@ class SubjectTabBuilder:
 
             return gr.update(choices=choices, value=new_val)
 
-        c["person_detector_class_input"].change(
+        c["subject_detector_class_input"].change(
             handle_class_change,
-            inputs=[c["person_detector_class_input"], c["best_frame_strategy_input"]],
+            inputs=[c["subject_detector_class_input"], c["best_frame_strategy_input"]],
             outputs=[c["best_frame_strategy_input"]],
         )

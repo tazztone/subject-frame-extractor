@@ -24,11 +24,11 @@ def test_yolo26_model_mapping(tmp_path):
     yolo_versions = ["YOLO26n", "YOLO26s", "YOLO26m", "YOLO26l", "YOLO26x", "YOLO12l-Seg"]
 
     for version in yolo_versions:
-        params = AnalysisParameters(output_folder=str(tmp_path), video_path="test.mp4", person_detector_model=version)
+        params = AnalysisParameters(output_folder=str(tmp_path), video_path="test.mp4", subject_detector_model=version)
+        registry.get_subject_detector.reset_mock()
 
         with (
             patch("core.managers.model_loader.download_model"),
-            patch("core.managers.model_loader.PersonDetector") as MockDetector,
             patch("core.managers.model_loader.get_face_landmarker"),
         ):
             # Mock the landmarker file existence to skip that part
@@ -42,5 +42,5 @@ def test_yolo26_model_mapping(tmp_path):
 
             initialize_analysis_models(params, config, logger, registry)
 
-            # Verify MockDetector was called with the correct path for this version
-            MockDetector.assert_called_with(str(model_path), logger, device="cpu")
+            # Verify registry.get_subject_detector was called with the correct path for this version
+            registry.get_subject_detector.assert_called_with(version, str(model_path), logger, "cpu")

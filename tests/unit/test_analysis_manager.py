@@ -40,7 +40,7 @@ def analysis_params():
         min_mask_area_pct=0.1,
         sharpness_base_scale=1.0,
         edge_strength_base_scale=1.0,
-        primary_seed_strategy="Find Prominent Person",
+        primary_seed_strategy="Automatic Detection",
     )
 
 
@@ -77,7 +77,8 @@ def test_load_scenes_success(tmp_path):
 
 @patch("core.managers.analysis.SubjectMasker")
 @patch("core.managers.analysis.initialize_analysis_models")
-def test_run_full_analysis_success(mock_init_models, mock_masker_cls, mock_deps, analysis_params, tmp_path):
+@patch("core.managers.analysis.Database")
+def test_run_full_analysis_success(mock_db, mock_init_models, mock_masker_cls, mock_deps, analysis_params, tmp_path):
     analysis_params.output_folder = str(tmp_path)
     analysis_params.video_path = "test.mp4"
 
@@ -98,7 +99,7 @@ def test_run_full_analysis_success(mock_init_models, mock_masker_cls, mock_deps,
         "ref_emb": None,
         "face_landmarker": None,
         "device": "cpu",
-        "person_detector": None,
+        "subject_detector": None,
     }
 
     result = pipeline.run_full_analysis(scenes)
@@ -109,7 +110,8 @@ def test_run_full_analysis_success(mock_init_models, mock_masker_cls, mock_deps,
 
 @patch("core.managers.analysis.run_operators")
 @patch("core.managers.analysis.initialize_analysis_models")
-def test_run_analysis_only_success(mock_init_models, mock_run_ops, mock_deps, analysis_params, tmp_path):
+@patch("core.managers.analysis.Database")
+def test_run_analysis_only_success(mock_db, mock_init_models, mock_run_ops, mock_deps, analysis_params, tmp_path):
     analysis_params.output_folder = str(tmp_path)
     analysis_params.video_path = "test.mp4"
     analysis_params.compute_quality_score = True
@@ -133,7 +135,7 @@ def test_run_analysis_only_success(mock_init_models, mock_run_ops, mock_deps, an
         "ref_emb": None,
         "face_landmarker": None,
         "device": "cpu",
-        "person_detector": None,
+        "subject_detector": None,
     }
     mock_run_ops.return_value = {"quality": MagicMock(success=True, metrics={"quality_score": 80})}
 
@@ -170,7 +172,7 @@ def test_pre_analysis_run_cancellation(mock_masker_cls, mock_init_models, mock_d
         "ref_emb": None,
         "face_landmarker": None,
         "device": "cpu",
-        "person_detector": None,
+        "subject_detector": None,
     }
     mock_masker = mock_masker_cls.return_value
     mock_masker._create_frame_map.return_value = {1: "img1.jpg"}
@@ -187,7 +189,8 @@ def test_pre_analysis_run_cancellation(mock_masker_cls, mock_init_models, mock_d
 
 
 @patch("core.managers.analysis.initialize_analysis_models")
-def test_analysis_run_resume_logic(mock_init_models, mock_deps, analysis_params, tmp_path):
+@patch("core.managers.analysis.Database")
+def test_analysis_run_resume_logic(mock_db, mock_init_models, mock_deps, analysis_params, tmp_path):
     analysis_params.output_folder = str(tmp_path)
     analysis_params.resume = True
 
@@ -211,7 +214,7 @@ def test_analysis_run_resume_logic(mock_init_models, mock_deps, analysis_params,
         "ref_emb": None,
         "face_landmarker": None,
         "device": "cpu",
-        "person_detector": None,
+        "subject_detector": None,
     }
 
     scenes = [Scene(shot_id=1, start_frame=0, end_frame=10), Scene(shot_id=2, start_frame=11, end_frame=20)]
@@ -227,7 +230,8 @@ def test_analysis_run_resume_logic(mock_init_models, mock_deps, analysis_params,
 
 @patch("core.managers.analysis.cv2.imread")
 @patch("core.managers.analysis.initialize_analysis_models")
-def test_process_reference_face_logic(mock_init_models, mock_imread, mock_deps, analysis_params, tmp_path):
+@patch("core.managers.analysis.Database")
+def test_process_reference_face_logic(mock_db, mock_init_models, mock_imread, mock_deps, analysis_params, tmp_path):
     analysis_params.output_folder = str(tmp_path)
     analysis_params.face_ref_img_path = str(tmp_path / "ref.jpg")
     (tmp_path / "ref.jpg").write_text("dummy")
@@ -292,10 +296,12 @@ def test_process_single_frame_complex_meta(mock_db, mock_run_ops, mock_deps, ana
     assert meta["mask_path"] == "frame_000001.png"
 
 
-def test_process_single_frame_face_analysis_failure(mock_deps, analysis_params, tmp_path):
+@patch("core.managers.analysis.Database")
+def test_process_single_frame_face_analysis_failure(mock_db, mock_deps, analysis_params, tmp_path):
     """Test that face analysis failure is caught and logged."""
     from core.managers.analysis import AnalysisPipeline
 
+    analysis_params.output_folder = str(tmp_path)
     pipeline = AnalysisPipeline(
         mock_deps["config"],
         mock_deps["logger"],
@@ -317,8 +323,7 @@ def test_process_single_frame_face_analysis_failure(mock_deps, analysis_params, 
     mock_deps["thumbnail_manager"].get.return_value = np.zeros((10, 10, 3), dtype=np.uint8)
 
     with patch("core.managers.analysis.cv2.imread", return_value=np.zeros((10, 10), dtype=np.uint8)):
-        with patch("core.managers.analysis.Database"):  # Mock DB to avoid real calls
-            pipeline._process_single_frame(img_path, {})
+        pipeline._process_single_frame(img_path, {})
 
     # Verify logger was called
     assert mock_deps["logger"].warning.called
@@ -352,8 +357,9 @@ def test_analysis_loop_batch_error(mock_db, mock_deps, analysis_params, tmp_path
     assert mock_deps["logger"].error.called
 
 
+@patch("core.managers.analysis.Database")
 @patch("core.managers.analysis.create_frame_map")
-def test_image_folder_analysis_trigger(mock_create_map, mock_deps, analysis_params, tmp_path):
+def test_image_folder_analysis_trigger(mock_create_map, mock_db, mock_deps, analysis_params, tmp_path):
     analysis_params.video_path = ""
     analysis_params.output_folder = str(tmp_path)
 
@@ -443,7 +449,7 @@ def test_pre_analysis_pipeline_run(
         "ref_emb": None,
         "face_landmarker": None,
         "device": "cpu",
-        "person_detector": None,
+        "subject_detector": None,
     }
     mock_masker = mock_masker_cls.return_value
     mock_masker._create_frame_map.return_value = {1: "img1.jpg"}

@@ -135,6 +135,24 @@ class ModelRegistry:
             self.logger.error(f"Failed to initialize tracker: {e}", exc_info=True)
             return None
 
+    def get_subject_detector(
+        self, model_name: str, model_path: str, logger: "LoggerLike", device: str
+    ) -> Optional[Any]:
+        """Retrieves or loads a subject detector (YOLO family)."""
+        key = f"detector_{model_name}"
+
+        def _loader():
+            # Lazy import to avoid top-level onnxruntime dependency
+            from .subject_detector import SubjectDetector
+
+            return SubjectDetector(model_path, logger, device=device)
+
+        try:
+            return self.get_or_load(key, _loader)
+        except Exception as e:
+            self.logger.error(f"Failed to initialize subject detector {model_name}: {e}", exc_info=True)
+            return None
+
     def _load_tracker_impl(
         self,
         model_name: str,

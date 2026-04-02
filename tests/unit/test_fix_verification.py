@@ -38,13 +38,13 @@ def test_face_fallback_when_no_people_detected():
     selector.tracker = MagicMock()
     selector.tracker.detect_objects.return_value = []
 
-    # Mock _expand_face_to_body and _get_person_boxes (to return empty)
+    # Mock _expand_face_to_body and _get_subject_boxes (to return empty)
     with (
-        patch.object(selector, "_get_person_boxes", return_value=[]),
+        patch.object(selector, "_get_subject_boxes", return_value=[]),
         patch.object(selector, "_expand_face_to_body", return_value=[10, 10, 100, 200]),
     ):
         frame = np.zeros((480, 640, 3), dtype=np.uint8)
-        box, details = selector._choose_person_by_strategy(frame, params)
+        box, details = selector._choose_subject_by_strategy(frame, params)
 
         assert details["type"] == "face_fallback_expanded"
         assert box == [10, 10, 100, 200]
@@ -64,7 +64,7 @@ def test_strategy_routing_with_enum():
         patch.object(selector, "_identity_first_seed", return_value=([10, 10, 20, 20], {"type": "id"})) as mock_id,
         patch.object(selector, "_object_first_seed", return_value=([10, 10, 20, 20], {"type": "obj"})) as mock_obj,
         patch.object(
-            selector, "_choose_person_by_strategy", return_value=([10, 10, 20, 20], {"type": "auto"})
+            selector, "_choose_subject_by_strategy", return_value=([10, 10, 20, 20], {"type": "auto"})
         ) as mock_auto,
     ):
         # Test Face Reference

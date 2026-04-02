@@ -198,10 +198,10 @@ class AnalysisParameters(BaseModel):
     enable_subject_mask: bool = False
     tracker_model_name: str = "sam2"
     seed_strategy: str = ""
-    person_detector_model: str = "YOLO26n"
-    person_detector_class_name: str = "person"
-    person_detector_class_id: int = 0
-    person_detector_threshold: float = 0.45
+    subject_detector_model: str = "YOLO26n"
+    subject_detector_class_name: str = "person"
+    subject_detector_class_id: int = 0
+    subject_detector_threshold: float = 0.45
     scene_detect: bool = False
     nth_frame: int = 0
     require_face_match: bool = False
@@ -328,7 +328,7 @@ class AnalysisParameters(BaseModel):
         # Post-process: Resolve COCO Class ID
         from core.enums import get_coco_id
 
-        instance.person_detector_class_id = get_coco_id(instance.person_detector_class_name)
+        instance.subject_detector_class_id = get_coco_id(instance.subject_detector_class_name)
 
         return instance
 

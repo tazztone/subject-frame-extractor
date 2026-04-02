@@ -64,7 +64,7 @@ class AppUI:
     SEED_STRATEGY_CHOICES: List[str] = ANCHOR_STRATEGIES
     FACE_MODEL_NAME_CHOICES: List[str] = ["buffalo_l", "buffalo_s"]
     TRACKER_MODEL_CHOICES: List[Tuple[str, str]] = [("sam2", "sam2"), ("sam3 (Experimental)", "sam3")]
-    PERSON_DETECTOR_MODEL_CHOICES: List[str] = [
+    SUBJECT_DETECTOR_MODEL_CHOICES: List[str] = [
         "None",
         "YOLO12l-Seg",
         "YOLO26n",
@@ -158,9 +158,9 @@ class AppUI:
             "edge_strength_base_scale",
             "pre_analysis_enabled",
             "pre_sample_nth",
-            "person_detector_model",
-            "person_detector_class_name",
-            "person_detector_threshold",
+            "subject_detector_model",
+            "subject_detector_class_name",
+            "subject_detector_threshold",
             "primary_seed_strategy",
             "compute_quality_score",
             "compute_sharpness",
@@ -193,9 +193,9 @@ class AppUI:
             "text_prompt_input",
             "best_frame_strategy_input",
             "tracker_model_name_input",
-            "person_detector_model_input",
-            "person_detector_class_input",
-            "person_detector_threshold_input",
+            "subject_detector_model_input",
+            "subject_detector_class_input",
+            "subject_detector_threshold_input",
             "propagate_masks_button",
             "seeding_results_column",
             "propagation_group",
@@ -915,7 +915,7 @@ class AppUI:
         c["stop_batch_button"].click(self.stop_batch_handler, inputs=[], outputs=[c["unified_log"]])
 
         c["find_people_button"].click(
-            self.on_find_people_from_video,
+            self.on_find_subjects_from_video,
             inputs=self.ana_input_components,
             outputs=[
                 c["unified_status"],
@@ -986,15 +986,15 @@ class AppUI:
             all_faces, labels, selected_label, state.extracted_video_path, state.extracted_frames_dir
         )
 
-    @safe_ui_callback("Face Discovery")
-    def on_find_people_from_video(self, current_state: ApplicationState, *args) -> dict:
-        """Scans the video for faces to populate the discovery gallery.
+    @safe_ui_callback("Subject Discovery")
+    def on_find_subjects_from_video(self, current_state: ApplicationState, *args) -> dict:
+        """Scans the video for subjects to populate the discovery gallery.
 
         Returns: Dictionary of component updates.
         """
         new_state = current_state.model_copy()
         c = self.components
-        self.logger.info("Scan Video for Faces clicked")
+        self.logger.info("Scan Video for Subjects clicked")
         params = self._create_pre_analysis_event(current_state, *args)
         output_dir = Path(params.output_folder)
         self.logger.info(f"Output dir: {output_dir}, exists: {output_dir.exists()}")

@@ -74,6 +74,10 @@ class PreAnalysisEvent(UIEvent):
     face_model_name: str = "buffalo_l"
     enable_subject_mask: bool = False
     tracker_model_name: str = "sam2"
+    subject_detector_model: str = "YOLO26n"
+    subject_detector_class_name: str = "person"
+    subject_detector_class_id: int = 0
+    subject_detector_threshold: float = 0.45
     best_frame_strategy: str = "sharpness"
     scene_detect: bool = True
     text_prompt: str = ""

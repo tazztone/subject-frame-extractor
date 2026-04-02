@@ -45,11 +45,11 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`extraction.py`](#-coremanagersextractionpy)  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`face.py`](#-coremanagersfacepy)  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`model_loader.py`](#-coremanagersmodel_loaderpy)  
-│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`person_detector.py`](#-coremanagersperson_detectorpy)  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`registry.py`](#-coremanagersregistrypy)  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`sam2.py`](#-coremanagerssam2py)  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`sam3.py`](#-coremanagerssam3py)  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`session.py`](#-coremanagerssessionpy)  
+│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`subject_detector.py`](#-coremanagerssubject_detectorpy)  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`thumbnails.py`](#-coremanagersthumbnailspy)  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`tracker_factory.py`](#-coremanagerstracker_factorypy)  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;[`video.py`](#-coremanagersvideopy)  
@@ -829,30 +829,10 @@ def get_face_analyzer(model_name: str, models_path: str, det_size_tuple: tuple, 
 ### `📄 core/managers/model_loader.py`
 
 ```python
-def PersonDetector(*args, **kwargs):
-    """Lazy-loading proxy for PersonDetector to satisfy both tests and onnxruntime-o..."""
 def get_lpips_metric(model_name: str='alex', device: str='cpu'):
     """Returns the LPIPS metric model."""
 def initialize_analysis_models(params: Union[dict, 'AnalysisParameters'], config: 'Config', logger: 'AppLogger', model_registry: 'ModelRegistry') -> dict:
     """Initializes all necessary analysis models based on parameters."""
-```
-
-### `📄 core/managers/person_detector.py`
-
-```python
-@dataclass
-class SubjectDetection:
-    """Standardized detection result for subject tracking."""
-    def to_dict(self) -> dict:
-        """Compatibility method for legacy SeedSelector dict-based logic."""
-PersonDetection = SubjectDetection
-class PersonDetector:
-    """GPU-accelerated subject detection and segmentation using YOLO ONNX."""
-    def __init__(self, model_path: str, logger: 'AppLogger', device: str='cuda'): ...
-    def detect(self, frame_bgr: np.ndarray, conf_threshold: float=0.45, target_class_id: int=0) -> List[SubjectDetection]:
-        """Run inference and return subject detections."""
-    def _postprocess_det(self, outputs: list, h: int, w: int, scale: float, pad_top: int, pad_left: int, conf: float, target_class_id: int) -> List[SubjectDetection]: ...
-    def _postprocess_seg(self, outputs: list, h: int, w: int, scale: float, pad_top: int, pad_left: int, conf_threshold: float, target_class_id: int) -> List[SubjectDetection]: ...
 ```
 
 ### `📄 core/managers/registry.py`
@@ -867,6 +847,8 @@ class ModelRegistry:
         """Clears all models and triggers memory cleanup."""
     def get_tracker(self, model_name: str, models_path: Optional[str]=None, user_agent: Optional[str]=None, retry_params: Optional[tuple]=None, config: Optional['Config']=None) -> Optional[Any]:
         """Loads subject tracker with CPU fallback on OOM."""
+    def get_subject_detector(self, model_name: str, model_path: str, logger: 'LoggerLike', device: str) -> Optional[Any]:
+        """Retrieves or loads a subject detector (YOLO family)."""
     def _load_tracker_impl(self, model_name: str, models_path: str, user_agent: str, retry_params: tuple, device: str, config: Optional['Config']=None): ...
 ```
 
@@ -931,6 +913,27 @@ def execute_session_load(event: 'SessionLoadEvent', logger: 'AppLogger') -> dict
     """Loads session state from disk."""
 def _load_analysis_scenes(scenes_data: List[dict], is_folder_mode: bool, include_only: bool=True) -> List[Scene]:
     """Converts raw scene data to Scene objects."""
+```
+
+### `📄 core/managers/subject_detector.py`
+
+```python
+@dataclass
+class SubjectDetection:
+    """Standardized detection result for subject tracking."""
+    def to_dict(self) -> dict:
+        """Compatibility method for legacy SeedSelector dict-based logic."""
+PersonDetection = SubjectDetection
+class SubjectDetector:
+    """GPU-accelerated subject detection and segmentation using YOLO ONNX."""
+    def __init__(self, model_path: str, logger: 'AppLogger', device: str='cuda'): ...
+    def detect(self, frame_bgr: np.ndarray, conf_threshold: float=0.45, target_class_id: int=0) -> List[SubjectDetection]:
+        """Run inference and return subject detections."""
+    def _postprocess_det(self, outputs: list, h: int, w: int, scale: float, pad_top: int, pad_left: int, conf: float, target_class_id: int) -> List[SubjectDetection]: ...
+    def _postprocess_seg(self, outputs: list, h: int, w: int, scale: float, pad_top: int, pad_left: int, conf_threshold: float, target_class_id: int) -> List[SubjectDetection]: ...
+    def close(self):
+        """Explicitly release the ONNX Runtime session."""
+    def __del__(self): ...
 ```
 
 ### `📄 core/managers/thumbnails.py`
@@ -1387,7 +1390,7 @@ class MaskPropagator:
 """SeedSelector class for selecting seed frames and bounding boxes for mask prop..."""
 class SeedSelector:
     """Selects seed frames and bounding boxes for mask propagation."""
-    def __init__(self, params: 'AnalysisParameters', config: 'Config', face_analyzer: Optional['FaceAnalysis']=None, reference_embedding: Optional[np.ndarray]=None, tracker: Optional['SAM3Wrapper']=None, person_detector: Optional['PersonDetector']=None, logger: Optional['LoggerLike']=None, device: str='cpu'):
+    def __init__(self, params: 'AnalysisParameters', config: 'Config', face_analyzer: Optional['FaceAnalysis']=None, reference_embedding: Optional[np.ndarray]=None, tracker: Optional['SAM3Wrapper']=None, subject_detector: Optional['SubjectDetector']=None, logger: Optional['LoggerLike']=None, device: str='cpu'):
         """Initialize the SeedSelector."""
     def _get_param(self, source: Union[dict, object], key: str, default: Any=None) -> Any:
         """Get a parameter from either a dict or an object."""
@@ -1398,17 +1401,17 @@ class SeedSelector:
     def _identity_first_seed(self, frame_rgb: np.ndarray, params: Union[dict, 'AnalysisParameters'], scene: Optional['Scene']=None) -> tuple[Optional[list], dict]:
         """Find subject by matching to reference face."""
     def _object_first_seed(self, frame_rgb: np.ndarray, params: Union[dict, 'AnalysisParameters'], scene: Optional['Scene']=None) -> tuple[Optional[list], dict]:
-        """Find subject using text prompt, validated by person detection."""
+        """Find subject using text prompt, validated by subject detection."""
     def _find_target_face(self, frame_rgb: np.ndarray) -> tuple[Optional[dict], dict]:
         """Find the target face in frame that matches reference embedding."""
-    def _get_person_boxes(self, frame_rgb: np.ndarray, scene: Optional['Scene']=None) -> list[dict]:
-        """Get person bounding boxes from scene cache or detection."""
+    def _get_subject_boxes(self, frame_rgb: np.ndarray, scene: Optional['Scene']=None) -> list[dict]:
+        """Get subject bounding boxes from scene cache or detection."""
     def _get_text_prompt_boxes(self, frame_rgb: np.ndarray, params: Union[dict, 'AnalysisParameters']) -> tuple[list[dict], dict]:
         """Get bounding boxes from text prompt detection."""
-    def _score_and_select_candidate(self, frame_rgb: np.ndarray, target_face: dict, person_boxes: list[dict], text_boxes: list[dict]) -> tuple[Optional[list], dict]:
+    def _score_and_select_candidate(self, frame_rgb: np.ndarray, target_face: dict, subject_boxes: list[dict], text_boxes: list[dict]) -> tuple[Optional[list], dict]:
         """Score and select the best candidate box that contains the target face."""
-    def _choose_person_by_strategy(self, frame_rgb: np.ndarray, params: Union[dict, 'AnalysisParameters'], scene: Optional['Scene']=None) -> tuple[list, dict]:
-        """Select person using configurable strategy."""
+    def _choose_subject_by_strategy(self, frame_rgb: np.ndarray, params: Union[dict, 'AnalysisParameters'], scene: Optional['Scene']=None) -> tuple[list, dict]:
+        """Select subject using configurable strategy."""
     def _load_image_from_array(self, image_rgb: np.ndarray) -> tuple[np.ndarray, torch.Tensor]:
         """Load image for model input."""
     def _calculate_iou(self, box1: list, box2: list) -> float:
@@ -1431,7 +1434,7 @@ class SeedSelector:
 """SubjectMasker class for coordinating subject detection and mask propagation."""
 class SubjectMasker:
     """Coordinates subject detection and mask propagation for video frames."""
-    def __init__(self, params: 'AnalysisParameters', progress_queue: Queue, cancel_event: threading.Event, config: 'Config', frame_map: Optional[dict]=None, face_analyzer: Optional['FaceAnalysis']=None, reference_embedding: Optional[np.ndarray]=None, thumbnail_manager: Optional['ThumbnailManager']=None, niqe_metric: Optional[Callable]=None, logger: Optional['LoggerLike']=None, face_landmarker: Optional[Any]=None, device: str='cpu', model_registry: Optional['ModelRegistry']=None, person_detector: Optional['PersonDetector']=None):
+    def __init__(self, params: 'AnalysisParameters', progress_queue: Queue, cancel_event: threading.Event, config: 'Config', frame_map: Optional[dict]=None, face_analyzer: Optional['FaceAnalysis']=None, reference_embedding: Optional[np.ndarray]=None, thumbnail_manager: Optional['ThumbnailManager']=None, niqe_metric: Optional[Callable]=None, logger: Optional['LoggerLike']=None, face_landmarker: Optional[Any]=None, device: str='cpu', model_registry: Optional['ModelRegistry']=None, subject_detector: Optional['SubjectDetector']=None):
         """Initialize SubjectMasker."""
     def initialize_models(self) -> None:
         """Initialize required models based on parameters."""
@@ -1621,9 +1624,9 @@ class AppUI:
     @safe_ui_callback('Face Selection')
     def on_discovered_face_select(self, state: ApplicationState, confidence: float, evt: Optional[gr.SelectData]=None) -> tuple[Optional[str], Optional[np.ndarray], str]:
         """Handles selection of a face cluster from the discovery gallery."""
-    @safe_ui_callback('Face Discovery')
-    def on_find_people_from_video(self, current_state: ApplicationState, *args) -> dict:
-        """Scans the video for faces to populate the discovery gallery."""
+    @safe_ui_callback('Subject Discovery')
+    def on_find_subjects_from_video(self, current_state: ApplicationState, *args) -> dict:
+        """Scans the video for subjects to populate the discovery gallery."""
     def _get_smart_mode_updates(self, is_enabled: bool) -> list[Any]:
         """Calculates slider updates when toggling 'Smart Mode'."""
     def _setup_filtering_handlers(self):

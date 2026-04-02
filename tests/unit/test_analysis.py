@@ -17,7 +17,7 @@ def test_pre_analysis_pipeline(mock_save, mock_masker, mock_init, mock_logger, m
         "face_analyzer": None,
         "ref_emb": None,
         "face_landmarker": None,
-        "person_detector": None,
+        "subject_detector": None,
     }
     params = AnalysisParameters(source_path="video.mp4", output_folder=str(tmp_path))
     tm = MagicMock()
@@ -48,7 +48,7 @@ def test_analysis_pipeline_full(mock_cfm, mock_db, mock_masker, mock_init, mock_
         "face_analyzer": None,
         "ref_emb": None,
         "face_landmarker": None,
-        "person_detector": None,
+        "subject_detector": None,
     }
     params = AnalysisParameters(source_path="video.mp4", video_path="video.mp4", output_folder=str(tmp_path))
     tm = MagicMock()
@@ -68,7 +68,7 @@ def test_analysis_pipeline_only(mock_db, mock_init, mock_logger, mock_config, tm
         "face_analyzer": None,
         "ref_emb": None,
         "face_landmarker": None,
-        "person_detector": None,
+        "subject_detector": None,
     }
     params = AnalysisParameters(source_path="video.mp4", output_folder=str(tmp_path))
     tm = MagicMock()

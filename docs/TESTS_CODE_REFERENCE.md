@@ -1176,27 +1176,33 @@ def test_load_scenes_failure(tmp_path): ...
 def test_load_scenes_success(tmp_path): ...
 @patch('core.managers.analysis.SubjectMasker')
 @patch('core.managers.analysis.initialize_analysis_models')
-def test_run_full_analysis_success(mock_init_models, mock_masker_cls, mock_deps, analysis_params, tmp_path): ...
+@patch('core.managers.analysis.Database')
+def test_run_full_analysis_success(mock_db, mock_init_models, mock_masker_cls, mock_deps, analysis_params, tmp_path): ...
 @patch('core.managers.analysis.run_operators')
 @patch('core.managers.analysis.initialize_analysis_models')
-def test_run_analysis_only_success(mock_init_models, mock_run_ops, mock_deps, analysis_params, tmp_path): ...
+@patch('core.managers.analysis.Database')
+def test_run_analysis_only_success(mock_db, mock_init_models, mock_run_ops, mock_deps, analysis_params, tmp_path): ...
 @patch('core.managers.analysis.initialize_analysis_models')
 @patch('core.managers.analysis.SubjectMasker')
 def test_pre_analysis_run_cancellation(mock_masker_cls, mock_init_models, mock_deps, analysis_params, tmp_path): ...
 @patch('core.managers.analysis.initialize_analysis_models')
-def test_analysis_run_resume_logic(mock_init_models, mock_deps, analysis_params, tmp_path): ...
+@patch('core.managers.analysis.Database')
+def test_analysis_run_resume_logic(mock_db, mock_init_models, mock_deps, analysis_params, tmp_path): ...
 @patch('core.managers.analysis.cv2.imread')
 @patch('core.managers.analysis.initialize_analysis_models')
-def test_process_reference_face_logic(mock_init_models, mock_imread, mock_deps, analysis_params, tmp_path): ...
+@patch('core.managers.analysis.Database')
+def test_process_reference_face_logic(mock_db, mock_init_models, mock_imread, mock_deps, analysis_params, tmp_path): ...
 @patch('core.managers.analysis.run_operators')
 @patch('core.managers.analysis.Database')
 def test_process_single_frame_complex_meta(mock_db, mock_run_ops, mock_deps, analysis_params, tmp_path): ...
-def test_process_single_frame_face_analysis_failure(mock_deps, analysis_params, tmp_path):
+@patch('core.managers.analysis.Database')
+def test_process_single_frame_face_analysis_failure(mock_db, mock_deps, analysis_params, tmp_path):
     """Test that face analysis failure is caught and logged."""
 @patch('core.managers.analysis.Database')
 def test_analysis_loop_batch_error(mock_db, mock_deps, analysis_params, tmp_path): ...
+@patch('core.managers.analysis.Database')
 @patch('core.managers.analysis.create_frame_map')
-def test_image_folder_analysis_trigger(mock_create_map, mock_deps, analysis_params, tmp_path): ...
+def test_image_folder_analysis_trigger(mock_create_map, mock_db, mock_deps, analysis_params, tmp_path): ...
 @patch('core.managers.analysis.Database')
 def test_filter_completed_scenes(mock_db, mock_deps, analysis_params): ...
 @patch('core.managers.analysis.Database')
@@ -2182,14 +2188,13 @@ class TestManagers:
     @patch('core.managers.face.python.BaseOptions')
     @patch('core.managers.face.vision.FaceLandmarkerOptions')
     def test_get_face_landmarker(self, mock_opts, mock_base, mock_cls, mock_logger): ...
-    @patch('core.managers.model_loader.PersonDetector')
     @patch('core.managers.model_loader.get_face_analyzer')
     @patch('core.managers.model_loader.download_model')
     @patch('pathlib.Path.exists', return_value=True)
     @patch('pathlib.Path.is_file', return_value=True)
     @patch('core.managers.model_loader.get_face_landmarker')
     @patch('cv2.imread', return_value=np.zeros((100, 100, 3)))
-    def test_initialize_analysis_models(self, mock_imread, mock_get_landmarker, mock_isfile, mock_exists, mock_download, mock_get_analyzer, mock_person_detector_cls, mock_config, mock_logger): ...
+    def test_initialize_analysis_models(self, mock_imread, mock_get_landmarker, mock_isfile, mock_exists, mock_download, mock_get_analyzer, mock_config, mock_logger): ...
     @patch('insightface.app.FaceAnalysis')
     @patch('time.sleep', return_value=None)
     def test_get_face_analyzer_retry_logic(self, mock_sleep, mock_face_analysis_cls, mock_logger): ...
@@ -2899,15 +2904,15 @@ def test_select_seed_identity_first_no_ref(selector):
     """Test identity-first strategy fallback when reference embedding is missing."""
 def test_find_target_face_error_paths(selector):
     """Test error paths in _find_target_face."""
-def test_get_person_boxes_from_scene(selector):
-    """Test getting person boxes from scene metadata."""
-def test_get_person_boxes_no_tracker(selector):
-    """Test _get_person_boxes when tracker is None."""
+def test_get_subject_boxes_from_scene(selector):
+    """Test getting subject boxes from scene metadata."""
+def test_get_subject_boxes_no_tracker(selector):
+    """Test _get_subject_boxes when tracker is None."""
 def test_get_text_prompt_boxes_error_paths(selector):
     """Test error paths in _get_text_prompt_boxes."""
-def test_choose_person_by_strategy_no_analyzer_fallback(selector):
-    """Test choose_person fallback when face_analyzer is None."""
-def test_choose_person_by_strategy_post_selection_failure(selector):
+def test_choose_subject_by_strategy_no_analyzer_fallback(selector):
+    """Test choose_subject fallback when face_analyzer is None."""
+def test_choose_subject_by_strategy_post_selection_failure(selector):
     """Test face analysis failure during post-selection."""
 def test_get_mask_for_bbox_error_paths(selector):
     """Test error paths in _get_mask_for_bbox."""
@@ -2932,10 +2937,10 @@ class TestSeedSelectorExtended:
         """OBJECT_FIRST with text prompt but no person validation."""
     def test_expand_face_to_body_edge_cases(self, selector):
         """Test expansion logic at image boundaries."""
-    def test_choose_person_by_strategy_all_variants(self, selector):
-        """Test different selection strategies in _choose_person_by_strategy."""
-    def test_choose_person_by_strategy_face_fallback(self, selector):
-        """Fallback to face detection when no people are detected."""
+    def test_choose_subject_by_strategy_all_variants(self, selector):
+        """Test different selection strategies in _choose_subject_by_strategy."""
+    def test_choose_subject_by_strategy_face_fallback(self, selector):
+        """Fallback to face detection when no subjects are detected."""
     def test_get_mask_for_bbox_torch_oom(self, selector):
         """Test OOM handling in _get_mask_for_bbox."""
 ```
@@ -2949,15 +2954,15 @@ class TestSeedSelectorStrategies:
         """Mock detection boxes: [x1, y1, x2, y2]"""
     @pytest.fixture
     def mock_frame(self): ...
-    def _get_selector(self, mock_config, mock_logger, strategy='Largest Person'): ...
-    @pytest.mark.parametrize('strategy, expected_fragment', [('Largest Person', 'largest_person'), ('Center-most Person', 'center-most_person'), ('Highest Confidence', 'highest_confidence'), ('Tallest Person', 'tallest_person'), ('Area x Confidence', 'area_x_confidence'), ('Rule-of-Thirds', 'rule-of-thirds'), ('Edge-avoiding', 'edge-avoiding'), ('Balanced', 'balanced')])
+    def _get_selector(self, mock_config, mock_logger, strategy='Largest Subject'): ...
+    @pytest.mark.parametrize('strategy, expected_fragment', [('Largest Subject', 'largest_subject'), ('Center-most Subject', 'center-most_subject'), ('Highest Confidence', 'highest_confidence'), ('Tallest Subject', 'tallest_subject'), ('Area x Confidence', 'area_x_confidence'), ('Rule-of-Thirds', 'rule-of-thirds'), ('Edge-avoiding', 'edge-avoiding'), ('Balanced', 'balanced')])
     def test_all_strategies_dispatch(self, strategy, expected_fragment, mock_frame, mock_boxes, mock_config, mock_logger): ...
     def test_seed_selector_best_face_strategy(self, mock_frame, mock_boxes, mock_config, mock_logger):
         """Test 'Best Face' strategy specifically."""
     def test_seed_selector_fallback_to_face(self, mock_frame, mock_config, mock_logger):
-        """Test fallback to face when no persons are found."""
+        """Test fallback to face when no subjects are found."""
     def test_seed_selector_final_fallback(self, mock_frame, mock_config, mock_logger):
-        """Test final fallback when neither persons nor faces are found."""
+        """Test final fallback when neither subjects nor faces are found."""
     @given(x1=st.floats(-1000, 1000), y1=st.floats(-1000, 1000), x2=st.floats(-1000, 1000), y2=st.floats(-1000, 1000))
     @settings(suppress_health_check=[HealthCheck.function_scoped_fixture], max_examples=50)
     def test_xyxy_to_xywh_robustness(self, x1, y1, x2, y2, mock_config, mock_logger):

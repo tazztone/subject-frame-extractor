@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
     from core.config import Config
     from core.logger import AppLogger, LoggerLike
-    from core.managers import ModelRegistry, PersonDetector, ThumbnailManager
+    from core.managers import ModelRegistry, SubjectDetector, ThumbnailManager
     from core.models import AnalysisParameters, Scene
     from core.progress import AdvancedProgressTracker
 
@@ -62,7 +62,7 @@ class SubjectMasker:
         face_landmarker: Optional[Any] = None,
         device: str = "cpu",
         model_registry: Optional["ModelRegistry"] = None,
-        person_detector: Optional["PersonDetector"] = None,
+        subject_detector: Optional["SubjectDetector"] = None,
     ):
         """
         Initialize SubjectMasker.
@@ -102,7 +102,7 @@ class SubjectMasker:
         self.thumbnail_manager = thumbnail_manager
         self.niqe_metric = niqe_metric
         self.model_registry = model_registry
-        self.person_detector = person_detector
+        self.subject_detector = subject_detector
 
         # Initialize child components BEFORE calling initialize_models()
         # because _initialize_tracker() may try to access self.seed_selector
@@ -112,7 +112,7 @@ class SubjectMasker:
             face_analyzer=face_analyzer,
             reference_embedding=reference_embedding,
             tracker=self.dam_tracker,  # Will be None at this point, updated later
-            person_detector=self.person_detector,
+            subject_detector=self.subject_detector,
             logger=self.logger,
             device=self._device,
         )

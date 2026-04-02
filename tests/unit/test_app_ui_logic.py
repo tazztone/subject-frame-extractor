@@ -149,7 +149,7 @@ class TestAppUI:
                 None,  # face_ref_img_upload
                 "buffalo_l",  # face_model_name
                 True,  # enable_subject_mask
-                "sam3",  # tracker_model_name
+                "sam2",  # tracker_model_name
                 "Largest",  # best_frame_strategy
                 True,  # scene_detect
                 "",  # text_prompt
@@ -158,10 +158,13 @@ class TestAppUI:
                 100.0,  # edge_strength_base_scale
                 True,  # pre_analysis_enabled
                 1,  # pre_sample_nth
+                "YOLO26n",  # subject_detector_model
+                "person",  # subject_detector_class_name
+                0.45,  # subject_detector_threshold
                 "Automatic Detection",  # primary_seed_strategy
                 True,  # compute_quality_score
                 True,  # compute_sharpness
-            ] + [True] * 12  # remaining compute_... metrics (was 11+1 due to compute_face_sim being in the list)
+            ] + [True] * 12  # remaining compute_... metrics
 
             app_state.extracted_video_path = "vid.mp4"
             app_state.analysis_output_dir = out_dir

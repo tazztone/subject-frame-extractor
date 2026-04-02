@@ -4,6 +4,7 @@ SeedSelector class for selecting seed frames and bounding boxes for mask propaga
 
 from __future__ import annotations
 
+import logging
 import math
 from typing import TYPE_CHECKING, Any, Optional, Union, cast
 
@@ -16,7 +17,7 @@ if TYPE_CHECKING:
 
     from core.config import Config
     from core.logger import LoggerLike
-    from core.managers import PersonDetector, SAM3Wrapper
+    from core.managers import SAM3Wrapper, SubjectDetector
     from core.models import AnalysisParameters, Scene
 
 from core.enums import SeedStrategy
@@ -46,7 +47,7 @@ class SeedSelector:
         face_analyzer: Optional["FaceAnalysis"] = None,
         reference_embedding: Optional[np.ndarray] = None,
         tracker: Optional["SAM3Wrapper"] = None,
-        person_detector: Optional["PersonDetector"] = None,
+        subject_detector: Optional["SubjectDetector"] = None,
         logger: Optional["LoggerLike"] = None,
         device: str = "cpu",
     ):
@@ -67,10 +68,8 @@ class SeedSelector:
         self.face_analyzer = face_analyzer
         self.reference_embedding = reference_embedding
         self.tracker = tracker
-        self.person_detector = person_detector
+        self.subject_detector = subject_detector
         self._device = device
-        import logging
-
         self.logger: LoggerLike = logger or logging.getLogger("app_logger")
 
     def _get_param(self, source: Union[dict, object], key: str, default: Any = None) -> Any:
@@ -116,7 +115,7 @@ class SeedSelector:
             box, details = self._face_with_text_fallback_seed(frame_rgb, p, scene)
         else:
             log_with_component(self.logger, "info", f"Starting '{SeedStrategy.AUTOMATIC.value}' seeding.")
-            box, details = self._choose_person_by_strategy(frame_rgb, p, scene)
+            box, details = self._choose_subject_by_strategy(frame_rgb, p, scene)
 
         # Centralized tracker interaction
         if box is not None and self.tracker is not None:
@@ -160,9 +159,9 @@ class SeedSelector:
         if not target_face:
             log_with_component(self.logger, "warning", "Target face not found in scene.", extra=details)
             return None, {"type": "no_subject_found"}
-        person_boxes = self._get_person_boxes(frame_rgb, scene)
+        subject_boxes = self._get_subject_boxes(frame_rgb, scene)
         text_boxes = self._get_text_prompt_boxes(frame_rgb, params)[0]
-        best_box, best_details = self._score_and_select_candidate(frame_rgb, target_face, person_boxes, text_boxes)
+        best_box, best_details = self._score_and_select_candidate(frame_rgb, target_face, subject_boxes, text_boxes)
         if best_box:
             # Propagate face similarity if available
             if "seed_face_sim" in details:
@@ -182,14 +181,14 @@ class SeedSelector:
     def _object_first_seed(
         self, frame_rgb: np.ndarray, params: Union[dict, "AnalysisParameters"], scene: Optional["Scene"] = None
     ) -> tuple[Optional[list], dict]:
-        """Find subject using text prompt, validated by person detection."""
+        """Find subject using text prompt, validated by subject detection."""
         text_boxes, text_details = self._get_text_prompt_boxes(frame_rgb, params)
         if text_boxes:
-            person_boxes = self._get_person_boxes(frame_rgb, scene)
-            if person_boxes:
+            subject_boxes = self._get_subject_boxes(frame_rgb, scene)
+            if subject_boxes:
                 best_iou, best_match = -1, None
                 for d_box in text_boxes:
-                    for y_box in person_boxes:
+                    for y_box in subject_boxes:
                         iou = self._calculate_iou(d_box["bbox"], y_box["bbox"])
                         if iou > best_iou:
                             best_iou = iou
@@ -198,15 +197,15 @@ class SeedSelector:
                                 "type": "sam3_intersect",
                                 "iou": iou,
                                 "text_conf": d_box["conf"],
-                                "person_conf": y_box["conf"],
+                                "subject_conf": y_box["conf"],
                             }
                 if best_match and best_match["iou"] > self.config.seeding_iou_threshold:
                     log_with_component(self.logger, "info", "Found high-confidence intersection.", extra=best_match)
                     return self._xyxy_to_xywh(best_match["bbox"], frame_rgb.shape), best_match
             log_with_component(self.logger, "info", "Using best text box without validation.", extra=text_details)
             return self._xyxy_to_xywh(text_boxes[0]["bbox"], frame_rgb.shape), text_details
-        log_with_component(self.logger, "info", "No text results, falling back to person-only strategy.")
-        return self._choose_person_by_strategy(frame_rgb, params, scene)
+        log_with_component(self.logger, "info", "No text results, falling back to subject-only strategy.")
+        return self._choose_subject_by_strategy(frame_rgb, params, scene)
 
     def _find_target_face(self, frame_rgb: np.ndarray) -> tuple[Optional[dict], dict]:
         """Find the target face in frame that matches reference embedding."""
@@ -234,8 +233,8 @@ class SeedSelector:
             }
         return None, {"error": "no_matching_face", "best_sim": best_sim}
 
-    def _get_person_boxes(self, frame_rgb: np.ndarray, scene: Optional["Scene"] = None) -> list[dict]:
-        """Get person bounding boxes from scene cache or detection."""
+    def _get_subject_boxes(self, frame_rgb: np.ndarray, scene: Optional["Scene"] = None) -> list[dict]:
+        """Get subject bounding boxes from scene cache or detection."""
         if scene and getattr(scene, "person_detections", None):
             return scene.person_detections
         if scene and (scene.selected_bbox or scene.initial_bbox):
@@ -246,7 +245,7 @@ class SeedSelector:
                 return [{"bbox": xyxy, "conf": 1.0, "type": "selected"}]
         if self.tracker:
             try:
-                class_name = getattr(self.params, "person_detector_class_name", "person")
+                class_name = getattr(self.params, "subject_detector_class_name", "person")
                 results = self.tracker.detect_objects(frame_rgb, class_name)
                 if results:
                     return results
@@ -255,11 +254,11 @@ class SeedSelector:
                     self.logger, "warning", f"Tracker-native {class_name} detection failed.", exc_info=True
                 )
 
-        if self.person_detector:
+        if self.subject_detector:
             try:
-                conf_thresh = getattr(self.params, "person_detector_threshold", 0.45)
-                class_id = getattr(self.params, "person_detector_class_id", 0)
-                detections = self.person_detector.detect(
+                conf_thresh = getattr(self.params, "subject_detector_threshold", 0.45)
+                class_id = getattr(self.params, "subject_detector_class_id", 0)
+                detections = self.subject_detector.detect(
                     cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR), conf_threshold=conf_thresh, target_class_id=class_id
                 )
                 if detections:
@@ -295,10 +294,10 @@ class SeedSelector:
         return results, {**results[0], "all_boxes_count": len(results)}
 
     def _score_and_select_candidate(
-        self, frame_rgb: np.ndarray, target_face: dict, person_boxes: list[dict], text_boxes: list[dict]
+        self, frame_rgb: np.ndarray, target_face: dict, subject_boxes: list[dict], text_boxes: list[dict]
     ) -> tuple[Optional[list], dict]:
         """Score and select the best candidate box that contains the target face."""
-        candidates = person_boxes + text_boxes
+        candidates = subject_boxes + text_boxes
         if not candidates:
             return None, {}
         scored_candidates = []
@@ -313,7 +312,7 @@ class SeedSelector:
 
         # Bonus for high IoU between person and text boxes
         best_iou, best_pair = -1, None
-        for y_box in person_boxes:
+        for y_box in subject_boxes:
             for d_box in text_boxes:
                 iou = self._calculate_iou(y_box["bbox"], d_box["bbox"])
                 if iou > best_iou:
@@ -333,11 +332,11 @@ class SeedSelector:
             **winner["details"],
         }
 
-    def _choose_person_by_strategy(
+    def _choose_subject_by_strategy(
         self, frame_rgb: np.ndarray, params: Union[dict, "AnalysisParameters"], scene: Optional["Scene"] = None
     ) -> tuple[list, dict]:
-        """Select person using configurable strategy."""
-        boxes = self._get_person_boxes(frame_rgb, scene)
+        """Select subject using configurable strategy."""
+        boxes = self._get_subject_boxes(frame_rgb, scene)
         if not boxes:
             # Fallback: try face detection -> expand to body box
             if self.face_analyzer:
@@ -350,25 +349,25 @@ class SeedSelector:
                     else:
                         best_face = max(faces, key=lambda f: f.det_score)
                     expanded = self._expand_face_to_body(best_face.bbox.astype(int), frame_rgb.shape)
-                    log_with_component(self.logger, "info", "Used face-detection fallback for person seeding")
+                    log_with_component(self.logger, "info", "Used face-detection fallback for subject seeding")
                     return expanded, {
                         "type": "face_fallback_expanded",
                         "face_conf": float(best_face.det_score),
                         "detection_attempted": True,
                     }
 
-            log_with_component(self.logger, "warning", "No people detected in scene - using fallback region")
+            log_with_component(self.logger, "warning", "No subjects detected in scene - using fallback region")
             fallback_box = self._final_fallback_box(frame_rgb.shape)
             return fallback_box, {
-                "type": "no_people_fallback",
-                "reason": "No people detected in best frame",
+                "type": "no_subjects_fallback",
+                "reason": "No subjects detected in best frame",
                 "detection_attempted": True,
             }
-        class_id = getattr(params, "person_detector_class_id", 0)
+        class_id = getattr(params, "subject_detector_class_id", 0)
         strategy = getattr(params, "seed_strategy", "Largest Subject")
         if isinstance(params, dict):
             strategy = params.get("seed_strategy", strategy)
-            class_id = params.get("person_detector_class_id", class_id)
+            class_id = params.get("subject_detector_class_id", class_id)
 
         is_person = class_id == 0
         h, w = frame_rgb.shape[:2]

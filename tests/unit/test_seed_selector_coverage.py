@@ -76,24 +76,24 @@ def test_find_target_face_error_paths(selector):
     assert details["error"] == "reference_embedding_not_initialized"
 
 
-def test_get_person_boxes_from_scene(selector):
-    """Test getting person boxes from scene metadata."""
+def test_get_subject_boxes_from_scene(selector):
+    """Test getting subject boxes from scene metadata."""
     scene = MagicMock()
     scene.person_detections = [{"bbox": [0, 0, 10, 10], "conf": 1.0}]
-    res = selector._get_person_boxes(np.zeros((10, 10, 3)), scene)
+    res = selector._get_subject_boxes(np.zeros((10, 10, 3)), scene)
     assert res == scene.person_detections
 
     # From selected_bbox
     scene.person_detections = None
     scene.selected_bbox = [0, 0, 5, 5]
-    res = selector._get_person_boxes(np.zeros((10, 10, 3)), scene)
+    res = selector._get_subject_boxes(np.zeros((10, 10, 3)), scene)
     assert res[0]["bbox"] == [0, 0, 5, 5]
 
 
-def test_get_person_boxes_no_tracker(selector):
-    """Test _get_person_boxes when tracker is None."""
+def test_get_subject_boxes_no_tracker(selector):
+    """Test _get_subject_boxes when tracker is None."""
     selector.tracker = None
-    assert selector._get_person_boxes(np.zeros((10, 10, 3))) == []
+    assert selector._get_subject_boxes(np.zeros((10, 10, 3))) == []
 
 
 def test_get_text_prompt_boxes_error_paths(selector):
@@ -112,17 +112,17 @@ def test_get_text_prompt_boxes_error_paths(selector):
     assert "SAM3 Fail" in details["error"]
 
 
-def test_choose_person_by_strategy_no_analyzer_fallback(selector):
-    """Test choose_person fallback when face_analyzer is None."""
+def test_choose_subject_by_strategy_no_analyzer_fallback(selector):
+    """Test choose_subject fallback when face_analyzer is None."""
     selector.tracker = MagicMock()
     selector.tracker.detect_objects.return_value = []
     selector.face_analyzer = None
 
-    res_box, details = selector._choose_person_by_strategy(np.zeros((100, 100, 3), dtype=np.uint8), {})
-    assert details["type"] == "no_people_fallback"
+    res_box, details = selector._choose_subject_by_strategy(np.zeros((100, 100, 3), dtype=np.uint8), {})
+    assert details["type"] == "no_subjects_fallback"
 
 
-def test_choose_person_by_strategy_post_selection_failure(selector):
+def test_choose_subject_by_strategy_post_selection_failure(selector):
     """Test face analysis failure during post-selection."""
     selector.tracker = MagicMock()
     selector.tracker.detect_objects.return_value = [{"bbox": [0, 0, 10, 10], "conf": 0.9, "type": "person"}]
@@ -131,7 +131,7 @@ def test_choose_person_by_strategy_post_selection_failure(selector):
     selector.reference_embedding = np.random.rand(512)
 
     # Should still succeed but with no seed_face_sim
-    res_box, details = selector._choose_person_by_strategy(np.zeros((100, 100, 3), dtype=np.uint8), {})
+    res_box, details = selector._choose_subject_by_strategy(np.zeros((100, 100, 3), dtype=np.uint8), {})
     assert details["seed_face_sim"] is None
 
 

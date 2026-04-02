@@ -22,7 +22,7 @@ class TestSeedSelectorStrategies:
     def mock_frame(self):
         return np.zeros((500, 500, 3), dtype=np.uint8)
 
-    def _get_selector(self, mock_config, mock_logger, strategy="Largest Person"):
+    def _get_selector(self, mock_config, mock_logger, strategy="Largest Subject"):
         params_dict = {
             "primary_seed_strategy": strategy,
             "seed_strategy": strategy,  # SeedSelector uses getattr(params, "seed_strategy", ...) or params.get("seed_strategy", ...)
@@ -35,10 +35,10 @@ class TestSeedSelectorStrategies:
     @pytest.mark.parametrize(
         "strategy, expected_fragment",
         [
-            ("Largest Person", "largest_person"),
-            ("Center-most Person", "center-most_person"),
+            ("Largest Subject", "largest_subject"),
+            ("Center-most Subject", "center-most_subject"),
             ("Highest Confidence", "highest_confidence"),
-            ("Tallest Person", "tallest_person"),
+            ("Tallest Subject", "tallest_subject"),
             ("Area x Confidence", "area_x_confidence"),
             ("Rule-of-Thirds", "rule-of-thirds"),
             ("Edge-avoiding", "edge-avoiding"),
@@ -77,7 +77,7 @@ class TestSeedSelectorStrategies:
         assert "best_face" in result_meta["type"]
 
     def test_seed_selector_fallback_to_face(self, mock_frame, mock_config, mock_logger):
-        """Test fallback to face when no persons are found."""
+        """Test fallback to face when no subjects are found."""
         selector = self._get_selector(mock_config, mock_logger)
         selector.tracker = MagicMock()
         selector.tracker.detect_objects.return_value = []  # No persons
@@ -95,7 +95,7 @@ class TestSeedSelectorStrategies:
         assert "face_fallback" in result_meta["type"]
 
     def test_seed_selector_final_fallback(self, mock_frame, mock_config, mock_logger):
-        """Test final fallback when neither persons nor faces are found."""
+        """Test final fallback when neither subjects nor faces are found."""
         selector = self._get_selector(mock_config, mock_logger)
         selector.tracker = MagicMock()
         selector.tracker.detect_objects.return_value = []
@@ -105,7 +105,7 @@ class TestSeedSelectorStrategies:
         result_box, result_meta = selector.select_seed(mock_frame)
 
         assert result_box is not None
-        assert "no_people_fallback" in result_meta["type"]
+        assert "no_subjects_fallback" in result_meta["type"]
 
     @given(
         x1=st.floats(-1000, 1000),

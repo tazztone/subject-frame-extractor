@@ -99,9 +99,9 @@ class Config(BaseSettings):
     default_tracker_model_name: str = "sam2"
     default_primary_seed_strategy: str = "Automatic Detection"
     default_seed_strategy: str = "Largest Subject"
-    default_person_detector_model: str = "YOLO26n"
-    default_person_detector_class: str = "person"
-    default_person_detector_threshold: float = 0.45
+    default_subject_detector_model: str = "YOLO26n"
+    default_subject_detector_class: str = "person"
+    default_subject_detector_threshold: float = 0.45
     default_text_prompt: str = "a person"
     default_resume: bool = False
     default_require_face_match: bool = False

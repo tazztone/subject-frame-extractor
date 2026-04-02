@@ -34,7 +34,7 @@ class SubjectDetection:
 PersonDetection = SubjectDetection
 
 
-class PersonDetector:
+class SubjectDetector:
     """GPU-accelerated subject detection and segmentation using YOLO ONNX."""
 
     def __init__(self, model_path: str, logger: "AppLogger", device: str = "cuda"):
@@ -184,3 +184,12 @@ class PersonDetector:
             )
 
         return results
+
+    def close(self):
+        """Explicitly release the ONNX Runtime session."""
+        if hasattr(self, "session"):
+            del self.session
+            self.logger.debug("SubjectDetector ONNX session released.")
+
+    def __del__(self):
+        self.close()

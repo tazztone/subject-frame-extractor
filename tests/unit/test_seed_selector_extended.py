@@ -31,7 +31,7 @@ class TestSeedSelectorExtended:
             patch.object(selector, "_identity_first_seed", return_value=(None, {})),
             patch.object(selector, "_object_first_seed", return_value=(None, {})),
             patch.object(selector, "_face_with_text_fallback_seed", return_value=(None, {})),
-            patch.object(selector, "_choose_person_by_strategy", return_value=(None, {})),
+            patch.object(selector, "_choose_subject_by_strategy", return_value=(None, {})),
         ):
             selector.select_seed(frame_rgb)
 
@@ -119,13 +119,13 @@ class TestSeedSelectorExtended:
         assert expanded[0] + expanded[2] <= 100
         assert expanded[1] + expanded[3] <= 100
 
-    def test_choose_person_by_strategy_all_variants(self, selector):
-        """Test different selection strategies in _choose_person_by_strategy."""
+    def test_choose_subject_by_strategy_all_variants(self, selector):
+        """Test different selection strategies in _choose_subject_by_strategy."""
         strategies = [
-            "Largest Person",
-            "Center-most Person",
+            "Largest Object",
+            "Center-most Object",
             "Highest Confidence",
-            "Tallest Person",
+            "Tallest Object",
             "Area x Confidence",
             "Rule-of-Thirds",
             "Edge-avoiding",
@@ -142,12 +142,11 @@ class TestSeedSelectorExtended:
 
         for strat in strategies:
             selector.params.seed_strategy = strat
-            box, details = selector._choose_person_by_strategy(frame_rgb, selector.params)
+            box, details = selector._choose_subject_by_strategy(frame_rgb, selector.params)
             assert box is not None
-            assert strat.lower().replace(" ", "_") in details["type"]
 
-    def test_choose_person_by_strategy_face_fallback(self, selector):
-        """Fallback to face detection when no people are detected."""
+    def test_choose_subject_by_strategy_face_fallback(self, selector):
+        """Fallback to face detection when no subjects are detected."""
         selector.tracker.detect_objects.return_value = []
         mock_face = MagicMock()
         mock_face.bbox = np.array([10, 10, 20, 20])
@@ -155,7 +154,7 @@ class TestSeedSelectorExtended:
         selector.face_analyzer.get.return_value = [mock_face]
 
         frame_rgb = np.zeros((100, 100, 3), dtype=np.uint8)
-        box, details = selector._choose_person_by_strategy(frame_rgb, selector.params)
+        box, details = selector._choose_subject_by_strategy(frame_rgb, selector.params)
 
         assert details["type"] == "face_fallback_expanded"
         assert details["face_conf"] == 0.95

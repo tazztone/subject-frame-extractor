@@ -109,7 +109,7 @@ class PreAnalysisPipeline(Pipeline):
             face_landmarker=models["face_landmarker"],
             device=models["device"],
             model_registry=self.model_registry,
-            person_detector=models["person_detector"],
+            subject_detector=models["subject_detector"],
         )
         masker.frame_map = masker._create_frame_map(str(self.output_dir))
 
@@ -208,6 +208,7 @@ class AnalysisPipeline(Pipeline):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.thumbnail_manager = thumbnail_manager
         self.model_registry = model_registry
+        self.subject_detector = None
         self.loaded_models = loaded_models
         OperatorRegistry.initialize_all(self.config)
 
@@ -267,6 +268,7 @@ class AnalysisPipeline(Pipeline):
                 face_landmarker=self.face_landmarker,
                 device=models["device"],
                 model_registry=self.model_registry,
+                subject_detector=models["subject_detector"],
             )
             self.mask_metadata = masker.run_propagation(str(self.output_dir), scenes_to_process, tracker=tracker)
             completed_scene_ids = [s.shot_id for s in scenes_to_process]

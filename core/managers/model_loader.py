@@ -18,13 +18,6 @@ if TYPE_CHECKING:
     from .registry import ModelRegistry
 
 
-def PersonDetector(*args, **kwargs):
-    """Lazy-loading proxy for PersonDetector to satisfy both tests and onnxruntime-optional environments."""
-    from .person_detector import PersonDetector as RealDetector
-
-    return RealDetector(*args, **kwargs)
-
-
 def get_lpips_metric(model_name: str = "alex", device: str = "cpu"):
     """Returns the LPIPS metric model."""
     return lpips.LPIPS(net=model_name).to(device)
@@ -81,8 +74,8 @@ def initialize_analysis_models(
 
     # Person Detector
     person_detector = None
-    if params.person_detector_model and params.person_detector_model != "None":
-        model_name = params.person_detector_model
+    if params.subject_detector_model and params.subject_detector_model != "None":
+        model_name = params.subject_detector_model
 
         # Map model name to config URL
         url_map = {
@@ -101,7 +94,7 @@ def initialize_analysis_models(
                 "face_analyzer": face_analyzer,
                 "ref_emb": ref_emb,
                 "face_landmarker": face_landmarker,
-                "person_detector": None,
+                "subject_detector": None,
                 "device": device,
             }
 
@@ -117,12 +110,12 @@ def initialize_analysis_models(
         )
 
         if model_path.exists():
-            person_detector = PersonDetector(str(model_path), logger, device=device)
+            person_detector = model_registry.get_subject_detector(model_name, str(model_path), logger, device)
 
     return {
         "face_analyzer": face_analyzer,
         "ref_emb": ref_emb,
         "face_landmarker": face_landmarker,
-        "person_detector": person_detector,
+        "subject_detector": person_detector,
         "device": device,
     }
