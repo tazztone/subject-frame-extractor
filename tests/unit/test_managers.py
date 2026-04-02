@@ -323,8 +323,8 @@ class TestManagers:
         params.compute_face_sim = True
         params.face_model_name = "buffalo_l"
         params.face_ref_img_path = "ref.jpg"
-        params.subject_detector_model = "YOLO26n"
-        params.model_dump.return_value = {"subject_detector_model": "YOLO26n"}
+        params.subject_detector_model = "YOLO12l-Seg"
+        params.model_dump.return_value = {"subject_detector_model": "YOLO12l-Seg"}
 
         model_registry = MagicMock()
 

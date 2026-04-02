@@ -158,7 +158,7 @@ class TestAppUI:
                 100.0,  # edge_strength_base_scale
                 True,  # pre_analysis_enabled
                 1,  # pre_sample_nth
-                "YOLO26n",  # subject_detector_model
+                "YOLO12l-Seg",  # subject_detector_model
                 "person",  # subject_detector_class_name
                 0.45,  # subject_detector_threshold
                 "Automatic Detection",  # primary_seed_strategy

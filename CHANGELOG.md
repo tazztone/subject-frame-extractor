@@ -2,6 +2,18 @@
 
 All notable changes to the Subject Frame Extractor project.
 
+## [1.7.0] - 2026-04-02
+### Added
+- **Multi-Class Subject Architecture**: Transitioned the entire detection and analysis pipeline from "person-only" to a flexible, COCO-compliant "Subject" system supporting all 80 YOLO classes.
+- **Dynamic Class Selection**: Added a "Subject Class" dropdown to the UI, allowing users to target specific object types (e.g., cars, dogs, bicycles) for tracking.
+- **YOLO26 Family Support**: Integrated the full YOLO26 model family (n, s, m, l, x) into the subject detection stage.
+
+### Changed
+- **Nomenclature Synchronization**: Standardized on "Subject" terminology across the entire codebase, including Pydantic models, managers, events, and Gradio UI components.
+- **Core Refactor**: Renamed the `PersonDetector` class to `SubjectDetector` and migrated its logic to `core/managers/subject_detector.py`.
+- **UI Labeling**: Updated all "Person" references in the interface to "Subject" for architectural consistency.
+- **Test Infrastructure Sync**: Updated all E2E Playwright locators and regenerated visual regression baselines to align with the new nomenclature and layout.
+
 ## [1.6.0] - 2026-03-31
 ### Added
 - **Performance Optimization Suite**: Comprehensive audit and refactor of core processing pipelines.

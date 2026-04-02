@@ -503,7 +503,7 @@ def mock_ui_state():
         "face_model_name": "ghostface",
         "enable_subject_mask": False,
         "tracker_model_name": "sam2",
-        "subject_detector_model": "YOLO26n",
+        "subject_detector_model": "YOLO12l-Seg",
         "subject_detector_class_name": "person",
         "subject_detector_class_id": 0,
         "subject_detector_threshold": 0.45,
