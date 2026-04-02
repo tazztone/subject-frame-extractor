@@ -109,7 +109,6 @@ def test_get_tracker_oom_fallback(registry, mock_config):
     with (
         patch.object(registry, "_load_tracker_impl") as mock_load,
         patch("core.managers.registry.torch.cuda.is_available", return_value=True, create=True),
-        patch("core.managers.registry.torch.cuda.empty_cache") as mock_empty,
     ):
         # First call raises OOM
         mock_load.side_effect = [torch.cuda.OutOfMemoryError("CUDA out of memory"), MagicMock(name="CPUTracker")]
@@ -127,4 +126,3 @@ def test_get_tracker_oom_fallback(registry, mock_config):
         # Check that first call was cuda and second was cpu
         assert mock_load.call_args_list[0][0][4] == "cuda"
         assert mock_load.call_args_list[1][0][4] == "cpu"
-        assert mock_empty.called

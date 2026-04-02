@@ -33,10 +33,12 @@ tests
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;scenes.json  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;thumbs  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_gpu_e2e.py`](#-testsintegrationtest_gpu_e2epy)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_gpu_health.py`](#-testsintegrationtest_gpu_healthpy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_integration_smoke.py`](#-testsintegrationtest_integration_smokepy)  
 │&nbsp;&nbsp;&nbsp;└──&nbsp;[`test_real_workflow.py`](#-testsintegrationtest_real_workflowpy)  
 ├──&nbsp;[`mock_app.py`](#-testsmock_apppy)  
 ├──&nbsp;regression  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_pre_analysis_hang.py`](#-testsregressiontest_pre_analysis_hangpy)  
 │&nbsp;&nbsp;&nbsp;└──&nbsp;[`test_robustness.py`](#-testsregressiontest_robustnesspy)  
 ├──&nbsp;research  
 │&nbsp;&nbsp;&nbsp;└──&nbsp;[`test_debug_sam3.py`](#-testsresearchtest_debug_sam3py)  
@@ -481,6 +483,19 @@ class TestMaskGenerationE2E:
         """Test the full pre-analysis flow including mask generation."""
 ```
 
+### `📄 tests/integration/test_gpu_health.py`
+
+```python
+def test_torch_cuda_health():
+    """Verify Torch can talk to the GPU."""
+def test_onnx_cuda_health():
+    """Verify ONNXRuntime can actually load CUDA providers and their shared libraries."""
+def test_niqe_cuda_health():
+    """Verify pyiqa NIQE metric can run on GPU."""
+def test_gpu_coexistence():
+    """Verify Torch (NIQE) and ONNX (YOLO) can run in the same process/thread."""
+```
+
 ### `📄 tests/integration/test_integration_smoke.py`
 
 ```python
@@ -573,6 +588,16 @@ core.photo_utils.ingest_folder = mock_ingest_folder
 core.xmp_writer.export_xmps_for_photos = mock_export_xmps_for_photos
 core.utils.download_model = MagicMock()
 core.managers.download_model = MagicMock()
+```
+
+### `📄 tests/regression/test_pre_analysis_hang.py`
+
+```python
+@pytest.fixture(scope='module')
+def real_app_url():
+    """Start the real app and return the URL."""
+def test_reproduce_hang_workflow(page: Page, real_app_url: str):
+    """Test the pre-analysis workflow in the real app to reproduce and verify the ha..."""
 ```
 
 ### `📄 tests/regression/test_robustness.py`
@@ -2700,8 +2725,7 @@ def test_sam2_wrapper_add_point_prompt(mock_build, mock_predictor): ...
 def test_sam2_wrapper_stubs_and_utility(mock_build, mock_predictor): ...
 @patch('core.managers.sam2.build_sam2_video_predictor')
 @patch('core.managers.sam2.torch.cuda.is_available', return_value=True, create=True)
-@patch('core.managers.sam2.torch.cuda.empty_cache')
-def test_sam2_wrapper_shutdown(mock_empty_cache, mock_cuda, mock_build, mock_predictor): ...
+def test_sam2_wrapper_shutdown(mock_cuda, mock_build, mock_predictor): ...
 ```
 
 ### `📄 tests/unit/test_sam3_import.py`

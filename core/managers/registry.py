@@ -124,7 +124,6 @@ class ModelRegistry:
             except RuntimeError as e:
                 if "out of memory" in str(e) and device == "cuda":
                     self.logger.warning("CUDA OOM during tracker init. Switching to CPU.")
-                    torch.cuda.empty_cache()
                     self.runtime_device_override = "cpu"
                     return self._load_tracker_impl(model_name, _models_path, _user_agent, _retry_params, "cpu", _config)
                 raise e

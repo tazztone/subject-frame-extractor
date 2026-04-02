@@ -103,6 +103,8 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 ├──&nbsp;htmlcov  
 │&nbsp;&nbsp;&nbsp;└──&nbsp;status.json  
 ├──&nbsp;outputs  
+│&nbsp;&nbsp;&nbsp;└──&nbsp;reproduce_test  
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└──&nbsp;thumbs  
 ├──&nbsp;previews  
 ├──&nbsp;scripts  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;jules_setup_script.sh  
@@ -147,10 +149,12 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;scenes.json  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;thumbs  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_gpu_e2e.py  
+│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_gpu_health.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_integration_smoke.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;test_real_workflow.py  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;mock_app.py  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;regression  
+│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_pre_analysis_hang.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;test_robustness.py  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;research  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;test_debug_sam3.py  
@@ -1431,6 +1435,8 @@ class SubjectMasker:
         """Initialize SubjectMasker."""
     def initialize_models(self) -> None:
         """Initialize required models based on parameters."""
+    def initialize_tracker_session(self, frames_dir: str) -> bool:
+        """Initialize a tracking session for a specific directory of frames."""
     def _initialize_tracker(self) -> bool:
         """Initialize the SAM3 tracker."""
     def run_propagation(self, frames_dir: str, scenes_to_process: list['Scene'], tracker: Optional['AdvancedProgressTracker']=None) -> dict:

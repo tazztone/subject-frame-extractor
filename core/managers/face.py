@@ -64,10 +64,7 @@ def get_face_analyzer(
             logger.success(f"Face model loaded with {'CUDA' if is_cuda else 'CPU'}.")
             return analyzer
         except Exception as e:
-            import torch
-
             if "out of memory" in str(e) and device == "cuda":
-                torch.cuda.empty_cache()
                 logger.warning("CUDA OOM, retrying with CPU...")
                 try:
                     analyzer = FaceAnalysis(name=model_name, root=models_path, providers=["CPUExecutionProvider"])

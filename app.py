@@ -10,6 +10,14 @@ from pathlib import Path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
+try:
+    import onnxruntime as ort
+
+    if hasattr(ort, "preload_dlls"):
+        ort.preload_dlls()
+except ImportError:
+    pass
+
 import gc
 import threading
 from queue import Queue

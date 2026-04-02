@@ -75,43 +75,70 @@ def handle_common_errors(func: Callable) -> Callable:
     def wrapper(*args, **kwargs):
         is_gen = inspect.isgeneratorfunction(func)
 
+        # Try to find logger in args or kwargs
+        logger = kwargs.get("logger")
+        if not logger:
+            for arg in args:
+                if hasattr(arg, "critical") and hasattr(arg, "error"):
+                    logger = arg
+                    break
+
         if is_gen:
 
             def gen_wrapper():
                 try:
                     yield from func(*args, **kwargs)
                 except FileNotFoundError as e:
+                    msg = f"File not found: {e}"
+                    if logger:
+                        logger.error(msg)
                     yield {
-                        "log": f"[ERROR] File not found: {e}",
+                        "log": f"[ERROR] {msg}",
                         "status_message": "File not found",
                         "error_message": str(e),
                         "done": False,
                     }
                 except (ValueError, TypeError) as e:
+                    msg = f"Invalid input: {e}"
+                    if logger:
+                        logger.error(msg)
                     yield {
-                        "log": f"[ERROR] Invalid input: {e}",
+                        "log": f"[ERROR] {msg}",
                         "status_message": "Invalid input",
                         "error_message": str(e),
                         "done": False,
                     }
                 except RuntimeError as e:
                     if "CUDA out of memory" in str(e):
+                        msg = "CUDA OOM"
+                        if logger:
+                            logger.error(msg)
                         yield {
-                            "log": "[ERROR] CUDA OOM",
+                            "log": f"[ERROR] {msg}",
                             "status_message": "GPU memory error",
                             "error_message": "CUDA out of memory",
                             "done": False,
                         }
                     else:
+                        msg = f"Runtime error: {e}"
+                        if logger:
+                            logger.error(msg)
                         yield {
-                            "log": f"[ERROR] Runtime error: {e}",
+                            "log": f"[ERROR] {msg}",
                             "status_message": "Processing error",
                             "error_message": str(e),
                             "done": False,
                         }
                 except Exception as e:
+                    import traceback
+
+                    msg = f"Unexpected error: {e}\n{traceback.format_exc()}"
+                    if logger:
+                        logger.critical(msg)
+                    else:
+                        print(f"CRITICAL: {msg}")
                     yield {
-                        "log": f"[CRITICAL] Unexpected error: {e}\n{traceback.format_exc()}",
+                        "log": f"[CRITICAL] {msg}",
                         "status_message": "Critical error",
                         "error_message": str(e),
                         "done": False,

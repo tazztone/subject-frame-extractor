@@ -144,6 +144,26 @@ class SubjectMasker:
         ):
             self._initialize_tracker()
 
+    def initialize_tracker_session(self, frames_dir: str) -> bool:
+        """
+        Initialize a tracking session for a specific directory of frames.
+
+        Args:
+            frames_dir: Directory containing frames or a video path
+
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self._initialize_tracker():
+            return False
+        if self.dam_tracker:
+            try:
+                self.dam_tracker.init_video(frames_dir)
+                return True
+            except Exception as e:
+                log_with_component(self.logger, "error", f"Failed to initialize tracker session for {frames_dir}: {e}")
+        return False
+
     def _initialize_tracker(self) -> bool:
         """
         Initialize the SAM3 tracker.
@@ -402,33 +422,55 @@ class SubjectMasker:
             return
 
         candidates = shot_frames[:: max(1, self.params.pre_sample_nth)]
+        self.logger.info(f"Analyzing {len(candidates)} candidate frames for scene {scene.shot_id}...")
+
         scores = []
         niqe_score = 10.0
         face_sim = 0.0
 
-        for frame_num, thumb_rgb, _ in candidates:
+        for i, (frame_num, thumb_rgb, _) in enumerate(candidates):
+            self.logger.info(f"  [Progress] Candidate {i + 1}/{len(candidates)} (Frame {frame_num})")
+
             niqe_score = 10.0
             if self.niqe_metric:
-                img_tensor = torch.from_numpy(thumb_rgb).float().permute(2, 0, 1).unsqueeze(0) / 255.0
-                with torch.no_grad(), torch.cuda.amp.autocast(enabled=self._device == "cuda"):
-                    niqe_score = float(self.niqe_metric(img_tensor.to(self.niqe_metric.device)))
+                self.logger.info(f"    - Attempting NIQE on {self._device}...")
+                try:
+                    img_tensor = torch.from_numpy(thumb_rgb).float().permute(2, 0, 1).unsqueeze(0) / 255.0
+                    device = getattr(self.niqe_metric, "device", self._device)
+                    img_tensor = img_tensor.to(device)
+                    with torch.no_grad():
+                        niqe_score = float(self.niqe_metric(img_tensor))
+                    self.logger.info(f"    - NIQE Success: {niqe_score:.4f}")
+                except Exception as e:
+                    self.logger.warning(f"NIQE failed: {e}")
+            else:
+                self.logger.info("    - NIQE metric skipped (not initialized).")
 
             face_sim = 0.0
             if self.face_analyzer and self.reference_embedding is not None:
-                faces = self.face_analyzer.get(cv2.cvtColor(thumb_rgb, cv2.COLOR_RGB2BGR))
-                if faces:
-                    best_face = max(faces, key=lambda x: x.det_score)
-                    face_sim = np.dot(best_face.normed_embedding, self.reference_embedding)
+                self.logger.info("    - Attempting Face Analyzer...")
+                try:
+                    faces = self.face_analyzer.get(cv2.cvtColor(thumb_rgb, cv2.COLOR_RGB2BGR))
+                    if faces:
+                        best_face = max(faces, key=lambda x: x.det_score)
+                        face_sim = np.dot(best_face.normed_embedding, self.reference_embedding)
+                    self.logger.info(f"    - Face Analyzer Success: {face_sim:.4f}")
+                except Exception as e:
+                    self.logger.warning(f"Face Analyzer failed: {e}")
 
             scores.append((10 - niqe_score) + (face_sim * 10))
 
+        self.logger.info(f"Finished scoring {len(scores)} candidates. Selecting top seeds...")
         if not scores:
             scene.best_frame = shot_frames[0][0] if shot_frames else scene.start_frame
             scene.seed_metrics = {"reason": "pre-analysis failed, no scores", "score": 0}
+            self.logger.warning("No scores calculated, using default frame.")
             return
 
         # Select top candidates from the actual thumbnails
         candidates_with_scores = sorted(zip(candidates, scores), key=lambda x: x[1], reverse=True)
+        self.logger.debug(f"Top 3 candidate scores: {[s for _, s in candidates_with_scores[:3]]}")
+
         best_seeds = []
         min_dist = max(1, (scene.end_frame - scene.start_frame) // 8)
 
@@ -442,9 +484,11 @@ class SubjectMasker:
         if best_seeds:
             scene.best_frame = best_seeds[0]
             scene.candidate_seed_frames = best_seeds
+            self.logger.info(f"Selected {len(best_seeds)} seed frames: {best_seeds}")
         else:
             scene.best_frame = candidates[int(np.argmax(scores))][0]
             scene.candidate_seed_frames = [scene.best_frame]
+            self.logger.info(f"Selected best frame: {scene.best_frame} (no additional seeds found)")
 
         scene.seed_metrics = {
             "reason": "pre-analysis complete",
@@ -477,7 +521,7 @@ class SubjectMasker:
         self._initialize_tracker()
 
         if scene is not None:
-            scene.person_detections = self.seed_selector._get_person_boxes(frame_rgb, scene=None)
+            scene.person_detections = self.seed_selector._get_subject_boxes(frame_rgb, scene=None)
 
         return self.seed_selector.select_seed(frame_rgb, current_params=seed_config, scene=scene)
 

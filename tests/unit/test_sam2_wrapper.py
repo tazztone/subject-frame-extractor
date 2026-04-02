@@ -137,8 +137,7 @@ def test_sam2_wrapper_stubs_and_utility(mock_build, mock_predictor):
 
 @patch("core.managers.sam2.build_sam2_video_predictor")
 @patch("core.managers.sam2.torch.cuda.is_available", return_value=True, create=True)
-@patch("core.managers.sam2.torch.cuda.empty_cache")
-def test_sam2_wrapper_shutdown(mock_empty_cache, mock_cuda, mock_build, mock_predictor):
+def test_sam2_wrapper_shutdown(mock_cuda, mock_build, mock_predictor):
     mock_build.return_value = mock_predictor
     wrapper = SAM2Wrapper(checkpoint_path="dummy.pt")
     wrapper._state = "test_state"
@@ -147,4 +146,3 @@ def test_sam2_wrapper_shutdown(mock_empty_cache, mock_cuda, mock_build, mock_pre
 
     assert wrapper._state is None
     assert wrapper.predictor is None
-    assert mock_empty_cache.called

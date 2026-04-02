@@ -84,4 +84,3 @@ def test_sam21_close_session(mock_sam2_predictor, mock_cuda):
 
     mock_sam2_predictor.reset_state.assert_called_once_with(original_state)
     assert wrapper._state is None
-    mock_cuda.empty_cache.assert_called_once()

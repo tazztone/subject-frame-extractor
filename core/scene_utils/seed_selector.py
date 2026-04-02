@@ -117,13 +117,24 @@ class SeedSelector:
             log_with_component(self.logger, "info", f"Starting '{SeedStrategy.AUTOMATIC.value}' seeding.")
             box, details = self._choose_subject_by_strategy(frame_rgb, p, scene)
 
-        # Centralized tracker interaction
-        if box is not None and self.tracker is not None:
+        # Centralized tracker interaction - only if session is active
+        # In pre-analysis, we don't usually have an active session yet,
+        # so we skip this and let get_mask_for_bbox handle it with a temp session.
+        has_session = False
+        if self.tracker:
+            if hasattr(self.tracker, "_state"):  # SAM2
+                has_session = self.tracker._state is not None
+            elif hasattr(self.tracker, "session_id"):  # SAM3
+                has_session = self.tracker.session_id is not None
+
+        if box is not None and self.tracker is not None and has_session:
+            frame_idx = getattr(scene, "best_frame", 0) if scene else 0
             if details.get("mask") is not None and hasattr(self.tracker, "add_mask_prompt"):
-                log_with_component(self.logger, "info", "Using YOLO mask prompt for seeding.")
-                self.tracker.add_mask_prompt(0, 1, details["mask"])
+                log_with_component(self.logger, "info", f"Using YOLO mask prompt for seeding (Frame {frame_idx}).")
+                self.tracker.add_mask_prompt(frame_idx, 1, details["mask"])
             else:
-                self.tracker.add_bbox_prompt(0, 1, box, (frame_rgb.shape[1], frame_rgb.shape[0]))
+                log_with_component(self.logger, "info", f"Adding bbox prompt for seeding (Frame {frame_idx}).")
+                self.tracker.add_bbox_prompt(frame_idx, 1, box, (frame_rgb.shape[1], frame_rgb.shape[0]))
 
         return box, details
 
@@ -598,6 +609,15 @@ class SeedSelector:
                     mask = postprocess_mask(
                         (mask * 255).astype(np.uint8), config=self.config, fill_holes=True, keep_largest_only=True
                     )
+
+                # Critical: Close the temporary session so we don't pollute the tracker for other scenes
+                if hasattr(self.tracker, "close_session"):
+                    self.tracker.close_session()
+                elif hasattr(self.tracker, "predictor") and hasattr(self.tracker.predictor, "reset_state"):
+                    # Fallback if no close_session
+                    self.tracker.predictor.reset_state(self.tracker._state)
+                    self.tracker._state = None
+
                 return mask
         except (torch.cuda.OutOfMemoryError, RuntimeError) as e:
             log_with_component(self.logger, "warning", f"GPU error in mask generation: {e}")

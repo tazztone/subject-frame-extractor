@@ -37,6 +37,8 @@ class SAM2Wrapper:
     def add_bbox_prompt(
         self, frame_idx: int, obj_id: int, bbox_xywh: list, img_size: tuple, text: Optional[str] = None
     ) -> np.ndarray:
+        if self._state is None:
+            raise RuntimeError("Tracker state is not initialized. Call init_video first.")
         x, y, w, h = bbox_xywh
         box = np.array([x, y, x + w, y + h], dtype=np.float32)
         with torch.inference_mode():
@@ -87,8 +89,7 @@ class SAM2Wrapper:
         if self._state is not None:
             self.predictor.reset_state(self._state)
             self._state = None
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        # Removed empty_cache to prevent threading deadlocks during hot loops
 
     def reset_session(self):
         self.close_session()

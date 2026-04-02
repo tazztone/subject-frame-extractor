@@ -84,11 +84,9 @@ def test_get_face_analyzer_cuda_oom_fallback(mock_logger, mock_registry):
         return mock_analyzer_cpu
 
     with patch("insightface.app.FaceAnalysis", side_effect=side_effect):
-        with patch("torch.cuda.empty_cache") as mock_empty:
-            res = get_face_analyzer("buffalo_l", "models", (640, 640), mock_logger, mock_registry, device="cuda")
-            assert res == mock_analyzer_cpu
-            mock_empty.assert_called_once()
-            mock_logger.warning.assert_called_with("CUDA OOM, retrying with CPU...")
+        res = get_face_analyzer("buffalo_l", "models", (640, 640), mock_logger, mock_registry, device="cuda")
+        assert res == mock_analyzer_cpu
+        mock_logger.warning.assert_called_with("CUDA OOM, retrying with CPU...")
 
 
 def test_get_face_analyzer_generic_failure(mock_logger, mock_registry):
@@ -107,6 +105,5 @@ def test_get_face_analyzer_cpu_fallback_failure(mock_logger, mock_registry):
         raise Exception("CPU also failed")
 
     with patch("insightface.app.FaceAnalysis", side_effect=side_effect):
-        with patch("torch.cuda.empty_cache"):
-            with pytest.raises(RuntimeError, match="CPU fallback also failed"):
-                get_face_analyzer("buffalo_l", "models", (640, 640), mock_logger, mock_registry, device="cuda")
+        with pytest.raises(RuntimeError, match="CPU fallback also failed"):
+            get_face_analyzer("buffalo_l", "models", (640, 640), mock_logger, mock_registry, device="cuda")
