@@ -13,7 +13,7 @@ class ApplicationState(BaseModel):
     extracted_frames_dir: str = ""
     analysis_output_dir: str = ""
     analysis_metadata_path: str = ""
-    all_frames_data: List[dict] = Field(default_factory=list)
+    all_frames_data: Optional[List[dict]] = None
     per_metric_values: Dict[str, List[float]] = Field(default_factory=dict)
     scenes: List[dict] = Field(default_factory=list)
     selected_scene_id: Optional[int] = None

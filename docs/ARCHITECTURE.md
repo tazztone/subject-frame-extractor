@@ -9,9 +9,13 @@ The system follows a strict isolation pattern:
 - **UI (Gradio)**: Collects user parameters and displays results. It is prohibited from executing heavy logic directly.
 - **Core (Pipelines)**: Receives an `AnalysisParameters` object (Pydantic) and executes long-running tasks in background threads.
 
-## Pipeline Orchestration
+### Orchestration Signal Protocol
+When chaining multiple generator-based pipelines into an orchestrator (e.g., `execute_analysis_orchestrator`), the orchestrator MUST actively manage the `done: True` termination flag:
+- **Sub-Stage Yielding**: Intermediate stages (Extraction, Pre-Analysis, Propagation) MUST have their `done: True` flag stripped before being yielded by the orchestrator.
+- **Consumer Stability**: If an intermediate stage yields `done: True`, the UI's background consumer (or any upstream generator consumer) will treat the entire task as finished, causing subsequent stages to be orphaned or leading to a UI hang.
+- **Final Result**: Only the absolute final stage (Analysis) or the orchestrator itself should yield `done: True`.
 
-The processing flow is split into three distinct phases to allow for checkpoints and resumability:
+---
 
 ### 1. Extraction Phase (`ExtractionPipeline`)
 - **Input**: Video file or Image folder.

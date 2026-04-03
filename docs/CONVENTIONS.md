@@ -10,13 +10,17 @@ All UI logic in `AppUI` should be wrapped with `@AppUI.safe_ui_callback("Context
 - **Purpose**: Prevents the entire Gradio app from crashing on unhandled exceptions.
 - **Behavior**: Catches exceptions, logs them with `self.logger.error`, and returns a standardized error message to the "Unified Status" and "Unified Log" components.
 
-### 2. The event-Pipeline Pattern
-Never pass raw Gradio arguments directly to core logic.
-- **UI**: Collects `*args`.
-- **"Seeding"**: The initialization of a track on a specific frame (the "Anchor Frame").
-- **ID Resolution**: Always resolve class names (e.g., "dog") to COCO IDs at the ingest layer (`AnalysisParameters.from_ui`) to prevent logic duplication in core managers.
-- **Mapping**: Create a dictionary and validate it into a Pydantic `UIEvent` model (e.g., `ExtractionEvent`).
-- **Pipeline**: Processes the validated event object.
+### 3. Anti-Loop State Initialization
+Reactive state fields in `ApplicationState` (like `all_frames_data`) that trigger `.change()` listeners MUST NOT use "falsy" defaults that indicate "not yet loaded" (e.g., `[]`, `""`, `0`).
+- **Pattern**: Initialize with `None`.
+- **Condition**: Listeners should check `if state.all_frames_data is None` to trigger first-time loading.
+- **Success State**: After a load (even if 0 items found), the field becomes `[]`. Since `[] is not None`, the reactive loop terminates.
+
+### 4. Busy-Flag Gating
+To prevent UI interactions from interrupting long-running database operations or causing "flicker," use a busy flag.
+- **Implementation**: `AppUI` has an `is_busy` boolean.
+- **Gating**: All background tasks (`_run_pipeline`) should toggle `is_busy`.
+- **Condition**: Reactive logic (like `auto_load_data`) should check `not self.is_busy` before executing.
 
 ## Metadata & Validation (Pydantic)
 

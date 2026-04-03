@@ -26,6 +26,8 @@ These are complex, opinionated patterns that correct behaviors the agent natural
 *   **SAM2.1 Default Baseline**: **SAM2.1 Hiera Tiny** is the project's default tracker and baseline for all integration tests. SAM3 is considered an experimental alternative.
 *   **Visual Baseline Updates**: When UI labels or layouts change, visual regression baselines MUST be updated using `uv run pytest -n 0 --update-baselines tests/ui/test_visual_regression.py`. Parallel execution (`-n > 0`) is forbidden during updates.
 *   **Feature Status**: `sam3` is an experimental tracker. The default is `sam2`. Do not switch the default without explicit instruction.
+*   **Reactive State Safety**: NEVER use falsy defaults (`[]`, `""`, `0`) for `ApplicationState` fields that trigger Gradio `.change()` listeners. Use `Optional` with `None` and check `is None` to differentiate between "not loaded" and "empty".
+*   **Orchestrator Strip-Done Protocol**: When chaining generators (e.g., in `execute_analysis_orchestrator`), intermediate stages MUST have their `done: True` flag stripped before yielding. Only the final stage or the orchestrator itself should yield `done: True` to prevent premature consumer termination.
 
 ---
 

@@ -18,6 +18,8 @@ def histogram_svg(hist_data: Tuple[list, list], title: str = "", logger: Optiona
         return ""
     try:
         counts, bins = hist_data
+        if len(counts) == 0 or len(bins) == 0:
+            return ""
         with plt.style.context("dark_background"):
             fig, ax = plt.subplots(figsize=(4.6, 2.2), dpi=120)
             ax.bar(bins[:-1], counts, width=np.diff(bins), color="#7aa2ff", alpha=0.85, align="edge")

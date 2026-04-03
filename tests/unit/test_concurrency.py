@@ -14,7 +14,7 @@ from core.models import AnalysisParameters
 
 def test_application_state_concurrent_updates():
     """Test concurrent updates to ApplicationState (stress test)."""
-    state = ApplicationState()
+    state = ApplicationState(all_frames_data=[])
     num_threads = 10
     updates_per_thread = 100
 

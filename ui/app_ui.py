@@ -136,6 +136,7 @@ class AppUI:
         self.performance_metrics = {}
         self.log_viewer = LogViewer(logger, progress_queue, self.LOG_LEVEL_CHOICES)
         self.last_run_args = None
+        self.is_busy = False
         self.ext_ui_map_keys = [
             "source_path",
             "upload_video",
@@ -540,80 +541,84 @@ class AppUI:
         Yields:
             Dictionary of UI updates.
         """
-        self.last_run_args = args
-        self.cancel_event.clear()
-        tracker_instance = next((arg for arg in args if isinstance(arg, AdvancedProgressTracker)), None)
-        if tracker_instance:
-            tracker_instance.pause_event.set()
-        op_name = getattr(task_func, "__name__", "Unknown Task").replace("_wrapper", "").replace("_", " ").title()
-        yield {
-            self.components["cancel_button"]: gr.update(interactive=True),
-            self.components["pause_button"]: gr.update(interactive=True),
-            self.components["unified_status"]: f"**Starting: {op_name}...**",
-        }
+        self.is_busy = True
+        try:
+            self.last_run_args = args
+            self.cancel_event.clear()
+            tracker_instance = next((arg for arg in args if isinstance(arg, AdvancedProgressTracker)), None)
+            if tracker_instance:
+                tracker_instance.pause_event.set()
+            op_name = getattr(task_func, "__name__", "Unknown Task").replace("_wrapper", "").replace("_", " ").title()
+            yield {
+                self.components["cancel_button"]: gr.update(interactive=True),
+                self.components["pause_button"]: gr.update(interactive=True),
+                self.components["unified_status"]: f"**Starting: {op_name}...**",
+            }
 
-        def run_and_capture():
-            try:
-                res = task_func(*args)
-                if hasattr(res, "__iter__") and not isinstance(res, (dict, list, tuple, str)):
-                    for item in res:
-                        self.progress_queue.put({"ui_update": item})
-                else:
-                    self.progress_queue.put({"ui_update": res})
-            except Exception as e:
-                self.app_logger.error(f"Task failed: {e}", exc_info=True)
-                self.progress_queue.put({"ui_update": {self.components["unified_log"]: f"[CRITICAL] Task failed: {e}"}})
-
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(run_and_capture)
-            start_time = time.time()
-            while future.running():
-                if time.time() - start_time > 3600:
-                    self.app_logger.error("Task timed out after 1 hour")
-                    self.cancel_event.set()
-                    future.cancel()
-                    break
-                if self.cancel_event.is_set():
-                    future.cancel()
-                    break
-                if tracker_instance and not tracker_instance.pause_event.is_set():
-                    yield {self.components["unified_status"]: f"**Paused: {op_name}**"}
-                    time.sleep(0.2)
-                    continue
+            def run_and_capture():
                 try:
-                    msg, update_dict = self.progress_queue.get(timeout=0.1), {}
-                    if "ui_update" in msg:
-                        update_dict.update(msg["ui_update"])
-                    if "log" in msg:
-                        update_dict.update(self.log_viewer.get_log_update_dict(msg["log"]))
-                    if "progress" in msg:
-                        from core.progress import ProgressEvent
+                    res = task_func(*args)
+                    if hasattr(res, "__iter__") and not isinstance(res, (dict, list, tuple, str)):
+                        for item in res:
+                            self.progress_queue.put({"ui_update": item})
+                    else:
+                        self.progress_queue.put({"ui_update": res})
+                except Exception as e:
+                    self.app_logger.error(f"Task failed: {e}", exc_info=True)
+                    self.progress_queue.put(
+                        {"ui_update": {self.components["unified_log"]: f"[CRITICAL] Task failed: {e}"}}
+                    )
 
-                        p = ProgressEvent(**msg["progress"])
-                        progress(p.fraction, desc=f"{p.stage} ({p.done}/{p.total}) • {p.eta_formatted}")
-                        status_md = (
-                            f"**Running: {op_name}**\n- Stage: {p.stage} ({p.done}/{p.total})\n- ETA: {p.eta_formatted}"
-                        )
-                        if p.substage:
-                            status_md += f"\n- Step: {p.substage}"
-                        update_dict[self.components["unified_status"]] = status_md
-                    if update_dict:
-                        yield update_dict
-                except Empty:
-                    pass
-                time.sleep(0.05)
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(run_and_capture)
+                start_time = time.time()
+                while future.running():
+                    if time.time() - start_time > 3600:
+                        self.app_logger.error("Task timed out after 1 hour")
+                        self.cancel_event.set()
+                        future.cancel()
+                        break
+                    if self.cancel_event.is_set():
+                        future.cancel()
+                        break
+                    if tracker_instance and not tracker_instance.pause_event.is_set():
+                        yield {self.components["unified_status"]: f"**Paused: {op_name}**"}
+                        time.sleep(0.2)
+                        continue
+                    try:
+                        msg, update_dict = self.progress_queue.get(timeout=0.1), {}
+                        if "ui_update" in msg:
+                            update_dict.update(msg["ui_update"])
+                        if "log" in msg:
+                            update_dict.update(self.log_viewer.get_log_update_dict(msg["log"]))
+                        if "progress" in msg:
+                            from core.progress import ProgressEvent
 
-            while not self.progress_queue.empty():
-                try:
-                    msg, update_dict = self.progress_queue.get_nowait(), {}
-                    if "ui_update" in msg:
-                        update_dict.update(msg["ui_update"])
-                    if "log" in msg:
-                        update_dict.update(self.log_viewer.get_log_update_dict(msg["log"]))
-                    if update_dict:
-                        yield update_dict
-                except Empty:
-                    break
+                            p = ProgressEvent(**msg["progress"])
+                            progress(p.fraction, desc=f"{p.stage} ({p.done}/{p.total}) • {p.eta_formatted}")
+                            status_md = f"**Running: {op_name}**\n- Stage: {p.stage} ({p.done}/{p.total})\n- ETA: {p.eta_formatted}"
+                            if p.substage:
+                                status_md += f"\n- Step: {p.substage}"
+                            update_dict[self.components["unified_status"]] = status_md
+                        if update_dict:
+                            yield update_dict
+                    except Empty:
+                        pass
+                    time.sleep(0.05)
+
+                while not self.progress_queue.empty():
+                    try:
+                        msg, update_dict = self.progress_queue.get_nowait(), {}
+                        if "ui_update" in msg:
+                            update_dict.update(msg["ui_update"])
+                        if "log" in msg:
+                            update_dict.update(self.log_viewer.get_log_update_dict(msg["log"]))
+                        if update_dict:
+                            yield update_dict
+                    except Empty:
+                        break
+        finally:
+            self.is_busy = False
 
     @safe_ui_callback("Toggle Pause")
     def _toggle_pause(self, tracker: "AdvancedProgressTracker") -> str:
@@ -718,6 +723,7 @@ class AppUI:
             progress: Gradio progress callback.
             success_callback: Optional callback to run on successful completion.
         """
+        self.is_busy = True
         generator = None
         try:
             generator = pipeline_func(
@@ -748,6 +754,7 @@ class AppUI:
                 self.components["unified_status"]: f"⚠️ Failure in {pipeline_func.__name__}",
             }
         finally:
+            self.is_busy = False
             if generator and hasattr(generator, "close"):
                 generator.close()
 
@@ -1242,8 +1249,8 @@ class AppUI:
             slider_values_dict = {key: c["metric_sliders"][key].value for key in slider_keys}
             dedup_val = self._map_dedup_method(c["dedup_method_input"].value)
             filter_event = FilterEvent(
-                all_frames_data=all_frames,
-                per_metric_values=metric_values,
+                all_frames_data=all_frames or [],
+                per_metric_values=metric_values or {},
                 output_dir=output_dir,
                 gallery_view="Kept Frames",
                 show_overlay=c["show_mask_overlay_input"].value,
@@ -1265,7 +1272,7 @@ class AppUI:
         c["filtering_tab"].select(load_and_trigger_update, [c["application_state"]], load_outputs)
 
         def auto_load_data(state: ApplicationState):
-            if state.analysis_output_dir and not state.all_frames_data:
+            if state.analysis_output_dir and state.all_frames_data is None and not self.is_busy:
                 return load_and_trigger_update(state)
             return [gr.update()] * len(load_outputs)
 
@@ -1553,8 +1560,8 @@ class AppUI:
     ) -> dict:
         """Wrapper to execute the final frame export."""
         # Self-heal: load frames if the lazy tab-select hasn't fired yet
-        if not state.all_frames_data and state.analysis_output_dir:
-            self.logger.info("[Export] all_frames_data empty — loading from DB before export.")
+        if state.all_frames_data is None and state.analysis_output_dir:
+            self.logger.info("[Export] all_frames_data is None — loading from DB before export.")
             state = self._load_frames_into_state(state)
 
         if not state.all_frames_data:
@@ -1614,8 +1621,8 @@ class AppUI:
     ) -> dict:
         """Wrapper to perform a dry run of the export."""
         # Self-heal: load frames if the lazy tab-select hasn't fired yet
-        if not state.all_frames_data and state.analysis_output_dir:
-            self.logger.info("[Dry Run] all_frames_data empty — loading from DB before export.")
+        if state.all_frames_data is None and state.analysis_output_dir:
+            self.logger.info("[Dry Run] all_frames_data is None — loading from DB before export.")
             state = self._load_frames_into_state(state)
 
         if not state.all_frames_data:

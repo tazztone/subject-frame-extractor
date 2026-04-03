@@ -294,6 +294,7 @@ def execute_analysis_orchestrator(
     # Initialize models once for all stages
     params = AnalysisParameters.from_ui(logger, config, **event.model_dump())
     loaded_models = initialize_analysis_models(params, config, logger, mr)
+    pre_result = None
 
     # 1. Pre-Analysis
     pre_gen = execute_pre_analysis(
@@ -308,11 +309,16 @@ def execute_analysis_orchestrator(
         mr,
         loaded_models=loaded_models,
     )
-    pre_result = {}
     for res in pre_gen:
-        yield res
         if res.get("done"):
             pre_result = res
+            # Strip 'done' so UI doesn't stop consuming the orchestrator
+            clean_res = res.copy()
+            clean_res.pop("done")
+            if clean_res:
+                yield clean_res
+            continue
+        yield res
 
     if not pre_result or not pre_result.get("done"):
         return
@@ -342,11 +348,14 @@ def execute_analysis_orchestrator(
             loaded_models=loaded_models,
         )
         for res in prop_gen:
+            if res.get("done"):
+                # Strip 'done' so UI doesn't stop consuming the orchestrator
+                clean_res = res.copy()
+                clean_res.pop("done")
+                if clean_res:
+                    yield clean_res
+                continue
             yield res
-            if not res.get("done"):
-                # If a step fails, we might still want to continue to analysis if possible?
-                # Usually better to stop if propagation fails in a video.
-                pass
     else:
         msg = "Mask Propagation (Skipped for Folder)"
         logger.info(msg)
@@ -365,8 +374,7 @@ def execute_analysis_orchestrator(
         mr,
         loaded_models=loaded_models,
     )
-    for res in ana_gen:
-        yield res
+    yield from ana_gen
 
 
 @handle_common_errors
@@ -388,9 +396,15 @@ def execute_full_pipeline(
     )
     ext_result = {}
     for res in ext_gen:
-        yield res
         if res.get("done"):
             ext_result = res
+            # Strip 'done' so UI doesn't stop consuming the orchestrator
+            clean_res = res.copy()
+            clean_res.pop("done")
+            if clean_res:
+                yield clean_res
+            continue
+        yield res
 
     if not ext_result or not ext_result.get("done"):
         return
