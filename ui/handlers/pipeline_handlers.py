@@ -227,7 +227,9 @@ class PipelineHandler:
         """Callback for successful analysis."""
         new_state = current_state.model_copy()
         new_state.analysis_metadata_path = result["metadata_path"]
-        self.app._save_session_log(str(Path(result["metadata_path"]).parent))
+        output_dir = str(Path(result["metadata_path"]).parent)
+        new_state.analysis_output_dir = output_dir
+        self.app._save_session_log(output_dir)
 
         msg = """<div class="success-card"><h3>Analysis Complete</h3></div>"""
         return {

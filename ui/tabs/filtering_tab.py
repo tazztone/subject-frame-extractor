@@ -194,9 +194,9 @@ class FilteringTabBuilder:
 
             # Right Column: Results & Export
             with gr.Column(scale=2):
-                with gr.Group(visible=self.app.debug_mode) as results_group:
+                with gr.Group(visible=True, elem_id="results_group") as results_group:
                     self.app.components["results_group"] = results_group
-                    gr.Markdown("#### Results Preview")
+                    gr.Markdown("#### 1. Preview Filtered Results")
                     with gr.Row():
                         self.app._create_component(
                             "gallery_view_toggle",
@@ -241,9 +241,9 @@ class FilteringTabBuilder:
                         },
                     )
 
-                with gr.Group(visible=self.app.debug_mode) as export_group:
+                with gr.Group(visible=True, elem_id="export_group") as export_group:
                     self.app.components["export_group"] = export_group
-                    gr.Markdown("#### Export Dataset")
+                    gr.Markdown("#### 2. Finalize & Export Dataset")
 
                     with gr.Accordion("Advanced Export Options", open=False):
                         with gr.Row():
@@ -284,8 +284,17 @@ class FilteringTabBuilder:
                                 "scale": 2,
                                 "size": "lg",
                                 "elem_id": "export_button",
+                                "interactive": False,
                             },
                         )
                         self.app._create_component(
-                            "dry_run_button", "button", {"value": "Dry Run", "scale": 1, "size": "lg"}
+                            "dry_run_button",
+                            "button",
+                            {
+                                "value": "Dry Run",
+                                "scale": 1,
+                                "size": "lg",
+                                "elem_id": "dry_run_button",
+                                "interactive": False,
+                            },
                         )

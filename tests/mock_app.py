@@ -433,9 +433,44 @@ def mock_analysis_execution(
     progress=None,
     model_registry=None,
 ):
+    import json
+    import sqlite3
+
     print("[Mock] Running Analysis...")
     output_dir = event.output_folder
     metadata_path = os.path.join(output_dir, "metadata.db")
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Create a minimal real schema-compliant DB
+    conn = sqlite3.connect(metadata_path)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS metadata (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            filename TEXT UNIQUE,
+            metrics TEXT,
+            face_sim REAL,
+            face_conf REAL,
+            shot_id INTEGER,
+            seed_type TEXT,
+            seed_face_sim REAL,
+            mask_area_pct REAL,
+            mask_empty INTEGER,
+            error TEXT,
+            phash TEXT,
+            dedup_thresh INTEGER,
+            error_severity TEXT
+        )
+    """)
+    # Insert 10 dummy rows
+    for i in range(1, 11):
+        metrics = json.dumps({"quality_score": 80.0, "sharpness": 75.0, "eyes_open": 1.0})
+        conn.execute(
+            "INSERT OR IGNORE INTO metadata (id, filename, metrics, face_sim, shot_id) VALUES (?, ?, ?, ?, ?)",
+            (i, f"frame_{i:06d}.webp", metrics, 0.95, 1),
+        )
+    conn.commit()
+    conn.close()
+
     msg = "Analysis complete."
     if logger:
         logger.info(msg)

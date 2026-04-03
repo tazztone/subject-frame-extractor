@@ -38,7 +38,7 @@ tests
 │&nbsp;&nbsp;&nbsp;└──&nbsp;[`test_real_workflow.py`](#-testsintegrationtest_real_workflowpy)  
 ├──&nbsp;[`mock_app.py`](#-testsmock_apppy)  
 ├──&nbsp;regression  
-│&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_pre_analysis_hang.py`](#-testsregressiontest_pre_analysis_hangpy)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_full_workflow_regression.py`](#-testsregressiontest_full_workflow_regressionpy)  
 │&nbsp;&nbsp;&nbsp;└──&nbsp;[`test_robustness.py`](#-testsregressiontest_robustnesspy)  
 ├──&nbsp;research  
 │&nbsp;&nbsp;&nbsp;└──&nbsp;[`test_debug_sam3.py`](#-testsresearchtest_debug_sam3py)  
@@ -590,14 +590,16 @@ core.utils.download_model = MagicMock()
 core.managers.download_model = MagicMock()
 ```
 
-### `📄 tests/regression/test_pre_analysis_hang.py`
+### `📄 tests/regression/test_full_workflow_regression.py`
 
 ```python
 @pytest.fixture(scope='module')
 def real_app_url():
     """Start the real app and return the URL."""
-def test_reproduce_hang_workflow(page: Page, real_app_url: str):
-    """Test the pre-analysis workflow in the real app to reproduce and verify the ha..."""
+def switch_to_tab(page: Page, tab_name: str):
+    """Robustly switch tabs in Gradio."""
+def test_full_workflow_regression(page: Page, real_app_url: str):
+    """Test the full workflow in the real app to verify stability and fixes."""
 ```
 
 ### `📄 tests/regression/test_robustness.py`

@@ -193,7 +193,9 @@ class Database:
             row_dict = dict(row)
             if "metrics" in row_dict and isinstance(row_dict["metrics"], str):
                 try:
-                    row_dict.update(json.loads(row_dict["metrics"]))
+                    parsed = json.loads(row_dict["metrics"])
+                    row_dict.update(parsed)
+                    row_dict["metrics"] = parsed
                 except json.JSONDecodeError:
                     pass
             results.append(row_dict)

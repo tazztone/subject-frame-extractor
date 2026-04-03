@@ -58,6 +58,9 @@ def parse_args():
     parser.add_argument("--ssl-certfile", type=str, help="Path to SSL certificate file")
     parser.add_argument("--ssl-verify", action="store_true", default=None, help="Enable SSL verification")
     parser.add_argument("--no-ssl-verify", action="store_false", dest="ssl_verify", help="Disable SSL verification")
+    parser.add_argument(
+        "--debug", action="store_true", default=False, help="Enable debug mode (shows Export tab groups at startup)"
+    )
 
     return parser.parse_args()
 
@@ -79,11 +82,22 @@ def main():
         setup_logging(config, progress_queue=progress_queue)
         logger = AppLogger(config=config)
 
+        # 2. Initialize Core components
+        config.debug = args.debug  # Sync CLI flag to config
         model_registry = ModelRegistry(logger=logger)
         thumbnail_manager = ThumbnailManager(logger, config)
         cancel_event = threading.Event()
 
-        app_ui = AppUI(config, logger, progress_queue, cancel_event, thumbnail_manager, model_registry)
+        app_ui = AppUI(
+            config,
+            logger,
+            progress_queue,
+            cancel_event,
+            thumbnail_manager,
+            model_registry,
+            debug_mode=args.debug,
+        )
+
         demo = app_ui.build_ui()
         logger.info("Frame Extractor & Analyzer v4.0.0\nStarting application...")
 

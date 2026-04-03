@@ -22,6 +22,7 @@ def perform_ffmpeg_export(
         return True, None
 
     # Ensure export_dir exists
+    export_dir = Path(export_dir)
     export_dir.mkdir(parents=True, exist_ok=True)
 
     # Construct the select filter for multiple frames

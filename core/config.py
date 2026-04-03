@@ -34,6 +34,7 @@ class Config(BaseSettings):
     logs_dir: str = "outputs/logs"
     models_dir: str = "models"
     downloads_dir: str = "downloads"
+    debug: bool = False
 
     # Models
     user_agent: str = "Mozilla/5.0"

@@ -60,7 +60,7 @@ class FaceProminenceOperator:
         # For now, let's assume we can run it or get it from ctx.params
 
         face_bbox = ctx.params.get("face_bbox")
-        if not face_bbox:
+        if face_bbox is None or len(face_bbox) == 0:
             # Try to find it via analyzer if not passed
             return OperatorResult(metrics={"face_prominence_score": 0.0}, warnings=["No face bbox provided"])
 

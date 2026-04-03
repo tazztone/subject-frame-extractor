@@ -102,7 +102,7 @@ def export_kept_frames(
             if orig_num is not None:
                 frames_to_extract.append(orig_num)
 
-        success, msg = perform_ffmpeg_export(str(video_p), frames_to_extract, str(export_dir), config, logger)
+        success, msg = perform_ffmpeg_export(str(video_p), frames_to_extract, export_dir, logger)
         if not success:
             return f"FFmpeg failed: {msg}"
 

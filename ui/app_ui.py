@@ -54,6 +54,7 @@ class AppUI:
         ("Every N-th Frame (Recommended)", "every_nth_frame"),
         ("All Frames (Maximum Quality)", "all"),
         ("Keyframes (Cuts/Scene Changes)", "keyframes"),
+        ("Scene-based", "scene"),
     ]
     PRIMARY_SEED_STRATEGY_CHOICES: List[Any] = [
         ("🤖 Automatic Detection", "Automatic Detection"),
@@ -107,6 +108,7 @@ class AppUI:
         cancel_event: threading.Event,
         thumbnail_manager: "ThumbnailManager",
         model_registry: "ModelRegistry",
+        debug_mode: bool = False,
     ):
         """
         Initialize the AppUI.
@@ -118,6 +120,7 @@ class AppUI:
             cancel_event: Event to signal task cancellation.
             thumbnail_manager: Manager for thumbnail caching.
             model_registry: Registry for ML models.
+            debug_mode: Whether to show hidden debug UI elements.
         """
         self.config = config
         self.logger = logger
@@ -127,7 +130,7 @@ class AppUI:
         self.thumbnail_manager = thumbnail_manager
         self.model_registry = model_registry
         self.batch_manager = BatchManager()
-        self.debug_mode = config.debug_mode
+        self.debug_mode = debug_mode or getattr(config, "debug", False)
         self.components, self.cuda_available = {}, torch.cuda.is_available()
         self.ui_registry = {}
         self.performance_metrics = {}
@@ -653,9 +656,10 @@ class AppUI:
 
         # Analysis State
         if state.analysis_output_dir:
-            updates[c["results_group"]] = gr.update(visible=True)
-            updates[c["export_group"]] = gr.update(visible=True)
             updates[c["filtering_tab"]] = gr.update(interactive=True)
+            if state.all_frames_data:
+                updates[c["export_button"]] = gr.update(interactive=True)
+                updates[c["dry_run_button"]] = gr.update(interactive=True)
 
         # Tabs interactive state
         if state.extracted_frames_dir:
@@ -860,6 +864,13 @@ class AppUI:
         """Retrieves a list of UI components based on their registry keys."""
         return [self.ui_registry[k] for k in keys if k in self.ui_registry]
 
+    def _map_dedup_method(self, ui_value: str) -> str:
+        """Maps UI dropdown values to internal deduplication method names."""
+        return {
+            "Fast (pHash)": "pHash",
+            "Accurate (LPIPS)": "pHash then LPIPS",
+        }.get(ui_value, "None")
+
     def _setup_pipeline_handlers(self):
         """Configures event handlers for starting main processing pipelines."""
         c = self.components
@@ -895,7 +906,7 @@ class AppUI:
             outputs=self.all_outputs,
             show_progress="hidden",
         )
-        c["start_analysis_button"].click(
+        self.analysis_click_event = c["start_analysis_button"].click(
             fn=self.pipeline_handler.run_analysis_wrapper,
             inputs=self.ana_input_components,
             outputs=self.all_outputs,
@@ -1145,7 +1156,7 @@ class AppUI:
                 f"Smart Mode: {'On' if e else 'Off'}",
             ),
             inputs=[c["application_state"], c["smart_filter_checkbox"]],
-            outputs=[c["application_state"], c["application_state"]] + slider_comps + [c["filter_status_text"]],
+            outputs=[c["application_state"]] + slider_comps + [c["filter_status_text"]],
         )
 
         for control in slider_comps + [
@@ -1171,6 +1182,8 @@ class AppUI:
                 c["results_gallery"],
                 c["results_group"],
                 c["export_group"],
+                c["export_button"],
+                c["dry_run_button"],
             ]
             + [c["metric_plots"].get(k) for k in self._get_all_filter_keys() if c["metric_plots"].get(k)]
             + slider_comps
@@ -1179,22 +1192,29 @@ class AppUI:
         )
 
         def load_and_trigger_update(state):
+            print(f"[DEBUG] load_and_trigger_update called with state.analysis_output_dir: {state.analysis_output_dir}")
             output_dir = state.analysis_output_dir
             if not output_dir:
+                print("[DEBUG] No output_dir, aborting.")
                 return [gr.update()] * len(load_outputs)
             from core.filtering import build_all_metric_svgs, load_and_prep_filter_data
 
             all_frames, metric_values = load_and_prep_filter_data(output_dir, self._get_all_filter_keys, self.config)
+            print(f"[DEBUG] loaded {len(all_frames)} frames.")
             svgs = build_all_metric_svgs(metric_values, self._get_all_filter_keys, self.logger)
 
             new_state = state.model_copy()
             new_state.all_frames_data = all_frames
             new_state.per_metric_values = metric_values
+            # Ensure analysis_output_dir is set in case we resumed
+            new_state.analysis_output_dir = output_dir
 
             updates = {
                 c["application_state"]: new_state,
                 c["results_group"]: gr.update(visible=True),
                 c["export_group"]: gr.update(visible=True),
+                c["export_button"]: gr.update(interactive=bool(all_frames)),
+                c["dry_run_button"]: gr.update(interactive=bool(all_frames)),
             }
             for k in self._get_all_filter_keys():
                 acc = c["metric_accs"].get(k)
@@ -1205,13 +1225,7 @@ class AppUI:
                     updates[c["metric_plots"][k]] = gr.update(value=svgs.get(k, ""))
 
             slider_values_dict = {key: c["metric_sliders"][key].value for key in slider_keys}
-            dedup_val = (
-                "pHash"
-                if c["dedup_method_input"].value == "Fast (pHash)"
-                else "pHash then LPIPS"
-                if c["dedup_method_input"].value == "Accurate (LPIPS)"
-                else "None"
-            )
+            dedup_val = self._map_dedup_method(c["dedup_method_input"].value)
             filter_event = FilterEvent(
                 all_frames_data=all_frames,
                 per_metric_values=metric_values,
@@ -1234,6 +1248,14 @@ class AppUI:
             return [updates.get(comp, gr.update()) for comp in load_outputs]
 
         c["filtering_tab"].select(load_and_trigger_update, [c["application_state"]], load_outputs)
+
+        def auto_load_data(state: ApplicationState):
+            if state.analysis_output_dir and not state.all_frames_data:
+                print("[DEBUG] auto-loading data via state change")
+                return load_and_trigger_update(state)
+            return [gr.update()] * len(load_outputs)
+
+        c["application_state"].change(auto_load_data, [c["application_state"]], load_outputs)
 
         c["export_button"].click(
             self.export_kept_frames_wrapper,
@@ -1390,13 +1412,7 @@ class AppUI:
                     except Exception:
                         pass
 
-        dedup_method = (
-            "pHash"
-            if dedup_method_ui == "Fast (pHash)"
-            else "pHash then LPIPS"
-            if dedup_method_ui == "Accurate (LPIPS)"
-            else "None"
-        )
+        dedup_method = self._map_dedup_method(dedup_method_ui)
         result = on_filters_changed(
             FilterEvent(
                 all_frames_data=all_frames_data,
@@ -1432,13 +1448,7 @@ class AppUI:
         all_frames_data = state.all_frames_data
         if not gallery or not gallery.selection:  # type: ignore
             return None
-        dedup_method = (
-            "pHash"
-            if dedup_method_ui == "Fast (pHash)"
-            else "pHash then LPIPS"
-            if dedup_method_ui == "Accurate (LPIPS)"
-            else "None"
-        )
+        dedup_method = self._map_dedup_method(dedup_method_ui)
 
         selected_image_index = gallery.selection["index"]  # type: ignore
         selected_frame_data = all_frames_data[selected_image_index]
@@ -1528,18 +1538,15 @@ class AppUI:
         *slider_values: float,
     ) -> dict:
         """Wrapper to execute the final frame export."""
+        if not state.all_frames_data:
+            return {self.components["unified_status"]: "⚠️ No frames loaded. Run Analysis first."}
+
         all_frames_data = state.all_frames_data
         output_dir = state.analysis_output_dir
         video_path = state.extracted_video_path
 
         slider_values_dict = {k: v for k, v in zip(sorted(self.components["metric_sliders"].keys()), slider_values)}
-        dedup_method = (
-            "pHash"
-            if dedup_method_ui == "Fast (pHash)"
-            else "pHash then LPIPS"
-            if dedup_method_ui == "Accurate (LPIPS)"
-            else "None"
-        )
+        dedup_method = self._map_dedup_method(dedup_method_ui)
         filter_args: dict[str, Any] = slider_values_dict
         filter_args.update(
             {
@@ -1588,13 +1595,7 @@ class AppUI:
         video_path = state.extracted_video_path
 
         slider_values_dict = {k: v for k, v in zip(sorted(self.components["metric_sliders"].keys()), slider_values)}
-        dedup_method = (
-            "pHash"
-            if dedup_method_ui == "Fast (pHash)"
-            else "pHash then LPIPS"
-            if dedup_method_ui == "Accurate (LPIPS)"
-            else "None"
-        )
+        dedup_method = self._map_dedup_method(dedup_method_ui)
         filter_args: dict[str, Any] = slider_values_dict
         filter_args.update(
             {

@@ -162,7 +162,23 @@ class JSONFormatter(logging.Formatter):
             "message",
         }
 
-        custom_fields = {k: v for k, v in record.__dict__.items() if k not in skip_attrs and not k.startswith("_")}
+        def _sanitize(obj: Any) -> Any:
+            """Recursively ensures objects are JSON-serializable."""
+            if isinstance(obj, (str, int, float, bool)) or obj is None:
+                return obj
+            if isinstance(obj, dict):
+                return {str(k): _sanitize(v) for k, v in obj.items()}
+            if isinstance(obj, set):
+                return sorted([_sanitize(v) for v in obj], key=str)
+            if isinstance(obj, (list, tuple)):
+                return [_sanitize(v) for v in obj]
+
+            return str(obj)
+
+        custom_fields = {}
+        for k, v in record.__dict__.items():
+            if k not in skip_attrs and not k.startswith("_"):
+                custom_fields[k] = _sanitize(v)
 
         # Component is usually passed via 'extra'
         component = custom_fields.pop("component", "system")

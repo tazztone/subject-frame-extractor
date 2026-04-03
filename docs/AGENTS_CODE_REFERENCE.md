@@ -154,7 +154,7 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;test_real_workflow.py  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;mock_app.py  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;regression  
-│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_pre_analysis_hang.py  
+│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_full_workflow_regression.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;test_robustness.py  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;research  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;test_debug_sam3.py  
@@ -1552,7 +1552,7 @@ class QualityVerifier:
 ```python
 class AppUI:
     """Main UI class for the Frame Extractor & Analyzer application."""
-    def __init__(self, config: 'Config', logger: 'AppLogger', progress_queue: Queue, cancel_event: threading.Event, thumbnail_manager: 'ThumbnailManager', model_registry: 'ModelRegistry'):
+    def __init__(self, config: 'Config', logger: 'AppLogger', progress_queue: Queue, cancel_event: threading.Event, thumbnail_manager: 'ThumbnailManager', model_registry: 'ModelRegistry', debug_mode: bool=False):
         """Initialize the AppUI."""
     def preload_models(self):
         """Asynchronously preloads heavy models (SAM3) in a background thread."""
@@ -1615,6 +1615,8 @@ class AppUI:
         """Configures dynamic visibility logic for UI components."""
     def _get_inputs(self, keys: list[str]) -> list[gr.Component]:
         """Retrieves a list of UI components based on their registry keys."""
+    def _map_dedup_method(self, ui_value: str) -> str:
+        """Maps UI dropdown values to internal deduplication method names."""
     def _setup_pipeline_handlers(self):
         """Configures event handlers for starting main processing pipelines."""
     @safe_ui_callback('Face Clustering')
