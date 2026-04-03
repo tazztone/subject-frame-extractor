@@ -39,6 +39,10 @@ def mock_app():
     thumbnail_manager = MagicMock()
     model_registry = MagicMock()
 
+    # Mock return values for registry to return strings for component choices
+    model_registry.get_tracker_names.return_value = ["sam2", "sam3"]
+    model_registry.get_detector_names.return_value = ["YOLO12l-Seg", "YOLO26n"]
+
     with patch("torch.cuda.is_available", return_value=False, create=True):
         app = AppUI(config, logger, progress_queue, cancel_event, thumbnail_manager, model_registry)
         with gr.Blocks() as demo:

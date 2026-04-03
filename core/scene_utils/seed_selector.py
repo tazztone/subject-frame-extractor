@@ -267,12 +267,14 @@ class SeedSelector:
 
         if self.subject_detector:
             try:
+                log_with_component(self.logger, "debug", "Running YOLO subject detection...")
                 conf_thresh = getattr(self.params, "subject_detector_threshold", 0.45)
                 class_id = getattr(self.params, "subject_detector_class_id", 0)
                 detections = self.subject_detector.detect(
                     cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR), conf_threshold=conf_thresh, target_class_id=class_id
                 )
                 if detections:
+                    log_with_component(self.logger, "debug", f"YOLO found {len(detections)} candidates.")
                     return [
                         {
                             "bbox": d.bbox,
@@ -283,6 +285,8 @@ class SeedSelector:
                         }
                         for d in detections
                     ]
+                else:
+                    log_with_component(self.logger, "debug", "YOLO found no subjects.")
             except Exception as e:
                 log_with_component(self.logger, "warning", f"YOLO subject detection failed: {e}")
 
@@ -360,7 +364,9 @@ class SeedSelector:
                     else:
                         best_face = max(faces, key=lambda f: f.det_score)
                     expanded = self._expand_face_to_body(best_face.bbox.astype(int), frame_rgb.shape)
-                    log_with_component(self.logger, "info", "Used face-detection fallback for subject seeding")
+                    log_with_component(
+                        self.logger, "info", "No subjects found by YOLO; used face-detection fallback for seeding"
+                    )
                     return expanded, {
                         "type": "face_fallback_expanded",
                         "face_conf": float(best_face.det_score),

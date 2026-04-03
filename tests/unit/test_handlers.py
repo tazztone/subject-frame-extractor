@@ -60,6 +60,9 @@ class TestAppUIHandlers:
         app.components["scene_gallery"] = MagicMock()
         app.components["total_pages_label"] = MagicMock()
         app.components["page_number_input"] = MagicMock()
+        app.components["filtering_tab"] = MagicMock()
+        app.components["export_button"] = MagicMock()
+        app.components["dry_run_button"] = MagicMock()
         app.components["metric_sliders"] = {}
         app.components["metric_accs"] = {}
         return app

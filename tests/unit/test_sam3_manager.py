@@ -154,7 +154,6 @@ def test_sam3_wrapper_shutdown_cleanup():
                 SAM3Wrapper(checkpoint_path="fake.pt", device="cpu")
 
 
-@pytest.mark.xfail(reason="Unstable due to global pkg_resources mock in conftest")
 def test_sam3_wrapper_pkg_resources_fallback():
     """Test the pkg_resources fallback by forcing an ImportError."""
     # This is tricky because the module is already loaded.

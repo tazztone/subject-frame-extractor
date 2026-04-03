@@ -77,10 +77,11 @@ testpaths = ["tests"]
 python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
-norecursedirs = ["SAM3_repo", ".agent", "scripts", "outputs"]
+norecursedirs = ["SAM3_repo", ".agent", "scripts", "outputs", ".hypothesis"]
 addopts = "-v --tb=short --cov=core --cov-report=term-missing --cov-report=html:htmlcov --cov-fail-under=80 --ignore=tests/e2e/ -m 'not integration and not gpu_e2e and not audit and not slow'"
 filterwarnings = [
     "ignore::DeprecationWarning:torch.jit",
+    "ignore::UserWarning:pkg_resources",
 ]
 markers = [
     "unit: Unit tests (fast, isolated, use mocks)",

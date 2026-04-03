@@ -137,14 +137,22 @@ class ModelRegistry:
     def get_subject_detector(
         self, model_name: str, model_path: str, logger: "LoggerLike", device: str
     ) -> Optional[Any]:
-        """Retrieves or loads a subject detector (YOLO family)."""
+        """Retrieves or loads a subject detector (YOLO family) with CPU fallback on OOM."""
         key = f"detector_{model_name}"
 
         def _loader():
             # Lazy import to avoid top-level onnxruntime dependency
             from .subject_detector import SubjectDetector
 
-            return SubjectDetector(model_path, logger, device=device)
+            current_device = self.runtime_device_override or device
+            try:
+                return SubjectDetector(model_path, logger, device=current_device)
+            except RuntimeError as e:
+                if "out of memory" in str(e).lower() and current_device == "cuda":
+                    self.logger.warning(f"CUDA OOM during detector '{model_name}' init. Switching to CPU.")
+                    self.runtime_device_override = "cpu"
+                    return SubjectDetector(model_path, logger, device="cpu")
+                raise e
 
         try:
             return self.get_or_load(key, _loader)

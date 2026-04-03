@@ -161,6 +161,7 @@ tests
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_simple_cv_operators.py`](#-testsunittest_simple_cv_operatorspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_smoke.py`](#-testsunittest_smokepy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_strategy_mapping.py`](#-testsunittest_strategy_mappingpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_subject_detector.py`](#-testsunittest_subject_detectorpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_subject_masker_coverage.py`](#-testsunittest_subject_masker_coveragepy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_subject_masker_simple.py`](#-testsunittest_subject_masker_simplepy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_system_health.py`](#-testsunittest_system_healthpy)  
@@ -328,8 +329,11 @@ def _create_test_image(width=256, height=256, frame_idx=0):
     """Create a high-entropy test image with a noise-textured complex object (simula..."""
 def _create_test_image_with_face(width=256, height=256):
     """Create a test image with a face-like pattern."""
-REAL_VIDEO_PATH = Path('/home/tazztone/_coding/subject-frame-extractor/downlo...
-REAL_BBOX = [652, 207, 71, 102]
+def _generate_synthetic_video(video_path, width=1280, height=720, num_frames=60):
+    """Generate a realistic 720p synthetic video with a moving textured object."""
+@pytest.fixture(scope='module')
+def sample_video(tmp_path_factory):
+    """Resolve a test video: prefer real media if present in downloads, else generat..."""
 def _create_test_frames_dir(tmp_path, num_frames=5, width=256, height=256):
     """Create a directory with high-entropy test frames for robust tracking tests."""
 def _is_sam3_available():
@@ -369,11 +373,11 @@ class TestSAM3Inference:
     def test_sam3_add_bbox_prompt(self, tmp_path, module_model_registry):
         """SAM3 add_bbox_prompt() returns valid mask."""
     @requires_sam3
-    def test_sam3_propagate_forward(self, tmp_path, module_model_registry):
-        """SAM3 propagate() forward generator yields valid results with real media."""
+    def test_sam3_propagate_forward(self, tmp_path, sample_video, module_model_registry):
+        """SAM3 can propagate forward through real or realistic synthetic video."""
     @requires_sam3
-    def test_sam3_propagate_bidirectional(self, tmp_path, module_model_registry):
-        """SAM3 propagate() works bidirectionally from middle frame with real media."""
+    def test_sam3_propagate_bidirectional(self, tmp_path, sample_video, module_model_registry):
+        """SAM3 can propagate from a middle frame."""
     @requires_sam3
     def test_sam3_clear_prompts(self, test_frames_dir, module_model_registry):
         """SAM3 clear_prompts() resets session state."""
@@ -468,13 +472,13 @@ class TestLargeVideoE2E:
         """Test processing a larger number of frames."""
     @requires_sam3
     @pytest.mark.sam3
-    def test_sam3_with_many_frames(self, tmp_path, module_model_registry):
+    def test_sam3_with_many_frames(self, tmp_path, sample_video, module_model_registry):
         """SAM3 can process a larger sequence."""
 @pytest.mark.gpu_e2e
 class TestMaskGenerationE2E:
     """E2E tests for mask generation to catch silent failures."""
     @requires_sam3
-    def test_get_mask_for_bbox_e2e(self, test_frames_dir, tmp_path):
+    def test_get_mask_for_bbox_e2e(self, test_frames_dir, tmp_path, module_model_registry):
         """Test SeedSelector._get_mask_for_bbox with real SAM3."""
     @requires_sam3
     def test_identity_first_seed_e2e(self, test_image_with_face, tmp_path, module_model_registry):
@@ -2758,7 +2762,6 @@ def test_sam3_wrapper_checkpoint_resolution():
     """Test checkpoint auto-resolution when None is provided."""
 def test_sam3_wrapper_shutdown_cleanup():
     """Test the shutdown method with various predictor states."""
-@pytest.mark.xfail(reason='Unstable due to global pkg_resources mock in conftest')
 def test_sam3_wrapper_pkg_resources_fallback():
     """Test the pkg_resources fallback by forcing an ImportError."""
 def test_sam3_wrapper_add_point_prompt(sam3_unit_fresh): ...
@@ -3193,6 +3196,21 @@ class TestStrategyMapping:
         """GREEN TEST: Now that AnalysisParameters has a validator, or we"""
     def test_automatic_fallback_prefers_best_face(self, selector):
         """GREEN TEST: In Automatic fallback, face detection now picks"""
+```
+
+### `📄 tests/unit/test_subject_detector.py`
+
+```python
+@pytest.fixture
+def mock_logger(): ...
+@pytest.fixture
+def mock_ort_session(): ...
+def test_subject_detector_init(mock_logger, mock_ort_session): ...
+def test_detect_filters_by_class_and_conf(mock_logger, mock_ort_session): ...
+def test_postprocess_det_unscaling(mock_logger, mock_ort_session): ...
+def test_postprocess_seg_mask_logic(mock_logger, mock_ort_session): ...
+def test_dynamic_class_splitting(mock_logger, mock_ort_session): ...
+def test_close_releases_session(mock_logger, mock_ort_session): ...
 ```
 
 ### `📄 tests/unit/test_subject_masker_coverage.py`

@@ -277,6 +277,7 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_simple_cv_operators.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_smoke.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_strategy_mapping.py  
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_subject_detector.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_subject_masker_coverage.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_subject_masker_simple.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_system_health.py  
@@ -845,7 +846,7 @@ class ModelRegistry:
     def get_tracker(self, model_name: str, models_path: Optional[str]=None, user_agent: Optional[str]=None, retry_params: Optional[tuple]=None, config: Optional['Config']=None) -> Optional[Any]:
         """Loads subject tracker with CPU fallback on OOM."""
     def get_subject_detector(self, model_name: str, model_path: str, logger: 'LoggerLike', device: str) -> Optional[Any]:
-        """Retrieves or loads a subject detector (YOLO family)."""
+        """Retrieves or loads a subject detector (YOLO family) with CPU fallback on OOM."""
     def _load_tracker_impl(self, model_name: str, models_path: str, user_agent: str, retry_params: tuple, device: str, config: Optional['Config']=None): ...
 ```
 
@@ -1630,6 +1631,8 @@ class AppUI:
         """Scans the video for subjects to populate the discovery gallery."""
     def _get_smart_mode_updates(self, is_enabled: bool) -> list[Any]:
         """Calculates slider updates when toggling 'Smart Mode'."""
+    def _load_frames_into_state(self, state: ApplicationState) -> ApplicationState:
+        """Load frame metadata from the analysis DB into state. Returns a new state copy."""
     def _setup_filtering_handlers(self):
         """Configures event handlers for the filtering and export tab."""
     @safe_ui_callback('Preset Change')

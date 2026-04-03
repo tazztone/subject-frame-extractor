@@ -236,6 +236,11 @@ class PipelineHandler:
             self.app.components["application_state"]: new_state,
             self.app.components["unified_status"]: msg,
             self.app.components["unified_log"]: result.get("unified_log", "Analysis Complete."),
+            # Explicitly enable export controls — data loads lazily when the Export tab is selected.
+            # Do NOT gate these on all_frames_data; it is always empty at this point.
+            self.app.components["filtering_tab"]: gr.update(interactive=True),
+            self.app.components["export_button"]: gr.update(interactive=True),
+            self.app.components["dry_run_button"]: gr.update(interactive=True),
         }
 
     @safe_ui_callback("Load Session")

@@ -59,7 +59,17 @@ class SubjectDetector:
         # Check if this is a segmentation model by looking at outputs
         outputs = self.session.get_outputs()
         self.is_seg = len(outputs) > 1
-        self.logger.debug(f"Detector mode: {'Segmentation' if self.is_seg else 'Detection only'}")
+        # Determine number of classes and coefficients
+        inputs = self.session.get_inputs()[0]
+        output_shape = outputs[0].shape  # YOLO output for seg: (1, 4 + num_classes + num_masks, num_detections)
+        # We look at the second dimension of the first output
+        self.total_dims = output_shape[1]
+
+        self.logger.debug(
+            f"Detector mode: {'Segmentation' if self.is_seg else 'Detection only'} | "
+            f"Input: {inputs.shape} | Output: {output_shape}",
+            component="person_detector",
+        )
 
     def detect(
         self, frame_bgr: np.ndarray, conf_threshold: float = 0.45, target_class_id: int = 0
@@ -83,6 +93,7 @@ class SubjectDetector:
         # 2. Inference
         input_name = self.session.get_inputs()[0].name
         outputs = self.session.run(None, {input_name: blob})
+        self.logger.debug(f"YOLO raw predictions: {len(outputs[0][0].T)} candidates.")
 
         # 3. Postprocess
         if self.is_seg:
@@ -138,19 +149,20 @@ class SubjectDetector:
         preds = outputs[0][0].T  # (N, 116)
         proto = outputs[1][0]  # (32, 160, 160)
         results = []
+        # Determine mask coefficient count from proto shape
+        num_masks = proto.shape[0]  # Usually 32
 
         for det in preds:
             cx, cy, bw, bh = det[:4]
-            # YOLO-seg typically has 80 classes, then 32 mask coefficients
-            # 116 total: 4 coords + 80 class scores + 32 mask coeffs.
-            class_scores = det[4:84]
+            # YOLO-seg: [4 coords, N classes, M masks]
+            class_scores = det[4:-num_masks]
             class_id = int(np.argmax(class_scores))
             score = float(class_scores[class_id])
 
             if class_id != target_class_id or score < conf_threshold:
                 continue
 
-            coeffs = det[84:]  # 32 coefficients
+            coeffs = det[-num_masks:]  # The last M values are mask coefficients
 
             # 1. Unscale bbox
             x1 = max(0, int((cx - bw / 2 - pad_left) / scale))

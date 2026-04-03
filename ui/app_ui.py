@@ -1130,6 +1130,25 @@ class AppUI:
                 )
         return updates
 
+    def _load_frames_into_state(self, state: ApplicationState) -> ApplicationState:
+        """Load frame metadata from the analysis DB into state. Returns a new state copy."""
+        output_dir = state.analysis_output_dir
+        if not output_dir:
+            return state
+
+        from core.filtering import load_and_prep_filter_data
+
+        all_frames, metric_values = load_and_prep_filter_data(output_dir, self._get_all_filter_keys, self.config)
+        self.logger.info(f"[Filtering] Loaded {len(all_frames)} frames from {output_dir}")
+
+        return state.model_copy(
+            update={
+                "all_frames_data": all_frames,
+                "per_metric_values": metric_values,
+                "analysis_output_dir": output_dir,  # Ensure consistency
+            }
+        )
+
     def _setup_filtering_handlers(self):
         """Configures event handlers for the filtering and export tab."""
         c = self.components
@@ -1192,22 +1211,18 @@ class AppUI:
         )
 
         def load_and_trigger_update(state):
-            print(f"[DEBUG] load_and_trigger_update called with state.analysis_output_dir: {state.analysis_output_dir}")
             output_dir = state.analysis_output_dir
             if not output_dir:
-                print("[DEBUG] No output_dir, aborting.")
                 return [gr.update()] * len(load_outputs)
-            from core.filtering import build_all_metric_svgs, load_and_prep_filter_data
 
-            all_frames, metric_values = load_and_prep_filter_data(output_dir, self._get_all_filter_keys, self.config)
-            print(f"[DEBUG] loaded {len(all_frames)} frames.")
+            # Use the shared helper for loading data
+            new_state = self._load_frames_into_state(state)
+            all_frames = new_state.all_frames_data
+            metric_values = new_state.per_metric_values
+
+            from core.filtering import build_all_metric_svgs
+
             svgs = build_all_metric_svgs(metric_values, self._get_all_filter_keys, self.logger)
-
-            new_state = state.model_copy()
-            new_state.all_frames_data = all_frames
-            new_state.per_metric_values = metric_values
-            # Ensure analysis_output_dir is set in case we resumed
-            new_state.analysis_output_dir = output_dir
 
             updates = {
                 c["application_state"]: new_state,
@@ -1251,7 +1266,6 @@ class AppUI:
 
         def auto_load_data(state: ApplicationState):
             if state.analysis_output_dir and not state.all_frames_data:
-                print("[DEBUG] auto-loading data via state change")
                 return load_and_trigger_update(state)
             return [gr.update()] * len(load_outputs)
 
@@ -1270,7 +1284,7 @@ class AppUI:
                 c["dedup_method_input"],
             ]
             + slider_comps,
-            [c["unified_status"]],
+            [c["application_state"], c["unified_status"]],
         )
         c["dry_run_button"].click(
             self.dry_run_export_wrapper,
@@ -1285,7 +1299,7 @@ class AppUI:
                 c["dedup_method_input"],
             ]
             + slider_comps,
-            [c["unified_status"]],
+            [c["application_state"], c["unified_status"]],
         )
 
         # Reset Filters
@@ -1538,8 +1552,16 @@ class AppUI:
         *slider_values: float,
     ) -> dict:
         """Wrapper to execute the final frame export."""
+        # Self-heal: load frames if the lazy tab-select hasn't fired yet
+        if not state.all_frames_data and state.analysis_output_dir:
+            self.logger.info("[Export] all_frames_data empty — loading from DB before export.")
+            state = self._load_frames_into_state(state)
+
         if not state.all_frames_data:
-            return {self.components["unified_status"]: "⚠️ No frames loaded. Run Analysis first."}
+            return {
+                self.components["application_state"]: state,
+                self.components["unified_status"]: "⚠️ No frames loaded. Run Analysis first.",
+            }
 
         all_frames_data = state.all_frames_data
         output_dir = state.analysis_output_dir
@@ -1573,6 +1595,7 @@ class AppUI:
             self.cancel_event,
         )
         return {
+            self.components["application_state"]: state,
             self.components["unified_status"]: msg,
         }
 
@@ -1590,6 +1613,17 @@ class AppUI:
         *slider_values: float,
     ) -> dict:
         """Wrapper to perform a dry run of the export."""
+        # Self-heal: load frames if the lazy tab-select hasn't fired yet
+        if not state.all_frames_data and state.analysis_output_dir:
+            self.logger.info("[Dry Run] all_frames_data empty — loading from DB before export.")
+            state = self._load_frames_into_state(state)
+
+        if not state.all_frames_data:
+            return {
+                self.components["application_state"]: state,
+                self.components["unified_status"]: "⚠️ No frames loaded. Run Analysis first.",
+            }
+
         all_frames_data = state.all_frames_data
         output_dir = state.analysis_output_dir
         video_path = state.extracted_video_path
@@ -1620,5 +1654,6 @@ class AppUI:
             self.logger,
         )
         return {
+            self.components["application_state"]: state,
             self.components["unified_status"]: msg,
         }
