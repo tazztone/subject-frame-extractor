@@ -118,10 +118,5 @@ class TestErrorHandling:
         # Open logs to ensure component is active/visible
         open_accordion(page, Labels.SYSTEM_LOGS)
 
-        # Manual refresh to pull from queue immediately
-        page.locator(Selectors.REFRESH_LOGS).click()
-        # Settle time for Gradio update
-        page.wait_for_timeout(500)
-
         # Check logs using the textarea inside the container (Gradio 5 standard)
         expect(page.locator(Selectors.LOG_TEXTAREA)).to_contain_text("Error", timeout=10000)

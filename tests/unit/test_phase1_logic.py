@@ -16,6 +16,7 @@ class TestPhase1Logic(unittest.TestCase):
         self.thumbnail_manager = MagicMock()
         self.model_registry = MagicMock()
 
+        # Build basic components needed for the handler success calls
         with patch("ui.app_ui.torch.cuda.is_available", create=True, return_value=False):
             self.app = AppUI(
                 self.config,
@@ -44,7 +45,13 @@ class TestPhase1Logic(unittest.TestCase):
     def test_on_pre_analysis_success_image_folder(self, mock_get_status):
         mock_get_status.return_value = ("status", gr.update(interactive=True))
 
-        result = {"scenes": [], "output_dir": "/mock/images"}
+        result = {
+            "unified_log": "Pre-Analysis Complete.",
+            "scenes": [],
+            "output_dir": "/mock/images",
+            "video_path": "",
+            "done": True,
+        }
         current_state = ApplicationState()
 
         with patch("ui.handlers.pipeline_handlers.Scene", side_effect=lambda **kwargs: kwargs):
@@ -63,7 +70,13 @@ class TestPhase1Logic(unittest.TestCase):
     def test_on_pre_analysis_success_video_folder(self, mock_get_status):
         mock_get_status.return_value = ("status", gr.update(interactive=True))
 
-        result = {"scenes": [], "output_dir": "/mock/video"}
+        result = {
+            "unified_log": "Pre-Analysis Complete.",
+            "scenes": [],
+            "output_dir": "/mock/video",
+            "video_path": "/mock/video.mp4",
+            "done": True,
+        }
         current_state = ApplicationState(extracted_video_path="/mock/video.mp4")
 
         with patch("ui.handlers.pipeline_handlers.Scene", side_effect=lambda **kwargs: kwargs):

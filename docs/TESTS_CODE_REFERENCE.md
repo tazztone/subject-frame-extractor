@@ -37,7 +37,8 @@ tests
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_gpu_health.py`](#-testsintegrationtest_gpu_healthpy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_handler_state.py`](#-testsintegrationtest_handler_statepy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_integration_smoke.py`](#-testsintegrationtest_integration_smokepy)  
-│&nbsp;&nbsp;&nbsp;└──&nbsp;[`test_real_workflow.py`](#-testsintegrationtest_real_workflowpy)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_real_workflow.py`](#-testsintegrationtest_real_workflowpy)  
+│&nbsp;&nbsp;&nbsp;└──&nbsp;[`test_session_load.py`](#-testsintegrationtest_session_loadpy)  
 ├──&nbsp;[`mock_app.py`](#-testsmock_apppy)  
 ├──&nbsp;regression  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_full_workflow_regression.py`](#-testsregressiontest_full_workflow_regressionpy)  
@@ -127,6 +128,7 @@ tests
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_launch_config.py`](#-testsunittest_launch_configpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_logger.py`](#-testsunittest_loggerpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_logger_interop.py`](#-testsunittest_logger_interoppy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_logger_setup.py`](#-testsunittest_logger_setuppy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_managers.py`](#-testsunittest_managerspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_mask_operators.py`](#-testsunittest_mask_operatorspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_mask_propagator_logic.py`](#-testsunittest_mask_propagator_logicpy)  
@@ -555,6 +557,13 @@ def test_real_end_to_end_workflow(tmp_path, tracker_model):
     """Automated version of tests/verification/e2e_run.py."""
 ```
 
+### `📄 tests/integration/test_session_load.py`
+
+```python
+def test_session_load_restores_state(tmp_path):
+    """Verify run_session_load_wrapper correctly restores UI and state components."""
+```
+
 ### `📄 tests/mock_app.py`
 
 ```python
@@ -573,9 +582,12 @@ mock_torch.no_grad = TransparentContext
 mock_torch.inference_mode = TransparentContext
 modules_to_mock = ['torch', 'torch.cuda', 'torch.nn', 'torchvision', 'torchvi...
 def mock_extraction_run(self, tracker=None): ...
-def mock_pre_analysis_execution(event, *args, **kwargs): ...
-def mock_propagation_execution(event, *args, **kwargs): ...
-def mock_analysis_execution(event, *args, **kwargs): ...
+def mock_pre_analysis_execution(event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress=None, model_registry=None, loaded_models=None, **kwargs): ...
+def mock_propagation_execution(event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress=None, model_registry=None, loaded_models=None, **kwargs): ...
+def mock_analysis_execution(event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress=None, model_registry=None, loaded_models=None, **kwargs): ...
+def mock_ingest_folder(folder_path, output_dir, recursive=False, thumbnails_only=True): ...
+def mock_export_xmps_for_photos(photos, star_thresholds=None): ...
+def mock_export_kept_frames(event, config, logger, progress_queue=None, cancel_event=None): ...
 def mock_extraction_wrapper(self, current_state: ApplicationState, *args, **kwargs): ...
 def mock_pre_analysis_wrapper(self, current_state: ApplicationState, *args, **kwargs): ...
 def mock_propagation_wrapper(self, current_state: ApplicationState, *args, **kwargs): ...
@@ -1361,14 +1373,8 @@ class TestAppUI:
     def test_on_pre_analysis_success(self, app_ui, app_state, tmp_path): ...
     def test_push_history(self, app_state): ...
     def test_undo_last_action(self, app_ui, app_state, tmp_path): ...
-    def test_get_smart_mode_updates(self, app_ui): ...
-    def test_on_apply_bulk_scene_filters_extended(self, app_ui, app_state, tmp_path): ...
-    def test_on_reset_filters(self, app_ui, app_state, tmp_path): ...
-    def test_on_filters_changed_wrapper(self, app_ui, tmp_path):
-        """Test on_filters_changed_wrapper uses ApplicationState data."""
-    def test_on_auto_set_thresholds(self, app_ui): ...
-    @patch('ui.handlers.pipeline_handlers.execute_session_load')
-    def test_run_session_load_wrapper(self, mock_load, app_ui, app_state, tmp_path): ...
+    def test_run_session_load_wrapper(self, app_ui, app_state, tmp_path):
+        """Verify run_session_load_wrapper uses _run_pipeline orchestrator."""
 ```
 
 ### `📄 tests/unit/test_batch_manager.py`
@@ -2250,6 +2256,15 @@ def test_create_frame_map_interop(tmp_path): ...
 def test_setup_logging_stable_name(tmp_path): ...
 ```
 
+### `📄 tests/unit/test_logger_setup.py`
+
+```python
+def test_gradio_queue_handler_formatter_default():
+    """Verify GradioQueueHandler hardcodes its simple formatter."""
+def test_root_logger_isolation():
+    """Verify setup_logging does NOT attach GradioQueueHandler to the root logger."""
+```
+
 ### `📄 tests/unit/test_managers.py`
 
 ```python
@@ -2379,8 +2394,8 @@ class TestMaskPropagatorOOM:
     def mock_dam_tracker(self): ...
     @pytest.fixture
     def propagator(self, mock_config, mock_logger, mock_dam_tracker): ...
-    @patch('torch.cuda.empty_cache')
-    @patch('torch.cuda.is_available', return_value=True)
+    @patch('core.scene_utils.mask_propagator.torch.cuda.empty_cache')
+    @patch('core.scene_utils.mask_propagator.torch.cuda.is_available', return_value=True)
     def test_propagate_video_oom_recovery(self, mock_cuda_avail, mock_empty_cache, propagator, mock_dam_tracker):
         """Test that OutOfMemoryError is caught and handled during propagate_video."""
 ```
@@ -2605,6 +2620,8 @@ def test_extraction_success_yields_correct_status():
     """Tier 1: Verify extraction success state."""
 def test_pre_analysis_blocks_on_missing_extracted_video():
     """Tier 1: Verify pre-analysis error handling for missing video."""
+def test_pre_analysis_result_validation():
+    """Tier 1: Verify PreAnalysisResult validation logic."""
 ```
 
 ### `📄 tests/unit/test_pipeline_result_schemas.py`

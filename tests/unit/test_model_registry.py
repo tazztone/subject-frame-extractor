@@ -100,7 +100,7 @@ class TestModelRegistry:
             # First call OOMs on CUDA, second succeeds on CPU
             mock_load.side_effect = [RuntimeError("out of memory"), "cpu_tracker"]
 
-            with patch("torch.cuda.is_available", return_value=True):
+            with patch("core.managers.registry.torch.cuda.is_available", return_value=True):
                 tracker = registry.get_tracker("sam3", models_path="/tmp")
                 assert tracker == "cpu_tracker"
                 assert registry.runtime_device_override == "cpu"

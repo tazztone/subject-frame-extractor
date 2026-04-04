@@ -153,7 +153,8 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_gpu_health.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_handler_state.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_integration_smoke.py  
-│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;test_real_workflow.py  
+│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_real_workflow.py  
+│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;test_session_load.py  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;mock_app.py  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;regression  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_full_workflow_regression.py  
@@ -243,6 +244,7 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_launch_config.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_logger.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_logger_interop.py  
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_logger_setup.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_managers.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_mask_operators.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_mask_propagator_logic.py  
@@ -756,7 +758,7 @@ def setup_logging(config: 'Config', log_dir: Optional[Path]=None, log_to_console
     """Sets up the global logging configuration using dictConfig."""
 class AppLogger:
     """A streamlined interface for the application's logging."""
-    def __init__(self, config: 'Config', **kwargs):
+    def __init__(self, config: 'Config', session_log_file: Optional[Union[str, Path]]=None, **kwargs):
         """Initializes the AppLogger. setup_logging() MUST be called once before this."""
     def _log(self, level: str, message: str, component: str, **kwargs):
         """Helper to create a structured log and pass to standard logger."""
@@ -1024,6 +1026,8 @@ class AnalysisParameters(BaseModel):
         """Factory method to create parameters from UI arguments, handling validation an..."""
 class MaskingResult(BaseModel):
     """Result of the mask propagation process for a frame."""
+class PreAnalysisResult(BaseModel):
+    """Typed result for the pre-analysis pipeline stage."""
 ```
 
 ### `📄 core/operators/__init__.py`
@@ -1728,7 +1732,7 @@ class PipelineHandler:
     @safe_ui_callback('Pre-Analysis')
     def run_pre_analysis_wrapper(self, current_state: ApplicationState, *args, progress=None):
         """Wrapper to execute the pre-analysis pipeline."""
-    def _on_pre_analysis_success(self, result: dict, current_state: ApplicationState) -> dict:
+    def _on_pre_analysis_success(self, result_dict: dict, current_state: ApplicationState) -> dict:
         """Callback for successful pre-analysis."""
     def _propagation_button_handler(self, current_state: ApplicationState):
         """Unified guard for propagation button."""
@@ -1742,9 +1746,13 @@ class PipelineHandler:
         """Wrapper to execute the full analysis pipeline."""
     def _on_analysis_success(self, result: dict, current_state: ApplicationState) -> dict:
         """Callback for successful analysis."""
+    def _execute_session_load_adapter(self, event, *args, **kwargs):
+        """Adapts the synchronous execute_session_load to the pipeline generator interface."""
     @safe_ui_callback('Load Session')
-    def run_session_load_wrapper(self, session_path: str, current_state: ApplicationState):
-        """Loads a previous session and updates the UI state."""
+    def run_session_load_wrapper(self, session_path: str, current_state: ApplicationState, progress=None):
+        """Wrapper to execute the session loading pipeline."""
+    def _on_session_load_success(self, result: dict, current_state: ApplicationState) -> dict:
+        """Callback for successful session loading."""
 ```
 
 ### `📄 ui/handlers/scene_handler.py`

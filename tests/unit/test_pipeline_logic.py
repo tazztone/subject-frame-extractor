@@ -1,6 +1,10 @@
 from unittest.mock import MagicMock
 
+import pytest
+from pydantic import ValidationError
+
 from core.application_state import ApplicationState
+from core.models import PreAnalysisResult
 from tests.mock_app import mock_extraction_wrapper, mock_pre_analysis_wrapper
 
 
@@ -63,3 +67,24 @@ def test_pre_analysis_blocks_on_missing_extracted_video():
 
     status_id = handler.app.components["unified_status"]
     assert "⚠️ Error: No extracted video found" in yielded[status_id]
+
+
+def test_pre_analysis_result_validation():
+    """Tier 1: Verify PreAnalysisResult validation logic."""
+    valid_data = {"unified_log": "Success", "scenes": [], "output_dir": "/tmp", "video_path": "test.mp4", "done": True}
+
+    # Assert valid data passes
+    result = PreAnalysisResult(**valid_data)
+    assert result.unified_log == "Success"
+
+    # Assert missing required field raises ValidationError
+    invalid_data = valid_data.copy()
+    del invalid_data["scenes"]
+    with pytest.raises(ValidationError):
+        PreAnalysisResult(**invalid_data)
+
+    # Assert invalid type raises ValidationError
+    invalid_data = valid_data.copy()
+    invalid_data["scenes"] = "not a list"
+    with pytest.raises(ValidationError):
+        PreAnalysisResult(**invalid_data)

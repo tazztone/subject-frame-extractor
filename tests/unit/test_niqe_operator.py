@@ -171,7 +171,7 @@ class TestNiqeOperator:
         """Test cleanup calls empty_cache when device is cuda."""
         operator.device = "cuda"
         operator.model = MagicMock()
-        with patch("torch.cuda.empty_cache") as mock_empty:
+        with patch("core.operators.niqe.torch.cuda.empty_cache") as mock_empty:
             operator.cleanup()
             mock_empty.assert_called_once()
 

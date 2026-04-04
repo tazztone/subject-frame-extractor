@@ -5,10 +5,12 @@
 
 ## UI Event Patterns
 
-### 1. The "Safe Callback" Decorator
-All UI logic in `AppUI` should be wrapped with `@AppUI.safe_ui_callback("Context Name")`.
-- **Purpose**: Prevents the entire Gradio app from crashing on unhandled exceptions.
 - **Behavior**: Catches exceptions, logs them with `self.logger.error`, and returns a standardized error message to the "Unified Status" and "Unified Log" components.
+
+### 2. Async Orchestration (`_run_pipeline`)
+Any UI action that triggers a long-running process (Extraction, Analysis, Session Loading) MUST use the `self.app._run_pipeline` async wrapper.
+- **Responsiveness**: This ensures the Gradio UI remains interactive and displays a "Loading" or "Running" status instead of freezing.
+- **Standard**: Even non-ML tasks like `Load Session` should be adapted to this generator-based pattern.
 
 ### 3. Anti-Loop State Initialization
 Reactive state fields in `ApplicationState` (like `all_frames_data`) that trigger `.change()` listeners MUST NOT use "falsy" defaults that indicate "not yet loaded" (e.g., `[]`, `""`, `0`).
@@ -16,11 +18,16 @@ Reactive state fields in `ApplicationState` (like `all_frames_data`) that trigge
 - **Condition**: Listeners should check `if state.all_frames_data is None` to trigger first-time loading.
 - **Success State**: After a load (even if 0 items found), the field becomes `[]`. Since `[] is not None`, the reactive loop terminates.
 
-### 4. Busy-Flag Gating
-To prevent UI interactions from interrupting long-running database operations or causing "flicker," use a busy flag.
-- **Implementation**: `AppUI` has an `is_busy` boolean.
-- **Gating**: All background tasks (`_run_pipeline`) should toggle `is_busy`.
-- **Condition**: Reactive logic (like `auto_load_data`) should check `not self.is_busy` before executing.
+## Logging & Progress Tracking
+
+### 1. Mandatory Level Tags
+To ensure logs are correctly filtered and visible in the UI `LogViewer`, all log messages MUST contain a bracketed level tag.
+- **Allowed Levels**: `[INFO]`, `[ERROR]`, `[DEBUG]`, `[SUCCESS]`, `[WARNING]`.
+- **Filtering**: The UI component uses these tags to toggle visibility (e.g., hiding DEBUG logs by default).
+- **Example**: `self.logger.info("[SUCCESS] Session loaded correctly")`.
+
+### 2. Queue-First Principle
+Directly yielding to `unified_log` is an anti-pattern. Always prefer the background queue via the logger to ensure the UI refresh timer captures the update atomically.
 
 ## Metadata & Validation (Pydantic)
 
@@ -68,9 +75,14 @@ For interactive subject selection, the model must provide immediate feedback on 
 - **Docstrings**: Google-style docstrings used throughout.
 - **Forward References**: Use `"ClassName"` or `from __future__ import annotations` to handle circular dependencies in type hints.
 
-## Development Workflows
+## Development & Testing Workflows
 
-### Bug Fix Workflow
+### 1. Mock Integrity & API Signatures
+The `tests/mock_app.py` stubs MUST be kept in perfect synchronization with the real `PipelineHandler` and `core/pipelines.py` signatures.
+- **Verification**: Always run `uv run pytest tests/unit/test_signatures.py` after changing any public pipeline API.
+- **Failure**: Failure to sync mocks will cause CI regressions in unit tests that rely on the mock app.
+
+### 2. Bug Fix Workflow
 1. **Reproduce**: Create a minimal test case in `tests/unit/` or `tests/integration/`.
 2. **Trace**: Use `logger.debug()` or `logger.info()` to inspect state during pipeline execution.
 3. **Fix**: Implement the fix in the appropriate `core/` or `ui/` module.

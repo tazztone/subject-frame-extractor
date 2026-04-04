@@ -343,3 +343,15 @@ class MaskingResult(BaseModel):
     mask_area_pct: Optional[float] = None
     mask_empty: bool = True
     error: Optional[str] = None
+
+
+class PreAnalysisResult(BaseModel):
+    """Typed result for the pre-analysis pipeline stage."""
+
+    unified_log: str
+    scenes: List[dict]
+    output_dir: str
+    video_path: str
+    done: bool = True
+    seeding_results_column: Optional[dict] = None
+    propagation_group: Optional[dict] = None

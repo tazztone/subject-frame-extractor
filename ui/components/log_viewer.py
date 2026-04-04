@@ -2,6 +2,7 @@
 Log viewer component for the Gradio UI.
 """
 
+from collections import deque
 from typing import Any, Dict, List, Optional
 
 import gradio as gr
@@ -16,7 +17,8 @@ class LogViewer:
         self.logger = logger
         self.progress_queue = progress_queue
         self.log_level_choices = log_level_choices
-        self.all_logs: List[str] = []
+        # Fix Issue: Use deque for thread-safety and bounded memory
+        self.all_logs: deque[str] = deque(maxlen=1000)
         self.log_filter_level = "INFO"
         self.components: Dict[str, Any] = {}
         self._last_rendered_log: str = ""  # Track last emitted content
@@ -49,41 +51,45 @@ class LogViewer:
 
         log_level_map = {level: i for i, level in enumerate(self.log_level_choices)}
         current_filter_level = log_level_map.get(self.log_filter_level.upper(), 1)
+        # Convert deque to list for filtering
         filtered_logs = [
             l
-            for l in self.all_logs
+            for l in list(self.all_logs)
             if any(f"[{level}]" in l for level in self.log_level_choices[current_filter_level:])
         ]
-        return {self.components["unified_log"]: "\n".join(filtered_logs[-1000:])}
+        return {self.components["unified_log"]: "\n".join(filtered_logs)}
 
     def setup_handlers(self, timer_outputs: List[Any], full_outputs: List[Any]):
         """Sets up background log refresh and filter toggles."""
 
         def update_logs(filter_debug):
             """Refreshes log display by draining queue and applying filter."""
-            # Drain log messages from the queue (only; ui_update messages are
-            # the responsibility of button event handlers, not the timer).
+            # Fix Issue 2: Drain all messages atomically before filtering to ensure determinism
+            new_msgs = []
             while not self.progress_queue.empty():
                 try:
                     msg = self.progress_queue.get_nowait()
                     if "log" in msg:
-                        self.all_logs.append(msg["log"])
+                        new_msgs.append(msg["log"])
                 except Exception:
                     break
+
+            if new_msgs:
+                self.all_logs.extend(new_msgs)
 
             level = "DEBUG" if filter_debug else "INFO"
             self.log_filter_level = level
             log_level_map = {l: i for i, l in enumerate(self.log_level_choices)}
             current_filter_level = log_level_map.get(level.upper(), 1)
+
+            # Use atomic snapshot of logs
+            current_logs = list(self.all_logs)
             filtered_logs = [
-                l
-                for l in self.all_logs
-                if any(f"[{lvl}]" in l for lvl in self.log_level_choices[current_filter_level:])
+                l for l in current_logs if any(f"[{lvl}]" in l for lvl in self.log_level_choices[current_filter_level:])
             ]
-            new_content = "\n".join(filtered_logs[-1000:])
+            new_content = "\n".join(filtered_logs)
             self._last_rendered_log = new_content
             # Return (not yield) so Gradio always applies the update.
-            # Generator functions that yield nothing reset outputs to default.
             return {self.components["unified_log"]: new_content}
 
         c = self.components

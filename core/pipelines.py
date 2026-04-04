@@ -3,7 +3,7 @@ import shutil
 import threading
 from pathlib import Path
 from queue import Queue
-from typing import TYPE_CHECKING, Any, Callable, Generator, Optional
+from typing import TYPE_CHECKING, Callable, Generator, Optional
 
 import gradio as gr
 from PIL import Image
@@ -34,7 +34,7 @@ from core.managers import (
 from core.managers import (
     validate_session_dir as _validate_session_dir,
 )
-from core.models import AnalysisParameters
+from core.models import AnalysisParameters, PreAnalysisResult
 from core.progress import AdvancedProgressTracker
 from core.utils import (
     estimate_totals,
@@ -155,18 +155,21 @@ def execute_pre_analysis(
 
     msg = "Pre-Analysis Complete."
     logger.info(msg)
-    res: dict[str, Any] = {
-        "unified_log": "Pre-Analysis Complete. (Compute Metrics to continue)",
-        "scenes": [s.model_dump() for s in processed],
-        "output_dir": str(out_dir),
-        "video_path": params.video_path,
-        "done": True,
-    }
-    if gr:
-        res["seeding_results_column"] = gr.update(visible=True)
-        res["propagation_group"] = gr.update(visible=True)
 
-    yield res
+    # Fix Issue 6: Use typed PreAnalysisResult
+    res = PreAnalysisResult(
+        unified_log="Pre-Analysis Complete. (Compute Metrics to continue)",
+        scenes=[s.model_dump() for s in processed],
+        output_dir=str(out_dir),
+        video_path=params.video_path,
+        done=True,
+    )
+
+    if gr:
+        res.seeding_results_column = gr.update(visible=True)
+        res.propagation_group = gr.update(visible=True)
+
+    yield res.model_dump()
 
 
 def validate_session_dir(path: str) -> bool:

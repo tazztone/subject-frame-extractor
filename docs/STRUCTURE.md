@@ -33,7 +33,7 @@
 │   ├── gallery_utils.py    # Gallery logic and filtering handlers
 │   ├── handlers/           # Tab-specific event handlers (SceneHandler)
 │   ├── tabs/               # Modular Tab builders (ExtractionTabBuilder, etc.)
-│   └── components/         # Reusable Gradio components
+│   └── components/         # Reusable Gradio components (LogViewer, Gallery)
 ├── tests/                  # Multi-tier test suite
 │   ├── unit/               # Fast, mocked logic tests
 │   ├── integration/        # Hardware-dependent pipeline tests
@@ -56,6 +56,7 @@
 
 ### Data & State
 - **`metadata.db`**: Persistent SQLite storage for frame metrics. Allows the Gallery to filter thousands of frames instantly.
+- **`PreAnalysisResult`**: The primary typed data contract between the Discovery pipeline and the UI.
 - **`run_config.json`**: Generated in each output folder; stores the exact parameters used for that run (essential for resumability).
 - **`frame_map.json`**: The translation layer between filesystem image names (`frame_000001.png`) and original video indices.
 

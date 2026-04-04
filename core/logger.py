@@ -93,11 +93,14 @@ class GradioQueueHandler(logging.Handler):
     def __init__(self, queue: Queue):
         super().__init__()
         self.queue = queue
+        # Fix Issue 3: Hardcode the simple formatter for defense-in-depth
+        self.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
 
     def emit(self, record: logging.LogRecord):
         try:
             msg = self.format(record)
-            self.queue.put({"log": msg, "unified_log": msg})
+            # Fix Issue 1: Remove "unified_log" key - only use "log"
+            self.queue.put({"log": msg})
         except Exception:
             self.handleError(record)
 
@@ -309,7 +312,9 @@ def setup_logging(
             "level": "INFO",
         }
         logging_config["loggers"]["app_logger"]["handlers"].append("gradio")
-        logging_config["loggers"][""]["handlers"].append("gradio")
+        # Fix Issue 7: Never append the gradio handler to the root logger ("")
+        # This prevents library noise pollution and ensures test isolation.
+        # logging_config["loggers"][""]["handlers"].append("gradio")
 
     logging.config.dictConfig(logging_config)
 
@@ -327,12 +332,13 @@ class AppLogger:
     Now acts as a proxy to standard logging calls.
     """
 
-    def __init__(self, config: "Config", **kwargs):
+    def __init__(self, config: "Config", session_log_file: Optional[Union[str, Path]] = None, **kwargs):
         """
         Initializes the AppLogger. setup_logging() MUST be called once before this.
         """
         self.config = config
         self.logger = logging.getLogger("app_logger")
+        self.session_log_file = Path(session_log_file) if session_log_file else None
 
     def _log(self, level: str, message: str, component: str, **kwargs):
         """Helper to create a structured log and pass to standard logger."""
@@ -382,12 +388,8 @@ class AppLogger:
         import shutil
 
         try:
-            # This is a bit of a hack since we don't track the current log file in AppLogger
-            # but setup_logging returns it.
-            log_dir = Path(self.config.logs_dir)
-            # Find the newest run.log or session_*.log
-            log_files = sorted(log_dir.glob("session_*.log"), key=os.path.getmtime, reverse=True)
-            if log_files:
-                shutil.copy(log_files[0], Path(session_dir) / "session.log")
+            # Fix Issue 4: Use the stored session_log_file directly (no globbing)
+            if self.session_log_file and self.session_log_file.exists():
+                shutil.copy(self.session_log_file, Path(session_dir) / "session.log")
         except Exception:
             pass

@@ -75,7 +75,7 @@ class AppUI:
         "YOLO26x",
     ]
     GALLERY_VIEW_CHOICES: List[str] = ["Kept", "Rejected"]
-    LOG_LEVEL_CHOICES: List[str] = ["DEBUG", "INFO", "WARNING", "ERROR", "SUCCESS", "CRITICAL"]
+    LOG_LEVEL_CHOICES: List[str] = ["DEBUG", "INFO", "SUCCESS", "WARNING", "ERROR", "CRITICAL"]
     SCENE_GALLERY_VIEW_CHOICES: List[str] = ["Kept", "Rejected", "All"]
     FILTER_PRESETS: Dict[str, Dict[str, float]] = {
         "Portrait/Selfie": {

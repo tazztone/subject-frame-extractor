@@ -9,11 +9,19 @@ The system follows a strict isolation pattern:
 - **UI (Gradio)**: Collects user parameters and displays results. It is prohibited from executing heavy logic directly.
 - **Core (Pipelines)**: Receives an `AnalysisParameters` object (Pydantic) and executes long-running tasks in background threads.
 
-### Orchestration Signal Protocol
-When chaining multiple generator-based pipelines into an orchestrator (e.g., `execute_analysis_orchestrator`), the orchestrator MUST actively manage the `done: True` termination flag:
-- **Sub-Stage Yielding**: Intermediate stages (Extraction, Pre-Analysis, Propagation) MUST have their `done: True` flag stripped before being yielded by the orchestrator.
-- **Consumer Stability**: If an intermediate stage yields `done: True`, the UI's background consumer (or any upstream generator consumer) will treat the entire task as finished, causing subsequent stages to be orphaned or leading to a UI hang.
 - **Final Result**: Only the absolute final stage (Analysis) or the orchestrator itself should yield `done: True`.
+
+---
+
+### Logging & Progress Delivery (Queue-First)
+
+To bypass Gradio's reactive refresh delays and prevent UI flickering, the system uses a **Queue-First Architecture**:
+1.  **Emission**: Pipelines call `AppLogger.info/error()`, which routes to `GradioQueueHandler.emit()`.
+2.  **Buffering**: Logs are placed into a thread-safe `collections.deque` via the `progress_queue`.
+3.  **Consumption**: The `ui/components/log_viewer.py` component uses a `gr.Timer(0.5)` to atomically drain the queue and render the updated log buffer.
+
+> [!WARNING]
+> **Deprecation**: Direct yields of `{self.app.components["unified_log"]: "Message"}` are deprecated as they are susceptible to being overwritten by the background refresh timer. Always use the logger for transient progress updates.
 
 ---
 
@@ -64,6 +72,7 @@ Large ML models (SAM3, InsightFace) are managed by a central registry:
 | Artifact | Producer | Consumer | Purpose |
 |----------|----------|-----------|---------|
 | `AnalysisParameters` | UI | All Pipelines | Configuration and user intent (resolves class names to IDs). |
+| `PreAnalysisResult` | Pre-Analysis | UI Handler | **Typed Result**: Best frame seeds, face embeddings, and detection counts. |
 | `frame_map.json` | Extraction | Analysis, UI | Maps file index to original video frame index. |
 | `scenes.json` | Extraction | Analysis, UI | Defines shot boundaries and status (`pending`, `included`). |
 | `metadata.db` | Analysis | UI, Export | Queryable frame quality and metadata. |

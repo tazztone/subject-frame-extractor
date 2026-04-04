@@ -28,8 +28,8 @@ class TestMaskPropagatorOOM:
             logger=mock_logger,
         )
 
-    @patch("torch.cuda.empty_cache")
-    @patch("torch.cuda.is_available", return_value=True)
+    @patch("core.scene_utils.mask_propagator.torch.cuda.empty_cache")
+    @patch("core.scene_utils.mask_propagator.torch.cuda.is_available", return_value=True)
     def test_propagate_video_oom_recovery(self, mock_cuda_avail, mock_empty_cache, propagator, mock_dam_tracker):
         """Test that OutOfMemoryError is caught and handled during propagate_video."""
         # Setup tracker to raise OOM

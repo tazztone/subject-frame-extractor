@@ -79,8 +79,8 @@ def main():
         config = Config(**config_overrides)
 
         progress_queue = Queue()
-        setup_logging(config, progress_queue=progress_queue)
-        logger = AppLogger(config=config)
+        session_log_file = setup_logging(config, progress_queue=progress_queue)
+        logger = AppLogger(config=config, session_log_file=session_log_file)
 
         # 2. Initialize Core components
         config.debug = args.debug  # Sync CLI flag to config

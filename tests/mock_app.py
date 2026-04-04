@@ -128,7 +128,19 @@ def mock_extraction_run(self, tracker=None):
     }
 
 
-def mock_pre_analysis_execution(event, *args, **kwargs):
+def mock_pre_analysis_execution(
+    event,
+    progress_queue,
+    cancel_event,
+    logger,
+    config,
+    thumbnail_manager,
+    cuda_available,
+    progress=None,
+    model_registry=None,
+    loaded_models=None,
+    **kwargs,
+):
     scenes = [
         Scene(
             shot_id=1,
@@ -145,10 +157,24 @@ def mock_pre_analysis_execution(event, *args, **kwargs):
         "scenes": scenes,
         "done": True,
         "unified_status": "Pre-Analysis Complete",
+        "output_dir": event.output_folder,
+        "video_path": event.video_path,
     }
 
 
-def mock_propagation_execution(event, *args, **kwargs):
+def mock_propagation_execution(
+    event,
+    progress_queue,
+    cancel_event,
+    logger,
+    config,
+    thumbnail_manager,
+    cuda_available,
+    progress=None,
+    model_registry=None,
+    loaded_models=None,
+    **kwargs,
+):
     yield {
         "unified_log": "Propagation complete.",
         "done": True,
@@ -157,8 +183,32 @@ def mock_propagation_execution(event, *args, **kwargs):
     }
 
 
-def mock_analysis_execution(event, *args, **kwargs):
+def mock_analysis_execution(
+    event,
+    progress_queue,
+    cancel_event,
+    logger,
+    config,
+    thumbnail_manager,
+    cuda_available,
+    progress=None,
+    model_registry=None,
+    loaded_models=None,
+    **kwargs,
+):
     yield {"unified_log": "Analysis complete.", "done": True, "unified_status": "Analysis Complete"}
+
+
+def mock_ingest_folder(folder_path, output_dir, recursive=False, thumbnails_only=True):
+    return [{"id": "mock", "source": Path("test.jpg"), "preview": Path("test.jpg"), "type": "jpeg"}]
+
+
+def mock_export_xmps_for_photos(photos, star_thresholds=None):
+    return len(photos)
+
+
+def mock_export_kept_frames(event, config, logger, progress_queue=None, cancel_event=None):
+    return "Export Complete (MOCKED)"
 
 
 # --- 3. Wrapper Mocks ---
@@ -169,8 +219,10 @@ def mock_extraction_wrapper(self, current_state: ApplicationState, *args, **kwar
     upload_video = args[1] if len(args) > 1 else None
     effective_source = source_path or upload_video
     if not effective_source:
-        log_msg = "❌ **Error:** Please provide a Source Path"
-        self.app.progress_queue.put({"log": f"[ERROR] {log_msg}"})
+        log_msg = "[ERROR] Please provide a Source Path"
+        self.app.progress_queue.put({"log": log_msg})
+        # Direct yield for immediate feedback in synchronous handlers,
+        # though LogViewer will eventually refresh from queue.
         yield {
             self.app.components["unified_status"]: "⚠️ Failure in execute_extraction",
             self.app.components["unified_log"]: log_msg,
@@ -197,8 +249,8 @@ def mock_extraction_wrapper(self, current_state: ApplicationState, *args, **kwar
 
 def mock_pre_analysis_wrapper(self, current_state: ApplicationState, *args, **kwargs):
     if not current_state.extracted_video_path:
-        log_msg = "❌ **Error:** No extracted video found."
-        self.app.progress_queue.put({"log": f"[ERROR] {log_msg}"})
+        log_msg = "[ERROR] No extracted video found."
+        self.app.progress_queue.put({"log": log_msg})
         yield {
             self.app.components["unified_status"]: "⚠️ Error: No extracted video found.",
             self.app.components["unified_log"]: log_msg,
@@ -208,10 +260,10 @@ def mock_pre_analysis_wrapper(self, current_state: ApplicationState, *args, **kw
     # Ensure progress log is visible
     self.app.progress_queue.put({"log": "[INFO] Pre-Analysis Started (MOCKED)."})
 
-    # Mock pre-analysis results
-    res = next(mock_pre_analysis_execution(None))
+    # Simulate success
     new_state = current_state.model_copy()
-    new_state.scenes = res["scenes"]
+    new_state.scenes = []  # Mocked
+    new_state.extracted_frames_dir = "/tmp/mock"
 
     msg = """<div class="success-card"><h3>Pre-Analysis Complete</h3></div>"""
 
@@ -269,16 +321,22 @@ def build_mock_app(downloads_dir=None):
     core.fingerprint.save_fingerprint = MagicMock()
     core.utils.download_model = MagicMock()
 
+    # Missing attributes for signature test
+    core.photo_utils.ingest_folder = mock_ingest_folder
+    core.xmp_writer.export_xmps_for_photos = mock_export_xmps_for_photos
+    core.export.export_kept_frames = mock_export_kept_frames
+
     # 2. Instantiate
     from core.config import Config
-    from core.logger import AppLogger
+    from core.logger import AppLogger, setup_logging
 
     progress_queue = Queue()
     config = Config()
     if downloads_dir:
         config.downloads_dir = downloads_dir
 
-    logger = AppLogger(config)
+    session_log_file = setup_logging(config, progress_queue=progress_queue)
+    logger = AppLogger(config, session_log_file=session_log_file)
     cancel_event = MagicMock()
     thumbnail_manager = MagicMock()
     model_registry = MagicMock()
@@ -334,6 +392,7 @@ def build_mock_app(downloads_dir=None):
         return demo
 
     app_instance.build_ui = types.MethodType(build_ui_with_reset, app_instance)
+    app_instance.build_ui()  # Populate components
     _active_app = app_instance
     return app_instance
 

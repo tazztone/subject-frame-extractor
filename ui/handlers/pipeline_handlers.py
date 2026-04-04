@@ -5,7 +5,7 @@ import gradio as gr
 
 from core.application_state import ApplicationState
 from core.events import ExtractionEvent, PropagationEvent, SessionLoadEvent
-from core.models import Scene
+from core.models import PreAnalysisResult, Scene
 from core.pipelines import (
     execute_analysis,
     execute_extraction,
@@ -98,19 +98,20 @@ class PipelineHandler:
                 current_state = cast(ApplicationState, update[self.app.components["application_state"]])
             yield update
 
-    def _on_pre_analysis_success(self, result: dict, current_state: ApplicationState) -> dict:
+    def _on_pre_analysis_success(self, result_dict: dict, current_state: ApplicationState) -> dict:
         """Callback for successful pre-analysis."""
+        # Fix Issue 6: Use typed PreAnalysisResult for validation and structured extraction
+        result = PreAnalysisResult(**result_dict)
+
         new_state = current_state.model_copy()
-        new_state.scenes = result["scenes"]
-        new_state.analysis_output_dir = result["output_dir"]
-        # Ensure video path is preserved
-        if "video_path" in result:
-            new_state.extracted_video_path = result["video_path"]
+        new_state.scenes = result.scenes
+        new_state.analysis_output_dir = result.output_dir
+        new_state.extracted_video_path = result.video_path
 
         # Auto-save logs
-        self.app._save_session_log(result["output_dir"])
+        self.app._save_session_log(result.output_dir)
 
-        scenes_objs = [Scene(**s) for s in result["scenes"]]
+        scenes_objs = [Scene(**s) for s in result.scenes]
         status_text, button_update = get_scene_status_text(scenes_objs)
 
         # Hide propagation for image-only folders
@@ -149,17 +150,16 @@ class PipelineHandler:
             self.app.components["scene_gallery"]: gr.update(value=items),
             self.app.components["total_pages_label"]: f"/ {total_pages} pages",
             self.app.components["page_number_input"]: gr.update(choices=page_choices, value="1"),
-            self.app.components["unified_log"]: result.get("unified_log", "Pre-Analysis Complete."),
+            self.app.components["unified_log"]: result.unified_log,
         }
 
-        # Include any explicit UI updates from the pipeline result (e.g. visibility toggles)
-        for k, v in result.items():
-            if k in self.app.components:
-                updates[self.app.components[k]] = v
+        # Include explicit UI updates from the pipeline result
+        if result.seeding_results_column:
+            updates[self.app.components["seeding_results_column"]] = result.seeding_results_column
+        if result.propagation_group:
+            updates[self.app.components["propagation_group"]] = result.propagation_group
 
         # These specific components must be visible for the next step
-        updates[self.app.components["seeding_results_column"]] = gr.update(visible=True)
-        updates[self.app.components["propagation_group"]] = gr.update(visible=True)
         updates[self.app.components["propagate_masks_button"]] = button_update
         updates[self.app.components["main_tabs"]] = gr.update(selected=2)
 
@@ -243,16 +243,28 @@ class PipelineHandler:
             self.app.components["dry_run_button"]: gr.update(interactive=True),
         }
 
-    @safe_ui_callback("Load Session")
-    def run_session_load_wrapper(self, session_path: str, current_state: ApplicationState):
-        """Loads a previous session and updates the UI state."""
-        event = SessionLoadEvent(session_path=session_path)
-        yield {self.app.components["unified_status"]: "Loading Session..."}
-
+    def _execute_session_load_adapter(self, event, *args, **kwargs):
+        """Adapts the synchronous execute_session_load to the pipeline generator interface."""
         result = execute_session_load(event, self.logger)
+        if not result.get("error"):
+            result["done"] = True
+        yield result
+
+    @safe_ui_callback("Load Session")
+    def run_session_load_wrapper(self, session_path: str, current_state: ApplicationState, progress=None):
+        """Wrapper to execute the session loading pipeline."""
+        event = SessionLoadEvent(session_path=session_path)
+        yield from self.app._run_pipeline(
+            self._execute_session_load_adapter,
+            event,
+            progress or gr.Progress(),
+            lambda res: self._on_session_load_success(res, current_state),
+        )
+
+    def _on_session_load_success(self, result: dict, current_state: ApplicationState) -> dict:
+        """Callback for successful session loading."""
         if result.get("error"):
-            yield {self.app.components["unified_log"]: f"[ERROR] {result['error']}"}
-            return
+            return {self.app.components["unified_log"]: f"[ERROR] {result['error']}"}
 
         run_config = result["run_config"]
         session_path_obj = Path(result["session_path"])
@@ -352,8 +364,8 @@ class PipelineHandler:
         updates.update(
             {
                 self.app.components["application_state"]: new_state,
-                self.app.components["unified_log"]: f"Successfully loaded session from: {session_path}",
+                self.app.components["unified_log"]: f"Successfully loaded session from: {result['session_path']}",
                 self.app.components["unified_status"]: "Session Loaded.",
             }
         )
-        yield updates
+        return updates

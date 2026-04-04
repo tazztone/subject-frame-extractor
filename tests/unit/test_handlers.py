@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from core.models import PreAnalysisResult
 from ui.app_ui import ApplicationState, AppUI
 
 
@@ -84,12 +85,14 @@ class TestAppUIHandlers:
     def test_on_pre_analysis_success(self, app_ui):
         """Test _on_pre_analysis_success updates ApplicationState correctly."""
         current_state = ApplicationState(extracted_video_path="/path/to/video.mp4")
-        result = {
-            "scenes": [{"shot_id": 1, "start_frame": 0, "end_frame": 100}],
-            "output_dir": "/test/output",
-        }
+        result = PreAnalysisResult(
+            unified_log="Pre-analysis complete.",
+            scenes=[{"shot_id": 1, "start_frame": 0, "end_frame": 100}],
+            output_dir="/test/output",
+            video_path="/path/to/video.mp4",
+        )
 
-        updates = app_ui.pipeline_handler._on_pre_analysis_success(result, current_state)
+        updates = app_ui.pipeline_handler._on_pre_analysis_success(result.model_dump(), current_state)
 
         new_state = updates[app_ui.components["application_state"]]
         assert len(new_state.scenes) == 1
