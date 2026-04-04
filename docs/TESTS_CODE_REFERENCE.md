@@ -35,6 +35,7 @@ tests
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_accuracy.py`](#-testsintegrationtest_accuracypy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_gpu_e2e.py`](#-testsintegrationtest_gpu_e2epy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_gpu_health.py`](#-testsintegrationtest_gpu_healthpy)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_handler_state.py`](#-testsintegrationtest_handler_statepy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_integration_smoke.py`](#-testsintegrationtest_integration_smokepy)  
 │&nbsp;&nbsp;&nbsp;└──&nbsp;[`test_real_workflow.py`](#-testsintegrationtest_real_workflowpy)  
 ├──&nbsp;[`mock_app.py`](#-testsmock_apppy)  
@@ -141,6 +142,7 @@ tests
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_phase2_logic.py`](#-testsunittest_phase2_logicpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_phase2_robustness.py`](#-testsunittest_phase2_robustnesspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_photo_utils.py`](#-testsunittest_photo_utilspy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_pipeline_logic.py`](#-testsunittest_pipeline_logicpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_pipeline_result_schemas.py`](#-testsunittest_pipeline_result_schemaspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_pipelines.py`](#-testsunittest_pipelinespy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_pipelines_extended.py`](#-testsunittest_pipelines_extendedpy)  
@@ -519,6 +521,15 @@ def test_gpu_coexistence():
     """Verify Torch (NIQE) and ONNX (YOLO) can run in the same process/thread."""
 ```
 
+### `📄 tests/integration/test_handler_state.py`
+
+```python
+def test_handler_is_bound_to_correct_instance(tmp_path):
+    """Tier 2: Verify that the PipelineHandler is bound to the specific AppUI instance."""
+def test_multiple_instances_are_isolated(tmp_path):
+    """Tier 2: Verify that multiple factory calls return isolated instances."""
+```
+
 ### `📄 tests/integration/test_integration_smoke.py`
 
 ```python
@@ -548,97 +559,31 @@ def test_real_end_to_end_workflow(tmp_path, tracker_model):
 
 ```python
 project_root = Path(__file__).parent.parent
-global_progress_queue = Queue()
-_active_app = None
-def get_active_app():
-    """Returns the most recently initialized AppUI instance."""
-def create_mock_module(name, attributes=None):
-    """Creates a proper ModuleType instance populated with mocks/attributes."""
+def create_mock_module(name, attributes=None): ...
 mock_torch = MagicMock(name='torch')
 mock_torch.cuda.is_available.return_value = False
 mock_torch.__version__ = "<REDACTED_STRING>"
 mock_torch.nn.Module = MagicMock
 mock_torch.Tensor = MagicMock
-mock_sam3 = MagicMock(name='sam3')
-mock_sam3.model_builder = MagicMock()
-mock_sam3.model_builder.build_sam3_predictor = MagicMock()
-mock_sam3.model_builder.build_sam3_multiplex_video_predictor = MagicMock()
-mock_sam3.model_builder.build_sam3_video_predictor = MagicMock()
-class OutOfMemoryError(RuntimeError): ...
-class VideoOpenFailure(RuntimeError): ...
 class TransparentContext:
-    """Empty context manager that does nothing but allows 'with' blocks."""
     def __enter__(self, *args, **kwargs): ...
     def __exit__(self, *args, **kwargs): ...
     def __call__(self, func=None): ...
-def _create_mock_tensor(name='tensor', shape=None, value=None, **kwargs): ...
-mock_torch.cuda.OutOfMemoryError = OutOfMemoryError
-mock_torch.cuda.get_device_name = MagicMock(return_value='Mock GPU')
-mock_torch.float32 = MagicMock(name='torch.float32')
-mock_torch.uint8 = MagicMock(name='torch.uint8')
-mock_torch.device = MagicMock()
-mock_torch.from_numpy = MagicMock(side_effect=lambda np_arr: _create_mock_ten...
-mock_torch.zeros = MagicMock(side_effect=lambda shape, **kwargs: _create_mock...
-mock_torch.ones = MagicMock(side_effect=lambda shape, **kwargs: _create_mock_...
 mock_torch.no_grad = TransparentContext
 mock_torch.inference_mode = TransparentContext
-modules_map = {'torch': create_mock_module('torch', {'cuda': mock_torch.cuda,...
-modules_map['sam3.model'] = create_mock_module('sam3.model')
-modules_map['sam3.utils'] = create_mock_module('sam3.utils')
-modules_map['sam3.model.sam3_video_predictor'] = create_mock_module('sam3.mod...
-modules_map['sam3.model.sam3_video_predictor'].SAM3VideoPredictor = MagicMock()
-modules_map['sam3.model.sam3_video_inference'] = create_mock_module('sam3.mod...
-modules_map['sam3.model.sam3_video_inference'].SAM3VideoInference = MagicMock()
-modules_map['sam3.model.sam3_base_predictor'] = create_mock_module('sam3.mode...
-modules_map['sam3.model.sam3_multiplex_video_predictor'] = create_mock_module...
-modules_map['sam3.model.sam3_multiplex_tracking'] = create_mock_module('sam3....
-modules_map['sam3.model.sam3_multiplex_base'] = create_mock_module('sam3.mode...
-def mock_extraction_run(self, tracker=None):
-    """Mocks the extraction process."""
-def mock_pre_analysis_execution(event, *args, **kwargs):
-    """Mocks execute_pre_analysis generator."""
+modules_to_mock = ['torch', 'torch.cuda', 'torch.nn', 'torchvision', 'torchvi...
+def mock_extraction_run(self, tracker=None): ...
+def mock_pre_analysis_execution(event, *args, **kwargs): ...
 def mock_propagation_execution(event, *args, **kwargs): ...
 def mock_analysis_execution(event, *args, **kwargs): ...
-def mock_analysis_orchestrator(event, *args, **kwargs): ...
-def mock_ingest_folder(folder_path: str, *args, **kwargs):
-    """Mocks ingesting a folder of photos."""
-def mock_export_xmps_for_photos(photos: list, star_thresholds=None):
-    """Mocks XMP export."""
-def mock_export_kept_frames(*args, **kwargs): ...
-def mock_dry_run_export(*args, **kwargs): ...
-def reset_app_state(): ...
-def mock_session_load_wrapper(self, session_path: str, current_state: ApplicationState):
-    """Mocks PipelineHandler.run_session_load_wrapper."""
-def mock_extraction_wrapper(self, current_state: ApplicationState, *args, **kwargs):
-    """Mocks PipelineHandler.run_extraction_wrapper."""
-def mock_pre_analysis_wrapper(self, current_state: ApplicationState, *args, **kwargs):
-    """Mocks PipelineHandler.run_pre_analysis_wrapper handles prerequisite checks."""
-def mock_propagation_wrapper(self, current_state: ApplicationState, *args, **kwargs):
-    """Mocks PipelineHandler.run_propagation_wrapper."""
-def mock_analysis_wrapper(self, current_state: ApplicationState, *args, **kwargs):
-    """Mocks PipelineHandler.run_analysis_wrapper."""
-ui.app_ui.AppUI.preload_models = MagicMock(side_effect=lambda *args: None)
-ph.PipelineHandler.run_session_load_wrapper = mock_session_load_wrapper
-ph.PipelineHandler.run_extraction_wrapper = mock_extraction_wrapper
-ph.PipelineHandler.run_pre_analysis_wrapper = mock_pre_analysis_wrapper
-ph.PipelineHandler.run_propagation_wrapper = mock_propagation_wrapper
-ph.PipelineHandler.run_analysis_wrapper = mock_analysis_wrapper
-original_main = ui.app_ui.AppUI.build_ui
-original_app_ui_init = ui.app_ui.AppUI.__init__
-def mock_app_ui_init(self, *args, **kwargs): ...
-ui.app_ui.AppUI.__init__ = mock_app_ui_init
-def mock_build_ui(self, *args, **kwargs): ...
-ui.app_ui.AppUI.build_ui = mock_build_ui
-core.fingerprint.create_fingerprint = MagicMock(return_value={})
-core.fingerprint.save_fingerprint = MagicMock()
-ui.app_ui.export_kept_frames = mock_export_kept_frames
-ui.app_ui.dry_run_export = mock_dry_run_export
-core.export.export_kept_frames = mock_export_kept_frames
-core.utils.download_model = MagicMock()
-core.managers.download_model = MagicMock()
-ExtractionPipeline._run_impl = mock_extraction_run
-core.photo_utils.ingest_folder = mock_ingest_folder
-core.xmp_writer.export_xmps_for_photos = mock_export_xmps_for_photos
+def mock_extraction_wrapper(self, current_state: ApplicationState, *args, **kwargs): ...
+def mock_pre_analysis_wrapper(self, current_state: ApplicationState, *args, **kwargs): ...
+def mock_propagation_wrapper(self, current_state: ApplicationState, *args, **kwargs): ...
+def mock_analysis_wrapper(self, current_state: ApplicationState, *args, **kwargs): ...
+_active_app = None
+def get_active_app(): ...
+def build_mock_app(downloads_dir=None):
+    """Factory to create a fresh AppUI instance with all mocks applied."""
 ```
 
 ### `📄 tests/regression/test_full_workflow_regression.py`
@@ -734,7 +679,7 @@ def pytest_runtest_makereport(item, call):
 def wait_for_server(url, timeout=60):
     """Wait for the server to be responsive."""
 def wait_for_app_ready(page: Page):
-    """Robustly wait for the Gradio app to be interactive."""
+    """Blocks until the Gradio application is fully hydrated and ready for interaction."""
 def open_accordion(page: Page, text: str):
     """Robustly open an accordion if it's closed."""
 def switch_to_tab(page: Page, tab_name: str):
@@ -840,20 +785,18 @@ class TestFullAppAudit:
 
 ```python
 """Playwright E2E Tests for main application workflow."""
-pytestmark = pytest.mark.e2e
+@pytest.mark.usefixtures('app_server')
 class TestMainWorkflow:
-    """Complete end-to-end workflow tests."""
-    @pytest.mark.flaky(reruns=3)
     def test_full_user_flow(self, page: Page, app_server):
         """Tests the complete end-to-end workflow:"""
+@pytest.mark.usefixtures('app_server')
 class TestTabNavigation:
-    """Tests for tab navigation and UI responsiveness."""
     def test_all_tabs_accessible(self, page: Page, app_server):
-        """Verify all main tabs can be accessed and show expected content."""
+        """Verify each major tab can be reached."""
     def test_tab_state_preserved(self, page: Page, app_server):
-        """Verify tab state is preserved when switching tabs."""
+        """Verify input state is kept when switching tabs."""
+@pytest.mark.usefixtures('app_server')
 class TestErrorHandling:
-    """Tests for error display and recovery."""
     def test_empty_source_shows_message(self, page: Page, app_server):
         """Verify appropriate message when no source is provided."""
 ```
@@ -2649,6 +2592,19 @@ def test_extract_preview_resize_exception(tmp_path):
     """Test handling of resizing exceptions."""
 def test_ingest_folder_nonexistent():
     """Test ingesting a non-existent folder."""
+```
+
+### `📄 tests/unit/test_pipeline_logic.py`
+
+```python
+class MockApp:
+    def __init__(self): ...
+def test_extraction_blocks_on_empty_source():
+    """Tier 1: Verify extraction error handling for empty source path."""
+def test_extraction_success_yields_correct_status():
+    """Tier 1: Verify extraction success state."""
+def test_pre_analysis_blocks_on_missing_extracted_video():
+    """Tier 1: Verify pre-analysis error handling for missing video."""
 ```
 
 ### `📄 tests/unit/test_pipeline_result_schemas.py`

@@ -73,41 +73,37 @@ def wait_for_server(url, timeout=60):
 
 def wait_for_app_ready(page: Page):
     """
-    Robustly wait for the Gradio app to be interactive.
-    Includes an optional state reset for mock-based E2E isolation.
+    Blocks until the Gradio application is fully hydrated and ready for interaction.
+    Uses framework-native signals (loading indicators) instead of fixed timeouts.
     """
-    # Wait for the main heading to be visible as a proxy for app load
+    # 1. Wait for any initial Gradio loading indicators to disappear
+    # These are present during the initial JS bundle load and hydration gap.
+    page.wait_for_selector(".generating, .loading, [data-testid='loading']", state="hidden", timeout=20000)
+
+    # 2. Wait for the main heading to be visible as a proxy for app load
     expect(page.get_by_text("Frame Extractor & Analyzer")).to_be_visible(timeout=30000)
-    # Wait for the status area to be present
+
+    # 3. Wait for the status area to be attached
     expect(page.locator(Selectors.UNIFIED_STATUS)).to_be_attached(timeout=5000)
 
-    # Optional: Clear state if the mock-only reset button is present
+    # 4. Optional: Clear state if the mock-only reset button is present
     reset_btn = page.locator(Selectors.RESET_STATE_BUTTON)
     if not reset_btn.is_visible():
-        # Try opening the accordion first
         try:
             open_accordion(page, "Tests (Experimental)")
         except Exception:
             pass
 
     if reset_btn.is_visible():
-        # Ensure log viewer is visible to check the message
-        try:
-            open_accordion(page, Labels.SYSTEM_LOGS)
-        except Exception:
-            pass
-
         reset_btn.click()
 
         # CRITICAL: Wait for the reset status to appear to ensure clean state
         status_locator = page.locator(Selectors.UNIFIED_STATUS)
-        expect(status_locator).to_contain_text(Selectors.STATUS_READY, timeout=10000)
+        expect(status_locator).to_contain_text(Selectors.STATUS_READY, timeout=15000)
+        expect(page.get_by_text("System Reset Ready.")).to_be_visible(timeout=5000)
 
-        # Wait for the status to signal success (Markdown is more robust than Log Textbox)
-        expect(page.get_by_text("System Reset Ready.")).to_be_visible(timeout=15000)
-
-    # Global settle time (Gradio 5 needs a moment to hydrate event listeners)
-    page.wait_for_timeout(1000)
+    # Small final settle for event loop binding stability
+    page.wait_for_timeout(500)
 
 
 def open_accordion(page: Page, text: str):

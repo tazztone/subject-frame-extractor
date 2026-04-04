@@ -311,11 +311,23 @@ class AppUI:
 
             # Global outputs for dynamic UI updates (used by buttons)
             self.all_outputs = [
+                self.components["application_state"],
                 self.components["unified_status"],
                 self.components["unified_log"],
                 self.components["progress_details"],
                 self.components["pause_button"],
                 self.components["cancel_button"],
+                self.components["main_tabs"],
+                self.components["propagate_masks_button"],
+                self.components["seeding_results_column"],
+                self.components["propagation_group"],
+                self.components["scene_filter_status"],
+                self.components["scene_gallery"],
+                self.components["total_pages_label"],
+                self.components["page_number_input"],
+                self.components["filtering_tab"],
+                self.components["export_button"],
+                self.components["dry_run_button"],
             ]
 
             # Limited outputs for the background timer (prevents status overwrites)
@@ -324,6 +336,7 @@ class AppUI:
                 self.components["progress_details"],
             ]
             self.full_outputs = [
+                self.components["application_state"],
                 self.components["unified_log"],
                 self.components["progress_details"],
                 self.components["unified_status"],
