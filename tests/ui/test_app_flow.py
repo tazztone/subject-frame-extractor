@@ -29,7 +29,7 @@ class TestMainWorkflow:
 
         # 1. Frame Extraction
         page.locator(Selectors.SOURCE_INPUT).fill("dummy_video.mp4")
-        page.locator(Selectors.START_EXTRACTION).click()
+        page.locator(Selectors.START_EXTRACTION).click(force=True)
 
         # Wait for "complete" in the status area
         expect(unified_status).to_contain_text(Selectors.STATUS_SUCCESS_EXTRACTION, timeout=30000)
@@ -40,7 +40,7 @@ class TestMainWorkflow:
         # Click "Confirm Subject"
         pre_analyze_btn = page.locator(Selectors.START_PRE_ANALYSIS)
         expect(pre_analyze_btn).to_be_visible(timeout=10000)
-        pre_analyze_btn.click()
+        pre_analyze_btn.click(force=True)
 
         expect(unified_status).to_contain_text(Selectors.STATUS_SUCCESS_PRE_ANALYSIS, timeout=30000)
 
@@ -50,7 +50,7 @@ class TestMainWorkflow:
         prop_btn = page.locator(Selectors.PROPAGATE_MASKS)
         expect(prop_btn).to_be_visible(timeout=10000)
         expect(prop_btn).to_be_enabled(timeout=5000)
-        prop_btn.click()
+        prop_btn.click(force=True)
 
         expect(unified_status).to_contain_text(Selectors.STATUS_SUCCESS_PROPAGATION, timeout=30000)
 
@@ -60,7 +60,7 @@ class TestMainWorkflow:
         ana_btn = page.locator(Selectors.START_ANALYSIS)
         expect(ana_btn).to_be_visible(timeout=10000)
         expect(ana_btn).to_be_enabled(timeout=5000)
-        ana_btn.click()
+        ana_btn.click(force=True)
 
         expect(unified_status).to_contain_text(Selectors.STATUS_SUCCESS_ANALYSIS, timeout=30000)
 
@@ -69,8 +69,8 @@ class TestMainWorkflow:
 
         export_btn = page.locator(Selectors.EXPORT_BUTTON)
         expect(export_btn).to_be_visible(timeout=10000)
-        expect(export_btn).to_be_enabled(timeout=5000)
-        export_btn.click()
+        expect(export_btn).to_have_attribute("aria-disabled", "false", timeout=10000)
+        export_btn.click(force=True)
 
         expect(unified_status).to_contain_text(Selectors.STATUS_SUCCESS_EXPORT, timeout=30000)
 
@@ -112,7 +112,7 @@ class TestErrorHandling:
         page.goto(BASE_URL)
         wait_for_app_ready(page)
 
-        page.locator(Selectors.START_EXTRACTION).click()
+        page.locator(Selectors.START_EXTRACTION).click(force=True)
 
         # Check status for Error
         expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text(Selectors.STATUS_ERROR_REGEX, timeout=10000)

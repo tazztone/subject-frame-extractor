@@ -137,6 +137,7 @@ class AppUI:
         self.log_viewer = LogViewer(logger, progress_queue, self.LOG_LEVEL_CHOICES)
         self.last_run_args = None
         self.is_busy = False
+        self._registered_elem_ids: set[str] = set()
         self.ext_ui_map_keys = [
             "source_path",
             "upload_video",
@@ -308,8 +309,25 @@ class AppUI:
             self._build_main_tabs()
             self._build_footer()
 
-            # Global outputs for dynamic UI updates
-            self.all_outputs = [v for v in self.components.values() if hasattr(v, "_id")]
+            # Global outputs for dynamic UI updates (used by buttons)
+            self.all_outputs = [
+                self.components["unified_status"],
+                self.components["unified_log"],
+                self.components["progress_details"],
+                self.components["pause_button"],
+                self.components["cancel_button"],
+            ]
+
+            # Limited outputs for the background timer (prevents status overwrites)
+            self.timer_outputs = [
+                self.components["unified_log"],
+                self.components["progress_details"],
+            ]
+            self.full_outputs = [
+                self.components["unified_log"],
+                self.components["progress_details"],
+                self.components["unified_status"],
+            ]
 
             self._create_event_handlers()
 
@@ -362,14 +380,14 @@ class AppUI:
             # Default secondary unless specified
             pass
 
-        if (
-            comp_type in ["slider", "dropdown", "textbox", "number", "checkbox"]
-            and "label" in kwargs
-            and "info" not in kwargs
-        ):
-            # Auto-generate empty info to ensure spacing consistency if needed,
-            # but for now we just allow it.
-            pass
+        # Auto-assign elem_id if not provided
+        if "elem_id" not in kwargs:
+            kwargs["elem_id"] = name
+            # Duplicate detection in debug mode
+            if self.debug_mode:
+                if name in self._registered_elem_ids:
+                    self.logger.warning(f"Duplicate elem_id '{name}' - component names must be unique.")
+                self._registered_elem_ids.add(name)
 
         self.components[name] = comp_map[comp_type](**kwargs)
         return self.components[name]
@@ -519,8 +537,8 @@ class AppUI:
         )
         c["clear_logs_button"].click(lambda: (self.log_viewer.all_logs.clear(), "")[1], [], c["unified_log"])
 
-        # Use LogViewer to setup its own handlers
-        self.log_viewer.setup_handlers(self.all_outputs)
+        # Use LogViewer to setup its own handlers with split outputs (Fix Gap 6)
+        self.log_viewer.setup_handlers(self.timer_outputs, self.full_outputs)
 
         # Stepper Handler (Removed)
 

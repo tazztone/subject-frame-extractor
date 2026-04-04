@@ -549,6 +549,9 @@ def test_real_end_to_end_workflow(tmp_path, tracker_model):
 ```python
 project_root = Path(__file__).parent.parent
 global_progress_queue = Queue()
+_active_app = None
+def get_active_app():
+    """Returns the most recently initialized AppUI instance."""
 def create_mock_module(name, attributes=None):
     """Creates a proper ModuleType instance populated with mocks/attributes."""
 mock_torch = MagicMock(name='torch')
@@ -608,12 +611,22 @@ def mock_session_load_wrapper(self, session_path: str, current_state: Applicatio
     """Mocks PipelineHandler.run_session_load_wrapper."""
 def mock_extraction_wrapper(self, current_state: ApplicationState, *args, **kwargs):
     """Mocks PipelineHandler.run_extraction_wrapper."""
-def reset_app_state_handler():
-    """Handles the Reset State button click, returning updates for the UI."""
+def mock_pre_analysis_wrapper(self, current_state: ApplicationState, *args, **kwargs):
+    """Mocks PipelineHandler.run_pre_analysis_wrapper handles prerequisite checks."""
+def mock_propagation_wrapper(self, current_state: ApplicationState, *args, **kwargs):
+    """Mocks PipelineHandler.run_propagation_wrapper."""
+def mock_analysis_wrapper(self, current_state: ApplicationState, *args, **kwargs):
+    """Mocks PipelineHandler.run_analysis_wrapper."""
 ui.app_ui.AppUI.preload_models = MagicMock(side_effect=lambda *args: None)
-ui.handlers.pipeline_handlers.PipelineHandler.run_session_load_wrapper = mock...
-ui.handlers.pipeline_handlers.PipelineHandler.run_extraction_wrapper = mock_e...
+ph.PipelineHandler.run_session_load_wrapper = mock_session_load_wrapper
+ph.PipelineHandler.run_extraction_wrapper = mock_extraction_wrapper
+ph.PipelineHandler.run_pre_analysis_wrapper = mock_pre_analysis_wrapper
+ph.PipelineHandler.run_propagation_wrapper = mock_propagation_wrapper
+ph.PipelineHandler.run_analysis_wrapper = mock_analysis_wrapper
 original_main = ui.app_ui.AppUI.build_ui
+original_app_ui_init = ui.app_ui.AppUI.__init__
+def mock_app_ui_init(self, *args, **kwargs): ...
+ui.app_ui.AppUI.__init__ = mock_app_ui_init
 def mock_build_ui(self, *args, **kwargs): ...
 ui.app_ui.AppUI.build_ui = mock_build_ui
 core.fingerprint.create_fingerprint = MagicMock(return_value={})
@@ -731,6 +744,9 @@ def cleanup_port(port: int):
 @pytest.fixture(scope='module')
 def app_server():
     """Starts the mock app server before tests and kills it after."""
+@pytest.fixture
+def app_instance(app_server):
+    """Retrieve the live AppUI instance from the running server."""
 @pytest.fixture
 def extracted_session(page, app_server):
     """Fixture that provides a page with extraction already completed."""
@@ -1181,7 +1197,6 @@ class TestWorkflowVariants:
 ### `📄 tests/ui/ui_locators.py`
 
 ```python
-"""Centralized UI locators — single place to update when the UI changes."""
 class Selectors:
     """elem_id-based CSS selectors (most resilient to label changes)."""
     UNIFIED_LOG = "<REDACTED_STRING>"
@@ -1190,8 +1205,11 @@ class Selectors:
     CANCEL_BUTTON = "<REDACTED_STRING>"
     PAUSE_BUTTON = "<REDACTED_STRING>"
     RESET_STATE_BUTTON = "<REDACTED_STRING>"
+    REFRESH_LOGS = "<REDACTED_STRING>"
     STATUS_READY = "<REDACTED_STRING>"
-    STATUS_ERROR_REGEX = "<REDACTED_STRING>"
+    STATUS_MSG = "<REDACTED_STRING>"
+    STATUS_ERROR = "<REDACTED_STRING>"
+    STATUS_ERROR_REGEX = re.compile('⚠️|Error|Fail|Invalid', re.IGNORECASE)
     STATUS_SUCCESS_EXTRACTION = "<REDACTED_STRING>"
     STATUS_SUCCESS_PRE_ANALYSIS = "<REDACTED_STRING>"
     STATUS_SUCCESS_PROPAGATION = "<REDACTED_STRING>"
@@ -1204,13 +1222,19 @@ class Selectors:
     SESSION_INPUT = "<REDACTED_STRING>"
     LOAD_SESSION_BUTTON = "<REDACTED_STRING>"
     MAX_RESOLUTION = "<REDACTED_STRING>"
-    EXTRACTION_METHOD = "<REDACTED_STRING>"
+    METHOD_INPUT = "<REDACTED_STRING>"
     SEED_STRATEGY = "<REDACTED_STRING>"
+    BEST_FRAME_STRATEGY = "<REDACTED_STRING>"
     START_PRE_ANALYSIS = "<REDACTED_STRING>"
     SCENE_GALLERY = "<REDACTED_STRING>"
-    VIEW_TOGGLE = "<REDACTED_STRING>"
+    SCENE_GALLERY_VIEW_TOGGLE = "<REDACTED_STRING>"
     MASK_AREA_MIN = "<REDACTED_STRING>"
     QUALITY_SCORE_MIN = "<REDACTED_STRING>"
+    SCENE_MASK_AREA_MIN = "<REDACTED_STRING>"
+    SCENE_FACE_SIM_MIN = "<REDACTED_STRING>"
+    SCENE_QUALITY_SCORE_MIN = "<REDACTED_STRING>"
+    PREV_PAGE_BUTTON = "<REDACTED_STRING>"
+    NEXT_PAGE_BUTTON = "<REDACTED_STRING>"
     PROPAGATE_MASKS = "<REDACTED_STRING>"
     SCENE_FILTER_STATUS = "<REDACTED_STRING>"
     START_ANALYSIS = "<REDACTED_STRING>"
@@ -1228,11 +1252,13 @@ class Labels:
     SOURCE_PLACEHOLDER = "<REDACTED_STRING>"
     SYSTEM_LOGS = "<REDACTED_STRING>"
     HELP_ACCORDION = "<REDACTED_STRING>"
+    HELP_ACCORDION_BTN = "<REDACTED_STRING>"
     SCAN_VIDEO_BUTTON = "<REDACTED_STRING>"
     TAB_SCAN_VIDEO = "<REDACTED_STRING>"
     SESSION_ACCORDION = "<REDACTED_STRING>"
     ADVANCED_ACCORDION = "<REDACTED_STRING>"
     BATCH_FILTER_ACCORDION = "<REDACTED_STRING>"
+    STRATEGY_AUTO = "<REDACTED_STRING>"
     STRATEGY_FACE = "<REDACTED_STRING>"
     STRATEGY_TEXT = "<REDACTED_STRING>"
 ```

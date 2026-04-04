@@ -34,6 +34,15 @@ from core.pipelines import ExtractionPipeline
 # Global queue for mock log updates
 global_progress_queue = Queue()
 
+# Registry for the active AppUI instance (Fixes "Dual Instance" bug)
+_active_app = None
+
+
+def get_active_app():
+    """Returns the most recently initialized AppUI instance."""
+    return _active_app
+
+
 # --- 1. Mock Heavy Dependencies ---
 
 
@@ -243,6 +252,7 @@ def mock_extraction_run(self, tracker=None):
 
     import json
 
+    # Frame map needs at least 5 frames for some tests
     frame_map = {i: f"frame_{i:06d}.webp" for i in range(1, 11)}
     with open(os.path.join(output_dir, "frame_map.json"), "w") as f:
         json.dump(list(frame_map.keys()), f)
@@ -377,33 +387,117 @@ def mock_session_load_wrapper(self, session_path: str, current_state: Applicatio
 
 def mock_extraction_wrapper(self, current_state: ApplicationState, *args, **kwargs):
     """Mocks PipelineHandler.run_extraction_wrapper."""
-    print("[Mock] Running Extraction Wrapper...")
+    print(f"[Mock] Running Extraction Wrapper with source: {current_state.source_path}")
+
+    if not current_state.source_path:
+        log_msg = "❌ **Error:** Please provide a Source Path or Upload a Video."
+        self.app.progress_queue.put({"log": f"[ERROR] {log_msg}"})
+        # Match real PipelineHandler error behavior
+        yield {
+            self.app.components["unified_status"]: "⚠️ Failure in execute_extraction",
+            self.app.components["unified_log"]: log_msg,
+        }
+        return
+
+    self.app.progress_queue.put({"log": "[INFO] Extraction Complete (MOCKED)."})
     yield {
         self.app.components["unified_status"]: "Extraction Complete",
         self.app.components["unified_log"]: "Extraction Complete.",
     }
 
 
-def reset_app_state_handler():
-    """Handles the Reset State button click, returning updates for the UI."""
-    new_state = reset_app_state()
-    msg = "System state reset successful (MOCKED)."
-    status = "System Reset Ready."
-    global_progress_queue.put({"log": f"[INFO] {msg}"})
-    # For this specific handler, we return a tuple because the return is mapped by position in build_ui
-    return msg, status, new_state
+def mock_pre_analysis_wrapper(self, current_state: ApplicationState, *args, **kwargs):
+    """Mocks PipelineHandler.run_pre_analysis_wrapper handles prerequisite checks."""
+    app = self.app
+    print(f"[Mock] Running Pre-Analysis Wrapper (App Instance: {id(app)})")
+    if not current_state.extracted_video_path:
+        log_msg = "❌ **Error:** No extracted video found. Please run Extraction first."
+        log_entry = f"[ERROR] {log_msg}"
+        app.progress_queue.put({"log": log_entry})
+        yield {
+            app.components["unified_status"]: "⚠️ Error: No extracted video found.",
+            app.components["unified_log"]: log_msg,
+        }
+        return
+    log_entry = "[INFO] Pre-Analysis Started (MOCKED)."
+    app.progress_queue.put({"log": log_entry})
+    from unittest.mock import MagicMock
+
+    mock_event = MagicMock()
+    mock_event.video_path = current_state.extracted_video_path
+    mock_event.output_folder = self.config.downloads_dir
+    yield from mock_pre_analysis_execution(
+        mock_event, MagicMock(), MagicMock(), self.logger, self.config, self.thumbnail_manager, False
+    )
+
+
+def mock_propagation_wrapper(self, current_state: ApplicationState, *args, **kwargs):
+    """Mocks PipelineHandler.run_propagation_wrapper."""
+    print("[Mock] Running Propagation Wrapper")
+    yield from mock_propagation_execution(MagicMock(output_folder="mock_video", scenes=[]))
+
+
+def mock_analysis_wrapper(self, current_state: ApplicationState, *args, **kwargs):
+    """Mocks PipelineHandler.run_analysis_wrapper."""
+    print("[Mock] Running Analysis Wrapper")
+    yield from mock_analysis_execution(MagicMock(output_folder="mock_video"))
 
 
 # --- 3. Apply Patches ---
 
 ui.app_ui.AppUI.preload_models = MagicMock(side_effect=lambda *args: None)
-ui.handlers.pipeline_handlers.PipelineHandler.run_session_load_wrapper = mock_session_load_wrapper
-ui.handlers.pipeline_handlers.PipelineHandler.run_extraction_wrapper = mock_extraction_wrapper
+
+# Patch PipelineHandler methods at the CLASS level before AppUI instantiates it
+import ui.handlers.pipeline_handlers as ph
+
+ph.PipelineHandler.run_session_load_wrapper = mock_session_load_wrapper
+ph.PipelineHandler.run_extraction_wrapper = mock_extraction_wrapper
+ph.PipelineHandler.run_pre_analysis_wrapper = mock_pre_analysis_wrapper
+ph.PipelineHandler.run_propagation_wrapper = mock_propagation_wrapper
+ph.PipelineHandler.run_analysis_wrapper = mock_analysis_wrapper
 
 original_main = ui.app_ui.AppUI.build_ui
 
 
+# Capture the active instance during initialization
+original_app_ui_init = ui.app_ui.AppUI.__init__
+
+
+def mock_app_ui_init(self, *args, **kwargs):
+    global _active_app
+    original_app_ui_init(self, *args, **kwargs)
+    _active_app = self
+    print(f"[Mock] Captured Active App Instance: {id(_active_app)}")
+
+
+ui.app_ui.AppUI.__init__ = mock_app_ui_init
+
+
 def mock_build_ui(self, *args, **kwargs):
+    def reset_app_state_handler():
+        """Handles the Reset State button click, returning updates for the UI."""
+        new_state = reset_app_state()
+
+        # Drain the progress_queue so stale messages from the previous test
+        # don't surface via the LogViewer timer after reset.
+        while not global_progress_queue.empty():
+            try:
+                global_progress_queue.get_nowait()
+            except Exception:
+                break
+
+        # Clear LogViewer internal state to avoid "Ghost Logs"
+        if hasattr(self, "log_viewer"):
+            self.log_viewer.all_logs.clear()
+            self.log_viewer._last_rendered_log = ""
+
+        c = self.components
+        return {
+            c["application_state"]: new_state,
+            c["unified_status"]: "System Reset Ready.",
+            c["unified_log"]: "System Reset Ready.",
+        }
+
     demo = original_main(self, *args, **kwargs)
     with demo:
         with gr.Accordion("Tests (Experimental)", open=True, visible=True):

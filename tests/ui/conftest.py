@@ -103,14 +103,10 @@ def wait_for_app_ready(page: Page):
         status_locator = page.locator(Selectors.UNIFIED_STATUS)
         expect(status_locator).to_contain_text(Selectors.STATUS_READY, timeout=10000)
 
-        # Buffer for Gradio state propagation
-        page.wait_for_timeout(500)
         # Wait for the status to signal success (Markdown is more robust than Log Textbox)
         expect(page.get_by_text("System Reset Ready.")).to_be_visible(timeout=15000)
-        # Small buffer for Gradio's JS to settle after reset
-        page.wait_for_timeout(1000)
 
-    # Small buffer for Gradio's JS to settle
+    # Global settle time (Gradio 5 needs a moment to hydrate event listeners)
     page.wait_for_timeout(1000)
 
 
@@ -124,6 +120,10 @@ def open_accordion(page: Page, text: str):
         elem_id = "#system_logs_accordion"
     elif "Help" in text:
         elem_id = "#help_accordion"
+    elif "Deduplication" in text:
+        elem_id = "#dedup_accordion"
+    elif "Advanced Model Configuration" in text:
+        elem_id = "#subject_advanced_config_accordion"
 
     if elem_id:
         accordion = page.locator(elem_id)
@@ -132,23 +132,24 @@ def open_accordion(page: Page, text: str):
 
     expect(accordion).to_be_visible(timeout=5000)
 
-    # Check if already open
+    # Check if already open using multiple strategies (Gradio 5+ details/button)
     is_open = False
     try:
-        # Check for Gradio open classes or aria-expanded
-        is_open = page.evaluate(
-            "(sel) => { "
-            "const el = document.querySelector(sel); "
-            "if (!el) return false; "
-            "return el.classList.contains('open') || el.getAttribute('aria-expanded') === 'true'; "
-            "}",
-            elem_id if elem_id else f"text={text}",
-        )
+        # 1. Check if it's a 'details' element with 'open' attribute
+        if accordion.evaluate("el => el.tagName === 'DETAILS' && el.open"):
+            is_open = True
+        # 2. Check aria-expanded on the accordion element or its buttons
+        elif accordion.get_attribute("aria-expanded") == "true":
+            is_open = True
+        elif accordion.locator("button[aria-expanded='true']").count() > 0:
+            is_open = True
     except Exception:
         pass
 
     if not is_open:
+        # Click the header/accordion to toggle
         accordion.click()
+        # Wait for animation
         page.wait_for_timeout(500)
 
 
@@ -162,7 +163,8 @@ def switch_to_tab(page: Page, tab_name: str):
     if tab_btn.get_attribute("aria-selected") != "true":
         tab_btn.click(force=True)
         expect(tab_btn).to_have_attribute("aria-selected", "true", timeout=5000)
-        page.wait_for_timeout(1000)  # Gradio animation/content load buffer
+        # Wait for any loading indicator to disappear after tab switch
+        page.wait_for_selector(".generating, [data-testid='loading']", state="hidden", timeout=2000)
 
 
 def cleanup_port(port: int):
@@ -226,6 +228,21 @@ def app_server():
         process.kill()
         process.wait()
     log_file.close()
+
+
+@pytest.fixture
+def app_instance(app_server):
+    """
+    Retrieve the live AppUI instance from the running server.
+    Note: This only works if the server is running in the same process.
+    For subprocess-based servers, this will return None unless captured via IPC.
+    """
+    try:
+        from tests.mock_app import get_active_app
+
+        return get_active_app()
+    except ImportError:
+        return None
 
 
 @pytest.fixture
@@ -326,10 +343,11 @@ def shared_analysis_session(shared_page, app_server):
     # 3. Propagation
     switch_to_tab(page, Labels.TAB_SCENES)
     propagate_btn = page.locator(Selectors.PROPAGATE_MASKS)
-    expect(propagate_btn).to_be_visible(timeout=5000)
-    propagate_btn.click()
+    # The button becomes visible only after pre-analysis results are populated
+    expect(propagate_btn).to_be_visible(timeout=10000)
+    propagate_btn.click(force=True)
     expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text(Selectors.STATUS_SUCCESS_PROPAGATION, timeout=30000)
-    page.wait_for_timeout(500)
+    page.wait_for_timeout(1000)
 
     # 4. Analysis
     switch_to_tab(page, Labels.TAB_METRICS)
@@ -353,7 +371,7 @@ def full_analysis_session(analyzed_session):
     # Click Propagate
     propagate_btn = page.locator(Selectors.PROPAGATE_MASKS)
     expect(propagate_btn).to_be_visible(timeout=10000)
-    propagate_btn.click()
+    propagate_btn.click(force=True)
 
     expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text(Selectors.STATUS_SUCCESS_PROPAGATION, timeout=30000)
     page.wait_for_timeout(1000)

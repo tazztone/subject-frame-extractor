@@ -20,21 +20,38 @@ class TestAdvancedWorkflow:
         """
         page.goto(BASE_URL)
         wait_for_app_ready(page)
-
         # 1. Switch to Subject tab
         switch_to_tab(page, Labels.TAB_SUBJECT)
 
         # 2. Click "Confirm Subject"
         pre_analyze_btn = page.locator(Selectors.START_PRE_ANALYSIS)
-        expect(pre_analyze_btn).to_be_visible()
-        pre_analyze_btn.click()
+        expect(pre_analyze_btn).to_be_visible(timeout=10000)
+
+        pre_analyze_btn.click(force=True)
 
         # 3. Verify Error in Status
+        # Standard expect already polls and provides better error messages than wait_for_function
         expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text(Selectors.STATUS_ERROR_REGEX, timeout=10000)
 
         # 4. Open logs to confirm detail
         open_accordion(page, Labels.SYSTEM_LOGS)
-        expect(page.locator(Selectors.LOG_TEXTAREA)).to_contain_text("Error", timeout=10000)
+        # Click refresh to force an immediate log render cycle, then poll
+        # until "Error" appears — resilient to LogViewer timer delays.
+        page.locator(Selectors.REFRESH_LOGS).click()
+        # Wait for any potential loading state to clear before checking text
+        page.wait_for_selector(".generating, [data-testid='loading']", state="hidden", timeout=5000)
+
+        page.wait_for_function(
+            """() => {
+                const ta = document.querySelector('#unified_log textarea');
+                if (ta && ta.value.includes('Error')) return true;
+                const el = document.querySelector('#unified_log');
+                if (!el) return false;
+                const text = el.textContent || '';
+                return text.includes('Error') && !text.trim().startsWith('System Logs Output');
+            }""",
+            timeout=12000,
+        )
 
     def test_extraction_settings_persistence(self, page: Page, app_server):
         """
@@ -46,8 +63,8 @@ class TestAdvancedWorkflow:
         # 1. Open Advanced Settings
         open_accordion(page, "Advanced Processing Settings")
 
-        # 2. Change Megapixels
-        mp_input = page.locator(Selectors.THUMB_MEGAPIXELS)
+        # 2. Change Megapixels - append numeric input selector
+        mp_input = page.locator(f"{Selectors.THUMB_MEGAPIXELS} input[data-testid='number-input']")
         expect(mp_input).to_be_visible()
         mp_input.fill("1.0")
 

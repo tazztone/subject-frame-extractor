@@ -249,7 +249,7 @@ class SubjectTabBuilder:
         )
 
         # 5. Advanced Configuration Accordion
-        with gr.Accordion("Advanced Model Configuration", open=False):
+        with gr.Accordion("Advanced Model Configuration", open=False, elem_id="subject_advanced_config_accordion"):
             with gr.Row():
                 self.app._reg(
                     "tracker_model_name",

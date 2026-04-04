@@ -55,8 +55,8 @@ class TestFindPeopleButtonRegression:
 
         switch_to_tab(page, Labels.TAB_SUBJECT)
 
-        # Select Face strategy
-        page.get_by_label(Labels.STRATEGY_FACE).check(force=True)
+        # Select Face strategy - use label-based click
+        page.get_by_label(Labels.STRATEGY_FACE, exact=False).click()
         page.wait_for_timeout(500)
 
         # Click the Scan Video tab
@@ -128,7 +128,7 @@ class TestSystemLogsRegression:
         page.goto(BASE_URL)
         wait_for_app_ready(page)
 
-        logs_accordion = page.get_by_text(Labels.SYSTEM_LOGS)
+        logs_accordion = page.get_by_role("button", name="📋 System Logs", exact=False)
         expect(logs_accordion).to_be_visible(timeout=5000)
 
     def test_refresh_logs_button_exists(self, page: Page, app_server):

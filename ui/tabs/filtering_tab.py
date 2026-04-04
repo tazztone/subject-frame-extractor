@@ -75,7 +75,9 @@ class FilteringTabBuilder:
                 self.app.components["metric_auto_threshold_cbs"] = {}
 
                 # 2. Deduplication Accordion
-                with gr.Accordion("Deduplication (Remove Duplicates)", open=True) as dedup_acc:
+                with gr.Accordion(
+                    "Deduplication (Remove Duplicates)", open=True, elem_id="dedup_accordion"
+                ) as dedup_acc:
                     self.app.components["metric_accs"]["dedup"] = dedup_acc
                     self.app._create_component(
                         "dedup_method_input",

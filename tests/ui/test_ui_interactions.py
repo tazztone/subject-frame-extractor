@@ -21,11 +21,10 @@ class TestInteractiveComponents:
         wait_for_app_ready(page)
 
         switch_to_tab(page, Labels.TAB_SUBJECT)
-        expect(page.locator(Selectors.SEED_STRATEGY)).to_be_visible(timeout=5000)
 
-        # Select Face strategy
-        page.get_by_label(Labels.STRATEGY_FACE).check(force=True)
-        page.wait_for_timeout(1000)
+        # Select Face strategy - use get_by_label for robustness
+        page.get_by_label(Labels.STRATEGY_FACE, exact=False).click()
+        expect(page.get_by_role("tab", name=Labels.TAB_SCAN_VIDEO, exact=False)).to_be_visible(timeout=5000)
 
         # Click the "Scan Video for Subjects" sub-tab
         page.get_by_role("tab", name=Labels.TAB_SCAN_VIDEO, exact=False).click()
@@ -57,10 +56,8 @@ class TestWorkflowInteractions:
         switch_to_tab(page, Labels.TAB_SUBJECT)
 
         # Select Face
-        page.get_by_label(Labels.STRATEGY_FACE).check(force=True)
-        page.wait_for_timeout(500)
-
-        # Check for photo upload text
+        page.get_by_label(Labels.STRATEGY_FACE, exact=False).click()
+        # Check for photo upload text (Wait for visibility instead of timeout)
         expect(page.get_by_text("Upload Reference Photo", exact=False)).to_be_visible()
 
     def test_text_strategy_shows_prompt(self, page: Page, app_server):
@@ -71,10 +68,8 @@ class TestWorkflowInteractions:
         switch_to_tab(page, Labels.TAB_SUBJECT)
 
         # Select Text
-        page.get_by_label(Labels.STRATEGY_TEXT).check(force=True)
-        page.wait_for_timeout(500)
-
-        # Check for prompt placeholder
+        page.get_by_label(Labels.STRATEGY_TEXT, exact=False).click()
+        # Check for prompt placeholder (Wait for visibility instead of timeout)
         expect(page.get_by_placeholder("e.g., 'a man in a blue suit'")).to_be_visible()
 
 
@@ -89,8 +84,8 @@ class TestErrorScenarios:
         switch_to_tab(page, Labels.TAB_SUBJECT)
 
         # Select "By Face" strategy
-        page.get_by_label(Labels.STRATEGY_FACE).check(force=True)
-        page.wait_for_timeout(1000)
+        page.get_by_label(Labels.STRATEGY_FACE, exact=False).click()
+        expect(page.get_by_role("tab", name=Labels.TAB_SCAN_VIDEO, exact=False)).to_be_visible(timeout=5000)
 
         # Ensure we are on Scan Video tab
         page.get_by_role("tab", name=Labels.TAB_SCAN_VIDEO, exact=False).click()

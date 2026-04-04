@@ -19,6 +19,7 @@ class LogViewer:
         self.all_logs: List[str] = []
         self.log_filter_level = "INFO"
         self.components: Dict[str, Any] = {}
+        self._last_rendered_log: str = ""  # Track last emitted content
 
     def build(self) -> gr.Accordion:
         """Constructs the log viewer UI components."""
@@ -34,7 +35,9 @@ class LogViewer:
             )
             with gr.Row():
                 self.components["show_debug_logs"] = gr.Checkbox(label="Show Debug Logs", value=False)
-                self.components["refresh_logs_button"] = gr.Button("🔄 Refresh", scale=1, visible=True)
+                self.components["refresh_logs_button"] = gr.Button(
+                    "🔄 Refresh", scale=1, visible=True, elem_id="refresh_logs_button"
+                )
                 self.components["clear_logs_button"] = gr.Button("Clear", scale=1)
 
         return accordion
@@ -53,19 +56,18 @@ class LogViewer:
         ]
         return {self.components["unified_log"]: "\n".join(filtered_logs[-1000:])}
 
-    def setup_handlers(self, all_outputs: List[Any]):
+    def setup_handlers(self, timer_outputs: List[Any], full_outputs: List[Any]):
         """Sets up background log refresh and filter toggles."""
 
         def update_logs(filter_debug):
             """Refreshes log display by draining queue and applying filter."""
-            # First drain any pending log messages from the queue
+            # Drain log messages from the queue (only; ui_update messages are
+            # the responsibility of button event handlers, not the timer).
             while not self.progress_queue.empty():
                 try:
                     msg = self.progress_queue.get_nowait()
                     if "log" in msg:
                         self.all_logs.append(msg["log"])
-                    if "ui_update" in msg:
-                        yield msg["ui_update"]
                 except Exception:
                     break
 
@@ -78,16 +80,20 @@ class LogViewer:
                 for l in self.all_logs
                 if any(f"[{lvl}]" in l for lvl in self.log_level_choices[current_filter_level:])
             ]
-            yield {self.components["unified_log"]: "\n".join(filtered_logs[-1000:])}
+            new_content = "\n".join(filtered_logs[-1000:])
+            self._last_rendered_log = new_content
+            # Return (not yield) so Gradio always applies the update.
+            # Generator functions that yield nothing reset outputs to default.
+            return {self.components["unified_log"]: new_content}
 
         c = self.components
         c["clear_logs_button"].click(lambda: (self.all_logs.clear(), "")[1], [], c["unified_log"])
 
-        c["show_debug_logs"].change(update_logs, inputs=[c["show_debug_logs"]], outputs=all_outputs)
+        c["show_debug_logs"].change(update_logs, inputs=[c["show_debug_logs"]], outputs=full_outputs)
 
-        # Log Auto-Refresh (every 1s)
-        self.components["log_timer"] = gr.Timer(1.0)
-        self.components["log_timer"].tick(update_logs, inputs=[c["show_debug_logs"]], outputs=all_outputs)
+        # Log Auto-Refresh (every 0.5s)
+        self.components["log_timer"] = gr.Timer(0.5)
+        self.components["log_timer"].tick(update_logs, inputs=[c["show_debug_logs"]], outputs=timer_outputs)
 
-        # Keep manual refresh just in case
-        c["refresh_logs_button"].click(update_logs, inputs=[c["show_debug_logs"]], outputs=all_outputs)
+        # Manual refresh (full outputs)
+        c["refresh_logs_button"].click(update_logs, inputs=[c["show_debug_logs"]], outputs=full_outputs)

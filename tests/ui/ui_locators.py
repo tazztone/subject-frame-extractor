@@ -1,4 +1,4 @@
-"""Centralized UI locators — single place to update when the UI changes."""
+import re
 
 
 class Selectors:
@@ -7,14 +7,17 @@ class Selectors:
     # Global Components
     UNIFIED_LOG = "#unified_log"
     UNIFIED_STATUS = "#unified_status"
-    LOG_TEXTAREA = "textarea[aria-label='System Logs Output']"
+    LOG_TEXTAREA = "#unified_log textarea"
     CANCEL_BUTTON = "button:has-text('Cancel')"
     PAUSE_BUTTON = "button:has-text('Pause')"
     RESET_STATE_BUTTON = "button:has-text('Reset State (MOCKED)')"
+    REFRESH_LOGS = "#refresh_logs_button"
 
     # Status Message Constants (regex for robustness)
     STATUS_READY = "System Reset Ready."
-    STATUS_ERROR_REGEX = "Error:|Fail|Invalid"
+    STATUS_MSG = "#unified_status"
+    STATUS_ERROR = "#unified_status"
+    STATUS_ERROR_REGEX = re.compile(r"⚠️|Error|Fail|Invalid", re.IGNORECASE)
     STATUS_SUCCESS_EXTRACTION = "Extraction Complete"
     STATUS_SUCCESS_PRE_ANALYSIS = "Pre-Analysis Complete"
     STATUS_SUCCESS_PROPAGATION = "Propagation Complete"
@@ -23,30 +26,39 @@ class Selectors:
 
     # Extraction Tab (Source)
     SOURCE_INPUT = "#source_input textarea, #source_input input"
-    START_EXTRACTION = "button:has-text('Start Extraction')"
-    ADD_TO_QUEUE = "button:has-text('Queue for Batch')"
-    THUMB_MEGAPIXELS = "#thumb_megapixels_input input[data-testid='number-input']"
+    START_EXTRACTION = "#start_extraction_button"
+    ADD_TO_QUEUE = "#add_to_queue_button"
+    THUMB_MEGAPIXELS = "#thumb_megapixels_input"
     SESSION_INPUT = "#session_path_input textarea, #session_path_input input"
-    LOAD_SESSION_BUTTON = "button:has-text('Load Session')"
-    MAX_RESOLUTION = "#max_resolution input"
-    EXTRACTION_METHOD = "#method_input"
+    LOAD_SESSION_BUTTON = "#load_session_button"
+    MAX_RESOLUTION = "#max_resolution"
+    METHOD_INPUT = "#method_input"
 
     # Subject/Scenes Tab
-    SEED_STRATEGY = "input[aria-label='How to find the subject?']"
-    START_PRE_ANALYSIS = "button:has-text('Confirm Subject')"
+    SEED_STRATEGY = "#primary_seed_strategy_input"
+    BEST_FRAME_STRATEGY = "#best_frame_strategy_input"
+    START_PRE_ANALYSIS = "#start_pre_analysis_button"
     SCENE_GALLERY = "#scene_gallery"
-    VIEW_TOGGLE = "button[aria-label='Toggle Gallery View']"
+    SCENE_GALLERY_VIEW_TOGGLE = "#scene_gallery_view_toggle"
     MASK_AREA_MIN = "input[aria-label='Min Subject Area %']"
     QUALITY_SCORE_MIN = "input[aria-label='Min Quality Score']"
-    PROPAGATE_MASKS = "button:has-text('Propagate Masks')"
+
+    # Scene Tab Specific (using elem_id)
+    SCENE_MASK_AREA_MIN = "#scene_mask_area_min_input"
+    SCENE_FACE_SIM_MIN = "#scene_face_sim_min_input"
+    SCENE_QUALITY_SCORE_MIN = "#scene_quality_score_min_input"
+    PREV_PAGE_BUTTON = "#prev_page_button"
+    NEXT_PAGE_BUTTON = "#next_page_button"
+
+    PROPAGATE_MASKS = "#propagate_masks_button"
     SCENE_FILTER_STATUS = "#scene_filter_status"
 
     # Metrics & Export Tab
-    START_ANALYSIS = "button:has-text('Start Analysis')"
-    FILTER_PRESET = "input[aria-label='Filter Preset']"
-    DEDUP_THRESH = "input[aria-label='Deduplication Threshold']"
-    EXPORT_BUTTON = "button:has-text('Start Export')"
-    DRY_RUN_BUTTON = "button:has-text('Dry Run')"
+    START_ANALYSIS = "#start_analysis_button"
+    FILTER_PRESET = "#filter_preset_dropdown"
+    DEDUP_THRESH = "#dedup_thresh_input"
+    EXPORT_BUTTON = "#export_button"
+    DRY_RUN_BUTTON = "#dry_run_button"
 
 
 class Labels:
@@ -61,14 +73,16 @@ class Labels:
 
     # Common Labels
     SOURCE_PLACEHOLDER = "Paste YouTube URL or local path"
-    SYSTEM_LOGS = "System Logs"
+    SYSTEM_LOGS = "📋 System Logs"
     HELP_ACCORDION = "❓ Help / Troubleshooting"
+    HELP_ACCORDION_BTN = "button:has-text('❓ Help / Troubleshooting')"
     SCAN_VIDEO_BUTTON = "🔍 Scan Video Now"
     TAB_SCAN_VIDEO = "Scan Video for Subjects"
     SESSION_ACCORDION = "Resume previous Session"
     ADVANCED_ACCORDION = "Advanced Processing Settings"
     BATCH_FILTER_ACCORDION = "Batch Filter Scenes"
 
-    # Strategy Options
-    STRATEGY_FACE = "Source Face Reference"
-    STRATEGY_TEXT = "Text Description (Limited)"
+    # Strategy Options (Match exact UI text including icons)
+    STRATEGY_AUTO = "🤖 Automatic Detection"
+    STRATEGY_FACE = "👤 Source Face Reference"
+    STRATEGY_TEXT = "📝 Text Description (Limited)"

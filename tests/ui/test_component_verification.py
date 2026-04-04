@@ -130,8 +130,9 @@ class TestLogsFunctionality:
 
         # Open logs
         open_accordion(page, Labels.SYSTEM_LOGS)
+        page.wait_for_timeout(500)
 
-        clear_btn = page.get_by_role("button", name="Clear")
+        clear_btn = page.get_by_role("button", name="Clear", exact=False)
         if clear_btn.is_visible():
             clear_btn.click()
             expect(page.locator(Selectors.LOG_TEXTAREA)).to_have_value("", timeout=2000)
@@ -198,8 +199,8 @@ class TestStrategyVisibility:
 
         switch_to_tab(page, Labels.TAB_SUBJECT)
 
-        # Use get_by_label
-        page.get_by_label(Labels.STRATEGY_FACE).click()
+        # Use get_by_label with exact=False for resilience to emojis/spans
+        page.get_by_label(Labels.STRATEGY_FACE, exact=False).click()
 
         # Check for child element in the group
         expect(page.get_by_text("Upload Reference Photo", exact=False)).to_be_visible(timeout=5000)
@@ -211,7 +212,7 @@ class TestStrategyVisibility:
 
         switch_to_tab(page, Labels.TAB_SUBJECT)
 
-        page.get_by_label(Labels.STRATEGY_TEXT).click()
+        page.get_by_label(Labels.STRATEGY_TEXT, exact=False).click()
 
         # Text prompt should appear
         expect(page.get_by_text("What should we look for?", exact=False)).to_be_visible(timeout=5000)

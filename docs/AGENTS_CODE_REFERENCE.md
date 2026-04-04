@@ -1675,7 +1675,7 @@ class LogViewer:
         """Constructs the log viewer UI components."""
     def get_log_update_dict(self, new_log_msg: Optional[str]=None) -> Dict[Any, str]:
         """Returns a Gradio update dictionary for the unified log component."""
-    def setup_handlers(self, all_outputs: List[Any]):
+    def setup_handlers(self, timer_outputs: List[Any], full_outputs: List[Any]):
         """Sets up background log refresh and filter toggles."""
 ```
 
