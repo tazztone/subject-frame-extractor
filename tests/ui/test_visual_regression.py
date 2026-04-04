@@ -1,23 +1,13 @@
 """
 Visual regression tests - captures UI states and compares to baselines.
-
-These tests detect unintended visual changes by:
-1. Capturing screenshots at each UI state
-2. Comparing against baseline images using perceptual hashing
-3. Failing if visual changes exceed threshold
-
-Run with:
-    python -m pytest tests/e2e/test_visual_regression.py -v
-
-Update baselines:
-    python -m pytest tests/e2e/test_visual_regression.py -v --update-baselines
+Standardized to use the new unified Selectors and Labels contract.
 """
 
 import pytest
 from playwright.sync_api import Page
 
 from .conftest import BASE_URL, open_accordion, switch_to_tab, wait_for_app_ready
-from .ui_locators import Labels
+from .ui_locators import Labels, Selectors
 
 try:
     from .visual_test_utils import capture_state_screenshot, compare_with_baseline, save_as_baseline
@@ -41,8 +31,8 @@ class TestVisualRegression:
             lambda p: p.get_by_placeholder(Labels.SOURCE_PLACEHOLDER).fill("sample_video.mp4"),
         ),
         ("03_subject_tab_initial", lambda p: switch_to_tab(p, Labels.TAB_SUBJECT)),
-        ("04_subject_face_strategy", lambda p: _click_strategy(p, "Face")),
-        ("05_subject_text_strategy", lambda p: _click_strategy(p, "Text")),
+        ("04_subject_face_strategy", lambda p: _click_strategy(p, Labels.STRATEGY_FACE)),
+        ("05_subject_text_strategy", lambda p: _click_strategy(p, Labels.STRATEGY_TEXT)),
         ("06_scenes_tab_initial", lambda p: switch_to_tab(p, Labels.TAB_SCENES)),
         ("07_metrics_tab_initial", lambda p: switch_to_tab(p, Labels.TAB_METRICS)),
         ("08_export_tab_initial", lambda p: switch_to_tab(p, Labels.TAB_EXPORT)),
@@ -110,6 +100,7 @@ class TestUIStateConsistency:
 
         # Switch away and back
         switch_to_tab(page, Labels.TAB_SUBJECT)
+        switch_to_tab(page, Labels.TAB_METRICS) # Switch to a mid-flow tab
         switch_to_tab(page, Labels.TAB_SOURCE)
 
         # Capture return state
@@ -127,14 +118,8 @@ class TestUIStateConsistency:
 
 
 # Helper functions for test setup
-def _click_strategy(page: Page, strategy_keyword: str):
-    """Click a strategy radio button containing keyword."""
+def _click_strategy(page: Page, label: str):
+    """Select a subject discovery strategy."""
     switch_to_tab(page, Labels.TAB_SUBJECT)
-
-    if "face" in strategy_keyword.lower():
-        label = Labels.STRATEGY_FACE
-    else:
-        label = Labels.STRATEGY_TEXT
-
-    page.get_by_text(label, exact=False).first.click()
+    page.get_by_label(label).check(force=True)
     page.wait_for_timeout(500)

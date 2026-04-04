@@ -1,21 +1,14 @@
 """
 Playwright E2E Tests for Bug Regression Prevention.
-
-These tests verify that previously fixed bugs don't regress:
-- Pagination crash on single page (Bug 2)
-- Find People button functionality (Bug 3)
-- Filter slider ranges and behavior (Bug 4)
-- Gallery size controls (Bug 5)
-- System logs visibility (Bug 6)
-
-Run with: python -m pytest tests/e2e/test_bug_regression.py -v -s
-Requires: mock app running on port 7860
+Standardized to use the new unified Selectors and Labels contract.
 """
 
+import re
 import pytest
 from playwright.sync_api import Page, expect
 
-from .conftest import BASE_URL
+from .conftest import BASE_URL, open_accordion, switch_to_tab, wait_for_app_ready
+from .ui_locators import Labels, Selectors
 
 # Mark all tests as e2e
 pytestmark = pytest.mark.e2e
@@ -27,39 +20,30 @@ class TestPaginationBugRegression:
     def test_next_button_on_empty_gallery_no_crash(self, page: Page, app_server):
         """Clicking Next on empty/single-page gallery should not crash."""
         page.goto(BASE_URL)
-        page.wait_for_timeout(2000)
+        wait_for_app_ready(page)
 
-        # Navigate to Scenes tab
-        scenes_tab = page.get_by_role("tab", name="Scenes")
-        if scenes_tab.is_visible():
-            scenes_tab.click(force=True)
-            page.wait_for_timeout(1000)
+        switch_to_tab(page, Labels.TAB_SCENES)
 
-            # Try to click Next - should not crash application
-            next_button = page.get_by_role("button", name="Next ➡️")
-            if next_button.is_visible():
-                next_button.click()
-                page.wait_for_timeout(500)
-                # App should still be responsive
-                expect(page.locator("body")).to_be_visible()
-                print("✓ Next button on empty gallery - no crash")
+        # Try to click Next - should not crash application
+        next_button = page.locator(Selectors.NEXT_PAGE_BUTTON)
+        # Even if disabled, clicking should not crash
+        next_button.click(force=True)
+        page.wait_for_timeout(500)
+        
+        # App should still be responsive
+        expect(page.locator("body")).to_be_visible()
 
     def test_prev_button_on_page_one_no_crash(self, page: Page, app_server):
         """Clicking Previous on page 1 should not crash."""
         page.goto(BASE_URL)
-        page.wait_for_timeout(2000)
+        wait_for_app_ready(page)
 
-        scenes_tab = page.get_by_role("tab", name="Scenes")
-        if scenes_tab.is_visible():
-            scenes_tab.click(force=True)
-            page.wait_for_timeout(1000)
+        switch_to_tab(page, Labels.TAB_SCENES)
 
-            prev_button = page.get_by_role("button", name="⬅️ Previous")
-            if prev_button.is_visible():
-                prev_button.click()
-                page.wait_for_timeout(500)
-                expect(page.locator("body")).to_be_visible()
-                print("✓ Previous button on page 1 - no crash")
+        prev_button = page.locator(Selectors.PREV_PAGE_BUTTON)
+        prev_button.click(force=True)
+        page.wait_for_timeout(500)
+        expect(page.locator("body")).to_be_visible()
 
 
 class TestFindPeopleButtonRegression:
@@ -68,30 +52,20 @@ class TestFindPeopleButtonRegression:
     def test_find_people_button_visible_in_face_strategy(self, page: Page, app_server):
         """Find People button should be visible when 'By Face' strategy selected."""
         page.goto(BASE_URL)
-        page.wait_for_timeout(2000)
+        wait_for_app_ready(page)
 
-        # Navigate to Subject tab
-        subject_tab = page.get_by_role("tab", name="Subject")
-        if subject_tab.is_visible():
-            subject_tab.click(force=True)
-            page.wait_for_timeout(1000)
+        switch_to_tab(page, Labels.TAB_SUBJECT)
 
-            # Look for Face strategy option
-            face_option = page.get_by_text("👤 By Face")
-            if face_option.is_visible():
-                face_option.click()
-                page.wait_for_timeout(500)
+        # Select Face strategy
+        page.get_by_label(Labels.STRATEGY_FACE).check(force=True)
+        page.wait_for_timeout(500)
 
-                # Click the Scan Video tab
-                scan_tab = page.get_by_role("tab", name="Scan Video for People")
-                if scan_tab.is_visible():
-                    scan_tab.click()
-                    page.wait_for_timeout(500)
+        # Click the Scan Video tab
+        page.get_by_role("tab", name=Labels.TAB_SCAN_VIDEO, exact=False).click()
 
-                # Find People button should be visible
-                find_people_btn = page.get_by_role("button", name="🔍 Scan Video Now")
-                expect(find_people_btn).to_be_visible(timeout=5000)
-                print("✓ Find People button is visible")
+        # Find People button should be visible
+        find_people_btn = page.get_by_role("button", name=Labels.SCAN_VIDEO_BUTTON, exact=False)
+        expect(find_people_btn).to_be_visible(timeout=5000)
 
 
 class TestFilterSlidersRegression:
@@ -100,44 +74,31 @@ class TestFilterSlidersRegression:
     def test_scenes_tab_has_filter_sliders(self, page: Page, app_server):
         """Scenes tab should have properly ranged filter sliders."""
         page.goto(BASE_URL)
-        page.wait_for_timeout(2000)
+        wait_for_app_ready(page)
 
-        scenes_tab = page.get_by_role("tab", name="Scenes")
-        if scenes_tab.is_visible():
-            scenes_tab.click(force=True)
-            page.wait_for_timeout(1000)
+        switch_to_tab(page, Labels.TAB_SCENES)
 
-            # Open Scene Filtering accordion if present
-            accordion = page.get_by_text("Scene Filtering")
-            if accordion.is_visible():
-                accordion.click()
-                page.wait_for_timeout(500)
+        # Open Scene Filtering accordion
+        open_accordion(page, "Batch Filter Scenes")
 
-            # Check for Face Similarity slider (0-1 range)
-            face_sim_slider = page.get_by_label("Min Face Similarity").first
-            if face_sim_slider.is_visible():
-                print("✓ Face Similarity slider found")
+        # Check for Face Similarity slider
+        face_sim_slider = page.locator(f"{Selectors.SCENE_FACE_SIM_MIN} input[type=range]")
+        expect(face_sim_slider).to_be_attached(timeout=5000)
 
-            # Check for Quality Score slider (0-20 range)
-            quality_slider = page.get_by_label("Min Quality Score").first
-            if quality_slider.is_visible():
-                print("✓ Quality Score slider found")
+        # Check for Quality Score slider
+        quality_slider = page.locator(f"{Selectors.SCENE_QUALITY_SCORE_MIN} input[type=range]")
+        expect(quality_slider).to_be_attached(timeout=5000)
 
     def test_export_tab_has_filter_sliders(self, page: Page, app_server):
         """Export tab filtering should have proper metric sliders."""
         page.goto(BASE_URL)
-        page.wait_for_timeout(2000)
+        wait_for_app_ready(page)
 
-        export_tab = page.get_by_role("tab", name="Export")
-        if export_tab.is_visible():
-            export_tab.click(force=True)
-            page.wait_for_timeout(1000)
+        switch_to_tab(page, Labels.TAB_EXPORT)
 
-            # Should have at least some range inputs (sliders)
-            sliders = page.locator("input[type='range']")
-            count = sliders.count()
-            assert count > 0, "Export tab should have filter sliders"
-            print(f"✓ Found {count} sliders in Export tab")
+        # Should have at least some range inputs (sliders)
+        sliders = page.locator("input[type='range']")
+        expect(sliders.first).to_be_attached(timeout=5000)
 
 
 class TestGallerySizeControlsRegression:
@@ -146,22 +107,18 @@ class TestGallerySizeControlsRegression:
     def test_gallery_size_controls_exist(self, page: Page, app_server):
         """Scene gallery should have columns and height controls."""
         page.goto(BASE_URL)
-        page.wait_for_timeout(2000)
+        wait_for_app_ready(page)
 
-        scenes_tab = page.get_by_role("tab", name="Scenes")
-        if scenes_tab.is_visible():
-            scenes_tab.click(force=True)
-            page.wait_for_timeout(1000)
+        switch_to_tab(page, Labels.TAB_SCENES)
+        open_accordion(page, "Display Settings")
 
-            # Check for Columns slider
-            columns_slider = page.get_by_label("Columns").first
-            if columns_slider.is_visible():
-                print("✓ Columns slider found")
+        # Check for Columns slider
+        columns_slider = page.get_by_label("Columns").first
+        expect(columns_slider).to_be_visible()
 
-            # Check for Height slider
-            height_slider = page.get_by_label("Gallery Height").first
-            if height_slider.is_visible():
-                print("✓ Height slider found")
+        # Check for Height slider
+        height_slider = page.get_by_label("Height").first
+        expect(height_slider).to_be_visible()
 
 
 class TestSystemLogsRegression:
@@ -170,66 +127,47 @@ class TestSystemLogsRegression:
     def test_logs_accordion_exists(self, page: Page, app_server):
         """System Logs accordion should be present."""
         page.goto(BASE_URL)
-        page.wait_for_timeout(2000)
+        wait_for_app_ready(page)
 
-        logs_accordion = page.get_by_text("📋 System Logs")
+        logs_accordion = page.get_by_text(Labels.SYSTEM_LOGS)
         expect(logs_accordion).to_be_visible(timeout=5000)
-        print("✓ System Logs accordion found")
 
     def test_refresh_logs_button_exists(self, page: Page, app_server):
         """Refresh Logs button should be present for manual log updates."""
         page.goto(BASE_URL)
-        page.wait_for_timeout(2000)
+        wait_for_app_ready(page)
 
-        # Open logs accordion
-        logs_accordion = page.get_by_text("📋 System Logs")
-        if logs_accordion.is_visible():
-            logs_accordion.click()
-            page.wait_for_timeout(500)
+        open_accordion(page, Labels.SYSTEM_LOGS)
 
-            # Check for Refresh button
-            refresh_btn = page.get_by_role("button", name="🔄 Refresh")
-            expect(refresh_btn).to_be_visible(timeout=5000)
-            print("✓ Refresh Logs button found")
+        # Check for Refresh button
+        refresh_btn = page.get_by_role("button", name="Refresh", exact=False)
+        expect(refresh_btn).to_be_visible(timeout=5000)
 
     def test_clear_logs_button_works(self, page: Page, app_server):
         """Clear Logs button should clear the log display."""
         page.goto(BASE_URL)
-        page.wait_for_timeout(2000)
+        wait_for_app_ready(page)
 
-        logs_accordion = page.get_by_text("📋 System Logs")
-        if logs_accordion.is_visible():
-            logs_accordion.click()
-            page.wait_for_timeout(500)
+        open_accordion(page, Labels.SYSTEM_LOGS)
 
-            # Click Clear button
-            clear_btn = page.get_by_role("button", name="🗑️ Clear")
-            if clear_btn.is_visible():
-                clear_btn.click()
-                page.wait_for_timeout(500)
-
-                # Log area should be empty or show initial message
-                log_area = page.locator("#unified_log")
-                expect(log_area).to_be_visible()
-                print("✓ Clear Logs button works")
+        # Click Clear button
+        clear_btn = page.get_by_role("button", name="Clear", exact=False)
+        if clear_btn.is_visible():
+            clear_btn.click()
+            # Log area should be empty or show initial message
+            expect(page.locator(Selectors.LOG_TEXTAREA)).to_have_value("", timeout=5000)
 
 
 class TestPropagationErrorHandling:
     """Tests for propagation error handling (Bug 1)."""
 
-    def test_propagate_button_disabled_without_scenes(self, page: Page, app_server):
-        """Propagate button should be disabled when no scenes are ready."""
+    def test_propagate_button_found(self, page: Page, app_server):
+        """Propagate button should be present on the Scenes tab."""
         page.goto(BASE_URL)
-        page.wait_for_timeout(2000)
+        wait_for_app_ready(page)
 
-        scenes_tab = page.get_by_role("tab", name="Scenes")
-        if scenes_tab.is_visible():
-            scenes_tab.click(force=True)
-            page.wait_for_timeout(1000)
+        switch_to_tab(page, Labels.TAB_SCENES)
 
-            # Propagate button should exist
-            propagate_btn = page.get_by_role("button", name="Propagate Masks")
-            if propagate_btn.count() > 0:
-                # Button should be disabled when no scenes are processed
-                # (Can't easily check disabled state with Playwright, just verify visibility)
-                print("✓ Propagate Masks button found")
+        # Propagate button should exist
+        propagate_btn = page.locator(Selectors.PROPAGATE_MASKS)
+        expect(propagate_btn).to_be_attached(timeout=5000)

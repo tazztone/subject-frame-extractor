@@ -17,7 +17,9 @@ These rules map directly to automated CI checks.
 
 These are complex, opinionated patterns that correct behaviors the agent naturally gets wrong.
 
-*   **Gradio 5+ Protocol**: Prefer **dictionary returns** for component updates instead of positional tuples to prevent silent app crashes during UI refactors.
+*   **Gradio 5+ Protocol**: Prefer **dictionary returns** for component updates.
+*   **Accordion Visibility**: Components inside collapsed `gr.Accordion` are INVISIBLE to Playwright. ALWAYS use `open_accordion(page, Label)` before asserting values inside.
+*   **Slider Selectors**: Gradio Sliders contain multiple inputs. Use `#elem_id input[data-testid='number-input']` for numeric values.
 *   **Playwright UI Tests**: ALWAYS use `page.wait_for_timeout()` instead of web-first assertions to account for Gradio's reactive delay.
 *   **Operator Plugin Pattern**: When adding a metric, you MUST add an entry to `core.filtering._extract_metric_arrays`, otherwise it silently fails filtering.
 *   **Thread-Safe Model Access**: Models (like InsightFace) are NOT thread-safe. You MUST use specific locks if running inside `ThreadPoolExecutor`.

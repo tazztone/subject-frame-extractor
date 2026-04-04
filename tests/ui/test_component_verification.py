@@ -1,28 +1,23 @@
 """
 Component-level verification tests using stable elem_id selectors.
-
-Tests that each UI component (sliders, dropdowns, buttons, logs) actually functions
-correctly, not just renders. This catches "does nothing" type bugs.
-
-Run with:
-    uv run pytest tests/ui/test_component_verification.py -v
+Standardized to use the new unified Selectors and Labels contract.
 """
 
 import pytest
 from playwright.sync_api import Page, expect
 
-from .conftest import BASE_URL, switch_to_tab
-from .ui_locators import Labels
+from .conftest import BASE_URL, open_accordion, switch_to_tab, wait_for_app_ready
+from .ui_locators import Labels, Selectors
 
 pytestmark = [pytest.mark.e2e, pytest.mark.component]
 
 
 # Sliders to verify: (Tab, Selector)
 SLIDERS_BY_TAB = [
-    ("Source", "#thumb_megapixels_input"),
-    ("Scenes", "#scene_mask_area_min_input"),
-    ("Scenes", "#scene_quality_score_min_input"),
-    ("Export", "#dedup_thresh_input"),
+    (Labels.TAB_SOURCE, Selectors.THUMB_MEGAPIXELS),
+    (Labels.TAB_SCENES, Selectors.SCENE_MASK_AREA_MIN),
+    (Labels.TAB_SCENES, Selectors.SCENE_QUALITY_SCORE_MIN),
+    (Labels.TAB_EXPORT, Selectors.DEDUP_THRESH),
 ]
 
 
@@ -32,22 +27,18 @@ class TestSliderFunctionality:
     @pytest.mark.parametrize("tab,selector", SLIDERS_BY_TAB)
     def test_slider_value_changes(self, page: Page, app_server, tab, selector):
         """Moving a slider should update its internal value."""
-        page.goto(BASE_URL, wait_until="domcontentloaded")
+        page.goto(BASE_URL)
+        wait_for_app_ready(page)
 
         switch_to_tab(page, tab)
 
         # Force open accordions to ensure visibility
-        if tab == "Source" and selector == "#thumb_megapixels_input":
-            page.get_by_text("Advanced Processing Settings").click()
-        elif tab == "Scenes":
-            # Elements are in Batch Filter accordion - click it to ensure it's open
-            page.get_by_text("Batch Filter Scenes").first.click()
-        elif tab == "Export" and selector == "#dedup_thresh_input":
-            # Only click if not visible. Use flexible substring to avoid emoji issues.
-            slider_locator = page.locator(f"{selector} input[type=range]")
-            if not slider_locator.is_visible():
-                page.get_by_text("Deduplication", exact=False).first.click()
-                page.wait_for_timeout(500)
+        if tab == Labels.TAB_SOURCE and selector == Selectors.THUMB_MEGAPIXELS:
+            open_accordion(page, "Advanced Processing Settings")
+        elif tab == Labels.TAB_SCENES:
+            open_accordion(page, "Batch Filter Scenes")
+        elif tab == Labels.TAB_EXPORT and selector == Selectors.DEDUP_THRESH:
+            open_accordion(page, "Deduplication")
 
         # For sliders, we need the actual range input inside the wrapper
         slider_input = page.locator(f"{selector} input[type=range]")
@@ -66,10 +57,10 @@ class TestSliderFunctionality:
 
 # Dropdowns to verify: (Tab, Selector)
 DROPDOWNS_BY_TAB = [
-    ("Source", "#max_resolution"),
-    ("Source", "#method_input"),
-    ("Subject", "#best_frame_strategy_input"),
-    ("Export", "#filter_preset_dropdown"),
+    (Labels.TAB_SOURCE, Selectors.MAX_RESOLUTION),
+    (Labels.TAB_SOURCE, Selectors.METHOD_INPUT),
+    (Labels.TAB_SUBJECT, Selectors.BEST_FRAME_STRATEGY),
+    (Labels.TAB_EXPORT, Selectors.FILTER_PRESET),
 ]
 
 
@@ -79,7 +70,8 @@ class TestDropdownFunctionality:
     @pytest.mark.parametrize("tab,selector", DROPDOWNS_BY_TAB)
     def test_dropdown_is_interactive(self, page: Page, app_server, tab, selector):
         """Dropdowns should be visible and enabled."""
-        page.goto(BASE_URL, wait_until="domcontentloaded")
+        page.goto(BASE_URL)
+        wait_for_app_ready(page)
 
         switch_to_tab(page, tab)
 
@@ -93,14 +85,15 @@ class TestFiltersFunctionality:
 
     def test_scene_gallery_view_toggle(self, page: Page, app_server):
         """View toggle changes displayed scenes."""
-        page.goto(BASE_URL, wait_until="domcontentloaded")
+        page.goto(BASE_URL)
+        wait_for_app_ready(page)
 
-        switch_to_tab(page, "Scenes")
+        switch_to_tab(page, Labels.TAB_SCENES)
 
-        view_toggle = page.locator("#scene_gallery_view_toggle")
+        view_toggle = page.locator(Selectors.SCENE_GALLERY_VIEW_TOGGLE)
         expect(view_toggle).to_be_visible(timeout=5000)
 
-        # Click options
+        # Click options by label
         page.get_by_label("All", exact=True).click()
         page.get_by_label("Kept", exact=True).click()
 
@@ -110,40 +103,38 @@ class TestLogsFunctionality:
 
     def test_logs_visible_in_accordion(self, page: Page, app_server):
         """System Logs accordion contains a textbox."""
-        page.goto(BASE_URL, wait_until="domcontentloaded")
+        page.goto(BASE_URL)
+        wait_for_app_ready(page)
 
         # Find and open logs accordion
-        logs_accordion = page.get_by_text("System Logs")
-        expect(logs_accordion).to_be_visible()
-        logs_accordion.click()
+        open_accordion(page, Labels.SYSTEM_LOGS)
 
-        # Log textbox (inside the wrapper) should be visible
-        log_textarea = page.locator("#unified_log textarea")
-        expect(log_textarea).to_be_visible()
+        # Log textarea should be visible
+        expect(page.locator(Selectors.LOG_TEXTAREA)).to_be_visible(timeout=5000)
 
     def test_logs_have_initial_content(self, page: Page, app_server):
         """Logs should show initial ready message."""
-        page.goto(BASE_URL, wait_until="domcontentloaded")
+        page.goto(BASE_URL)
+        wait_for_app_ready(page)
 
         # Open logs
-        page.get_by_text("System Logs").click()
+        open_accordion(page, Labels.SYSTEM_LOGS)
 
-        log_textarea = page.locator("#unified_log textarea")
         # Wait for content from mock app
-        expect(log_textarea).not_to_have_value("", timeout=5000)
+        expect(page.locator(Selectors.LOG_TEXTAREA)).not_to_have_value("", timeout=5000)
 
     def test_clear_logs_button(self, page: Page, app_server):
         """Clear button empties log content."""
-        page.goto(BASE_URL, wait_until="domcontentloaded")
+        page.goto(BASE_URL)
+        wait_for_app_ready(page)
 
         # Open logs
-        page.get_by_text("System Logs").click()
+        open_accordion(page, Labels.SYSTEM_LOGS)
 
         clear_btn = page.get_by_role("button", name="Clear")
         if clear_btn.is_visible():
             clear_btn.click()
-            log_textarea = page.locator("#unified_log textarea")
-            expect(log_textarea).to_have_value("", timeout=2000)
+            expect(page.locator(Selectors.LOG_TEXTAREA)).to_have_value("", timeout=2000)
 
 
 class TestPaginationFunctionality:
@@ -151,49 +142,50 @@ class TestPaginationFunctionality:
 
     def test_pagination_row_exists(self, page: Page, app_server):
         """Pagination row should exist."""
-        page.goto(BASE_URL, wait_until="domcontentloaded")
+        page.goto(BASE_URL)
+        wait_for_app_ready(page)
 
-        switch_to_tab(page, "Scenes")
+        switch_to_tab(page, Labels.TAB_SCENES)
 
         pagination_row = page.locator("#pagination_row")
         expect(pagination_row).to_be_visible(timeout=5000)
 
     def test_prev_next_buttons_exist(self, page: Page, app_server):
         """Previous and Next pagination buttons should exist."""
-        page.goto(BASE_URL, wait_until="domcontentloaded")
+        page.goto(BASE_URL)
+        wait_for_app_ready(page)
 
-        switch_to_tab(page, "Scenes")
+        switch_to_tab(page, Labels.TAB_SCENES)
 
-        expect(page.locator("#prev_page_button")).to_be_visible()
-        expect(page.locator("#next_page_button")).to_be_visible()
+        expect(page.locator(Selectors.PREV_PAGE_BUTTON)).to_be_visible()
+        expect(page.locator(Selectors.NEXT_PAGE_BUTTON)).to_be_visible()
 
 
 class TestButtonsFunctionality:
     """Verify buttons are clickable and perform actions."""
 
     CRITICAL_BUTTONS = [
-        ("Source", "#start_extraction_button"),
-        ("Source", "#add_to_queue_button"),
-        ("Subject", "#start_pre_analysis_button"),
-        ("Metrics", "#start_analysis_button"),
-        ("Export", "#export_button"),
+        (Labels.TAB_SOURCE, Selectors.START_EXTRACTION),
+        (Labels.TAB_SUBJECT, Selectors.START_PRE_ANALYSIS),
+        (Labels.TAB_METRICS, Selectors.START_ANALYSIS),
+        (Labels.TAB_EXPORT, Selectors.EXPORT_BUTTON),
     ]
 
     @pytest.mark.parametrize("tab,selector", CRITICAL_BUTTONS)
     def test_button_is_visible(self, page: Page, app_server, tab, selector):
         """Critical buttons should be attached to the DOM on their respective tabs."""
-        page.goto(BASE_URL, wait_until="domcontentloaded")
+        page.goto(BASE_URL)
+        wait_for_app_ready(page)
 
         switch_to_tab(page, tab)
 
         button = page.locator(selector)
-        # Some buttons (like Export) are hidden in groups until a session is loaded.
-        # We check for attachment to verify they were at least built.
+        # Check for attachment to verify they were at least built.
         expect(button).to_be_attached(timeout=5000)
 
-        # If it's not the Export button, it should also be visible
-        if selector != "#export_button":
-            expect(button).to_be_visible(timeout=2000)
+        # Non-Export buttons should be visible immediately after app ready
+        if tab != Labels.TAB_EXPORT:
+            expect(button).to_be_visible(timeout=5000)
 
 
 class TestStrategyVisibility:
@@ -201,11 +193,12 @@ class TestStrategyVisibility:
 
     def test_face_strategy_shows_face_options(self, page: Page, app_server):
         """Selecting Face strategy should show face-specific options."""
-        page.goto(BASE_URL, wait_until="domcontentloaded")
+        page.goto(BASE_URL)
+        wait_for_app_ready(page)
 
         switch_to_tab(page, Labels.TAB_SUBJECT)
 
-        # Use get_by_label to avoid text matching in info description
+        # Use get_by_label
         page.get_by_label(Labels.STRATEGY_FACE).click()
 
         # Check for child element in the group
@@ -213,7 +206,8 @@ class TestStrategyVisibility:
 
     def test_text_strategy_shows_text_options(self, page: Page, app_server):
         """Selecting Text strategy should show text prompt and warning."""
-        page.goto(BASE_URL, wait_until="domcontentloaded")
+        page.goto(BASE_URL)
+        wait_for_app_ready(page)
 
         switch_to_tab(page, Labels.TAB_SUBJECT)
 

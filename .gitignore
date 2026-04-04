@@ -230,3 +230,4 @@ ux_reports/*
 tests/ui/diffs/*.png
 tests/ui/baselines/*.png
 outputs/
+.kilo/

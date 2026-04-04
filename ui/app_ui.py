@@ -299,6 +299,7 @@ class AppUI:
                             "placeholder": "Path to a previous run's output folder...",
                             "info": "Paste the path to a folder from a previous extraction to resume work.",
                             "scale": 3,
+                            "elem_id": "session_path_input",
                         },
                     )
                     self._create_component("load_session_button", "button", {"value": "Load Session", "scale": 1})

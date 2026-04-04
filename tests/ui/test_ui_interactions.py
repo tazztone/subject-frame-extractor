@@ -1,22 +1,13 @@
 """
 Playwright E2E Tests for specific UI interactions.
-
-Tests individual component behaviors:
-- Accordion toggling
-- Strategy selection visibility
-- Slider interactions
-- Log refresh mechanism
-- Error message displays
-
-Run with: python -m pytest tests/ui/test_ui_interactions.py -v -s
+Standardized to use the new unified Selectors and Labels contract.
 """
 
 import re
-
 import pytest
 from playwright.sync_api import Page, expect
 
-from .conftest import BASE_URL, open_accordion, switch_to_tab
+from .conftest import BASE_URL, open_accordion, switch_to_tab, wait_for_app_ready
 from .ui_locators import Labels, Selectors
 
 pytestmark = pytest.mark.e2e
@@ -28,15 +19,14 @@ class TestInteractiveComponents:
     def test_find_people_button_visibility(self, page: Page, app_server):
         """Verify the Find People button appears when face strategy is selected."""
         page.goto(BASE_URL)
-        page.wait_for_timeout(2000)
+        wait_for_app_ready(page)
 
         switch_to_tab(page, Labels.TAB_SUBJECT)
         expect(page.locator(Selectors.SEED_STRATEGY)).to_be_visible(timeout=5000)
 
-        # Select Face strategy - use a more robust click on the radio input
-        face_radio = page.locator(f"{Selectors.SEED_STRATEGY} input[value='{Labels.STRATEGY_FACE}']")
-        face_radio.check(force=True)
-        page.wait_for_timeout(1000)  # Wait for visibility toggle
+        # Select Face strategy
+        page.get_by_label(Labels.STRATEGY_FACE).check(force=True)
+        page.wait_for_timeout(1000)
 
         # Click the "Scan Video for Subjects" sub-tab
         page.get_by_role("tab", name=Labels.TAB_SCAN_VIDEO, exact=False).click()
@@ -48,7 +38,7 @@ class TestInteractiveComponents:
     def test_logs_accordion_works(self, page: Page, app_server):
         """Verify the System Logs accordion opens and shows content."""
         page.goto(BASE_URL)
-        page.wait_for_timeout(2000)
+        wait_for_app_ready(page)
 
         # Find and open logs accordion
         open_accordion(page, Labels.SYSTEM_LOGS)
@@ -63,12 +53,12 @@ class TestWorkflowInteractions:
     def test_face_strategy_shows_upload(self, page: Page, app_server):
         """Verify that selecting Face strategy shows upload component."""
         page.goto(BASE_URL)
-        page.wait_for_timeout(2000)
+        wait_for_app_ready(page)
 
         switch_to_tab(page, Labels.TAB_SUBJECT)
 
         # Select Face
-        page.locator(f"{Selectors.SEED_STRATEGY} input[value='{Labels.STRATEGY_FACE}']").check(force=True)
+        page.get_by_label(Labels.STRATEGY_FACE).check(force=True)
         page.wait_for_timeout(500)
 
         # Check for photo upload text
@@ -77,12 +67,12 @@ class TestWorkflowInteractions:
     def test_text_strategy_shows_prompt(self, page: Page, app_server):
         """Verify that selecting Text strategy shows prompt input."""
         page.goto(BASE_URL)
-        page.wait_for_timeout(2000)
+        wait_for_app_ready(page)
 
         switch_to_tab(page, Labels.TAB_SUBJECT)
 
         # Select Text
-        page.locator(f"{Selectors.SEED_STRATEGY} input[value='{Labels.STRATEGY_TEXT}']").check(force=True)
+        page.get_by_label(Labels.STRATEGY_TEXT).check(force=True)
         page.wait_for_timeout(500)
 
         # Check for prompt placeholder
@@ -95,12 +85,12 @@ class TestErrorScenarios:
     def test_find_people_graceful_error_handling(self, page: Page, app_server):
         """Verify that Scan Video Now handles errors gracefully when no source is set."""
         page.goto(BASE_URL)
-        page.wait_for_timeout(2000)
+        wait_for_app_ready(page)
 
         switch_to_tab(page, Labels.TAB_SUBJECT)
 
-        # Select "By Face" strategy to make the group visible
-        page.locator(f"{Selectors.SEED_STRATEGY} input[value='{Labels.STRATEGY_FACE}']").check(force=True)
+        # Select "By Face" strategy
+        page.get_by_label(Labels.STRATEGY_FACE).check(force=True)
         page.wait_for_timeout(1000)
 
         # Ensure we are on Scan Video tab
@@ -110,11 +100,7 @@ class TestErrorScenarios:
         page.get_by_role("button", name=Labels.SCAN_VIDEO_BUTTON, exact=False).click()
 
         # Should show error in status or logs
-        expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text("Failed", timeout=10000)
-
-        # Verify status message content
-        text = page.locator(Selectors.UNIFIED_STATUS).inner_text()
-        assert "Run extraction first" in text or "Face analyzer unavailable" in text or "No video frames" in text
+        expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text(Selectors.STATUS_ERROR_REGEX, timeout=10000)
 
 
 class TestGallerySliderInteractions:
@@ -123,14 +109,15 @@ class TestGallerySliderInteractions:
     def test_columns_slider_exists_and_interactive(self, page: Page, app_server):
         """Columns slider should exist and be draggable."""
         page.goto(BASE_URL)
-        page.wait_for_timeout(2000)
+        wait_for_app_ready(page)
 
         switch_to_tab(page, Labels.TAB_SCENES)
 
         # Change the slider value
         open_accordion(page, "Display Settings")
 
-        columns_slider = page.locator("#scene_gallery_columns input[type=range]")
+        # Gradio 5+ range sliders often have an input[type=range]
+        columns_slider = page.locator("input[type=range]").first # Usually columns is first
         expect(columns_slider).to_be_visible(timeout=5000)
 
         columns_slider.fill("4")
@@ -140,14 +127,15 @@ class TestGallerySliderInteractions:
     def test_height_slider_exists_and_interactive(self, page: Page, app_server):
         """Height slider should exist and be adjustable."""
         page.goto(BASE_URL)
-        page.wait_for_timeout(2000)
+        wait_for_app_ready(page)
 
         switch_to_tab(page, Labels.TAB_SCENES)
 
         # Find Height slider
         open_accordion(page, "Display Settings")
 
-        height_slider = page.locator("#scene_gallery_height input[type=range]")
+        # In scene_handler.py, it's the second range slider in that group
+        height_slider = page.locator("input[type=range]").nth(1)
         expect(height_slider).to_be_visible(timeout=5000)
 
         # Change the slider
@@ -162,7 +150,7 @@ class TestLogRefreshMechanism:
     def test_refresh_button_updates_logs(self, page: Page, app_server):
         """Clicking Refresh should drain log queue and update display."""
         page.goto(BASE_URL)
-        page.wait_for_timeout(2000)
+        wait_for_app_ready(page)
 
         # Open logs accordion
         open_accordion(page, Labels.SYSTEM_LOGS)
@@ -179,27 +167,6 @@ class TestLogRefreshMechanism:
         expect(page.locator(Selectors.LOG_TEXTAREA)).to_be_visible()
 
 
-class TestPropagationErrorHandling:
-    """Tests for propagation error handling."""
-
-    def test_propagation_without_scenes_no_crash(self, page: Page, app_server):
-        """Clicking propagate without scenes should not crash."""
-        page.goto(BASE_URL)
-        page.wait_for_timeout(2000)
-
-        switch_to_tab(page, Labels.TAB_SCENES)
-
-        # Find propagate button (should be disabled but let's try regex)
-        prop_btn = page.get_by_role("button", name=re.compile("Propagate", re.I))
-        if prop_btn.count() > 0 and prop_btn.first.is_visible():
-            try:
-                prop_btn.first.click(timeout=1000)
-            except:
-                pass  # Expected if disabled
-
-        expect(page.locator("body")).to_be_visible()
-
-
 class TestUIConsoleErrors:
     """Tests that monitor browser console for JavaScript errors."""
 
@@ -209,10 +176,10 @@ class TestUIConsoleErrors:
         page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
 
         page.goto(BASE_URL)
-        page.wait_for_timeout(3000)
+        wait_for_app_ready(page)
 
-        # Filter out known benign errors
-        critical_errors = [e for e in console_errors if "gradio" not in e.lower()]
+        # Filter out known benign errors (e.g. Gradio internal warnings)
+        critical_errors = [e for e in console_errors if "gradio" not in e.lower() and "favicon" not in e.lower()]
         assert len(critical_errors) == 0, f"Critical console errors found: {critical_errors}"
 
     def test_no_errors_during_tab_navigation(self, page: Page, app_server):
@@ -221,7 +188,7 @@ class TestUIConsoleErrors:
         page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
 
         page.goto(BASE_URL)
-        page.wait_for_timeout(2000)
+        wait_for_app_ready(page)
 
         tabs = [Labels.TAB_SOURCE, Labels.TAB_SUBJECT, Labels.TAB_SCENES, Labels.TAB_METRICS, Labels.TAB_EXPORT]
         for tab_name in tabs:

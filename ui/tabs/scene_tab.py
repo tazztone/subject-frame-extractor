@@ -81,7 +81,10 @@ class SceneTabBuilder:
                 self.app._create_component(
                     "scene_filter_status",
                     "markdown",
-                    {"value": "*Apply constraints to automatically exclude bad scenes.*"},
+                    {
+                        "value": "*Apply constraints to automatically exclude bad scenes.*",
+                        "elem_id": "scene_filter_status",
+                    },
                 )
                 with gr.Row():
                     self.app._create_component(

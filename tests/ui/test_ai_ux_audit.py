@@ -1,22 +1,13 @@
 """
 AI-powered UX audit tests.
-
-Uses the ai_ux_analyzer module to detect UX issues in screenshots.
-Can run with or without AI API - manual mode uses heuristic checks.
-
-Run with:
-    python -m pytest tests/e2e/test_ai_ux_audit.py -v -s
-
-For AI-powered analysis:
-    OPENAI_API_KEY=sk-xxx python -m pytest tests/e2e/test_ai_ux_audit.py -v -s
+Standardized to use the new unified Selectors and Labels contract.
 """
 
 import os
-
 import pytest
 from playwright.sync_api import Page
 
-from .conftest import BASE_URL, wait_for_app_ready
+from .conftest import BASE_URL, switch_to_tab, wait_for_app_ready
 
 try:
     from .ai_ux_analyzer import (
@@ -30,6 +21,8 @@ try:
     HAS_ANALYZER = True
 except ImportError:
     HAS_ANALYZER = False
+
+from .ui_locators import Labels
 
 pytestmark = [pytest.mark.e2e, pytest.mark.ux_audit, pytest.mark.audit, pytest.mark.slow]
 
@@ -66,12 +59,11 @@ class TestUXAudit:
 
     @pytest.mark.skipif(not HAS_ANALYZER, reason="ai_ux_analyzer not available")
     def test_scenes_tab_ux(self, page: Page, app_server, use_ai, tmp_path):
-        """Audit Scenes tab UX - where pagination issues were found."""
+        """Audit Scenes tab UX."""
         page.goto(BASE_URL)
         wait_for_app_ready(page)
 
-        page.get_by_role("tab", name="Scenes").click(force=True)
-        page.wait_for_timeout(500)
+        switch_to_tab(page, Labels.TAB_SCENES)
 
         screenshot = capture_state_screenshot(page, "audit_scenes")
 
@@ -88,12 +80,11 @@ class TestUXAudit:
 
     @pytest.mark.skipif(not HAS_ANALYZER, reason="ai_ux_analyzer not available")
     def test_export_tab_ux(self, page: Page, app_server, use_ai, tmp_path):
-        """Audit Export tab UX - filter controls and results display."""
+        """Audit Export tab UX."""
         page.goto(BASE_URL)
         wait_for_app_ready(page)
 
-        page.get_by_role("tab", name="Export").click(force=True)
-        page.wait_for_timeout(500)
+        switch_to_tab(page, Labels.TAB_EXPORT)
 
         screenshot = capture_state_screenshot(page, "audit_export")
 
@@ -117,17 +108,14 @@ class TestFullAppAudit:
         """Comprehensive UX audit of entire application."""
         all_issues = []
 
-        tabs = ["Source", "Subject", "Scenes", "Metrics", "Export"]
+        tabs = [Labels.TAB_SOURCE, Labels.TAB_SUBJECT, Labels.TAB_SCENES, Labels.TAB_METRICS, Labels.TAB_EXPORT]
 
         for tab in tabs:
             page.goto(BASE_URL)
             wait_for_app_ready(page)
 
-            if tab != "Source":
-                tab_btn = page.get_by_role("tab", name=tab)
-                if tab_btn.is_visible():
-                    tab_btn.click(force=True)
-                    page.wait_for_timeout(500)
+            if tab != Labels.TAB_SOURCE:
+                switch_to_tab(page, tab)
 
             screenshot = capture_state_screenshot(page, f"audit_{tab.lower()}")
 

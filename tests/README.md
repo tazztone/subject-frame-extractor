@@ -14,12 +14,14 @@
 | **UI (E2E)** | `tests/ui/` | Playwright automation. Mocks backend to test Gradio flows. | `pytest + playwright` |
 | **UX Audit**| `scripts/run_ux_audit.py` | Accessibility (Axe), Visuals, and Performance. | `python` |
 | **GPU E2E** | `tests/integration/` | Heavy-duty SAM2/SAM3 propagation on real hardware. | `pytest (serial)` |
+| **Accuracy** | `tests/integration/test_accuracy.py` | Precision checks (IoU) for mask propagation. | `pytest (gpu_e2e)` |
 
 ### Specialized Test Files
 
 | File | Purpose |
 |------|---------|
 | `test_exit_branches.py` | Groups exit-branch tests (`→exit` coverage gaps) across `batch_manager`, `db_schema`, `sam2`, `error_handling`, and `session` in one place to make systematic sweeps easy. |
+| `test_accuracy.py` | **Precision Baseline**. Uses `bedroom.mp4` to verify SAM3 mask propagation quality (IoU > 0.8) and area stability (< 0.5% variance). |
 
 ## Setup & Execution
 
@@ -160,4 +162,39 @@ If you try to run a specific test file (e.g., `tests/integration/test_gpu_e2e.py
 
 ---
 
-*Last Updated: 2026-03-31 (Duration Logging & Troubleshooting)*
+*Last Updated: 2026-04-04 (GPU Accuracy & Gradio 5 Hardening)*
+
+## Gradio 5 UI Testing Patterns
+
+During the 2026-04 infrastructure hardening, we established several patterns for handling **Gradio 5**'s reactive DOM:
+
+### 1. Lazy-Loaded Accordions
+Elements inside a collapsed `gr.Accordion` may not be present in the DOM.
+- **Pattern**: Always call `open_accordion(page, Labels.SOME_ACCORDION)` before asserting values inside.
+- **Helper**: `tests/ui/conftest.py::open_accordion` uses JS to ensure the component is actually expanded.
+
+### 2. Slider Selection (Strict Mode)
+`gr.Slider` generates multiple `input` elements (a range slider and a numeric input).
+- **Ambiguity**: `page.locator("#slider input")` will trigger a **Strict Mode Violation** (resolves to 2 elements).
+- **Solution**: Use the `data-testid` attribute:
+  ```python
+  Selectors.THUMB_MEGAPIXELS = "#thumb_megapixels_input input[data-testid='number-input']"
+  ```
+
+### 3. Dropdown Interaction
+The Gradio 5 `gr.Dropdown` uses a custom list component rather than a native HTML `select`.
+- **Selection**:
+  ```python
+  page.locator(Selectors.EXTRACTION_METHOD).click()
+  page.get_by_role("listitem").filter(has_text="Desired Option").click(force=True)
+  ```
+- **Constraint**: Always use `force=True` on dropdown clicks to bypass overlapping transparent overlays.
+
+### 4. Status Timing
+Mock backend updates can take standard reactive cycles (~50-200ms).
+- **Strategy**: Always use `expect(...).to_contain_text(..., timeout=10000)` instead of direct equality checks. Static status messages like "System Reset Ready." are the standard "idleness" indicator.
+
+---
+
+## Appendix: GPU Accuracy Metrics
+...

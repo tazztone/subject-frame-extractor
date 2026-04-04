@@ -74,14 +74,44 @@ def wait_for_server(url, timeout=60):
 def wait_for_app_ready(page: Page):
     """
     Robustly wait for the Gradio app to be interactive.
-    Avoids 'networkidle' as it's unreliable with Gradio WebSockets.
+    Includes an optional state reset for mock-based E2E isolation.
     """
     # Wait for the main heading to be visible as a proxy for app load
     expect(page.get_by_text("Frame Extractor & Analyzer")).to_be_visible(timeout=30000)
     # Wait for the status area to be present
     expect(page.locator(Selectors.UNIFIED_STATUS)).to_be_attached(timeout=5000)
+
+    # Optional: Clear state if the mock-only reset button is present
+    reset_btn = page.locator(Selectors.RESET_STATE_BUTTON)
+    if not reset_btn.is_visible():
+        # Try opening the accordion first
+        try:
+            open_accordion(page, "Tests (Experimental)")
+        except Exception:
+            pass
+
+    if reset_btn.is_visible():
+        # Ensure log viewer is visible to check the message
+        try:
+            open_accordion(page, Labels.SYSTEM_LOGS)
+        except Exception:
+            pass
+
+        reset_btn.click()
+        
+        # CRITICAL: Wait for the reset status to appear to ensure clean state
+        status_locator = page.locator(Selectors.UNIFIED_STATUS)
+        expect(status_locator).to_contain_text(Selectors.STATUS_READY, timeout=10000)
+        
+        # Buffer for Gradio state propagation
+        page.wait_for_timeout(500)
+        # Wait for the status to signal success (Markdown is more robust than Log Textbox)
+        expect(page.get_by_text("System Reset Ready.")).to_be_visible(timeout=15000)
+        # Small buffer for Gradio's JS to settle after reset
+        page.wait_for_timeout(1000)
+
     # Small buffer for Gradio's JS to settle
-    page.wait_for_timeout(1500)
+    page.wait_for_timeout(1000)
 
 
 def open_accordion(page: Page, text: str):
@@ -220,7 +250,7 @@ def extracted_session(page, app_server):
     extract_btn.click()
 
     # Wait for completion
-    expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text("Extraction Complete", timeout=30000)
+    expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text(Selectors.STATUS_SUCCESS_EXTRACTION, timeout=30000)
     page.wait_for_timeout(1000)
 
     return page
@@ -249,7 +279,7 @@ def analyzed_session(extracted_session):
     find_btn.click()
 
     # Wait for completion (check status)
-    expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text("Pre-Analysis Complete", timeout=30000)
+    expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text(Selectors.STATUS_SUCCESS_PRE_ANALYSIS, timeout=30000)
     page.wait_for_timeout(1000)
 
     return page
@@ -284,27 +314,27 @@ def shared_analysis_session(shared_page, app_server):
         source_input = page.locator(Selectors.SOURCE_INPUT)
     source_input.fill("dummy_video.mp4")
     page.locator(Selectors.START_EXTRACTION).click()
-    expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text("Extraction Complete", timeout=30000)
+    expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text(Selectors.STATUS_SUCCESS_EXTRACTION, timeout=30000)
     page.wait_for_timeout(500)
 
     # 2. Pre-Analysis
     switch_to_tab(page, Labels.TAB_SUBJECT)
     page.locator(Selectors.START_PRE_ANALYSIS).click()
-    expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text("Pre-Analysis Complete", timeout=30000)
+    expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text(Selectors.STATUS_SUCCESS_PRE_ANALYSIS, timeout=30000)
     page.wait_for_timeout(500)
 
     # 3. Propagation
     switch_to_tab(page, Labels.TAB_SCENES)
-    propagate_btn = page.get_by_role("button", name="Propagate Masks", exact=False)
+    propagate_btn = page.locator(Selectors.PROPAGATE_MASKS)
     expect(propagate_btn).to_be_visible(timeout=5000)
     propagate_btn.click()
-    expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text("Propagation Complete", timeout=30000)
+    expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text(Selectors.STATUS_SUCCESS_PROPAGATION, timeout=30000)
     page.wait_for_timeout(500)
 
     # 4. Analysis
     switch_to_tab(page, Labels.TAB_METRICS)
     page.locator(Selectors.START_ANALYSIS).click()
-    expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text("Analysis Complete", timeout=30000)
+    expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text(Selectors.STATUS_SUCCESS_ANALYSIS, timeout=30000)
     page.wait_for_timeout(500)
 
     return page
@@ -321,12 +351,11 @@ def full_analysis_session(analyzed_session):
     switch_to_tab(page, Labels.TAB_SCENES)
 
     # Click Propagate
-    # For now, use text matching since I don't have a specific ID for Propagate button in Selectors yet
-    propagate_btn = page.get_by_role("button", name="Propagate Masks", exact=False)
+    propagate_btn = page.locator(Selectors.PROPAGATE_MASKS)
     expect(propagate_btn).to_be_visible(timeout=10000)
     propagate_btn.click()
 
-    expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text("Propagation Complete", timeout=30000)
+    expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text(Selectors.STATUS_SUCCESS_PROPAGATION, timeout=30000)
     page.wait_for_timeout(1000)
 
     # Analyze (Metrics tab)
@@ -336,7 +365,7 @@ def full_analysis_session(analyzed_session):
     expect(analyze_btn).to_be_visible(timeout=5000)
     analyze_btn.click()
 
-    expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text("Analysis Complete", timeout=30000)
+    expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text(Selectors.STATUS_SUCCESS_ANALYSIS, timeout=30000)
     page.wait_for_timeout(1000)
 
     return page

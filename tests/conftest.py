@@ -594,6 +594,39 @@ def pytest_sessionfinish(session, exitstatus):
             sys.modules[mod_name] = session.original_modules[mod_name]
 
 
+@pytest.fixture(scope="module")
+def module_model_registry():
+    """Module-scoped model registry to avoid reloading weights between tests.
+    Speeds up the integration suite significantly (5-10s per tracker test).
+    Uses the project's real models directory to avoid redundant downloads.
+    """
+    import tempfile
+    from pathlib import Path
+
+    from core.config import Config
+    from core.logger import AppLogger
+    from core.managers import ModelRegistry
+
+    # Get the project root to find the real models directory (conftest is in tests/)
+    project_root = Path(__file__).parents[1]
+    real_models_dir = project_root / "models"
+
+    if not real_models_dir.exists():
+        real_models_dir.mkdir(parents=True)
+
+    # Use a persistent temp dir for logs only
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        logs_dir = Path(tmp_dir) / "logs"
+        logs_dir.mkdir()
+        config = Config(
+            logs_dir=str(logs_dir),
+            models_dir=str(real_models_dir),
+        )
+        logger = AppLogger(config, log_to_console=False, log_to_file=False)
+        registry = ModelRegistry(logger)
+        yield registry
+
+
 @pytest.fixture
 def mock_torch():
     """Fixture to access the mocked torch module."""
