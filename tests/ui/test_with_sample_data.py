@@ -48,7 +48,9 @@ class TestSampleDataWorkflow:
 
         # Start and wait for completion
         page.locator(Selectors.START_EXTRACTION).click()
-        expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text(Selectors.STATUS_SUCCESS_EXTRACTION, timeout=30000)
+        expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text(
+            Selectors.STATUS_SUCCESS_EXTRACTION, timeout=30000
+        )
 
         # 2. Seeding (Subject Tab)
         switch_to_tab(page, Labels.TAB_SUBJECT)
@@ -57,13 +59,15 @@ class TestSampleDataWorkflow:
         # Gradio 5 Radio components are best targeted by label text if they are buttons
         page.get_by_label(Labels.STRATEGY_TEXT).check(force=True)
         page.wait_for_timeout(500)
-        
+
         # Fill prompt
         page.get_by_placeholder("e.g., 'a man in a blue suit'").fill("protagonist")
 
         # Start pre-analysis
         page.locator(Selectors.START_PRE_ANALYSIS).click()
-        expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text(Selectors.STATUS_SUCCESS_PRE_ANALYSIS, timeout=30000)
+        expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text(
+            Selectors.STATUS_SUCCESS_PRE_ANALYSIS, timeout=30000
+        )
 
         # 3. Verification (Scenes Tab)
         switch_to_tab(page, Labels.TAB_SCENES)

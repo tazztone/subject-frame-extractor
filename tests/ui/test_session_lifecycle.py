@@ -88,7 +88,9 @@ class TestWorkflowState:
         page.locator(Selectors.START_EXTRACTION).click()
 
         # Wait for completion
-        expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text(Selectors.STATUS_SUCCESS_EXTRACTION, timeout=30000)
+        expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text(
+            Selectors.STATUS_SUCCESS_EXTRACTION, timeout=30000
+        )
 
         # Log should contain extraction info
         open_accordion(page, Labels.SYSTEM_LOGS)

@@ -82,7 +82,7 @@ uv run --no-sync pytest tests/regression/ -v
 
 ## 4. Test Infrastructure Rules (Prevent Mock Leakage)
 
-*   **SAM3 is NOT in global mocks**: `tests/conftest.py` intentionally excludes all `sam3.*` entries from `modules_to_mock`. Unit tests that need a mock SAM3 MUST create a local mock in their own file using `patch("sam3.model_builder.build_sam3_video_predictor")`.
+*   **SAM3 is NOT in global mocks**: `tests/conftest.py` intentionally excludes all `sam3.*` entries from `modules_to_mock`. Unit tests that need a mock SAM3 MUST create a local mock in their own file using `patch("sam3.model_builder.build_sam3_predictor")`.
 *   **`PYTEST_INTEGRATION_MODE` propagation**: `conftest.py` disables global mocks when this env var is `true`. xdist workers inherit env vars only if the parent shell used `export`, not an inline prefix. Always use `export`.
 *   **`gpu_e2e` tests are serial-only**: The `module_model_registry` fixture uses `scope="module"` to share model weights within a worker, but provides no cross-worker isolation. Multiple workers loading SAM3 + SAM2 simultaneously causes GPU OOM.
 *   **Blank model dirs are forbidden in E2E fixtures**: The `module_model_registry` fixture in `test_gpu_e2e.py` must point to the project's real `models/` directory. Never use `tempfile.TemporaryDirectory()` for the models path in GPU tests — it triggers a 3.3 GB HuggingFace download race.

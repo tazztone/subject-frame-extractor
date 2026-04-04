@@ -1,5 +1,8 @@
 import sys
-from typing import Optional, Union
+from typing import TYPE_CHECKING, Optional, Union
+
+if TYPE_CHECKING:
+    from core.config import Config
 
 import numpy as np
 import torch
@@ -22,8 +25,8 @@ _triton_mocked = _setup_triton_mock()
 class SAM3Wrapper:
     """SAM3 Tracker using official Sam3VideoPredictor API."""
 
-    def __init__(self, checkpoint_path=None, device="cuda"):
-        from sam3.model_builder import build_sam3_video_predictor  # type: ignore
+    def __init__(self, checkpoint_path=None, device="cuda", config: Optional["Config"] = None):
+        from sam3.model_builder import build_sam3_predictor  # type: ignore
 
         # Detect mock leakage — only in real GPU mode.
         # Unit tests use device="cpu" with intentional mocks; that's fine.
@@ -32,9 +35,9 @@ class SAM3Wrapper:
             try:
                 from unittest.mock import MagicMock as _MagicMock
 
-                if isinstance(build_sam3_video_predictor, _MagicMock):
+                if isinstance(build_sam3_predictor, _MagicMock):
                     raise RuntimeError(
-                        f"SAM3 build_sam3_video_predictor is a MagicMock (device='{device}') — "
+                        f"SAM3 build_sam3_predictor is a MagicMock (device='{device}') — "
                         "conftest.py has injected a mock into sys.modules['sam3.model_builder']. "
                         "Run integration tests with: export PYTEST_INTEGRATION_MODE=true"
                     )
@@ -48,17 +51,39 @@ class SAM3Wrapper:
             from pathlib import Path
 
             _project_root = Path(__file__).resolve().parents[2]
-            _local_ckpt = _project_root / "models" / "sam3.pt"
-            if _local_ckpt.exists():
-                checkpoint_path = str(_local_ckpt)
+            # Try 3.1 first, then 3.0
+            _local_ckpt_31 = _project_root / "models" / "sam3.1_multiplex.pt"
+            _local_ckpt_30 = _project_root / "models" / "sam3.pt"
+            if _local_ckpt_31.exists():
+                checkpoint_path = str(_local_ckpt_31)
+            elif _local_ckpt_30.exists():
+                checkpoint_path = str(_local_ckpt_30)
 
         self.device = device
         if torch.cuda.is_available():
             torch.set_float32_matmul_precision("high")
 
-        # Force single-GPU mode to prevent multi-process resource exhaustion in tests/Gradio
+        # Detect version from checkpoint path
+        sam3_version = "sam3.1"
+        if checkpoint_path and "sam3.pt" in str(checkpoint_path) and "sam3.1" not in str(checkpoint_path):
+            sam3_version = "sam3"
+
+        # Configuration from app config or defaults
+        compile_model = config.sam3_compile if config else False
+        use_fa3 = config.sam3_use_flash_attention if config else False
+        use_rope_real = config.sam3_use_rope_real if config else False
+
+        # Force single-GPU mode for legacy SAM 3.0 (passed via kwargs)
         gpus = [0] if device == "cuda" else None
-        self.predictor = build_sam3_video_predictor(checkpoint_path=checkpoint_path, gpus_to_use=gpus)
+
+        self.predictor = build_sam3_predictor(
+            checkpoint_path=checkpoint_path,
+            version=sam3_version,
+            compile=compile_model,
+            use_fa3=use_fa3,
+            use_rope_real=use_rope_real,
+            gpus_to_use=gpus,
+        )
 
         if self.predictor is None or getattr(self.predictor, "model", None) is None:
             raise RuntimeError(
@@ -71,8 +96,13 @@ class SAM3Wrapper:
         # Restore overrides for Subject Extraction workflow:
         # 1. Disable hotstart (delay=0) to ensure immediate masks for all frames
         # 2. Disable confirmation (False) to prevent suppressing masks for unconfirmed tracks
-        self.predictor.model.hotstart_delay = 0  # type: ignore
-        self.predictor.model.masklet_confirmation_enable = False  # type: ignore
+        if hasattr(self.predictor, "model"):
+            setattr(self.predictor.model, "hotstart_delay", 0)
+            setattr(self.predictor.model, "masklet_confirmation_enable", False)
+        elif hasattr(self.predictor, "tracker"):
+            # Some predictor versions might call it 'tracker'
+            setattr(self.predictor.tracker, "hotstart_delay", 0)
+            setattr(self.predictor.tracker, "masklet_confirmation_enable", False)
         self.session_id = None
 
     def init_video(self, video_resource: Union[str, list]):

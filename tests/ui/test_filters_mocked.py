@@ -1,8 +1,8 @@
 import pytest
 from playwright.sync_api import Page, expect
 
-from .conftest import BASE_URL, switch_to_tab, wait_for_app_ready, open_accordion
-from .ui_locators import Selectors, Labels
+from .conftest import BASE_URL, open_accordion, switch_to_tab, wait_for_app_ready
+from .ui_locators import Labels, Selectors
 
 # Mark as e2e test
 pytestmark = pytest.mark.e2e
@@ -25,17 +25,23 @@ class TestMockFilters:
         # 1. Extraction
         page.locator(Selectors.SOURCE_INPUT).fill("filter_test.mp4")
         page.locator(Selectors.START_EXTRACTION).click()
-        expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text(Selectors.STATUS_SUCCESS_EXTRACTION, timeout=30000)
+        expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text(
+            Selectors.STATUS_SUCCESS_EXTRACTION, timeout=30000
+        )
 
         # 2. Pre-Analysis
         switch_to_tab(page, Labels.TAB_SUBJECT)
         page.locator(Selectors.START_PRE_ANALYSIS).click()
-        expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text(Selectors.STATUS_SUCCESS_PRE_ANALYSIS, timeout=30000)
+        expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text(
+            Selectors.STATUS_SUCCESS_PRE_ANALYSIS, timeout=30000
+        )
 
         # 3. Propagation
         switch_to_tab(page, Labels.TAB_SCENES)
         page.locator(Selectors.PROPAGATE_MASKS).click()
-        expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text(Selectors.STATUS_SUCCESS_PROPAGATION, timeout=30000)
+        expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text(
+            Selectors.STATUS_SUCCESS_PROPAGATION, timeout=30000
+        )
 
         # 4. Analysis
         switch_to_tab(page, Labels.TAB_METRICS)
@@ -78,7 +84,7 @@ class TestMockFilters:
 
         # Verify no error toast
         expect(page.locator(".toast-wrap")).not_to_be_visible()
-        
+
     def test_gallery_count_updates_on_filter(self, page: Page):
         """
         Verify that changing a filter value updates the 'Kept' count.
@@ -92,8 +98,8 @@ class TestMockFilters:
         # The label is "Min" but it's inside the "Quality Score" accordion
         q_min = page.locator("div:has-text('Quality Score')").locator("input[aria-label='Min']").first
         expect(q_min).to_be_visible()
-        
-        q_min.fill("95") # Set very high
+
+        q_min.fill("95")  # Set very high
 
         # Wait for reactive update
         page.wait_for_timeout(2000)

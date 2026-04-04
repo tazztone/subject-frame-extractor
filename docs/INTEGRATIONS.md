@@ -36,14 +36,10 @@
 ## ML Frameworks & Submodules
 
 **Tracking & Segmentation:**
-- SAM3 (Segment Anything Model 3) - Core engine for subject tracking.
-  - Integration: Git submodule at `SAM3_repo`.
-  - Wrapper: `core/managers.SAM3Wrapper` encapsulates the predictor API.
+### SAM 3.1 API Guide (Developer Reference)
 
-### SAM3 API Guide (Developer Reference)
-
-The `SAM3Wrapper` in `core/managers.py` encapsulates the official `Sam3VideoPredictor` API. For the primary reference implementation this project follows, see:
-`SAM3_repo/examples/sam3_video_predictor_example.ipynb`
+The `SAM3Wrapper` in `core/managers/sam3.py` encapsulates the official `build_sam3_predictor` API. For the primary reference implementation this project follows, see:
+`SAM3_repo/examples/sam3.1_video_predictor_example.ipynb`
 
 #### Core API Usage
 ```python
@@ -104,5 +100,5 @@ The project uses `core/sam3_patches.py` to fix several upstream limitations:
 
 ---
 
-*Integration audit: 2026-03-21*
+*Integration audit: 2026-04-04 (SAM 3.1 Multiplex)*
 *Update when adding/removing external services*

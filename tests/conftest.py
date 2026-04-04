@@ -254,7 +254,13 @@ modules_to_mock = {
     "insightface": _create_mock_module("insightface", {"app": MagicMock()}),
     "insightface.app": MagicMock(),
     "sam3": _create_mock_module("sam3", {"model_builder": MagicMock()}),
-    "sam3.model_builder": MagicMock(),
+    "sam3.model_builder": _create_mock_module(
+        "sam3.model_builder",
+        {
+            "build_sam3_predictor": MagicMock(),
+            "build_sam3_video_predictor": MagicMock(),
+        },
+    ),
     "sam3.model": _create_mock_module("sam3.model", {"sam3_video_predictor": MagicMock()}),
     "sam3.model.sam3_video_predictor": MagicMock(),
     "sam3.model.decoder": MagicMock(),

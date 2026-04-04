@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 # Expected hash of SAM3_repo/sam3/model/sam3_video_predictor.py
 # to ensure manual patches align with the library version.
-SAM3_PREDICTOR_HASH = "a229bb66a1b3ee4a8db9b51b5a2b9b998cb7b87546cd3cf7612f31e42ce578db"
+SAM3_PREDICTOR_HASH = "645a1f21b3258e54d93b30c66bf7627c4af9de23571a5ceb9a060d7f098d012b"
 
 
 def edt_triton_fallback(data):
@@ -208,7 +208,7 @@ def patch_sam3_detect_objects():
     """Add detect_objects capability to Sam3VideoPredictor classes."""
     try:
         from PIL import Image
-        from sam3.model.sam3_video_predictor import Sam3VideoPredictor, Sam3VideoPredictorMultiGPU  # type: ignore
+        from sam3.model.sam3_base_predictor import Sam3BasePredictor  # type: ignore
 
         def detect_objects(self, image: np.ndarray, text: str):
             """Detect objects in a frame using a text prompt."""
@@ -237,7 +237,7 @@ def patch_sam3_detect_objects():
             return {"outputs": results}
 
         # Patch the base handle_request to support the new type
-        original_handle_request = Sam3VideoPredictor.handle_request  # type: ignore
+        original_handle_request = Sam3BasePredictor.handle_request  # type: ignore
 
         @torch.inference_mode()
         def handle_request_patched(self, request):
@@ -245,26 +245,34 @@ def patch_sam3_detect_objects():
                 return self.detect_objects(request["image"], request["text"])
             return original_handle_request(self, request)
 
-        Sam3VideoPredictor.detect_objects = detect_objects  # type: ignore
-        Sam3VideoPredictor.handle_request = handle_request_patched  # type: ignore
+        Sam3BasePredictor.detect_objects = detect_objects  # type: ignore
+        Sam3BasePredictor.handle_request = handle_request_patched  # type: ignore
 
-        # Sam3VideoPredictorMultiGPU also overrides handle_request, so patch it too
-        if hasattr(Sam3VideoPredictorMultiGPU, "handle_request"):  # type: ignore
-            original_multi_handle_request = Sam3VideoPredictorMultiGPU.handle_request  # type: ignore
+        # Legacy: Sam3VideoPredictorMultiGPU in 3.0 overridden handle_request,
+        # but in 3.1 it likely uses the base one. We check if it still has its own.
+        try:
+            from sam3.model.sam3_video_predictor import Sam3VideoPredictorMultiGPU  # type: ignore
 
-            @torch.inference_mode()
-            def multi_handle_request_patched(self, request):
-                if request["type"] == "detect_objects":
-                    # For detect_objects, we use the base implementation on rank 0
-                    if self.world_size > 1 and self.rank == 0:
-                        for rank in range(1, self.world_size):
-                            self.command_queues[rank].put((request, False))
+            if hasattr(Sam3VideoPredictorMultiGPU, "handle_request") and (
+                Sam3VideoPredictorMultiGPU.handle_request != Sam3BasePredictor.handle_request
+            ):
+                original_multi_handle_request = Sam3VideoPredictorMultiGPU.handle_request  # type: ignore
 
-                    return Sam3VideoPredictor.handle_request(self, request)  # type: ignore
+                @torch.inference_mode()
+                def multi_handle_request_patched(self, request):
+                    if request["type"] == "detect_objects":
+                        # For detect_objects, we use the base implementation on rank 0
+                        if getattr(self, "world_size", 1) > 1 and getattr(self, "rank", 0) == 0:
+                            for rank in range(1, self.world_size):
+                                self.command_queues[rank].put((request, False))
 
-                return original_multi_handle_request(self, request)
+                        return Sam3BasePredictor.handle_request(self, request)  # type: ignore
 
-            Sam3VideoPredictorMultiGPU.handle_request = multi_handle_request_patched  # type: ignore
+                    return original_multi_handle_request(self, request)
+
+                Sam3VideoPredictorMultiGPU.handle_request = multi_handle_request_patched  # type: ignore
+        except ImportError:
+            pass
 
     except ImportError:
         pass

@@ -38,7 +38,7 @@
 ## Key Dependencies
 
 **Critical:**
-- **SAM3**: Segment Anything Model 3 (PVS-first tracking path).
+- **SAM 3.1**: Segment Anything Model 3.1 (Object Multiplex).
 - **YOLO26**: Multi-class (80 COCO classes) detection and segmentation (ONNX format).
 - **InsightFace**: `buffalo_l` / `buffalo_s` models for high-accuracy face embedding and quality scoring.
 - **MediaPipe**: Used for face mesh analysis (eyes-open validation, yaw/pitch estimation).
@@ -76,5 +76,5 @@
 
 ---
 
-*Stack analysis: 2026-03-21*
+*Stack analysis: 2026-04-04 (SAM 3.1 Migration)*
 *Update after major dependency changes*

@@ -9,9 +9,9 @@ from core.managers.sam3 import SAM3Wrapper
 class TestSAM3Import:
     def test_sam3_wrapper_raises_on_missing_checkpoint(self):
         """Test SAM3Wrapper raises RuntimeError if checkpoint is missing/fail to load."""
-        # SAM3Wrapper imports build_sam3_video_predictor FROM sam3.model_builder
+        # SAM3Wrapper imports build_sam3_predictor FROM sam3.model_builder
         # We need to patch it in sys.modules or the module itself
-        with patch("sam3.model_builder.build_sam3_video_predictor") as mock_build:
+        with patch("sam3.model_builder.build_sam3_predictor") as mock_build:
             mock_build.return_value = None  # Simulates load failure
 
             with pytest.raises(RuntimeError, match="failed to load"):
@@ -22,7 +22,7 @@ class TestSAM3Import:
         mock_predictor = MagicMock()
         mock_predictor.model = MagicMock()
 
-        with patch("sam3.model_builder.build_sam3_video_predictor", return_value=mock_predictor):
+        with patch("sam3.model_builder.build_sam3_predictor", return_value=mock_predictor):
             wrapper = SAM3Wrapper(checkpoint_path="dummy.pt", device="cpu")
             assert wrapper.predictor == mock_predictor
             # Check if overrides were applied
@@ -35,7 +35,7 @@ class TestSAM3Import:
         mock_predictor.model = MagicMock()
         mock_predictor.handle_request.return_value = {"session_id": "sess_123"}
 
-        with patch("sam3.model_builder.build_sam3_video_predictor", return_value=mock_predictor):
+        with patch("sam3.model_builder.build_sam3_predictor", return_value=mock_predictor):
             wrapper = SAM3Wrapper(checkpoint_path="dummy.pt", device="cpu")
 
             # 1. Init video

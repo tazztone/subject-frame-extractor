@@ -33,39 +33,6 @@ pytestmark = [
 ]
 
 
-@pytest.fixture(scope="module")
-def module_model_registry():
-    """Module-scoped model registry to avoid reloading weights between tests.
-    Speeds up the integration suite significantly (5-10s per tracker test).
-    Uses the project's real models directory to avoid redundant downloads.
-    """
-    import tempfile
-    from pathlib import Path
-
-    from core.config import Config
-    from core.logger import AppLogger
-    from core.managers import ModelRegistry
-
-    # Get the project root to find the real models directory
-    project_root = Path(__file__).parents[2]
-    real_models_dir = project_root / "models"
-
-    if not real_models_dir.exists():
-        real_models_dir.mkdir(parents=True)
-
-    # Use a persistent temp dir for logs only
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        logs_dir = Path(tmp_dir) / "logs"
-        logs_dir.mkdir()
-        config = Config(
-            logs_dir=str(logs_dir),
-            models_dir=str(real_models_dir),
-        )
-        logger = AppLogger(config, log_to_console=False, log_to_file=False)
-        registry = ModelRegistry(logger)
-        yield registry
-
-
 def _create_test_image(width=256, height=256, frame_idx=0):
     """Create a high-entropy test image with a noise-textured complex object (simulates a tracked subject)."""
     img = np.zeros((height, width, 3), dtype=np.uint8)
@@ -182,7 +149,7 @@ def _create_test_frames_dir(tmp_path, num_frames=5, width=256, height=256):
 def _is_sam3_available():
     """Check if SAM3 is properly installed and can be imported."""
     try:
-        from sam3.model_builder import build_sam3_video_model  # noqa: F401
+        from sam3.model_builder import build_sam3_predictor  # noqa: F401
 
         return True
     except ImportError:
@@ -264,8 +231,14 @@ class TestSAM3Inference:
             pytest.skip("CUDA not available")
 
         project_root = Path(__file__).parents[2]
-        real_checkpoint = project_root / "models" / "sam3.pt"
-        if not real_checkpoint.exists():
+        # Check for 3.1 first, then 3.0
+        real_checkpoint_31 = project_root / "models" / "sam3.1_multiplex.pt"
+        real_checkpoint_30 = project_root / "models" / "sam3.pt"
+        if real_checkpoint_31.exists():
+            real_checkpoint = real_checkpoint_31
+        elif real_checkpoint_30.exists():
+            real_checkpoint = real_checkpoint_30
+        else:
             pytest.skip("SAM3 checkpoint not found locally")
 
         wrapper = SAM3Wrapper(checkpoint_path=str(real_checkpoint), device="cuda")
@@ -1023,15 +996,35 @@ class TestExportE2E:
     def test_export_dry_run_mode(self, tmp_path):
         """Dry run export mode works without creating files."""
         from core.config import Config
+        from core.events import ExportEvent
+        from core.export import dry_run_export
         from core.logger import AppLogger
 
         config = Config(logs_dir=str(tmp_path / "logs"))
-        AppLogger(config, log_to_console=False, log_to_file=False)
+        logger = AppLogger(config, log_to_console=False, log_to_file=False)
 
         export_dir = tmp_path / "export_dry"
-        # Directory NOT created yet
 
-        # Dry run should work without output directory existing
+        # Create minimal 5-frame mock session metadata
+        all_frames_data = [
+            {"filename": f"frame_{i + 1:06d}.webp", "frame_number": i, "metrics": {"quality_score": 50.0}}
+            for i in range(5)
+        ]
+
+        event = ExportEvent(
+            all_frames_data=all_frames_data,
+            output_dir=str(tmp_path / "session"),
+            video_path=str(tmp_path / "test.mp4"),
+            enable_crop=False,
+            crop_ars="1:1",
+            crop_padding=10,
+            filter_args={"quality_score_min": 0.0},  # Include all
+        )
+
+        # Dry run should return summary string containing frame count
+        summary = dry_run_export(event, config, logger)
+
+        assert "Dry Run: 5 frames" in summary
         assert not export_dir.exists()
 
 

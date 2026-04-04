@@ -2,7 +2,7 @@ import pytest
 from playwright.sync_api import Page, expect
 
 from .conftest import BASE_URL, open_accordion, switch_to_tab, wait_for_app_ready
-from .ui_locators import Selectors, Labels
+from .ui_locators import Labels, Selectors
 
 # Mark as e2e test
 pytestmark = pytest.mark.e2e
@@ -58,7 +58,9 @@ class TestAdvancedWorkflow:
         page.locator(Selectors.START_EXTRACTION).click()
 
         # 5. Verify completion
-        expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text(Selectors.STATUS_SUCCESS_EXTRACTION, timeout=30000)
+        expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text(
+            Selectors.STATUS_SUCCESS_EXTRACTION, timeout=30000
+        )
 
     def test_filtering_ui_responsiveness(self, page: Page, app_server):
         """

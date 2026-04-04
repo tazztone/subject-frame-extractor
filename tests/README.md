@@ -76,7 +76,7 @@ To ensure fast execution and hardware independence, all **Unit Tests** must comp
 ## Gradio & Pyright Resiliency
 
 - **SAM3 Experimental Status**: `sam3` is an experimental tracker. Integration tests (`tests/integration/test_gpu_e2e.py`) verify its logic, but it is **not** the baseline for regressions. The default is `sam2`.
-- **SAM3 Checkpoints**: SAM3 requires a local `models/sam3.pt` checkpoint. The wrapper includes a `RuntimeError` guard if the model fails to load. Never patch `download_ckpt_from_hf` as it prevents the resolver from finding local files and causes `NoneType` attribute errors.
+- **SAM3 Checkpoints**: SAM3 prefers a local `models/sam3.1_multiplex.pt` checkpoint but automatically falls back to `models/sam3.pt` if the 3.1 model is missing. The wrapper includes a `RuntimeError` guard if the model fails to load. Never patch `download_ckpt_from_hf` as it prevents the resolver from finding local files and causes `NoneType` attribute errors.
 - **HuggingFace Access**: To avoid `401 GatedRepoError` in tests, always ensure `checkpoint_path` is explicitly passed to constructors or point registries to a directory containing the real `.pt` file.
 - **Type Hints**: For Gradio event handlers, use `Any` or `dict[str, Any]` for return type hints instead of `gr.update`. Gradio 5+ treats updates as dynamic dictionaries, and `gr.update` often causes Pyright noise.
 - **Optional Members**: Components like `AdvancedProgressTracker` should use `Optional[Queue]` and `Optional[AppLogger]` with explicit null-checks to prevent Pyright "attribute not found on None" errors.
@@ -162,7 +162,7 @@ If you try to run a specific test file (e.g., `tests/integration/test_gpu_e2e.py
 
 ---
 
-*Last Updated: 2026-04-04 (GPU Accuracy & Gradio 5 Hardening)*
+*Last Updated: 2026-04-04 (SAM 3.1 Multiplex Migration & UI Hardening)*
 
 ## Gradio 5 UI Testing Patterns
 

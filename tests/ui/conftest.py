@@ -98,11 +98,11 @@ def wait_for_app_ready(page: Page):
             pass
 
         reset_btn.click()
-        
+
         # CRITICAL: Wait for the reset status to appear to ensure clean state
         status_locator = page.locator(Selectors.UNIFIED_STATUS)
         expect(status_locator).to_contain_text(Selectors.STATUS_READY, timeout=10000)
-        
+
         # Buffer for Gradio state propagation
         page.wait_for_timeout(500)
         # Wait for the status to signal success (Markdown is more robust than Log Textbox)

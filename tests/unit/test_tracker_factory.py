@@ -22,7 +22,7 @@ def test_selects_sam3(mock_sam3):
     """Test that SAM3Wrapper is selected when SAM3 is requested."""
     tracker = build_tracker("sam3", "/tmp/model.pt", "cpu")
 
-    mock_sam3.assert_called_once_with("/tmp/model.pt", "cpu")
+    mock_sam3.assert_called_once_with("/tmp/model.pt", "cpu", config=None)
     assert tracker == mock_sam3.return_value
 
 

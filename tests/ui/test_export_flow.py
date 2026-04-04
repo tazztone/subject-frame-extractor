@@ -2,7 +2,7 @@ import pytest
 from playwright.sync_api import Page, expect
 
 from .conftest import open_accordion, switch_to_tab
-from .ui_locators import Selectors, Labels
+from .ui_locators import Labels, Selectors
 
 # Mark as e2e test
 pytestmark = pytest.mark.e2e

@@ -33,7 +33,7 @@ FACE_PATH = Path("downloads/example face.png")
 def _is_sam3_available():
     """Check if SAM3 is properly installed and can be imported."""
     try:
-        from sam3.model_builder import build_sam3_video_model  # noqa: F401
+        from sam3.model_builder import build_sam3_predictor  # noqa: F401
 
         return True
     except ImportError:

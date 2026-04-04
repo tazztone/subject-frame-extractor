@@ -2,7 +2,7 @@ import pytest
 from playwright.sync_api import Page, expect
 
 from .conftest import BASE_URL, switch_to_tab, wait_for_app_ready
-from .ui_locators import Selectors, Labels
+from .ui_locators import Labels, Selectors
 
 # Mark as e2e test
 pytestmark = pytest.mark.e2e
@@ -26,7 +26,6 @@ class TestBusyState:
         page.locator(Selectors.SOURCE_INPUT).fill("busy_test.mp4")
         start_btn = page.locator(Selectors.START_EXTRACTION)
         cancel_btn = page.locator(Selectors.CANCEL_BUTTON)
-        pause_btn = page.locator(Selectors.PAUSE_BUTTON)
 
         # Idle state (Pre-start)
         expect(start_btn).to_be_enabled()
@@ -45,7 +44,9 @@ class TestBusyState:
         expect(cancel_btn).to_be_enabled()
 
         # 4. Wait for completion
-        expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text(Selectors.STATUS_SUCCESS_EXTRACTION, timeout=30000)
+        expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text(
+            Selectors.STATUS_SUCCESS_EXTRACTION, timeout=30000
+        )
 
         # 5. Idle state again (Post-completion)
         expect(start_btn).to_be_enabled(timeout=10000)
@@ -74,7 +75,9 @@ class TestBusyState:
         expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text("Mock Extraction")
 
         # 3. Wait for it to finish while on the other tab
-        expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text(Selectors.STATUS_SUCCESS_EXTRACTION, timeout=30000)
+        expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text(
+            Selectors.STATUS_SUCCESS_EXTRACTION, timeout=30000
+        )
 
         # 4. Switch back to Source
         switch_to_tab(page, Labels.TAB_SOURCE)

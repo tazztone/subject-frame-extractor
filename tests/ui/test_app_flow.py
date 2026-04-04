@@ -24,7 +24,7 @@ class TestMainWorkflow:
         """
         page.goto(BASE_URL)
         wait_for_app_ready(page)
-        
+
         unified_status = page.locator(Selectors.UNIFIED_STATUS)
 
         # 1. Frame Extraction
@@ -33,10 +33,10 @@ class TestMainWorkflow:
 
         # Wait for "complete" in the status area
         expect(unified_status).to_contain_text(Selectors.STATUS_SUCCESS_EXTRACTION, timeout=30000)
-        
+
         # 2. Define Subject (Pre-Analysis)
         switch_to_tab(page, Labels.TAB_SUBJECT)
-        
+
         # Click "Confirm Subject"
         pre_analyze_btn = page.locator(Selectors.START_PRE_ANALYSIS)
         expect(pre_analyze_btn).to_be_visible(timeout=10000)
@@ -71,7 +71,7 @@ class TestMainWorkflow:
         expect(export_btn).to_be_visible(timeout=10000)
         expect(export_btn).to_be_enabled(timeout=5000)
         export_btn.click()
-        
+
         expect(unified_status).to_contain_text(Selectors.STATUS_SUCCESS_EXPORT, timeout=30000)
 
 

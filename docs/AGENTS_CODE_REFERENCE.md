@@ -148,6 +148,7 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;scene_seeds.json  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;scenes.json  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;thumbs  
+│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_accuracy.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_gpu_e2e.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_gpu_health.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_integration_smoke.py  
@@ -175,17 +176,22 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_ai_ux_audit.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_app_flow.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_bug_regression.py  
+│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_busy_state.py  
+│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_cancellation.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_component_verification.py  
+│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_error_recovery.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_export_flow.py  
-│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_filters_real.py  
+│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_filters_mocked.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_full_workflow_mocked.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_handler_contracts.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_photo_flow.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_session_lifecycle.py  
+│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_session_resume.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_smoke_ui_init.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_ui_interactions.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_visual_regression.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_with_sample_data.py  
+│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_workflow_variants.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;ui_locators.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;visual_test_utils.py  
 │&nbsp;&nbsp;&nbsp;└──&nbsp;unit  
@@ -881,7 +887,7 @@ class SAM2Wrapper:
 _triton_mocked = _setup_triton_mock()
 class SAM3Wrapper:
     """SAM3 Tracker using official Sam3VideoPredictor API."""
-    def __init__(self, checkpoint_path=None, device='cuda'): ...
+    def __init__(self, checkpoint_path=None, device='cuda', config: Optional['Config']=None): ...
     def init_video(self, video_resource: Union[str, list]): ...
     def add_bbox_prompt(self, frame_idx: int, obj_id: int, bbox_xywh: list, img_size: tuple, text: Optional[str]=None): ...
     def add_mask_prompt(self, frame_idx: int, obj_id: int, mask: np.ndarray):
@@ -952,7 +958,7 @@ class ThumbnailManager:
 
 ```python
 TrackerBackend = Literal['sam2', 'sam3']
-def build_tracker(backend: TrackerBackend, checkpoint_path: str, device: str='cuda'):
+def build_tracker(backend: TrackerBackend, checkpoint_path: str, device: str='cuda', config: Optional['Config']=None):
     """Factory function to build a subject tracker based on the selected backend."""
 ```
 

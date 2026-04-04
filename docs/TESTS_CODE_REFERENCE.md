@@ -32,6 +32,7 @@ tests
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;scene_seeds.json  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;scenes.json  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;thumbs  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_accuracy.py`](#-testsintegrationtest_accuracypy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_gpu_e2e.py`](#-testsintegrationtest_gpu_e2epy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_gpu_health.py`](#-testsintegrationtest_gpu_healthpy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_integration_smoke.py`](#-testsintegrationtest_integration_smokepy)  
@@ -59,17 +60,22 @@ tests
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_ai_ux_audit.py`](#-testsuitest_ai_ux_auditpy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_app_flow.py`](#-testsuitest_app_flowpy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_bug_regression.py`](#-testsuitest_bug_regressionpy)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_busy_state.py`](#-testsuitest_busy_statepy)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_cancellation.py`](#-testsuitest_cancellationpy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_component_verification.py`](#-testsuitest_component_verificationpy)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_error_recovery.py`](#-testsuitest_error_recoverypy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_export_flow.py`](#-testsuitest_export_flowpy)  
-│&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_filters_real.py`](#-testsuitest_filters_realpy)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_filters_mocked.py`](#-testsuitest_filters_mockedpy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_full_workflow_mocked.py`](#-testsuitest_full_workflow_mockedpy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_handler_contracts.py`](#-testsuitest_handler_contractspy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_photo_flow.py`](#-testsuitest_photo_flowpy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_session_lifecycle.py`](#-testsuitest_session_lifecyclepy)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_session_resume.py`](#-testsuitest_session_resumepy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_smoke_ui_init.py`](#-testsuitest_smoke_ui_initpy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_ui_interactions.py`](#-testsuitest_ui_interactionspy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_visual_regression.py`](#-testsuitest_visual_regressionpy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_with_sample_data.py`](#-testsuitest_with_sample_datapy)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_workflow_variants.py`](#-testsuitest_workflow_variantspy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`ui_locators.py`](#-testsuiui_locatorspy)  
 │&nbsp;&nbsp;&nbsp;└──&nbsp;[`visual_test_utils.py`](#-testsuivisual_test_utilspy)  
 └──&nbsp;unit  
@@ -280,6 +286,9 @@ def pytest_sessionstart(session):
     """Mocks are now initialized at the module level for early interception."""
 def pytest_sessionfinish(session, exitstatus):
     """Restore original modules after the session."""
+@pytest.fixture(scope='module')
+def module_model_registry():
+    """Module-scoped model registry to avoid reloading weights between tests."""
 @pytest.fixture
 def mock_torch():
     """Fixture to access the mocked torch module."""
@@ -317,14 +326,24 @@ class TestPhotoCLI:
 def verify_ui_simple(): ...
 ```
 
+### `📄 tests/integration/test_accuracy.py`
+
+```python
+pytestmark = [pytest.mark.gpu_e2e, pytest.mark.slow, pytest.mark.skipif(not t...
+@pytest.fixture(scope='module')
+def real_video():
+    """Provides a guaranteed real-world video from SAM3 assets."""
+def test_mask_iou_accuracy(real_video, module_model_registry):
+    """Verify that SAM3 generates a mask that reasonably matches the input bbox."""
+def test_propagation_stability(real_video, module_model_registry, tmp_path):
+    """Verify that propagation maintains a non-empty mask over several frames."""
+```
+
 ### `📄 tests/integration/test_gpu_e2e.py`
 
 ```python
 """GPU E2E Tests - Real inference with actual models."""
 pytestmark = [pytest.mark.gpu_e2e, pytest.mark.slow, pytest.mark.skipif(not t...
-@pytest.fixture(scope='module')
-def module_model_registry():
-    """Module-scoped model registry to avoid reloading weights between tests."""
 def _create_test_image(width=256, height=256, frame_idx=0):
     """Create a high-entropy test image with a noise-textured complex object (simula..."""
 def _create_test_image_with_face(width=256, height=256):
@@ -528,6 +547,8 @@ def test_real_end_to_end_workflow(tmp_path, tracker_model):
 ### `📄 tests/mock_app.py`
 
 ```python
+project_root = Path(__file__).parent.parent
+global_progress_queue = Queue()
 def create_mock_module(name, attributes=None):
     """Creates a proper ModuleType instance populated with mocks/attributes."""
 mock_torch = MagicMock(name='torch')
@@ -537,6 +558,9 @@ mock_torch.nn.Module = MagicMock
 mock_torch.Tensor = MagicMock
 mock_sam3 = MagicMock(name='sam3')
 mock_sam3.model_builder = MagicMock()
+mock_sam3.model_builder.build_sam3_predictor = MagicMock()
+mock_sam3.model_builder.build_sam3_multiplex_video_predictor = MagicMock()
+mock_sam3.model_builder.build_sam3_video_predictor = MagicMock()
 class OutOfMemoryError(RuntimeError): ...
 class VideoOpenFailure(RuntimeError): ...
 class TransparentContext:
@@ -547,18 +571,12 @@ class TransparentContext:
 def _create_mock_tensor(name='tensor', shape=None, value=None, **kwargs): ...
 mock_torch.cuda.OutOfMemoryError = OutOfMemoryError
 mock_torch.cuda.get_device_name = MagicMock(return_value='Mock GPU')
-mock_torch.cuda.empty_cache = MagicMock()
-mock_torch.float = MagicMock(name='torch.float')
 mock_torch.float32 = MagicMock(name='torch.float32')
-mock_torch.float16 = MagicMock(name='torch.float16')
-mock_torch.bfloat16 = MagicMock(name='torch.bfloat16')
 mock_torch.uint8 = MagicMock(name='torch.uint8')
-mock_torch.int64 = MagicMock(name='torch.int64')
 mock_torch.device = MagicMock()
 mock_torch.from_numpy = MagicMock(side_effect=lambda np_arr: _create_mock_ten...
 mock_torch.zeros = MagicMock(side_effect=lambda shape, **kwargs: _create_mock...
 mock_torch.ones = MagicMock(side_effect=lambda shape, **kwargs: _create_mock_...
-mock_torch.tensor = MagicMock(side_effect=lambda data, **kwargs: _create_mock...
 mock_torch.no_grad = TransparentContext
 mock_torch.inference_mode = TransparentContext
 modules_map = {'torch': create_mock_module('torch', {'cuda': mock_torch.cuda,...
@@ -568,30 +586,46 @@ modules_map['sam3.model.sam3_video_predictor'] = create_mock_module('sam3.mod...
 modules_map['sam3.model.sam3_video_predictor'].SAM3VideoPredictor = MagicMock()
 modules_map['sam3.model.sam3_video_inference'] = create_mock_module('sam3.mod...
 modules_map['sam3.model.sam3_video_inference'].SAM3VideoInference = MagicMock()
+modules_map['sam3.model.sam3_base_predictor'] = create_mock_module('sam3.mode...
+modules_map['sam3.model.sam3_multiplex_video_predictor'] = create_mock_module...
+modules_map['sam3.model.sam3_multiplex_tracking'] = create_mock_module('sam3....
+modules_map['sam3.model.sam3_multiplex_base'] = create_mock_module('sam3.mode...
 def mock_extraction_run(self, tracker=None):
     """Mocks the extraction process."""
-def mock_pre_analysis_execution(event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress=None, model_registry=None):
+def mock_pre_analysis_execution(event, *args, **kwargs):
     """Mocks execute_pre_analysis generator."""
-def mock_propagation_execution(event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress=None, model_registry=None): ...
-def mock_analysis_execution(event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress=None, model_registry=None): ...
-def mock_analysis_orchestrator(event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress=None, model_registry=None):
-    """Mocks the analysis orchestrator workflow."""
-def mock_full_pipeline_execution(event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress=None, model_registry=None):
-    """Mocks the full pipeline orchestrator workflow."""
-def mock_ingest_folder(folder_path, output_dir): ...
-def mock_apply_scores_to_photos(photos, weights): ...
-def mock_export_xmps_for_photos(photos, thresholds=None): ...
+def mock_propagation_execution(event, *args, **kwargs): ...
+def mock_analysis_execution(event, *args, **kwargs): ...
+def mock_analysis_orchestrator(event, *args, **kwargs): ...
+def mock_ingest_folder(folder_path: str, *args, **kwargs):
+    """Mocks ingesting a folder of photos."""
+def mock_export_xmps_for_photos(photos: list, star_thresholds=None):
+    """Mocks XMP export."""
 def mock_export_kept_frames(*args, **kwargs): ...
-core.pipelines.ExtractionPipeline._run_impl = mock_extraction_run
+def mock_dry_run_export(*args, **kwargs): ...
+def reset_app_state(): ...
+def mock_session_load_wrapper(self, session_path: str, current_state: ApplicationState):
+    """Mocks PipelineHandler.run_session_load_wrapper."""
+def mock_extraction_wrapper(self, current_state: ApplicationState, *args, **kwargs):
+    """Mocks PipelineHandler.run_extraction_wrapper."""
+def reset_app_state_handler():
+    """Handles the Reset State button click, returning updates for the UI."""
 ui.app_ui.AppUI.preload_models = MagicMock(side_effect=lambda *args: None)
+ui.handlers.pipeline_handlers.PipelineHandler.run_session_load_wrapper = mock...
+ui.handlers.pipeline_handlers.PipelineHandler.run_extraction_wrapper = mock_e...
+original_main = ui.app_ui.AppUI.build_ui
+def mock_build_ui(self, *args, **kwargs): ...
+ui.app_ui.AppUI.build_ui = mock_build_ui
 core.fingerprint.create_fingerprint = MagicMock(return_value={})
 core.fingerprint.save_fingerprint = MagicMock()
 ui.app_ui.export_kept_frames = mock_export_kept_frames
+ui.app_ui.dry_run_export = mock_dry_run_export
 core.export.export_kept_frames = mock_export_kept_frames
-core.photo_utils.ingest_folder = mock_ingest_folder
-core.xmp_writer.export_xmps_for_photos = mock_export_xmps_for_photos
 core.utils.download_model = MagicMock()
 core.managers.download_model = MagicMock()
+ExtractionPipeline._run_impl = mock_extraction_run
+core.photo_utils.ingest_folder = mock_ingest_folder
+core.xmp_writer.export_xmps_for_photos = mock_export_xmps_for_photos
 ```
 
 ### `📄 tests/regression/test_full_workflow_regression.py`
@@ -749,14 +783,15 @@ class TestARIACompliance:
 ### `📄 tests/ui/test_advanced_workflow.py`
 
 ```python
-@pytest.fixture(scope='module')
-def app_server_url(app_server):
-    """Returns the URL of the running app server."""
+pytestmark = pytest.mark.e2e
 class TestAdvancedWorkflow:
-    """Advanced E2E tests covering edge cases, settings changes, and error handling."""
-    def test_navigation_restrictions(self, page: Page, app_server_url): ...
-    def test_extraction_settings_change(self, page: Page, app_server_url): ...
-    def test_filtering_ui(self, page: Page, app_server_url): ...
+    """Advanced E2E tests covering navigation restrictions and UI responsiveness usi..."""
+    def test_navigation_restrictions_error(self, page: Page, app_server):
+        """Verify that attempting to move to Subject/Analysis stage without extraction r..."""
+    def test_extraction_settings_persistence(self, page: Page, app_server):
+        """Verify that changing extraction settings is reflected in the UI and extractio..."""
+    def test_filtering_ui_responsiveness(self, page: Page, app_server):
+        """Test the Metrics/Filtering tab UI controls responsiveness."""
 ```
 
 ### `📄 tests/ui/test_ai_ux_audit.py`
@@ -774,10 +809,10 @@ class TestUXAudit:
         """Audit Source tab UX."""
     @pytest.mark.skipif(not HAS_ANALYZER, reason='ai_ux_analyzer not available')
     def test_scenes_tab_ux(self, page: Page, app_server, use_ai, tmp_path):
-        """Audit Scenes tab UX - where pagination issues were found."""
+        """Audit Scenes tab UX."""
     @pytest.mark.skipif(not HAS_ANALYZER, reason='ai_ux_analyzer not available')
     def test_export_tab_ux(self, page: Page, app_server, use_ai, tmp_path):
-        """Audit Export tab UX - filter controls and results display."""
+        """Audit Export tab UX."""
 class TestFullAppAudit:
     """Run comprehensive audit across all tabs."""
     @pytest.mark.skipif(not HAS_ANALYZER, reason='ai_ux_analyzer not available')
@@ -790,10 +825,6 @@ class TestFullAppAudit:
 ```python
 """Playwright E2E Tests for main application workflow."""
 pytestmark = pytest.mark.e2e
-def switch_to_tab(page: Page, tab_name: str):
-    """Robustly switch tabs in Gradio, handling potential race conditions."""
-def open_logs(page: Page):
-    """Opens the system logs accordion if it's closed."""
 class TestMainWorkflow:
     """Complete end-to-end workflow tests."""
     @pytest.mark.flaky(reruns=3)
@@ -846,8 +877,32 @@ class TestSystemLogsRegression:
         """Clear Logs button should clear the log display."""
 class TestPropagationErrorHandling:
     """Tests for propagation error handling (Bug 1)."""
-    def test_propagate_button_disabled_without_scenes(self, page: Page, app_server):
-        """Propagate button should be disabled when no scenes are ready."""
+    def test_propagate_button_found(self, page: Page, app_server):
+        """Propagate button should be present on the Scenes tab."""
+```
+
+### `📄 tests/ui/test_busy_state.py`
+
+```python
+pytestmark = pytest.mark.e2e
+class TestBusyState:
+    """Tests for 'Busy' UI states during long-running tasks."""
+    def test_extraction_lock_and_unlock(self, page: Page, app_server):
+        """Start extraction → Verify Start button is disabled → Verify Cancel/Pause are ..."""
+    def test_tab_switch_during_busy(self, page: Page, app_server):
+        """Start pipeline → Switch tabs → Pipeline should continue → Switch back → Statu..."""
+```
+
+### `📄 tests/ui/test_cancellation.py`
+
+```python
+pytestmark = pytest.mark.e2e
+class TestCancellation:
+    """Tests for the Cancel button during pipeline execution."""
+    def test_cancel_extraction_midway(self, page: Page, app_server):
+        """Start extraction → Wait for progress → Click Cancel → Verify Cancellation sta..."""
+    def test_cancel_propagation_midway(self, page: Page, app_server):
+        """Start propagation → Click Cancel → Verify Success of subsequent retry."""
 ```
 
 ### `📄 tests/ui/test_component_verification.py`
@@ -855,13 +910,13 @@ class TestPropagationErrorHandling:
 ```python
 """Component-level verification tests using stable elem_id selectors."""
 pytestmark = [pytest.mark.e2e, pytest.mark.component]
-SLIDERS_BY_TAB = [('Source', '#thumb_megapixels_input'), ('Scenes', '#scene_m...
+SLIDERS_BY_TAB = [(Labels.TAB_SOURCE, Selectors.THUMB_MEGAPIXELS), (Labels.TA...
 class TestSliderFunctionality:
     """Verify sliders are visible and interactive."""
     @pytest.mark.parametrize('tab,selector', SLIDERS_BY_TAB)
     def test_slider_value_changes(self, page: Page, app_server, tab, selector):
         """Moving a slider should update its internal value."""
-DROPDOWNS_BY_TAB = [('Source', '#max_resolution'), ('Source', '#method_input'...
+DROPDOWNS_BY_TAB = [(Labels.TAB_SOURCE, Selectors.MAX_RESOLUTION), (Labels.TA...
 class TestDropdownFunctionality:
     """Verify dropdowns exist and are interactive."""
     @pytest.mark.parametrize('tab,selector', DROPDOWNS_BY_TAB)
@@ -887,7 +942,7 @@ class TestPaginationFunctionality:
         """Previous and Next pagination buttons should exist."""
 class TestButtonsFunctionality:
     """Verify buttons are clickable and perform actions."""
-    CRITICAL_BUTTONS = [('Source', '#start_extraction_button'), ('Source', '#add_...
+    CRITICAL_BUTTONS = [(Labels.TAB_SOURCE, Selectors.START_EXTRACTION), (Labels....
     @pytest.mark.parametrize('tab,selector', CRITICAL_BUTTONS)
     def test_button_is_visible(self, page: Page, app_server, tab, selector):
         """Critical buttons should be attached to the DOM on their respective tabs."""
@@ -899,57 +954,60 @@ class TestStrategyVisibility:
         """Selecting Text strategy should show text prompt and warning."""
 ```
 
+### `📄 tests/ui/test_error_recovery.py`
+
+```python
+pytestmark = pytest.mark.e2e
+class TestErrorRecovery:
+    """Tests for error paths and user recovery after pipeline/validation failures."""
+    def test_extraction_with_invalid_path_to_success(self, page: Page, app_server):
+        """Fill a nonsense path → Extract → Verify Error → Retry with valid path."""
+    def test_tab_jump_restriction_recovery(self, page: Page, app_server):
+        """Skip to Subject tab, click Confirm → Verify error message → Go back and extra..."""
+    def test_export_precondition_failure(self, page: Page, app_server):
+        """Go to Export tab, click Export with no data loaded → verify graceful error/wa..."""
+```
+
 ### `📄 tests/ui/test_export_flow.py`
 
 ```python
-"""Playwright E2E Tests for export workflow."""
 pytestmark = pytest.mark.e2e
 class TestExportFlow:
-    """Export workflow tests."""
-    def test_export_tab_accessible(self, shared_analysis_session):
-        """Verify export tab is accessible and shows expected elements."""
-    def test_dry_run_export_requires_analysis(self, shared_analysis_session):
-        """Test dry run export mode after full analysis."""
-    def test_export_button_visibility(self, shared_analysis_session):
-        """Test export button becomes visible after analysis."""
-class TestFilteringBeforeExport:
-    """Tests for filtering controls in export tab."""
-    def test_filter_sliders_visible(self, shared_analysis_session):
-        """Verify filtering sliders are visible in export tab."""
-    def test_smart_filter_toggle(self, shared_analysis_session):
-        """Test Smart Filtering toggle."""
-class TestExportFormats:
-    """Tests for export format options."""
-    def test_export_settings_visible(self, shared_analysis_session):
-        """Verify export settings are accessible after analysis."""
+    """Comprehensive tests for the Export workflow."""
+    def test_export_tab_elements_visibility(self, shared_analysis_session: Page):
+        """Verify export tab is accessible and shows expected elements after analysis."""
+    def test_dry_run_summary_verification(self, shared_analysis_session: Page):
+        """Test dry run export mode and verify the summary output in logs."""
+    def test_filter_preset_interaction(self, shared_analysis_session: Page):
+        """Verify that selecting a filter preset updates the UI state."""
+    def test_export_completion(self, shared_analysis_session: Page):
+        """Verify that clicking Export completes and shows the success message."""
 ```
 
-### `📄 tests/ui/test_filters_real.py`
+### `📄 tests/ui/test_filters_mocked.py`
 
 ```python
-"""E2E Tests for Real Filtering Logic."""
 pytestmark = pytest.mark.e2e
-SAMPLE_VIDEO = "<REDACTED_STRING>"
-class TestRealFilters:
+class TestMockFilters:
+    """Harden filtering logic tests using the mock app."""
     @pytest.fixture(autouse=True)
-    def setup_with_analysis(self, page: Page, app_server): ...
-    def test_apply_filter_reduces_count(self, page: Page):
-        """Test that increasing a filter threshold reduces the number of kept frames."""
-    def test_deduplication_toggle(self, page: Page):
-        """Test enabling deduplication updates the count."""
+    def setup_mock_analysis(self, page: Page, app_server):
+        """Setup: Run the full mock pipeline to get frames into the state."""
+    def test_smart_filter_toggle_updates_ui(self, page: Page):
+        """Verify that toggling Smart Filtering enables/disables the percentile slider."""
+    def test_filter_preset_application(self, page: Page):
+        """Test that selecting a preset (e.g., Portrait) updates sliders."""
+    def test_gallery_count_updates_on_filter(self, page: Page):
+        """Verify that changing a filter value updates the 'Kept' count."""
 ```
 
 ### `📄 tests/ui/test_full_workflow_mocked.py`
 
 ```python
-@pytest.fixture(scope='module')
-def app_server_url(app_server):
-    """Returns the URL of the running app server."""
+pytestmark = pytest.mark.e2e
 class TestFullWorkflowMocked:
     """Comprehensive E2E test simulating a full user journey using Playwright"""
-    def switch_to_tab(self, page: Page, tab_name: str):
-        """Robustly switch tabs in Gradio."""
-    def test_full_user_journey(self, page: Page, app_server_url):
+    def test_full_user_journey(self, page: Page, app_server):
         """Simulates:"""
 ```
 
@@ -1001,10 +1059,29 @@ class TestWorkflowState:
         """Verify workflow progress is tracked."""
 ```
 
+### `📄 tests/ui/test_session_resume.py`
+
+```python
+pytestmark = pytest.mark.e2e
+class TestSessionResume:
+    """E2E tests for loading and resuming previous sessions."""
+    @pytest.fixture
+    def mock_session_dir(self):
+        """Creates a temporary mock session directory."""
+    def test_load_session_updates_ui(self, page: Page, app_server, mock_session_dir):
+        """Verify that loading a session directory updates UI components correctly."""
+    def test_load_invalid_session_shows_error(self, page: Page, app_server):
+        """Verify that loading a non-existent directory shows an error."""
+```
+
 ### `📄 tests/ui/test_smoke_ui_init.py`
 
 ```python
-def test_ui_init(): ...
+"""Smoke test for UI initialization."""
+pytestmark = pytest.mark.smoke
+@patch('torch.cuda.is_available', return_value=False)
+def test_ui_initialization_smoke(mock_cuda):
+    """Verify that the UI can be built with mocked dependencies."""
 ```
 
 ### `📄 tests/ui/test_ui_interactions.py`
@@ -1038,10 +1115,6 @@ class TestLogRefreshMechanism:
     """Tests for log display."""
     def test_refresh_button_updates_logs(self, page: Page, app_server):
         """Clicking Refresh should drain log queue and update display."""
-class TestPropagationErrorHandling:
-    """Tests for propagation error handling."""
-    def test_propagation_without_scenes_no_crash(self, page: Page, app_server):
-        """Clicking propagate without scenes should not crash."""
 class TestUIConsoleErrors:
     """Tests that monitor browser console for JavaScript errors."""
     def test_no_console_errors_on_load(self, page: Page, app_server):
@@ -1067,8 +1140,8 @@ class TestUIStateConsistency:
     @pytest.mark.skipif(not HAS_UTILS, reason='visual_test_utils dependencies not installed')
     def test_tab_switching_preserves_state(self, page: Page, app_server):
         """Switching tabs and back should preserve visual state."""
-def _click_strategy(page: Page, strategy_keyword: str):
-    """Click a strategy radio button containing keyword."""
+def _click_strategy(page: Page, label: str):
+    """Select a subject discovery strategy."""
 ```
 
 ### `📄 tests/ui/test_with_sample_data.py`
@@ -1093,6 +1166,18 @@ class TestSeedingOptions:
         """Test entering a text prompt."""
 ```
 
+### `📄 tests/ui/test_workflow_variants.py`
+
+```python
+pytestmark = pytest.mark.e2e
+class TestWorkflowVariants:
+    """E2E tests for different input variants (Image Folders vs Videos)."""
+    def test_image_folder_workflow_skips_propagation(self, page: Page, app_server):
+        """Verify that selecting a folder of images skips propagation step."""
+    def test_video_workflow_shows_propagation(self, page: Page, app_server):
+        """Verify that selecting a video shows propagation step."""
+```
+
 ### `📄 tests/ui/ui_locators.py`
 
 ```python
@@ -1102,25 +1187,37 @@ class Selectors:
     UNIFIED_LOG = "<REDACTED_STRING>"
     UNIFIED_STATUS = "<REDACTED_STRING>"
     LOG_TEXTAREA = "<REDACTED_STRING>"
+    CANCEL_BUTTON = "<REDACTED_STRING>"
+    PAUSE_BUTTON = "<REDACTED_STRING>"
+    RESET_STATE_BUTTON = "<REDACTED_STRING>"
+    STATUS_READY = "<REDACTED_STRING>"
+    STATUS_ERROR_REGEX = "<REDACTED_STRING>"
+    STATUS_SUCCESS_EXTRACTION = "<REDACTED_STRING>"
+    STATUS_SUCCESS_PRE_ANALYSIS = "<REDACTED_STRING>"
+    STATUS_SUCCESS_PROPAGATION = "<REDACTED_STRING>"
+    STATUS_SUCCESS_ANALYSIS = "<REDACTED_STRING>"
+    STATUS_SUCCESS_EXPORT = "<REDACTED_STRING>"
     SOURCE_INPUT = "<REDACTED_STRING>"
     START_EXTRACTION = "<REDACTED_STRING>"
     ADD_TO_QUEUE = "<REDACTED_STRING>"
     THUMB_MEGAPIXELS = "<REDACTED_STRING>"
+    SESSION_INPUT = "<REDACTED_STRING>"
+    LOAD_SESSION_BUTTON = "<REDACTED_STRING>"
+    MAX_RESOLUTION = "<REDACTED_STRING>"
+    EXTRACTION_METHOD = "<REDACTED_STRING>"
     SEED_STRATEGY = "<REDACTED_STRING>"
     START_PRE_ANALYSIS = "<REDACTED_STRING>"
-    SCAN_VIDEO_TAB = "<REDACTED_STRING>"
     SCENE_GALLERY = "<REDACTED_STRING>"
     VIEW_TOGGLE = "<REDACTED_STRING>"
     MASK_AREA_MIN = "<REDACTED_STRING>"
     QUALITY_SCORE_MIN = "<REDACTED_STRING>"
-    PREV_PAGE = "<REDACTED_STRING>"
-    NEXT_PAGE = "<REDACTED_STRING>"
-    PAGINATION_ROW = "<REDACTED_STRING>"
     PROPAGATE_MASKS = "<REDACTED_STRING>"
+    SCENE_FILTER_STATUS = "<REDACTED_STRING>"
     START_ANALYSIS = "<REDACTED_STRING>"
     FILTER_PRESET = "<REDACTED_STRING>"
     DEDUP_THRESH = "<REDACTED_STRING>"
     EXPORT_BUTTON = "<REDACTED_STRING>"
+    DRY_RUN_BUTTON = "<REDACTED_STRING>"
 class Labels:
     """Text/label-based locators (used when elem_id isn't available)."""
     TAB_SOURCE = "<REDACTED_STRING>"
@@ -1133,6 +1230,9 @@ class Labels:
     HELP_ACCORDION = "<REDACTED_STRING>"
     SCAN_VIDEO_BUTTON = "<REDACTED_STRING>"
     TAB_SCAN_VIDEO = "<REDACTED_STRING>"
+    SESSION_ACCORDION = "<REDACTED_STRING>"
+    ADVANCED_ACCORDION = "<REDACTED_STRING>"
+    BATCH_FILTER_ACCORDION = "<REDACTED_STRING>"
     STRATEGY_FACE = "<REDACTED_STRING>"
     STRATEGY_TEXT = "<REDACTED_STRING>"
 ```

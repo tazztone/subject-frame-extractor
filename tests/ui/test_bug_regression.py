@@ -3,7 +3,6 @@ Playwright E2E Tests for Bug Regression Prevention.
 Standardized to use the new unified Selectors and Labels contract.
 """
 
-import re
 import pytest
 from playwright.sync_api import Page, expect
 
@@ -29,7 +28,7 @@ class TestPaginationBugRegression:
         # Even if disabled, clicking should not crash
         next_button.click(force=True)
         page.wait_for_timeout(500)
-        
+
         # App should still be responsive
         expect(page.locator("body")).to_be_visible()
 

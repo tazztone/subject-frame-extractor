@@ -3,7 +3,6 @@ Playwright E2E Tests for specific UI interactions.
 Standardized to use the new unified Selectors and Labels contract.
 """
 
-import re
 import pytest
 from playwright.sync_api import Page, expect
 
@@ -117,7 +116,7 @@ class TestGallerySliderInteractions:
         open_accordion(page, "Display Settings")
 
         # Gradio 5+ range sliders often have an input[type=range]
-        columns_slider = page.locator("input[type=range]").first # Usually columns is first
+        columns_slider = page.locator("input[type=range]").first  # Usually columns is first
         expect(columns_slider).to_be_visible(timeout=5000)
 
         columns_slider.fill("4")

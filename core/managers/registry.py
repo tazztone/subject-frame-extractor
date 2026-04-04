@@ -180,14 +180,22 @@ class ModelRegistry:
             description = "SAM2.1 Model"
             backend: TrackerBackend = "sam2"
         elif model_name == "sam3":
-            checkpoint_filename = "sam3.pt"
+            checkpoint_filename = "sam3.1_multiplex.pt"
             url = config.sam3_checkpoint_url if config else ""
-            description = "SAM3 Model"
+            description = "SAM3.1 Model"
             backend: TrackerBackend = "sam3"
         else:
             raise ValueError(f"Unknown tracker model '{model_name}'. Must be 'sam2' or 'sam3'.")
 
         checkpoint_path = Path(models_path) / checkpoint_filename
+        if model_name == "sam3":
+            # Fallback logic: check for legacy sam3.pt before deciding to download
+            if not checkpoint_path.exists():
+                legacy_path = Path(models_path) / "sam3.pt"
+                if legacy_path.exists():
+                    self.logger.info(f"SAM 3.1 checkpoint not found; falling back to legacy {legacy_path.name}")
+                    checkpoint_path = legacy_path
+
         if not checkpoint_path.exists():
             if url and ".safetensors" in url:
                 url = url.replace(".safetensors", ".pt")
@@ -206,4 +214,4 @@ class ModelRegistry:
                 user_agent=user_agent,
                 token=config.huggingface_token if config else None,
             )
-        return build_tracker(backend, str(checkpoint_path), device=device)
+        return build_tracker(backend, str(checkpoint_path), device=device, config=config)

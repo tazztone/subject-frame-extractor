@@ -7,11 +7,10 @@ import threading
 from queue import Queue
 from unittest.mock import MagicMock, patch
 
-import pytest
 import gradio as gr
+import pytest
 
 from ui.app_ui import AppUI
-from core.application_state import ApplicationState
 
 # Mark as smoke test
 pytestmark = pytest.mark.smoke
@@ -40,26 +39,26 @@ def test_ui_initialization_smoke(mock_cuda):
     config.retry_backoff_seconds = [1]
     config.default_face_model_name = "buffalo_l"
     config.default_primary_seed_strategy = "Largest Person"
-    
+
     logger = MagicMock()
     progress_queue = Queue()
     cancel_event = threading.Event()
     thumbnail_manager = MagicMock()
     model_registry = MagicMock()
-    
+
     # Mock registry names for dropdown choices
     model_registry.get_tracker_names.return_value = ["sam2"]
     model_registry.get_tracker_vram_requirement.return_value = 4000
     model_registry.get_detector_names.return_value = ["YOLO12l-Seg"]
 
     app = AppUI(config, logger, progress_queue, cancel_event, thumbnail_manager, model_registry)
-    
+
     # Avoid thread startup
     with patch.object(app, "preload_models"):
-        with gr.Blocks() as demo:
+        with gr.Blocks():
             app.build_ui()
             # If we reach here without exception, the build was successful
             assert "application_state" in app.components
             assert isinstance(app.components["application_state"], gr.State)
-            
+
     print("UI Initialization Successful")

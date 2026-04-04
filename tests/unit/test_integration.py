@@ -81,9 +81,9 @@ class TestGPUIntegration:
         if not torch.cuda.is_available():
             pytest.skip("CUDA not available")
         try:
-            from sam3.model_builder import build_sam3_video_predictor
+            from sam3.model_builder import build_sam3_predictor
 
-            assert build_sam3_video_predictor is not None
+            assert build_sam3_predictor is not None
         except ImportError as e:
             pytest.skip(f"SAM3 not installed. Run: pip install -e SAM3_repo. Error: {e}")
 

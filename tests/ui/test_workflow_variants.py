@@ -1,11 +1,12 @@
 import pytest
 from playwright.sync_api import Page, expect
 
-from .conftest import BASE_URL, wait_for_app_ready, switch_to_tab, open_accordion
-from .ui_locators import Selectors, Labels
+from .conftest import BASE_URL, open_accordion, switch_to_tab, wait_for_app_ready
+from .ui_locators import Labels, Selectors
 
 # Mark as e2e test
 pytestmark = pytest.mark.e2e
+
 
 class TestWorkflowVariants:
     """
@@ -28,12 +29,16 @@ class TestWorkflowVariants:
 
         # 3. Start Extraction
         page.locator(Selectors.START_EXTRACTION).click()
-        expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text(Selectors.STATUS_SUCCESS_EXTRACTION, timeout=15000)
+        expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text(
+            Selectors.STATUS_SUCCESS_EXTRACTION, timeout=15000
+        )
 
         # 4. Confirm Subject (Pre-Analysis)
         switch_to_tab(page, Labels.TAB_SUBJECT)
         page.locator(Selectors.START_PRE_ANALYSIS).click()
-        expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text(Selectors.STATUS_SUCCESS_PRE_ANALYSIS, timeout=15000)
+        expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text(
+            Selectors.STATUS_SUCCESS_PRE_ANALYSIS, timeout=15000
+        )
 
         # 5. Verify Propagation button IS HIDDEN (Images don't need propagation)
         prop_button = page.locator(Selectors.PROPAGATE_MASKS)
@@ -59,12 +64,16 @@ class TestWorkflowVariants:
 
         # 3. Start Extraction
         page.locator(Selectors.START_EXTRACTION).click()
-        expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text(Selectors.STATUS_SUCCESS_EXTRACTION, timeout=15000)
+        expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text(
+            Selectors.STATUS_SUCCESS_EXTRACTION, timeout=15000
+        )
 
         # 4. Confirm Subject
         switch_to_tab(page, Labels.TAB_SUBJECT)
         page.locator(Selectors.START_PRE_ANALYSIS).click()
-        expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text(Selectors.STATUS_SUCCESS_PRE_ANALYSIS, timeout=15000)
+        expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text(
+            Selectors.STATUS_SUCCESS_PRE_ANALYSIS, timeout=15000
+        )
 
         # 5. Verify Propagation button IS VISIBLE
         prop_button = page.locator(Selectors.PROPAGATE_MASKS)

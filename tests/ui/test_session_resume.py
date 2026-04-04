@@ -2,14 +2,16 @@ import json
 import shutil
 import tempfile
 from pathlib import Path
+
 import pytest
 from playwright.sync_api import Page, expect
 
-from .conftest import BASE_URL, wait_for_app_ready, switch_to_tab, open_accordion
-from .ui_locators import Selectors, Labels
+from .conftest import BASE_URL, open_accordion, switch_to_tab, wait_for_app_ready
+from .ui_locators import Labels, Selectors
 
 # Mark as e2e test
 pytestmark = pytest.mark.e2e
+
 
 class TestSessionResume:
     """
@@ -32,7 +34,7 @@ class TestSessionResume:
             "pre_analysis_enabled": True,
             "pre_sample_nth": 2,
             "tracker_model_name": "sam2",
-            "best_frame_strategy": "Largest Person"
+            "best_frame_strategy": "Largest Person",
         }
         (session_path / "run_config.json").write_text(json.dumps(run_config), encoding="utf-8")
 
@@ -43,7 +45,7 @@ class TestSessionResume:
         # 3. Create scene_seeds.json
         seeds = {
             "0": {"status": "included", "best_frame": 50, "bbox": [10, 10, 50, 50]},
-            "1": {"status": "included", "best_frame": 150, "bbox": [20, 20, 60, 60]}
+            "1": {"status": "included", "best_frame": 150, "bbox": [20, 20, 60, 60]},
         }
         (session_path / "scene_seeds.json").write_text(json.dumps(seeds), encoding="utf-8")
 

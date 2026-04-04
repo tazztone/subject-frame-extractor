@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-# We need to mock build_sam3_video_predictor BEFORE importing SAM3Wrapper if possible,
+# We need to mock build_sam3_predictor BEFORE importing SAM3Wrapper if possible,
 # but sam3_unit fixture in conftest already does some mocking.
 # Let's use patch.dict on sys.modules to control the mock.
 
@@ -22,7 +22,7 @@ def sam3_unit_fresh():
 
     mock_build = MagicMock(return_value=mock_predictor)
 
-    with patch.dict("sys.modules", {"sam3.model_builder": MagicMock(build_sam3_video_predictor=mock_build)}):
+    with patch.dict("sys.modules", {"sam3.model_builder": MagicMock(build_sam3_predictor=mock_build)}):
         from core.managers.sam3 import SAM3Wrapper
 
         wrapper = SAM3Wrapper(checkpoint_path="fake.pt", device="cpu")
@@ -73,7 +73,7 @@ def test_sam3_wrapper_import_error_degradation():
     """Test that SAM3Wrapper raises RuntimeError if predictor fails to load."""
     mock_build = MagicMock(return_value=None)
 
-    with patch("sam3.model_builder.build_sam3_video_predictor", mock_build):
+    with patch("sam3.model_builder.build_sam3_predictor", mock_build):
         from core.managers.sam3 import SAM3Wrapper
 
         with pytest.raises(RuntimeError, match="SAM3 model failed to load"):
@@ -84,10 +84,10 @@ def test_sam3_wrapper_mock_leakage_check():
     """Test the mock leakage check when device='cuda'."""
     mock_build = MagicMock()
     # To simulate MagicMock detection, we don't need patch.dict if we patch the right place
-    with patch("sam3.model_builder.build_sam3_video_predictor", mock_build):
+    with patch("sam3.model_builder.build_sam3_predictor", mock_build):
         from core.managers.sam3 import SAM3Wrapper
 
-        with pytest.raises(RuntimeError, match="SAM3 build_sam3_video_predictor is a MagicMock"):
+        with pytest.raises(RuntimeError, match="SAM3 build_sam3_predictor is a MagicMock"):
             SAM3Wrapper(checkpoint_path="fake.pt", device="cuda")
 
 
@@ -97,28 +97,28 @@ def test_sam3_wrapper_checkpoint_resolution():
     mock_predictor.model = MagicMock()
     mock_build = MagicMock(return_value=mock_predictor)
 
-    with patch("sam3.model_builder.build_sam3_video_predictor", mock_build):
+    with patch("sam3.model_builder.build_sam3_predictor", mock_build):
         with patch("pathlib.Path.exists", return_value=True):
             from core.managers.sam3 import SAM3Wrapper
 
             wrapper = SAM3Wrapper(checkpoint_path=None, device="cpu")
             assert wrapper.predictor is not None
-            # Verify build_sam3_video_predictor was called with a path
+            # Verify build_sam3_predictor was called with a path
             args, kwargs = mock_build.call_args
             assert "checkpoint_path" in kwargs
             assert kwargs["checkpoint_path"] is not None
-            assert "models/sam3.pt" in kwargs["checkpoint_path"]
+            assert "models/sam3.1_multiplex.pt" in kwargs["checkpoint_path"]
 
 
 def test_sam3_wrapper_shutdown_cleanup():
     """Test the shutdown method with various predictor states."""
     from core.managers.sam3 import SAM3Wrapper
 
-    # Mock build_sam3_video_predictor to return a mock predictor
+    # Mock build_sam3_predictor to return a mock predictor
     mock_predictor = MagicMock()
     mock_predictor.model = MagicMock()
 
-    with patch("sam3.model_builder.build_sam3_video_predictor", return_value=mock_predictor):
+    with patch("sam3.model_builder.build_sam3_predictor", return_value=mock_predictor):
         # 1. Predictor has shutdown and model
         wrapper = SAM3Wrapper(checkpoint_path="fake.pt", device="cpu")
         wrapper.session_id = "active_session"
@@ -135,7 +135,7 @@ def test_sam3_wrapper_shutdown_cleanup():
         if hasattr(mock_predictor_no_shutdown, "shutdown"):
             del mock_predictor_no_shutdown.shutdown
 
-        with patch("sam3.model_builder.build_sam3_video_predictor", return_value=mock_predictor_no_shutdown):
+        with patch("sam3.model_builder.build_sam3_predictor", return_value=mock_predictor_no_shutdown):
             wrapper = SAM3Wrapper(checkpoint_path="fake.pt", device="cpu")
             wrapper.shutdown()
             assert wrapper.predictor is None
@@ -149,7 +149,7 @@ def test_sam3_wrapper_shutdown_cleanup():
 
         mock_predictor_no_model = NoModelPredictor()
 
-        with patch("sam3.model_builder.build_sam3_video_predictor", return_value=mock_predictor_no_model):
+        with patch("sam3.model_builder.build_sam3_predictor", return_value=mock_predictor_no_model):
             with pytest.raises(RuntimeError, match="SAM3 model failed to load"):
                 SAM3Wrapper(checkpoint_path="fake.pt", device="cpu")
 

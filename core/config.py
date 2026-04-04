@@ -43,7 +43,10 @@ class Config(BaseSettings):
         "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
     )
     face_landmarker_sha256: str = "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff"
-    sam3_checkpoint_url: str = "https://huggingface.co/1038lab/sam3/resolve/main/sam3.pt"
+    sam3_checkpoint_url: str = "https://huggingface.co/facebook/sam3.1/resolve/main/sam3.1_multiplex.pt"
+    sam3_compile: bool = False
+    sam3_use_flash_attention: bool = False
+    sam3_use_rope_real: bool = False
     sam2_checkpoint_url: str = "https://huggingface.co/facebook/sam2.1-hiera-tiny/resolve/main/sam2.1_hiera_tiny.pt"
     yolo26n_url: str = "https://huggingface.co/onnx-community/yolo26n-ONNX/resolve/main/onnx/model_fp16.onnx"
     yolo26s_url: str = "https://huggingface.co/onnx-community/yolo26s-ONNX/resolve/main/onnx/model_fp16.onnx"

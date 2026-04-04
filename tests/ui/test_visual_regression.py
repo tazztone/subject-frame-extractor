@@ -7,7 +7,7 @@ import pytest
 from playwright.sync_api import Page
 
 from .conftest import BASE_URL, open_accordion, switch_to_tab, wait_for_app_ready
-from .ui_locators import Labels, Selectors
+from .ui_locators import Labels
 
 try:
     from .visual_test_utils import capture_state_screenshot, compare_with_baseline, save_as_baseline
@@ -100,7 +100,7 @@ class TestUIStateConsistency:
 
         # Switch away and back
         switch_to_tab(page, Labels.TAB_SUBJECT)
-        switch_to_tab(page, Labels.TAB_METRICS) # Switch to a mid-flow tab
+        switch_to_tab(page, Labels.TAB_METRICS)  # Switch to a mid-flow tab
         switch_to_tab(page, Labels.TAB_SOURCE)
 
         # Capture return state

@@ -35,6 +35,11 @@ def app_ui(
             "propagate_masks_button": MagicMock(),
             "scene_filter_status": MagicMock(),
             "unified_status": MagicMock(),
+            "unified_log": MagicMock(),
+            "thumb_megapixels_input": MagicMock(),
+            "filtering_tab": MagicMock(),
+            "method_input": MagicMock(),
+            "source_input": MagicMock(),
         }
         app.ana_input_components = []
         return app
