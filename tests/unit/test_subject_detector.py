@@ -31,7 +31,7 @@ def mock_ort_session():
 
 
 def test_subject_detector_init(mock_logger, mock_ort_session):
-    with patch("core.managers.subject_detector.ort.InferenceSession", return_value=mock_ort_session):
+    with patch("core.managers.subject_detector.ort.InferenceSession", return_value=mock_ort_session, create=True):
         detector = SubjectDetector("dummy.onnx", mock_logger)
         assert detector.is_seg is True
         assert detector.total_dims == 116
@@ -49,7 +49,14 @@ def test_detect_filters_by_class_and_conf(mock_logger, mock_ort_session):
     preds[0, 5, 1] = 0.8  # Class 1 score
     proto = np.zeros((1, 32, 160, 160), dtype=np.float32)
     mock_ort_session.run.return_value = [preds, proto]
-    with patch("core.managers.subject_detector.ort.InferenceSession", return_value=mock_ort_session):
+    with (
+        patch("core.managers.subject_detector.ort.InferenceSession", return_value=mock_ort_session, create=True),
+        patch(
+            "cv2.resize",
+            side_effect=lambda x, d: np.zeros(d[::-1] + (3,), dtype=np.uint8) if len(d) == 2 else x,
+        ),
+        patch("cv2.cvtColor", side_effect=lambda x, c: x),
+    ):
         detector = SubjectDetector("dummy.onnx", mock_logger)
         frame = np.zeros((720, 1280, 3), dtype=np.uint8)
         # Detect person (class 0)
@@ -68,7 +75,7 @@ def test_postprocess_det_unscaling(mock_logger, mock_ort_session):
     preds[0, :4, 0] = [320, 320, 100, 100]
     preds[0, 4, 0] = 0.9
     mock_ort_session.run.return_value = [preds]
-    with patch("core.managers.subject_detector.ort.InferenceSession", return_value=mock_ort_session):
+    with patch("core.managers.subject_detector.ort.InferenceSession", return_value=mock_ort_session, create=True):
         detector = SubjectDetector("dummy.onnx", mock_logger)
         assert detector.is_seg is False
         frame = np.zeros((720, 1280, 3), dtype=np.uint8)
@@ -87,7 +94,13 @@ def test_postprocess_seg_mask_logic(mock_logger, mock_ort_session):
     proto = np.zeros((1, 32, 160, 160), dtype=np.float32)
     proto[0, 0, :, :] = 1.0
     mock_ort_session.run.return_value = [preds, proto]
-    with patch("core.managers.subject_detector.ort.InferenceSession", return_value=mock_ort_session):
+    with (
+        patch("core.managers.subject_detector.ort.InferenceSession", return_value=mock_ort_session, create=True),
+        patch(
+            "cv2.resize",
+            side_effect=lambda x, d: np.ones(d[::-1] + x.shape[2:], dtype=x.dtype),
+        ),
+    ):
         detector = SubjectDetector("dummy.onnx", mock_logger)
         frame = np.zeros((720, 1280, 3), dtype=np.uint8)
         results = detector.detect(frame)
@@ -109,7 +122,7 @@ def test_dynamic_class_splitting(mock_logger, mock_ort_session):
     preds[0, 14:, 0] = 5.0
     proto = np.zeros((1, 16, 160, 160), dtype=np.float32)
     mock_ort_session.run.return_value = [preds, proto]
-    with patch("core.managers.subject_detector.ort.InferenceSession", return_value=mock_ort_session):
+    with patch("core.managers.subject_detector.ort.InferenceSession", return_value=mock_ort_session, create=True):
         detector = SubjectDetector("dummy.onnx", mock_logger)
         frame = np.zeros((640, 640, 3), dtype=np.uint8)
         results = detector.detect(frame, target_class_id=9)
@@ -118,6 +131,6 @@ def test_dynamic_class_splitting(mock_logger, mock_ort_session):
 
 
 def test_close_releases_session(mock_logger, mock_ort_session):
-    with patch("core.managers.subject_detector.ort.InferenceSession", return_value=mock_ort_session):
+    with patch("core.managers.subject_detector.ort.InferenceSession", return_value=mock_ort_session, create=True):
         detector = SubjectDetector("dummy.onnx", mock_logger)
         detector.close()

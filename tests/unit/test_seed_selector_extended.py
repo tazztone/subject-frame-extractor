@@ -161,11 +161,10 @@ class TestSeedSelectorExtended:
 
     def test_get_mask_for_bbox_torch_oom(self, selector):
         """Test OOM handling in _get_mask_for_bbox."""
-        import torch
 
         with (
-            patch.object(torch.cuda, "is_available", return_value=True),
-            patch.object(torch.cuda, "empty_cache") as mock_empty,
+            patch("core.scene_utils.seed_selector.torch.cuda.is_available", return_value=True),
+            patch("core.scene_utils.seed_selector.torch.cuda.empty_cache") as mock_empty,
         ):
             selector.tracker.init_video.side_effect = RuntimeError("out of memory")
 

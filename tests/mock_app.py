@@ -42,7 +42,20 @@ def create_mock_module(name, attributes=None):
 
 # Mock Torch
 mock_torch = MagicMock(name="torch")
-mock_torch.cuda.is_available.return_value = False
+
+
+# Promote torch.cuda to a real ModuleType instance for stable patching
+mock_cuda = create_mock_module(
+    "torch.cuda",
+    {
+        "is_available": MagicMock(return_value=False),
+        "device_count": MagicMock(return_value=0),
+        "empty_cache": MagicMock(),
+        "synchronize": MagicMock(),
+    },
+)
+
+mock_torch.cuda = mock_cuda
 mock_torch.__version__ = "2.0.0"
 mock_torch.nn.Module = MagicMock
 mock_torch.Tensor = MagicMock
@@ -128,6 +141,26 @@ def mock_extraction_run(self, tracker=None):
     }
 
 
+def mock_extraction_execution(
+    event,
+    progress_queue,
+    cancel_event,
+    logger,
+    config,
+    model_registry,
+    thumbnail_manager=None,
+    cuda_available=None,
+    progress=None,
+    **kwargs,
+):
+    yield {
+        "done": True,
+        "output_dir": "/tmp/mock_extraction",
+        "video_path": "mock.mp4",
+        "unified_status": "Extraction Complete",
+    }
+
+
 def mock_pre_analysis_execution(
     event,
     progress_queue,
@@ -135,9 +168,9 @@ def mock_pre_analysis_execution(
     logger,
     config,
     thumbnail_manager,
+    model_registry,
     cuda_available,
     progress=None,
-    model_registry=None,
     loaded_models=None,
     **kwargs,
 ):
@@ -169,9 +202,10 @@ def mock_propagation_execution(
     logger,
     config,
     thumbnail_manager,
+    model_registry,
+    database,
     cuda_available,
     progress=None,
-    model_registry=None,
     loaded_models=None,
     **kwargs,
 ):
@@ -190,9 +224,10 @@ def mock_analysis_execution(
     logger,
     config,
     thumbnail_manager,
+    model_registry,
+    database,
     cuda_available,
     progress=None,
-    model_registry=None,
     loaded_models=None,
     **kwargs,
 ):
@@ -340,8 +375,12 @@ def build_mock_app(downloads_dir=None):
     cancel_event = MagicMock()
     thumbnail_manager = MagicMock()
     model_registry = MagicMock()
+    database = MagicMock()
+    database.set_db_path = MagicMock()
 
-    app_instance = ui.app_ui.AppUI(config, logger, progress_queue, cancel_event, thumbnail_manager, model_registry)
+    app_instance = ui.app_ui.AppUI(
+        config, logger, progress_queue, cancel_event, thumbnail_manager, model_registry, database
+    )
 
     # 3. Instance-level patches for handlers (CRITICAL for component alignment)
     # We use __get__ to bind the function as a method to the instance

@@ -5,7 +5,13 @@ import gradio as gr
 
 from core.application_state import ApplicationState
 from core.events import ExtractionEvent, PropagationEvent, SessionLoadEvent
-from core.models import PreAnalysisResult, Scene
+from core.models import Scene
+from core.pipeline_results import (
+    AnalysisResult,
+    ExtractionResult,
+    PreAnalysisResult,
+    PropagationResult,
+)
 from core.pipelines import (
     execute_analysis,
     execute_extraction,
@@ -63,22 +69,23 @@ class PipelineHandler:
                 current_state = cast(ApplicationState, update[self.app.components["application_state"]])
             yield update
 
-    def _on_extraction_success(self, result: dict, current_state: ApplicationState) -> dict:
+    def _on_extraction_success(self, result_dict: dict, current_state: ApplicationState) -> dict:
         """Callback for successful extraction."""
+        result = ExtractionResult(**result_dict)
         new_state = current_state.model_copy()
-        new_state.extracted_video_path = result.get("extracted_video_path_state", "")
-        new_state.extracted_frames_dir = result["extracted_frames_dir_state"]
+        new_state.extracted_video_path = result.extracted_video_path_state
+        new_state.extracted_frames_dir = result.extracted_frames_dir_state
 
         msg = f"""<div class="success-card">
         <h3>Extraction Complete</h3>
-        <p>Frames extracted to: <code>{result["extracted_frames_dir_state"]}</code></p>
+        <p>Frames extracted to: <code>{result.extracted_frames_dir_state}</code></p>
         <p><strong>Moving to next step automatically...</strong></p>
         </div>"""
 
         return {
             self.app.components["application_state"]: new_state,
             self.app.components["unified_status"]: msg,
-            self.app.components["unified_log"]: result.get("unified_log", "Extraction Complete."),
+            self.app.components["unified_log"]: result.unified_log or "Extraction Complete.",
             self.app.components["main_tabs"]: gr.update(selected=1),
         }
 
@@ -153,11 +160,10 @@ class PipelineHandler:
             self.app.components["unified_log"]: result.unified_log,
         }
 
-        # Include explicit UI updates from the pipeline result
-        if result.seeding_results_column:
-            updates[self.app.components["seeding_results_column"]] = result.seeding_results_column
-        if result.propagation_group:
-            updates[self.app.components["propagation_group"]] = result.propagation_group
+        # Include explicit UI updates from the pipeline result signaling
+        if result.show_results:
+            updates[self.app.components["seeding_results_column"]] = gr.update(visible=True)
+            updates[self.app.components["propagation_group"]] = gr.update(visible=True)
 
         # These specific components must be visible for the next step
         updates[self.app.components["propagate_masks_button"]] = button_update
@@ -196,13 +202,14 @@ class PipelineHandler:
             lambda res: self._on_propagation_success(res, current_state),
         )
 
-    def _on_propagation_success(self, result: dict, current_state: ApplicationState) -> dict:
+    def _on_propagation_success(self, result_dict: dict, current_state: ApplicationState) -> dict:
         """Callback for successful propagation."""
-        msg = """<div class="success-card"><h3>Mask Propagation Complete</h3></div>"""
+        result = PropagationResult(**result_dict)
+        msg = f"""<div class="success-card"><h3>Mask Propagation Complete</h3><p>Generated {result.mask_count} masks.</p></div>"""
         return {
             self.app.components["application_state"]: current_state,
             self.app.components["unified_status"]: msg,
-            self.app.components["unified_log"]: result.get("unified_log", "Propagation Complete."),
+            self.app.components["unified_log"]: result.unified_log or "Propagation Complete.",
         }
 
     @safe_ui_callback("Analysis")
@@ -223,11 +230,12 @@ class PipelineHandler:
             lambda res: self._on_analysis_success(res, current_state),
         )
 
-    def _on_analysis_success(self, result: dict, current_state: ApplicationState) -> dict:
+    def _on_analysis_success(self, result_dict: dict, current_state: ApplicationState) -> dict:
         """Callback for successful analysis."""
+        result = AnalysisResult(**result_dict)
         new_state = current_state.model_copy()
-        new_state.analysis_metadata_path = result["metadata_path"]
-        output_dir = str(Path(result["metadata_path"]).parent)
+        new_state.analysis_metadata_path = result.metadata_path
+        output_dir = result.output_dir
         new_state.analysis_output_dir = output_dir
         self.app._save_session_log(output_dir)
 
@@ -235,7 +243,7 @@ class PipelineHandler:
         return {
             self.app.components["application_state"]: new_state,
             self.app.components["unified_status"]: msg,
-            self.app.components["unified_log"]: result.get("unified_log", "Analysis Complete."),
+            self.app.components["unified_log"]: result.unified_log or "Analysis Complete.",
             # Explicitly enable export controls — data loads lazily when the Export tab is selected.
             # Do NOT gate these on all_frames_data; it is always empty at this point.
             self.app.components["filtering_tab"]: gr.update(interactive=True),

@@ -9,10 +9,18 @@ import math
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
-import cv2
-from PIL import Image
-from scenedetect import VideoOpenFailure, detect
-from scenedetect.detectors import ContentDetector
+try:
+    from scenedetect import VideoOpenFailure, detect
+    from scenedetect.detectors import ContentDetector
+except ImportError:
+    # We define it locally if scenedetect is missing to avoid NameError in except blocks
+    class VideoOpenFailure(Exception):
+        pass
+
+    detect = None
+    ContentDetector = None
+
+# Heavy imports moved to methods for lazy loading
 
 if TYPE_CHECKING:
     from core.config import Config
@@ -36,6 +44,9 @@ def run_scene_detection(video_path: str, output_dir: Path, logger: "AppLogger") 
     """
     logger.info("Detecting scenes...", component="video")
     try:
+        if detect is None or ContentDetector is None:
+            raise ImportError("PySceneDetect not installed")
+
         # TODO: Make ContentDetector threshold configurable
         scene_list = detect(str(video_path), ContentDetector())
         shots = [(s.get_frames(), e.get_frames()) for s, e in scene_list] if scene_list else []
@@ -43,6 +54,9 @@ def run_scene_detection(video_path: str, output_dir: Path, logger: "AppLogger") 
             json.dump(shots, f)
         logger.success(f"Found {len(shots)} scenes.", component="video")
         return shots
+    except ImportError:
+        logger.error("PySceneDetect not installed, scene detection unavailable.", component="video")
+        return []
     except FileNotFoundError:
         logger.error(f"Video file not found: {video_path}", component="video")
         return []
@@ -84,6 +98,8 @@ def make_photo_thumbs(
     thumbs_dir.mkdir(parents=True, exist_ok=True)
     target_area = params.thumb_megapixels * 1_000_000
     frame_map, image_manifest = {}, {}
+    import cv2
+    from PIL import Image
 
     if tracker:
         tracker.start(len(image_paths), desc="Generating thumbnails")

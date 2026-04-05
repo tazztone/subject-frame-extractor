@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.models import PreAnalysisResult
+from core.pipeline_results import PreAnalysisResult
 from ui.app_ui import ApplicationState, AppUI
 
 
@@ -37,6 +37,7 @@ class TestAppUIHandlers:
         mock_model_registry,
         mock_progress_queue,
         mock_cancel_event,
+        mock_database,
     ):
         """Create an AppUI instance for testing."""
         app = AppUI(
@@ -46,6 +47,7 @@ class TestAppUIHandlers:
             cancel_event=mock_cancel_event,
             thumbnail_manager=mock_thumbnail_manager,
             model_registry=mock_model_registry,
+            database=mock_database,
         )
         # Manually initialize critical components for testing
         app.components["application_state"] = MagicMock()

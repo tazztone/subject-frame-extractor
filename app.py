@@ -25,6 +25,7 @@ from queue import Queue
 import torch
 
 from core.config import Config
+from core.database import Database
 from core.logger import AppLogger, setup_logging
 from core.managers import ModelRegistry, ThumbnailManager
 from ui.app_ui import AppUI
@@ -86,6 +87,7 @@ def main():
         config.debug = args.debug  # Sync CLI flag to config
         model_registry = ModelRegistry(logger=logger)
         thumbnail_manager = ThumbnailManager(logger, config)
+        database = Database(logger=logger)
         cancel_event = threading.Event()
 
         app_ui = AppUI(
@@ -95,6 +97,7 @@ def main():
             cancel_event,
             thumbnail_manager,
             model_registry,
+            database,
             debug_mode=args.debug,
         )
 

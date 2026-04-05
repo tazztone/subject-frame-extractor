@@ -10,7 +10,13 @@ from ui.app_ui import AppUI
 
 @pytest.fixture
 def app_ui(
-    mock_config, mock_logger, mock_progress_queue, mock_cancel_event, mock_thumbnail_manager, mock_model_registry
+    mock_config,
+    mock_logger,
+    mock_progress_queue,
+    mock_cancel_event,
+    mock_thumbnail_manager,
+    mock_model_registry,
+    mock_database,
 ):
     with patch("ui.app_ui.AppUI.preload_models"):
         app = AppUI(
@@ -20,6 +26,7 @@ def app_ui(
             mock_cancel_event,
             mock_thumbnail_manager,
             mock_model_registry,
+            mock_database,
         )
         app.components = {
             "face_seeding_group": MagicMock(),

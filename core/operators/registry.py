@@ -138,18 +138,16 @@ def discover_operators(package_path: str = "core.operators") -> list[str]:
         return []
 
     if hasattr(package, "__path__"):
-        for importer, modname, ispkg in pkgutil.iter_modules(package.__path__):
-            # Skip infrastructure modules to avoid circular imports or re-registration loops
-            if modname not in ("base", "registry", "__init__"):
-                try:
-                    full_modname = f"{package_path}.{modname}"
-                    if full_modname in sys.modules:
-                        importlib.reload(sys.modules[full_modname])
-                    else:
-                        importlib.import_module(full_modname)
-                except Exception as e:
-                    # Log error but continue discovery
-                    logger.error(f"Failed to discover operator in {modname}: {e}")
+        for _, modname, _ in pkgutil.iter_modules(package.__path__):
+            # Skip infrastructure modules
+            if modname in ("base", "registry", "__init__", "viz"):
+                continue
+            try:
+                full_modname = f"{package_path}.{modname}"
+                if full_modname not in sys.modules:
+                    importlib.import_module(full_modname)
+            except Exception as e:
+                logger.error(f"Failed to discover operator in {modname}: {e}")
 
     return OperatorRegistry.list_names()
 

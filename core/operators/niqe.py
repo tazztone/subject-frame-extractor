@@ -1,4 +1,4 @@
-import torch
+# Lazy torch import in execute
 
 from core.operators import OperatorConfig, OperatorContext, OperatorResult, register_operator
 
@@ -33,9 +33,13 @@ class NiqeOperator:
     def cleanup(self):
         self.model = None
         if self.device == "cuda":
+            import torch
+
             torch.cuda.empty_cache()
 
     def execute(self, ctx: OperatorContext) -> OperatorResult:
+        import torch
+
         if self.model is None:
             return OperatorResult(error="NIQE not initialized or pyiqa missing")
 

@@ -89,6 +89,14 @@ class TestAppLogger:
 
     def test_apply_all_filters_with_face_and_mask(self, sample_frames_data, mock_config):
         """Verify filtering by face similarity and mask area."""
+        # Enrich sample data with face_sim and mask_area for this test
+        sample_frames_data[0]["face_sim"] = 0.8
+        sample_frames_data[0]["mask_area_pct"] = 20.0
+        sample_frames_data[1]["face_sim"] = 0.2  # too low
+        sample_frames_data[1]["mask_area_pct"] = 20.0
+        sample_frames_data[2]["face_sim"] = 0.8
+        sample_frames_data[2]["mask_area_pct"] = 5.0  # too low
+
         filters = {
             "face_sim_enabled": True,
             "face_sim_min": 0.5,
@@ -100,9 +108,9 @@ class TestAppLogger:
         kept_filenames = {f["filename"] for f in kept}
         rejected_filenames = {f["filename"] for f in rejected}
 
-        assert "frame_01.png" in kept_filenames
-        assert "frame_04.png" in rejected_filenames  # face_sim too low
-        assert "frame_05.png" in rejected_filenames  # mask_area_pct too low
+        assert "frame_0000.jpg" in kept_filenames
+        assert "frame_0001.jpg" in rejected_filenames  # face_sim too low
+        assert "frame_0002.jpg" in rejected_filenames  # mask_area_pct too low
 
 
 class TestPreAnalysisEvent:

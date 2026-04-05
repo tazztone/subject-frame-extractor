@@ -22,7 +22,7 @@ def test_execute_extraction(mock_pipeline_cls, mock_config, mock_logger):
         scene_detect=False,
     )
 
-    results = list(execute_extraction(event, Queue(), threading.Event(), mock_logger, mock_config))
+    results = list(execute_extraction(event, Queue(), threading.Event(), mock_logger, mock_config, MagicMock()))
     assert results[-1]["done"] is True
     assert results[-1]["extracted_frames_dir_state"] == "/tmp/out"
 
@@ -49,7 +49,9 @@ def test_execute_pre_analysis(mock_load, mock_pipeline_cls, mock_config, mock_lo
     # We need to mock gr.update for gradio
     with patch("gradio.update", return_value=None):
         results = list(
-            execute_pre_analysis(event, Queue(), threading.Event(), mock_logger, mock_config, MagicMock(), False)
+            execute_pre_analysis(
+                event, Queue(), threading.Event(), mock_logger, mock_config, MagicMock(), MagicMock(), False
+            )
         )
         assert results[-1]["done"] is True
 
@@ -76,7 +78,11 @@ def test_execute_propagation(mock_vinfo, mock_load, mock_pipeline_cls, mock_conf
     )
     event = PropagationEvent(scenes=[], analysis_params=mock_params, output_folder=str(tmp_path), video_path="test.mp4")
 
-    results = list(execute_propagation(event, Queue(), threading.Event(), mock_logger, mock_config, MagicMock(), False))
+    results = list(
+        execute_propagation(
+            event, Queue(), threading.Event(), mock_logger, mock_config, MagicMock(), MagicMock(), MagicMock(), False
+        )
+    )
     assert results[-1]["done"] is True
 
 
@@ -101,5 +107,9 @@ def test_execute_analysis(mock_load, mock_pipeline_cls, mock_config, mock_logger
     )
     event = PropagationEvent(scenes=[], analysis_params=mock_params, output_folder=str(tmp_path), video_path="test.mp4")
 
-    results = list(execute_analysis(event, Queue(), threading.Event(), mock_logger, mock_config, MagicMock(), False))
+    results = list(
+        execute_analysis(
+            event, Queue(), threading.Event(), mock_logger, mock_config, MagicMock(), MagicMock(), MagicMock(), False
+        )
+    )
     assert results[-1]["done"] is True

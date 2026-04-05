@@ -4,7 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from core.application_state import ApplicationState
-from core.models import PreAnalysisResult
+from core.pipeline_results import PreAnalysisResult
 from tests.mock_app import mock_extraction_wrapper, mock_pre_analysis_wrapper
 
 
@@ -77,11 +77,11 @@ def test_pre_analysis_result_validation():
     result = PreAnalysisResult(**valid_data)
     assert result.unified_log == "Success"
 
-    # Assert missing required field raises ValidationError
+    # Assert missing optional fields (like scenes) uses default
     invalid_data = valid_data.copy()
     del invalid_data["scenes"]
-    with pytest.raises(ValidationError):
-        PreAnalysisResult(**invalid_data)
+    result2 = PreAnalysisResult(**invalid_data)
+    assert result2.scenes == []
 
     # Assert invalid type raises ValidationError
     invalid_data = valid_data.copy()

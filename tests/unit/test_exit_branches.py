@@ -50,7 +50,7 @@ class TestExitBranches:
     # --- SAM2 Wrapper ---
     def test_sam2_wrapper_init_failure(self, mock_config):
         """Test SAM2Wrapper initialization failure handling."""
-        with patch("core.managers.sam2.build_sam2_video_predictor", side_effect=RuntimeError("build failed")):
+        with patch("sam2.build_sam.build_sam2_video_predictor", side_effect=RuntimeError("build failed")):
             with pytest.raises(RuntimeError, match="build failed"):
                 SAM2Wrapper(checkpoint_path="missing.pt", device="cpu")
 

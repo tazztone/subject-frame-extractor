@@ -11,7 +11,9 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-import torch
+
+# We lazy-import torch inside functions to avoid top-level import during conftest initialization
+# which can bypass early sys.modules mocking in parallel workers.
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +24,8 @@ SAM3_PREDICTOR_HASH = "645a1f21b3258e54d93b30c66bf7627c4af9de23571a5ceb9a060d7f0
 
 def edt_triton_fallback(data):
     """OpenCV-based fallback for Euclidean Distance Transform when Triton unavailable"""
+    import torch
+
     assert data.dim() == 3
     device = data.device
     data_cpu = data.cpu().numpy().astype(np.uint8)
@@ -54,6 +58,8 @@ def connected_components_fallback(input_tensor):
             counts[cur_mask] = cur_mask.sum()
         labels_list.append(labels)
         counts_list.append(counts)
+
+    import torch
 
     labels_tensor = torch.from_numpy(np.stack(labels_list)).unsqueeze(1).to(device)
     counts_tensor = torch.from_numpy(np.stack(counts_list)).unsqueeze(1).to(device)
@@ -92,6 +98,8 @@ def patch_sam3_dtype():
         original_build_model = mb.build_sam3_video_model  # type: ignore
 
         def build_sam3_video_model_patched(*args, **kwargs):
+            import torch
+
             model = original_build_model(*args, **kwargs)
             # Ensure model is float32
             if hasattr(model, "to"):
@@ -116,6 +124,8 @@ def patch_sam3_dtype():
             original_predictor_init(self, *args, **kwargs)
 
             # After init, ensure the model is indeed float32 and on the right device
+            import torch
+
             if hasattr(self, "model") and hasattr(self.model, "to"):
                 self.model = self.model.to(device="cuda", dtype=torch.float32)
 
@@ -188,6 +198,7 @@ def patch_sam3_bf16_stability():
     correctly when autocast is disabled.
     """
     try:
+        import torch
         from sam3.model.decoder import TransformerDecoderLayer  # type: ignore
 
         original_forward_ffn = TransformerDecoderLayer.forward_ffn  # type: ignore
@@ -238,6 +249,8 @@ def patch_sam3_detect_objects():
 
         # Patch the base handle_request to support the new type
         original_handle_request = Sam3BasePredictor.handle_request  # type: ignore
+
+        import torch
 
         @torch.inference_mode()
         def handle_request_patched(self, request):

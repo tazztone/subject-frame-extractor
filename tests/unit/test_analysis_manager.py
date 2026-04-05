@@ -26,6 +26,7 @@ def mock_deps():
         "cancel_event": threading.Event(),
         "thumbnail_manager": MagicMock(),
         "model_registry": MagicMock(),
+        "mock_database": MagicMock(),
     }
 
 
@@ -228,7 +229,7 @@ def test_analysis_run_resume_logic(mock_db, mock_init_models, mock_deps, analysi
         assert passed_scenes[0].shot_id == 2
 
 
-@patch("core.managers.analysis.cv2.imread")
+@patch("cv2.imread")
 @patch("core.managers.analysis.initialize_analysis_models")
 @patch("core.managers.analysis.Database")
 def test_process_reference_face_logic(mock_db, mock_init_models, mock_imread, mock_deps, analysis_params, tmp_path):
@@ -287,7 +288,7 @@ def test_process_single_frame_complex_meta(mock_db, mock_run_ops, mock_deps, ana
     mock_op_res = MagicMock(success=True, metrics={"sharpness": 0.5}, data={})
     mock_run_ops.return_value = {"sharpness": mock_op_res}
 
-    with patch("core.managers.analysis.cv2.imread", return_value=np.zeros((10, 10), dtype=np.uint8)):
+    with patch("cv2.imread", return_value=np.zeros((10, 10), dtype=np.uint8)):
         pipeline._process_single_frame(Path("frame_000001.webp"), {"sharpness": True})
 
     assert pipeline.db.insert_metadata.called
@@ -322,7 +323,7 @@ def test_process_single_frame_face_analysis_failure(mock_db, mock_deps, analysis
     img_path = Path("frame_000001.webp")
     mock_deps["thumbnail_manager"].get.return_value = np.zeros((10, 10, 3), dtype=np.uint8)
 
-    with patch("core.managers.analysis.cv2.imread", return_value=np.zeros((10, 10), dtype=np.uint8)):
+    with patch("cv2.imread", return_value=np.zeros((10, 10), dtype=np.uint8)):
         pipeline._process_single_frame(img_path, {})
 
     # Verify logger was called
@@ -549,8 +550,8 @@ def test_process_single_frame_metadata_assembly(mock_db, mock_deps, analysis_par
 
     with (
         patch("core.managers.analysis.run_operators") as mock_run,
-        patch("core.managers.analysis.cv2.imread", return_value=np.zeros((10, 10))),
-        patch("core.managers.analysis.cv2.resize", return_value=np.zeros((10, 10))),
+        patch("cv2.imread", return_value=np.zeros((10, 10))),
+        patch("cv2.resize", return_value=np.zeros((10, 10))),
     ):
         mock_res = MagicMock()
         mock_res.success = True
@@ -653,6 +654,8 @@ def test_process_single_frame_edge_cases(mock_db, mock_deps, analysis_params, tm
         pipeline._process_single_frame(Path("frame_000001.webp"), {})
 
     # Face analysis fails
+    # Ensure thumbnail_manager returns a valid image so we don't exit early
+    mock_deps["thumbnail_manager"].get.return_value = np.zeros((100, 100, 3), dtype=np.uint8)
     analysis_params.compute_face_sim = True
     pipeline.face_analyzer = MagicMock()
     pipeline.face_analyzer.get.side_effect = Exception("Face Fail")

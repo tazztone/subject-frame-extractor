@@ -2,11 +2,10 @@ from collections import defaultdict
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 
-import cv2
 import numpy as np
-import torch
-from skimage.metrics import structural_similarity as ssim
-from torchvision import transforms
+
+# Heavy imports moved to methods for lazy loading
+# torch, torchvision, cv2, skimage, imagehash
 
 if TYPE_CHECKING:
     from core.config import Config
@@ -24,9 +23,11 @@ def _run_batched_lpips(
     output_dir: str,
     threshold: float,
     device: str = "cpu",
-):
+) -> None:
     if not pairs:
         return
+    from torchvision import transforms
+
     loss_fn = get_lpips_metric(device=device)
     transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
     batch_size = 32
@@ -43,6 +44,8 @@ def _run_batched_lpips(
                 valid_indices.append((p_idx, c_idx))
         if not valid_indices:
             continue
+        import torch
+
         img1_t, img2_t = torch.stack(img1_batch).to(device), torch.stack(img2_batch).to(device)
         with torch.no_grad():
             distances_t: torch.Tensor = loss_fn.forward(img1_t, img2_t).squeeze()  # type: ignore
@@ -70,6 +73,7 @@ def apply_deduplication_filter(
     config: "Config",
     output_dir: Optional[str],
 ) -> Tuple[np.ndarray, Dict[str, List[str]]]:
+    # Lazy import of heavy lib
     import imagehash
 
     num_frames = len(all_frames_data)
@@ -120,6 +124,9 @@ def apply_deduplication_filter(
                 if not is_duplicate:
                     kept_hash_matrix[kept_count], kept_indices[kept_count], kept_count = curr_hash, i, kept_count + 1
         elif dedup_method == "SSIM" and thumbnail_manager:
+            import cv2
+            from skimage.metrics import structural_similarity as ssim
+
             threshold = filters.get("ssim_threshold", 0.95)
 
             def compare_fn(i1, i2):
@@ -127,6 +134,8 @@ def apply_deduplication_filter(
 
             _generic_dedup(all_frames_data, dedup_mask, reasons, thumbnail_manager, output_dir, compare_fn)
         elif dedup_method == "LPIPS" and thumbnail_manager and output_dir:
+            import torch
+
             sorted_indices = sorted(range(num_frames), key=lambda i: filenames[i])
             pairs = [(sorted_indices[i - 1], sorted_indices[i]) for i in range(1, len(sorted_indices))]
             _run_batched_lpips(
@@ -169,6 +178,8 @@ def apply_deduplication_filter(
                 if not is_duplicate:
                     kept_hash_matrix[kept_count], kept_indices[kept_count], kept_count = curr_hash, i, kept_count + 1
             if p_hash_duplicates:
+                import torch
+
                 _run_batched_lpips(
                     p_hash_duplicates,
                     all_frames_data,

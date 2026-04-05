@@ -165,6 +165,7 @@ class TestMockAppSyncValidation:
 
         sync_targets = [
             (core.pipelines.ExtractionPipeline._run_impl, mock_app.mock_extraction_run),
+            (core.pipelines.execute_extraction, mock_app.mock_extraction_execution),
             (core.pipelines.execute_pre_analysis, mock_app.mock_pre_analysis_execution),
             (core.pipelines.execute_propagation, mock_app.mock_propagation_execution),
             (core.pipelines.execute_analysis, mock_app.mock_analysis_execution),
@@ -196,6 +197,30 @@ class TestMockAppSyncValidation:
                     if p == "self":
                         continue
                     assert p in real_params, f"Mock {mock_fn.__name__} has extra parameter: {p}"
+
+
+class TestAestheticIntegrity:
+    """Verify code structure avoids leakage between layers."""
+
+    def test_no_top_level_gradio_in_pipelines(self):
+        """core/pipelines.py should not import gradio at the top level."""
+        import ast
+        from pathlib import Path
+
+        pipelines_path = Path("core/pipelines.py")
+        if not pipelines_path.exists():
+            pytest.skip("core/pipelines.py not found")
+
+        tree = ast.parse(pipelines_path.read_text())
+        for node in tree.body:
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                # Check for 'import gradio'
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        assert alias.name != "gradio", "core/pipelines.py has top-level 'import gradio'"
+                # Check for 'from gradio import ...'
+                if isinstance(node, ast.ImportFrom):
+                    assert node.module != "gradio", "core/pipelines.py has top-level 'from gradio import ...'"
 
 
 if __name__ == "__main__":

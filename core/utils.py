@@ -1,11 +1,8 @@
 from __future__ import annotations
 
 import contextlib
-import functools
 import gc
-import inspect
-import traceback
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import numpy as np
 import torch
@@ -51,6 +48,8 @@ if TYPE_CHECKING:
     from core.models import AnalysisParameters, Scene
 
 # Re-export from specialized modules for backward compatibility
+# Re-export handle_common_errors for backward compatibility
+from core.error_handling import handle_common_errors  # noqa: F401
 from core.image_utils import (  # noqa: F401
     draw_bbox,
     postprocess_mask,
@@ -66,125 +65,6 @@ from core.io_utils import (  # noqa: F401
     sanitize_filename,
     validate_video_file,
 )
-
-
-def handle_common_errors(func: Callable) -> Callable:
-    """Decorator to catch common exceptions and return a standardized error dictionary or yield it if a generator."""
-
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        is_gen = inspect.isgeneratorfunction(func)
-
-        # Try to find logger in args or kwargs
-        logger = kwargs.get("logger")
-        if not logger:
-            for arg in args:
-                if hasattr(arg, "critical") and hasattr(arg, "error"):
-                    logger = arg
-                    break
-
-        if is_gen:
-
-            def gen_wrapper():
-                try:
-                    yield from func(*args, **kwargs)
-                except FileNotFoundError as e:
-                    msg = f"File not found: {e}"
-                    if logger:
-                        logger.error(msg)
-                    yield {
-                        "log": f"[ERROR] {msg}",
-                        "status_message": "File not found",
-                        "error_message": str(e),
-                        "done": False,
-                    }
-                except (ValueError, TypeError) as e:
-                    msg = f"Invalid input: {e}"
-                    if logger:
-                        logger.error(msg)
-                    yield {
-                        "log": f"[ERROR] {msg}",
-                        "status_message": "Invalid input",
-                        "error_message": str(e),
-                        "done": False,
-                    }
-                except RuntimeError as e:
-                    if "CUDA out of memory" in str(e):
-                        msg = "CUDA OOM"
-                        if logger:
-                            logger.error(msg)
-                        yield {
-                            "log": f"[ERROR] {msg}",
-                            "status_message": "GPU memory error",
-                            "error_message": "CUDA out of memory",
-                            "done": False,
-                        }
-                    else:
-                        msg = f"Runtime error: {e}"
-                        if logger:
-                            logger.error(msg)
-                        yield {
-                            "log": f"[ERROR] {msg}",
-                            "status_message": "Processing error",
-                            "error_message": str(e),
-                            "done": False,
-                        }
-                except Exception as e:
-                    import traceback
-
-                    msg = f"Unexpected error: {e}\n{traceback.format_exc()}"
-                    if logger:
-                        logger.critical(msg)
-                    else:
-                        print(f"CRITICAL: {msg}")
-                    yield {
-                        "log": f"[CRITICAL] {msg}",
-                        "status_message": "Critical error",
-                        "error_message": str(e),
-                        "done": False,
-                    }
-
-            return gen_wrapper()
-
-        try:
-            return func(*args, **kwargs)
-        except FileNotFoundError as e:
-            return {
-                "log": f"[ERROR] File not found: {e}",
-                "status_message": "File not found",
-                "error_message": str(e),
-                "done": False,
-            }
-        except (ValueError, TypeError) as e:
-            return {
-                "log": f"[ERROR] Invalid input: {e}",
-                "status_message": "Invalid input",
-                "error_message": str(e),
-                "done": False,
-            }
-        except RuntimeError as e:
-            if "CUDA out of memory" in str(e):
-                return {
-                    "log": "[ERROR] CUDA OOM",
-                    "status_message": "GPU memory error",
-                    "error_message": "CUDA out of memory",
-                    "done": False,
-                }
-            return {
-                "log": f"[ERROR] Runtime error: {e}",
-                "status_message": "Processing error",
-                "error_message": str(e),
-                "done": False,
-            }
-        except Exception as e:
-            return {
-                "log": f"[CRITICAL] Unexpected error: {e}\n{traceback.format_exc()}",
-                "status_message": "Critical error",
-                "error_message": str(e),
-                "done": False,
-            }
-
-    return wrapper
 
 
 def monitor_memory_usage(logger: "AppLogger", device: str, threshold_mb: int = 8000):

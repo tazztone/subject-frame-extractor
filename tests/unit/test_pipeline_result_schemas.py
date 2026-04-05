@@ -30,7 +30,15 @@ def test_execute_analysis_schema():
                     mock_init.return_value = mock_pipe
 
                     gen = execute_analysis(
-                        event, MagicMock(), threading.Event(), MagicMock(), MagicMock(), MagicMock(), True
+                        event,
+                        MagicMock(),
+                        threading.Event(),
+                        MagicMock(),
+                        MagicMock(),
+                        MagicMock(),  # thumbnail_manager
+                        MagicMock(),  # model_registry
+                        MagicMock(),  # database
+                        True,  # cuda_available
                     )
 
                     results = list(gen)

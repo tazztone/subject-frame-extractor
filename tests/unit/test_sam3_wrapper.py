@@ -102,8 +102,8 @@ class TestSAM3WrapperMethodBehavior:
         original_predictor.shutdown = MagicMock()
 
         with (
-            patch("core.managers.sam3.torch.cuda.is_available", return_value=True, create=True),
-            patch("core.managers.sam3.torch.cuda.empty_cache") as mock_empty_cache,
+            patch("torch.cuda.is_available", return_value=True, create=True),
+            patch("torch.cuda.empty_cache", create=True) as mock_empty_cache,
             patch.object(sam3_unit, "close_session", wraps=sam3_unit.close_session) as mock_close_session,
         ):
             sam3_unit.shutdown()

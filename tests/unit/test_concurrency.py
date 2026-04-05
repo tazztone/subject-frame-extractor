@@ -86,7 +86,7 @@ def test_analysis_pipeline_concurrency(tmp_path):
     tm = MagicMock()
     registry = MagicMock()
 
-    with patch("core.managers.analysis.Database") as mock_db_cls, patch("core.managers.analysis.OperatorRegistry"):
+    with patch("core.managers.analysis.Database") as mock_db_cls, patch("core.operators.registry.OperatorRegistry"):
         pipeline = AnalysisPipeline(config, logger, params, Queue(), threading.Event(), tm, registry)
         pipeline.db = mock_db_cls.return_value
         pipeline.face_analyzer = MagicMock()
@@ -103,7 +103,7 @@ def test_analysis_pipeline_concurrency(tmp_path):
 
         with (
             patch("core.managers.analysis.run_operators") as mock_run_ops,
-            patch("core.managers.analysis.cv2.cvtColor"),
+            patch("cv2.cvtColor"),
         ):
             mock_run_ops.return_value = {}  # Mock results
 

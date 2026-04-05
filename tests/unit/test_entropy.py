@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 import numpy as np
 
 from core.operators.base import OperatorContext
@@ -11,7 +13,14 @@ def test_entropy_solid_color():
     img = np.zeros((100, 100, 3), dtype=np.uint8)
     ctx = OperatorContext(image_rgb=img)
 
-    result = op.execute(ctx)
+    # Mock calcHist to return a single peak (0 entropy)
+    hist = np.zeros((256, 1), dtype=np.float32)
+    hist[0, 0] = 10000.0
+    with (
+        patch("core.operators.entropy.cv2.cvtColor", side_effect=lambda x, c: x.mean(axis=2).astype(np.uint8)),
+        patch("core.operators.entropy.cv2.calcHist", return_value=hist),
+    ):
+        result = op.execute(ctx)
     assert result.success
     assert result.metrics["entropy"] == 0.0
     assert result.metrics["entropy_score"] == 0.0
@@ -26,7 +35,13 @@ def test_entropy_random_noise():
     img = np.random.randint(0, 256, (100, 100, 3), dtype=np.uint8)
     ctx = OperatorContext(image_rgb=img)
 
-    result = op.execute(ctx)
+    # Mock calcHist to return a flat distribution (max entropy)
+    hist = np.full((256, 1), 10000.0 / 256.0, dtype=np.float32)
+    with (
+        patch("core.operators.entropy.cv2.cvtColor", side_effect=lambda x, c: x.mean(axis=2).astype(np.uint8)),
+        patch("core.operators.entropy.cv2.calcHist", return_value=hist),
+    ):
+        result = op.execute(ctx)
     assert result.success
     # Shannon entropy for uniform 0-255 is approx 8.0.
     # Our mapping is entropy / 8.0 * 100.0.
@@ -47,7 +62,13 @@ def test_entropy_with_mask():
     mask[:, :50] = 255
 
     ctx = OperatorContext(image_rgb=img, mask=mask)
-    result = op.execute(ctx)
+    hist_solid = np.zeros((256, 1), dtype=np.float32)
+    hist_solid[0, 0] = 5000.0
+    with (
+        patch("core.operators.entropy.cv2.cvtColor", side_effect=lambda x, c: x.mean(axis=2).astype(np.uint8)),
+        patch("core.operators.entropy.cv2.calcHist", return_value=hist_solid),
+    ):
+        result = op.execute(ctx)
     assert result.success
     assert result.metrics["entropy"] < 0.1  # Should be near 0 because it's mostly solid
 
@@ -55,7 +76,12 @@ def test_entropy_with_mask():
     mask_noisy = np.zeros((100, 100), dtype=np.uint8)
     mask_noisy[:, 50:] = 255
     ctx_noisy = OperatorContext(image_rgb=img, mask=mask_noisy)
-    result_noisy = op.execute(ctx_noisy)
+    hist_noisy = np.full((256, 1), 5000.0 / 256.0, dtype=np.float32)
+    with (
+        patch("core.operators.entropy.cv2.cvtColor", side_effect=lambda x, c: x.mean(axis=2).astype(np.uint8)),
+        patch("core.operators.entropy.cv2.calcHist", return_value=hist_noisy),
+    ):
+        result_noisy = op.execute(ctx_noisy)
     assert result_noisy.success
     assert result_noisy.metrics["entropy"] > 0.9
 
@@ -69,7 +95,12 @@ def test_entropy_empty_mask():
     mask[0, 0:10] = 255
 
     ctx = OperatorContext(image_rgb=img, mask=mask)
-    result = op.execute(ctx)
+    hist = np.full((256, 1), 10000.0 / 256.0, dtype=np.float32)
+    with (
+        patch("core.operators.entropy.cv2.cvtColor", side_effect=lambda x, c: x.mean(axis=2).astype(np.uint8)),
+        patch("core.operators.entropy.cv2.calcHist", return_value=hist),
+    ):
+        result = op.execute(ctx)
     # The implementation uses the full image if mask < 100 pixels
     assert result.success
     assert result.metrics["entropy_score"] > 0

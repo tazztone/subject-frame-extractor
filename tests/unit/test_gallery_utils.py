@@ -50,7 +50,9 @@ class TestGalleryUtils:
     ):
         kept = sample_frames_data[:2]
         rejected = [sample_frames_data[2]]
-        reasons = {"frame_03.png": ["low_quality"]}
+        # Filename must match sample_frames_data[2]["filename"]
+        filename = sample_frames_data[2]["filename"]
+        reasons = {filename: ["low_quality"]}
         mock_apply.return_value = (kept, rejected, MagicMock(), reasons)
 
         status, update = _update_gallery(

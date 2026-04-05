@@ -29,15 +29,12 @@ class TestModelRegistry:
         assert loader.call_count == 1
 
     def test_get_or_load_oom_retry(self, registry):
-        """Test that OOM triggers clear() and retry."""
+        """Test that OOM is bubbled up (retry logic moved to specialized loaders)."""
         loader = MagicMock()
         loader.side_effect = [torch.cuda.OutOfMemoryError(), "success"]
 
-        with patch.object(registry, "clear") as mock_clear:
-            val = registry.get_or_load("oom_key", loader)
-            assert val == "success"
-            assert loader.call_count == 2
-            mock_clear.assert_called_once()
+        with pytest.raises(torch.cuda.OutOfMemoryError):
+            registry.get_or_load("oom_key", loader)
 
     def test_sticky_failure_logic(self, registry):
         """Test that failures are cached (sticky failure)."""
@@ -100,8 +97,13 @@ class TestModelRegistry:
             # First call OOMs on CUDA, second succeeds on CPU
             mock_load.side_effect = [RuntimeError("out of memory"), "cpu_tracker"]
 
-            with patch("core.managers.registry.torch.cuda.is_available", return_value=True):
+            # Patch where the registry actually checks it
+            with patch("core.managers.registry.torch.cuda.is_available", return_value=True, create=True):
                 tracker = registry.get_tracker("sam3", models_path="/tmp")
                 assert tracker == "cpu_tracker"
                 assert registry.runtime_device_override == "cpu"
                 assert mock_load.call_count == 2
+                # Positional args of _load_tracker_impl:
+                # 0: model_name, 1: models_path, 2: user_agent, 3: retry_params, 4: device
+                assert mock_load.call_args_list[0][0][4] == "cuda"
+                assert mock_load.call_args_list[1][0][4] == "cpu"

@@ -133,7 +133,7 @@ class TestSeedSelector:
         # In conftest, torch is a MagicMock. accessing torch.cuda.OutOfMemoryError might return a MagicMock which is not a type.
         # We need to ensure torch.cuda.OutOfMemoryError is a valid exception type for except clause.
 
-        with patch("torch.cuda.OutOfMemoryError", RuntimeError):
+        with patch("torch.cuda.OutOfMemoryError", RuntimeError, create=True):
             mask = selector._get_mask_for_bbox(frame_rgb, bbox)
             assert mask is None
 

@@ -53,6 +53,7 @@ def mock_runtime():
         "config": MagicMock(downloads_dir="/tmp/downloads"),
         "thumbnail_manager": MagicMock(),
         "model_registry": MagicMock(),
+        "mock_database": MagicMock(),
     }
 
 
@@ -78,6 +79,7 @@ def test_execute_extraction_success(mock_runtime, tmp_path, default_extraction_e
                 cancel_event=mock_runtime["cancel_event"],
                 logger=mock_runtime["logger"],
                 config=mock_runtime["config"],
+                model_registry=mock_runtime["model_registry"],
             )
             results = list(gen)
 
@@ -100,6 +102,7 @@ def test_execute_extraction_pipeline_failure(mock_runtime, default_extraction_ev
             cancel_event=mock_runtime["cancel_event"],
             logger=mock_runtime["logger"],
             config=mock_runtime["config"],
+            model_registry=mock_runtime["model_registry"],
         )
         results = list(gen)
 
@@ -130,6 +133,7 @@ def test_execute_extraction_upload_copy(mock_runtime, tmp_path, default_extracti
                 cancel_event=mock_runtime["cancel_event"],
                 logger=mock_runtime["logger"],
                 config=mock_runtime["config"],
+                model_registry=mock_runtime["model_registry"],
             )
             list(gen)
 
@@ -156,6 +160,7 @@ def test_execute_pre_analysis_success(mock_runtime, tmp_path, default_pre_analys
             logger=mock_runtime["logger"],
             config=mock_runtime["config"],
             thumbnail_manager=mock_runtime["thumbnail_manager"],
+            model_registry=mock_runtime["model_registry"],
             cuda_available=True,
         )
         results = list(gen)
@@ -176,6 +181,8 @@ def test_execute_propagation_no_scenes(mock_runtime, default_pre_analysis_event)
             logger=mock_runtime["logger"],
             config=mock_runtime["config"],
             thumbnail_manager=mock_runtime["thumbnail_manager"],
+            model_registry=mock_runtime["model_registry"],
+            database=mock_runtime["mock_database"],
             cuda_available=True,
         )
         results = list(gen)
@@ -209,6 +216,8 @@ def test_execute_analysis_success(mock_runtime, tmp_path, default_pre_analysis_e
             logger=mock_runtime["logger"],
             config=mock_runtime["config"],
             thumbnail_manager=mock_runtime["thumbnail_manager"],
+            model_registry=mock_runtime["model_registry"],
+            database=mock_runtime["mock_database"],
             cuda_available=True,
         )
         results = list(gen)
@@ -242,6 +251,7 @@ def test_execute_pre_analysis_with_upload(mock_runtime, tmp_path, default_pre_an
             logger=mock_runtime["logger"],
             config=mock_runtime["config"],
             thumbnail_manager=mock_runtime["thumbnail_manager"],
+            model_registry=mock_runtime["model_registry"],
             cuda_available=True,
         )
         list(gen)
@@ -289,6 +299,8 @@ def test_execute_propagation_success(mock_runtime, tmp_path, default_pre_analysi
             logger=mock_runtime["logger"],
             config=mock_runtime["config"],
             thumbnail_manager=mock_runtime["thumbnail_manager"],
+            model_registry=mock_runtime["model_registry"],
+            database=mock_runtime["mock_database"],
             cuda_available=True,
         )
         results = list(gen)
@@ -319,6 +331,8 @@ def test_execute_propagation_failure(mock_runtime, default_pre_analysis_event):
             logger=mock_runtime["logger"],
             config=mock_runtime["config"],
             thumbnail_manager=mock_runtime["thumbnail_manager"],
+            model_registry=mock_runtime["model_registry"],
+            database=mock_runtime["mock_database"],
             cuda_available=True,
         )
         results = list(gen)
@@ -347,6 +361,8 @@ def test_execute_analysis_failure(mock_runtime, default_pre_analysis_event):
             logger=mock_runtime["logger"],
             config=mock_runtime["config"],
             thumbnail_manager=mock_runtime["thumbnail_manager"],
+            model_registry=mock_runtime["model_registry"],
+            database=mock_runtime["mock_database"],
             cuda_available=True,
         )
         results = list(gen)
@@ -376,6 +392,8 @@ def test_execute_propagation_is_folder(mock_runtime, default_pre_analysis_event)
             logger=mock_runtime["logger"],
             config=mock_runtime["config"],
             thumbnail_manager=mock_runtime["thumbnail_manager"],
+            model_registry=mock_runtime["model_registry"],
+            database=mock_runtime["mock_database"],
             cuda_available=True,
         )
         list(gen)
@@ -402,6 +420,7 @@ def test_fingerprint_failure_is_silent(mock_runtime, tmp_path, default_extractio
                 cancel_event=mock_runtime["cancel_event"],
                 logger=mock_runtime["logger"],
                 config=mock_runtime["config"],
+                model_registry=mock_runtime["model_registry"],
             )
             results = list(gen)
 

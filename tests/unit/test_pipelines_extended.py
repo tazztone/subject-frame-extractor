@@ -253,6 +253,7 @@ class TestExecutePreAnalysis:
             logger=MagicMock(),
             config=MagicMock(),
             thumbnail_manager=MagicMock(),
+            model_registry=MagicMock(),
             cuda_available=False,
         )
         results = list(gen)

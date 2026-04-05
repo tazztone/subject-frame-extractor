@@ -25,6 +25,12 @@ class ModelRegistry:
         self.logger: "LoggerLike" = logger or logging.getLogger(__name__)
         self.runtime_device_override: Optional[str] = None
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.clear()
+
     def get_or_load(self, key: str, loader_fn: Callable[[], Any]) -> Any:
         """Retrieves a model by key, loading it via loader_fn if not present."""
         with self._registry_lock:
@@ -44,21 +50,10 @@ class ModelRegistry:
 
             try:
                 val = loader_fn()
-            except torch.cuda.OutOfMemoryError:
-                if self.logger:
-                    self.logger.warning(f"CUDA OOM loading '{key}'. Clearing models and retrying...")
-                self.clear()
-                val = loader_fn()
             except Exception as e:
-                if "out of memory" in str(e).lower():
-                    if self.logger:
-                        self.logger.warning(f"Potential OOM loading '{key}'. Clearing models and retrying...")
-                    self.clear()
-                    val = loader_fn()
-                else:
-                    with self._registry_lock:
-                        self._failed_models.add(key)
-                    raise e
+                with self._registry_lock:
+                    self._failed_models.add(key)
+                raise e
 
             with self._registry_lock:
                 self._models[key] = val
@@ -121,8 +116,10 @@ class ModelRegistry:
             device = self.runtime_device_override or ("cuda" if torch.cuda.is_available() else "cpu")
             try:
                 return self._load_tracker_impl(model_name, _models_path, _user_agent, _retry_params, device, _config)
-            except RuntimeError as e:
-                if "out of memory" in str(e) and device == "cuda":
+            except (RuntimeError, torch.cuda.OutOfMemoryError) as e:
+                if (
+                    "out of memory" in str(e).lower() or isinstance(e, torch.cuda.OutOfMemoryError)
+                ) and device == "cuda":
                     self.logger.warning("CUDA OOM during tracker init. Switching to CPU.")
                     self.runtime_device_override = "cpu"
                     return self._load_tracker_impl(model_name, _models_path, _user_agent, _retry_params, "cpu", _config)
@@ -147,8 +144,10 @@ class ModelRegistry:
             current_device = self.runtime_device_override or device
             try:
                 return SubjectDetector(model_path, logger, device=current_device)
-            except RuntimeError as e:
-                if "out of memory" in str(e).lower() and current_device == "cuda":
+            except (RuntimeError, torch.cuda.OutOfMemoryError) as e:
+                if (
+                    "out of memory" in str(e).lower() or isinstance(e, torch.cuda.OutOfMemoryError)
+                ) and current_device == "cuda":
                     self.logger.warning(f"CUDA OOM during detector '{model_name}' init. Switching to CPU.")
                     self.runtime_device_override = "cpu"
                     return SubjectDetector(model_path, logger, device="cpu")

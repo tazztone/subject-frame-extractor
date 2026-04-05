@@ -231,3 +231,7 @@ tests/ui/diffs/*.png
 tests/ui/baselines/*.png
 outputs/
 .kilo/
+previews/
+init_logs/
+custom_logs/
+.geminiignore

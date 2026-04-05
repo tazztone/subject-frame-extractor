@@ -37,7 +37,13 @@ class TestSharedUtils:
         assert np.array_equal(res_ok, img)
 
         # Excluded scene: should have modifications (badge)
-        res_bad = create_scene_thumbnail_with_badge(img, 2, True)
+        # Patch drawing functions to actually modify the array for the test
+        with (
+            patch("core.shared.cv2.rectangle", side_effect=lambda x, p1, p2, c, t: x.__setitem__((0, 0), c)),
+            patch("core.shared.cv2.circle", side_effect=lambda x, p, r, c, t: x.__setitem__((1, 1), c)),
+            patch("core.shared.cv2.putText", side_effect=lambda x, t, p, f, s, c, th: x.__setitem__((2, 2), c)),
+        ):
+            res_bad = create_scene_thumbnail_with_badge(img, 2, True)
         assert not np.array_equal(res_bad, img)
 
         # Check if badge text "E" is likely drawn (simple check: image changed significantly)
@@ -115,12 +121,14 @@ class TestSharedUtils:
         config.visualization_badge_excluded_color = [255, 0, 0]
         config.visualization_badge_text_color = [0, 0, 0]
 
-        res = create_scene_thumbnail_with_badge(img, 1, True, config=config)
+        with (
+            patch("core.shared.cv2.rectangle", side_effect=lambda x, p1, p2, c, t: x.__setitem__((0, 0), c)),
+            patch("core.shared.cv2.circle", side_effect=lambda x, p, r, c, t: x.__setitem__((1, 1), c)),
+            patch("core.shared.cv2.putText", side_effect=lambda x, t, p, f, s, c, th: x.__setitem__((2, 2), c)),
+        ):
+            res = create_scene_thumbnail_with_badge(img, 1, True, config=config)
         # Check if border color is applied (Blue in RGB if config says [255, 0, 0])
-        # Wait, cv2 draws in BGR if color is a tuple?
-        # The code does `tuple(config.visualization_badge_excluded_color)`
-        # If config is [255, 0, 0], border is (255, 0, 0).
-        # Pixel (0,0) should be (255, 0, 0)
+        # Pixel (0,0) should be modified by our mock side_effect
         assert np.array_equal(res[0, 0], [255, 0, 0])
 
     def test_scene_caption_dict(self):

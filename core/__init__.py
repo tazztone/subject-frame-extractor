@@ -2,8 +2,5 @@
 Core module for Subject Frame Extractor.
 """
 
-from core.sam3_patches import apply_patches
-
-# Apply all runtime patches for SAM3 (Resource patching, HWC fixing, Dtype forcing)
-# This MUST happen early to avoid deprecation warnings and stability issues.
-apply_patches()
+# Note: SAM3 patches are now applied lazily by SAM3Wrapper to avoid
+# import-time side effects during unit testing.

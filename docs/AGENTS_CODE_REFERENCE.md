@@ -31,6 +31,7 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`db_schema.py`](#-coredb_schemapy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`enums.py`](#-coreenumspy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`error_handling.py`](#-coreerror_handlingpy)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`eta_calculator.py`](#-coreeta_calculatorpy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`events.py`](#-coreeventspy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`export.py`](#-coreexportpy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`face_clustering.py`](#-coreface_clusteringpy)  
@@ -70,8 +71,10 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`simple_cv.py`](#-coreoperatorssimple_cvpy)  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;[`viz.py`](#-coreoperatorsvizpy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`photo_utils.py`](#-corephoto_utilspy)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`pipeline_results.py`](#-corepipeline_resultspy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`pipelines.py`](#-corepipelinespy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`progress.py`](#-coreprogresspy)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`protocols.py`](#-coreprotocolspy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`sam3_patches.py`](#-coresam3_patchespy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;scene_utils  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`__init__.py`](#-corescene_utils__init__py)  
@@ -136,8 +139,12 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;e2e_run.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_photo_cli.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;verify_simple.py  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;helpers  
+│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;exceptions.py  
+│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;mock_tensor.py  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;integration  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;__init__.py  
+│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;conftest.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;e2e_output_debug  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;frame_map.json  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;mask_metadata.json  
@@ -216,10 +223,12 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_crop_operator.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_database.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_db_schema.py  
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_debug_parallel.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_dedup.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_entropy.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_enums.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_error_handling.py  
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_eta_calculator.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_events.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_exit_branches.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_export.py  
@@ -494,8 +503,10 @@ class Config(BaseSettings):
 
 ```python
 class Database:
-    def __init__(self, db_path: Path, batch_size: int=100, logger: Optional[Union[logging.Logger, 'AppLogger']]=None):
+    def __init__(self, db_path: Optional[Path]=None, batch_size: int=100, logger: Optional[Union[logging.Logger, 'AppLogger']]=None):
         """Initializes the Database manager."""
+    def set_db_path(self, db_path: Path):
+        """Sets the database path and re-initializes connection and schema."""
     def __enter__(self): ...
     def __exit__(self, exc_type, exc_val, exc_tb): ...
     def connect(self):
@@ -582,6 +593,21 @@ class ErrorHandler:
         """Decorator that retries the function call upon failure."""
     def with_fallback(self, fallback_func: Callable):
         """Decorator that executes a fallback function if the primary function fails."""
+def handle_common_errors(func: Callable) -> Callable:
+    """Standalone decorator that wraps a generator func, yielding an error dict/resu..."""
+```
+
+### `📄 core/eta_calculator.py`
+
+```python
+class ETACalculator:
+    """Pure logic for calculating and formatting Estimated Time of Arrival (ETA)."""
+    @staticmethod
+    def calculate_eta(total: int, done: int, ema_dt: Optional[float]) -> Optional[float]:
+        """Calculates estimated seconds remaining based on exponential moving average of..."""
+    @staticmethod
+    def format_eta(eta_seconds: Optional[float]) -> str:
+        """Formats seconds into a human-readable string (e.g., '2h 15m', '45s')."""
 ```
 
 ### `📄 core/events.py`
@@ -796,7 +822,7 @@ class PreAnalysisPipeline(Pipeline):
     def _process_single_scene(self, scene: Scene, masker: 'SubjectMasker', previews_dir: Path, is_folder_mode: bool): ...
 class AnalysisPipeline(Pipeline):
     """Pipeline for analyzing frames (pre-analysis, propagation, full analysis)."""
-    def __init__(self, config: 'Config', logger: 'AppLogger', params: 'AnalysisParameters', progress_queue: Queue, cancel_event: threading.Event, thumbnail_manager: 'ThumbnailManager', model_registry: 'ModelRegistry', loaded_models: Optional[dict]=None): ...
+    def __init__(self, config: 'Config', logger: 'AppLogger', params: 'AnalysisParameters', progress_queue: Queue, cancel_event: threading.Event, thumbnail_manager: 'ThumbnailManager', model_registry: 'ModelRegistry', database: Optional['Database']=None, loaded_models: Optional[dict]=None): ...
     def _initialize_niqe_metric(self): ...
     def run_full_analysis(self, scenes_to_process: List[Scene], tracker: Optional['AdvancedProgressTracker']=None) -> dict: ...
     def run_analysis_only(self, scenes_to_process: List[Scene], tracker: Optional['AdvancedProgressTracker']=None) -> dict: ...
@@ -849,6 +875,8 @@ def initialize_analysis_models(params: Union[dict, 'AnalysisParameters'], config
 class ModelRegistry:
     """Thread-safe registry for lazy loading and caching of heavy ML models."""
     def __init__(self, logger: Optional['LoggerLike']=None): ...
+    def __enter__(self): ...
+    def __exit__(self, exc_type, exc_val, exc_tb): ...
     def get_or_load(self, key: str, loader_fn: Callable[[], Any]) -> Any:
         """Retrieves a model by key, loading it via loader_fn if not present."""
     def clear(self):
@@ -1026,8 +1054,6 @@ class AnalysisParameters(BaseModel):
         """Factory method to create parameters from UI arguments, handling validation an..."""
 class MaskingResult(BaseModel):
     """Result of the mask propagation process for a frame."""
-class PreAnalysisResult(BaseModel):
-    """Typed result for the pre-analysis pipeline stage."""
 ```
 
 ### `📄 core/operators/__init__.py`
@@ -1091,7 +1117,7 @@ def crop_image_with_subject(image: np.ndarray, mask: np.ndarray, aspect_ratios: 
 ### `📄 core/operators/dedup.py`
 
 ```python
-def _run_batched_lpips(pairs: List[Tuple[int, int]], all_frames_data: List[Dict[str, Any]], dedup_mask: np.ndarray, reasons: defaultdict, thumbnail_manager: 'ThumbnailManager', output_dir: str, threshold: float, device: str='cpu'): ...
+def _run_batched_lpips(pairs: List[Tuple[int, int]], all_frames_data: List[Dict[str, Any]], dedup_mask: np.ndarray, reasons: defaultdict, thumbnail_manager: 'ThumbnailManager', output_dir: str, threshold: float, device: str='cpu') -> None: ...
 def apply_deduplication_filter(all_frames_data: List[Dict[str, Any]], filters: Dict[str, Any], thumbnail_manager: Optional['ThumbnailManager'], config: 'Config', output_dir: Optional[str]) -> Tuple[np.ndarray, Dict[str, List[str]]]: ...
 def _generic_dedup(all_frames_data: List[Dict[str, Any]], dedup_mask: np.ndarray, reasons: defaultdict, thumbnail_manager: 'ThumbnailManager', output_dir: Optional[str], compare_fn: Callable[[np.ndarray, np.ndarray], bool]): ...
 ```
@@ -1248,30 +1274,44 @@ def ingest_folder(folder_path: Path, output_dir: Path, recursive: bool=False, th
     """Scans a folder for images, extracting previews for RAW files."""
 ```
 
+### `📄 core/pipeline_results.py`
+
+```python
+class PipelineResult(BaseModel):
+    """Base class for all pipeline results to ensure consistent signaling."""
+class PreAnalysisResult(PipelineResult):
+    """Typed result for the pre-analysis pipeline stage."""
+class ExtractionResult(PipelineResult):
+    """Typed result for the extraction pipeline stage."""
+class PropagationResult(PipelineResult):
+    """Typed result for the mask propagation pipeline stage."""
+class AnalysisResult(PipelineResult):
+    """Typed result for the analysis-only pipeline stage."""
+```
+
 ### `📄 core/pipelines.py`
 
 ```python
 Image = Image
-gr = gr
 def _handle_extraction_uploads(event_dict: dict, config: 'Config') -> dict:
     """Helper to move uploaded video to downloads directory."""
 def _handle_pre_analysis_uploads(event_dict: dict, config: 'Config') -> dict:
     """Helper to move uploaded face reference image to downloads directory."""
 @handle_common_errors
-def execute_extraction(event: 'ExtractionEvent', progress_queue: Queue, cancel_event: threading.Event, logger: 'AppLogger', config: 'Config', thumbnail_manager: Optional['ThumbnailManager']=None, cuda_available: Optional[bool]=None, progress: Optional[Callable]=None, model_registry: Optional['ModelRegistry']=None) -> Generator[dict, None, None]: ...
+def execute_extraction(event: 'ExtractionEvent', progress_queue: Queue, cancel_event: threading.Event, logger: 'AppLogger', config: 'Config', model_registry: 'ModelRegistry', thumbnail_manager: Optional['ThumbnailManager']=None, cuda_available: Optional[bool]=None, progress: Optional[Callable]=None) -> Generator[dict, None, None]: ...
 @handle_common_errors
-def execute_pre_analysis(event: 'PreAnalysisEvent', progress_queue: Queue, cancel_event: threading.Event, logger: 'AppLogger', config: 'Config', thumbnail_manager: 'ThumbnailManager', cuda_available: bool, progress: Optional[Callable]=None, model_registry: Optional['ModelRegistry']=None, loaded_models: Optional[dict]=None) -> Generator[dict, None, None]: ...
+def execute_pre_analysis(event: 'PreAnalysisEvent', progress_queue: Queue, cancel_event: threading.Event, logger: 'AppLogger', config: 'Config', thumbnail_manager: 'ThumbnailManager', model_registry: 'ModelRegistry', cuda_available: bool, progress: Optional[Callable]=None, loaded_models: Optional[dict]=None) -> Generator[dict, None, None]: ...
 def validate_session_dir(path: str) -> bool: ...
 def execute_session_load(event: SessionLoadEvent | dict, logger: 'AppLogger') -> dict: ...
 @handle_common_errors
-def execute_propagation(event: PropagationEvent, progress_queue: Queue, cancel_event: threading.Event, logger: 'AppLogger', config: 'Config', thumbnail_manager: 'ThumbnailManager', cuda_available: bool, progress: Optional[Callable]=None, model_registry: Optional['ModelRegistry']=None, loaded_models: Optional[dict]=None) -> Generator[dict, None, None]: ...
+def execute_propagation(event: PropagationEvent, progress_queue: Queue, cancel_event: threading.Event, logger: 'AppLogger', config: 'Config', thumbnail_manager: 'ThumbnailManager', model_registry: 'ModelRegistry', database: 'Database', cuda_available: bool, progress: Optional[Callable]=None, loaded_models: Optional[dict]=None) -> Generator[dict, None, None]: ...
 @handle_common_errors
-def execute_analysis(event: PropagationEvent, progress_queue: Queue, cancel_event: threading.Event, logger: 'AppLogger', config: 'Config', thumbnail_manager: 'ThumbnailManager', cuda_available: bool, progress: Optional[Callable]=None, model_registry: Optional['ModelRegistry']=None, loaded_models: Optional[dict]=None) -> Generator[dict, None, None]: ...
+def execute_analysis(event: PropagationEvent, progress_queue: Queue, cancel_event: threading.Event, logger: 'AppLogger', config: 'Config', thumbnail_manager: 'ThumbnailManager', model_registry: 'ModelRegistry', database: 'Database', cuda_available: bool, progress: Optional[Callable]=None, loaded_models: Optional[dict]=None) -> Generator[dict, None, None]: ...
 @handle_common_errors
-def execute_analysis_orchestrator(event: 'PreAnalysisEvent', progress_queue: Queue, cancel_event: threading.Event, logger: 'AppLogger', config: 'Config', thumbnail_manager: 'ThumbnailManager', cuda_available: bool, progress: Optional[Callable]=None, model_registry: Optional['ModelRegistry']=None) -> Generator[dict, None, None]:
+def execute_analysis_orchestrator(event: 'PreAnalysisEvent', progress_queue: Queue, cancel_event: threading.Event, logger: 'AppLogger', config: 'Config', thumbnail_manager: 'ThumbnailManager', model_registry: 'ModelRegistry', database: 'Database', cuda_available: bool, progress: Optional[Callable]=None) -> Generator[dict, None, None]:
     """Orchestrates Pre-Analysis, Propagation, and Analysis stages."""
 @handle_common_errors
-def execute_full_pipeline(event: 'ExtractionEvent', progress_queue: Queue, cancel_event: threading.Event, logger: 'AppLogger', config: 'Config', thumbnail_manager: 'ThumbnailManager', cuda_available: bool, progress: Optional[Callable]=None, model_registry: Optional['ModelRegistry']=None) -> Generator[dict, None, None]:
+def execute_full_pipeline(event: 'ExtractionEvent', progress_queue: Queue, cancel_event: threading.Event, logger: 'AppLogger', config: 'Config', thumbnail_manager: 'ThumbnailManager', model_registry: 'ModelRegistry', database: 'Database', cuda_available: bool, progress: Optional[Callable]=None) -> Generator[dict, None, None]:
     """Orchestrates the entire flow: Extraction -> Pre-Analysis -> Propagation -> An..."""
 ```
 
@@ -1296,11 +1336,25 @@ class AdvancedProgressTracker:
         """Marks the current operation as complete."""
     def _overlay(self, force: bool=False):
         """Emits a progress update if enough time has passed (throttling)."""
-    def _eta_seconds(self) -> Optional[float]:
-        """Calculates estimated seconds remaining based on EMA."""
-    @staticmethod
-    def _fmt_eta(eta_s: Optional[float]) -> str:
-        """Formats seconds into a human-readable string."""
+```
+
+### `📄 core/protocols.py`
+
+```python
+"""Protocol definitions for dependency injection and static type checking."""
+class DatabaseProtocol(Protocol):
+    """Interface for the Application Database."""
+    def save_frame(self, frame_id: str, scene_id: str, frame_data: Frame) -> bool: ...
+    def get_frame(self, frame_id: str) -> Optional[Frame]: ...
+    def save_scene(self, scene_id: str, scene_data: Scene) -> bool: ...
+    def get_scene(self, scene_id: str) -> Optional[Scene]: ...
+    def update_scene_status(self, scene_id: str, status: str) -> bool: ...
+    def execute(self, query: str, params: Optional[Tuple]=None) -> Any: ...
+class ThumbnailManagerProtocol(Protocol):
+    """Interface for the Thumbnail Manager."""
+    def get(self, frame_id: str) -> Optional[np.ndarray]: ...
+    def save(self, frame_id: str, image: np.ndarray) -> bool: ...
+    def clear_cache(self) -> None: ...
 ```
 
 ### `📄 core/sam3_patches.py`
@@ -1496,9 +1550,9 @@ def check_dependencies() -> List[str]:
     """Checks for the presence of core dependencies."""
 def check_paths_and_assets(config: Any) -> List[str]:
     """Checks for required paths and assets."""
-def simulate_pipeline(config: Any, logger: Any, progress_queue: Any, cancel_event: Any, thumbnail_manager: Any, cuda_available: bool) -> List[str]:
+def simulate_pipeline(config: Any, logger: Any, progress_queue: Any, cancel_event: Any, thumbnail_manager: Any, model_registry: Any, database: Any, cuda_available: bool) -> List[str]:
     """Simulates the E2E pipeline with sample assets."""
-def generate_full_diagnostic_report(config: Any, logger: Any, progress_queue: Any, cancel_event: Any, thumbnail_manager: Any, cuda_available: bool) -> Generator[str, None, None]:
+def generate_full_diagnostic_report(config: Any, logger: Any, progress_queue: Any, cancel_event: Any, thumbnail_manager: Any, model_registry: Any, database: Any, cuda_available: bool) -> Generator[str, None, None]:
     """Generates a full diagnostic report as a generator."""
 ```
 
@@ -1507,8 +1561,6 @@ def generate_full_diagnostic_report(config: Any, logger: Any, progress_queue: An
 ```python
 def _setup_triton_mock():
     """Mocks the Triton library if it's missing (e.g., on Windows or non-CUDA enviro..."""
-def handle_common_errors(func: Callable) -> Callable:
-    """Decorator to catch common exceptions and return a standardized error dictiona..."""
 def monitor_memory_usage(logger: 'AppLogger', device: str, threshold_mb: int=8000):
     """Logs a warning and clears cache if GPU memory usage exceeds threshold."""
 def estimate_totals(params: 'AnalysisParameters', video_info: dict, scenes: Optional[list['Scene']]) -> dict:
@@ -1565,7 +1617,7 @@ class QualityVerifier:
 ```python
 class AppUI:
     """Main UI class for the Frame Extractor & Analyzer application."""
-    def __init__(self, config: 'Config', logger: 'AppLogger', progress_queue: Queue, cancel_event: threading.Event, thumbnail_manager: 'ThumbnailManager', model_registry: 'ModelRegistry', debug_mode: bool=False):
+    def __init__(self, config: 'Config', logger: 'AppLogger', progress_queue: Queue, cancel_event: threading.Event, thumbnail_manager: 'ThumbnailManager', model_registry: 'ModelRegistry', database: 'Database', debug_mode: bool=False):
         """Initialize the AppUI."""
     def preload_models(self):
         """Asynchronously preloads heavy models (SAM3) in a background thread."""
@@ -1727,7 +1779,7 @@ class PipelineHandler:
     @safe_ui_callback('Extraction')
     def run_extraction_wrapper(self, current_state: ApplicationState, *args, progress=None):
         """Wrapper to execute the frame extraction pipeline."""
-    def _on_extraction_success(self, result: dict, current_state: ApplicationState) -> dict:
+    def _on_extraction_success(self, result_dict: dict, current_state: ApplicationState) -> dict:
         """Callback for successful extraction."""
     @safe_ui_callback('Pre-Analysis')
     def run_pre_analysis_wrapper(self, current_state: ApplicationState, *args, progress=None):
@@ -1739,12 +1791,12 @@ class PipelineHandler:
     @safe_ui_callback('Propagation')
     def run_propagation_wrapper(self, current_state: ApplicationState, *args, progress=None):
         """Wrapper to execute the mask propagation pipeline."""
-    def _on_propagation_success(self, result: dict, current_state: ApplicationState) -> dict:
+    def _on_propagation_success(self, result_dict: dict, current_state: ApplicationState) -> dict:
         """Callback for successful propagation."""
     @safe_ui_callback('Analysis')
     def run_analysis_wrapper(self, current_state: ApplicationState, *args, progress=None):
         """Wrapper to execute the full analysis pipeline."""
-    def _on_analysis_success(self, result: dict, current_state: ApplicationState) -> dict:
+    def _on_analysis_success(self, result_dict: dict, current_state: ApplicationState) -> dict:
         """Callback for successful analysis."""
     def _execute_session_load_adapter(self, event, *args, **kwargs):
         """Adapts the synchronous execute_session_load to the pipeline generator interface."""

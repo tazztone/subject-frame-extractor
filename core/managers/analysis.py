@@ -190,11 +190,12 @@ class AnalysisPipeline(Pipeline):
         cancel_event: threading.Event,
         thumbnail_manager: "ThumbnailManager",
         model_registry: "ModelRegistry",
+        database: Optional["Database"] = None,
         loaded_models: Optional[dict] = None,
     ):
         super().__init__(config, logger, params, progress_queue, cancel_event)
         self.output_dir = Path(self.params.output_folder)
-        self.db = Database(self.output_dir / "metadata.db", logger=self.logger)
+        self.db = database or Database(self.output_dir / "metadata.db", logger=self.logger)
         self.db.error_handler = self.error_handler
         self.thumb_dir = self.output_dir / "thumbs"
         self.masks_dir = self.output_dir / "masks"

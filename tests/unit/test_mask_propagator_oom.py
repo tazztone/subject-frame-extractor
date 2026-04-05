@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from core.scene_utils.mask_propagator import MaskPropagator
-from tests.conftest import OutOfMemoryError
+from tests.helpers.exceptions import OutOfMemoryError
 
 
 class TestMaskPropagatorOOM:

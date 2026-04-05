@@ -198,7 +198,7 @@ class TestManagers:
         assert tracker == "mock_tracker"
 
     @patch("core.managers.registry.ModelRegistry._load_tracker_impl")
-    @patch("core.managers.registry.torch.cuda.empty_cache", create=True)
+    @patch("torch.cuda.empty_cache", create=True)
     @patch("core.managers.registry.torch.cuda.is_available", return_value=True, create=True)
     def test_get_tracker_oom_fallback(self, mock_cuda, mock_empty, mock_load, mock_logger, mock_config):
         registry = ModelRegistry(mock_logger)

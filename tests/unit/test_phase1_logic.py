@@ -15,6 +15,7 @@ class TestPhase1Logic(unittest.TestCase):
         self.cancel_event = MagicMock()
         self.thumbnail_manager = MagicMock()
         self.model_registry = MagicMock()
+        self.database = MagicMock()
 
         # Build basic components needed for the handler success calls
         with patch("ui.app_ui.torch.cuda.is_available", create=True, return_value=False):
@@ -25,6 +26,7 @@ class TestPhase1Logic(unittest.TestCase):
                 self.cancel_event,
                 self.thumbnail_manager,
                 self.model_registry,
+                self.database,
             )
             # Mock components
             self.app.components = {

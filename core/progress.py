@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING, Callable, Optional
 
 from pydantic import BaseModel
 
+from core.eta_calculator import ETACalculator
+
 if TYPE_CHECKING:
     from core.logger import AppLogger
 
@@ -127,8 +129,8 @@ class AdvancedProgressTracker:
         if not force and (now - self._last_update_ts < self.throttle_interval):
             return
         self._last_update_ts = now
-        eta_s = self._eta_seconds()
-        eta_str = self._fmt_eta(eta_s)
+        eta_s = ETACalculator.calculate_eta(self.total, self.done, self._ema_dt)
+        eta_str = ETACalculator.format_eta(eta_s)
         desc_parts = [f"{self.stage} ({self.done}/{self.total})"]
         if self.substage:
             desc_parts.append(self.substage)
@@ -147,25 +149,3 @@ class AdvancedProgressTracker:
         )
         if self.queue:
             self.queue.put({"progress": progress_event.model_dump()})
-
-    def _eta_seconds(self) -> Optional[float]:
-        """Calculates estimated seconds remaining based on EMA."""
-        if self._ema_dt is None:
-            return None
-        remaining = max(0, self.total - self.done)
-        return self._ema_dt * remaining
-
-    @staticmethod
-    def _fmt_eta(eta_s: Optional[float]) -> str:
-        """Formats seconds into a human-readable string."""
-        # TODO: Add locale-aware formatting
-        # TODO: Support different precision levels (coarse/fine)
-        if eta_s is None:
-            return "—"
-        if eta_s < 60:
-            return f"{int(eta_s)}s"
-        m, s = divmod(int(eta_s), 60)
-        if m < 60:
-            return f"{m}m {s}s"
-        h, m = divmod(m, 60)
-        return f"{h}h {m}m"

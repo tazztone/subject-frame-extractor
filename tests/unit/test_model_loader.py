@@ -24,7 +24,8 @@ class TestModelLoader:
     def test_get_lpips_metric(self):
 
         # Rely on global mock from conftest.py
-        with patch("lpips.LPIPS") as mock_lpips:
+        # Patch where used in core.managers.model_loader
+        with patch("core.managers.model_loader.lpips.LPIPS") as mock_lpips:
             get_lpips_metric("alex", "cpu")
             mock_lpips.assert_called_with(net="alex")
 

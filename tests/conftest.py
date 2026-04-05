@@ -1,544 +1,295 @@
-"""
-Shared pytest fixtures and configuration.
-
-This module provides common fixtures for operator tests and regression tests,
-reducing code duplication and ensuring consistency.
-"""
-
 import sys
-import threading
-import types
-from queue import Queue
+from collections import namedtuple
+from types import ModuleType
 from unittest.mock import MagicMock
 
-import cv2
 import numpy as np
 import pytest
 
-# --- 1. Global Mocking Infrastructure (Run immediately on import) ---
+# 1. BOOTSTRAP STABLE MOCK HELPERS
+# We use a proper class for MockTensor to ensure stability in parallel execution
+from tests.helpers.mock_tensor import create_mock_tensor
+
+DeviceProps = namedtuple("DeviceProps", ["total_memory"])
+
+# 2. DEFINITION OF ESSENTIAL TOP-LEVEL MOCKS
+# We use ModuleType to satisfy the import system (prevent AttributeError: __spec__)
+# and use __getattr__ to automatically mock submodules.
 
 
-def pytest_addoption(parser):
-    """Add custom command-line options to pytest."""
-    parser.addoption(
-        "--update-baselines",
-        action="store_true",
-        default=False,
-        help="Update visual regression baseline screenshots",
-    )
-    parser.addoption(
-        "--capture-golden",
-        action="store_true",
-        default=False,
-        help="Capture current legacy metrics as golden reference for regression tests",
-    )
+class MockModule(ModuleType):
+    def __init__(self, name, attrs=None):
+        super().__init__(name)
+        self.__file__ = f"<mock {name}>"
+        self.__path__ = []
+        if attrs:
+            for k, v in attrs.items():
+                setattr(self, k, v)
+
+    def __getattr__(self, name):
+        # Return a fresh mock for any missing attribute/submodule
+        # We now use setattr to allow patching to work correctly
+        m = MagicMock(name=f"{self.__name__}.{name}")
+        setattr(self, name, m)
+        return m
 
 
-# Module creation helper
-def _create_mock_module(name, attributes=None):
-    """Creates a proper ModuleType instance populated with mocks/attributes."""
-    mock_mod = types.ModuleType(name)
-    if attributes:
-        for attr, val in attributes.items():
-            setattr(mock_mod, attr, val)
-    return mock_mod
+def _create_mock_module(name, attrs=None):
+    return MockModule(name, attrs)
 
 
-# Stable exception classes
-class OutOfMemoryError(RuntimeError):
-    """Mock CUDA OutOfMemoryError."""
+from tests.helpers.exceptions import OutOfMemoryError, VideoOpenFailure
 
-    pass
+# Alias for backward compatibility in existing tests
+createmocktensor = create_mock_tensor
 
-
-class VideoOpenFailure(RuntimeError):
-    """Mock PySceneDetect VideoOpenFailure."""
-
-    pass
-
-
-class TransparentContext:
-    """Empty context manager that does nothing but allows 'with' blocks."""
-
-    def __enter__(self, *args, **kwargs):
-        return self
-
-    def __exit__(self, *args, **kwargs):
-        pass
-
-    def __call__(self, func=None):
-        if func is not None:
-            return func
-        return self
-
-
-# Build the base torch mock
-_mock_torch_obj = MagicMock(name="torch")
-
-
-# Promote torch.cuda to a real ModuleType instance for stable patching
-_cuda_mod = _create_mock_module(
+cuda_mock = _create_mock_module(
     "torch.cuda",
     {
         "is_available": MagicMock(return_value=False),
         "device_count": MagicMock(return_value=0),
-        "get_device_name": MagicMock(return_value="Mock GPU"),
-        "empty_cache": MagicMock(),
-        "synchronize": MagicMock(),
-        "memory_summary": MagicMock(return_value="Mock Memory Summary"),
-        "memory_allocated": MagicMock(return_value=0),
         "OutOfMemoryError": OutOfMemoryError,
-        "amp": _create_mock_module("torch.cuda.amp", {"autocast": TransparentContext}),
+        "empty_cache": MagicMock(),
+        "memory_allocated": MagicMock(return_value=0),
+        "memory_reserved": MagicMock(return_value=0.0),
+        "get_device_properties": MagicMock(return_value=DeviceProps(total_memory=8 * 1024**3)),
     },
 )
 
-_mock_torch_obj.cuda = _cuda_mod
-_mock_torch_obj.__version__ = "2.0.0"
-_mock_torch_obj.nn.Module = MagicMock
-_mock_torch_obj.Tensor = MagicMock
-_mock_torch_obj.device = MagicMock
-_mock_torch_obj.float = MagicMock(name="torch.float")
-_mock_torch_obj.float32 = MagicMock(name="torch.float32")
-_mock_torch_obj.float16 = MagicMock(name="torch.float16")
-_mock_torch_obj.bfloat16 = MagicMock(name="torch.bfloat16")
-_mock_torch_obj.uint8 = MagicMock(name="torch.uint8")
-_mock_torch_obj.int64 = MagicMock(name="torch.int64")
-_mock_torch_obj.version = MagicMock()
-_mock_torch_obj.version.cuda = "12.1"
-
-
-# Stub torch creation functions to return mocks with correct shape
-def _create_mock_tensor(name="tensor", shape=None, value=None, **kwargs):
-    class MockTensor(MagicMock):
-        def __len__(self):
-            if hasattr(self, "_mock_shape") and self._mock_shape is not None:
-                return self._mock_shape[0] if len(self._mock_shape) > 0 else 0
-            return 0
-
-        def __getitem__(self, idx):
-            new_shape = None
-            if hasattr(self, "_mock_shape") and self._mock_shape is not None:
-                if len(self._mock_shape) > 0:
-                    new_shape = self._mock_shape[1:]
-            return _create_mock_tensor(f"{self._mock_name}[{idx}]", shape=new_shape)
-
-        def __gt__(self, other):
-            return _create_mock_tensor(f"{self._mock_name} > {other}", shape=getattr(self, "_mock_shape", None))
-
-        def __bool__(self):
-            return True
-
-        def cpu(self):
-            return self
-
-        def numpy(self):
-            s = getattr(self, "_mock_shape", None)
-            if s is None:
-                s = (100, 100)
-            if isinstance(s, int):
-                s = (s,)
-            return np.zeros(s, dtype=np.float32)
-
-        def __repr__(self):
-            return f"MockTensor(name={self._mock_name}, shape={getattr(self, '_mock_shape', None)})"
-
-        @property
-        def ndim(self):
-            s = getattr(self, "_mock_shape", None)
-            return len(s) if s is not None else 0
-
-    mock_t = MockTensor(name=name)
-    mock_t._mock_shape = shape
-    if shape is not None:
-        mock_t.shape = shape
-    mock_t.device = _mock_torch_obj.device("cpu")
-    mock_t.dtype = _mock_torch_obj.float32
-    mock_t.size.side_effect = lambda dim=None: shape if dim is None else shape[dim]
-    mock_t.__mul__ = MagicMock(return_value=mock_t)
-    mock_t.__rmul__ = MagicMock(return_value=mock_t)
-    mock_t.__add__ = MagicMock(return_value=mock_t)
-    mock_t.__sub__ = MagicMock(return_value=mock_t)
-    mock_t.__gt__ = MagicMock(return_value=mock_t)
-    mock_t.__lt__ = MagicMock(return_value=mock_t)
-    mock_t.__truediv__ = MagicMock(return_value=mock_t)
-    mock_t.float = MagicMock(return_value=mock_t)
-    mock_t.to = MagicMock(return_value=mock_t)
-    mock_t.permute = MagicMock(return_value=mock_t)
-    mock_t.unsqueeze = MagicMock(return_value=mock_t)
-    mock_t.squeeze = MagicMock(return_value=mock_t)
-    # Ensure it's truthy so 'if tensor is None' or 'if tensor' checks work as expected
-    mock_t.__bool__ = MagicMock(return_value=True)
-    mock_t.__len__ = MagicMock(return_value=1)
-    mock_t.__eq__ = MagicMock(return_value=True)
-    if value is not None:
-        if hasattr(value, "__getitem__") and len(value) > 0:
-            try:
-                # Handle nested lists/arrays
-                flat_val = value
-                while hasattr(flat_val, "__getitem__") and not isinstance(flat_val, (str, bytes)):
-                    flat_val = flat_val[0]
-                mock_t.item.return_value = flat_val
-            except Exception:
-                mock_t.item.return_value = 1.0
-        else:
-            mock_t.item.return_value = value
-    else:
-        mock_t.item.return_value = 1.0
-    return mock_t
-
-
-_mock_torch_obj.from_numpy = MagicMock(side_effect=lambda np_arr: _create_mock_tensor("from_numpy", np_arr.shape))
-_mock_torch_obj.zeros = MagicMock(side_effect=lambda shape, **kwargs: _create_mock_tensor("zeros", shape))
-_mock_torch_obj.ones = MagicMock(side_effect=lambda shape, **kwargs: _create_mock_tensor("ones", shape))
-_mock_torch_obj.rand = MagicMock(side_effect=lambda *shape, **kwargs: _create_mock_tensor("rand", shape))
-_mock_torch_obj.randn = MagicMock(side_effect=lambda *shape, **kwargs: _create_mock_tensor("randn", shape))
-_mock_torch_obj.empty = MagicMock(side_effect=lambda *shape, **kwargs: _create_mock_tensor("empty", shape))
-_mock_torch_obj.tensor = MagicMock(
-    side_effect=lambda data, **kwargs: _create_mock_tensor(
-        "tensor",
-        getattr(data, "shape", getattr(data, "__len__", lambda: (1,))() if hasattr(data, "__len__") else ()),
-        data,
-    )
-)
-_mock_torch_obj.no_grad = TransparentContext
-_mock_torch_obj.inference_mode = TransparentContext
-_mock_torch_obj.SymFloat = MagicMock
-_mock_torch_obj.SymInt = MagicMock
-
-# Patch sys.modules globally ONLY if we are in a mock-safe environment (unit tests).
-# Integration and UI tests MUST use real dependencies.
-# NOTE: SAM3 (sam3.*) is intentionally excluded from this list.
-# SAM3 is a local editable install — unit tests that need a mock SAM3 must
-# create their own local MagicMock rather than relying on global injection.
-# This prevents MagicMock leaking into xdist integration workers.
+# 3. CORE MODULE MAP
 modules_to_mock = {
     "torch": _create_mock_module(
         "torch",
         {
-            "cuda": _cuda_mod,
-            "nn": _mock_torch_obj.nn,
-            "version": _mock_torch_obj.version,
-            "Tensor": _mock_torch_obj.Tensor,
-            "device": _mock_torch_obj.device,
-            "from_numpy": _mock_torch_obj.from_numpy,
-            "zeros": _mock_torch_obj.zeros,
-            "ones": _mock_torch_obj.ones,
-            "tensor": _mock_torch_obj.tensor,
-            "stack": MagicMock(side_effect=lambda tensors, **kwargs: MagicMock(name="stacked")),
-            "cat": MagicMock(side_effect=lambda tensors, **kwargs: MagicMock(name="catted")),
-            "rand": MagicMock(side_effect=lambda *args, **kwargs: MagicMock(name="rand")),
-            "randn": MagicMock(side_effect=lambda *args, **kwargs: MagicMock(name="randn")),
-            "float": _mock_torch_obj.float,
-            "float32": _mock_torch_obj.float32,
-            "float16": _mock_torch_obj.float16,
-            "bfloat16": _mock_torch_obj.bfloat16,
-            "uint8": _mock_torch_obj.uint8,
-            "int64": _mock_torch_obj.int64,
-            "no_grad": _mock_torch_obj.no_grad,
-            "inference_mode": _mock_torch_obj.no_grad,
-            "jit": MagicMock(script=lambda x: x, is_tracing=lambda: False),
-            "set_float32_matmul_precision": MagicMock(),
-            "SymFloat": _mock_torch_obj.SymFloat,
-            "SymInt": _mock_torch_obj.SymInt,
-            "linalg": _create_mock_module("torch.linalg", {"svd": MagicMock()}),
-            "all": MagicMock(side_effect=lambda x: all(x) if hasattr(x, "__iter__") else bool(x)),
-            "__version__": "2.0.0",
-            "manual_seed": MagicMock(),
+            "Tensor": MagicMock,
+            "from_numpy": MagicMock(side_effect=lambda arr, **k: create_mock_tensor("from_numpy", shape=arr.shape)),
+            "zeros": MagicMock(side_effect=lambda shape, *a, **k: create_mock_tensor("zeros", shape=shape)),
+            "ones": MagicMock(side_effect=lambda shape, *a, **k: create_mock_tensor("ones", shape=shape)),
+            "randn": MagicMock(side_effect=lambda shape, *a, **k: create_mock_tensor("randn", shape=shape)),
+            "cat": MagicMock(side_effect=lambda tensors, *a, **k: create_mock_tensor("cat", shape=tensors[0].shape)),
+            "stack": MagicMock(
+                side_effect=lambda tensors, *a, **k: create_mock_tensor(
+                    "stack", shape=(len(tensors),) + tensors[0].shape
+                )
+            ),
+            "device": MagicMock,
+            "nn": _create_mock_module("torch.nn", {"Module": MagicMock, "Parameter": MagicMock}),
+            "cuda": cuda_mock,
+            "float": MagicMock(),
+            "float32": MagicMock(),
+            "float16": MagicMock(),
+            "bfloat16": MagicMock(),
+            "uint8": MagicMock(),
+            "int64": MagicMock(),
+            "int32": MagicMock(),
+            "bool": MagicMock(),
+            "long": MagicMock(),
         },
     ),
-    "torch.cuda": _cuda_mod,
-    "torch.nn": _mock_torch_obj.nn,
-    "torch.version": _mock_torch_obj.version,
-    "torchvision": _create_mock_module("torchvision", {"ops": MagicMock(), "transforms": MagicMock()}),
-    "torchvision.ops": MagicMock(),
-    "insightface": _create_mock_module("insightface", {"app": MagicMock()}),
-    "insightface.app": MagicMock(),
-    "sam3": _create_mock_module("sam3", {"model_builder": MagicMock()}),
-    "sam3.model_builder": _create_mock_module(
-        "sam3.model_builder",
+    "torch.cuda": cuda_mock,
+    "torchvision": _create_mock_module("torchvision", {"transforms": MagicMock(), "ops": MagicMock()}),
+    "cv2": _create_mock_module(
+        "cv2",
         {
-            "build_sam3_predictor": MagicMock(),
-            "build_sam3_video_predictor": MagicMock(),
+            "imread": MagicMock(return_value=np.zeros((100, 100, 3), dtype=np.uint8)),
+            "cvtColor": MagicMock(side_effect=lambda x, *a, **k: x),
+            "resize": MagicMock(
+                side_effect=lambda x, size, **k: (
+                    np.zeros((size[1], size[0]) + x.shape[2:], dtype=getattr(x, "dtype", np.uint8))
+                    if hasattr(x, "shape") and len(x.shape) > 2
+                    else np.zeros((size[1], size[0]), dtype=getattr(x, "dtype", np.uint8))
+                )
+            ),
+            "addWeighted": MagicMock(
+                side_effect=lambda src1, a1, src2, a2, g, **k: (
+                    src1.astype(float) * a1 + src2.astype(float) * a2 + g
+                ).astype(np.uint8)
+            ),
+            "morphologyEx": MagicMock(side_effect=lambda x, op, k, **kwargs: x),
+            "getStructuringElement": MagicMock(return_value=np.ones((3, 3), dtype=np.uint8)),
+            "rectangle": MagicMock(
+                side_effect=lambda img, pt1, pt2, color, *a, **k: img.__setitem__(
+                    (slice(max(0, pt1[1]), max(0, pt2[1])), slice(max(0, pt1[0]), max(0, pt2[0]))),
+                    (max(color) if isinstance(color, (tuple, list, np.ndarray)) and len(color) > 0 else 255),
+                )
+            ),
+            "putText": MagicMock(),
+            "Sobel": MagicMock(side_effect=lambda x, *a, **k: x),
+            "Laplacian": MagicMock(side_effect=lambda x, *a, **k: x),
+            "calcHist": MagicMock(
+                side_effect=lambda images, *a, **k: (
+                    np.histogram(images[0], bins=256, range=(0, 256))[0].astype(np.float32).reshape(-1, 1)
+                )
+            ),
+            "connectedComponentsWithStats": MagicMock(
+                side_effect=lambda mask, **k: (
+                    2,
+                    (mask > 0).astype(np.int32),
+                    np.array([[0, 0, 0, 0, 0], [0, 0, mask.shape[1], mask.shape[0], np.sum(mask > 0)]], dtype=np.int32),
+                    np.array([[0, 0], [mask.shape[1] // 2, mask.shape[0] // 2]], dtype=np.float32),
+                )
+            ),
+            "findContours": MagicMock(return_value=([], None)),
+            "getTextSize": MagicMock(return_value=((50, 20), 5)),
+            "IMREAD_UNCHANGED": 0,
+            "IMREAD_COLOR": 1,
+            "IMREAD_GRAYSCALE": 2,
+            "COLOR_RGB2BGR": 4,
+            "COLOR_BGR2RGB": 4,
+            "COLOR_RGB2GRAY": 6,
+            "COLOR_BGR2GRAY": 6,
+            "INTER_AREA": 3,
+            "INTER_LINEAR": 1,
+            "INTER_NEAREST": 0,
+            "CV_64F": 6,
+            "CV_32F": 5,
+            "CV_8U": 0,
+            "MORPH_CLOSE": 1,
+            "MORPH_ELLIPSE": 1,
+            "CC_STAT_AREA": 4,
         },
     ),
-    "sam3.model": _create_mock_module("sam3.model", {"sam3_video_predictor": MagicMock()}),
-    "sam3.model.sam3_video_predictor": MagicMock(),
-    "sam3.model.decoder": MagicMock(),
-    "sam3.model.sam3_image_processor": MagicMock(),
-    "sam3.model.sam3_video_inference": MagicMock(),
-    "sam3.model.edt": MagicMock(),
-    "sam3.perflib": _create_mock_module("sam3.perflib", {"connected_components": MagicMock()}),
-    "sam3.perflib.connected_components": MagicMock(),
-    "mediapipe": _create_mock_module("mediapipe", {"tasks": MagicMock()}),
-    "mediapipe.tasks": _create_mock_module("mediapipe.tasks", {"python": MagicMock()}),
-    "mediapipe.tasks.python": _create_mock_module("mediapipe.tasks.python", {"vision": MagicMock()}),
-    "pyiqa": MagicMock(),
-    "lpips": _create_mock_module("lpips", {"LPIPS": MagicMock()}),
-    "skimage.metrics": MagicMock(),
+    "sam2": _create_mock_module("sam2", {"build_sam2_video_predictor": MagicMock()}),
+    "sam2.build_sam": _create_mock_module("sam2.build_sam", {"build_sam2_video_predictor": MagicMock()}),
+    "sam3": _create_mock_module("sam3", {"build_sam3_video_model": MagicMock()}),
+    "sam3.model_builder": _create_mock_module("sam3.model_builder", {"build_sam3_predictor": MagicMock()}),
     "scenedetect": _create_mock_module(
         "scenedetect",
         {
-            "detect": MagicMock(),
-            "VideoOpenFailure": VideoOpenFailure,
             "ContentDetector": MagicMock(),
-            "__all__": ["VideoOpenFailure", "ContentDetector"],
+            "VideoOpenFailure": VideoOpenFailure,
+            "detect": MagicMock(),
         },
     ),
     "scenedetect.detectors": _create_mock_module("scenedetect.detectors", {"ContentDetector": MagicMock()}),
-    "scenedetect.video_stream": _create_mock_module("scenedetect.video_stream", {"VideoOpenFailure": VideoOpenFailure}),
-    "torchvision.transforms": MagicMock(),
+    "insightface": _create_mock_module("insightface", {"app": MagicMock()}),
+    "insightface.app": _create_mock_module("insightface.app", {"FaceAnalysis": MagicMock()}),
+    "pyiqa": _create_mock_module("pyiqa", {"create_metric": MagicMock()}),
+    "lpips": _create_mock_module("lpips", {"LPIPS": MagicMock()}),
+    "onnxruntime": _create_mock_module(
+        "onnxruntime",
+        {"InferenceSession": MagicMock(), "SessionOptions": MagicMock(), "GraphOptimizationLevel": MagicMock()},
+    ),
 }
 
-import os
 
-
+# 4. INJECTION LOGIC
 def _should_skip_mocks():
-    """Determine if global mocks should be disabled for real-mode execution.
+    import os
 
-    Priority order:
-    1. PYTEST_INTEGRATION_MODE=true env var — authoritative signal, always wins.
-    2. PYTEST_XDIST_WORKER env var — worker inherited env from parent; if parent
-       set PYTEST_INTEGRATION_MODE, workers already matched rule 1. If a worker
-       exists but rule 1 didn't fire, the parent did NOT export the var, so we
-       stay in mock mode (safe default).
-    3. sys.argv path inspection — for direct invocations without the env var.
-    """
-    # Rule 1: Explicit environment variable — highest priority
     if os.environ.get("PYTEST_INTEGRATION_MODE") == "true":
         return True
-
-    # Rule 2: We are inside an xdist worker.
-    # Workers inherit the parent environment. If PYTEST_INTEGRATION_MODE wasn't
-    # set by the parent, the worker should stay in mock mode. No action needed
-    # here — fall through to argv check as a best-effort fallback.
-    # (Documented explicitly to prevent future "fixes" that break unit tests.)
-
-    # Rule 3: Direct invocation targeting integration/e2e/ui paths
+    # If explicitly running integration or E2E tests, skip mocks
     integration_paths = ["tests/integration/", "tests/e2e/", "tests/ui/"]
     for arg in sys.argv:
-        if any(p in arg for p in integration_paths):
-            if "tests/unit/" in arg:
-                continue
+        if any(p in arg for p in integration_paths) and "tests/unit/" not in arg:
             return True
     return False
 
 
-_skip_mocks = _should_skip_mocks()
+def _inject_global_mocks():
+    if _should_skip_mocks():
+        return
 
-if not _skip_mocks:
+    # 1. First Pass: Inject all into sys.modules
     for mod_name, mod_obj in modules_to_mock.items():
         sys.modules[mod_name] = mod_obj
-else:
-    print("\n[PyTest] Integration/UI Mode detected: Global mocks DISABLED.")
+
+    # 2. Second Pass: Structural Linkage (Parent -> Child attributes)
+    # Ensure that for 'a.b.c', sys.modules['a'].b is sys.modules['a.b']
+    for mod_name in sorted(modules_to_mock.keys()):
+        if "." in mod_name:
+            parent_name, child_name = mod_name.rsplit(".", 1)
+            if parent_name in sys.modules:
+                parent_mod = sys.modules[parent_name]
+                child_mod = sys.modules[mod_name]
+                # Use object.__setattr__ to bypass MockModule.__setattr__ or auto-generation
+                object.__setattr__(parent_mod, child_name, child_mod)
+
+    # 3. CRITICAL: Specific sync for torch.cuda
+    # Even if handled by the loop above, we force it for absolute certainty
+    torch_mod = sys.modules.get("torch")
+    cuda_mod = sys.modules.get("torch.cuda")
+    if torch_mod is not None and cuda_mod is not None:
+        object.__setattr__(torch_mod, "cuda", cuda_mod)
 
 
-# NOW import application modules
-from core.operators import OperatorRegistry
+# 5. INITIALIZE TEST ENVIRONMENT
+_inject_global_mocks()
 
 
-@pytest.fixture
-def clean_registry():
-    """Ensure OperatorRegistry is clean before each test."""
-    OperatorRegistry.clear()
+@pytest.fixture(scope="session", autouse=True)
+def initialize_operators():
+    """Initialize operators once per session after mocks are injected."""
+    if _should_skip_mocks():
+        yield
+        return
+
+    try:
+        from core.operators import OperatorRegistry
+
+        # Avoid double-initialization in some environments
+        if not OperatorRegistry.list_names():
+            from core.operators import discover_operators
+
+            discover_operators()
+
+        # We use a mock config to satisfy initialization
+        from unittest.mock import MagicMock
+
+        OperatorRegistry.initialize_all(MagicMock())
+    except Exception as e:
+        # Don't let initialization failure crash the entire session if some tests don't need it
+        print(f"\nWarning: Failed to initialize operators in conftest: {e}")
     yield
-    OperatorRegistry.clear()
 
 
-@pytest.fixture(scope="session")
-def requires_cuda():
-    """Skip test if CUDA is not available."""
-    import torch
-
-    if not torch.cuda.is_available():
-        pytest.skip("CUDA not available")
-
-
-@pytest.fixture(scope="session")
-def check_assets():
-    """Ensure E2E sample assets exist."""
-    from pathlib import Path
-
-    assets_dir = Path("tests/assets")
-    required = ["sample.mp4", "sample.jpg"]
-    missing = [f for f in required if not (assets_dir / f).exists()]
-    if missing:
-        pytest.skip(f"Missing required test assets: {', '.join(missing)}")
-
-
-@pytest.fixture
-def mock_logger():
-    """Mock Application Logger."""
-    return MagicMock()
-
-
-@pytest.fixture
-def sample_image():
-    """100x100 RGB image with random noise (seed 42 for consistency)."""
-    np.random.seed(42)
-    return np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
-
-
-@pytest.fixture
-def sample_mask():
-    """100x100 grayscale mask (center region active)."""
-    mask = np.zeros((100, 100), dtype=np.uint8)
-    mask[25:75, 25:75] = 255
-    return mask
-
-
-@pytest.fixture
-def sharp_image():
-    """High-frequency checkerboard pattern (sharp)."""
-    pattern = np.indices((100, 100)).sum(axis=0) % 2
-    img = (pattern * 255).astype(np.uint8)
-    return np.stack([img, img, img], axis=-1)
-
-
-@pytest.fixture
-def blurry_image():
-    """Gaussian blurred uniform gray (blurry)."""
-    gray = np.full((100, 100, 3), 128, dtype=np.uint8)
-    return cv2.GaussianBlur(gray, (21, 21), 0)
+# --- GLOBAL FIXTURES ---
 
 
 @pytest.fixture
 def mock_config():
-    """Mock Config object with common parameters."""
-    config = MagicMock()
-    # Quality params
-    config.sharpness_base_scale = 2500.0
-    config.edge_strength_base_scale = 500.0
-    config.quality_contrast_clamp = 50.0
-    config.ffmpeg_thumbnail_quality = 100
-    config.cache_cleanup_threshold = 0.9
-    config.cache_size = 100
-    config.cache_thumbnail_max_size = 100
-    config.thumbnail_cache_max_mb = 100
-    config.cache_eviction_factor = 0.5
-    config.seeding_iou_threshold = 0.5
-    config.seeding_face_similarity_threshold = 0.5
-    config.seeding_face_contain_score = 10.0
-    config.seeding_confidence_score_multiplier = 1.0
-    config.seeding_iou_bonus = 5.0
-    config.seeding_face_to_body_expansion_factors = [2.0, 4.0, 1.0]
-    config.seeding_balanced_score_weights = {"area": 0.3, "confidence": 0.4, "edge": 0.3}
+    from core.config import Config
 
-    # Analysis params
-    config.analysis_default_workers = 4
-    config.analysis_default_batch_size = 8
-    # System params
-    config.downloads_dir = "/tmp/downloads"
-    config.retry_max_attempts = 1
-    config.utility_max_filename_length = 100
-    config.utility_image_extensions = [".jpg", ".png", ".webp", ".jpeg"]
-    config.image_extensions = config.utility_image_extensions  # Fallback
-    config.filename_max_length = config.utility_max_filename_length  # Fallback
-
-    # Utils params
-    config.masking_close_kernel_size = 3
-    config.masking_keep_largest_only = True
-    config.visualization_bbox_color = (255, 0, 0)
-    config.visualization_bbox_thickness = 2
-
-    # Filter defaults
-    config.filter_default_quality_score = {"default_min": 0.0, "default_max": 100.0}
-    config.filter_default_face_sim = {"default_min": 0.0, "default_max": 1.0}
-    config.filter_default_mask_area_pct = {"default_min": 0.0}
-    config.filter_default_eyes_open = {"default_min": 0.0}
-    config.filter_default_sharpness = {"default_min": 0.0, "default_max": 100.0}
-    config.filter_default_edge_strength = {"default_min": 0.0, "default_max": 100.0}
-    config.filter_default_contrast = {"default_min": 0.0, "default_max": 100.0}
-    config.filter_default_brightness = {"default_min": 0.0, "default_max": 100.0}
-    config.filter_default_entropy = {"default_min": 0.0, "default_max": 100.0}
-    config.filter_default_niqe = {"default_min": 0.0, "default_max": 100.0}
-    config.filter_default_yaw = {"min": -180, "max": 180}
-    config.filter_default_pitch = {"min": -180, "max": 180}
-
-    # Mock model_dump
-    config.model_dump.return_value = {
-        "sharpness_base_scale": 2500.0,
-        "edge_strength_base_scale": 500.0,
-        "quality_contrast_clamp": 50.0,
-        "default_thumb_megapixels": 0.5,
-        "quality_weights_sharpness": 20.0,
-        "quality_weights_edge_strength": 20.0,
-        "quality_weights_contrast": 20.0,
-        "quality_weights_brightness": 10.0,
-        "quality_weights_entropy": 10.0,
-        "quality_weights_niqe": 20.0,
-        "filter_default_quality_score": {"default_min": 0.0, "default_max": 100.0},
-        "filter_default_face_sim": {"default_min": 0.0, "default_max": 1.0},
-        "filter_default_mask_area_pct": {"default_min": 0.0},
-        "filter_default_eyes_open": {"default_min": 0.0},
-    }
-    return config
+    return Config()
 
 
 @pytest.fixture
 def mock_config_simple(mock_config):
-    """Alias for mock_config used by some tests."""
     return mock_config
 
 
 @pytest.fixture
-def sample_frames_data():
-    """Provides sample frame metadata for filtering tests."""
-    return [
-        {"filename": "frame_01.png", "face_sim": 0.8, "mask_area_pct": 15.0, "metrics": {"quality_score": 85}},
-        {"filename": "frame_02.png", "face_sim": 0.7, "mask_area_pct": 12.0, "metrics": {"quality_score": 75}},
-        {"filename": "frame_03.png", "face_sim": 0.6, "mask_area_pct": 20.0, "metrics": {"quality_score": 65}},
-        {"filename": "frame_04.png", "face_sim": 0.4, "mask_area_pct": 10.0, "metrics": {"quality_score": 55}},
-        {"filename": "frame_05.png", "face_sim": 0.9, "mask_area_pct": 5.0, "metrics": {"quality_score": 45}},
-        {"filename": "frame_06.png", "face_sim": None, "mask_area_pct": 0.0, "metrics": {"quality_score": 35}},
-    ]
+def mock_logger():
+    return MagicMock(name="mock_logger")
+
+
+@pytest.fixture
+def mock_progress_queue():
+    import queue
+
+    return queue.Queue()
+
+
+@pytest.fixture
+def mock_cancel_event():
+    import threading
+
+    return threading.Event()
+
+
+@pytest.fixture
+def mock_thumbnail_manager():
+    return MagicMock(name="mock_thumbnail_manager")
 
 
 @pytest.fixture
 def mock_ui_state():
     """Provides a dictionary with default values for UI-related event models."""
     return {
-        "source_path": "video.mp4",
-        "video_path": "video.mp4",
-        "output_folder": "/tmp/out",
-        "method": "🤖 Automatic",
-        "interval": 1.0,
-        "max_resolution": "720p",
-        "disable_parallel": False,
-        "resume": False,
-        "face_ref_img_path": "",
-        "face_model_name": "ghostface",
-        "enable_subject_mask": False,
-        "tracker_model_name": "sam2",
-        "subject_detector_model": "YOLO12l-Seg",
-        "subject_detector_class_name": "person",
-        "subject_detector_class_id": 0,
-        "subject_detector_threshold": 0.45,
-        "best_frame_strategy": "🤖 Automatic",
-        "scene_detect": True,
-        "nth_frame": 1,
-        "require_face_match": False,
-        "text_prompt": "",
-        "thumbnails_only": True,
-        "thumb_megapixels": 0.5,
-        "pre_analysis_enabled": True,
-        "pre_sample_nth": 1,
-        "primary_seed_strategy": "🧑\u200d🤝\u200d🧑 Find Prominent Person",
-        "min_mask_area_pct": 1.0,
-        "sharpness_base_scale": 2500.0,
-        "edge_strength_base_scale": 100.0,
-        "compute_quality_score": True,
-        "compute_sharpness": True,
-        "compute_edge_strength": True,
-        "compute_contrast": True,
-        "compute_brightness": True,
-        "compute_entropy": True,
-        "compute_eyes_open": True,
-        "compute_yaw": True,
-        "compute_pitch": True,
-        "compute_face_sim": True,
-        "compute_subject_mask_area": True,
-        "compute_niqe": True,
-        "compute_phash": True,
+        "video_path": "test.mp4",
+        "output_folder": "/tmp",
+        "primary_seed_strategy": "Automatic Detection",
     }
 
 
@@ -551,29 +302,66 @@ def mock_params(mock_ui_state):
 
 
 @pytest.fixture
-def mock_thumbnail_manager():
-    """Provides a mock ThumbnailManager."""
-    tm = MagicMock()
-    tm.get.return_value = np.zeros((100, 100, 3), dtype=np.uint8)
-    return tm
-
-
-@pytest.fixture(scope="session")
 def mock_model_registry():
-    """Provides a mock ModelRegistry."""
-    return MagicMock()
+    return MagicMock(name="mock_model_registry")
 
 
 @pytest.fixture
-def mock_progress_queue():
-    """Provides a mock progress queue."""
-    return Queue()
+def mock_database():
+    db = MagicMock(name="mock_database")
+    db.__enter__.return_value = db
+    return db
 
 
 @pytest.fixture
-def mock_cancel_event():
-    """Provides a mock cancel event."""
-    return threading.Event()
+def sample_image():
+    """100x100 RGB image with random noise (seed 42 for consistency)."""
+    import numpy as np
+
+    np.random.seed(42)
+    return np.random.randint(0, 256, (100, 100, 3), dtype=np.uint8)
+
+
+@pytest.fixture
+def sample_mask():
+    """100x100 grayscale mask (center region active)."""
+    import numpy as np
+
+    mask = np.zeros((100, 100), dtype=np.uint8)
+    mask[25:75, 25:75] = 255
+    return mask
+
+
+@pytest.fixture
+def sharp_image():
+    """High-frequency checkerboard pattern (sharp)."""
+    import numpy as np
+
+    img = np.zeros((100, 100, 3), dtype=np.uint8)
+    # 10x10 checkerboard
+    for i in range(10):
+        for j in range(10):
+            if (i + j) % 2 == 0:
+                img[i * 10 : (i + 1) * 10, j * 10 : (j + 1) * 10] = 255
+    return img
+
+
+@pytest.fixture
+def blurry_image():
+    """Uniform gray (low frequency/blurry)."""
+    import numpy as np
+
+    return np.full((100, 100, 3), 128, dtype=np.uint8)
+
+
+@pytest.fixture
+def sample_frames_data():
+    """Provides sample frame metadata for filtering tests."""
+    return [
+        {"filename": "frame_0000.jpg", "metrics": {"quality_score": 85.0, "niqe": 15.0}},
+        {"filename": "frame_0001.jpg", "metrics": {"quality_score": 40.0, "niqe": 45.0}},
+        {"filename": "frame_0002.jpg", "metrics": {"quality_score": 92.0, "niqe": 12.0}},
+    ]
 
 
 @pytest.fixture
@@ -582,58 +370,7 @@ def sample_scenes():
     from core.models import Scene
 
     return [
-        Scene(shot_id=1, start_frame=0, end_frame=100, status="pending"),
-        Scene(shot_id=2, start_frame=101, end_frame=200, status="included"),
-        Scene(shot_id=3, start_frame=201, end_frame=300, status="excluded"),
+        Scene(shot_id=1, start_frame=0, end_frame=100, status="included"),
+        Scene(shot_id=2, start_frame=100, end_frame=250, status="excluded", rejection_reasons=["blurry"]),
+        Scene(shot_id=3, start_frame=250, end_frame=400, status="included"),
     ]
-
-
-def pytest_sessionstart(session):
-    """Mocks are now initialized at the module level for early interception."""
-    pass
-
-
-def pytest_sessionfinish(session, exitstatus):
-    """Restore original modules after the session."""
-    if hasattr(session, "original_modules"):
-        for mod_name in session.original_modules:
-            sys.modules[mod_name] = session.original_modules[mod_name]
-
-
-@pytest.fixture(scope="module")
-def module_model_registry():
-    """Module-scoped model registry to avoid reloading weights between tests.
-    Speeds up the integration suite significantly (5-10s per tracker test).
-    Uses the project's real models directory to avoid redundant downloads.
-    """
-    import tempfile
-    from pathlib import Path
-
-    from core.config import Config
-    from core.logger import AppLogger
-    from core.managers import ModelRegistry
-
-    # Get the project root to find the real models directory (conftest is in tests/)
-    project_root = Path(__file__).parents[1]
-    real_models_dir = project_root / "models"
-
-    if not real_models_dir.exists():
-        real_models_dir.mkdir(parents=True)
-
-    # Use a persistent temp dir for logs only
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        logs_dir = Path(tmp_dir) / "logs"
-        logs_dir.mkdir()
-        config = Config(
-            logs_dir=str(logs_dir),
-            models_dir=str(real_models_dir),
-        )
-        logger = AppLogger(config, log_to_console=False, log_to_file=False)
-        registry = ModelRegistry(logger)
-        yield registry
-
-
-@pytest.fixture
-def mock_torch():
-    """Fixture to access the mocked torch module."""
-    return sys.modules["torch"]

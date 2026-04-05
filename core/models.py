@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from core.logger import AppLogger
 
 from core.enums import SceneStatus
+from core.pipeline_results import PreAnalysisResult  # noqa: F401 # Backward compatibility shim
 
 
 def _coerce(val: Any, to_type: Optional[type]) -> Any:
@@ -343,15 +344,3 @@ class MaskingResult(BaseModel):
     mask_area_pct: Optional[float] = None
     mask_empty: bool = True
     error: Optional[str] = None
-
-
-class PreAnalysisResult(BaseModel):
-    """Typed result for the pre-analysis pipeline stage."""
-
-    unified_log: str
-    scenes: List[dict]
-    output_dir: str
-    video_path: str
-    done: bool = True
-    seeding_results_column: Optional[dict] = None
-    propagation_group: Optional[dict] = None

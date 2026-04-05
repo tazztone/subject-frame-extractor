@@ -87,6 +87,8 @@ def simulate_pipeline(
     progress_queue: Any,
     cancel_event: Any,
     thumbnail_manager: Any,
+    model_registry: Any,
+    database: Any,
     cuda_available: bool,
 ) -> List[str]:
     """Simulates the E2E pipeline with sample assets."""
@@ -114,7 +116,16 @@ def simulate_pipeline(
             scene_detect=True,
         )
         ext_result = deque(
-            execute_extraction(ext_event, progress_queue, cancel_event, logger, config),
+            execute_extraction(
+                ext_event,
+                progress_queue,
+                cancel_event,
+                logger,
+                config,
+                model_registry,
+                thumbnail_manager,
+                cuda_available,
+            ),
             maxlen=1,
         )[0]
         if not ext_result.get("done"):
@@ -145,6 +156,7 @@ def simulate_pipeline(
                 logger,
                 config,
                 thumbnail_manager,
+                model_registry,
                 cuda_available,
             ),
             maxlen=1,
@@ -171,6 +183,8 @@ def simulate_pipeline(
                 logger,
                 config,
                 thumbnail_manager,
+                model_registry,
+                database,
                 cuda_available,
             ),
             maxlen=1,
@@ -189,6 +203,8 @@ def simulate_pipeline(
                 logger,
                 config,
                 thumbnail_manager,
+                model_registry,
+                database,
                 cuda_available,
             ),
             maxlen=1,
@@ -223,7 +239,7 @@ def simulate_pipeline(
             crop_padding=0,
             filter_args={"require_face_match": False, "dedup_thresh": -1},
         )
-        export_msg = export_kept_frames(export_event, config, logger, thumbnail_manager, cancel_event)
+        export_msg = export_kept_frames(export_event, config, logger, progress_queue, cancel_event)
         if "Error" in export_msg:
             raise RuntimeError(f"Export failed: {export_msg}")
         report[-1] += " OK"
@@ -245,6 +261,8 @@ def generate_full_diagnostic_report(
     progress_queue: Any,
     cancel_event: Any,
     thumbnail_manager: Any,
+    model_registry: Any,
+    database: Any,
     cuda_available: bool,
 ) -> Generator[str, None, None]:
     """Generates a full diagnostic report as a generator."""
@@ -259,6 +277,8 @@ def generate_full_diagnostic_report(
             progress_queue,
             cancel_event,
             thumbnail_manager,
+            model_registry,
+            database,
             cuda_available,
         )
     )

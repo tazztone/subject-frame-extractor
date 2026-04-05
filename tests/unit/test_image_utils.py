@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
@@ -13,7 +13,18 @@ def test_postprocess_mask_basic(mock_config):
     mask[10:20, 10:20] = 255
     mask[50:60, 50:70] = 255  # Larger blob
 
-    processed = postprocess_mask(mask, mock_config)
+    # Mock connectedComponentsWithStats to return 2 labels
+    # Label 0: Background, Label 1: Smaller blob, Label 2: Larger blob
+    labels = np.zeros((100, 100), dtype=np.int32)
+    labels[10:20, 10:20] = 1
+    labels[50:60, 50:70] = 2
+    stats = np.zeros((3, 5), dtype=np.int32)
+    stats[1, 4] = 100  # Area of label 1
+    stats[2, 4] = 200  # Area of label 2
+
+    with patch("cv2.connectedComponentsWithStats", return_value=(3, labels, stats, None)):
+        processed = postprocess_mask(mask, mock_config)
+
     assert np.any(processed)
     # With keep_largest_only, only the larger blob (50:60, 50:70) should remain
     assert processed[15, 15] == 0
@@ -43,7 +54,11 @@ def test_render_mask_overlay_resize():
     mask[5:10, 5:10] = 255
     logger = MagicMock()
 
-    overlay = render_mask_overlay(image, mask, alpha=0.5, logger=logger)
+    # Mock cv2.resize to return a 100x100 mask with same contents
+    resized_mask = np.zeros((100, 100), dtype=np.uint8)
+    resized_mask[10:20, 10:20] = 255
+    with patch("cv2.resize", return_value=resized_mask):
+        overlay = render_mask_overlay(image, mask, alpha=0.5, logger=logger)
     assert overlay.shape == (100, 100, 3)
     # The mask should have been resized to 100x100
     assert np.any(overlay[15, 15, 0] > 0)

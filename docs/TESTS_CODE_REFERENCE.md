@@ -20,8 +20,12 @@ tests
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`e2e_run.py`](#-testse2ee2e_runpy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_photo_cli.py`](#-testse2etest_photo_clipy)  
 │&nbsp;&nbsp;&nbsp;└──&nbsp;[`verify_simple.py`](#-testse2everify_simplepy)  
+├──&nbsp;helpers  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`exceptions.py`](#-testshelpersexceptionspy)  
+│&nbsp;&nbsp;&nbsp;└──&nbsp;[`mock_tensor.py`](#-testshelpersmock_tensorpy)  
 ├──&nbsp;integration  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`__init__.py`](#-testsintegration__init__py)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`conftest.py`](#-testsintegrationconftestpy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;e2e_output_debug  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;frame_map.json  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;mask_metadata.json  
@@ -100,10 +104,12 @@ tests
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_crop_operator.py`](#-testsunittest_crop_operatorpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_database.py`](#-testsunittest_databasepy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_db_schema.py`](#-testsunittest_db_schemapy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_debug_parallel.py`](#-testsunittest_debug_parallelpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_dedup.py`](#-testsunittest_deduppy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_entropy.py`](#-testsunittest_entropypy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_enums.py`](#-testsunittest_enumspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_error_handling.py`](#-testsunittest_error_handlingpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_eta_calculator.py`](#-testsunittest_eta_calculatorpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_events.py`](#-testsunittest_eventspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_exit_branches.py`](#-testsunittest_exit_branchespy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_export.py`](#-testsunittest_exportpy)  
@@ -187,63 +193,41 @@ tests
 ### `📄 tests/conftest.py`
 
 ```python
-"""Shared pytest fixtures and configuration."""
-def pytest_addoption(parser):
-    """Add custom command-line options to pytest."""
-def _create_mock_module(name, attributes=None):
-    """Creates a proper ModuleType instance populated with mocks/attributes."""
-class OutOfMemoryError(RuntimeError):
-    """Mock CUDA OutOfMemoryError."""
-class VideoOpenFailure(RuntimeError):
-    """Mock PySceneDetect VideoOpenFailure."""
-class TransparentContext:
-    """Empty context manager that does nothing but allows 'with' blocks."""
-    def __enter__(self, *args, **kwargs): ...
-    def __exit__(self, *args, **kwargs): ...
-    def __call__(self, func=None): ...
-_mock_torch_obj = MagicMock(name='torch')
-_cuda_mod = _create_mock_module('torch.cuda', {'is_available': MagicMock(retu...
-_mock_torch_obj.cuda = _cuda_mod
-_mock_torch_obj.__version__ = "<REDACTED_STRING>"
-_mock_torch_obj.nn.Module = MagicMock
-_mock_torch_obj.Tensor = MagicMock
-_mock_torch_obj.device = MagicMock
-_mock_torch_obj.float = MagicMock(name='torch.float')
-_mock_torch_obj.float32 = MagicMock(name='torch.float32')
-_mock_torch_obj.float16 = MagicMock(name='torch.float16')
-_mock_torch_obj.bfloat16 = MagicMock(name='torch.bfloat16')
-_mock_torch_obj.uint8 = MagicMock(name='torch.uint8')
-_mock_torch_obj.int64 = MagicMock(name='torch.int64')
-_mock_torch_obj.version = MagicMock()
-_mock_torch_obj.version.cuda = "<REDACTED_STRING>"
-def _create_mock_tensor(name='tensor', shape=None, value=None, **kwargs): ...
-_mock_torch_obj.from_numpy = MagicMock(side_effect=lambda np_arr: _create_moc...
-_mock_torch_obj.zeros = MagicMock(side_effect=lambda shape, **kwargs: _create...
-_mock_torch_obj.ones = MagicMock(side_effect=lambda shape, **kwargs: _create_...
-_mock_torch_obj.rand = MagicMock(side_effect=lambda *shape, **kwargs: _create...
-_mock_torch_obj.randn = MagicMock(side_effect=lambda *shape, **kwargs: _creat...
-_mock_torch_obj.empty = MagicMock(side_effect=lambda *shape, **kwargs: _creat...
-_mock_torch_obj.tensor = MagicMock(side_effect=lambda data, **kwargs: _create...
-_mock_torch_obj.no_grad = TransparentContext
-_mock_torch_obj.inference_mode = TransparentContext
-_mock_torch_obj.SymFloat = MagicMock
-_mock_torch_obj.SymInt = MagicMock
-modules_to_mock = {'torch': _create_mock_module('torch', {'cuda': _cuda_mod, ...
-def _should_skip_mocks():
-    """Determine if global mocks should be disabled for real-mode execution."""
-_skip_mocks = _should_skip_mocks()
+DeviceProps = namedtuple('DeviceProps', ['total_memory'])
+class MockModule(ModuleType):
+    def __init__(self, name, attrs=None): ...
+    def __getattr__(self, name): ...
+def _create_mock_module(name, attrs=None): ...
+createmocktensor = create_mock_tensor
+cuda_mock = _create_mock_module('torch.cuda', {'is_available': MagicMock(retu...
+modules_to_mock = {'torch': _create_mock_module('torch', {'Tensor': MagicMock...
+def _should_skip_mocks(): ...
+def _inject_global_mocks(): ...
+@pytest.fixture(scope='session', autouse=True)
+def initialize_operators():
+    """Initialize operators once per session after mocks are injected."""
 @pytest.fixture
-def clean_registry():
-    """Ensure OperatorRegistry is clean before each test."""
-@pytest.fixture(scope='session')
-def requires_cuda():
-    """Skip test if CUDA is not available."""
-@pytest.fixture(scope='session')
-def check_assets():
-    """Ensure E2E sample assets exist."""
+def mock_config(): ...
 @pytest.fixture
-def mock_logger():
-    """Mock Application Logger."""
+def mock_config_simple(mock_config): ...
+@pytest.fixture
+def mock_logger(): ...
+@pytest.fixture
+def mock_progress_queue(): ...
+@pytest.fixture
+def mock_cancel_event(): ...
+@pytest.fixture
+def mock_thumbnail_manager(): ...
+@pytest.fixture
+def mock_ui_state():
+    """Provides a dictionary with default values for UI-related event models."""
+@pytest.fixture
+def mock_params(mock_ui_state):
+    """Provides an AnalysisParameters instance for testing."""
+@pytest.fixture
+def mock_model_registry(): ...
+@pytest.fixture
+def mock_database(): ...
 @pytest.fixture
 def sample_image():
     """100x100 RGB image with random noise (seed 42 for consistency)."""
@@ -255,47 +239,13 @@ def sharp_image():
     """High-frequency checkerboard pattern (sharp)."""
 @pytest.fixture
 def blurry_image():
-    """Gaussian blurred uniform gray (blurry)."""
-@pytest.fixture
-def mock_config():
-    """Mock Config object with common parameters."""
-@pytest.fixture
-def mock_config_simple(mock_config):
-    """Alias for mock_config used by some tests."""
+    """Uniform gray (low frequency/blurry)."""
 @pytest.fixture
 def sample_frames_data():
     """Provides sample frame metadata for filtering tests."""
 @pytest.fixture
-def mock_ui_state():
-    """Provides a dictionary with default values for UI-related event models."""
-@pytest.fixture
-def mock_params(mock_ui_state):
-    """Provides an AnalysisParameters instance for testing."""
-@pytest.fixture
-def mock_thumbnail_manager():
-    """Provides a mock ThumbnailManager."""
-@pytest.fixture(scope='session')
-def mock_model_registry():
-    """Provides a mock ModelRegistry."""
-@pytest.fixture
-def mock_progress_queue():
-    """Provides a mock progress queue."""
-@pytest.fixture
-def mock_cancel_event():
-    """Provides a mock cancel event."""
-@pytest.fixture
 def sample_scenes():
     """Provides a list of sample Scene objects."""
-def pytest_sessionstart(session):
-    """Mocks are now initialized at the module level for early interception."""
-def pytest_sessionfinish(session, exitstatus):
-    """Restore original modules after the session."""
-@pytest.fixture(scope='module')
-def module_model_registry():
-    """Module-scoped model registry to avoid reloading weights between tests."""
-@pytest.fixture
-def mock_torch():
-    """Fixture to access the mocked torch module."""
 ```
 
 ### `📄 tests/e2e/e2e_run.py`
@@ -328,6 +278,33 @@ class TestPhotoCLI:
 
 ```python
 def verify_ui_simple(): ...
+```
+
+### `📄 tests/helpers/exceptions.py`
+
+```python
+class OutOfMemoryError(RuntimeError):
+    """Mock CUDA OutOfMemoryError."""
+class VideoOpenFailure(RuntimeError):
+    """Mock PySceneDetect VideoOpenFailure."""
+```
+
+### `📄 tests/helpers/mock_tensor.py`
+
+```python
+"""Robust mock tensor factory for unit tests."""
+def _create_mock_tensor(name='tensor', shape=None, device_mock=None, dtype_mock=None, depth=0):
+    """Factory for robust mock tensors that support .cpu().numpy() and basic torch ops."""
+def create_mock_tensor(name='tensor', shape=None, device_mock=None, dtype_mock=None):
+    """Public API for mock tensor factory."""
+```
+
+### `📄 tests/integration/conftest.py`
+
+```python
+@pytest.fixture
+def database(tmp_path):
+    """Provides a fresh in-memory or temporary SQLite database for tests."""
 ```
 
 ### `📄 tests/integration/test_accuracy.py`
@@ -432,7 +409,7 @@ class TestPipelineE2E:
     """End-to-end pipeline tests with real execution."""
     def test_extraction_pipeline_creates_output(self, tmp_path):
         """ExtractionPipeline initializes correctly with real config."""
-    def test_analysis_pipeline_initializes_with_real_managers(self, tmp_path, module_model_registry):
+    def test_analysis_pipeline_initializes_with_real_managers(self, tmp_path, module_model_registry, database):
         """AnalysisPipeline initializes with real ThumbnailManager and ModelRegistry."""
 @pytest.mark.gpu_e2e
 class TestVideoE2E:
@@ -479,7 +456,7 @@ class TestCancellationE2E:
     @requires_sam3
     def test_propagation_with_cancel_event(self, tmp_path, test_frames_dir, module_model_registry):
         """MaskPropagator handles cancel event during propagation."""
-    def test_analysis_pipeline_cancel(self, tmp_path, module_model_registry):
+    def test_analysis_pipeline_cancel(self, tmp_path, module_model_registry, database):
         """AnalysisPipeline handles cancel event gracefully."""
 @pytest.mark.gpu_e2e
 class TestMediaPipeLandmarkerE2E:
@@ -570,7 +547,8 @@ def test_session_load_restores_state(tmp_path):
 project_root = Path(__file__).parent.parent
 def create_mock_module(name, attributes=None): ...
 mock_torch = MagicMock(name='torch')
-mock_torch.cuda.is_available.return_value = False
+mock_cuda = create_mock_module('torch.cuda', {'is_available': MagicMock(retur...
+mock_torch.cuda = mock_cuda
 mock_torch.__version__ = "<REDACTED_STRING>"
 mock_torch.nn.Module = MagicMock
 mock_torch.Tensor = MagicMock
@@ -582,9 +560,10 @@ mock_torch.no_grad = TransparentContext
 mock_torch.inference_mode = TransparentContext
 modules_to_mock = ['torch', 'torch.cuda', 'torch.nn', 'torchvision', 'torchvi...
 def mock_extraction_run(self, tracker=None): ...
-def mock_pre_analysis_execution(event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress=None, model_registry=None, loaded_models=None, **kwargs): ...
-def mock_propagation_execution(event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress=None, model_registry=None, loaded_models=None, **kwargs): ...
-def mock_analysis_execution(event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress=None, model_registry=None, loaded_models=None, **kwargs): ...
+def mock_extraction_execution(event, progress_queue, cancel_event, logger, config, model_registry, thumbnail_manager=None, cuda_available=None, progress=None, **kwargs): ...
+def mock_pre_analysis_execution(event, progress_queue, cancel_event, logger, config, thumbnail_manager, model_registry, cuda_available, progress=None, loaded_models=None, **kwargs): ...
+def mock_propagation_execution(event, progress_queue, cancel_event, logger, config, thumbnail_manager, model_registry, database, cuda_available, progress=None, loaded_models=None, **kwargs): ...
+def mock_analysis_execution(event, progress_queue, cancel_event, logger, config, thumbnail_manager, model_registry, database, cuda_available, progress=None, loaded_models=None, **kwargs): ...
 def mock_ingest_folder(folder_path, output_dir, recursive=False, thumbnails_only=True): ...
 def mock_export_xmps_for_photos(photos, star_thresholds=None): ...
 def mock_export_kept_frames(event, config, logger, progress_queue=None, cancel_event=None): ...
@@ -1242,6 +1221,12 @@ def cleanup_diffs():
 
 ```python
 @pytest.fixture
+def mock_database():
+    """Provides a thread-safe mock Database instance."""
+@pytest.fixture
+def mock_app_ui(mock_config, mock_logger, mock_database, mock_thumbnail_manager, mock_model_registry):
+    """Provides a mocked AppUI instance with all sub-handlers/managers."""
+@pytest.fixture
 def sam3_unit():
     """A SAM3Wrapper instance for unit tests."""
 ```
@@ -1301,7 +1286,7 @@ def test_pre_analysis_run_cancellation(mock_masker_cls, mock_init_models, mock_d
 @patch('core.managers.analysis.initialize_analysis_models')
 @patch('core.managers.analysis.Database')
 def test_analysis_run_resume_logic(mock_db, mock_init_models, mock_deps, analysis_params, tmp_path): ...
-@patch('core.managers.analysis.cv2.imread')
+@patch('cv2.imread')
 @patch('core.managers.analysis.initialize_analysis_models')
 @patch('core.managers.analysis.Database')
 def test_process_reference_face_logic(mock_db, mock_init_models, mock_imread, mock_deps, analysis_params, tmp_path): ...
@@ -1363,7 +1348,7 @@ class TestAppUI:
     @pytest.fixture
     def app_state(self): ...
     @pytest.fixture
-    def app_ui(self, mock_config, mock_logger, mock_queue, mock_cancel_event, mock_thumbnail_manager, mock_model_registry): ...
+    def app_ui(self, mock_config, mock_logger, mock_queue, mock_cancel_event, mock_thumbnail_manager, mock_model_registry, mock_database): ...
     def test_init(self, app_ui): ...
     def test_preload_models(self, app_ui): ...
     def test_fix_strategy_visibility(self, app_ui): ...
@@ -1631,6 +1616,13 @@ def test_migrate_database_rollback_on_failure(tmp_path):
     """Test that migration rolls back on failure."""
 ```
 
+### `📄 tests/unit/test_debug_parallel.py`
+
+```python
+def test_debug_torch_path(): ...
+def test_debug_sys_modules(): ...
+```
+
 ### `📄 tests/unit/test_dedup.py`
 
 ```python
@@ -1684,72 +1676,39 @@ def test_get_coco_id_fallback():
 ### `📄 tests/unit/test_error_handling.py`
 
 ```python
-"""Tests for error handling and edge cases."""
-class TestConfigEdgeCases:
-    """Tests for Config validation and edge cases."""
-    def test_config_default_values(self):
-        """Test that Config has sensible defaults."""
-    def test_config_custom_values(self, tmp_path):
-        """Test that Config accepts custom values."""
-    def test_config_path_creation(self, tmp_path):
-        """Test that Config creates necessary directories."""
-    @patch('pathlib.Path.mkdir', MagicMock())
-    @patch('pathlib.Path.touch', MagicMock())
-    @patch('pathlib.Path.unlink', MagicMock())
-    def test_config_invalid_quality_weights(self):
-        """Test that Config rejects invalid quality weights (sum cannot be zero)."""
-class TestSceneEdgeCases:
-    """Tests for Scene model edge cases."""
-    def test_scene_minimal(self):
-        """Test Scene with minimal required fields."""
-    def test_scene_with_seed_result(self):
-        """Test Scene with seed_result data."""
-    def test_scene_status_transitions(self):
-        """Test Scene status can be changed."""
-class TestFrameEdgeCases:
-    """Tests for Frame model edge cases."""
-    def test_frame_with_none_image(self):
-        """Test Frame with None image data (some workflows don't need images)."""
-    def test_frame_with_image_data(self, sample_image):
-        """Test Frame stores image data correctly."""
-class TestFilteringEdgeCases:
-    """Tests for filtering with edge cases and empty data."""
-    def test_filter_empty_frames(self, mock_config):
-        """Test filtering handles empty frame list."""
-    def test_filter_all_frames_pass(self, sample_frames_data, mock_config):
-        """Test filtering when all frames pass."""
-    def test_filter_strict_thresholds(self, sample_frames_data, mock_config):
-        """Test filtering with very strict thresholds rejects most frames."""
-class TestAnalysisParametersValidation:
-    """Tests for AnalysisParameters validation."""
-    def test_params_minimal(self, tmp_path):
-        """Test AnalysisParameters with minimal required fields."""
-    def test_params_full(self, tmp_path):
-        """Test AnalysisParameters with all fields."""
-    def test_params_from_ui(self, mock_config):
-        """Test AnalysisParameters.from_ui factory method."""
-class TestErrorHandlerDecorators:
-    """Tests for ErrorHandler.with_retry and with_fallback decorators."""
-    def test_with_retry_success_first_try(self, mock_logger):
-        """Test with_retry when function succeeds on first try."""
-    def test_with_retry_success_after_failures(self, mock_logger):
-        """Test with_retry when function succeeds after initial failures."""
-    def test_with_retry_all_attempts_fail(self, mock_logger):
-        """Test with_retry raises exception when all attempts fail."""
-    def test_with_retry_custom_exceptions(self, mock_logger):
-        """Test with_retry only catches specified exceptions."""
-    def test_with_fallback_primary_succeeds(self, mock_logger):
-        """Test with_fallback when primary function succeeds."""
-    def test_with_fallback_primary_fails(self, mock_logger):
-        """Test with_fallback when primary function fails."""
-    def test_with_fallback_both_fail(self, mock_logger):
-        """Test with_fallback when both primary and fallback fail."""
-class TestErrorSeverityAndRecoveryStrategy:
-    """Tests for ErrorSeverity and RecoveryStrategy enums."""
-    def test_error_severity_values(self):
-        """Test ErrorSeverity enum values exist."""
-    def test_recovery_strategy_values(self):
-        """Test RecoveryStrategy enum values exist."""
+"""Unit tests for handle_common_errors decorator."""
+def test_handle_common_errors_success():
+    """Test handle_common_errors with successful generator."""
+def test_handle_common_errors_generic_exception():
+    """Test handle_common_errors with generic Exception."""
+def test_handle_common_errors_file_not_found():
+    """Test handle_common_errors with FileNotFoundError."""
+def test_handle_common_errors_value_error():
+    """Test handle_common_errors with ValueError."""
+def test_handle_common_errors_cuda_oom():
+    """Test handle_common_errors with CUDA OutOfMemoryError."""
+def test_handle_common_errors_runtime_error():
+    """Test handle_common_errors with RuntimeError."""
+```
+
+### `📄 tests/unit/test_eta_calculator.py`
+
+```python
+"""Unit tests for ETACalculator."""
+def test_calculate_eta_none():
+    """Test calculate_eta with None EMA."""
+def test_calculate_eta_zero():
+    """Test calculate_eta with 0 remaining."""
+def test_calculate_eta_normal():
+    """Test calculate_eta with normal values."""
+def test_format_eta_none():
+    """Test format_eta with None."""
+def test_format_eta_seconds():
+    """Test format_eta with seconds only."""
+def test_format_eta_minutes():
+    """Test format_eta with minutes and seconds."""
+def test_format_eta_hours():
+    """Test format_eta with hours and minutes."""
 ```
 
 ### `📄 tests/unit/test_events.py`
@@ -2012,7 +1971,7 @@ class TestFiltering:
         """Test edge case where all frames are filtered out."""
     def test_apply_all_filters_face_sim_edge_cases(self, sample_frames, mock_config):
         """Test face_sim filtering with require_face_match."""
-    def test_apply_all_filters_range_filter(self, sample_frames, mock_config):
+    def test_apply_all_filters_range_filter(self, sample_frames):
         """Test a range-based filter (e.g., yaw)."""
 ```
 
@@ -2076,7 +2035,7 @@ class TestAppUIHandlers:
     @pytest.fixture
     def test_list_images(self, tmp_path, mock_config): ...
     @pytest.fixture
-    def app_ui(self, mock_config, mock_logger, mock_thumbnail_manager, mock_model_registry, mock_progress_queue, mock_cancel_event):
+    def app_ui(self, mock_config, mock_logger, mock_thumbnail_manager, mock_model_registry, mock_progress_queue, mock_cancel_event, mock_database):
         """Create an AppUI instance for testing."""
     def test_on_extraction_success(self, app_ui):
         """Test _on_extraction_success updates ApplicationState correctly."""
@@ -2288,7 +2247,7 @@ class TestManagers:
     @patch('core.managers.registry.ModelRegistry._load_tracker_impl')
     def test_get_tracker_success(self, mock_load, mock_logger, mock_config): ...
     @patch('core.managers.registry.ModelRegistry._load_tracker_impl')
-    @patch('core.managers.registry.torch.cuda.empty_cache', create=True)
+    @patch('torch.cuda.empty_cache', create=True)
     @patch('core.managers.registry.torch.cuda.is_available', return_value=True, create=True)
     def test_get_tracker_oom_fallback(self, mock_cuda, mock_empty, mock_load, mock_logger, mock_config): ...
     def test_video_manager_prepare_local(self, mock_config): ...
@@ -2425,7 +2384,7 @@ class TestModelRegistry:
     def registry(self, mock_logger): ...
     def test_get_or_load_happy_path(self, registry): ...
     def test_get_or_load_oom_retry(self, registry):
-        """Test that OOM triggers clear() and retry."""
+        """Test that OOM is bubbled up (retry logic moved to specialized loaders)."""
     def test_sticky_failure_logic(self, registry):
         """Test that failures are cached (sticky failure)."""
     def test_clear_and_reload(self, registry):
@@ -2484,17 +2443,14 @@ class TestNiqeOperator:
     def test_initialize_success(self, operator): ...
     def test_initialize_error_paths(self, operator): ...
     def test_execute_flow(self, operator): ...
+    def test_execute_no_model(self, operator): ...
     def test_execute_with_config_overrides(self, operator): ...
     def test_execute_with_various_config_attributes(self, operator):
-        """Test fallback to 'niqe_offset' if 'quality_niqe_offset' is missing."""
+        """Test with different combinations of config attributes."""
     def test_execute_with_mask_tensor(self, operator):
-        """Test that mask_tensor is used in execute."""
-    def test_execute_error_paths(self, operator): ...
-    def test_cleanup_clears_model(self, operator): ...
-    def test_cleanup_cuda(self, operator):
-        """Test cleanup calls empty_cache when device is cuda."""
-    def test_initialize_without_config(self, operator):
-        """Test initialize handles empty config or None."""
+        """Test execution when a mask tensor is provided."""
+    def test_execute_exception_handling(self, operator):
+        """Test that exceptions during model call are caught."""
 ```
 
 ### `📄 tests/unit/test_operators.py`
@@ -2761,7 +2717,7 @@ def test_tracker_throttling():
 def test_tracker_set_and_done():
     """Test set() and done_stage() methods."""
 def test_fmt_eta_static():
-    """Test the static _fmt_eta helper."""
+    """Test the static format_eta helper in ETACalculator."""
 def test_tracker_pause_resume():
     """Test that stepping honors the pause event."""
 ```
@@ -2795,16 +2751,16 @@ pytestmark = [pytest.mark.sam2]
 @pytest.fixture
 def mock_sam2_predictor(): ...
 @pytest.fixture
-def mock_cuda(): ...
+def mock_torch(): ...
 def test_sam21_wrapper_init(mock_sam2_predictor):
     """Test initialization logic and lazy loading."""
-@patch('core.managers.sam2.torch.inference_mode')
+@patch('torch.inference_mode')
 def test_sam21_init_video(mock_inference_mode, mock_sam2_predictor):
     """Test that init_video calls the underlying predictor."""
-@patch('core.managers.sam2.torch.inference_mode')
+@patch('torch.inference_mode')
 def test_sam21_propagate_in_video(mock_inference_mode, mock_sam2_predictor):
     """Test the propagate generator logic."""
-def test_sam21_close_session(mock_sam2_predictor, mock_cuda):
+def test_sam21_close_session(mock_sam2_predictor):
     """Test the cleanup logic in close_session."""
 ```
 
@@ -2814,23 +2770,20 @@ def test_sam21_close_session(mock_sam2_predictor, mock_cuda):
 """Unit tests for SAM2Wrapper API completeness and functionality."""
 pytestmark = [pytest.mark.sam2]
 @pytest.fixture
-def mock_predictor(): ...
-@patch('core.managers.sam2.build_sam2_video_predictor')
-@patch('core.managers.sam2.torch.cuda.is_available', return_value=False, create=True)
-def test_sam2_wrapper_init(mock_cuda, mock_build, mock_predictor): ...
-@patch('core.managers.sam2.build_sam2_video_predictor')
-def test_sam2_wrapper_session_lifecycle(mock_build, mock_predictor): ...
-@patch('core.managers.sam2.build_sam2_video_predictor')
-def test_sam2_wrapper_add_bbox_prompt(mock_build, mock_predictor): ...
-@patch('core.managers.sam2.build_sam2_video_predictor')
-def test_sam2_wrapper_propagate(mock_build, mock_predictor): ...
-@patch('core.managers.sam2.build_sam2_video_predictor')
-def test_sam2_wrapper_add_point_prompt(mock_build, mock_predictor): ...
-@patch('core.managers.sam2.build_sam2_video_predictor')
-def test_sam2_wrapper_stubs_and_utility(mock_build, mock_predictor): ...
-@patch('core.managers.sam2.build_sam2_video_predictor')
-@patch('core.managers.sam2.torch.cuda.is_available', return_value=True, create=True)
-def test_sam2_wrapper_shutdown(mock_cuda, mock_build, mock_predictor): ...
+def mock_predictor():
+    """Provides a mocked SAM2 predictor with deterministic mask outputs."""
+def test_sam2_wrapper_init(mock_predictor):
+    """Test initialization logic and lazy loading."""
+def test_sam2_wrapper_init_video(mock_predictor):
+    """Test that init_video calls the underlying predictor."""
+def test_sam2_wrapper_add_bbox_prompt(mock_predictor):
+    """Test that add_bbox_prompt returns a boolean mask."""
+def test_sam2_wrapper_propagate(mock_predictor):
+    """Test the propagate generator logic."""
+def test_sam2_wrapper_close_session(mock_predictor):
+    """Test the cleanup logic in close_session."""
+def test_sam2_wrapper_shutdown(mock_predictor):
+    """Test the shutdown and GC logic."""
 ```
 
 ### `📄 tests/unit/test_sam3_import.py`
@@ -2901,17 +2854,21 @@ class TestSceneDetection:
     @patch('core.scene_utils.detection.detect')
     def test_run_scene_detection_empty(self, mock_detect, mock_logger, tmp_path):
         """Test run_scene_detection with no scenes detected."""
+    @patch('core.scene_utils.detection.Path.exists', return_value=False)
     @patch('core.scene_utils.detection.detect')
-    def test_run_scene_detection_exception(self, mock_detect, mock_logger, tmp_path):
+    def test_run_scene_detection_exception(self, mock_detect, mock_exists, mock_logger, tmp_path):
         """Test run_scene_detection handles exceptions gracefully."""
+    @patch('core.scene_utils.detection.Path.exists', return_value=False)
     @patch('core.scene_utils.detection.detect')
-    def test_run_scene_detection_file_not_found(self, mock_detect, tmp_path):
+    def test_run_scene_detection_file_not_found(self, mock_detect, mock_exists, tmp_path):
         """Test run_scene_detection handles FileNotFoundError."""
+    @patch('core.scene_utils.detection.Path.exists', return_value=False)
     @patch('core.scene_utils.detection.detect')
-    def test_run_scene_detection_permission_error(self, mock_detect, tmp_path):
+    def test_run_scene_detection_permission_error(self, mock_detect, mock_exists, tmp_path):
         """Test run_scene_detection handles PermissionError."""
+    @patch('core.scene_utils.detection.Path.exists', return_value=False)
     @patch('core.scene_utils.detection.detect')
-    def test_run_scene_detection_video_open_failure(self, mock_detect, tmp_path):
+    def test_run_scene_detection_video_open_failure(self, mock_detect, mock_exists, tmp_path):
         """Test run_scene_detection handles VideoOpenFailure."""
     @patch('cv2.imread')
     @patch('cv2.resize')
@@ -3195,6 +3152,10 @@ class TestMockAppSyncValidation:
     """Validate that mock_app.py stubs match production signatures."""
     def test_mock_app_function_signatures(self):
         """Compare mock_app.py stubs against real function signatures."""
+class TestAestheticIntegrity:
+    """Verify code structure avoids leakage between layers."""
+    def test_no_top_level_gradio_in_pipelines(self):
+        """core/pipelines.py should not import gradio at the top level."""
 ```
 
 ### `📄 tests/unit/test_simple_cv_operators.py`
@@ -3207,9 +3168,9 @@ class TestEdgeStrengthOperator:
         """Config values are correct."""
     def test_solid_color_is_zero(self, operator):
         """Solid color image has zero edge strength."""
-    def test_edges_are_detected(self, operator, sharp_image):
+    def test_edges_are_detected(self, operator):
         """Image with strong edges has >0 edge strength."""
-    def test_scaling(self, operator, sharp_image, mock_config):
+    def test_scaling(self, operator, mock_config):
         """Config scale affects score."""
 class TestContrastOperator:
     @pytest.fixture
@@ -3219,14 +3180,14 @@ class TestContrastOperator:
         """Uniform image has zero contrast."""
     def test_high_contrast_pattern(self, operator):
         """Black and white image has high contrast."""
-    def test_masking_affects_contrast(self, operator, sample_mask):
+    def test_masking_affects_contrast(self, operator):
         """Masking changes calculation to include only masked pixels."""
 class TestBrightnessOperator:
     @pytest.fixture
     def operator(self): ...
     def test_black_image(self, operator): ...
     def test_white_image(self, operator): ...
-    def test_gray_image(self, operator): ...
+    def test_gray_image_with_mask(self, operator): ...
 class TestEntropyOperator:
     @pytest.fixture
     def operator(self): ...
@@ -3407,7 +3368,7 @@ def test_get_tracker_oom_fallback(registry, mock_config):
 
 ```python
 @pytest.fixture
-def app_ui(mock_config, mock_logger, mock_progress_queue, mock_cancel_event, mock_thumbnail_manager, mock_model_registry): ...
+def app_ui(mock_config, mock_logger, mock_progress_queue, mock_cancel_event, mock_thumbnail_manager, mock_model_registry, mock_database): ...
 def test_run_extraction_wrapper(app_ui): ...
 def test_fix_strategy_visibility_face_ref(app_ui): ...
 def test_fix_strategy_visibility_text(app_ui): ...

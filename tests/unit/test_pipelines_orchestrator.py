@@ -86,6 +86,7 @@ class TestPipelinesOrchestrator:
             thumbnail_manager=mock_thumbnail_manager,
             cuda_available=True,
             model_registry=mock_model_registry,
+            database=MagicMock(),
         )
 
         results = list(gen)
@@ -130,8 +131,9 @@ class TestPipelinesOrchestrator:
             logger=mock_logger,
             config=mock_config,
             thumbnail_manager=mock_thumbnail_manager,
-            cuda_available=True,
             model_registry=mock_model_registry,
+            database=MagicMock(),
+            cuda_available=True,
         )
 
         results = list(gen)
@@ -167,6 +169,8 @@ class TestPipelinesOrchestrator:
             logger=mock_logger,
             config=mock_config,
             thumbnail_manager=MagicMock(),
+            model_registry=MagicMock(),
+            database=MagicMock(),
             cuda_available=True,
         )
 
@@ -204,6 +208,8 @@ class TestPipelinesOrchestrator:
             logger=mock_logger,
             config=mock_config,
             thumbnail_manager=mock_thumbnail_manager,
+            model_registry=MagicMock(),
+            database=MagicMock(),
             cuda_available=True,
         )
 
@@ -214,10 +220,8 @@ class TestPipelinesOrchestrator:
         mock_orchestrator.assert_called_once()
 
         # Verify events passed to orchestrator
-        # It's called positionally in core/pipelines.py
-        # yield from execute_analysis_orchestrator(pre_event, ...)
-        call_args_list = mock_orchestrator.call_args[0]
-        passed_event = call_args_list[0]
+        # It's called with keyword arguments in core/pipelines.py
+        passed_event = mock_orchestrator.call_args.kwargs["event"]
         assert passed_event.output_folder == "/tmp/out"
         assert passed_event.video_path == "v.mp4"
 
@@ -243,6 +247,8 @@ class TestPipelinesOrchestrator:
             logger=mock_logger,
             config=mock_config,
             thumbnail_manager=MagicMock(),
+            model_registry=MagicMock(),
+            database=MagicMock(),
             cuda_available=True,
         )
 

@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 import numpy as np
 
 from core.operators.base import OperatorContext
@@ -10,7 +12,12 @@ def test_sharpness_blurry():
     # 100x100 solid image (zero variance)
     img = np.zeros((100, 100, 3), dtype=np.uint8)
     ctx = OperatorContext(image_rgb=img)
-    result = op.execute(ctx)
+    # Patch Laplacian to return input so .var() works on real data
+    with (
+        patch("core.operators.sharpness.cv2.cvtColor", side_effect=lambda x, c: x.mean(axis=2)),
+        patch("core.operators.sharpness.cv2.Laplacian", side_effect=lambda x, d: x),
+    ):
+        result = op.execute(ctx)
     assert result.success
     assert result.metrics["sharpness_score"] == 0.0
 
@@ -26,7 +33,11 @@ def test_sharpness_focused():
                 img[i : i + 10, j : j + 10] = 255
 
     ctx = OperatorContext(image_rgb=img)
-    result = op.execute(ctx)
+    with (
+        patch("core.operators.sharpness.cv2.cvtColor", side_effect=lambda x, c: x.mean(axis=2)),
+        patch("core.operators.sharpness.cv2.Laplacian", side_effect=lambda x, d: x),
+    ):
+        result = op.execute(ctx)
     assert result.success
     assert result.metrics["sharpness_score"] > 20.0
 
@@ -36,26 +47,31 @@ def test_sharpness_with_mask():
     op = SharpnessOperator()
     # Top half sharp, bottom half blurry
     img = np.zeros((100, 100, 3), dtype=np.uint8)
-    # Checkerboard in top half
     for i in range(0, 50, 10):
         for j in range(0, 100, 10):
             if (i + j) % 20 == 0:
                 img[i : i + 10, j : j + 10] = 255
 
-    # Bottom half is solid (zero variance)
-
     # Mask covers only the sharp top half
     mask_top = np.zeros((100, 100), dtype=np.uint8)
-    mask_top[:40, :] = 255  # Stay away from the boundary at 50
+    mask_top[:40, :] = 255
     ctx_top = OperatorContext(image_rgb=img, mask=mask_top)
-    result_top = op.execute(ctx_top)
+    with (
+        patch("core.operators.sharpness.cv2.cvtColor", side_effect=lambda x, c: x.mean(axis=2)),
+        patch("core.operators.sharpness.cv2.Laplacian", side_effect=lambda x, d: x),
+    ):
+        result_top = op.execute(ctx_top)
     assert result_top.metrics["sharpness_score"] > 20.0
 
     # Mask covers only the blurry bottom half
     mask_bottom = np.zeros((100, 100), dtype=np.uint8)
-    mask_bottom[60:, :] = 255  # Stay away from the boundary at 50
+    mask_bottom[60:, :] = 255
     ctx_bottom = OperatorContext(image_rgb=img, mask=mask_bottom)
-    result_bottom = op.execute(ctx_bottom)
+    with (
+        patch("core.operators.sharpness.cv2.cvtColor", side_effect=lambda x, c: x.mean(axis=2)),
+        patch("core.operators.sharpness.cv2.Laplacian", side_effect=lambda x, d: x),
+    ):
+        result_bottom = op.execute(ctx_bottom)
     assert result_bottom.metrics["sharpness_score"] == 0.0
 
 
@@ -91,8 +107,10 @@ def test_sharpness_empty_region():
     mask[0, 0:5] = 255
 
     ctx = OperatorContext(image_rgb=img, mask=mask)
-    result = op.execute(ctx)
-    # Should revert to full image or report empty
-    # implementation says if np.sum(active_mask) >= 100 it uses it, otherwise uses original laplacian
+    with (
+        patch("core.operators.sharpness.cv2.cvtColor", side_effect=lambda x, c: x.mean(axis=2)),
+        patch("core.operators.sharpness.cv2.Laplacian", side_effect=lambda x, d: x),
+    ):
+        result = op.execute(ctx)
     assert result.success
     assert result.metrics["sharpness_score"] > 0

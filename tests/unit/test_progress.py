@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from core.eta_calculator import ETACalculator
 from core.progress import AdvancedProgressTracker, ProgressEvent
 
 
@@ -138,11 +139,11 @@ def test_tracker_set_and_done():
 
 
 def test_fmt_eta_static():
-    """Test the static _fmt_eta helper."""
-    assert AdvancedProgressTracker._fmt_eta(None) == "—"
-    assert AdvancedProgressTracker._fmt_eta(45) == "45s"
-    assert AdvancedProgressTracker._fmt_eta(125) == "2m 5s"
-    assert AdvancedProgressTracker._fmt_eta(3665) == "1h 1m"
+    """Test the static format_eta helper in ETACalculator."""
+    assert ETACalculator.format_eta(None) == "—"
+    assert ETACalculator.format_eta(45) == "45s"
+    assert ETACalculator.format_eta(125) == "2m 5s"
+    assert ETACalculator.format_eta(3665) == "1h 1m"
 
 
 def test_tracker_pause_resume():

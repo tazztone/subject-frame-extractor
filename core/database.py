@@ -18,7 +18,7 @@ from core.db_schema import migrate_database
 class Database:
     def __init__(
         self,
-        db_path: Path,
+        db_path: Optional[Path] = None,
         batch_size: int = 100,
         logger: Optional[Union[logging.Logger, "AppLogger"]] = None,
     ):
@@ -50,6 +50,13 @@ class Database:
         # Register atexit handler to ensure flush on shutdown
         atexit.register(self.close)
 
+    def set_db_path(self, db_path: Path):
+        """Sets the database path and re-initializes connection and schema."""
+        self.close()
+        self.db_path = db_path
+        self.connect()
+        self.migrate()
+
     def __enter__(self):
         return self
 
@@ -58,16 +65,21 @@ class Database:
 
     def connect(self):
         """Connects to the SQLite database."""
+        if not self.db_path:
+            return
         self.conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=30.0)
         self.conn.execute("PRAGMA journal_mode=WAL;")
         self.conn.row_factory = sqlite3.Row
 
     def migrate(self):
         """Migrates the database to the latest schema version."""
+        if not self.db_path:
+            return
         if not self.conn:
             self.connect()
-        assert self.conn is not None
-        migrate_database(self.conn, self.logger)
+
+        if self.conn:
+            migrate_database(self.conn, self.logger)
 
     def close(self):
         """Closes the database connection."""
@@ -88,12 +100,17 @@ class Database:
         """Deletes all records from the metadata table."""
         with self.lock:
             self.buffer.clear()
+            if not self.db_path:
+                self.logger.warning("Attempted to clear_metadata without db_path set.")
+                return
+
             if not self.conn:
                 self.connect()
-            assert self.conn is not None
-            cursor = self.conn.cursor()
-            cursor.execute("DELETE FROM metadata")
-            self.conn.commit()
+
+            if self.conn:
+                cursor = self.conn.cursor()
+                cursor.execute("DELETE FROM metadata")
+                self.conn.commit()
 
     def insert_metadata(self, metadata: Dict[str, Any]):
         """Inserts or replaces a metadata record."""
@@ -147,9 +164,18 @@ class Database:
             return
 
         def _execute_flush():
+            if not self.db_path:
+                self.logger.error("Attempted to flush database without db_path set. Data will be lost.")
+                self.buffer.clear()
+                return
+
             if not self.conn:
                 self.connect()
-            assert self.conn is not None
+
+            if not self.conn:
+                self.logger.error("Failed to connect to database for flush.")
+                return
+
             cursor = self.conn.cursor()
             placeholders = ", ".join(["?"] * len(self.columns))
             columns_str = ", ".join(self.columns)
@@ -181,9 +207,17 @@ class Database:
     def load_all_metadata(self) -> List[Dict[str, Any]]:
         """Loads all metadata from the database."""
         self.flush()
+        if not self.db_path:
+            self.logger.warning("Attempted to load metadata without db_path set.")
+            return []
+
         if not self.conn:
             self.connect()
-        assert self.conn is not None
+
+        if not self.conn:
+            self.logger.error("Failed to connect to database for load_all_metadata.")
+            return []
+
         cursor = self.conn.cursor()
         cursor.execute("SELECT * FROM metadata")
         rows = cursor.fetchall()
@@ -204,10 +238,15 @@ class Database:
     def count_errors(self) -> int:
         """Counts the number of records with errors."""
         self.flush()
+        if not self.db_path:
+            return 0
+
         if not self.conn:
             self.connect()
-        assert self.conn is not None
-        cursor = self.conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM metadata WHERE error IS NOT NULL")
-        result = cursor.fetchone()
-        return result[0] if result else 0
+
+        if self.conn:
+            cursor = self.conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM metadata WHERE error IS NOT NULL")
+            result = cursor.fetchone()
+            return result[0] if result else 0
+        return 0

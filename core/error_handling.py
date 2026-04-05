@@ -6,7 +6,9 @@ import functools
 import time
 import traceback
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable, Generator, Optional
+
+from core.pipeline_results import PipelineResult
 
 if TYPE_CHECKING:
     from core.logger import LoggerLike
@@ -144,3 +146,70 @@ class ErrorHandler:
             return wrapper
 
         return decorator
+
+
+def handle_common_errors(func: Callable) -> Callable:
+    """
+    Standalone decorator that wraps a generator func, yielding an error dict/result on failure.
+    Finds the logger in the arguments to provide contextual logging.
+    """
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs) -> Generator[Any, None, None]:
+        # Try to find logger in args or kwargs
+        logger = kwargs.get("logger")
+        if not logger:
+            for arg in args:
+                if hasattr(arg, "critical") and hasattr(arg, "error"):
+                    # Use AppLogger or standard logger
+                    logger = arg
+                    break
+
+        try:
+            yield from func(*args, **kwargs)
+        except Exception as e:
+            # Detect CUDA OOM if torch is available
+            is_oom = False
+            try:
+                import torch
+
+                # If torch is a mock, OutOfMemoryError might be a MagicMock instance, not a type.
+                # Use getattr and isinstance(oom_type, type) to safely check.
+                cuda_module = getattr(torch, "cuda", None)
+                oom_type = getattr(cuda_module, "OutOfMemoryError", None)
+                if oom_type and isinstance(oom_type, type) and isinstance(e, oom_type):
+                    is_oom = True
+                # Fallback for mock environments where identity might diverge
+                elif type(e).__name__ == "OutOfMemoryError" or "out of memory" in str(e).lower():
+                    is_oom = True
+            except (ImportError, AttributeError):
+                pass
+
+            if is_oom:
+                msg = "GPU memory error: Out of memory. Try reducing batch size or resolution."
+            elif isinstance(e, FileNotFoundError):
+                msg = f"File not found: {e}"
+            elif isinstance(e, (ValueError, TypeError)):
+                msg = f"Invalid argument or configuration: {e}"
+            elif isinstance(e, RuntimeError):
+                msg = f"Runtime error during pipeline: {e}"
+            else:
+                msg = f"Pipeline operation '{func.__name__}' failed: {e}"
+
+            if logger:
+                # Use logger.error if available
+                logger.error(msg, exc_info=True)
+            else:
+                print(f"ERROR in {func.__name__}: {msg}")
+                traceback.print_exc()
+
+            yield PipelineResult(
+                success=False,
+                error=str(e),
+                unified_log=f"❌ **Error:** {msg}",
+                status_message=msg,
+                error_message=msg,
+                done=False,
+            ).model_dump()
+
+    return wrapper

@@ -579,7 +579,7 @@ class TestPipelineE2E:
         assert pipeline is not None
         assert pipeline.config is not None
 
-    def test_analysis_pipeline_initializes_with_real_managers(self, tmp_path, module_model_registry):
+    def test_analysis_pipeline_initializes_with_real_managers(self, tmp_path, module_model_registry, database):
         """AnalysisPipeline initializes with real ThumbnailManager and ModelRegistry."""
         import torch
 
@@ -1097,7 +1097,7 @@ class TestCancellationE2E:
         finally:
             pass  # cleanup() removed
 
-    def test_analysis_pipeline_cancel(self, tmp_path, module_model_registry):
+    def test_analysis_pipeline_cancel(self, tmp_path, module_model_registry, database):
         """AnalysisPipeline handles cancel event gracefully."""
         import threading
         from queue import Queue

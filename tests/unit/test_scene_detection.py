@@ -55,10 +55,15 @@ class TestSceneDetection:
 
         assert result == []
 
+    @patch("core.scene_utils.detection.Path.exists", return_value=False)
     @patch("core.scene_utils.detection.detect")
-    def test_run_scene_detection_exception(self, mock_detect, mock_logger, tmp_path):
+    def test_run_scene_detection_exception(self, mock_detect, mock_exists, mock_logger, tmp_path):
         """Test run_scene_detection handles exceptions gracefully."""
         from core.scene_utils.detection import run_scene_detection
+
+        # unittest.mock.patch(detect) is bottom, so mock_detect is 1st arg
+        # unittest.mock.patch(exists) is top, so mock_exists is 2nd arg
+        # mock_logger and tmp_path are pytest fixtures
 
         mock_detect.side_effect = Exception("Detection failed")
 
@@ -67,8 +72,9 @@ class TestSceneDetection:
         # Should return empty list on exception
         assert result == []
 
+    @patch("core.scene_utils.detection.Path.exists", return_value=False)
     @patch("core.scene_utils.detection.detect")
-    def test_run_scene_detection_file_not_found(self, mock_detect, tmp_path):
+    def test_run_scene_detection_file_not_found(self, mock_detect, mock_exists, tmp_path):
         """Test run_scene_detection handles FileNotFoundError."""
         from core.scene_utils.detection import run_scene_detection
 
@@ -80,8 +86,9 @@ class TestSceneDetection:
         assert result == []
         mock_logger.error.assert_called_with("Video file not found: /nonexistent/video.mp4", component="video")
 
+    @patch("core.scene_utils.detection.Path.exists", return_value=False)
     @patch("core.scene_utils.detection.detect")
-    def test_run_scene_detection_permission_error(self, mock_detect, tmp_path):
+    def test_run_scene_detection_permission_error(self, mock_detect, mock_exists, tmp_path):
         """Test run_scene_detection handles PermissionError."""
         from core.scene_utils.detection import run_scene_detection
 
@@ -93,12 +100,12 @@ class TestSceneDetection:
         assert result == []
         mock_logger.error.assert_called_with("Permission denied accessing video: /path/to/video.mp4", component="video")
 
+    @patch("core.scene_utils.detection.Path.exists", return_value=False)
     @patch("core.scene_utils.detection.detect")
-    def test_run_scene_detection_video_open_failure(self, mock_detect, tmp_path):
+    def test_run_scene_detection_video_open_failure(self, mock_detect, mock_exists, tmp_path):
         """Test run_scene_detection handles VideoOpenFailure."""
-        from scenedetect import VideoOpenFailure
-
         from core.scene_utils.detection import run_scene_detection
+        from tests.helpers.exceptions import VideoOpenFailure
 
         mock_logger = MagicMock()
         # Patch the class identity in the module to match what we raise

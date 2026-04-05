@@ -14,15 +14,15 @@ def test_check_environment():
         patch("core.system_health.torch.version.cuda", "12.1"),
     ):
         report = check_environment()
-        assert any("CUDA: OK" in line for line in report)
-        assert any("CUDA: OK" in line for line in report)
+        assert any("  - CUDA: OK" in line for line in report)
         assert any("Test GPU" in line for line in report)
 
 
 def test_check_environment_no_cuda():
+    # Patch the specific module reference to be safe against parallel import timing
     with patch("core.system_health.torch.cuda.is_available", return_value=False, create=True):
         report = check_environment()
-        assert any("Running in CPU mode" in line for line in report)
+        assert any("  - CUDA: NOT AVAILABLE" in line for line in report)
         assert any("Running in CPU mode" in line for line in report)
 
 
@@ -54,7 +54,7 @@ def test_generate_full_diagnostic_report():
     ):
         from core.system_health import generate_full_diagnostic_report
 
-        gen = generate_full_diagnostic_report(config, logger, queue, cancel, tm, False)
+        gen = generate_full_diagnostic_report(config, logger, queue, cancel, tm, MagicMock(), MagicMock(), False)
         report = next(gen)
         assert "--- System Diagnostics Report ---" in report
         assert "Pipeline: OK" in report
@@ -108,7 +108,7 @@ def test_simulate_pipeline_success(tmp_path):
     ):
         from core.system_health import simulate_pipeline
 
-        report = simulate_pipeline(config, logger, queue, cancel, tm, False)
+        report = simulate_pipeline(config, logger, queue, cancel, tm, MagicMock(), MagicMock(), False)
 
         # Verify that we got OK for all stages
         stages_covered = [line for line in report if "Stage" in line and "OK" in line]

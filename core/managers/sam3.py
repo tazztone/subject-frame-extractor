@@ -5,7 +5,8 @@ if TYPE_CHECKING:
     from core.config import Config
 
 import numpy as np
-import torch
+
+# torch moved to methods for lazy loading
 
 # Shim pkg_resources for vendored SAM3 that still uses the deprecated API
 try:
@@ -26,6 +27,9 @@ class SAM3Wrapper:
     """SAM3 Tracker using official Sam3VideoPredictor API."""
 
     def __init__(self, checkpoint_path=None, device="cuda", config: Optional["Config"] = None):
+        from core.sam3_patches import apply_patches
+
+        apply_patches()
         from sam3.model_builder import build_sam3_predictor  # type: ignore
 
         # Detect mock leakage — only in real GPU mode.
@@ -58,6 +62,8 @@ class SAM3Wrapper:
                 checkpoint_path = str(_local_ckpt_31)
             elif _local_ckpt_30.exists():
                 checkpoint_path = str(_local_ckpt_30)
+
+        import torch
 
         self.device = device
         if torch.cuda.is_available():
@@ -255,6 +261,8 @@ class SAM3Wrapper:
     def reset_session(self):
         """Reset the current tracking session."""
         self.close_session()
+        import torch
+
         if torch.cuda.is_available():
             torch.cuda.synchronize()
             torch.cuda.empty_cache()
@@ -287,6 +295,8 @@ class SAM3Wrapper:
             self.predictor = None
 
         gc.collect()
+        import torch
+
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
             torch.cuda.synchronize()

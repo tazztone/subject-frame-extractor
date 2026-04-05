@@ -16,6 +16,7 @@ import torch
 from core.application_state import ApplicationState
 from core.batch_manager import BatchItem, BatchManager
 from core.config import Config
+from core.database import Database
 from core.enums import ANCHOR_STRATEGIES
 from core.events import ExportEvent, ExtractionEvent, FilterEvent, PreAnalysisEvent
 from core.export import dry_run_export, export_kept_frames
@@ -108,6 +109,7 @@ class AppUI:
         cancel_event: threading.Event,
         thumbnail_manager: "ThumbnailManager",
         model_registry: "ModelRegistry",
+        database: "Database",
         debug_mode: bool = False,
     ):
         """
@@ -129,6 +131,7 @@ class AppUI:
         self.cancel_event = cancel_event
         self.thumbnail_manager = thumbnail_manager
         self.model_registry = model_registry
+        self.database = database
         self.batch_manager = BatchManager()
         self.debug_mode = debug_mode or getattr(config, "debug", False)
         self.components, self.cuda_available = {}, torch.cuda.is_available()
@@ -674,6 +677,8 @@ class AppUI:
             self.progress_queue,
             self.cancel_event,
             self.thumbnail_manager,
+            self.model_registry,
+            self.database,
             self.cuda_available,
         )
 

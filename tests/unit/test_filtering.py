@@ -200,15 +200,21 @@ class TestFiltering:
         assert "face_sim_low" in reasons["frame_002.png"]
         assert "face_missing" in reasons["frame_003.png"]
 
-    def test_apply_all_filters_range_filter(self, sample_frames, mock_config):
+    def test_apply_all_filters_range_filter(self, sample_frames):
         """Test a range-based filter (e.g., yaw)."""
         sample_frames[0]["metrics"]["yaw"] = -10
         sample_frames[1]["metrics"]["yaw"] = 0
         sample_frames[2]["metrics"]["yaw"] = 20
 
         # Mock config to define range filter for yaw
+        mock_config = MagicMock()
+        # Set defaults for ALL metrics that will be checked in the loop
         mock_config.filter_default_yaw = {"type": "range", "default_min": -5, "default_max": 5}
-        # Ensure 'yaw' is in the quality weight keys or recognized
+        mock_config.filter_default_pitch = {"type": "range", "default_min": -np.inf, "default_max": np.inf}
+        mock_config.filter_default_quality_score = {"type": "range", "default_min": 0, "default_max": 100}
+        mock_config.filter_default_face_sim = {"type": "min", "default_min": 0}
+        mock_config.filter_default_mask_area_pct = {"type": "min", "default_min": 0}
+        mock_config.filter_default_eyes_open = {"type": "min", "default_min": 0}
         mock_config.model_dump.return_value = {"quality_weights_yaw": 1}
 
         filters = {"yaw_min": -5, "yaw_max": 5}
