@@ -16,6 +16,10 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 .  
 ├──&nbsp;AGENTS.md  
 ├──&nbsp;CHANGELOG.md  
+├──&nbsp;MagicMock  
+│&nbsp;&nbsp;&nbsp;└──&nbsp;mock.models_dir  
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;129555355383088  
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└──&nbsp;133535735959280  
 ├──&nbsp;README.md  
 ├──&nbsp;[`app.py`](#-apppy)  
 ├──&nbsp;cli.py  
@@ -1617,7 +1621,7 @@ class QualityVerifier:
 ```python
 class AppUI:
     """Main UI class for the Frame Extractor & Analyzer application."""
-    def __init__(self, config: 'Config', logger: 'AppLogger', progress_queue: Queue, cancel_event: threading.Event, thumbnail_manager: 'ThumbnailManager', model_registry: 'ModelRegistry', database: 'Database', debug_mode: bool=False):
+    def __init__(self, config: 'Config', logger: 'AppLogger', progress_queue: Queue, cancel_event: threading.Event, thumbnail_manager: 'ThumbnailManager', model_registry: 'ModelRegistry', database: 'Database', debug_mode: bool=False, cuda_available: Optional[bool]=None):
         """Initialize the AppUI."""
     def preload_models(self):
         """Asynchronously preloads heavy models (SAM3) in a background thread."""

@@ -106,8 +106,8 @@ def test_get_tracker_oom_fallback(registry, mock_config):
     """Test CPU fallback on CUDA OOM."""
     # We need to ensure the logger mock has 'success' because get_or_load calls it
     with (
+        patch("core.managers.registry.torch.cuda.is_available", return_value=True),
         patch.object(registry, "_load_tracker_impl") as mock_load,
-        patch("torch.cuda.is_available", return_value=True, create=True),
     ):
         # First call raises OOM
         mock_load.side_effect = [RuntimeError("out of memory"), MagicMock(name="CPUTracker")]

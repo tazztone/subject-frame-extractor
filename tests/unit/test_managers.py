@@ -338,7 +338,7 @@ class TestManagers:
         mock_analyzer.get.return_value = [mock_face]
 
         # Use a scoped patch instead of manual mutation to avoid cross-test pollution
-        with patch("torch.cuda.is_available", return_value=False, create=True):
+        with patch("core.managers.model_loader.torch.cuda.is_available", return_value=False):
             models = initialize_analysis_models(params, mock_config, mock_logger, model_registry)
 
         assert models["face_analyzer"] == mock_analyzer

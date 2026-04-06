@@ -113,45 +113,46 @@ def test_run_full_analysis_success(mock_db, mock_init_models, mock_masker_cls, m
 @patch("core.managers.analysis.initialize_analysis_models")
 @patch("core.managers.analysis.Database")
 def test_run_analysis_only_success(mock_db, mock_init_models, mock_run_ops, mock_deps, analysis_params, tmp_path):
-    analysis_params.output_folder = str(tmp_path)
-    analysis_params.video_path = "test.mp4"
-    analysis_params.compute_quality_score = True
+    with patch("core.managers.analysis.torch.cuda.is_available", return_value=False):
+        analysis_params.output_folder = str(tmp_path)
+        analysis_params.video_path = "test.mp4"
+        analysis_params.compute_quality_score = True
 
-    pipeline = AnalysisPipeline(
-        mock_deps["config"],
-        mock_deps["logger"],
-        analysis_params,
-        mock_deps["progress_queue"],
-        mock_deps["cancel_event"],
-        mock_deps["thumbnail_manager"],
-        mock_deps["model_registry"],
-    )
-    pipeline.db = MagicMock()
-    pipeline.thumb_dir = tmp_path / "thumbs"
-    pipeline.thumb_dir.mkdir()
-    (pipeline.thumb_dir / "frame_000001.webp").write_text("dummy")
+        pipeline = AnalysisPipeline(
+            mock_deps["config"],
+            mock_deps["logger"],
+            analysis_params,
+            mock_deps["progress_queue"],
+            mock_deps["cancel_event"],
+            mock_deps["thumbnail_manager"],
+            mock_deps["model_registry"],
+        )
+        pipeline.db = MagicMock()
+        pipeline.thumb_dir = tmp_path / "thumbs"
+        pipeline.thumb_dir.mkdir()
+        (pipeline.thumb_dir / "frame_000001.webp").write_text("dummy")
 
-    mock_init_models.return_value = {
-        "face_analyzer": None,
-        "ref_emb": None,
-        "face_landmarker": None,
-        "device": "cpu",
-        "subject_detector": None,
-    }
-    mock_run_ops.return_value = {"quality": MagicMock(success=True, metrics={"quality_score": 80})}
+        mock_init_models.return_value = {
+            "face_analyzer": None,
+            "ref_emb": None,
+            "face_landmarker": None,
+            "device": "cpu",
+            "subject_detector": None,
+        }
+        mock_run_ops.return_value = {"quality": MagicMock(success=True, metrics={"quality_score": 80})}
 
-    # Need a frame_map in the pipeline
-    pipeline.mask_metadata = {"frame_000001": {"mask_path": None}}
+        # Need a frame_map in the pipeline
+        pipeline.mask_metadata = {"frame_000001": {"mask_path": None}}
 
-    # Mocking thumb_manager
-    mock_deps["thumbnail_manager"].get.return_value = np.zeros((10, 10, 3), dtype=np.uint8)
+        # Mocking thumb_manager
+        mock_deps["thumbnail_manager"].get.return_value = np.zeros((10, 10, 3), dtype=np.uint8)
 
-    with patch("core.managers.analysis.create_frame_map", return_value={1: "frame_000001.webp"}):
-        scenes = [Scene(shot_id=1, start_frame=1, end_frame=1)]
-        result = pipeline.run_analysis_only(scenes)
+        with patch("core.managers.analysis.create_frame_map", return_value={1: "frame_000001.webp"}):
+            scenes = [Scene(shot_id=1, start_frame=1, end_frame=1)]
+            result = pipeline.run_analysis_only(scenes)
 
-    assert result.get("done") is True
-    assert mock_run_ops.called
+        assert result.get("done") is True
+        assert mock_run_ops.called
 
 
 @patch("core.managers.analysis.initialize_analysis_models")
@@ -333,29 +334,30 @@ def test_process_single_frame_face_analysis_failure(mock_db, mock_deps, analysis
 
 @patch("core.managers.analysis.Database")
 def test_analysis_loop_batch_error(mock_db, mock_deps, analysis_params, tmp_path):
-    pipeline = AnalysisPipeline(
-        mock_deps["config"],
-        mock_deps["logger"],
-        analysis_params,
-        mock_deps["progress_queue"],
-        mock_deps["cancel_event"],
-        mock_deps["thumbnail_manager"],
-        mock_deps["model_registry"],
-    )
+    with patch("core.managers.analysis.torch.cuda.is_available", return_value=False):
+        pipeline = AnalysisPipeline(
+            mock_deps["config"],
+            mock_deps["logger"],
+            analysis_params,
+            mock_deps["progress_queue"],
+            mock_deps["cancel_event"],
+            mock_deps["thumbnail_manager"],
+            mock_deps["model_registry"],
+        )
 
-    with (
-        patch("core.managers.analysis.create_frame_map", return_value={1: "frame_000001.webp"}),
-        patch("core.managers.analysis.ThreadPoolExecutor") as mock_executor_cls,
-    ):
-        mock_executor = mock_executor_cls.return_value.__enter__.return_value
-        mock_future = MagicMock()
-        mock_future.result.side_effect = Exception("Batch Fail")
-        mock_executor.submit.return_value = mock_future
+        with (
+            patch("core.managers.analysis.create_frame_map", return_value={1: "frame_000001.webp"}),
+            patch("core.managers.analysis.ThreadPoolExecutor") as mock_executor_cls,
+        ):
+            mock_executor = mock_executor_cls.return_value.__enter__.return_value
+            mock_future = MagicMock()
+            mock_future.result.side_effect = Exception("Batch Fail")
+            mock_executor.submit.return_value = mock_future
 
-        # This should not raise but log the error
-        pipeline._run_analysis_loop([Scene(shot_id=1, start_frame=1, end_frame=1)], {})
+            # This should not raise but log the error
+            pipeline._run_analysis_loop([Scene(shot_id=1, start_frame=1, end_frame=1)], {})
 
-    assert mock_deps["logger"].error.called
+        assert mock_deps["logger"].error.called
 
 
 @patch("core.managers.analysis.Database")

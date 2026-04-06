@@ -15,6 +15,7 @@ Requirements:
 - All models downloaded
 """
 
+import os
 from pathlib import Path
 
 import cv2
@@ -23,6 +24,9 @@ import pytest
 import torch
 
 from core.managers import SAM3Wrapper
+
+if os.environ.get("PYTEST_INTEGRATION_MODE", "").lower() != "true":
+    pytest.skip("Set PYTEST_INTEGRATION_MODE=true to run GPU E2E tests", allow_module_level=True)
 
 # Mark all tests as gpu_e2e (requires GPU, slow)
 # Automatically skip entire file if CUDA is not available

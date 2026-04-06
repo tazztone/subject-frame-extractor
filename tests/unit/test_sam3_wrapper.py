@@ -98,12 +98,15 @@ class TestSAM3WrapperMethodBehavior:
     def test_shutdown_cleans_up_resources(self, sam3_unit):
         from unittest.mock import MagicMock, patch
 
+        import torch
+
         original_predictor = sam3_unit.predictor
         original_predictor.shutdown = MagicMock()
 
         with (
-            patch("torch.cuda.is_available", return_value=True, create=True),
-            patch("torch.cuda.empty_cache", create=True) as mock_empty_cache,
+            patch.object(torch.cuda, "is_available", return_value=True),
+            patch.object(torch.cuda, "empty_cache") as mock_empty_cache,
+            patch.object(torch.cuda, "synchronize", create=True),
             patch.object(sam3_unit, "close_session", wraps=sam3_unit.close_session) as mock_close_session,
         ):
             sam3_unit.shutdown()

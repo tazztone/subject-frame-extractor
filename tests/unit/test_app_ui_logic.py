@@ -26,17 +26,16 @@ class TestAppUI:
         mock_model_registry,
         mock_database,
     ):
-        # We need to mock torch.cuda.is_available inside AppUI init
-        with patch("torch.cuda.is_available", return_value=False, create=True):
-            ui = AppUI(
-                mock_config,
-                mock_logger,
-                mock_queue,
-                mock_cancel_event,
-                mock_thumbnail_manager,
-                mock_model_registry,
-                mock_database,
-            )
+        ui = AppUI(
+            mock_config,
+            mock_logger,
+            mock_queue,
+            mock_cancel_event,
+            mock_thumbnail_manager,
+            mock_model_registry,
+            mock_database,
+            cuda_available=False,
+        )
 
         # Manually populate components usually created by build_ui
         ui.components = {

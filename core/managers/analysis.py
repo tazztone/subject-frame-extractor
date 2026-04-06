@@ -255,6 +255,7 @@ class AnalysisPipeline(Pipeline):
             if self.face_analyzer and self.params.face_ref_img_path:
                 self._process_reference_face()
             ext = ".webp" if self.params.thumbnails_only else ".png"
+
             masker = SubjectMasker(
                 self.params,
                 self.progress_queue,
@@ -411,13 +412,18 @@ class AnalysisPipeline(Pipeline):
         with ThreadPoolExecutor(max_workers=num_workers) as executor:
             futures = []
             while processed < len(image_files) or futures:
-                if (
-                    torch.cuda.is_available()
-                    and torch.cuda.memory_reserved(0) / torch.cuda.get_device_properties(0).total_memory > 0.85
-                ):
-                    current_bs = max(1, current_bs // 2)
-                elif current_bs < self.config.analysis_default_batch_size:
-                    current_bs = min(self.config.analysis_default_batch_size, current_bs + 2)
+                try:
+                    if (
+                        torch.cuda.is_available()
+                        and torch.cuda.memory_reserved(0) / torch.cuda.get_device_properties(0).total_memory > 0.85
+                    ):
+                        current_bs = max(1, current_bs // 2)
+                    elif current_bs < self.config.analysis_default_batch_size:
+                        current_bs = min(self.config.analysis_default_batch_size, current_bs + 2)
+                except Exception:
+                    # CUDA properties might fail in mocked or weird environments
+                    pass
+
                 while len(futures) < num_workers and processed < len(image_files):
                     end = min(processed + current_bs, len(image_files))
                     batch_paths = image_files[processed:end]

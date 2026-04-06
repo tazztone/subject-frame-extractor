@@ -91,5 +91,32 @@ The `tests/mock_app.py` stubs MUST be kept in perfect synchronization with the r
 
 ---
 
+## Agent & CI Knowledge Base (Migrated from AGENTS.md)
+
+### Validated Architectural Rules
+*   **Architectural Isolation**: NEVER import from `ui/` inside `core/`.
+*   **UI Safety Contract**: Event methods in `app_ui.py` MUST be wrapped in `@AppUI.safe_ui_callback`.
+*   **Unhashable Config**: NEVER use `@lru_cache` on functions taking `Config`.
+*   **Mock Integrity**: Sync `mock_app.py` stubs directly with real pipeline signatures.
+
+### Hard-Learned Behavioral Patterns
+*   **Gradio 5+ Protocol**: Prefer **dictionary returns** for component updates.
+*   **Accordion Visibility**: Components inside collapsed `gr.Accordion` are INVISIBLE to Playwright. ALWAYS use `open_accordion(page, Label)` before asserting values inside.
+*   **Slider Selectors**: Gradio Sliders contain multiple inputs. Use `#elem_id input[data-testid='number-input']` for numeric values.
+*   **Playwright UI Tests**: ALWAYS use `page.wait_for_timeout()` instead of web-first assertions to account for Gradio's reactive delay.
+*   **Operator Plugin Pattern**: When adding a metric, you MUST add an entry to `core.filtering._extract_metric_arrays`, otherwise it silently fails filtering.
+*   **Thread-Safe Model Access**: Models (like InsightFace) are NOT thread-safe. You MUST use specific locks if running inside `ThreadPoolExecutor`.
+*   **Milestone Logging**: Use **Title Case** for major pipeline milestones or the downstream E2E scraper logs will break.
+*   **Immutable Submodule**: NEVER edit files in `SAM3_repo`. It is an external dependency.
+*   **SAM2.1 Default Baseline**: **SAM2.1 Hiera Tiny** is the project's default tracker and baseline for all integration tests. SAM3 is considered an experimental alternative.
+*   **Visual Baseline Updates**: When UI labels or layouts change, visual regression baselines MUST be updated using `uv run pytest -n 0 --update-baselines tests/ui/test_visual_regression.py`. Parallel execution (`-n > 0`) is forbidden during updates.
+*   **Feature Status**: `sam3` is an experimental tracker. The default is `sam2`. Do not switch the default without explicit instruction.
+*   **Orchestrator Strip-Done Protocol**: When chaining generators (e.g., in `execute_analysis_orchestrator`), intermediate stages MUST have their `done: True` flag stripped before yielding. Only the final stage or the orchestrator itself should yield `done: True` to prevent premature consumer termination.
+
+### Test Infrastructure Rules (Prevent Mock Leakage)
+*   **SAM3 is NOT in global mocks**: `tests/conftest.py` intentionally excludes all `sam3.*` entries from `modules_to_mock`. Unit tests that need a mock SAM3 MUST create a local mock in their own file using `patch("sam3.model_builder.build_sam3_predictor")`.
+*   **`PYTEST_INTEGRATION_MODE` propagation**: `conftest.py` disables global mocks when this env var is `true`. xdist workers inherit env vars only if the parent shell used `export`, not an inline prefix. Always use `export`.
+*   **`gpu_e2e` tests are serial-only**: The `module_model_registry` fixture uses `scope="module"` to share model weights within a worker, but provides no cross-worker isolation. Multiple workers loading SAM3 + SAM2 simultaneously causes GPU OOM.
+*   **Blank model dirs are forbidden in E2E fixtures**: The `module_model_registry` fixture in `test_gpu_e2e.py` must point to the project's real `models/` directory. Never use `tempfile.TemporaryDirectory()` for the models path in GPU tests — it triggers a 3.3 GB HuggingFace download race.
 
 *Refined conventions: 2026-03-21*

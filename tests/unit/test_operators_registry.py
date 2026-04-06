@@ -10,7 +10,10 @@ from core.operators.registry import OperatorRegistry, discover_operators, regist
 class MockOperator(Operator):
     def __init__(self, name="mock_op", requires_tensor=False):
         self._config = OperatorConfig(
-            name=name, display_name=name.capitalize(), description="Test", requires_tensor=requires_tensor
+            name=name,
+            display_name=name.capitalize(),
+            description="Test",
+            requires_tensor=requires_tensor,
         )
         self.initialized = False
         self.cleaned = False
@@ -139,15 +142,17 @@ def test_run_operators_retry_logic():
     assert logger.warning.called
 
 
-@patch("torch.cuda.is_available", create=True, return_value=False)
-def test_run_operators_with_tensor(mock_cuda):
+def test_run_operators_with_tensor():
     op = MockOperator("tensor_op", requires_tensor=True)
     OperatorRegistry.register(op)
 
     img = np.zeros((10, 10, 3), dtype=np.uint8)
     mask = np.zeros((10, 10), dtype=np.uint8)
 
-    with patch("torch.from_numpy") as mock_from_numpy:
+    with (
+        patch("core.operators.registry.torch.cuda.is_available", return_value=False),
+        patch("core.operators.registry.torch.from_numpy") as mock_from_numpy,
+    ):
         mock_tensor = MagicMock()
         mock_from_numpy.return_value = mock_tensor
         mock_tensor.float.return_value = mock_tensor
@@ -156,7 +161,7 @@ def test_run_operators_with_tensor(mock_cuda):
         mock_tensor.unsqueeze.return_value = mock_tensor
         mock_tensor.to.return_value = mock_tensor
 
-        run_operators(img, mask=mask, operators=["tensor_op"])
+        run_operators(image_rgb=img, mask=mask, operators=["tensor_op"])
         assert mock_from_numpy.called
 
 

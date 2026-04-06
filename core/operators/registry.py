@@ -16,6 +16,11 @@ from typing import TYPE_CHECKING, Any, Optional, Type
 
 from core.operators.base import Operator, OperatorConfig, OperatorContext, OperatorResult
 
+try:
+    import torch
+except ImportError:
+    torch = None
+
 if TYPE_CHECKING:
     pass
 
@@ -219,7 +224,9 @@ def run_operators(
     for name in operator_names:
         op = OperatorRegistry.get(name)
         if op and getattr(op.config, "requires_tensor", False):
-            import torch
+            if torch is None:
+                logger.error(f"Operator '{name}' requires torch, but torch is not installed.")
+                continue
 
             device = "cuda" if torch.cuda.is_available() else "cpu"
             # (H, W, C) -> (C, H, W) -> (1, C, H, W)

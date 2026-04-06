@@ -24,7 +24,6 @@ if TYPE_CHECKING:
 from core.enums import SceneStatus
 from core.image_utils import render_mask_overlay
 from core.io_utils import create_frame_map
-from core.managers.model_loader import initialize_analysis_models
 from core.shared import build_scene_gallery_items
 from core.utils import _to_json_safe
 
@@ -182,6 +181,9 @@ def _create_analysis_context(
     resolved_outdir = Path(output_folder_str).resolve()
     ui_args["output_folder"] = str(resolved_outdir)
     params = AnalysisParameters.from_ui(logger, config, **ui_args)
+
+    from core.managers.model_loader import initialize_analysis_models
+
     models = initialize_analysis_models(params, config, logger, model_registry)
     frame_map = create_frame_map(resolved_outdir, logger)
     if not frame_map:

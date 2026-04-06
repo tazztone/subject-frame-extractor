@@ -28,7 +28,7 @@ def mock_app_ui(mock_config, mock_logger, mock_database, mock_thumbnail_manager,
     q = Queue()
     evt = threading.Event()
 
-    with patch("torch.cuda.is_available", return_value=False, create=True):
+    with patch("ui.app_ui.torch.cuda.is_available", return_value=False):
         ui = AppUI(mock_config, mock_logger, q, evt, mock_thumbnail_manager, mock_model_registry, mock_database)
         ui.components = MagicMock()  # Will be populated as needed by tests
         return ui

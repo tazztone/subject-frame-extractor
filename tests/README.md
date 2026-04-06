@@ -162,7 +162,17 @@ If you try to run a specific test file (e.g., `tests/integration/test_gpu_e2e.py
 
 ---
 
-*Last Updated: 2026-04-04 (SAM 3.1 Multiplex Migration & UI Hardening)*
+*Last Updated: 2026-04-06 (Mock Hardening & Parallel Stability)*
+
+## Key Infrastructure Takeaways
+
+During the 2026-04 stabilization effort, several high-signal patterns were established to maintain a 100% stable parallel test suite:
+
+- **Unit Test Hardware Ownership**: Unit tests must own their hardware assumptions. Any test that cares about device or CUDA state should patch the **module-local reference** (e.g., `patch("core.managers.model_loader.torch.cuda.is_available", ...)`), not the global `torch.cuda` namespace. This prevents cross-test leakage in parallel environments regardless of `conftest.py` state.
+- **Mock Control Flags**: `PYTEST_INTEGRATION_MODE=true` does not simply mean "integration tests are running"; it means **"mocks are off everywhere."** For future clarity, consider this equivalent to a `DISABLE_TEST_MOCKS=true` toggle.
+- **CUDA Introspection Hygiene**: Wrap all CUDA introspection calls (e.g., `get_device_properties()`, `memory_reserved()`) in `try/except` blocks. This is production-quality hygiene necessary for resiliency in restricted environments like WSL, containers, or CI runners with driver mismatches.
+- **Lazy Imports > Circular Guards**: Favor module-level lazy patterns (or `try/import` within functions) over complex `TYPE_CHECKING` blocks or excessive package restructuring. This keeps the dependency graph lean and prevents premature module initialization.
+- **Mock Idempotency**: The `_mocks_injected` flag is mandatory when combining `pytest_configure` hooks with module-level initialization. It ensures that parallel workers do not double-inject mocks and produce non-deterministic state.
 
 ## Gradio 5 UI Testing Patterns
 

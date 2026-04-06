@@ -111,6 +111,7 @@ class AppUI:
         model_registry: "ModelRegistry",
         database: "Database",
         debug_mode: bool = False,
+        cuda_available: Optional[bool] = None,
     ):
         """
         Initialize the AppUI.
@@ -122,7 +123,9 @@ class AppUI:
             cancel_event: Event to signal task cancellation.
             thumbnail_manager: Manager for thumbnail caching.
             model_registry: Registry for ML models.
+            database: Database manager.
             debug_mode: Whether to show hidden debug UI elements.
+            cuda_available: Optional override for CUDA availability check.
         """
         self.config = config
         self.logger = logger
@@ -134,7 +137,8 @@ class AppUI:
         self.database = database
         self.batch_manager = BatchManager()
         self.debug_mode = debug_mode or getattr(config, "debug", False)
-        self.components, self.cuda_available = {}, torch.cuda.is_available()
+        self.cuda_available = cuda_available if cuda_available is not None else torch.cuda.is_available()
+        self.components = {}
         self.ui_registry = {}
         self.performance_metrics = {}
         self.log_viewer = LogViewer(logger, progress_queue, self.LOG_LEVEL_CHOICES)
