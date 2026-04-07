@@ -71,7 +71,7 @@ To ensure fast execution and hardware independence, all **Unit Tests** must comp
 
 ### Mock Mode Priority Rules
 
-`_should_skip_mocks()` uses a three-rule priority chain: (1) `PYTEST_INTEGRATION_MODE=true` env var wins unconditionally; (2) xdist workers inherit the parent environment — set the var in the **parent** shell, not in individual workers; (3) `sys.argv` path inspection as a last resort for direct invocations.
+The global mock system in `tests/conftest.py` respects the `PYTEST_INTEGRATION_MODE` environment variable. When set to `true`, all module-level mock injections and hardware patches are bypassed to allow real execution.
 
 ## Gradio & Pyright Resiliency
 
@@ -177,6 +177,12 @@ During the 2026-04 stabilization effort, several high-signal patterns were estab
 - **CUDA Introspection Hygiene**: Wrap all CUDA introspection calls (e.g., `get_device_properties()`, `memory_reserved()`) in `try/except` blocks. This is production-quality hygiene necessary for resiliency in restricted environments like WSL, containers, or CI runners with driver mismatches.
 - **Lazy Imports > Circular Guards**: Favor module-level lazy patterns (or `try/import` within functions) over complex `TYPE_CHECKING` blocks or excessive package restructuring. This keeps the dependency graph lean and prevents premature module initialization.
 - **Mock Idempotency**: The `_mocks_injected` flag is mandatory when combining `pytest_configure` hooks with module-level initialization. It ensures that parallel workers do not double-inject mocks and produce non-deterministic state.
+- **Logger Configuration Requirement**: `AppLogger` MUST be initialized with a proper `Config` object, not a string name. Passing a string as the first argument will cause downstream crashes in `ModelRegistry` which expects `logger.config` to be a `Config` instance.
+- **Integration Test Hygiene (Mock Leakage Prevention)**: To maintain a 100% stable integration suite, follow these strict rules to prevent "mock leakage" where unit-test mocks contaminate real GPU processes:
+    - **Deferred Imports**: Never use module-level core imports (e.g., `from core.managers.analysis import AnalysisPipeline`) in files under `tests/integration/`. Pytest collects these BEFORE environment guards are active, forcing the loading of mocked modules. **Always import core components inside the test function.**
+    - **Strict Directory Partitioning**: Test files that rely on the "standard mock triplet" (`mock_config`, `mock_logger`, `mock_model_registry`) belong strictly in `tests/unit/`. If these files are collected during an integration run, they trigger the root `conftest.py` mock injection, which "poisons" `sys.modules` for the entire process.
+    - **Registry Failure Stickiness**: The `ModelRegistry` (and its module-scoped test fixture) caches initialization failures. If a tracker fails to load once (e.g., due to a mock collision or OOM), it returns `None` for every subsequent call. This results in a cascade of `AttributeError: 'NoneType' object has no attribute 'xxx'` across the entire suite.
+    - **Modern API Usage**: Integration tests must use `MaskPropagator.propagate_video()` (which works directly with video paths) instead of the deprecated `propagate()` method.
 
 ## Gradio 5 UI Testing Patterns
 

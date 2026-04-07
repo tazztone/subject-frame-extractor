@@ -19,9 +19,10 @@ def module_model_registry():
         from core.logger import AppLogger
         from core.managers.registry import ModelRegistry
 
-        logger = AppLogger("integration_registry")
         config = Config()
-        registry = ModelRegistry(config, logger)
+        logger = AppLogger(config)
+        registry = ModelRegistry(logger)
+        registry.default_config = config
         # We don't necessarily load all models here, just return the registry
         return registry
     else:
@@ -29,3 +30,9 @@ def module_model_registry():
         mock = MagicMock()
         mock.get_tracker.return_value = MagicMock()
         return mock
+
+
+@pytest.fixture
+def database(mock_database):
+    """Alias for mock_database to satisfy integration tests that request it."""
+    return mock_database

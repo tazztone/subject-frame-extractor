@@ -401,6 +401,9 @@ def force_cpu_device():
     This ensures that unit tests running in the same process as the mock
     infrastructure behave deterministically.
     """
+    if os.environ.get("PYTEST_INTEGRATION_MODE", "").lower() == "true":
+        yield
+        return
     with (
         patch("core.utils.device.get_device", return_value="cpu"),
         patch("core.utils.device.is_cuda_available", return_value=False),

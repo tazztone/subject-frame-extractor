@@ -23,8 +23,6 @@ import numpy as np
 import pytest
 import torch
 
-from core.managers import SAM3Wrapper
-
 if os.environ.get("PYTEST_INTEGRATION_MODE", "").lower() != "true":
     pytest.skip("Set PYTEST_INTEGRATION_MODE=true to run GPU E2E tests", allow_module_level=True)
 
@@ -235,6 +233,8 @@ class TestSAM3Inference:
         from pathlib import Path
 
         import torch
+
+        from core.managers import SAM3Wrapper
 
         if not torch.cuda.is_available():
             pytest.skip("CUDA not available")
@@ -588,7 +588,7 @@ class TestPipelineE2E:
         assert pipeline is not None
         assert pipeline.config is not None
 
-    def test_analysis_pipeline_initializes_with_real_managers(self, tmp_path, module_model_registry, database):
+    def test_analysis_pipeline_initializes_with_real_managers(self, tmp_path, module_model_registry):
         """AnalysisPipeline initializes with real ThumbnailManager and ModelRegistry."""
         import torch
 
@@ -767,7 +767,7 @@ class TestMaskPropagatorE2E:
     """Tests for MaskPropagator with real SAM3 inference."""
 
     @requires_sam3
-    def test_mask_propagator_propagate(self, tmp_path, module_model_registry):
+    def test_mask_propagator_propagate(self, tmp_path, module_model_registry, sample_video):
         """MaskPropagator.propagate() works with new SAM3 API."""
         import threading
         from queue import Queue
@@ -800,13 +800,21 @@ class TestMaskPropagatorE2E:
                 device="cuda",
             )
 
-            # Create test frames
-            frames_rgb = [_create_test_image() for _ in range(5)]
-
             # Run propagation
-            masks, areas, empties, errors = propagator.propagate(
-                shot_frames_rgb=frames_rgb, seed_idx=0, bbox_xywh=[50, 50, 80, 150]
+            video_path, bbox = sample_video
+            frame_numbers = list(range(5))
+            res_masks, res_areas, res_empties, res_errors = propagator.propagate_video(
+                video_path=str(video_path),
+                frame_numbers=frame_numbers,
+                prompts=[{"frame": 0, "bbox": bbox}],
+                frame_size=(1280, 720),  # sample_video is 720p
+                frame_map={},
             )
+
+            masks = [res_masks[i] for i in frame_numbers]
+            areas = [res_areas[i] for i in frame_numbers]
+            empties = [res_empties[i] for i in frame_numbers]
+            errors = [res_errors[i] for i in frame_numbers]
 
             assert len(masks) == 5
             assert len(areas) == 5
@@ -821,7 +829,7 @@ class TestMaskPropagatorE2E:
             wrapper.reset_session()
 
     @requires_sam3
-    def test_mask_propagator_bidirectional(self, tmp_path, module_model_registry):
+    def test_mask_propagator_bidirectional(self, tmp_path, module_model_registry, sample_video):
         """MaskPropagator.propagate() works bidirectionally from middle frame."""
         import threading
         from queue import Queue
@@ -854,28 +862,32 @@ class TestMaskPropagatorE2E:
                 device="cuda",
             )
 
-            # Create 10 test frames with moving object
-            frames_rgb = []
-            for i in range(10):
-                img = np.zeros((256, 256, 3), dtype=np.uint8)
-                img[:, :] = [100, 150, 200]
-                x = 30 + i * 15
-                img[50:200, x : x + 80] = [200, 100, 100]
-                frames_rgb.append(img)
-
             # Start from middle frame
+            video_path, bbox = sample_video
+            frame_numbers = list(range(10))
             seed_idx = 5
-            x_at_seed = 30 + seed_idx * 15
 
-            masks, areas, empties, errors = propagator.propagate(
-                shot_frames_rgb=frames_rgb, seed_idx=seed_idx, bbox_xywh=[x_at_seed, 50, 80, 150]
+            res_masks, res_areas, res_empties, res_errors = propagator.propagate_video(
+                video_path=str(video_path),
+                frame_numbers=frame_numbers,
+                prompts=[{"frame": seed_idx, "bbox": bbox}],
+                frame_size=(1280, 720),
+                frame_map={},
             )
+
+            masks = [res_masks[i] for i in frame_numbers]
+            areas = [res_areas[i] for i in frame_numbers]
+            empties = [res_empties[i] for i in frame_numbers]
+            errors = [res_errors[i] for i in frame_numbers]
 
             assert len(masks) == 10
             # All frames should have masks (either from forward or backward propagation)
             for i, mask in enumerate(masks):
                 assert mask is not None, f"Frame {i} has no mask"
                 assert isinstance(mask, np.ndarray)
+                assert not errors[i], f"Frame {i} has error: {errors[i]}"
+                assert areas[i] >= 0, f"Frame {i} has invalid area: {areas[i]}"
+                assert empties[i] in [True, False]
         finally:
             wrapper.reset_session()
 
@@ -1042,7 +1054,7 @@ class TestCancellationE2E:
     """E2E tests for cancel operations during pipeline execution."""
 
     @requires_sam3
-    def test_propagation_with_cancel_event(self, tmp_path, test_frames_dir, module_model_registry):
+    def test_propagation_with_cancel_event(self, tmp_path, module_model_registry, sample_video):
         """MaskPropagator handles cancel event during propagation."""
         import threading
         from queue import Queue
@@ -1078,9 +1090,6 @@ class TestCancellationE2E:
                 device="cuda",
             )
 
-            # Create test frames
-            frames_rgb = [_create_test_image() for _ in range(10)]
-
             # Set cancel event after a short delay to simulate user cancellation
             def cancel_after_delay():
                 import time
@@ -1093,11 +1102,20 @@ class TestCancellationE2E:
             cancel_thread.start()
 
             # Run propagation (may be interrupted)
-            masks, areas, empties, errors = propagator.propagate(
-                shot_frames_rgb=frames_rgb, seed_idx=0, bbox_xywh=[50, 50, 80, 150]
+            video_path, bbox = sample_video
+            frame_numbers = list(range(10))
+            res_masks, res_areas, res_empties, res_errors = propagator.propagate_video(
+                video_path=str(video_path),
+                frame_numbers=frame_numbers,
+                prompts=[{"frame": 0, "bbox": bbox}],
+                frame_size=(1280, 720),
+                frame_map={},
             )
 
             cancel_thread.join()
+
+            masks = [res_masks[i] for i in frame_numbers]
+            areas = [res_areas[i] for i in frame_numbers]
 
             # Should return lists (possibly incomplete due to cancel)
             assert isinstance(masks, list)
@@ -1106,7 +1124,7 @@ class TestCancellationE2E:
         finally:
             pass  # cleanup() removed
 
-    def test_analysis_pipeline_cancel(self, tmp_path, module_model_registry, database):
+    def test_analysis_pipeline_cancel(self, tmp_path, module_model_registry):
         """AnalysisPipeline handles cancel event gracefully."""
         import threading
         from queue import Queue
@@ -1163,7 +1181,7 @@ class TestMediaPipeLandmarkerE2E:
         from core.config import Config
         from core.logger import AppLogger
 
-        config = Config(logs_dir=str(tmp_path / "logs"), models_dir=str(tmp_path / "models"))
+        config = Config(logs_dir=str(tmp_path / "logs"))
         AppLogger(config, log_to_console=False, log_to_file=False)
 
         # Model download is handled by managers
@@ -1349,7 +1367,7 @@ class TestMaskGenerationE2E:
         from core.models import AnalysisParameters
         from core.scene_utils import SubjectMasker
 
-        config = Config(logs_dir=str(tmp_path / "logs"), models_dir=str(tmp_path / "models"))
+        config = Config(logs_dir=str(tmp_path / "logs"))
         logger = AppLogger(config, log_to_console=False, log_to_file=False)
         registry = module_model_registry
         tm = ThumbnailManager(logger, config)

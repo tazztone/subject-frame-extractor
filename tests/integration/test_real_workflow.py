@@ -10,20 +10,6 @@ import pytest
 # Add root to path so we can import core modules
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from core.config import Config
-from core.events import (
-    ExtractionEvent,
-    PreAnalysisEvent,
-    PropagationEvent,
-)
-from core.logger import AppLogger
-from core.managers import ModelRegistry, ThumbnailManager
-from core.pipelines import (
-    execute_analysis,
-    execute_extraction,
-    execute_pre_analysis,
-    execute_propagation,
-)
 
 # Constants from the manual script
 VIDEO_PATH = Path("downloads/example clip 720p 2x.mov")
@@ -59,6 +45,21 @@ def test_real_end_to_end_workflow(tmp_path, tracker_model):
     Runs the full extraction -> pre-analysis -> propagation -> analysis pipeline
     on a real video file.
     """
+
+    from core.config import Config
+    from core.events import (
+        ExtractionEvent,
+        PreAnalysisEvent,
+        PropagationEvent,
+    )
+    from core.logger import AppLogger
+    from core.managers import ModelRegistry, ThumbnailManager
+    from core.pipelines import (
+        execute_analysis,
+        execute_extraction,
+        execute_pre_analysis,
+        execute_propagation,
+    )
 
     # 1. Setup & Checks
     if tracker_model == "sam3" and not _is_sam3_available():

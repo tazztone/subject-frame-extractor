@@ -91,15 +91,14 @@ def test_clear_registry(registry):
 def test_get_tracker_failure_path(registry, mock_config):
     """Test error handling when loader fails."""
     with patch.object(registry, "_load_tracker_impl", side_effect=Exception("Failed")):
-        tracker = registry.get_tracker(
-            model_name="sam2",
-            models_path="models",
-            user_agent="test-agent",
-            retry_params=(3, (1, 2)),
-            config=mock_config,
-        )
-        assert tracker is None
-        assert registry.logger.error.called
+        with pytest.raises(Exception, match="Failed"):
+            registry.get_tracker(
+                model_name="sam2",
+                models_path="models",
+                user_agent="test-agent",
+                retry_params=(3, (1, 2)),
+                config=mock_config,
+            )
 
 
 def test_get_tracker_oom_fallback(registry, mock_config):

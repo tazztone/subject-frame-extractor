@@ -123,7 +123,7 @@ class MaskPropagator:
                 text_hint = (
                     self.params.text_prompt
                     if (hasattr(self.params, "text_prompt") and self.params.text_prompt)
-                    else "person"
+                    else None
                 )
                 for p in prompts:
                     if self.cancel_event.is_set():

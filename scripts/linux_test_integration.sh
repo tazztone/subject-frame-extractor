@@ -19,7 +19,7 @@ echo "----------------------------------------------------"
 export PYTEST_INTEGRATION_MODE=true
 
 # Integration tests are heavy and should run serially or with -n 1
-uv run --no-sync pytest tests/integration/ -q --tb=short -m "integration or gpu_e2e" --no-cov "$@"
+uv run --no-sync pytest tests/integration/ -n 0 -q --tb=short -m "integration or gpu_e2e" --no-cov "$@"
 
 if [ $? -ne 0 ]; then
     echo ""

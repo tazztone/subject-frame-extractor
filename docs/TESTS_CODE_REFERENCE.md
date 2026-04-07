@@ -37,12 +37,11 @@ tests
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;scenes.json  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;thumbs  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_accuracy.py`](#-testsintegrationtest_accuracypy)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_debug_infra.py`](#-testsintegrationtest_debug_infrapy)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_diagnostics.py`](#-testsintegrationtest_diagnosticspy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_gpu_e2e.py`](#-testsintegrationtest_gpu_e2epy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_gpu_health.py`](#-testsintegrationtest_gpu_healthpy)  
-│&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_handler_state.py`](#-testsintegrationtest_handler_statepy)  
-│&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_integration_smoke.py`](#-testsintegrationtest_integration_smokepy)  
-│&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_real_workflow.py`](#-testsintegrationtest_real_workflowpy)  
-│&nbsp;&nbsp;&nbsp;└──&nbsp;[`test_session_load.py`](#-testsintegrationtest_session_loadpy)  
+│&nbsp;&nbsp;&nbsp;└──&nbsp;[`test_real_workflow.py`](#-testsintegrationtest_real_workflowpy)  
 ├──&nbsp;[`mock_app.py`](#-testsmock_apppy)  
 ├──&nbsp;regression  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_full_workflow_regression.py`](#-testsregressiontest_full_workflow_regressionpy)  
@@ -124,6 +123,7 @@ tests
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_fingerprint.py`](#-testsunittest_fingerprintpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_fix_verification.py`](#-testsunittest_fix_verificationpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_gallery_utils.py`](#-testsunittest_gallery_utilspy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_handler_state.py`](#-testsunittest_handler_statepy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_handlers.py`](#-testsunittest_handlerspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_helpers_extended.py`](#-testsunittest_helpers_extendedpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_image_utils.py`](#-testsunittest_image_utilspy)  
@@ -171,6 +171,7 @@ tests
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_seed_selector_extended.py`](#-testsunittest_seed_selector_extendedpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_seed_selector_strategies.py`](#-testsunittest_seed_selector_strategiespy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_session.py`](#-testsunittest_sessionpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_session_load.py`](#-testsunittest_session_loadpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_shared.py`](#-testsunittest_sharedpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_sharpness.py`](#-testsunittest_sharpnesspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_signatures.py`](#-testsunittest_signaturespy)  
@@ -309,6 +310,9 @@ def create_mock_tensor(name='tensor', shape=None, device_mock=None, dtype_mock=N
 @pytest.fixture(scope='module')
 def module_model_registry():
     """Module-scoped real (or stub) ModelRegistry for integration tests."""
+@pytest.fixture
+def database(mock_database):
+    """Alias for mock_database to satisfy integration tests that request it."""
 ```
 
 ### `📄 tests/integration/test_accuracy.py`
@@ -322,6 +326,19 @@ def test_mask_iou_accuracy(real_video, module_model_registry):
     """Verify that SAM3 generates a mask that reasonably matches the input bbox."""
 def test_propagation_stability(real_video, module_model_registry, tmp_path):
     """Verify that propagation maintains a non-empty mask over several frames."""
+```
+
+### `📄 tests/integration/test_debug_infra.py`
+
+```python
+def test_debug_env(): ...
+```
+
+### `📄 tests/integration/test_diagnostics.py`
+
+```python
+def test_torch_is_not_mock(): ...
+def test_sam2_config_resolvable(): ...
 ```
 
 ### `📄 tests/integration/test_gpu_e2e.py`
@@ -413,7 +430,7 @@ class TestPipelineE2E:
     """End-to-end pipeline tests with real execution."""
     def test_extraction_pipeline_creates_output(self, tmp_path):
         """ExtractionPipeline initializes correctly with real config."""
-    def test_analysis_pipeline_initializes_with_real_managers(self, tmp_path, module_model_registry, database):
+    def test_analysis_pipeline_initializes_with_real_managers(self, tmp_path, module_model_registry):
         """AnalysisPipeline initializes with real ThumbnailManager and ModelRegistry."""
 @pytest.mark.gpu_e2e
 class TestVideoE2E:
@@ -433,10 +450,10 @@ class TestVideoE2E:
 class TestMaskPropagatorE2E:
     """Tests for MaskPropagator with real SAM3 inference."""
     @requires_sam3
-    def test_mask_propagator_propagate(self, tmp_path, module_model_registry):
+    def test_mask_propagator_propagate(self, tmp_path, module_model_registry, sample_video):
         """MaskPropagator.propagate() works with new SAM3 API."""
     @requires_sam3
-    def test_mask_propagator_bidirectional(self, tmp_path, module_model_registry):
+    def test_mask_propagator_bidirectional(self, tmp_path, module_model_registry, sample_video):
         """MaskPropagator.propagate() works bidirectionally from middle frame."""
 @pytest.mark.gpu_e2e
 class TestOperatorE2E:
@@ -458,9 +475,9 @@ class TestExportE2E:
 class TestCancellationE2E:
     """E2E tests for cancel operations during pipeline execution."""
     @requires_sam3
-    def test_propagation_with_cancel_event(self, tmp_path, test_frames_dir, module_model_registry):
+    def test_propagation_with_cancel_event(self, tmp_path, module_model_registry, sample_video):
         """MaskPropagator handles cancel event during propagation."""
-    def test_analysis_pipeline_cancel(self, tmp_path, module_model_registry, database):
+    def test_analysis_pipeline_cancel(self, tmp_path, module_model_registry):
         """AnalysisPipeline handles cancel event gracefully."""
 @pytest.mark.gpu_e2e
 class TestMediaPipeLandmarkerE2E:
@@ -504,24 +521,6 @@ def test_gpu_coexistence():
     """Verify Torch (NIQE) and ONNX (YOLO) can run in the same process/thread."""
 ```
 
-### `📄 tests/integration/test_handler_state.py`
-
-```python
-def test_handler_is_bound_to_correct_instance(tmp_path):
-    """Tier 2: Verify that the PipelineHandler is bound to the specific AppUI instance."""
-def test_multiple_instances_are_isolated(tmp_path):
-    """Tier 2: Verify that multiple factory calls return isolated instances."""
-```
-
-### `📄 tests/integration/test_integration_smoke.py`
-
-```python
-def test_integration_smoke_flow(mock_config, mock_logger, mock_model_registry):
-    """Smoke test to verify the integration of BatchManager and Pipelines."""
-def test_pipeline_wiring(mock_config, mock_logger, mock_model_registry):
-    """Verify Pipeline wiring with mocks."""
-```
-
 ### `📄 tests/integration/test_real_workflow.py`
 
 ```python
@@ -536,13 +535,6 @@ def _is_sam2_available():
 @pytest.mark.parametrize('tracker_model', ['sam2', 'sam3'])
 def test_real_end_to_end_workflow(tmp_path, tracker_model):
     """Automated version of tests/verification/e2e_run.py."""
-```
-
-### `📄 tests/integration/test_session_load.py`
-
-```python
-def test_session_load_restores_state(tmp_path):
-    """Verify run_session_load_wrapper correctly restores UI and state components."""
 ```
 
 ### `📄 tests/mock_app.py`
@@ -1928,6 +1920,15 @@ class TestGalleryUtils:
     def test_auto_set_thresholds_empty(self): ...
 ```
 
+### `📄 tests/unit/test_handler_state.py`
+
+```python
+def test_handler_is_bound_to_correct_instance(tmp_path):
+    """Tier 2: Verify that the PipelineHandler is bound to the specific AppUI instance."""
+def test_multiple_instances_are_isolated(tmp_path):
+    """Tier 2: Verify that multiple factory calls return isolated instances."""
+```
+
 ### `📄 tests/unit/test_handlers.py`
 
 ```python
@@ -2934,6 +2935,14 @@ def test_execute_session_load_corrupt_seeds(mock_logger, tmp_path): ...
 def test_execute_session_load_missing_seeds_file(mock_logger, tmp_path): ...
 def test_load_analysis_scenes_folder_mode(): ...
 def test_validate_session_dir_exception(): ...
+```
+
+### `📄 tests/unit/test_session_load.py`
+
+```python
+@patch('ui.handlers.pipeline_handlers.execute_session_load')
+def test_session_load_restores_state(mock_load, tmp_path):
+    """Verify run_session_load_wrapper correctly restores UI and state components."""
 ```
 
 ### `📄 tests/unit/test_shared.py`

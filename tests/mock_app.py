@@ -373,6 +373,7 @@ def build_mock_app(downloads_dir=None):
     session_log_file = setup_logging(config, progress_queue=progress_queue)
     logger = AppLogger(config, session_log_file=session_log_file)
     cancel_event = MagicMock()
+    cancel_event.is_set.return_value = False
     thumbnail_manager = MagicMock()
     model_registry = MagicMock()
     database = MagicMock()

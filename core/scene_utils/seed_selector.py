@@ -362,20 +362,25 @@ class SeedSelector:
                 frame_bgr = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
                 faces = self.face_analyzer.get(frame_bgr)
                 if faces:
-                    if self.reference_embedding is not None:
-                        # Prioritize match similarity over raw detection score
-                        best_face = max(faces, key=lambda f: np.dot(f.normed_embedding, self.reference_embedding))
-                    else:
-                        best_face = max(faces, key=lambda f: f.det_score)
-                    expanded = self._expand_face_to_body(best_face.bbox.astype(int), frame_rgb.shape)
-                    log_with_component(
-                        self.logger, "info", "No subjects found by YOLO; used face-detection fallback for seeding"
-                    )
-                    return expanded, {
-                        "type": "face_fallback_expanded",
-                        "face_conf": float(best_face.det_score),
-                        "detection_attempted": True,
-                    }
+                    try:
+                        if self.reference_embedding is not None:
+                            # Prioritize match similarity over raw detection score
+                            best_face = max(faces, key=lambda f: np.dot(f.normed_embedding, self.reference_embedding))
+                        else:
+                            best_face = max(faces, key=lambda f: f.det_score)
+                    except (ValueError, TypeError):
+                        best_face = None
+
+                    if best_face:
+                        expanded = self._expand_face_to_body(best_face.bbox.astype(int), frame_rgb.shape)
+                        log_with_component(
+                            self.logger, "info", "No subjects found by YOLO; used face-detection fallback for seeding"
+                        )
+                        return expanded, {
+                            "type": "face_fallback_expanded",
+                            "face_conf": float(best_face.det_score),
+                            "detection_attempted": True,
+                        }
 
             log_with_component(self.logger, "warning", "No subjects detected in scene - using fallback region")
             fallback_box = self._final_fallback_box(frame_rgb.shape)

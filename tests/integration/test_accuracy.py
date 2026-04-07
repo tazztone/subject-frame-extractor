@@ -5,10 +5,6 @@ import numpy as np
 import pytest
 import torch
 
-from core.models import AnalysisParameters
-from core.scene_utils.mask_propagator import MaskPropagator
-
-# Mark as a GPU E2E test
 pytestmark = [
     pytest.mark.gpu_e2e,
     pytest.mark.slow,
@@ -96,12 +92,13 @@ def test_propagation_stability(real_video, module_model_registry, tmp_path):
 
     config = Config(logs_dir=str(tmp_path / "logs"))
     logger = AppLogger(config, log_to_console=False, log_to_file=False)
+    from core.models import AnalysisParameters
+    from core.scene_utils.mask_propagator import MaskPropagator
+
     params = AnalysisParameters(source_path=video_path, output_folder=str(tmp_path))
 
     # Initial Add Prompt for propagation
     wrapper.reset_session()
-    wrapper.init_video(video_path)
-    wrapper.add_bbox_prompt(frame_idx=0, obj_id=1, bbox_xywh=bbox, img_size=img_size)
 
     try:
         propagator = MaskPropagator(
@@ -125,7 +122,20 @@ def test_propagation_stability(real_video, module_model_registry, tmp_path):
         cap.release()
 
         # Propagate
-        masks, areas, empties, errors = propagator.propagate(shot_frames_rgb=frames, seed_idx=0, bbox_xywh=bbox)
+        frame_numbers = list(range(len(frames)))
+        h, w = frames[0].shape[:2]
+        res_masks, res_areas, res_empties, res_errors = propagator.propagate_video(
+            video_path=str(video_path),
+            frame_numbers=frame_numbers,
+            prompts=[{"frame": 0, "bbox": bbox}],
+            frame_size=(w, h),
+            frame_map={},
+        )
+
+        # Convert dictionaries to lists for compatibility with existing assertions
+        masks = [res_masks[i] for i in frame_numbers]
+        areas = [res_areas[i] for i in frame_numbers]
+        errors = [res_errors[i] for i in frame_numbers]
 
         # Assertions
         assert len(masks) == len(frames)

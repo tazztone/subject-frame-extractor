@@ -19,7 +19,7 @@ class SAM2Wrapper:
         if torch.cuda.is_available():
             torch.set_float32_matmul_precision("high")
 
-        # SAM2.1 hiera-tiny config is usually built-in or provided by the package
+        # SAM2.1 hiera-tiny config — Hydra resolves this via pkg://sam2 search path
         self.predictor: Any = build_sam2_video_predictor(
             config_file="configs/sam2.1/sam2.1_hiera_t.yaml",
             ckpt_path=checkpoint_path,
