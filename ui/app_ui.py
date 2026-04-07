@@ -335,6 +335,10 @@ class AppUI:
                 self.components["filtering_tab"],
                 self.components["export_button"],
                 self.components["dry_run_button"],
+                self.components["start_extraction_button"],
+                self.components["start_pre_analysis_button"],
+                self.components["start_analysis_button"],
+                self.components["apply_auto_button"],
             ]
 
             # Limited outputs for the background timer (prevents status overwrites)
@@ -747,6 +751,27 @@ class AppUI:
             clean_args.update({"compute_face_sim": False, "face_ref_img_path": ""})
         return PreAnalysisEvent.model_validate(clean_args)
 
+    def _set_busy_state(self, is_busy: bool):
+        """Updates UI components to reflect processing state."""
+        updates = {
+            self.components["cancel_button"]: gr.update(interactive=is_busy),
+            self.components["pause_button"]: gr.update(interactive=is_busy),
+        }
+        # Disable action buttons when busy
+        for btn_name in [
+            "start_extraction_button",
+            "start_pre_analysis_button",
+            "propagate_masks_button",
+            "start_analysis_button",
+            "export_button",
+            "apply_auto_button",
+        ]:
+            if btn_name in self.components:
+                orig_value = getattr(self.components[btn_name], "value", "Processing...")
+                new_value = "⏳ Processing..." if is_busy else orig_value.replace("⏳ ", "")
+                updates[self.components[btn_name]] = gr.update(interactive=not is_busy, value=new_value)
+        return updates
+
     def _run_pipeline(
         self,
         pipeline_func: Callable,
@@ -757,14 +782,11 @@ class AppUI:
     ):
         """
         Generic wrapper to run a pipeline function and handle progress/errors.
-
-        Args:
-            pipeline_func: The pipeline generator function to run.
-            event: The event object to pass to the pipeline.
-            progress: Gradio progress callback.
-            success_callback: Optional callback to run on successful completion.
         """
         self.is_busy = True
+        self.cancel_event.clear()
+        yield self._set_busy_state(True)
+
         generator = None
         try:
             generator = pipeline_func(
@@ -787,6 +809,7 @@ class AppUI:
                         if success_callback:
                             yield success_callback(result)
                         return
+                    yield result
             yield {self.components["unified_log"]: "❌ Pipeline failed unexpectedly."}
         except Exception as e:
             import traceback
@@ -801,11 +824,10 @@ class AppUI:
             yield {
                 self.components["unified_log"]: detailed_error,
                 self.components["unified_status"]: f"⚠️ Backend Failure in {pipeline_func.__name__}",
-                self.components.get("start_extraction_button"): gr.update(interactive=True),
-                self.components.get("start_pre_analysis_button"): gr.update(interactive=True),
             }
         finally:
             self.is_busy = False
+            yield self._set_busy_state(False)
             if generator and hasattr(generator, "close"):
                 generator.close()
 

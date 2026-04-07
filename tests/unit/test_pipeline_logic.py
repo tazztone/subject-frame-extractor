@@ -17,6 +17,8 @@ class MockApp:
             "progress_details": "progress_id",
         }
         self.progress_queue = MagicMock()
+        from threading import Event
+        self.cancel_event = Event()
 
 
 def test_extraction_blocks_on_empty_source():
@@ -47,11 +49,9 @@ def test_extraction_success_yields_correct_status():
     # source_path is args[0]
     results = list(mock_extraction_wrapper(handler, state, "valid_video.mp4"))
 
-    assert len(results) == 1
-    yielded = results[0]
-
+    assert len(results) >= 1
     status_id = handler.app.components["unified_status"]
-    assert "Extraction Complete" in yielded[status_id]
+    assert any("Extraction Complete" in str(u.get(status_id, "")) for u in results)
 
 
 def test_pre_analysis_blocks_on_missing_extracted_video():

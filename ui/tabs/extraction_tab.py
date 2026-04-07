@@ -166,8 +166,10 @@ class ExtractionTabBuilder:
 
         # 4. Action Area
         with gr.Row(elem_id="extraction_actions"):
-            self.app.components["start_extraction_button"] = gr.Button(
-                "🚀 Start Extraction", variant="primary", scale=2, size="lg", elem_id="start_extraction_button"
+            self.app._create_component(
+                "start_extraction_button",
+                "button",
+                {"value": "🚀 Start Extraction", "variant": "primary", "scale": 2, "size": "lg", "elem_id": "start_extraction_button"},
             )
             self.app._create_component(
                 "add_to_queue_button",

@@ -37,8 +37,8 @@ def test_session_load_restores_state(mock_load, tmp_path):
     # Verify status updates and final state
     assert any("Session Loaded" in str(u.get(app.components["unified_status"], "")) for u in results)
 
-    # Check final update (the dict with all restorations)
-    final_update = results[-1]
+    # Check for the update containing application_state
+    final_update = next(u for u in reversed(results) if app.components["application_state"] in u)
 
     # Verify application_state restoration
     restored_state = final_update[app.components["application_state"]]

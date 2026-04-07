@@ -5,7 +5,6 @@ from .conftest import BASE_URL, Labels, Selectors, switch_to_tab, wait_for_app_r
 
 
 @pytest.mark.e2e
-@pytest.mark.gpu_e2e
 def test_ui_e2e_real_workflow(page: Page, live_server):
     """
     E2E test that mimics the real user workflow:

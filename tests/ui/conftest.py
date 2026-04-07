@@ -29,7 +29,7 @@ def get_test_port():
 
 PORT = get_test_port()
 BASE_URL = f"http://127.0.0.1:{PORT}"
-FAILURES_DIR = Path(__file__).parent.parent.parent / "tests" / "results" / "failures"
+FAILURES_DIR = Path(__file__).parent.parent / "results" / "failures"
 
 
 @pytest.fixture(autouse=True)
@@ -102,8 +102,9 @@ def wait_for_app_ready(page: Page):
         expect(status_locator).to_contain_text(Selectors.STATUS_READY, timeout=15000)
         expect(page.get_by_text("System Reset Ready.")).to_be_visible(timeout=5000)
 
-    # Small final settle for event loop binding stability
-    page.wait_for_timeout(500)
+    # Small settle for Gradio JS hydration stability
+    page.wait_for_timeout(200)
+
 
 
 def open_accordion(page: Page, text: str):
@@ -253,8 +254,10 @@ def app_instance(app_server):
     """
     try:
         from tests.mock_app import get_active_app
-
-        return get_active_app()
+        app = get_active_app()
+        if app is None:
+            pytest.skip("app_instance is not available for subprocess-based servers")
+        return app
     except ImportError:
         return None
 
@@ -282,7 +285,6 @@ def extracted_session(page, app_server):
 
     # Wait for completion
     expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text(Selectors.STATUS_SUCCESS_EXTRACTION, timeout=30000)
-    page.wait_for_timeout(1000)
 
     return page
 
@@ -299,19 +301,11 @@ def analyzed_session(extracted_session):
 
     # Click find frames
     find_btn = page.locator(Selectors.START_PRE_ANALYSIS)
-
-    # Sometimes it takes time to switch tabs or render
-    time.sleep(1)
-    if not find_btn.is_visible():
-        switch_to_tab(page, Labels.TAB_SUBJECT)
-        time.sleep(1)
-
-    expect(find_btn).to_be_visible(timeout=10000)
+    expect(find_btn).to_be_visible(timeout=15000)
     find_btn.click()
 
     # Wait for completion (check status)
     expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text(Selectors.STATUS_SUCCESS_PRE_ANALYSIS, timeout=30000)
-    page.wait_for_timeout(1000)
 
     return page
 

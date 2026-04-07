@@ -1,7 +1,6 @@
 import os
 import sys
 import time
-import types
 from pathlib import Path
 from queue import Queue
 from unittest.mock import MagicMock
@@ -29,88 +28,10 @@ from core.application_state import ApplicationState
 from core.models import Scene
 from core.pipelines import ExtractionPipeline
 
-# --- 1. Mock Heavy Dependencies ---
+from tests.conftest import _inject_global_mocks
+_inject_global_mocks()
 
-
-def create_mock_module(name, attributes=None):
-    mock_mod = types.ModuleType(name)
-    if attributes:
-        for attr, val in attributes.items():
-            setattr(mock_mod, attr, val)
-    return mock_mod
-
-
-# Mock Torch
-mock_torch = MagicMock(name="torch")
-
-
-# Promote torch.cuda to a real ModuleType instance for stable patching
-mock_cuda = create_mock_module(
-    "torch.cuda",
-    {
-        "is_available": MagicMock(return_value=False),
-        "device_count": MagicMock(return_value=0),
-        "empty_cache": MagicMock(),
-        "synchronize": MagicMock(),
-    },
-)
-
-mock_torch.cuda = mock_cuda
-mock_torch.__version__ = "2.0.0"
-mock_torch.nn.Module = MagicMock
-mock_torch.Tensor = MagicMock
-
-
-class TransparentContext:
-    def __enter__(self, *args, **kwargs):
-        return self
-
-    def __exit__(self, *args, **kwargs):
-        pass
-
-    def __call__(self, func=None):
-        return func if func else self
-
-
-mock_torch.no_grad = TransparentContext
-mock_torch.inference_mode = TransparentContext
-
-# Setup sys.modules mocks before any other imports
-modules_to_mock = [
-    "torch",
-    "torch.cuda",
-    "torch.nn",
-    "torchvision",
-    "torchvision.ops",
-    "torchvision.transforms",
-    "insightface",
-    "insightface.app",
-    "sam3",
-    "sam3.model_builder",
-    "mediapipe",
-    "pyiqa",
-    "scenedetect",
-    "yt_dlp",
-    "numba",
-    "lpips",
-    "matplotlib",
-    "matplotlib.pyplot",
-    "skimage",
-    "skimage.metrics",
-    "safetensors",
-    "onnxruntime",
-    "sam3.model",
-    "sam3.utils",
-    "sam3.model.sam3_video_predictor",
-    "sam3.model.sam3_video_inference",
-    "sam3.model.sam3_base_predictor",
-    "sam3.model.sam3_multiplex_video_predictor",
-    "sam3.model.sam3_multiplex_tracking",
-    "sam3.model.sam3_multiplex_base",
-]
-
-for mod_name in modules_to_mock:
-    sys.modules[mod_name] = MagicMock()
+# Global mocks are now injected via tests.conftest._inject_global_mocks()
 
 # --- 2. Pipeline Mock Logic ---
 
@@ -267,6 +188,22 @@ def mock_extraction_wrapper(self, current_state: ApplicationState, *args, **kwar
     # Small delay to ensure UI transition is detectable
     time.sleep(0.5)
 
+    # Initial yield to satisfy 'Busy' state checks
+    yield {
+        self.app.components["unified_status"]: "Mock Extraction",
+        self.app.components["unified_log"]: "[INFO] Parallel Extraction Started (MOCKED).",
+    }
+
+    # Simulate extraction progress
+    for i in range(15):
+        time.sleep(0.2)
+        if self.app.cancel_event.is_set():
+            yield {
+                self.app.components["unified_status"]: "Cancelled",
+                self.app.components["unified_log"]: "[WARN] Extraction Cancelled by user.",
+            }
+            return
+
     # Simulate extraction results that update the state
     new_state = current_state.model_copy()
     output_dir = os.path.join(self.config.downloads_dir, "mock_video")
@@ -293,7 +230,17 @@ def mock_pre_analysis_wrapper(self, current_state: ApplicationState, *args, **kw
         return
 
     # Ensure progress log is visible
-    self.app.progress_queue.put({"log": "[INFO] Pre-Analysis Started (MOCKED)."})
+    yield {
+        self.app.components["unified_status"]: "Mock Pre-Analysis",
+        self.app.components["unified_log"]: "[INFO] Pre-Analysis Started (MOCKED).",
+    }
+    time.sleep(0.5)
+    if self.app.cancel_event.is_set():
+        yield {
+            self.app.components["unified_status"]: "Cancelled",
+            self.app.components["unified_log"]: "[WARN] Pre-Analysis Cancelled.",
+        }
+        return
 
     # Simulate success
     new_state = current_state.model_copy()
@@ -314,6 +261,18 @@ def mock_pre_analysis_wrapper(self, current_state: ApplicationState, *args, **kw
 
 def mock_propagation_wrapper(self, current_state: ApplicationState, *args, **kwargs):
     print("[Mock] Running Propagation Wrapper")
+    yield {
+        self.app.components["unified_status"]: "Mock Propagation",
+        self.app.components["unified_log"]: "[INFO] Propagation Started (MOCKED).",
+    }
+    time.sleep(0.5)
+    if self.app.cancel_event.is_set():
+        yield {
+            self.app.components["unified_status"]: "Cancelled",
+            self.app.components["unified_log"]: "[WARN] Propagation Cancelled.",
+        }
+        return
+
     new_state = current_state.model_copy()
     msg = """<div class="success-card"><h3>Mask Propagation Complete</h3></div>"""
     yield {
@@ -372,8 +331,8 @@ def build_mock_app(downloads_dir=None):
 
     session_log_file = setup_logging(config, progress_queue=progress_queue)
     logger = AppLogger(config, session_log_file=session_log_file)
-    cancel_event = MagicMock()
-    cancel_event.is_set.return_value = False
+    from threading import Event
+    cancel_event = Event()
     thumbnail_manager = MagicMock()
     model_registry = MagicMock()
     database = MagicMock()
@@ -401,7 +360,7 @@ def build_mock_app(downloads_dir=None):
     # Wrap build_ui to add the reset button
     original_build_ui = app_instance.build_ui
 
-    def build_ui_with_reset(self):
+    def build_ui_with_reset():
         demo = original_build_ui()
         with demo:
             with gr.Accordion("Tests (Experimental)", open=True, visible=True):
@@ -429,9 +388,10 @@ def build_mock_app(downloads_dir=None):
                         app_instance.components["application_state"],
                     ],
                 )
+        app_instance.demo = demo
         return demo
 
-    app_instance.build_ui = types.MethodType(build_ui_with_reset, app_instance)
+    app_instance.build_ui = build_ui_with_reset
     app_instance.build_ui()  # Populate components
     _active_app = app_instance
     return app_instance
@@ -440,5 +400,4 @@ def build_mock_app(downloads_dir=None):
 if __name__ == "__main__":
     port = int(os.environ.get("APP_SERVER_PORT", 7860))
     app_ui = build_mock_app()
-    demo = app_ui.build_ui()
-    demo.launch(server_name="127.0.0.1", server_port=port)
+    app_ui.demo.launch(server_name="127.0.0.1", server_port=port)

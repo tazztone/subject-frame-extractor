@@ -402,6 +402,12 @@ def force_cpu_device():
     infrastructure behave deterministically.
     """
     if os.environ.get("PYTEST_INTEGRATION_MODE", "").lower() == "true":
+        # Smoke assertion: even in integration mode, we need a valid device detection state
+        from core.utils.device import get_device
+        try:
+            get_device()
+        except Exception as e:
+            pytest.fail(f"Integration mode failed smoke device check: {e}")
         yield
         return
     with (
