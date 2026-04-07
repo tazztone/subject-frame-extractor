@@ -183,6 +183,9 @@ During the 2026-04 stabilization effort, several high-signal patterns were estab
     - **Strict Directory Partitioning**: Test files that rely on the "standard mock triplet" (`mock_config`, `mock_logger`, `mock_model_registry`) belong strictly in `tests/unit/`. If these files are collected during an integration run, they trigger the root `conftest.py` mock injection, which "poisons" `sys.modules` for the entire process.
     - **Registry Failure Stickiness**: The `ModelRegistry` (and its module-scoped test fixture) caches initialization failures. If a tracker fails to load once (e.g., due to a mock collision or OOM), it returns `None` for every subsequent call. This results in a cascade of `AttributeError: 'NoneType' object has no attribute 'xxx'` across the entire suite.
     - **Modern API Usage**: Integration tests must use `MaskPropagator.propagate_video()` (which works directly with video paths) instead of the deprecated `propagate()` method.
+- **Mock Truthiness Hazards**: In Python, a `MagicMock` instance evaluates to `True` in a boolean context. Always explicitly configure boolean-returning mocks (e.g., `threading.Event().is_set.return_value = False`). Failure to do so will cause components like cancellation handlers to trigger unconditionally.
+- **Fail-Fast vs Silent Suppression**: Core factories and registries (like `ModelRegistry`) must re-raise initialization exceptions (e.g., OOM or missing imports) rather than catching them and returning `None`. Silent suppression creates non-deterministic downstream `AttributeError: NoneType` failures that obscure the root cause during testing.
+- **Strict Patch Control**: Avoid manual assignment patching (`module.func = MagicMock()`) in unit tests, as it relies heavily on module import ordering and can bleed across tests. Always use `unittest.mock.patch` decorators or context managers to ensure proper setup and teardown.
 
 ## Gradio 5 UI Testing Patterns
 
