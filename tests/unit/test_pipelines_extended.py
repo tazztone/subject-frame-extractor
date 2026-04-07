@@ -182,7 +182,7 @@ class TestPreAnalysisPipeline:
 
     @patch("core.managers.analysis.initialize_analysis_models")
     @patch("core.managers.analysis.SubjectMasker")
-    @patch("core.managers.analysis.save_scene_seeds")
+    @patch("core.scene_utils.save_scene_seeds")
     @patch("PIL.Image.fromarray")
     def test_pre_analysis_run(
         self, mock_img_save, mock_save_seeds, mock_masker_cls, mock_init_models, pre_pipeline, tmp_path

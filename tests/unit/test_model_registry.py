@@ -3,7 +3,6 @@ import time
 from unittest.mock import MagicMock, patch
 
 import pytest
-import torch
 
 from core.managers.registry import ModelRegistry
 
@@ -31,9 +30,8 @@ class TestModelRegistry:
     def test_get_or_load_oom_retry(self, registry):
         """Test that OOM is bubbled up (retry logic moved to specialized loaders)."""
         loader = MagicMock()
-        loader.side_effect = [torch.cuda.OutOfMemoryError(), "success"]
-
-        with pytest.raises(torch.cuda.OutOfMemoryError):
+        loader.side_effect = [RuntimeError("out of memory"), "success"]
+        with pytest.raises(RuntimeError):
             registry.get_or_load("oom_key", loader)
 
     def test_sticky_failure_logic(self, registry):
@@ -97,8 +95,8 @@ class TestModelRegistry:
             # First call OOMs on CUDA, second succeeds on CPU
             mock_load.side_effect = [RuntimeError("out of memory"), "cpu_tracker"]
 
-            # Patch where the registry actually checks it
-            with patch("core.managers.registry.torch.cuda.is_available", return_value=True, create=True):
+            # Force 'cuda' so OOM logic triggers
+            with patch("core.managers.registry.get_device", return_value="cuda"):
                 tracker = registry.get_tracker("sam3", models_path="/tmp")
                 assert tracker == "cpu_tracker"
                 assert registry.runtime_device_override == "cpu"

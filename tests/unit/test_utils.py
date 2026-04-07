@@ -68,9 +68,9 @@ def test_handle_common_errors_generator():
 def test_monitor_memory_usage():
     logger = MagicMock()
     with (
-        patch("core.utils.torch.cuda.is_available", return_value=True, create=True),
-        patch("core.utils.torch.cuda.memory_allocated", return_value=9000 * 1024**2),
-        patch("core.utils.torch.cuda.empty_cache") as mock_empty,
+        patch("core.utils.is_cuda_available", return_value=True),
+        patch("core.utils.get_gpu_memory_pressure", return_value=9000),
+        patch("core.utils.empty_cache") as mock_empty,
     ):
         monitor_memory_usage(logger, "cuda", threshold_mb=8000)
         assert logger.warning.called
@@ -122,8 +122,8 @@ def test_to_json_safe():
 def test_safe_resource_cleanup():
     with (
         patch("gc.collect") as mock_gc,
-        patch("core.utils.torch.cuda.is_available", return_value=True, create=True),
-        patch("core.utils.torch.cuda.empty_cache") as mock_empty,
+        patch("core.utils.is_cuda_available", return_value=True),
+        patch("core.utils.empty_cache") as mock_empty,
     ):
         with safe_resource_cleanup(device="cuda"):
             pass
@@ -134,9 +134,9 @@ def test_safe_resource_cleanup():
 def test_monitor_memory_usage_low():
     logger = MagicMock()
     with (
-        patch("core.utils.torch.cuda.is_available", return_value=True, create=True),
-        patch("core.utils.torch.cuda.memory_allocated", return_value=1000 * 1024**2),
-        patch("core.utils.torch.cuda.empty_cache") as mock_empty,
+        patch("core.utils.is_cuda_available", return_value=True),
+        patch("core.utils.get_gpu_memory_pressure", return_value=1000),
+        patch("core.utils.empty_cache") as mock_empty,
     ):
         monitor_memory_usage(logger, "cuda", threshold_mb=8000)
         assert not logger.warning.called
@@ -205,8 +205,8 @@ def test_estimate_totals_all():
 def test_safe_resource_cleanup_no_cuda():
     with (
         patch("gc.collect") as mock_gc,
-        patch("core.utils.torch.cuda.is_available", return_value=False, create=True),
-        patch("core.utils.torch.cuda.empty_cache") as mock_empty,
+        patch("core.utils.is_cuda_available", return_value=False),
+        patch("core.utils.empty_cache") as mock_empty,
     ):
         with safe_resource_cleanup(device="cuda"):
             pass

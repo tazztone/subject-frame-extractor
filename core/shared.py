@@ -145,6 +145,7 @@ def build_scene_gallery_items(
     Returns:
         Tuple of (gallery_items, index_map, total_pages)
     """
+    from core.enums import SceneStatus
     from core.models import Scene as SceneModel
 
     items: List[Tuple[Optional[np.ndarray], str]] = []
@@ -192,6 +193,9 @@ def build_scene_gallery_items(
         try:
             thumb_img_np = cv2.imread(str(thumb_path))
             if thumb_img_np is None:
+                import logging
+
+                logging.error(f"Failed to load thumbnail at {thumb_path}")
                 continue
             thumb_img_np = cv2.cvtColor(thumb_img_np, cv2.COLOR_BGR2RGB)
             badged_thumb = create_scene_thumbnail_with_badge(

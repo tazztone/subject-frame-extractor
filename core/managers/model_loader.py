@@ -1,9 +1,8 @@
 from pathlib import Path
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING, Optional, Union
 
 import cv2
 import lpips
-import torch
 
 from core.error_handling import ErrorHandler
 from core.io_utils import download_model
@@ -24,15 +23,20 @@ def get_lpips_metric(model_name: str = "alex", device: str = "cpu"):
 
 
 def initialize_analysis_models(
-    params: Union[dict, "AnalysisParameters"], config: "Config", logger: "AppLogger", model_registry: "ModelRegistry"
+    params: Union[dict, "AnalysisParameters"],
+    config: "Config",
+    logger: "AppLogger",
+    model_registry: "ModelRegistry",
+    device: Optional[str] = None,
 ) -> dict:
     """Initializes all necessary analysis models based on parameters."""
     from core.models import AnalysisParameters
+    from core.utils.device import get_device
 
     if isinstance(params, dict):
         params = AnalysisParameters(**params)
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = device or get_device()
     face_analyzer, ref_emb, face_landmarker = None, None, None
 
     if params.compute_face_sim:

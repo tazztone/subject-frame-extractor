@@ -69,7 +69,7 @@ class TestSharedUtils:
         assert "❌" in cap_rej
         assert "(blurry)" in cap_rej
 
-    @patch("cv2.imread")
+    @patch("core.shared.cv2.imread")
     def test_build_scene_gallery_items(self, mock_imread, tmp_path):
         output_dir = tmp_path / "output"
         previews_dir = output_dir / "previews"
@@ -172,7 +172,7 @@ class TestSharedUtils:
         items, _, _ = build_scene_gallery_items(scenes, "All", str(output_dir))
         assert len(items) == 0
 
-    @patch("cv2.imread")
+    @patch("core.shared.cv2.imread")
     def test_build_scene_gallery_items_timestamped(self, mock_imread, tmp_path):
         """Verify gallery finds timestamped preview files via glob fallback."""
         output_dir = tmp_path / "output"

@@ -1,6 +1,7 @@
+import os
 import sys
 from types import ModuleType
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
@@ -182,21 +183,8 @@ def _get_modules_to_mock():
 
 
 # 4. INJECTION LOGIC
-def _should_skip_mocks():
-    import os
-    import sys
-
-    # 1. Explicit environment variable check
-    if os.environ.get("PYTEST_INTEGRATION_MODE", "").lower() == "true":
-        return True
-
-    # 2. Path-based fallback check (Sanity guard for xdist environment inheritance)
-    # If the command line contains tests/integration or tests/ui, we should skip mocks.
-    for arg in sys.argv:
-        if "tests/integration" in arg or "tests/ui" in arg:
-            return True
-
-    return False
+# No top-level injection; handled by pytest_configure to ensure
+# process isolation and respect PYTEST_INTEGRATION_MODE.
 
 
 _mocks_injected = False
@@ -204,7 +192,10 @@ _mocks_injected = False
 
 def _inject_global_mocks():
     global _mocks_injected
-    if _mocks_injected or _should_skip_mocks():
+    if _mocks_injected:
+        return
+
+    if os.environ.get("PYTEST_INTEGRATION_MODE", "").lower() == "true":
         return
 
     modules_to_mock = _get_modules_to_mock()
@@ -235,18 +226,20 @@ def _inject_global_mocks():
 
 
 def pytest_configure(config):
-    """Ensure mocks are injected in this process."""
-    _inject_global_mocks()
+    """Ensure mocks are injected in this process if in unit test mode."""
+    if os.environ.get("PYTEST_INTEGRATION_MODE", "").lower() != "true":
+        _inject_global_mocks()
 
 
 # 5. INITIALIZE TEST ENVIRONMENT
-_inject_global_mocks()
+# Top-level injection removed; now handled by pytest_configure to avoid
+# early import pollutants and respect integration mode more reliably.
 
 
 @pytest.fixture(scope="session", autouse=True)
 def initialize_operators():
     """Initialize operators once per session after mocks are injected."""
-    if _should_skip_mocks():
+    if os.environ.get("PYTEST_INTEGRATION_MODE", "").lower() == "true":
         yield
         return
 
@@ -399,3 +392,18 @@ def sample_scenes():
         Scene(shot_id=2, start_frame=100, end_frame=250, status="excluded", rejection_reasons=["blurry"]),
         Scene(shot_id=3, start_frame=250, end_frame=400, status="included"),
     ]
+
+
+@pytest.fixture(autouse=True)
+def force_cpu_device():
+    """Forces core.utils.device to return 'cpu' and False for CUDA availability.
+
+    This ensures that unit tests running in the same process as the mock
+    infrastructure behave deterministically.
+    """
+    with (
+        patch("core.utils.device.get_device", return_value="cpu"),
+        patch("core.utils.device.is_cuda_available", return_value=False),
+        patch("core.utils.device.get_gpu_memory_pressure", return_value=0.0),
+    ):
+        yield

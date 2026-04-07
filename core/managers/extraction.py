@@ -77,6 +77,7 @@ def run_ffmpeg_extraction(
     logger: "AppLogger",
     config: "Config",
     tracker: Optional["AdvancedProgressTracker"] = None,
+    device: str = "cpu",
 ):
     """Executes FFmpeg command to extract frames/thumbnails."""
     from core.io_utils import detect_hwaccel
@@ -237,13 +238,17 @@ class ExtractionPipeline:
         progress_queue: Queue,
         cancel_event: threading.Event,
         model_registry: Optional["ModelRegistry"] = None,
+        device: str = "cpu",
     ):
+        from core.utils.device import get_device
+
         self.config = config
         self.logger = logger
         self.params = params
         self.progress_queue = progress_queue
         self.cancel_event = cancel_event
         self.model_registry = model_registry
+        self.device = device or get_device()
         self.error_handler = ErrorHandler(logger, config.retry_max_attempts, config.retry_backoff_seconds)
         self.run = self.error_handler.with_retry()(self._run_impl)
 
@@ -297,6 +302,7 @@ class ExtractionPipeline:
                 self.logger,
                 self.config,
                 tracker=tracker,
+                device=self.device,
             )
             if self.cancel_event.is_set():
                 return {"done": False, "log": "Extraction cancelled"}

@@ -46,6 +46,7 @@ from core.progress import AdvancedProgressTracker
 from core.utils import (
     estimate_totals,
 )
+from core.utils.device import get_device
 
 
 def _handle_extraction_uploads(event_dict: dict, config: "Config") -> dict:
@@ -85,8 +86,12 @@ def execute_extraction(
 
     event_dict = _handle_extraction_uploads(event.model_dump(), config)
     params = AnalysisParameters.from_ui(logger, config, **event_dict)
-    tracker = AdvancedProgressTracker(progress, progress_queue, logger, ui_stage_name="Extracting")
-    pipeline = ExtractionPipeline(config, logger, params, progress_queue, cancel_event, model_registry=model_registry)
+
+    device = "cuda" if cuda_available else "cpu" if cuda_available is not None else get_device()
+    tracker = AdvancedProgressTracker(progress, progress_queue, logger, ui_stage_name="Extracting", device=device)
+    pipeline = ExtractionPipeline(
+        config, logger, params, progress_queue, cancel_event, model_registry=model_registry, device=device
+    )
     result = pipeline.run(tracker=tracker)
 
     if result and result.get("done"):
@@ -150,7 +155,7 @@ def execute_pre_analysis(
 
     # Ensure OperatorRegistry is initialized
     OperatorRegistry.initialize_all(config)
-
+    device = "cuda" if cuda_available else "cpu"
     pipeline = PreAnalysisPipeline(
         config,
         logger,
@@ -160,6 +165,7 @@ def execute_pre_analysis(
         thumbnail_manager,
         model_registry,
         loaded_models=loaded_models,
+        device=device,
     )
     processed = pipeline.run(scenes, tracker=tracker)
 
@@ -212,7 +218,8 @@ def execute_propagation(
         yield {"done": True}
         return
 
-    tracker = AdvancedProgressTracker(progress, progress_queue, logger, ui_stage_name="Analysis")
+    device = "cuda" if cuda_available else "cpu"
+    tracker = AdvancedProgressTracker(progress, progress_queue, logger, ui_stage_name="Analysis", device=device)
     if is_folder:
         tracker.start(len(scenes), desc="Analyzing Images")
     else:
@@ -234,6 +241,7 @@ def execute_propagation(
         model_registry,
         database,
         loaded_models=loaded_models,
+        device=device,
     )
     result = pipeline.run_full_analysis(scenes, tracker=tracker)
 
@@ -276,7 +284,8 @@ def execute_analysis(
         yield {"done": True}
         return
 
-    tracker = AdvancedProgressTracker(progress, progress_queue, logger, ui_stage_name="Analyzing")
+    device = "cuda" if cuda_available else "cpu"
+    tracker = AdvancedProgressTracker(progress, progress_queue, logger, ui_stage_name="Analyzing", device=device)
     tracker.start(sum(s.end_frame - s.start_frame for s in scenes), desc="Analyzing")
 
     # Ensure OperatorRegistry is initialized and Database is pointed to session dir
@@ -293,6 +302,7 @@ def execute_analysis(
         model_registry,
         database,
         loaded_models=loaded_models,
+        device=device,
     )
     result = pipeline.run_analysis_only(scenes, tracker=tracker)
 

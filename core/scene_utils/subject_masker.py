@@ -13,7 +13,6 @@ from typing import TYPE_CHECKING, Any, Callable, Optional, Union, cast
 
 import cv2
 import numpy as np
-import torch
 
 if TYPE_CHECKING:
     from insightface.app import FaceAnalysis
@@ -433,6 +432,8 @@ class SubjectMasker:
 
             niqe_score = 10.0
             if self.niqe_metric:
+                import torch
+
                 self.logger.info(f"    - Attempting NIQE on {self._device}...")
                 try:
                     img_tensor = torch.from_numpy(thumb_rgb).float().permute(2, 0, 1).unsqueeze(0) / 255.0

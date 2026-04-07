@@ -15,6 +15,7 @@ import time
 from typing import TYPE_CHECKING, Any, Optional, Type
 
 from core.operators.base import Operator, OperatorConfig, OperatorContext, OperatorResult
+from core.utils.device import empty_cache, get_device, is_cuda_available
 
 try:
     import torch
@@ -228,7 +229,7 @@ def run_operators(
                 logger.error(f"Operator '{name}' requires torch, but torch is not installed.")
                 continue
 
-            device = "cuda" if torch.cuda.is_available() else "cpu"
+            device = get_device()
             # (H, W, C) -> (C, H, W) -> (1, C, H, W)
             tensor = torch.from_numpy(image_rgb).float() / 255.0
             ctx.image_tensor = tensor.permute(2, 0, 1).unsqueeze(0).to(device)
@@ -277,8 +278,8 @@ def run_operators(
                         logger.warning(
                             f"Operator '{name}' failed (attempt {attempt + 1}), retrying...", extra={"error": e}
                         )
-                    if "cuda" in str(e).lower() and torch.cuda.is_available():
-                        torch.cuda.empty_cache()
+                    if "cuda" in str(e).lower() and is_cuda_available():
+                        empty_cache()
                     time.sleep(0.5 * (attempt + 1))
                 else:
                     results[name] = OperatorResult(

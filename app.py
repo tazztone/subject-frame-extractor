@@ -22,12 +22,11 @@ import gc
 import threading
 from queue import Queue
 
-import torch
-
 from core.config import Config
 from core.database import Database
 from core.logger import AppLogger, setup_logging
 from core.managers import ModelRegistry, ThumbnailManager
+from core.utils.device import empty_cache
 from ui.app_ui import AppUI
 
 
@@ -40,7 +39,7 @@ def cleanup_models(model_registry):
     """
     if model_registry:
         model_registry.clear()
-    torch.cuda.empty_cache()
+    empty_cache()
     gc.collect()
 
 

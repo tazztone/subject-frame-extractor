@@ -200,11 +200,10 @@ def _create_mock_module(name, attrs=None): ...
 createmocktensor = create_mock_tensor
 def _get_modules_to_mock():
     """Build mock map lazily — only called when unit mocks are actually needed."""
-def _should_skip_mocks(): ...
 _mocks_injected = False
 def _inject_global_mocks(): ...
 def pytest_configure(config):
-    """Ensure mocks are injected in this process."""
+    """Ensure mocks are injected in this process if in unit test mode."""
 @pytest.fixture(scope='session', autouse=True)
 def initialize_operators():
     """Initialize operators once per session after mocks are injected."""
@@ -248,6 +247,9 @@ def sample_frames_data():
 @pytest.fixture
 def sample_scenes():
     """Provides a list of sample Scene objects."""
+@pytest.fixture(autouse=True)
+def force_cpu_device():
+    """Forces core.utils.device to return 'cpu' and False for CUDA availability."""
 ```
 
 ### `📄 tests/e2e/e2e_run.py`
@@ -304,9 +306,9 @@ def create_mock_tensor(name='tensor', shape=None, device_mock=None, dtype_mock=N
 ### `📄 tests/integration/conftest.py`
 
 ```python
-@pytest.fixture
-def database(tmp_path):
-    """Provides a fresh in-memory or temporary SQLite database for tests."""
+@pytest.fixture(scope='module')
+def module_model_registry():
+    """Module-scoped real (or stub) ModelRegistry for integration tests."""
 ```
 
 ### `📄 tests/integration/test_accuracy.py`
@@ -1251,16 +1253,13 @@ def test_face_prominence_off_center():
 ```python
 @patch('core.managers.analysis.initialize_analysis_models')
 @patch('core.managers.analysis.SubjectMasker')
-@patch('core.managers.analysis.save_scene_seeds')
-def test_pre_analysis_pipeline(mock_save, mock_masker, mock_init, mock_logger, mock_config, tmp_path): ...
+@patch('core.scene_utils.save_scene_seeds')
+def test_pre_analysis_pipeline(mock_save, mock_masker, mock_init, mock_logger, mock_config_simple, tmp_path): ...
 @patch('core.managers.analysis.initialize_analysis_models')
 @patch('core.managers.analysis.SubjectMasker')
 @patch('core.managers.analysis.Database')
 @patch('core.managers.analysis.create_frame_map')
-def test_analysis_pipeline_full(mock_cfm, mock_db, mock_masker, mock_init, mock_logger, mock_config, tmp_path): ...
-@patch('core.managers.analysis.initialize_analysis_models')
-@patch('core.managers.analysis.Database')
-def test_analysis_pipeline_only(mock_db, mock_init, mock_logger, mock_config, tmp_path): ...
+def test_analysis_pipeline_full(mock_cfm, mock_db, mock_masker, mock_init, mock_logger, mock_config_simple, tmp_path): ...
 ```
 
 ### `📄 tests/unit/test_analysis_manager.py`
@@ -1269,65 +1268,19 @@ def test_analysis_pipeline_only(mock_db, mock_init, mock_logger, mock_config, tm
 @pytest.fixture
 def mock_deps(): ...
 @pytest.fixture
-def analysis_params(): ...
-@patch('core.managers.analysis.Database')
-def test_analysis_pipeline_initialization(mock_db, mock_deps, analysis_params): ...
-def test_load_scenes_failure(tmp_path): ...
-def test_load_scenes_success(tmp_path): ...
-@patch('core.managers.analysis.SubjectMasker')
+def analysis_params(tmp_path): ...
 @patch('core.managers.analysis.initialize_analysis_models')
+@patch('core.scene_utils.helpers.save_scene_seeds')
 @patch('core.managers.analysis.Database')
-def test_run_full_analysis_success(mock_db, mock_init_models, mock_masker_cls, mock_deps, analysis_params, tmp_path): ...
 @patch('core.managers.analysis.run_operators')
-@patch('core.managers.analysis.initialize_analysis_models')
-@patch('core.managers.analysis.Database')
-def test_run_analysis_only_success(mock_db, mock_init_models, mock_run_ops, mock_deps, analysis_params, tmp_path): ...
+def test_run_analysis_only_success(mock_run_ops, mock_db, mock_save_seeds, mock_init_models, mock_deps, analysis_params): ...
 @patch('core.managers.analysis.initialize_analysis_models')
 @patch('core.managers.analysis.SubjectMasker')
-def test_pre_analysis_run_cancellation(mock_masker_cls, mock_init_models, mock_deps, analysis_params, tmp_path): ...
-@patch('core.managers.analysis.initialize_analysis_models')
-@patch('core.managers.analysis.Database')
-def test_analysis_run_resume_logic(mock_db, mock_init_models, mock_deps, analysis_params, tmp_path): ...
-@patch('cv2.imread')
-@patch('core.managers.analysis.initialize_analysis_models')
-@patch('core.managers.analysis.Database')
-def test_process_reference_face_logic(mock_db, mock_init_models, mock_imread, mock_deps, analysis_params, tmp_path): ...
-@patch('core.managers.analysis.run_operators')
-@patch('core.managers.analysis.Database')
-def test_process_single_frame_complex_meta(mock_db, mock_run_ops, mock_deps, analysis_params, tmp_path): ...
-@patch('core.managers.analysis.Database')
-def test_process_single_frame_face_analysis_failure(mock_db, mock_deps, analysis_params, tmp_path):
-    """Test that face analysis failure is caught and logged."""
-@patch('core.managers.analysis.Database')
-def test_analysis_loop_batch_error(mock_db, mock_deps, analysis_params, tmp_path): ...
-@patch('core.managers.analysis.Database')
-@patch('core.managers.analysis.create_frame_map')
-def test_image_folder_analysis_trigger(mock_create_map, mock_db, mock_deps, analysis_params, tmp_path): ...
-@patch('core.managers.analysis.Database')
-def test_filter_completed_scenes(mock_db, mock_deps, analysis_params): ...
-@patch('core.managers.analysis.Database')
-def test_save_progress_bulk(mock_db, mock_deps, analysis_params, tmp_path): ...
-@patch('core.managers.analysis.initialize_analysis_models')
-@patch('core.managers.analysis.SubjectMasker')
-@patch('core.managers.analysis.save_scene_seeds')
-def test_pre_analysis_pipeline_run(mock_save_seeds, mock_masker_cls, mock_init_models, mock_deps, analysis_params, tmp_path): ...
-@patch('core.managers.analysis.Database')
-def test_niqe_initialization_failures(mock_db, mock_deps, analysis_params): ...
-def test_pre_analysis_process_single_scene_edge_cases(mock_deps, analysis_params, tmp_path): ...
-@patch('core.managers.analysis.Database')
-def test_process_single_frame_metadata_assembly(mock_db, mock_deps, analysis_params, tmp_path): ...
-@patch('core.managers.analysis.Database')
-def test_save_progress_bulk_read_failure(mock_db, mock_deps, analysis_params, tmp_path): ...
-@patch('core.managers.analysis.Database')
-def test_process_reference_face_failures(mock_db, mock_deps, analysis_params, tmp_path): ...
-@patch('core.managers.analysis.Database')
-def test_process_single_frame_edge_cases(mock_db, mock_deps, analysis_params, tmp_path): ...
-@patch('core.managers.analysis._load_scenes')
-def test_image_folder_analysis_resume(mock_load, mock_deps, analysis_params, tmp_path): ...
-def test_pre_analysis_process_single_scene(mock_deps, analysis_params, tmp_path): ...
-def test_initialize_niqe_success(mock_deps, analysis_params): ...
-@patch('core.managers.analysis.Database')
-def test_process_single_frame_full_meta(mock_db, mock_deps, analysis_params, tmp_path): ...
+@patch('core.scene_utils.save_scene_seeds')
+def test_pre_analysis_pipeline_run(mock_save_seeds, mock_masker_cls, mock_init_models, mock_deps, analysis_params): ...
+@patch('core.managers.analysis.cv2.imread')
+def test_process_reference_face_logic(mock_imread, mock_deps, analysis_params): ...
+def test_analysis_loop_batch_error(mock_deps, analysis_params): ...
 ```
 
 ### `📄 tests/unit/test_app.py`
@@ -1741,65 +1694,14 @@ class TestExitBranches:
 ### `📄 tests/unit/test_export.py`
 
 ```python
-class TestExportEdgeCases:
-    @given(frame_w=st.integers(100, 4096), frame_h=st.integers(100, 4096), box_x=st.integers(0, 4000), box_y=st.integers(0, 4000), box_w=st.integers(1, 4000), box_h=st.integers(1, 4000), padding_factor=st.floats(1.0, 2.0))
-    @settings(max_examples=50, deadline=None)
-    def test_calculate_best_crop_bounds_safety(self, frame_w, frame_h, box_x, box_y, box_w, box_h, padding_factor):
-        """Ensure that calculate_best_crop never returns a box exceeding frame dimension..."""
-    def test_filtering_nan_quality_scores(self, mock_config):
-        """Test filtering handles NaN or None quality scores without crashing."""
-    def test_filtering_extreme_thresholds(self, mock_config):
-        """Test filtering with extreme thresholds."""
 class TestExportAdvanced:
-    @patch('cv2.imread')
-    @patch('cv2.imwrite')
-    @patch('cv2.findContours')
-    @patch('cv2.boundingRect')
+    @patch('core.export.cv2.imread')
+    @patch('core.export.cv2.imwrite')
+    @patch('core.operators.crop.cv2.findContours')
+    @patch('core.operators.crop.cv2.boundingRect')
     def test_crop_exported_frames_logic(self, mock_boundingRect, mock_findContours, mock_imwrite, mock_imread, tmp_path):
         """Test the logic of cropping exported frames."""
-    @patch('cv2.imread')
-    def test_crop_exported_frames_missing_files(self, mock_imread, tmp_path):
-        """Test graceful handling of missing files."""
-    @patch('cv2.imread')
-    @patch('cv2.findContours')
-    def test_crop_exported_frames_empty_mask(self, mock_findContours, mock_imread, tmp_path):
-        """Test handling of empty masks."""
-class TestExportExtended:
-    """Extended tests for export.py to cover crop logic and edge cases."""
-    @pytest.fixture
-    def mock_deps(self, mock_config, mock_logger): ...
-    def test_crop_exported_frames_happy_path(self, mock_deps, tmp_path): ...
-    def test_crop_exported_frames_invalid_ar(self, mock_deps, tmp_path): ...
-    def test_crop_exported_frames_missing_files(self, mock_deps, tmp_path): ...
-    def test_crop_exported_frames_read_failure(self, mock_deps, tmp_path): ...
-    def test_crop_exported_frames_exception_handling(self, mock_deps, tmp_path): ...
-    @given(ar_w=st.floats(min_value=0.1, max_value=10.0), ar_h=st.floats(min_value=0.1, max_value=10.0), padding=st.integers(min_value=0, max_value=100))
-    def test_crop_logic_bounds_property(self, ar_w, ar_h, padding):
-        """Property-based test for crop logic bounds (using internal operator)."""
-    @patch('core.export.apply_all_filters_vectorized')
-    def test_export_kept_frames_no_frame_map_error(self, mock_filter, mock_deps, tmp_path): ...
-    @patch('core.export.apply_all_filters_vectorized')
-    def test_export_kept_frames_folder_mode_happy_path(self, mock_filter, mock_deps, tmp_path): ...
-def test_rename_exported_frames_happy_path(mock_config, mock_logger, tmp_path): ...
-def test_rename_exported_frames_collision(mock_config, mock_logger, tmp_path): ...
-@patch('pathlib.Path.rename')
-def test_rename_exported_frames_missing_src(mock_rename, mock_config, mock_logger, tmp_path): ...
-def test_export_metadata_success(mock_config, mock_logger, tmp_path): ...
-def test_export_metadata_empty(mock_config, mock_logger, tmp_path): ...
-def test_dry_run_export_no_data(mock_config, mock_logger): ...
-def test_dry_run_export_no_video(mock_config, mock_logger): ...
-@patch('core.export.apply_all_filters_vectorized')
-def test_dry_run_export_success(mock_filter, mock_config, mock_logger, tmp_path): ...
-@patch('core.export.apply_all_filters_vectorized')
-def test_export_kept_frames_no_frames_kept(mock_filter, mock_config, mock_logger, tmp_path): ...
-@patch('core.export.apply_all_filters_vectorized')
-@patch('core.export.perform_ffmpeg_export')
-def test_export_kept_frames_ffmpeg_failure(mock_ffmpeg, mock_filter, mock_config, mock_logger, tmp_path): ...
-@patch('core.export.apply_all_filters_vectorized')
-def test_dry_run_export_no_frames_kept(mock_filter, mock_config, mock_logger, tmp_path): ...
-def test_write_xmp_sidecar_rename_failure(tmp_path): ...
-@patch('core.export.cv2.imread', return_value=None)
-def test_crop_exported_frames_folder_mode_read_failure(mock_read, mock_logger, tmp_path): ...
+    def test_export_kept_frames_no_data(self): ...
 ```
 
 ### `📄 tests/unit/test_extraction.py`
@@ -2154,9 +2056,9 @@ def test_execute_extraction_smoke(mock_analysis, mock_pre_analysis, mock_extract
 ```python
 def test_validate_video_file_not_found(): ...
 def test_validate_video_file_empty(tmp_path): ...
-@patch('cv2.VideoCapture')
+@patch('core.io_utils.cv2.VideoCapture')
 def test_validate_video_file_invalid(mock_vc, tmp_path): ...
-@patch('cv2.VideoCapture')
+@patch('core.io_utils.cv2.VideoCapture')
 def test_validate_video_file_success(mock_vc, tmp_path): ...
 def test_sanitize_filename(mock_config): ...
 def test_is_image_folder(tmp_path): ...
@@ -2247,9 +2149,10 @@ class TestManagers:
     @patch('core.managers.registry.ModelRegistry._load_tracker_impl')
     def test_get_tracker_success(self, mock_load, mock_logger, mock_config): ...
     @patch('core.managers.registry.ModelRegistry._load_tracker_impl')
-    @patch('torch.cuda.empty_cache', create=True)
-    @patch('core.managers.registry.torch.cuda.is_available', return_value=True, create=True)
-    def test_get_tracker_oom_fallback(self, mock_cuda, mock_empty, mock_load, mock_logger, mock_config): ...
+    @patch('core.managers.registry.empty_cache')
+    @patch('core.managers.registry.get_device', return_value='cuda')
+    @patch('core.managers.registry.is_cuda_available', return_value=True)
+    def test_get_tracker_oom_fallback(self, mock_cuda, mock_device, mock_empty, mock_load, mock_logger, mock_config): ...
     def test_video_manager_prepare_local(self, mock_config): ...
     @patch('core.managers.video.ytdlp.YoutubeDL')
     def test_video_manager_prepare_youtube(self, mock_ytdl, mock_config, mock_logger): ...
@@ -2257,7 +2160,7 @@ class TestManagers:
     @patch('core.managers.video.DownloadError', new_callable=lambda: type('DownloadError', (Exception,), {}))
     @patch('core.managers.video.ytdlp')
     def test_video_manager_youtube_error(self, mock_ytdlp_module, mock_download_error_cls, mock_config, mock_logger): ...
-    @patch('cv2.VideoCapture')
+    @patch('core.managers.video.cv2.VideoCapture')
     def test_get_video_info(self, mock_cap): ...
     @patch('core.managers.face.vision.FaceLandmarker')
     @patch('core.managers.face.python.BaseOptions')
@@ -2268,7 +2171,7 @@ class TestManagers:
     @patch('pathlib.Path.exists', return_value=True)
     @patch('pathlib.Path.is_file', return_value=True)
     @patch('core.managers.model_loader.get_face_landmarker')
-    @patch('cv2.imread', return_value=np.zeros((100, 100, 3)))
+    @patch('core.managers.model_loader.cv2.imread', return_value=np.zeros((100, 100, 3)))
     def test_initialize_analysis_models(self, mock_imread, mock_get_landmarker, mock_isfile, mock_exists, mock_download, mock_get_analyzer, mock_config, mock_logger): ...
     @patch('insightface.app.FaceAnalysis')
     @patch('time.sleep', return_value=None)
@@ -2306,57 +2209,33 @@ def test_subject_mask_area_missing():
 
 ```python
 @pytest.fixture
-def mock_sam3_wrapper():
-    """Mocks the SAM3Wrapper class."""
+def mock_logger(): ...
 @pytest.fixture
-def mask_propagator(mock_config, mock_logger, mock_sam3_wrapper):
-    """Creates a MaskPropagator instance with mocks."""
+def mock_sam3_wrapper(): ...
+@pytest.fixture
+def mock_config(): ...
+@pytest.fixture
+def mask_propagator(mock_logger, mock_sam3_wrapper, mock_config): ...
 class TestMaskPropagatorLogic:
-    """Tests the logic of MaskPropagator without requiring real SAM3 models."""
-    def test_initialization(self, mask_propagator, mock_sam3_wrapper):
-        """Test that the propagator initializes correctly."""
-    def test_propagate_video_success(self, mask_propagator, mock_sam3_wrapper):
-        """Test successful video propagation flow."""
-    def test_propagate_video_handles_empty_masks(self, mask_propagator, mock_sam3_wrapper):
-        """Test handling of empty/missing masks from SAM3."""
-    def test_propagate_video_cancellation(self, mask_propagator, mock_sam3_wrapper):
-        """Test that propagation stops when cancel event is set."""
-    def test_propagate_video_mid_batch_cancellation(self, mask_propagator, mock_sam3_wrapper):
-        """Test cancellation within the frame processing loop."""
+    @patch('core.scene_utils.mask_propagator.postprocess_mask', side_effect=lambda x, **k: x)
+    def test_propagate_video_success(self, mock_post, mask_propagator, mock_sam3_wrapper):
+        """Test successful video propagation."""
     def test_propagate_video_outer_exception(self, mask_propagator, mock_sam3_wrapper):
-        """Test outer error handler in propagate_video."""
-    def test_close_with_none_tracker(self, mask_propagator):
-        """Test close() when dam_tracker is None."""
-    def test_error_handling_gpu_oom(self, mask_propagator, mock_sam3_wrapper):
-        """Test handling of CUDA OOM error."""
-    def test_executor_cleanup_on_failure(self, mask_propagator, mock_sam3_wrapper):
-        """Test ThreadPoolExecutor cleanup on failure."""
-    def test_propagate_video_no_tracker(self, mask_propagator):
-        """Test propagate_video with no tracker initialized."""
-    def test_propagate_video_heartbeats(self, mask_propagator, mock_sam3_wrapper):
-        """Test forward and backward propagation heartbeats."""
-    def test_propagate_video_finally_failure(self, mask_propagator, mock_sam3_wrapper):
-        """Test failure in close_session during finally block."""
-    def test_propagate_legacy_basic(self, mask_propagator, mock_sam3_wrapper):
-        """Test legacy propagate method success path."""
-    def test_propagate_legacy_no_tracker(self, mask_propagator):
-        """Test legacy propagate with no tracker."""
-    def test_propagate_legacy_error_paths(self, mask_propagator, mock_sam3_wrapper):
-        """Test legacy propagate error handling."""
+        """Test unexpected exception during propagation."""
 ```
 
 ### `📄 tests/unit/test_mask_propagator_oom.py`
 
 ```python
+@pytest.fixture
+def mock_logger(): ...
+@pytest.fixture
+def mock_sam3_wrapper(): ...
+@pytest.fixture
+def mask_propagator(mock_logger, mock_sam3_wrapper): ...
 class TestMaskPropagatorOOM:
-    @pytest.fixture
-    def mock_dam_tracker(self): ...
-    @pytest.fixture
-    def propagator(self, mock_config, mock_logger, mock_dam_tracker): ...
-    @patch('core.scene_utils.mask_propagator.torch.cuda.empty_cache')
-    @patch('core.scene_utils.mask_propagator.torch.cuda.is_available', return_value=True)
-    def test_propagate_video_oom_recovery(self, mock_cuda_avail, mock_empty_cache, propagator, mock_dam_tracker):
-        """Test that OutOfMemoryError is caught and handled during propagate_video."""
+    def test_propagate_video_oom_recovery(self, mask_propagator, mock_sam3_wrapper):
+        """Test handling of CUDA OOM error and cache clearing."""
 ```
 
 ### `📄 tests/unit/test_model_loader.py`
@@ -2635,7 +2514,7 @@ class TestPreAnalysisPipeline:
     def pre_pipeline(self, mock_params, mock_logger, mock_config, mock_thumbnail_manager): ...
     @patch('core.managers.analysis.initialize_analysis_models')
     @patch('core.managers.analysis.SubjectMasker')
-    @patch('core.managers.analysis.save_scene_seeds')
+    @patch('core.scene_utils.save_scene_seeds')
     @patch('PIL.Image.fromarray')
     def test_pre_analysis_run(self, mock_img_save, mock_save_seeds, mock_masker_cls, mock_init_models, pre_pipeline, tmp_path): ...
 class TestExecutePreAnalysis:
@@ -2920,7 +2799,6 @@ class TestModelRegistry:
 ### `📄 tests/unit/test_scene_utils.py`
 
 ```python
-"""Tests for scene utilities - SeedSelector, MaskPropagator, SubjectMasker."""
 def create_tensor_mock(shape=(100, 100), val=1.0): ...
 class TestSeedSelector:
     @pytest.fixture
@@ -2980,27 +2858,14 @@ class TestSceneUtilsHelpers:
 
 ```python
 @pytest.fixture
-def mock_config(): ...
-@pytest.fixture
 def mock_logger(): ...
 @pytest.fixture
-def selector(mock_config, mock_logger): ...
-def test_select_seed_identity_first_no_ref(selector):
-    """Test identity-first strategy fallback when reference embedding is missing."""
-def test_find_target_face_error_paths(selector):
-    """Test error paths in _find_target_face."""
-def test_get_subject_boxes_from_scene(selector):
-    """Test getting subject boxes from scene metadata."""
-def test_get_subject_boxes_no_tracker(selector):
-    """Test _get_subject_boxes when tracker is None."""
-def test_get_text_prompt_boxes_error_paths(selector):
-    """Test error paths in _get_text_prompt_boxes."""
-def test_choose_subject_by_strategy_no_analyzer_fallback(selector):
-    """Test choose_subject fallback when face_analyzer is None."""
-def test_choose_subject_by_strategy_post_selection_failure(selector):
-    """Test face analysis failure during post-selection."""
-def test_get_mask_for_bbox_error_paths(selector):
-    """Test error paths in _get_mask_for_bbox."""
+def mock_params(): ...
+@pytest.fixture
+def mock_config(): ...
+@pytest.fixture
+def selector(mock_params, mock_config, mock_logger): ...
+def test_get_mask_for_bbox_error_paths(selector): ...
 ```
 
 ### `📄 tests/unit/test_seed_selector_extended.py`
@@ -3079,7 +2944,7 @@ class TestSharedUtils:
     def test_scene_matches_view(self): ...
     def test_create_scene_thumbnail_with_badge(self): ...
     def test_scene_caption(self): ...
-    @patch('cv2.imread')
+    @patch('core.shared.cv2.imread')
     def test_build_scene_gallery_items(self, mock_imread, tmp_path): ...
     def test_scene_matches_view_invalid(self): ...
     def test_create_scene_thumbnail_with_badge_config(self): ...
@@ -3091,7 +2956,7 @@ class TestSharedUtils:
     def test_build_scene_gallery_items_error(self, mock_imread, tmp_path): ...
     @patch('cv2.imread')
     def test_build_scene_gallery_items_imread_none(self, mock_imread, tmp_path): ...
-    @patch('cv2.imread')
+    @patch('core.shared.cv2.imread')
     def test_build_scene_gallery_items_timestamped(self, mock_imread, tmp_path):
         """Verify gallery finds timestamped preview files via glob fallback."""
 ```

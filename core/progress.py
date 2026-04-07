@@ -39,8 +39,8 @@ class AdvancedProgressTracker:
         queue: Optional[Queue] = None,
         logger: Optional["AppLogger"] = None,
         ui_stage_name: str = "",
+        device: str = "cpu",
     ):
-        # type: ignore
         """
         Initializes the progress tracker.
 
@@ -49,7 +49,11 @@ class AdvancedProgressTracker:
             queue: Queue for sending progress events.
             logger: Application logger.
             ui_stage_name: Initial stage name.
+            device: Device to run on ('cpu' or 'cuda').
         """
+        from core.utils.device import get_device
+
+        self.device = device or get_device()
         self.progress = progress or (lambda x, desc=None: None)
         self.queue = queue
         self.logger = logger

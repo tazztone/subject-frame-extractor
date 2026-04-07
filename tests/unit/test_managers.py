@@ -198,9 +198,10 @@ class TestManagers:
         assert tracker == "mock_tracker"
 
     @patch("core.managers.registry.ModelRegistry._load_tracker_impl")
-    @patch("torch.cuda.empty_cache", create=True)
-    @patch("core.managers.registry.torch.cuda.is_available", return_value=True, create=True)
-    def test_get_tracker_oom_fallback(self, mock_cuda, mock_empty, mock_load, mock_logger, mock_config):
+    @patch("core.managers.registry.empty_cache")
+    @patch("core.managers.registry.get_device", return_value="cuda")
+    @patch("core.managers.registry.is_cuda_available", return_value=True)
+    def test_get_tracker_oom_fallback(self, mock_cuda, mock_device, mock_empty, mock_load, mock_logger, mock_config):
         registry = ModelRegistry(mock_logger)
 
         # First call raises OOM
@@ -261,25 +262,15 @@ class TestManagers:
 
         assert "Download failed" in str(excinfo.value)
 
-    @patch("cv2.VideoCapture")
+    @patch("core.managers.video.cv2.VideoCapture")
     def test_get_video_info(self, mock_cap):
         instance = mock_cap.return_value
         instance.isOpened.return_value = True
 
-        import cv2
-
-        def get_side_effect(prop):
-            if prop == cv2.CAP_PROP_FRAME_WIDTH:
-                return 1920
-            if prop == cv2.CAP_PROP_FRAME_HEIGHT:
-                return 1080
-            if prop == cv2.CAP_PROP_FPS:
-                return 30.0
-            if prop == cv2.CAP_PROP_FRAME_COUNT:
-                return 100
-            return 0
-
-        instance.get.side_effect = get_side_effect
+        # Map property indices to expected return values
+        # CAP_PROP_FRAME_WIDTH=3, CAP_PROP_FRAME_HEIGHT=4, CAP_PROP_FPS=5, CAP_PROP_FRAME_COUNT=7
+        props = {3: 1920, 4: 1080, 5: 30.0, 7: 100}
+        instance.get.side_effect = lambda p: props.get(p, 0.0)
 
         info = VideoManager.get_video_info("test.mp4")
 
@@ -287,6 +278,7 @@ class TestManagers:
         assert info["width"] == 1920
         assert info["height"] == 1080
         assert info["frame_count"] == 100
+        instance.release.assert_called_once()
 
     # --- Face Model Tests ---
 
@@ -307,7 +299,7 @@ class TestManagers:
     @patch("pathlib.Path.exists", return_value=True)
     @patch("pathlib.Path.is_file", return_value=True)
     @patch("core.managers.model_loader.get_face_landmarker")
-    @patch("cv2.imread", return_value=np.zeros((100, 100, 3)))
+    @patch("core.managers.model_loader.cv2.imread", return_value=np.zeros((100, 100, 3)))
     def test_initialize_analysis_models(
         self,
         mock_imread,
@@ -338,8 +330,7 @@ class TestManagers:
         mock_analyzer.get.return_value = [mock_face]
 
         # Use a scoped patch instead of manual mutation to avoid cross-test pollution
-        with patch("core.managers.model_loader.torch.cuda.is_available", return_value=False):
-            models = initialize_analysis_models(params, mock_config, mock_logger, model_registry)
+        models = initialize_analysis_models(params, mock_config, mock_logger, model_registry)
 
         assert models["face_analyzer"] == mock_analyzer
         assert models["ref_emb"] is not None

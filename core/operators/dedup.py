@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from core.managers import ThumbnailManager
 
 from core.managers.model_loader import get_lpips_metric
+from core.utils.device import get_device
 
 
 def _run_batched_lpips(
@@ -134,8 +135,6 @@ def apply_deduplication_filter(
 
             _generic_dedup(all_frames_data, dedup_mask, reasons, thumbnail_manager, output_dir, compare_fn)
         elif dedup_method == "LPIPS" and thumbnail_manager and output_dir:
-            import torch
-
             sorted_indices = sorted(range(num_frames), key=lambda i: filenames[i])
             pairs = [(sorted_indices[i - 1], sorted_indices[i]) for i in range(1, len(sorted_indices))]
             _run_batched_lpips(
@@ -146,7 +145,7 @@ def apply_deduplication_filter(
                 thumbnail_manager,
                 output_dir,
                 filters.get("lpips_threshold", 0.1),
-                device="cuda" if torch.cuda.is_available() else "cpu",
+                device=get_device(),
             )
         elif dedup_method == "pHash then LPIPS" and thumbnail_manager and imagehash and output_dir:
             sorted_indices = sorted(range(num_frames), key=lambda i: filenames[i])
@@ -178,8 +177,6 @@ def apply_deduplication_filter(
                 if not is_duplicate:
                     kept_hash_matrix[kept_count], kept_indices[kept_count], kept_count = curr_hash, i, kept_count + 1
             if p_hash_duplicates:
-                import torch
-
                 _run_batched_lpips(
                     p_hash_duplicates,
                     all_frames_data,
@@ -188,7 +185,7 @@ def apply_deduplication_filter(
                     thumbnail_manager,
                     output_dir,
                     filters.get("lpips_threshold", 0.1),
-                    device="cuda" if torch.cuda.is_available() else "cpu",
+                    device=get_device(),
                 )
     return dedup_mask, reasons
 

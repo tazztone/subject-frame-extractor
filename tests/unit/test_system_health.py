@@ -9,9 +9,9 @@ from core.system_health import check_dependencies, check_environment, check_path
 
 def test_check_environment():
     with (
-        patch("core.system_health.torch.cuda.is_available", return_value=True, create=True),
+        patch("core.system_health.torch.cuda.is_available", return_value=True),
         patch("core.system_health.torch.cuda.get_device_name", return_value="Test GPU"),
-        patch("core.system_health.torch.version.cuda", "12.1"),
+        patch("core.system_health.torch.version.cuda", "12.1", create=True),
     ):
         report = check_environment()
         assert any("  - CUDA: OK" in line for line in report)

@@ -1,13 +1,31 @@
+import os
+from unittest.mock import MagicMock
+
 import pytest
 
-from core.database import Database
 
+@pytest.fixture(scope="module")
+def module_model_registry():
+    """Module-scoped real (or stub) ModelRegistry for integration tests.
 
-@pytest.fixture
-def database(tmp_path):
-    """Provides a fresh in-memory or temporary SQLite database for tests."""
-    db_path = tmp_path / "test.db"
-    db = Database(str(db_path))
-    db.connect()
-    yield db
-    db.close()
+    When PYTEST_INTEGRATION_MODE=true, returns a real ModelRegistry loaded
+    from the environment. Otherwise returns a MagicMock that satisfies
+    fixture requirements for unit-within-integration tests.
+    """
+    is_integration = os.environ.get("PYTEST_INTEGRATION_MODE", "false").lower() == "true"
+
+    if is_integration:
+        from core.config import Config
+        from core.logger import AppLogger
+        from core.managers.registry import ModelRegistry
+
+        logger = AppLogger("integration_registry")
+        config = Config()
+        registry = ModelRegistry(config, logger)
+        # We don't necessarily load all models here, just return the registry
+        return registry
+    else:
+        # Fallback to mock for non-integration runs that accidentally hit integration tests
+        mock = MagicMock()
+        mock.get_tracker.return_value = MagicMock()
+        return mock

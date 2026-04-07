@@ -29,7 +29,7 @@ def test_validate_video_file_empty(tmp_path):
         validate_video_file(str(empty_file))
 
 
-@patch("cv2.VideoCapture")
+@patch("core.io_utils.cv2.VideoCapture")
 def test_validate_video_file_invalid(mock_vc, tmp_path):
     video_file = tmp_path / "invalid.mp4"
     video_file.write_text("not a video")
@@ -42,7 +42,7 @@ def test_validate_video_file_invalid(mock_vc, tmp_path):
     mock_cap.release.assert_called_once()
 
 
-@patch("cv2.VideoCapture")
+@patch("core.io_utils.cv2.VideoCapture")
 def test_validate_video_file_success(mock_vc, tmp_path):
     video_file = tmp_path / "valid.mp4"
     video_file.write_text("fake video data")

@@ -6,6 +6,10 @@
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$SCRIPT_DIR/.."
 
+# Ensure we are NOT in integration mode for unit tests to prevent loading real models
+unset PYTEST_INTEGRATION_MODE
+export PYTEST_INTEGRATION_MODE=false
+
 # Check for uv
 if ! command -v uv &> /dev/null; then
     echo "Error: 'uv' not found. Please install it."
@@ -15,7 +19,8 @@ fi
 echo "Running unit tests (fast, mock-first)..."
 echo "----------------------------------------"
 
-uv run --no-sync pytest -n auto --cov-report=html:htmlcov tests/unit/ "$@"
+# Run tests with xdist (auto workers)
+uv run --no-sync pytest -n auto --no-cov -q --tb=short tests/unit/ "$@"
 
 if [ $? -ne 0 ]; then
     echo ""

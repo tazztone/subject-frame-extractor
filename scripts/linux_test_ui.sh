@@ -25,11 +25,11 @@ mkdir -p tests/results/logs
 # Run UI tests with xdist for parallel performance
 # If no arguments are provided, use tests/ui/ as default
 if [ $# -eq 0 ]; then
-    uv run --no-sync pytest tests/ui/ -n "$WORKERS" -o "addopts=-v --tb=short"
+    uv run --no-sync pytest tests/ui/ -q --tb=short -n "$WORKERS"
 else
     # Pass arguments directly to pytest but ensure it's scoped to tests/ui/
     # and excludes heavy integration/GPU tests to prevent accidental re-runs
-    uv run --no-sync pytest tests/ui/ -n "$WORKERS" -o "addopts=-v --tb=short" -m "not integration and not gpu_e2e" "$@"
+    uv run --no-sync pytest tests/ui/ -q --tb=short -n "$WORKERS" -m "not integration and not gpu_e2e" "$@"
 fi
 
 if [ $? -ne 0 ]; then

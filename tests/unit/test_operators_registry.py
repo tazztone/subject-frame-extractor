@@ -150,7 +150,7 @@ def test_run_operators_with_tensor():
     mask = np.zeros((10, 10), dtype=np.uint8)
 
     with (
-        patch("core.operators.registry.torch.cuda.is_available", return_value=False),
+        patch("core.operators.registry.is_cuda_available", return_value=False),
         patch("core.operators.registry.torch.from_numpy") as mock_from_numpy,
     ):
         mock_tensor = MagicMock()

@@ -18,7 +18,7 @@ class TestPhase1Logic(unittest.TestCase):
         self.database = MagicMock()
 
         # Build basic components needed for the handler success calls
-        with patch("ui.app_ui.torch.cuda.is_available", create=True, return_value=False):
+        with patch("ui.app_ui.is_cuda_available", return_value=False):
             self.app = AppUI(
                 self.config,
                 self.logger,

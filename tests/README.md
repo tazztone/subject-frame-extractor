@@ -33,7 +33,7 @@ All tests should be run using `uv` to ensure the correct environment.
 | :--- | :--- | :--- |
 | `scripts/test.sh` | **Standard Quality Pass**. Runs Ruff, Unit Tests, and Integration Smoke. | `./scripts/test.sh` |
 | `scripts/linux_test_ui.sh` | Runs Playwright tests in `tests/ui/` with xdist. | `./scripts/linux_test_ui.sh` |
-| `scripts/linux_test_all.sh` | Runs the full suite with **duration logging**. | `./scripts/linux_test_all.sh` |
+| `scripts/linux_test_all.sh` | Runs the full suite with **clean console** and stage-specific detailed logging. | `./scripts/linux_test_all.sh` |
 | `scripts/linux_test_integration.sh` | Specialized runner for GPU/Backend tests. | `./scripts/linux_test_integration.sh` |
 
 ### GPU Concurrency Warning
@@ -104,15 +104,19 @@ The suite compares current UI states against baseline screenshots using perceptu
 ## Coverage Requirements
 
 - **Current baseline**: 84.21%. **Near-term target**: 88% (enforced after Sprint 3). **Long-term target**: 90% (enforced after Sprint 5). `--cov-fail-under` in `pyproject.toml` will be bumped accordingly.
+- **Note on Masking**: `scripts/linux_test_unit.sh` uses `--no-cov` during standard runs. This ensures that logic failures trip the pipeline immediately without being masked by (or failing solely due to) coverage thresholds.
 - **Manual Verification**: `scripts/linux_test_cov.sh`.
 
 ## Performance Monitoring
 
 The `scripts/linux_test_all.sh` script automatically tracks test durations to help identify bottlenecks.
 
-- **Log File**: Timings are saved to `tests/results/logs/test_performance.log` in a clean `[duration]s [test_name]` format.
-- **Background Tracking**: Every test is timed automatically (using `--durations=0`), but the results are kept in the log to avoid terminal clutter.
-- **Interpreting Results**: Use the "slowest durations" section at the end of each test stage to identify tests that may need better mocking or optimization.
+- **Log Files**: 
+  - **Summary**: Timings for tests slower than **0.1s** are saved to `tests/results/logs/test_performance.log` in a clean `[duration]s [test_name]` format. Small tests are excluded to keep the log actionable.
+  - **Raw Output**: Full stage logs (including all durations, failures, and full traces) are saved to `stage_<name>_full.log`.
+- **Clean Console**: Individual test durations and the "hidden durations" summary echos are automatically stripped from the terminal output to keep the console focused on test pass/fail status and the final summary.
+- **Interpreting Results**: To identify bottlenecks, inspect the performance log or check the duration echo at the end of each stage.
+- **Slowest Tests**: Use the robust sorting command: `sort -t' ' -k1,1rn tests/results/logs/test_performance.log | head -n 20`.
 ## Advanced Testing Patterns
 
 ### Property-Based Testing (Hypothesis)
@@ -162,7 +166,7 @@ If you try to run a specific test file (e.g., `tests/integration/test_gpu_e2e.py
 
 ---
 
-*Last Updated: 2026-04-06 (Mock Hardening & Parallel Stability)*
+*Last Updated: 2026-04-07 (Infrastructure Hardening & Logging Improvements)*
 
 ## Key Infrastructure Takeaways
 

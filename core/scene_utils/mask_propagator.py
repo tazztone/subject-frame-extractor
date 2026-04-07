@@ -8,19 +8,21 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from queue import Queue
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
 import numpy as np
-import torch
+
+from core.utils.device import empty_cache, is_cuda_available
 
 if TYPE_CHECKING:
     from core.config import Config
     from core.logger import AppLogger
-    from core.managers import ModelRegistry, SAM3Wrapper
+    from core.managers import SAM3Wrapper
+    from core.model_loader import ModelRegistry
     from core.models import AnalysisParameters
     from core.progress import AdvancedProgressTracker
 
-from core.image_utils import postprocess_mask, rgb_to_pil
+from core.image_utils import postprocess_mask
 
 
 class MaskPropagator:
@@ -28,12 +30,8 @@ class MaskPropagator:
     Propagates segmentation masks from a seed frame to surrounding frames.
 
     Uses a subject tracker (e.g., SAM2.1 or SAM3) to propagate masks forward
-    and backward from a seed frame where the subject was initially identified.
+    and backward through a scene's shots.
     """
-
-    # TODO: Add temporal consistency smoothing between frames
-    # TODO: Implement bidirectional propagation merging (not just forward+backward)
-    # TODO: Add adaptive quality thresholds based on propagation distance from seed
 
     def __init__(
         self,
@@ -43,50 +41,42 @@ class MaskPropagator:
         progress_queue: Queue,
         config: "Config",
         logger: "AppLogger",
-        device: str = "cpu",
+        device: Optional[str] = None,
         model_registry: Optional["ModelRegistry"] = None,
     ):
         """
         Initialize the MaskPropagator.
-
-        Args:
-            params: Analysis parameters
-            dam_tracker: SAM3 wrapper for mask prediction
-            cancel_event: Event to signal cancellation
-            progress_queue: Queue for progress updates
-            config: Application configuration
-            logger: Application logger
-            device: Device to run on ('cpu' or 'cuda')
-            model_registry: Optional model registry for memory monitoring
         """
+        from core.utils.device import get_device
+
         self.params = params
         self.dam_tracker = dam_tracker
         self.cancel_event = cancel_event
         self.progress_queue = progress_queue
         self.config = config
         self.logger = logger
-        self._device = device
+        self._device = device or get_device()
         self.model_registry = model_registry
+
+    @property
+    def device(self) -> str:
+        return self._device
+
+    @device.setter
+    def device(self, value: str):
+        self._device = value
 
     def propagate_video(
         self,
         video_path: str,
-        frame_numbers: list[int],
-        prompts: list[dict],
-        frame_size: tuple[int, int],
-        frame_map: dict[int, str],
+        frame_numbers: List[int],
+        prompts: List[Dict],
+        frame_size: Tuple[int, int],
+        frame_map: Dict[int, str],
         tracker: Optional["AdvancedProgressTracker"] = None,
-    ) -> tuple[dict, dict, dict, dict]:
+    ) -> Tuple[Dict[int, np.ndarray], Dict[int, float], Dict[int, bool], Dict[int, Optional[str]]]:
         """
         Propagate masks using the video file directly (no temp JPEG I/O).
-
-        Args:
-            video_path: Path to the downscaled video file
-            frame_numbers: List of original video frame numbers to get masks for
-            prompts: List of prompts [{"frame": int, "bbox": list, "obj_id": int}]
-            frame_size: (width, height) of the video frames
-            frame_map: Mapping from frame number to filename
-            tracker: Optional progress tracker
 
         Returns:
             Tuple of dicts keyed by frame_number: (masks, area_pcts, is_empty, errors)
@@ -101,12 +91,11 @@ class MaskPropagator:
             )
 
         w, h = frame_size
-        from typing import Dict
-
-        masks = {fn: np.zeros((h, w), dtype=np.uint8) for fn in frame_numbers}
+        masks_dict: Dict[int, np.ndarray] = {fn: np.zeros((h, w), dtype=np.uint8) for fn in frame_numbers}
         areas: Dict[int, float] = {fn: 0.0 for fn in frame_numbers}
         empties: Dict[int, bool] = {fn: True for fn in frame_numbers}
         errors: Dict[int, Optional[str]] = {fn: None for fn in frame_numbers}
+
         all_propagated: Dict[int, Optional[np.ndarray]] = {fn: None for fn in frame_numbers}
         target_frames = set(frame_numbers)
 
@@ -127,13 +116,10 @@ class MaskPropagator:
             # Initialize SAM3 with the video file
             self.dam_tracker.init_video(video_path)
 
-            # Add all prompts and capture their indices
+            # Add all prompts
             start_frame_idx = frame_numbers[0]
             if prompts:
                 start_frame_idx = prompts[0]["frame"]
-                if self.cancel_event.is_set():
-                    return masks, areas, empties, errors
-
                 text_hint = (
                     self.params.text_prompt
                     if (hasattr(self.params, "text_prompt") and self.params.text_prompt)
@@ -141,290 +127,117 @@ class MaskPropagator:
                 )
                 for p in prompts:
                     if self.cancel_event.is_set():
-                        return masks, areas, empties, errors
+                        break
                     fn = p["frame"]
                     mask = self.dam_tracker.add_bbox_prompt(
                         frame_idx=fn, obj_id=p.get("obj_id", 1), bbox_xywh=p["bbox"], img_size=(w, h), text=text_hint
                     )
-                    # For seed frames, prioritize the added mask
                     if mask is not None:
                         all_propagated[fn] = mask
-                        self.logger.debug(f"Added prompt mask at frame {fn}", component="propagator")
-
-            if tracker:
-                tracker.step(1, desc="Prompts added")
 
             if self.cancel_event.is_set():
-                return masks, areas, empties, errors
+                return self._final_results(masks_dict, areas, empties, errors, frame_numbers, h, w)
 
-            # Determine boundaries for progress bar and max_frames
+            # Boundaries
             min_fn = min(frame_numbers)
             max_fn = max(frame_numbers)
 
-            # --- Pass 1: Forward Propagation ---
+            # --- Forward Propagation ---
             fwd_steps = max_fn - start_frame_idx
             if fwd_steps > 0:
-                self.logger.debug(
-                    f"Tracking forward from {start_frame_idx} to {max_fn} ({fwd_steps} steps)", component="propagator"
-                )
                 for frame_idx, obj_id, pred_mask in self.dam_tracker.propagate(
                     start_idx=start_frame_idx, reverse=False, max_frames=fwd_steps
                 ):
                     if self.cancel_event.is_set():
                         break
-
-                    if frame_idx in target_frames:
-                        # Protect existing seeds or better masks
-                        if pred_mask is not None and np.any(pred_mask):
-                            all_propagated[frame_idx] = pred_mask
-
-                        if tracker:
-                            tracker.step(1, desc="Propagation (→)")
-
-                        # Heartbeat every 50 frames
-                        if frame_idx % 50 == 0:
-                            self.logger.info(
-                                f"Forward propagation heartbeat: frame {frame_idx}",
-                                component="propagator",
-                                user_context={"current_frame": frame_idx, "direction": "forward"},
-                            )
+                    if frame_idx in target_frames and pred_mask is not None:
+                        all_propagated[frame_idx] = pred_mask
+                    if tracker:
+                        tracker.step(1, desc="Propagation (→)")
 
             if self.cancel_event.is_set():
-                return masks, areas, empties, errors
+                return self._final_results(masks_dict, areas, empties, errors, frame_numbers, h, w)
 
-            # --- Pass 2: Backward Propagation ---
+            # --- Backward Propagation ---
             bwd_steps = start_frame_idx - min_fn
             if bwd_steps > 0:
-                self.logger.debug(
-                    f"Tracking backward from {start_frame_idx} to {min_fn} ({bwd_steps} steps)", component="propagator"
-                )
                 for frame_idx, obj_id, pred_mask in self.dam_tracker.propagate(
                     start_idx=start_frame_idx, reverse=True, max_frames=bwd_steps
                 ):
                     if self.cancel_event.is_set():
                         break
+                    if frame_idx in target_frames and pred_mask is not None:
+                        all_propagated[frame_idx] = pred_mask
+                    if tracker:
+                        tracker.step(1, desc="Propagation (←)")
 
-                    if frame_idx in target_frames:
-                        if pred_mask is not None and np.any(pred_mask):
-                            all_propagated[frame_idx] = pred_mask
-
-                        if tracker:
-                            tracker.step(1, desc="Propagation (←)")
-
-                        # Heartbeat every 50 frames
-                        if frame_idx % 50 == 0:
-                            self.logger.info(
-                                f"Backward propagation heartbeat: frame {frame_idx}",
-                                component="propagator",
-                                user_context={"current_frame": frame_idx, "direction": "backward"},
-                            )
-
-            # Process all gathered masks (seeds + propagated) in parallel
+            # --- Parallel Post-processing ---
             img_area = h * w
 
             def _process_frame(fn):
                 try:
                     pred_mask = all_propagated.get(fn)
                     if pred_mask is not None and np.any(pred_mask):
-                        mask = postprocess_mask(
-                            (pred_mask * 255).astype(np.uint8),
+                        # Ensure mask is uint8 for post-processing
+                        mask_data = (
+                            (pred_mask * 255).astype(np.uint8)
+                            if pred_mask.dtype == bool
+                            else pred_mask.astype(np.uint8)
+                        )
+                        res_mask = postprocess_mask(
+                            mask_data,
                             config=self.config,
                             fill_holes=True,
                             keep_largest_only=True,
                         )
                     else:
-                        mask = np.zeros((h, w), dtype=np.uint8)
+                        res_mask = np.zeros((h, w), dtype=np.uint8)
 
-                    area_pct = (np.sum(mask > 0) / img_area) * 100 if img_area > 0 else 0.0
-                    return fn, mask, float(area_pct), bool(area_pct < self.params.min_mask_area_pct)
+                    area_pct = (np.sum(res_mask > 0) / img_area) * 100 if img_area > 0 else 0.0
+                    return fn, res_mask, float(area_pct), bool(area_pct < self.params.min_mask_area_pct)
                 except Exception as e:
                     self.logger.error(f"Parallel mask post-processing failed: {e}")
                     return fn, np.zeros((h, w), dtype=np.uint8), 0.0, True
 
             with ThreadPoolExecutor(max_workers=min(len(frame_numbers), 8)) as executor:
-                for fn, mask, area_pct, is_empty in executor.map(_process_frame, frame_numbers):
-                    masks[fn] = mask
+                for fn, res_mask, area_pct, is_empty in executor.map(_process_frame, frame_numbers):
+                    masks_dict[fn] = res_mask
                     areas[fn] = area_pct
                     empties[fn] = is_empty
                     errors[fn] = "Empty mask" if is_empty else None
 
-        except (torch.cuda.OutOfMemoryError, RuntimeError) as e:
-            err_msg = f"GPU error: {e}"
-            self.logger.error(err_msg, component="propagator")
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            for fn in frame_numbers:
-                masks[fn] = np.zeros((h, w), dtype=np.uint8)
-                areas[fn] = 0.0
-                empties[fn] = True
-                errors[fn] = err_msg
         except Exception as e:
-            err_msg = f"Propagation error: {e}"
-            self.logger.error(err_msg, component="propagator", exc_info=True)
-            for fn in frame_numbers:
+            import torch as _torch
+
+            _oom_type = getattr(_torch.cuda, "OutOfMemoryError", None)
+            is_oom = "out of memory" in str(e).lower() or (
+                _oom_type is not None and isinstance(_oom_type, type) and isinstance(e, _oom_type)
+            )
+            if is_oom:
+                self.logger.error(f"GPU error in propagation: {e}", component="propagator")
+                if self.device == "cuda" and is_cuda_available():
+                    empty_cache()
+                # Flag all remaining target frames as GPU error
+                for fn in frame_numbers:
+                    if errors[fn] is None:
+                        errors[fn] = f"GPU error: {e}"
+            else:
+                self.logger.error(f"Propagation error: {e}", component="propagator", exc_info=True)
+                for fn in frame_numbers:
+                    if errors[fn] is None:
+                        errors[fn] = str(e)
+
+        return masks_dict, areas, empties, errors
+
+    def _final_results(self, masks, areas, empties, errors, frame_numbers, h, w):
+        """Helper to return current results on cancellation."""
+        for fn in frame_numbers:
+            if fn not in masks:
                 masks[fn] = np.zeros((h, w), dtype=np.uint8)
                 areas[fn] = 0.0
                 empties[fn] = True
-                errors[fn] = err_msg
-        finally:
-            try:
-                if hasattr(self.dam_tracker, "close_session"):
-                    self.dam_tracker.close_session()
-            except Exception as e:
-                self.logger.debug(f"Error during SAM3 session cleanup: {e}", component="propagator")
-
+                errors[fn] = "Cancelled"
         return masks, areas, empties, errors
-
-    # TODO: Consider deprecating legacy method in favor of video-based propagation
-    # TODO: Add memory-mapped frame loading for very large sequences
-    def propagate(
-        self,
-        shot_frames_rgb: list[np.ndarray],
-        seed_idx: int,
-        bbox_xywh: list[int],
-        tracker: Optional["AdvancedProgressTracker"] = None,
-        additional_seeds: Optional[list[dict]] = None,
-        frame_numbers: Optional[list[int]] = None,
-    ) -> tuple[list, list, list, list]:
-        """
-        [DEPRECATED] Legacy method: Propagate masks from a seed frame using in-memory frames.
-
-        This method writes frames to temp JPEGs for SAM3 processing.
-        Prefer propagate_video() when a downscaled video is available.
-
-        Args:
-            shot_frames_rgb: List of RGB frames as numpy arrays
-            seed_idx: Index of the seed frame in the list (relative to shot_frames_rgb)
-            bbox_xywh: Bounding box [x, y, width, height] on the seed frame
-            tracker: Optional progress tracker
-            additional_seeds: Optional list of additional seeds [{"frame": original_fn, "bbox": [x,y,w,h]}]
-            frame_numbers: List of original frame numbers matching shot_frames_rgb
-
-        Returns:
-            Tuple of (masks, area_percentages, is_empty_flags, error_messages)
-        """
-        import os
-        import tempfile
-
-        # from core.image_utils import rgb_to_pil # Already imported at module level
-
-        if not self.dam_tracker or not shot_frames_rgb:
-            err_msg = "Tracker not initialized" if not self.dam_tracker else "No frames"
-            shape = shot_frames_rgb[0].shape[:2] if shot_frames_rgb else (100, 100)
-            num_frames = len(shot_frames_rgb)
-            return (
-                [np.zeros(shape, np.uint8)] * num_frames,
-                [0.0] * num_frames,
-                [True] * num_frames,
-                [err_msg] * num_frames,
-            )
-
-        self.logger.info(
-            "Propagating masks with SAM3 (legacy temp JPEG mode)",
-            component="propagator",
-            user_context={
-                "num_frames": len(shot_frames_rgb),
-                "seed_index": seed_idx,
-                "extra_seeds": len(additional_seeds or []),
-            },
-        )
-        h, w = shot_frames_rgb[0].shape[:2]
-        masks: list[Optional[np.ndarray]] = [None] * len(shot_frames_rgb)
-
-        if tracker:
-            tracker.set_stage(f"Propagating masks for {len(shot_frames_rgb)} frames")
-
-        # Use TemporaryDirectory for automatic cleanup
-        with tempfile.TemporaryDirectory() as temp_dir:
-            try:
-                # Save frames to temp directory for SAM3
-                for i, img in enumerate(shot_frames_rgb):
-                    pil_img = rgb_to_pil(img)
-                    pil_img.save(os.path.join(temp_dir, f"{i:05d}.jpg"))
-
-                # Initialize video session with new API
-                self.dam_tracker.init_video(temp_dir)
-
-                # Add primary seed bbox prompt (index i in temp_dir files)
-                seed_mask = self.dam_tracker.add_bbox_prompt(
-                    frame_idx=seed_idx, obj_id=1, bbox_xywh=bbox_xywh, img_size=(w, h)
-                )
-
-                # Add additional seeds if we can map their frame numbers to indices
-                if additional_seeds and frame_numbers:
-                    fn_to_idx = {fn: i for i, fn in enumerate(frame_numbers)}
-                    for seed in additional_seeds:
-                        idx = fn_to_idx.get(seed["frame"])
-                        if idx is not None:
-                            self.dam_tracker.add_bbox_prompt(
-                                frame_idx=idx, obj_id=1, bbox_xywh=seed["bbox"], img_size=(w, h)
-                            )
-
-                # Process seed mask
-                if seed_mask is not None:
-                    mask = postprocess_mask(
-                        (seed_mask * 255).astype(np.uint8), config=self.config, fill_holes=True, keep_largest_only=True
-                    )
-                else:
-                    mask = np.zeros((h, w), dtype=np.uint8)
-                masks[seed_idx] = mask
-
-                if tracker:
-                    tracker.step(1, desc="Propagation (seed)")
-
-                # Propagate in both directions
-                for reverse in [False, True]:
-                    if self.cancel_event.is_set():
-                        break
-                    for frame_idx, obj_id, pred_mask in self.dam_tracker.propagate(start_idx=seed_idx, reverse=reverse):
-                        if frame_idx == seed_idx:
-                            continue
-                        if frame_idx < 0 or frame_idx >= len(shot_frames_rgb):
-                            continue
-                        if self.cancel_event.is_set():
-                            break
-
-                        if pred_mask is not None and np.any(pred_mask):
-                            mask = postprocess_mask(
-                                (pred_mask * 255).astype(np.uint8),
-                                config=self.config,
-                                fill_holes=True,
-                                keep_largest_only=True,
-                            )
-                            masks[frame_idx] = mask
-                        else:
-                            masks[frame_idx] = np.zeros((h, w), dtype=np.uint8)
-
-                        if tracker:
-                            tracker.step(1, desc="Propagation (↔)")
-
-            except (torch.cuda.OutOfMemoryError, RuntimeError) as e:
-                self.logger.error(f"GPU error in propagation: {e}", component="propagator")
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-            except Exception as e:
-                self.logger.error(f"Propagation error: {e}", component="propagator", exc_info=True)
-
-        # Compute final results
-        final_masks = []
-        final_areas = []
-        final_empties = []
-        final_errors = []
-
-        for i, mask in enumerate(masks):
-            if self.cancel_event.is_set() or mask is None:
-                mask = np.zeros((h, w), dtype=np.uint8)
-            img_area = h * w
-            area_pct = (np.sum(mask > 0) / img_area) * 100 if img_area > 0 else 0.0
-            is_empty = area_pct < self.params.min_mask_area_pct
-            error = "Empty mask" if is_empty else None
-
-            final_masks.append(mask)
-            final_areas.append(area_pct)
-            final_empties.append(is_empty)
-            final_errors.append(error)
-
-        return final_masks, final_areas, final_empties, final_errors
 
     def close(self):
         """Release tracker resources."""

@@ -90,7 +90,9 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;[`subject_masker.py`](#-corescene_utilssubject_maskerpy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`shared.py`](#-coresharedpy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`system_health.py`](#-coresystem_healthpy)  
-│&nbsp;&nbsp;&nbsp;├──&nbsp;[`utils.py`](#-coreutilspy)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;utils  
+│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`__init__.py`](#-coreutils__init__py)  
+│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;[`device.py`](#-coreutilsdevicepy)  
 │&nbsp;&nbsp;&nbsp;└──&nbsp;[`xmp_writer.py`](#-corexmp_writerpy)  
 ├──&nbsp;custom_logs  
 ├──&nbsp;docs  
@@ -815,18 +817,18 @@ __all__ = ['ThumbnailManager', 'ModelRegistry', 'SAM3Wrapper', 'SAM2Wrapper',...
 ```python
 class Pipeline:
     """Base class for processing pipelines."""
-    def __init__(self, config: 'Config', logger: 'AppLogger', params: 'AnalysisParameters', progress_queue: Queue, cancel_event: threading.Event): ...
+    def __init__(self, config: 'Config', logger: 'AppLogger', params: 'AnalysisParameters', progress_queue: Queue, cancel_event: threading.Event, device: str='cpu'): ...
 def _load_scenes(output_dir: Path) -> List[Scene]:
     """Loads scenes from scenes.json."""
 class PreAnalysisPipeline(Pipeline):
     """Pipeline for pre-analyzing scenes (best frame selection, seeding)."""
-    def __init__(self, config: 'Config', logger: 'AppLogger', params: 'AnalysisParameters', progress_queue: Queue, cancel_event: threading.Event, thumbnail_manager: 'ThumbnailManager', model_registry: 'ModelRegistry', loaded_models: Optional[dict]=None): ...
+    def __init__(self, config: 'Config', logger: 'AppLogger', params: 'AnalysisParameters', progress_queue: Queue, cancel_event: threading.Event, thumbnail_manager: 'ThumbnailManager', model_registry: 'ModelRegistry', loaded_models: Optional[dict]=None, device: str='cpu'): ...
     def run(self, scenes: List[Scene], tracker: Optional['AdvancedProgressTracker']=None) -> List[Scene]: ...
     def _initialize_niqe_if_needed(self, device: str, is_folder_mode: bool): ...
     def _process_single_scene(self, scene: Scene, masker: 'SubjectMasker', previews_dir: Path, is_folder_mode: bool): ...
 class AnalysisPipeline(Pipeline):
     """Pipeline for analyzing frames (pre-analysis, propagation, full analysis)."""
-    def __init__(self, config: 'Config', logger: 'AppLogger', params: 'AnalysisParameters', progress_queue: Queue, cancel_event: threading.Event, thumbnail_manager: 'ThumbnailManager', model_registry: 'ModelRegistry', database: Optional['Database']=None, loaded_models: Optional[dict]=None): ...
+    def __init__(self, config: 'Config', logger: 'AppLogger', params: 'AnalysisParameters', progress_queue: Queue, cancel_event: threading.Event, thumbnail_manager: 'ThumbnailManager', model_registry: 'ModelRegistry', database: Optional['Database']=None, loaded_models: Optional[dict]=None, device: str='cpu'): ...
     def _initialize_niqe_metric(self): ...
     def run_full_analysis(self, scenes_to_process: List[Scene], tracker: Optional['AdvancedProgressTracker']=None) -> dict: ...
     def run_analysis_only(self, scenes_to_process: List[Scene], tracker: Optional['AdvancedProgressTracker']=None) -> dict: ...
@@ -846,11 +848,11 @@ def _process_ffmpeg_stream(stream, tracker: Optional['AdvancedProgressTracker'],
     """Parses FFmpeg progress stream and updates the tracker with optional time offset."""
 def _process_ffmpeg_showinfo(stream, fps: float) -> tuple[list, str]:
     """Parses FFmpeg stderr for 'showinfo' frame timestamps to map back to original ..."""
-def run_ffmpeg_extraction(video_path: str | Path, output_dir: Path, video_info: dict, params: 'AnalysisParameters', progress_queue: Queue, cancel_event: threading.Event, logger: 'AppLogger', config: 'Config', tracker: Optional['AdvancedProgressTracker']=None):
+def run_ffmpeg_extraction(video_path: str | Path, output_dir: Path, video_info: dict, params: 'AnalysisParameters', progress_queue: Queue, cancel_event: threading.Event, logger: 'AppLogger', config: 'Config', tracker: Optional['AdvancedProgressTracker']=None, device: str='cpu'):
     """Executes FFmpeg command to extract frames/thumbnails."""
 class ExtractionPipeline:
     """Pipeline for extracting frames from video or processing image folders."""
-    def __init__(self, config: 'Config', logger: 'AppLogger', params: 'AnalysisParameters', progress_queue: Queue, cancel_event: threading.Event, model_registry: Optional['ModelRegistry']=None): ...
+    def __init__(self, config: 'Config', logger: 'AppLogger', params: 'AnalysisParameters', progress_queue: Queue, cancel_event: threading.Event, model_registry: Optional['ModelRegistry']=None, device: str='cpu'): ...
     def _run_impl(self, tracker: Optional['AdvancedProgressTracker']=None) -> dict: ...
 ```
 
@@ -869,7 +871,7 @@ def get_face_analyzer(model_name: str, models_path: str, det_size_tuple: tuple, 
 ```python
 def get_lpips_metric(model_name: str='alex', device: str='cpu'):
     """Returns the LPIPS metric model."""
-def initialize_analysis_models(params: Union[dict, 'AnalysisParameters'], config: 'Config', logger: 'AppLogger', model_registry: 'ModelRegistry') -> dict:
+def initialize_analysis_models(params: Union[dict, 'AnalysisParameters'], config: 'Config', logger: 'AppLogger', model_registry: 'ModelRegistry', device: Optional[str]=None) -> dict:
     """Initializes all necessary analysis models based on parameters."""
 ```
 
@@ -1326,7 +1328,7 @@ def execute_full_pipeline(event: 'ExtractionEvent', progress_queue: Queue, cance
 class ProgressEvent(BaseModel): ...
 class AdvancedProgressTracker:
     """Tracks and estimates progress for long-running operations."""
-    def __init__(self, progress: Optional[Callable]=None, queue: Optional[Queue]=None, logger: Optional['AppLogger']=None, ui_stage_name: str=''):
+    def __init__(self, progress: Optional[Callable]=None, queue: Optional[Queue]=None, logger: Optional['AppLogger']=None, ui_stage_name: str='', device: str='cpu'):
         """Initializes the progress tracker."""
     def start(self, total_items: int, desc: Optional[str]=None):
         """Resets the tracker for a new operation."""
@@ -1442,12 +1444,16 @@ def _wire_recompute_handler(config: 'Config', logger: 'AppLogger', thumbnail_man
 """MaskPropagator class for propagating segmentation masks across video frames."""
 class MaskPropagator:
     """Propagates segmentation masks from a seed frame to surrounding frames."""
-    def __init__(self, params: 'AnalysisParameters', dam_tracker: Optional['SAM3Wrapper'], cancel_event: threading.Event, progress_queue: Queue, config: 'Config', logger: 'AppLogger', device: str='cpu', model_registry: Optional['ModelRegistry']=None):
+    def __init__(self, params: 'AnalysisParameters', dam_tracker: Optional['SAM3Wrapper'], cancel_event: threading.Event, progress_queue: Queue, config: 'Config', logger: 'AppLogger', device: Optional[str]=None, model_registry: Optional['ModelRegistry']=None):
         """Initialize the MaskPropagator."""
-    def propagate_video(self, video_path: str, frame_numbers: list[int], prompts: list[dict], frame_size: tuple[int, int], frame_map: dict[int, str], tracker: Optional['AdvancedProgressTracker']=None) -> tuple[dict, dict, dict, dict]:
+    @property
+    def device(self) -> str: ...
+    @device.setter
+    def device(self, value: str): ...
+    def propagate_video(self, video_path: str, frame_numbers: List[int], prompts: List[Dict], frame_size: Tuple[int, int], frame_map: Dict[int, str], tracker: Optional['AdvancedProgressTracker']=None) -> Tuple[Dict[int, np.ndarray], Dict[int, float], Dict[int, bool], Dict[int, Optional[str]]]:
         """Propagate masks using the video file directly (no temp JPEG I/O)."""
-    def propagate(self, shot_frames_rgb: list[np.ndarray], seed_idx: int, bbox_xywh: list[int], tracker: Optional['AdvancedProgressTracker']=None, additional_seeds: Optional[list[dict]]=None, frame_numbers: Optional[list[int]]=None) -> tuple[list, list, list, list]:
-        """[DEPRECATED] Legacy method: Propagate masks from a seed frame using in-memory..."""
+    def _final_results(self, masks, areas, empties, errors, frame_numbers, h, w):
+        """Helper to return current results on cancellation."""
     def close(self):
         """Release tracker resources."""
 ```
@@ -1458,7 +1464,7 @@ class MaskPropagator:
 """SeedSelector class for selecting seed frames and bounding boxes for mask prop..."""
 class SeedSelector:
     """Selects seed frames and bounding boxes for mask propagation."""
-    def __init__(self, params: 'AnalysisParameters', config: 'Config', face_analyzer: Optional['FaceAnalysis']=None, reference_embedding: Optional[np.ndarray]=None, tracker: Optional['SAM3Wrapper']=None, subject_detector: Optional['SubjectDetector']=None, logger: Optional['LoggerLike']=None, device: str='cpu'):
+    def __init__(self, params: 'AnalysisParameters', config: 'Config', face_analyzer: Optional['FaceAnalysis']=None, reference_embedding: Optional[np.ndarray]=None, tracker: Optional['SAM3Wrapper']=None, subject_detector: Optional['SubjectDetector']=None, logger: Optional['LoggerLike']=None, device: Optional[str]=None):
         """Initialize the SeedSelector."""
     def _get_param(self, source: Union[dict, object], key: str, default: Any=None) -> Any:
         """Get a parameter from either a dict or an object."""
@@ -1480,7 +1486,7 @@ class SeedSelector:
         """Score and select the best candidate box that contains the target face."""
     def _choose_subject_by_strategy(self, frame_rgb: np.ndarray, params: Union[dict, 'AnalysisParameters'], scene: Optional['Scene']=None) -> tuple[list, dict]:
         """Select subject using configurable strategy."""
-    def _load_image_from_array(self, image_rgb: np.ndarray) -> tuple[np.ndarray, torch.Tensor]:
+    def _load_image_from_array(self, image_rgb: np.ndarray) -> tuple[np.ndarray, 'torch.Tensor']:
         """Load image for model input."""
     def _calculate_iou(self, box1: list, box2: list) -> float:
         """Calculate IoU between two boxes in xyxy format."""
@@ -1560,7 +1566,7 @@ def generate_full_diagnostic_report(config: Any, logger: Any, progress_queue: An
     """Generates a full diagnostic report as a generator."""
 ```
 
-### `📄 core/utils.py`
+### `📄 core/utils/__init__.py`
 
 ```python
 def _setup_triton_mock():
@@ -1574,6 +1580,21 @@ def _to_json_safe(obj: Any) -> Any:
 @contextlib.contextmanager
 def safe_resource_cleanup(device: str='cpu'):
     """Context manager to ensure garbage collection and CUDA cache clearing."""
+```
+
+### `📄 core/utils/device.py`
+
+```python
+def get_device() -> str:
+    """Returns 'cuda' if available, else 'cpu'."""
+def is_cuda_available() -> bool:
+    """Returns True if CUDA is available."""
+def get_gpu_memory_pressure() -> float:
+    """Returns fraction of reserved/total VRAM (0.0 to 1.0), or 0.0 if not available."""
+def empty_cache():
+    """Empty CUDA cache if available."""
+def synchronize():
+    """Synchronize CUDA if available."""
 ```
 
 ### `📄 core/xmp_writer.py`

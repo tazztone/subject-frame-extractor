@@ -11,7 +11,6 @@ from typing import Any, Callable, Dict, Generator, List, Optional, Tuple
 import cv2
 import gradio as gr
 import numpy as np
-import torch
 
 from core.application_state import ApplicationState
 from core.batch_manager import BatchItem, BatchManager
@@ -24,6 +23,7 @@ from core.logger import AppLogger
 from core.managers import ModelRegistry, ThumbnailManager
 from core.pipelines import AdvancedProgressTracker, execute_extraction
 from core.utils import is_image_folder
+from core.utils.device import is_cuda_available
 from ui.components.log_viewer import LogViewer
 from ui.decorators import safe_ui_callback
 from ui.gallery_utils import auto_set_thresholds, on_filters_changed
@@ -137,7 +137,7 @@ class AppUI:
         self.database = database
         self.batch_manager = BatchManager()
         self.debug_mode = debug_mode or getattr(config, "debug", False)
-        self.cuda_available = cuda_available if cuda_available is not None else torch.cuda.is_available()
+        self.cuda_available = cuda_available if cuda_available is not None else is_cuda_available()
         self.components = {}
         self.ui_registry = {}
         self.performance_metrics = {}

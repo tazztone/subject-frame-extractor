@@ -235,3 +235,5 @@ previews/
 init_logs/
 custom_logs/
 .geminiignore
+MagicMock/
+.vscode/

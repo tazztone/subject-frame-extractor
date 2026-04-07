@@ -82,25 +82,25 @@ def test_extract_folder(mock_setup, mock_execute, runner, tmp_path, mock_pipelin
 @patch("core.cli_commands.execute_analysis_orchestrator")
 @patch("core.cli_commands._setup_runtime")
 def test_analyze(mock_setup, mock_orch, runner, tmp_path, mock_pipeline_result):
-    with patch("core.cli_commands.torch.cuda.is_available", return_value=False):
-        mock_setup.return_value = (
-            MagicMock(),  # config
-            MagicMock(),  # logger
-            MagicMock(),  # progress_queue
-            MagicMock(),  # cancel_event
-            MagicMock(),  # model_registry
-            MagicMock(),  # thumbnail_manager
-        )
-        mock_orch.return_value = [{"done": True, "unified_log": "Analysis Complete"}]
+    # with patch removed, already handled by force_cpu_device fixture
+    mock_setup.return_value = (
+        MagicMock(),  # config
+        MagicMock(),  # logger
+        MagicMock(),  # progress_queue
+        MagicMock(),  # cancel_event
+        MagicMock(),  # model_registry
+        MagicMock(),  # thumbnail_manager
+    )
+    mock_orch.return_value = [{"done": True, "unified_log": "Analysis Complete"}]
 
-        # Create session dir
-        session_dir = tmp_path / "session"
-        session_dir.mkdir()
-        source_path = tmp_path / "video.mp4"
-        source_path.touch()
+    # Create session dir
+    session_dir = tmp_path / "session"
+    session_dir.mkdir()
+    source_path = tmp_path / "video.mp4"
+    source_path.touch()
 
-        # Invoke command
-        result = runner.invoke(cli, ["analyze", "--session", str(session_dir), "--source", str(source_path)])
+    # Invoke command
+    result = runner.invoke(cli, ["analyze", "--session", str(session_dir), "--source", str(source_path)])
 
     assert result.exit_code == 0
     assert "ANALYSIS" in result.output
@@ -157,22 +157,22 @@ def test_extract_invalid_source(runner, tmp_path):
 @patch("core.cli_commands.execute_analysis_orchestrator")
 @patch("core.cli_commands._setup_runtime")
 def test_analyze_folder(mock_setup, mock_orch, runner, tmp_path, mock_pipeline_result):
-    with patch("core.cli_commands.torch.cuda.is_available", return_value=False):
-        mock_setup.return_value = (MagicMock(), MagicMock(), MagicMock(), MagicMock(), MagicMock(), MagicMock())
-        mock_orch.return_value = [
-            {"unified_log": "Pre-Analysis Complete."},
-            {"unified_log": "Mask Propagation (Skipped for Folder)"},
-            {"done": True, "unified_log": "Analysis Complete"},
-        ]
+    # with patch removed, already handled by force_cpu_device fixture
+    mock_setup.return_value = (MagicMock(), MagicMock(), MagicMock(), MagicMock(), MagicMock(), MagicMock())
+    mock_orch.return_value = [
+        {"unified_log": "Pre-Analysis Complete."},
+        {"unified_log": "Mask Propagation (Skipped for Folder)"},
+        {"done": True, "unified_log": "Analysis Complete"},
+    ]
 
-        session_dir = tmp_path / "session"
-        session_dir.mkdir()
-        source_dir = tmp_path / "images"
-        source_dir.mkdir()
+    session_dir = tmp_path / "session"
+    session_dir.mkdir()
+    source_dir = tmp_path / "images"
+    source_dir.mkdir()
 
-        # For folders, Propagation should be skipped
-        with patch("core.pipelines.execute_propagation") as mock_prop:
-            result = runner.invoke(cli, ["analyze", "--session", str(session_dir), "--source", str(source_dir)])
-            assert result.exit_code == 0
-            assert "Mask Propagation (Skipped for Folder)" in result.output
-            mock_prop.assert_not_called()
+    # For folders, Propagation should be skipped
+    with patch("core.pipelines.execute_propagation") as mock_prop:
+        result = runner.invoke(cli, ["analyze", "--session", str(session_dir), "--source", str(source_dir)])
+        assert result.exit_code == 0
+        assert "Mask Propagation (Skipped for Folder)" in result.output
+        mock_prop.assert_not_called()

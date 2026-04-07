@@ -1,6 +1,7 @@
 # Lazy torch import in execute
 
 from core.operators import OperatorConfig, OperatorContext, OperatorResult, register_operator
+from core.utils.device import empty_cache
 
 
 @register_operator
@@ -33,9 +34,7 @@ class NiqeOperator:
     def cleanup(self):
         self.model = None
         if self.device == "cuda":
-            import torch
-
-            torch.cuda.empty_cache()
+            empty_cache()
 
     def execute(self, ctx: OperatorContext) -> OperatorResult:
         import torch

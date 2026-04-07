@@ -5,7 +5,8 @@ import gc
 from typing import TYPE_CHECKING, Any, Optional
 
 import numpy as np
-import torch
+
+from core.utils.device import empty_cache, get_gpu_memory_pressure, is_cuda_available
 
 
 def _setup_triton_mock():
@@ -69,11 +70,11 @@ from core.io_utils import (  # noqa: F401
 
 def monitor_memory_usage(logger: "AppLogger", device: str, threshold_mb: int = 8000):
     """Logs a warning and clears cache if GPU memory usage exceeds threshold."""
-    if device == "cuda" and torch.cuda.is_available():
-        allocated = torch.cuda.memory_allocated() / 1024**2
+    if device == "cuda" and is_cuda_available():
+        allocated = get_gpu_memory_pressure()
         if allocated > threshold_mb:
             logger.warning(f"High GPU memory usage: {allocated:.1f}MB")
-            torch.cuda.empty_cache()
+            empty_cache()
 
 
 def estimate_totals(params: "AnalysisParameters", video_info: dict, scenes: Optional[list["Scene"]]) -> dict:
@@ -131,5 +132,5 @@ def safe_resource_cleanup(device: str = "cpu"):
         yield
     finally:
         gc.collect()
-        if device == "cuda" and torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        if device == "cuda" and is_cuda_available():
+            empty_cache()

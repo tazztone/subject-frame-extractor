@@ -10,9 +10,11 @@ from typing import TYPE_CHECKING, Any, Optional, Union, cast
 
 import cv2
 import numpy as np
-import torch
+
+from core.utils.device import empty_cache, is_cuda_available
 
 if TYPE_CHECKING:
+    import torch
     from insightface.app import FaceAnalysis
 
     from core.config import Config
@@ -49,7 +51,7 @@ class SeedSelector:
         tracker: Optional["SAM3Wrapper"] = None,
         subject_detector: Optional["SubjectDetector"] = None,
         logger: Optional["LoggerLike"] = None,
-        device: str = "cpu",
+        device: Optional[str] = None,
     ):
         """
         Initialize the SeedSelector.
@@ -63,13 +65,15 @@ class SeedSelector:
             logger: Application logger
             device: Device to run on ('cpu' or 'cuda')
         """
+        from core.utils.device import get_device
+
         self.params = params
         self.config = config
         self.face_analyzer = face_analyzer
         self.reference_embedding = reference_embedding
         self.tracker = tracker
         self.subject_detector = subject_detector
-        self._device = device
+        self._device = device or get_device()
         self.logger: LoggerLike = logger or logging.getLogger("app_logger")
 
     def _get_param(self, source: Union[dict, object], key: str, default: Any = None) -> Any:
@@ -498,8 +502,7 @@ class SeedSelector:
 
         return self._xyxy_to_xywh(best_person["bbox"], frame_rgb.shape), details
 
-    # TODO: Cache transform for reuse across multiple frames
-    def _load_image_from_array(self, image_rgb: np.ndarray) -> tuple[np.ndarray, torch.Tensor]:
+    def _load_image_from_array(self, image_rgb: np.ndarray) -> tuple[np.ndarray, "torch.Tensor"]:
         """Load image for model input."""
         import torch
         from torchvision import transforms
@@ -625,11 +628,17 @@ class SeedSelector:
                     self.tracker._state = None
 
                 return mask
-        except (torch.cuda.OutOfMemoryError, RuntimeError) as e:
-            log_with_component(self.logger, "warning", f"GPU error in mask generation: {e}")
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            return None
         except Exception as e:
+            import torch as _torch
+
+            _oom_type = getattr(_torch.cuda, "OutOfMemoryError", None)
+            is_oom = "out of memory" in str(e).lower() or (
+                _oom_type is not None and isinstance(_oom_type, type) and isinstance(e, _oom_type)
+            )
+            if is_oom:
+                log_with_component(self.logger, "warning", f"GPU error in mask generation: {e}")
+                if is_cuda_available():
+                    empty_cache()
+                return None
             log_with_component(self.logger, "error", f"Unexpected error in mask generation: {type(e).__name__}: {e!r}")
             return None

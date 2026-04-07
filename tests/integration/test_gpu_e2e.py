@@ -213,7 +213,12 @@ class TestCUDAAvailability:
         if not torch.cuda.is_available():
             pytest.skip("CUDA not available")
 
-        free_memory = torch.cuda.get_device_properties(0).total_memory
+        props = torch.cuda.get_device_properties(0)
+        total = props.total_memory
+        allocated = torch.cuda.memory_allocated(0)
+        # Guard against mock leakage from parallel workers
+        assert isinstance(total, int), f"total_memory is not int (likely a MagicMock leak): {type(total)}"
+        free_memory = total - allocated
         min_required = 4 * 1024 * 1024 * 1024  # 4GB
         assert free_memory >= min_required, f"Need at least 4GB GPU memory, got {free_memory / 1e9:.1f}GB"
 

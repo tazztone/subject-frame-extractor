@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING, Any, List, Optional
 
 import cv2
 import numpy as np
-import torch
 from PIL import Image
 
 if TYPE_CHECKING:
@@ -29,9 +28,9 @@ from core.io_utils import create_frame_map
 from core.models import AnalysisParameters, Frame, Scene
 from core.operators import OperatorRegistry, run_operators
 from core.progress import AdvancedProgressTracker
-from core.scene_utils import save_scene_seeds
 from core.scene_utils.subject_masker import SubjectMasker
 from core.utils import _to_json_safe
+from core.utils.device import get_device, get_gpu_memory_pressure
 
 from .model_loader import initialize_analysis_models
 
@@ -46,12 +45,14 @@ class Pipeline:
         params: "AnalysisParameters",
         progress_queue: Queue,
         cancel_event: threading.Event,
+        device: str = "cpu",
     ):
         self.config = config
         self.logger = logger
         self.params = params
         self.progress_queue = progress_queue
         self.cancel_event = cancel_event
+        self.device = device or get_device()
         self.error_handler = ErrorHandler(
             self.logger, self.config.retry_max_attempts, self.config.retry_backoff_seconds
         )
@@ -80,8 +81,9 @@ class PreAnalysisPipeline(Pipeline):
         thumbnail_manager: "ThumbnailManager",
         model_registry: "ModelRegistry",
         loaded_models: Optional[dict] = None,
+        device: str = "cpu",
     ):
-        super().__init__(config, logger, params, progress_queue, cancel_event)
+        super().__init__(config, logger, params, progress_queue, cancel_event, device=device)
         self.thumbnail_manager = thumbnail_manager
         self.model_registry = model_registry
         self.output_dir = Path(self.params.output_folder)
@@ -91,7 +93,9 @@ class PreAnalysisPipeline(Pipeline):
         models = (
             self.loaded_models
             if self.loaded_models
-            else initialize_analysis_models(self.params, self.config, self.logger, self.model_registry)
+            else initialize_analysis_models(
+                self.params, self.config, self.logger, self.model_registry, device=self.device
+            )
         )
         is_folder_mode = not self.params.video_path
         niqe_metric = self._initialize_niqe_if_needed(models["device"], is_folder_mode)
@@ -122,6 +126,8 @@ class PreAnalysisPipeline(Pipeline):
             if tracker:
                 tracker.step(1, desc=f"Scene {scene.shot_id}")
             self._process_single_scene(scene, masker, previews_dir, is_folder_mode)
+
+        from core.scene_utils import save_scene_seeds
 
         save_scene_seeds(scenes, str(self.output_dir), self.logger)
         return scenes
@@ -192,8 +198,9 @@ class AnalysisPipeline(Pipeline):
         model_registry: "ModelRegistry",
         database: Optional["Database"] = None,
         loaded_models: Optional[dict] = None,
+        device: str = "cpu",
     ):
-        super().__init__(config, logger, params, progress_queue, cancel_event)
+        super().__init__(config, logger, params, progress_queue, cancel_event, device=device)
         self.output_dir = Path(self.params.output_folder)
         self.db = database or Database(self.output_dir / "metadata.db", logger=self.logger)
         self.db.error_handler = self.error_handler
@@ -206,7 +213,6 @@ class AnalysisPipeline(Pipeline):
         self.face_landmarker: Optional[Any] = None
         self.scene_map: dict = {}
         self.niqe_metric: Optional[Any] = None
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.thumbnail_manager = thumbnail_manager
         self.model_registry = model_registry
         self.subject_detector = None
@@ -412,19 +418,12 @@ class AnalysisPipeline(Pipeline):
         with ThreadPoolExecutor(max_workers=num_workers) as executor:
             futures = []
             while processed < len(image_files) or futures:
-                try:
-                    if (
-                        torch.cuda.is_available()
-                        and torch.cuda.memory_reserved(0) / torch.cuda.get_device_properties(0).total_memory > 0.85
-                    ):
+                while len(futures) < num_workers and processed < len(image_files):
+                    if get_gpu_memory_pressure() > 0.85:
                         current_bs = max(1, current_bs // 2)
                     elif current_bs < self.config.analysis_default_batch_size:
                         current_bs = min(self.config.analysis_default_batch_size, current_bs + 2)
-                except Exception:
-                    # CUDA properties might fail in mocked or weird environments
-                    pass
 
-                while len(futures) < num_workers and processed < len(image_files):
                     end = min(processed + current_bs, len(image_files))
                     batch_paths = image_files[processed:end]
                     fut = executor.submit(self._process_batch, batch_paths, metrics_to_compute)

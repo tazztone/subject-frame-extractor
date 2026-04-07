@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Optional
 
 import click
-import torch
 
 from core.cli_utils import _run_pipeline, _setup_runtime
 from core.database import Database
@@ -21,6 +20,7 @@ from core.pipelines import (
     execute_extraction,
     execute_full_pipeline,
 )
+from core.utils.device import is_cuda_available
 
 
 def run_extract(source, output, method, nth_frame, max_resolution, thumb_mp, scene_detect, verbose, clean, force):
@@ -108,8 +108,10 @@ def run_analyze(session, source, face_ref, strategy, verbose, resume, force):
 
     pre_event = _build_pre_analysis_event(output_dir, source, is_video, face_ref, strategy, resume)
 
-    cuda_available = torch.cuda.is_available()
+    cuda_available = is_cuda_available()
     if cuda_available:
+        import torch
+
         click.echo("   🚀 CUDA available, using GPU acceleration")
         torch.set_float32_matmul_precision("medium")
 
@@ -244,7 +246,7 @@ def run_full(source, output, face_ref, nth_frame, max_resolution, verbose, clean
     config, logger, progress_queue, cancel_event, model_registry, thumbnail_manager = _setup_runtime(
         output_dir, verbose
     )
-    cuda_available = torch.cuda.is_available()
+    cuda_available = is_cuda_available()
 
     ext_event = ExtractionEvent(
         source_path=str(source),

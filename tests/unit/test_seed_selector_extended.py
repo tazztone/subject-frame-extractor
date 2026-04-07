@@ -163,8 +163,8 @@ class TestSeedSelectorExtended:
         """Test OOM handling in _get_mask_for_bbox."""
 
         with (
-            patch("core.scene_utils.seed_selector.torch.cuda.is_available", return_value=True),
-            patch("core.scene_utils.seed_selector.torch.cuda.empty_cache") as mock_empty,
+            patch("core.scene_utils.seed_selector.is_cuda_available", return_value=True),
+            patch("core.scene_utils.seed_selector.empty_cache") as mock_empty,
         ):
             selector.tracker.init_video.side_effect = RuntimeError("out of memory")
 

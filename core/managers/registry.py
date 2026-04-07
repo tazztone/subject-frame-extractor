@@ -7,7 +7,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Set
 
-import torch
+from core.utils.device import empty_cache, get_device, is_cuda_available
 
 if TYPE_CHECKING:
     from core.config import Config
@@ -83,8 +83,8 @@ class ModelRegistry:
                 self.logger.warning(f"Error shutting down model {key}: {e}")
 
         gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        if is_cuda_available():
+            empty_cache()
 
     def get_tracker(
         self,
@@ -113,13 +113,16 @@ class ModelRegistry:
         key = f"tracker_{model_name}"
 
         def _loader():
-            device = self.runtime_device_override or ("cuda" if torch.cuda.is_available() else "cpu")
+            device = self.runtime_device_override or get_device()
             try:
                 return self._load_tracker_impl(model_name, _models_path, _user_agent, _retry_params, device, _config)
-            except (RuntimeError, torch.cuda.OutOfMemoryError) as e:
-                if (
-                    "out of memory" in str(e).lower() or isinstance(e, torch.cuda.OutOfMemoryError)
-                ) and device == "cuda":
+            except Exception as e:
+                import torch
+
+                is_oom = "out of memory" in str(e).lower() or (
+                    hasattr(torch.cuda, "OutOfMemoryError") and isinstance(e, torch.cuda.OutOfMemoryError)
+                )
+                if is_oom and device == "cuda":
                     self.logger.warning("CUDA OOM during tracker init. Switching to CPU.")
                     self.runtime_device_override = "cpu"
                     return self._load_tracker_impl(model_name, _models_path, _user_agent, _retry_params, "cpu", _config)
@@ -144,10 +147,13 @@ class ModelRegistry:
             current_device = self.runtime_device_override or device
             try:
                 return SubjectDetector(model_path, logger, device=current_device)
-            except (RuntimeError, torch.cuda.OutOfMemoryError) as e:
-                if (
-                    "out of memory" in str(e).lower() or isinstance(e, torch.cuda.OutOfMemoryError)
-                ) and current_device == "cuda":
+            except Exception as e:
+                import torch
+
+                is_oom = "out of memory" in str(e).lower() or (
+                    hasattr(torch.cuda, "OutOfMemoryError") and isinstance(e, torch.cuda.OutOfMemoryError)
+                )
+                if is_oom and current_device == "cuda":
                     self.logger.warning(f"CUDA OOM during detector '{model_name}' init. Switching to CPU.")
                     self.runtime_device_override = "cpu"
                     return SubjectDetector(model_path, logger, device="cpu")

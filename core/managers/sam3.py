@@ -19,6 +19,7 @@ except ImportError:
     sys.modules["pkg_resources"] = pkg_resources
 
 from core.utils import _setup_triton_mock
+from core.utils.device import empty_cache, is_cuda_available, synchronize
 
 _triton_mocked = _setup_triton_mock()
 
@@ -40,8 +41,10 @@ class SAM3Wrapper:
                 from unittest.mock import MagicMock as _MagicMock
 
                 if isinstance(build_sam3_predictor, _MagicMock):
+                    mod = getattr(build_sam3_predictor, "__module__", "unknown")
+                    found_type = type(build_sam3_predictor)
                     raise RuntimeError(
-                        f"SAM3 build_sam3_predictor is a MagicMock (device='{device}') — "
+                        f"SAM3 build_sam3_predictor is a MagicMock (type={found_type}, module={mod}, device='{device}') — "
                         "conftest.py has injected a mock into sys.modules['sam3.model_builder']. "
                         "Run integration tests with: export PYTEST_INTEGRATION_MODE=true"
                     )
@@ -63,10 +66,10 @@ class SAM3Wrapper:
             elif _local_ckpt_30.exists():
                 checkpoint_path = str(_local_ckpt_30)
 
-        import torch
-
         self.device = device
-        if torch.cuda.is_available():
+        if is_cuda_available():
+            import torch
+
             torch.set_float32_matmul_precision("high")
 
         # Detect version from checkpoint path
@@ -261,11 +264,10 @@ class SAM3Wrapper:
     def reset_session(self):
         """Reset the current tracking session."""
         self.close_session()
-        import torch
 
-        if torch.cuda.is_available():
-            torch.cuda.synchronize()
-            torch.cuda.empty_cache()
+        if is_cuda_available():
+            synchronize()
+            empty_cache()
 
     def clear_prompts(self):
         """Clear all prompts in the current session."""
@@ -295,8 +297,7 @@ class SAM3Wrapper:
             self.predictor = None
 
         gc.collect()
-        import torch
 
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-            torch.cuda.synchronize()
+        if is_cuda_available():
+            empty_cache()
+            synchronize()
