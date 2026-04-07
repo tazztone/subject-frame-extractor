@@ -152,5 +152,6 @@ quote-style = "double"
 [tool.pyright]
 pythonVersion = "3.11"
 typeCheckingMode = "basic"
+stubPath = "typings"
 reportMissingModuleSource = "none"
 exclude = ["SAM3_repo", "outputs", "venv", ".venv", ".git", "**/__pycache__", "tests", "scripts"]

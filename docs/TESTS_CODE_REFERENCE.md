@@ -77,6 +77,7 @@ tests
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_session_lifecycle.py`](#-testsuitest_session_lifecyclepy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_session_resume.py`](#-testsuitest_session_resumepy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_smoke_ui_init.py`](#-testsuitest_smoke_ui_initpy)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_ui_e2e_real_workflow.py`](#-testsuitest_ui_e2e_real_workflowpy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_ui_interactions.py`](#-testsuitest_ui_interactionspy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_visual_regression.py`](#-testsuitest_visual_regressionpy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_with_sample_data.py`](#-testsuitest_with_sample_datapy)  
@@ -675,7 +676,12 @@ def cleanup_port(port: int):
     """Forcefully kill any process using the specified port."""
 @pytest.fixture(scope='module')
 def app_server():
-    """Starts the mock app server before tests and kills it after."""
+    """Starts the mock app server (Legacy alias for mock_only tests)."""
+@pytest.fixture(scope='module')
+def live_server():
+    """Recommended fixture for E2E tests."""
+def _start_app_server(use_mock: bool):
+    """Internal helper to start either real or mock server."""
 @pytest.fixture
 def app_instance(app_server):
     """Retrieve the live AppUI instance from the running server."""
@@ -1028,6 +1034,15 @@ pytestmark = pytest.mark.smoke
 @patch('torch.cuda.is_available', return_value=False)
 def test_ui_initialization_smoke(mock_cuda):
     """Verify that the UI can be built with mocked dependencies."""
+```
+
+### `📄 tests/ui/test_ui_e2e_real_workflow.py`
+
+```python
+@pytest.mark.e2e
+@pytest.mark.gpu_e2e
+def test_ui_e2e_real_workflow(page: Page, live_server):
+    """E2E test that mimics the real user workflow:"""
 ```
 
 ### `📄 tests/ui/test_ui_interactions.py`

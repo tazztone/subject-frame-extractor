@@ -789,10 +789,20 @@ class AppUI:
                         return
             yield {self.components["unified_log"]: "❌ Pipeline failed unexpectedly."}
         except Exception as e:
+            import traceback
+
             self.app_logger.error(f"Pipeline execution failed: {e}", exc_info=True)
+            tb_str = traceback.format_exc()
+            detailed_error = (
+                f"❌ **Fatal Error ({type(e).__name__}):** {str(e)}\n\n"
+                f"<details><summary><b>Show Traceback</b></summary>\n\n"
+                f"```python\n{tb_str}\n```\n\n</details>"
+            )
             yield {
-                self.components["unified_log"]: f"❌ **Error:** {e}",
-                self.components["unified_status"]: f"⚠️ Failure in {pipeline_func.__name__}",
+                self.components["unified_log"]: detailed_error,
+                self.components["unified_status"]: f"⚠️ Backend Failure in {pipeline_func.__name__}",
+                self.components.get("start_extraction_button"): gr.update(interactive=True),
+                self.components.get("start_pre_analysis_button"): gr.update(interactive=True),
             }
         finally:
             self.is_busy = False

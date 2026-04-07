@@ -185,7 +185,9 @@ During the 2026-04 stabilization effort, several high-signal patterns were estab
     - **Modern API Usage**: Integration tests must use `MaskPropagator.propagate_video()` (which works directly with video paths) instead of the deprecated `propagate()` method.
 - **Mock Truthiness Hazards**: In Python, a `MagicMock` instance evaluates to `True` in a boolean context. Always explicitly configure boolean-returning mocks (e.g., `threading.Event().is_set.return_value = False`). Failure to do so will cause components like cancellation handlers to trigger unconditionally.
 - **Fail-Fast vs Silent Suppression**: Core factories and registries (like `ModelRegistry`) must re-raise initialization exceptions (e.g., OOM or missing imports) rather than catching them and returning `None`. Silent suppression creates non-deterministic downstream `AttributeError: NoneType` failures that obscure the root cause during testing.
-- **Strict Patch Control**: Avoid manual assignment patching (`module.func = MagicMock()`) in unit tests, as it relies heavily on module import ordering and can bleed across tests. Always use `unittest.mock.patch` decorators or context managers to ensure proper setup and teardown.
+- [x] **Strict Patch Control**: Avoid manual assignment patching (`module.func = MagicMock()`) in unit tests, as it relies heavily on module import ordering and can bleed across tests. Always use `unittest.mock.patch` decorators or context managers to ensure proper setup and teardown.
+- **Vendored Library Stubs**: For libraries injected into `sys.modules` during runtime (like `sam3`), IDEs often report "Missing Module" errors. Use a local `typings/` directory with `.pyi` stubs and set `stubPath = "typings"` in `pyproject.toml` to maintain a clean linting environment.
+- **E2E Server Consolidation**: Always use the `live_server` fixture from `tests/ui/conftest.py` for E2E tests. This fixture handles subprocess orchestration, port cleanup, and toggles between mock and real modes based on `PYTEST_INTEGRATION_MODE`, preventing divergent startup paths between the app and the test.
 
 ## Gradio 5 UI Testing Patterns
 

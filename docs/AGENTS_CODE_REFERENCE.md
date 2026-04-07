@@ -202,6 +202,7 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_session_lifecycle.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_session_resume.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_smoke_ui_init.py  
+│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_ui_e2e_real_workflow.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_ui_interactions.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_visual_regression.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_with_sample_data.py  
@@ -314,6 +315,8 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_viz.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_xmp_writer.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└──&nbsp;test_yolo_expansion.py  
+├──&nbsp;typings  
+│&nbsp;&nbsp;&nbsp;└──&nbsp;sam3  
 └──&nbsp;ui  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`__init__.py`](#-ui__init__py)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`app_ui.py`](#-uiapp_uipy)  

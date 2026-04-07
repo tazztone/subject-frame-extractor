@@ -174,56 +174,74 @@ def cleanup_port(port: int):
 
 @pytest.fixture(scope="module")
 def app_server():
-    """
-    Starts the mock app server before tests and kills it after.
+    """Starts the mock app server (Legacy alias for mock_only tests)."""
+    for process_data in _start_app_server(use_mock=True):
+        yield process_data
 
-    The mock app replaces heavy ML operations with fast stubs,
-    allowing E2E tests to run quickly without GPU.
-    """
 
-    # Aggressively clean up the test port before starting
+@pytest.fixture(scope="module")
+def live_server():
+    """
+    Recommended fixture for E2E tests.
+    Starts real app.py if PYTEST_INTEGRATION_MODE=true, otherwise runs mock_app.py.
+    """
+    use_mock = environ.get("PYTEST_INTEGRATION_MODE") != "true"
+    for process_data in _start_app_server(use_mock=use_mock):
+        yield process_data
+
+
+def _start_app_server(use_mock: bool):
+    """Internal helper to start either real or mock server."""
     cleanup_port(PORT)
-    time.sleep(1)  # Give the OS a moment to free the socket
+    time.sleep(1)
 
-    print(f"Starting mock app on port {PORT}...")
+    app_type = "MOCK" if use_mock else "REAL"
+    print(f"Starting {app_type} app on port {PORT}...")
 
-    mock_app_path = str(Path(__file__).parent.parent / "mock_app.py")
+    if use_mock:
+        app_path = str(Path(__file__).parent.parent / "mock_app.py")
+    else:
+        app_path = str(Path(__file__).parent.parent.parent / "app.py")
 
     log_dir = Path(__file__).parent.parent.parent / "tests" / "results" / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     worker_id = environ.get("PYTEST_XDIST_WORKER", "master")
-    log_file_path = log_dir / f"mock_app_e2e_{worker_id}.log"
+    log_file_path = log_dir / f"{app_type.lower()}_app_e2e_{worker_id}.log"
 
     log_file = open(log_file_path, "w")
+    cmd = [sys.executable, app_path]
+    if not use_mock:
+        # Pass test port to real app
+        cmd += ["--server-port", str(PORT)]
+
     process = subprocess.Popen(
-        [sys.executable, mock_app_path],
+        cmd,
         stdout=log_file,
         stderr=subprocess.STDOUT,
         env={**environ, "APP_SERVER_PORT": str(PORT), "PYTHONUNBUFFERED": "1"},
     )
 
-    # Wait for server startup using HTTP check with increased timeout
     if wait_for_server(BASE_URL, timeout=60):
-        print(f"✓ Server started successfully (Logs: {log_file_path})")
+        print(f"✓ {app_type} Server started successfully (Logs: {log_file_path})")
     else:
-        print("❌ Server failed to start within timeout")
-        # Ensure cleanup before failing
+        print(f"❌ {app_type} Server failed to start within timeout")
         process.terminate()
         with open(log_file_path, "r") as f:
-            print(f"Mock App Logs:\n{f.read()[-2000:]}")
-        pytest.fail("Mock server failed to start")
+            print(f"App Logs:\n{f.read()[-2000:]}")
+        pytest.fail(f"{app_type} server failed to start")
 
     yield process
 
     # Cleanup
-    print("Stopping mock app...")
+    print(f"Stopping {app_type} app...")
     process.terminate()
     try:
         process.wait(timeout=5)
     except subprocess.TimeoutExpired:
         process.kill()
         process.wait()
-    log_file.close()
+    if log_file and not log_file.closed:
+        log_file.close()
 
 
 @pytest.fixture
