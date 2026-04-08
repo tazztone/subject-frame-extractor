@@ -15,14 +15,17 @@ class TestWorkflowVariants:
 
     def test_image_folder_workflow_skips_propagation(self, page: Page, app_server):
         """Verify that selecting a folder of images skips propagation step."""
-        page.goto(BASE_URL)
+        page.goto(BASE_URL, timeout=60000)
         wait_for_app_ready(page)
 
         # 1. Select 'All Frames' (Proxy for testing workflow variant)
         # 1. Select 'All Frames' (Proxy for testing workflow variant)
-        page.locator(Selectors.EXTRACTION_METHOD).click()
-        # Gradio 5 Dropdown selection fix
-        page.get_by_role("listitem").filter(has_text="All Frames (Maximum Quality)").click(force=True)
+        page.get_by_label("Extraction Method").click()
+        # Gradio 5 dropdown selection fix: use robust locator fallback
+        try:
+            page.get_by_role("listitem").filter(has_text="All Frames (Maximum Quality)").click(force=True, timeout=5000)
+        except Exception:
+            page.get_by_text("All Frames (Maximum Quality)").first.click(force=True)
 
         # 2. Fill a dummy path
         page.locator(Selectors.SOURCE_INPUT).fill("/home/user/pics")
@@ -55,9 +58,12 @@ class TestWorkflowVariants:
 
         # 1. Select 'Scene-based' (Default)
         # 1. Select 'Scene-based' (Default)
-        page.locator(Selectors.EXTRACTION_METHOD).click()
-        # Gradio 5 Dropdown selection fix
-        page.get_by_role("listitem").filter(has_text="Scene-based").click(force=True)
+        page.get_by_label("Extraction Method").click()
+        # Gradio 5 dropdown selection fix: use robust locator fallback
+        try:
+            page.get_by_role("listitem").filter(has_text="Scene-based").click(force=True, timeout=5000)
+        except Exception:
+            page.get_by_text("Scene-based").first.click(force=True)
 
         # 2. Fill a dummy video path
         page.locator(Selectors.SOURCE_INPUT).fill("mock_video.mp4")

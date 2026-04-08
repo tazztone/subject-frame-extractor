@@ -18,15 +18,15 @@ class TestCancellation:
         """
         Start extraction → Wait for progress → Click Cancel → Verify Cancellation status.
         """
-        page.goto(BASE_URL)
+        page.goto(BASE_URL, timeout=60000)
         wait_for_app_ready(page)
 
         # 1. Fill source and start extraction
         page.locator(Selectors.SOURCE_INPUT).fill("cancel_test.mp4")
         page.locator(Selectors.START_EXTRACTION).click()
 
-        # 2. Wait for it to definitely be running
-        # mock_app.py uses 'Mock Extraction' in tracker desc
+        # 2. In Gradio 5 with show_progress="hidden", button text doesn't change.
+        # Instead, we wait for the UNIFIED_STATUS to reflect the mock action.
         expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text("Mock Extraction", timeout=10000)
 
         # 3. Click Cancel
@@ -69,9 +69,13 @@ class TestCancellation:
 
         # 1. Start Propagation
         switch_to_tab(page, Labels.TAB_SCENES)
-        page.locator(Selectors.PROPAGATE_MASKS).click()
+        prop_btn = page.locator(Selectors.PROPAGATE_MASKS)
+        prop_btn.click()
+        
+        # 2. Wait for busy state signal
+        expect(prop_btn).to_contain_text("⏳ Processing", timeout=5000)
 
-        # 2. Click Cancel quickly
+        # 3. Click Cancel quickly
         page.locator(Selectors.CANCEL_BUTTON).click()
 
         # 3. Verify status reflects cancellation or immediate recovery

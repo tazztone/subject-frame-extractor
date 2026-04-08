@@ -50,8 +50,9 @@ def mock_app():
     model_registry.get_tracker_vram_requirement.return_value = 4000
     model_registry.get_detector_names.return_value = ["YOLO12l-Seg", "YOLO26n"]
 
+    database = MagicMock()
     with patch("torch.cuda.is_available", return_value=False, create=True):
-        app = AppUI(config, logger, progress_queue, cancel_event, thumbnail_manager, model_registry)
+        app = AppUI(config, logger, progress_queue, cancel_event, thumbnail_manager, model_registry, database)
         # Avoid thread startup
         with patch.object(app, "preload_models"):
             with gr.Blocks() as demo:

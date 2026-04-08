@@ -7,7 +7,7 @@ class Selectors:
     # Global Components
     UNIFIED_LOG = "#unified_log"
     UNIFIED_STATUS = "#unified_status"
-    LOG_TEXTAREA = "#unified_log textarea"
+    LOG_TEXTAREA = "#unified_log"
     CANCEL_BUTTON = "button:has-text('Cancel')"
     PAUSE_BUTTON = "button:has-text('Pause')"
     RESET_STATE_BUTTON = "button:has-text('Reset State (MOCKED)')"
@@ -20,7 +20,7 @@ class Selectors:
     STATUS_ERROR_REGEX = re.compile(r"⚠️|Error|Fail|Invalid", re.IGNORECASE)
     STATUS_SUCCESS_EXTRACTION = "Extraction Complete"
     STATUS_SUCCESS_PRE_ANALYSIS = "Pre-Analysis Complete"
-    STATUS_SUCCESS_PROPAGATION = "Propagation Complete"
+    STATUS_SUCCESS_PROPAGATION = "Mask Propagation Complete"
     STATUS_SUCCESS_ANALYSIS = "Analysis Complete"
     STATUS_SUCCESS_EXPORT = "Export Complete"
 

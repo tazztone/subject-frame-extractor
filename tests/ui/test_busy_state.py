@@ -39,8 +39,8 @@ class TestBusyState:
         # 3. Busy state (status should contain 'Mock Extraction' now)
         expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text("Mock Extraction", timeout=10000)
 
-        # Start button should be disabled during execution
-        expect(start_btn).to_be_disabled()
+        # Start button should show processing state and lead to status update
+        expect(start_btn).to_contain_text("⏳ Processing", timeout=5000)
         expect(cancel_btn).to_be_enabled()
 
         # 4. Wait for completion

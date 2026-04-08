@@ -11,6 +11,16 @@ from playwright.sync_api import Page, expect
 from .ui_locators import Labels, Selectors
 
 
+def pytest_addoption(parser):
+    """Add custom CLI options for UI tests."""
+    parser.addoption(
+        "--update-baselines",
+        action="store_true",
+        default=False,
+        help="Update visual regression baselines with current screenshots",
+    )
+
+
 # Constants
 # Use an isolated port for UI tests to avoid collisions with the real app (7860)
 # Support parallel execution via pytest-xdist worker IDs
@@ -35,7 +45,7 @@ FAILURES_DIR = Path(__file__).parent.parent / "results" / "failures"
 @pytest.fixture(autouse=True)
 def setup_playwright_timeout(page: Page):
     """Set a baseline timeout for all Playwright actions."""
-    page.set_default_timeout(15000)  # Increased for slow CI/container runs
+    page.set_default_timeout(60000)  # Increased for slow CI/container runs
     yield
 
 
@@ -125,7 +135,11 @@ def open_accordion(page: Page, text: str):
     if elem_id:
         accordion = page.locator(elem_id)
     else:
-        accordion = page.get_by_text(text, exact=False).first
+        # Prefer the button that contains the text (Gradio 5 header)
+        accordion = page.get_by_role("button", name=text, exact=False).first
+        # Fallback to general text match if role-based lookup fails
+        if not accordion.is_visible():
+            accordion = page.get_by_text(text, exact=False).first
 
     expect(accordion).to_be_visible(timeout=5000)
 
@@ -219,7 +233,12 @@ def _start_app_server(use_mock: bool):
         cmd,
         stdout=log_file,
         stderr=subprocess.STDOUT,
-        env={**environ, "APP_SERVER_PORT": str(PORT), "PYTHONUNBUFFERED": "1"},
+        env={
+            **environ,
+            "APP_SERVER_PORT": str(PORT),
+            "PYTHONUNBUFFERED": "1",
+            "GRADIO_ANALYTICS_ENABLED": "False",
+        },
     )
 
     if wait_for_server(BASE_URL, timeout=60):

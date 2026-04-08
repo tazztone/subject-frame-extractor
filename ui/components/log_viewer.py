@@ -19,6 +19,7 @@ class LogViewer:
         self.log_level_choices = log_level_choices
         # Fix Issue: Use deque for thread-safety and bounded memory
         self.all_logs: deque[str] = deque(maxlen=1000)
+        self.all_logs.append("[INFO] System Initialized.")
         self.log_filter_level = "INFO"
         self.components: Dict[str, Any] = {}
         self._last_rendered_log: str = ""  # Track last emitted content
