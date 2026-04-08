@@ -36,8 +36,8 @@ def test_extraction_blocks_on_empty_source():
     status_id = handler.app.components["unified_status"]
     log_id = handler.app.components["unified_log"]
 
-    assert "⚠️ Failure" in yielded[status_id]
-    assert "Please provide a Source Path" in yielded[log_id]
+    assert "⚠️ Failure" in str(yielded[status_id])
+    assert "Please provide a Source Path" in str(yielded[log_id])
 
 
 def test_extraction_success_yields_correct_status():
@@ -66,7 +66,7 @@ def test_pre_analysis_blocks_on_missing_extracted_video():
     yielded = results[0]
 
     status_id = handler.app.components["unified_status"]
-    assert "⚠️ Error: No extracted video found" in yielded[status_id]
+    assert "⚠️ Error: No extracted video found" in str(yielded[status_id])
 
 
 def test_pre_analysis_result_validation():

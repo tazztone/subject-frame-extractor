@@ -27,7 +27,7 @@ class TestCancellation:
 
         # 2. In Gradio 5 with show_progress="hidden", button text doesn't change.
         # Instead, we wait for the UNIFIED_STATUS to reflect the mock action.
-        expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text("Mock Extraction", timeout=10000)
+        expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text("⏳ Processing (Extraction)", timeout=10000)
 
         # 3. Click Cancel
         cancel_btn = page.locator(Selectors.CANCEL_BUTTON)

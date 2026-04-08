@@ -52,9 +52,52 @@ def mock_extraction_run(self, tracker=None):
         "unified_status": "Extraction Complete",
     }
 
+
+# --- 2b. Signature Contract Stubs (Legacy Compatibility) ---
+
+def mock_extraction_execution(event, progress_queue, cancel_event, logger,
+                              config, model_registry, thumbnail_manager=None,
+                              cuda_available=None, progress=None, **kwargs):
+    yield {"done": True}
+
+def mock_pre_analysis_execution(event, progress_queue, cancel_event, logger,
+                                config, thumbnail_manager, model_registry,
+                                cuda_available, progress=None, loaded_models=None, **kwargs):
+    yield {"done": True}
+
+def mock_propagation_execution(event, progress_queue, cancel_event, logger,
+                               config, thumbnail_manager, model_registry,
+                               database, cuda_available, progress=None,
+                               loaded_models=None, **kwargs):
+    yield {"done": True}
+
+def mock_analysis_execution(event, progress_queue, cancel_event, logger,
+                            config, thumbnail_manager, model_registry,
+                            database, cuda_available, progress=None,
+                            loaded_models=None, **kwargs):
+    yield {"done": True}
+
+def mock_ingest_folder(folder_path, output_dir, recursive=False, thumbnails_only=True):
+    return []
+
+def mock_export_xmps_for_photos(photos, star_thresholds=None):
+    return 0
+
+def mock_export_kept_frames(event, config, logger, progress_queue=None, cancel_event=None):
+    return "Export Complete (MOCKED)"
+
 # --- 3. Wrapper Mocks ---
 
 def mock_extraction_wrapper(self, current_state: ApplicationState, *args, **kwargs):
+    source_path = args[0] if args else None
+    upload_video = args[1] if len(args) > 1 else None
+    if not (source_path or upload_video):
+        yield {
+            self.app.components["unified_status"]: gr.update(value="⚠️ Failure in execute_extraction"),
+            self.app.components["unified_log"]: gr.update(value="[ERROR] Please provide a Source Path"),
+        }
+        return
+
     yield {
         self.app.components["unified_status"]: gr.update(value="⏳ Processing (Extraction)"),
         self.app.components["unified_log"]: gr.update(value="[INFO] Extraction Started (MOCKED)."),
@@ -80,6 +123,13 @@ def mock_extraction_wrapper(self, current_state: ApplicationState, *args, **kwar
 
 
 def mock_pre_analysis_wrapper(self, current_state: ApplicationState, *args, **kwargs):
+    if not current_state.extracted_video_path:
+        yield {
+            self.app.components["unified_status"]: gr.update(value="⚠️ Error: No extracted video found"),
+            self.app.components["unified_log"]: gr.update(value="[ERROR] Please run extraction first."),
+        }
+        return
+
     workflow_msg = "Propagation is not needed for image folders"
     
     # HEURISTIC: Hide propagation button if source is likely a folder
@@ -269,6 +319,10 @@ def build_mock_app(downloads_dir=None):
         return demo
 
     app_instance.build_ui = build_ui_with_reset
+    app_instance.build_ui()
+    
+    global _active_app
+    _active_app = app_instance
     return app_instance
 
 

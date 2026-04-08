@@ -37,7 +37,7 @@ class TestBusyState:
         start_btn.click()
 
         # 3. Busy state (status should contain 'Mock Extraction' now)
-        expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text("Mock Extraction", timeout=10000)
+        expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text("⏳ Processing (Extraction)", timeout=10000)
 
         # Start button should show processing state and lead to status update
         expect(start_btn).to_contain_text("⏳ Processing", timeout=5000)
@@ -64,7 +64,7 @@ class TestBusyState:
         page.locator(Selectors.START_EXTRACTION).click()
 
         # Verify it started
-        expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text("Mock Extraction", timeout=10000)
+        expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text("⏳ Processing (Extraction)", timeout=10000)
 
         # 1. Switch to Subject tab
         switch_to_tab(page, Labels.TAB_SUBJECT)
@@ -72,7 +72,7 @@ class TestBusyState:
         expect(page.get_by_role("tab", name=Labels.TAB_SUBJECT)).to_have_attribute("aria-selected", "true")
 
         # 2. Status bar (global) should still show progress details
-        expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text("Mock Extraction")
+        expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text("⏳ Processing (Extraction)")
 
         # 3. Wait for it to finish while on the other tab
         expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text(

@@ -753,6 +753,8 @@ class AppUI:
 
     def _set_busy_state(self, is_busy: bool):
         """Updates UI components to reflect processing state."""
+        if not self.components:
+            return {}
         updates = {
             self.components["cancel_button"]: gr.update(interactive=is_busy),
             self.components["pause_button"]: gr.update(interactive=is_busy),
