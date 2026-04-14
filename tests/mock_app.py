@@ -53,7 +53,7 @@ def mock_extraction_run(self, tracker=None):
 # --- 3. Wrapper Mocks ---
 
 
-def mock_extraction_wrapper(self, current_state, *args, **kwargs):
+def mock_extraction_wrapper(self, current_state, *args, progress=None):
     # Extract source arg correctly
     source = args[0] if args else ""
     upload = None  # Not mocked fully
@@ -116,7 +116,7 @@ def mock_extraction_wrapper(self, current_state, *args, **kwargs):
     }
 
 
-def mock_pre_analysis_wrapper(self, current_state, *args, **kwargs):
+def mock_pre_analysis_wrapper(self, current_state, *args, progress=None):
     # Guard: fail fast if extraction hasn't run yet
     if not current_state.extracted_video_path:
         updates = self.app._set_busy_state(False) if hasattr(self.app, "_set_busy_state") else {}
@@ -173,7 +173,7 @@ def mock_pre_analysis_wrapper(self, current_state, *args, **kwargs):
     yield base_updates
 
 
-def mock_propagation_wrapper(self, current_state, *args, **kwargs):
+def mock_propagation_wrapper(self, current_state, *args, progress=None):
     yield {
         self.app.components["unified_status"]: gr.update(value="⏳ Processing (Propagation)"),
         self.app.components["application_state"]: current_state,
@@ -203,7 +203,7 @@ def mock_propagation_wrapper(self, current_state, *args, **kwargs):
     }
 
 
-def mock_analysis_wrapper(self, current_state, *args, **kwargs):
+def mock_analysis_wrapper(self, current_state, *args, progress=None):
     yield {
         self.app.components["unified_status"]: gr.update(value="⏳ Processing (Analysis)"),
         self.app.components["application_state"]: current_state,
@@ -296,7 +296,7 @@ def mock_export_kept_frames(event, config, logger, progress_queue=None, cancel_e
     return "Export Mock Success"
 
 
-def mock_session_load_wrapper(self, session_path, *args, **kwargs):
+def mock_session_load_wrapper(self, session_path: str, current_state, progress=None):
     if "invalid" in str(session_path).lower() or "/non/existent" in str(session_path):
         yield {self.app.components["unified_status"]: gr.update(value="⚠️ Error: Session directory does not exist")}
         return

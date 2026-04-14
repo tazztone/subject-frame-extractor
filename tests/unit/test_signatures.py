@@ -198,6 +198,27 @@ class TestMockAppSyncValidation:
                         continue
                     assert p in real_params, f"Mock {mock_fn.__name__} has extra parameter: {p}"
 
+        # Test wrapper signatures exactly
+        from ui.handlers.pipeline_handlers import PipelineHandler
+
+        wrapper_targets = [
+            (PipelineHandler.run_extraction_wrapper, mock_app.mock_extraction_wrapper),
+            (PipelineHandler.run_pre_analysis_wrapper, mock_app.mock_pre_analysis_wrapper),
+            (PipelineHandler.run_propagation_wrapper, mock_app.mock_propagation_wrapper),
+            (PipelineHandler.run_analysis_wrapper, mock_app.mock_analysis_wrapper),
+            (PipelineHandler.run_session_load_wrapper, mock_app.mock_session_load_wrapper),
+        ]
+
+        for real_fn, mock_fn in wrapper_targets:
+            real_sig = inspect.signature(real_fn)
+            mock_sig = inspect.signature(mock_fn)
+            # Remove kwargs/args from the comparison to focus on explicit params if we want,
+            # or just assert the precise lists
+            assert list(real_sig.parameters.keys()) == list(mock_sig.parameters.keys()), (
+                f"Signature mismatch for {real_fn.__name__}: "
+                f"Real {list(real_sig.parameters.keys())} != Mock {list(mock_sig.parameters.keys())}"
+            )
+
 
 class TestAestheticIntegrity:
     """Verify code structure avoids leakage between layers."""

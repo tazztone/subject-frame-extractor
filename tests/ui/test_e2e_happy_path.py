@@ -10,10 +10,11 @@ pytestmark = pytest.mark.e2e
 
 
 class TestMainWorkflow:
-    def test_full_user_flow(self, page: Page, app_server):
+    @pytest.mark.parametrize("workflow_type", ["video", "image_folder"])
+    def test_full_user_flow(self, page: Page, app_server, workflow_type):
         """
         Tests the complete end-to-end workflow:
-        Extraction -> Pre-Analysis -> Scene Selection -> Propagation -> Analysis -> Export
+        Extraction -> Pre-Analysis -> Scene Selection -> [Optional] Propagation -> Analysis -> Export
         """
         page.goto(BASE_URL)
         wait_for_app_ready(page)
@@ -21,7 +22,8 @@ class TestMainWorkflow:
         unified_status = page.locator(Selectors.UNIFIED_STATUS)
 
         # 1. Frame Extraction
-        page.locator(Selectors.SOURCE_INPUT).fill("dummy_video.mp4")
+        source_path = "dummy_video.mp4" if workflow_type == "video" else "dummy_pics_folder"
+        page.locator(Selectors.SOURCE_INPUT).fill(source_path)
         page.locator(Selectors.START_EXTRACTION).click(force=True)
 
         # Wait for success card (HTML)
@@ -38,14 +40,19 @@ class TestMainWorkflow:
 
         expect(unified_status).to_contain_text(re.compile(r"Pre-Analysis Complete", re.IGNORECASE), timeout=15000)
 
-        # 3. Scene Selection & Propagation
+        # 3. Scene Selection & Propagation (only for video)
         switch_to_tab(page, Labels.TAB_SCENES)
 
-        prop_btn = page.locator(Selectors.PROPAGATE_MASKS)
-        expect(prop_btn).to_be_visible(timeout=10000)
-        prop_btn.click(force=True)
-
-        expect(unified_status).to_contain_text(re.compile(r"Mask Propagation Complete", re.IGNORECASE), timeout=30000)
+        if workflow_type == "video":
+            prop_btn = page.locator(Selectors.PROPAGATE_MASKS)
+            expect(prop_btn).to_be_visible(timeout=10000)
+            prop_btn.click(force=True)
+            expect(unified_status).to_contain_text(
+                re.compile(r"Mask Propagation Complete", re.IGNORECASE), timeout=30000
+            )
+        else:
+            # For image folders, propagation isn't needed. Button should be hidden.
+            expect(page.locator(Selectors.PROPAGATE_MASKS)).not_to_be_visible()
 
         # 4. Final Analysis
         switch_to_tab(page, Labels.TAB_METRICS)

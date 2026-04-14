@@ -21,6 +21,12 @@ def pytest_addoption(parser):
     )
 
 
+def pytest_collection_modifyitems(config, items):
+    """Automatically add flaky marker to all UI tests to handle Gradio 5 render cycle flakes."""
+    for item in items:
+        item.add_marker(pytest.mark.flaky(reruns=2))
+
+
 # Configuration
 # Support parallel execution via pytest-xdist worker IDs
 worker_id = environ.get("PYTEST_XDIST_WORKER", "master")

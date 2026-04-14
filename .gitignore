@@ -236,4 +236,4 @@ init_logs/
 custom_logs/
 .geminiignore
 MagicMock/
-.vscode/
+.vscode/mock_metadata.db

@@ -192,6 +192,7 @@ def build_mock_modules():
 
 
 _mocks_injected = False
+_original_sys_modules = {}
 
 
 def inject_mocks_into_sys():
@@ -204,6 +205,9 @@ def inject_mocks_into_sys():
         return
 
     mocks = build_mock_modules()
+
+    for name in mocks.keys():
+        _original_sys_modules[name] = sys.modules.get(name)
 
     for name, b_mod in mocks.items():
         sys.modules[name] = b_mod
@@ -222,3 +226,30 @@ def inject_mocks_into_sys():
         setattr(torch_mod, "cuda", cuda_mod)
 
     _mocks_injected = True
+
+
+def remove_mocks_from_sys():
+    """Removes injected mocks from sys.modules to restore original state."""
+    global _mocks_injected, _original_sys_modules
+    if not _mocks_injected:
+        return
+
+    for name, orig_mod in _original_sys_modules.items():
+        if orig_mod is None:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = orig_mod
+
+    # Also remove structural linkage injected
+    mocks = build_mock_modules()
+    for name in sorted(mocks):
+        if "." in name:
+            parent_name, child_name = name.rsplit(".", 1)
+            # We don't definitively revert child attributes on parents unless
+            # they were dynamically created, but we can attempt basic cleanup if parent exists.
+            if parent_name in sys.modules and hasattr(sys.modules[parent_name], child_name):
+                # We skip deep setattr rollback to keep it safe and focus on module un-poisoning.
+                pass
+
+    _original_sys_modules.clear()
+    _mocks_injected = False

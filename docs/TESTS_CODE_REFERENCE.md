@@ -73,6 +73,7 @@ tests
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_smoke_ui_init.py`](#-testsuitest_smoke_ui_initpy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_ui_e2e_real_workflow.py`](#-testsuitest_ui_e2e_real_workflowpy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_ui_interactions.py`](#-testsuitest_ui_interactionspy)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_visual_regression.py`](#-testsuitest_visual_regressionpy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`ui_locators.py`](#-testsuiui_locatorspy)  
 │&nbsp;&nbsp;&nbsp;└──&nbsp;[`visual_test_utils.py`](#-testsuivisual_test_utilspy)  
 └──&nbsp;unit  
@@ -296,8 +297,11 @@ def _mock_module(name, **attrs):
 def build_mock_modules():
     """Builds the comprehensive map of mock modules for the extraction system."""
 _mocks_injected = False
+_original_sys_modules = {}
 def inject_mocks_into_sys():
     """Manually injects mocks into sys.modules. Used by mock_app.py and pytest_confi..."""
+def remove_mocks_from_sys():
+    """Removes injected mocks from sys.modules to restore original state."""
 ```
 
 ### `📄 tests/integration/conftest.py`
@@ -540,10 +544,10 @@ project_root = Path(__file__).parent.parent
 _active_app = None
 def get_active_app(): ...
 def mock_extraction_run(self, tracker=None): ...
-def mock_extraction_wrapper(self, current_state, *args, **kwargs): ...
-def mock_pre_analysis_wrapper(self, current_state, *args, **kwargs): ...
-def mock_propagation_wrapper(self, current_state, *args, **kwargs): ...
-def mock_analysis_wrapper(self, current_state, *args, **kwargs): ...
+def mock_extraction_wrapper(self, current_state, *args, progress=None): ...
+def mock_pre_analysis_wrapper(self, current_state, *args, progress=None): ...
+def mock_propagation_wrapper(self, current_state, *args, progress=None): ...
+def mock_analysis_wrapper(self, current_state, *args, progress=None): ...
 def mock_extraction_execution(event, progress_queue, cancel_event, logger, config, model_registry, thumbnail_manager=None, cuda_available=None, progress=None): ...
 def mock_pre_analysis_execution(event, progress_queue, cancel_event, logger, config, thumbnail_manager, model_registry, cuda_available, progress=None, loaded_models=None): ...
 def mock_propagation_execution(event, progress_queue, cancel_event, logger, config, thumbnail_manager, model_registry, database, cuda_available, progress=None, loaded_models=None): ...
@@ -551,7 +555,7 @@ def mock_analysis_execution(event, progress_queue, cancel_event, logger, config,
 def mock_ingest_folder(folder_path, output_dir, recursive=False, thumbnails_only=True): ...
 def mock_export_xmps_for_photos(photos, star_thresholds=None): ...
 def mock_export_kept_frames(event, config, logger, progress_queue=None, cancel_event=None): ...
-def mock_session_load_wrapper(self, session_path, *args, **kwargs): ...
+def mock_session_load_wrapper(self, session_path: str, current_state, progress=None): ...
 def build_mock_app(downloads_dir=None, build=True): ...
 ```
 
@@ -637,6 +641,8 @@ def generate_issue_report(issues: List[UXIssue], title: str='UX Analysis Report'
 ```python
 def pytest_addoption(parser):
     """Add custom CLI options for UI tests."""
+def pytest_collection_modifyitems(config, items):
+    """Automatically add flaky marker to all UI tests to handle Gradio 5 render cycl..."""
 worker_id = environ.get('PYTEST_XDIST_WORKER', 'master')
 BASE_URL = f'http://127.0.0.1:{PORT}'
 TIMEOUT = 30000
@@ -807,7 +813,8 @@ class TestPropagationErrorHandling:
 ```python
 pytestmark = pytest.mark.e2e
 class TestMainWorkflow:
-    def test_full_user_flow(self, page: Page, app_server):
+    @pytest.mark.parametrize('workflow_type', ['video', 'image_folder'])
+    def test_full_user_flow(self, page: Page, app_server, workflow_type):
         """Tests the complete end-to-end workflow:"""
 @pytest.mark.usefixtures('app_server')
 class TestTabNavigation:
@@ -944,6 +951,15 @@ class TestUIConsoleErrors:
         """Page should load without JavaScript errors."""
     def test_no_errors_during_tab_navigation(self, page: Page, app_server):
         """Navigating through tabs should not cause errors."""
+```
+
+### `📄 tests/ui/test_visual_regression.py`
+
+```python
+pytestmark = [pytest.mark.e2e, pytest.mark.visual]
+@pytest.mark.parametrize('tab_label, snapshot_name', [(Labels.TAB_SOURCE, 'tab_source_empty')])
+def test_visual_baselines(page: Page, app_server, request, tab_label, snapshot_name):
+    """Visual regression test across main tabs in clean state."""
 ```
 
 ### `📄 tests/ui/ui_locators.py`
