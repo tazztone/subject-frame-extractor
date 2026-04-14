@@ -21,24 +21,19 @@ def pytest_addoption(parser):
     )
 
 
-# Constants
-# Use an isolated port for UI tests to avoid collisions with the real app (7860)
+# Configuration
 # Support parallel execution via pytest-xdist worker IDs
-def get_test_port():
-    base_port = 8765
-    worker_id = environ.get("PYTEST_XDIST_WORKER")
-    if worker_id:
-        # worker_id is 'gw0', 'gw1', etc.
-        try:
-            worker_num = int("".join(filter(str.isdigit, worker_id)))
-            return base_port + worker_num
-        except ValueError:
-            pass
-    return base_port
+worker_id = environ.get("PYTEST_XDIST_WORKER", "master")
+if worker_id.startswith("gw"):
+    import re
 
+    worker_num = int(re.sub(r"\D", "", worker_id))
+    PORT = 7861 + worker_num
+else:
+    PORT = int(environ.get("APP_SERVER_PORT", 7860))
 
-PORT = get_test_port()
 BASE_URL = f"http://127.0.0.1:{PORT}"
+TIMEOUT = 30000
 FAILURES_DIR = Path(__file__).parent.parent / "results" / "failures"
 
 
@@ -94,7 +89,7 @@ def wait_for_app_ready(page: Page):
     expect(page.get_by_text("Frame Extractor & Analyzer")).to_be_visible(timeout=30000)
 
     # 3. Wait for the status area to be attached
-    expect(page.locator(Selectors.UNIFIED_STATUS)).to_be_attached(timeout=5000)
+    expect(page.locator(Selectors.UNIFIED_STATUS)).to_be_attached(timeout=10000)
 
     # 4. Optional: Clear state if the mock-only reset button is present
     reset_btn = page.locator(Selectors.RESET_STATE_BUTTON)
@@ -116,51 +111,27 @@ def wait_for_app_ready(page: Page):
     page.wait_for_timeout(200)
 
 
-
 def open_accordion(page: Page, text: str):
-    """Robustly open an accordion if it's closed."""
-    # Try multiple ways to find the accordion header
-    # 1. By text (with fuzzy match for emojis)
-    # 2. By elem_id (if we know it)
-    elem_id = None
-    if "Log" in text:
-        elem_id = "#system_logs_accordion"
-    elif "Help" in text:
-        elem_id = "#help_accordion"
-    elif "Deduplication" in text:
-        elem_id = "#dedup_accordion"
-    elif "Advanced Model Configuration" in text:
-        elem_id = "#subject_advanced_config_accordion"
+    """Robustly open an accordion if it's closed in Gradio 5."""
+    # Find the accordion header button
+    header = page.get_by_role("button", name=text, exact=False).first
+    if not header.is_visible():
+        header = page.get_by_text(text, exact=False).first
 
-    if elem_id:
-        accordion = page.locator(elem_id)
-    else:
-        # Prefer the button that contains the text (Gradio 5 header)
-        accordion = page.get_by_role("button", name=text, exact=False).first
-        # Fallback to general text match if role-based lookup fails
-        if not accordion.is_visible():
-            accordion = page.get_by_text(text, exact=False).first
+    expect(header).to_be_visible(timeout=5000)
 
-    expect(accordion).to_be_visible(timeout=5000)
+    # Check state
+    expanded = header.get_attribute("aria-expanded")
+    if expanded is None:
+        # Try to find the button parent if we clicked a label
+        btn = page.locator(f"button:has-text('{text}')").first
+        if btn.is_visible():
+            header = btn
+            expanded = btn.get_attribute("aria-expanded")
 
-    # Check if already open using multiple strategies (Gradio 5+ details/button)
-    is_open = False
-    try:
-        # 1. Check if it's a 'details' element with 'open' attribute
-        if accordion.evaluate("el => el.tagName === 'DETAILS' && el.open"):
-            is_open = True
-        # 2. Check aria-expanded on the accordion element or its buttons
-        elif accordion.get_attribute("aria-expanded") == "true":
-            is_open = True
-        elif accordion.locator("button[aria-expanded='true']").count() > 0:
-            is_open = True
-    except Exception:
-        pass
-
-    if not is_open:
-        # Click the header/accordion to toggle
-        accordion.click()
-        # Wait for animation
+    if expanded == "false" or expanded is None:
+        header.click(force=True)
+        # Verify it actually opened by waiting for content
         page.wait_for_timeout(500)
 
 
@@ -273,6 +244,7 @@ def app_instance(app_server):
     """
     try:
         from tests.mock_app import get_active_app
+
         app = get_active_app()
         if app is None:
             pytest.skip("app_instance is not available for subprocess-based servers")

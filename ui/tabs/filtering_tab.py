@@ -136,7 +136,10 @@ class FilteringTabBuilder:
                     f_def = getattr(self.config, f"filter_default_{metric_name}")
 
                     with gr.Accordion(
-                        metric_name.replace("_", " ").title(), open=metric_config["open"], visible=False
+                        metric_name.replace("_", " ").title(),
+                        open=metric_config["open"],
+                        visible=False,
+                        elem_id=f"{metric_name}_accordion",
                     ) as acc:
                         self.app.components["metric_accs"][metric_name] = acc
                         gr.Markdown(self.app._get_metric_description(metric_name), elem_classes="metric-description")

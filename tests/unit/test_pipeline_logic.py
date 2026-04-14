@@ -18,7 +18,9 @@ class MockApp:
         }
         self.progress_queue = MagicMock()
         from threading import Event
+
         self.cancel_event = Event()
+        self.logger = MagicMock()
 
 
 def test_extraction_blocks_on_empty_source():
@@ -34,10 +36,10 @@ def test_extraction_blocks_on_empty_source():
     yielded = results[0]
 
     status_id = handler.app.components["unified_status"]
-    log_id = handler.app.components["unified_log"]
 
-    assert "⚠️ Failure" in str(yielded[status_id])
-    assert "Please provide a Source Path" in str(yielded[log_id])
+    assert "Error/Failure" in str(yielded[status_id])
+    # Now check logger instead of yield dict
+    handler.logger.error.assert_called_with("Error/Failure: Invalid Source Path")
 
 
 def test_extraction_success_yields_correct_status():

@@ -7,7 +7,7 @@ class Selectors:
     # Global Components
     UNIFIED_LOG = "#unified_log"
     UNIFIED_STATUS = "#unified_status"
-    LOG_TEXTAREA = "#unified_log"
+    LOG_TEXTAREA = "#unified_log textarea"
     CANCEL_BUTTON = "button:has-text('Cancel')"
     PAUSE_BUTTON = "button:has-text('Pause')"
     RESET_STATE_BUTTON = "button:has-text('Reset State (MOCKED)')"
@@ -41,12 +41,12 @@ class Selectors:
     SCENE_GALLERY = "#scene_gallery"
     SCENE_GALLERY_VIEW_TOGGLE = "#scene_gallery_view_toggle"
     MASK_AREA_MIN = "input[aria-label='Min Subject Area %']"
-    QUALITY_SCORE_MIN = "input[aria-label='Min Quality Score']"
+    QUALITY_SCORE_MIN = "#slider_quality_score_min"
 
     # Scene Tab Specific (using elem_id)
-    SCENE_MASK_AREA_MIN = "#scene_mask_area_min_input"
-    SCENE_FACE_SIM_MIN = "#scene_face_sim_min_input"
-    SCENE_QUALITY_SCORE_MIN = "#scene_quality_score_min_input"
+    SCENE_MASK_AREA_MIN = "#slider_scene_mask_area_min"
+    SCENE_FACE_SIM_MIN = "#slider_scene_face_sim_min"
+    SCENE_QUALITY_SCORE_MIN = "#slider_scene_quality_score_min"
     PREV_PAGE_BUTTON = "#prev_page_button"
     NEXT_PAGE_BUTTON = "#next_page_button"
 

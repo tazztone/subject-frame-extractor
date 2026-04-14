@@ -159,6 +159,7 @@ def generate_file_tree(
         "ux_reports",
         "test_results",
         ".pytest_cache",
+        "MagicMock",
     }
 
     exclude_files = {
