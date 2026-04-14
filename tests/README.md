@@ -11,7 +11,7 @@
 |-------|-----------|-------------|--------|
 | **Unit** | `tests/unit/` | Fast tests for core logic. Function-level, heavily mocked. | `pytest` |
 | **Integration** | `tests/integration/` | Real backend pipeline tests. Uses real PyTorch models. | `pytest` |
-| **UI (E2E)** | `tests/ui/` | Playwright automation. Mocks backend to test Gradio flows. | `pytest + playwright` |
+| **UI (E2E)** | `tests/ui/` | Playwright automation. Consolidated "Happy Path" behavioral tests. | `pytest + playwright` |
 | **UX Audit**| `scripts/run_ux_audit.py` | Accessibility (Axe), Visuals, and Performance. | `python` |
 | **GPU E2E** | `tests/integration/` | Heavy-duty SAM2/SAM3 propagation on real hardware. | `pytest (serial)` |
 | **Accuracy** | `tests/integration/test_accuracy.py` | Precision checks (IoU) for mask propagation. | `pytest (gpu_e2e)` |
@@ -20,8 +20,9 @@
 
 | File | Purpose |
 |------|---------|
-| `test_exit_branches.py` | Groups exit-branch tests (`→exit` coverage gaps) across `batch_manager`, `db_schema`, `sam2`, `error_handling`, and `session` in one place to make systematic sweeps easy. |
-| `test_accuracy.py` | **Precision Baseline**. Uses `bedroom.mp4` to verify SAM3 mask propagation quality (IoU > 0.8) and area stability (< 0.5% variance). |
+| `test_signatures.py` | **Mock Parity Guard**. Ensures `mock_app.py` stubs match `core/pipelines.py` signatures exactly. |
+| `test_exit_branches.py` | Groups exit-branch tests (`→exit` coverage gaps) in one place for systematic sweeps. |
+| `test_accuracy.py` | **Precision Baseline**. Verifies SAM3 mask propagation quality (IoU > 0.8). |
 
 ## Setup & Execution
 
@@ -54,9 +55,10 @@ The project uses GitHub Actions (`.github/workflows/ci.yml`) for automated verif
 3. **GPU Integration Tests (Dry Run)**: A `gpu-tests` job runs on standard runners to verify the `gpu_e2e` suite.
    - **Verification**: Confirms file collection, dependency imports, and `pytest.mark.skipif` logic without requiring real hardware.
 
-## The "Mock-First" Philosophy
+### The "Mock-First" Philosophy
 
 To ensure fast execution and hardware independence, all **Unit Tests** must completely mock the following:
+- **Centralized Injection**: All mock module injections (patching `sys.modules`) are handled by `tests/helpers/sys_mock_modules.py` to ensure consistency and prevent background thread leakage.
 - **ML Models**: Mock `ModelRegistry.get_tracker`, `get_face_analyzer`, and `TrackerFactory`.
 - **SAM3**: SAM3 **is** globally mocked in unit mode via `sys.modules` (see `conftest.py`). Integration tests that need the real SAM3 editable install must set `PYTEST_INTEGRATION_MODE=true`. Never patch `download_ckpt_from_hf` — it breaks local checkpoint resolution.
 - **GPU/Torch**: `tests/conftest.py` promotes `torch.cuda` to a real `ModuleType` instance (not just a `MagicMock`). This provides stable access to `OutOfMemoryError` and `is_available` across parallel workers.
@@ -88,7 +90,15 @@ The global mock system in `tests/conftest.py` respects the `PYTEST_INTEGRATION_M
 
 ## E2E Testing (Playwright)
 
-- **Port Isolation**: To prevent collisions in parallel runs (`xdist`), mock servers use the formula `8765 + worker_id`. Each worker gets a unique port (8765, 8766, etc.).
+- **Consolidated Strategy**: Individual component tests have been replaced by robust "Happy Path" behavioral tests:
+  - `test_e2e_happy_path.py`: Core orchestration (Extraction -> Analysis -> Export).
+  - `test_e2e_error_recovery.py`: Guard logic, cancellation, and structurally-induced failures.
+  - `test_e2e_busy_state.py`: Verifies UI interactivity interlocks during processing.
+  - `test_e2e_session_resume.py`: Data persistence and state restoration contracts.
+- **Port Isolation**: To prevent collisions in parallel runs (`xdist`), mock servers use the formula `8765 + worker_id`.
+
+### Playwright Interaction Rules
+
 - **Locator Protocol**: Never hardcode strings in tests. Always use `ui_locators.py` (`Labels` and `Selectors`).
 - **Emoji Sensitivity**: Playwright is sensitive to emojis. If a UI button adds an emoji (e.g., `🚀 Start`), the `Labels` entry must match exactly.
 - **Accordion Handling**: Use the `open_accordion(page, label)` helper in `conftest.py`. It uses `elem_id` (#system_logs_accordion) and JS state checks to handle Gradio's complex DOM.

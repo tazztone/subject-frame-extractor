@@ -37,7 +37,8 @@
 ├── tests/                  # Multi-tier test suite
 │   ├── unit/               # Fast, mocked logic tests
 │   ├── integration/        # Hardware-dependent pipeline tests
-│   └── ui/                 # Playwright E2E browser tests
+│   ├── ui/                 # Consolidated Playwright E2E behavioral tests
+│   └── helpers/            # Deterministic mock injection (sys_mock_modules.py)
 ├── scripts/                # Utility and verification scripts
 │   └── verification/       # E2E health check scripts
 ├── SAM3_repo/              # READ-ONLY Git Submodule (SAM3 official) 🔴

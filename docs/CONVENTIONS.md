@@ -113,10 +113,12 @@ The `tests/mock_app.py` stubs MUST be kept in perfect synchronization with the r
 *   **Feature Status**: `sam3` is an experimental tracker. The default is `sam2`. Do not switch the default without explicit instruction.
 *   **Orchestrator Strip-Done Protocol**: When chaining generators (e.g., in `execute_analysis_orchestrator`), intermediate stages MUST have their `done: True` flag stripped before yielding. Only the final stage or the orchestrator itself should yield `done: True` to prevent premature consumer termination.
 
-### Test Infrastructure Rules (Prevent Mock Leakage)
-*   **SAM3 is NOT in global mocks**: `tests/conftest.py` intentionally excludes all `sam3.*` entries from `modules_to_mock`. Unit tests that need a mock SAM3 MUST create a local mock in their own file using `patch("sam3.model_builder.build_sam3_predictor")`.
-*   **`PYTEST_INTEGRATION_MODE` propagation**: `conftest.py` disables global mocks when this env var is `true`. xdist workers inherit env vars only if the parent shell used `export`, not an inline prefix. Always use `export`.
-*   **`gpu_e2e` tests are serial-only**: The `module_model_registry` fixture uses `scope="module"` to share model weights within a worker, but provides no cross-worker isolation. Multiple workers loading SAM3 + SAM2 simultaneously causes GPU OOM.
-*   **Blank model dirs are forbidden in E2E fixtures**: The `module_model_registry` fixture in `test_gpu_e2e.py` must point to the project's real `models/` directory. Never use `tempfile.TemporaryDirectory()` for the models path in GPU tests — it triggers a 3.3 GB HuggingFace download race.
+### Test Infrastructure Rules (Mock Safety & Parity)
+
+*   **Deterministic Mock Injection**: All mock module patching must be handled centrally through `tests/helpers/sys_mock_modules.py`. Manually overriding `sys.modules` in local test files or `mock_app.py` is strictly prohibited as it leads to non-deterministic state leakage across background threads.
+*   **Signature Parity Contract**: The stubs in `tests/mock_app.py` MUST mirror the signatures of `core/pipelines.py` and `PipelineHandler` exactly (verified by `test_signatures.py`).
+*   **SAM3 is globally mocked in unit mode**: `sam3` and `sam3.model_builder` are included in `tests/helpers/sys_mock_modules.py`. Unit tests do not need local patches. Integration tests requiring the real SAM3 install must set `PYTEST_INTEGRATION_MODE=true`.
+*   **`PYTEST_INTEGRATION_MODE` propagation**: `conftest.py` disables global mocks when this env var is `true`. Always use `export` to ensure inheritance by parallel workers.
+*   **`gpu_e2e` tests are serial-only**: Parallel loading of multiple SAM models (SAM2 + SAM3) will cause VRAM OOM.
 
 *Refined conventions: 2026-03-21*
