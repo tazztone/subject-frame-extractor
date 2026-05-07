@@ -254,6 +254,7 @@ class TestSceneHelpers:
 
     def test_toggle_scene_status_include(self, mock_logger, tmp_path, sample_scenes):
         """Test toggle_scene_status includes a scene."""
+        from core.models import SceneStatus
         from core.scene_utils.helpers import toggle_scene_status
 
         result = toggle_scene_status(
@@ -268,10 +269,11 @@ class TestSceneHelpers:
 
         # Find the scene and check status
         scene = next(s for s in updated_scenes if s.shot_id == 1)
-        assert scene.status == "included"
+        assert scene.status == SceneStatus.INCLUDED
 
     def test_toggle_scene_status_exclude(self, mock_logger, tmp_path, sample_scenes):
         """Test toggle_scene_status excludes a scene."""
+        from core.models import SceneStatus
         from core.scene_utils.helpers import toggle_scene_status
 
         result = toggle_scene_status(
@@ -285,7 +287,7 @@ class TestSceneHelpers:
         updated_scenes, status_text, message, button_update = result
 
         scene = next(s for s in updated_scenes if s.shot_id == 2)
-        assert scene.status == "excluded"
+        assert scene.status == SceneStatus.EXCLUDED
 
     def test_toggle_scene_status_invalid_id(self, mock_logger, tmp_path, sample_scenes):
         """Test toggle_scene_status with invalid shot_id."""

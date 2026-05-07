@@ -115,9 +115,10 @@ class TestMinConfidenceFilter:
                     )
 
         # Scene should be excluded because score defaults to 0, which is < 0.5
+        from core.models import SceneStatus
         updated_state = result[0]
         updated_scenes = updated_state.scenes
-        assert updated_scenes[0]["status"] == "excluded", (
+        assert updated_scenes[0]["status"] == SceneStatus.EXCLUDED, (
             "Scene without score should be excluded when min_quality_score > 0"
         )
         assert "Quality" in updated_scenes[0]["rejection_reasons"][0], "Rejection reason should include 'Quality'"
@@ -153,9 +154,10 @@ class TestMinConfidenceFilter:
                         view="All",
                     )
 
+        from core.models import SceneStatus
         updated_state = result[0]
         updated_scenes = updated_state.scenes
-        assert updated_scenes[0]["status"] == "included", "Scene with score >= threshold should be kept"
+        assert updated_scenes[0]["status"] == SceneStatus.INCLUDED, "Scene with score >= threshold should be kept"
 
     def test_manual_override_not_affected_by_filters(self, app_ui):
         """Scenes with manual_status_change should not be auto-filtered."""
@@ -187,9 +189,10 @@ class TestMinConfidenceFilter:
                         view="All",
                     )
 
+        from core.models import SceneStatus
         updated_state = result[0]
         updated_scenes = updated_state.scenes
-        assert updated_scenes[0]["status"] == "included", "Manual override scenes should not be auto-filtered"
+        assert updated_scenes[0]["status"] == SceneStatus.INCLUDED, "Manual override scenes should not be auto-filtered"
 
 
 class TestTextStrategyWarning:

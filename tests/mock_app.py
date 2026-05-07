@@ -68,7 +68,7 @@ import core.pipelines
 import core.utils
 import core.photo_utils
 import core.xmp_writer
-from core.models import Scene
+from core.models import Scene, SceneStatus
 
 # --- 3. Patch Pipeline Logic for E2E Speed ---
 
@@ -119,11 +119,11 @@ def mock_pre_analysis_execution(
             shot_id=1,
             start_frame=0,
             end_frame=50,
-            status="included",
+            status=SceneStatus.INCLUDED,
             seed_result={"bbox": [10, 10, 100, 100], "details": {"type": "mock"}},
             seed_metrics={"score": 10.0, "best_face_sim": 0.9}
         ).model_dump(),
-        Scene(shot_id=2, start_frame=51, end_frame=100, status="included",
+        Scene(shot_id=2, start_frame=51, end_frame=100, status=SceneStatus.INCLUDED,
               seed_metrics={"score": 5.0, "best_face_sim": 0.5}).model_dump(),
     ]
 

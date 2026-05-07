@@ -17,6 +17,8 @@ if TYPE_CHECKING:
     from core.config import Config
     from core.models import Scene
 
+from core.models import SceneStatus
+
 
 # TODO: Add caching for repeated scene status checks
 def scene_matches_view(scene: "Scene", view: str) -> bool:
@@ -30,13 +32,13 @@ def scene_matches_view(scene: "Scene", view: str) -> bool:
     Returns:
         True if the scene matches the view filter
     """
-    status = scene.status if hasattr(scene, "status") else scene.get("status", "included")
+    status = scene.status if hasattr(scene, "status") else scene.get("status", SceneStatus.INCLUDED)
     if view == "All":
-        return status in ("included", "excluded", "pending")
+        return status in (SceneStatus.INCLUDED, SceneStatus.EXCLUDED, SceneStatus.PENDING)
     if view == "Kept":
-        return status == "included"
+        return status == SceneStatus.INCLUDED
     if view == "Rejected":
-        return status == "excluded"
+        return status == SceneStatus.EXCLUDED
     return False
 
 
@@ -99,7 +101,7 @@ def scene_caption(scene: Union[dict, "Scene"]) -> str:
     if isinstance(scene, dict):
         shot = scene.get("shot_id", 0)
         start, end = scene.get("start_frame", 0), scene.get("end_frame", 0)
-        status = scene.get("status", "included")
+        status = scene.get("status", SceneStatus.INCLUDED)
         rejection_reasons = scene.get("rejection_reasons", [])
         seed_type = scene.get("seed_type")
     else:
@@ -109,9 +111,9 @@ def scene_caption(scene: Union[dict, "Scene"]) -> str:
         rejection_reasons = scene.rejection_reasons or []
         seed_type = scene.seed_type
 
-    status_icon = "✅" if status == "included" else "❌"
+    status_icon = "✅" if status == SceneStatus.INCLUDED else "❌"
     caption = f"Scene {shot} [{start}-{end}] {status_icon}"
-    if status == "excluded" and rejection_reasons:
+    if status == SceneStatus.EXCLUDED and rejection_reasons:
         caption += f"\n({', '.join(rejection_reasons)})"
     if seed_type:
         caption += f"\nSeed: {seed_type}"
@@ -183,7 +185,7 @@ def build_scene_gallery_items(
                 continue
             thumb_img_np = cv2.cvtColor(thumb_img_np, cv2.COLOR_BGR2RGB)
             badged_thumb = create_scene_thumbnail_with_badge(
-                thumb_img_np, i, s.status == "excluded", config=config
+                thumb_img_np, i, s.status == SceneStatus.EXCLUDED, config=config
             )
             items.append((badged_thumb, scene_caption(s)))
         except Exception:

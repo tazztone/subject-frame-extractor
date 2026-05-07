@@ -6,14 +6,14 @@ from unittest.mock import patch
 
 import numpy as np
 
-from core.models import Scene
+from core.models import Scene, SceneStatus
 from core.shared import build_scene_gallery_items, create_scene_thumbnail_with_badge, scene_caption, scene_matches_view
 
 
 class TestSharedUtils:
     def test_scene_matches_view(self):
-        scene_inc = Scene(shot_id=1, start_frame=0, end_frame=1, status="included")
-        scene_exc = Scene(shot_id=2, start_frame=2, end_frame=3, status="excluded")
+        scene_inc = Scene(shot_id=1, start_frame=0, end_frame=1, status=SceneStatus.INCLUDED)
+        scene_exc = Scene(shot_id=2, start_frame=2, end_frame=3, status=SceneStatus.EXCLUDED)
 
         # View "All"
         assert scene_matches_view(scene_inc, "All")
@@ -51,14 +51,14 @@ class TestSharedUtils:
         assert np.any(res_bad[0, 0] != [0, 255, 0])
 
     def test_scene_caption(self):
-        scene = Scene(shot_id=5, start_frame=10, end_frame=20, status="included", seed_type="manual")
+        scene = Scene(shot_id=5, start_frame=10, end_frame=20, status=SceneStatus.INCLUDED, seed_type="manual")
         cap = scene_caption(scene)
         assert "Scene 5" in cap
         assert "[10-20]" in cap
         assert "✅" in cap
         assert "Seed: manual" in cap
 
-        scene_rej = Scene(shot_id=6, start_frame=30, end_frame=40, status="excluded", rejection_reasons=["blurry"])
+        scene_rej = Scene(shot_id=6, start_frame=30, end_frame=40, status=SceneStatus.EXCLUDED, rejection_reasons=["blurry"])
         cap_rej = scene_caption(scene_rej)
         assert "❌" in cap_rej
         assert "(blurry)" in cap_rej
@@ -78,8 +78,8 @@ class TestSharedUtils:
         mock_imread.return_value = img
 
         scenes = [
-            Scene(shot_id=1, start_frame=0, end_frame=10, status="included"),
-            Scene(shot_id=2, start_frame=11, end_frame=20, status="excluded"),
+            Scene(shot_id=1, start_frame=0, end_frame=10, status=SceneStatus.INCLUDED),
+            Scene(shot_id=2, start_frame=11, end_frame=20, status=SceneStatus.EXCLUDED),
         ]
 
         # Test pagination and filtering

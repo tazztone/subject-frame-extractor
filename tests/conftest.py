@@ -200,11 +200,11 @@ def mock_cancel_event():
 @pytest.fixture
 def sample_scenes():
     """Provides a list of sample Scene objects."""
-    from core.models import Scene
+    from core.models import Scene, SceneStatus
     return [
-        Scene(shot_id=1, start_frame=0, end_frame=100, status="pending"),
-        Scene(shot_id=2, start_frame=101, end_frame=200, status="included"),
-        Scene(shot_id=3, start_frame=201, end_frame=300, status="excluded"),
+        Scene(shot_id=1, start_frame=0, end_frame=100, status=SceneStatus.PENDING),
+        Scene(shot_id=2, start_frame=101, end_frame=200, status=SceneStatus.INCLUDED),
+        Scene(shot_id=3, start_frame=201, end_frame=300, status=SceneStatus.EXCLUDED),
     ]
 
 

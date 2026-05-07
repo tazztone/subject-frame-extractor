@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 import gradio as gr
 import pytest
 
+from core.models import SceneStatus
 from ui.app_ui import AppUI, ApplicationState
 
 
@@ -255,7 +256,7 @@ class TestAppUI:
                 "shot_id": 1,
                 "start_frame": 0,
                 "end_frame": 10,
-                "status": "included",
+                "status": SceneStatus.INCLUDED,
                 "seed_result": {"bbox": [0, 0, 10, 10]},
             }
         ]
@@ -318,7 +319,7 @@ class TestAppUI:
                 "shot_id": 1,
                 "start_frame": 0,
                 "end_frame": 10,
-                "status": "included",
+                "status": SceneStatus.INCLUDED,
                 "seed_metrics": {"quality_score": 0.9},
                 "seed_result": {"details": {"mask_area_pct": 50}},
                 "manual_status_change": False,
@@ -334,7 +335,7 @@ class TestAppUI:
                 app_state, 60.0, 0.0, 0.0, False, "Kept"
             )
 
-            assert new_state.scenes[0]["status"] == "excluded"
+            assert new_state.scenes[0]["status"] == SceneStatus.EXCLUDED
             assert any("Area" in r for r in new_state.scenes[0]["rejection_reasons"])
 
     # --- Reset Filters ---

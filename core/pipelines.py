@@ -31,7 +31,7 @@ from core.database import Database
 from core.error_handling import ErrorHandler
 from core.events import ExtractionEvent, PreAnalysisEvent, PropagationEvent, SessionLoadEvent
 from core.managers import VideoManager, initialize_analysis_models
-from core.models import AnalysisParameters, Frame, Scene
+from core.models import AnalysisParameters, Frame, Scene, SceneStatus
 from core.operators import OperatorRegistry, run_operators
 from core.photo_utils import ingest_folder
 from core.progress import AdvancedProgressTracker
@@ -750,7 +750,7 @@ class AnalysisPipeline(Pipeline):
             return {"done": False, "log": "No scenes found for analysis."}
             
         # Filter included scenes if not resuming
-        scenes_to_process = [s for s in scenes if s.status == "included" or not self.params.resume]
+        scenes_to_process = [s for s in scenes if s.status == SceneStatus.INCLUDED or not self.params.resume]
         
         if tracker:
             tracker.set_stage("Analyzing images")
@@ -1198,7 +1198,7 @@ class PreAnalysisPipeline(Pipeline):
         
         preview_path = previews_dir / f"scene_{scene.shot_id:05d}.jpg"
         Image.fromarray(overlay_rgb).save(preview_path)
-        scene.preview_path, scene.status = str(preview_path), "included"
+        scene.preview_path, scene.status = str(preview_path), SceneStatus.INCLUDED
 
 
 @handle_common_errors
@@ -1317,7 +1317,7 @@ def execute_session_load(event: "SessionLoadEvent", logger: "AppLogger") -> dict
                         rec = seeds_lookup[shot_id]
                         rec["best_frame"] = rec.get("best_frame", rec.get("best_seed_frame"))
                         scene.update(rec)
-                    scene.setdefault("status", "included")
+                    scene.setdefault("status", SceneStatus.INCLUDED)
             except Exception as e:
                 logger.warning(f"Failed to parse scene_seeds.json: {e}")
 
@@ -1341,7 +1341,7 @@ def _load_analysis_scenes(scenes_data: list, is_folder_mode: bool, include_only:
     return [
         Scene(**{k: v for k, v in s.items() if k in scene_fields})
         for s in scenes_data
-        if not include_only or is_folder_mode or s.get("status") == "included"
+        if not include_only or is_folder_mode or s.get("status") == SceneStatus.INCLUDED
     ]
 
 

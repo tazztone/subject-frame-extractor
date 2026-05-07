@@ -15,7 +15,7 @@ from pydantic import ValidationError
 
 from core.config import Config
 from core.filtering import apply_all_filters_vectorized
-from core.models import AnalysisParameters, Frame, Scene
+from core.models import AnalysisParameters, Frame, Scene, SceneStatus
 
 
 class TestConfigEdgeCases:
@@ -68,7 +68,7 @@ class TestSceneEdgeCases:
         """Test Scene with minimal required fields."""
         scene = Scene(shot_id=1, start_frame=0, end_frame=10)
         assert scene.shot_id == 1
-        assert scene.status == "pending"
+        assert scene.status == SceneStatus.PENDING
 
     def test_scene_with_seed_result(self):
         """Test Scene with seed_result data."""
@@ -85,13 +85,13 @@ class TestSceneEdgeCases:
     def test_scene_status_transitions(self):
         """Test Scene status can be changed."""
         scene = Scene(shot_id=1, start_frame=0, end_frame=10)
-        assert scene.status == "pending"
+        assert scene.status == SceneStatus.PENDING
 
-        scene.status = "included"
-        assert scene.status == "included"
+        scene.status = SceneStatus.INCLUDED
+        assert scene.status == SceneStatus.INCLUDED
 
-        scene.status = "excluded"
-        assert scene.status == "excluded"
+        scene.status = SceneStatus.EXCLUDED
+        assert scene.status == SceneStatus.EXCLUDED
 
 
 class TestFrameEdgeCases:

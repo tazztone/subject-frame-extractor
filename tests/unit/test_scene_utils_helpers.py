@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-from core.models import Scene
+from core.models import Scene, SceneStatus
 from core.scene_utils.helpers import (
     _create_analysis_context,
     _recompute_single_preview,
@@ -24,7 +24,7 @@ class TestSceneUtilsHelpers:
             shot_id=1,
             start_frame=0,
             end_frame=10,
-            status="pending",
+            status=SceneStatus.PENDING,
             best_frame=5,
             seed_frame_idx=5,
             seed_type="auto",
@@ -87,7 +87,7 @@ class TestSceneUtilsHelpers:
             mock_logger.error.assert_called_once()
 
     def test_get_scene_status_text(self, mock_scene):
-        mock_scene.status = "included"
+        mock_scene.status = SceneStatus.INCLUDED
         mock_scene.seed_result = {"bbox": [10, 10, 50, 50]}
 
         scenes = [mock_scene]
@@ -103,7 +103,7 @@ class TestSceneUtilsHelpers:
         assert button_update["interactive"] is False
 
     def test_get_scene_status_text_rejected(self):
-        scene = Scene(shot_id=1, start_frame=0, end_frame=10, status="excluded")
+        scene = Scene(shot_id=1, start_frame=0, end_frame=10, status=SceneStatus.EXCLUDED)
         scene.rejection_reasons = ["too_short"]
 
         status, _ = get_scene_status_text([scene])
@@ -111,10 +111,10 @@ class TestSceneUtilsHelpers:
 
     def test_toggle_scene_status(self, mock_scene, mock_logger, tmp_path):
         scenes = [mock_scene]
-        new_status = "excluded"
+        new_status = SceneStatus.EXCLUDED
 
         updated_scenes, status_text, msg, btn = toggle_scene_status(
-            scenes, mock_scene.shot_id, new_status, str(tmp_path), mock_logger
+            scenes, mock_scene.shot_id, new_status.value, str(tmp_path), mock_logger
         )
 
         assert updated_scenes[0].status == new_status
@@ -125,7 +125,7 @@ class TestSceneUtilsHelpers:
 
     def test_toggle_scene_status_not_found(self, mock_scene, mock_logger, tmp_path):
         updated_scenes, status_text, msg, btn = toggle_scene_status(
-            [mock_scene], 999, "excluded", str(tmp_path), mock_logger
+            [mock_scene], 999, SceneStatus.EXCLUDED.value, str(tmp_path), mock_logger
         )
         assert "Could not find scene" in msg
 
