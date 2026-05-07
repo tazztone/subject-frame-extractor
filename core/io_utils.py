@@ -218,7 +218,9 @@ def create_frame_map(output_dir: Path, logger: Optional["LoggerLike"], ext: str 
         with open(frame_map_path, "r", encoding="utf-8") as f:
             frame_map_list = json.load(f)
         sorted_frames = sorted(map(int, frame_map_list))
-        return {orig_num: f"frame_{i + 1:06d}{ext}" for i, orig_num in enumerate(sorted_frames)}
+        # Use % formatting for better performance in tight loops
+        fmt = "frame_%06d" + ext
+        return {orig_num: fmt % (i + 1) for i, orig_num in enumerate(sorted_frames)}
     except (FileNotFoundError, json.JSONDecodeError, TypeError) as e:
         if logger:
             logger.error(f"Could not load or parse frame_map.json: {e}. Frame mapping will be empty.", exc_info=False)
