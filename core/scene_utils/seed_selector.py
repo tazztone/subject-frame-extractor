@@ -485,26 +485,20 @@ class SeedSelector:
         if not self.tracker or bbox_xywh is None:
             return None
 
-        import os
-        import tempfile
-
         try:
-            # Use TemporaryDirectory for automatic cleanup
-            with tempfile.TemporaryDirectory() as temp_dir:
-                # Save frame to temp directory for SAM3 init_state
-                pil_img = rgb_to_pil(frame_rgb_small)
-                pil_img.save(os.path.join(temp_dir, "00000.jpg"))
+            # Use SAM3 API with in-memory image to avoid redundant I/O
+            pil_img = rgb_to_pil(frame_rgb_small)
+            self.tracker.init_video([pil_img])
 
-                # Use SAM3 API
-                h, w = frame_rgb_small.shape[:2]
-                self.tracker.init_video(temp_dir)
-                mask = self.tracker.add_bbox_prompt(frame_idx=0, obj_id=1, bbox_xywh=bbox_xywh, img_size=(w, h))
+            # Generate mask for the bounding box
+            h, w = frame_rgb_small.shape[:2]
+            mask = self.tracker.add_bbox_prompt(frame_idx=0, obj_id=1, bbox_xywh=bbox_xywh, img_size=(w, h))
 
-                if mask is not None:
-                    mask = postprocess_mask(
-                        (mask * 255).astype(np.uint8), config=self.config, fill_holes=True, keep_largest_only=True
-                    )
-                return mask
+            if mask is not None:
+                mask = postprocess_mask(
+                    (mask * 255).astype(np.uint8), config=self.config, fill_holes=True, keep_largest_only=True
+                )
+            return mask
         except (torch.cuda.OutOfMemoryError, RuntimeError) as e:
             self.logger.warning(f"GPU error in mask generation: {e}")
             if torch.cuda.is_available():
