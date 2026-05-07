@@ -251,13 +251,23 @@ class Database:
         cursor.execute("SELECT * FROM metadata")
         rows = cursor.fetchall()
 
+        if not rows:
+            return []
+
+        # Optimization: use zip(keys, row) which is faster than dict(row) for sqlite3.Row
+        # and cache json.loads and JSONDecodeError to minimize lookups in the loop
+        keys = rows[0].keys()
+        _loads = json.loads
+        _decode_error = json.JSONDecodeError
+
         results = []
         for row in rows:
-            row_dict = dict(row)
-            if "metrics" in row_dict and isinstance(row_dict["metrics"], str):
+            row_dict = dict(zip(keys, row))
+            metrics = row_dict.get("metrics")
+            if isinstance(metrics, str):
                 try:
-                    row_dict.update(json.loads(row_dict["metrics"]))
-                except json.JSONDecodeError:
+                    row_dict.update(_loads(metrics))
+                except _decode_error:
                     pass
             results.append(row_dict)
         return results
