@@ -1,186 +1,107 @@
-# 🎬 Subject Frame Extractor
+# Subject Frame Extractor
 
-**An AI-powered powerhouse for extracting, analyzing, and filtering high-quality frames from video.**
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://python.org)
+[![PyTorch](https://img.shields.io/badge/PyTorch-CUDA-ee4c2c)](https://pytorch.org/)
+[![Gradio](https://img.shields.io/badge/UI-Gradio%206.x-ff5000)](https://gradio.app/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![PyTorch](https://img.shields.io/badge/PyTorch-CUDA%20Supported-ee4c2c.svg)](https://pytorch.org/)
-[![Gradio](https://img.shields.io/badge/UI-Gradio-ff5000.svg)](https://gradio.app/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+An AI-powered tool for extracting, analyzing, and filtering high-quality frames from video footage. Designed for dataset builders (LoRA / Dreambooth training), content creators, and researchers who need curated image sets from raw video — not just raw frame dumps.
 
-Designed for content creators, dataset builders (LoRA/Dreambooth), and researchers. This tool bridges the gap between raw video footage and curated, high-quality image datasets using state-of-the-art AI.
+Also includes a **Photo Culling** mode for scoring and rating RAW photo libraries.
 
----
+## Tech Stack
 
-## ✨ Overview
+| Layer | Technology |
+|---|---|
+| Runtime | Python 3.10+ (3.12 recommended) |
+| UI | Gradio 6.x |
+| Segmentation | SAM 3 (Segment Anything Model 3, Facebook Research) |
+| Object detection | YOLO (80 COCO classes) |
+| Face analysis | InsightFace (similarity matching, blink detection, head pose) |
+| Quality scoring | NIQE (perceptual), Laplacian variance (sharpness), pHash + LPIPS (dedup) |
+| Video / media | FFmpeg, yt-dlp |
+| RAW processing | ExifTool (embedded preview extraction — no demosaicing) |
+| Data | PyTorch, NumPy, OpenCV, SQLite, Pydantic |
+| Dependency management | uv |
 
-Traditional frame extraction is noisy. **Subject Frame Extractor** uses advanced segmentation and quality heuristics to ensure you only keep the frames that matter.
+## Architecture
 
-*   **Intelligent Extraction**: Beyond simple intervals—use scene detection and keyframe awareness.
-*   **Multi-Class Tracking**: Automatically find and track any of 80 COCO objects (people, cars, animals, etc.) using YOLO26 and SAM3.
-*   **Scene-Level Deduplication**: Automated extraction of the single best frame per shot.
-*   **Quality First**: Filter by sharpness, contrast, and perceptual quality (**NIQE**).
-*   **Face Matching**: Find every frame of a specific person using **InsightFace**.
-
----
-
-## 🚀 Key Features
-
-### 🎯 Smart Extraction
-*   **Extraction Strategies**: Keyframes, fixed intervals, scene-based, or every Nth frame.
-*   **YouTube Integration**: Direct URL processing with resolution control.
-*   **Scene Intelligence**: Automatically segments video into shots to optimize analysis.
-
-### 🧠 Advanced AI Analysis
-*   **SAM 3 Integration**: Precise subject segmentation and tracking across scenes.
-*   **Open-Vocabulary Detection**: Describe what you want to find (e.g., "a golden retriever") and let the AI find it.
-*   **Face Analysis**: Similarity matching, blink detection, and head pose estimation (yaw/pitch/roll).
-*   **Perceptual Metrics**: Real-time quality scoring to surface the "best" frames automatically.
-
-### 🔍 Filtering & Export
-*   **Interactive Sliders**: Filter thousands of frames in real-time based on AI-calculated metrics.
-*   **Smart Deduplication**: Uses pHash and LPIPS to remove near-identical frames.
-*   **AR-Aware Cropping**: Export subject-centered crops in 1:1, 9:16, 16:9, or custom ratios.
-
-### 📸 Photo Mode (Culling)
-*   **RAW Support**: Extract high-resolution embedded previews from RAW files (CR2, NEF, ARW, DNG, ORF, etc.) using **ExifTool**. No demosaicing required for ultra-fast ingestion.
-*   **Quality Culling**: AI-powered scoring for focus, composition, and technical quality.
-    *   **Sharpness**: Laplacian variance based edge-detection to identify focused shots.
-    *   **Naturalness (NIQE)**: Perceptual quality score that measures how \"natural\" an image looks without needing a reference.
-    *   **Information (Entropy)**: Measures the complexity/detail density of the image.
-    *   **Face Prominence**: Uses InsightFace to detect faces and score them based on confidence and size.
-*   **Lightroom/C1 Interop**: Export internal scores as 1-5 star ratings directly to **non-destructive XMP sidecars**.
-
----
-
-## 🛠️ Tech Stack
-
-*   **Segmentation**: [Segment Anything Model 3 (SAM 3)](https://github.com/facebookresearch/sam3)
-*   **Face Analysis**: [InsightFace](https://github.com/deepinsight/insightface)
-*   **UI Framework**: [Gradio 6.x](https://gradio.app/)
-*   **Data Science**: PyTorch, NumPy, OpenCV, Pydantic
-*   **Media Handling**: FFmpeg, yt-dlp
-*   **Database**: SQLite (for lightning-fast metadata filtering)
-
----
-
-## 💻 Installation & Setup
-
-### Prerequisites
-*   **Python 3.10+** (3.12 recommended)
-*   **FFmpeg** installed and in your system PATH.
-*   **CUDA-capable GPU** (highly recommended; ~8GB VRAM for SAM 3).
-
-### Quick Start (using `uv`)
-We highly recommend [uv](https://astral.sh/uv) for its speed and reliability.
-
-1.  **Clone with Submodules**
-    ```bash
-    git clone --recursive https://github.com/tazztone/subject-frame-extractor.git
-    cd subject-frame-extractor
-    ```
-    *Note: Use `git submodule update --init --recursive` if already cloned.*
-
-2.  **Sync Environment**
-    ```bash
-    uv sync
-    ```
-
-3.  **Launch**
-    ```bash
-    uv run python app.py
-    ```
-    *Alternatively, on Linux, use:* `./scripts/linux_run_app.sh`
-
-    Access the UI at `http://127.0.0.1:7860`.
-
-### Manual Setup (vEnv)
-1. `python -m venv venv`
-2. Activate: `. venv/bin/activate` (Linux/Mac) or `. venv\Scripts\activate.ps1` (Windows)
-3. `pip install -r requirements.txt`
-4. `pip install -e SAM3_repo`
-
----
-
-## ⌨️ CLI Usage
-
-The application provides a powerful CLI for automated extraction, analysis, and headless operation. Always use `uv run` to ensure the correct environment.
-
-### Extraction
-Extract thumbnails and detect scenes from a video:
-```bash
-uv run python cli.py extract --video path/to/video.mp4 --output ./results --nth-frame 10
 ```
-- **Caching**: Subsequent runs with identical settings will skip automatically using fingerprints.
-- **Force**: Use `--force` to re-extract even if a fingerprint match is found.
-- **Clean**: Use `--clean` to delete the output directory before starting.
-
-### Analysis
-Run the full AI pipeline (seeding, tracking, metrics) on an existing extraction:
-```bash
-uv run python cli.py analyze --session ./results --video path/to/video.mp4 --face-ref person.png --resume
+/
+├── app.py                  # Gradio UI entry point
+├── cli.py                  # Headless CLI (extract / analyze / full / status / photo)
+├── core/
+│   ├── config.py           # Full configuration schema (Pydantic)
+│   ├── extractor.py        # Extraction strategies (keyframe, interval, scene, Nth)
+│   ├── analyzer.py         # AI analysis pipeline (SAM seeding, tracking, metrics)
+│   ├── tracker.py          # Subject tracking across scenes
+│   ├── face.py             # InsightFace integration
+│   ├── quality.py          # NIQE, sharpness, entropy, LPIPS scoring
+│   ├── dedup.py            # pHash + LPIPS deduplication
+│   ├── photo.py            # Photo culling: RAW ingest, scoring, XMP sidecar export
+│   └── database.py         # SQLite session metadata
+├── SAM3_repo/              # SAM 3 submodule
+└── scripts/
+    ├── linux_run_app.sh
+    └── setup scripts
 ```
-- **Resume**: Use `--resume` to skip already completed scenes (uses `progress.json`).
 
-### Full Pipeline
-Run extraction and analysis in one command:
+**Pipeline:** Extract frames → scene segmentation → AI seeding (face ref / text / YOLO) → SAM 3 propagation → quality metrics → interactive filtering → AR-aware crop export.
+
+## Key Features
+
+- **Extraction strategies** — keyframes, fixed intervals, scene-based, every Nth frame; YouTube URL support
+- **Multi-class tracking** — find and track any of 80 COCO objects via YOLO + SAM 3; open-vocabulary text descriptions
+- **Face matching** — find every frame of a specific person using InsightFace reference photo
+- **Quality filtering** — interactive sliders for sharpness, contrast, NIQE perceptual score
+- **Smart deduplication** — pHash + LPIPS removes near-identical frames per scene
+- **AR-aware export** — subject-centred crops in 1:1, 9:16, 16:9, or custom ratios
+- **Photo culling mode** — RAW preview extraction (CR2, NEF, ARW, DNG, ORF…), AI scoring, export to Lightroom/Capture One XMP sidecar star ratings
+
+## Quick Start
+
+**Prerequisites:** Python 3.10+, FFmpeg in PATH, CUDA GPU recommended (~8 GB VRAM for SAM 3)
+
 ```bash
+git clone --recursive https://github.com/tazztone/subject-frame-extractor.git
+cd subject-frame-extractor
+uv sync
+
+# Launch Gradio UI
+uv run python app.py
+# → http://127.0.0.1:7860
+```
+
+## CLI Usage
+
+```bash
+# Extract frames
+uv run python cli.py extract --video video.mp4 --output ./results --nth-frame 10
+
+# Run AI analysis (with face reference)
+uv run python cli.py analyze --session ./results --video video.mp4 --face-ref person.png --resume
+
+# Full pipeline in one command
 uv run python cli.py full --video video.mp4 --output ./results --face-ref person.png
-```
 
-### Status
-Check the progress and metadata of a session:
-```bash
-uv run python cli.py status --session ./results
-```
-
-### Photo Mode (Culling)
-Process image folders and sync ratings to sidecars:
-```bash
-# 1. Ingest folder (crawls images, extracts RAW previews)
+# Photo culling workflow
 uv run python cli.py photo ingest --folder /path/to/raws --output ./photo_session
-
-# 2. Score photos (sharpness, naturalness, face prominence, etc.)
 uv run python cli.py photo score --session ./photo_session
-
-# 3. Export XMP sidecars (Ratings & Labels compatible with Lightroom)
-uv run python cli.py photo export --session ./photo_session
+uv run python cli.py photo export --session ./photo_session   # → XMP sidecars
 ```
 
+## Configuration
 
----
-
-## 📖 Usage Guide
-
-1.  **Source**: Upload a video or paste a YouTube URL. Choose your extraction resolution.
-2.  **Extract**: Run the extraction. The tool identifies scenes and generates thumbnails.
-3.  **Define Subject**: 
-    *   **Hybrid Seeding**: Combine face reference with text descriptions and YOLO mask prompts for robust initialization.
-    *   **By Face**: Upload a reference photo for similarity matching.
-    *   **By Text**: Enter a description (e.g., "cat", "person in red").
-    *   **Auto**: Let the AI select the most prominent subject.
-4.  **Analyze**: Review "Scene Seeds". Run **Propagation** to track subjects through the video.
-5.  **Filter**: Use sliders in the **Metrics & Filtering** tab to curate your dataset.
-6.  **Export**: Select your crop settings and aspect ratio, then hit **Export**.
-
----
-
-For detailed information on architecture, critical rules (Agent Memory), development workflows, and testing, please refer to the [AGENTS.md](AGENTS.md).
-
-## ⚙️ Configuration Reference
-
-See `core/config.py` for the full schema.
+See `core/config.py` for the full Pydantic schema. Key settings:
 
 | Category | Key Fields | Default |
-|----------|------------|---------|
-| **Paths** | `logs_dir`, `models_dir`, `downloads_dir` | `logs`, `models`, `downloads` |
-| **Models** | `face_model_name`, `tracker_model_name` | `buffalo_l`, `sam3` |
-| **Performance** | `analysis_default_workers`, `cache_size` | `4`, `200` |
-| **Quality** | `quality_weights_*` | (Variable Weights) |
+|---|---|---|
+| Paths | `logs_dir`, `models_dir`, `downloads_dir` | `logs`, `models`, `downloads` |
+| Models | `face_model_name`, `tracker_model_name` | `buffalo_l`, `sam3` |
+| Performance | `analysis_default_workers`, `cache_size` | `4`, `200` |
 
----
+See [AGENTS.md](AGENTS.md) for architecture details, critical rules, and development guidelines.
 
+## License
 
----
-
-## 📄 License
-MIT License. See [LICENSE](LICENSE) for details.
+MIT — see [LICENSE](LICENSE).
