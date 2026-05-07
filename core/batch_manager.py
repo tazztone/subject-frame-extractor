@@ -35,7 +35,7 @@ class BatchManager:
     # TODO: Add resource-aware scheduling (wait for GPU or RAM availability)
     def __init__(self):
         """Initializes the BatchManager."""
-        self.queue: List[BatchItem] = []
+        self.queue: Dict[str, BatchItem] = {}
         self.lock = threading.Lock()
         self.stop_event = threading.Event()
         self.executor: Optional[ThreadPoolExecutor] = None
@@ -47,51 +47,49 @@ class BatchManager:
         with self.lock:
             for p in paths:
                 item = BatchItem(id=str(uuid.uuid4()), path=p)
-                self.queue.append(item)
+                self.queue[item.id] = item
 
     def get_queue_snapshot(self) -> List[BatchItem]:
         """Returns a thread-safe snapshot of the current queue."""
         with self.lock:
-            return list(self.queue)
+            return list(self.queue.values())
 
     def get_status_list(self) -> List[List]:
         """Returns a simplified list of status data for the UI."""
         with self.lock:
-            return [[item.path, item.status.value, item.progress, item.message] for item in self.queue]
+            return [[item.path, item.status.value, item.progress, item.message] for item in self.queue.values()]
 
     def clear_completed(self):
         """Removes completed, failed, and cancelled items from the queue."""
         with self.lock:
-            self.queue = [
-                item
-                for item in self.queue
+            self.queue = {
+                item_id: item
+                for item_id, item in self.queue.items()
                 if item.status not in (BatchStatus.COMPLETED, BatchStatus.FAILED, BatchStatus.CANCELLED)
-            ]
+            }
 
     def clear_all(self):
         """Clears all items from the queue."""
         with self.lock:
-            self.queue = []
+            self.queue = {}
 
     def update_progress(self, item_id: str, fraction: float, message: Optional[str] = None):
         """Updates the progress of a specific batch item."""
         with self.lock:
-            for item in self.queue:
-                if item.id == item_id:
-                    item.progress = fraction
-                    if message:
-                        item.message = message
-                    break
+            item = self.queue.get(item_id)
+            if item:
+                item.progress = fraction
+                if message:
+                    item.message = message
 
     def set_status(self, item_id: str, status: BatchStatus, message: Optional[str] = None):
         """Updates the status and message of a specific batch item."""
         with self.lock:
-            for item in self.queue:
-                if item.id == item_id:
-                    item.status = status
-                    if message:
-                        item.message = message
-                    break
+            item = self.queue.get(item_id)
+            if item:
+                item.status = status
+                if message:
+                    item.message = message
 
     def start_processing(self, processor_func: Callable, max_workers: int = 1):
         """
@@ -104,7 +102,7 @@ class BatchManager:
         self.stop_event.clear()
         self.is_running = True
 
-        pending_items = [item for item in self.queue if item.status == BatchStatus.PENDING]
+        pending_items = [item for item in self.queue.values() if item.status == BatchStatus.PENDING]
         if not pending_items:
             self.is_running = False
             return
@@ -121,7 +119,7 @@ class BatchManager:
                 while not self.stop_event.is_set():
                     candidate = None
                     with self.lock:
-                        for item in self.queue:
+                        for item in self.queue.values():
                             if item.status == BatchStatus.PENDING and item.id not in submitted_ids:
                                 candidate = item
                                 break
@@ -161,7 +159,7 @@ class BatchManager:
 
                         all_done = True
                         with self.lock:
-                            for item in self.queue:
+                            for item in self.queue.values():
                                 if item.status in (BatchStatus.PENDING, BatchStatus.PROCESSING):
                                     all_done = False
                                     break

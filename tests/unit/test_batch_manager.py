@@ -7,13 +7,15 @@ def test_batch_manager_add():
     bm = BatchManager()
     bm.add_paths(["test1.mp4", "test2.mp4"])
     assert len(bm.queue) == 2
-    assert bm.queue[0].path == "test1.mp4"
-    assert bm.queue[1].status == BatchStatus.PENDING
+    items = list(bm.queue.values())
+    assert any(item.path == "test1.mp4" for item in items)
+    assert items[1].status == BatchStatus.PENDING
 
 
 def test_batch_manager_processing():
     bm = BatchManager()
     bm.add_paths(["test1.mp4"])
+    item_id = list(bm.queue.keys())[0]
 
     def processor(item, progress):
         progress(0.5, "Halfway")
@@ -26,18 +28,19 @@ def test_batch_manager_processing():
     start = time.time()
     while bm.is_running and time.time() - start < timeout:
         with bm.lock:
-            if bm.queue[0].status == BatchStatus.COMPLETED:
+            if bm.queue[item_id].status == BatchStatus.COMPLETED:
                 break
         time.sleep(0.1)
 
-    assert bm.queue[0].status == BatchStatus.COMPLETED
-    assert bm.queue[0].progress == 0.5
-    assert bm.queue[0].message == "Done"
+    assert bm.queue[item_id].status == BatchStatus.COMPLETED
+    assert bm.queue[item_id].progress == 0.5
+    assert bm.queue[item_id].message == "Done"
 
 
 def test_batch_manager_failure():
     bm = BatchManager()
     bm.add_paths(["fail.mp4"])
+    item_id = list(bm.queue.keys())[0]
 
     def processor(item, progress):
         raise ValueError("Error")
@@ -49,9 +52,9 @@ def test_batch_manager_failure():
     start = time.time()
     while bm.is_running and time.time() - start < timeout:
         with bm.lock:
-            if bm.queue[0].status == BatchStatus.FAILED:
+            if bm.queue[item_id].status == BatchStatus.FAILED:
                 break
         time.sleep(0.1)
 
-    assert bm.queue[0].status == BatchStatus.FAILED
-    assert bm.queue[0].message == "Error"
+    assert bm.queue[item_id].status == BatchStatus.FAILED
+    assert bm.queue[item_id].message == "Error"
