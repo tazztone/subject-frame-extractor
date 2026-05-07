@@ -8,7 +8,7 @@ import shutil
 import subprocess
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, as_completed, wait
 from pathlib import Path
 from queue import Queue
 from typing import TYPE_CHECKING, Callable, Generator, Optional, Union
@@ -821,7 +821,12 @@ class AnalysisPipeline(Pipeline):
                     processed_count = end_idx
 
                 # 3. Collect finished futures
-                done, futures = [], [f for f in futures if not f.done() or done.append(f) or False]
+                if futures:
+                    done_set, _ = wait(futures, timeout=0.1, return_when=FIRST_COMPLETED)
+                    done = list(done_set)
+                    futures = [f for f in futures if f not in done_set]
+                else:
+                    done = []
                 
                 for future in done:
                     try:
@@ -835,8 +840,9 @@ class AnalysisPipeline(Pipeline):
                     for f in futures:
                         f.cancel()
                     break
-                    
-                time.sleep(0.1) # Prevent tight loop
+
+                if not done and (processed_count < total_frames or futures):
+                    time.sleep(0.01) # Very brief sleep if nothing was done to prevent 100% CPU in edge cases
 
     def _process_batch(self, batch_paths: list[Path], metrics_to_compute: dict) -> int:
         """Processes a batch of frame files."""
