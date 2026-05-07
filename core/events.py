@@ -5,9 +5,11 @@ Pydantic models representing UI events and data contracts.
 """
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, TYPE_CHECKING
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+
+from core.models import Scene
 
 
 class UIEvent(BaseModel):
@@ -101,7 +103,6 @@ class PreAnalysisEvent(UIEvent):
         return self
 
 
-# TODO: Add scene status validation (enum instead of string)
 class PropagationEvent(UIEvent):
     """
     Data model for the mask propagation stage.
@@ -109,7 +110,7 @@ class PropagationEvent(UIEvent):
 
     output_folder: str
     video_path: str
-    scenes: list[dict[str, Any]]
+    scenes: list["Scene"]
     analysis_params: PreAnalysisEvent
 
 

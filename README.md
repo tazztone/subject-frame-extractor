@@ -1,3 +1,27 @@
+## 📋 TODO Summary
+
+Total TODO items found: 107. Below are the top 20 most actionable items:
+
+1. [ ] **core/shared.py:58**: Add additional status badges (pending, error, etc.)
+2. [ ] **core/pipelines.py:510**: Implement per-frame error recovery instead of skipping
+3. [ ] **core/database.py:239**: Implement proper error recovery strategy (retry with backoff)
+4. [ ] **core/config.py:165**: Add automatic memory cleanup when approaching critical threshold
+5. [ ] **core/utils.py:31**: Add specific exception types for better error handling
+6. [ ] **core/batch_manager.py:154**: Add retry logic for transient failures
+7. [ ] **core/config.py:21**: Log config loading errors instead of silently ignoring
+8. [ ] **core/shared.py:190**: Log the specific exception for debugging
+9. [ ] **core/filtering.py:27**: Add real-time histogram updates during filtering
+10. [ ] **core/batch_manager.py:155**: Capture full stack trace for debugging
+11. [ ] **core/events.py:104**: Add scene status validation (enum instead of string)
+12. [ ] **core/pipelines.py:339**: Add support for resumable extraction from checkpoints
+13. [ ] **core/pipelines.py:340**: Implement parallel video decoding for multi-GPU systems
+14. [ ] **core/pipelines.py:509**: Add automatic batch size adjustment based on available memory
+15. [ ] **core/pipelines.py:511**: Add analysis caching to skip already-analyzed frames
+16. [ ] **core/managers.py:99**: Add memory-based eviction (keep simple: LRU or similar)
+17. [ ] **core/config.py:164**: Implement actual memory monitoring using these thresholds
+18. [ ] **core/filtering.py:167**: Add adaptive batch sizing based on available GPU memory
+19. [ ] **core/filtering.py:168**: Implement caching of LPIPS features for repeated comparisons
+20. [ ] **core/utils.py:75**: Validate video resolution is within supported range
 # 🎬 Subject Frame Extractor
 
 **An AI-powered powerhouse for extracting, analyzing, and filtering high-quality frames from video.**

@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from core.managers import ModelRegistry, ThumbnailManager
     from core.models import Scene, SceneState
 
+from core.models import SceneStatus
 from core.managers import initialize_analysis_models
 from core.scene_utils.subject_masker import SubjectMasker
 from core.shared import build_scene_gallery_items
@@ -93,7 +94,7 @@ def get_scene_status_text(scenes_list: list["Scene"]) -> tuple[str, Any]:
     if not scenes_list:
         return "No scenes loaded.", gr.update(interactive=False)
 
-    included_scenes = [s for s in scenes_list if s.status == "included"]
+    included_scenes = [s for s in scenes_list if s.status == SceneStatus.INCLUDED]
     ready_for_propagation_count = sum(1 for s in included_scenes if s.seed_result and s.seed_result.get("bbox"))
     total_count = len(scenes_list)
     included_count = len(included_scenes)
@@ -101,7 +102,7 @@ def get_scene_status_text(scenes_list: list["Scene"]) -> tuple[str, Any]:
     # Count rejection reasons
     rejection_counts = {}
     for scene in scenes_list:
-        if scene.status == "excluded" and scene.rejection_reasons:
+        if scene.status == SceneStatus.EXCLUDED and scene.rejection_reasons:
             for reason in scene.rejection_reasons:
                 rejection_counts[reason] = rejection_counts.get(reason, 0) + 1
 

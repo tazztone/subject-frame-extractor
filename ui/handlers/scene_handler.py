@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, List, Dict, Deque, Optional, Tuple
 from pathlib import Path
 import gradio as gr
 
-from core.models import Scene, SceneState
+from core.models import Scene, SceneState, SceneStatus
 from core.scene_utils import (
     _create_analysis_context,
     _recompute_single_preview,
@@ -209,11 +209,11 @@ class SceneHandler:
         )
 
         c["sceneincludebutton"].click(
-            lambda s, v: self.on_editor_toggle(s, v, "included"),
+            lambda s, v: self.on_editor_toggle(s, v, SceneStatus.INCLUDED),
             # Lambda signature mismatch. on_editor_toggle(app_state, view, status)
             # Input list: [app_state, view_toggle, dummy_history?]
             # Wait, I removed history from on_editor_toggle.
-            # So lambda should be: lambda s, v: self.on_editor_toggle(s, v, "included")
+            # So lambda should be: lambda s, v: self.on_editor_toggle(s, v, SceneStatus.INCLUDED)
             inputs=[
                 c["application_state"],
                 c["scene_gallery_view_toggle"],
@@ -226,7 +226,7 @@ class SceneHandler:
             ],
         )
         c["sceneexcludebutton"].click(
-            lambda s, v: self.on_editor_toggle(s, v, "excluded"),
+            lambda s, v: self.on_editor_toggle(s, v, SceneStatus.EXCLUDED),
             inputs=[
                 c["application_state"],
                 c["scene_gallery_view_toggle"],
@@ -349,7 +349,7 @@ class SceneHandler:
                     "seed_result": {},
                     "seed_metrics": {},
                     "manual_status_change": False,
-                    "status": "included",
+                    "status": SceneStatus.INCLUDED,
                     "is_overridden": False,
                     "selected_bbox": scene.get("initial_bbox"),
                 }
@@ -482,7 +482,7 @@ class SceneHandler:
             if scene.get("is_overridden", False) or scene.get("manual_status_change", False):
                 continue
 
-            current_status = scene.get("status", "included")
+            current_status = scene.get("status", SceneStatus.INCLUDED)
             should_exclude = False
             reason = []
 
@@ -507,7 +507,7 @@ class SceneHandler:
                     should_exclude = True
                     reason.append(f"Quality {q:.1f} < {min_quality}")
 
-            new_status = "excluded" if should_exclude else "included"
+            new_status = SceneStatus.EXCLUDED if should_exclude else SceneStatus.INCLUDED
 
             if current_status != new_status or scene.get("rejection_reasons") != reason:
                 scene["status"] = new_status

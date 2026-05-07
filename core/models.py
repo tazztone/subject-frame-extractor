@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Union
 
@@ -92,16 +93,23 @@ class Frame(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
+class SceneStatus(str, Enum):
+    """Status of a scene."""
+
+    PENDING = "pending"
+    INCLUDED = "included"
+    EXCLUDED = "excluded"
+
+
 class Scene(BaseModel):
     """Represents a detected scene or shot in the video."""
 
-    # TODO: Use Enum for status field (pending, included, excluded)
     # TODO: Add duration_seconds computed property
     # TODO: Add scene type classification field
     shot_id: int
     start_frame: int
     end_frame: int
-    status: str = "pending"
+    status: SceneStatus = SceneStatus.PENDING
     best_frame: Optional[int] = None
     seed_metrics: dict = Field(default_factory=dict)
     rejection_reasons: Optional[List[str]] = Field(default_factory=list)
@@ -154,7 +162,7 @@ class SceneState:
         if not self._scene.seed_config:
             self._scene.seed_config = {}
         self._scene.seed_config["override_source"] = source
-        self._scene.status = "included"
+        self._scene.status = SceneStatus.INCLUDED
         self._scene.manual_status_change = True
 
     def reset(self):
@@ -166,12 +174,12 @@ class SceneState:
 
     def include(self):
         """Marks the scene as included."""
-        self._scene.status = "included"
+        self._scene.status = SceneStatus.INCLUDED
         self._scene.manual_status_change = True
 
     def exclude(self):
         """Marks the scene as excluded."""
-        self._scene.status = "excluded"
+        self._scene.status = SceneStatus.EXCLUDED
         self._scene.manual_status_change = True
 
     def update_seed_result(self, bbox: Optional[list[int]], details: dict):
