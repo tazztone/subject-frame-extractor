@@ -309,6 +309,28 @@ class SceneHandler:
             [c["scene_gallery"]],
         )
 
+        # BBox visualization style handlers
+        c["visualization_bbox_style_input"].change(
+            lambda v, s, view: (setattr(self.config, "visualization_bbox_style", v), s)[1],
+            inputs=[c["visualization_bbox_style_input"], c["application_state"], c["scene_gallery_view_toggle"]],
+            outputs=[c["application_state"]],
+        )
+        c["visualization_bbox_thickness_input"].change(
+            lambda v, s, view: (setattr(self.config, "visualization_bbox_thickness", v), s)[1],
+            inputs=[c["visualization_bbox_thickness_input"], c["application_state"], c["scene_gallery_view_toggle"]],
+            outputs=[c["application_state"]],
+        )
+        c["visualization_bbox_radius_input"].change(
+            lambda v, s, view: (setattr(self.config, "visualization_bbox_radius", v), s)[1],
+            inputs=[c["visualization_bbox_radius_input"], c["application_state"], c["scene_gallery_view_toggle"]],
+            outputs=[c["application_state"]],
+        )
+        c["visualization_show_labels_input"].change(
+            lambda v, s, view: (setattr(self.config, "visualization_show_labels", v), s)[1],
+            inputs=[c["visualization_show_labels_input"], c["application_state"], c["scene_gallery_view_toggle"]],
+            outputs=[c["application_state"]],
+        )
+
     def _undo_last_action(self, app_state: ApplicationState, view: str) -> tuple:
         """Reverts the last action by popping from the history stack."""
         prev_scenes = app_state.pop_history()

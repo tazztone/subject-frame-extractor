@@ -8,7 +8,7 @@ import json
 import threading
 from pathlib import Path
 from queue import Queue
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 import cv2
 import numpy as np
@@ -26,9 +26,13 @@ from core.shared import build_scene_gallery_items
 from core.utils import _to_json_safe, create_frame_map, render_mask_overlay
 
 
-# TODO: Add box drawing style options (dashed, rounded corners, etc.)
-# TODO: Support drawing box labels with confidence scores
-def draw_boxes_preview(img: np.ndarray, boxes_xyxy: list[list[int]], cfg: "Config") -> np.ndarray:
+def draw_boxes_preview(
+    img: np.ndarray,
+    boxes_xyxy: list[list[int]],
+    cfg: "Config",
+    scores: Optional[list[float]] = None,
+    labels: Optional[list[str]] = None,
+) -> np.ndarray:
     """
     Draw bounding boxes on an image for preview.
 
@@ -36,16 +40,25 @@ def draw_boxes_preview(img: np.ndarray, boxes_xyxy: list[list[int]], cfg: "Confi
         img: RGB image
         boxes_xyxy: List of boxes in [x1, y1, x2, y2] format
         cfg: Config with visualization settings
+        scores: Optional list of confidence scores
+        labels: Optional list of labels
 
     Returns:
         Image with boxes drawn
     """
-    img = img.copy()
-    for x1, y1, x2, y2 in boxes_xyxy:
-        cv2.rectangle(
-            img, (int(x1), int(y1)), (int(x2), int(y2)), cfg.visualization_bbox_color, cfg.visualization_bbox_thickness
-        )
-    return img
+    img_out = img.copy()
+    from core.utils import draw_bbox
+
+    for i, (x1, y1, x2, y2) in enumerate(boxes_xyxy):
+        xywh = [int(x1), int(y1), int(x2 - x1), int(y2 - y1)]
+        box_label = labels[i] if labels and i < len(labels) else None
+        if scores and i < len(scores):
+            score_str = f"{scores[i]:.2f}"
+            box_label = f"{box_label}: {score_str}" if box_label else score_str
+
+        # draw_bbox can draw in-place to avoid multiple copies
+        img_out = draw_bbox(img_out, xywh, cfg, label=box_label, inplace=True)
+    return img_out
 
 
 def save_scene_seeds(scenes_list: list["Scene"], output_dir_str: str, logger: "AppLogger") -> None:

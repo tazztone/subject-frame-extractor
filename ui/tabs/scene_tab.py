@@ -183,6 +183,61 @@ class SceneTabBuilder:
                             "slider",
                             {"label": "Gallery Height (px)", "minimum": 200, "maximum": 1000, "value": 600, "step": 40},
                         )
+                    with gr.Row():
+                        self.app._reg(
+                            "visualization_bbox_style",
+                            self.app._create_component(
+                                "visualization_bbox_style_input",
+                                "dropdown",
+                                {
+                                    "label": "BBox Style",
+                                    "choices": ["solid", "dashed", "dotted"],
+                                    "value": self.config.visualization_bbox_style,
+                                    "info": "Style of bounding boxes in previews.",
+                                },
+                            ),
+                        )
+                        self.app._reg(
+                            "visualization_bbox_thickness",
+                            self.app._create_component(
+                                "visualization_bbox_thickness_input",
+                                "slider",
+                                {
+                                    "label": "BBox Thickness",
+                                    "minimum": 1,
+                                    "maximum": 10,
+                                    "value": self.config.visualization_bbox_thickness,
+                                    "step": 1,
+                                },
+                            ),
+                        )
+                        self.app._reg(
+                            "visualization_bbox_radius",
+                            self.app._create_component(
+                                "visualization_bbox_radius_input",
+                                "slider",
+                                {
+                                    "label": "Corner Radius",
+                                    "minimum": 0,
+                                    "maximum": 50,
+                                    "value": self.config.visualization_bbox_radius,
+                                    "step": 1,
+                                    "info": "Rounded corners for boxes.",
+                                },
+                            ),
+                        )
+                        self.app._reg(
+                            "visualization_show_labels",
+                            self.app._create_component(
+                                "visualization_show_labels_input",
+                                "checkbox",
+                                {
+                                    "label": "Show Labels",
+                                    "value": self.config.visualization_show_labels,
+                                    "info": "Display confidence scores/labels.",
+                                },
+                            ),
+                        )
 
             # 4. Action
             gr.Markdown("### 🚀 Ready?")

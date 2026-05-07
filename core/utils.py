@@ -349,6 +349,34 @@ def create_frame_map(output_dir: Path, logger: "AppLogger", ext: str = ".webp") 
         return {}
 
 
+def _draw_dashed_line(
+    img: np.ndarray, pt1: tuple[int, int], pt2: tuple[int, int], color: tuple[int, int, int], thickness: int, dash_len: int = 10
+):
+    """Internal helper to draw a dashed line."""
+    dist = ((pt1[0] - pt2[0]) ** 2 + (pt1[1] - pt2[1]) ** 2) ** 0.5
+    if dist == 0:
+        return
+    for i in np.arange(0, dist, dash_len * 2):
+        r1 = i / dist
+        r2 = min(i + dash_len, dist) / dist
+        p1 = (int(pt1[0] + (pt2[0] - pt1[0]) * r1), int(pt1[1] + (pt2[1] - pt1[1]) * r1))
+        p2 = (int(pt1[0] + (pt2[0] - pt1[0]) * r2), int(pt1[1] + (pt2[1] - pt1[1]) * r2))
+        cv2.line(img, p1, p2, color, thickness)
+
+
+def _draw_dotted_line(
+    img: np.ndarray, pt1: tuple[int, int], pt2: tuple[int, int], color: tuple[int, int, int], thickness: int, gap: int = 5
+):
+    """Internal helper to draw a dotted line."""
+    dist = ((pt1[0] - pt2[0]) ** 2 + (pt1[1] - pt2[1]) ** 2) ** 0.5
+    if dist == 0:
+        return
+    for i in np.arange(0, dist, gap * 2):
+        r = i / dist
+        p = (int(pt1[0] + (pt2[0] - pt1[0]) * r), int(pt1[1] + (pt2[1] - pt1[1]) * r))
+        cv2.circle(img, p, thickness, color, -1)
+
+
 def draw_bbox(
     img_rgb: np.ndarray,
     xywh: list,
@@ -356,19 +384,52 @@ def draw_bbox(
     color: Optional[tuple] = None,
     thickness: Optional[int] = None,
     label: Optional[str] = None,
+    style: Optional[str] = None,
+    radius: Optional[int] = None,
+    inplace: bool = False,
 ) -> np.ndarray:
     """Draws a bounding box and optional label on an image."""
     color = color or tuple(config.visualization_bbox_color)
     thickness = thickness or config.visualization_bbox_thickness
+    style = style if style is not None else getattr(config, "visualization_bbox_style", "solid")
+    radius = radius if radius is not None else getattr(config, "visualization_bbox_radius", 0)
+    show_labels = getattr(config, "visualization_show_labels", True)
+
     x, y, w, h = map(int, xywh or [0, 0, 0, 0])
-    img_out = img_rgb.copy()
-    cv2.rectangle(img_out, (x, y), (x + w, y + h), color, thickness)
-    if label:
-        font_scale = 1
+    x2, y2 = x + w, y + h
+    img_out = img_rgb if inplace else img_rgb.copy()
+
+    if radius > 0:
+        # Rounded corners
+        r = min(radius, w // 2, h // 2)
+        cv2.line(img_out, (x + r, y), (x2 - r, y), color, thickness)
+        cv2.line(img_out, (x + r, y2), (x2 - r, y2), color, thickness)
+        cv2.line(img_out, (x, y + r), (x, y2 - r), color, thickness)
+        cv2.line(img_out, (x2, y + r), (x2, y2 - r), color, thickness)
+        cv2.ellipse(img_out, (x + r, y + r), (r, r), 180, 0, 90, color, thickness)
+        cv2.ellipse(img_out, (x2 - r, y + r), (r, r), 270, 0, 90, color, thickness)
+        cv2.ellipse(img_out, (x + r, y2 - r), (r, r), 90, 0, 90, color, thickness)
+        cv2.ellipse(img_out, (x2 - r, y2 - r), (r, r), 0, 0, 90, color, thickness)
+    elif style == "dashed":
+        _draw_dashed_line(img_out, (x, y), (x2, y), color, thickness)
+        _draw_dashed_line(img_out, (x, y2), (x2, y2), color, thickness)
+        _draw_dashed_line(img_out, (x, y), (x, y2), color, thickness)
+        _draw_dashed_line(img_out, (x2, y), (x2, y2), color, thickness)
+    elif style == "dotted":
+        _draw_dotted_line(img_out, (x, y), (x2, y), color, thickness)
+        _draw_dotted_line(img_out, (x, y2), (x2, y2), color, thickness)
+        _draw_dotted_line(img_out, (x, y), (x, y2), color, thickness)
+        _draw_dotted_line(img_out, (x2, y), (x2, y2), color, thickness)
+    else:
+        cv2.rectangle(img_out, (x, y), (x2, y2), color, thickness)
+
+    if label and show_labels:
+        font_scale = getattr(config, "visualization_label_font_scale", 0.5)
+        font_thickness = getattr(config, "visualization_label_thickness", 1)
         font = cv2.FONT_HERSHEY_SIMPLEX
-        (text_width, text_height), baseline = cv2.getTextSize(label, font, font_scale, thickness)
-        text_x = x + 5
-        text_y = y + text_height + 5
-        cv2.rectangle(img_out, (x, y), (x + text_width + 10, y + text_height + 10), color, -1)
-        cv2.putText(img_out, label, (text_x, text_y), font, font_scale, (255, 255, 255), thickness)
+        (text_width, text_height), baseline = cv2.getTextSize(label, font, font_scale, font_thickness)
+        text_x = x
+        text_y = y - 5 if y - 5 > text_height else y + text_height + 5
+        cv2.rectangle(img_out, (text_x, text_y - text_height - 5), (text_x + text_width + 10, text_y + 5), color, -1)
+        cv2.putText(img_out, label, (text_x + 5, text_y), font, font_scale, (255, 255, 255), font_thickness)
     return img_out

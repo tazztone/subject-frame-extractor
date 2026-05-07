@@ -442,9 +442,12 @@ class SubjectMasker:
         color: Optional[tuple] = None,
         thickness: Optional[int] = None,
         label: Optional[str] = None,
+        style: Optional[str] = None,
+        radius: Optional[int] = None,
+        inplace: bool = False,
     ) -> np.ndarray:
         """Draw a bounding box on an image."""
-        return draw_bbox(img_rgb, xywh, self.config, color, thickness, label)
+        return draw_bbox(img_rgb, xywh, self.config, color, thickness, label, style, radius, inplace)
 
     def _create_frame_map(self, output_dir: str) -> dict:
         """Create a frame map for the output directory."""
