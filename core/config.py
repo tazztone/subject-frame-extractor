@@ -3,11 +3,14 @@ Configuration Management for Frame Extractor & Analyzer
 """
 
 import json
+import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
 
 
 def json_config_settings_source() -> Dict[str, Any]:
@@ -17,9 +20,8 @@ def json_config_settings_source() -> Dict[str, Any]:
         if Path(config_path).is_file():
             with open(config_path, "r", encoding="utf-8") as f:
                 return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        # TODO: Log config loading errors instead of silently ignoring
-        pass
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        logger.error(f"Failed to load config from {config_path}: {e}")
     return {}
 
 
