@@ -143,6 +143,9 @@ def test_fmt_eta_static():
     assert AdvancedProgressTracker._fmt_eta(45) == "45s"
     assert AdvancedProgressTracker._fmt_eta(125) == "2m 5s"
     assert AdvancedProgressTracker._fmt_eta(3665) == "1h 1m"
+    assert AdvancedProgressTracker._fmt_eta(3665, precision="fine") == "1h 1m 5s"
+    assert AdvancedProgressTracker._fmt_eta(3605, precision="coarse") == "1h 0m"
+    assert AdvancedProgressTracker._fmt_eta(3605, precision="fine") == "1h 0m 5s"
 
 
 def test_tracker_pause_resume():
