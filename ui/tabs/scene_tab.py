@@ -212,6 +212,32 @@ class SceneTabBuilder:
                                 "elem_id": "scene_gallery_height",
                             },
                         )
+                    with gr.Row():
+                        self.app._create_component(
+                            "visualization_bbox_style",
+                            "dropdown",
+                            {
+                                "label": "Box Style",
+                                "choices": ["solid", "dashed", "dotted"],
+                                "value": self.config.visualization_bbox_style,
+                            },
+                        )
+                        self.app._create_component(
+                            "visualization_bbox_radius",
+                            "slider",
+                            {
+                                "label": "Corner Radius",
+                                "minimum": 0,
+                                "maximum": 50,
+                                "value": self.config.visualization_bbox_radius,
+                                "step": 1,
+                            },
+                        )
+                        self.app._create_component(
+                            "visualization_show_labels",
+                            "checkbox",
+                            {"label": "Show Labels", "value": self.config.visualization_show_labels},
+                        )
 
             # 4. Action
             gr.Markdown("### Ready?")

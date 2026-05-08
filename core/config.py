@@ -234,6 +234,12 @@ class Config(BaseSettings):
     # Visualization
     visualization_bbox_color: List[int] = Field(default_factory=lambda: [255, 0, 0])
     visualization_bbox_thickness: int = 2
+    visualization_bbox_style: str = "solid"  # solid, dashed, dotted
+    visualization_bbox_radius: int = 0
+    visualization_bbox_show_conf: bool = True
+    visualization_show_labels: bool = True
+    visualization_label_font_scale: float = 0.5
+    visualization_label_thickness: int = 1
     visualization_badge_excluded_color: List[int] = Field(default_factory=lambda: [33, 128, 141])  # BGR Teal-ish
     visualization_badge_text_color: List[int] = Field(default_factory=lambda: [255, 255, 255])
 

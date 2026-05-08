@@ -303,20 +303,35 @@ class SceneHandler:
                 ],
             )
 
-        # Gallery size controls
-        def update_gallery_layout(columns, height, current_gallery):
+        # Gallery size and style controls
+        def update_gallery_layout(
+            columns, height, current_gallery, style, radius, show_labels, app_state: ApplicationState
+        ):
+            app_state.config.visualization_bbox_style = style
+            app_state.config.visualization_bbox_radius = int(radius)
+            app_state.config.visualization_show_labels = show_labels
             return gr.Gallery(columns=int(columns), height=int(height), value=current_gallery)
 
-        c["scene_gallery_columns"].release(
-            update_gallery_layout,
-            [c["scene_gallery_columns"], c["scene_gallery_height"], c["scene_gallery"]],
-            [c["scene_gallery"]],
-        )
-        c["scene_gallery_height"].release(
-            update_gallery_layout,
-            [c["scene_gallery_columns"], c["scene_gallery_height"], c["scene_gallery"]],
-            [c["scene_gallery"]],
-        )
+        for comp in [
+            c["scene_gallery_columns"],
+            c["scene_gallery_height"],
+            c["visualization_bbox_style"],
+            c["visualization_bbox_radius"],
+            c["visualization_show_labels"],
+        ]:
+            comp.release(
+                update_gallery_layout,
+                [
+                    c["scene_gallery_columns"],
+                    c["scene_gallery_height"],
+                    c["scene_gallery"],
+                    c["visualization_bbox_style"],
+                    c["visualization_bbox_radius"],
+                    c["visualization_show_labels"],
+                    c["application_state"],
+                ],
+                [c["scene_gallery"]],
+            )
 
     def _undo_last_action(self, app_state: ApplicationState, view: str) -> tuple:
         """Reverts the last action by popping from the history stack."""

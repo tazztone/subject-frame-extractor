@@ -105,3 +105,18 @@ See [AGENTS.md](AGENTS.md) for architecture details, critical rules, and develop
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+---
+
+## Technical Debt & Roadmap
+
+This project uses a semi-automated TODO tracking system to prioritize refactors and features.
+
+- **Check Current Debt**: Run `uv run python scripts/generate_todo_report.py` to generate `TODO_REPORT.md`.
+- **Top 20 Summary**:
+    1.  [High] Refactor `core/pipelines.py` to use modular `core/managers`. (In Progress)
+    2.  [High] Implement thread-safe model access for InsightFace.
+    3.  [Medium] Add temporal consistency smoothing between frames in `MaskPropagator`.
+    4.  [Medium] Add adaptive quality thresholds based on propagation distance.
+    5.  [Low] Support demosaicing for RAW photo ingest (currently uses previews).
+

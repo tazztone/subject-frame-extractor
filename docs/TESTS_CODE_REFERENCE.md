@@ -20,6 +20,7 @@ tests
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`e2e_run.py`](#-testse2ee2e_runpy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_photo_cli.py`](#-testse2etest_photo_clipy)  
 │&nbsp;&nbsp;&nbsp;└──&nbsp;[`verify_simple.py`](#-testse2everify_simplepy)  
+├──&nbsp;helpers  
 ├──&nbsp;integration  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`__init__.py`](#-testsintegration__init__py)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;e2e_output_debug  

@@ -16,7 +16,16 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 .  
 ├──&nbsp;AGENTS.md  
 ├──&nbsp;CHANGELOG.md  
+├──&nbsp;MagicMock  
+│&nbsp;&nbsp;&nbsp;└──&nbsp;mock.config.downloads_dir  
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;130276556587904  
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;extracted_frames  
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;133535462706208  
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;extracted_frames  
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└──&nbsp;136706662630080  
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└──&nbsp;extracted_frames  
 ├──&nbsp;README.md  
+├──&nbsp;TODO_REPORT.md  
 ├──&nbsp;[`app.py`](#-apppy)  
 ├──&nbsp;cli.py  
 ├──&nbsp;core  
@@ -83,6 +92,7 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;[`subject_masker.py`](#-corescene_utilssubject_maskerpy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`shared.py`](#-coresharedpy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`system_health.py`](#-coresystem_healthpy)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;utils  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`utils.py`](#-coreutilspy)  
 │&nbsp;&nbsp;&nbsp;└──&nbsp;[`xmp_writer.py`](#-corexmp_writerpy)  
 ├──&nbsp;custom_logs  
@@ -107,6 +117,7 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└──&nbsp;thumbs  
 ├──&nbsp;previews  
 ├──&nbsp;scripts  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`generate_todo_report.py`](#-scriptsgenerate_todo_reportpy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;jules_setup_script.sh  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;linux_run_app.sh  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;linux_setup_playwright.sh  
@@ -136,6 +147,7 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;e2e_run.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_photo_cli.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;verify_simple.py  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;helpers  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;integration  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;__init__.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;e2e_output_debug  
@@ -700,7 +712,11 @@ def render_mask_overlay(frame_rgb: np.ndarray, mask_gray: np.ndarray, alpha: flo
     """overlays a semi-transparent red mask on the image."""
 def rgb_to_pil(image_rgb: np.ndarray) -> Image.Image:
     """Converts a NumPy RGB array to a PIL Image."""
-def draw_bbox(img_rgb: np.ndarray, xywh: list, config: 'Config', color: Optional[tuple]=None, thickness: Optional[int]=None, label: Optional[str]=None) -> np.ndarray:
+def _draw_dashed_line(img: np.ndarray, pt1: tuple[int, int], pt2: tuple[int, int], color: tuple[int, int, int], thickness: int, dash_len: int=10):
+    """Internal helper to draw a dashed line."""
+def _draw_dotted_line(img: np.ndarray, pt1: tuple[int, int], pt2: tuple[int, int], color: tuple[int, int, int], thickness: int, gap: int=5):
+    """Internal helper to draw a dotted line."""
+def draw_bbox(img_rgb: np.ndarray, xywh: list, config: 'Config', color: Optional[tuple]=None, thickness: Optional[int]=None, label: Optional[str]=None, style: Optional[str]=None, radius: Optional[int]=None, inplace: bool=False) -> np.ndarray:
     """Draws a bounding box and optional label on an image."""
 @njit
 def compute_entropy(hist: np.ndarray, entropy_norm: float) -> float:
@@ -1528,6 +1544,14 @@ def write_xmp_sidecar(source_path: Path, rating: int, label: str) -> Optional[Pa
     """Writes an XMP sidecar file compatible with Adobe Lightroom/Bridge."""
 def export_xmps_for_photos(photos: List[Dict], star_thresholds: Optional[List[int]]=None) -> int:
     """Writes XMP sidecars for all photos in the list."""
+```
+
+### `📄 scripts/generate_todo_report.py`
+
+```python
+"""Scans the codebase for TODO items and generates a prioritized report."""
+def scan_todos(root_dir='.'): ...
+def generate_report(todos): ...
 ```
 
 ### `📄 scripts/run_ux_audit.py`
