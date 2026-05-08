@@ -142,8 +142,9 @@ class TestSharedUtils:
         items, _, _ = build_scene_gallery_items(scenes, "All", str(output_dir))
         assert len(items) == 0  # Previews dir doesn't exist yet
 
+    @patch("core.shared.logger")
     @patch("cv2.imread")
-    def test_build_scene_gallery_items_error(self, mock_imread, tmp_path):
+    def test_build_scene_gallery_items_error(self, mock_imread, mock_logger, tmp_path):
         output_dir = tmp_path / "output"
         (output_dir / "previews").mkdir(parents=True)
         (output_dir / "previews" / "scene_00001.jpg").touch()
@@ -152,6 +153,7 @@ class TestSharedUtils:
         scenes = [Scene(shot_id=1, start_frame=0, end_frame=10)]
         items, _, _ = build_scene_gallery_items(scenes, "All", str(output_dir))
         assert len(items) == 0
+        mock_logger.error.assert_called_once()
 
     @patch("cv2.imread")
     def test_build_scene_gallery_items_imread_none(self, mock_imread, tmp_path):
