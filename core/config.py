@@ -95,6 +95,7 @@ class Config(BaseSettings):
     default_thumbnails_only: bool = True
     default_thumb_megapixels: float = 0.5
     default_scene_detect: bool = True
+    default_scene_detect_threshold: float = 27.0
     default_max_resolution: str = "maximum available"
     default_pre_analysis_enabled: bool = True
     default_pre_sample_nth: int = 5
@@ -115,6 +116,7 @@ class Config(BaseSettings):
     default_interval: float = 5.0
     default_nth_frame: int = 5
     default_disable_parallel: bool = False
+    scene_detect_threshold: float = 27.0
 
     # Filter Defaults
     filter_default_quality_score: Dict[str, float] = Field(

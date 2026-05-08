@@ -203,6 +203,7 @@ class AnalysisParameters(BaseModel):
     subject_detector_class_id: int = 0
     subject_detector_threshold: float = 0.45
     scene_detect: bool = False
+    scene_detect_threshold: float = 27.0
     nth_frame: int = 0
     require_face_match: bool = False
     text_prompt: str = ""
