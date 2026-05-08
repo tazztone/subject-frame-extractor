@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import threading
+from datetime import datetime, timezone
 from pathlib import Path
 from queue import Queue
 from typing import TYPE_CHECKING, Any
@@ -73,6 +74,7 @@ def save_scene_seeds(scenes_list: list["Scene"], output_dir_str: str, logger: "A
             "seed_metrics": s.seed_metrics,
             "seed_result": s.seed_result,
             "preview_path": s.preview_path,
+            "status_history": s.status_history,
         }
         scene_seeds[str(s.shot_id)] = data
     try:
@@ -137,13 +139,17 @@ def toggle_scene_status(
     """
     # TODO: Add undo/redo support for status changes
     # TODO: Support batch status changes for multiple scenes
-    # TODO: Add status change history for audit trail
     if selected_shot_id is None or not scenes_list:
         status_text, button_update = get_scene_status_text(scenes_list)
         return scenes_list, status_text, "No scene selected.", button_update
 
     scene_to_update = next((s for s in scenes_list if s.shot_id == selected_shot_id), None)
     if scene_to_update:
+        if scene_to_update.status != SceneStatus(new_status):
+            scene_to_update.status_history.append({
+                "status": new_status,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            })
         scene_to_update.status = SceneStatus(new_status)
         scene_to_update.manual_status_change = True
         save_scene_seeds(scenes_list, output_folder, logger)
