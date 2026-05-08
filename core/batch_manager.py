@@ -1,5 +1,6 @@
 import threading
 import time
+import traceback
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -33,8 +34,9 @@ class BatchManager:
     """Manages a queue of batch processing tasks."""
 
     # TODO: Add resource-aware scheduling (wait for GPU or RAM availability)
-    def __init__(self):
+    def __init__(self, logger=None):
         """Initializes the BatchManager."""
+        self.logger = logger
         self.queue: List[BatchItem] = []
         self.lock = threading.Lock()
         self.stop_event = threading.Event()
@@ -83,7 +85,7 @@ class BatchManager:
                         item.message = message
                     break
 
-    def set_status(self, item_id: str, status: BatchStatus, message: Optional[str] = None):
+    def set_status(self, item_id: str, status: BatchStatus, message: Optional[str] = None, error: Optional[str] = None):
         """Updates the status and message of a specific batch item."""
         with self.lock:
             for item in self.queue:
@@ -91,6 +93,10 @@ class BatchManager:
                     item.status = status
                     if message:
                         item.message = message
+                    if error is not None:
+                        item.error = error
+                    else:
+                        item.error = ""
                     break
 
     def start_processing(self, processor_func: Callable, max_workers: int = 1):
@@ -153,8 +159,13 @@ class BatchManager:
                                 self.set_status(item.id, BatchStatus.COMPLETED, msg)
                             except Exception as e:
                                 # TODO: Add retry logic for transient failures
-                                # TODO: Capture full stack trace for debugging
-                                self.set_status(item.id, BatchStatus.FAILED, str(e))
+                                trace_str = traceback.format_exc()
+                                self.set_status(item.id, BatchStatus.FAILED, str(e), error=trace_str)
+                                if self.logger:
+                                    try:
+                                        self.logger.error(f"Task failed: {e}", exc_info=True, component="batch_manager")
+                                    except TypeError:
+                                        self.logger.error(f"Task failed: {e}", exc_info=True)
 
                         futures.append(executor.submit(task))
                     else:
