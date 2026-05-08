@@ -2,10 +2,13 @@
 Progress Tracking Infrastructure for Frame Extractor & Analyzer
 """
 
+import gettext
 import threading
 import time
 from queue import Queue
 from typing import TYPE_CHECKING, Callable, Optional
+
+_ = gettext.gettext
 
 from pydantic import BaseModel
 
@@ -158,14 +161,13 @@ class AdvancedProgressTracker:
     @staticmethod
     def _fmt_eta(eta_s: Optional[float]) -> str:
         """Formats seconds into a human-readable string."""
-        # TODO: Add locale-aware formatting
         # TODO: Support different precision levels (coarse/fine)
         if eta_s is None:
             return "—"
         if eta_s < 60:
-            return f"{int(eta_s)}s"
+            return _("{s}s").format(s=int(eta_s))
         m, s = divmod(int(eta_s), 60)
         if m < 60:
-            return f"{m}m {s}s"
+            return _("{m}m {s}s").format(m=m, s=s)
         h, m = divmod(m, 60)
-        return f"{h}h {m}m"
+        return _("{h}h {m}m").format(h=h, m=m)
