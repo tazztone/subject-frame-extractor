@@ -189,117 +189,33 @@ tests
 ### `📄 tests/conftest.py`
 
 ```python
-"""Shared pytest fixtures and configuration."""
-def pytest_addoption(parser):
-    """Add custom command-line options to pytest."""
-def _create_mock_module(name, attributes=None):
-    """Creates a proper ModuleType instance populated with mocks/attributes."""
-class OutOfMemoryError(RuntimeError):
-    """Mock CUDA OutOfMemoryError."""
-class VideoOpenFailure(RuntimeError):
-    """Mock PySceneDetect VideoOpenFailure."""
+def _should_skip_mocks(): ...
+def _create_mock_module(name, attributes=None): ...
+class OutOfMemoryError(RuntimeError): ...
+class VideoOpenFailure(RuntimeError): ...
 class TransparentContext:
-    """Empty context manager that does nothing but allows 'with' blocks."""
     def __enter__(self, *args, **kwargs): ...
     def __exit__(self, *args, **kwargs): ...
     def __call__(self, func=None): ...
-_mock_torch_obj = MagicMock(name='torch')
+_cuda_is_available_mock = MagicMock(return_value=False)
+def set_cuda_available(available: bool): ...
 svmem = namedtuple('svmem', ['total', 'available', 'percent', 'used', 'free'])
-def make_svmem(available_mb=4096, percent=50.0, total_gb=8):
-    """Helper to create realistic psutil.virtual_memory returns."""
-_cuda_mod = _create_mock_module('torch.cuda', {'is_available': MagicMock(retu...
-_mock_torch_obj.cuda = _cuda_mod
-_mock_torch_obj.__version__ = "<REDACTED_STRING>"
-_mock_torch_obj.nn.Module = MagicMock
-_mock_torch_obj.Tensor = MagicMock
-_mock_torch_obj.device = MagicMock
-_mock_torch_obj.float = MagicMock(name='torch.float')
-_mock_torch_obj.float32 = MagicMock(name='torch.float32')
-_mock_torch_obj.float16 = MagicMock(name='torch.float16')
-_mock_torch_obj.bfloat16 = MagicMock(name='torch.bfloat16')
-_mock_torch_obj.uint8 = MagicMock(name='torch.uint8')
-_mock_torch_obj.int64 = MagicMock(name='torch.int64')
-_mock_torch_obj.version = MagicMock()
-_mock_torch_obj.version.cuda = "<REDACTED_STRING>"
+def make_svmem(available_mb=4096, percent=50.0, total_gb=8): ...
 def _create_mock_tensor(name='tensor', shape=None, value=None, **kwargs): ...
-_mock_torch_obj.from_numpy = MagicMock(side_effect=lambda np_arr: _create_moc...
-_mock_torch_obj.zeros = MagicMock(side_effect=lambda shape, **kwargs: _create...
-_mock_torch_obj.ones = MagicMock(side_effect=lambda shape, **kwargs: _create_...
-_mock_torch_obj.rand = MagicMock(side_effect=lambda *shape, **kwargs: _create...
-_mock_torch_obj.randn = MagicMock(side_effect=lambda *shape, **kwargs: _creat...
-_mock_torch_obj.empty = MagicMock(side_effect=lambda *shape, **kwargs: _creat...
-_mock_torch_obj.tensor = MagicMock(side_effect=lambda data, **kwargs: _create...
-_mock_torch_obj.no_grad = TransparentContext
-_mock_torch_obj.inference_mode = TransparentContext
-_mock_torch_obj.SymFloat = MagicMock
-_mock_torch_obj.SymInt = MagicMock
-modules_to_mock = {'torch': _create_mock_module('torch', {'cuda': _cuda_mod, ...
-def _should_skip_mocks():
-    """Determine if global mocks should be disabled."""
+_cuda_mod = _create_mock_module('torch.cuda', {'is_available': _cuda_is_avail...
+_torch_mod = _create_mock_module('torch', {'__path__': [], 'cuda': _cuda_mod,...
+modules_to_mock = {'psutil': _create_mock_module('psutil', {'virtual_memory':...
+@pytest.fixture(autouse=True)
+def clean_gpu_mock():
+    """Ensure CUDA mock is reset between tests."""
 @pytest.fixture
-def clean_registry():
-    """Ensure OperatorRegistry is clean before each test."""
-@pytest.fixture(scope='session')
-def requires_cuda():
-    """Skip test if CUDA is not available."""
-@pytest.fixture(scope='session')
-def check_assets():
-    """Ensure E2E sample assets exist."""
+def mock_config(): ...
 @pytest.fixture
-def mock_logger():
-    """Mock Application Logger."""
+def mock_config_simple(): ...
 @pytest.fixture
-def sample_image():
-    """100x100 RGB image with random noise (seed 42 for consistency)."""
+def mock_logger(): ...
 @pytest.fixture
-def sample_mask():
-    """100x100 grayscale mask (center region active)."""
-@pytest.fixture
-def sharp_image():
-    """High-frequency checkerboard pattern (sharp)."""
-@pytest.fixture
-def blurry_image():
-    """Gaussian blurred uniform gray (blurry)."""
-@pytest.fixture
-def mock_config():
-    """Mock Config object with common parameters."""
-@pytest.fixture
-def mock_config_simple(mock_config):
-    """Alias for mock_config used by some tests."""
-@pytest.fixture
-def sample_frames_data():
-    """Provides sample frame metadata for filtering tests."""
-@pytest.fixture
-def mock_ui_state():
-    """Provides a dictionary with default values for UI-related event models."""
-@pytest.fixture
-def mock_params(mock_ui_state):
-    """Provides an AnalysisParameters instance for testing."""
-@pytest.fixture
-def mock_thumbnail_manager():
-    """Provides a mock ThumbnailManager."""
-@pytest.fixture(scope='session')
-def mock_model_registry():
-    """Provides a mock ModelRegistry."""
-@pytest.fixture
-def mock_progress_queue():
-    """Provides a mock progress queue."""
-@pytest.fixture
-def mock_cancel_event():
-    """Provides a mock cancel event."""
-@pytest.fixture
-def sample_scenes():
-    """Provides a list of sample Scene objects."""
-def pytest_sessionstart(session):
-    """Mocks are now initialized at the module level for early interception."""
-def pytest_sessionfinish(session, exitstatus):
-    """Restore original modules after the session."""
-@pytest.fixture(scope='module')
-def module_model_registry():
-    """Module-scoped model registry to avoid reloading weights between tests."""
-@pytest.fixture
-def mock_torch():
-    """Fixture to access the mocked torch module."""
+def sample_scenes(): ...
 ```
 
 ### `📄 tests/e2e/e2e_run.py`
@@ -3295,13 +3211,11 @@ class TestDependencyImports:
 class TestStability(unittest.TestCase):
     def setUp(self): ...
     @patch('core.batch_manager.psutil.virtual_memory')
-    @patch('core.batch_manager.torch.cuda.is_available', return_value=False)
     @patch('core.batch_manager.time.sleep')
-    def test_batch_manager_resource_aware_wait(self, mock_sleep, mock_cuda_avail, mock_ram): ...
+    def test_batch_manager_resource_aware_wait(self, mock_sleep, mock_ram): ...
     @patch('time.sleep', side_effect=[StopIteration])
-    @patch('psutil.virtual_memory')
-    @patch('core.utils.torch.cuda.is_available', return_value=False)
-    def test_memory_watchdog(self, mock_cuda_avail, mock_ram, mock_sleep): ...
+    @patch('core.utils.psutil.virtual_memory')
+    def test_memory_watchdog(self, mock_ram, mock_sleep): ...
     def test_propagation_event_enum_validation(self): ...
 ```
 
