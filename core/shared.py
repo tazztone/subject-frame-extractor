@@ -7,6 +7,7 @@ resolving circular import issues.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional, Sequence, Tuple, Union
 
@@ -18,6 +19,8 @@ from core.enums import SceneStatus
 if TYPE_CHECKING:
     from core.config import Config
     from core.models import Scene
+
+logger = logging.getLogger(__name__)
 
 
 # TODO: Add caching for repeated scene status checks
@@ -198,8 +201,8 @@ def build_scene_gallery_items(
                 thumb_img_np, i, s.status == SceneStatus.EXCLUDED, config=config
             )
             items.append((badged_thumb, scene_caption(s)))
-        except Exception:
-            # TODO: Log the specific exception for debugging
+        except Exception as e:
+            logger.error(f"Failed to create thumbnail for scene {getattr(s, 'shot_id', 'unknown')} at {thumb_path}: {e}", exc_info=True)
             continue
         index_map.append(i)
 
