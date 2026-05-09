@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 
 
 # TODO: Support multiple detection algorithms (content, histogram, motion)
-def run_scene_detection(video_path: str, output_dir: Path, logger: "AppLogger") -> list:
+def run_scene_detection(video_path: str, output_dir: Path, logger: "AppLogger", threshold: float = 27.0) -> list:
     """
     Detect scene changes in a video using PySceneDetect.
 
@@ -30,14 +30,14 @@ def run_scene_detection(video_path: str, output_dir: Path, logger: "AppLogger") 
         video_path: Path to the video file
         output_dir: Directory to save scenes.json
         logger: Application logger
+        threshold: ContentDetector threshold (default: 27.0)
 
     Returns:
         List of (start_frame, end_frame) tuples for each scene
     """
     logger.info("Detecting scenes...", component="video")
     try:
-        # TODO: Make ContentDetector threshold configurable
-        scene_list = detect(str(video_path), ContentDetector())
+        scene_list = detect(str(video_path), ContentDetector(threshold=threshold))
         shots = [(s.get_frames(), e.get_frames()) for s, e in scene_list] if scene_list else []
         with (output_dir / "scenes.json").open("w", encoding="utf-8") as f:
             json.dump(shots, f)
