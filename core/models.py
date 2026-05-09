@@ -288,10 +288,11 @@ class AnalysisParameters(BaseModel):
                 except (ValueError, TypeError):
                     pass
 
-        for metric in [k.replace("filter_default_", "") for k in config_defaults if k.startswith("filter_default_")]:
-            compute_key = f"compute_{metric}"
-            if compute_key in valid_keys:
-                defaults[compute_key] = True
+        for k in config_defaults:
+            if k.startswith("filter_default_"):
+                compute_key = f"compute_{k[15:]}"
+                if compute_key in valid_keys:
+                    defaults[compute_key] = True
 
         defaults["compute_phash"] = True
         instance = cls(**defaults)
