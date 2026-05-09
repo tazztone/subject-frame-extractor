@@ -26,6 +26,7 @@ from core.scene_utils.helpers import (
     draw_boxes_preview,
     get_scene_status_text,
     save_scene_seeds,
+    set_batch_scene_status,
     toggle_scene_status,
 )
 
@@ -46,6 +47,7 @@ __all__ = [
     "draw_boxes_preview",
     "save_scene_seeds",
     "get_scene_status_text",
+    "set_batch_scene_status",
     "toggle_scene_status",
     "_create_analysis_context",
     "_recompute_single_preview",
