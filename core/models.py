@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, List, Optional, Union
 
@@ -104,6 +105,7 @@ class Scene(BaseModel):
     person_detections: List[dict] = Field(default_factory=list)
     additional_seeds: List[dict] = Field(default_factory=list)
     candidate_seed_frames: List[int] = Field(default_factory=list)
+    status_history: List[dict] = Field(default_factory=list)
 
 
 class SceneState:
@@ -141,6 +143,11 @@ class SceneState:
         if not self._scene.seed_config:
             self._scene.seed_config = {}
         self._scene.seed_config["override_source"] = source
+        if self._scene.status != SceneStatus.INCLUDED:
+            self._scene.status_history.append({
+                "status": "included",
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            })
         self._scene.status = SceneStatus.INCLUDED
         self._scene.manual_status_change = True
 
@@ -153,11 +160,21 @@ class SceneState:
 
     def include(self):
         """Marks the scene as included."""
+        if self._scene.status != SceneStatus.INCLUDED:
+            self._scene.status_history.append({
+                "status": "included",
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            })
         self._scene.status = SceneStatus.INCLUDED
         self._scene.manual_status_change = True
 
     def exclude(self):
         """Marks the scene as excluded."""
+        if self._scene.status != SceneStatus.EXCLUDED:
+            self._scene.status_history.append({
+                "status": "excluded",
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            })
         self._scene.status = SceneStatus.EXCLUDED
         self._scene.manual_status_change = True
 
