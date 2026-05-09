@@ -71,6 +71,7 @@ class SeedSelector:
         self.subject_detector = subject_detector
         self._device = device
         self.logger: LoggerLike = logger or logging.getLogger("app_logger")
+        self._transform = None
 
     def _get_param(self, source: Union[dict, object], key: str, default: Any = None) -> Any:
         """Get a parameter from either a dict or an object."""
@@ -498,20 +499,20 @@ class SeedSelector:
 
         return self._xyxy_to_xywh(best_person["bbox"], frame_rgb.shape), details
 
-    # TODO: Cache transform for reuse across multiple frames
     def _load_image_from_array(self, image_rgb: np.ndarray) -> tuple[np.ndarray, torch.Tensor]:
         """Load image for model input."""
         import torch
         from torchvision import transforms
 
-        transform = transforms.Compose(
-            [
-                transforms.ToPILImage(),
-                transforms.ToTensor(),
-                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-            ]
-        )
-        t_img = transform(image_rgb)
+        if self._transform is None:
+            self._transform = transforms.Compose(
+                [
+                    transforms.ToPILImage(),
+                    transforms.ToTensor(),
+                    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+                ]
+            )
+        t_img = self._transform(image_rgb)
         return image_rgb, cast(torch.Tensor, t_img)
 
     def _calculate_iou(self, box1: list, box2: list) -> float:

@@ -144,3 +144,54 @@ def test_batch_manager_start_empty(bm):
     # Should not crash or hang
     bm.start_processing(lambda x, y: None)
     assert not bm.is_running
+
+
+def test_batch_manager_retry_success(bm):
+    bm.add_paths(["retry_success.mp4"])
+
+    attempts = 0
+    def processor(item, progress):
+        nonlocal attempts
+        attempts += 1
+        if attempts < 2:
+            raise ValueError("Transient error")
+        return {"message": "Success on retry"}
+
+    bm.start_processing(processor)
+
+    # Wait for completion
+    timeout = 5
+    start = time.time()
+    while bm.is_running and time.time() - start < timeout:
+        time.sleep(0.01)
+
+    assert bm.queue[0].status == BatchStatus.COMPLETED
+    assert bm.queue[0].message == "Success on retry"
+    assert attempts == 2
+
+
+def test_batch_manager_retry_failure_with_logger():
+    from unittest.mock import MagicMock
+    logger_mock = MagicMock()
+    bm = BatchManager(logger=logger_mock)
+    bm.add_paths(["retry_fail.mp4"])
+
+    attempts = 0
+    def processor(item, progress):
+        nonlocal attempts
+        attempts += 1
+        raise RuntimeError("Persistent error")
+
+    bm.start_processing(processor)
+
+    # Wait for completion
+    timeout = 5
+    start = time.time()
+    while bm.is_running and time.time() - start < timeout:
+        time.sleep(0.01)
+
+    assert bm.queue[0].status == BatchStatus.FAILED
+    assert bm.queue[0].message == "Persistent error"
+    assert "Traceback" in bm.queue[0].error
+    assert attempts == 3
+    logger_mock.error.assert_called()

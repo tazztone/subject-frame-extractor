@@ -131,8 +131,20 @@ def test_config_json_source():
     with patch("core.config.Path.is_file", return_value=True):
         with patch("builtins.open", MagicMock()):
             with patch("json.load", side_effect=json.JSONDecodeError("msg", "doc", 0)):
+                with patch("core.config.logger.error") as mock_logger_error:
+                    result = json_config_settings_source()
+                    assert result == {}
+                    mock_logger_error.assert_called_once()
+                    assert "Failed to load config from config.json:" in mock_logger_error.call_args[0][0]
+
+    # Test file not found
+    with patch("core.config.Path.is_file", return_value=True):
+        with patch("builtins.open", side_effect=FileNotFoundError("file not found")):
+            with patch("core.config.logger.error") as mock_logger_error:
                 result = json_config_settings_source()
                 assert result == {}
+                mock_logger_error.assert_called_once()
+                assert "Failed to load config from config.json:" in mock_logger_error.call_args[0][0]
 
 
 def test_quality_weights_property():

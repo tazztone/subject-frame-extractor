@@ -40,6 +40,7 @@ class AdvancedProgressTracker:
         queue: Optional[Queue] = None,
         logger: Optional["AppLogger"] = None,
         ui_stage_name: str = "",
+        eta_precision: str = "coarse",
     ):
         # type: ignore
         """
@@ -66,6 +67,7 @@ class AdvancedProgressTracker:
         self.throttle_interval: float = 0.1
         self.pause_event = threading.Event()
         self.pause_event.set()
+        self.eta_precision = eta_precision
 
     def start(self, total_items: int, desc: Optional[str] = None):
         """Resets the tracker for a new operation."""
@@ -131,7 +133,7 @@ class AdvancedProgressTracker:
             return
         self._last_update_ts = now
         eta_s = self._eta_seconds()
-        eta_str = self._fmt_eta(eta_s)
+        eta_str = self._fmt_eta(eta_s, precision=self.eta_precision)
         desc_parts = [f"{self.stage} ({self.done}/{self.total})"]
         if self.substage:
             desc_parts.append(self.substage)
@@ -159,15 +161,24 @@ class AdvancedProgressTracker:
         return self._ema_dt * remaining
 
     @staticmethod
-    def _fmt_eta(eta_s: Optional[float]) -> str:
+    def _fmt_eta(eta_s: Optional[float], precision: str = "coarse") -> str:
         """Formats seconds into a human-readable string."""
-        # TODO: Support different precision levels (coarse/fine)
         if eta_s is None:
             return "—"
-        if eta_s < 60:
-            return _("{s}s").format(s=int(eta_s))
-        m, s = divmod(int(eta_s), 60)
-        if m < 60:
+
+        s_total = int(eta_s)
+        if s_total < 60:
+            return _("{s}s").format(s=s_total)
+
+        m_total, s = divmod(s_total, 60)
+
+        if precision == "fine":
+            h, m = divmod(m_total, 60)
+            if h > 0:
+                return _("{h}h {m}m {s}s").format(h=h, m=m, s=s)
             return _("{m}m {s}s").format(m=m, s=s)
-        h, m = divmod(m, 60)
-        return _("{h}h {m}m").format(h=h, m=m)
+        else:
+            if m_total < 60:
+                return _("{m}m {s}s").format(m=m_total, s=s)
+            h, m = divmod(m_total, 60)
+            return _("{h}h {m}m").format(h=h, m=m)

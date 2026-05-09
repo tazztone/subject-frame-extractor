@@ -286,7 +286,7 @@ class ExtractionPipeline:
                 totals = estimate_totals(self.params, video_info, None)
                 tracker.start(totals["extraction"], desc="Extracting frames")
             if self.params.scene_detect:
-                run_scene_detection(str(video_path), output_dir, self.logger)
+                run_scene_detection(str(video_path), output_dir, self.logger, threshold=self.params.scene_detect_threshold)
             run_ffmpeg_extraction(
                 str(video_path),
                 output_dir,
