@@ -300,6 +300,7 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_signatures.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_simple_cv_operators.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_smoke.py  
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_stability.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_strategy_mapping.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_subject_detector.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_subject_masker_coverage.py  
@@ -636,6 +637,10 @@ class PropagationEvent(UIEvent):
     @field_validator('output_folder')
     @classmethod
     def validate_out(cls, v: str) -> str: ...
+    @field_validator('scenes')
+    @classmethod
+    def validate_scene_statuses(cls, v: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Coerce status strings to SceneStatus enum."""
 class FilterEvent(UIEvent):
     """Data model for filtering and gallery update events."""
     @field_validator('output_dir')
@@ -1388,6 +1393,8 @@ def save_scene_seeds(scenes_list: list['Scene'], output_dir_str: str, logger: 'A
     """Save scene seed information to JSON file."""
 def get_scene_status_text(scenes_list: list['Scene']) -> tuple[str, Any]:
     """Generate status text and button update for scene list."""
+def set_batch_scene_status(scenes_list: list['Scene'], selected_shot_ids: list[int], new_status: str, output_folder: str, logger: 'AppLogger') -> tuple[list, str, str, Any]:
+    """Toggle the status of multiple selected scenes."""
 def toggle_scene_status(scenes_list: list['Scene'], selected_shot_id: int, new_status: str, output_folder: str, logger: 'AppLogger') -> tuple[list, str, str, Any]:
     """Toggle the status of a selected scene."""
 def _create_analysis_context(config: 'Config', logger: 'AppLogger', thumbnail_manager: 'ThumbnailManager', cuda_available: bool, ana_ui_map_keys: list[str], ana_input_components: list, model_registry: 'ModelRegistry') -> 'SubjectMasker':
@@ -1499,8 +1506,8 @@ class SubjectMasker:
 logger = logging.getLogger(__name__)
 def scene_matches_view(scene: 'Scene', view: str) -> bool:
     """Check if a scene matches the specified view filter."""
-def create_scene_thumbnail_with_badge(thumb_img: np.ndarray, scene_idx: int, is_excluded: bool, config: Optional['Config']=None) -> np.ndarray:
-    """Create a scene thumbnail with a visual badge indicating exclusion status."""
+def create_scene_thumbnail_with_badge(thumb_img: np.ndarray, scene_idx: int, status: Union[bool, str, 'SceneStatus'], config: Optional['Config']=None) -> np.ndarray:
+    """Create a scene thumbnail with a visual badge indicating status."""
 def scene_caption(scene: Union[dict, 'Scene']) -> str:
     """Generate a caption string for a scene."""
 def build_scene_gallery_items(scenes: Sequence[Union[dict, 'Scene']], view: str, output_dir: str, page_num: int=1, page_size: int=20, config: Optional['Config']=None) -> Tuple[List[Tuple], List[int], int]:
@@ -1530,8 +1537,14 @@ def _setup_triton_mock():
     """Mocks the Triton library if it's missing (e.g., on Windows or non-CUDA enviro..."""
 def handle_common_errors(func: Callable) -> Callable:
     """Decorator to catch common exceptions and return a standardized error dictiona..."""
-def monitor_memory_usage(logger: 'AppLogger', device: str, threshold_mb: int=8000):
-    """Logs a warning and clears cache if GPU memory usage exceeds threshold."""
+def monitor_memory_usage(logger: 'AppLogger', device: str, gpu_threshold_mb: int=8000, ram_threshold_pct: float=90.0):
+    """Logs warnings and clears cache if memory usage exceeds thresholds."""
+class MemoryWatchdog:
+    """Background thread that monitors memory usage and logs critical warnings."""
+    def __init__(self, config: 'Config', logger: 'AppLogger'): ...
+    def start(self): ...
+    def stop(self): ...
+    def _run(self): ...
 def estimate_totals(params: 'AnalysisParameters', video_info: dict, scenes: Optional[list['Scene']]) -> dict:
     """Estimates the total work items for each pipeline stage."""
 def _to_json_safe(obj: Any) -> Any:

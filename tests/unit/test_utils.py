@@ -66,7 +66,7 @@ def test_monitor_memory_usage():
         patch("core.utils.torch.cuda.memory_allocated", return_value=9000 * 1024**2),
         patch("core.utils.torch.cuda.empty_cache") as mock_empty,
     ):
-        monitor_memory_usage(logger, "cuda", threshold_mb=8000)
+        monitor_memory_usage(logger, device="cuda", gpu_threshold_mb=8000)
         assert logger.warning.called
         assert mock_empty.called
 
@@ -132,7 +132,7 @@ def test_monitor_memory_usage_low():
         patch("core.utils.torch.cuda.memory_allocated", return_value=1000 * 1024**2),
         patch("core.utils.torch.cuda.empty_cache") as mock_empty,
     ):
-        monitor_memory_usage(logger, "cuda", threshold_mb=8000)
+        monitor_memory_usage(logger, device="cuda", gpu_threshold_mb=8000)
         assert not logger.warning.called
         assert not mock_empty.called
 

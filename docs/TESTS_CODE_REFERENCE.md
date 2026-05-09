@@ -171,6 +171,7 @@ tests
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_signatures.py`](#-testsunittest_signaturespy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_simple_cv_operators.py`](#-testsunittest_simple_cv_operatorspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_smoke.py`](#-testsunittest_smokepy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_stability.py`](#-testsunittest_stabilitypy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_strategy_mapping.py`](#-testsunittest_strategy_mappingpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_subject_detector.py`](#-testsunittest_subject_detectorpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_subject_masker_coverage.py`](#-testsunittest_subject_masker_coveragepy)  
@@ -203,6 +204,9 @@ class TransparentContext:
     def __exit__(self, *args, **kwargs): ...
     def __call__(self, func=None): ...
 _mock_torch_obj = MagicMock(name='torch')
+svmem = namedtuple('svmem', ['total', 'available', 'percent', 'used', 'free'])
+def make_svmem(available_mb=4096, percent=50.0, total_gb=8):
+    """Helper to create realistic psutil.virtual_memory returns."""
 _cuda_mod = _create_mock_module('torch.cuda', {'is_available': MagicMock(retu...
 _mock_torch_obj.cuda = _cuda_mod
 _mock_torch_obj.__version__ = "<REDACTED_STRING>"
@@ -231,8 +235,7 @@ _mock_torch_obj.SymFloat = MagicMock
 _mock_torch_obj.SymInt = MagicMock
 modules_to_mock = {'torch': _create_mock_module('torch', {'cuda': _cuda_mod, ...
 def _should_skip_mocks():
-    """Determine if global mocks should be disabled for real-mode execution."""
-_skip_mocks = _should_skip_mocks()
+    """Determine if global mocks should be disabled."""
 @pytest.fixture
 def clean_registry():
     """Ensure OperatorRegistry is clean before each test."""
@@ -3008,6 +3011,9 @@ class TestSceneUtilsHelpers:
     def test_get_scene_status_text_rejected(self): ...
     def test_toggle_scene_status(self, mock_scene, mock_logger, tmp_path): ...
     def test_toggle_scene_status_not_found(self, mock_scene, mock_logger, tmp_path): ...
+    def test_set_batch_scene_status(self, mock_scene, mock_logger, tmp_path): ...
+    def test_set_batch_scene_status_not_found(self, mock_scene, mock_logger, tmp_path): ...
+    def test_set_batch_scene_status_empty_ids(self, mock_scene, mock_logger, tmp_path): ...
     @patch('core.scene_utils.helpers.initialize_analysis_models')
     @patch('core.scene_utils.helpers.create_frame_map')
     def test_create_analysis_context(self, mock_create_frame_map, mock_init_models, mock_config, mock_logger): ...
@@ -3281,6 +3287,22 @@ class TestDependencyImports:
     def test_numpy_available(self): ...
     def test_gradio_available(self): ...
     def test_pydantic_available(self): ...
+```
+
+### `📄 tests/unit/test_stability.py`
+
+```python
+class TestStability(unittest.TestCase):
+    def setUp(self): ...
+    @patch('core.batch_manager.psutil.virtual_memory')
+    @patch('core.batch_manager.torch.cuda.is_available', return_value=False)
+    @patch('core.batch_manager.time.sleep')
+    def test_batch_manager_resource_aware_wait(self, mock_sleep, mock_cuda_avail, mock_ram): ...
+    @patch('time.sleep', side_effect=[StopIteration])
+    @patch('psutil.virtual_memory')
+    @patch('core.utils.torch.cuda.is_available', return_value=False)
+    def test_memory_watchdog(self, mock_cuda_avail, mock_ram, mock_sleep): ...
+    def test_propagation_event_enum_validation(self): ...
 ```
 
 ### `📄 tests/unit/test_strategy_mapping.py`

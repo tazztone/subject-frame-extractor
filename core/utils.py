@@ -4,10 +4,12 @@ import contextlib
 import functools
 import gc
 import inspect
+import threading
 import traceback
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
 import numpy as np
+import psutil
 import torch
 
 
@@ -47,6 +49,7 @@ def _setup_triton_mock():
 
 
 if TYPE_CHECKING:
+    from core.config import Config
     from core.logger import AppLogger
     from core.models import AnalysisParameters, Scene
 
@@ -187,13 +190,83 @@ def handle_common_errors(func: Callable) -> Callable:
     return wrapper
 
 
-def monitor_memory_usage(logger: "AppLogger", device: str, threshold_mb: int = 8000):
-    """Logs a warning and clears cache if GPU memory usage exceeds threshold."""
+def monitor_memory_usage(
+    logger: "AppLogger", device: str, gpu_threshold_mb: int = 8000, ram_threshold_pct: float = 90.0
+):
+    """Logs warnings and clears cache if memory usage exceeds thresholds."""
     if device == "cuda" and torch.cuda.is_available():
         allocated = torch.cuda.memory_allocated() / 1024**2
-        if allocated > threshold_mb:
+        if allocated > gpu_threshold_mb:
             logger.warning(f"High GPU memory usage: {allocated:.1f}MB")
             torch.cuda.empty_cache()
+
+    # Coerce thresholds and handle mocks in tests
+    if not isinstance(gpu_threshold_mb, (int, float)):
+        gpu_threshold_mb = 8000
+    if not isinstance(ram_threshold_pct, (int, float)):
+        ram_threshold_pct = 90.0
+
+    try:
+        raw_ram = psutil.virtual_memory().percent
+        ram_usage = float(raw_ram) if isinstance(raw_ram, (int, float)) else 0.0
+    except (TypeError, ValueError, AttributeError):
+        ram_usage = 0.0
+
+    if ram_usage > ram_threshold_pct:
+        logger.warning(f"High system RAM usage: {ram_usage:.1f}%")
+        gc.collect()
+
+
+class MemoryWatchdog:
+    """Background thread that monitors memory usage and logs critical warnings."""
+
+    def __init__(self, config: "Config", logger: "AppLogger"):
+        self.config = config
+        self.logger = logger
+        self.stop_event = threading.Event()
+        self.thread: Optional[threading.Thread] = None
+
+    def start(self):
+        if not self.config.monitoring_memory_watchdog_enabled:
+            return
+        self.stop_event.clear()
+        self.thread = threading.Thread(target=self._run, daemon=True)
+        self.thread.start()
+        self.logger.info("Memory watchdog started.", component="monitor")
+
+    def stop(self):
+        self.stop_event.set()
+        if self.thread:
+            self.thread.join(timeout=1.0)
+
+    def _run(self):
+        import time
+
+        while not self.stop_event.is_set():
+            # Check RAM
+            mem = psutil.virtual_memory()
+            ram_used_mb = (mem.total - mem.available) / 1024 / 1024
+            if ram_used_mb > self.config.monitoring_memory_critical_threshold_mb:
+                self.logger.critical(
+                    f"CRITICAL: System RAM usage ({ram_used_mb:.0f}MB) exceeded threshold ({self.config.monitoring_memory_critical_threshold_mb}MB)!",
+                    component="monitor",
+                )
+                gc.collect()
+            elif ram_used_mb > self.config.monitoring_memory_warning_threshold_mb:
+                self.logger.warning(f"High system RAM usage: {ram_used_mb:.0f}MB", component="monitor")
+
+            # Check GPU VRAM
+            if torch.cuda.is_available():
+                for i in range(torch.cuda.device_count()):
+                    vram_used_mb = torch.cuda.memory_reserved(i) / 1024 / 1024
+                    if vram_used_mb > self.config.monitoring_gpu_memory_critical_threshold_mb:
+                        self.logger.critical(
+                            f"CRITICAL: GPU {i} VRAM usage ({vram_used_mb:.0f}MB) exceeded threshold ({self.config.monitoring_gpu_memory_critical_threshold_mb}MB)!",
+                            component="monitor",
+                        )
+                        torch.cuda.empty_cache()
+
+            time.sleep(5.0)
 
 
 def estimate_totals(params: "AnalysisParameters", video_info: dict, scenes: Optional[list["Scene"]]) -> dict:

@@ -36,9 +36,9 @@ class SeedSelector:
     - Automatic (person detection with various scoring)
     """
 
-    # TODO: Add adaptive face similarity thresholds based on video quality
-    # TODO: Implement multi-person tracking with ID assignment
-    # TODO: Add strategy confidence scoring for automatic fallback ordering
+    # TODO: Add adaptive face similarity thresholds based on video quality (Phase 3)
+    # TODO: Implement multi-person tracking with ID assignment (Phase 3)
+    # TODO: Add strategy confidence scoring for automatic fallback ordering (Phase 3)
 
     def __init__(
         self,

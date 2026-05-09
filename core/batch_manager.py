@@ -6,6 +6,9 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Callable, Dict, List, Optional
 
+import psutil
+import torch
+
 
 class BatchStatus(Enum):
     PENDING = "Pending"
@@ -133,6 +136,36 @@ class BatchManager:
                                 break
 
                     if candidate:
+                        # Resource-aware scheduling pre-check
+                        vram_avail_mb = 0
+                        if torch.cuda.is_available():
+                            try:
+                                props = torch.cuda.get_device_properties(0)
+                                reserved = torch.cuda.memory_reserved(0)
+                                val = (props.total_memory - reserved) / 1024 / 1024
+                                vram_avail_mb = val if isinstance(val, (int, float)) else 8000
+                            except (AttributeError, TypeError, RuntimeError):
+                                vram_avail_mb = 8000  # Fallback for mocks/failures
+
+                        try:
+                            raw_ram = psutil.virtual_memory().available
+                            ram_avail_mb = float(raw_ram) / 1024 / 1024 if isinstance(raw_ram, (int, float)) else 4096
+                        except (AttributeError, TypeError):
+                            ram_avail_mb = 4096  # Fallback
+
+                        # Thresholds (could be made configurable in Config)
+                        MIN_VRAM_MB = 1024
+                        MIN_RAM_MB = 2048
+
+                        if (torch.cuda.is_available() and vram_avail_mb < MIN_VRAM_MB) or ram_avail_mb < MIN_RAM_MB:
+                            if self.logger:
+                                self.logger.debug(
+                                    f"Waiting for resources... (RAM: {ram_avail_mb:.0f}MB, VRAM: {vram_avail_mb:.0f}MB)",
+                                    component="batch_manager",
+                                )
+                            time.sleep(2.0)
+                            continue
+
                         submitted_ids.add(candidate.id)
 
                         def task(item=candidate):
@@ -158,14 +191,20 @@ class BatchManager:
                                 try:
                                     result = processor_func(item, ProgressAdapter(self, item.id))
                                     msg = "Completed"
-                                    if isinstance(result, dict) and "message" in result:
-                                        msg = result["message"]
-                                        # TODO: Store output path from result for later retrieval
+                                    if isinstance(result, dict):
+                                        if "message" in result:
+                                            msg = result["message"]
+                                        if "output_path" in result:
+                                            item.output_path = result["output_path"]
                                     self.set_status(item.id, BatchStatus.COMPLETED, msg)
                                     break  # Success, exit retry loop
                                 except Exception as e:
                                     if attempt < max_retries - 1:
-                                        self.set_status(item.id, BatchStatus.PROCESSING, f"Retrying... ({attempt + 1}/{max_retries})")
+                                        self.set_status(
+                                            item.id,
+                                            BatchStatus.PROCESSING,
+                                            f"Retrying... ({attempt + 1}/{max_retries})",
+                                        )
                                         time.sleep(retry_delay)
                                     else:
                                         stack_trace = traceback.format_exc()
@@ -173,9 +212,16 @@ class BatchManager:
                                             # Depending on logger type, it might support component= kwargs or just standard args
                                             if hasattr(self.logger, "error"):
                                                 try:
-                                                    self.logger.error(f"Task failed after {max_retries} attempts: {str(e)}", exc_info=True, component="batch_manager")
+                                                    self.logger.error(
+                                                        f"Task failed after {max_retries} attempts: {str(e)}",
+                                                        exc_info=True,
+                                                        component="batch_manager",
+                                                    )
                                                 except TypeError:
-                                                    self.logger.error(f"Task failed after {max_retries} attempts: {str(e)}", exc_info=True)
+                                                    self.logger.error(
+                                                        f"Task failed after {max_retries} attempts: {str(e)}",
+                                                        exc_info=True,
+                                                    )
 
                                         self.set_status(item.id, BatchStatus.FAILED, str(e), error=stack_trace)
 

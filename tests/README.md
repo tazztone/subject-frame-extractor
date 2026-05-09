@@ -22,6 +22,7 @@
 |------|---------|
 | `test_exit_branches.py` | Groups exit-branch tests (`→exit` coverage gaps) across `batch_manager`, `db_schema`, `sam2`, `error_handling`, and `session` in one place to make systematic sweeps easy. |
 | `test_accuracy.py` | **Precision Baseline**. Uses `bedroom.mp4` to verify SAM3 mask propagation quality (IoU > 0.8) and area stability (< 0.5% variance). |
+| `test_stability.py` | **Resource & Reliability**. Verifies `BatchManager` resource-aware scheduling, system memory watchdog triggers, and Pydantic event validation. |
 
 ## Setup & Execution
 
@@ -162,7 +163,7 @@ If you try to run a specific test file (e.g., `tests/integration/test_gpu_e2e.py
 
 ---
 
-*Last Updated: 2026-04-04 (SAM 3.1 Multiplex Migration & UI Hardening)*
+*Last Updated: 2026-05-09 (Phase 1: Stability Hardening & Resource Monitoring)*
 
 ## Gradio 5 UI Testing Patterns
 

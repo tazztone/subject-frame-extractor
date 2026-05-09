@@ -141,7 +141,6 @@ class PreAnalysisEvent(UIEvent):
         return self
 
 
-# TODO: Add scene status validation (enum instead of string)
 class PropagationEvent(UIEvent):
     """
     Data model for the mask propagation stage.
@@ -156,6 +155,21 @@ class PropagationEvent(UIEvent):
     @classmethod
     def validate_out(cls, v: str) -> str:
         return validate_writable_directory(v, "Output Folder")
+
+    @field_validator("scenes")
+    @classmethod
+    def validate_scene_statuses(cls, v: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Coerce status strings to SceneStatus enum."""
+        from core.enums import SceneStatus
+
+        for scene in v:
+            if "status" in scene and isinstance(scene["status"], str):
+                try:
+                    scene["status"] = SceneStatus(scene["status"])
+                except ValueError:
+                    # Fallback or log error if invalid status
+                    pass
+        return v
 
 
 class FilterEvent(UIEvent):

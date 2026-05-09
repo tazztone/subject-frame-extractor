@@ -30,7 +30,6 @@ def test_yolo26_model_mapping(tmp_path):
         with (
             patch("core.managers.model_loader.download_model"),
             patch("core.managers.model_loader.get_face_landmarker"),
-            patch("torch.cuda.is_available", return_value=False),
         ):
             # Mock the landmarker file existence to skip that part
             landmarker_path = config.models_dir / "landmarker.task"

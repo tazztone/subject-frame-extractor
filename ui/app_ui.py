@@ -22,7 +22,7 @@ from core.export import dry_run_export, export_kept_frames
 from core.logger import AppLogger
 from core.managers import ModelRegistry, ThumbnailManager
 from core.pipelines import AdvancedProgressTracker, execute_extraction
-from core.utils import is_image_folder
+from core.utils import MemoryWatchdog, is_image_folder
 from ui.components.log_viewer import LogViewer
 from ui.decorators import safe_ui_callback
 from ui.gallery_utils import auto_set_thresholds, on_filters_changed
@@ -130,6 +130,9 @@ class AppUI:
         self.thumbnail_manager = thumbnail_manager
         self.model_registry = model_registry
         self.batch_manager = BatchManager()
+        if getattr(config, "monitoring_memory_watchdog_enabled", False) is True:
+            self.memory_watchdog = MemoryWatchdog(config, logger)
+            self.memory_watchdog.start()
         self.debug_mode = debug_mode or getattr(config, "debug", False)
         self.components, self.cuda_available = {}, torch.cuda.is_available()
         self.ui_registry = {}

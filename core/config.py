@@ -181,8 +181,6 @@ class Config(BaseSettings):
     log_structured_path: str = "structured_log.jsonl"
 
     # Monitoring
-    # TODO: Implement actual memory monitoring using these thresholds
-    # TODO: Add automatic memory cleanup when approaching critical threshold
     monitoring_memory_warning_threshold_mb: int = 8192
     monitoring_memory_critical_threshold_mb: int = 16384
     monitoring_memory_watchdog_enabled: bool = True

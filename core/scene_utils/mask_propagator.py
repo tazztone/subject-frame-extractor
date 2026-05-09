@@ -275,8 +275,7 @@ class MaskPropagator:
 
         return masks, areas, empties, errors
 
-    # TODO: Consider deprecating legacy method in favor of video-based propagation
-    # TODO: Add memory-mapped frame loading for very large sequences
+    # TODO: Add memory-mapped frame loading for very large sequences (Phase 2)
     def propagate(
         self,
         shot_frames_rgb: list[np.ndarray],
@@ -291,18 +290,14 @@ class MaskPropagator:
 
         This method writes frames to temp JPEGs for SAM3 processing.
         Prefer propagate_video() when a downscaled video is available.
-
-        Args:
-            shot_frames_rgb: List of RGB frames as numpy arrays
-            seed_idx: Index of the seed frame in the list (relative to shot_frames_rgb)
-            bbox_xywh: Bounding box [x, y, width, height] on the seed frame
-            tracker: Optional progress tracker
-            additional_seeds: Optional list of additional seeds [{"frame": original_fn, "bbox": [x,y,w,h]}]
-            frame_numbers: List of original frame numbers matching shot_frames_rgb
-
-        Returns:
-            Tuple of (masks, area_percentages, is_empty_flags, error_messages)
         """
+        import warnings
+
+        warnings.warn(
+            "propagate() is deprecated and will be removed in a future version. Use propagate_video() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         import os
         import tempfile
 
