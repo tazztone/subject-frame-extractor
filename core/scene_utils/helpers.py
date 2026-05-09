@@ -121,6 +121,49 @@ def get_scene_status_text(scenes_list: list["Scene"]) -> tuple[str, Any]:
     return status_text, gr.update(value=button_text, interactive=ready_for_propagation_count > 0)
 
 
+def set_batch_scene_status(
+    scenes_list: list["Scene"], selected_shot_ids: list[int], new_status: str, output_folder: str, logger: "AppLogger"
+) -> tuple[list, str, str, Any]:
+    """
+    Toggle the status of multiple selected scenes.
+
+    Args:
+        scenes_list: List of Scene objects
+        selected_shot_ids: List of IDs of the scenes to toggle
+        new_status: New status ('included' or 'excluded')
+        output_folder: Output folder path
+        logger: Application logger
+
+    Returns:
+        Tuple of (updated_scenes, status_text, message, button_update)
+    """
+    if not selected_shot_ids or not scenes_list:
+        status_text, button_update = get_scene_status_text(scenes_list)
+        return scenes_list, status_text, "No scenes selected.", button_update
+
+    updated_count = 0
+    shot_ids_set = set(selected_shot_ids)
+
+    for scene in scenes_list:
+        if scene.shot_id in shot_ids_set:
+            if scene.status != SceneStatus(new_status):
+                scene.status_history.append({
+                    "status": new_status,
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                })
+            scene.status = SceneStatus(new_status)
+            scene.manual_status_change = True
+            updated_count += 1
+
+    if updated_count > 0:
+        save_scene_seeds(scenes_list, output_folder, logger)
+        status_text, button_update = get_scene_status_text(scenes_list)
+        return (scenes_list, status_text, f"{updated_count} scenes status set to {new_status}.", button_update)
+
+    status_text, button_update = get_scene_status_text(scenes_list)
+    return (scenes_list, status_text, f"Could not find any of the selected scenes.", button_update)
+
+
 def toggle_scene_status(
     scenes_list: list["Scene"], selected_shot_id: int, new_status: str, output_folder: str, logger: "AppLogger"
 ) -> tuple[list, str, str, Any]:
@@ -138,7 +181,6 @@ def toggle_scene_status(
         Tuple of (updated_scenes, status_text, message, button_update)
     """
     # TODO: Add undo/redo support for status changes
-    # TODO: Support batch status changes for multiple scenes
     if selected_shot_id is None or not scenes_list:
         status_text, button_update = get_scene_status_text(scenes_list)
         return scenes_list, status_text, "No scene selected.", button_update

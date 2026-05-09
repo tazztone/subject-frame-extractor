@@ -33,7 +33,7 @@ class BatchManager:
     """Manages a queue of batch processing tasks."""
 
     # TODO: Add resource-aware scheduling (wait for GPU or RAM availability)
-    def __init__(self):
+    def __init__(self, logger=None):
         """Initializes the BatchManager."""
         self.queue: List[BatchItem] = []
         self.lock = threading.Lock()
@@ -41,6 +41,7 @@ class BatchManager:
         self.executor: Optional[ThreadPoolExecutor] = None
         self.is_running = False
         self.active_items: Dict[str, BatchItem] = {}
+        self.logger = logger
 
     def add_paths(self, paths: List[str]):
         """Adds a list of file paths to the batch queue."""
@@ -83,14 +84,18 @@ class BatchManager:
                         item.message = message
                     break
 
-    def set_status(self, item_id: str, status: BatchStatus, message: Optional[str] = None):
-        """Updates the status and message of a specific batch item."""
+    def set_status(self, item_id: str, status: BatchStatus, message: Optional[str] = None, error: Optional[str] = None):
+        """Updates the status, message, and error of a specific batch item."""
         with self.lock:
             for item in self.queue:
                 if item.id == item_id:
                     item.status = status
                     if message:
                         item.message = message
+                    if error is not None:
+                        item.error = error
+                    else:
+                        item.error = ""
                     break
 
     def start_processing(self, processor_func: Callable, max_workers: int = 1):
@@ -144,17 +149,35 @@ class BatchManager:
                                 def __call__(self, fraction, desc=None):
                                     self.manager.update_progress(self.item_id, fraction, desc)
 
-                            try:
-                                result = processor_func(item, ProgressAdapter(self, item.id))
-                                msg = "Completed"
-                                if isinstance(result, dict) and "message" in result:
-                                    msg = result["message"]
-                                    # TODO: Store output path from result for later retrieval
-                                self.set_status(item.id, BatchStatus.COMPLETED, msg)
-                            except Exception as e:
-                                # TODO: Add retry logic for transient failures
-                                # TODO: Capture full stack trace for debugging
-                                self.set_status(item.id, BatchStatus.FAILED, str(e))
+                            import traceback
+
+                            max_retries = 3
+                            retry_delay = 1.0
+
+                            for attempt in range(max_retries):
+                                try:
+                                    result = processor_func(item, ProgressAdapter(self, item.id))
+                                    msg = "Completed"
+                                    if isinstance(result, dict) and "message" in result:
+                                        msg = result["message"]
+                                        # TODO: Store output path from result for later retrieval
+                                    self.set_status(item.id, BatchStatus.COMPLETED, msg)
+                                    break  # Success, exit retry loop
+                                except Exception as e:
+                                    if attempt < max_retries - 1:
+                                        self.set_status(item.id, BatchStatus.PROCESSING, f"Retrying... ({attempt + 1}/{max_retries})")
+                                        time.sleep(retry_delay)
+                                    else:
+                                        stack_trace = traceback.format_exc()
+                                        if self.logger:
+                                            # Depending on logger type, it might support component= kwargs or just standard args
+                                            if hasattr(self.logger, "error"):
+                                                try:
+                                                    self.logger.error(f"Task failed after {max_retries} attempts: {str(e)}", exc_info=True, component="batch_manager")
+                                                except TypeError:
+                                                    self.logger.error(f"Task failed after {max_retries} attempts: {str(e)}", exc_info=True)
+
+                                        self.set_status(item.id, BatchStatus.FAILED, str(e), error=stack_trace)
 
                         futures.append(executor.submit(task))
                     else:

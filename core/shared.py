@@ -7,6 +7,7 @@ resolving circular import issues.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional, Sequence, Tuple, Union
 
@@ -18,6 +19,8 @@ from core.enums import SceneStatus
 if TYPE_CHECKING:
     from core.config import Config
     from core.models import Scene
+
+logger = logging.getLogger(__name__)
 
 
 # TODO: Add caching for repeated scene status checks
@@ -43,48 +46,75 @@ def scene_matches_view(scene: "Scene", view: str) -> bool:
 
 
 def create_scene_thumbnail_with_badge(
-    thumb_img: np.ndarray, scene_idx: int, is_excluded: bool, config: Optional["Config"] = None
+    thumb_img: np.ndarray, scene_idx: int, status: Union[bool, str, "SceneStatus"], config: Optional["Config"] = None
 ) -> np.ndarray:
     """
-    Create a scene thumbnail with a visual badge indicating exclusion status.
+    Create a scene thumbnail with a visual badge indicating status.
 
     Args:
         thumb_img: RGB thumbnail image
         scene_idx: Index of the scene
-        is_excluded: Whether the scene is excluded
+        status: The status of the scene (bool for legacy is_excluded, or string like 'excluded', 'pending', 'error')
         config: Application configuration (optional)
 
     Returns:
         Thumbnail with badge overlay
     """
-    # TODO: Add additional status badges (pending, error, etc.)
     # TODO: Consider SVG overlay for better scaling
     thumb = thumb_img.copy()
     h, w = thumb.shape[:2]
 
-    # Defaults
+    # Normalize status
+    if isinstance(status, bool):
+        status_str = "excluded" if status else "included"
+    elif hasattr(status, "value"):
+        status_str = str(status.value).lower()
+    else:
+        status_str = str(status).lower()
+
+    if status_str == "included":
+        return thumb
+
+    # Defaults for excluded
     border_color = (33, 128, 141)  # Teal-ish color
     text_color = (255, 255, 255)  # White
+    badge_char = "E"
 
-    if config:
-        border_color = tuple(config.visualization_badge_excluded_color)
-        text_color = tuple(config.visualization_badge_text_color)
+    if status_str == "excluded":
+        if config:
+            border_color = tuple(config.visualization_badge_excluded_color)
+            text_color = tuple(config.visualization_badge_text_color)
+        badge_char = "E"
+    elif status_str == "pending":
+        border_color = (128, 128, 128)  # Gray
+        badge_char = "P"
+    elif status_str == "error":
+        border_color = (255, 0, 0)  # Red
+        badge_char = "!"
+    else:
+        return thumb
 
-    if is_excluded:
-        cv2.rectangle(thumb, (0, 0), (w - 1, h - 1), border_color, 4)
-        badge_size = int(min(w, h) * 0.15)
-        badge_pos = (w - badge_size - 5, 5)
-        # Draw filled circle with border color
-        cv2.circle(
-            thumb,
-            (badge_pos[0] + badge_size // 2, badge_pos[1] + badge_size // 2),
-            badge_size // 2,
-            border_color,
-            -1,
-        )
-        font = cv2.FONT_HERSHEY_SIMPLEX
-        # Draw text with text color (White by default)
-        cv2.putText(thumb, "E", badge_pos, font, 0.5, text_color, 2)
+    cv2.rectangle(thumb, (0, 0), (w - 1, h - 1), border_color, 4)
+    badge_size = int(min(w, h) * 0.15)
+    badge_pos = (w - badge_size - 5, 5)
+
+    # Draw filled circle with border color
+    cv2.circle(
+        thumb,
+        (badge_pos[0] + badge_size // 2, badge_pos[1] + badge_size // 2),
+        badge_size // 2,
+        border_color,
+        -1,
+    )
+
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    text_size = cv2.getTextSize(badge_char, font, 0.5, 2)[0]
+
+    # Center text inside the circle
+    text_x = badge_pos[0] + (badge_size - text_size[0]) // 2
+    text_y = badge_pos[1] + (badge_size + text_size[1]) // 2
+
+    cv2.putText(thumb, badge_char, (text_x, text_y), font, 0.5, text_color, 2)
     return thumb
 
 
@@ -194,12 +224,10 @@ def build_scene_gallery_items(
             if thumb_img_np is None:
                 continue
             thumb_img_np = cv2.cvtColor(thumb_img_np, cv2.COLOR_BGR2RGB)
-            badged_thumb = create_scene_thumbnail_with_badge(
-                thumb_img_np, i, s.status == SceneStatus.EXCLUDED, config=config
-            )
+            badged_thumb = create_scene_thumbnail_with_badge(thumb_img_np, i, s.status, config=config)
             items.append((badged_thumb, scene_caption(s)))
-        except Exception:
-            # TODO: Log the specific exception for debugging
+        except Exception as e:
+            logger.error(f"Failed to create thumbnail for scene {getattr(s, 'shot_id', 'unknown')} at {thumb_path}: {e}", exc_info=True)
             continue
         index_map.append(i)
 

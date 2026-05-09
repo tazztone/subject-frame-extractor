@@ -14,6 +14,7 @@ from core.scene_utils.helpers import (
     get_scene_status_text,
     save_scene_seeds,
     toggle_scene_status,
+    set_batch_scene_status,
 )
 
 
@@ -128,6 +129,45 @@ class TestSceneUtilsHelpers:
             [mock_scene], 999, "excluded", str(tmp_path), mock_logger
         )
         assert "Could not find scene" in msg
+
+    def test_set_batch_scene_status(self, mock_scene, mock_logger, tmp_path):
+        scene2 = Scene(
+            shot_id=2,
+            start_frame=11,
+            end_frame=20,
+            status="pending",
+            best_frame=15,
+            seed_frame_idx=15,
+            seed_type="auto",
+            seed_config={},
+            seed_metrics={},
+        )
+        scenes = [mock_scene, scene2]
+        new_status = "excluded"
+
+        updated_scenes, status_text, msg, btn = set_batch_scene_status(
+            scenes, [mock_scene.shot_id, scene2.shot_id], new_status, str(tmp_path), mock_logger
+        )
+
+        assert updated_scenes[0].status == new_status
+        assert updated_scenes[0].manual_status_change is True
+        assert updated_scenes[1].status == new_status
+        assert updated_scenes[1].manual_status_change is True
+        assert f"2 scenes status set to {new_status}" in msg
+        # Check if saved
+        assert (tmp_path / "scene_seeds.json").exists()
+
+    def test_set_batch_scene_status_not_found(self, mock_scene, mock_logger, tmp_path):
+        updated_scenes, status_text, msg, btn = set_batch_scene_status(
+            [mock_scene], [999, 1000], "excluded", str(tmp_path), mock_logger
+        )
+        assert "Could not find any of the selected scenes" in msg
+
+    def test_set_batch_scene_status_empty_ids(self, mock_scene, mock_logger, tmp_path):
+        updated_scenes, status_text, msg, btn = set_batch_scene_status(
+            [mock_scene], [], "excluded", str(tmp_path), mock_logger
+        )
+        assert "No scenes selected." in msg
 
     @patch("core.scene_utils.helpers.initialize_analysis_models")
     @patch("core.scene_utils.helpers.create_frame_map")

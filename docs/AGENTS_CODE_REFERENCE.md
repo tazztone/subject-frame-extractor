@@ -27,6 +27,7 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 ├──&nbsp;README.md  
 ├──&nbsp;TODO_REPORT.md  
 ├──&nbsp;[`app.py`](#-apppy)  
+├──&nbsp;benchmark_comprehension.py  
 ├──&nbsp;cli.py  
 ├──&nbsp;core  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`__init__.py`](#-core__init__py)  
@@ -138,6 +139,7 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;├──&nbsp;dependency_links.txt  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;requires.txt  
 │&nbsp;&nbsp;&nbsp;└──&nbsp;top_level.txt  
+├──&nbsp;test_models.py  
 ├──&nbsp;tests  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;README.md  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;__init__.py  
@@ -375,7 +377,7 @@ class BatchItem:
     """Represents a single item in the batch processing queue."""
 class BatchManager:
     """Manages a queue of batch processing tasks."""
-    def __init__(self):
+    def __init__(self, logger=None):
         """Initializes the BatchManager."""
     def add_paths(self, paths: List[str]):
         """Adds a list of file paths to the batch queue."""
@@ -389,8 +391,8 @@ class BatchManager:
         """Clears all items from the queue."""
     def update_progress(self, item_id: str, fraction: float, message: Optional[str]=None):
         """Updates the progress of a specific batch item."""
-    def set_status(self, item_id: str, status: BatchStatus, message: Optional[str]=None):
-        """Updates the status and message of a specific batch item."""
+    def set_status(self, item_id: str, status: BatchStatus, message: Optional[str]=None, error: Optional[str]=None):
+        """Updates the status, message, and error of a specific batch item."""
     def start_processing(self, processor_func: Callable, max_workers: int=1):
         """Starts processing the batch queue in a background thread."""
     def _run_scheduler(self, processor_func, max_workers): ...
@@ -483,6 +485,7 @@ def _run_pipeline(generator, stage_name: str) -> dict:
 
 ```python
 """Configuration Management for Frame Extractor & Analyzer"""
+logger = logging.getLogger(__name__)
 def json_config_settings_source() -> Dict[str, Any]:
     """Loads settings from a JSON file for Pydantic settings."""
 class Config(BaseSettings):
@@ -1295,10 +1298,11 @@ def execute_full_pipeline(event: 'ExtractionEvent', progress_queue: Queue, cance
 
 ```python
 """Progress Tracking Infrastructure for Frame Extractor & Analyzer"""
+_ = gettext.gettext
 class ProgressEvent(BaseModel): ...
 class AdvancedProgressTracker:
     """Tracks and estimates progress for long-running operations."""
-    def __init__(self, progress: Optional[Callable]=None, queue: Optional[Queue]=None, logger: Optional['AppLogger']=None, ui_stage_name: str=''):
+    def __init__(self, progress: Optional[Callable]=None, queue: Optional[Queue]=None, logger: Optional['AppLogger']=None, ui_stage_name: str='', eta_precision: str='coarse'):
         """Initializes the progress tracker."""
     def start(self, total_items: int, desc: Optional[str]=None):
         """Resets the tracker for a new operation."""
@@ -1315,7 +1319,7 @@ class AdvancedProgressTracker:
     def _eta_seconds(self) -> Optional[float]:
         """Calculates estimated seconds remaining based on EMA."""
     @staticmethod
-    def _fmt_eta(eta_s: Optional[float]) -> str:
+    def _fmt_eta(eta_s: Optional[float], precision: str='coarse') -> str:
         """Formats seconds into a human-readable string."""
 ```
 
@@ -1358,7 +1362,7 @@ __all__ = ['run_scene_detection', 'make_photo_thumbs', 'MaskPropagator', 'See...
 
 ```python
 """Scene detection and thumbnail generation utilities."""
-def run_scene_detection(video_path: str, output_dir: Path, logger: 'AppLogger') -> list:
+def run_scene_detection(video_path: str, output_dir: Path, logger: 'AppLogger', threshold: float=27.0) -> list:
     """Detect scene changes in a video using PySceneDetect."""
 def make_photo_thumbs(image_paths: list[Path], out_dir: Path, params: 'AnalysisParameters', cfg: 'Config', logger: 'AppLogger', tracker: Optional['AdvancedProgressTracker']=None) -> dict:
     """Generate thumbnails for a list of images."""
@@ -1492,6 +1496,7 @@ class SubjectMasker:
 
 ```python
 """Shared utilities for Frame Extractor & Analyzer"""
+logger = logging.getLogger(__name__)
 def scene_matches_view(scene: 'Scene', view: str) -> bool:
     """Check if a scene matches the specified view filter."""
 def create_scene_thumbnail_with_badge(thumb_img: np.ndarray, scene_idx: int, is_excluded: bool, config: Optional['Config']=None) -> np.ndarray:

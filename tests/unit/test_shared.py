@@ -36,19 +36,24 @@ class TestSharedUtils:
         res_ok = create_scene_thumbnail_with_badge(img, 1, False)
         assert np.array_equal(res_ok, img)
 
+        res_ok_str = create_scene_thumbnail_with_badge(img, 1, "included")
+        assert np.array_equal(res_ok_str, img)
+
         # Excluded scene: should have modifications (badge)
         res_bad = create_scene_thumbnail_with_badge(img, 2, True)
         assert not np.array_equal(res_bad, img)
+        assert np.array_equal(res_bad[0, 0], [33, 128, 141])
 
-        # Check if badge text "E" is likely drawn (simple check: image changed significantly)
-        # Or check if specific pixels are changed.
-        # The function draws a rectangle border and a circle badge.
-        # Border is 4px thick. (0,0) should be teal (33, 128, 141) in BGR?
-        # Wait, CV2 uses BGR default, but inputs are usually RGB in this app?
-        # The function docstring says "RGB thumbnail image".
-        # Border color is (33, 128, 141).
-        # Let's check pixel (0,0)
-        assert np.any(res_bad[0, 0] != [0, 255, 0])
+        res_bad_str = create_scene_thumbnail_with_badge(img, 2, "excluded")
+        assert np.array_equal(res_bad_str[0, 0], [33, 128, 141])
+
+        # Pending scene
+        res_pending = create_scene_thumbnail_with_badge(img, 3, "pending")
+        assert np.array_equal(res_pending[0, 0], [128, 128, 128])
+
+        # Error scene
+        res_error = create_scene_thumbnail_with_badge(img, 4, "error")
+        assert np.array_equal(res_error[0, 0], [255, 0, 0])
 
     def test_scene_caption(self):
         scene = Scene(shot_id=5, start_frame=10, end_frame=20, status="included", seed_type="manual")
@@ -142,8 +147,9 @@ class TestSharedUtils:
         items, _, _ = build_scene_gallery_items(scenes, "All", str(output_dir))
         assert len(items) == 0  # Previews dir doesn't exist yet
 
+    @patch("core.shared.logger")
     @patch("cv2.imread")
-    def test_build_scene_gallery_items_error(self, mock_imread, tmp_path):
+    def test_build_scene_gallery_items_error(self, mock_imread, mock_logger, tmp_path):
         output_dir = tmp_path / "output"
         (output_dir / "previews").mkdir(parents=True)
         (output_dir / "previews" / "scene_00001.jpg").touch()
@@ -152,6 +158,7 @@ class TestSharedUtils:
         scenes = [Scene(shot_id=1, start_frame=0, end_frame=10)]
         items, _, _ = build_scene_gallery_items(scenes, "All", str(output_dir))
         assert len(items) == 0
+        mock_logger.error.assert_called_once()
 
     @patch("cv2.imread")
     def test_build_scene_gallery_items_imread_none(self, mock_imread, tmp_path):
