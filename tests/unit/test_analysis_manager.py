@@ -623,18 +623,17 @@ def test_process_reference_face_failures(mock_db, mock_deps, analysis_params, tm
 
 @patch("core.managers.analysis.Database")
 def test_process_single_frame_edge_cases(mock_db, mock_deps, analysis_params, tmp_path):
-    # Mock SVD if needed, but safely
-    with patch("torch.linalg.svd", create=True) as mock_svd:
-        mock_svd.return_value = (None, torch.ones(1), None)
-        pipeline = AnalysisPipeline(
-            mock_deps["config"],
-            mock_deps["logger"],
-            analysis_params,
-            mock_deps["progress_queue"],
-            mock_deps["cancel_event"],
-            mock_deps["thumbnail_manager"],
-            mock_deps["model_registry"],
-        )
+    # Mock SVD if needed, but safely using the existing global mock
+    torch.linalg.svd.return_value = (None, torch.ones(1), None)
+    pipeline = AnalysisPipeline(
+        mock_deps["config"],
+        mock_deps["logger"],
+        analysis_params,
+        mock_deps["progress_queue"],
+        mock_deps["cancel_event"],
+        mock_deps["thumbnail_manager"],
+        mock_deps["model_registry"],
+    )
     pipeline.mask_metadata = {"frame_000001": {"mask_path": "masks/m1.png"}}
     pipeline.masks_dir = tmp_path / "masks"
     pipeline.masks_dir.mkdir()

@@ -5,7 +5,6 @@ Unit tests for ModelRegistry tracker loading.
 from unittest.mock import MagicMock, patch
 
 import pytest
-import torch
 
 from core.managers.registry import ModelRegistry
 
@@ -106,12 +105,15 @@ def test_get_tracker_failure_path(registry, mock_config):
 def test_get_tracker_oom_fallback(registry, mock_config):
     """Test CPU fallback on CUDA OOM."""
     # We need to ensure the logger mock has 'success' because get_or_load calls it
+    from tests.conftest import _torch_mod
+
     with (
+        patch("core.managers.registry.torch", _torch_mod),
         patch.object(registry, "_load_tracker_impl") as mock_load,
-        patch("torch.cuda.is_available", return_value=True),
+        patch("core.managers.registry.torch.cuda.is_available", return_value=True),
     ):
         # First call raises OOM
-        mock_load.side_effect = [torch.cuda.OutOfMemoryError("CUDA out of memory"), MagicMock(name="CPUTracker")]
+        mock_load.side_effect = [_torch_mod.cuda.OutOfMemoryError("CUDA out of memory"), MagicMock(name="CPUTracker")]
 
         tracker = registry.get_tracker(
             model_name="sam2_oom",

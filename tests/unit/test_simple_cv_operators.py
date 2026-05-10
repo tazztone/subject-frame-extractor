@@ -154,10 +154,10 @@ class TestEntropyOperator:
         result = operator.execute(ctx)
         assert result.metrics["entropy_score"] == 0.0
 
-    def test_random_noise_high_entropy(self, operator, sample_image):
+    def test_random_noise_high_entropy(self, operator):
         """Random noise has high entropy."""
-        # sample_image is random noise
-        ctx = OperatorContext(image_rgb=sample_image)
+        noise_img = np.random.randint(0, 256, (100, 100, 3), dtype=np.uint8)
+        ctx = OperatorContext(image_rgb=noise_img)
         result = operator.execute(ctx)
         # Should be close to max (~100) or at least high
         assert result.metrics["entropy_score"] > 80.0

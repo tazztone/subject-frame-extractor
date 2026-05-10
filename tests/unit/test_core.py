@@ -87,15 +87,20 @@ class TestAppLogger:
         assert updates["slider_sharpness_min"]["value"] == 77.5
         assert updates["slider_contrast_min"]["value"] == 4.0
 
-    def test_apply_all_filters_with_face_and_mask(self, sample_frames_data, mock_config):
+    def test_apply_all_filters_with_face_and_mask(self, mock_config):
         """Verify filtering by face similarity and mask area."""
+        frames = [
+            {"filename": "frame_01.png", "metrics": {"quality_score": 85}, "face_sim": 0.8, "mask_area_pct": 15.0},
+            {"filename": "frame_04.png", "metrics": {"quality_score": 85}, "face_sim": 0.4, "mask_area_pct": 15.0},
+            {"filename": "frame_05.png", "metrics": {"quality_score": 85}, "face_sim": 0.8, "mask_area_pct": 5.0},
+        ]
         filters = {
             "face_sim_enabled": True,
             "face_sim_min": 0.5,
             "mask_area_enabled": True,
             "mask_area_pct_min": 10.0,
         }
-        kept, rejected, _, _ = apply_all_filters_vectorized(sample_frames_data, filters, mock_config)
+        kept, rejected, _, _ = apply_all_filters_vectorized(frames, filters, mock_config)
 
         kept_filenames = {f["filename"] for f in kept}
         rejected_filenames = {f["filename"] for f in rejected}

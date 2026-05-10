@@ -68,7 +68,10 @@ To ensure fast execution and hardware independence, all **Unit Tests** must comp
 - `test_system_health.py`: Verifies diagnostic checks and environment validation.
  Reuse it when testing code that uses these as context managers.
 - **High-Fidelity I/O Mocking**: When mocking standard library functions like `urllib.request.urlopen`, ensure the mock response includes all methods called by the production code (e.g., `.getheader()`). Using a simple `io.BytesIO` as a return value will cause `AttributeError`.
-- **Requirement**: Always include `create=True` in `patch("torch.cuda.is_available", ...)` to prevent worker collisions in parallel runs.
+- **Patch the Consumer, Not the Provider**: In bulk runs, production modules (like `system_health.py`) cache `torch` at import time. Patching `torch.cuda` globally often fails to reach these cached references. **Rule**: Always patch the module-level reference: `patch("core.system_health.torch.cuda.is_available", ...)` or `patch("core.system_health.torch", _torch_mod)`.
+- **Stub Factory Rule**: Avoid using `torch.zeros()` or `torch.ones()` in test bodies to set up mock return values. These calls resolve to the global `torch` state which may be polluted. Use local numpy-based helpers or the `_create_mock_tensor` fixture instead.
+- **Requirement**: Always include `create=True` in `patch("torch.cuda.is_available", ...)` when targeting attributes that may not exist on the base mock.
+- **NIQE/PyIQA Imports**: `torch.hub` must be fully mocked (including `download_url_to_file`, `get_dir`, and `load_state_dict_from_url`) to prevent collection-time crashes during `pyiqa` imports.
 
 ### Mock Mode Priority Rules
 
@@ -161,9 +164,17 @@ If you try to run a specific test file (e.g., `tests/integration/test_gpu_e2e.py
   uv run pytest tests/integration/ -m "integration"
   ```
 
+### Bulk-Run Stability (TypeError / Mock Pollution)
+- **Symptom**: Tests pass in isolation but fail with `TypeError: '>' not supported between instances of 'MagicMock' and 'int'` or `AttributeError` when run in bulk.
+- **Cause**: **Mock Pollution**. A previous test modified a global mock attribute (like `torch.cuda.is_available`) and failed to restore it, or a production module is holding a stale reference to an older mock object.
+- **Fixes**: 
+  1. **Patch the Consumer**: Always patch where the name is used: `patch("core.managers.sam2.torch", _torch_mod)`.
+  2. **Authoritative Reset**: Use the `_restore_mock_modules` autouse fixture in `conftest.py`.
+  3. **Consistent Exception Classes**: Use `_torch_mod.cuda.OutOfMemoryError` when mocking side effects to ensure the consumer's `except` block matches the class.
+
 ---
 
-*Last Updated: 2026-05-09 (Phase 1: Stability Hardening & Resource Monitoring)*
+*Last Updated: 2026-05-10 (Bulk-Run Stability & Mock Hardening)*
 
 ## Gradio 5 UI Testing Patterns
 

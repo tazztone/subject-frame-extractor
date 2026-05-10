@@ -55,7 +55,7 @@ def test_validate_video_file_success(mock_vc, tmp_path):
 
 
 def test_sanitize_filename(mock_config):
-    mock_config.filename_max_length = 100  # Ensure it's an int
+    mock_config.utility_max_filename_length = 100  # Ensure it's an int
     assert sanitize_filename("hello/world.jpg", mock_config) == "hello_world.jpg"
     assert sanitize_filename("a" * 50, mock_config) == "a" * 50
     assert sanitize_filename("chars!@#$%^&*().png", mock_config) == "chars__________.png"

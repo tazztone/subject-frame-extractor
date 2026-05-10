@@ -206,10 +206,8 @@ class TestFiltering:
         sample_frames[1]["metrics"]["yaw"] = 0
         sample_frames[2]["metrics"]["yaw"] = 20
 
-        # Mock config to define range filter for yaw
+        # Config already has quality_weights_yaw. Just set the filter default for yaw range.
         mock_config.filter_default_yaw = {"type": "range", "default_min": -5, "default_max": 5}
-        # Ensure 'yaw' is in the quality weight keys or recognized
-        mock_config.model_dump.return_value = {"quality_weights_yaw": 1}
 
         filters = {"yaw_min": -5, "yaw_max": 5}
 

@@ -129,7 +129,7 @@ class TestFilteringEdgeCases:
             "mask_area_enabled": False,
         }
         kept, rejected, _, _ = apply_all_filters_vectorized(sample_frames_data, filters, mock_config)
-        assert len(kept) == 6  # All frames should pass
+        assert len(kept) == len(sample_frames_data)  # All frames should pass
         assert len(rejected) == 0
 
     def test_filter_strict_thresholds(self, sample_frames_data, mock_config):
