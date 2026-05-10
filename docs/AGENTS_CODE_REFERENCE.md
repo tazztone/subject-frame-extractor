@@ -117,7 +117,6 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;└──&nbsp;reproduce_test  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└──&nbsp;thumbs  
 ├──&nbsp;previews  
-├──&nbsp;scratch.py  
 ├──&nbsp;scripts  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`generate_todo_report.py`](#-scriptsgenerate_todo_reportpy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;jules_setup_script.sh  

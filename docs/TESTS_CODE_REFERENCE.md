@@ -1564,7 +1564,7 @@ class TestAppLogger:
     def test_app_logger_instantiation(self, mock_config):
         """Tests that the logger can be instantiated with a valid config."""
     def test_auto_set_thresholds(self): ...
-    def test_apply_all_filters_with_face_and_mask(self, sample_frames_data, mock_config):
+    def test_apply_all_filters_with_face_and_mask(self, mock_config):
         """Verify filtering by face similarity and mask area."""
 class TestPreAnalysisEvent:
     def test_face_ref_validation(self, tmp_path, mock_ui_state):
@@ -3239,7 +3239,7 @@ class TestEntropyOperator:
     def test_config(self, operator): ...
     def test_uniform_image_zero_entropy(self, operator):
         """Uniform image has 0 entropy."""
-    def test_random_noise_high_entropy(self, operator, sample_image):
+    def test_random_noise_high_entropy(self, operator):
         """Random noise has high entropy."""
 ```
 
