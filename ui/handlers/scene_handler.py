@@ -319,7 +319,7 @@ class SceneHandler:
             c["visualization_bbox_radius"],
             c["visualization_show_labels"],
         ]:
-            comp.release(
+            (comp.release if hasattr(comp, "release") else comp.change)(
                 update_gallery_layout,
                 [
                     c["scene_gallery_columns"],
