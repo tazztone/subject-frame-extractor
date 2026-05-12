@@ -46,8 +46,12 @@ def scene_matches_view(scene: "Scene", view: str) -> bool:
 
 
 def create_scene_thumbnail_with_badge(
-    thumb_img: np.ndarray, scene_idx: int, status: Union[bool, str, "SceneStatus"], config: Optional["Config"] = None
-) -> np.ndarray:
+    thumb_img: np.ndarray,
+    scene_idx: int,
+    status: Union[bool, str, "SceneStatus"],
+    config: Optional["Config"] = None,
+    use_svg: bool = True,
+) -> Union[np.ndarray, str]:
     """
     Create a scene thumbnail with a visual badge indicating status.
 
@@ -56,13 +60,12 @@ def create_scene_thumbnail_with_badge(
         scene_idx: Index of the scene
         status: The status of the scene (bool for legacy is_excluded, or string like 'excluded', 'pending', 'error')
         config: Application configuration (optional)
+        use_svg: Whether to return an SVG data URL for better scaling (default: True)
 
     Returns:
-        Thumbnail with badge overlay
+        Thumbnail with badge overlay (numpy array or SVG data URL string)
     """
-    # TODO: Consider SVG overlay for better scaling
-    thumb = thumb_img.copy()
-    h, w = thumb.shape[:2]
+    h, w = thumb_img.shape[:2]
 
     # Normalize status
     if isinstance(status, bool):
@@ -73,7 +76,7 @@ def create_scene_thumbnail_with_badge(
         status_str = str(status).lower()
 
     if status_str == "included":
-        return thumb
+        return thumb_img
 
     # Defaults for excluded
     border_color = (33, 128, 141)  # Teal-ish color
@@ -92,8 +95,37 @@ def create_scene_thumbnail_with_badge(
         border_color = (255, 0, 0)  # Red
         badge_char = "!"
     else:
-        return thumb
+        return thumb_img
 
+    if use_svg:
+        import base64
+
+        # Convert image to base64
+        _, buffer = cv2.imencode(".jpg", cv2.cvtColor(thumb_img, cv2.COLOR_RGB2BGR), [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+        img_b64 = base64.b64encode(buffer).decode("utf-8")
+        data_url = f"data:image/jpeg;base64,{img_b64}"
+
+        svg_color = f"rgb({border_color[0]}, {border_color[1]}, {border_color[2]})"
+        svg_text_color = f"rgb({text_color[0]}, {text_color[1]}, {text_color[2]})"
+
+        badge_size = int(min(w, h) * 0.15)
+        # Circle center (top-right)
+        cx = w - badge_size // 2 - 5
+        cy = badge_size // 2 + 5
+
+        # Create SVG string
+        svg = f"""<svg width="{w}" height="{h}" viewBox="0 0 {w} {h}" xmlns="http://www.w3.org/2000/svg">
+            <image href="{data_url}" width="{w}" height="{h}" />
+            <rect x="2" y="2" width="{w-4}" height="{h-4}" fill="none" stroke="{svg_color}" stroke-width="4" />
+            <circle cx="{cx}" cy="{cy}" r="{badge_size // 2}" fill="{svg_color}" />
+            <text x="{cx}" y="{cy}" font-family="sans-serif" font-size="{int(badge_size * 0.7)}" fill="{svg_text_color}" text-anchor="middle" dominant-baseline="central">{badge_char}</text>
+        </svg>"""
+
+        svg_b64 = base64.b64encode(svg.encode("utf-8")).decode("utf-8")
+        return f"data:image/svg+xml;base64,{svg_b64}"
+
+    # Raster fallback
+    thumb = thumb_img.copy()
     cv2.rectangle(thumb, (0, 0), (w - 1, h - 1), border_color, 4)
     badge_size = int(min(w, h) * 0.15)
     badge_pos = (w - badge_size - 5, 5)
@@ -177,7 +209,7 @@ def build_scene_gallery_items(
     """
     from core.models import Scene as SceneModel
 
-    items: List[Tuple[Optional[np.ndarray], str]] = []
+    items: List[Tuple[Optional[Union[np.ndarray, str]], str]] = []
     index_map: List[int] = []
 
     if not scenes:

@@ -32,28 +32,33 @@ class TestSharedUtils:
         img = np.zeros((100, 100, 3), dtype=np.uint8)
         img[:] = (0, 255, 0)
 
-        # Non-excluded scene: should be same as input (copy)
+        # Non-excluded scene: should be same as input (identity)
         res_ok = create_scene_thumbnail_with_badge(img, 1, False)
         assert np.array_equal(res_ok, img)
 
         res_ok_str = create_scene_thumbnail_with_badge(img, 1, "included")
         assert np.array_equal(res_ok_str, img)
 
-        # Excluded scene: should have modifications (badge)
+        # Excluded scene (SVG - default)
         res_bad = create_scene_thumbnail_with_badge(img, 2, True)
-        assert not np.array_equal(res_bad, img)
-        assert np.array_equal(res_bad[0, 0], [33, 128, 141])
+        assert isinstance(res_bad, str)
+        assert res_bad.startswith("data:image/svg+xml;base64,")
 
-        res_bad_str = create_scene_thumbnail_with_badge(img, 2, "excluded")
-        assert np.array_equal(res_bad_str[0, 0], [33, 128, 141])
+        # Excluded scene (Raster fallback)
+        res_raster = create_scene_thumbnail_with_badge(img, 2, True, use_svg=False)
+        assert isinstance(res_raster, np.ndarray)
+        assert not np.array_equal(res_raster, img)
+        assert np.array_equal(res_raster[0, 0], [33, 128, 141])
 
-        # Pending scene
+        # Pending scene (SVG)
         res_pending = create_scene_thumbnail_with_badge(img, 3, "pending")
-        assert np.array_equal(res_pending[0, 0], [128, 128, 128])
+        assert isinstance(res_pending, str)
+        assert res_pending.startswith("data:image/svg+xml;base64,")
 
-        # Error scene
+        # Error scene (SVG)
         res_error = create_scene_thumbnail_with_badge(img, 4, "error")
-        assert np.array_equal(res_error[0, 0], [255, 0, 0])
+        assert isinstance(res_error, str)
+        assert res_error.startswith("data:image/svg+xml;base64,")
 
     def test_scene_caption(self):
         scene = Scene(shot_id=5, start_frame=10, end_frame=20, status="included", seed_type="manual")
@@ -120,13 +125,14 @@ class TestSharedUtils:
         config.visualization_badge_excluded_color = [255, 0, 0]
         config.visualization_badge_text_color = [0, 0, 0]
 
-        res = create_scene_thumbnail_with_badge(img, 1, True, config=config)
-        # Check if border color is applied (Blue in RGB if config says [255, 0, 0])
-        # Wait, cv2 draws in BGR if color is a tuple?
-        # The code does `tuple(config.visualization_badge_excluded_color)`
-        # If config is [255, 0, 0], border is (255, 0, 0).
-        # Pixel (0,0) should be (255, 0, 0)
+        # Raster check for config (simpler to verify color than parsing SVG/base64)
+        res = create_scene_thumbnail_with_badge(img, 1, True, config=config, use_svg=False)
         assert np.array_equal(res[0, 0], [255, 0, 0])
+
+        # SVG check for config
+        res_svg = create_scene_thumbnail_with_badge(img, 1, True, config=config, use_svg=True)
+        assert isinstance(res_svg, str)
+        assert res_svg.startswith("data:image/svg+xml;base64,")
 
     def test_scene_caption_dict(self):
         scene = {"shot_id": 1, "start_frame": 0, "end_frame": 10, "status": "excluded", "rejection_reasons": ["test"]}
