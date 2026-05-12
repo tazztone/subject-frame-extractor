@@ -262,7 +262,7 @@ def mock_pre_analysis_wrapper(self, current_state: ApplicationState, *args, **kw
 
     # Simulate success
     new_state = current_state.model_copy()
-    new_state.scenes = []  # Mocked
+    new_state.scenes = [{"shot_id": 1, "start_frame": 0, "end_frame": 25, "status": "excluded", "rejection_reasons": ["blurry"], "preview_path": os.path.join(output_dir, "thumbs", "frame_000001.webp")}]
     new_state.extracted_frames_dir = "/tmp/mock"
 
     msg = """<div class="success-card"><h3>Pre-Analysis Complete</h3></div>"""

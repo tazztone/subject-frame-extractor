@@ -5,6 +5,7 @@ Tests for shared utilities in core/shared.py.
 from unittest.mock import MagicMock, patch
 
 import numpy as np
+from PIL import Image
 
 from core.models import Scene
 from core.shared import build_scene_gallery_items, create_scene_thumbnail_with_badge, scene_caption, scene_matches_view
@@ -148,28 +149,44 @@ class TestSharedUtils:
         assert len(items) == 0  # Previews dir doesn't exist yet
 
     @patch("core.shared.logger")
-    @patch("cv2.imread")
-    def test_build_scene_gallery_items_error(self, mock_imread, mock_logger, tmp_path):
+    @patch("core.shared.create_scene_thumbnail_svg")
+    def test_build_scene_gallery_items_error(self, mock_svg, mock_logger, tmp_path):
         output_dir = tmp_path / "output"
         (output_dir / "previews").mkdir(parents=True)
         (output_dir / "previews" / "scene_00001.jpg").touch()
-        mock_imread.side_effect = Exception("Read error")
+        mock_svg.side_effect = Exception("SVG error")
 
-        scenes = [Scene(shot_id=1, start_frame=0, end_frame=10)]
+        scenes = [Scene(shot_id=1, start_frame=0, end_frame=10, status="excluded")]
         items, _, _ = build_scene_gallery_items(scenes, "All", str(output_dir))
         assert len(items) == 0
         mock_logger.error.assert_called_once()
 
-    @patch("cv2.imread")
-    def test_build_scene_gallery_items_imread_none(self, mock_imread, tmp_path):
+    def test_create_scene_thumbnail_svg(self, tmp_path):
+        from core.shared import create_scene_thumbnail_svg
+
+        thumb_path = tmp_path / "thumb.jpg"
+        img = Image.new("RGB", (100, 100), color="red")
+        img.save(thumb_path)
+
+        # Included: returns path
+        res = create_scene_thumbnail_svg(thumb_path, "included")
+        assert res == str(thumb_path)
+
+        # Excluded: returns data URL
+        res_svg = create_scene_thumbnail_svg(thumb_path, "excluded")
+        assert res_svg.startswith("data:image/svg+xml;base64,")
+
+    @patch("core.shared.create_scene_thumbnail_svg")
+    def test_build_scene_gallery_items_imread_none(self, mock_svg, tmp_path):
         output_dir = tmp_path / "output"
         (output_dir / "previews").mkdir(parents=True)
         (output_dir / "previews" / "scene_00001.jpg").touch()
-        mock_imread.return_value = None  # Trigger the 'continue' on line 185
+        mock_svg.return_value = "mock_svg_data"
 
-        scenes = [Scene(shot_id=1, start_frame=0, end_frame=10)]
+        scenes = [Scene(shot_id=1, start_frame=0, end_frame=10, status="excluded")]
         items, _, _ = build_scene_gallery_items(scenes, "All", str(output_dir))
-        assert len(items) == 0
+        assert len(items) == 1
+        assert items[0][0] == "mock_svg_data"
 
     @patch("cv2.imread")
     def test_build_scene_gallery_items_timestamped(self, mock_imread, tmp_path):

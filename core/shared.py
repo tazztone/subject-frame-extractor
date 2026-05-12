@@ -7,12 +7,14 @@ resolving circular import issues.
 
 from __future__ import annotations
 
+import base64
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional, Sequence, Tuple, Union
 
 import cv2
 import numpy as np
+from PIL import Image
 
 from core.enums import SceneStatus
 
@@ -23,7 +25,14 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-# TODO: Add caching for repeated scene status checks
+# Caching for repeated scene status checks
+_VIEW_STATUS_MAP = {
+    "All": {SceneStatus.INCLUDED, SceneStatus.EXCLUDED, SceneStatus.PENDING},
+    "Kept": {SceneStatus.INCLUDED},
+    "Rejected": {SceneStatus.EXCLUDED},
+}
+
+
 def scene_matches_view(scene: "Scene", view: str) -> bool:
     """
     Check if a scene matches the specified view filter.
@@ -36,13 +45,47 @@ def scene_matches_view(scene: "Scene", view: str) -> bool:
         True if the scene matches the view filter
     """
     status = getattr(scene, "status", SceneStatus.INCLUDED)
-    if view == "All":
-        return status in (SceneStatus.INCLUDED, SceneStatus.EXCLUDED, SceneStatus.PENDING)
-    if view == "Kept":
-        return status == SceneStatus.INCLUDED
-    if view == "Rejected":
-        return status == SceneStatus.EXCLUDED
-    return False
+    return status in _VIEW_STATUS_MAP.get(view, set())
+
+
+def _get_badge_params(status: Union[bool, str, "SceneStatus"], config: Optional["Config"] = None) -> Optional[dict]:
+    """Helper to resolve status string and associated visual parameters."""
+    # Normalize status
+    if isinstance(status, bool):
+        status_str = "excluded" if status else "included"
+    elif hasattr(status, "value"):
+        status_str = str(status.value).lower()
+    else:
+        status_str = str(status).lower()
+
+    if status_str == "included":
+        return None
+
+    # Defaults
+    border_color = (33, 128, 141)  # Teal-ish color (BGR)
+    text_color = (255, 255, 255)  # White
+    badge_char = "E"
+
+    if status_str == "excluded":
+        if config:
+            border_color = tuple(config.visualization_badge_excluded_color)
+            text_color = tuple(config.visualization_badge_text_color)
+        badge_char = "E"
+    elif status_str == "pending":
+        border_color = (128, 128, 128)  # Gray
+        badge_char = "P"
+    elif status_str == "error":
+        border_color = (255, 0, 0)  # Red
+        badge_char = "!"
+    else:
+        return None
+
+    return {
+        "status_str": status_str,
+        "border_color": border_color,
+        "text_color": text_color,
+        "badge_char": badge_char,
+    }
 
 
 def create_scene_thumbnail_with_badge(
@@ -60,49 +103,25 @@ def create_scene_thumbnail_with_badge(
     Returns:
         Thumbnail with badge overlay
     """
-    # TODO: Consider SVG overlay for better scaling
+    params = _get_badge_params(status, config)
+    if not params:
+        return thumb_img
+
     thumb = thumb_img.copy()
     h, w = thumb.shape[:2]
-
-    # Normalize status
-    if isinstance(status, bool):
-        status_str = "excluded" if status else "included"
-    elif hasattr(status, "value"):
-        status_str = str(status.value).lower()
-    else:
-        status_str = str(status).lower()
-
-    if status_str == "included":
-        return thumb
-
-    # Defaults for excluded
-    border_color = (33, 128, 141)  # Teal-ish color
-    text_color = (255, 255, 255)  # White
-    badge_char = "E"
-
-    if status_str == "excluded":
-        if config:
-            border_color = tuple(config.visualization_badge_excluded_color)
-            text_color = tuple(config.visualization_badge_text_color)
-        badge_char = "E"
-    elif status_str == "pending":
-        border_color = (128, 128, 128)  # Gray
-        badge_char = "P"
-    elif status_str == "error":
-        border_color = (255, 0, 0)  # Red
-        badge_char = "!"
-    else:
-        return thumb
+    border_color = params["border_color"]
+    text_color = params["text_color"]
+    badge_char = params["badge_char"]
 
     cv2.rectangle(thumb, (0, 0), (w - 1, h - 1), border_color, 4)
-    badge_size = int(min(w, h) * 0.15)
-    badge_pos = (w - badge_size - 5, 5)
+    badge_radius = int(min(w, h) * 0.15) // 2
+    badge_pos = (w - (badge_radius * 2) - 5, 5)
 
     # Draw filled circle with border color
     cv2.circle(
         thumb,
-        (badge_pos[0] + badge_size // 2, badge_pos[1] + badge_size // 2),
-        badge_size // 2,
+        (badge_pos[0] + badge_radius, badge_pos[1] + badge_radius),
+        badge_radius,
         border_color,
         -1,
     )
@@ -111,11 +130,64 @@ def create_scene_thumbnail_with_badge(
     text_size = cv2.getTextSize(badge_char, font, 0.5, 2)[0]
 
     # Center text inside the circle
-    text_x = badge_pos[0] + (badge_size - text_size[0]) // 2
-    text_y = badge_pos[1] + (badge_size + text_size[1]) // 2
+    text_x = badge_pos[0] + (badge_radius * 2 - text_size[0]) // 2
+    text_y = badge_pos[1] + (badge_radius * 2 + text_size[1]) // 2
 
     cv2.putText(thumb, badge_char, (text_x, text_y), font, 0.5, text_color, 2)
     return thumb
+
+
+def create_scene_thumbnail_svg(
+    thumb_path: Union[str, Path], status: Union[bool, str, "SceneStatus"], config: Optional["Config"] = None
+) -> str:
+    """
+    Create a scene thumbnail SVG with a visual badge indicating status.
+
+    Returns a data URL containing the SVG with embedded image.
+    """
+    params = _get_badge_params(status, config)
+    if not params:
+        return str(thumb_path)
+
+    try:
+        thumb_path = Path(thumb_path)
+        with Image.open(thumb_path) as img:
+            w, h = img.size
+            img_format = img.format.lower() if img.format else "jpeg"
+
+        with open(thumb_path, "rb") as f:
+            img_b64 = base64.b64encode(f.read()).decode("utf-8")
+
+        img_data_url = f"data:image/{img_format};base64,{img_b64}"
+
+        # Convert BGR to RGB for SVG
+        b_c = params["border_color"]
+        t_c = params["text_color"]
+        border_color_rgb = f"rgb({b_c[2]},{b_c[1]},{b_c[0]})"
+        text_color_rgb = f"rgb({t_c[2]},{t_c[1]},{t_c[0]})"
+        badge_char = params["badge_char"]
+
+        badge_radius = int(min(w, h) * 0.15) // 2
+        badge_cx = w - badge_radius - 5
+        badge_cy = badge_radius + 5
+
+        # Precise SVG overlay
+        svg = (
+            f'<svg width="{w}" height="{h}" viewBox="0 0 {w} {h}" xmlns="http://www.w3.org/2000/svg">'
+            f'<image href="{img_data_url}" width="{w}" height="{h}" />'
+            f'<rect x="2" y="2" width="{w-4}" height="{h-4}" fill="none" stroke="{border_color_rgb}" stroke-width="4" />'
+            f'<circle cx="{badge_cx}" cy="{badge_cy}" r="{badge_radius}" fill="{border_color_rgb}" />'
+            f'<text x="{badge_cx}" y="{badge_cy}" dominant-baseline="central" text-anchor="middle" '
+            f'font-family="sans-serif" font-size="{badge_radius*1.4}" fill="{text_color_rgb}" font-weight="bold">'
+            f"{badge_char}</text></svg>"
+        )
+
+        svg_b64 = base64.b64encode(svg.encode("utf-8")).decode("utf-8")
+        return f"data:image/svg+xml;base64,{svg_b64}"
+
+    except Exception as e:
+        logger.error(f"Failed to create SVG thumbnail: {e}")
+        return str(thumb_path)
 
 
 def scene_caption(scene: Union[dict, "Scene"]) -> str:
@@ -220,14 +292,19 @@ def build_scene_gallery_items(
             continue
 
         try:
-            thumb_img_np = cv2.imread(str(thumb_path))
-            if thumb_img_np is None:
-                continue
-            thumb_img_np = cv2.cvtColor(thumb_img_np, cv2.COLOR_BGR2RGB)
-            badged_thumb = create_scene_thumbnail_with_badge(thumb_img_np, i, s.status, config=config)
-            items.append((badged_thumb, scene_caption(s)))
+            # Optimization: If status is included, return the path directly (fast)
+            # If not included, use SVG for high-quality badge overlay
+            params = _get_badge_params(s.status, config)
+            if params is None:
+                items.append((str(thumb_path), scene_caption(s)))
+            else:
+                badged_svg = create_scene_thumbnail_svg(thumb_path, s.status, config=config)
+                items.append((badged_svg, scene_caption(s)))
         except Exception as e:
-            logger.error(f"Failed to create thumbnail for scene {getattr(s, 'shot_id', 'unknown')} at {thumb_path}: {e}", exc_info=True)
+            logger.error(
+                f"Failed to create thumbnail for scene {getattr(s, 'shot_id', 'unknown')} at {thumb_path}: {e}",
+                exc_info=True,
+            )
             continue
         index_map.append(i)
 
