@@ -23,6 +23,7 @@ tests
 ├──&nbsp;helpers  
 ├──&nbsp;integration  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`__init__.py`](#-testsintegration__init__py)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`conftest.py`](#-testsintegrationconftestpy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;e2e_output_debug  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;frame_map.json  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;mask_metadata.json  
@@ -322,6 +323,17 @@ class TestPhotoCLI:
 
 ```python
 def verify_ui_simple(): ...
+```
+
+### `📄 tests/integration/conftest.py`
+
+```python
+@pytest.fixture(scope='module')
+def module_model_registry():
+    """Module-scoped real (or stub) ModelRegistry for integration tests."""
+@pytest.fixture
+def database(mock_database):
+    """Alias for mock_database to satisfy integration tests that request it."""
 ```
 
 ### `📄 tests/integration/test_accuracy.py`
@@ -1751,10 +1763,20 @@ class TestErrorSeverityAndRecoveryStrategy:
 ### `📄 tests/unit/test_events.py`
 
 ```python
+def test_validate_writable_directory():
+    """Test the validate_writable_directory helper."""
 def test_extraction_event_validation():
     """Test ExtractionEvent validation logic."""
 def test_pre_analysis_event_validation():
     """Test PreAnalysisEvent validation logic."""
+def test_propagation_event_validation():
+    """Test PropagationEvent validation."""
+def test_filter_event_validation():
+    """Test FilterEvent validation."""
+def test_export_event_validation():
+    """Test ExportEvent validation."""
+def test_session_load_event_validation():
+    """Test SessionLoadEvent validation."""
 def test_ui_event_extra_ignore():
     """Test that UIEvent ignores extra fields as configured."""
 ```
@@ -3137,10 +3159,11 @@ class TestSharedUtils:
     @patch('cv2.imread')
     def test_build_scene_gallery_items_missing_file(self, mock_imread, tmp_path): ...
     @patch('core.shared.logger')
-    @patch('cv2.imread')
-    def test_build_scene_gallery_items_error(self, mock_imread, mock_logger, tmp_path): ...
-    @patch('cv2.imread')
-    def test_build_scene_gallery_items_imread_none(self, mock_imread, tmp_path): ...
+    @patch('core.shared.create_scene_thumbnail_svg')
+    def test_build_scene_gallery_items_error(self, mock_svg, mock_logger, tmp_path): ...
+    def test_create_scene_thumbnail_svg(self, tmp_path): ...
+    @patch('core.shared.create_scene_thumbnail_svg')
+    def test_build_scene_gallery_items_imread_none(self, mock_svg, tmp_path): ...
     @patch('cv2.imread')
     def test_build_scene_gallery_items_timestamped(self, mock_imread, tmp_path):
         """Verify gallery finds timestamped preview files via glob fallback."""

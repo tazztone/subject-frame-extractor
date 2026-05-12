@@ -303,7 +303,16 @@ def patch_sam3_pvs_initialization():
         Sam3VideoInferenceWithInstanceInteractivity._build_tracker_output = _build_tracker_output_patched  # type: ignore
         logger.debug("Applied SAM3 PVS Initialization patch.")
     except Exception as e:
-        logger.warning(f"Failed to apply PVS patch: {e}")
+        import os
+        import sys
+
+        # If we're in a unit test (mocked torch), this import WILL fail.
+        # We downgrade to debug to avoid confusing the user during local tests.
+        is_test = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST")
+        if is_test and "torch.nn.functional" in str(e):
+            logger.debug(f"PVS patch skipped during testing (expected): {e}")
+        else:
+            logger.warning(f"Failed to apply PVS patch: {e}")
 
 
 def apply_patches():

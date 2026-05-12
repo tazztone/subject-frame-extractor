@@ -29,7 +29,7 @@ from core.io_utils import create_frame_map
 from core.models import AnalysisParameters, Frame, Scene
 from core.operators import OperatorRegistry, run_operators
 from core.progress import AdvancedProgressTracker
-from core.scene_utils import save_scene_seeds
+from core.scene_utils.helpers import save_scene_seeds
 from core.scene_utils.subject_masker import SubjectMasker
 from core.utils import _to_json_safe
 
@@ -254,6 +254,7 @@ class AnalysisPipeline(Pipeline):
             if self.face_analyzer and self.params.face_ref_img_path:
                 self._process_reference_face()
             ext = ".webp" if self.params.thumbnails_only else ".png"
+
             masker = SubjectMasker(
                 self.params,
                 self.progress_queue,

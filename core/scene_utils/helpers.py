@@ -25,7 +25,6 @@ if TYPE_CHECKING:
 from core.enums import SceneStatus
 from core.image_utils import render_mask_overlay
 from core.io_utils import create_frame_map
-from core.managers.model_loader import initialize_analysis_models
 from core.shared import build_scene_gallery_items
 from core.utils import _to_json_safe
 
@@ -147,10 +146,7 @@ def set_batch_scene_status(
     for scene in scenes_list:
         if scene.shot_id in shot_ids_set:
             if scene.status != SceneStatus(new_status):
-                scene.status_history.append({
-                    "status": new_status,
-                    "timestamp": datetime.now(timezone.utc).isoformat()
-                })
+                scene.status_history.append({"status": new_status, "timestamp": datetime.now(timezone.utc).isoformat()})
             scene.status = SceneStatus(new_status)
             scene.manual_status_change = True
             updated_count += 1
@@ -161,7 +157,7 @@ def set_batch_scene_status(
         return (scenes_list, status_text, f"{updated_count} scenes status set to {new_status}.", button_update)
 
     status_text, button_update = get_scene_status_text(scenes_list)
-    return (scenes_list, status_text, f"Could not find any of the selected scenes.", button_update)
+    return (scenes_list, status_text, "Could not find any of the selected scenes.", button_update)
 
 
 def toggle_scene_status(
@@ -188,10 +184,9 @@ def toggle_scene_status(
     scene_to_update = next((s for s in scenes_list if s.shot_id == selected_shot_id), None)
     if scene_to_update:
         if scene_to_update.status != SceneStatus(new_status):
-            scene_to_update.status_history.append({
-                "status": new_status,
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            })
+            scene_to_update.status_history.append(
+                {"status": new_status, "timestamp": datetime.now(timezone.utc).isoformat()}
+            )
         scene_to_update.status = SceneStatus(new_status)
         scene_to_update.manual_status_change = True
         save_scene_seeds(scenes_list, output_folder, logger)
@@ -200,6 +195,13 @@ def toggle_scene_status(
 
     status_text, button_update = get_scene_status_text(scenes_list)
     return (scenes_list, status_text, f"Could not find scene {selected_shot_id}.", button_update)
+
+
+def initialize_analysis_models(*args, **kwargs):
+    """Lazy wrapper to break circular imports while remaining patchable."""
+    from core.managers.model_loader import initialize_analysis_models as _init
+
+    return _init(*args, **kwargs)
 
 
 def _create_analysis_context(
@@ -230,6 +232,7 @@ def _create_analysis_context(
     resolved_outdir = Path(output_folder_str).resolve()
     ui_args["output_folder"] = str(resolved_outdir)
     params = AnalysisParameters.from_ui(logger, config, **ui_args)
+
     models = initialize_analysis_models(params, config, logger, model_registry)
     frame_map = create_frame_map(resolved_outdir, logger)
     if not frame_map:

@@ -152,6 +152,7 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;├──&nbsp;helpers  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;integration  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;__init__.py  
+│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;conftest.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;e2e_output_debug  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;frame_map.json  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;mask_metadata.json  
@@ -1397,6 +1398,8 @@ def set_batch_scene_status(scenes_list: list['Scene'], selected_shot_ids: list[i
     """Toggle the status of multiple selected scenes."""
 def toggle_scene_status(scenes_list: list['Scene'], selected_shot_id: int, new_status: str, output_folder: str, logger: 'AppLogger') -> tuple[list, str, str, Any]:
     """Toggle the status of a selected scene."""
+def initialize_analysis_models(*args, **kwargs):
+    """Lazy wrapper to break circular imports while remaining patchable."""
 def _create_analysis_context(config: 'Config', logger: 'AppLogger', thumbnail_manager: 'ThumbnailManager', cuda_available: bool, ana_ui_map_keys: list[str], ana_input_components: list, model_registry: 'ModelRegistry') -> 'SubjectMasker':
     """Helper to initialize a SubjectMasker from UI arguments."""
 def _recompute_single_preview(scene_state: 'SceneState', masker: 'SubjectMasker', overrides: dict, thumbnail_manager: 'ThumbnailManager', logger: 'AppLogger'):
@@ -1504,10 +1507,15 @@ class SubjectMasker:
 ```python
 """Shared utilities for Frame Extractor & Analyzer"""
 logger = logging.getLogger(__name__)
+_VIEW_STATUS_MAP = {'All': {SceneStatus.INCLUDED, SceneStatus.EXCLUDED, Scene...
 def scene_matches_view(scene: 'Scene', view: str) -> bool:
     """Check if a scene matches the specified view filter."""
+def _get_badge_params(status: Union[bool, str, 'SceneStatus'], config: Optional['Config']=None) -> Optional[dict]:
+    """Helper to resolve status string and associated visual parameters."""
 def create_scene_thumbnail_with_badge(thumb_img: np.ndarray, scene_idx: int, status: Union[bool, str, 'SceneStatus'], config: Optional['Config']=None) -> np.ndarray:
     """Create a scene thumbnail with a visual badge indicating status."""
+def create_scene_thumbnail_svg(thumb_path: Union[str, Path], status: Union[bool, str, 'SceneStatus'], config: Optional['Config']=None) -> str:
+    """Create a scene thumbnail SVG with a visual badge indicating status."""
 def scene_caption(scene: Union[dict, 'Scene']) -> str:
     """Generate a caption string for a scene."""
 def build_scene_gallery_items(scenes: Sequence[Union[dict, 'Scene']], view: str, output_dir: str, page_num: int=1, page_size: int=20, config: Optional['Config']=None) -> Tuple[List[Tuple], List[int], int]:
