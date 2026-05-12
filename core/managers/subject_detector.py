@@ -114,15 +114,23 @@ class SubjectDetector:
     ) -> List[SubjectDetection]:
         # YOLO26 ONNX output: (1, num_classes+4, num_detections)
         preds = outputs[0][0].T  # (N, C+4)
-        results = []
-        for det in preds:
-            cx, cy, bw, bh = det[:4]
-            scores = det[4:]
-            class_id = int(np.argmax(scores))
-            score = float(scores[class_id])
 
-            if class_id != target_class_id or score < conf:
-                continue
+        # Vectorized class filtering
+        class_scores = preds[:, 4:]
+        class_ids = np.argmax(class_scores, axis=1)
+        scores = class_scores[np.arange(len(class_ids)), class_ids]
+
+        mask = (class_ids == target_class_id) & (scores >= conf)
+        valid_preds = preds[mask]
+        valid_scores = scores[mask]
+        valid_class_ids = class_ids[mask]
+
+        results = []
+        for i in range(len(valid_preds)):
+            det = valid_preds[i]
+            cx, cy, bw, bh = det[:4]
+            score = float(valid_scores[i])
+            class_id = int(valid_class_ids[i])
 
             # Unscale letterbox
             x1 = max(0, int((cx - bw / 2 - pad_left) / scale))
@@ -148,20 +156,25 @@ class SubjectDetector:
         # YOLO-seg outputs: [0] = detections (1, 116, N), [1] = proto masks (1, 32, 160, 160)
         preds = outputs[0][0].T  # (N, 116)
         proto = outputs[1][0]  # (32, 160, 160)
-        results = []
         # Determine mask coefficient count from proto shape
         num_masks = proto.shape[0]  # Usually 32
 
-        for det in preds:
+        # Vectorized class filtering
+        class_scores = preds[:, 4:-num_masks]
+        class_ids = np.argmax(class_scores, axis=1)
+        scores = class_scores[np.arange(len(class_ids)), class_ids]
+
+        mask = (class_ids == target_class_id) & (scores >= conf_threshold)
+        valid_preds = preds[mask]
+        valid_scores = scores[mask]
+        valid_class_ids = class_ids[mask]
+
+        results = []
+        for i in range(len(valid_preds)):
+            det = valid_preds[i]
             cx, cy, bw, bh = det[:4]
-            # YOLO-seg: [4 coords, N classes, M masks]
-            class_scores = det[4:-num_masks]
-            class_id = int(np.argmax(class_scores))
-            score = float(class_scores[class_id])
-
-            if class_id != target_class_id or score < conf_threshold:
-                continue
-
+            score = float(valid_scores[i])
+            class_id = int(valid_class_ids[i])
             coeffs = det[-num_masks:]  # The last M values are mask coefficients
 
             # 1. Unscale bbox
