@@ -278,6 +278,58 @@ def patch_sam3_detect_objects():
         pass
 
 
+def patch_sam3_coco_loader():
+    """
+    Patch COCO_FROM_JSON to replace unsafe eval() with ast.literal_eval().
+    This fixes a security vulnerability where arbitrary code could be
+    executed via the prompts argument.
+    """
+    try:
+        import ast
+        from sam3.train.data.coco_json_loaders import COCO_FROM_JSON  # type: ignore
+
+        original_init = COCO_FROM_JSON.__init__
+
+        def __init___patched(self, annotation_file, prompts=None, include_negatives=True, category_chunk_size=None):
+            # We must call load_coco_and_group_by_image which is used in original __init__
+            # or better, just perform the safe eval and then call original_init with evaluated prompts.
+            # However, original_init calls eval(prompts) again.
+            # So we need to completely replace it or patch the built-in eval temporarily (dangerous).
+            # Best is to re-implement the __init__ logic safely.
+
+            from sam3.train.data.coco_json_loaders import load_coco_and_group_by_image  # type: ignore
+
+            self._raw_data, self._cat_idx_to_text = load_coco_and_group_by_image(
+                annotation_file
+            )
+            self._sorted_cat_ids = sorted(list(self._cat_idx_to_text.keys()))
+            self.prompts = None
+            self.include_negatives = include_negatives
+            self.category_chunk_size = (
+                category_chunk_size
+                if category_chunk_size is not None
+                else len(self._sorted_cat_ids)
+            )
+            self.category_chunks = [
+                self._sorted_cat_ids[i : i + self.category_chunk_size]
+                for i in range(0, len(self._sorted_cat_ids), self.category_chunk_size)
+            ]
+            if prompts is not None:
+                if isinstance(prompts, str):
+                    prompts = ast.literal_eval(prompts)
+                self.prompts = {}
+                for loc_dict in prompts:
+                    self.prompts[int(loc_dict["id"])] = loc_dict["name"]
+                assert len(self.prompts) == len(self._sorted_cat_ids), (
+                    "Number of prompts must match number of categories"
+                )
+
+        COCO_FROM_JSON.__init__ = __init___patched
+        logger.debug("Applied SAM3 COCO_FROM_JSON security patch.")
+    except ImportError:
+        pass
+
+
 def patch_sam3_pvs_initialization():
     """
     SAM3's Sam3VideoInference._build_tracker_output assumes that
@@ -333,6 +385,7 @@ def apply_patches():
 
     # 4. Feature and Workflow patches
     patch_sam3_detect_objects()
+    patch_sam3_coco_loader()
     patch_sam3_pvs_initialization()
 
     # 5. Triton fallbacks
