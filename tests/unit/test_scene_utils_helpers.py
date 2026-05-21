@@ -13,8 +13,8 @@ from core.scene_utils.helpers import (
     draw_boxes_preview,
     get_scene_status_text,
     save_scene_seeds,
-    toggle_scene_status,
     set_batch_scene_status,
+    toggle_scene_status,
 )
 
 
@@ -61,6 +61,16 @@ class TestSceneUtilsHelpers:
         # Check if rectangles were drawn (some pixels should be green)
         # Note: BGR is used by cv2, but config.visualization_bbox_color is passed directly.
         # Assuming (0, 255, 0) is passed, channel 1 should be 255 at the box locations.
+        assert np.any(result[10:50, 10:50, 1] == 255)
+        assert np.any(result[60:80, 60:80, 1] == 255)
+
+    def test_draw_boxes_preview_with_conf(self, mock_config):
+        img = np.zeros((100, 100, 3), dtype=np.uint8)
+        boxes = [[10, 10, 50, 50, 0.95], [60, 60, 80, 80, 0.8]]
+
+        result = draw_boxes_preview(img, boxes, mock_config)
+
+        assert result.shape == img.shape
         assert np.any(result[10:50, 10:50, 1] == 255)
         assert np.any(result[60:80, 60:80, 1] == 255)
 
