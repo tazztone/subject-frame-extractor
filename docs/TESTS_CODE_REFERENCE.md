@@ -1787,6 +1787,8 @@ def test_session_load_event_validation(tmp_path: Path):
     """Test SessionLoadEvent validation."""
 def test_ui_event_extra_ignore():
     """Test that UIEvent ignores extra fields as configured."""
+def test_validate_face_ref():
+    """Test the validate_face_ref classmethod of PreAnalysisEvent."""
 @patch('core.events.validate_writable_directory')
 def test_validate_out_methods(mock_validate):
     """Test that validate_out classmethods correctly delegate to validate_writable_d..."""

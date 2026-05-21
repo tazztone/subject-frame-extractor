@@ -309,6 +309,38 @@ def test_ui_event_extra_ignore():
     assert not hasattr(event, "extra_field")
 
 
+def test_validate_face_ref():
+    """Test the validate_face_ref classmethod of PreAnalysisEvent."""
+    # Empty input
+    info_mock = MagicMock()
+    info_mock.data = {"video_path": "video.mp4"}
+    assert PreAnalysisEvent.validate_face_ref("", info_mock) == ""
+
+    # Input matching video_path
+    assert PreAnalysisEvent.validate_face_ref("video.mp4", info_mock) == ""
+
+    # Non-existent file
+    with patch("core.events.Path.is_file", return_value=False):
+        assert PreAnalysisEvent.validate_face_ref("missing.jpg", info_mock) == ""
+
+    # Existing file with invalid extension
+    with patch("core.events.Path.is_file", return_value=True):
+        assert PreAnalysisEvent.validate_face_ref("valid_file.txt", info_mock) == ""
+
+    # Existing file with valid extension
+    with patch("core.events.Path.is_file", return_value=True):
+        assert PreAnalysisEvent.validate_face_ref("valid_file.jpg", info_mock) == "valid_file.jpg"
+        assert PreAnalysisEvent.validate_face_ref("valid_file.png", info_mock) == "valid_file.png"
+        assert PreAnalysisEvent.validate_face_ref("valid_file.jpeg", info_mock) == "valid_file.jpeg"
+        assert PreAnalysisEvent.validate_face_ref("valid_file.webp", info_mock) == "valid_file.webp"
+        assert PreAnalysisEvent.validate_face_ref("valid_file.bmp", info_mock) == "valid_file.bmp"
+
+    # Existing file with uppercase valid extension
+    with patch("core.events.Path.is_file", return_value=True):
+        assert PreAnalysisEvent.validate_face_ref("valid_file.JPG", info_mock) == "valid_file.JPG"
+        assert PreAnalysisEvent.validate_face_ref("valid_file.PNG", info_mock) == "valid_file.PNG"
+
+
 @patch("core.events.validate_writable_directory")
 def test_validate_out_methods(mock_validate):
     """Test that validate_out classmethods correctly delegate to validate_writable_directory."""
