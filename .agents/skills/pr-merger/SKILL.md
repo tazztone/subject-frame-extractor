@@ -3,65 +3,80 @@ name: pr-merger
 description: Strategically merge pull requests, handle merge conflicts in test files, and run unit or integration tests. Use when merging pull requests or managing multi-stage branch integrations.
 ---
 
-# Strategic PR Merging & Integration
+# PR Merger
 
-## Quick start
+## Quick Start
 
-Check out a PR branch, merge `main`, verify tests, and merge back to `main`:
 ```bash
-# Checkout and merge main
-gh pr checkout <PR_NUMBER>
-git merge main
-
-# Verify locally
-uv run pytest tests/unit/test_events.py
-
-# Push and merge
-git push origin <BRANCH_NAME>
-gh pr merge <PR_NUMBER> --merge --delete-branch
+git fetch origin && git checkout main && git pull origin main
+git merge origin/feature-branch --no-ff
+# resolve conflicts if any, then verify tests pass
+git push origin main
 ```
 
----
+## Workflows
 
-## Strategic Integration Workflows
+### Single PR Merge
 
-When handling multiple concurrent PRs, group them in dependency order:
-1. **Phase 1: Security & Independent PRs** (e.g. database security patches, code-health imports).
-2. **Phase 2: Functional Core Updates** (functional pipeline or utility updates).
-3. **Phase 3: Shared Test File Integrations** (unit test suites with high merge conflict risks).
+- [ ] `git fetch origin && git checkout main && git pull origin main`
+- [ ] `git merge origin/<branch> --no-ff`
+- [ ] If conflicts → resolve (see [REFERENCE.md](REFERENCE.md))
+- [ ] Run `bash scripts/conflict_scan.sh` to verify no markers remain
+- [ ] Run project test suite
+- [ ] `git push origin main`
+- [ ] Cleanup: `git branch -d <branch> && git push origin --delete <branch>`
 
----
+### Batch Merge (Multiple PRs)
 
-## Conflict Resolution Protocols
+Order matters. Merge one at a time, verify between each.
 
-When merging `main` into a PR branch triggers a conflict in shared test files (e.g., `tests/unit/test_events.py` or `tests/unit/test_progress.py`):
-1. **Preserve Both Test Cases**: Do not select one over the other. Extract and merge unique test cases (e.g., both `test_validate_output_folder_direct` and `test_strip_emoji_from_strategy`).
-2. **Handle Mocking vs Real Files**: Favor test methods using `tmp_path` or real fixtures over older generic mocks.
-3. **Commit Stage**: Stage files with `git add`, run `git commit`, and handle formatting checks.
+1. **Triage** — identify dependency chains and conflict clusters
+2. **Order** — foundational/independent PRs first, dependents after
+3. **Merge sequentially** — never skip verification between merges
 
----
-
-## Verification & Execution Protocols
-
-Always run the correct commands depending on the tests to verify the integrations:
-
-### 1. Unit Tests (Fast, No GPU)
 ```bash
-bash scripts/linux_test_unit.sh
+# Discover overlap
+gh pr list --state open
+git diff main..origin/<branch> --stat   # per branch
 ```
-*   **Coverage Target**: Must maintain or exceed the **80%** repository coverage threshold.
 
-### 2. GPU / Integration / End-to-End Tests
-```bash
-export PYTEST_INTEGRATION_MODE=true
-uv run --no-sync pytest tests/integration/ -m "integration or gpu_e2e" -n 1 -v --no-cov
-```
-> [!IMPORTANT]
-> - Always use `export PYTEST_INTEGRATION_MODE=true` to properly propagate global mock disabling to sub-workers.
-> - Always use `-n 1` for GPU tests to prevent VRAM exhaustion and out-of-memory crashes.
+- [ ] Sort: fewest conflicts first, dependencies before dependents
+- [ ] For each PR in order:
+  - [ ] Merge, resolve conflicts, run tests, push
+  - [ ] Only proceed to next PR after green tests
 
-### 3. Handling Transient Flakes
-If a commit fails due to known parallel/xdist flakes in pre-commit hooks (e.g., `test_create_scene_thumbnail_svg`), and individual targeted tests pass successfully, bypass the pre-commit pytest check using the `--no-verify` flag during commit:
+### Conflict Resolution (Summary)
+
+| File type | Strategy |
+|-----------|----------|
+| **Test files** | Union — keep ALL test functions from both sides, deduplicate imports |
+| **Production code** | Read both PRs' intent, prefer the more general version, combine if both needed |
+| **Config/lock files** | Regenerate from source (`uv lock`, `npm install`, etc.) |
+
+After resolving: `bash scripts/conflict_scan.sh`
+
+See [REFERENCE.md](REFERENCE.md) for detailed patterns.
+
+### Using `gh` CLI
+
 ```bash
-git commit --no-verify -m "Merge branch 'main' into PR <PR_NUMBER>"
+gh pr diff <number>          # review changes
+gh pr checks <number>        # check CI status
+gh pr merge <number> --merge --delete-branch  # merge + cleanup
 ```
+
+### Verification Gate
+
+Discover the project's test command:
+
+1. `ls scripts/*test*` or `grep test Makefile`
+2. Check `pyproject.toml` / `package.json` for test scripts
+3. Fallback: `pytest` / `npm test` / `make test`
+
+**Never push a merge that hasn't passed tests.**
+
+### Post-Merge Cleanup
+
+- [ ] Delete local branch: `git branch -d <branch>`
+- [ ] Delete remote branch: `git push origin --delete <branch>`
+- [ ] Verify PR auto-closed, or: `gh pr close <number>`
