@@ -1,8 +1,19 @@
+import json
 import logging
+import sys
 from queue import Queue
 from unittest.mock import MagicMock, patch
 
-from core.logger import AppLogger, ColoredFormatter, GradioQueueHandler, LogEvent, setup_logging
+from core.logger import (
+    SUCCESS_LEVEL_NUM,
+    AppLogger,
+    ColoredFormatter,
+    GradioQueueHandler,
+    JSONFormatter,
+    LogEvent,
+    log_with_component,
+    setup_logging,
+)
 
 
 def test_log_event_model():
@@ -56,6 +67,22 @@ def test_setup_logging(mock_dict_config, tmp_path):
 
 
 @patch("logging.config.dictConfig")
+def test_setup_logging_stable_name(mock_dict_config, tmp_path):
+    """Test setup_logging configuration logic with stable name."""
+    config = MagicMock()
+    config.logs_dir = str(tmp_path)
+    config.log_format = "%(message)s"
+    config.log_colored = True
+    config.log_level = "INFO"
+
+    log_file = setup_logging(config, stable_log_name=True)
+
+    assert mock_dict_config.called
+    assert log_file.parent == tmp_path
+    assert log_file.name == "run.log"
+
+
+@patch("logging.config.dictConfig")
 def test_setup_logging_with_queue(mock_dict_config, tmp_path):
     """Test setup_logging with a progress queue."""
     config = MagicMock()
@@ -71,6 +98,34 @@ def test_setup_logging_with_queue(mock_dict_config, tmp_path):
     conf = args[0]
     assert "gradio" in conf["handlers"]
     assert "gradio" in conf["loggers"]["app_logger"]["handlers"]
+
+
+def test_app_logger_log_mocked():
+    """Test AppLogger log method."""
+    config = MagicMock()
+    with patch("logging.getLogger") as mock_get_logger:
+        mock_logger = mock_get_logger.return_value
+        logger = AppLogger(config)
+
+        logger.log(logging.INFO, "log message", component="custom")
+
+        mock_logger.log.assert_called_with(
+            logging.INFO, "log message [custom]", extra={"component": "custom"}, exc_info=None
+        )
+
+
+def test_app_logger_info():
+    """Test AppLogger info method specifically."""
+    config = MagicMock()
+    with patch("logging.getLogger") as mock_get_logger:
+        mock_logger = mock_get_logger.return_value
+        logger = AppLogger(config)
+
+        logger.info("info message", component="custom_info")
+
+        mock_logger.log.assert_called_with(
+            logging.INFO, "info message [custom_info]", extra={"component": "custom_info"}, exc_info=None
+        )
 
 
 def test_app_logger_all_methods():
@@ -92,6 +147,15 @@ def test_app_logger_all_methods():
             mock_logger.log.assert_any_call(
                 level, f"{method_name} message [test]", extra={"component": "test"}, exc_info=None
             )
+
+
+def test_app_logger_critical():
+    """Test AppLogger.critical specifically calls _log with correct args."""
+    config = MagicMock()
+    logger = AppLogger(config)
+    with patch.object(logger, "_log") as mock_log:
+        logger.critical("Critical error occurred", component="test_component", exc_info=True)
+        mock_log.assert_called_once_with("CRITICAL", "Critical error occurred", "test_component", exc_info=True)
 
 
 @patch("logging.config.dictConfig")
@@ -129,3 +193,378 @@ def test_gradio_queue_handler_error():
     with patch.object(handler, "handleError") as mock_handle_error:
         handler.emit(record)
         assert mock_handle_error.called
+
+
+def test_app_logger_success():
+    """Test explicit AppLogger.success method."""
+    config = MagicMock()
+    with patch("logging.getLogger") as mock_get_logger:
+        mock_logger = mock_get_logger.return_value
+        logger = AppLogger(config)
+
+        logger.success("Success message", component="test_comp")
+
+        mock_logger.log.assert_called_with(
+            25, "Success message [test_comp]", extra={"component": "test_comp"}, exc_info=None
+        )
+
+
+def test_app_logger_log():
+    """Test AppLogger.log mapping."""
+    config = MagicMock()
+    with patch("logging.getLogger") as mock_get_logger:
+        mock_logger = mock_get_logger.return_value
+        logger = AppLogger(config)
+
+        logger.log(logging.ERROR, "Error msg", component="err_comp", custom="field")
+
+        mock_logger.log.assert_called_with(
+            logging.ERROR, "Error msg [err_comp]", extra={"component": "err_comp", "custom": "field"}, exc_info=None
+        )
+
+
+def test_log_with_component_none():
+    """Test log_with_component with None logger."""
+    # Should just return without crashing
+    log_with_component(None, "info", "test message")
+
+
+def test_log_with_component_none_logger():
+    """Test log_with_component ignores None logger."""
+    # Should not raise exception
+    log_with_component(None, "INFO", "message")
+
+
+def test_log_with_component_app_logger():
+    """Test log_with_component with AppLogger."""
+    logger = MagicMock(spec=AppLogger)
+    logger.info = MagicMock()
+    log_with_component(logger, "INFO", "message", component="test", extra_arg="val")
+    logger.info.assert_called_once_with("message", component="test", extra_arg="val")
+
+
+def test_log_with_component_app_logger_lowercase():
+    """Test log_with_component with AppLogger and lowercase level."""
+    logger = MagicMock(spec=AppLogger)
+    log_with_component(logger, "info", "test message", component="my_component")
+    logger.info.assert_called_once_with("test message", component="my_component")
+
+
+def test_log_with_component_standard_logger():
+    """Test log_with_component with standard logging.Logger."""
+    logger = logging.getLogger("test_standard")
+    with patch.object(logger, "info") as mock_info:
+        log_with_component(logger, "INFO", "message", component="test", extra_arg="val")
+        mock_info.assert_called_once_with("message", extra={"component": "test"}, extra_arg="val")
+
+
+def test_log_with_component_standard_logger_mock():
+    """Test log_with_component with standard logging.Logger mock."""
+    logger = MagicMock(spec=logging.Logger)
+    log_with_component(logger, "info", "test message", component="my_component")
+    logger.info.assert_called_once_with("test message", extra={"component": "my_component"})
+
+
+def test_log_with_component_standard_logger_extra_kwargs():
+    """Test log_with_component with standard logger and extra kwargs."""
+    logger = MagicMock(spec=logging.Logger)
+    log_with_component(logger, "info", "test message", component="my_component", extra={"other": "value"})
+    logger.info.assert_called_once_with("test message", extra={"other": "value", "component": "my_component"})
+
+
+def test_log_with_component_success_fallback():
+    """Test log_with_component success fallback."""
+    logger = logging.getLogger("test_success")
+    with patch.object(logger, "log") as mock_log:
+        log_with_component(logger, "SUCCESS", "message", component="test", extra_arg="val")
+        mock_log.assert_called_once_with(25, "message [test]", extra_arg="val")
+
+
+def test_log_with_component_success_fallback_mock():
+    """Test log_with_component success fallback on standard logger mock."""
+    logger = MagicMock(spec=logging.Logger)
+    # Ensure success method doesn't exist to trigger fallback
+    del logger.success
+    log_with_component(logger, "success", "test message", component="my_component")
+    logger.log.assert_called_once_with(SUCCESS_LEVEL_NUM, "test message [my_component]")
+
+
+def test_log_with_component_missing_level():
+    """Test log_with_component with a level that doesn't exist."""
+    logger = MagicMock(spec=logging.Logger)
+    # Should return silently without crashing
+    log_with_component(logger, "nonexistent", "test message", component="my_component")
+
+
+def test_log_with_component_std_logger():
+    """Test log_with_component with standard logger."""
+    logger = logging.getLogger("test_logger")
+    with patch.object(logger, "error") as mock_error:
+        log_with_component(logger, "ERROR", "My err msg", component="std_comp", custom="val")
+        mock_error.assert_called_with("My err msg", extra={"component": "std_comp"}, custom="val")
+
+
+def test_log_with_component_std_logger_success():
+    """Test log_with_component with standard logger and custom SUCCESS level fallback."""
+    logger = logging.getLogger("test_logger")
+    with patch.object(logger, "log") as mock_log:
+        log_with_component(logger, "SUCCESS", "My success msg", component="std_comp")
+        mock_log.assert_called_with(25, "My success msg [std_comp]")
+
+
+def test_log_with_component_missing_method():
+    """Test log_with_component when level method doesn't exist on logger."""
+    logger = logging.getLogger("test_logger")
+    log_with_component(logger, "NONEXISTENT", "msg")  # Should not crash
+
+
+def test_json_formatter():
+    """Test JSONFormatter formats log records correctly."""
+    formatter = JSONFormatter()
+    record = logging.LogRecord(
+        name="test_logger",
+        level=logging.ERROR,
+        pathname="path.py",
+        lineno=10,
+        msg="test message",
+        args=(),
+        exc_info=(ValueError, ValueError("error"), None),
+    )
+    # Add extra attribute
+    record.__dict__["component"] = "test_component"
+    record.__dict__["custom_val"] = {"key": "val"}
+
+    formatted = formatter.format(record)
+    assert "test message" in formatted
+    assert "ERROR" in formatted
+    assert "test_component" in formatted
+    assert "ValueError" in formatted
+    assert "custom_val" in formatted
+    assert "val" in formatted
+
+
+def test_app_logger_copy_log_to_output(tmp_path):
+    """Test copy_log_to_output copies the log file correctly."""
+    config = MagicMock()
+    session_log_file = tmp_path / "source.log"
+    session_log_file.write_text("test log content")
+
+    logger = AppLogger(config, session_log_file=session_log_file)
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+
+    logger.copy_log_to_output(output_dir)
+
+    copied_file = output_dir / "session.log"
+    assert copied_file.exists()
+    assert copied_file.read_text() == "test log content"
+
+
+def test_app_logger_copy_log_to_output_missing_file(tmp_path):
+    """Test copy_log_to_output handles missing source file gracefully."""
+    config = MagicMock()
+    session_log_file = tmp_path / "missing.log"
+
+    logger = AppLogger(config, session_log_file=session_log_file)
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+
+    # Should not raise an exception
+    logger.copy_log_to_output(output_dir)
+
+    copied_file = output_dir / "session.log"
+    assert not copied_file.exists()
+
+
+def test_app_logger_copy_log_to_output_no_session_file(tmp_path):
+    """Test copy_log_to_output handles case where session_log_file is not set."""
+    config = MagicMock()
+
+    logger = AppLogger(config)
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+
+    # Should not raise an exception
+    logger.copy_log_to_output(output_dir)
+
+    copied_file = output_dir / "session.log"
+    assert not copied_file.exists()
+
+
+def test_app_logger_copy_log_to_output_exception(tmp_path):
+    """Test copy_log_to_output catches and ignores exceptions."""
+    config = MagicMock()
+    session_log_file = tmp_path / "source.log"
+    session_log_file.write_text("test log content")
+
+    logger = AppLogger(config, session_log_file=session_log_file)
+    output_dir = tmp_path / "output"
+
+    # Passing an invalid path or missing directory to trigger shutil.copy exception
+    # It should not raise since it has a blanket except Exception pass
+    with patch("shutil.copy", side_effect=Exception("Disk error")):
+        logger.copy_log_to_output(output_dir)
+
+
+def test_app_logger_copy_log_to_output_exception_mock(tmp_path):
+    """Test copy_log_to_output handles exceptions."""
+    config = MagicMock()
+    session_log = tmp_path / "test_session.log"
+    session_log.write_text("log content")
+
+    logger = AppLogger(config, session_log_file=session_log)
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+
+    with patch("shutil.copy", side_effect=Exception("Copy failed")):
+        logger.copy_log_to_output(output_dir)
+        # Should catch and pass silently
+        assert not (output_dir / "session.log").exists()
+
+
+def test_app_logger_copy_log_to_output_no_log_file():
+    """Test copy_log_to_output method when session_log_file is None."""
+    config = MagicMock()
+    logger = AppLogger(config)  # no session_log_file passed
+
+    with patch("shutil.copy") as mock_copy:
+        logger.copy_log_to_output("some_dir")
+        mock_copy.assert_not_called()
+
+
+def test_app_logger_copy_log_to_output_file_not_exists(tmp_path):
+    """Test copy_log_to_output method when session_log_file does not exist."""
+    config = MagicMock()
+    session_log = tmp_path / "test_session.log"
+    logger = AppLogger(config, session_log_file=session_log)
+
+    with patch("shutil.copy") as mock_copy:
+        logger.copy_log_to_output("some_dir")
+        mock_copy.assert_not_called()
+
+
+def test_app_logger_level_methods():
+    """Test all specific AppLogger level methods explicitly."""
+    config = MagicMock()
+    with patch("logging.getLogger") as mock_get_logger:
+        mock_logger = mock_get_logger.return_value
+        logger = AppLogger(config)
+
+        logger.debug("Debug msg", component="comp1")
+        mock_logger.log.assert_called_with(
+            logging.DEBUG, "Debug msg [comp1]", extra={"component": "comp1"}, exc_info=None
+        )
+
+        logger.info("Info msg", component="comp2")
+        mock_logger.log.assert_called_with(
+            logging.INFO, "Info msg [comp2]", extra={"component": "comp2"}, exc_info=None
+        )
+
+        logger.warning("Warn msg", component="comp3")
+        mock_logger.log.assert_called_with(
+            logging.WARNING, "Warn msg [comp3]", extra={"component": "comp3"}, exc_info=None
+        )
+
+        logger.error("Err msg", component="comp4")
+        mock_logger.log.assert_called_with(
+            logging.ERROR, "Err msg [comp4]", extra={"component": "comp4"}, exc_info=None
+        )
+
+        logger.critical("Crit msg", component="comp5")
+        mock_logger.log.assert_called_with(
+            logging.CRITICAL, "Crit msg [comp5]", extra={"component": "comp5"}, exc_info=None
+        )
+
+
+def test_app_logger_log_direct():
+    """Test standard log method mapping to internal _log."""
+    config = MagicMock()
+    logger = AppLogger(config)
+
+    with patch.object(logger, "_log") as mock_log:
+        logger.log(logging.ERROR, "An error log", component="custom")
+        mock_log.assert_called_once_with("ERROR", "An error log", "custom")
+
+
+def test_json_formatter_basic():
+    """Test JSONFormatter formats basic log record correctly."""
+    formatter = JSONFormatter()
+    record = logging.LogRecord(
+        name="test",
+        level=logging.INFO,
+        pathname="",
+        lineno=0,
+        msg="test message",
+        args=(),
+        exc_info=None,
+    )
+    record.__dict__["component"] = "test_component"
+    record.__dict__["custom_key"] = "custom_value"
+
+    formatted = formatter.format(record)
+    data = json.loads(formatted)
+
+    assert data["message"] == "test message"
+    assert data["level"] == "INFO"
+    assert data["component"] == "test_component"
+    assert data["custom_fields"]["custom_key"] == "custom_value"
+    assert "timestamp" in data
+    assert data["error_type"] is None
+
+
+def test_json_formatter_sanitize():
+    """Test JSONFormatter _sanitize function for various types."""
+    formatter = JSONFormatter()
+    record = logging.LogRecord(
+        name="test",
+        level=logging.DEBUG,
+        pathname="",
+        lineno=0,
+        msg="test sanitize",
+        args=(),
+        exc_info=None,
+    )
+
+    record.__dict__["a_set"] = {3, 1, 2}
+    record.__dict__["a_dict"] = {"inner": {2, 1}, "num": 1.5}
+    record.__dict__["a_list"] = [1, {3, 2}, "str"]
+    record.__dict__["an_object"] = object()
+
+    formatted = formatter.format(record)
+    data = json.loads(formatted)
+
+    fields = data["custom_fields"]
+    assert fields["a_set"] == [1, 2, 3]  # sorted elements
+    assert fields["a_dict"]["inner"] == [1, 2]  # sorted elements
+    assert fields["a_dict"]["num"] == 1.5
+    assert fields["a_list"] == [1, [2, 3], "str"]
+    assert "object at" in fields["an_object"]  # str(object())
+
+
+def test_json_formatter_exception():
+    """Test JSONFormatter formats exception info properly."""
+    formatter = JSONFormatter()
+
+    try:
+        raise ValueError("test error")
+    except ValueError:
+        exc_info = sys.exc_info()
+
+    record = logging.LogRecord(
+        name="test",
+        level=logging.ERROR,
+        pathname="",
+        lineno=0,
+        msg="error occurred",
+        args=(),
+        exc_info=exc_info,
+    )
+
+    formatted = formatter.format(record)
+    data = json.loads(formatted)
+
+    assert data["message"] == "error occurred"
+    assert data["level"] == "ERROR"
+    assert data["error_type"] == "ValueError"
+    assert data["stack_trace"] is not None
+    assert "test error" in data["stack_trace"]
