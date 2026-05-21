@@ -1777,8 +1777,12 @@ def test_pre_analysis_event_validation():
     """Test PreAnalysisEvent validation logic."""
 def test_propagation_event_validation():
     """Test PropagationEvent validation."""
+def test_filter_event_validate_out_direct():
+    """Directly test the validate_out classmethod for FilterEvent."""
 def test_filter_event_validation():
     """Test FilterEvent validation."""
+def test_export_event_validate_out_direct():
+    """Directly test the validate_out classmethod for ExportEvent."""
 def test_export_event_validation():
     """Test ExportEvent validation."""
 def test_export_event_validate_out():
