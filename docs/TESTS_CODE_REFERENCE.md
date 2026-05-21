@@ -2258,6 +2258,10 @@ def test_setup_logging_stable_name(mock_dict_config, tmp_path):
 @patch('logging.config.dictConfig')
 def test_setup_logging_with_queue(mock_dict_config, tmp_path):
     """Test setup_logging with a progress queue."""
+def test_app_logger_log_mocked():
+    """Test AppLogger log method."""
+def test_app_logger_info():
+    """Test AppLogger info method specifically."""
 def test_app_logger_all_methods():
     """Test all AppLogger proxy methods."""
 def test_app_logger_critical():
@@ -2271,6 +2275,10 @@ def test_setup_logging_mkdir(mock_dict_config, mock_mkdir, tmp_path):
     """Test setup_logging calls mkdir."""
 def test_gradio_queue_handler_error():
     """Test GradioQueueHandler error handling."""
+def test_app_logger_success():
+    """Test explicit AppLogger.success method."""
+def test_app_logger_log():
+    """Test AppLogger.log mapping."""
 def test_log_with_component_none():
     """Test log_with_component with None logger."""
 def test_log_with_component_none_logger():
@@ -2291,6 +2299,12 @@ def test_log_with_component_success_fallback_mock():
     """Test log_with_component success fallback on standard logger mock."""
 def test_log_with_component_missing_level():
     """Test log_with_component with a level that doesn't exist."""
+def test_log_with_component_std_logger():
+    """Test log_with_component with standard logger."""
+def test_log_with_component_std_logger_success():
+    """Test log_with_component with standard logger and custom SUCCESS level fallback."""
+def test_log_with_component_missing_method():
+    """Test log_with_component when level method doesn't exist on logger."""
 def test_json_formatter():
     """Test JSONFormatter formats log records correctly."""
 def test_app_logger_copy_log_to_output(tmp_path):
@@ -2301,7 +2315,15 @@ def test_app_logger_copy_log_to_output_no_session_file(tmp_path):
     """Test copy_log_to_output handles case where session_log_file is not set."""
 def test_app_logger_copy_log_to_output_exception(tmp_path):
     """Test copy_log_to_output catches and ignores exceptions."""
-def test_app_logger_log():
+def test_app_logger_copy_log_to_output_exception_mock(tmp_path):
+    """Test copy_log_to_output handles exceptions."""
+def test_app_logger_copy_log_to_output_no_log_file():
+    """Test copy_log_to_output method when session_log_file is None."""
+def test_app_logger_copy_log_to_output_file_not_exists(tmp_path):
+    """Test copy_log_to_output method when session_log_file does not exist."""
+def test_app_logger_level_methods():
+    """Test all specific AppLogger level methods explicitly."""
+def test_app_logger_log_direct():
     """Test standard log method mapping to internal _log."""
 def test_json_formatter_basic():
     """Test JSONFormatter formats basic log record correctly."""

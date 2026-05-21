@@ -100,7 +100,7 @@ def test_setup_logging_with_queue(mock_dict_config, tmp_path):
     assert "gradio" in conf["loggers"]["app_logger"]["handlers"]
 
 
-def test_app_logger_log():
+def test_app_logger_log_mocked():
     """Test AppLogger log method."""
     config = MagicMock()
     with patch("logging.getLogger") as mock_get_logger:
@@ -195,6 +195,34 @@ def test_gradio_queue_handler_error():
         assert mock_handle_error.called
 
 
+def test_app_logger_success():
+    """Test explicit AppLogger.success method."""
+    config = MagicMock()
+    with patch("logging.getLogger") as mock_get_logger:
+        mock_logger = mock_get_logger.return_value
+        logger = AppLogger(config)
+
+        logger.success("Success message", component="test_comp")
+
+        mock_logger.log.assert_called_with(
+            25, "Success message [test_comp]", extra={"component": "test_comp"}, exc_info=None
+        )
+
+
+def test_app_logger_log():
+    """Test AppLogger.log mapping."""
+    config = MagicMock()
+    with patch("logging.getLogger") as mock_get_logger:
+        mock_logger = mock_get_logger.return_value
+        logger = AppLogger(config)
+
+        logger.log(logging.ERROR, "Error msg", component="err_comp", custom="field")
+
+        mock_logger.log.assert_called_with(
+            logging.ERROR, "Error msg [err_comp]", extra={"component": "err_comp", "custom": "field"}, exc_info=None
+        )
+
+
 def test_log_with_component_none():
     """Test log_with_component with None logger."""
     # Should just return without crashing
@@ -266,6 +294,28 @@ def test_log_with_component_missing_level():
     logger = MagicMock(spec=logging.Logger)
     # Should return silently without crashing
     log_with_component(logger, "nonexistent", "test message", component="my_component")
+
+
+def test_log_with_component_std_logger():
+    """Test log_with_component with standard logger."""
+    logger = logging.getLogger("test_logger")
+    with patch.object(logger, "error") as mock_error:
+        log_with_component(logger, "ERROR", "My err msg", component="std_comp", custom="val")
+        mock_error.assert_called_with("My err msg", extra={"component": "std_comp"}, custom="val")
+
+
+def test_log_with_component_std_logger_success():
+    """Test log_with_component with standard logger and custom SUCCESS level fallback."""
+    logger = logging.getLogger("test_logger")
+    with patch.object(logger, "log") as mock_log:
+        log_with_component(logger, "SUCCESS", "My success msg", component="std_comp")
+        mock_log.assert_called_with(25, "My success msg [std_comp]")
+
+
+def test_log_with_component_missing_method():
+    """Test log_with_component when level method doesn't exist on logger."""
+    logger = logging.getLogger("test_logger")
+    log_with_component(logger, "NONEXISTENT", "msg")  # Should not crash
 
 
 def test_json_formatter():
@@ -356,7 +406,77 @@ def test_app_logger_copy_log_to_output_exception(tmp_path):
         logger.copy_log_to_output(output_dir)
 
 
-def test_app_logger_log():
+def test_app_logger_copy_log_to_output_exception_mock(tmp_path):
+    """Test copy_log_to_output handles exceptions."""
+    config = MagicMock()
+    session_log = tmp_path / "test_session.log"
+    session_log.write_text("log content")
+
+    logger = AppLogger(config, session_log_file=session_log)
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+
+    with patch("shutil.copy", side_effect=Exception("Copy failed")):
+        logger.copy_log_to_output(output_dir)
+        # Should catch and pass silently
+        assert not (output_dir / "session.log").exists()
+
+
+def test_app_logger_copy_log_to_output_no_log_file():
+    """Test copy_log_to_output method when session_log_file is None."""
+    config = MagicMock()
+    logger = AppLogger(config)  # no session_log_file passed
+
+    with patch("shutil.copy") as mock_copy:
+        logger.copy_log_to_output("some_dir")
+        mock_copy.assert_not_called()
+
+
+def test_app_logger_copy_log_to_output_file_not_exists(tmp_path):
+    """Test copy_log_to_output method when session_log_file does not exist."""
+    config = MagicMock()
+    session_log = tmp_path / "test_session.log"
+    logger = AppLogger(config, session_log_file=session_log)
+
+    with patch("shutil.copy") as mock_copy:
+        logger.copy_log_to_output("some_dir")
+        mock_copy.assert_not_called()
+
+
+def test_app_logger_level_methods():
+    """Test all specific AppLogger level methods explicitly."""
+    config = MagicMock()
+    with patch("logging.getLogger") as mock_get_logger:
+        mock_logger = mock_get_logger.return_value
+        logger = AppLogger(config)
+
+        logger.debug("Debug msg", component="comp1")
+        mock_logger.log.assert_called_with(
+            logging.DEBUG, "Debug msg [comp1]", extra={"component": "comp1"}, exc_info=None
+        )
+
+        logger.info("Info msg", component="comp2")
+        mock_logger.log.assert_called_with(
+            logging.INFO, "Info msg [comp2]", extra={"component": "comp2"}, exc_info=None
+        )
+
+        logger.warning("Warn msg", component="comp3")
+        mock_logger.log.assert_called_with(
+            logging.WARNING, "Warn msg [comp3]", extra={"component": "comp3"}, exc_info=None
+        )
+
+        logger.error("Err msg", component="comp4")
+        mock_logger.log.assert_called_with(
+            logging.ERROR, "Err msg [comp4]", extra={"component": "comp4"}, exc_info=None
+        )
+
+        logger.critical("Crit msg", component="comp5")
+        mock_logger.log.assert_called_with(
+            logging.CRITICAL, "Crit msg [comp5]", extra={"component": "comp5"}, exc_info=None
+        )
+
+
+def test_app_logger_log_direct():
     """Test standard log method mapping to internal _log."""
     config = MagicMock()
     logger = AppLogger(config)
