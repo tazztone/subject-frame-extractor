@@ -1626,6 +1626,8 @@ def test_migrate_calls_connect_if_needed(db_path):
     """Test that migrate() calls connect() if conn is None."""
 def test_migrate_failure_logging(db_path):
     """Test that migrate() logs errors from migrate_database."""
+def test_sql_injection_prevention(db_path):
+    """Test that invalid column names raise a ValueError to prevent SQL injection."""
 ```
 
 ### `📄 tests/unit/test_db_schema.py`
@@ -2949,6 +2951,7 @@ class TestSceneHelpers:
     """Tests for scene_utils/helpers.py."""
     def test_draw_boxes_preview(self, mock_config_simple):
         """Test draw_boxes_preview draws bounding boxes."""
+    def test_draw_boxes_preview_with_conf(self, mock_config_simple): ...
     def test_draw_boxes_preview_empty_boxes(self, mock_config_simple):
         """Test draw_boxes_preview with no boxes."""
     def test_save_scene_seeds(self, mock_logger, tmp_path, sample_scenes):
@@ -3021,6 +3024,7 @@ class TestSceneUtilsHelpers:
     @pytest.fixture
     def mock_config(self): ...
     def test_draw_boxes_preview(self, mock_config): ...
+    def test_draw_boxes_preview_with_conf(self, mock_config): ...
     def test_save_scene_seeds(self, mock_scene, mock_logger, tmp_path): ...
     def test_save_scene_seeds_empty(self, mock_logger): ...
     def test_save_scene_seeds_error(self, mock_scene, mock_logger): ...

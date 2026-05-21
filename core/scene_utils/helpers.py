@@ -30,7 +30,7 @@ from core.utils import _to_json_safe
 
 def draw_boxes_preview(
     img: np.ndarray,
-    boxes_xyxy: list[list[int]],
+    boxes_xyxy: list[list[float | int]] | list[list[int]],
     cfg: "Config",
     labels: list[str] | None = None,
     confidences: list[float] | None = None,
@@ -40,7 +40,7 @@ def draw_boxes_preview(
 
     Args:
         img: RGB image
-        boxes_xyxy: List of boxes in [x1, y1, x2, y2] format
+        boxes_xyxy: List of boxes in [x1, y1, x2, y2] or [x1, y1, x2, y2, conf] format
         cfg: Config with visualization settings
         labels: Optional list of labels for each box
         confidences: Optional list of confidences for each box
@@ -49,17 +49,35 @@ def draw_boxes_preview(
         Image with boxes drawn
     """
     img = img.copy()
-    for i, (x1, y1, x2, y2) in enumerate(boxes_xyxy):
+    for i, box in enumerate(boxes_xyxy):
+        if len(box) >= 5:
+            x1, y1, x2, y2 = box[:4]
+            conf = box[4]
+        elif len(box) == 4:
+            x1, y1, x2, y2 = box
+            conf = None
+        else:
+            continue
+
         xywh = [int(x1), int(y1), int(x2 - x1), int(y2 - y1)]
 
         box_label = None
         if labels and i < len(labels):
             box_label = str(labels[i])
-            if getattr(cfg, "visualization_bbox_show_conf", True) and confidences and i < len(confidences):
-                box_label += f" {confidences[i]:.2f}"
+
+        # Get confidence score: either from box[4] or from confidences parameter
+        box_conf = conf
+        if box_conf is None and confidences and i < len(confidences):
+            box_conf = confidences[i]
+
+        if getattr(cfg, "visualization_bbox_show_conf", True) and box_conf is not None:
+            if box_label:
+                box_label += f" {box_conf:.2f}"
+            else:
+                box_label = f"{box_conf:.2f}"
 
         draw_bbox(
-            img,
+            img_rgb=img,
             xywh=xywh,
             config=cfg,
             label=box_label,

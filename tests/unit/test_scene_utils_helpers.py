@@ -64,6 +64,16 @@ class TestSceneUtilsHelpers:
         assert np.any(result[10:50, 10:50, 1] == 255)
         assert np.any(result[60:80, 60:80, 1] == 255)
 
+    def test_draw_boxes_preview_with_conf(self, mock_config):
+        img = np.zeros((100, 100, 3), dtype=np.uint8)
+        boxes = [[10, 10, 50, 50, 0.95], [60, 60, 80, 80, 0.8]]
+
+        result = draw_boxes_preview(img, boxes, mock_config)
+
+        assert result.shape == img.shape
+        assert np.any(result[10:50, 10:50, 1] == 255)
+        assert np.any(result[60:80, 60:80, 1] == 255)
+
     def test_save_scene_seeds(self, mock_scene, mock_logger, tmp_path):
         scenes = [mock_scene]
         output_dir = tmp_path
