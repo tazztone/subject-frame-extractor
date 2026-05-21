@@ -33,7 +33,6 @@ class AdvancedProgressTracker:
     Calculates ETA using exponential moving average (EMA) and updates the UI.
     """
 
-    # TODO: Thread 'substage' parameter through callers in MaskPropagator and SubjectMasker
     def __init__(
         self,
         progress: Optional[Callable] = None,
