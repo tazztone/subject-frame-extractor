@@ -2,7 +2,10 @@ import logging
 from queue import Queue
 from unittest.mock import MagicMock, patch
 
-from core.logger import AppLogger, ColoredFormatter, GradioQueueHandler, LogEvent, setup_logging
+import json
+import sys
+
+from core.logger import AppLogger, ColoredFormatter, GradioQueueHandler, JSONFormatter, LogEvent, setup_logging
 
 
 def test_log_event_model():
@@ -129,3 +132,90 @@ def test_gradio_queue_handler_error():
     with patch.object(handler, "handleError") as mock_handle_error:
         handler.emit(record)
         assert mock_handle_error.called
+
+
+def test_json_formatter_basic():
+    """Test JSONFormatter formats basic log record correctly."""
+    formatter = JSONFormatter()
+    record = logging.LogRecord(
+        name="test",
+        level=logging.INFO,
+        pathname="",
+        lineno=0,
+        msg="test message",
+        args=(),
+        exc_info=None,
+    )
+    # AppLogger usually adds component in extra, but the formatter will pop it from custom fields if present
+    # Add a custom extra to test _sanitize and skip_attrs
+    record.__dict__["component"] = "test_component"
+    record.__dict__["custom_key"] = "custom_value"
+
+    formatted = formatter.format(record)
+    data = json.loads(formatted)
+
+    assert data["message"] == "test message"
+    assert data["level"] == "INFO"
+    assert data["component"] == "test_component"
+    assert data["custom_fields"]["custom_key"] == "custom_value"
+    assert "timestamp" in data
+    assert data["error_type"] is None
+
+
+def test_json_formatter_sanitize():
+    """Test JSONFormatter _sanitize function for various types."""
+    formatter = JSONFormatter()
+    record = logging.LogRecord(
+        name="test",
+        level=logging.DEBUG,
+        pathname="",
+        lineno=0,
+        msg="test sanitize",
+        args=(),
+        exc_info=None,
+    )
+
+    # Test different types of un-serializable or complex objects
+    record.__dict__["a_set"] = {3, 1, 2}
+    record.__dict__["a_dict"] = {"inner": {2, 1}, "num": 1.5}
+    record.__dict__["a_list"] = [1, {3, 2}, "str"]
+    record.__dict__["an_object"] = object()
+
+    formatted = formatter.format(record)
+    data = json.loads(formatted)
+
+    fields = data["custom_fields"]
+    assert fields["a_set"] == [1, 2, 3] # sorted elements
+    assert fields["a_dict"]["inner"] == [1, 2] # sorted elements
+    assert fields["a_dict"]["num"] == 1.5
+    assert fields["a_list"] == [1, [2, 3], "str"]
+    assert "object at" in fields["an_object"] # str(object())
+
+
+def test_json_formatter_exception():
+    """Test JSONFormatter formats exception info properly."""
+    formatter = JSONFormatter()
+
+    try:
+        raise ValueError("test error")
+    except ValueError:
+        exc_info = sys.exc_info()
+
+    record = logging.LogRecord(
+        name="test",
+        level=logging.ERROR,
+        pathname="",
+        lineno=0,
+        msg="error occurred",
+        args=(),
+        exc_info=exc_info,
+    )
+
+    formatted = formatter.format(record)
+    data = json.loads(formatted)
+
+    assert data["message"] == "error occurred"
+    assert data["level"] == "ERROR"
+    assert data["error_type"] == "ValueError"
+    assert data["stack_trace"] is not None
+    assert "test error" in data["stack_trace"]
