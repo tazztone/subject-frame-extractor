@@ -199,9 +199,17 @@ def test_propagation_event_validation():
     assert event_invalid.scenes[0]["status"] == "unknown"
 
 
+def test_filter_event_validate_out_direct():
+    """Directly test the validate_out classmethod for FilterEvent."""
+    with patch("core.events.validate_writable_directory", return_value="direct_out") as mock_validate:
+        result = FilterEvent.validate_out("some/path")
+        mock_validate.assert_called_once_with("some/path", "Output Directory")
+        assert result == "direct_out"
+
+
 def test_filter_event_validation():
     """Test FilterEvent validation."""
-    with patch("core.events.validate_writable_directory", return_value="out"):
+    with patch("core.events.validate_writable_directory", return_value="out") as mock_validate:
         event = FilterEvent(
             all_frames_data=[],
             per_metric_values={},
@@ -214,12 +222,21 @@ def test_filter_event_validation():
             slider_values={},
             dedup_method="phash"
         )
+        mock_validate.assert_called_once_with("out", "Output Directory")
         assert event.output_dir == "out"
+
+
+def test_export_event_validate_out_direct():
+    """Directly test the validate_out classmethod for ExportEvent."""
+    with patch("core.events.validate_writable_directory", return_value="direct_out") as mock_validate:
+        result = ExportEvent.validate_out("some/path")
+        mock_validate.assert_called_once_with("some/path", "Output Directory")
+        assert result == "direct_out"
 
 
 def test_export_event_validation():
     """Test ExportEvent validation."""
-    with patch("core.events.validate_writable_directory", return_value="out"):
+    with patch("core.events.validate_writable_directory", return_value="out") as mock_validate:
         event = ExportEvent(
             all_frames_data=[],
             output_dir="out",
@@ -229,6 +246,7 @@ def test_export_event_validation():
             crop_padding=0,
             filter_args={}
         )
+        mock_validate.assert_called_once_with("out", "Output Directory")
         assert event.output_dir == "out"
 
 
