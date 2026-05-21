@@ -5,6 +5,7 @@ from queue import Queue
 from unittest.mock import MagicMock, patch
 
 from core.logger import (
+    SUCCESS_LEVEL_NUM,
     AppLogger,
     ColoredFormatter,
     GradioQueueHandler,
@@ -194,6 +195,12 @@ def test_gradio_queue_handler_error():
         assert mock_handle_error.called
 
 
+def test_log_with_component_none():
+    """Test log_with_component with None logger."""
+    # Should just return without crashing
+    log_with_component(None, "info", "test message")
+
+
 def test_log_with_component_none_logger():
     """Test log_with_component ignores None logger."""
     # Should not raise exception
@@ -208,6 +215,13 @@ def test_log_with_component_app_logger():
     logger.info.assert_called_once_with("message", component="test", extra_arg="val")
 
 
+def test_log_with_component_app_logger_lowercase():
+    """Test log_with_component with AppLogger and lowercase level."""
+    logger = MagicMock(spec=AppLogger)
+    log_with_component(logger, "info", "test message", component="my_component")
+    logger.info.assert_called_once_with("test message", component="my_component")
+
+
 def test_log_with_component_standard_logger():
     """Test log_with_component with standard logging.Logger."""
     logger = logging.getLogger("test_standard")
@@ -216,12 +230,42 @@ def test_log_with_component_standard_logger():
         mock_info.assert_called_once_with("message", extra={"component": "test"}, extra_arg="val")
 
 
+def test_log_with_component_standard_logger_mock():
+    """Test log_with_component with standard logging.Logger mock."""
+    logger = MagicMock(spec=logging.Logger)
+    log_with_component(logger, "info", "test message", component="my_component")
+    logger.info.assert_called_once_with("test message", extra={"component": "my_component"})
+
+
+def test_log_with_component_standard_logger_extra_kwargs():
+    """Test log_with_component with standard logger and extra kwargs."""
+    logger = MagicMock(spec=logging.Logger)
+    log_with_component(logger, "info", "test message", component="my_component", extra={"other": "value"})
+    logger.info.assert_called_once_with("test message", extra={"other": "value", "component": "my_component"})
+
+
 def test_log_with_component_success_fallback():
     """Test log_with_component success fallback."""
     logger = logging.getLogger("test_success")
     with patch.object(logger, "log") as mock_log:
         log_with_component(logger, "SUCCESS", "message", component="test", extra_arg="val")
         mock_log.assert_called_once_with(25, "message [test]", extra_arg="val")
+
+
+def test_log_with_component_success_fallback_mock():
+    """Test log_with_component success fallback on standard logger mock."""
+    logger = MagicMock(spec=logging.Logger)
+    # Ensure success method doesn't exist to trigger fallback
+    del logger.success
+    log_with_component(logger, "success", "test message", component="my_component")
+    logger.log.assert_called_once_with(SUCCESS_LEVEL_NUM, "test message [my_component]")
+
+
+def test_log_with_component_missing_level():
+    """Test log_with_component with a level that doesn't exist."""
+    logger = MagicMock(spec=logging.Logger)
+    # Should return silently without crashing
+    log_with_component(logger, "nonexistent", "test message", component="my_component")
 
 
 def test_json_formatter():

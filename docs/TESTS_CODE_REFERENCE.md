@@ -2271,14 +2271,26 @@ def test_setup_logging_mkdir(mock_dict_config, mock_mkdir, tmp_path):
     """Test setup_logging calls mkdir."""
 def test_gradio_queue_handler_error():
     """Test GradioQueueHandler error handling."""
+def test_log_with_component_none():
+    """Test log_with_component with None logger."""
 def test_log_with_component_none_logger():
     """Test log_with_component ignores None logger."""
 def test_log_with_component_app_logger():
     """Test log_with_component with AppLogger."""
+def test_log_with_component_app_logger_lowercase():
+    """Test log_with_component with AppLogger and lowercase level."""
 def test_log_with_component_standard_logger():
     """Test log_with_component with standard logging.Logger."""
+def test_log_with_component_standard_logger_mock():
+    """Test log_with_component with standard logging.Logger mock."""
+def test_log_with_component_standard_logger_extra_kwargs():
+    """Test log_with_component with standard logger and extra kwargs."""
 def test_log_with_component_success_fallback():
     """Test log_with_component success fallback."""
+def test_log_with_component_success_fallback_mock():
+    """Test log_with_component success fallback on standard logger mock."""
+def test_log_with_component_missing_level():
+    """Test log_with_component with a level that doesn't exist."""
 def test_json_formatter():
     """Test JSONFormatter formats log records correctly."""
 def test_app_logger_copy_log_to_output(tmp_path):
