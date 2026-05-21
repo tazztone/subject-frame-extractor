@@ -150,6 +150,12 @@ class Database:
             if not self.conn:
                 self.connect()
             assert self.conn is not None
+
+            # Validate columns to prevent SQL injection
+            for col in self.columns:
+                if not col.isidentifier():
+                    raise ValueError(f"Invalid column name: {col}")
+
             cursor = self.conn.cursor()
             placeholders = ", ".join(["?"] * len(self.columns))
             columns_str = ", ".join(self.columns)

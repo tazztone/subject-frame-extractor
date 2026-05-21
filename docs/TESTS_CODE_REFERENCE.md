@@ -1626,6 +1626,8 @@ def test_migrate_calls_connect_if_needed(db_path):
     """Test that migrate() calls connect() if conn is None."""
 def test_migrate_failure_logging(db_path):
     """Test that migrate() logs errors from migrate_database."""
+def test_sql_injection_prevention(db_path):
+    """Test that invalid column names raise a ValueError to prevent SQL injection."""
 ```
 
 ### `📄 tests/unit/test_db_schema.py`
@@ -1767,6 +1769,8 @@ def test_validate_writable_directory():
     """Test the validate_writable_directory helper."""
 def test_extraction_event_validation():
     """Test ExtractionEvent validation logic."""
+def test_strip_emoji_from_strategy():
+    """Test the strip_emoji_from_strategy method of PreAnalysisEvent."""
 def test_pre_analysis_event_validation():
     """Test PreAnalysisEvent validation logic."""
 def test_propagation_event_validation():
@@ -1775,10 +1779,15 @@ def test_filter_event_validation():
     """Test FilterEvent validation."""
 def test_export_event_validation():
     """Test ExportEvent validation."""
+def test_export_event_validate_out():
+    """Test ExportEvent validate_out method directly."""
 def test_session_load_event_validation():
     """Test SessionLoadEvent validation."""
 def test_ui_event_extra_ignore():
     """Test that UIEvent ignores extra fields as configured."""
+@patch('core.events.validate_writable_directory')
+def test_validate_out_methods(mock_validate):
+    """Test that validate_out classmethods correctly delegate to validate_writable_d..."""
 ```
 
 ### `📄 tests/unit/test_exit_branches.py`
@@ -2251,10 +2260,19 @@ def test_colored_formatter():
 def test_setup_logging(mock_dict_config, tmp_path):
     """Test setup_logging configuration logic."""
 @patch('logging.config.dictConfig')
+def test_setup_logging_stable_name(mock_dict_config, tmp_path):
+    """Test setup_logging configuration logic with stable name."""
+@patch('logging.config.dictConfig')
 def test_setup_logging_with_queue(mock_dict_config, tmp_path):
     """Test setup_logging with a progress queue."""
+def test_app_logger_log_mocked():
+    """Test AppLogger log method."""
+def test_app_logger_info():
+    """Test AppLogger info method specifically."""
 def test_app_logger_all_methods():
     """Test all AppLogger proxy methods."""
+def test_app_logger_critical():
+    """Test AppLogger.critical specifically calls _log with correct args."""
 @patch('logging.config.dictConfig')
 def test_setup_logging_no_console(mock_dict_config, tmp_path):
     """Test setup_logging with console logging disabled."""
@@ -2264,6 +2282,62 @@ def test_setup_logging_mkdir(mock_dict_config, mock_mkdir, tmp_path):
     """Test setup_logging calls mkdir."""
 def test_gradio_queue_handler_error():
     """Test GradioQueueHandler error handling."""
+def test_app_logger_success():
+    """Test explicit AppLogger.success method."""
+def test_app_logger_log():
+    """Test AppLogger.log mapping."""
+def test_log_with_component_none():
+    """Test log_with_component with None logger."""
+def test_log_with_component_none_logger():
+    """Test log_with_component ignores None logger."""
+def test_log_with_component_app_logger():
+    """Test log_with_component with AppLogger."""
+def test_log_with_component_app_logger_lowercase():
+    """Test log_with_component with AppLogger and lowercase level."""
+def test_log_with_component_standard_logger():
+    """Test log_with_component with standard logging.Logger."""
+def test_log_with_component_standard_logger_mock():
+    """Test log_with_component with standard logging.Logger mock."""
+def test_log_with_component_standard_logger_extra_kwargs():
+    """Test log_with_component with standard logger and extra kwargs."""
+def test_log_with_component_success_fallback():
+    """Test log_with_component success fallback."""
+def test_log_with_component_success_fallback_mock():
+    """Test log_with_component success fallback on standard logger mock."""
+def test_log_with_component_missing_level():
+    """Test log_with_component with a level that doesn't exist."""
+def test_log_with_component_std_logger():
+    """Test log_with_component with standard logger."""
+def test_log_with_component_std_logger_success():
+    """Test log_with_component with standard logger and custom SUCCESS level fallback."""
+def test_log_with_component_missing_method():
+    """Test log_with_component when level method doesn't exist on logger."""
+def test_json_formatter():
+    """Test JSONFormatter formats log records correctly."""
+def test_app_logger_copy_log_to_output(tmp_path):
+    """Test copy_log_to_output copies the log file correctly."""
+def test_app_logger_copy_log_to_output_missing_file(tmp_path):
+    """Test copy_log_to_output handles missing source file gracefully."""
+def test_app_logger_copy_log_to_output_no_session_file(tmp_path):
+    """Test copy_log_to_output handles case where session_log_file is not set."""
+def test_app_logger_copy_log_to_output_exception(tmp_path):
+    """Test copy_log_to_output catches and ignores exceptions."""
+def test_app_logger_copy_log_to_output_exception_mock(tmp_path):
+    """Test copy_log_to_output handles exceptions."""
+def test_app_logger_copy_log_to_output_no_log_file():
+    """Test copy_log_to_output method when session_log_file is None."""
+def test_app_logger_copy_log_to_output_file_not_exists(tmp_path):
+    """Test copy_log_to_output method when session_log_file does not exist."""
+def test_app_logger_level_methods():
+    """Test all specific AppLogger level methods explicitly."""
+def test_app_logger_log_direct():
+    """Test standard log method mapping to internal _log."""
+def test_json_formatter_basic():
+    """Test JSONFormatter formats basic log record correctly."""
+def test_json_formatter_sanitize():
+    """Test JSONFormatter _sanitize function for various types."""
+def test_json_formatter_exception():
+    """Test JSONFormatter formats exception info properly."""
 ```
 
 ### `📄 tests/unit/test_logger_interop.py`
@@ -2772,16 +2846,76 @@ def test_tracker_initialization():
     """Test tracker initialization and default values."""
 def test_tracker_start():
     """Test the start method resets state."""
+def test_tracker_start_edge_cases():
+    """Test the start method handles edge cases like 0 total items, missing desc, an..."""
 def test_tracker_step_and_eta():
     """Test stepping through progress and ETA estimation."""
 def test_tracker_throttling():
     """Test that updates are throttled."""
+def test_tracker_set_stage():
+    """Test set_stage updates description and forces overlay."""
 def test_tracker_set_and_done():
     """Test set() and done_stage() methods."""
 def test_fmt_eta_static():
     """Test the static _fmt_eta helper."""
 def test_tracker_pause_resume():
     """Test that stepping honors the pause event."""
+def test_tracker_step_with_desc_and_substage():
+    """Test stepping with optional desc and substage."""
+def test_tracker_set_stage_alternate():
+    """Test setting stage and substage explicitly."""
+def test_tracker_no_eta_seconds():
+    """Test _eta_seconds when _ema_dt is None."""
+def test_tracker_done_stage_no_text():
+    """Test done_stage without final_text."""
+def test_tracker_set_delta_zero():
+    """Test set when delta <= 0."""
+def test_tracker_no_queue_no_progress():
+    """Test overlay when queue and progress are None."""
+def test_fmt_eta_fine_precision_no_hours():
+    """Test _fmt_eta with fine precision and no hours."""
+def test_tracker_step_with_desc():
+    """Test step with description explicitly."""
+def test_tracker_set_stage_explicitly():
+    """Test set_stage with substage."""
+def test_tracker_dt_le_zero():
+    """Test step when dt <= 0."""
+def test_tracker_substage_not_none():
+    """Test step with substage explicit passing."""
+def test_tracker_progress_is_not_none():
+    """Test overlay when progress is not None."""
+def test_fmt_eta_fine_precision_no_hours_no_minutes():
+    """Test _fmt_eta with fine precision and no hours/minutes."""
+def test_tracker_progress_none():
+    """Test overlay when progress is None."""
+def test_tracker_progress_is_callable():
+    """Test overlay when progress is provided as a Callable."""
+def test_tracker_progress_lambda_desc_none():
+    """Test overlay when progress uses the default lambda and desc is updated."""
+def test_tracker_progress_is_callable_true():
+    """Test overlay when progress evaluates to truthy but not callable to ensure lin..."""
+def test_tracker_progress_is_callable_but_not_truthy():
+    """Test what happens if the mock progress is falsey... actually, a MagicMock is ..."""
+def test_tracker_progress_is_falsy():
+    """Test overlay when progress is intentionally falsey to cover line 142 false br..."""
+def test_tracker_set_stage_main_branch():
+    """Test set_stage method from main branch."""
+def test_tracker_done_stage_no_text_or_logger():
+    """Test done_stage method without text or logger."""
+def test_tracker_step_edge_cases():
+    """Test step edge cases (dt <= 0, and desc provided)."""
+def test_tracker_set_delta_zero_main_branch():
+    """Test set method when delta <= 0 from main branch."""
+def test_tracker_overlay_edge_cases():
+    """Test _overlay when progress and queue are None."""
+def test_fmt_eta_static_fine_no_hours_main_branch():
+    """Test _fmt_eta with fine precision and h == 0 from main branch."""
+def test_tracker_overlay_edge_cases_no_progress_main_branch():
+    """Test _overlay when progress function is not provided."""
+def test_tracker_overlay_edge_cases_no_progress_branch_main_branch():
+    """Test _overlay when progress function evaluates to False to hit branch missing."""
+def test_tracker_done_stage_with_text_and_logger():
+    """Test done_stage method with both text and logger."""
 ```
 
 ### `📄 tests/unit/test_quality_score.py`
@@ -2949,6 +3083,7 @@ class TestSceneHelpers:
     """Tests for scene_utils/helpers.py."""
     def test_draw_boxes_preview(self, mock_config_simple):
         """Test draw_boxes_preview draws bounding boxes."""
+    def test_draw_boxes_preview_with_conf(self, mock_config_simple): ...
     def test_draw_boxes_preview_empty_boxes(self, mock_config_simple):
         """Test draw_boxes_preview with no boxes."""
     def test_save_scene_seeds(self, mock_logger, tmp_path, sample_scenes):
@@ -3021,6 +3156,7 @@ class TestSceneUtilsHelpers:
     @pytest.fixture
     def mock_config(self): ...
     def test_draw_boxes_preview(self, mock_config): ...
+    def test_draw_boxes_preview_with_conf(self, mock_config): ...
     def test_save_scene_seeds(self, mock_scene, mock_logger, tmp_path): ...
     def test_save_scene_seeds_empty(self, mock_logger): ...
     def test_save_scene_seeds_error(self, mock_scene, mock_logger): ...
