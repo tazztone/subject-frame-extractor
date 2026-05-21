@@ -4,8 +4,8 @@ SeedSelector class for selecting seed frames and bounding boxes for mask propaga
 
 from __future__ import annotations
 
-import logging
 import math
+from logging import getLogger
 from typing import TYPE_CHECKING, Any, Optional, Union, cast
 
 import cv2
@@ -70,7 +70,7 @@ class SeedSelector:
         self.tracker = tracker
         self.subject_detector = subject_detector
         self._device = device
-        self.logger: LoggerLike = logger or logging.getLogger("app_logger")
+        self.logger: LoggerLike = logger or getLogger("app_logger")
         self._transform = None
 
     def _get_param(self, source: Union[dict, object], key: str, default: Any = None) -> Any:
