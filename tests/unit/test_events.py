@@ -219,7 +219,7 @@ def test_filter_event_validation():
 
 def test_export_event_validation():
     """Test ExportEvent validation."""
-    with patch("core.events.validate_writable_directory", return_value="out"):
+    with patch("core.events.validate_writable_directory", return_value="out_validated") as mock_validate:
         event = ExportEvent(
             all_frames_data=[],
             output_dir="out",
@@ -229,7 +229,16 @@ def test_export_event_validation():
             crop_padding=0,
             filter_args={}
         )
-        assert event.output_dir == "out"
+        assert event.output_dir == "out_validated"
+        mock_validate.assert_called_once_with("out", "Output Directory")
+
+
+def test_export_event_validate_out():
+    """Test ExportEvent validate_out method directly."""
+    with patch("core.events.validate_writable_directory", return_value="validated_path") as mock_validate:
+        result = ExportEvent.validate_out("some_path")
+        assert result == "validated_path"
+        mock_validate.assert_called_once_with("some_path", "Output Directory")
 
 
 def test_session_load_event_validation():
