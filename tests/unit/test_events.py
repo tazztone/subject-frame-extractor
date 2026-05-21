@@ -102,6 +102,32 @@ def test_extraction_event_validation():
         assert event_none.output_folder is None
 
 
+def test_strip_emoji_from_strategy():
+    """Test the strip_emoji_from_strategy method of PreAnalysisEvent."""
+    # Test typical emoji cases
+    assert PreAnalysisEvent.strip_emoji_from_strategy("🤖 Auto") == "Auto"
+    assert PreAnalysisEvent.strip_emoji_from_strategy("👤 Person") == "Person"
+    assert PreAnalysisEvent.strip_emoji_from_strategy("✨ Magic") == "Magic"
+
+    # Test symbols
+    assert PreAnalysisEvent.strip_emoji_from_strategy("! Exclamation") == "Exclamation"
+    assert PreAnalysisEvent.strip_emoji_from_strategy("--> Arrow") == "Arrow"
+
+    # Test text without emojis
+    assert PreAnalysisEvent.strip_emoji_from_strategy("No Emoji") == "No Emoji"
+    assert PreAnalysisEvent.strip_emoji_from_strategy("Normal Strategy 123") == "Normal Strategy 123"
+
+    # Test edge cases
+    assert PreAnalysisEvent.strip_emoji_from_strategy("") == ""
+    assert PreAnalysisEvent.strip_emoji_from_strategy("   ") == "   "
+    assert PreAnalysisEvent.strip_emoji_from_strategy("🤖NoSpace") == "🤖NoSpace"
+
+    # Test non-string values
+    assert PreAnalysisEvent.strip_emoji_from_strategy(123) == "123"
+    assert PreAnalysisEvent.strip_emoji_from_strategy(None) == "None"
+    assert PreAnalysisEvent.strip_emoji_from_strategy(True) == "True"
+
+
 def test_pre_analysis_event_validation():
     """Test PreAnalysisEvent validation logic."""
     common_args = {
