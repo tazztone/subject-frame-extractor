@@ -2774,16 +2774,76 @@ def test_tracker_initialization():
     """Test tracker initialization and default values."""
 def test_tracker_start():
     """Test the start method resets state."""
+def test_tracker_start_edge_cases():
+    """Test the start method handles edge cases like 0 total items, missing desc, an..."""
 def test_tracker_step_and_eta():
     """Test stepping through progress and ETA estimation."""
 def test_tracker_throttling():
     """Test that updates are throttled."""
+def test_tracker_set_stage():
+    """Test set_stage updates description and forces overlay."""
 def test_tracker_set_and_done():
     """Test set() and done_stage() methods."""
 def test_fmt_eta_static():
     """Test the static _fmt_eta helper."""
 def test_tracker_pause_resume():
     """Test that stepping honors the pause event."""
+def test_tracker_step_with_desc_and_substage():
+    """Test stepping with optional desc and substage."""
+def test_tracker_set_stage_alternate():
+    """Test setting stage and substage explicitly."""
+def test_tracker_no_eta_seconds():
+    """Test _eta_seconds when _ema_dt is None."""
+def test_tracker_done_stage_no_text():
+    """Test done_stage without final_text."""
+def test_tracker_set_delta_zero():
+    """Test set when delta <= 0."""
+def test_tracker_no_queue_no_progress():
+    """Test overlay when queue and progress are None."""
+def test_fmt_eta_fine_precision_no_hours():
+    """Test _fmt_eta with fine precision and no hours."""
+def test_tracker_step_with_desc():
+    """Test step with description explicitly."""
+def test_tracker_set_stage_explicitly():
+    """Test set_stage with substage."""
+def test_tracker_dt_le_zero():
+    """Test step when dt <= 0."""
+def test_tracker_substage_not_none():
+    """Test step with substage explicit passing."""
+def test_tracker_progress_is_not_none():
+    """Test overlay when progress is not None."""
+def test_fmt_eta_fine_precision_no_hours_no_minutes():
+    """Test _fmt_eta with fine precision and no hours/minutes."""
+def test_tracker_progress_none():
+    """Test overlay when progress is None."""
+def test_tracker_progress_is_callable():
+    """Test overlay when progress is provided as a Callable."""
+def test_tracker_progress_lambda_desc_none():
+    """Test overlay when progress uses the default lambda and desc is updated."""
+def test_tracker_progress_is_callable_true():
+    """Test overlay when progress evaluates to truthy but not callable to ensure lin..."""
+def test_tracker_progress_is_callable_but_not_truthy():
+    """Test what happens if the mock progress is falsey... actually, a MagicMock is ..."""
+def test_tracker_progress_is_falsy():
+    """Test overlay when progress is intentionally falsey to cover line 142 false br..."""
+def test_tracker_set_stage_main_branch():
+    """Test set_stage method from main branch."""
+def test_tracker_done_stage_no_text_or_logger():
+    """Test done_stage method without text or logger."""
+def test_tracker_step_edge_cases():
+    """Test step edge cases (dt <= 0, and desc provided)."""
+def test_tracker_set_delta_zero_main_branch():
+    """Test set method when delta <= 0 from main branch."""
+def test_tracker_overlay_edge_cases():
+    """Test _overlay when progress and queue are None."""
+def test_fmt_eta_static_fine_no_hours_main_branch():
+    """Test _fmt_eta with fine precision and h == 0 from main branch."""
+def test_tracker_overlay_edge_cases_no_progress_main_branch():
+    """Test _overlay when progress function is not provided."""
+def test_tracker_overlay_edge_cases_no_progress_branch_main_branch():
+    """Test _overlay when progress function evaluates to False to hit branch missing."""
+def test_tracker_done_stage_with_text_and_logger():
+    """Test done_stage method with both text and logger."""
 ```
 
 ### `📄 tests/unit/test_quality_score.py`

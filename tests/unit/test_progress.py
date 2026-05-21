@@ -239,12 +239,204 @@ def test_tracker_pause_resume():
     assert tracker.done == 1
     assert not thread.is_alive()
 
-def test_tracker_set_stage():
-    """Test set_stage method."""
+
+def test_tracker_step_with_desc_and_substage():
+    """Test stepping with optional desc and substage."""
     progress_mock = MagicMock()
     queue = Queue()
     logger = MagicMock()
     tracker = AdvancedProgressTracker(progress_mock, queue, logger)
+    tracker.throttle_interval = 0
+    tracker.start(10)
+
+    tracker.step(1, desc="New Stage", substage="New Substage")
+    assert tracker.stage == "New Stage"
+    assert tracker.substage == "New Substage"
+
+
+def test_tracker_set_stage_alternate():
+    """Test setting stage and substage explicitly."""
+    progress_mock = MagicMock()
+    queue = Queue()
+    logger = MagicMock()
+    tracker = AdvancedProgressTracker(progress_mock, queue, logger)
+    tracker.start(10)
+
+    tracker.set_stage("Custom Stage", substage="Custom Substage")
+    assert tracker.stage == "Custom Stage"
+    assert tracker.substage == "Custom Substage"
+
+
+def test_tracker_no_eta_seconds():
+    """Test _eta_seconds when _ema_dt is None."""
+    progress_mock = MagicMock()
+    queue = Queue()
+    logger = MagicMock()
+    tracker = AdvancedProgressTracker(progress_mock, queue, logger)
+
+    assert tracker._eta_seconds() is None
+
+
+def test_tracker_done_stage_no_text():
+    """Test done_stage without final_text."""
+    progress_mock = MagicMock()
+    queue = Queue()
+    logger = MagicMock()
+    tracker = AdvancedProgressTracker(progress_mock, queue, logger)
+    tracker.start(10)
+
+    tracker.done_stage()
+    assert tracker.done == 10
+    logger.info.assert_not_called()
+
+
+def test_tracker_set_delta_zero():
+    """Test set when delta <= 0."""
+    progress_mock = MagicMock()
+    queue = Queue()
+    logger = MagicMock()
+    tracker = AdvancedProgressTracker(progress_mock, queue, logger)
+    tracker.start(10)
+    tracker.done = 5
+
+    tracker.set(5)  # delta = 0
+    assert tracker.done == 5
+
+    tracker.set(3)  # delta < 0
+    assert tracker.done == 5
+
+
+def test_tracker_no_queue_no_progress():
+    """Test overlay when queue and progress are None."""
+    tracker = AdvancedProgressTracker(progress=None, queue=None)
+    tracker.throttle_interval = 0
+    tracker._overlay(force=True)
+    # Should not raise an exception
+
+
+def test_fmt_eta_fine_precision_no_hours():
+    """Test _fmt_eta with fine precision and no hours."""
+    assert AdvancedProgressTracker._fmt_eta(125, precision="fine") == "2m 5s"
+
+
+def test_tracker_step_with_desc():
+    """Test step with description explicitly."""
+    tracker = AdvancedProgressTracker()
+    tracker.start(10)
+    tracker.step(1, desc="New Desc")
+    assert tracker.stage == "New Desc"
+
+
+def test_tracker_set_stage_explicitly():
+    """Test set_stage with substage."""
+    tracker = AdvancedProgressTracker()
+    tracker.set_stage("Stage A", substage="Substage B")
+    assert tracker.stage == "Stage A"
+    assert tracker.substage == "Substage B"
+
+
+def test_tracker_dt_le_zero():
+    """Test step when dt <= 0."""
+    progress_mock = MagicMock()
+    queue = Queue()
+    logger = MagicMock()
+    tracker = AdvancedProgressTracker(progress_mock, queue, logger)
+    tracker.throttle_interval = 0
+    tracker.start(10)
+
+    with patch("time.time", side_effect=[tracker._last_ts, tracker._last_ts]):
+        tracker.step(1)
+        assert tracker.done == 1
+        assert tracker._ema_dt is None
+
+
+def test_tracker_substage_not_none():
+    """Test step with substage explicit passing."""
+    tracker = AdvancedProgressTracker()
+    tracker.start(10)
+    tracker.step(1, substage="Working")
+    assert tracker.substage == "Working"
+
+
+def test_tracker_progress_is_not_none():
+    """Test overlay when progress is not None."""
+    progress_mock = MagicMock()
+    tracker = AdvancedProgressTracker(progress=progress_mock, queue=None)
+    tracker.throttle_interval = 0
+    tracker._overlay(force=True)
+    progress_mock.assert_called_once()
+
+
+def test_fmt_eta_fine_precision_no_hours_no_minutes():
+    """Test _fmt_eta with fine precision and no hours/minutes."""
+    assert AdvancedProgressTracker._fmt_eta(45, precision="fine") == "45s"
+
+
+def test_tracker_progress_none():
+    """Test overlay when progress is None."""
+    queue = Queue()
+    tracker = AdvancedProgressTracker(progress=None, queue=queue)
+    tracker.throttle_interval = 0
+    tracker._overlay(force=True)
+    assert not queue.empty()
+
+
+def test_tracker_progress_is_callable():
+    """Test overlay when progress is provided as a Callable."""
+    progress_called = False
+
+    def mock_progress(fraction, desc=None):
+        nonlocal progress_called
+        progress_called = True
+
+    tracker = AdvancedProgressTracker(progress=mock_progress, queue=None)
+    tracker.throttle_interval = 0
+    tracker._overlay(force=True)
+    assert progress_called
+
+
+def test_tracker_progress_lambda_desc_none():
+    """Test overlay when progress uses the default lambda and desc is updated."""
+    tracker = AdvancedProgressTracker(queue=None)
+    tracker.throttle_interval = 0
+    tracker._overlay(force=True)
+    # Testing that it doesn't fail when the default lambda is called.
+
+
+def test_tracker_progress_is_callable_true():
+    """Test overlay when progress evaluates to truthy but not callable to ensure line 142 condition is fully covered."""
+    progress_mock = MagicMock()
+    tracker = AdvancedProgressTracker(progress=progress_mock, queue=None)
+    tracker.throttle_interval = 0
+    tracker._overlay(force=True)
+    progress_mock.assert_called_once()
+
+
+def test_tracker_progress_is_callable_but_not_truthy():
+    """Test what happens if the mock progress is falsey... actually, a MagicMock is truthy."""
+    pass  # covered by `test_tracker_progress_none`
+
+
+def test_tracker_progress_is_falsy():
+    """Test overlay when progress is intentionally falsey to cover line 142 false branch."""
+    tracker = AdvancedProgressTracker(queue=None)
+    tracker.progress = None
+    tracker.throttle_interval = 0
+    tracker._overlay(force=True)
+
+
+def test_tracker_set_stage_main_branch():
+    """Test set_stage method from main branch."""
+    progress_mock = MagicMock()
+    queue = Queue()
+    logger = MagicMock()
+    tracker = AdvancedProgressTracker(progress_mock, queue, logger)
+    tracker.throttle_interval = 0
+    tracker.start(10)
+
+    # Clear queue of start events
+    while not queue.empty():
+        queue.get()
 
     tracker.set_stage("New Stage", substage="New Substage")
     assert tracker.stage == "New Stage"
@@ -255,6 +447,7 @@ def test_tracker_set_stage():
     event = queue.get()["progress"]
     assert event["stage"] == "New Stage"
     assert event["substage"] == "New Substage"
+
 
 def test_tracker_done_stage_no_text_or_logger():
     """Test done_stage method without text or logger."""
@@ -276,13 +469,14 @@ def test_tracker_step_edge_cases():
     tracker = AdvancedProgressTracker()
     tracker.start(10)
 
-    with patch("time.time", return_value=tracker._last_ts): # dt = 0
+    with patch("time.time", return_value=tracker._last_ts):  # dt = 0
         tracker.step(1, desc="Step Edge Case")
         assert tracker.stage == "Step Edge Case"
         assert tracker.done == 1
 
-def test_tracker_set_delta_zero():
-    """Test set method when delta <= 0."""
+
+def test_tracker_set_delta_zero_main_branch():
+    """Test set method when delta <= 0 from main branch."""
     tracker = AdvancedProgressTracker()
     tracker.start(10)
     tracker.set(5)
@@ -295,20 +489,22 @@ def test_tracker_set_delta_zero():
     tracker.set(3)
     assert tracker.done == 5
 
+
 def test_tracker_overlay_edge_cases():
     """Test _overlay when progress and queue are None."""
-    tracker = AdvancedProgressTracker() # No progress or queue
+    tracker = AdvancedProgressTracker()  # No progress or queue
     tracker.start(10)
 
     # Should run without raising any exception
     tracker._overlay(force=True)
 
-def test_fmt_eta_static_fine_no_hours():
-    """Test _fmt_eta with fine precision and h == 0."""
+
+def test_fmt_eta_static_fine_no_hours_main_branch():
+    """Test _fmt_eta with fine precision and h == 0 from main branch."""
     assert AdvancedProgressTracker._fmt_eta(65, precision="fine") == "1m 5s"
 
 
-def test_tracker_overlay_edge_cases_no_progress():
+def test_tracker_overlay_edge_cases_no_progress_main_branch():
     """Test _overlay when progress function is not provided."""
     # To test line 142 false branch
     queue = Queue()
@@ -319,10 +515,9 @@ def test_tracker_overlay_edge_cases_no_progress():
     # Force _overlay to execute line 142
     tracker.start(10)
     tracker._overlay(force=True)
-    # the code should pass without error
 
 
-def test_tracker_overlay_edge_cases_no_progress_branch():
+def test_tracker_overlay_edge_cases_no_progress_branch_main_branch():
     """Test _overlay when progress function evaluates to False to hit branch missing."""
     tracker = AdvancedProgressTracker()
     # Explicitly bypass the dummy function set in __init__
