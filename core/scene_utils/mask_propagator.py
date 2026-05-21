@@ -4,7 +4,6 @@ MaskPropagator class for propagating segmentation masks across video frames.
 
 from __future__ import annotations
 
-import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from queue import Queue
@@ -14,6 +13,8 @@ import numpy as np
 import torch
 
 if TYPE_CHECKING:
+    import threading
+
     from core.config import Config
     from core.logger import AppLogger
     from core.managers import ModelRegistry, SAM3Wrapper
