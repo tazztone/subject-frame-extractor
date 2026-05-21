@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -23,13 +22,11 @@ def test_validate_writable_directory():
     assert validate_writable_directory("", "Test Field") == ""
 
     # Existing writable directory
-    with patch("core.events.Path.exists", return_value=True), \
-         patch("os.access", return_value=True):
+    with patch("core.events.Path.exists", return_value=True), patch("os.access", return_value=True):
         assert validate_writable_directory("/valid/path", "Test Field") == "/valid/path"
 
     # Existing non-writable directory
-    with patch("core.events.Path.exists", return_value=True), \
-         patch("os.access", return_value=False):
+    with patch("core.events.Path.exists", return_value=True), patch("os.access", return_value=False):
         with pytest.raises(ValueError, match="Test Field '/invalid/path' is not writable"):
             validate_writable_directory("/invalid/path", "Test Field")
 
@@ -37,16 +34,14 @@ def test_validate_writable_directory():
     mock_path = MagicMock(spec=Path)
     mock_path.exists.return_value = False
     mock_path.parent.exists.return_value = True
-    with patch("core.events.Path", return_value=mock_path), \
-         patch("os.access", return_value=True):
+    with patch("core.events.Path", return_value=mock_path), patch("os.access", return_value=True):
         assert validate_writable_directory("/new/dir", "Test Field") == "/new/dir"
 
     # Non-existing directory with non-writable parent
     mock_path = MagicMock(spec=Path)
     mock_path.exists.return_value = False
     mock_path.parent.exists.return_value = True
-    with patch("core.events.Path", return_value=mock_path), \
-         patch("os.access", return_value=False):
+    with patch("core.events.Path", return_value=mock_path), patch("os.access", return_value=False):
         with pytest.raises(ValueError, match="Test Field '/new/dir' is not writable"):
             validate_writable_directory("/new/dir", "Test Field")
 
@@ -180,9 +175,9 @@ def test_propagation_event_validation():
             scenes=[
                 {"id": 1, "status": "included"},
                 {"id": 2, "status": SceneStatus.EXCLUDED},  # Not a string
-                {"id": 3}  # No status
+                {"id": 3},  # No status
             ],
-            analysis_params=analysis_params
+            analysis_params=analysis_params,
         )
         assert event.output_folder == "out"
         assert event.scenes[0]["status"] == SceneStatus.INCLUDED
@@ -194,7 +189,7 @@ def test_propagation_event_validation():
         output_folder="out",
         video_path="video.mp4",
         scenes=[{"id": 1, "status": "unknown"}],
-        analysis_params=analysis_params
+        analysis_params=analysis_params,
     )
     assert event_invalid.scenes[0]["status"] == "unknown"
 
@@ -212,14 +207,14 @@ def test_filter_event_validation():
             require_face_match=False,
             dedup_thresh=50,
             slider_values={},
-            dedup_method="phash"
+            dedup_method="phash",
         )
         assert event.output_dir == "out"
 
 
 def test_export_event_validation():
     """Test ExportEvent validation."""
-    with patch("core.events.validate_writable_directory", return_value="out"):
+    with patch("core.events.validate_writable_directory", return_value="out_validated") as mock_validate:
         event = ExportEvent(
             all_frames_data=[],
             output_dir="out",
@@ -227,9 +222,18 @@ def test_export_event_validation():
             enable_crop=False,
             crop_ars="1:1",
             crop_padding=0,
-            filter_args={}
+            filter_args={},
         )
-        assert event.output_dir == "out"
+        assert event.output_dir == "out_validated"
+        mock_validate.assert_called_once_with("out", "Output Directory")
+
+
+def test_export_event_validate_out():
+    """Test ExportEvent validate_out method directly."""
+    with patch("core.events.validate_writable_directory", return_value="validated_path") as mock_validate:
+        result = ExportEvent.validate_out("some_path")
+        assert result == "validated_path"
+        mock_validate.assert_called_once_with("some_path", "Output Directory")
 
 
 def test_session_load_event_validation():
@@ -239,8 +243,7 @@ def test_session_load_event_validation():
     assert event.session_path == ""
 
     # Valid path
-    with patch("core.events.Path.exists", return_value=True), \
-         patch("core.events.Path.is_dir", return_value=True):
+    with patch("core.events.Path.exists", return_value=True), patch("core.events.Path.is_dir", return_value=True):
         event = SessionLoadEvent(session_path="valid/session")
         assert event.session_path == "valid/session"
 
@@ -250,8 +253,7 @@ def test_session_load_event_validation():
             SessionLoadEvent(session_path="invalid/path")
 
     # Path is not a directory
-    with patch("core.events.Path.exists", return_value=True), \
-         patch("core.events.Path.is_dir", return_value=False):
+    with patch("core.events.Path.exists", return_value=True), patch("core.events.Path.is_dir", return_value=False):
         with pytest.raises(ValueError, match="Session path 'file/path' is not a directory"):
             SessionLoadEvent(session_path="file/path")
 
@@ -261,6 +263,7 @@ def test_ui_event_extra_ignore():
     event = UIEvent(extra_field="ignore me")
     # Should not raise error and should not have extra_field
     assert not hasattr(event, "extra_field")
+
 
 @patch("core.events.validate_writable_directory")
 def test_validate_out_methods(mock_validate):

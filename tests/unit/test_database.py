@@ -282,3 +282,12 @@ def test_migrate_failure_logging(db_path):
     with patch("core.database.migrate_database", side_effect=sqlite3.Error("Migrate fail")):
         with pytest.raises(sqlite3.Error):
             db.migrate()
+
+
+def test_sql_injection_prevention(db_path):
+    """Test that invalid column names raise a ValueError to prevent SQL injection."""
+    db = Database(db_path, batch_size=1)
+    db.columns.append('invalid_col"); DROP TABLE metadata; --')
+
+    with pytest.raises(ValueError, match="Invalid column name: invalid_col"):
+        db.insert_metadata({"filename": "test.jpg"})

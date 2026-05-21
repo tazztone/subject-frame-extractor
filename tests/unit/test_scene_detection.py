@@ -205,6 +205,17 @@ class TestSceneHelpers:
         # Boxes should be drawn (pixels changed)
         assert not np.array_equal(result, img)
 
+    def test_draw_boxes_preview_with_conf(self, mock_config_simple):
+        from core.scene_utils.helpers import draw_boxes_preview
+
+        img = np.zeros((100, 100, 3), dtype=np.uint8)
+        boxes = [[10, 10, 50, 50, 0.99], [60, 60, 90, 90, 0.85]]
+
+        result = draw_boxes_preview(img, boxes, mock_config_simple)
+
+        assert result.shape == img.shape
+        assert not np.array_equal(result, img)
+
     def test_draw_boxes_preview_empty_boxes(self, mock_config_simple):
         """Test draw_boxes_preview with no boxes."""
         from core.scene_utils.helpers import draw_boxes_preview
