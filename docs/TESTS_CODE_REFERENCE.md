@@ -2253,10 +2253,15 @@ def test_colored_formatter():
 def test_setup_logging(mock_dict_config, tmp_path):
     """Test setup_logging configuration logic."""
 @patch('logging.config.dictConfig')
+def test_setup_logging_stable_name(mock_dict_config, tmp_path):
+    """Test setup_logging configuration logic with stable name."""
+@patch('logging.config.dictConfig')
 def test_setup_logging_with_queue(mock_dict_config, tmp_path):
     """Test setup_logging with a progress queue."""
 def test_app_logger_all_methods():
     """Test all AppLogger proxy methods."""
+def test_app_logger_critical():
+    """Test AppLogger.critical specifically calls _log with correct args."""
 @patch('logging.config.dictConfig')
 def test_setup_logging_no_console(mock_dict_config, tmp_path):
     """Test setup_logging with console logging disabled."""
@@ -2266,6 +2271,32 @@ def test_setup_logging_mkdir(mock_dict_config, mock_mkdir, tmp_path):
     """Test setup_logging calls mkdir."""
 def test_gradio_queue_handler_error():
     """Test GradioQueueHandler error handling."""
+def test_log_with_component_none_logger():
+    """Test log_with_component ignores None logger."""
+def test_log_with_component_app_logger():
+    """Test log_with_component with AppLogger."""
+def test_log_with_component_standard_logger():
+    """Test log_with_component with standard logging.Logger."""
+def test_log_with_component_success_fallback():
+    """Test log_with_component success fallback."""
+def test_json_formatter():
+    """Test JSONFormatter formats log records correctly."""
+def test_app_logger_copy_log_to_output(tmp_path):
+    """Test copy_log_to_output copies the log file correctly."""
+def test_app_logger_copy_log_to_output_missing_file(tmp_path):
+    """Test copy_log_to_output handles missing source file gracefully."""
+def test_app_logger_copy_log_to_output_no_session_file(tmp_path):
+    """Test copy_log_to_output handles case where session_log_file is not set."""
+def test_app_logger_copy_log_to_output_exception(tmp_path):
+    """Test copy_log_to_output catches and ignores exceptions."""
+def test_app_logger_log():
+    """Test standard log method mapping to internal _log."""
+def test_json_formatter_basic():
+    """Test JSONFormatter formats basic log record correctly."""
+def test_json_formatter_sanitize():
+    """Test JSONFormatter _sanitize function for various types."""
+def test_json_formatter_exception():
+    """Test JSONFormatter formats exception info properly."""
 ```
 
 ### `📄 tests/unit/test_logger_interop.py`
