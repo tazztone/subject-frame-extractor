@@ -178,3 +178,107 @@ def test_tracker_pause_resume():
     thread.join(timeout=0.1)
     assert tracker.done == 1
     assert not thread.is_alive()
+
+def test_tracker_set_stage():
+    """Test set_stage method."""
+    progress_mock = MagicMock()
+    queue = Queue()
+    logger = MagicMock()
+    tracker = AdvancedProgressTracker(progress_mock, queue, logger)
+
+    tracker.set_stage("New Stage", substage="New Substage")
+    assert tracker.stage == "New Stage"
+    assert tracker.substage == "New Substage"
+
+    # Check that _overlay was called
+    assert not queue.empty()
+    event = queue.get()["progress"]
+    assert event["stage"] == "New Stage"
+    assert event["substage"] == "New Substage"
+
+def test_tracker_done_stage_no_text_or_logger():
+    """Test done_stage method without text or logger."""
+    tracker = AdvancedProgressTracker()
+    tracker.start(10)
+
+    # done_stage should not raise an error when logger is None and final_text is None
+    tracker.done_stage()
+    assert tracker.done == 10
+
+    # test with final_text but no logger
+    tracker.done = 0
+    tracker.done_stage("Finished")
+    assert tracker.done == 10
+
+
+def test_tracker_step_edge_cases():
+    """Test step edge cases (dt <= 0, and desc provided)."""
+    tracker = AdvancedProgressTracker()
+    tracker.start(10)
+
+    with patch("time.time", return_value=tracker._last_ts): # dt = 0
+        tracker.step(1, desc="Step Edge Case")
+        assert tracker.stage == "Step Edge Case"
+        assert tracker.done == 1
+
+def test_tracker_set_delta_zero():
+    """Test set method when delta <= 0."""
+    tracker = AdvancedProgressTracker()
+    tracker.start(10)
+    tracker.set(5)
+
+    # delta = 0
+    tracker.set(5)
+    assert tracker.done == 5
+
+    # delta < 0
+    tracker.set(3)
+    assert tracker.done == 5
+
+def test_tracker_overlay_edge_cases():
+    """Test _overlay when progress and queue are None."""
+    tracker = AdvancedProgressTracker() # No progress or queue
+    tracker.start(10)
+
+    # Should run without raising any exception
+    tracker._overlay(force=True)
+
+def test_fmt_eta_static_fine_no_hours():
+    """Test _fmt_eta with fine precision and h == 0."""
+    assert AdvancedProgressTracker._fmt_eta(65, precision="fine") == "1m 5s"
+
+
+def test_tracker_overlay_edge_cases_no_progress():
+    """Test _overlay when progress function is not provided."""
+    # To test line 142 false branch
+    queue = Queue()
+    logger = MagicMock()
+    # Explicitly set progress=None (default behavior is dummy function)
+    tracker = AdvancedProgressTracker(progress=None, queue=queue, logger=logger)
+
+    # Force _overlay to execute line 142
+    tracker.start(10)
+    tracker._overlay(force=True)
+    # the code should pass without error
+
+
+def test_tracker_overlay_edge_cases_no_progress_branch():
+    """Test _overlay when progress function evaluates to False to hit branch missing."""
+    tracker = AdvancedProgressTracker()
+    # Explicitly bypass the dummy function set in __init__
+    tracker.progress = None
+    tracker.start(10)
+    tracker._overlay(force=True)
+
+
+def test_tracker_done_stage_with_text_and_logger():
+    """Test done_stage method with both text and logger."""
+    progress_mock = MagicMock()
+    queue = Queue()
+    logger = MagicMock()
+    tracker = AdvancedProgressTracker(progress_mock, queue, logger)
+    tracker.start(10)
+
+    tracker.done_stage("Task completed")
+    assert tracker.done == 10
+    logger.info.assert_called_once_with("Task completed", component="progress")
