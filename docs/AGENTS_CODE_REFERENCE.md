@@ -852,7 +852,7 @@ class ExtractionPipeline:
 ### `📄 core/managers/face.py`
 
 ```python
-thread_local = threading.local()
+thread_local = local()
 def get_face_landmarker(model_path: str, logger: 'AppLogger') -> Any:
     """Returns a thread-local MediaPipe FaceLandmarker instance."""
 def get_face_analyzer(model_name: str, models_path: str, det_size_tuple: tuple, logger: 'AppLogger', model_registry: 'ModelRegistry', device: str='cpu') -> 'FaceAnalysis':
@@ -1388,7 +1388,7 @@ def _cleanup_partial_export(export_dir: Path):
 
 ```python
 """Helper functions for scene processing."""
-def draw_boxes_preview(img: np.ndarray, boxes_xyxy: list[list[int]], cfg: 'Config') -> np.ndarray:
+def draw_boxes_preview(img: np.ndarray, boxes_xyxy: list[list[float | int]] | list[list[int]], cfg: 'Config', labels: list[str] | None=None, confidences: list[float] | None=None) -> np.ndarray:
     """Draw bounding boxes on an image for preview."""
 def save_scene_seeds(scenes_list: list['Scene'], output_dir_str: str, logger: 'AppLogger') -> None:
     """Save scene seed information to JSON file."""
