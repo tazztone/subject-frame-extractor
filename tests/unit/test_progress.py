@@ -45,6 +45,25 @@ def test_tracker_start():
     assert event["total"] == 100
 
 
+def test_tracker_start_edge_cases():
+    """Test the start method handles edge cases like 0 total items, missing desc, and clears substage."""
+    progress_mock = MagicMock()
+    queue = Queue()
+    logger = MagicMock()
+    tracker = AdvancedProgressTracker(progress_mock, queue, logger, ui_stage_name="Initial Stage")
+    tracker.substage = "Initial Substage"
+    tracker._ema_dt = 10.0
+
+    # Start with 0 items, which should default to 1, and no desc, which should retain the old stage.
+    tracker.start(0)
+
+    assert tracker.total == 1
+    assert tracker.done == 0
+    assert tracker.stage == "Initial Stage"
+    assert tracker.substage is None
+    assert tracker._ema_dt is None
+
+
 def test_tracker_step_and_eta():
     """Test stepping through progress and ETA estimation."""
     progress_mock = MagicMock()
