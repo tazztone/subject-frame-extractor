@@ -121,7 +121,7 @@ class MaskPropagator:
         )
 
         if tracker:
-            tracker.set_stage(f"Propagating masks for {len(frame_numbers)} frames")
+            tracker.set_stage("Propagating masks", substage=f"{len(frame_numbers)} frames")
 
         try:
             # Initialize SAM3 with the video file
@@ -152,7 +152,7 @@ class MaskPropagator:
                         self.logger.debug(f"Added prompt mask at frame {fn}", component="propagator")
 
             if tracker:
-                tracker.step(1, desc="Prompts added")
+                tracker.step(1, substage="Prompts added")
 
             if self.cancel_event.is_set():
                 return masks, areas, empties, errors
@@ -179,7 +179,7 @@ class MaskPropagator:
                             all_propagated[frame_idx] = pred_mask
 
                         if tracker:
-                            tracker.step(1, desc="Propagation (→)")
+                            tracker.step(1, substage="Propagation (→)")
 
                         # Heartbeat every 50 frames
                         if frame_idx % 50 == 0:
@@ -209,7 +209,7 @@ class MaskPropagator:
                             all_propagated[frame_idx] = pred_mask
 
                         if tracker:
-                            tracker.step(1, desc="Propagation (←)")
+                            tracker.step(1, substage="Propagation (←)")
 
                         # Heartbeat every 50 frames
                         if frame_idx % 50 == 0:
@@ -327,7 +327,7 @@ class MaskPropagator:
         masks: list[Optional[np.ndarray]] = [None] * len(shot_frames_rgb)
 
         if tracker:
-            tracker.set_stage(f"Propagating masks for {len(shot_frames_rgb)} frames")
+            tracker.set_stage("Propagating masks", substage=f"{len(shot_frames_rgb)} frames")
 
         # Use TemporaryDirectory for automatic cleanup
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -365,7 +365,7 @@ class MaskPropagator:
                 masks[seed_idx] = mask
 
                 if tracker:
-                    tracker.step(1, desc="Propagation (seed)")
+                    tracker.step(1, substage="Propagation (seed)")
 
                 # Propagate in both directions
                 for reverse in [False, True]:
@@ -391,7 +391,7 @@ class MaskPropagator:
                             masks[frame_idx] = np.zeros((h, w), dtype=np.uint8)
 
                         if tracker:
-                            tracker.step(1, desc="Propagation (↔)")
+                            tracker.step(1, substage="Propagation (↔)")
 
             except (torch.cuda.OutOfMemoryError, RuntimeError) as e:
                 self.logger.error(f"GPU error in propagation: {e}", component="propagator")
