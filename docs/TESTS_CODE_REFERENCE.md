@@ -1769,6 +1769,8 @@ def test_validate_writable_directory():
     """Test the validate_writable_directory helper."""
 def test_extraction_event_validation():
     """Test ExtractionEvent validation logic."""
+def test_validate_output_folder_direct():
+    """Test the validate_output_folder classmethod directly."""
 def test_strip_emoji_from_strategy():
     """Test the strip_emoji_from_strategy method of PreAnalysisEvent."""
 def test_pre_analysis_event_validation():

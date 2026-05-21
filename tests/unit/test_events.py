@@ -97,6 +97,20 @@ def test_extraction_event_validation():
         assert event_none.output_folder is None
 
 
+def test_validate_output_folder_direct():
+    """Test the validate_output_folder classmethod directly."""
+    # Test None
+    assert ExtractionEvent.validate_output_folder(None) is None
+
+    # Test empty string
+    assert ExtractionEvent.validate_output_folder("") == ""
+
+    # Test valid string with mock
+    with patch("core.events.validate_writable_directory", return_value="validated_path") as mock_validate:
+        assert ExtractionEvent.validate_output_folder("some_path") == "validated_path"
+        mock_validate.assert_called_once_with("some_path", "Output Folder")
+
+
 def test_strip_emoji_from_strategy():
     """Test the strip_emoji_from_strategy method of PreAnalysisEvent."""
     # Test typical emoji cases
