@@ -11,7 +11,6 @@ from pathlib import Path
 from queue import Queue
 from typing import TYPE_CHECKING, Any
 
-import cv2
 import numpy as np
 from PIL import Image
 
@@ -23,30 +22,42 @@ if TYPE_CHECKING:
     from core.scene_utils.subject_masker import SubjectMasker
 
 from core.enums import SceneStatus
-from core.image_utils import render_mask_overlay
+from core.image_utils import draw_bbox, render_mask_overlay
 from core.io_utils import create_frame_map
 from core.shared import build_scene_gallery_items
 from core.utils import _to_json_safe
 
 
-# TODO: Add box drawing style options (dashed, rounded corners, etc.)
-# TODO: Support drawing box labels with confidence scores
-def draw_boxes_preview(img: np.ndarray, boxes_xyxy: list[list[int]], cfg: "Config") -> np.ndarray:
+def draw_boxes_preview(img: np.ndarray, boxes_xyxy: list[list[float | int]], cfg: "Config") -> np.ndarray:
     """
     Draw bounding boxes on an image for preview.
 
     Args:
         img: RGB image
-        boxes_xyxy: List of boxes in [x1, y1, x2, y2] format
+        boxes_xyxy: List of boxes in [x1, y1, x2, y2] or [x1, y1, x2, y2, conf] format
         cfg: Config with visualization settings
 
     Returns:
         Image with boxes drawn
     """
     img = img.copy()
-    for x1, y1, x2, y2 in boxes_xyxy:
-        cv2.rectangle(
-            img, (int(x1), int(y1)), (int(x2), int(y2)), cfg.visualization_bbox_color, cfg.visualization_bbox_thickness
+    for box in boxes_xyxy:
+        if len(box) >= 5:
+            x1, y1, x2, y2, conf = box[:5]
+            label = f"{conf:.2f}" if getattr(cfg, "visualization_bbox_show_conf", True) else None
+        elif len(box) == 4:
+            x1, y1, x2, y2 = box
+            label = None
+        else:
+            continue
+
+        xywh = [x1, y1, x2 - x1, y2 - y1]
+        draw_bbox(
+            img_rgb=img,
+            xywh=xywh,
+            config=cfg,
+            label=label,
+            inplace=True
         )
     return img
 
