@@ -99,6 +99,34 @@ def test_setup_logging_with_queue(mock_dict_config, tmp_path):
     assert "gradio" in conf["loggers"]["app_logger"]["handlers"]
 
 
+def test_app_logger_log():
+    """Test AppLogger log method."""
+    config = MagicMock()
+    with patch("logging.getLogger") as mock_get_logger:
+        mock_logger = mock_get_logger.return_value
+        logger = AppLogger(config)
+
+        logger.log(logging.INFO, "log message", component="custom")
+
+        mock_logger.log.assert_called_with(
+            logging.INFO, "log message [custom]", extra={"component": "custom"}, exc_info=None
+        )
+
+
+def test_app_logger_info():
+    """Test AppLogger info method specifically."""
+    config = MagicMock()
+    with patch("logging.getLogger") as mock_get_logger:
+        mock_logger = mock_get_logger.return_value
+        logger = AppLogger(config)
+
+        logger.info("info message", component="custom_info")
+
+        mock_logger.log.assert_called_with(
+            logging.INFO, "info message [custom_info]", extra={"component": "custom_info"}, exc_info=None
+        )
+
+
 def test_app_logger_all_methods():
     """Test all AppLogger proxy methods."""
     config = MagicMock()
