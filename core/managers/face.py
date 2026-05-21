@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import threading
+from threading import local
 from typing import TYPE_CHECKING, Any
 
 from mediapipe.tasks import python
@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
     from .registry import ModelRegistry
 
-thread_local = threading.local()
+thread_local = local()
 
 
 def get_face_landmarker(model_path: str, logger: "AppLogger") -> Any:
