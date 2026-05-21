@@ -173,7 +173,7 @@ def test_propagation_event_validation():
     )
 
     # Valid event
-    with patch("core.events.validate_writable_directory", return_value="out"):
+    with patch("core.events.validate_writable_directory", return_value="out_validated") as mock_validate:
         event = PropagationEvent(
             output_folder="out",
             video_path="video.mp4",
@@ -184,10 +184,11 @@ def test_propagation_event_validation():
             ],
             analysis_params=analysis_params
         )
-        assert event.output_folder == "out"
+        assert event.output_folder == "out_validated"
         assert event.scenes[0]["status"] == SceneStatus.INCLUDED
         assert event.scenes[1]["status"] == SceneStatus.EXCLUDED
         assert "status" not in event.scenes[2]
+        mock_validate.assert_called_with("out", "Output Folder")
 
     # Test invalid status fallback
     event_invalid = PropagationEvent(
