@@ -119,6 +119,47 @@ def test_tracker_throttling():
     assert not queue.empty()
 
 
+def test_tracker_set_stage():
+    """Test set_stage updates description and forces overlay."""
+    progress_mock = MagicMock()
+    queue = Queue()
+    logger = MagicMock()
+    tracker = AdvancedProgressTracker(progress_mock, queue, logger)
+    tracker.throttle_interval = 1.0  # Set throttle to ensure force=True works
+
+    tracker.start(10)
+
+    # Clear the queue from start
+    while not queue.empty():
+        queue.get()
+
+    # Call set_stage with just stage
+    tracker.set_stage("New Stage")
+    assert tracker.stage == "New Stage"
+    assert tracker.substage is None
+
+    # Verify forced overlay emitted an event
+    assert not queue.empty()
+    event = queue.get()["progress"]
+    assert event["stage"] == "New Stage"
+    assert event["substage"] is None
+
+    # Clear queue again
+    while not queue.empty():
+        queue.get()
+
+    # Call set_stage with stage and substage
+    tracker.set_stage("Another Stage", substage="New Substage")
+    assert tracker.stage == "Another Stage"
+    assert tracker.substage == "New Substage"
+
+    # Verify forced overlay emitted an event
+    assert not queue.empty()
+    event = queue.get()["progress"]
+    assert event["stage"] == "Another Stage"
+    assert event["substage"] == "New Substage"
+
+
 def test_tracker_set_and_done():
     """Test set() and done_stage() methods."""
     progress_mock = MagicMock()
