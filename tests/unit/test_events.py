@@ -60,6 +60,31 @@ def test_extraction_event_validation():
         output_folder="out",
     )
     assert event.source_path == "video.mp4"
+    assert event.upload_video is None
+
+    # Valid event with only upload_video
+    event_upload = ExtractionEvent(
+        source_path="",
+        upload_video="uploaded_video.mp4",
+        method="all",
+        max_resolution="1080p",
+        scene_detect=True,
+        output_folder="out",
+    )
+    assert event_upload.source_path == ""
+    assert event_upload.upload_video == "uploaded_video.mp4"
+
+    # Valid event with both source_path and upload_video
+    event_both = ExtractionEvent(
+        source_path="video.mp4",
+        upload_video="uploaded_video.mp4",
+        method="all",
+        max_resolution="1080p",
+        scene_detect=True,
+        output_folder="out",
+    )
+    assert event_both.source_path == "video.mp4"
+    assert event_both.upload_video == "uploaded_video.mp4"
 
     # Missing both source_path and upload_video
     with pytest.raises(ValueError, match="Please provide a Source Path or Upload a Video"):
