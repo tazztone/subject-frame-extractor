@@ -11,7 +11,6 @@ from pathlib import Path
 from queue import Queue
 from typing import TYPE_CHECKING, Any
 
-import cv2
 import numpy as np
 from PIL import Image
 
@@ -23,30 +22,66 @@ if TYPE_CHECKING:
     from core.scene_utils.subject_masker import SubjectMasker
 
 from core.enums import SceneStatus
-from core.image_utils import render_mask_overlay
+from core.image_utils import draw_bbox, render_mask_overlay
 from core.io_utils import create_frame_map
 from core.shared import build_scene_gallery_items
 from core.utils import _to_json_safe
 
 
-# TODO: Add box drawing style options (dashed, rounded corners, etc.)
-# TODO: Support drawing box labels with confidence scores
-def draw_boxes_preview(img: np.ndarray, boxes_xyxy: list[list[int]], cfg: "Config") -> np.ndarray:
+def draw_boxes_preview(
+    img: np.ndarray,
+    boxes_xyxy: list[list[float | int]] | list[list[int]],
+    cfg: "Config",
+    labels: list[str] | None = None,
+    confidences: list[float] | None = None,
+) -> np.ndarray:
     """
     Draw bounding boxes on an image for preview.
 
     Args:
         img: RGB image
-        boxes_xyxy: List of boxes in [x1, y1, x2, y2] format
+        boxes_xyxy: List of boxes in [x1, y1, x2, y2] or [x1, y1, x2, y2, conf] format
         cfg: Config with visualization settings
+        labels: Optional list of labels for each box
+        confidences: Optional list of confidences for each box
 
     Returns:
         Image with boxes drawn
     """
     img = img.copy()
-    for x1, y1, x2, y2 in boxes_xyxy:
-        cv2.rectangle(
-            img, (int(x1), int(y1)), (int(x2), int(y2)), cfg.visualization_bbox_color, cfg.visualization_bbox_thickness
+    for i, box in enumerate(boxes_xyxy):
+        if len(box) >= 5:
+            x1, y1, x2, y2 = box[:4]
+            conf = box[4]
+        elif len(box) == 4:
+            x1, y1, x2, y2 = box
+            conf = None
+        else:
+            continue
+
+        xywh = [int(x1), int(y1), int(x2 - x1), int(y2 - y1)]
+
+        box_label = None
+        if labels and i < len(labels):
+            box_label = str(labels[i])
+
+        # Get confidence score: either from box[4] or from confidences parameter
+        box_conf = conf
+        if box_conf is None and confidences and i < len(confidences):
+            box_conf = confidences[i]
+
+        if getattr(cfg, "visualization_bbox_show_conf", True) and box_conf is not None:
+            if box_label:
+                box_label += f" {box_conf:.2f}"
+            else:
+                box_label = f"{box_conf:.2f}"
+
+        draw_bbox(
+            img_rgb=img,
+            xywh=xywh,
+            config=cfg,
+            label=box_label,
+            inplace=True,
         )
     return img
 
