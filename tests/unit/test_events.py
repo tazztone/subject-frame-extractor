@@ -232,28 +232,30 @@ def test_export_event_validation():
         assert event.output_dir == "out"
 
 
-def test_session_load_event_validation():
+def test_session_load_event_validation(tmp_path: Path):
     """Test SessionLoadEvent validation."""
     # Empty path
     event = SessionLoadEvent(session_path="")
     assert event.session_path == ""
 
-    # Valid path
-    with patch("core.events.Path.exists", return_value=True), \
-         patch("core.events.Path.is_dir", return_value=True):
-        event = SessionLoadEvent(session_path="valid/session")
-        assert event.session_path == "valid/session"
+    # Valid path (directory)
+    valid_dir = tmp_path / "valid_session"
+    valid_dir.mkdir()
+    event = SessionLoadEvent(session_path=str(valid_dir))
+    assert event.session_path == str(valid_dir)
+
+    import re
 
     # Non-existent path
-    with patch("core.events.Path.exists", return_value=False):
-        with pytest.raises(ValueError, match="Session path 'invalid/path' does not exist"):
-            SessionLoadEvent(session_path="invalid/path")
+    invalid_path = tmp_path / "invalid_path"
+    with pytest.raises(ValueError, match=f"Session path '{re.escape(str(invalid_path))}' does not exist."):
+        SessionLoadEvent(session_path=str(invalid_path))
 
-    # Path is not a directory
-    with patch("core.events.Path.exists", return_value=True), \
-         patch("core.events.Path.is_dir", return_value=False):
-        with pytest.raises(ValueError, match="Session path 'file/path' is not a directory"):
-            SessionLoadEvent(session_path="file/path")
+    # Path is not a directory (it's a file)
+    file_path = tmp_path / "file.txt"
+    file_path.touch()
+    with pytest.raises(ValueError, match=f"Session path '{re.escape(str(file_path))}' is not a directory."):
+        SessionLoadEvent(session_path=str(file_path))
 
 
 def test_ui_event_extra_ignore():
