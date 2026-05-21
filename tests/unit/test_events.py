@@ -263,3 +263,32 @@ def test_ui_event_extra_ignore():
     event = UIEvent(extra_field="ignore me")
     # Should not raise error and should not have extra_field
     assert not hasattr(event, "extra_field")
+
+
+@patch("core.events.validate_writable_directory")
+def test_validate_out_methods(mock_validate):
+    """Test that validate_out classmethods correctly delegate to validate_writable_directory."""
+    mock_validate.return_value = "/mock/path"
+
+    # Test PreAnalysisEvent.validate_out
+    result = PreAnalysisEvent.validate_out("some/path")
+    mock_validate.assert_called_with("some/path", "Output Folder")
+    assert result == "/mock/path"
+    mock_validate.reset_mock()
+
+    # Test PropagationEvent.validate_out
+    result = PropagationEvent.validate_out("another/path")
+    mock_validate.assert_called_with("another/path", "Output Folder")
+    assert result == "/mock/path"
+    mock_validate.reset_mock()
+
+    # Test FilterEvent.validate_out
+    result = FilterEvent.validate_out("filter/path")
+    mock_validate.assert_called_with("filter/path", "Output Directory")
+    assert result == "/mock/path"
+    mock_validate.reset_mock()
+
+    # Test ExportEvent.validate_out
+    result = ExportEvent.validate_out("export/path")
+    mock_validate.assert_called_with("export/path", "Output Directory")
+    assert result == "/mock/path"

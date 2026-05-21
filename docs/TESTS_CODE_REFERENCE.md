@@ -1783,6 +1783,9 @@ def test_session_load_event_validation():
     """Test SessionLoadEvent validation."""
 def test_ui_event_extra_ignore():
     """Test that UIEvent ignores extra fields as configured."""
+@patch('core.events.validate_writable_directory')
+def test_validate_out_methods(mock_validate):
+    """Test that validate_out classmethods correctly delegate to validate_writable_d..."""
 ```
 
 ### `📄 tests/unit/test_exit_branches.py`
