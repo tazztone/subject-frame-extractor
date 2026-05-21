@@ -1777,6 +1777,8 @@ def test_filter_event_validation():
     """Test FilterEvent validation."""
 def test_export_event_validation():
     """Test ExportEvent validation."""
+def test_export_event_validate_out():
+    """Test ExportEvent validate_out method directly."""
 def test_session_load_event_validation():
     """Test SessionLoadEvent validation."""
 def test_ui_event_extra_ignore():
