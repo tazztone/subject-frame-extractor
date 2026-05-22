@@ -1,27 +1,30 @@
 # PR Merger — Reference
 
-## Conflict Resolution
+## Review rubric
 
-### Test Files (Union Merge)
-Test file conflicts are usually additive. Keep **both** sides of the conflict block.
-1. Remove conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`).
-2. Deduplicate imports.
-3. Rename colliding test functions.
-4. Run `bash scripts/conflict_scan.sh`.
+For each PR diff, check:
 
-### Production Code
-- **Divergent edits**: Combine intents.
-- **Structural moves**: Apply the edit to the new file location.
-- **Signature changes**: Keep new signature, reapply body changes.
+- **Correctness** — does the code do what the PR description claims?
+- **Tests** — are new behaviours covered? Are existing tests still passing?
+- **Breaking changes** — does it change a public API, config format, or DB schema without a migration path?
+- **Scope creep** — does the diff contain unrelated changes? Flag them.
+- **Security** — any hardcoded secrets, unchecked inputs, or new dependencies with known vulnerabilities?
+- **Style** — is it consistent with the surrounding code? (Don't block on nits — comment but approve.)
 
-### Config/Lock Files
-Manually merge semantic config (e.g. `pyproject.toml`). **Regenerate** lock files (`uv lock`, `npm install`) instead of manually resolving them.
+## Merge method guide
 
-## Batch Merging
-1. **Ordering**: Find overlap (`git diff main..origin/<branch> --name-only`). Merge infrastructure/foundational PRs first.
-2. **Cascade Preview**: Preview next merge with `git merge --no-commit --no-ff origin/<branch>`. `git merge --abort` if too messy.
-3. **Abort Criteria**: Stop the batch if test failures occur unrelated to conflicts, or if deep architectural conflicts arise.
+| Situation | Flag | Reason |
+|---|---|---|
+| Feature branch into main | `--squash` | Clean linear history |
+| Release / long-lived branch | `--merge` | Preserves full commit context |
+| User requests linear history | `--rebase` | No merge commit |
 
-## Troubleshooting
-- **Already merged?**: Run `git fetch origin --prune`.
-- **Semantic Conflicts**: If a text-clean merge fails tests, the logic combined incorrectly. Debug the failing test.
+## Dependency conflicts
+
+If PR A and PR B both touch the same files, merge the smaller/simpler one first, then update the other branch:
+
+```bash
+gh pr checkout <larger-pr-number>
+git merge main
+git push
+```
