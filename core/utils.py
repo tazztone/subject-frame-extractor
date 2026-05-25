@@ -190,33 +190,6 @@ def handle_common_errors(func: Callable) -> Callable:
     return wrapper
 
 
-def monitor_memory_usage(
-    logger: "AppLogger", device: str, gpu_threshold_mb: int = 8000, ram_threshold_pct: float = 90.0
-):
-    """Logs warnings and clears cache if memory usage exceeds thresholds."""
-    if device == "cuda" and torch.cuda.is_available():
-        allocated = torch.cuda.memory_allocated() / 1024**2
-        if allocated > gpu_threshold_mb:
-            logger.warning(f"High GPU memory usage: {allocated:.1f}MB")
-            torch.cuda.empty_cache()
-
-    # Coerce thresholds and handle mocks in tests
-    if not isinstance(gpu_threshold_mb, (int, float)):
-        gpu_threshold_mb = 8000
-    if not isinstance(ram_threshold_pct, (int, float)):
-        ram_threshold_pct = 90.0
-
-    try:
-        raw_ram = psutil.virtual_memory().percent
-        ram_usage = float(raw_ram) if isinstance(raw_ram, (int, float)) else 0.0
-    except (TypeError, ValueError, AttributeError):
-        ram_usage = 0.0
-
-    if ram_usage > ram_threshold_pct:
-        logger.warning(f"High system RAM usage: {ram_usage:.1f}%")
-        gc.collect()
-
-
 class MemoryWatchdog:
     """Background thread that monitors memory usage and logs critical warnings."""
 
