@@ -2,6 +2,8 @@
 Image Processing Utilities for Subject Frame Extractor
 """
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING, Optional
 
 import cv2
@@ -15,7 +17,7 @@ if TYPE_CHECKING:
 
 
 def postprocess_mask(
-    mask: np.ndarray, config: "Config", fill_holes: bool = True, keep_largest_only: bool = True
+    mask: np.ndarray, config: Config, fill_holes: bool = True, keep_largest_only: bool = True
 ) -> np.ndarray:
     """Cleans up binary masks using morphological operations and connected components."""
 
@@ -35,7 +37,7 @@ def postprocess_mask(
     return (binary_mask * 255).astype(np.uint8)
 
 
-def render_mask_overlay(frame_rgb: np.ndarray, mask_gray: np.ndarray, alpha: float, logger: "AppLogger") -> np.ndarray:
+def render_mask_overlay(frame_rgb: np.ndarray, mask_gray: np.ndarray, alpha: float, logger: AppLogger) -> np.ndarray:
     """overlays a semi-transparent red mask on the image."""
     if mask_gray is None or frame_rgb is None:
         return frame_rgb if frame_rgb is not None else np.array([])
@@ -100,7 +102,7 @@ def _draw_dotted_line(
 def draw_bbox(
     img_rgb: np.ndarray,
     xywh: list,
-    config: "Config",
+    config: Config,
     color: Optional[tuple] = None,
     thickness: Optional[int] = None,
     label: Optional[str] = None,
