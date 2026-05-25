@@ -19,12 +19,12 @@ class ErrorSeverity(Enum):
     CRITICAL = "critical"
 
 
-# TODO: Consider adding NOTIFY strategy for non-blocking alerts
 class RecoveryStrategy(Enum):
     RETRY = "retry"
     FALLBACK = "fallback"
     SKIP = "skip"
     ABORT = "abort"
+    NOTIFY = "notify"
 
 
 class ErrorHandler:
@@ -103,6 +103,35 @@ class ErrorHandler:
                             )
                 if last_exception:
                     raise last_exception
+
+            return wrapper
+
+        return decorator
+
+    def with_notify(self, default_return: Any = None):
+        """
+        Decorator that catches exceptions, logs a warning, and returns a default value.
+        Useful for non-blocking operations where an error should only notify.
+
+        Args:
+            default_return: Value to return if an exception is caught. Defaults to None.
+
+        Returns:
+            Decorated function.
+        """
+
+        def decorator(func: Callable) -> Callable:
+            @functools.wraps(func)
+            def wrapper(*args, **kwargs) -> Any:
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    self._log_with_component(
+                        "warning",
+                        f"Non-blocking error in {func.__name__}: {str(e)}",
+                        component="error_handler",
+                    )
+                    return default_return
 
             return wrapper
 
