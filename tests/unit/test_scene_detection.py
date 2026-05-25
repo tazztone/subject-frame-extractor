@@ -186,6 +186,65 @@ class TestSceneDetection:
         # Should return empty map since image couldn't be read
         assert result == {}
 
+    @patch("cv2.imread")
+    @patch("cv2.resize")
+    @patch("cv2.cvtColor")
+    def test_make_photo_thumbs_caching(
+        self, mock_cvtcolor, mock_resize, mock_imread, mock_logger, mock_config_simple, tmp_path
+    ):
+        """Test make_photo_thumbs caches existing thumbnails."""
+        from core.models import AnalysisParameters
+        from core.scene_utils.detection import make_photo_thumbs
+
+        # Mock image reading
+        test_image = np.zeros((1920, 1080, 3), dtype=np.uint8)
+        mock_imread.return_value = test_image
+        mock_resize.return_value = np.zeros((720, 405, 3), dtype=np.uint8)
+        mock_cvtcolor.return_value = np.zeros((720, 405, 3), dtype=np.uint8)
+
+        images_dir = tmp_path / "images"
+        images_dir.mkdir()
+        img1 = images_dir / "test1.jpg"
+        img2 = images_dir / "test2.jpg"
+        img1.touch()
+        img2.touch()
+
+        # Pre-create the first thumbnail to test caching
+        thumbs_dir = tmp_path / "thumbs"
+        thumbs_dir.mkdir(parents=True, exist_ok=True)
+        (thumbs_dir / "frame_000001.webp").touch()
+
+        params = AnalysisParameters(
+            source_path="test.mp4",
+            video_path="test.mp4",
+            output_folder=str(tmp_path),
+            thumb_megapixels=0.5,
+        )
+
+        with patch("PIL.Image.fromarray") as mock_pil:
+            mock_img = MagicMock()
+            mock_pil.return_value = mock_img
+
+            result = make_photo_thumbs(
+                image_paths=[img1, img2],
+                out_dir=tmp_path,
+                params=params,
+                cfg=mock_config_simple,
+                logger=mock_logger,
+            )
+
+        # First image skipped (imread not called for it), second image processed
+        assert mock_imread.call_count == 1
+        assert mock_imread.call_args[0][0] == str(img2)
+
+        # PIL fromarray only called for second image
+        assert mock_pil.call_count == 1
+
+        # Frame map contains both
+        assert len(result) == 2
+        assert result[1] == "frame_000001.webp"
+        assert result[2] == "frame_000002.webp"
+
 
 class TestSceneHelpers:
     """Tests for scene_utils/helpers.py."""

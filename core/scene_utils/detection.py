@@ -79,7 +79,6 @@ def make_photo_thumbs(
     Returns:
         Dictionary mapping frame numbers to thumbnail filenames
     """
-    # TODO: Support thumbnail caching to skip already-processed images
     thumbs_dir = out_dir / "thumbs"
     thumbs_dir.mkdir(parents=True, exist_ok=True)
     target_area = params.thumb_megapixels * 1_000_000
@@ -92,6 +91,17 @@ def make_photo_thumbs(
         if tracker and tracker.pause_event.is_set():
             tracker.step()
         try:
+            out_name = f"frame_{i:06d}.webp"
+            out_path = thumbs_dir / out_name
+
+            if out_path.exists():
+                logger.debug(f"Thumbnail {out_name} already exists, skipping generation")
+                frame_map[i] = out_name
+                image_manifest[i] = str(img_path.resolve())
+                if tracker:
+                    tracker.step()
+                continue
+
             bgr = cv2.imread(str(img_path))
             if bgr is None:
                 logger.warning(f"Could not read image file: {img_path}")
@@ -104,8 +114,6 @@ def make_photo_thumbs(
                 bgr = cv2.resize(bgr, (max(2, new_w), max(2, new_h)), interpolation=cv2.INTER_AREA)
 
             rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
-            out_name = f"frame_{i:06d}.webp"
-            out_path = thumbs_dir / out_name
             Image.fromarray(rgb).save(out_path, format="WEBP", quality=cfg.ffmpeg_thumbnail_quality)
 
             frame_map[i] = out_name
