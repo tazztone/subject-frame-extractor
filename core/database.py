@@ -30,6 +30,8 @@ class Database:
         self.logger = logger or logging.getLogger(__name__)
         self.lock = threading.Lock()
         self.error_handler: Optional[Any] = None
+        self._columns: List[str] = []
+        self._insert_query: str = ""
         self.columns = [
             "filename",
             "face_sim",
@@ -49,6 +51,25 @@ class Database:
         self.migrate()
         # Register atexit handler to ensure flush on shutdown
         atexit.register(self.close)
+
+    @property
+    def columns(self) -> List[str]:
+        return self._columns
+
+    @columns.setter
+    def columns(self, new_columns: List[str]) -> None:
+        # Validate columns to prevent SQL injection
+        for col in new_columns:
+            if not col.isidentifier():
+                raise ValueError(f"Invalid column name: {col}")
+
+        self._columns = list(new_columns)
+        placeholders = ", ".join(["?"] * len(self._columns))
+        columns_str = ", ".join(self._columns)
+        self._insert_query = f"""
+            INSERT OR REPLACE INTO metadata ({columns_str})
+            VALUES ({placeholders})
+        """
 
     def __enter__(self):
         return self
@@ -151,19 +172,9 @@ class Database:
                 self.connect()
             assert self.conn is not None
 
-            # Validate columns to prevent SQL injection
-            for col in self.columns:
-                if not col.isidentifier():
-                    raise ValueError(f"Invalid column name: {col}")
-
             cursor = self.conn.cursor()
-            placeholders = ", ".join(["?"] * len(self.columns))
-            columns_str = ", ".join(self.columns)
             cursor.executemany(
-                f"""
-                INSERT OR REPLACE INTO metadata ({columns_str})
-                VALUES ({placeholders})
-            """,
+                self._insert_query,
                 self.buffer,
             )
             self.conn.commit()
