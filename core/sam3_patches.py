@@ -6,6 +6,7 @@ fixes image processing issues, and addresses deprecation warnings.
 """
 
 import hashlib
+import importlib.util
 import logging
 from pathlib import Path
 
@@ -345,9 +346,7 @@ def apply_patches():
     patch_sam3_pvs_initialization()
 
     # 5. Triton fallbacks
-    try:
-        import triton  # noqa: F401
-    except ImportError:
+    if importlib.util.find_spec("triton") is None:
         try:
             import sam3.model.edt as edt_module  # type: ignore
             import sam3.perflib.connected_components as cc_module  # type: ignore
