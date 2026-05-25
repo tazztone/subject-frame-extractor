@@ -141,7 +141,7 @@ def test_filter(mock_apply, mock_db, mock_setup, runner, tmp_path):
     assert "Filtering complete" in result.output
 
 
-@pytest.mark.parametrize("command", ["extract", "analyze", "status", "filter"])
+@pytest.mark.parametrize("command", ["extract", "analyze", "status", "filter", "full"])
 def test_cli_help_commands(runner, command):
     result = runner.invoke(cli, [command, "--help"])
     assert result.exit_code == 0
@@ -176,3 +176,88 @@ def test_analyze_folder(mock_cuda, mock_setup, mock_orch, runner, tmp_path, mock
         assert result.exit_code == 0
         assert "Mask Propagation (Skipped for Folder)" in result.output
         mock_prop.assert_not_called()
+
+
+@patch("core.cli_args.run_extract")
+def test_extract_command_args(mock_run_extract, runner, tmp_path):
+    source_path = tmp_path / "video.mp4"
+    source_path.touch()
+    output_dir = tmp_path / "out"
+
+    result = runner.invoke(
+        cli,
+        [
+            "extract",
+            str(source_path),
+            str(output_dir),
+            "--method",
+            "scene_changes",
+            "--nth-frame",
+            "5",
+            "--max-resolution",
+            "720",
+            "--thumb-mp",
+            "1.5",
+            "--no-scene-detect",
+            "--verbose",
+            "--clean",
+            "--force",
+        ],
+    )
+
+    assert result.exit_code == 0
+    mock_run_extract.assert_called_once_with(
+        str(source_path),
+        str(output_dir),
+        "scene_changes",
+        5,
+        "720",
+        1.5,
+        False,  # scene_detect is False due to --no-scene-detect
+        True,  # verbose
+        True,  # clean
+        True,  # force
+    )
+
+
+@patch("core.cli_args.run_full")
+def test_full_command_args(mock_run_full, runner, tmp_path):
+    source_path = tmp_path / "video.mp4"
+    source_path.touch()
+    output_dir = tmp_path / "out"
+    face_ref = tmp_path / "face.jpg"
+    face_ref.touch()
+
+    result = runner.invoke(
+        cli,
+        [
+            "full",
+            "--source",
+            str(source_path),
+            "--output",
+            str(output_dir),
+            "--face-ref",
+            str(face_ref),
+            "--nth-frame",
+            "10",
+            "--max-resolution",
+            "480",
+            "--verbose",
+            "--clean",
+            "--resume",
+            "--force",
+        ],
+    )
+
+    assert result.exit_code == 0
+    mock_run_full.assert_called_once_with(
+        str(source_path),
+        str(output_dir),
+        str(face_ref),
+        10,
+        "480",
+        True,  # verbose
+        True,  # clean
+        True,  # resume
+        True,  # force
+    )
