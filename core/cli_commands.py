@@ -296,6 +296,7 @@ def _build_pre_analysis_event(
         best_frame_strategy="Largest Person",
         scene_detect=True if is_video else False,
         min_mask_area_pct=1.0,
+        min_mask_confidence=0.0,
         sharpness_base_scale=2500.0,
         edge_strength_base_scale=100.0,
         pre_analysis_enabled=True,

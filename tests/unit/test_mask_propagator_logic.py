@@ -63,9 +63,9 @@ class TestMaskPropagatorLogic:
         """Test successful video propagation flow."""
         # Setup mocks
         # Forward: frame 2
-        forward_gen = iter([(2, 1, np.ones((100, 100), dtype=bool))])
+        forward_gen = iter([(2, 1, np.ones((100, 100), dtype=bool), 1.0)])
         # Backward: frame 0
-        backward_gen = iter([(0, 1, np.ones((100, 100), dtype=bool))])
+        backward_gen = iter([(0, 1, np.ones((100, 100), dtype=bool), 1.0)])
 
         mock_sam3_wrapper.propagate.side_effect = [forward_gen, backward_gen]
 
@@ -111,7 +111,7 @@ class TestMaskPropagatorLogic:
         mock_sam3_wrapper.add_bbox_prompt.return_value = None
 
         # Propagation returns None masks
-        mock_sam3_wrapper.propagate.return_value = iter([(1, 1, None)])
+        mock_sam3_wrapper.propagate.return_value = iter([(1, 1, None, 1.0)])
 
         masks, areas, empties, errors = mask_propagator.propagate_video(
             video_path="video.mp4",
@@ -158,9 +158,9 @@ class TestMaskPropagatorLogic:
 
         # Mock propagate to return some frames then we cancel
         def gen():
-            yield (1, 1, np.ones((10, 10), dtype=bool))
+            yield (1, 1, np.ones((10, 10), dtype=bool), 1.0)
             mask_propagator.cancel_event.set()
-            yield (2, 1, np.ones((10, 10), dtype=bool))
+            yield (2, 1, np.ones((10, 10), dtype=bool), 1.0)
 
         mock_sam3_wrapper.propagate.return_value = gen()
 
@@ -215,7 +215,7 @@ class TestMaskPropagatorLogic:
 
     def test_executor_cleanup_on_failure(self, mask_propagator, mock_sam3_wrapper):
         """Test ThreadPoolExecutor cleanup on failure."""
-        mock_sam3_wrapper.propagate.return_value = iter([(1, 1, np.ones((10, 10), dtype=bool))])
+        mock_sam3_wrapper.propagate.return_value = iter([(1, 1, np.ones((10, 10), dtype=bool), 1.0)])
 
         # Mock postprocess_mask to raise error for one frame
         with patch("core.scene_utils.mask_propagator.postprocess_mask", side_effect=Exception("post failure")):
@@ -243,9 +243,9 @@ class TestMaskPropagatorLogic:
         # Setup many frames to trigger frame_idx % 50 == 0
         frames = [0, 50, 100]
         # Forward: frame 50
-        forward_gen = iter([(50, 1, np.ones((10, 10), dtype=bool))])
+        forward_gen = iter([(50, 1, np.ones((10, 10), dtype=bool), 1.0)])
         # Backward: frame 0
-        backward_gen = iter([(0, 1, np.ones((10, 10), dtype=bool))])
+        backward_gen = iter([(0, 1, np.ones((10, 10), dtype=bool), 1.0)])
 
         mock_sam3_wrapper.propagate.side_effect = [forward_gen, backward_gen]
 
@@ -277,7 +277,7 @@ class TestMaskPropagatorLogic:
         """Test legacy propagate method success path."""
         frames = [np.zeros((10, 10, 3), dtype=np.uint8)] * 3
         mock_sam3_wrapper.propagate.side_effect = [
-            iter([(1, 1, np.ones((10, 10), dtype=bool))]),  # Forward from 0
+            iter([(1, 1, np.ones((10, 10), dtype=bool), 1.0)]),  # Forward from 0
             iter([]),  # Backward
         ]
 

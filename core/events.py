@@ -82,6 +82,7 @@ class PreAnalysisEvent(UIEvent):
     scene_detect: bool = True
     text_prompt: str = ""
     min_mask_area_pct: float = Field(default=1.0, gt=0, le=100)
+    min_mask_confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     sharpness_base_scale: float = Field(default=2500.0, gt=0)
     edge_strength_base_scale: float = Field(default=100.0, gt=0)
     pre_analysis_enabled: bool = True
