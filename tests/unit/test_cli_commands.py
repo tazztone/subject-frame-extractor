@@ -57,6 +57,25 @@ class TestCLICommands:
                 run_extract(str(source), str(output), "nth", 10, 1080, 0.5, True, False, False, False)
                 mock_exec.assert_not_called()
 
+    def test_run_extract_fingerprint_error(self, mock_runtime, tmp_path):
+        source = tmp_path / "test.mp4"
+        source.touch()
+        output = tmp_path / "out"
+        output.mkdir()
+
+        with (
+            patch("core.cli_commands.load_fingerprint", return_value={"created_at": "now"}),
+            patch("core.cli_commands.create_fingerprint", side_effect=Exception("mocked error")),
+            patch("core.cli_commands.click.secho") as mock_secho,
+            patch("core.cli_commands.execute_extraction") as mock_exec,
+            patch("core.cli_commands._run_pipeline") as mock_run,
+        ):
+            run_extract(str(source), str(output), "nth", 10, 1080, 0.5, True, False, False, False)
+
+            mock_secho.assert_any_call("⚠️ Could not verify fingerprint: mocked error", fg="yellow")
+            mock_exec.assert_called_once()
+            mock_run.assert_called_once()
+
     def test_run_analyze(self, mock_runtime, tmp_path):
         source = tmp_path / "test.mp4"
         source.touch()
