@@ -1,4 +1,3 @@
-import gc
 from collections import OrderedDict
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
@@ -60,12 +59,6 @@ class ThumbnailManager:
         except Exception as e:
             self.logger.warning("Failed to load thumbnail with Pillow", extra={"path": str(thumb_path), "error": e})
             return None
-
-    def clear_cache(self):
-        """Standard cache clearing and GC triggering."""
-        self.cache.clear()
-        self.current_bytes = 0
-        gc.collect()
 
     def _cleanup_old_entries(self):
         num_to_remove = int(self.max_count * self.config.cache_eviction_factor)
