@@ -125,20 +125,26 @@ class SubjectDetector:
         valid_scores = scores[mask]
         valid_class_ids = class_ids[mask]
 
+        if len(valid_preds) == 0:
+            return []
+
+        # Vectorized bbox unscaling
+        cxs, cys, bws, bhs = valid_preds[:, 0], valid_preds[:, 1], valid_preds[:, 2], valid_preds[:, 3]
+        x1s = np.clip((cxs - bws / 2 - pad_left) / scale, 0, w).astype(int)
+        y1s = np.clip((cys - bhs / 2 - pad_top) / scale, 0, h).astype(int)
+        x2s = np.clip((cxs + bws / 2 - pad_left) / scale, 0, w).astype(int)
+        y2s = np.clip((cys + bhs / 2 - pad_top) / scale, 0, h).astype(int)
+
         results = []
         for i in range(len(valid_preds)):
-            det = valid_preds[i]
-            cx, cy, bw, bh = det[:4]
-            score = float(valid_scores[i])
-            class_id = int(valid_class_ids[i])
-
-            # Unscale letterbox
-            x1 = max(0, int((cx - bw / 2 - pad_left) / scale))
-            y1 = max(0, int((cy - bh / 2 - pad_top) / scale))
-            x2 = min(w, int((cx + bw / 2 - pad_left) / scale))
-            y2 = min(h, int((cy + bh / 2 - pad_top) / scale))
-
-            results.append(SubjectDetection(bbox=[x1, y1, x2, y2], conf=score, class_id=class_id, type="yolo26n"))
+            results.append(
+                SubjectDetection(
+                    bbox=[int(x1s[i]), int(y1s[i]), int(x2s[i]), int(y2s[i])],
+                    conf=float(valid_scores[i]),
+                    class_id=int(valid_class_ids[i]),
+                    type="yolo26n",
+                )
+            )
 
         return results
 
@@ -169,34 +175,35 @@ class SubjectDetector:
         valid_scores = scores[mask]
         valid_class_ids = class_ids[mask]
 
+        if len(valid_preds) == 0:
+            return []
+
+        # 1. Vectorized bbox unscaling
+        cxs, cys, bws, bhs = valid_preds[:, 0], valid_preds[:, 1], valid_preds[:, 2], valid_preds[:, 3]
+        x1s = np.clip((cxs - bws / 2 - pad_left) / scale, 0, w).astype(int)
+        y1s = np.clip((cys - bhs / 2 - pad_top) / scale, 0, h).astype(int)
+        x2s = np.clip((cxs + bws / 2 - pad_left) / scale, 0, w).astype(int)
+        y2s = np.clip((cys + bhs / 2 - pad_top) / scale, 0, h).astype(int)
+
+        # 2. Vectorized mask decoding
+        c, mh, mw = proto.shape
+        coeffs = valid_preds[:, -num_masks:]
+        soft_masks = (coeffs @ proto.reshape(c, -1)).reshape(-1, mh, mw)
+        soft_masks = 1 / (1 + np.exp(-soft_masks))  # Sigmoid
+
+        # 3. Vectorized mask clipping bounds
+        mx1s = np.clip((cxs - bws / 2) * (mw / self.input_size), 0, mw).astype(int)
+        my1s = np.clip((cys - bhs / 2) * (mh / self.input_size), 0, mh).astype(int)
+        mx2s = np.clip((cxs + bws / 2) * (mw / self.input_size), 0, mw).astype(int)
+        my2s = np.clip((cys + bhs / 2) * (mh / self.input_size), 0, mh).astype(int)
+
         results = []
         for i in range(len(valid_preds)):
-            det = valid_preds[i]
-            cx, cy, bw, bh = det[:4]
-            score = float(valid_scores[i])
-            class_id = int(valid_class_ids[i])
-            coeffs = det[-num_masks:]  # The last M values are mask coefficients
-
-            # 1. Unscale bbox
-            x1 = max(0, int((cx - bw / 2 - pad_left) / scale))
-            y1 = max(0, int((cy - bh / 2 - pad_top) / scale))
-            x2 = min(w, int((cx + bw / 2 - pad_left) / scale))
-            y2 = min(h, int((cy + bh / 2 - pad_top) / scale))
-
-            # 2. Decode mask: coeffs (32) @ proto (32, 160, 160) → (160, 160)
-            c, mh, mw = proto.shape
-            soft_mask = (coeffs @ proto.reshape(c, -1)).reshape(mh, mw)
-            soft_mask = 1 / (1 + np.exp(-soft_mask))  # Sigmoid
-
-            # 3. Clip mask to detection box in 160x160 space
-            mx1, my1 = int((cx - bw / 2) * (mw / self.input_size)), int((cy - bh / 2) * (mh / self.input_size))
-            mx2, my2 = int((cx + bw / 2) * (mw / self.input_size)), int((cy + bh / 2) * (mh / self.input_size))
+            mx1, my1, mx2, my2 = mx1s[i], my1s[i], mx2s[i], my2s[i]
 
             # Mask post-process (simple cropping to avoid artifacts outside bbox)
-            crop_mask = np.zeros_like(soft_mask)
-            my1, my2 = max(0, my1), min(mh, my2)
-            mx1, mx2 = max(0, mx1), min(mw, mx2)
-            crop_mask[my1:my2, mx1:mx2] = soft_mask[my1:my2, mx1:mx2]
+            crop_mask = np.zeros((mh, mw), dtype=soft_masks.dtype)
+            crop_mask[my1:my2, mx1:mx2] = soft_masks[i, my1:my2, mx1:mx2]
 
             # 4. Resize mask to original frame size
             full_mask = cv2.resize(crop_mask, (w, h))
@@ -204,7 +211,11 @@ class SubjectDetector:
 
             results.append(
                 SubjectDetection(
-                    bbox=[x1, y1, x2, y2], conf=score, class_id=class_id, type="yolo12l_seg", mask=bool_mask
+                    bbox=[int(x1s[i]), int(y1s[i]), int(x2s[i]), int(y2s[i])],
+                    conf=float(valid_scores[i]),
+                    class_id=int(valid_class_ids[i]),
+                    type="yolo12l_seg",
+                    mask=bool_mask,
                 )
             )
 
