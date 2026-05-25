@@ -413,29 +413,3 @@ def test_validate_out_methods(mock_validate):
     assert result == "/mock/path"
 
 
-def test_validate_strategy_consistency():
-    """Test PreAnalysisEvent validate_strategy_consistency logic."""
-    common_args = {
-        "output_folder": "out",
-        "video_path": "video.mp4",
-        "face_model_name": "buffalo_l",
-        "tracker_model_name": "sam3",
-        "best_frame_strategy": "Largest Person",
-        "min_mask_area_pct": 1.0,
-        "sharpness_base_scale": 2500.0,
-        "edge_strength_base_scale": 100.0,
-        "primary_seed_strategy": "Find Prominent Person",
-        "pre_sample_nth": 1,
-    }
-
-    with patch("core.events.validate_writable_directory", return_value="out"):
-        # Test branch: face_ref_img_path is empty but compute_face_sim is True
-        event1 = PreAnalysisEvent(**common_args, face_ref_img_path="", compute_face_sim=True)
-        assert event1.face_ref_img_path == ""
-        assert event1.compute_face_sim is True
-
-        # Test branch: face_ref_img_path is provided
-        with patch("core.events.Path.is_file", return_value=True):
-            event2 = PreAnalysisEvent(**common_args, face_ref_img_path="existent.jpg", compute_face_sim=True)
-            assert event2.face_ref_img_path == "existent.jpg"
-            assert event2.compute_face_sim is True

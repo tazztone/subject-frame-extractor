@@ -1796,8 +1796,6 @@ def test_validate_face_ref():
 @patch('core.events.validate_writable_directory')
 def test_validate_out_methods(mock_validate):
     """Test that validate_out classmethods correctly delegate to validate_writable_d..."""
-def test_validate_strategy_consistency():
-    """Test PreAnalysisEvent validate_strategy_consistency logic."""
 ```
 
 ### `📄 tests/unit/test_exit_branches.py`

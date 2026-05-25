@@ -630,9 +630,6 @@ class PreAnalysisEvent(UIEvent):
     @classmethod
     def validate_face_ref(cls, v: str, info) -> str:
         """Validates that the reference image path is a valid image file."""
-    @model_validator(mode='after')
-    def validate_strategy_consistency(self) -> 'PreAnalysisEvent':
-        """Ensures that dependent settings (like face filter) are consistent with availa..."""
 class PropagationEvent(UIEvent):
     """Data model for the mask propagation stage."""
     @field_validator('output_folder')
