@@ -287,7 +287,5 @@ def test_migrate_failure_logging(db_path):
 def test_sql_injection_prevention(db_path):
     """Test that invalid column names raise a ValueError to prevent SQL injection."""
     db = Database(db_path, batch_size=1)
-    db.columns.append('invalid_col"); DROP TABLE metadata; --')
-
     with pytest.raises(ValueError, match="Invalid column name: invalid_col"):
-        db.insert_metadata({"filename": "test.jpg"})
+        db.columns = list(db.columns) + ['invalid_col"); DROP TABLE metadata; --']
