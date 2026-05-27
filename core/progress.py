@@ -2,18 +2,20 @@
 Progress Tracking Infrastructure for Frame Extractor & Analyzer
 """
 
+from __future__ import annotations
+
 import gettext
 import threading
 import time
 from queue import Queue
 from typing import TYPE_CHECKING, Callable, Optional
 
-_ = gettext.gettext
-
 from pydantic import BaseModel
 
 if TYPE_CHECKING:
     from core.logger import AppLogger
+
+_ = gettext.gettext
 
 
 class ProgressEvent(BaseModel):
@@ -37,7 +39,7 @@ class AdvancedProgressTracker:
         self,
         progress: Optional[Callable] = None,
         queue: Optional[Queue] = None,
-        logger: Optional["AppLogger"] = None,
+        logger: Optional[AppLogger] = None,
         ui_stage_name: str = "",
         eta_precision: str = "coarse",
     ):
