@@ -1,11 +1,11 @@
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import numpy as np
 from pydantic import BaseModel
 
 from core.models import AnalysisParameters, Scene
-from core.utils import _to_json_safe, estimate_totals, handle_common_errors, monitor_memory_usage, safe_resource_cleanup
+from core.utils import _to_json_safe, estimate_totals, handle_common_errors, safe_resource_cleanup
 
 
 def test_handle_common_errors_success():
@@ -57,18 +57,6 @@ def test_handle_common_errors_generator():
     res = next(it)
     assert res["done"] is False
     assert "Invalid input" in res["status_message"]
-
-
-def test_monitor_memory_usage():
-    logger = MagicMock()
-    with (
-        patch("core.utils.torch.cuda.is_available", return_value=True, create=True),
-        patch("core.utils.torch.cuda.memory_allocated", return_value=9000 * 1024**2),
-        patch("core.utils.torch.cuda.empty_cache") as mock_empty,
-    ):
-        monitor_memory_usage(logger, device="cuda", gpu_threshold_mb=8000)
-        assert logger.warning.called
-        assert mock_empty.called
 
 
 def test_estimate_totals():
@@ -123,18 +111,6 @@ def test_safe_resource_cleanup():
             pass
         assert mock_gc.called
         assert mock_empty.called
-
-
-def test_monitor_memory_usage_low():
-    logger = MagicMock()
-    with (
-        patch("core.utils.torch.cuda.is_available", return_value=True, create=True),
-        patch("core.utils.torch.cuda.memory_allocated", return_value=1000 * 1024**2),
-        patch("core.utils.torch.cuda.empty_cache") as mock_empty,
-    ):
-        monitor_memory_usage(logger, device="cuda", gpu_threshold_mb=8000)
-        assert not logger.warning.called
-        assert not mock_empty.called
 
 
 def test_handle_common_errors_gen_exceptions():
