@@ -321,6 +321,38 @@ class TestErrorHandlerDecorators:
 
         assert "Fallback failed" in str(exc_info.value)
 
+    def test_with_notify_success(self, mock_logger):
+        """Test with_notify when primary function succeeds."""
+        from core.error_handling import ErrorHandler
+
+        handler = ErrorHandler(mock_logger, max_attempts=3, backoff_seconds=[0.01])
+
+        @handler.with_notify(default_return="default")
+        def succeeds():
+            return "success"
+
+        result = succeeds()
+
+        assert result == "success"
+
+    def test_with_notify_failure(self, mock_logger):
+        """Test with_notify when primary function fails."""
+        from core.error_handling import ErrorHandler
+
+        handler = ErrorHandler(mock_logger, max_attempts=3, backoff_seconds=[0.01])
+
+        @handler.with_notify(default_return="default")
+        def fails():
+            raise ValueError("Primary failed")
+
+        result = fails()
+
+        assert result == "default"
+        # Since mock_logger is an ordinary Mock (or similar) from conftest,
+        # its warning method should have been called via _log_with_component.
+        # Check that warning was called
+        assert mock_logger.warning.called
+
 
 class TestErrorSeverityAndRecoveryStrategy:
     """Tests for ErrorSeverity and RecoveryStrategy enums."""
@@ -342,6 +374,7 @@ class TestErrorSeverityAndRecoveryStrategy:
         assert RecoveryStrategy.FALLBACK.value == "fallback"
         assert RecoveryStrategy.SKIP.value == "skip"
         assert RecoveryStrategy.ABORT.value == "abort"
+        assert RecoveryStrategy.NOTIFY.value == "notify"
 
 
 if __name__ == "__main__":
