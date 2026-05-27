@@ -132,15 +132,6 @@ class PreAnalysisEvent(UIEvent):
             return ""
         return v
 
-    @model_validator(mode="after")
-    def validate_strategy_consistency(self) -> "PreAnalysisEvent":
-        """Ensures that dependent settings (like face filter) are consistent with available data."""
-        if not self.face_ref_img_path and self.compute_face_sim:
-            # We don't necessarily turn it off, but seeding might fallback
-            pass
-        return self
-
-
 class PropagationEvent(UIEvent):
     """
     Data model for the mask propagation stage.
