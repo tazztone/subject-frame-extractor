@@ -69,9 +69,8 @@ def _detect_legacy_version(cursor) -> int:
         return 0
 
     # Check if error_severity column exists
-    cursor.execute("PRAGMA table_info(metadata)")
-    columns = [info[1] for info in cursor.fetchall()]
-    if "error_severity" in columns:
+    cursor.execute("SELECT 1 FROM pragma_table_info('metadata') WHERE name='error_severity'")
+    if cursor.fetchone():
         return 2
 
     return 1
@@ -102,7 +101,6 @@ def _migration_v1_initial_schema(cursor):
 
 def _migration_v2_add_error_severity(cursor):
     """Migration v2: Add error_severity column."""
-    cursor.execute("PRAGMA table_info(metadata)")
-    columns = [info[1] for info in cursor.fetchall()]
-    if "error_severity" not in columns:
+    cursor.execute("SELECT 1 FROM pragma_table_info('metadata') WHERE name='error_severity'")
+    if not cursor.fetchone():
         cursor.execute("ALTER TABLE metadata ADD COLUMN error_severity TEXT")
