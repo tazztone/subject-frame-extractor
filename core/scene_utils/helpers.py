@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import threading
+from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
 from queue import Queue
@@ -26,6 +27,9 @@ from core.image_utils import draw_bbox, render_mask_overlay
 from core.io_utils import create_frame_map
 from core.shared import build_scene_gallery_items
 from core.utils import _to_json_safe
+
+_PREVIEW_CACHE = OrderedDict()
+_PREVIEW_CACHE_MAX_SIZE = 32
 
 
 def draw_boxes_preview(
@@ -297,7 +301,6 @@ def _recompute_single_preview(
     logger: "AppLogger",
 ):
     """Re-runs the seeding process for a single scene and updates its preview image."""
-    # TODO: Add preview caching to avoid redundant regeneration
     # TODO: Support async preview generation for faster UI response
     # TODO: Add comparison view (before/after) for seed changes
     scene = scene_state.scene  # Use .scene property if using refactored SceneState
@@ -314,6 +317,29 @@ def _recompute_single_preview(
     if thumb_rgb is None:
         raise FileNotFoundError(f"Thumbnail for frame {best_frame_num} not found on disk.")
     seed_config = {**masker.params.model_dump(), **overrides}
+
+    cache_key = json.dumps({
+        "shot_id": scene.shot_id,
+        "best_frame": best_frame_num,
+        "seed_config": seed_config,
+    }, sort_keys=True)
+
+    if cache_key in _PREVIEW_CACHE:
+        cached_data = _PREVIEW_CACHE[cache_key]
+        scene_state.update_seed_result(cached_data["bbox"], cached_data["details"])
+        scene.seed_config.update(overrides)
+        if cached_data["score"] is not None:
+            if not scene.seed_metrics:
+                scene.seed_metrics = {}
+            scene.seed_metrics["score"] = cached_data["score"]
+        if cached_data["mask_area_pct"] is not None:
+            if not scene.seed_result.get("details"):
+                scene.seed_result["details"] = {}
+            scene.seed_result["details"]["mask_area_pct"] = cached_data["mask_area_pct"]
+        scene.preview_path = cached_data["preview_path"]
+        _PREVIEW_CACHE.move_to_end(cache_key)
+        return
+
     if overrides.get("text_prompt", "").strip():
         seed_config["primary_seed_strategy"] = "Text Description (Limited)"
         logger.info(
@@ -329,12 +355,15 @@ def _recompute_single_preview(
             scene.seed_metrics = {}
         scene.seed_metrics["score"] = new_score
     mask = masker.get_mask_for_bbox(thumb_rgb, bbox) if bbox else None
+
+    mask_area_pct = None
     if mask is not None:
         h, w = mask.shape[:2]
         area = h * w
         if not scene.seed_result.get("details"):
             scene.seed_result["details"] = {}
-        scene.seed_result["details"]["mask_area_pct"] = (np.sum(mask > 0) / area * 100.0) if area > 0 else 0.0
+        mask_area_pct = (np.sum(mask > 0) / area * 100.0) if area > 0 else 0.0
+        scene.seed_result["details"]["mask_area_pct"] = mask_area_pct
     overlay_rgb = (
         render_mask_overlay(thumb_rgb, mask, 0.6, logger=logger)
         if mask is not None
@@ -357,6 +386,16 @@ def _recompute_single_preview(
     try:
         Image.fromarray(overlay_rgb).save(preview_path)
         scene.preview_path = str(preview_path)
+
+        _PREVIEW_CACHE[cache_key] = {
+            "bbox": bbox,
+            "details": details,
+            "score": new_score,
+            "mask_area_pct": mask_area_pct,
+            "preview_path": scene.preview_path
+        }
+        if len(_PREVIEW_CACHE) > _PREVIEW_CACHE_MAX_SIZE:
+            _PREVIEW_CACHE.popitem(last=False)
     except Exception as e:
         logger.error(f"Failed to save recomputed preview: {e}")
 
