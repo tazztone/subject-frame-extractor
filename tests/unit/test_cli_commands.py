@@ -164,6 +164,15 @@ class TestCLICommands:
         # Should not crash
         run_status(str(output))
 
+    def test_run_status_corrupted_progress(self, tmp_path):
+        output = tmp_path / "out"
+        output.mkdir()
+        progress_path = output / "progress.json"
+        progress_path.write_text("{invalid_json:")
+
+        # Should not crash and should ignore the malformed JSON gracefully
+        run_status(str(output))
+
     def test_run_full(self, mock_runtime, tmp_path):
         source = tmp_path / "test.mp4"
         source.touch()
