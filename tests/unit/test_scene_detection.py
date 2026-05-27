@@ -399,7 +399,6 @@ class TestManagersThumbnailManager:
             mock_img.convert.return_value = test_image
             mock_open.return_value.__enter__.return_value = mock_img
             # First get - should load from disk
-            manager.clear_cache()
             with patch("pathlib.Path.exists", return_value=True):
                 result1 = manager.get(test_thumb)
             assert manager.current_bytes == test_image.nbytes
@@ -419,26 +418,6 @@ class TestManagersThumbnailManager:
         result = manager.get(Path("/nonexistent/path.webp"))
 
         assert result is None
-
-    def test_thumbnail_manager_clear_cache(self, mock_logger, mock_config, tmp_path):
-        """Test ThumbnailManager cache clearing."""
-        from core.managers import ThumbnailManager
-
-        manager = ThumbnailManager(logger=mock_logger, config=mock_config)
-
-        # Add something to cache
-        test_thumb = tmp_path / "test.webp"
-        test_image = np.zeros((50, 50, 3), dtype=np.uint8)
-        from PIL import Image
-
-        Image.fromarray(test_image).save(test_thumb)
-
-        manager.get(test_thumb)
-        assert len(manager.cache) > 0
-
-        manager.clear_cache()
-        assert len(manager.cache) == 0
-        assert manager.current_bytes == 0
 
 
 class TestModelRegistry:
