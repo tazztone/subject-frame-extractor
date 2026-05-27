@@ -154,6 +154,12 @@ def test_extract_invalid_source(runner, tmp_path):
     assert result.exit_code != 0
 
 
+def test_filter_missing_session(runner):
+    result = runner.invoke(cli, ["filter"])
+    assert result.exit_code != 0
+    assert "Missing option '--session'" in result.output
+
+
 @patch("core.cli_commands.execute_analysis_orchestrator")
 @patch("core.cli_commands._setup_runtime")
 @patch("torch.cuda.is_available", return_value=False, create=True)
