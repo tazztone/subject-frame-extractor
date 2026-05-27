@@ -67,7 +67,8 @@ class SAM2Wrapper:
                     m = masks_np[i]
                     if m.ndim == 3:
                         m = m[0]
-                    yield frame_idx, oid, m > 0
+                    # SAM2 propagate_in_video doesn't natively yield confidence scores in this tuple
+                    yield frame_idx, oid, m > 0, 1.0
 
     def add_point_prompt(self, frame_idx, obj_id, points, labels, img_size):
         pts = np.array(points, dtype=np.float32)

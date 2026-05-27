@@ -44,7 +44,6 @@ class SubjectMasker:
     """
 
     # TODO: Add support for tracking multiple subjects simultaneously
-    # TODO: Implement confidence-based mask rejection
     # TODO: Add mask quality assessment metrics
 
     def __init__(

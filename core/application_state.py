@@ -24,6 +24,7 @@ class ApplicationState(BaseModel):
     resume: bool = False
     enable_subject_mask: bool = True
     min_mask_area_pct: float = 1.0
+    min_mask_confidence: float = 0.0
     sharpness_base_scale: float = 2500.0
     edge_strength_base_scale: float = 100.0
     smart_filter_enabled: bool = False

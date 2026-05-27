@@ -168,11 +168,14 @@ class MaskPropagator:
                 self.logger.debug(
                     f"Tracking forward from {start_frame_idx} to {max_fn} ({fwd_steps} steps)", component="propagator"
                 )
-                for frame_idx, obj_id, pred_mask in self.dam_tracker.propagate(
+                for frame_idx, obj_id, pred_mask, score in self.dam_tracker.propagate(
                     start_idx=start_frame_idx, reverse=False, max_frames=fwd_steps
                 ):
                     if self.cancel_event.is_set():
                         break
+
+                    if score < self.params.min_mask_confidence:
+                        pred_mask = None  # Reject mask due to low confidence
 
                     if frame_idx in target_frames:
                         # Protect existing seeds or better masks
@@ -199,11 +202,14 @@ class MaskPropagator:
                 self.logger.debug(
                     f"Tracking backward from {start_frame_idx} to {min_fn} ({bwd_steps} steps)", component="propagator"
                 )
-                for frame_idx, obj_id, pred_mask in self.dam_tracker.propagate(
+                for frame_idx, obj_id, pred_mask, score in self.dam_tracker.propagate(
                     start_idx=start_frame_idx, reverse=True, max_frames=bwd_steps
                 ):
                     if self.cancel_event.is_set():
                         break
+
+                    if score < self.params.min_mask_confidence:
+                        pred_mask = None  # Reject mask due to low confidence
 
                     if frame_idx in target_frames:
                         if pred_mask is not None and np.any(pred_mask):
@@ -372,13 +378,16 @@ class MaskPropagator:
                 for reverse in [False, True]:
                     if self.cancel_event.is_set():
                         break
-                    for frame_idx, obj_id, pred_mask in self.dam_tracker.propagate(start_idx=seed_idx, reverse=reverse):
+                    for frame_idx, obj_id, pred_mask, score in self.dam_tracker.propagate(start_idx=seed_idx, reverse=reverse):
                         if frame_idx == seed_idx:
                             continue
                         if frame_idx < 0 or frame_idx >= len(shot_frames_rgb):
                             continue
                         if self.cancel_event.is_set():
                             break
+
+                        if score < self.params.min_mask_confidence:
+                            pred_mask = None
 
                         if pred_mask is not None and np.any(pred_mask):
                             mask = postprocess_mask(

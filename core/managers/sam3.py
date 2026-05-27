@@ -220,6 +220,7 @@ class SAM3Wrapper:
             frame_idx = resp.get("frame_index")
             out = resp.get("outputs", {})
             masks, ids = out.get("out_binary_masks"), out.get("out_obj_ids")
+            probs = out.get("out_probs")
             if masks is None or ids is None:
                 continue
             if hasattr(masks, "cpu"):
@@ -228,7 +229,8 @@ class SAM3Wrapper:
                 m = masks[i]
                 if m.ndim == 3:
                     m = m[0]
-                yield frame_idx, int(oid), m > 0
+                score = float(probs[i]) if probs is not None and i < len(probs) else 1.0
+                yield frame_idx, int(oid), m > 0, score
 
     def detect_objects(self, frame_rgb: np.ndarray, prompt: str) -> list:
         """Detect objects in a frame using a text prompt."""

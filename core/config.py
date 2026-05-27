@@ -142,6 +142,7 @@ class Config(BaseSettings):
 
     # Missing Defaults
     default_min_mask_area_pct: float = 1.0
+    default_min_mask_confidence: float = 0.0
     default_sharpness_base_scale: float = 2500.0
     default_edge_strength_base_scale: float = 100.0
     filter_default_niqe: Dict[str, float] = Field(
