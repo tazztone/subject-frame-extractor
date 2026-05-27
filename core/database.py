@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
 if TYPE_CHECKING:
-    from core.error_handling import ErrorHandler
+
     from core.logger import AppLogger
 
 from core.db_schema import migrate_database
@@ -29,7 +29,7 @@ class Database:
         self.batch_size = batch_size
         self.logger = logger or logging.getLogger(__name__)
         self.lock = threading.Lock()
-        self.error_handler: Optional["ErrorHandler"] = None
+        self.error_handler: Optional[Any] = None
         self.columns = [
             "filename",
             "face_sim",
