@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import shutil
 import threading
@@ -14,10 +16,11 @@ gr = gr
 
 if TYPE_CHECKING:
     from core.config import Config
+    from core.events import ExtractionEvent
     from core.logger import AppLogger
     from core.managers import ThumbnailManager
 
-from core.events import ExtractionEvent, PreAnalysisEvent, PropagationEvent, SessionLoadEvent
+from core.events import PreAnalysisEvent, PropagationEvent, SessionLoadEvent
 from core.managers import (
     AnalysisPipeline,
     ExtractionPipeline,
@@ -42,7 +45,7 @@ from core.utils import (
 )
 
 
-def _handle_extraction_uploads(event_dict: dict, config: "Config") -> dict:
+def _handle_extraction_uploads(event_dict: dict, config: Config) -> dict:
     """Helper to move uploaded video to downloads directory."""
     if event_dict.get("upload_video"):
         source = Path(event_dict.pop("upload_video"))
@@ -52,7 +55,7 @@ def _handle_extraction_uploads(event_dict: dict, config: "Config") -> dict:
     return event_dict
 
 
-def _handle_pre_analysis_uploads(event_dict: dict, config: "Config") -> dict:
+def _handle_pre_analysis_uploads(event_dict: dict, config: Config) -> dict:
     """Helper to move uploaded face reference image to downloads directory."""
     if event_dict.get("face_ref_img_upload"):
         ref = Path(event_dict.pop("face_ref_img_upload"))
@@ -64,15 +67,15 @@ def _handle_pre_analysis_uploads(event_dict: dict, config: "Config") -> dict:
 
 @handle_common_errors
 def execute_extraction(
-    event: "ExtractionEvent",
+    event: ExtractionEvent,
     progress_queue: Queue,
     cancel_event: threading.Event,
-    logger: "AppLogger",
-    config: "Config",
-    thumbnail_manager: Optional["ThumbnailManager"] = None,
+    logger: AppLogger,
+    config: Config,
+    thumbnail_manager: Optional[ThumbnailManager] = None,
     cuda_available: Optional[bool] = None,
     progress: Optional[Callable] = None,
-    model_registry: Optional["ModelRegistry"] = None,
+    model_registry: Optional[ModelRegistry] = None,
 ) -> Generator[dict, None, None]:
     event_dict = _handle_extraction_uploads(event.model_dump(), config)
     params = AnalysisParameters.from_ui(logger, config, **event_dict)
@@ -114,15 +117,15 @@ def execute_extraction(
 
 @handle_common_errors
 def execute_pre_analysis(
-    event: "PreAnalysisEvent",
+    event: PreAnalysisEvent,
     progress_queue: Queue,
     cancel_event: threading.Event,
-    logger: "AppLogger",
-    config: "Config",
-    thumbnail_manager: "ThumbnailManager",
+    logger: AppLogger,
+    config: Config,
+    thumbnail_manager: ThumbnailManager,
     cuda_available: bool,
     progress: Optional[Callable] = None,
-    model_registry: Optional["ModelRegistry"] = None,
+    model_registry: Optional[ModelRegistry] = None,
     loaded_models: Optional[dict] = None,
 ) -> Generator[dict, None, None]:
     # Import gradio only when needed to keep test dependencies light
@@ -177,7 +180,7 @@ def validate_session_dir(path: str) -> bool:
     return p is not None and err is None
 
 
-def execute_session_load(event: SessionLoadEvent | dict, logger: "AppLogger") -> dict:
+def execute_session_load(event: SessionLoadEvent | dict, logger: AppLogger) -> dict:
     if isinstance(event, dict):
         event = SessionLoadEvent(**event)
     return _execute_session_load(event, logger)
@@ -188,12 +191,12 @@ def execute_propagation(
     event: PropagationEvent,
     progress_queue: Queue,
     cancel_event: threading.Event,
-    logger: "AppLogger",
-    config: "Config",
-    thumbnail_manager: "ThumbnailManager",
+    logger: AppLogger,
+    config: Config,
+    thumbnail_manager: ThumbnailManager,
     cuda_available: bool,
     progress: Optional[Callable] = None,
-    model_registry: Optional["ModelRegistry"] = None,
+    model_registry: Optional[ModelRegistry] = None,
     loaded_models: Optional[dict] = None,
 ) -> Generator[dict, None, None]:
     params = AnalysisParameters.from_ui(logger, config, **event.analysis_params.model_dump())
@@ -240,12 +243,12 @@ def execute_analysis(
     event: PropagationEvent,
     progress_queue: Queue,
     cancel_event: threading.Event,
-    logger: "AppLogger",
-    config: "Config",
-    thumbnail_manager: "ThumbnailManager",
+    logger: AppLogger,
+    config: Config,
+    thumbnail_manager: ThumbnailManager,
     cuda_available: bool,
     progress: Optional[Callable] = None,
-    model_registry: Optional["ModelRegistry"] = None,
+    model_registry: Optional[ModelRegistry] = None,
     loaded_models: Optional[dict] = None,
 ) -> Generator[dict, None, None]:
     params = AnalysisParameters.from_ui(logger, config, **event.analysis_params.model_dump())
@@ -280,15 +283,15 @@ def execute_analysis(
 
 @handle_common_errors
 def execute_analysis_orchestrator(
-    event: "PreAnalysisEvent",
+    event: PreAnalysisEvent,
     progress_queue: Queue,
     cancel_event: threading.Event,
-    logger: "AppLogger",
-    config: "Config",
-    thumbnail_manager: "ThumbnailManager",
+    logger: AppLogger,
+    config: Config,
+    thumbnail_manager: ThumbnailManager,
     cuda_available: bool,
     progress: Optional[Callable] = None,
-    model_registry: Optional["ModelRegistry"] = None,
+    model_registry: Optional[ModelRegistry] = None,
 ) -> Generator[dict, None, None]:
     """Orchestrates Pre-Analysis, Propagation, and Analysis stages."""
     # Ensure model_registry is not None
@@ -382,15 +385,15 @@ def execute_analysis_orchestrator(
 
 @handle_common_errors
 def execute_full_pipeline(
-    event: "ExtractionEvent",
+    event: ExtractionEvent,
     progress_queue: Queue,
     cancel_event: threading.Event,
-    logger: "AppLogger",
-    config: "Config",
-    thumbnail_manager: "ThumbnailManager",
+    logger: AppLogger,
+    config: Config,
+    thumbnail_manager: ThumbnailManager,
     cuda_available: bool,
     progress: Optional[Callable] = None,
-    model_registry: Optional["ModelRegistry"] = None,
+    model_registry: Optional[ModelRegistry] = None,
 ) -> Generator[dict, None, None]:
     """Orchestrates the entire flow: Extraction -> Pre-Analysis -> Propagation -> Analysis."""
     # 1. Extraction
