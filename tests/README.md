@@ -59,10 +59,10 @@ The project uses GitHub Actions (`.github/workflows/ci.yml`) for automated verif
 
 To ensure fast execution and hardware independence, all **Unit Tests** must completely mock the following:
 - **ML Models**: Mock `ModelRegistry.get_tracker`, `get_face_analyzer`, and `TrackerFactory`.
-- **SAM3**: SAM3 **is** globally mocked in unit mode via `sys.modules` (see `conftest.py`). Integration tests that need the real SAM3 editable install must set `PYTEST_INTEGRATION_MODE=true`. Never patch `download_ckpt_from_hf` — it breaks local checkpoint resolution.
-- **GPU/Torch**: `tests/conftest.py` promotes `torch.cuda` to a real `ModuleType` instance (not just a `MagicMock`). This provides stable access to `OutOfMemoryError` and `is_available` across parallel workers.
-- **OOM Testing**: Use `from tests.conftest import OutOfMemoryError` (not `torch.cuda.OutOfMemoryError`) when testing CUDA memory exhaustion paths. The global torch mock maps `torch.cuda.OutOfMemoryError` to this class.
-- **No-op Context Managers**: `TransparentContext` (defined in `conftest.py`) replaces `torch.no_grad()` and `torch.inference_mode()` in mocked environments.
+- **SAM3**: SAM3 **is** globally mocked in unit mode via `sys.modules` (see `tests/helpers/mock_env.py`). Integration tests that need the real SAM3 editable install must set `PYTEST_INTEGRATION_MODE=true`. Never patch `download_ckpt_from_hf` — it breaks local checkpoint resolution.
+- **GPU/Torch**: `tests/helpers/mock_env.py` promotes `torch.cuda` to a real `ModuleType` instance (not just a `MagicMock`). This provides stable access to `OutOfMemoryError` and `is_available` across parallel workers.
+- **OOM Testing**: Use `from tests.conftest import OutOfMemoryError` (or `from tests.helpers.mock_env import OutOfMemoryError`) when testing CUDA memory exhaustion paths. The global torch mock maps `torch.cuda.OutOfMemoryError` to this class.
+- **No-op Context Managers**: `TransparentContext` (defined in `tests/helpers/mock_env.py`, re-exported by `conftest.py`) replaces `torch.no_grad()` and `torch.inference_mode()` in mocked environments.
 - `test_enums.py`: Verifies `SceneStatus`, `PropagationDirection`, and COCO ID resolution.
 - `test_yolo_expansion.py`: [NEW] Verifies detection and segmentation for multiple COCO classes (cars, birds, etc.).
 - `test_system_health.py`: Verifies diagnostic checks and environment validation.
@@ -73,9 +73,22 @@ To ensure fast execution and hardware independence, all **Unit Tests** must comp
 - **Requirement**: Always include `create=True` in `patch("torch.cuda.is_available", ...)` when targeting attributes that may not exist on the base mock.
 - **NIQE/PyIQA Imports**: `torch.hub` must be fully mocked (including `download_url_to_file`, `get_dir`, and `load_state_dict_from_url`) to prevent collection-time crashes during `pyiqa` imports.
 
+### Deep Module Hierarchy & Wiring
+
+When mocking complex third-party packages (e.g., `mediapipe.tasks.python.vision`, `yt_dlp.utils`, `matplotlib.pyplot`), you **must** wire the mock modules into a proper parent-child hierarchy in `tests/helpers/mock_env.py`.
+1. **ModuleType vs MagicMock**: `types.ModuleType` does NOT auto-create attributes. If the source code accesses `module.Attribute` (e.g., `vision.FaceLandmarkerOptions`), that attribute must be explicitly defined in the mock `ModuleType` definition.
+2. **Import Resolution**: When production code does `from X import Y` (e.g., `from mediapipe.tasks.python import vision`), Python expects the parent module `X` to have an attribute `Y` that points to the exact same object as `sys.modules["X.Y"]`. If they differ, `unittest.mock.patch("X.Y.target")` will patch a different object than the one held by the production code, causing tests to fail.
+3. **Pattern**: Always define child mocks first, then inject them into the parent's attributes:
+   ```python
+   _mp_vision_mod = _create_mock_module("mediapipe.tasks.python.vision", {"FaceLandmarker": MagicMock()})
+   _mp_tasks_python_mod = _create_mock_module("mediapipe.tasks.python", {"vision": _mp_vision_mod})
+   ```
+
 ### Mock Mode Priority Rules
 
-`_should_skip_mocks()` uses a three-rule priority chain: (1) `PYTEST_INTEGRATION_MODE=true` env var wins unconditionally; (2) xdist workers inherit the parent environment — set the var in the **parent** shell, not in individual workers; (3) `sys.argv` path inspection as a last resort for direct invocations.
+`_should_skip_mocks()` (in `tests/conftest.py`) uses a three-rule priority chain: (1) `PYTEST_INTEGRATION_MODE=true` env var wins unconditionally; (2) xdist workers inherit the parent environment — set the var in the **parent** shell, not in individual workers; (3) `sys.argv` path inspection as a last resort for direct invocations.
+
+**Mock Source of Truth**: All `sys.modules` mock definitions live in `tests/helpers/mock_env.py`. Both `tests/conftest.py` (unit tests) and `tests/mock_app.py` (UI test server) import from this single module via `install_mocks()`. Do **not** define new mock modules elsewhere.
 
 ## Gradio & Pyright Resiliency
 
@@ -206,7 +219,33 @@ The Gradio 5 `gr.Dropdown` uses a custom list component rather than a native HTM
 Mock backend updates can take standard reactive cycles (~50-200ms).
 - **Strategy**: Always use `expect(...).to_contain_text(..., timeout=10000)` instead of direct equality checks. Static status messages like "System Reset Ready." are the standard "idleness" indicator.
 
+
+---
+
+## Roadblocks & Key Takeaways
+
+During the mock consolidation and refactoring, several significant technical roadblocks were encountered and resolved. These findings are captured below to guide future mock implementations and test design.
+
+### 🛑 Technical Roadblocks
+
+1. **Headless Collection Crash (`mediapipe` / PortAudio)**
+   - **Problem:** Eager imports of packages like `mediapipe` or sound-processing tools (PortAudio) inside core backend classes would crash pytest test collection in headless/ci environments where systemic dynamic libraries are missing.
+   - **Resolution:** Centralized mocking in `tests/helpers/mock_env.py` intercepts these modules early during test initialization. By stubbing `sys.modules` before any application modules are evaluated, we isolate tests from environment-dependent system libraries.
+
+2. **Deep Module Mock Wiring Rules**
+   - **Problem:** When testing code that uses nested import styles (e.g., `from mediapipe.tasks.python import vision`), a basic mock under `sys.modules["mediapipe.tasks.python.vision"]` is not enough. If it is not explicitly attached as an attribute of the parent module mock, imports fail or resolve to distinct mock objects, causing `patch()` calls to target the wrong instance.
+   - **Resolution:** A strict parent-child wiring pattern is required for mock modules. We must create the child mock module first, then assign it directly to the corresponding attribute of the parent mock module before registering it in `sys.modules`.
+
+3. **MagicMock vs ModuleType for Standard Namespaces**
+   - **Problem:** Using `MagicMock` as a global mock for standard namespaces like `torch` or `matplotlib.pyplot` can cause issues. Because `MagicMock` auto-creates attributes on access, it can hide genuine import or usage errors. Conversely, standard namespace components that are accessed directly (such as `torch.cuda.OutOfMemoryError` or `matplotlib.pyplot.subplots`) will fail at runtime if not explicitly supported or if they are called inside exception blocks (`except OutOfMemoryError`).
+   - **Resolution:** Promote standard modules (like `torch.cuda` or `plt`) to `types.ModuleType` instances in `tests/helpers/mock_env.py` and populate the necessary functions, classes, and exceptions explicitly.
+
+4. **Testing Fallback Logic with Globally Mocked Dependencies**
+   - **Problem:** If a production module contains fallback logic (e.g., `try: import matplotlib; except ImportError:` to enable/disable visualization features), a global mock will prevent the `ImportError` from triggering.
+   - **Resolution:** Tests verifying missing-dependency fallbacks must temporarily un-mock or override the local references within the target module during the test execution, then restore them in a clean tear-down block.
+
 ---
 
 ## Appendix: GPU Accuracy Metrics
 ...
+

@@ -11,6 +11,12 @@ project_root = Path(__file__).parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+# Install mocks BEFORE any core/ui imports to prevent PortAudio, CUDA,
+# and native library crashes in the mock app subprocess.
+from tests.helpers.mock_env import install_mocks
+
+install_mocks()
+
 import gradio as gr
 import numpy as np
 from PIL import Image
@@ -28,76 +34,6 @@ import ui.handlers.pipeline_handlers as ph
 from core.application_state import ApplicationState
 from core.models import Scene
 from core.pipelines import ExtractionPipeline
-
-# --- 1. Mock Heavy Dependencies ---
-
-
-def create_mock_module(name, attributes=None):
-    mock_mod = types.ModuleType(name)
-    if attributes:
-        for attr, val in attributes.items():
-            setattr(mock_mod, attr, val)
-    return mock_mod
-
-
-# Mock Torch
-mock_torch = MagicMock(name="torch")
-mock_torch.cuda.is_available.return_value = False
-mock_torch.__version__ = "2.0.0"
-mock_torch.nn.Module = MagicMock
-mock_torch.Tensor = MagicMock
-
-
-class TransparentContext:
-    def __enter__(self, *args, **kwargs):
-        return self
-
-    def __exit__(self, *args, **kwargs):
-        pass
-
-    def __call__(self, func=None):
-        return func if func else self
-
-
-mock_torch.no_grad = TransparentContext
-mock_torch.inference_mode = TransparentContext
-
-# Setup sys.modules mocks before any other imports
-modules_to_mock = [
-    "torch",
-    "torch.cuda",
-    "torch.nn",
-    "torchvision",
-    "torchvision.ops",
-    "torchvision.transforms",
-    "insightface",
-    "insightface.app",
-    "sam3",
-    "sam3.model_builder",
-    "mediapipe",
-    "pyiqa",
-    "scenedetect",
-    "yt_dlp",
-    "numba",
-    "lpips",
-    "matplotlib",
-    "matplotlib.pyplot",
-    "skimage",
-    "skimage.metrics",
-    "safetensors",
-    "onnxruntime",
-    "sam3.model",
-    "sam3.utils",
-    "sam3.model.sam3_video_predictor",
-    "sam3.model.sam3_video_inference",
-    "sam3.model.sam3_base_predictor",
-    "sam3.model.sam3_multiplex_video_predictor",
-    "sam3.model.sam3_multiplex_tracking",
-    "sam3.model.sam3_multiplex_base",
-]
-
-for mod_name in modules_to_mock:
-    sys.modules[mod_name] = MagicMock()
 
 # --- 2. Pipeline Mock Logic ---
 

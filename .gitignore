@@ -216,7 +216,7 @@ __marimo__/
 .streamlit/secrets.toml
 
 # others
-.vscode/settings.json
+.vscode
 run_config.json
 models/*
 logs/*
