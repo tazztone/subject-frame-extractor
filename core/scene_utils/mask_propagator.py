@@ -340,9 +340,15 @@ class MaskPropagator:
         with tempfile.TemporaryDirectory() as temp_dir:
             try:
                 # Save frames to temp directory for SAM3
-                for i, img in enumerate(shot_frames_rgb):
-                    pil_img = rgb_to_pil(img)
-                    pil_img.save(os.path.join(temp_dir, f"{i:05d}.jpg"))
+                def _save_img(args: tuple[int, np.ndarray, str]) -> None:
+                    i, img, tdir = args
+                    rgb_to_pil(img).save(os.path.join(tdir, f"{i:05d}.jpg"))
+
+                with ThreadPoolExecutor() as executor:
+                    list(executor.map(
+                        _save_img,
+                        [(i, img, temp_dir) for i, img in enumerate(shot_frames_rgb)]
+                    ))
 
                 # Initialize video session with new API
                 self.dam_tracker.init_video(temp_dir)
