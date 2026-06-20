@@ -45,15 +45,49 @@ def load_and_prep_filter_data(output_dir: str, get_all_filter_keys: Callable, co
         if not cfg:
             continue
         path, alt = cfg.get("path"), cfg.get("alt_path")
+
+        has_path = bool(path)
+        has_alt = bool(alt)
+        path_len = len(path) if has_path else 0
+        alt_len = len(alt) if has_alt else 0
+
         vals = []
-        for f in all_frames:
-            v = None
-            if path:
-                v = f.get(path[0]) if len(path) == 1 else f.get(path[0], {}).get(path[1])
-            if v is None and alt:
-                v = f.get(alt[0]) if len(alt) == 1 else f.get(alt[0], {}).get(alt[1])
-            if v is not None:
-                vals.append(v)
+        if has_path and not has_alt:
+            if path_len == 1:
+                p0 = path[0]
+                vals = [v for f in all_frames if (v := f.get(p0)) is not None]
+            else:
+                p0, p1 = path[0], path[1]
+                vals = [v for f in all_frames if (v := f.get(p0, {}).get(p1)) is not None]
+        elif has_path and has_alt:
+            if path_len == 1 and alt_len == 1:
+                p0, a0 = path[0], alt[0]
+                vals = [v for f in all_frames if (v := f.get(p0)) is not None or (v := f.get(a0)) is not None]
+            elif path_len == 2 and alt_len == 2:
+                p0, p1, a0, a1 = path[0], path[1], alt[0], alt[1]
+                vals = [
+                    v
+                    for f in all_frames
+                    if (v := f.get(p0, {}).get(p1)) is not None or (v := f.get(a0, {}).get(a1)) is not None
+                ]
+            elif path_len == 1 and alt_len == 2:
+                p0, a0, a1 = path[0], alt[0], alt[1]
+                vals = [
+                    v for f in all_frames if (v := f.get(p0)) is not None or (v := f.get(a0, {}).get(a1)) is not None
+                ]
+            elif path_len == 2 and alt_len == 1:
+                p0, p1, a0 = path[0], path[1], alt[0]
+                vals = [
+                    v for f in all_frames if (v := f.get(p0, {}).get(p1)) is not None or (v := f.get(a0)) is not None
+                ]
+        elif not has_path and has_alt:
+            if alt_len == 1:
+                a0 = alt[0]
+                vals = [v for f in all_frames if (v := f.get(a0)) is not None]
+            else:
+                a0, a1 = alt[0], alt[1]
+                vals = [v for f in all_frames if (v := f.get(a0, {}).get(a1)) is not None]
+
         vals = np.asarray(vals, dtype=float)
         if vals.size > 0:
             counts, bins = np.histogram(vals, bins=50, range=cfg.get("range", (0, 100)))
