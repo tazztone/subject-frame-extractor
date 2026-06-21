@@ -51,7 +51,6 @@ class Config(BaseSettings):
     sam3_compile: bool = False
     sam3_use_flash_attention: bool = False
     sam3_use_rope_real: bool = False
-    sam2_checkpoint_url: str = "https://huggingface.co/facebook/sam2.1-hiera-tiny/resolve/main/sam2.1_hiera_tiny.pt"
     yolo26n_url: str = "https://huggingface.co/onnx-community/yolo26n-ONNX/resolve/main/onnx/model_fp16.onnx"
     yolo26s_url: str = "https://huggingface.co/onnx-community/yolo26s-ONNX/resolve/main/onnx/model_fp16.onnx"
     yolo26m_url: str = "https://huggingface.co/onnx-community/yolo26m-ONNX/resolve/main/onnx/model_fp16.onnx"

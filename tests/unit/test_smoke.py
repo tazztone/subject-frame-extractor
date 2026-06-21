@@ -105,11 +105,6 @@ class TestImportSmoke:
 
         assert callable(build_tracker)
 
-    def test_import_sam21_wrapper(self):
-        from core.managers.sam2 import SAM2Wrapper
-
-        assert SAM2Wrapper is not None
-
 
 class TestCriticalSymbols:
     """Verify critical symbols exist in modules (catches missing imports)."""

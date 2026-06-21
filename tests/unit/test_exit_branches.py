@@ -5,7 +5,6 @@ import pytest
 
 from core.batch_manager import BatchManager
 from core.db_schema import migrate_database
-from core.managers.sam2 import SAM2Wrapper
 from core.managers.session import validate_session_dir
 
 
@@ -46,12 +45,6 @@ class TestExitBranches:
 
         mock_conn.rollback.assert_called_once()
         mock_logger.error.assert_called()
-
-    # --- SAM2 Wrapper ---
-    def test_sam2_wrapper_init_failure(self, mock_config):
-        """Test SAM2Wrapper initialization raises ValueError indicating it is retired."""
-        with pytest.raises(ValueError, match="retired"):
-            SAM2Wrapper(checkpoint_path="missing.pt", device="cpu")
 
     # --- Session Manager ---
     def test_validate_session_dir_is_file(self, tmp_path):

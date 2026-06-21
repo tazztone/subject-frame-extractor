@@ -157,8 +157,6 @@ tests
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_progress.py`](#-testsunittest_progresspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_quality_score.py`](#-testsunittest_quality_scorepy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_quick_wins.py`](#-testsunittest_quick_winspy)  
-&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_sam2.py`](#-testsunittest_sam2py)  
-&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_sam2_wrapper.py`](#-testsunittest_sam2_wrapperpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_sam3_import.py`](#-testsunittest_sam3_importpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_sam3_manager.py`](#-testsunittest_sam3_managerpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_sam3_wrapper.py`](#-testsunittest_sam3_wrapperpy)  
@@ -1830,8 +1828,6 @@ class TestExitBranches:
         """Test BatchManager scheduler exits if stop event is set."""
     def test_migrate_database_failure(self, mock_logger):
         """Test migrate_database handles exceptions and triggers rollback."""
-    def test_sam2_wrapper_init_failure(self, mock_config):
-        """Test SAM2Wrapper initialization raises ValueError indicating it is retired."""
     def test_validate_session_dir_is_file(self, tmp_path):
         """Test validation fails if path is a file."""
     def test_validate_session_dir_non_existent(self):
@@ -2979,22 +2975,6 @@ class TestQuickWins:
         """Test detect_hwaccel handles permission errors from subprocess."""
 ```
 
-### `📄 tests/unit/test_sam2.py`
-
-```python
-pytestmark = [pytest.mark.sam2]
-def test_sam2_wrapper_retired():
-    """Verify that SAM2Wrapper immediately raises a ValueError upon instantiation."""
-```
-
-### `📄 tests/unit/test_sam2_wrapper.py`
-
-```python
-pytestmark = [pytest.mark.sam2]
-def test_sam2_wrapper_init_retired():
-    """Verify that SAM2Wrapper immediately raises a ValueError upon instantiation in..."""
-```
-
 ### `📄 tests/unit/test_sam3_import.py`
 
 ```python
@@ -3361,8 +3341,8 @@ class TestManagerClasses:
     def test_model_registry_has_get_or_load(self): ...
     def test_thumbnail_manager_has_get(self): ...
     def test_video_manager_has_get_video_info(self): ...
-    def test_sam21_matches_sam3_interface(self):
-        """Verify SAM2 and SAM3 wrappers share the same public interface."""
+    def test_sam3_interface(self):
+        """Verify SAM3 wrapper has all required public interface methods."""
 class TestMockAppSyncValidation:
     """Validate that mock_app.py stubs match production signatures."""
     def test_mock_app_function_signatures(self):
@@ -3433,7 +3413,6 @@ class TestImportSmoke:
     def test_import_ui_app_ui(self): ...
     def test_import_ui_gallery_utils(self): ...
     def test_import_tracker_factory(self): ...
-    def test_import_sam21_wrapper(self): ...
 class TestCriticalSymbols:
     """Verify critical symbols exist in modules (catches missing imports)."""
     @pytest.mark.skip(reason='PIL.Image is imported inside functions for startup performance')

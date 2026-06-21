@@ -54,7 +54,6 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`face.py`](#-coremanagersfacepy)  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`model_loader.py`](#-coremanagersmodel_loaderpy)  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`registry.py`](#-coremanagersregistrypy)  
-│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`sam2.py`](#-coremanagerssam2py)  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`sam3.py`](#-coremanagerssam3py)  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`session.py`](#-coremanagerssessionpy)  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`subject_detector.py`](#-coremanagerssubject_detectorpy)  
@@ -123,7 +122,6 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;├──&nbsp;linux_test_all.sh  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;linux_test_cov.sh  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;linux_test_integration.sh  
-│&nbsp;&nbsp;&nbsp;├──&nbsp;linux_test_sam2.sh  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;linux_test_sam3.sh  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;linux_test_ui.sh  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;linux_test_unit.sh  
@@ -283,8 +281,6 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_progress.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_quality_score.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_quick_wins.py  
-│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_sam2.py  
-│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_sam2_wrapper.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_sam3_import.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_sam3_manager.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_sam3_wrapper.py  
@@ -805,7 +801,7 @@ class AppLogger:
 ### `📄 core/managers/__init__.py`
 
 ```python
-__all__ = ['ThumbnailManager', 'ModelRegistry', 'SAM3Wrapper', 'SAM2Wrapper',...
+__all__ = ['ThumbnailManager', 'ModelRegistry', 'SAM3Wrapper', 'build_tracker...
 ```
 
 ### `📄 core/managers/analysis.py`
@@ -892,31 +888,6 @@ class ModelRegistry:
     def _load_tracker_impl(self, model_name: str, models_path: str, user_agent: str, retry_params: tuple, device: str, config: Optional['Config']=None): ...
 ```
 
-### `📄 core/managers/sam2.py`
-
-```python
-class SAM2Wrapper:
-    """SAM2.1 hiera-tiny via pip install sam2. Apache 2.0, ~38MB."""
-    def __init__(self, checkpoint_path: str, device: str='cuda'): ...
-    def init_video(self, video_resource: Union[str, list]):
-        """Accepts a frame-directory path (list → tempdir logic lives in caller)."""
-    def add_bbox_prompt(self, frame_idx: int, obj_id: int, bbox_xywh: list, img_size: tuple, text: Optional[str]=None) -> np.ndarray: ...
-    def propagate(self, start_idx: int=0, max_frames: Optional[int]=None, reverse: bool=False): ...
-    def add_point_prompt(self, frame_idx, obj_id, points, labels, img_size): ...
-    def close_session(self): ...
-    def reset_session(self): ...
-    def clear_prompts(self): ...
-    def remove_object(self, *a, **kw):
-        """Not implemented for SAM2.1 wrapper."""
-    def detect_objects(self, *a, **kw):
-        """SAM2.1 does not have built-in text-grounded detection like SAM3."""
-    def add_text_prompt(self, *a, **kw):
-        """SAM2.1 does not support text prompts."""
-    def add_mask_prompt(self, frame_idx: int, obj_id: int, mask: np.ndarray) -> np.ndarray:
-        """Seed SAM2 with a pre-existing segmentation mask (e.g. from YOLO-seg)."""
-    def shutdown(self): ...
-```
-
 ### `📄 core/managers/sam3.py`
 
 ```python
@@ -991,8 +962,8 @@ class ThumbnailManager:
 ### `📄 core/managers/tracker_factory.py`
 
 ```python
-TrackerBackend = Literal['sam2', 'sam3']
-def build_tracker(backend: TrackerBackend, checkpoint_path: str, device: str='cuda', config: Optional['Config']=None):
+TrackerBackend = Literal['sam3']
+def build_tracker(backend: str, checkpoint_path: str, device: str='cuda', config: Optional['Config']=None):
     """Factory function to build a subject tracker based on the selected backend."""
 ```
 

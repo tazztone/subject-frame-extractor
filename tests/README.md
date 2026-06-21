@@ -13,14 +13,14 @@
 | **Integration** | `tests/integration/` | Real backend pipeline tests. Uses real PyTorch models. | `pytest` |
 | **UI (E2E)** | `tests/ui/` | Playwright automation. Mocks backend to test Gradio flows. | `pytest + playwright` |
 | **UX Audit**| `scripts/run_ux_audit.py` | Accessibility (Axe), Visuals, and Performance. | `python` |
-| **GPU E2E** | `tests/integration/` | Heavy-duty SAM2/SAM3 propagation on real hardware. | `pytest (serial)` |
+| **GPU E2E** | `tests/integration/` | Heavy-duty SAM3 propagation on real hardware. | `pytest (serial)` |
 | **Accuracy** | `tests/integration/test_accuracy.py` | Precision checks (IoU) for mask propagation. | `pytest (gpu_e2e)` |
 
 ### Specialized Test Files
 
 | File | Purpose |
 |------|---------|
-| `test_exit_branches.py` | Groups exit-branch tests (`→exit` coverage gaps) across `batch_manager`, `db_schema`, `sam2`, `error_handling`, and `session` in one place to make systematic sweeps easy. |
+| `test_exit_branches.py` | Groups exit-branch tests (`→exit` coverage gaps) across `batch_manager`, `db_schema`, `error_handling`, and `session` in one place to make systematic sweeps easy. |
 | `test_accuracy.py` | **Precision Baseline**. Uses `bedroom.mp4` to verify SAM3 mask propagation quality (IoU > 0.8) and area stability (< 0.5% variance). |
 | `test_stability.py` | **Resource & Reliability**. Verifies `BatchManager` resource-aware scheduling, system memory watchdog triggers, and Pydantic event validation. |
 
@@ -41,7 +41,7 @@ All tests should be run using `uv` to ensure the correct environment.
 
 > [!CAUTION]
 > **NEVER run GPU-heavy integration tests with `pytest -n auto`.**
-> Loading multiple 3GB+ models (SAM2, SAM3, InsightFace) concurrently in parallel workers will exhaust VRAM and system RAM instantly, leading to a hard kernel-level system freeze. Always run `tests/integration/test_gpu_e2e.py` serially or with `-n 1`.
+> Loading multiple 3GB+ models (SAM3, InsightFace) concurrently in parallel workers will exhaust VRAM and system RAM instantly, leading to a hard kernel-level system freeze. Always run `tests/integration/test_gpu_e2e.py` serially or with `-n 1`.
 
 ## CI/CD Pipeline
 
@@ -92,8 +92,8 @@ When mocking complex third-party packages (e.g., `mediapipe.tasks.python.vision`
 
 ## Gradio & Pyright Resiliency
 
-- **SAM3 Experimental Status**: `sam3` is an experimental tracker. Integration tests (`tests/integration/test_gpu_e2e.py`) verify its logic, but it is **not** the baseline for regressions. The default is `sam2`.
-- **SAM3 Checkpoints**: SAM3 prefers a local `models/sam3.1_multiplex.pt` checkpoint but automatically falls back to `models/sam3.pt` if the 3.1 model is missing. The wrapper includes a `RuntimeError` guard if the model fails to load. Never patch `download_ckpt_from_hf` as it prevents the resolver from finding local files and causes `NoneType` attribute errors.
+- **SAM3 Baseline Status**: `sam3` (SAM3.1 Multiplex FP16) is the default baseline tracker. Integration tests (`tests/integration/test_gpu_e2e.py`) verify its logic.
+- **SAM3 Checkpoints**: SAM3 prefers a local `models/sam3.1_multiplex_fp16.safetensors` checkpoint. The wrapper includes a `RuntimeError` guard if the model fails to load.
 - **HuggingFace Access**: To avoid `401 GatedRepoError` in tests, always ensure `checkpoint_path` is explicitly passed to constructors or point registries to a directory containing the real `.pt` file.
 - **Type Hints**: For Gradio event handlers, use `Any` or `dict[str, Any]` for return type hints instead of `gr.update`. Gradio 5+ treats updates as dynamic dictionaries, and `gr.update` often causes Pyright noise.
 - **Optional Members**: Components like `AdvancedProgressTracker` should use `Optional[Queue]` and `Optional[AppLogger]` with explicit null-checks to prevent Pyright "attribute not found on None" errors.

@@ -6,12 +6,10 @@ from typing import TYPE_CHECKING, Literal, Optional
 if TYPE_CHECKING:
     from core.config import Config
 
-TrackerBackend = Literal["sam2", "sam3"]
+TrackerBackend = Literal["sam3"]
 
 
-def build_tracker(
-    backend: TrackerBackend, checkpoint_path: str, device: str = "cuda", config: Optional["Config"] = None
-):
+def build_tracker(backend: str, checkpoint_path: str, device: str = "cuda", config: Optional["Config"] = None):
     """
     Factory function to build a subject tracker based on the selected backend.
 

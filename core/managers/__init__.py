@@ -3,7 +3,6 @@ from .extraction import ExtractionPipeline
 from .face import get_face_analyzer, get_face_landmarker
 from .model_loader import get_lpips_metric, initialize_analysis_models
 from .registry import ModelRegistry
-from .sam2 import SAM2Wrapper
 from .sam3 import SAM3Wrapper
 from .session import _load_analysis_scenes, execute_session_load, validate_session_dir
 from .subject_detector import SubjectDetector
@@ -15,7 +14,6 @@ __all__ = [
     "ThumbnailManager",
     "ModelRegistry",
     "SAM3Wrapper",
-    "SAM2Wrapper",
     "build_tracker",
     "get_face_analyzer",
     "get_face_landmarker",
