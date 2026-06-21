@@ -436,6 +436,30 @@ class TestManagers:
         assert result2 == "Success"
         mock_loader.assert_called_once()
 
+    @patch("mediapipe.tasks.python.vision.FaceLandmarker.create_from_options")
+    def test_model_registry_face_landmarker(self, mock_create, mock_logger):
+        """Test ModelRegistry.get_face_landmarker caching and cleanup."""
+        mock_detector = MagicMock()
+        mock_create.return_value = mock_detector
+        registry = ModelRegistry(logger=mock_logger)
+
+        # First call in this thread should create
+        res1 = registry.get_face_landmarker("fake_path.task", mock_logger)
+        assert res1 == mock_detector
+        mock_create.assert_called_once()
+        assert len(registry._landmarkers) == 1
+
+        # Second call in same thread should cache
+        res2 = registry.get_face_landmarker("fake_path.task", mock_logger)
+        assert res2 == mock_detector
+        mock_create.assert_called_once()  # not called again
+        assert len(registry._landmarkers) == 1
+
+        # clear() should close the landmarker
+        registry.clear()
+        mock_detector.close.assert_called_once()
+        assert len(registry._landmarkers) == 0
+
     def test_thumbnail_manager_eviction_logic(self, tmp_path, mock_logger):
         """Test LRU eviction in ThumbnailManager."""
         from core.config import Config

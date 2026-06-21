@@ -127,7 +127,7 @@ class SubjectMasker:
         )
 
         # Now initialize models (may update tracker in child components)
-        self.initialize_models()
+        # Eager initialization removed to allow lazy-loading of heavy tracker models.
 
     def initialize_models(self) -> None:
         """Initialize required models based on parameters."""

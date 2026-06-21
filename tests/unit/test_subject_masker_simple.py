@@ -16,10 +16,11 @@ def test_subject_masker_init():
     pq = Queue()
     ce = threading.Event()
 
-    with patch.object(SubjectMasker, "initialize_models"):
+    with patch.object(SubjectMasker, "initialize_models") as mock_init:
         masker = SubjectMasker(params, pq, ce, config, logger=logger)
         assert masker.config == config
         assert masker.logger == logger
+        mock_init.assert_not_called()
 
 
 def test_subject_masker_draw_bbox():

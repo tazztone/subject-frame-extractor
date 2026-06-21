@@ -281,6 +281,32 @@ def execute_analysis(
         yield {"unified_log": f"Analysis failed: {error_msg}", "done": False}
 
 
+class PipelineChainRunner:
+    """Chains pipeline stages, stripping intermediate done flags."""
+
+    def __init__(self):
+        self.state: dict = {}
+        self.last_result: Optional[dict] = None
+
+    def run_stage(self, stage_gen: Generator[dict, None, None], *, is_final: bool = False):
+        """Yield results from a stage, stripping 'done' on non-final stages."""
+        for res in stage_gen:
+            if not isinstance(res, dict):
+                yield res
+                continue
+            self.state.update(res)
+            if res.get("done"):
+                self.last_result = res
+                if is_final:
+                    yield res
+                else:
+                    clean = {k: v for k, v in res.items() if k != "done"}
+                    if clean:
+                        yield clean
+            else:
+                yield res
+
+
 @handle_common_errors
 def execute_analysis_orchestrator(
     event: PreAnalysisEvent,
@@ -300,7 +326,8 @@ def execute_analysis_orchestrator(
     # Initialize models once for all stages
     params = AnalysisParameters.from_ui(logger, config, **event.model_dump())
     loaded_models = initialize_analysis_models(params, config, logger, mr)
-    pre_result = None
+
+    runner = PipelineChainRunner()
 
     # 1. Pre-Analysis
     pre_gen = execute_pre_analysis(
@@ -315,16 +342,8 @@ def execute_analysis_orchestrator(
         mr,
         loaded_models=loaded_models,
     )
-    for res in pre_gen:
-        if res.get("done"):
-            pre_result = res
-            # Strip 'done' so UI doesn't stop consuming the orchestrator
-            clean_res = res.copy()
-            clean_res.pop("done")
-            if clean_res:
-                yield clean_res
-            continue
-        yield res
+    yield from runner.run_stage(pre_gen)
+    pre_result = runner.last_result
 
     if not pre_result or not pre_result.get("done"):
         return
@@ -353,15 +372,7 @@ def execute_analysis_orchestrator(
             mr,
             loaded_models=loaded_models,
         )
-        for res in prop_gen:
-            if res.get("done"):
-                # Strip 'done' so UI doesn't stop consuming the orchestrator
-                clean_res = res.copy()
-                clean_res.pop("done")
-                if clean_res:
-                    yield clean_res
-                continue
-            yield res
+        yield from runner.run_stage(prop_gen)
     else:
         msg = "Mask Propagation (Skipped for Folder)"
         logger.info(msg)
@@ -380,7 +391,7 @@ def execute_analysis_orchestrator(
         mr,
         loaded_models=loaded_models,
     )
-    yield from ana_gen
+    yield from runner.run_stage(ana_gen, is_final=True)
 
 
 @handle_common_errors
@@ -396,21 +407,14 @@ def execute_full_pipeline(
     model_registry: Optional[ModelRegistry] = None,
 ) -> Generator[dict, None, None]:
     """Orchestrates the entire flow: Extraction -> Pre-Analysis -> Propagation -> Analysis."""
+    runner = PipelineChainRunner()
+
     # 1. Extraction
     ext_gen = execute_extraction(
         event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress, model_registry
     )
-    ext_result = {}
-    for res in ext_gen:
-        if res.get("done"):
-            ext_result = res
-            # Strip 'done' so UI doesn't stop consuming the orchestrator
-            clean_res = res.copy()
-            clean_res.pop("done")
-            if clean_res:
-                yield clean_res
-            continue
-        yield res
+    yield from runner.run_stage(ext_gen)
+    ext_result = runner.last_result
 
     if not ext_result or not ext_result.get("done"):
         return
@@ -428,14 +432,17 @@ def execute_full_pipeline(
     yield {"unified_log": "Moving to Analysis stages...", "done": False}
 
     # 3. Chain to Analysis Orchestrator
-    yield from execute_analysis_orchestrator(
-        pre_event,
-        progress_queue,
-        cancel_event,
-        logger,
-        config,
-        thumbnail_manager,
-        cuda_available,
-        progress,
-        model_registry,
+    yield from runner.run_stage(
+        execute_analysis_orchestrator(
+            pre_event,
+            progress_queue,
+            cancel_event,
+            logger,
+            config,
+            thumbnail_manager,
+            cuda_available,
+            progress,
+            model_registry,
+        ),
+        is_final=True,
     )

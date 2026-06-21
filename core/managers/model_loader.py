@@ -70,7 +70,7 @@ def initialize_analysis_models(
         expected_sha256=config.face_landmarker_sha256,
     )
     if landmarker_path.exists():
-        face_landmarker = get_face_landmarker(str(landmarker_path), logger)
+        face_landmarker = get_face_landmarker(str(landmarker_path), logger, model_registry)
 
     # Person Detector
     person_detector = None

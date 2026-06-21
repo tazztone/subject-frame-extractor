@@ -24,6 +24,8 @@ class ModelRegistry:
         self._registry_lock = threading.RLock()
         self.logger: "LoggerLike" = logger or logging.getLogger(__name__)
         self.runtime_device_override: Optional[str] = None
+        self._thread_local = threading.local()
+        self._landmarkers: list[Any] = []  # Tracks per-thread FaceLandmarker instances
 
     def get_or_load(self, key: str, loader_fn: Callable[[], Any]) -> Any:
         """Retrieves a model by key, loading it via loader_fn if not present."""
@@ -77,6 +79,9 @@ class ModelRegistry:
         with self._registry_lock:
             models_to_clear = list(self._models.items())
             self._models.clear()
+            landmarkers_to_clear = list(self._landmarkers)
+            self._landmarkers.clear()
+            self._thread_local = threading.local()
 
         for key, model in models_to_clear:
             try:
@@ -87,9 +92,40 @@ class ModelRegistry:
             except Exception as e:
                 self.logger.warning(f"Error shutting down model {key}: {e}")
 
+        for landmarker in landmarkers_to_clear:
+            try:
+                if hasattr(landmarker, "close") and callable(landmarker.close):
+                    landmarker.close()
+            except Exception as e:
+                self.logger.warning(f"Error closing face landmarker: {e}")
+
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
+
+    def get_face_landmarker(self, model_path: str, logger: "LoggerLike") -> Any:
+        """Returns a thread-local MediaPipe FaceLandmarker, tracked for cleanup."""
+        if hasattr(self._thread_local, "face_landmarker"):
+            return self._thread_local.face_landmarker
+
+        from mediapipe.tasks import python
+        from mediapipe.tasks.python import vision
+
+        logger.info("Initializing MediaPipe FaceLandmarker for thread.", component="face_landmarker")
+        base_options = python.BaseOptions(model_asset_path=model_path)
+        options = vision.FaceLandmarkerOptions(
+            base_options=base_options,
+            output_face_blendshapes=True,
+            output_facial_transformation_matrixes=True,
+            num_faces=1,
+            min_face_detection_confidence=0.3,
+            min_face_presence_confidence=0.3,
+        )
+        detector = vision.FaceLandmarker.create_from_options(options)
+        self._thread_local.face_landmarker = detector
+        with self._registry_lock:
+            self._landmarkers.append(detector)
+        return detector
 
     def get_tracker(
         self,

@@ -25,9 +25,7 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└──&nbsp;136706662630080  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└──&nbsp;extracted_frames  
 ├──&nbsp;README.md  
-├──&nbsp;TODO_REPORT.md  
 ├──&nbsp;[`app.py`](#-apppy)  
-├──&nbsp;benchmark_comprehension.py  
 ├──&nbsp;cli.py  
 ├──&nbsp;core  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`__init__.py`](#-core__init__py)  
@@ -139,7 +137,6 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;├──&nbsp;dependency_links.txt  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;requires.txt  
 │&nbsp;&nbsp;&nbsp;└──&nbsp;top_level.txt  
-├──&nbsp;test_models.py  
 ├──&nbsp;tests  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;README.md  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;__init__.py  
@@ -150,6 +147,8 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_photo_cli.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;verify_simple.py  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;helpers  
+│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;__init__.py  
+│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;mock_env.py  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;integration  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;__init__.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;conftest.py  
@@ -513,6 +512,10 @@ class Config(BaseSettings):
 class Database:
     def __init__(self, db_path: Path, batch_size: int=100, logger: Optional[Union[logging.Logger, 'AppLogger']]=None):
         """Initializes the Database manager."""
+    @property
+    def columns(self) -> List[str]: ...
+    @columns.setter
+    def columns(self, new_columns: List[str]) -> None: ...
     def __enter__(self): ...
     def __exit__(self, exc_type, exc_val, exc_tb): ...
     def connect(self):
@@ -590,6 +593,7 @@ class RecoveryStrategy(Enum):
     FALLBACK = "<REDACTED_STRING>"
     SKIP = "<REDACTED_STRING>"
     ABORT = "<REDACTED_STRING>"
+    NOTIFY = "<REDACTED_STRING>"
 class ErrorHandler:
     def __init__(self, logger: 'LoggerLike', max_attempts: int, backoff_seconds: list):
         """Initializes the ErrorHandler."""
@@ -597,6 +601,8 @@ class ErrorHandler:
         """Helper to call logger with or without component support."""
     def with_retry(self, max_attempts: Optional[int]=None, backoff_seconds: Optional[list]=None, recoverable_exceptions: tuple=(Exception,)):
         """Decorator that retries the function call upon failure."""
+    def with_notify(self, default_return: Any=None):
+        """Decorator that catches exceptions, logs a warning, and returns a default value."""
     def with_fallback(self, fallback_func: Callable):
         """Decorator that executes a fallback function if the primary function fails."""
 ```
@@ -712,9 +718,9 @@ def fingerprints_match(new: RunFingerprint, existing: RunFingerprint) -> bool:
 
 ```python
 """Image Processing Utilities for Subject Frame Extractor"""
-def postprocess_mask(mask: np.ndarray, config: 'Config', fill_holes: bool=True, keep_largest_only: bool=True) -> np.ndarray:
+def postprocess_mask(mask: np.ndarray, config: Config, fill_holes: bool=True, keep_largest_only: bool=True) -> np.ndarray:
     """Cleans up binary masks using morphological operations and connected components."""
-def render_mask_overlay(frame_rgb: np.ndarray, mask_gray: np.ndarray, alpha: float, logger: 'AppLogger') -> np.ndarray:
+def render_mask_overlay(frame_rgb: np.ndarray, mask_gray: np.ndarray, alpha: float, logger: AppLogger) -> np.ndarray:
     """overlays a semi-transparent red mask on the image."""
 def rgb_to_pil(image_rgb: np.ndarray) -> Image.Image:
     """Converts a NumPy RGB array to a PIL Image."""
@@ -722,7 +728,7 @@ def _draw_dashed_line(img: np.ndarray, pt1: tuple[int, int], pt2: tuple[int, int
     """Internal helper to draw a dashed line."""
 def _draw_dotted_line(img: np.ndarray, pt1: tuple[int, int], pt2: tuple[int, int], color: tuple[int, int, int], thickness: int, gap: int=5):
     """Internal helper to draw a dotted line."""
-def draw_bbox(img_rgb: np.ndarray, xywh: list, config: 'Config', color: Optional[tuple]=None, thickness: Optional[int]=None, label: Optional[str]=None, style: Optional[str]=None, radius: Optional[int]=None, inplace: bool=False) -> np.ndarray:
+def draw_bbox(img_rgb: np.ndarray, xywh: list, config: Config, color: Optional[tuple]=None, thickness: Optional[int]=None, label: Optional[str]=None, style: Optional[str]=None, radius: Optional[int]=None, inplace: bool=False) -> np.ndarray:
     """Draws a bounding box and optional label on an image."""
 @njit
 def compute_entropy(hist: np.ndarray, entropy_norm: float) -> float:
@@ -850,8 +856,8 @@ class ExtractionPipeline:
 
 ```python
 thread_local = local()
-def get_face_landmarker(model_path: str, logger: 'AppLogger') -> Any:
-    """Returns a thread-local MediaPipe FaceLandmarker instance."""
+def get_face_landmarker(model_path: str, logger: 'AppLogger', model_registry: Optional['ModelRegistry']=None) -> Any:
+    """Returns a thread-local MediaPipe FaceLandmarker instance, utilizing model_reg..."""
 def get_face_analyzer(model_name: str, models_path: str, det_size_tuple: tuple, logger: 'AppLogger', model_registry: 'ModelRegistry', device: str='cpu') -> 'FaceAnalysis':
     """Gets or loads the InsightFace FaceAnalysis app, with OOM handling."""
 ```
@@ -875,6 +881,8 @@ class ModelRegistry:
         """Retrieves a model by key, loading it via loader_fn if not present."""
     def clear(self):
         """Clears all models and triggers memory cleanup."""
+    def get_face_landmarker(self, model_path: str, logger: 'LoggerLike') -> Any:
+        """Returns a thread-local MediaPipe FaceLandmarker, tracked for cleanup."""
     def get_tracker(self, model_name: str, models_path: Optional[str]=None, user_agent: Optional[str]=None, retry_params: Optional[tuple]=None, config: Optional['Config']=None) -> Optional[Any]:
         """Loads subject tracker with CPU fallback on OOM."""
     def get_subject_detector(self, model_name: str, model_path: str, logger: 'LoggerLike', device: str) -> Optional[Any]:
@@ -975,8 +983,6 @@ class ThumbnailManager:
         """Initializes the manager with a configurable cache size and memory limit."""
     def get(self, thumb_path: Path) -> Optional[np.ndarray]:
         """Retrieves a thumbnail from cache or loads it from disk."""
-    def clear_cache(self):
-        """Standard cache clearing and GC triggering."""
     def _cleanup_old_entries(self): ...
 ```
 
@@ -1275,25 +1281,30 @@ def ingest_folder(folder_path: Path, output_dir: Path, recursive: bool=False, th
 ```python
 Image = Image
 gr = gr
-def _handle_extraction_uploads(event_dict: dict, config: 'Config') -> dict:
+def _handle_extraction_uploads(event_dict: dict, config: Config) -> dict:
     """Helper to move uploaded video to downloads directory."""
-def _handle_pre_analysis_uploads(event_dict: dict, config: 'Config') -> dict:
+def _handle_pre_analysis_uploads(event_dict: dict, config: Config) -> dict:
     """Helper to move uploaded face reference image to downloads directory."""
 @handle_common_errors
-def execute_extraction(event: 'ExtractionEvent', progress_queue: Queue, cancel_event: threading.Event, logger: 'AppLogger', config: 'Config', thumbnail_manager: Optional['ThumbnailManager']=None, cuda_available: Optional[bool]=None, progress: Optional[Callable]=None, model_registry: Optional['ModelRegistry']=None) -> Generator[dict, None, None]: ...
+def execute_extraction(event: ExtractionEvent, progress_queue: Queue, cancel_event: threading.Event, logger: AppLogger, config: Config, thumbnail_manager: Optional[ThumbnailManager]=None, cuda_available: Optional[bool]=None, progress: Optional[Callable]=None, model_registry: Optional[ModelRegistry]=None) -> Generator[dict, None, None]: ...
 @handle_common_errors
-def execute_pre_analysis(event: 'PreAnalysisEvent', progress_queue: Queue, cancel_event: threading.Event, logger: 'AppLogger', config: 'Config', thumbnail_manager: 'ThumbnailManager', cuda_available: bool, progress: Optional[Callable]=None, model_registry: Optional['ModelRegistry']=None, loaded_models: Optional[dict]=None) -> Generator[dict, None, None]: ...
+def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue, cancel_event: threading.Event, logger: AppLogger, config: Config, thumbnail_manager: ThumbnailManager, cuda_available: bool, progress: Optional[Callable]=None, model_registry: Optional[ModelRegistry]=None, loaded_models: Optional[dict]=None) -> Generator[dict, None, None]: ...
 def validate_session_dir(path: str) -> bool: ...
-def execute_session_load(event: SessionLoadEvent | dict, logger: 'AppLogger') -> dict: ...
+def execute_session_load(event: SessionLoadEvent | dict, logger: AppLogger) -> dict: ...
 @handle_common_errors
-def execute_propagation(event: PropagationEvent, progress_queue: Queue, cancel_event: threading.Event, logger: 'AppLogger', config: 'Config', thumbnail_manager: 'ThumbnailManager', cuda_available: bool, progress: Optional[Callable]=None, model_registry: Optional['ModelRegistry']=None, loaded_models: Optional[dict]=None) -> Generator[dict, None, None]: ...
+def execute_propagation(event: PropagationEvent, progress_queue: Queue, cancel_event: threading.Event, logger: AppLogger, config: Config, thumbnail_manager: ThumbnailManager, cuda_available: bool, progress: Optional[Callable]=None, model_registry: Optional[ModelRegistry]=None, loaded_models: Optional[dict]=None) -> Generator[dict, None, None]: ...
 @handle_common_errors
-def execute_analysis(event: PropagationEvent, progress_queue: Queue, cancel_event: threading.Event, logger: 'AppLogger', config: 'Config', thumbnail_manager: 'ThumbnailManager', cuda_available: bool, progress: Optional[Callable]=None, model_registry: Optional['ModelRegistry']=None, loaded_models: Optional[dict]=None) -> Generator[dict, None, None]: ...
+def execute_analysis(event: PropagationEvent, progress_queue: Queue, cancel_event: threading.Event, logger: AppLogger, config: Config, thumbnail_manager: ThumbnailManager, cuda_available: bool, progress: Optional[Callable]=None, model_registry: Optional[ModelRegistry]=None, loaded_models: Optional[dict]=None) -> Generator[dict, None, None]: ...
+class PipelineChainRunner:
+    """Chains pipeline stages, stripping intermediate done flags."""
+    def __init__(self): ...
+    def run_stage(self, stage_gen: Generator[dict, None, None], *, is_final: bool=False):
+        """Yield results from a stage, stripping 'done' on non-final stages."""
 @handle_common_errors
-def execute_analysis_orchestrator(event: 'PreAnalysisEvent', progress_queue: Queue, cancel_event: threading.Event, logger: 'AppLogger', config: 'Config', thumbnail_manager: 'ThumbnailManager', cuda_available: bool, progress: Optional[Callable]=None, model_registry: Optional['ModelRegistry']=None) -> Generator[dict, None, None]:
+def execute_analysis_orchestrator(event: PreAnalysisEvent, progress_queue: Queue, cancel_event: threading.Event, logger: AppLogger, config: Config, thumbnail_manager: ThumbnailManager, cuda_available: bool, progress: Optional[Callable]=None, model_registry: Optional[ModelRegistry]=None) -> Generator[dict, None, None]:
     """Orchestrates Pre-Analysis, Propagation, and Analysis stages."""
 @handle_common_errors
-def execute_full_pipeline(event: 'ExtractionEvent', progress_queue: Queue, cancel_event: threading.Event, logger: 'AppLogger', config: 'Config', thumbnail_manager: 'ThumbnailManager', cuda_available: bool, progress: Optional[Callable]=None, model_registry: Optional['ModelRegistry']=None) -> Generator[dict, None, None]:
+def execute_full_pipeline(event: ExtractionEvent, progress_queue: Queue, cancel_event: threading.Event, logger: AppLogger, config: Config, thumbnail_manager: ThumbnailManager, cuda_available: bool, progress: Optional[Callable]=None, model_registry: Optional[ModelRegistry]=None) -> Generator[dict, None, None]:
     """Orchestrates the entire flow: Extraction -> Pre-Analysis -> Propagation -> An..."""
 ```
 
@@ -1305,7 +1316,7 @@ _ = gettext.gettext
 class ProgressEvent(BaseModel): ...
 class AdvancedProgressTracker:
     """Tracks and estimates progress for long-running operations."""
-    def __init__(self, progress: Optional[Callable]=None, queue: Optional[Queue]=None, logger: Optional['AppLogger']=None, ui_stage_name: str='', eta_precision: str='coarse'):
+    def __init__(self, progress: Optional[Callable]=None, queue: Optional[Queue]=None, logger: Optional[AppLogger]=None, ui_stage_name: str='', eta_precision: str='coarse'):
         """Initializes the progress tracker."""
     def start(self, total_items: int, desc: Optional[str]=None):
         """Resets the tracker for a new operation."""
@@ -1385,6 +1396,8 @@ def _cleanup_partial_export(export_dir: Path):
 
 ```python
 """Helper functions for scene processing."""
+_PREVIEW_CACHE = OrderedDict()
+_PREVIEW_CACHE_MAX_SIZE = 32
 def draw_boxes_preview(img: np.ndarray, boxes_xyxy: list[list[float | int]] | list[list[int]], cfg: 'Config', labels: list[str] | None=None, confidences: list[float] | None=None) -> np.ndarray:
     """Draw bounding boxes on an image for preview."""
 def save_scene_seeds(scenes_list: list['Scene'], output_dir_str: str, logger: 'AppLogger') -> None:
@@ -1542,8 +1555,6 @@ def _setup_triton_mock():
     """Mocks the Triton library if it's missing (e.g., on Windows or non-CUDA enviro..."""
 def handle_common_errors(func: Callable) -> Callable:
     """Decorator to catch common exceptions and return a standardized error dictiona..."""
-def monitor_memory_usage(logger: 'AppLogger', device: str, gpu_threshold_mb: int=8000, ram_threshold_pct: float=90.0):
-    """Logs warnings and clears cache if memory usage exceeds thresholds."""
 class MemoryWatchdog:
     """Background thread that monitors memory usage and logs critical warnings."""
     def __init__(self, config: 'Config', logger: 'AppLogger'): ...

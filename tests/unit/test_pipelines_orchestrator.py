@@ -251,3 +251,30 @@ class TestPipelinesOrchestrator:
         assert len(results) == 1
         assert results[0]["unified_log"] == "Extraction failed"
         mock_orchestrator.assert_not_called()
+
+    def test_pipeline_chain_runner(self):
+        """Test PipelineChainRunner's yield and done stripping logic."""
+        from core.pipelines import PipelineChainRunner
+
+        runner = PipelineChainRunner()
+
+        def mock_stage():
+            yield {"log": "starting", "done": False}
+            yield {"log": "middle", "done": False}
+            yield {"log": "ending", "done": True, "data": 42}
+
+        # 1. Non-final stage should yield middle states but strip 'done'
+        results = list(runner.run_stage(mock_stage(), is_final=False))
+        assert len(results) == 3
+        assert results[0] == {"log": "starting", "done": False}
+        assert results[1] == {"log": "middle", "done": False}
+        assert results[2] == {"log": "ending", "data": 42}  # done stripped!
+        assert "done" not in results[2]
+
+        assert runner.last_result == {"log": "ending", "done": True, "data": 42}
+        assert runner.state["log"] == "ending"
+
+        # 2. Final stage should propagate 'done'
+        results_final = list(runner.run_stage(mock_stage(), is_final=True))
+        assert len(results_final) == 3
+        assert results_final[2] == {"log": "ending", "done": True, "data": 42}  # done kept!
