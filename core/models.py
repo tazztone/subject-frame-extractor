@@ -144,10 +144,9 @@ class SceneState:
             self._scene.seed_config = {}
         self._scene.seed_config["override_source"] = source
         if self._scene.status != SceneStatus.INCLUDED:
-            self._scene.status_history.append({
-                "status": "included",
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            })
+            self._scene.status_history.append(
+                {"status": "included", "timestamp": datetime.now(timezone.utc).isoformat()}
+            )
         self._scene.status = SceneStatus.INCLUDED
         self._scene.manual_status_change = True
 
@@ -161,20 +160,18 @@ class SceneState:
     def include(self):
         """Marks the scene as included."""
         if self._scene.status != SceneStatus.INCLUDED:
-            self._scene.status_history.append({
-                "status": "included",
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            })
+            self._scene.status_history.append(
+                {"status": "included", "timestamp": datetime.now(timezone.utc).isoformat()}
+            )
         self._scene.status = SceneStatus.INCLUDED
         self._scene.manual_status_change = True
 
     def exclude(self):
         """Marks the scene as excluded."""
         if self._scene.status != SceneStatus.EXCLUDED:
-            self._scene.status_history.append({
-                "status": "excluded",
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            })
+            self._scene.status_history.append(
+                {"status": "excluded", "timestamp": datetime.now(timezone.utc).isoformat()}
+            )
         self._scene.status = SceneStatus.EXCLUDED
         self._scene.manual_status_change = True
 
@@ -213,7 +210,7 @@ class AnalysisParameters(BaseModel):
     face_ref_img_path: str = ""
     face_model_name: str = ""
     enable_subject_mask: bool = False
-    tracker_model_name: str = "sam2"
+    tracker_model_name: str = "sam3"
     seed_strategy: str = ""
     subject_detector_model: str = "YOLO26n"
     subject_detector_class_name: str = "person"

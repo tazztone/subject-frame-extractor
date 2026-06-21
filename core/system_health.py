@@ -45,7 +45,7 @@ def check_environment() -> List[str]:
 def check_dependencies() -> List[str]:
     """Checks for the presence of core dependencies."""
     report = ["\n[SECTION 2: Core Dependencies]"]
-    for dep in ["cv2", "gradio", "imagehash", "mediapipe", "sam2", "sam3"]:
+    for dep in ["cv2", "gradio", "imagehash", "mediapipe", "sam3"]:
         try:
             __import__(dep.split(".")[0])
             report.append(f"  - {dep}: OK")

@@ -24,7 +24,7 @@ def test_ui_initialization_smoke(mock_cuda):
     """
     config = MagicMock()
     # Provide necessary config attributes for building the UI
-    config.default_tracker_model_name = "sam2"
+    config.default_tracker_model_name = "sam3"
     config.debug_mode = True
     config.gradio_auto_pctl_input = 50
     config.gradio_show_mask_overlay = True
@@ -47,7 +47,7 @@ def test_ui_initialization_smoke(mock_cuda):
     model_registry = MagicMock()
 
     # Mock registry names for dropdown choices
-    model_registry.get_tracker_names.return_value = ["sam2"]
+    model_registry.get_tracker_names.return_value = ["sam3"]
     model_registry.get_tracker_vram_requirement.return_value = 4000
     model_registry.get_detector_names.return_value = ["YOLO12l-Seg"]
 

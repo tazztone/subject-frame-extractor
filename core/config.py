@@ -45,7 +45,9 @@ class Config(BaseSettings):
         "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
     )
     face_landmarker_sha256: str = "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff"
-    sam3_checkpoint_url: str = "https://huggingface.co/facebook/sam3.1/resolve/main/sam3.1_multiplex.pt"
+    sam3_checkpoint_url: str = (
+        "https://huggingface.co/Comfy-Org/sam3.1/resolve/main/checkpoints/sam3.1_multiplex_fp16.safetensors"
+    )
     sam3_compile: bool = False
     sam3_use_flash_attention: bool = False
     sam3_use_rope_real: bool = False
@@ -103,7 +105,7 @@ class Config(BaseSettings):
     default_pre_sample_nth: int = 5
     default_face_model_name: str = "buffalo_l"
     default_enable_subject_mask: bool = True
-    default_tracker_model_name: str = "sam2"
+    default_tracker_model_name: str = "sam3"
     default_primary_seed_strategy: str = "Automatic Detection"
     default_seed_strategy: str = "Largest Subject"
     default_subject_detector_model: str = "YOLO12l-Seg"

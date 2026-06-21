@@ -2,29 +2,17 @@
 from __future__ import annotations
 
 import gc
-from typing import Any, Optional, Union
+from typing import Optional, Union
 
 import numpy as np
 import torch
-from sam2.build_sam import build_sam2_video_predictor
 
 
 class SAM2Wrapper:
     """SAM2.1 hiera-tiny via pip install sam2. Apache 2.0, ~38MB."""
 
     def __init__(self, checkpoint_path: str, device: str = "cuda"):
-        self.device = device
-        if torch.cuda.is_available():
-            torch.set_float32_matmul_precision("high")
-
-        # SAM2.1 hiera-tiny config is usually built-in or provided by the package
-        # We assume the config name matches the model type.
-        self.predictor: Any = build_sam2_video_predictor(
-            config_file="configs/sam2.1/sam2.1_hiera_t.yaml",
-            ckpt_path=checkpoint_path,
-            device=device,
-        )
-        self._state = None
+        raise ValueError("SAM2.1 has been retired. Please use SAM3.1 instead.")
 
     def init_video(self, video_resource: Union[str, list]):
         """Accepts a frame-directory path (list → tempdir logic lives in caller)."""

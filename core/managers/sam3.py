@@ -74,7 +74,9 @@ class SAM3Wrapper:
         use_rope_real = config.sam3_use_rope_real if config else False
 
         # Force single-GPU mode for legacy SAM 3.0 (passed via kwargs)
-        gpus = [0] if device == "cuda" else None
+        kwargs = {}
+        if sam3_version == "sam3":
+            kwargs["gpus_to_use"] = [0] if device == "cuda" else None
 
         self.predictor = build_sam3_predictor(
             checkpoint_path=checkpoint_path,
@@ -82,7 +84,7 @@ class SAM3Wrapper:
             compile=compile_model,
             use_fa3=use_fa3,
             use_rope_real=use_rope_real,
-            gpus_to_use=gpus,
+            **kwargs,
         )
 
         if self.predictor is None or getattr(self.predictor, "model", None) is None:

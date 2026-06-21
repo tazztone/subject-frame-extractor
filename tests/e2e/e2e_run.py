@@ -43,7 +43,7 @@ class Logger(object):
         self.log.flush()
 
 
-def run_e2e_verification(tracker_model="sam2"):
+def run_e2e_verification(tracker_model="sam3"):
     output_dir = Path(__file__).parent.parent / "results" / "e2e_output"
     if output_dir.exists():
         shutil.rmtree(output_dir)
@@ -237,6 +237,6 @@ def run_e2e_verification(tracker_model="sam2"):
 
 
 if __name__ == "__main__":
-    tracker = sys.argv[1] if len(sys.argv) > 1 else "sam2"
+    tracker = sys.argv[1] if len(sys.argv) > 1 else "sam3"
     success = run_e2e_verification(tracker_model=tracker)
     sys.exit(0 if success else 1)

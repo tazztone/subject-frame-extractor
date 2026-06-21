@@ -8,13 +8,13 @@ from core.models import AnalysisParameters
 from core.scene_utils.seed_selector import SeedSelector
 
 
-def test_tracker_model_name_defaults_to_sam2():
-    """Verify that AnalysisParameters and PreAnalysisEvent default to 'sam2'."""
+def test_tracker_model_name_defaults_to_sam3():
+    """Verify that AnalysisParameters and PreAnalysisEvent default to 'sam3'."""
     params = AnalysisParameters()
-    assert params.tracker_model_name == "sam2"
+    assert params.tracker_model_name == "sam3"
 
     event = PreAnalysisEvent(output_folder="/tmp", video_path="test.mp4", method="scene")
-    assert event.tracker_model_name == "sam2"
+    assert event.tracker_model_name == "sam3"
 
 
 def test_face_fallback_when_no_people_detected():

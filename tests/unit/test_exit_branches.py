@@ -49,10 +49,9 @@ class TestExitBranches:
 
     # --- SAM2 Wrapper ---
     def test_sam2_wrapper_init_failure(self, mock_config):
-        """Test SAM2Wrapper initialization failure handling."""
-        with patch("core.managers.sam2.build_sam2_video_predictor", side_effect=RuntimeError("build failed")):
-            with pytest.raises(RuntimeError, match="build failed"):
-                SAM2Wrapper(checkpoint_path="missing.pt", device="cpu")
+        """Test SAM2Wrapper initialization raises ValueError indicating it is retired."""
+        with pytest.raises(ValueError, match="retired"):
+            SAM2Wrapper(checkpoint_path="missing.pt", device="cpu")
 
     # --- Session Manager ---
     def test_validate_session_dir_is_file(self, tmp_path):

@@ -1361,6 +1361,8 @@ def patch_sam3_detect_objects():
     """Add detect_objects capability to Sam3VideoPredictor classes."""
 def patch_sam3_pvs_initialization():
     """SAM3's Sam3VideoInference._build_tracker_output assumes that"""
+def patch_torch_load_for_safetensors():
+    """Patch torch.load to transparently load safetensors checkpoints when requested."""
 def apply_patches():
     """Apply all monkey patches to SAM3 with version safety check."""
 ```

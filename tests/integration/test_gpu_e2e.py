@@ -159,18 +159,8 @@ def _is_sam3_available():
 requires_sam3 = pytest.mark.skipif(not _is_sam3_available(), reason="SAM3 not installed (pip install -e SAM3_repo)")
 
 
-def _is_sam2_available():
-    """Check if SAM2 is properly installed and can be imported."""
-    try:
-        import sam2.build_sam  # noqa: F401
-
-        return True
-    except ImportError:
-        return False
-
-
-# Skip decorator for tests requiring SAM2
-requires_sam2 = pytest.mark.skipif(not _is_sam2_available(), reason="SAM2 not installed (pip install sam2)")
+# Skip decorator for tests requiring SAM2 (SAM2 is retired)
+requires_sam2 = pytest.mark.skip(reason="SAM2 is retired")
 
 
 @pytest.fixture
@@ -387,101 +377,6 @@ class TestSAM3Inference:
             # Should be able to add new prompt after clearing
             mask = wrapper.add_bbox_prompt(0, 2, [60, 60, 70, 140], (256, 256))
             assert mask is not None
-        finally:
-            if wrapper:
-                wrapper.close_session()
-
-
-@pytest.mark.gpu_e2e
-@pytest.mark.sam2
-class TestSAM2Inference:
-    """Real SAM2 inference tests - catches BFloat16 and other runtime errors."""
-
-    @requires_sam2
-    def test_sam2_wrapper_initialization(self, tmp_path, module_model_registry):
-        """SAM2Wrapper can be initialized without errors via ModelRegistry."""
-        import torch
-
-        if not torch.cuda.is_available():
-            pytest.skip("CUDA not available")
-
-        wrapper = module_model_registry.get_tracker("sam2")
-        assert wrapper is not None
-        assert wrapper.predictor is not None
-
-    @requires_sam2
-    def test_sam2_init_video(self, test_frames_dir, module_model_registry):
-        """SAM2 init_video() initializes inference state correctly."""
-        import torch
-
-        if not torch.cuda.is_available():
-            pytest.skip("CUDA not available")
-
-        wrapper = module_model_registry.get_tracker("sam2")
-
-        try:
-            session_id = wrapper.init_video(str(test_frames_dir))
-            assert session_id is not None
-        finally:
-            if wrapper:
-                wrapper.close_session()
-
-    @requires_sam2
-    def test_sam2_add_bbox_prompt(self, tmp_path, module_model_registry):
-        """SAM2 add_bbox_prompt() returns valid mask."""
-        import torch
-
-        if not torch.cuda.is_available():
-            pytest.skip("CUDA not available")
-
-        # Create 5 frames
-        test_frames_dir = _create_test_frames_dir(tmp_path, num_frames=5)
-        wrapper = module_model_registry.get_tracker("sam2")
-
-        try:
-            wrapper.init_video(str(test_frames_dir))
-
-            # Add bbox prompt covering the object in test image
-            mask = wrapper.add_bbox_prompt(
-                frame_idx=0,
-                obj_id=1,
-                bbox_xywh=[77, 51, 102, 153],  # x, y, w, h
-                img_size=(256, 256),  # w, h
-            )
-
-            assert mask is not None
-            assert isinstance(mask, np.ndarray)
-            assert mask.ndim == 2  # Should be 2D (H, W) mask
-            assert mask.shape == (256, 256)
-            assert mask.any(), "Mask should not be empty"
-        finally:
-            if wrapper:
-                wrapper.close_session()
-
-    @requires_sam2
-    def test_sam2_propagate_forward(self, test_frames_dir, module_model_registry):
-        """SAM2 propagate() forward generator yields valid results."""
-        import torch
-
-        if not torch.cuda.is_available():
-            pytest.skip("CUDA not available")
-
-        wrapper = module_model_registry.get_tracker("sam2")
-
-        try:
-            wrapper.init_video(str(test_frames_dir))
-            wrapper.add_bbox_prompt(frame_idx=0, obj_id=1, bbox_xywh=[77, 51, 102, 153], img_size=(256, 256))
-
-            # Propagate forward
-            propagated = list(wrapper.propagate(start_idx=0, reverse=False))
-
-            assert len(propagated) > 0
-            for frame_idx, obj_id, mask in propagated:
-                assert isinstance(frame_idx, int)
-                assert frame_idx >= 0
-                assert isinstance(obj_id, int)
-                assert isinstance(mask, np.ndarray)
-                assert mask.ndim == 2
         finally:
             if wrapper:
                 wrapper.close_session()

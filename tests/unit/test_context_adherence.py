@@ -170,22 +170,22 @@ class TestMilestoneCase:
         pass
 
 
-class TestSAM2DefaultBaseline:
-    """Rule: SAM2.1 Hiera Tiny is the project's default tracker."""
+class TestSAM3DefaultBaseline:
+    """Rule: SAM3.1 Multiplex is the project's default tracker."""
 
-    def test_config_default_is_sam2(self):
+    def test_config_default_is_sam3(self):
         from core.config import Config
 
         config = Config()
-        assert config.default_tracker_model_name == "sam2", "Default tracker in config.py must be 'sam2'"
+        assert config.default_tracker_model_name == "sam3", "Default tracker in config.py must be 'sam3'"
 
-    def test_agents_md_prescribes_sam2_default(self):
+    def test_agents_md_prescribes_sam3_default(self):
         agents_md_path = pathlib.Path("AGENTS.md")
         if not agents_md_path.exists():
             pytest.skip("AGENTS.md not found")
 
         content = agents_md_path.read_text()
-        assert "SAM2.1 Hiera Tiny" in content, "AGENTS.md must mention SAM2.1 Hiera Tiny as the default baseline"
+        assert "SAM3.1 Multiplex" in content, "AGENTS.md must mention SAM3.1 Multiplex as the default baseline"
         assert "default tracker" in content.lower(), "AGENTS.md must specify the default tracker"
 
 

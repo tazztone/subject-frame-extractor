@@ -238,7 +238,7 @@ class Logger(object):
     def __init__(self, filename): ...
     def write(self, message): ...
     def flush(self): ...
-def run_e2e_verification(tracker_model='sam2'): ...
+def run_e2e_verification(tracker_model='sam3'): ...
 ```
 
 ### `📄 tests/e2e/test_photo_cli.py`
@@ -389,9 +389,7 @@ def _create_test_frames_dir(tmp_path, num_frames=5, width=256, height=256):
 def _is_sam3_available():
     """Check if SAM3 is properly installed and can be imported."""
 requires_sam3 = pytest.mark.skipif(not _is_sam3_available(), reason='SAM3 not...
-def _is_sam2_available():
-    """Check if SAM2 is properly installed and can be imported."""
-requires_sam2 = pytest.mark.skipif(not _is_sam2_available(), reason='SAM2 not...
+requires_sam2 = pytest.mark.skip(reason='SAM2 is retired')
 @pytest.fixture
 def test_image():
     """Provides a simple test image."""
@@ -431,22 +429,6 @@ class TestSAM3Inference:
     @requires_sam3
     def test_sam3_clear_prompts(self, test_frames_dir, module_model_registry):
         """SAM3 clear_prompts() resets session state."""
-@pytest.mark.gpu_e2e
-@pytest.mark.sam2
-class TestSAM2Inference:
-    """Real SAM2 inference tests - catches BFloat16 and other runtime errors."""
-    @requires_sam2
-    def test_sam2_wrapper_initialization(self, tmp_path, module_model_registry):
-        """SAM2Wrapper can be initialized without errors via ModelRegistry."""
-    @requires_sam2
-    def test_sam2_init_video(self, test_frames_dir, module_model_registry):
-        """SAM2 init_video() initializes inference state correctly."""
-    @requires_sam2
-    def test_sam2_add_bbox_prompt(self, tmp_path, module_model_registry):
-        """SAM2 add_bbox_prompt() returns valid mask."""
-    @requires_sam2
-    def test_sam2_propagate_forward(self, test_frames_dir, module_model_registry):
-        """SAM2 propagate() forward generator yields valid results."""
 @pytest.mark.gpu_e2e
 class TestInsightFaceInference:
     """Real InsightFace inference tests."""
@@ -575,11 +557,9 @@ VIDEO_PATH = Path('downloads/example clip 720p 2x.mov')
 FACE_PATH = Path('downloads/example face.png')
 def _is_sam3_available():
     """Check if SAM3 is properly installed and can be imported."""
-def _is_sam2_available():
-    """Check if SAM2 is properly installed and can be imported."""
 @pytest.mark.integration
 @pytest.mark.slow
-@pytest.mark.parametrize('tracker_model', ['sam2', 'sam3'])
+@pytest.mark.parametrize('tracker_model', ['sam3'])
 def test_real_end_to_end_workflow(tmp_path, tracker_model):
     """Automated version of tests/verification/e2e_run.py."""
 ```
@@ -1526,10 +1506,10 @@ def test_config_defaults():
     """Test that Config initializes with expected default values."""
 def test_config_env_overrides():
     """Test that environment variables correctly override default values."""
-def test_config_has_sam2_checkpoint_url():
-    """Test that sam2_checkpoint_url is present and points to a SAM2.1 model."""
-def test_config_default_tracker_is_sam2():
-    """Test that the default tracker is SAM2 per AGENTS.md."""
+def test_config_has_sam3_checkpoint_url():
+    """Test that sam3_checkpoint_url is present and points to a SAM3.1 model."""
+def test_config_default_tracker_is_sam3():
+    """Test that the default tracker is SAM3 per AGENTS.md."""
 def test_config_invalid_quality_weights():
     """Test that Config raises a validation error if all quality weights are zero."""
 def test_config_boundary_quality_weights():
@@ -1582,10 +1562,10 @@ class TestUISafety:
 class TestMilestoneCase:
     """Rule: ALWAYS use Title Case for major pipeline milestones."""
     def test_milestone_strings_are_title_case(self): ...
-class TestSAM2DefaultBaseline:
-    """Rule: SAM2.1 Hiera Tiny is the project's default tracker."""
-    def test_config_default_is_sam2(self): ...
-    def test_agents_md_prescribes_sam2_default(self): ...
+class TestSAM3DefaultBaseline:
+    """Rule: SAM3.1 Multiplex is the project's default tracker."""
+    def test_config_default_is_sam3(self): ...
+    def test_agents_md_prescribes_sam3_default(self): ...
 ```
 
 ### `📄 tests/unit/test_core.py`
@@ -1851,7 +1831,7 @@ class TestExitBranches:
     def test_migrate_database_failure(self, mock_logger):
         """Test migrate_database handles exceptions and triggers rollback."""
     def test_sam2_wrapper_init_failure(self, mock_config):
-        """Test SAM2Wrapper initialization failure handling."""
+        """Test SAM2Wrapper initialization raises ValueError indicating it is retired."""
     def test_validate_session_dir_is_file(self, tmp_path):
         """Test validation fails if path is a file."""
     def test_validate_session_dir_non_existent(self):
@@ -2119,8 +2099,8 @@ def test_create_fingerprint_analysis_settings(tmp_path):
 ### `📄 tests/unit/test_fix_verification.py`
 
 ```python
-def test_tracker_model_name_defaults_to_sam2():
-    """Verify that AnalysisParameters and PreAnalysisEvent default to 'sam2'."""
+def test_tracker_model_name_defaults_to_sam3():
+    """Verify that AnalysisParameters and PreAnalysisEvent default to 'sam3'."""
 def test_face_fallback_when_no_people_detected():
     """Verify that SeedSelector falls back to face detection when person detection f..."""
 def test_strategy_routing_with_enum():
@@ -3003,51 +2983,16 @@ class TestQuickWins:
 
 ```python
 pytestmark = [pytest.mark.sam2]
-@pytest.fixture
-def mock_sam2_predictor(): ...
-@pytest.fixture
-def mock_cuda(): ...
-def test_sam21_wrapper_init(mock_sam2_predictor):
-    """Test initialization logic and lazy loading."""
-@patch('core.managers.sam2.torch.inference_mode')
-def test_sam21_init_video(mock_inference_mode, mock_sam2_predictor):
-    """Test that init_video calls the underlying predictor."""
-@patch('core.managers.sam2.torch.inference_mode')
-def test_sam21_propagate_in_video(mock_inference_mode, mock_sam2_predictor):
-    """Test the propagate generator logic."""
-def test_sam21_close_session(mock_sam2_predictor, mock_cuda):
-    """Test the cleanup logic in close_session."""
+def test_sam2_wrapper_retired():
+    """Verify that SAM2Wrapper immediately raises a ValueError upon instantiation."""
 ```
 
 ### `📄 tests/unit/test_sam2_wrapper.py`
 
 ```python
-"""Unit tests for SAM2Wrapper API completeness and functionality."""
 pytestmark = [pytest.mark.sam2]
-def _mock_tensor(shape: tuple) -> MagicMock:
-    """Create a mock that behaves like a torch tensor through .cpu().numpy() > 0."""
-@pytest.fixture
-def mock_predictor(): ...
-@patch('core.managers.sam2.build_sam2_video_predictor')
-@patch('core.managers.sam2.torch.cuda.is_available', return_value=False)
-@patch('core.managers.sam2.torch', _torch_mod)
-def test_sam2_wrapper_init(mock_cuda, mock_build, mock_predictor): ...
-@patch('core.managers.sam2.build_sam2_video_predictor')
-def test_sam2_wrapper_session_lifecycle(mock_build, mock_predictor): ...
-@patch('core.managers.sam2.build_sam2_video_predictor')
-@patch('core.managers.sam2.torch', _torch_mod)
-def test_sam2_wrapper_add_bbox_prompt(mock_build, mock_predictor): ...
-@patch('core.managers.sam2.build_sam2_video_predictor')
-@patch('core.managers.sam2.torch', _torch_mod)
-def test_sam2_wrapper_propagate(mock_build, mock_predictor): ...
-@patch('core.managers.sam2.build_sam2_video_predictor')
-@patch('core.managers.sam2.torch', _torch_mod)
-def test_sam2_wrapper_add_point_prompt(mock_build, mock_predictor): ...
-@patch('core.managers.sam2.build_sam2_video_predictor')
-def test_sam2_wrapper_stubs_and_utility(mock_build, mock_predictor): ...
-@patch('core.managers.sam2.build_sam2_video_predictor')
-@patch('core.managers.sam2.torch.cuda.is_available', return_value=True)
-def test_sam2_wrapper_shutdown(mock_cuda, mock_build, mock_predictor): ...
+def test_sam2_wrapper_init_retired():
+    """Verify that SAM2Wrapper immediately raises a ValueError upon instantiation in..."""
 ```
 
 ### `📄 tests/unit/test_sam3_import.py`
@@ -3610,9 +3555,8 @@ def test_simulate_pipeline_success(tmp_path): ...
 ### `📄 tests/unit/test_tracker_factory.py`
 
 ```python
-@patch('core.managers.sam2.SAM2Wrapper')
-def test_selects_sam21(mock_sam21):
-    """Test that SAM21Wrapper is selected when SAM2 is requested."""
+def test_selects_sam21():
+    """Test that requesting SAM2 raises a ValueError indicating it is retired."""
 @patch('core.managers.sam3.SAM3Wrapper')
 def test_selects_sam3(mock_sam3):
     """Test that SAM3Wrapper is selected when SAM3 is requested."""
@@ -3630,7 +3574,7 @@ def registry(): ...
 @patch('core.managers.tracker_factory.build_tracker')
 @patch('core.managers.registry.Path.exists', return_value=True)
 def test_get_tracker_sam2(mock_exists, mock_build, mock_download, registry, mock_config):
-    """Test loading SAM2 tracker and cache hit."""
+    """Test loading SAM2 tracker returns None because it is retired."""
 @patch('core.io_utils.download_model')
 @patch('core.managers.tracker_factory.build_tracker')
 @patch('core.managers.registry.Path.exists', return_value=True)

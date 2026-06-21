@@ -10,7 +10,7 @@ from ui.app_ui import AppUI
 @pytest.fixture
 def mock_app():
     config = MagicMock()
-    config.default_tracker_model_name = "sam2"
+    config.default_tracker_model_name = "sam3"
     config.models_dir = "/tmp/models"
     config.user_agent = "test"
     config.retry_max_attempts = 1
@@ -46,7 +46,7 @@ def mock_app():
     model_registry = MagicMock()
 
     # Mock return values for registry to return strings for component choices
-    model_registry.get_tracker_names.return_value = ["sam2", "sam3"]
+    model_registry.get_tracker_names.return_value = ["sam3"]
     model_registry.get_tracker_vram_requirement.return_value = 4000
     model_registry.get_detector_names.return_value = ["YOLO12l-Seg", "YOLO26n"]
 

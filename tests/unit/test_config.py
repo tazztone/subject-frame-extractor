@@ -14,9 +14,9 @@ def test_config_defaults():
     assert config.quality_weights_sharpness == 25
     assert "sharpness" in config.quality_weights
     assert config.quality_weights["sharpness"] == 25
-    # SAM2.1 Hiera Tiny is the project default (AGENTS.md)
-    assert config.default_tracker_model_name == "sam2"
-    assert "sam2.1" in config.sam2_checkpoint_url
+    # SAM3.1 Multiplex is the project default (AGENTS.md)
+    assert config.default_tracker_model_name == "sam3"
+    assert "sam3.1_multiplex_fp16.safetensors" in config.sam3_checkpoint_url
 
 
 def test_config_env_overrides():
@@ -27,17 +27,17 @@ def test_config_env_overrides():
         assert config.ffmpeg_thumbnail_quality == 95
 
 
-def test_config_has_sam2_checkpoint_url():
-    """Test that sam2_checkpoint_url is present and points to a SAM2.1 model."""
+def test_config_has_sam3_checkpoint_url():
+    """Test that sam3_checkpoint_url is present and points to a SAM3.1 model."""
     config = Config()
-    assert hasattr(config, "sam2_checkpoint_url")
-    assert "sam2.1" in config.sam2_checkpoint_url  # points to hiera-tiny
+    assert hasattr(config, "sam3_checkpoint_url")
+    assert "sam3.1" in config.sam3_checkpoint_url
 
 
-def test_config_default_tracker_is_sam2():
-    """Test that the default tracker is SAM2 per AGENTS.md."""
+def test_config_default_tracker_is_sam3():
+    """Test that the default tracker is SAM3 per AGENTS.md."""
     config = Config()
-    assert config.default_tracker_model_name == "sam2"
+    assert config.default_tracker_model_name == "sam3"
 
 
 def test_config_invalid_quality_weights():
@@ -193,6 +193,7 @@ def test_config_quality_weights_sum_to_one():
     # Default values for others: edge_strength=15, contrast=15, brightness=10, entropy=15
     assert sum(config.quality_weights.values()) == (1 + 1 + 15 + 15 + 10 + 15)
 
+
 def test_config_save_config():
     """Test saving configuration to a JSON file."""
     from core.config import Config
@@ -211,28 +212,39 @@ def test_config_save_config():
             assert args[0] == config.model_dump()
             assert kwargs["indent"] == 4
 
+
 def test_json_config_settings_source_success():
     """Test loading JSON config source successfully."""
     from core.config import json_config_settings_source
+
     mock_data = {"test_key": "test_value"}
-    with patch("core.config.Path.is_file", return_value=True), \
-         patch("builtins.open", MagicMock()), \
-         patch("json.load", return_value=mock_data):
+    with (
+        patch("core.config.Path.is_file", return_value=True),
+        patch("builtins.open", MagicMock()),
+        patch("json.load", return_value=mock_data),
+    ):
         assert json_config_settings_source() == mock_data
+
 
 def test_json_config_settings_source_file_not_found():
     """Test JSON config source when file does not exist."""
     from core.config import json_config_settings_source
+
     with patch("core.config.Path.is_file", return_value=False):
         assert json_config_settings_source() == {}
+
 
 def test_json_config_settings_source_json_error():
     """Test JSON config source when JSON is invalid."""
     import json
+
     from core.config import json_config_settings_source
-    with patch("core.config.Path.is_file", return_value=True), \
-         patch("builtins.open", MagicMock()), \
-         patch("json.load", side_effect=json.JSONDecodeError("msg", "doc", 0)), \
-         patch("core.config.logger.error") as mock_logger:
+
+    with (
+        patch("core.config.Path.is_file", return_value=True),
+        patch("builtins.open", MagicMock()),
+        patch("json.load", side_effect=json.JSONDecodeError("msg", "doc", 0)),
+        patch("core.config.logger.error") as mock_logger,
+    ):
         assert json_config_settings_source() == {}
         mock_logger.assert_called_once()

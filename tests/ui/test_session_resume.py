@@ -33,7 +33,7 @@ class TestSessionResume:
             "method": "scene",
             "pre_analysis_enabled": True,
             "pre_sample_nth": 2,
-            "tracker_model_name": "sam2",
+            "tracker_model_name": "sam3",
             "best_frame_strategy": "Largest Person",
         }
         (session_path / "run_config.json").write_text(json.dumps(run_config), encoding="utf-8")

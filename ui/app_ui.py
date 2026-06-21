@@ -64,7 +64,7 @@ class AppUI:
     ]
     SEED_STRATEGY_CHOICES: List[str] = ANCHOR_STRATEGIES
     FACE_MODEL_NAME_CHOICES: List[str] = ["buffalo_l", "buffalo_s"]
-    TRACKER_MODEL_CHOICES: List[Tuple[str, str]] = [("sam2", "sam2"), ("sam3 (Experimental)", "sam3")]
+    TRACKER_MODEL_CHOICES: List[Tuple[str, str]] = [("SAM3.1 (Multiplex FP16)", "sam3")]
     SUBJECT_DETECTOR_MODEL_CHOICES: List[str] = [
         "None",
         "YOLO12l-Seg",

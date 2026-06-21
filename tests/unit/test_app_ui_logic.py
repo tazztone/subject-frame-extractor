@@ -139,7 +139,7 @@ class TestAppUI:
                 None,  # face_ref_img_upload
                 "buffalo_l",  # face_model_name
                 True,  # enable_subject_mask
-                "sam2",  # tracker_model_name
+                "sam3",  # tracker_model_name
                 "Largest",  # best_frame_strategy
                 True,  # scene_detect
                 "",  # text_prompt

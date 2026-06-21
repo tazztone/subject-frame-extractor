@@ -25,24 +25,11 @@ def registry():
 @patch("core.managers.tracker_factory.build_tracker")
 @patch("core.managers.registry.Path.exists", return_value=True)
 def test_get_tracker_sam2(mock_exists, mock_build, mock_download, registry, mock_config):
-    """Test loading SAM2 tracker and cache hit."""
-    mock_build.return_value = MagicMock(name="SAM2Instance")
-
-    # First load
-    tracker1 = registry.get_tracker(
+    """Test loading SAM2 tracker returns None because it is retired."""
+    tracker = registry.get_tracker(
         model_name="sam2", models_path="models", user_agent="test-agent", retry_params=(3, (1, 2)), config=mock_config
     )
-
-    assert tracker1 == mock_build.return_value
-    assert mock_build.call_count == 1
-
-    # Second load (cache hit)
-    tracker2 = registry.get_tracker(
-        model_name="sam2", models_path="models", user_agent="test-agent", retry_params=(3, (1, 2)), config=mock_config
-    )
-
-    assert tracker2 == tracker1
-    assert mock_build.call_count == 1  # Still 1
+    assert tracker is None
 
 
 @patch("core.io_utils.download_model")
@@ -56,7 +43,7 @@ def test_get_tracker_sam3_safetensors(mock_exists, mock_build, mock_download, re
         model_name="sam3", models_path="models", user_agent="test-agent", retry_params=(3, (1, 2)), config=mock_config
     )
 
-    # Verify .safetensors was replaced by .pt in URL if it was in the config
+    # Verify .safetensors was NOT replaced by .pt in URL
     # In my config fixture I set it to .safetensors
     mock_download.assert_not_called()  # Because exists=True
 
@@ -72,8 +59,7 @@ def test_get_tracker_sam3_safetensors(mock_exists, mock_build, mock_download, re
             config=mock_config,
         )
         assert mock_download.called
-        assert ".pt" in mock_download.call_args[1]["url"]
-        assert ".safetensors" not in mock_download.call_args[1]["url"]
+        assert ".safetensors" in mock_download.call_args[1]["url"]
 
 
 def test_clear_registry(registry):
@@ -92,7 +78,7 @@ def test_get_tracker_failure_path(registry, mock_config):
     """Test error handling when loader fails."""
     with patch.object(registry, "_load_tracker_impl", side_effect=Exception("Failed")):
         tracker = registry.get_tracker(
-            model_name="sam2",
+            model_name="sam3",
             models_path="models",
             user_agent="test-agent",
             retry_params=(3, (1, 2)),
@@ -116,7 +102,7 @@ def test_get_tracker_oom_fallback(registry, mock_config):
         mock_load.side_effect = [_torch_mod.cuda.OutOfMemoryError("CUDA out of memory"), MagicMock(name="CPUTracker")]
 
         tracker = registry.get_tracker(
-            model_name="sam2_oom",
+            model_name="sam3",
             models_path="models",
             user_agent="test-agent",
             retry_params=(3, (1, 2)),

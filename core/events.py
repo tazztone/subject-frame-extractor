@@ -73,7 +73,7 @@ class PreAnalysisEvent(UIEvent):
     face_ref_img_upload: Optional[str] = None
     face_model_name: str = "buffalo_l"
     enable_subject_mask: bool = False
-    tracker_model_name: str = "sam2"
+    tracker_model_name: str = "sam3"
     subject_detector_model: str = "YOLO26n"
     subject_detector_class_name: str = "person"
     subject_detector_class_id: int = 0
@@ -132,6 +132,7 @@ class PreAnalysisEvent(UIEvent):
         if not p.is_file() or p.suffix.lower() not in valid_exts:
             return ""
         return v
+
 
 class PropagationEvent(UIEvent):
     """

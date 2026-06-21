@@ -40,19 +40,9 @@ def _is_sam3_available():
         return False
 
 
-def _is_sam2_available():
-    """Check if SAM2 is properly installed and can be imported."""
-    try:
-        import sam2.build_sam  # noqa: F401
-
-        return True
-    except ImportError:
-        return False
-
-
 @pytest.mark.integration
 @pytest.mark.slow
-@pytest.mark.parametrize("tracker_model", ["sam2", "sam3"])
+@pytest.mark.parametrize("tracker_model", ["sam3"])
 def test_real_end_to_end_workflow(tmp_path, tracker_model):
     """
     Automated version of tests/verification/e2e_run.py.
@@ -63,8 +53,6 @@ def test_real_end_to_end_workflow(tmp_path, tracker_model):
     # 1. Setup & Checks
     if tracker_model == "sam3" and not _is_sam3_available():
         pytest.skip("SAM3 not available")
-    if tracker_model == "sam2" and not _is_sam2_available():
-        pytest.skip("SAM2 not available")
 
     if not VIDEO_PATH.exists():
         pytest.skip(f"Test video not found at {VIDEO_PATH}. Skip integration test.")

@@ -211,31 +211,18 @@ class ModelRegistry:
         from .tracker_factory import TrackerBackend, build_tracker
 
         if model_name == "sam2":
-            checkpoint_filename = "sam2.1_hiera_tiny.pt"
-            url = config.sam2_checkpoint_url if config else ""
-            description = "SAM2.1 Model"
-            backend: TrackerBackend = "sam2"
+            raise ValueError("SAM2.1 model has been retired. Please use 'sam3' (SAM3.1 Multiplex) instead.")
         elif model_name == "sam3":
-            checkpoint_filename = "sam3.1_multiplex.pt"
+            checkpoint_filename = "sam3.1_multiplex_fp16.safetensors"
             url = config.sam3_checkpoint_url if config else ""
-            description = "SAM3.1 Model"
+            description = "SAM3.1 Multiplex Model"
             backend: TrackerBackend = "sam3"
         else:
-            raise ValueError(f"Unknown tracker model '{model_name}'. Must be 'sam2' or 'sam3'.")
+            raise ValueError(f"Unknown tracker model '{model_name}'. Must be 'sam3'.")
 
         checkpoint_path = Path(models_path) / checkpoint_filename
-        if model_name == "sam3":
-            # Fallback logic: check for legacy sam3.pt before deciding to download
-            if not checkpoint_path.exists():
-                legacy_path = Path(models_path) / "sam3.pt"
-                if legacy_path.exists():
-                    self.logger.info(f"SAM 3.1 checkpoint not found; falling back to legacy {legacy_path.name}")
-                    checkpoint_path = legacy_path
 
         if not checkpoint_path.exists():
-            if url and ".safetensors" in url:
-                url = url.replace(".safetensors", ".pt")
-
             if not url:
                 raise ValueError(
                     f"No checkpoint URL provided for {model_name} and local file {checkpoint_path} not found."

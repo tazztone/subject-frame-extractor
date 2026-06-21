@@ -316,9 +316,43 @@ def patch_sam3_pvs_initialization():
             logger.warning(f"Failed to apply PVS patch: {e}")
 
 
+def patch_torch_load_for_safetensors():
+    """
+    Patch torch.load to transparently load safetensors checkpoints when requested.
+    This allows loading Comfy-Org's sam3.1_multiplex_fp16.safetensors directly.
+    """
+    try:
+        import safetensors.torch
+        import torch
+
+        original_load = torch.load
+
+        def patched_load(f, *args, **kwargs):
+            filepath = None
+            if isinstance(f, (str, Path)):
+                filepath = str(f)
+            elif hasattr(f, "name"):
+                filepath = str(f.name)
+
+            if filepath and filepath.endswith(".safetensors"):
+                state_dict = safetensors.torch.load_file(filepath, device="cpu")
+                if "model" in state_dict and isinstance(state_dict["model"], dict):
+                    return state_dict["model"]
+                return state_dict
+
+            return original_load(f, *args, **kwargs)
+
+        torch.load = patched_load
+    except (ImportError, AttributeError):
+        pass
+
+
 def apply_patches():
     """Apply all monkey patches to SAM3 with version safety check."""
-    # 0. Version Safety Check
+    # 0. Safetensors loading patch
+    patch_torch_load_for_safetensors()
+
+    # 1. Version Safety Check
     try:
         import sam3.model.sam3_video_predictor as svp  # type: ignore
 
