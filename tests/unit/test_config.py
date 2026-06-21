@@ -192,3 +192,47 @@ def test_config_quality_weights_sum_to_one():
     config = Config(quality_weights_sharpness=1, quality_weights_niqe=1)
     # Default values for others: edge_strength=15, contrast=15, brightness=10, entropy=15
     assert sum(config.quality_weights.values()) == (1 + 1 + 15 + 15 + 10 + 15)
+
+def test_config_save_config():
+    """Test saving configuration to a JSON file."""
+    from core.config import Config
+
+    config = Config()
+
+    with patch("builtins.open", MagicMock()) as mock_open:
+        with patch("json.dump") as mock_json_dump:
+            config.save_config("custom_config.json")
+
+            mock_open.assert_called_once_with("custom_config.json", "w", encoding="utf-8")
+            mock_json_dump.assert_called_once()
+
+            # Verify the first argument to json.dump is the config model dump
+            args, kwargs = mock_json_dump.call_args
+            assert args[0] == config.model_dump()
+            assert kwargs["indent"] == 4
+
+def test_json_config_settings_source_success():
+    """Test loading JSON config source successfully."""
+    from core.config import json_config_settings_source
+    mock_data = {"test_key": "test_value"}
+    with patch("core.config.Path.is_file", return_value=True), \
+         patch("builtins.open", MagicMock()), \
+         patch("json.load", return_value=mock_data):
+        assert json_config_settings_source() == mock_data
+
+def test_json_config_settings_source_file_not_found():
+    """Test JSON config source when file does not exist."""
+    from core.config import json_config_settings_source
+    with patch("core.config.Path.is_file", return_value=False):
+        assert json_config_settings_source() == {}
+
+def test_json_config_settings_source_json_error():
+    """Test JSON config source when JSON is invalid."""
+    import json
+    from core.config import json_config_settings_source
+    with patch("core.config.Path.is_file", return_value=True), \
+         patch("builtins.open", MagicMock()), \
+         patch("json.load", side_effect=json.JSONDecodeError("msg", "doc", 0)), \
+         patch("core.config.logger.error") as mock_logger:
+        assert json_config_settings_source() == {}
+        mock_logger.assert_called_once()
