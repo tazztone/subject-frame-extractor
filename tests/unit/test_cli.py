@@ -267,3 +267,95 @@ def test_full_command_args(mock_run_full, runner, tmp_path):
         True,  # resume
         True,  # force
     )
+
+
+@patch("core.cli_args.run_analyze")
+def test_analyze_command_args(mock_run_analyze, runner, tmp_path):
+    session_dir = tmp_path / "session"
+    session_dir.mkdir()
+    source_path = tmp_path / "video.mp4"
+    source_path.touch()
+    face_ref = tmp_path / "face.jpg"
+    face_ref.touch()
+
+    result = runner.invoke(
+        cli,
+        [
+            "analyze",
+            "--session",
+            str(session_dir),
+            "--source",
+            str(source_path),
+            "--face-ref",
+            str(face_ref),
+            "--strategy",
+            "🧑‍🤝‍🧑 Find Prominent Person",
+            "--verbose",
+            "--resume",
+            "--force",
+        ],
+    )
+
+    assert result.exit_code == 0
+    mock_run_analyze.assert_called_once_with(
+        str(session_dir),
+        str(source_path),
+        str(face_ref),
+        "🧑‍🤝‍🧑 Find Prominent Person",
+        True,  # verbose
+        True,  # resume
+        True,  # force
+    )
+
+
+@patch("core.cli_args.run_status")
+def test_status_command_args(mock_run_status, runner, tmp_path):
+    session_dir = tmp_path / "session"
+    session_dir.mkdir()
+
+    result = runner.invoke(cli, ["status", "--session", str(session_dir)])
+
+    assert result.exit_code == 0
+    mock_run_status.assert_called_once_with(str(session_dir))
+
+
+@patch("core.cli_args.run_filter")
+def test_filter_command_args(mock_run_filter, runner, tmp_path):
+    session_dir = tmp_path / "session"
+    session_dir.mkdir()
+
+    result = runner.invoke(
+        cli,
+        [
+            "filter",
+            "--session",
+            str(session_dir),
+            "--quality-min",
+            "50.5",
+            "--face-min",
+            "0.8",
+            "--no-dedup",
+            "--dedup-method",
+            "SSIM",
+            "--dedup-thresh",
+            "0.9",
+            "--verbose",
+        ],
+    )
+
+    assert result.exit_code == 0
+    mock_run_filter.assert_called_once_with(
+        str(session_dir),
+        50.5,
+        0.8,
+        False,  # dedup is False due to --no-dedup
+        "SSIM",
+        0.9,
+        True,   # verbose
+    )
+
+
+def test_cli_group_exists(runner):
+    result = runner.invoke(cli, ["--help"])
+    assert result.exit_code == 0
+    assert "Subject Frame Extractor CLI." in result.output
