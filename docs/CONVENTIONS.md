@@ -5,12 +5,15 @@
 
 ## UI Event Patterns
 
+### 1. UI Safety Contract
+Event methods in `app_ui.py` MUST be wrapped in `@AppUI.safe_ui_callback`.
 - **Behavior**: Catches exceptions, logs them with `self.logger.error`, and returns a standardized error message to the "Unified Status" and "Unified Log" components.
 
-### 2. Async Orchestration (`_run_pipeline`)
+### 2. Async Orchestration & Strip-Done Protocol
 Any UI action that triggers a long-running process (Extraction, Analysis, Session Loading) MUST use the `self.app._run_pipeline` async wrapper.
 - **Responsiveness**: This ensures the Gradio UI remains interactive and displays a "Loading" or "Running" status instead of freezing.
 - **Standard**: Even non-ML tasks like `Load Session` should be adapted to this generator-based pattern.
+- **Strip-Done Protocol**: When chaining generators (e.g., in `execute_analysis_orchestrator`), intermediate stages MUST have their `done: True` flag stripped before yielding. Only the final stage or the orchestrator itself should yield `done: True` to prevent premature consumer termination.
 
 ### 3. Anti-Loop State Initialization
 Reactive state fields in `ApplicationState` (like `all_frames_data`) that trigger `.change()` listeners MUST NOT use "falsy" defaults that indicate "not yet loaded" (e.g., `[]`, `""`, `0`).
@@ -82,7 +85,24 @@ The `tests/mock_app.py` stubs MUST be kept in perfect synchronization with the r
 - **Verification**: Always run `uv run pytest tests/unit/test_signatures.py` after changing any public pipeline API.
 - **Failure**: Failure to sync mocks will cause CI regressions in unit tests that rely on the mock app.
 
-### 2. Bug Fix Workflow
+### 2. Architectural Boundaries
+- **Architectural Isolation**: NEVER import from `ui/` inside `core/`.
+- **Unhashable Config**: NEVER use `@lru_cache` on functions taking the `Config` object.
+- **Operator Plugin Pattern**: When adding a quality metric, you MUST add an entry to `core.filtering._extract_metric_arrays` or filtering will silently fail.
+- **Milestone Logging**: Use **Title Case** for major pipeline milestones to prevent breaking the downstream E2E scraper logs.
+
+### 3. Playwright & UI Testing Conventions
+- **Accordion Visibility**: Components inside a collapsed `gr.Accordion` are INVISIBLE to Playwright. ALWAYS use `open_accordion(page, Label)` before asserting values inside.
+- **Slider Selectors**: Gradio Sliders contain multiple inputs. Use `#elem_id input[data-testid='number-input']` for numeric values.
+- **Playwright Delay**: ALWAYS use `page.wait_for_timeout()` instead of web-first assertions to account for Gradio's reactive delay.
+
+### 4. Test Infrastructure & Mock Rules
+- **SAM3 Mocking**: `tests/conftest.py` intentionally excludes all `sam3.*` entries from `modules_to_mock`. Unit tests that need a mock SAM3 MUST create a local mock in their own file using `patch("sam3.model_builder.build_sam3_predictor")`.
+- **`PYTEST_INTEGRATION_MODE` Propagation**: `conftest.py` disables global mocks when this env var is `true`. xdist workers inherit env vars only if the parent shell used `export`, not an inline prefix. Always use `export`.
+- **GPU E2E Isolation**: The `module_model_registry` fixture uses `scope="module"` to share model weights within a worker, but provides no cross-worker isolation. Multiple workers loading models (SAM3, SAM2) simultaneously causes VRAM GPU OOM.
+- **Real Model Directory in E2E**: The `module_model_registry` fixture in `test_gpu_e2e.py` must point to the project's real `models/` directory. Never use `tempfile.TemporaryDirectory()` for the models path in GPU tests (it triggers a 3.3 GB HuggingFace download race).
+
+### 5. Bug Fix Workflow
 1. **Reproduce**: Create a minimal test case in `tests/unit/` or `tests/integration/`.
 2. **Trace**: Use `logger.debug()` or `logger.info()` to inspect state during pipeline execution.
 3. **Fix**: Implement the fix in the appropriate `core/` or `ui/` module.
@@ -91,5 +111,4 @@ The `tests/mock_app.py` stubs MUST be kept in perfect synchronization with the r
 
 ---
 
-
-*Refined conventions: 2026-03-21*
+*Refined conventions: 2026-06-21*
