@@ -844,11 +844,11 @@ def _process_ffmpeg_stream(stream, tracker: Optional['AdvancedProgressTracker'],
     """Parses FFmpeg progress stream and updates the tracker with optional time offset."""
 def _process_ffmpeg_showinfo(stream, fps: float) -> tuple[list, str]:
     """Parses FFmpeg stderr for 'showinfo' frame timestamps to map back to original ..."""
-def run_ffmpeg_extraction(video_path: str | Path, output_dir: Path, video_info: dict, params: 'AnalysisParameters', progress_queue: Queue, cancel_event: threading.Event, logger: 'AppLogger', config: 'Config', tracker: Optional['AdvancedProgressTracker']=None):
-    """Executes FFmpeg command to extract frames/thumbnails."""
 class ExtractionPipeline:
     """Pipeline for extracting frames from video or processing image folders."""
     def __init__(self, config: 'Config', logger: 'AppLogger', params: 'AnalysisParameters', progress_queue: Queue, cancel_event: threading.Event, model_registry: Optional['ModelRegistry']=None): ...
+    def _run_ffmpeg_extraction(self, video_path: str | Path, output_dir: Path, video_info: dict, tracker: Optional['AdvancedProgressTracker']=None):
+        """Executes FFmpeg command to extract frames/thumbnails (private method)."""
     def _run_impl(self, tracker: Optional['AdvancedProgressTracker']=None) -> dict: ...
 ```
 
@@ -868,7 +868,7 @@ def get_face_analyzer(model_name: str, models_path: str, det_size_tuple: tuple, 
 def get_lpips_metric(model_name: str='alex', device: str='cpu'):
     """Returns the LPIPS metric model."""
 def initialize_analysis_models(params: Union[dict, 'AnalysisParameters'], config: 'Config', logger: 'AppLogger', model_registry: 'ModelRegistry') -> dict:
-    """Initializes all necessary analysis models based on parameters."""
+    """Compatibility/deprecation wrapper. Delegates directly to ModelRegistry."""
 ```
 
 ### `📄 core/managers/registry.py`
@@ -876,17 +876,19 @@ def initialize_analysis_models(params: Union[dict, 'AnalysisParameters'], config
 ```python
 class ModelRegistry:
     """Thread-safe registry for lazy loading and caching of heavy ML models."""
-    def __init__(self, logger: Optional['LoggerLike']=None): ...
+    def __init__(self, logger: Optional['LoggerLike']=None, config: Optional['Config']=None): ...
     def get_or_load(self, key: str, loader_fn: Callable[[], Any]) -> Any:
         """Retrieves a model by key, loading it via loader_fn if not present."""
     def clear(self):
         """Clears all models and triggers memory cleanup."""
-    def get_face_landmarker(self, model_path: str, logger: 'LoggerLike') -> Any:
-        """Returns a thread-local MediaPipe FaceLandmarker, tracked for cleanup."""
+    def get_face_analyzer(self, model_name: str, det_size_tuple: tuple, device: str='cpu') -> Any:
+        """Gets or loads the InsightFace FaceAnalysis app, with OOM handling."""
+    def get_face_landmarker(self, model_path: Optional[str]=None, logger: Optional['LoggerLike']=None) -> Any:
+        """Returns a thread-local MediaPipe FaceLandmarker, tracked for cleanup and down..."""
     def get_tracker(self, model_name: str, models_path: Optional[str]=None, user_agent: Optional[str]=None, retry_params: Optional[tuple]=None, config: Optional['Config']=None) -> Optional[Any]:
         """Loads subject tracker with CPU fallback on OOM."""
-    def get_subject_detector(self, model_name: str, model_path: str, logger: 'LoggerLike', device: str) -> Optional[Any]:
-        """Retrieves or loads a subject detector (YOLO family) with CPU fallback on OOM."""
+    def get_subject_detector(self, model_name: str, model_path: Optional[str]=None, logger: Optional['LoggerLike']=None, device: Optional[str]=None) -> Optional[Any]:
+        """Retrieves or loads a subject detector (YOLO family) with CPU fallback on OOM,..."""
     def _load_tracker_impl(self, model_name: str, models_path: str, user_agent: str, retry_params: tuple, device: str, config: Optional['Config']=None): ...
 ```
 
@@ -1442,8 +1444,20 @@ class MaskPropagator:
 """SeedSelector class for selecting seed frames and bounding boxes for mask prop..."""
 class SeedSelector:
     """Selects seed frames and bounding boxes for mask propagation."""
-    def __init__(self, params: 'AnalysisParameters', config: 'Config', face_analyzer: Optional['FaceAnalysis']=None, reference_embedding: Optional[np.ndarray]=None, tracker: Optional['SAM3Wrapper']=None, subject_detector: Optional['SubjectDetector']=None, logger: Optional['LoggerLike']=None, device: str='cpu'):
+    def __init__(self, params: 'AnalysisParameters', config: 'Config', face_analyzer: Optional['FaceAnalysis']=None, reference_embedding: Optional[np.ndarray]=None, tracker: Optional['SAM3Wrapper']=None, subject_detector: Optional['SubjectDetector']=None, logger: Optional['LoggerLike']=None, device: str='cpu', model_registry: Optional['ModelRegistry']=None):
         """Initialize the SeedSelector."""
+    @property
+    def face_analyzer(self) -> Optional['FaceAnalysis']: ...
+    @face_analyzer.setter
+    def face_analyzer(self, val): ...
+    @property
+    def reference_embedding(self) -> Optional[np.ndarray]: ...
+    @reference_embedding.setter
+    def reference_embedding(self, val): ...
+    @property
+    def subject_detector(self) -> Optional[Any]: ...
+    @subject_detector.setter
+    def subject_detector(self, val): ...
     def _get_param(self, source: Union[dict, object], key: str, default: Any=None) -> Any:
         """Get a parameter from either a dict or an object."""
     def select_seed(self, frame_rgb: np.ndarray, current_params: Union[dict, 'AnalysisParameters', None]=None, scene: Optional['Scene']=None) -> tuple[Optional[list], dict]:
@@ -1488,6 +1502,22 @@ class SubjectMasker:
     """Coordinates subject detection and mask propagation for video frames."""
     def __init__(self, params: 'AnalysisParameters', progress_queue: Queue, cancel_event: threading.Event, config: 'Config', frame_map: Optional[dict]=None, face_analyzer: Optional['FaceAnalysis']=None, reference_embedding: Optional[np.ndarray]=None, thumbnail_manager: Optional['ThumbnailManager']=None, niqe_metric: Optional[Callable]=None, logger: Optional['LoggerLike']=None, face_landmarker: Optional[Any]=None, device: str='cpu', model_registry: Optional['ModelRegistry']=None, subject_detector: Optional['SubjectDetector']=None):
         """Initialize SubjectMasker."""
+    @property
+    def face_analyzer(self) -> Optional['FaceAnalysis']: ...
+    @face_analyzer.setter
+    def face_analyzer(self, val): ...
+    @property
+    def reference_embedding(self) -> Optional[np.ndarray]: ...
+    @reference_embedding.setter
+    def reference_embedding(self, val): ...
+    @property
+    def face_landmarker(self) -> Optional[Any]: ...
+    @face_landmarker.setter
+    def face_landmarker(self, val): ...
+    @property
+    def subject_detector(self) -> Optional[Any]: ...
+    @subject_detector.setter
+    def subject_detector(self, val): ...
     def initialize_models(self) -> None:
         """Initialize required models based on parameters."""
     def initialize_tracker_session(self, frames_dir: str) -> bool:

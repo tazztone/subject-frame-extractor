@@ -321,7 +321,7 @@ def execute_analysis_orchestrator(
 ) -> Generator[dict, None, None]:
     """Orchestrates Pre-Analysis, Propagation, and Analysis stages."""
     # Ensure model_registry is not None
-    mr = model_registry or ModelRegistry(logger=logger)
+    mr = model_registry or ModelRegistry(logger=logger, config=config)
 
     # Initialize models once for all stages
     params = AnalysisParameters.from_ui(logger, config, **event.model_dump())

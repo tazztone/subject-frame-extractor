@@ -1910,7 +1910,7 @@ def test_process_ffmpeg_showinfo(mock_logger): ...
 @patch('core.managers.extraction.subprocess.Popen')
 @patch('core.utils.detect_hwaccel', return_value=(None, None))
 def test_run_ffmpeg_extraction(mock_detect, mock_popen, mock_logger, mock_config, tmp_path): ...
-@patch('core.managers.extraction.run_ffmpeg_extraction')
+@patch('core.managers.extraction.ExtractionPipeline._run_ffmpeg_extraction')
 @patch('core.managers.extraction.VideoManager')
 def test_extraction_pipeline_run_video(mock_vm_cls, mock_run_ffmpeg, mock_logger, mock_config, tmp_path): ...
 @patch('core.managers.extraction.ingest_folder')
@@ -1934,7 +1934,7 @@ def test_run_ffmpeg_extraction_success(mock_detect, mock_popen_cls, mock_deps, a
 @patch('core.managers.extraction.ingest_folder')
 def test_extraction_pipeline_image_folder(mock_ingest, mock_is_img, mock_deps, analysis_params, tmp_path): ...
 @patch('core.managers.extraction.VideoManager')
-@patch('core.managers.extraction.run_ffmpeg_extraction')
+@patch('core.managers.extraction.ExtractionPipeline._run_ffmpeg_extraction')
 def test_extraction_pipeline_video(mock_run_ffmpeg, mock_vid_manager_cls, mock_deps, analysis_params, tmp_path): ...
 @patch('core.managers.extraction.subprocess.Popen')
 @patch('core.managers.extraction.detect_hwaccel', create=True)

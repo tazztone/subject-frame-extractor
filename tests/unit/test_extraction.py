@@ -8,7 +8,6 @@ from core.managers.extraction import (
     ExtractionPipeline,
     _process_ffmpeg_showinfo,
     _process_ffmpeg_stream,
-    run_ffmpeg_extraction,
 )
 from core.models import AnalysisParameters
 
@@ -56,20 +55,16 @@ def test_run_ffmpeg_extraction(mock_detect, mock_popen, mock_logger, mock_config
     with patch("core.managers.extraction.subprocess.run") as mock_run:
         mock_run.return_value = MagicMock(returncode=0)
         params = AnalysisParameters(source_path="video.mp4", method="all", thumb_megapixels=0.5, thumbnails_only=True)
-        run_ffmpeg_extraction(
+        pipeline = ExtractionPipeline(mock_config, mock_logger, params, Queue(), threading.Event())
+        pipeline._run_ffmpeg_extraction(
             "video.mp4",
             tmp_path,
             {"fps": 30, "frame_count": 300},
-            params,
-            Queue(),
-            threading.Event(),
-            mock_logger,
-            mock_config,
         )
     assert mock_popen.called
 
 
-@patch("core.managers.extraction.run_ffmpeg_extraction")
+@patch("core.managers.extraction.ExtractionPipeline._run_ffmpeg_extraction")
 @patch("core.managers.extraction.VideoManager")
 def test_extraction_pipeline_run_video(mock_vm_cls, mock_run_ffmpeg, mock_logger, mock_config, tmp_path):
     mock_vm = mock_vm_cls.return_value

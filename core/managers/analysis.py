@@ -101,15 +101,11 @@ class PreAnalysisPipeline(Pipeline):
             self.progress_queue,
             self.cancel_event,
             self.config,
-            face_analyzer=models["face_analyzer"],
-            reference_embedding=models["ref_emb"],
             niqe_metric=niqe_metric,
             thumbnail_manager=self.thumbnail_manager,
             logger=self.logger,
-            face_landmarker=models["face_landmarker"],
             device=models["device"],
             model_registry=self.model_registry,
-            subject_detector=models["subject_detector"],
         )
         masker.frame_map = masker._create_frame_map(str(self.output_dir))
 
@@ -246,12 +242,14 @@ class AnalysisPipeline(Pipeline):
                 if self.loaded_models
                 else initialize_analysis_models(self.params, self.config, self.logger, self.model_registry)
             )
-            self.face_analyzer, self.reference_embedding, self.face_landmarker = (
-                models["face_analyzer"],
-                models["ref_emb"],
-                models["face_landmarker"],
-            )
-            if self.face_analyzer and self.params.face_ref_img_path:
+            self.face_analyzer = models.get("face_analyzer")
+            self.reference_embedding = models.get("ref_emb")
+            self.face_landmarker = models.get("face_landmarker")
+            self.subject_detector = models.get("subject_detector")
+            self.device = models.get("device", "cpu")
+
+            # Fallback if reference_embedding is not calculated yet but face_analyzer and path exist
+            if self.face_analyzer and self.params.face_ref_img_path and self.reference_embedding is None:
                 self._process_reference_face()
             ext = ".webp" if self.params.thumbnails_only else ".png"
 
@@ -260,16 +258,15 @@ class AnalysisPipeline(Pipeline):
                 self.progress_queue,
                 self.cancel_event,
                 self.config,
-                create_frame_map(self.output_dir, self.logger, ext=ext),
-                self.face_analyzer,
-                self.reference_embedding,
+                frame_map=create_frame_map(self.output_dir, self.logger, ext=ext),
+                face_analyzer=self.face_analyzer,
+                reference_embedding=self.reference_embedding,
                 thumbnail_manager=self.thumbnail_manager,
                 niqe_metric=self.niqe_metric,
                 logger=self.logger,
                 face_landmarker=self.face_landmarker,
-                device=models["device"],
+                device=self.device,
                 model_registry=self.model_registry,
-                subject_detector=models["subject_detector"],
             )
             self.mask_metadata = masker.run_propagation(str(self.output_dir), scenes_to_process, tracker=tracker)
             completed_scene_ids = [s.shot_id for s in scenes_to_process]
@@ -296,12 +293,14 @@ class AnalysisPipeline(Pipeline):
                 if self.loaded_models
                 else initialize_analysis_models(self.params, self.config, self.logger, self.model_registry)
             )
-            self.face_analyzer, self.reference_embedding, self.face_landmarker = (
-                models["face_analyzer"],
-                models["ref_emb"],
-                models["face_landmarker"],
-            )
-            if self.face_analyzer and self.params.face_ref_img_path:
+            self.face_analyzer = models.get("face_analyzer")
+            self.reference_embedding = models.get("ref_emb")
+            self.face_landmarker = models.get("face_landmarker")
+            self.subject_detector = models.get("subject_detector")
+            self.device = models.get("device", "cpu")
+
+            # Fallback if reference_embedding is not calculated yet but face_analyzer and path exist
+            if self.face_analyzer and self.params.face_ref_img_path and self.reference_embedding is None:
                 self._process_reference_face()
             mask_metadata_path = self.output_dir / "mask_metadata.json"
             if mask_metadata_path.exists():

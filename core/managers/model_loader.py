@@ -1,11 +1,8 @@
 from pathlib import Path
 from typing import TYPE_CHECKING, Union
 
-import cv2
 import lpips
-import torch
 
-from core.error_handling import ErrorHandler
 from core.io_utils import download_model
 
 from .face import get_face_analyzer, get_face_landmarker
@@ -26,13 +23,22 @@ def get_lpips_metric(model_name: str = "alex", device: str = "cpu"):
 def initialize_analysis_models(
     params: Union[dict, "AnalysisParameters"], config: "Config", logger: "AppLogger", model_registry: "ModelRegistry"
 ) -> dict:
-    """Initializes all necessary analysis models based on parameters."""
+    """Compatibility/deprecation wrapper. Delegates directly to ModelRegistry."""
+    import cv2
+    import torch
+
+    from core.error_handling import ErrorHandler
     from core.models import AnalysisParameters
 
     if isinstance(params, dict):
         params = AnalysisParameters(**params)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    # Synchronize config on the registry if not set
+    if getattr(model_registry, "config", None) is None:
+        model_registry.config = config
+
     face_analyzer, ref_emb, face_landmarker = None, None, None
 
     if params.compute_face_sim:
@@ -59,6 +65,7 @@ def initialize_analysis_models(
             else:
                 raise FileNotFoundError(f"Reference face image not found: {params.face_ref_img_path}")
 
+    # Landmarker
     landmarker_path = Path(config.models_dir) / Path(config.face_landmarker_url).name
     download_model(
         config.face_landmarker_url,
@@ -76,8 +83,6 @@ def initialize_analysis_models(
     person_detector = None
     if params.subject_detector_model and params.subject_detector_model != "None":
         model_name = params.subject_detector_model
-
-        # Map model name to config URL
         url_map = {
             "YOLO12l-Seg": config.yolo12l_seg_url,
             "YOLO26n": config.yolo26n_url,
@@ -86,31 +91,19 @@ def initialize_analysis_models(
             "YOLO26l": config.yolo26l_url,
             "YOLO26x": config.yolo26x_url,
         }
-
         model_url = url_map.get(model_name)
-        if not model_url:
-            logger.error(f"No URL configured for detector model: {model_name}")
-            return {
-                "face_analyzer": face_analyzer,
-                "ref_emb": ref_emb,
-                "face_landmarker": face_landmarker,
-                "subject_detector": None,
-                "device": device,
-            }
-
-        model_path = Path(config.models_dir) / Path(model_url).name
-
-        download_model(
-            model_url,
-            model_path,
-            f"Person Detector ({model_name})",
-            logger,
-            ErrorHandler(logger, config.retry_max_attempts, config.retry_backoff_seconds),
-            config.user_agent,
-        )
-
-        if model_path.exists():
-            person_detector = model_registry.get_subject_detector(model_name, str(model_path), logger, device)
+        if model_url:
+            model_path = Path(config.models_dir) / Path(model_url).name
+            download_model(
+                model_url,
+                model_path,
+                f"Person Detector ({model_name})",
+                logger,
+                ErrorHandler(logger, config.retry_max_attempts, config.retry_backoff_seconds),
+                config.user_agent,
+            )
+            if model_path.exists():
+                person_detector = model_registry.get_subject_detector(model_name, str(model_path), logger, device)
 
     return {
         "face_analyzer": face_analyzer,

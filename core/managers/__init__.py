@@ -1,5 +1,5 @@
 from .analysis import AnalysisPipeline, PreAnalysisPipeline, _load_scenes
-from .extraction import ExtractionPipeline, run_ffmpeg_extraction
+from .extraction import ExtractionPipeline
 from .face import get_face_analyzer, get_face_landmarker
 from .model_loader import get_lpips_metric, initialize_analysis_models
 from .registry import ModelRegistry
@@ -23,7 +23,6 @@ __all__ = [
     "initialize_analysis_models",
     "get_lpips_metric",
     "ExtractionPipeline",
-    "run_ffmpeg_extraction",
     "AnalysisPipeline",
     "PreAnalysisPipeline",
     "_load_scenes",

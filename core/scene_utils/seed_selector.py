@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
     from core.config import Config
     from core.logger import LoggerLike
-    from core.managers import SAM3Wrapper, SubjectDetector
+    from core.managers import ModelRegistry, SAM3Wrapper, SubjectDetector
     from core.models import AnalysisParameters, Scene
 
 from core.enums import SeedStrategy
@@ -50,28 +50,85 @@ class SeedSelector:
         subject_detector: Optional["SubjectDetector"] = None,
         logger: Optional["LoggerLike"] = None,
         device: str = "cpu",
+        model_registry: Optional["ModelRegistry"] = None,
     ):
         """
         Initialize the SeedSelector.
-
-        Args:
-            params: Analysis parameters
-            config: Application configuration
-            face_analyzer: InsightFace analyzer for face detection/recognition
-            reference_embedding: Reference face embedding for identity matching
-            tracker: SAM3 wrapper for object detection
-            logger: Application logger
-            device: Device to run on ('cpu' or 'cuda')
         """
         self.params = params
         self.config = config
-        self.face_analyzer = face_analyzer
-        self.reference_embedding = reference_embedding
+        self._face_analyzer = face_analyzer
+        self._reference_embedding = reference_embedding
         self.tracker = tracker
-        self.subject_detector = subject_detector
+        self._subject_detector = subject_detector
         self._device = device
         self.logger: LoggerLike = logger or getLogger("app_logger")
         self._transform = None
+        self.model_registry = model_registry
+
+    @property
+    def face_analyzer(self) -> Optional["FaceAnalysis"]:
+        if self._face_analyzer is not None:
+            return self._face_analyzer
+        if self.model_registry and self._get_param(self.params, "compute_face_sim", False):
+            device = self._device or "cpu"
+            face_model = self._get_param(self.params, "face_model_name", "buffalo_l")
+            self._face_analyzer = self.model_registry.get_face_analyzer(
+                model_name=face_model,
+                det_size_tuple=tuple(self.config.model_face_analyzer_det_size),
+                device=device,
+            )
+        return self._face_analyzer
+
+    @face_analyzer.setter
+    def face_analyzer(self, val):
+        self._face_analyzer = val
+
+    @property
+    def reference_embedding(self) -> Optional[np.ndarray]:
+        if self._reference_embedding is not None:
+            return self._reference_embedding
+        compute_face_sim = self._get_param(self.params, "compute_face_sim", False)
+        face_ref_path = self._get_param(self.params, "face_ref_img_path", None)
+        if compute_face_sim and face_ref_path:
+            analyzer = self.face_analyzer
+            if analyzer:
+                from pathlib import Path
+
+                ref_path = Path(face_ref_path)
+                if ref_path.exists() and ref_path.is_file():
+                    try:
+                        import cv2
+
+                        ref_img = cv2.imread(str(ref_path))
+                        if ref_img is not None:
+                            faces = analyzer.get(ref_img)
+                            if faces:
+                                self._reference_embedding = max(faces, key=lambda x: x.det_score).normed_embedding
+                                self.logger.info(
+                                    "Reference face embedding created successfully in SeedSelector (lazy)."
+                                )
+                    except Exception as e:
+                        self.logger.error(f"Failed to process reference face lazily: {e}")
+        return self._reference_embedding
+
+    @reference_embedding.setter
+    def reference_embedding(self, val):
+        self._reference_embedding = val
+
+    @property
+    def subject_detector(self) -> Optional[Any]:
+        if self._subject_detector is not None:
+            return self._subject_detector
+        detector_model = self._get_param(self.params, "subject_detector_model", "None")
+        if self.model_registry and detector_model and detector_model != "None":
+            device = self._device or "cpu"
+            self._subject_detector = self.model_registry.get_subject_detector(model_name=detector_model, device=device)
+        return self._subject_detector
+
+    @subject_detector.setter
+    def subject_detector(self, val):
+        self._subject_detector = val
 
     def _get_param(self, source: Union[dict, object], key: str, default: Any = None) -> Any:
         """Get a parameter from either a dict or an object."""
@@ -257,7 +314,7 @@ class SeedSelector:
                 return [{"bbox": xyxy, "conf": 1.0, "type": "selected"}]
         if self.tracker:
             try:
-                class_name = getattr(self.params, "subject_detector_class_name", "person")
+                class_name = self._get_param(self.params, "subject_detector_class_name", "person")
                 results = self.tracker.detect_objects(frame_rgb, class_name)
                 if results:
                     return results
@@ -269,8 +326,8 @@ class SeedSelector:
         if self.subject_detector:
             try:
                 log_with_component(self.logger, "debug", "Running YOLO subject detection...")
-                conf_thresh = getattr(self.params, "subject_detector_threshold", 0.45)
-                class_id = getattr(self.params, "subject_detector_class_id", 0)
+                conf_thresh = self._get_param(self.params, "subject_detector_threshold", 0.45)
+                class_id = self._get_param(self.params, "subject_detector_class_id", 0)
                 detections = self.subject_detector.detect(
                     cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR), conf_threshold=conf_thresh, target_class_id=class_id
                 )
@@ -381,11 +438,8 @@ class SeedSelector:
                 "reason": "No subjects detected in best frame",
                 "detection_attempted": True,
             }
-        class_id = getattr(params, "subject_detector_class_id", 0)
-        strategy = getattr(params, "seed_strategy", "Largest Subject")
-        if isinstance(params, dict):
-            strategy = params.get("seed_strategy", strategy)
-            class_id = params.get("subject_detector_class_id", class_id)
+        class_id = self._get_param(params, "subject_detector_class_id", 0)
+        strategy = self._get_param(params, "seed_strategy", "Largest Subject")
 
         is_person = class_id == 0
         h, w = frame_rgb.shape[:2]

@@ -10,7 +10,6 @@ from core.managers.extraction import (
     ExtractionPipeline,
     _process_ffmpeg_showinfo,
     _process_ffmpeg_stream,
-    run_ffmpeg_extraction,
 )
 from core.models import AnalysisParameters
 
@@ -89,16 +88,19 @@ def test_run_ffmpeg_extraction_success(mock_detect, mock_popen_cls, mock_deps, a
     mock_process.stderr.readline.return_value = ""
     mock_process.poll.return_value = 0
 
+    pipeline = ExtractionPipeline(
+        mock_deps["config"],
+        mock_deps["logger"],
+        analysis_params,
+        mock_deps["progress_queue"],
+        mock_deps["cancel_event"],
+    )
+
     with patch("core.managers.extraction.subprocess.run"):
-        run_ffmpeg_extraction(
+        pipeline._run_ffmpeg_extraction(
             "video.mp4",
             output_dir,
             video_info,
-            analysis_params,
-            mock_deps["progress_queue"],
-            mock_deps["cancel_event"],
-            mock_deps["logger"],
-            mock_deps["config"],
         )
 
     assert mock_popen_cls.called
@@ -136,7 +138,7 @@ def test_extraction_pipeline_image_folder(mock_ingest, mock_is_img, mock_deps, a
 
 
 @patch("core.managers.extraction.VideoManager")
-@patch("core.managers.extraction.run_ffmpeg_extraction")
+@patch("core.managers.extraction.ExtractionPipeline._run_ffmpeg_extraction")
 def test_extraction_pipeline_video(mock_run_ffmpeg, mock_vid_manager_cls, mock_deps, analysis_params, tmp_path):
     analysis_params.source_path = "video.mp4"
     analysis_params.output_folder = str(tmp_path / "output")
@@ -184,16 +186,19 @@ def test_run_ffmpeg_extraction_resume(mock_detect, mock_popen_cls, mock_deps, an
     mock_process.stderr.readline.return_value = ""
     mock_process.poll.return_value = 0
 
+    pipeline = ExtractionPipeline(
+        mock_deps["config"],
+        mock_deps["logger"],
+        analysis_params,
+        mock_deps["progress_queue"],
+        mock_deps["cancel_event"],
+    )
+
     with patch("core.managers.extraction.subprocess.run"):
-        run_ffmpeg_extraction(
+        pipeline._run_ffmpeg_extraction(
             "video.mp4",
             output_dir,
             video_info,
-            analysis_params,
-            mock_deps["progress_queue"],
-            mock_deps["cancel_event"],
-            mock_deps["logger"],
-            mock_deps["config"],
         )
 
     assert "-start_number" in mock_popen_cls.call_args[0][0]
@@ -229,15 +234,18 @@ def test_run_ffmpeg_extraction_cancellation(mock_popen_cls, mock_deps, analysis_
     # Simpler: just set it before and ensure wait is called
     mock_deps["cancel_event"].set()
 
-    run_ffmpeg_extraction(
-        "video.mp4",
-        output_dir,
-        video_info,
+    pipeline = ExtractionPipeline(
+        mock_deps["config"],
+        mock_deps["logger"],
         analysis_params,
         mock_deps["progress_queue"],
         mock_deps["cancel_event"],
-        mock_deps["logger"],
-        mock_deps["config"],
+    )
+
+    pipeline._run_ffmpeg_extraction(
+        "video.mp4",
+        output_dir,
+        video_info,
     )
 
     assert mock_process.terminate.called

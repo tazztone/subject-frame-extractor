@@ -67,165 +67,6 @@ def _process_ffmpeg_showinfo(stream, fps: float) -> tuple[list, str]:
     return frame_numbers, "".join(stderr_lines)
 
 
-def run_ffmpeg_extraction(
-    video_path: str | Path,
-    output_dir: Path,
-    video_info: dict,
-    params: "AnalysisParameters",
-    progress_queue: Queue,
-    cancel_event: threading.Event,
-    logger: "AppLogger",
-    config: "Config",
-    tracker: Optional["AdvancedProgressTracker"] = None,
-):
-    """Executes FFmpeg command to extract frames/thumbnails."""
-    from core.io_utils import detect_hwaccel
-
-    hwaccel_type = None
-    if config.ffmpeg_hwaccel != "off":
-        if config.ffmpeg_hwaccel == "auto":
-            hwaccel_type, _ = detect_hwaccel(logger)
-        else:
-            hwaccel_type = config.ffmpeg_hwaccel
-
-    thumb_dir = output_dir / "thumbs"
-    thumb_dir.mkdir(exist_ok=True)
-
-    target_area = params.thumb_megapixels * 1_000_000
-    w, h = video_info.get("width", 1920), video_info.get("height", 1080)
-    scale_factor = math.sqrt(target_area / (w * h)) if w * h > 0 else 1.0
-    vf_scale_thumb = f"scale=w=trunc(iw*{scale_factor}/2)*2:h=trunc(ih*{scale_factor}/2)*2"
-    vf_scale_video = "scale=-2:360"
-
-    fps = max(1, int(video_info.get("fps", 30)))
-    N = max(1, int(params.nth_frame or 0))
-
-    start_frame_idx = 0
-    existing_frame_map = []
-    frame_map_path = output_dir / "frame_map.json"
-    if frame_map_path.exists() and params.resume:
-        try:
-            with open(frame_map_path, "r", encoding="utf-8") as f:
-                existing_frame_map = json.load(f)
-            if existing_frame_map:
-                ext = ".webp" if params.thumbnails_only else ".png"
-                files = sorted(list(thumb_dir.glob(f"frame_*{ext}")))
-                if len(files) > 0:
-                    start_frame_idx = len(files)
-                    logger.info(f"Resuming extraction from frame {start_frame_idx + 1}")
-        except Exception as e:
-            logger.warning(f"Could not load existing frame map for resume: {e}")
-
-    select_map = {
-        "keyframes": "select='eq(pict_type,I)'",
-        "every_nth_frame": f"select='not(mod(n,{N}))'",
-        "all": f"fps={fps}",
-    }
-    vf_select = select_map.get(params.method, f"fps={fps}")
-
-    ext = ".webp" if params.thumbnails_only else ".png"
-    codec = (
-        ["-c:v", "libwebp", "-lossless", "0", "-quality", str(config.ffmpeg_thumbnail_quality)]
-        if params.thumbnails_only
-        else ["-c:v", "png"]
-    )
-
-    vf = f"{vf_select},{vf_scale_thumb if params.thumbnails_only else ''},showinfo".strip(",")
-
-    cmd = ["ffmpeg", "-y"]
-    if hwaccel_type:
-        cmd.extend(["-hwaccel", hwaccel_type])
-    cmd.extend(
-        ["-i", str(video_path), "-vf", vf]
-        + codec
-        + [
-            "-vsync",
-            "vfr",
-            "-start_number",
-            str(start_frame_idx + 1),
-            "-progress",
-            "pipe:1",
-            "-nostats",
-            "-loglevel",
-            "info",
-            str(thumb_dir / f"frame_%06d{ext}"),
-        ]
-    )
-
-    process = subprocess.Popen(
-        cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", bufsize=1
-    )
-    stderr_results = {}
-
-    assert process.stdout is not None
-    assert process.stderr is not None
-    with process.stdout, process.stderr:
-        total_duration_s = video_info.get("frame_count", 0) / max(0.01, video_info.get("fps", 30))
-        start_time_s = 0
-        if start_frame_idx > 0:
-            if params.method == "every_nth_frame":
-                start_time_s = (start_frame_idx * N) / fps
-            elif params.method == "all":
-                start_time_s = start_frame_idx / fps
-
-        stdout_thread = threading.Thread(
-            target=lambda: _process_ffmpeg_stream(
-                process.stdout, tracker, "Extracting frames", total_duration_s, start_time_s
-            )
-        )
-
-        def process_stderr_and_store():
-            nonlocal stderr_results
-            frame_map, full_stderr = _process_ffmpeg_showinfo(process.stderr, fps)
-            stderr_results["frame_map"] = frame_map
-            stderr_results["full_stderr"] = full_stderr
-
-        stderr_thread = threading.Thread(target=process_stderr_and_store)
-        stdout_thread.start()
-        stderr_thread.start()
-        while process.poll() is None:
-            try:
-                process.wait(timeout=0.1)
-            except subprocess.TimeoutExpired:
-                if cancel_event.is_set():
-                    process.terminate()
-                    break
-        stdout_thread.join()
-        stderr_thread.join()
-
-    frame_map_list = stderr_results.get("frame_map", [])
-    if frame_map_list:
-        final_frame_map = sorted(list(set(existing_frame_map + frame_map_list)))
-        with open(output_dir / "frame_map.json", "w", encoding="utf-8") as f:
-            json.dump(final_frame_map, f)
-
-    if not cancel_event.is_set():
-        lowres_video_path = output_dir / "video_lowres.mp4"
-        lowres_cmd = ["ffmpeg", "-y"]
-        if hwaccel_type:
-            lowres_cmd.extend(["-hwaccel", hwaccel_type])
-        lowres_cmd.extend(
-            [
-                "-i",
-                str(video_path),
-                "-vf",
-                vf_scale_video,
-                "-c:v",
-                "libx264",
-                "-preset",
-                "fast",
-                "-crf",
-                "23",
-                "-an",
-                str(lowres_video_path),
-            ]
-        )
-        try:
-            subprocess.run(lowres_cmd, capture_output=True, timeout=600)
-        except Exception as e:
-            logger.warning(f"Could not create downscaled video: {e}")
-
-
 class ExtractionPipeline:
     """Pipeline for extracting frames from video or processing image folders."""
 
@@ -246,6 +87,160 @@ class ExtractionPipeline:
         self.model_registry = model_registry
         self.error_handler = ErrorHandler(logger, config.retry_max_attempts, config.retry_backoff_seconds)
         self.run = self.error_handler.with_retry()(self._run_impl)
+
+    def _run_ffmpeg_extraction(
+        self,
+        video_path: str | Path,
+        output_dir: Path,
+        video_info: dict,
+        tracker: Optional["AdvancedProgressTracker"] = None,
+    ):
+        """Executes FFmpeg command to extract frames/thumbnails (private method)."""
+        from core.io_utils import detect_hwaccel
+
+        hwaccel_type = None
+        if self.config.ffmpeg_hwaccel != "off":
+            if self.config.ffmpeg_hwaccel == "auto":
+                hwaccel_type, _ = detect_hwaccel(self.logger)
+            else:
+                hwaccel_type = self.config.ffmpeg_hwaccel
+
+        thumb_dir = output_dir / "thumbs"
+        thumb_dir.mkdir(exist_ok=True)
+
+        target_area = self.params.thumb_megapixels * 1_000_000
+        w, h = video_info.get("width", 1920), video_info.get("height", 1080)
+        scale_factor = math.sqrt(target_area / (w * h)) if w * h > 0 else 1.0
+        vf_scale_thumb = f"scale=w=trunc(iw*{scale_factor}/2)*2:h=trunc(ih*{scale_factor}/2)*2"
+        vf_scale_video = "scale=-2:360"
+
+        fps = max(1, int(video_info.get("fps", 30)))
+        N = max(1, int(self.params.nth_frame or 0))
+
+        start_frame_idx = 0
+        existing_frame_map = []
+        frame_map_path = output_dir / "frame_map.json"
+        if frame_map_path.exists() and self.params.resume:
+            try:
+                with open(frame_map_path, "r", encoding="utf-8") as f:
+                    existing_frame_map = json.load(f)
+                if existing_frame_map:
+                    ext = ".webp" if self.params.thumbnails_only else ".png"
+                    files = sorted(list(thumb_dir.glob(f"frame_*{ext}")))
+                    if len(files) > 0:
+                        start_frame_idx = len(files)
+                        self.logger.info(f"Resuming extraction from frame {start_frame_idx + 1}")
+            except Exception as e:
+                self.logger.warning(f"Could not load existing frame map for resume: {e}")
+
+        select_map = {
+            "keyframes": "select='eq(pict_type,I)'",
+            "every_nth_frame": f"select='not(mod(n,{N}))'",
+            "all": f"fps={fps}",
+        }
+        vf_select = select_map.get(self.params.method, f"fps={fps}")
+
+        ext = ".webp" if self.params.thumbnails_only else ".png"
+        codec = (
+            ["-c:v", "libwebp", "-lossless", "0", "-quality", str(self.config.ffmpeg_thumbnail_quality)]
+            if self.params.thumbnails_only
+            else ["-c:v", "png"]
+        )
+
+        vf = f"{vf_select},{vf_scale_thumb if self.params.thumbnails_only else ''},showinfo".strip(",")
+
+        cmd = ["ffmpeg", "-y"]
+        if hwaccel_type:
+            cmd.extend(["-hwaccel", hwaccel_type])
+        cmd.extend(
+            ["-i", str(video_path), "-vf", vf]
+            + codec
+            + [
+                "-vsync",
+                "vfr",
+                "-start_number",
+                str(start_frame_idx + 1),
+                "-progress",
+                "pipe:1",
+                "-nostats",
+                "-loglevel",
+                "info",
+                str(thumb_dir / f"frame_%06d{ext}"),
+            ]
+        )
+
+        process = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", bufsize=1
+        )
+        stderr_results = {}
+
+        assert process.stdout is not None
+        assert process.stderr is not None
+        with process.stdout, process.stderr:
+            total_duration_s = video_info.get("frame_count", 0) / max(0.01, video_info.get("fps", 30))
+            start_time_s = 0
+            if start_frame_idx > 0:
+                if self.params.method == "every_nth_frame":
+                    start_time_s = (start_frame_idx * N) / fps
+                elif self.params.method == "all":
+                    start_time_s = start_frame_idx / fps
+
+            stdout_thread = threading.Thread(
+                target=lambda: _process_ffmpeg_stream(
+                    process.stdout, tracker, "Extracting frames", total_duration_s, start_time_s
+                )
+            )
+
+            def process_stderr_and_store():
+                nonlocal stderr_results
+                frame_map, full_stderr = _process_ffmpeg_showinfo(process.stderr, fps)
+                stderr_results["frame_map"] = frame_map
+                stderr_results["full_stderr"] = full_stderr
+
+            stderr_thread = threading.Thread(target=process_stderr_and_store)
+            stdout_thread.start()
+            stderr_thread.start()
+            while process.poll() is None:
+                try:
+                    process.wait(timeout=0.1)
+                except subprocess.TimeoutExpired:
+                    if self.cancel_event.is_set():
+                        process.terminate()
+                        break
+            stdout_thread.join()
+            stderr_thread.join()
+
+        frame_map_list = stderr_results.get("frame_map", [])
+        if frame_map_list:
+            final_frame_map = sorted(list(set(existing_frame_map + frame_map_list)))
+            with open(output_dir / "frame_map.json", "w", encoding="utf-8") as f:
+                json.dump(final_frame_map, f)
+
+        if not self.cancel_event.is_set():
+            lowres_video_path = output_dir / "video_lowres.mp4"
+            lowres_cmd = ["ffmpeg", "-y"]
+            if hwaccel_type:
+                lowres_cmd.extend(["-hwaccel", hwaccel_type])
+            lowres_cmd.extend(
+                [
+                    "-i",
+                    str(video_path),
+                    "-vf",
+                    vf_scale_video,
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    "fast",
+                    "-crf",
+                    "23",
+                    "-an",
+                    str(lowres_video_path),
+                ]
+            )
+            try:
+                subprocess.run(lowres_cmd, capture_output=True, timeout=600)
+            except Exception as e:
+                self.logger.warning(f"Could not create downscaled video: {e}")
 
     def _run_impl(self, tracker: Optional["AdvancedProgressTracker"] = None) -> dict:
         source_p = Path(self.params.source_path)
@@ -286,16 +281,13 @@ class ExtractionPipeline:
                 totals = estimate_totals(self.params, video_info, None)
                 tracker.start(totals["extraction"], desc="Extracting frames")
             if self.params.scene_detect:
-                run_scene_detection(str(video_path), output_dir, self.logger, threshold=self.params.scene_detect_threshold)
-            run_ffmpeg_extraction(
+                run_scene_detection(
+                    str(video_path), output_dir, self.logger, threshold=self.params.scene_detect_threshold
+                )
+            self._run_ffmpeg_extraction(
                 str(video_path),
                 output_dir,
                 video_info,
-                self.params,
-                self.progress_queue,
-                self.cancel_event,
-                self.logger,
-                self.config,
                 tracker=tracker,
             )
             if self.cancel_event.is_set():

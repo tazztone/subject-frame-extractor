@@ -17,12 +17,13 @@ if TYPE_CHECKING:
 class ModelRegistry:
     """Thread-safe registry for lazy loading and caching of heavy ML models."""
 
-    def __init__(self, logger: Optional["LoggerLike"] = None):
+    def __init__(self, logger: Optional["LoggerLike"] = None, config: Optional["Config"] = None):
         self._models: Dict[str, Any] = {}
         self._failed_models: Set[str] = set()
         self._locks: Dict[str, threading.Lock] = defaultdict(threading.Lock)
         self._registry_lock = threading.RLock()
         self.logger: "LoggerLike" = logger or logging.getLogger(__name__)
+        self.config: Optional["Config"] = config
         self.runtime_device_override: Optional[str] = None
         self._thread_local = threading.local()
         self._landmarkers: list[Any] = []  # Tracks per-thread FaceLandmarker instances
@@ -103,15 +104,84 @@ class ModelRegistry:
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-    def get_face_landmarker(self, model_path: str, logger: "LoggerLike") -> Any:
-        """Returns a thread-local MediaPipe FaceLandmarker, tracked for cleanup."""
+    def get_face_analyzer(
+        self,
+        model_name: str,
+        det_size_tuple: tuple,
+        device: str = "cpu",
+    ) -> Any:
+        """Gets or loads the InsightFace FaceAnalysis app, with OOM handling."""
+        from insightface.app import FaceAnalysis
+
+        _config = self.config
+        if _config is None and hasattr(self.logger, "config"):
+            _config = self.logger.config  # type: ignore
+        models_path = str(_config.models_dir) if _config else "/tmp"
+
+        model_key = f"face_analyzer_{model_name}_{device}_{det_size_tuple}"
+
+        def _loader():
+            self.logger.info(f"Loading face model: {model_name} on device: {device}")
+            try:
+                is_cuda = device == "cuda"
+                providers = ["CUDAExecutionProvider", "CPUExecutionProvider"] if is_cuda else ["CPUExecutionProvider"]
+                analyzer = FaceAnalysis(name=model_name, root=models_path, providers=providers)
+                analyzer.prepare(ctx_id=0 if is_cuda else -1, det_size=det_size_tuple)
+                if hasattr(self.logger, "success"):
+                    self.logger.success(f"Face model loaded with {'CUDA' if is_cuda else 'CPU'}.")  # type: ignore
+                else:
+                    self.logger.info(f"Face model loaded with {'CUDA' if is_cuda else 'CPU'}.")
+                return analyzer
+            except Exception as e:
+                if "out of memory" in str(e) and device == "cuda":
+                    self.logger.warning("CUDA OOM, retrying with CPU...")
+                    try:
+                        analyzer = FaceAnalysis(name=model_name, root=models_path, providers=["CPUExecutionProvider"])
+                        analyzer.prepare(ctx_id=-1, det_size=det_size_tuple)
+                        return analyzer
+                    except Exception as cpu_e:
+                        self.logger.error(f"CPU fallback also failed: {cpu_e}")
+                        raise RuntimeError(
+                            f"Could not initialize face analysis model. CPU fallback also failed: {cpu_e}"
+                        ) from cpu_e
+                raise RuntimeError(f"Could not initialize face analysis model. Error: {e}") from e
+
+        return self.get_or_load(model_key, _loader)
+
+    def get_face_landmarker(self, model_path: Optional[str] = None, logger: Optional["LoggerLike"] = None) -> Any:
+        """Returns a thread-local MediaPipe FaceLandmarker, tracked for cleanup and downloaded if needed."""
+        _logger = logger or self.logger
+        _config = self.config
+        if _config is None and hasattr(_logger, "config"):
+            _config = _logger.config  # type: ignore
+
+        if not model_path:
+            if not _config:
+                raise ValueError("No model_path or config provided for FaceLandmarker.")
+            model_url = _config.face_landmarker_url
+            model_path = str(Path(_config.models_dir) / Path(model_url).name)
+
+            if not Path(model_path).exists():
+                from core.error_handling import ErrorHandler
+                from core.io_utils import download_model
+
+                download_model(
+                    model_url,
+                    Path(model_path),
+                    "MediaPipe Face Landmarker",
+                    _logger,
+                    ErrorHandler(_logger, _config.retry_max_attempts, _config.retry_backoff_seconds),
+                    _config.user_agent,
+                    expected_sha256=_config.face_landmarker_sha256,
+                )
+
         if hasattr(self._thread_local, "face_landmarker"):
             return self._thread_local.face_landmarker
 
         from mediapipe.tasks import python
         from mediapipe.tasks.python import vision
 
-        logger.info("Initializing MediaPipe FaceLandmarker for thread.", component="face_landmarker")
+        _logger.info("Initializing MediaPipe FaceLandmarker for thread.", component="face_landmarker")
         base_options = python.BaseOptions(model_asset_path=model_path)
         options = vision.FaceLandmarkerOptions(
             base_options=base_options,
@@ -136,10 +206,7 @@ class ModelRegistry:
         config: Optional["Config"] = None,
     ) -> Optional[Any]:
         """Loads subject tracker with CPU fallback on OOM."""
-        # Imports moved to inner functions or re-exports in __init__.py
-
-        # Fallback to self.logger.config if not provided
-        _config = config
+        _config = config or self.config
         if _config is None and hasattr(self.logger, "config"):
             _config = self.logger.config  # type: ignore
 
@@ -171,29 +238,71 @@ class ModelRegistry:
             return None
 
     def get_subject_detector(
-        self, model_name: str, model_path: str, logger: "LoggerLike", device: str
+        self,
+        model_name: str,
+        model_path: Optional[str] = None,
+        logger: Optional["LoggerLike"] = None,
+        device: Optional[str] = None,
     ) -> Optional[Any]:
-        """Retrieves or loads a subject detector (YOLO family) with CPU fallback on OOM."""
+        """Retrieves or loads a subject detector (YOLO family) with CPU fallback on OOM, downloading if needed."""
+        _logger = logger or self.logger
+        _config = self.config
+        if _config is None and hasattr(_logger, "config"):
+            _config = _logger.config  # type: ignore
+        _device = device or self.runtime_device_override or ("cuda" if torch.cuda.is_available() else "cpu")
+
+        if not model_path:
+            if not _config:
+                raise ValueError("No model_path or config provided for subject detector.")
+
+            url_map = {
+                "YOLO12l-Seg": _config.yolo12l_seg_url,
+                "YOLO26n": _config.yolo26n_url,
+                "YOLO26s": _config.yolo26s_url,
+                "YOLO26m": _config.yolo26m_url,
+                "YOLO26l": _config.yolo26l_url,
+                "YOLO26x": _config.yolo26x_url,
+            }
+            model_url = url_map.get(model_name)
+            if not model_url:
+                _logger.error(f"No URL configured for detector model: {model_name}")
+                return None
+
+            model_path = str(Path(_config.models_dir) / Path(model_url).name)
+
+            if not Path(model_path).exists():
+                from core.error_handling import ErrorHandler
+                from core.io_utils import download_model
+
+                download_model(
+                    model_url,
+                    Path(model_path),
+                    f"Person Detector ({model_name})",
+                    _logger,
+                    ErrorHandler(_logger, _config.retry_max_attempts, _config.retry_backoff_seconds),
+                    _config.user_agent,
+                )
+
         key = f"detector_{model_name}"
 
         def _loader():
             # Lazy import to avoid top-level onnxruntime dependency
             from .subject_detector import SubjectDetector
 
-            current_device = self.runtime_device_override or device
+            current_device = self.runtime_device_override or _device
             try:
-                return SubjectDetector(model_path, logger, device=current_device)
+                return SubjectDetector(model_path, _logger, device=current_device)
             except RuntimeError as e:
                 if "out of memory" in str(e).lower() and current_device == "cuda":
-                    self.logger.warning(f"CUDA OOM during detector '{model_name}' init. Switching to CPU.")
+                    _logger.warning(f"CUDA OOM during detector '{model_name}' init. Switching to CPU.")
                     self.runtime_device_override = "cpu"
-                    return SubjectDetector(model_path, logger, device="cpu")
+                    return SubjectDetector(model_path, _logger, device="cpu")
                 raise e
 
         try:
             return self.get_or_load(key, _loader)
         except Exception as e:
-            self.logger.error(f"Failed to initialize subject detector {model_name}: {e}", exc_info=True)
+            _logger.error(f"Failed to initialize subject detector {model_name}: {e}", exc_info=True)
             return None
 
     def _load_tracker_impl(

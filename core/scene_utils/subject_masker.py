@@ -89,9 +89,9 @@ class SubjectMasker:
 
         self.logger: AppLogger = cast(AppLogger, logger or logging.getLogger("app_logger"))
         self.frame_map: Optional[dict] = frame_map
-        self.face_analyzer: Optional["FaceAnalysis"] = face_analyzer
-        self.reference_embedding: Optional[np.ndarray] = reference_embedding
-        self.face_landmarker: Optional[Any] = face_landmarker
+        self._face_analyzer: Optional["FaceAnalysis"] = face_analyzer
+        self._reference_embedding: Optional[np.ndarray] = reference_embedding
+        self._face_landmarker: Optional[Any] = face_landmarker
         from core.managers import SAM3Wrapper
 
         self.dam_tracker: Optional[SAM3Wrapper] = None
@@ -101,19 +101,24 @@ class SubjectMasker:
         self.thumbnail_manager = thumbnail_manager
         self.niqe_metric = niqe_metric
         self.model_registry = model_registry
-        self.subject_detector = subject_detector
+        self._subject_detector = subject_detector
+
+        # Sync registry config if needed
+        if model_registry and getattr(model_registry, "config", None) is None:
+            model_registry.config = config
 
         # Initialize child components BEFORE calling initialize_models()
         # because _initialize_tracker() may try to access self.seed_selector
         self.seed_selector = SeedSelector(
             params=params,
             config=self.config,
-            face_analyzer=face_analyzer,
-            reference_embedding=reference_embedding,
+            face_analyzer=self.face_analyzer,
+            reference_embedding=self.reference_embedding,
             tracker=self.dam_tracker,  # Will be None at this point, updated later
             subject_detector=self.subject_detector,
             logger=self.logger,
             device=self._device,
+            model_registry=self.model_registry,
         )
         self.mask_propagator = MaskPropagator(
             params,
@@ -126,8 +131,75 @@ class SubjectMasker:
             model_registry=self.model_registry,
         )
 
-        # Now initialize models (may update tracker in child components)
-        # Eager initialization removed to allow lazy-loading of heavy tracker models.
+    @property
+    def face_analyzer(self) -> Optional["FaceAnalysis"]:
+        if self._face_analyzer is not None:
+            return self._face_analyzer
+        if self.model_registry and self.params.compute_face_sim:
+            device = self._device or "cpu"
+            self._face_analyzer = self.model_registry.get_face_analyzer(
+                model_name=self.params.face_model_name,
+                det_size_tuple=tuple(self.config.model_face_analyzer_det_size),
+                device=device,
+            )
+        return self._face_analyzer
+
+    @face_analyzer.setter
+    def face_analyzer(self, val):
+        self._face_analyzer = val
+
+    @property
+    def reference_embedding(self) -> Optional[np.ndarray]:
+        if self._reference_embedding is not None:
+            return self._reference_embedding
+        if self.params.compute_face_sim and self.params.face_ref_img_path:
+            analyzer = self.face_analyzer
+            if analyzer:
+                ref_path = Path(self.params.face_ref_img_path)
+                if ref_path.exists() and ref_path.is_file():
+                    try:
+                        import cv2
+
+                        ref_img = cv2.imread(str(ref_path))
+                        if ref_img is not None:
+                            faces = analyzer.get(ref_img)
+                            if faces:
+                                self._reference_embedding = max(faces, key=lambda x: x.det_score).normed_embedding
+                                self.logger.info("Reference face embedding created successfully (lazy).")
+                    except Exception as e:
+                        self.logger.error(f"Failed to process reference face lazily: {e}")
+        return self._reference_embedding
+
+    @reference_embedding.setter
+    def reference_embedding(self, val):
+        self._reference_embedding = val
+
+    @property
+    def face_landmarker(self) -> Optional[Any]:
+        if self._face_landmarker is not None:
+            return self._face_landmarker
+        if self.model_registry:
+            self._face_landmarker = self.model_registry.get_face_landmarker()
+        return self._face_landmarker
+
+    @face_landmarker.setter
+    def face_landmarker(self, val):
+        self._face_landmarker = val
+
+    @property
+    def subject_detector(self) -> Optional[Any]:
+        if self._subject_detector is not None:
+            return self._subject_detector
+        if self.model_registry and self.params.subject_detector_model and self.params.subject_detector_model != "None":
+            device = self._device or "cpu"
+            self._subject_detector = self.model_registry.get_subject_detector(
+                model_name=self.params.subject_detector_model, device=device
+            )
+        return self._subject_detector
+
+    @subject_detector.setter
+    def subject_detector(self, val):
+        self._subject_detector = val
 
     def initialize_models(self) -> None:
         """Initialize required models based on parameters."""

@@ -23,6 +23,7 @@ def get_face_landmarker(model_path: str, logger: "AppLogger", model_registry: Op
 
     if hasattr(thread_local, "face_landmarker_instance"):
         return thread_local.face_landmarker_instance
+
     logger.info("Initializing MediaPipe FaceLandmarker for new thread.", component="face_landmarker")
     try:
         base_options = python.BaseOptions(model_asset_path=model_path)
@@ -36,7 +37,10 @@ def get_face_landmarker(model_path: str, logger: "AppLogger", model_registry: Op
         )
         detector = vision.FaceLandmarker.create_from_options(options)
         thread_local.face_landmarker_instance = detector
-        logger.success("Face landmarker model initialized successfully for this thread.")
+        if hasattr(logger, "success"):
+            logger.success("Face landmarker model initialized successfully for this thread.")  # type: ignore
+        else:
+            logger.info("Face landmarker model initialized successfully for this thread.")
         return detector
 
     except Exception as e:
@@ -64,11 +68,17 @@ def get_face_analyzer(
             providers = ["CUDAExecutionProvider", "CPUExecutionProvider"] if is_cuda else ["CPUExecutionProvider"]
             analyzer = FaceAnalysis(name=model_name, root=models_path, providers=providers)
             analyzer.prepare(ctx_id=0 if is_cuda else -1, det_size=det_size_tuple)
-            logger.success(f"Face model loaded with {'CUDA' if is_cuda else 'CPU'}.")
+            if hasattr(logger, "success"):
+                logger.success(f"Face model loaded with {'CUDA' if is_cuda else 'CPU'}.")  # type: ignore
+            else:
+                logger.info(f"Face model loaded with {'CUDA' if is_cuda else 'CPU'}.")
             return analyzer
         except Exception as e:
             if "out of memory" in str(e) and device == "cuda":
-                logger.warning("CUDA OOM, retrying with CPU...")
+                if hasattr(logger, "warning"):
+                    logger.warning("CUDA OOM, retrying with CPU...")
+                else:
+                    logger.info("CUDA OOM, retrying with CPU...")
                 try:
                     analyzer = FaceAnalysis(name=model_name, root=models_path, providers=["CPUExecutionProvider"])
                     analyzer.prepare(ctx_id=-1, det_size=det_size_tuple)
