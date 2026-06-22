@@ -16,6 +16,16 @@ from core.operators.dedup import apply_deduplication_filter
 from core.operators.viz import histogram_svg
 
 
+def _get_nested_value(d: Any, path: tuple[str, ...]) -> Any:
+    """Helper to safely fetch a nested value from a dictionary path."""
+    for key in path:
+        if isinstance(d, dict):
+            d = d.get(key)
+        else:
+            return None
+    return d
+
+
 def load_and_prep_filter_data(output_dir: str, get_all_filter_keys: Callable, config: "Config") -> tuple[list, dict]:
     db_path = Path(output_dir) / "metadata.db"
     if not db_path.exists():
@@ -33,16 +43,9 @@ def load_and_prep_filter_data(output_dir: str, get_all_filter_keys: Callable, co
     for k in get_all_filter_keys():
         d = defs_by_key.get(k)
         if d:
-            hist_range = (0.0, 100.0)
-            if d.key in ("yaw", "pitch"):
-                hist_range = (-180.0, 180.0)
-            elif d.key in ("eyes_open", "face_sim"):
-                hist_range = (0.0, 1.0)
-            elif d.key == "mask_area_pct":
-                hist_range = (0.0, 100.0)
-            metric_configs[k] = {"path": d.metadata_path, "range": hist_range}
+            metric_configs[k] = {"path": d.metadata_path, "range": d.histogram_range}
         else:
-            metric_configs[k] = {"path": (k,), "alt_path": ("metrics", f"{k}_score"), "range": (0, 100)}
+            metric_configs[k] = {"path": (k,), "alt_path": ("metrics", f"{k}_score"), "range": (0.0, 100.0)}
 
     for k in get_all_filter_keys():
         cfg = metric_configs.get(k)
@@ -50,51 +53,19 @@ def load_and_prep_filter_data(output_dir: str, get_all_filter_keys: Callable, co
             continue
         path, alt = cfg.get("path"), cfg.get("alt_path")
 
-        has_path = bool(path)
-        has_alt = bool(alt)
-        path_len = len(path) if has_path else 0
-        alt_len = len(alt) if has_alt else 0
-
         vals = []
-        if has_path and not has_alt:
-            if path_len == 1:
-                p0 = path[0]
-                vals = [v for f in all_frames if (v := f.get(p0)) is not None]
-            else:
-                p0, p1 = path[0], path[1]
-                vals = [v for f in all_frames if (v := f.get(p0, {}).get(p1)) is not None]
-        elif has_path and has_alt:
-            if path_len == 1 and alt_len == 1:
-                p0, a0 = path[0], alt[0]
-                vals = [v for f in all_frames if (v := f.get(p0)) is not None or (v := f.get(a0)) is not None]
-            elif path_len == 2 and alt_len == 2:
-                p0, p1, a0, a1 = path[0], path[1], alt[0], alt[1]
-                vals = [
-                    v
-                    for f in all_frames
-                    if (v := f.get(p0, {}).get(p1)) is not None or (v := f.get(a0, {}).get(a1)) is not None
-                ]
-            elif path_len == 1 and alt_len == 2:
-                p0, a0, a1 = path[0], alt[0], alt[1]
-                vals = [
-                    v for f in all_frames if (v := f.get(p0)) is not None or (v := f.get(a0, {}).get(a1)) is not None
-                ]
-            elif path_len == 2 and alt_len == 1:
-                p0, p1, a0 = path[0], path[1], alt[0]
-                vals = [
-                    v for f in all_frames if (v := f.get(p0, {}).get(p1)) is not None or (v := f.get(a0)) is not None
-                ]
-        elif not has_path and has_alt:
-            if alt_len == 1:
-                a0 = alt[0]
-                vals = [v for f in all_frames if (v := f.get(a0)) is not None]
-            else:
-                a0, a1 = alt[0], alt[1]
-                vals = [v for f in all_frames if (v := f.get(a0, {}).get(a1)) is not None]
+        for f in all_frames:
+            val = None
+            if path:
+                val = _get_nested_value(f, path)
+            if val is None and alt:
+                val = _get_nested_value(f, alt)
+            if val is not None:
+                vals.append(val)
 
         vals = np.asarray(vals, dtype=float)
         if vals.size > 0:
-            counts, bins = np.histogram(vals, bins=50, range=cfg.get("range", (0, 100)))
+            counts, bins = np.histogram(vals, bins=50, range=cfg.get("range", (0.0, 100.0)))
             metric_values[k], metric_values[f"{k}_hist"] = vals.tolist(), (counts.tolist(), bins.tolist())
     return all_frames, metric_values
 
@@ -117,13 +88,8 @@ def _extract_metric_arrays(all_frames_data: List[Dict[str, Any]], config: "Confi
         path = d.metadata_path
         vals = []
         for f in all_frames_data:
-            if len(path) == 1:
-                v = f.get(path[0], np.nan)
-            elif len(path) == 2:
-                v = f.get(path[0], {}).get(path[1], np.nan)
-            else:
-                v = np.nan
-            vals.append(v)
+            v = _get_nested_value(f, path)
+            vals.append(v if v is not None else np.nan)
         metric_arrays[d.key] = np.array(vals, dtype=np.float32)
     return metric_arrays
 
@@ -152,13 +118,13 @@ def _apply_metric_filters(
             continue
         defaults = getattr(config, f"filter_default_{k}", {})
         if t == "range":
-            min_v = filters.get(f"{k}_min", defaults.get("default_min", -np.inf))
-            max_v = filters.get(f"{k}_max", defaults.get("default_max", np.inf))
+            min_v = filters.get(f"{k}_min", defaults.get("default_min", d.default_min))
+            max_v = filters.get(f"{k}_max", defaults.get("default_max", d.default_max))
             if hasattr(min_v, "tolist"):
                 min_v = min_v.tolist()  # Handle mocks
             if hasattr(max_v, "tolist"):
                 max_v = max_v.tolist()
-            def_min = defaults.get("default_min", -np.inf)
+            def_min = defaults.get("default_min", d.default_min)
             if hasattr(def_min, "tolist"):
                 def_min = def_min.tolist()
             nan_fill = def_min if def_min != -np.inf else 0.0
@@ -166,10 +132,10 @@ def _apply_metric_filters(
                 np.nan_to_num(arr, nan=float(nan_fill)) <= float(max_v)
             )
         elif t == "min":
-            min_v = filters.get(f"{k}_min", defaults.get("default_min", -np.inf))
+            min_v = filters.get(f"{k}_min", defaults.get("default_min", d.default_min))
             if hasattr(min_v, "tolist"):
                 min_v = min_v.tolist()
-            def_min = defaults.get("default_min", -np.inf)
+            def_min = defaults.get("default_min", d.default_min)
             if hasattr(def_min, "tolist"):
                 def_min = def_min.tolist()
             nan_fill = def_min if def_min != -np.inf else 0.0
@@ -194,8 +160,8 @@ def _apply_metric_filters(
             defaults = getattr(config, f"filter_default_{k}", {})
             if t == "range":
                 min_v, max_v = (
-                    filters.get(f"{k}_min", defaults.get("default_min", -np.inf)),
-                    filters.get(f"{k}_max", defaults.get("default_max", np.inf)),
+                    filters.get(f"{k}_min", defaults.get("default_min", d.default_min)),
+                    filters.get(f"{k}_max", defaults.get("default_max", d.default_max)),
                 )
                 if not np.isnan(v):
                     if v < min_v:
@@ -203,7 +169,7 @@ def _apply_metric_filters(
                     if v > max_v:
                         reasons[filenames[i]].append(d.reason_range or d.reason_high or f"{k}_high")
             elif t == "min":
-                min_v = filters.get(f"{k}_min", defaults.get("default_min", -np.inf))
+                min_v = filters.get(f"{k}_min", defaults.get("default_min", d.default_min))
                 if not np.isnan(v) and v < min_v:
                     reasons[filenames[i]].append(d.reason_low or f"{k}_low")
                 elif k == "face_sim" and filters.get("require_face_match") and np.isnan(v):

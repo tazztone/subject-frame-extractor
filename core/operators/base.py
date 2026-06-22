@@ -128,6 +128,7 @@ class FilterDefinition:
     reason_high: Optional[str] = None
     reason_range: Optional[str] = None
     reason_missing: Optional[str] = None
+    histogram_range: tuple[float, float] = (0.0, 100.0)
 
 
 @runtime_checkable

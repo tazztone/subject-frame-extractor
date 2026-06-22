@@ -120,6 +120,7 @@ class EyesOpenOperator:
                 metadata_path=("metrics", "eyes_open"),
                 default_min=0.0,
                 reason_low="eyes_closed",
+                histogram_range=(0.0, 1.0),
             )
         ]
 
@@ -171,6 +172,7 @@ class FacePoseOperator:
                 default_min=-25.0,
                 default_max=25.0,
                 reason_range="yaw_out_of_range",
+                histogram_range=(-180.0, 180.0),
             ),
             FilterDefinition(
                 key="pitch",
@@ -179,6 +181,7 @@ class FacePoseOperator:
                 default_min=-25.0,
                 default_max=25.0,
                 reason_range="pitch_out_of_range",
+                histogram_range=(-180.0, 180.0),
             ),
         ]
 

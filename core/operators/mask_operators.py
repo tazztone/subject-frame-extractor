@@ -51,6 +51,7 @@ class SubjectMaskAreaOperator:
                 default_min=1.0,
                 enabled_key="mask_area_enabled",
                 reason_low="mask_too_small",
+                histogram_range=(0.0, 100.0),
             )
         ]
 

@@ -32,6 +32,7 @@ class FaceSimilarityOperator:
                 enabled_key="face_sim_enabled",
                 reason_low="face_sim_low",
                 reason_missing="face_missing",
+                histogram_range=(0.0, 1.0),
             )
         ]
 
