@@ -105,3 +105,16 @@ class TestModelRegistry:
                 assert tracker == "cpu_tracker"
                 assert registry.runtime_device_override == "cpu"
                 assert mock_load.call_count == 2
+
+    def test_get_tracker_invalid_and_retired(self, registry):
+        """Test that retired or unknown tracker backends return None."""
+        # Retired sam2
+        tracker_sam2 = registry.get_tracker("sam2", models_path="/tmp")
+        assert tracker_sam2 is None
+        assert registry.logger.error.called
+
+        # Unknown model
+        registry.logger.error.reset_mock()
+        tracker_invalid = registry.get_tracker("invalid_tracker", models_path="/tmp")
+        assert tracker_invalid is None
+        assert registry.logger.error.called

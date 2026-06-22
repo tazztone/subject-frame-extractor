@@ -1,6 +1,6 @@
 import torch
 
-from core.operators import OperatorConfig, OperatorContext, OperatorResult, register_operator
+from core.operators import FilterDefinition, OperatorConfig, OperatorContext, OperatorResult, register_operator
 
 
 @register_operator
@@ -17,6 +17,22 @@ class NiqeOperator:
             display_name="NIQE Quality",
             requires_tensor=True,
         )
+
+    @property
+    def filter_definitions(self) -> list[FilterDefinition]:
+        from core.operators.base import FilterDefinition
+
+        return [
+            FilterDefinition(
+                key="niqe",
+                filter_type="range",
+                metadata_path=("metrics", "niqe_score"),
+                default_min=0.0,
+                default_max=100.0,
+                reason_low="niqe_low",
+                reason_high="niqe_high",
+            )
+        ]
 
     def initialize(self, config: OperatorConfig):
         try:

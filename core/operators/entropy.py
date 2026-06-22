@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 
-from core.operators import OperatorConfig, OperatorContext, OperatorResult, register_operator
+from core.operators import FilterDefinition, OperatorConfig, OperatorContext, OperatorResult, register_operator
 
 
 @register_operator
@@ -17,6 +17,22 @@ class EntropyOperator:
             max_value=100.0,
             requires_mask=True,
         )
+
+    @property
+    def filter_definitions(self) -> list[FilterDefinition]:
+        from core.operators.base import FilterDefinition
+
+        return [
+            FilterDefinition(
+                key="entropy",
+                filter_type="range",
+                metadata_path=("metrics", "entropy_score"),
+                default_min=0.0,
+                default_max=100.0,
+                reason_low="entropy_low",
+                reason_high="entropy_high",
+            )
+        ]
 
     def execute(self, ctx: OperatorContext) -> OperatorResult:
         try:

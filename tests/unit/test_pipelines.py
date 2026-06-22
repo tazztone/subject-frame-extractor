@@ -276,7 +276,7 @@ def test_execute_propagation_success(mock_runtime, tmp_path, default_pre_analysi
     with (
         patch("core.pipelines.AnalysisPipeline") as mock_pipeline_cls,
         patch("core.pipelines._load_analysis_scenes", return_value=[MagicMock()]),
-        patch("core.pipelines.VideoManager.get_video_info", return_value={}),
+        patch("core.pipelines.MediaSession.get_video_info", return_value={}),
         patch("core.pipelines.estimate_totals", return_value={"propagation": 10}),
     ):
         mock_pipeline = mock_pipeline_cls.return_value
@@ -306,7 +306,7 @@ def test_execute_propagation_failure(mock_runtime, default_pre_analysis_event):
     with (
         patch("core.pipelines.AnalysisPipeline") as mock_pipeline_cls,
         patch("core.pipelines._load_analysis_scenes", return_value=[MagicMock()]),
-        patch("core.pipelines.VideoManager.get_video_info", return_value={}),
+        patch("core.pipelines.MediaSession.get_video_info", return_value={}),
         patch("core.pipelines.estimate_totals", return_value={}),
     ):
         mock_pipeline = mock_pipeline_cls.return_value

@@ -14,7 +14,7 @@ import sys
 import time
 from typing import TYPE_CHECKING, Any, Optional, Type
 
-from core.operators.base import Operator, OperatorConfig, OperatorContext, OperatorResult
+from core.operators.base import FilterDefinition, Operator, OperatorConfig, OperatorContext, OperatorResult
 
 if TYPE_CHECKING:
     pass
@@ -114,6 +114,24 @@ class OperatorRegistry:
                     pass
             if name in cls._initialized:
                 cls._initialized.remove(name)
+
+    @classmethod
+    def get_all_filter_definitions(cls, config: Any) -> list[FilterDefinition]:
+        """
+        Poll registered operators and compile a list of all filter definitions.
+        """
+        cls.initialize_all(config)
+
+        definitions = []
+        for op in cls._operators.values():
+            if hasattr(op, "filter_definitions"):
+                try:
+                    defs = op.filter_definitions
+                    if isinstance(defs, list):
+                        definitions.extend(defs)
+                except Exception as e:
+                    logger.error(f"Failed to get filter definitions from operator {op.config.name}: {e}")
+        return definitions
 
     @classmethod
     def clear(cls) -> None:

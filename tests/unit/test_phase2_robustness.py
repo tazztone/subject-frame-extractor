@@ -89,23 +89,6 @@ class TestRobustnessPhase2:
             # The first arg is the temp file, second is the .xmp
             assert str(mock_replace.call_args[0][1]).endswith("image.xmp")
 
-    # --- 3. SAM3 Patch Safety Tests ---
-
-    def test_sam3_patch_hash_mismatch(self, temp_dir):
-        # Setup a fake predictor file that won't match the hash
-        fake_file = temp_dir / "fake_predictor.py"
-        fake_file.write_text("# dummy content that won't match the hash")
-
-        # Directly test the version check function
-        with patch("core.sam3_patches.logger") as mock_logger:
-            from core.sam3_patches import _check_sam3_version
-
-            result = _check_sam3_version(fake_file)
-
-        assert result is False
-        assert mock_logger.warning.called
-        assert "SAM3 version mismatch" in mock_logger.warning.call_args[0][0]
-
     # --- 4. ML Model Sticky Failures ---
 
     def test_model_registry_sticky_failure(self):

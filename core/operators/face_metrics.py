@@ -4,7 +4,7 @@ from typing import Any, cast
 import mediapipe as mp
 import numpy as np
 
-from core.operators import OperatorConfig, OperatorContext, OperatorResult, register_operator
+from core.operators import FilterDefinition, OperatorConfig, OperatorContext, OperatorResult, register_operator
 
 
 def _get_face_data(ctx: OperatorContext) -> tuple[Any, Any]:
@@ -109,6 +109,20 @@ class EyesOpenOperator:
             requires_face=True,
         )
 
+    @property
+    def filter_definitions(self) -> list[FilterDefinition]:
+        from core.operators.base import FilterDefinition
+
+        return [
+            FilterDefinition(
+                key="eyes_open",
+                filter_type="min",
+                metadata_path=("metrics", "eyes_open"),
+                default_min=0.0,
+                reason_low="eyes_closed",
+            )
+        ]
+
     def execute(self, ctx: OperatorContext) -> OperatorResult:
         result, _ = _get_face_data(ctx)
         if not result or not result.face_blendshapes:
@@ -144,6 +158,29 @@ class FacePoseOperator:
             max_value=180.0,
             requires_face=True,
         )
+
+    @property
+    def filter_definitions(self) -> list[FilterDefinition]:
+        from core.operators.base import FilterDefinition
+
+        return [
+            FilterDefinition(
+                key="yaw",
+                filter_type="range",
+                metadata_path=("metrics", "yaw"),
+                default_min=-25.0,
+                default_max=25.0,
+                reason_range="yaw_out_of_range",
+            ),
+            FilterDefinition(
+                key="pitch",
+                filter_type="range",
+                metadata_path=("metrics", "pitch"),
+                default_min=-25.0,
+                default_max=25.0,
+                reason_range="pitch_out_of_range",
+            ),
+        ]
 
     def execute(self, ctx: OperatorContext) -> OperatorResult:
         result, _ = _get_face_data(ctx)

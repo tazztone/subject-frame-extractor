@@ -137,7 +137,7 @@ def test_extraction_pipeline_image_folder(mock_ingest, mock_is_img, mock_deps, a
     assert (tmp_path / "output" / "frame_map.json").exists()
 
 
-@patch("core.managers.extraction.VideoManager")
+@patch("core.managers.extraction.MediaSession")
 @patch("core.managers.extraction.ExtractionPipeline._run_ffmpeg_extraction")
 def test_extraction_pipeline_video(mock_run_ffmpeg, mock_vid_manager_cls, mock_deps, analysis_params, tmp_path):
     analysis_params.source_path = "video.mp4"

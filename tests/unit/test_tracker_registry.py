@@ -22,7 +22,7 @@ def registry():
 
 
 @patch("core.io_utils.download_model")
-@patch("core.managers.tracker_factory.build_tracker")
+@patch("core.managers.sam3.SAM3Wrapper")
 @patch("core.managers.registry.Path.exists", return_value=True)
 def test_get_tracker_sam2(mock_exists, mock_build, mock_download, registry, mock_config):
     """Test loading SAM2 tracker returns None because it is retired."""
@@ -33,7 +33,7 @@ def test_get_tracker_sam2(mock_exists, mock_build, mock_download, registry, mock
 
 
 @patch("core.io_utils.download_model")
-@patch("core.managers.tracker_factory.build_tracker")
+@patch("core.managers.sam3.SAM3Wrapper")
 @patch("core.managers.registry.Path.exists", return_value=True)
 def test_get_tracker_sam3_safetensors(mock_exists, mock_build, mock_download, registry, mock_config):
     """Test loading SAM3 tracker with safetensors replacement."""

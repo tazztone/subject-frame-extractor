@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 
-from core.operators import OperatorConfig, OperatorContext, OperatorResult, register_operator
+from core.operators import FilterDefinition, OperatorConfig, OperatorContext, OperatorResult, register_operator
 
 
 @register_operator
@@ -17,6 +17,22 @@ class EdgeStrengthOperator:
             max_value=100.0,
             requires_mask=True,
         )
+
+    @property
+    def filter_definitions(self) -> list[FilterDefinition]:
+        from core.operators.base import FilterDefinition
+
+        return [
+            FilterDefinition(
+                key="edge_strength",
+                filter_type="range",
+                metadata_path=("metrics", "edge_strength_score"),
+                default_min=0.0,
+                default_max=100.0,
+                reason_low="edge_strength_low",
+                reason_high="edge_strength_high",
+            )
+        ]
 
     def execute(self, ctx: OperatorContext) -> OperatorResult:
         try:
@@ -81,6 +97,22 @@ class ContrastOperator:
             requires_mask=True,
         )
 
+    @property
+    def filter_definitions(self) -> list[FilterDefinition]:
+        from core.operators.base import FilterDefinition
+
+        return [
+            FilterDefinition(
+                key="contrast",
+                filter_type="range",
+                metadata_path=("metrics", "contrast_score"),
+                default_min=0.0,
+                default_max=100.0,
+                reason_low="contrast_low",
+                reason_high="contrast_high",
+            )
+        ]
+
     def execute(self, ctx: OperatorContext) -> OperatorResult:
         try:
             gray = cv2.cvtColor(ctx.image_rgb, cv2.COLOR_RGB2GRAY)
@@ -126,6 +158,22 @@ class BrightnessOperator:
             max_value=100.0,
             requires_mask=True,
         )
+
+    @property
+    def filter_definitions(self) -> list[FilterDefinition]:
+        from core.operators.base import FilterDefinition
+
+        return [
+            FilterDefinition(
+                key="brightness",
+                filter_type="range",
+                metadata_path=("metrics", "brightness_score"),
+                default_min=0.0,
+                default_max=100.0,
+                reason_low="brightness_low",
+                reason_high="brightness_high",
+            )
+        ]
 
     def execute(self, ctx: OperatorContext) -> OperatorResult:
         try:

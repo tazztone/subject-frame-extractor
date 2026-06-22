@@ -16,7 +16,7 @@ import shutil
 
 from core.error_handling import ErrorHandler
 from core.io_utils import is_image_folder
-from core.managers.video import VideoManager
+from core.managers.media_session import MediaSession
 from core.models import AnalysisParameters
 from core.photo_utils import ingest_folder
 from core.progress import AdvancedProgressTracker
@@ -272,11 +272,13 @@ class ExtractionPipeline:
                 json.dump(source_map, f)
             return {"done": True, "output_dir": str(output_dir), "video_path": ""}
         else:
-            vid_manager = VideoManager(self.params.source_path, self.config, self.params.max_resolution)
-            video_path = Path(vid_manager.prepare_video(self.logger))
+            media_session = MediaSession(
+                self.config, self.params.source_path, max_resolution=self.params.max_resolution
+            )
+            video_path = Path(media_session.prepare_video(self.logger))
             output_dir = Path(self.params.output_folder or Path(self.config.downloads_dir) / video_path.stem)
             output_dir.mkdir(exist_ok=True, parents=True)
-            video_info = VideoManager.get_video_info(str(video_path))
+            video_info = MediaSession.get_video_info(str(video_path))
             if tracker:
                 totals = estimate_totals(self.params, video_info, None)
                 tracker.start(totals["extraction"], desc="Extracting frames")

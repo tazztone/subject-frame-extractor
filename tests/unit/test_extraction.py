@@ -65,7 +65,7 @@ def test_run_ffmpeg_extraction(mock_detect, mock_popen, mock_logger, mock_config
 
 
 @patch("core.managers.extraction.ExtractionPipeline._run_ffmpeg_extraction")
-@patch("core.managers.extraction.VideoManager")
+@patch("core.managers.extraction.MediaSession")
 def test_extraction_pipeline_run_video(mock_vm_cls, mock_run_ffmpeg, mock_logger, mock_config, tmp_path):
     mock_vm = mock_vm_cls.return_value
     mock_vm.prepare_video.return_value = "video.mp4"

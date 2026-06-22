@@ -112,6 +112,24 @@ class OperatorResult:
         return self.error is None
 
 
+@dataclass
+class FilterDefinition:
+    """
+    Metadata defining a database filter condition that can be evaluated on frame metadata.
+    """
+
+    key: str
+    filter_type: str  # "range" or "min"
+    metadata_path: tuple[str, ...]
+    default_min: float = -float("inf")
+    default_max: float = float("inf")
+    enabled_key: Optional[str] = None
+    reason_low: Optional[str] = None
+    reason_high: Optional[str] = None
+    reason_range: Optional[str] = None
+    reason_missing: Optional[str] = None
+
+
 @runtime_checkable
 class Operator(Protocol):
     """
@@ -125,6 +143,11 @@ class Operator(Protocol):
     @property
     def config(self) -> OperatorConfig:
         """Returns operator configuration and metadata."""
+        ...
+
+    @property
+    def filter_definitions(self) -> list[FilterDefinition]:
+        """Returns filter definitions associated with this operator."""
         ...
 
     def execute(self, ctx: OperatorContext) -> OperatorResult:

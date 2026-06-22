@@ -2,7 +2,7 @@ import math
 
 import numpy as np
 
-from core.operators import OperatorConfig, OperatorContext, OperatorResult, register_operator
+from core.operators import FilterDefinition, OperatorConfig, OperatorContext, OperatorResult, register_operator
 
 
 @register_operator
@@ -18,6 +18,22 @@ class FaceSimilarityOperator:
             max_value=1.0,
             requires_face=True,
         )
+
+    @property
+    def filter_definitions(self) -> list[FilterDefinition]:
+        from core.operators.base import FilterDefinition
+
+        return [
+            FilterDefinition(
+                key="face_sim",
+                filter_type="min",
+                metadata_path=("face_sim",),
+                default_min=0.0,
+                enabled_key="face_sim_enabled",
+                reason_low="face_sim_low",
+                reason_missing="face_missing",
+            )
+        ]
 
     def execute(self, ctx: OperatorContext) -> OperatorResult:
         ref_emb = ctx.params.get("reference_embedding")

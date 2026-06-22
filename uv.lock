@@ -2085,7 +2085,11 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "nvidia-cuda-nvrtc-cu12" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/04/1b/54f7595727516ba21b59dd8607ade5e6dda973462264be9af74b5ee0dee3/nvidia_cublas_cu12-12.9.2.10.tar.gz", hash = "sha256:7caf6512c921f956e5e609378e8332be502d7e5108deaade5c7ecf6b8042e842", size = 15431, upload-time = "2026-03-24T04:05:24.555Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f7/a2/c96163a0fff1839c0c9548bbdeae7b853b867009e33b9b9264adc238b1cf/nvidia_cublas_cu12-12.9.2.10-py3-none-manylinux_2_27_aarch64.whl", hash = "sha256:5572131a59c3eebeeb1c4c8144f772d49372c20124916e072a0e3fc30df421d5", size = 575012079, upload-time = "2026-04-08T18:51:47.303Z" },
+    { url = "https://files.pythonhosted.org/packages/cb/c0/0a517bfe63ccd3b92eb254d264e28fca3c7cab75d07daea315250fb1bf73/nvidia_cublas_cu12-12.9.2.10-py3-none-manylinux_2_27_x86_64.whl", hash = "sha256:e4f53a8ca8c5d6e8c492d0d0a3d565ecb59a751b19cfdaa4f6da0ab2104c1702", size = 581240110, upload-time = "2026-04-08T18:52:31.532Z" },
+    { url = "https://files.pythonhosted.org/packages/20/e2/fc9a0e985249d873150276d5afb02e39a66817fedbf1a385724393e505ed/nvidia_cublas_cu12-12.9.2.10-py3-none-win_amd64.whl", hash = "sha256:623f43027d40d44ceadf0043f002bd25cf353e8f13ce90b9a87057019f560661", size = 553162896, upload-time = "2026-04-08T18:53:10.035Z" },
+]
 
 [[package]]
 name = "nvidia-cuda-cupti"
@@ -3736,65 +3740,8 @@ sdist = { url = "https://files.pythonhosted.org/packages/ce/11/d07fc96688f731a85
 
 [[package]]
 name = "sam3"
-source = { editable = "SAM3_repo" }
-dependencies = [
-    { name = "ftfy" },
-    { name = "huggingface-hub" },
-    { name = "iopath" },
-    { name = "numpy" },
-    { name = "regex" },
-    { name = "timm" },
-    { name = "tqdm" },
-    { name = "typing-extensions" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "black", marker = "extra == 'dev'", specifier = "==24.2.0" },
-    { name = "decord", marker = "extra == 'notebooks'" },
-    { name = "einops", marker = "extra == 'notebooks'" },
-    { name = "fairscale", marker = "extra == 'train'" },
-    { name = "ftfy", specifier = "==6.1.1" },
-    { name = "fvcore", marker = "extra == 'train'" },
-    { name = "gitpython", marker = "extra == 'dev'", specifier = "==3.1.31" },
-    { name = "huggingface-hub" },
-    { name = "hydra-core", marker = "extra == 'train'" },
-    { name = "iopath", specifier = ">=0.1.10" },
-    { name = "ipycanvas", marker = "extra == 'notebooks'" },
-    { name = "ipympl", marker = "extra == 'notebooks'" },
-    { name = "ipywidgets", marker = "extra == 'notebooks'" },
-    { name = "jupyter", marker = "extra == 'notebooks'" },
-    { name = "matplotlib", marker = "extra == 'notebooks'" },
-    { name = "notebook", marker = "extra == 'notebooks'" },
-    { name = "numba", marker = "extra == 'dev'" },
-    { name = "numpy", specifier = ">=1.26,<2" },
-    { name = "opencv-python", marker = "extra == 'dev'" },
-    { name = "opencv-python", marker = "extra == 'notebooks'" },
-    { name = "pandas", marker = "extra == 'dev'" },
-    { name = "pycocotools", marker = "extra == 'dev'" },
-    { name = "pycocotools", marker = "extra == 'notebooks'" },
-    { name = "pytest", marker = "extra == 'dev'" },
-    { name = "pytest-cov", marker = "extra == 'dev'" },
-    { name = "python-rapidjson", marker = "extra == 'dev'" },
-    { name = "regex" },
-    { name = "ruff-api", marker = "extra == 'dev'", specifier = "==0.1.0" },
-    { name = "scikit-image", marker = "extra == 'notebooks'" },
-    { name = "scikit-image", marker = "extra == 'train'" },
-    { name = "scikit-learn", marker = "extra == 'notebooks'" },
-    { name = "scikit-learn", marker = "extra == 'train'" },
-    { name = "scipy", marker = "extra == 'train'" },
-    { name = "submitit", marker = "extra == 'train'" },
-    { name = "tensorboard", marker = "extra == 'train'" },
-    { name = "timm", specifier = ">=1.0.17" },
-    { name = "torchmetrics", marker = "extra == 'train'" },
-    { name = "tqdm" },
-    { name = "typing-extensions" },
-    { name = "ufmt", marker = "extra == 'dev'", specifier = "==2.8.0" },
-    { name = "usort", marker = "extra == 'dev'", specifier = "==1.0.2" },
-    { name = "yt-dlp", marker = "extra == 'dev'" },
-    { name = "zstandard", marker = "extra == 'train'" },
-]
-provides-extras = ["dev", "notebooks", "train"]
+version = "0.1.0"
+source = { editable = "sam3_vendored" }
 
 [[package]]
 name = "scenedetect"
@@ -4408,7 +4355,7 @@ requires-dist = [
     { name = "pyyaml" },
     { name = "regex" },
     { name = "sam2", specifier = ">=1.0" },
-    { name = "sam3", editable = "SAM3_repo" },
+    { name = "sam3", editable = "sam3_vendored" },
     { name = "scenedetect" },
     { name = "scikit-image" },
     { name = "scikit-learn" },

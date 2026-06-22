@@ -24,18 +24,20 @@ from core.events import PreAnalysisEvent, PropagationEvent, SessionLoadEvent
 from core.managers import (
     AnalysisPipeline,
     ExtractionPipeline,
+    MediaSession,
     ModelRegistry,
     PreAnalysisPipeline,
-    VideoManager,
-    _load_analysis_scenes,
     _load_scenes,
     initialize_analysis_models,
 )
-from core.managers import (
+from core.managers.media_session import (
     execute_session_load as _execute_session_load,
 )
-from core.managers import (
-    validate_session_dir as _validate_session_dir,
+from core.managers.media_session import (
+    load_analysis_scenes as _load_analysis_scenes,
+)
+from core.managers.media_session import (
+    validate_dir as _validate_session_dir,
 )
 from core.models import AnalysisParameters, PreAnalysisResult
 from core.progress import AdvancedProgressTracker
@@ -211,7 +213,7 @@ def execute_propagation(
     if is_folder:
         tracker.start(len(scenes), desc="Analyzing Images")
     else:
-        v_info = VideoManager.get_video_info(params.video_path)
+        v_info = MediaSession.get_video_info(params.video_path)
         totals = estimate_totals(params, v_info, scenes)
         tracker.start(totals.get("propagation", 0) + len(scenes), desc="Propagating Masks")
 

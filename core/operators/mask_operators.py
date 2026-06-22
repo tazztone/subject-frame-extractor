@@ -1,7 +1,7 @@
 import numpy as np
 from PIL import Image
 
-from core.operators import OperatorConfig, OperatorContext, OperatorResult, register_operator
+from core.operators import FilterDefinition, OperatorConfig, OperatorContext, OperatorResult, register_operator
 
 
 @register_operator
@@ -38,6 +38,21 @@ class SubjectMaskAreaOperator:
             description="Measures percentage of image covered by the subject mask.",
             requires_mask=True,
         )
+
+    @property
+    def filter_definitions(self) -> list[FilterDefinition]:
+        from core.operators.base import FilterDefinition
+
+        return [
+            FilterDefinition(
+                key="mask_area_pct",
+                filter_type="min",
+                metadata_path=("mask_area_pct",),
+                default_min=1.0,
+                enabled_key="mask_area_enabled",
+                reason_low="mask_too_small",
+            )
+        ]
 
     def execute(self, ctx: OperatorContext) -> OperatorResult:
         if ctx.mask is None:

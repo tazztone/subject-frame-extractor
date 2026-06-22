@@ -126,7 +126,6 @@ tests
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_helpers_extended.py`](#-testsunittest_helpers_extendedpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_image_utils.py`](#-testsunittest_image_utilspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_integration.py`](#-testsunittest_integrationpy)  
-&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_integration_sam3_patches.py`](#-testsunittest_integration_sam3_patchespy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_integration_smoke.py`](#-testsunittest_integration_smokepy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_io_utils.py`](#-testsunittest_io_utilspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_launch_config.py`](#-testsunittest_launch_configpy)  
@@ -137,6 +136,7 @@ tests
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_mask_operators.py`](#-testsunittest_mask_operatorspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_mask_propagator_logic.py`](#-testsunittest_mask_propagator_logicpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_mask_propagator_oom.py`](#-testsunittest_mask_propagator_oompy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_media_session.py`](#-testsunittest_media_sessionpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_model_loader.py`](#-testsunittest_model_loaderpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_model_registry.py`](#-testsunittest_model_registrypy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_models.py`](#-testsunittest_modelspy)  
@@ -166,7 +166,6 @@ tests
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_seed_selector_coverage.py`](#-testsunittest_seed_selector_coveragepy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_seed_selector_extended.py`](#-testsunittest_seed_selector_extendedpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_seed_selector_strategies.py`](#-testsunittest_seed_selector_strategiespy)  
-&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_session.py`](#-testsunittest_sessionpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_shared.py`](#-testsunittest_sharedpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_sharpness.py`](#-testsunittest_sharpnesspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_signatures.py`](#-testsunittest_signaturespy)  
@@ -178,7 +177,6 @@ tests
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_subject_masker_coverage.py`](#-testsunittest_subject_masker_coveragepy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_subject_masker_simple.py`](#-testsunittest_subject_masker_simplepy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_system_health.py`](#-testsunittest_system_healthpy)  
-&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_tracker_factory.py`](#-testsunittest_tracker_factorypy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_tracker_registry.py`](#-testsunittest_tracker_registrypy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_ui_unit.py`](#-testsunittest_ui_unitpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_utils.py`](#-testsunittest_utilspy)  
@@ -1907,7 +1905,7 @@ def test_process_ffmpeg_showinfo(mock_logger): ...
 @patch('core.utils.detect_hwaccel', return_value=(None, None))
 def test_run_ffmpeg_extraction(mock_detect, mock_popen, mock_logger, mock_config, tmp_path): ...
 @patch('core.managers.extraction.ExtractionPipeline._run_ffmpeg_extraction')
-@patch('core.managers.extraction.VideoManager')
+@patch('core.managers.extraction.MediaSession')
 def test_extraction_pipeline_run_video(mock_vm_cls, mock_run_ffmpeg, mock_logger, mock_config, tmp_path): ...
 @patch('core.managers.extraction.ingest_folder')
 @patch('core.managers.extraction.is_image_folder', return_value=True)
@@ -1929,7 +1927,7 @@ def test_run_ffmpeg_extraction_success(mock_detect, mock_popen_cls, mock_deps, a
 @patch('core.managers.extraction.is_image_folder', return_value=True)
 @patch('core.managers.extraction.ingest_folder')
 def test_extraction_pipeline_image_folder(mock_ingest, mock_is_img, mock_deps, analysis_params, tmp_path): ...
-@patch('core.managers.extraction.VideoManager')
+@patch('core.managers.extraction.MediaSession')
 @patch('core.managers.extraction.ExtractionPipeline._run_ffmpeg_extraction')
 def test_extraction_pipeline_video(mock_run_ffmpeg, mock_vid_manager_cls, mock_deps, analysis_params, tmp_path): ...
 @patch('core.managers.extraction.subprocess.Popen')
@@ -2223,20 +2221,6 @@ class TestPipelineIntegration:
         """Test AnalysisPipeline can be initialized."""
 ```
 
-### `📄 tests/unit/test_integration_sam3_patches.py`
-
-```python
-pytestmark = pytest.mark.sam3
-@pytest.fixture(autouse=True)
-def skip_if_mocked(): ...
-def test_edt_triton_fallback(): ...
-def test_connected_components_fallback(): ...
-def test_connected_components_fallback_3d_input(): ...
-@pytest.mark.skip(reason='Flaky due to global mocks in conftest.py')
-def test_apply_patches_triton_missing(): ...
-def test_apply_patches_triton_present(): ...
-```
-
 ### `📄 tests/unit/test_integration_smoke.py`
 
 ```python
@@ -2413,15 +2397,6 @@ class TestManagers:
     @patch('core.managers.registry.torch.cuda.empty_cache', create=True)
     @patch('core.managers.registry.torch.cuda.is_available', return_value=True, create=True)
     def test_get_tracker_oom_fallback(self, mock_cuda, mock_empty, mock_load, mock_logger, mock_config): ...
-    def test_video_manager_prepare_local(self, mock_config): ...
-    @patch('core.managers.video.ytdlp.YoutubeDL')
-    def test_video_manager_prepare_youtube(self, mock_ytdl, mock_config, mock_logger): ...
-    def test_video_manager_invalid_inputs(self, mock_config, mock_logger): ...
-    @patch('core.managers.video.DownloadError', new_callable=lambda: type('DownloadError', (Exception,), {}))
-    @patch('core.managers.video.ytdlp')
-    def test_video_manager_youtube_error(self, mock_ytdlp_module, mock_download_error_cls, mock_config, mock_logger): ...
-    @patch('cv2.VideoCapture')
-    def test_get_video_info(self, mock_cap): ...
     @patch('core.managers.face.vision.FaceLandmarker')
     @patch('core.managers.face.python.BaseOptions')
     @patch('core.managers.face.vision.FaceLandmarkerOptions')
@@ -2525,6 +2500,28 @@ class TestMaskPropagatorOOM:
         """Test that OutOfMemoryError is caught and handled during propagate_video."""
 ```
 
+### `📄 tests/unit/test_media_session.py`
+
+```python
+def test_validate_session_dir(tmp_path): ...
+def test_execute_session_load(mock_logger, tmp_path): ...
+def test_execute_session_load_errors(mock_logger, tmp_path): ...
+def test_execute_session_load_with_seeds(mock_logger, tmp_path): ...
+def test_execute_session_load_corrupt_seeds(mock_logger, tmp_path): ...
+def test_execute_session_load_missing_seeds_file(mock_logger, tmp_path): ...
+def test_load_analysis_scenes_folder_mode(): ...
+def test_validate_session_dir_exception(): ...
+def test_media_session_prepare_local(mock_config): ...
+@patch('core.managers.media_session.ytdlp.YoutubeDL')
+def test_media_session_prepare_youtube(mock_ytdl, mock_config, mock_logger): ...
+def test_media_session_invalid_inputs(mock_config, mock_logger): ...
+@patch('core.managers.media_session.DownloadError', new_callable=lambda: type('DownloadError', (Exception,), {}))
+@patch('core.managers.media_session.ytdlp')
+def test_media_session_youtube_error(mock_ytdlp_module, mock_download_error_cls, mock_config, mock_logger): ...
+@patch('cv2.VideoCapture')
+def test_get_video_info(mock_cap): ...
+```
+
 ### `📄 tests/unit/test_model_loader.py`
 
 ```python
@@ -2559,6 +2556,8 @@ class TestModelRegistry:
         """Test that concurrent loads only call the factory once."""
     def test_get_tracker_oom_fallback(self, registry):
         """Test tracker init fallback to CPU on OOM."""
+    def test_get_tracker_invalid_and_retired(self, registry):
+        """Test that retired or unknown tracker backends return None."""
 ```
 
 ### `📄 tests/unit/test_models.py`
@@ -2700,7 +2699,6 @@ class TestRobustnessPhase2:
     def test_setup_logging_structured(self, temp_dir): ...
     def test_atomic_write_text(self, temp_dir): ...
     def test_xmp_writer_atomic(self, temp_dir): ...
-    def test_sam3_patch_hash_mismatch(self, temp_dir): ...
     def test_model_registry_sticky_failure(self): ...
 ```
 
@@ -2865,7 +2863,7 @@ def test_execute_extraction(mock_pipeline_cls, mock_config, mock_logger): ...
 def test_execute_pre_analysis(mock_load, mock_pipeline_cls, mock_config, mock_logger, tmp_path): ...
 @patch('core.pipelines.AnalysisPipeline')
 @patch('core.pipelines._load_analysis_scenes')
-@patch('core.pipelines.VideoManager.get_video_info', return_value={'fps': 30, 'frame_count': 100})
+@patch('core.pipelines.MediaSession.get_video_info', return_value={'fps': 30, 'frame_count': 100})
 def test_execute_propagation(mock_vinfo, mock_load, mock_pipeline_cls, mock_config, mock_logger, tmp_path): ...
 @patch('core.pipelines.AnalysisPipeline')
 @patch('core.pipelines._load_analysis_scenes')
@@ -3252,19 +3250,6 @@ class TestSeedSelectorStrategies:
         """IoU must always be in [0, 1] for non-negative coordinates."""
 ```
 
-### `📄 tests/unit/test_session.py`
-
-```python
-def test_validate_session_dir(tmp_path): ...
-def test_execute_session_load(mock_logger, tmp_path): ...
-def test_execute_session_load_errors(mock_logger, tmp_path): ...
-def test_execute_session_load_with_seeds(mock_logger, tmp_path): ...
-def test_execute_session_load_corrupt_seeds(mock_logger, tmp_path): ...
-def test_execute_session_load_missing_seeds_file(mock_logger, tmp_path): ...
-def test_load_analysis_scenes_folder_mode(): ...
-def test_validate_session_dir_exception(): ...
-```
-
 ### `📄 tests/unit/test_shared.py`
 
 ```python
@@ -3412,7 +3397,6 @@ class TestImportSmoke:
     def test_import_core_scene_utils(self): ...
     def test_import_ui_app_ui(self): ...
     def test_import_ui_gallery_utils(self): ...
-    def test_import_tracker_factory(self): ...
 class TestCriticalSymbols:
     """Verify critical symbols exist in modules (catches missing imports)."""
     @pytest.mark.skip(reason='PIL.Image is imported inside functions for startup performance')
@@ -3531,18 +3515,6 @@ def test_check_environment_torch_exception(): ...
 def test_simulate_pipeline_success(tmp_path): ...
 ```
 
-### `📄 tests/unit/test_tracker_factory.py`
-
-```python
-def test_selects_sam21():
-    """Test that requesting SAM2 raises a ValueError indicating it is retired."""
-@patch('core.managers.sam3.SAM3Wrapper')
-def test_selects_sam3(mock_sam3):
-    """Test that SAM3Wrapper is selected when SAM3 is requested."""
-def test_selects_invalid_tracker():
-    """Test that an invalid tracker backend raises ValueError."""
-```
-
 ### `📄 tests/unit/test_tracker_registry.py`
 
 ```python
@@ -3550,12 +3522,12 @@ def test_selects_invalid_tracker():
 @pytest.fixture
 def registry(): ...
 @patch('core.io_utils.download_model')
-@patch('core.managers.tracker_factory.build_tracker')
+@patch('core.managers.sam3.SAM3Wrapper')
 @patch('core.managers.registry.Path.exists', return_value=True)
 def test_get_tracker_sam2(mock_exists, mock_build, mock_download, registry, mock_config):
     """Test loading SAM2 tracker returns None because it is retired."""
 @patch('core.io_utils.download_model')
-@patch('core.managers.tracker_factory.build_tracker')
+@patch('core.managers.sam3.SAM3Wrapper')
 @patch('core.managers.registry.Path.exists', return_value=True)
 def test_get_tracker_sam3_safetensors(mock_exists, mock_build, mock_download, registry, mock_config):
     """Test loading SAM3 tracker with safetensors replacement."""

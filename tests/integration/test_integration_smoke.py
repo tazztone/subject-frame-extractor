@@ -34,7 +34,7 @@ def test_integration_smoke_flow(mock_config, mock_logger, mock_model_registry):
 
     # 2. Mock some internal methods
     with patch(
-        "core.managers.video.VideoManager.get_video_info",
+        "core.managers.media_session.MediaSession.get_video_info",
         return_value={"fps": 30.0, "width": 1920, "height": 1080, "frame_count": 100},
     ):
         # 3. Verify BatchManager

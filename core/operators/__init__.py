@@ -33,6 +33,7 @@ Quick Start:
 """
 
 from core.operators.base import (
+    FilterDefinition,
     Operator,
     OperatorConfig,
     OperatorContext,
@@ -53,6 +54,7 @@ __all__ = [
     "OperatorConfig",
     "OperatorContext",
     "OperatorResult",
+    "FilterDefinition",
     "OperatorRegistry",
     "register_operator",
     "run_operators",

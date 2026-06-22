@@ -1,4 +1,4 @@
-from core.operators import OperatorConfig, OperatorContext, OperatorResult, register_operator
+from core.operators import FilterDefinition, OperatorConfig, OperatorContext, OperatorResult, register_operator
 
 
 @register_operator
@@ -9,10 +9,26 @@ class QualityScoreOperator:
             name="quality_score",
             display_name="Final Quality Score",
             category="quality",
-            description="Computes the weighted sum of all quality metrics.",
+            description="Computes the final weighted quality score of all quality metrics.",
             min_value=0.0,
             max_value=100.0,
         )
+
+    @property
+    def filter_definitions(self) -> list[FilterDefinition]:
+        from core.operators.base import FilterDefinition
+
+        return [
+            FilterDefinition(
+                key="quality_score",
+                filter_type="range",
+                metadata_path=("metrics", "quality_score"),
+                default_min=0.0,
+                default_max=100.0,
+                reason_low="quality_score_low",
+                reason_high="quality_score_high",
+            )
+        ]
 
     def execute(self, ctx: OperatorContext) -> OperatorResult:
         if not ctx.config:

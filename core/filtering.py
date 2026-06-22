@@ -24,22 +24,26 @@ def load_and_prep_filter_data(output_dir: str, get_all_filter_keys: Callable, co
     all_frames = db.load_all_metadata()
     db.close()
     metric_values = {}
-    metric_configs = {
-        "quality_score": {"path": ("metrics", "quality_score"), "range": (0, 100)},
-        "yaw": {
-            "path": ("metrics", "yaw"),
-            "range": (config.filter_default_yaw["min"], config.filter_default_yaw["max"]),
-        },
-        "pitch": {
-            "path": ("metrics", "pitch"),
-            "range": (config.filter_default_pitch["min"], config.filter_default_pitch["max"]),
-        },
-        "eyes_open": {"path": ("metrics", "eyes_open"), "range": (0, 1)},
-        "face_sim": {"path": ("face_sim",), "range": (0, 1)},
-    }
+    from core.operators.registry import OperatorRegistry
+
+    defs = OperatorRegistry.get_all_filter_definitions(config)
+    defs_by_key = {d.key: d for d in defs}
+
+    metric_configs = {}
     for k in get_all_filter_keys():
-        if k not in metric_configs:
+        d = defs_by_key.get(k)
+        if d:
+            hist_range = (0.0, 100.0)
+            if d.key in ("yaw", "pitch"):
+                hist_range = (-180.0, 180.0)
+            elif d.key in ("eyes_open", "face_sim"):
+                hist_range = (0.0, 1.0)
+            elif d.key == "mask_area_pct":
+                hist_range = (0.0, 100.0)
+            metric_configs[k] = {"path": d.metadata_path, "range": hist_range}
+        else:
             metric_configs[k] = {"path": (k,), "alt_path": ("metrics", f"{k}_score"), "range": (0, 100)}
+
     for k in get_all_filter_keys():
         cfg = metric_configs.get(k)
         if not cfg:
@@ -104,23 +108,23 @@ def build_all_metric_svgs(per_metric_values: dict, get_all_filter_keys: Callable
 
 
 def _extract_metric_arrays(all_frames_data: List[Dict[str, Any]], config: "Config") -> Dict[str, np.ndarray]:
-    keys = [k.replace("quality_weights_", "") for k in config.model_dump().keys() if k.startswith("quality_weights_")]
-    sources = {
-        **{k: ("metrics", f"{k}_score") for k in keys},
-        "quality_score": ("metrics", "quality_score"),
-        "face_sim": ("face_sim",),
-        "mask_area_pct": ("mask_area_pct",),
-        "eyes_open": ("metrics", "eyes_open"),
-        "yaw": ("metrics", "yaw"),
-        "pitch": ("metrics", "pitch"),
-    }
+    from core.operators.registry import OperatorRegistry
+
+    defs = OperatorRegistry.get_all_filter_definitions(config)
+
     metric_arrays = {}
-    for key, path in sources.items():
-        vals = [
-            f.get(path[0], np.nan) if len(path) == 1 else f.get(path[0], {}).get(path[1], np.nan)
-            for f in all_frames_data
-        ]
-        metric_arrays[key] = np.array(vals, dtype=np.float32)
+    for d in defs:
+        path = d.metadata_path
+        vals = []
+        for f in all_frames_data:
+            if len(path) == 1:
+                v = f.get(path[0], np.nan)
+            elif len(path) == 2:
+                v = f.get(path[0], {}).get(path[1], np.nan)
+            else:
+                v = np.nan
+            vals.append(v)
+        metric_arrays[d.key] = np.array(vals, dtype=np.float32)
     return metric_arrays
 
 
@@ -133,26 +137,15 @@ def _apply_metric_filters(
     num_frames = len(all_frames_data)
     filenames = [f["filename"] for f in all_frames_data]
     reasons = defaultdict(list)
-    keys = [k.replace("quality_weights_", "") for k in config.model_dump().keys() if k.startswith("quality_weights_")]
-    defs = [
-        *[{"key": k, "type": "range"} for k in keys],
-        {"key": "quality_score", "type": "range"},
-        {
-            "key": "face_sim",
-            "type": "min",
-            "enabled_key": "face_sim_enabled",
-            "reason_low": "face_sim_low",
-            "reason_missing": "face_missing",
-        },
-        {"key": "mask_area_pct", "type": "min", "enabled_key": "mask_area_enabled", "reason_low": "mask_too_small"},
-        {"key": "eyes_open", "type": "min", "reason_low": "eyes_closed"},
-        {"key": "yaw", "type": "range", "reason_range": "yaw_out_of_range"},
-        {"key": "pitch", "type": "range", "reason_range": "pitch_out_of_range"},
-    ]
+
+    from core.operators.registry import OperatorRegistry
+
+    defs = OperatorRegistry.get_all_filter_definitions(config)
+
     mask = np.ones(num_frames, dtype=bool)
     for d in defs:
-        k, t = d["key"], d["type"]
-        if d.get("enabled_key") and not filters.get(d["enabled_key"]):
+        k, t = d.key, d.filter_type
+        if d.enabled_key and not filters.get(d.enabled_key):
             continue
         arr = metric_arrays.get(k)
         if arr is None:
@@ -191,12 +184,12 @@ def _apply_metric_filters(
                 mask &= np.nan_to_num(arr, nan=float(nan_fill)) >= float(min_v)
     for i in np.where(~mask)[0]:
         for d in defs:
-            arr = metric_arrays.get(d["key"])
+            k, t = d.key, d.filter_type
+            arr = metric_arrays.get(k)
             if arr is None:
                 continue
             v = arr[i]
-            k, t = d["key"], d["type"]
-            if d.get("enabled_key") and not filters.get(d["enabled_key"]):
+            if d.enabled_key and not filters.get(d.enabled_key):
                 continue
             defaults = getattr(config, f"filter_default_{k}", {})
             if t == "range":
@@ -206,15 +199,15 @@ def _apply_metric_filters(
                 )
                 if not np.isnan(v):
                     if v < min_v:
-                        reasons[filenames[i]].append(d.get("reason_range") or d.get("reason_low", f"{k}_low"))
+                        reasons[filenames[i]].append(d.reason_range or d.reason_low or f"{k}_low")
                     if v > max_v:
-                        reasons[filenames[i]].append(d.get("reason_range") or d.get("reason_high", f"{k}_high"))
+                        reasons[filenames[i]].append(d.reason_range or d.reason_high or f"{k}_high")
             elif t == "min":
                 min_v = filters.get(f"{k}_min", defaults.get("default_min", -np.inf))
                 if not np.isnan(v) and v < min_v:
-                    reasons[filenames[i]].append(d.get("reason_low", f"{k}_low"))
+                    reasons[filenames[i]].append(d.reason_low or f"{k}_low")
                 elif k == "face_sim" and filters.get("require_face_match") and np.isnan(v):
-                    reasons[filenames[i]].append(d.get("reason_missing", "face_missing"))
+                    reasons[filenames[i]].append(d.reason_missing or "face_missing")
     return mask, reasons
 
 

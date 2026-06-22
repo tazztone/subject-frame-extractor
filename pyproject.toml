@@ -59,7 +59,7 @@ dev = [
 
 [tool.uv]
 # Note: Sources are relative to the root pyproject.toml
-sources = { sam3 = { path = "SAM3_repo", editable = true } }
+sources = { sam3 = { path = "sam3_vendored", editable = true } }
 
 [tool.setuptools]
 packages = ["core", "ui"]
@@ -124,6 +124,7 @@ line-length = 120
 target-version = "py310"
 exclude = [
     "SAM3_repo",
+    "sam3_vendored",
     "outputs",
     "venv",
     ".git",
@@ -153,4 +154,4 @@ quote-style = "double"
 pythonVersion = "3.11"
 typeCheckingMode = "basic"
 reportMissingModuleSource = "none"
-exclude = ["SAM3_repo", "outputs", "venv", ".venv", ".git", "**/__pycache__", "tests", "scripts"]
+exclude = ["SAM3_repo", "sam3_vendored", "outputs", "venv", ".venv", ".git", "**/__pycache__", "tests", "scripts"]

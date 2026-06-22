@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 import cv2
 import numpy as np
 
-from core.operators.base import Operator, OperatorConfig, OperatorContext, OperatorResult
+from core.operators.base import FilterDefinition, Operator, OperatorConfig, OperatorContext, OperatorResult
 from core.operators.registry import register_operator
 
 if TYPE_CHECKING:
@@ -42,6 +42,22 @@ class SharpnessOperator(Operator):
             max_value=100.0,
             description="Laplacian variance measuring image sharpness. Higher = sharper.",
         )
+
+    @property
+    def filter_definitions(self) -> list[FilterDefinition]:
+        from core.operators.base import FilterDefinition
+
+        return [
+            FilterDefinition(
+                key="sharpness",
+                filter_type="range",
+                metadata_path=("metrics", "sharpness_score"),
+                default_min=0.0,
+                default_max=100.0,
+                reason_low="sharpness_low",
+                reason_high="sharpness_high",
+            )
+        ]
 
     def execute(self, ctx: OperatorContext) -> OperatorResult:
         """

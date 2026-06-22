@@ -5,7 +5,7 @@ import pytest
 
 from core.batch_manager import BatchManager
 from core.db_schema import migrate_database
-from core.managers.session import validate_session_dir
+from core.managers import validate_session_dir
 
 
 class TestExitBranches:

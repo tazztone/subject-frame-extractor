@@ -494,17 +494,23 @@ class AppUI:
 
     def _get_all_filter_keys(self) -> list[str]:
         """Returns a list of all available filter metric keys."""
-        return list(self.config.quality_weights.keys()) + [
-            "quality_score",
-            "face_sim",
-            "mask_area_pct",
-            "eyes_open",
-            "yaw",
-            "pitch",
-        ]
+        from core.operators.registry import OperatorRegistry
+
+        defs = OperatorRegistry.get_all_filter_definitions(self.config)
+        return [d.key for d in defs]
 
     def _get_metric_description(self, metric_name: str) -> str:
         """Returns a user-friendly description for a given metric."""
+        from core.operators.registry import OperatorRegistry
+
+        for op in OperatorRegistry._operators.values():
+            if hasattr(op, "filter_definitions"):
+                try:
+                    if any(fd.key == metric_name for fd in op.filter_definitions):
+                        if op.config.description:
+                            return op.config.description
+                except Exception:
+                    pass
         descriptions = {
             "quality_score": "Overall 'goodness' score.",
             "niqe": "Natural Image Quality Evaluator. Lower is better, but scaled here so higher is better.",

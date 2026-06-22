@@ -100,11 +100,6 @@ class TestImportSmoke:
 
         assert gallery_utils is not None
 
-    def test_import_tracker_factory(self):
-        from core.managers.tracker_factory import build_tracker
-
-        assert callable(build_tracker)
-
 
 class TestCriticalSymbols:
     """Verify critical symbols exist in modules (catches missing imports)."""

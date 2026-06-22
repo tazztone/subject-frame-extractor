@@ -7,7 +7,6 @@ import pytest
 from core.managers import (
     ModelRegistry,
     ThumbnailManager,
-    VideoManager,
     get_face_analyzer,
     get_face_landmarker,
     initialize_analysis_models,
@@ -215,78 +214,6 @@ class TestManagers:
 
         assert tracker == "mock_tracker_cpu"
         assert registry.runtime_device_override == "cpu"
-
-    # --- VideoManager Tests ---
-
-    def test_video_manager_prepare_local(self, mock_config):
-        vm = VideoManager("test.mp4", mock_config)
-        with patch("core.managers.video.validate_video_file", return_value="test.mp4") as mock_val:
-            path = vm.prepare_video(MagicMock())
-            mock_val.assert_called_once()
-            assert path == "test.mp4"
-
-    @patch("core.managers.video.ytdlp.YoutubeDL")
-    def test_video_manager_prepare_youtube(self, mock_ytdl, mock_config, mock_logger):
-        vm = VideoManager("https://youtube.com/watch?v=123", mock_config)
-
-        mock_instance = mock_ytdl.return_value.__enter__.return_value
-        mock_instance.extract_info.return_value = {}
-        mock_instance.prepare_filename.return_value = "downloaded.mp4"
-
-        with patch("core.managers.video.validate_video_file", return_value="downloaded.mp4"):
-            path = vm.prepare_video(mock_logger)
-
-        assert path == "downloaded.mp4"
-        mock_instance.extract_info.assert_called_once()
-
-    def test_video_manager_invalid_inputs(self, mock_config, mock_logger):
-        # Invalid URL/File
-        vm = VideoManager("invalid_file.mp4", mock_config)
-        # Assuming validate_video_file raises FileNotFoundError
-        with patch("core.managers.video.validate_video_file", side_effect=FileNotFoundError):
-            with pytest.raises(FileNotFoundError):
-                vm.prepare_video(mock_logger)
-
-    @patch("core.managers.video.DownloadError", new_callable=lambda: type("DownloadError", (Exception,), {}))
-    @patch("core.managers.video.ytdlp")
-    def test_video_manager_youtube_error(self, mock_ytdlp_module, mock_download_error_cls, mock_config, mock_logger):
-        # Setup the YoutubeDL context manager mock
-        mock_ctx = mock_ytdlp_module.YoutubeDL.return_value.__enter__.return_value
-        mock_ctx.extract_info.side_effect = mock_download_error_cls("Failed")
-
-        vm = VideoManager("https://youtube.com/watch?v=bad", mock_config)
-
-        with pytest.raises(RuntimeError) as excinfo:
-            vm.prepare_video(mock_logger)
-
-        assert "Download failed" in str(excinfo.value)
-
-    @patch("cv2.VideoCapture")
-    def test_get_video_info(self, mock_cap):
-        instance = mock_cap.return_value
-        instance.isOpened.return_value = True
-
-        import cv2
-
-        def get_side_effect(prop):
-            if prop == cv2.CAP_PROP_FRAME_WIDTH:
-                return 1920
-            if prop == cv2.CAP_PROP_FRAME_HEIGHT:
-                return 1080
-            if prop == cv2.CAP_PROP_FPS:
-                return 30.0
-            if prop == cv2.CAP_PROP_FRAME_COUNT:
-                return 100
-            return 0
-
-        instance.get.side_effect = get_side_effect
-
-        info = VideoManager.get_video_info("test.mp4")
-
-        assert info["fps"] == 30.0
-        assert info["width"] == 1920
-        assert info["height"] == 1080
-        assert info["frame_count"] == 100
 
     # --- Face Model Tests ---
 

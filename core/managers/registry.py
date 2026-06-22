@@ -317,7 +317,7 @@ class ModelRegistry:
         from core.error_handling import ErrorHandler
         from core.io_utils import download_model
 
-        from .tracker_factory import TrackerBackend, build_tracker
+        from .sam3 import SAM3Wrapper
 
         if model_name == "sam2":
             raise ValueError("SAM2.1 model has been retired. Please use 'sam3' (SAM3.1 Multiplex) instead.")
@@ -325,7 +325,6 @@ class ModelRegistry:
             checkpoint_filename = "sam3.1_multiplex_fp16.safetensors"
             url = config.sam3_checkpoint_url if config else ""
             description = "SAM3.1 Multiplex Model"
-            backend: TrackerBackend = "sam3"
         else:
             raise ValueError(f"Unknown tracker model '{model_name}'. Must be 'sam3'.")
 
@@ -346,4 +345,4 @@ class ModelRegistry:
                 user_agent=user_agent,
                 token=config.huggingface_token if config else None,
             )
-        return build_tracker(backend, str(checkpoint_path), device=device, config=config)
+        return SAM3Wrapper(str(checkpoint_path), device=device, config=config)

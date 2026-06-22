@@ -116,28 +116,17 @@ class FilteringTabBuilder:
                     self.app._create_component("visual_diff_image", "image", {"label": "Visual Diff", "visible": False})
 
                 # 3. Dynamic Metric Accordions
-                metric_configs = {
-                    "quality_score": {"open": True},
-                    "niqe": {"open": False},
-                    "sharpness": {"open": False},
-                    "edge_strength": {"open": False},
-                    "contrast": {"open": False},
-                    "brightness": {"open": False},
-                    "entropy": {"open": False},
-                    "face_sim": {"open": False},
-                    "mask_area_pct": {"open": False},
-                    "eyes_open": {"open": False},
-                    "yaw": {"open": False},
-                    "pitch": {"open": False},
-                }
-                for metric_name, metric_config in metric_configs.items():
+                from core.operators.registry import OperatorRegistry
+
+                defs = OperatorRegistry.get_all_filter_definitions(self.config)
+                for d in defs:
+                    metric_name = d.key
+                    is_open = metric_name == "quality_score"
                     if not hasattr(self.config, f"filter_default_{metric_name}"):
                         continue
                     f_def = getattr(self.config, f"filter_default_{metric_name}")
 
-                    with gr.Accordion(
-                        metric_name.replace("_", " ").title(), open=metric_config["open"], visible=False
-                    ) as acc:
+                    with gr.Accordion(metric_name.replace("_", " ").title(), open=is_open, visible=False) as acc:
                         self.app.components["metric_accs"][metric_name] = acc
                         gr.Markdown(self.app._get_metric_description(metric_name), elem_classes="metric-description")
                         with gr.Column(elem_classes="plot-and-slider-column"):
@@ -161,7 +150,7 @@ class FilteringTabBuilder:
                                         },
                                     )
                                 )
-                                if "default_max" in f_def:
+                                if d.filter_type == "range" or "default_max" in f_def:
                                     self.app.components["metric_sliders"][f"{metric_name}_max"] = (
                                         self.app._create_component(
                                             f"slider_{metric_name}_max",
@@ -170,7 +159,7 @@ class FilteringTabBuilder:
                                                 "label": "Max",
                                                 "minimum": f_def["min"],
                                                 "maximum": f_def["max"],
-                                                "value": f_def["default_max"],
+                                                "value": f_def.get("default_max", f_def["max"]),
                                                 "step": f_def["step"],
                                                 "interactive": True,
                                                 "visible": True,
