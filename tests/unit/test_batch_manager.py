@@ -150,6 +150,7 @@ def test_batch_manager_retry_success(bm):
     bm.add_paths(["retry_success.mp4"])
 
     attempts = 0
+
     def processor(item, progress):
         nonlocal attempts
         attempts += 1
@@ -172,11 +173,13 @@ def test_batch_manager_retry_success(bm):
 
 def test_batch_manager_retry_failure_with_logger():
     from unittest.mock import MagicMock
+
     logger_mock = MagicMock()
     bm = BatchManager(logger=logger_mock)
     bm.add_paths(["retry_fail.mp4"])
 
     attempts = 0
+
     def processor(item, progress):
         nonlocal attempts
         attempts += 1

@@ -2,10 +2,12 @@
 
 ## Test Execution
 
+- All tests: `bash scripts/linux_test_all.sh`
 - Unit tests: `bash scripts/linux_test_unit.sh`
 - UI/Playwright tests: `bash scripts/linux_test_ui.sh`
+- Integration tests: `bash scripts/linux_test_integration.sh`
+- SAM3 tests: `bash scripts/linux_test_sam3.sh`
 - Regression tests: `uv run --no-sync pytest tests/regression/ -v`
-- Integration tests (requires `export PYTEST_INTEGRATION_MODE=true` and `-n 1` to prevent GPU OOM): `uv run --no-sync pytest tests/integration/ -m "integration or gpu_e2e" -n 1 -v --no-cov`
 - Update visual baselines (serial only): `uv run pytest -n 0 --update-baselines tests/ui/test_visual_regression.py`
 
 ## Active Rules

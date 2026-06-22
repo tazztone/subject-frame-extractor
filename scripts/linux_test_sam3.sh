@@ -15,7 +15,7 @@ fi
 echo "Running SAM3 tests (Heavyweight Integration/E2E)..."
 echo "----------------------------------------"
 
-# SAM3 currently mostly has integration/E2E tests in tests/integration/ 
+# SAM3 currently mostly has integration/E2E tests in tests/integration/
 # and some generic logic in tests/unit/ marked with -m sam3
 PYTEST_INTEGRATION_MODE=true uv run --no-sync pytest -m sam3 --no-cov "$@"
 

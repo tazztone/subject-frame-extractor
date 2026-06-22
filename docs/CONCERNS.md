@@ -53,7 +53,7 @@
 - **Concern**: Masks are stored as separate `.png` files. If the user deletes the `masks/` directory manually, the `metadata.db` becomes inconsistent, leading to "File Not Found" errors during export.
 
 ### 4. SAM3 State Reset Risks 🔴
-- **Concern**: The `predictor.add_prompt` API in SAM3 triggers an unconditional `self.reset_state()` if a `boxes_xywh` argument is provided. 
+- **Concern**: The `predictor.add_prompt` API in SAM3 triggers an unconditional `self.reset_state()` if a `boxes_xywh` argument is provided.
 - **Impact**: This destroys the tracking history for all other objects in the session, making multi-object propagation impossible after any manual BBox prompt.
 - **Mitigation**: The `SAM3Wrapper` avoids the `boxes_xywh` field entirely. It maps bounding boxes to the `points` argument with corner labels `[2, 3]` to force the PVS (Tracker) path which preserves session state.
 

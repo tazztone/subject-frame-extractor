@@ -1,4 +1,13 @@
 repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: ^docs/(TESTS_CODE_REFERENCE|AGENTS_CODE_REFERENCE)\.md$
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.8  # run `pre-commit autoupdate` to get actual latest
     hooks:
@@ -12,7 +21,7 @@ repos:
     hooks:
       - id: pytest-fast
         name: pytest-fast
-        entry: uv run pytest tests/unit/ -n auto -x -q
+        entry: uv run --no-sync pytest tests/unit/ -n auto -x -q
         language: system
         pass_filenames: false
         files: ^(core/|tests/unit/|tests/conftest\.py)
@@ -21,7 +30,7 @@ repos:
 
       - id: update-agents-md
         name: update-agents-md
-        entry: uv run python scripts/update_agents_md.py
+        entry: uv run --no-sync python scripts/update_agents_md.py
         language: system
         pass_filenames: false
         files: ^(core/|ui/|app\.py|cli\.py|scripts/|tests/)

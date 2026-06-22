@@ -351,7 +351,7 @@ def test_filter_command_args(mock_run_filter, runner, tmp_path):
         False,  # dedup is False due to --no-dedup
         "SSIM",
         0.9,
-        True,   # verbose
+        True,  # verbose
     )
 
 

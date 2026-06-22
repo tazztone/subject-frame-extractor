@@ -47,7 +47,7 @@ All tests should be run using `uv` to ensure the correct environment.
 
 The project uses GitHub Actions (`.github/workflows/ci.yml`) for automated verification:
 1. **Unit & Lint**: Runs on every push. Checks types (Pyright), lint (Ruff), and unit coverage.
-2. **UI / E2E Tests**: Runs after unit tests pass. 
+2. **UI / E2E Tests**: Runs after unit tests pass.
    - **Environment**: Ubuntu Latest, Chromium.
    - **Timeout**: 15 minutes.
    - **Workers**: Pinned to `-n 4` for deterministic mock server performance.
@@ -148,7 +148,7 @@ To verify CLI commands without the overhead of the ML backend:
 To verify that code intended to be multi-threaded is actually running in parallel (and not neutralized by a hidden lock):
 1. **Mock with Delays**: Patch the internal worker functions with a deterministic delay (e.g., `time.sleep(0.1)`).
 2. **Measure Wall-Clock**: Use `time.time()` to measure the total duration of a batch run.
-3. **Assert Parallelism**: If 10 workers run 10 tasks of 0.1s, the total duration should be ~0.1s (parallel) rather than 1.0s (serial). 
+3. **Assert Parallelism**: If 10 workers run 10 tasks of 0.1s, the total duration should be ~0.1s (parallel) rather than 1.0s (serial).
    * See `tests/unit/test_concurrency.py` for implementation.
 
 ### Infrastructure Latency Tuning
@@ -180,7 +180,7 @@ If you try to run a specific test file (e.g., `tests/integration/test_gpu_e2e.py
 ### Bulk-Run Stability (TypeError / Mock Pollution)
 - **Symptom**: Tests pass in isolation but fail with `TypeError: '>' not supported between instances of 'MagicMock' and 'int'` or `AttributeError` when run in bulk.
 - **Cause**: **Mock Pollution**. A previous test modified a global mock attribute (like `torch.cuda.is_available`) and failed to restore it, or a production module is holding a stale reference to an older mock object.
-- **Fixes**: 
+- **Fixes**:
   1. **Patch the Consumer**: Always patch where the name is used: `patch("core.managers.sam2.torch", _torch_mod)`.
   2. **Authoritative Reset**: Use the `_restore_mock_modules` autouse fixture in `conftest.py`.
   3. **Consistent Exception Classes**: Use `_torch_mod.cuda.OutOfMemoryError` when mocking side effects to ensure the consumer's `except` block matches the class.
@@ -248,4 +248,3 @@ During the mock consolidation and refactoring, several significant technical roa
 
 ## Appendix: GPU Accuracy Metrics
 ...
-

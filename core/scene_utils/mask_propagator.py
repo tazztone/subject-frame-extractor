@@ -345,10 +345,7 @@ class MaskPropagator:
                     rgb_to_pil(img).save(os.path.join(tdir, f"{i:05d}.jpg"))
 
                 with ThreadPoolExecutor() as executor:
-                    list(executor.map(
-                        _save_img,
-                        [(i, img, temp_dir) for i, img in enumerate(shot_frames_rgb)]
-                    ))
+                    list(executor.map(_save_img, [(i, img, temp_dir) for i, img in enumerate(shot_frames_rgb)]))
 
                 # Initialize video session with new API
                 self.dam_tracker.init_video(temp_dir)
@@ -384,7 +381,9 @@ class MaskPropagator:
                 for reverse in [False, True]:
                     if self.cancel_event.is_set():
                         break
-                    for frame_idx, obj_id, pred_mask, score in self.dam_tracker.propagate(start_idx=seed_idx, reverse=reverse):
+                    for frame_idx, obj_id, pred_mask, score in self.dam_tracker.propagate(
+                        start_idx=seed_idx, reverse=reverse
+                    ):
                         if frame_idx == seed_idx:
                             continue
                         if frame_idx < 0 or frame_idx >= len(shot_frames_rgb):

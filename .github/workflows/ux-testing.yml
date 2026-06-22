@@ -29,12 +29,12 @@ jobs:
   ux-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    
+
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-      
+
       - name: Install uv
         uses: astral-sh/setup-uv@v5
         with:
@@ -49,24 +49,24 @@ jobs:
         run: |
           uv sync
           uv run playwright install --with-deps chromium
-      
+
       - name: Download baselines artifact
         uses: actions/download-artifact@v4
         with:
           name: visual-baselines
           path: tests/ui/baselines
         continue-on-error: true  # First run or empty project won't have baselines
-      
+
       - name: Run UX Audit Suite
         run: |
           # run_ux_audit.py handles starting mock_app.py and running UI tests
           uv run python scripts/run_ux_audit.py ${{ github.event.inputs.update_baselines == 'true' && '--update-baselines' || '' }}
-      
+
       - name: Run Detailed Accessibility Audit
         run: |
           # Explicit run to ensure accessibility report is generated regardless of audit script limits
           uv run pytest tests/ui/test_accessibility.py -v
-      
+
       - name: Upload baselines artifact
         if: github.event.inputs.update_baselines == 'true'
         uses: actions/upload-artifact@v4
@@ -74,7 +74,7 @@ jobs:
           name: visual-baselines
           path: tests/ui/baselines
           retention-days: 90
-      
+
       - name: Upload screenshots and reports
         if: always()
         uses: actions/upload-artifact@v4

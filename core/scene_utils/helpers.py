@@ -318,11 +318,14 @@ def _recompute_single_preview(
         raise FileNotFoundError(f"Thumbnail for frame {best_frame_num} not found on disk.")
     seed_config = {**masker.params.model_dump(), **overrides}
 
-    cache_key = json.dumps({
-        "shot_id": scene.shot_id,
-        "best_frame": best_frame_num,
-        "seed_config": seed_config,
-    }, sort_keys=True)
+    cache_key = json.dumps(
+        {
+            "shot_id": scene.shot_id,
+            "best_frame": best_frame_num,
+            "seed_config": seed_config,
+        },
+        sort_keys=True,
+    )
 
     if cache_key in _PREVIEW_CACHE:
         cached_data = _PREVIEW_CACHE[cache_key]
@@ -392,7 +395,7 @@ def _recompute_single_preview(
             "details": details,
             "score": new_score,
             "mask_area_pct": mask_area_pct,
-            "preview_path": scene.preview_path
+            "preview_path": scene.preview_path,
         }
         if len(_PREVIEW_CACHE) > _PREVIEW_CACHE_MAX_SIZE:
             _PREVIEW_CACHE.popitem(last=False)

@@ -34,4 +34,3 @@ echo "--- Jules Environment Complete ---"
 echo "--- Jules Health Check ---"
 python -c "import torch; print(f'Torch OK: {torch.__version__}')" && \
 uv run --active pytest tests/unit/ --import-mode=importlib -q --tb=short
-

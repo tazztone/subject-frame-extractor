@@ -119,4 +119,3 @@ This project uses a semi-automated TODO tracking system to prioritize refactors 
     3.  [Medium] Add temporal consistency smoothing between frames in `MaskPropagator`.
     4.  [Medium] Add adaptive quality thresholds based on propagation distance.
     5.  [Low] Support demosaicing for RAW photo ingest (currently uses previews).
-

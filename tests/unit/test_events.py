@@ -411,5 +411,3 @@ def test_validate_out_methods(mock_validate):
     result = ExportEvent.validate_out("export/path")
     mock_validate.assert_called_with("export/path", "Output Directory")
     assert result == "/mock/path"
-
-

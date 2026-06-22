@@ -25,17 +25,17 @@ run_and_log() {
     local stage_name=$1
     shift
     local temp_log=$(mktemp)
-    
+
     # Run tests with durations=0 (measure everything)
     # 1. Capture FULL output (including durations) to temp_log
     # 2. Show live output to console, but STOP at 'slowest durations' to keep it clean.
     "$@" --durations=0 2>&1 | tee "$temp_log" | sed '/^=.*slowest .* durations/,$d'
-    
+
     # Append header and ONLY the timing lines to the final log
     echo "" >> "$LOG_FILE"
     echo "--- Stage: $stage_name ---" >> "$LOG_FILE"
     grep -E "^[0-9.]+s[[:space:]]+(call|setup|teardown)" "$temp_log" >> "$LOG_FILE"
-    
+
     local exit_code=${PIPESTATUS[0]} # Capture original exit code from the first command in the pipe
     rm "$temp_log"
     return $exit_code

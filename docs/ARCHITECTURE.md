@@ -33,7 +33,7 @@ To bypass Gradio's reactive refresh delays and prevent UI flickering, the system
 
 ### 2. Propagation Phase (`AnalysisPipeline` via `SubjectMasker`)
 - **Model**: SAM 3.1 (Segment Anything Model v3.1).
-- **Temporal Memory**: SAM3 uses a session-based approach where it tracks objects across frames. 
+- **Temporal Memory**: SAM3 uses a session-based approach where it tracks objects across frames.
 - **PVS vs. PCS Protocol**: The system strictly uses the **PVS (Promptable Visual Segmentation)** tracker path instead of the PCS (Semantic) path. This ensures tracking state persistence across frames and avoids the automatic `reset_state()` calls triggered by high-level BBox APIs.
 - **Coordinate System**: UI coordinates (pixels) are normalized to [0.0, 1.0] before being passed to the `SAM3Wrapper`.
 - **Output**: Binary masks stored as compressed `.png` or `.webp` files in the `masks/` directory.
@@ -124,10 +124,10 @@ class MyMetricOperator:
     def execute(self, ctx: OperatorContext) -> OperatorResult:
         # Access image as numpy array (RGB)
         image = ctx.image_rgb
-        
+
         # Compute your score (simulated here)
-        score = 85.0 
-        
+        score = 85.0
+
         return OperatorResult(metrics={"my_metric_score": score})
 ```
 

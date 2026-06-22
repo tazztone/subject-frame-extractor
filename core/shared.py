@@ -175,10 +175,10 @@ def create_scene_thumbnail_svg(
         svg = (
             f'<svg width="{w}" height="{h}" viewBox="0 0 {w} {h}" xmlns="http://www.w3.org/2000/svg">'
             f'<image href="{img_data_url}" width="{w}" height="{h}" />'
-            f'<rect x="2" y="2" width="{w-4}" height="{h-4}" fill="none" stroke="{border_color_rgb}" stroke-width="4" />'
+            f'<rect x="2" y="2" width="{w - 4}" height="{h - 4}" fill="none" stroke="{border_color_rgb}" stroke-width="4" />'
             f'<circle cx="{badge_cx}" cy="{badge_cy}" r="{badge_radius}" fill="{border_color_rgb}" />'
             f'<text x="{badge_cx}" y="{badge_cy}" dominant-baseline="central" text-anchor="middle" '
-            f'font-family="sans-serif" font-size="{badge_radius*1.4}" fill="{text_color_rgb}" font-weight="bold">'
+            f'font-family="sans-serif" font-size="{badge_radius * 1.4}" fill="{text_color_rgb}" font-weight="bold">'
             f"{badge_char}</text></svg>"
         )
 

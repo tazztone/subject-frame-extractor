@@ -64,6 +64,7 @@ def test_fingerprints_match():
     assert fingerprints_match(fp1, fp3) is False  # Outside 1s slack
     assert fingerprints_match(fp1, fp4) is False  # Different size
 
+
 def test_create_fingerprint_deterministic(tmp_path):
     """Test that fingerprint hashes are deterministic regardless of dict insertion order."""
     video_path = tmp_path / "video.mp4"
@@ -80,6 +81,7 @@ def test_create_fingerprint_deterministic(tmp_path):
 
     # Test with types that require default=str serialization
     from datetime import datetime
+
     now = datetime.now()
 
     settings_c = {"time": now, "path": tmp_path}
@@ -89,6 +91,7 @@ def test_create_fingerprint_deterministic(tmp_path):
     fp_d = create_fingerprint(str(video_path), settings_d)
 
     assert fp_c.extraction_hash == fp_d.extraction_hash
+
 
 def test_create_fingerprint_analysis_settings(tmp_path):
     """Test create_fingerprint with and without analysis_settings."""

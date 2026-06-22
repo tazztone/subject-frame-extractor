@@ -431,9 +431,7 @@ modules_to_mock = {
         },
     ),
     "scenedetect.detectors": _create_mock_module("scenedetect.detectors", {"ContentDetector": MagicMock()}),
-    "scenedetect.video_stream": _create_mock_module(
-        "scenedetect.video_stream", {"VideoOpenFailure": VideoOpenFailure}
-    ),
+    "scenedetect.video_stream": _create_mock_module("scenedetect.video_stream", {"VideoOpenFailure": VideoOpenFailure}),
     # --- SAM2 ---
     "sam2": _create_mock_module("sam2", {"__path__": []}),
     "sam2.build_sam": _create_mock_module(
@@ -445,9 +443,7 @@ modules_to_mock = {
                     add_new_points_or_box=MagicMock(
                         return_value=(None, None, [_create_mock_tensor(shape=(1, 1, 100, 100))])
                     ),
-                    propagate_in_video=MagicMock(
-                        return_value=[(0, [1], _create_mock_tensor(shape=(1, 1, 100, 100)))]
-                    ),
+                    propagate_in_video=MagicMock(return_value=[(0, [1], _create_mock_tensor(shape=(1, 1, 100, 100)))]),
                 )
             )
         },
