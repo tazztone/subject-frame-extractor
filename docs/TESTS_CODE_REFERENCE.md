@@ -108,7 +108,6 @@ tests
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_enums.py`](#-testsunittest_enumspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_error_handling.py`](#-testsunittest_error_handlingpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_events.py`](#-testsunittest_eventspy)  
-&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_exit_branches.py`](#-testsunittest_exit_branchespy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_export.py`](#-testsunittest_exportpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_extraction.py`](#-testsunittest_extractionpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_extraction_manager.py`](#-testsunittest_extraction_managerpy)  
@@ -125,12 +124,8 @@ tests
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_helpers_extended.py`](#-testsunittest_helpers_extendedpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_image_utils.py`](#-testsunittest_image_utilspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_integration.py`](#-testsunittest_integrationpy)  
-&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_integration_smoke.py`](#-testsunittest_integration_smokepy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_io_utils.py`](#-testsunittest_io_utilspy)  
-&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_launch_config.py`](#-testsunittest_launch_configpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_logger.py`](#-testsunittest_loggerpy)  
-&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_logger_interop.py`](#-testsunittest_logger_interoppy)  
-&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_logger_setup.py`](#-testsunittest_logger_setuppy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_managers.py`](#-testsunittest_managerspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_mask_operators.py`](#-testsunittest_mask_operatorspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_mask_propagator_logic.py`](#-testsunittest_mask_propagator_logicpy)  
@@ -149,14 +144,13 @@ tests
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_photo_utils.py`](#-testsunittest_photo_utilspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_pipeline_logic.py`](#-testsunittest_pipeline_logicpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_pipeline_result_schemas.py`](#-testsunittest_pipeline_result_schemaspy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_pipeline_wiring_smoke.py`](#-testsunittest_pipeline_wiring_smokepy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_pipelines.py`](#-testsunittest_pipelinespy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_pipelines_extended.py`](#-testsunittest_pipelines_extendedpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_pipelines_orchestrator.py`](#-testsunittest_pipelines_orchestratorpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_pipelines_wrapper.py`](#-testsunittest_pipelines_wrapperpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_progress.py`](#-testsunittest_progresspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_quality_score.py`](#-testsunittest_quality_scorepy)  
-&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_quick_wins.py`](#-testsunittest_quick_winspy)  
-&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_sam3_import.py`](#-testsunittest_sam3_importpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_sam3_manager.py`](#-testsunittest_sam3_managerpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_sam3_wrapper.py`](#-testsunittest_sam3_wrapperpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_scene_detection.py`](#-testsunittest_scene_detectionpy)  
@@ -197,7 +191,7 @@ def clean_gpu_mock():
 @pytest.fixture
 def mock_config(): ...
 @pytest.fixture
-def mock_config_simple(): ...
+def mock_config_simple(mock_config): ...
 @pytest.fixture
 def mock_logger(): ...
 @pytest.fixture
@@ -384,7 +378,6 @@ def _create_test_frames_dir(tmp_path, num_frames=5, width=256, height=256):
 def _is_sam3_available():
     """Check if SAM3 is properly installed and can be imported."""
 requires_sam3 = pytest.mark.skipif(not _is_sam3_available(), reason='SAM3 not...
-requires_sam2 = pytest.mark.skip(reason='SAM2 is retired')
 @pytest.fixture
 def test_image():
     """Provides a simple test image."""
@@ -1341,6 +1334,8 @@ def test_cleanup_models(): ...
 def test_main_success(): ...
 def test_main_keyboard_interrupt(): ...
 def test_main_exception(): ...
+def test_parse_args_extended(): ...
+def test_parse_args_defaults_extended(): ...
 ```
 
 ### `📄 tests/unit/test_app_ui_logic.py`
@@ -1384,6 +1379,8 @@ def test_batch_manager_stop_processing(bm): ...
 def test_batch_manager_start_empty(bm): ...
 def test_batch_manager_retry_success(bm): ...
 def test_batch_manager_retry_failure_with_logger(): ...
+def test_batch_manager_cancel_before_loop(mock_logger):
+    """Test BatchManager scheduler exits if stop event is set."""
 ```
 
 ### `📄 tests/unit/test_bug_fixes.py`
@@ -1499,6 +1496,7 @@ def test_analysis_pipeline_concurrency(tmp_path):
 ```python
 def test_config_defaults():
     """Test that Config initializes with expected default values."""
+def test_config_overrides(): ...
 def test_config_env_overrides(tmp_path):
     """Test that environment variables correctly override default values."""
 def test_config_has_sam3_checkpoint_url():
@@ -1654,6 +1652,8 @@ def test_migrate_database_from_v1_with_schema_versions(tmp_path):
     """Test migration from v1 to v2 when schema_versions already exists and is at ve..."""
 def test_migrate_database_already_updated(tmp_path):
     """Test migration on a database that is already at the current version."""
+def test_migrate_database_failure(mock_logger):
+    """Test migrate_database handles exceptions and triggers rollback."""
 ```
 
 ### `📄 tests/unit/test_dedup.py`
@@ -1805,20 +1805,6 @@ def test_validate_face_ref():
 @patch('core.events.validate_writable_directory')
 def test_validate_out_methods(mock_validate):
     """Test that validate_out classmethods correctly delegate to validate_writable_d..."""
-```
-
-### `📄 tests/unit/test_exit_branches.py`
-
-```python
-class TestExitBranches:
-    def test_batch_manager_cancel_before_loop(self, mock_logger):
-        """Test BatchManager scheduler exits if stop event is set."""
-    def test_migrate_database_failure(self, mock_logger):
-        """Test migrate_database handles exceptions and triggers rollback."""
-    def test_validate_session_dir_is_file(self, tmp_path):
-        """Test validation fails if path is a file."""
-    def test_validate_session_dir_non_existent(self):
-        """Test validation fails if path does not exist."""
 ```
 
 ### `📄 tests/unit/test_export.py`
@@ -2210,16 +2196,6 @@ class TestPipelineIntegration:
         """Test AnalysisPipeline can be initialized."""
 ```
 
-### `📄 tests/unit/test_integration_smoke.py`
-
-```python
-@patch('core.pipelines.ExtractionPipeline')
-@patch('core.pipelines.PreAnalysisPipeline')
-@patch('core.pipelines.AnalysisPipeline')
-def test_execute_extraction_smoke(mock_analysis, mock_pre_analysis, mock_extraction, mock_ui_state):
-    """End-to-end mock test for execute_extraction to ensure manager wiring succeeds."""
-```
-
 ### `📄 tests/unit/test_io_utils.py`
 
 ```python
@@ -2234,20 +2210,14 @@ def test_is_image_folder(tmp_path): ...
 def test_list_images(tmp_path, mock_config): ...
 @patch('subprocess.run')
 def test_detect_hwaccel_variants(mock_run): ...
+@patch('subprocess.run')
+def test_detect_hwaccel_handles_permission_error(mock_run, mock_logger):
+    """Test detect_hwaccel handles permission errors from subprocess."""
 def test_compute_sha256(tmp_path): ...
 @patch('urllib.request.urlopen')
 def test_download_model_full(mock_urlopen, tmp_path): ...
 def test_create_frame_map(tmp_path): ...
 def test_create_frame_map_json_error(tmp_path): ...
-```
-
-### `📄 tests/unit/test_launch_config.py`
-
-```python
-def test_config_defaults(): ...
-def test_config_overrides(): ...
-def test_parse_args(): ...
-def test_parse_args_defaults(): ...
 ```
 
 ### `📄 tests/unit/test_logger.py`
@@ -2341,23 +2311,13 @@ def test_json_formatter_sanitize():
     """Test JSONFormatter _sanitize function for various types."""
 def test_json_formatter_exception():
     """Test JSONFormatter formats exception info properly."""
-```
-
-### `📄 tests/unit/test_logger_interop.py`
-
-```python
-def test_logger_interop(tmp_path): ...
-def test_create_frame_map_interop(tmp_path): ...
-def test_setup_logging_stable_name(tmp_path): ...
-```
-
-### `📄 tests/unit/test_logger_setup.py`
-
-```python
 def test_gradio_queue_handler_formatter_default():
     """Verify GradioQueueHandler hardcodes its simple formatter."""
 def test_root_logger_isolation():
     """Verify setup_logging does NOT attach GradioQueueHandler to the root logger."""
+def test_logger_interop(tmp_path): ...
+def test_create_frame_map_interop(tmp_path): ...
+def test_setup_logging_stable_name_file(tmp_path): ...
 ```
 
 ### `📄 tests/unit/test_managers.py`
@@ -2417,6 +2377,10 @@ class TestManagers:
         """Test ModelRegistry.get_face_landmarker caching and cleanup."""
     def test_thumbnail_manager_eviction_logic(self, tmp_path, mock_logger):
         """Test LRU eviction in ThumbnailManager."""
+def test_validate_session_dir_is_file(tmp_path):
+    """Test validation fails if path is a file."""
+def test_validate_session_dir_non_existent():
+    """Test validation fails if path does not exist."""
 ```
 
 ### `📄 tests/unit/test_mask_operators.py`
@@ -2745,6 +2709,16 @@ def test_execute_extraction_schema():
     """Verify that execute_extraction yields the expected keys."""
 ```
 
+### `📄 tests/unit/test_pipeline_wiring_smoke.py`
+
+```python
+@patch('core.pipelines.ExtractionPipeline')
+@patch('core.pipelines.PreAnalysisPipeline')
+@patch('core.pipelines.AnalysisPipeline')
+def test_execute_extraction_smoke(mock_analysis, mock_pre_analysis, mock_extraction, mock_ui_state):
+    """End-to-end mock test for execute_extraction to ensure manager wiring succeeds."""
+```
+
 ### `📄 tests/unit/test_pipelines.py`
 
 ```python
@@ -2951,27 +2925,6 @@ def test_quality_score_all_zeros():
     """Test with all zeros."""
 def test_quality_score_empty_shared_data():
     """Test with weights but no metrics."""
-```
-
-### `📄 tests/unit/test_quick_wins.py`
-
-```python
-class TestQuickWins:
-    @patch('subprocess.run')
-    def test_detect_hwaccel_handles_permission_error(self, mock_run, mock_logger):
-        """Test detect_hwaccel handles permission errors from subprocess."""
-```
-
-### `📄 tests/unit/test_sam3_import.py`
-
-```python
-class TestSAM3Import:
-    def test_sam3_wrapper_raises_on_missing_checkpoint(self):
-        """Test SAM3Wrapper raises RuntimeError if checkpoint is missing/fail to load."""
-    def test_sam3_wrapper_init_success(self):
-        """Test SAM3Wrapper initializes correctly when build succeeds."""
-    def test_sam3_wrapper_session_and_prompts(self):
-        """Test init_video, add_bbox_prompt, and close_session."""
 ```
 
 ### `📄 tests/unit/test_sam3_manager.py`

@@ -204,3 +204,21 @@ def test_migrate_database_already_updated(tmp_path):
     cursor.execute("SELECT MAX(version) FROM schema_versions")
     assert cursor.fetchone()[0] == CURRENT_VERSION
     conn.close()
+
+
+def test_migrate_database_failure(mock_logger):
+    """Test migrate_database handles exceptions and triggers rollback."""
+    mock_conn = MagicMock()
+    mock_cursor = mock_conn.cursor.return_value
+
+    # 1. First call to get MAX(version) returns 0 to trigger migration
+    # 2. Second call during _detect_legacy_version returns None (no metadata table)
+    mock_cursor.fetchone.side_effect = [(0,), None]
+
+    # Force exception during migration body
+    with patch("core.db_schema._migration_v1_initial_schema", side_effect=sqlite3.OperationalError("locked")):
+        with pytest.raises(sqlite3.OperationalError):
+            migrate_database(mock_conn, mock_logger)
+
+    mock_conn.rollback.assert_called_once()
+    mock_logger.error.assert_called()

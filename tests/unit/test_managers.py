@@ -423,3 +423,24 @@ class TestManagers:
             assert Path(tmp_path / "1.jpg") in manager.cache
             assert Path(tmp_path / "3.jpg") in manager.cache
             assert Path(tmp_path / "2.jpg") not in manager.cache
+
+
+def test_validate_session_dir_is_file(tmp_path):
+    """Test validation fails if path is a file."""
+    from core.managers import validate_session_dir
+
+    p = tmp_path / "some_file.txt"
+    p.touch()
+
+    res_path, error = validate_session_dir(str(p))
+    assert res_path is None
+    assert "does not exist" in error.lower()
+
+
+def test_validate_session_dir_non_existent():
+    """Test validation fails if path does not exist."""
+    from core.managers import validate_session_dir
+
+    res_path, error = validate_session_dir("/non/existent/path")
+    assert res_path is None
+    assert "does not exist" in error.lower()

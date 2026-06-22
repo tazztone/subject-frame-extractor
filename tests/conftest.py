@@ -111,10 +111,8 @@ def mock_config():
 
 
 @pytest.fixture
-def mock_config_simple():
-    from core.config import Config
-
-    return Config()
+def mock_config_simple(mock_config):
+    return mock_config
 
 
 @pytest.fixture

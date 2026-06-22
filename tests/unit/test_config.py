@@ -17,6 +17,23 @@ def test_config_defaults():
     # SAM3.1 Multiplex is the project default (AGENTS.md)
     assert config.default_tracker_model_name == "sam3"
     assert "sam3.1_multiplex_fp16.safetensors" in config.sam3_checkpoint_url
+    # Launch config defaults
+    assert config.server_name == "127.0.0.1"
+    assert config.server_port == 7860
+    assert config.share is False
+    assert config.auth is None
+    assert config.ssl_keyfile is None
+    assert config.ssl_certfile is None
+    assert config.ssl_verify is True
+
+
+def test_config_overrides():
+    config = Config(server_name="0.0.0.0", server_port=9090, share=True, auth="user:pass", ssl_verify=False)
+    assert config.server_name == "0.0.0.0"
+    assert config.server_port == 9090
+    assert config.share is True
+    assert config.auth == "user:pass"
+    assert config.ssl_verify is False
 
 
 def test_config_env_overrides(tmp_path):

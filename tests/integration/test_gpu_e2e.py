@@ -159,10 +159,6 @@ def _is_sam3_available():
 requires_sam3 = pytest.mark.skipif(not _is_sam3_available(), reason="SAM3 not installed (pip install -e SAM3_repo)")
 
 
-# Skip decorator for tests requiring SAM2 (SAM2 is retired)
-requires_sam2 = pytest.mark.skip(reason="SAM2 is retired")
-
-
 @pytest.fixture
 def test_image():
     """Provides a simple test image."""

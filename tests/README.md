@@ -20,7 +20,6 @@
 
 | File | Purpose |
 |------|---------|
-| `test_exit_branches.py` | Groups exit-branch tests (`→exit` coverage gaps) across `batch_manager`, `db_schema`, `error_handling`, and `session` in one place to make systematic sweeps easy. |
 | `test_accuracy.py` | **Precision Baseline**. Uses `bedroom.mp4` to verify SAM3 mask propagation quality (IoU > 0.8) and area stability (< 0.5% variance). |
 | `test_stability.py` | **Resource & Reliability**. Verifies `BatchManager` resource-aware scheduling, system memory watchdog triggers, and Pydantic event validation. |
 

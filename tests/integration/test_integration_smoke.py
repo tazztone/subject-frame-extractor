@@ -47,7 +47,7 @@ def test_integration_smoke_flow(mock_config, mock_logger, mock_model_registry):
 
 def test_pipeline_wiring(mock_config, mock_logger, mock_model_registry):
     """Verify Pipeline wiring with mocks."""
-    mock_params = AnalysisParameters(source_path="mock.mp4", output_folder="/tmp/out", tracker_model_name="sam2")
+    mock_params = AnalysisParameters(source_path="mock.mp4", output_folder="/tmp/out", tracker_model_name="sam3")
     mock_progress_queue = MagicMock()
     mock_cancel_event = MagicMock()
 

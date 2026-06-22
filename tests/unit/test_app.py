@@ -94,3 +94,28 @@ def test_main_exception():
             app.main()
         mock_exit.assert_called_once_with(1)
         mock_logger.return_value.error.assert_called()
+
+
+def test_parse_args_extended():
+    import app
+
+    test_args = ["--server-name", "0.0.0.0", "--server-port", "8000", "--share", "--auth", "u:p", "--no-ssl-verify"]
+    with patch("sys.argv", ["app.py"] + test_args):
+        args = app.parse_args()
+        assert args.server_name == "0.0.0.0"
+        assert args.server_port == 8000
+        assert args.share is True
+        assert args.auth == "u:p"
+        assert args.ssl_verify is False
+
+
+def test_parse_args_defaults_extended():
+    import app
+
+    with patch("sys.argv", ["app.py"]):
+        args = app.parse_args()
+        assert args.server_name is None
+        assert args.server_port is None
+        assert args.share is None
+        assert args.auth is None
+        assert args.ssl_verify is None

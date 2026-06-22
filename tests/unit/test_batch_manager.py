@@ -198,3 +198,22 @@ def test_batch_manager_retry_failure_with_logger():
     assert "Traceback" in bm.queue[0].error
     assert attempts == 3
     logger_mock.error.assert_called()
+
+
+def test_batch_manager_cancel_before_loop(mock_logger):
+    """Test BatchManager scheduler exits if stop event is set."""
+    from unittest.mock import MagicMock
+
+    bm = BatchManager()
+    bm.stop_event.set()
+
+    processor_fn = MagicMock()
+
+    # Add a pending item
+    bm.add_paths(["test.mp4"])
+
+    # _run_scheduler is the internal loop
+    bm._run_scheduler(processor_fn, max_workers=1)
+
+    # Should not have called processor_fn because stop_event was set
+    processor_fn.assert_not_called()

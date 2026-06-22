@@ -108,6 +108,9 @@ def test_sam3_wrapper_checkpoint_resolution():
             assert "checkpoint_path" in kwargs
             assert kwargs["checkpoint_path"] is not None
             assert "models/sam3.1_multiplex.pt" in kwargs["checkpoint_path"]
+            # Check if overrides were applied
+            assert mock_predictor.model.hotstart_delay == 0
+            assert mock_predictor.model.masklet_confirmation_enable is False
 
 
 def test_sam3_wrapper_shutdown_cleanup():
