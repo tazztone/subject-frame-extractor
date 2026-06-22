@@ -19,11 +19,12 @@ def test_config_defaults():
     assert "sam3.1_multiplex_fp16.safetensors" in config.sam3_checkpoint_url
 
 
-def test_config_env_overrides():
+def test_config_env_overrides(tmp_path):
     """Test that environment variables correctly override default values."""
-    with patch.dict(os.environ, {"APP_LOGS_DIR": "custom_logs", "APP_FFMPEG_THUMBNAIL_QUALITY": "95"}):
+    custom_logs_dir = tmp_path / "custom_logs"
+    with patch.dict(os.environ, {"APP_LOGS_DIR": str(custom_logs_dir), "APP_FFMPEG_THUMBNAIL_QUALITY": "95"}):
         config = Config()
-        assert config.logs_dir == "custom_logs"
+        assert config.logs_dir == str(custom_logs_dir)
         assert config.ffmpeg_thumbnail_quality == 95
 
 

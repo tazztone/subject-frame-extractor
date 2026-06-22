@@ -32,7 +32,7 @@ All tests should be run using `uv` to ensure the correct environment.
 
 | Script | Purpose | Usage |
 | :--- | :--- | :--- |
-| `scripts/test.sh` | **Standard Quality Pass**. Runs Ruff, Unit Tests, and Integration Smoke. | `./scripts/test.sh` |
+| `scripts/linux_test_unit.sh` | Runs unit tests (fast, mock-first). | `./scripts/linux_test_unit.sh` |
 | `scripts/linux_test_ui.sh` | Runs Playwright tests in `tests/ui/` with xdist. | `./scripts/linux_test_ui.sh` |
 | `scripts/linux_test_all.sh` | Runs the full suite with **duration logging**. | `./scripts/linux_test_all.sh` |
 | `scripts/linux_test_integration.sh` | Specialized runner for GPU/Backend tests. | `./scripts/linux_test_integration.sh` |

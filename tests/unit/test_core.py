@@ -48,11 +48,11 @@ class TestUtils:
         with pytest.raises(ValueError):
             _coerce("not-a-float", float)
 
-    def test_config_init(self):
+    def test_config_init(self, tmp_path):
         mock_config_data = {}
         with patch("core.config.json_config_settings_source", return_value=mock_config_data):
-            config = Config(logs_dir="init_logs")
-        assert config.logs_dir == "init_logs"
+            config = Config(logs_dir=str(tmp_path / "init_logs"))
+        assert config.logs_dir == str(tmp_path / "init_logs")
 
     @patch("pathlib.Path.mkdir", MagicMock())
     @patch("pathlib.Path.touch", MagicMock())

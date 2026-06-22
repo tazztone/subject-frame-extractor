@@ -1,10 +1,119 @@
 {
   "version": 1,
   "skills": {
+    "hf-cli": {
+      "source": "huggingface/skills",
+      "sourceType": "github",
+      "skillPath": "skills/hf-cli/SKILL.md",
+      "computedHash": "8d7a3e2b59e574e4f2dd7f1c51efa49afcf057b39880395fa1121356a657daea"
+    },
+    "hf-mem": {
+      "source": "huggingface/skills",
+      "sourceType": "github",
+      "skillPath": "skills/hf-mem/SKILL.md",
+      "computedHash": "8e38f548246956ff9c2b156bd143c7d5da892993baf8ac61b83687f1ff3102f6"
+    },
+    "huggingface-best": {
+      "source": "huggingface/skills",
+      "sourceType": "github",
+      "skillPath": "skills/huggingface-best/SKILL.md",
+      "computedHash": "c3655c565e3bc526c17a2a051f452e3ddecb699308ecbad3509439eec9ef811c"
+    },
+    "huggingface-community-evals": {
+      "source": "huggingface/skills",
+      "sourceType": "github",
+      "skillPath": "skills/huggingface-community-evals/SKILL.md",
+      "computedHash": "32eec43c4c176086132aefee5377b47e98095727289f128492da697dccbc1598"
+    },
+    "huggingface-datasets": {
+      "source": "huggingface/skills",
+      "sourceType": "github",
+      "skillPath": "skills/huggingface-datasets/SKILL.md",
+      "computedHash": "d28d1ee4a61133ab6c1e12c74094681c2026c7e656784bd09831f91618fd0120"
+    },
     "huggingface-gradio": {
       "source": "huggingface/skills",
       "sourceType": "github",
+      "skillPath": "skills/huggingface-gradio/SKILL.md",
       "computedHash": "267dadfa06166207300e6995c0f38ece48d56cfe0067865563955f36a252ed88"
+    },
+    "huggingface-llm-trainer": {
+      "source": "huggingface/skills",
+      "sourceType": "github",
+      "skillPath": "skills/huggingface-llm-trainer/SKILL.md",
+      "computedHash": "a607046533c251221fd745780cf9b1fd7902bbe51549711ac95413f79d1b8631"
+    },
+    "huggingface-local-models": {
+      "source": "huggingface/skills",
+      "sourceType": "github",
+      "skillPath": "skills/huggingface-local-models/SKILL.md",
+      "computedHash": "98d8dd87770bafa3dc8e777204264e2d57ea550b3e04aae805e93d1e45d056a8"
+    },
+    "huggingface-lora-space-builder": {
+      "source": "huggingface/skills",
+      "sourceType": "github",
+      "skillPath": "skills/huggingface-lora-space-builder/SKILL.md",
+      "computedHash": "707ad141ba5419954ff00203153249f5a27ac1584a3317d18df39c6bff10da80"
+    },
+    "huggingface-paper-publisher": {
+      "source": "huggingface/skills",
+      "sourceType": "github",
+      "skillPath": "skills/huggingface-paper-publisher/SKILL.md",
+      "computedHash": "f20ababe4c4dfdc5e1b9bb24ffbb95792efff0e56f16917f41f9d665e2d31bfe"
+    },
+    "huggingface-papers": {
+      "source": "huggingface/skills",
+      "sourceType": "github",
+      "skillPath": "skills/huggingface-papers/SKILL.md",
+      "computedHash": "d10f77f78592263ed257ff1be56ab53469490ada7e8158460037af88c52454a7"
+    },
+    "huggingface-spaces": {
+      "source": "huggingface/skills",
+      "sourceType": "github",
+      "skillPath": "skills/huggingface-spaces/SKILL.md",
+      "computedHash": "2a5f21a6fc618df89d0d4812db1b0ca7fa63d766a0a4c568e2a19981554ec126"
+    },
+    "huggingface-tool-builder": {
+      "source": "huggingface/skills",
+      "sourceType": "github",
+      "skillPath": "skills/huggingface-tool-builder/SKILL.md",
+      "computedHash": "5466e19d49b55fd0cec167f921acb01bb7473c30dee8f60962225efb96099908"
+    },
+    "huggingface-trackio": {
+      "source": "huggingface/skills",
+      "sourceType": "github",
+      "skillPath": "skills/huggingface-trackio/SKILL.md",
+      "computedHash": "744a4d7ee5dfa6f61b343e9c354dd1d080d283e0aca521b229ce94367e6e94be"
+    },
+    "huggingface-vision-trainer": {
+      "source": "huggingface/skills",
+      "sourceType": "github",
+      "skillPath": "skills/huggingface-vision-trainer/SKILL.md",
+      "computedHash": "bf5eff3c692372a798f1763f975ed2725794a55af4f0ba4de58492e7d83b8d75"
+    },
+    "huggingface-zerogpu": {
+      "source": "huggingface/skills",
+      "sourceType": "github",
+      "skillPath": "skills/huggingface-zerogpu/SKILL.md",
+      "computedHash": "740dfb441230ae6a7ba08a19c357aee7b758b25d1fe435df3233adc144aa2dd0"
+    },
+    "train-sentence-transformers": {
+      "source": "huggingface/skills",
+      "sourceType": "github",
+      "skillPath": "skills/train-sentence-transformers/SKILL.md",
+      "computedHash": "3cff98a16b314cde34545912097128d6879d1c56b0397bf3d3ee07f7bd011fee"
+    },
+    "transformers-js": {
+      "source": "huggingface/skills",
+      "sourceType": "github",
+      "skillPath": "skills/transformers-js/SKILL.md",
+      "computedHash": "f61c531d0cc9ee4cb714b5a651f4a7a939ce127f70333d44af179cbbb1663de1"
+    },
+    "trl-training": {
+      "source": "huggingface/skills",
+      "sourceType": "github",
+      "skillPath": "skills/trl-training/SKILL.md",
+      "computedHash": "ae41062997a13dd9da1d73ecf111cffed04ebbd734bdaf5320c65f6f1c5b89a3"
     }
   }
 }

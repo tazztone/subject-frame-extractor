@@ -30,7 +30,6 @@ tests
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;frame_map.json  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;mask_metadata.json  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;masks  
-│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;previews  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;progress.json  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;run_config.json  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;scene_seeds.json  
@@ -1500,7 +1499,7 @@ def test_analysis_pipeline_concurrency(tmp_path):
 ```python
 def test_config_defaults():
     """Test that Config initializes with expected default values."""
-def test_config_env_overrides():
+def test_config_env_overrides(tmp_path):
     """Test that environment variables correctly override default values."""
 def test_config_has_sam3_checkpoint_url():
     """Test that sam3_checkpoint_url is present and points to a SAM3.1 model."""
@@ -1572,7 +1571,7 @@ class TestUtils:
     @pytest.mark.parametrize('value, to_type, expected', [('True', bool, True), ('false', bool, False), ('1', bool, True), ('0', bool, False), ('yes', bool, True), ('no', bool, False), (True, bool, True), (False, bool, False), ('123', int, 123), (123, int, 123), ('123.45', float, 123.45), (123.45, float, 123.45), ('string', str, 'string')])
     def test_coerce(self, value, to_type, expected): ...
     def test_coerce_invalid_raises(self): ...
-    def test_config_init(self): ...
+    def test_config_init(self, tmp_path): ...
     @patch('pathlib.Path.mkdir', MagicMock())
     @patch('pathlib.Path.touch', MagicMock())
     @patch('pathlib.Path.unlink', MagicMock())

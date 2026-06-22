@@ -16,14 +16,6 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 .  
 ├──&nbsp;AGENTS.md  
 ├──&nbsp;CHANGELOG.md  
-├──&nbsp;MagicMock  
-│&nbsp;&nbsp;&nbsp;└──&nbsp;mock.config.downloads_dir  
-│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;130276556587904  
-│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;extracted_frames  
-│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;133535462706208  
-│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;extracted_frames  
-│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└──&nbsp;136706662630080  
-│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└──&nbsp;extracted_frames  
 ├──&nbsp;README.md  
 ├──&nbsp;[`app.py`](#-apppy)  
 ├──&nbsp;cli.py  
@@ -90,7 +82,6 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;├──&nbsp;utils  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`utils.py`](#-coreutilspy)  
 │&nbsp;&nbsp;&nbsp;└──&nbsp;[`xmp_writer.py`](#-corexmp_writerpy)  
-├──&nbsp;custom_logs  
 ├──&nbsp;docs  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;ARCHITECTURE.md  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;CONCERNS.md  
@@ -105,12 +96,6 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;__init__.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;pixel_count.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└──&nbsp;test_pixel_count.py  
-├──&nbsp;htmlcov  
-│&nbsp;&nbsp;&nbsp;└──&nbsp;status.json  
-├──&nbsp;outputs  
-│&nbsp;&nbsp;&nbsp;└──&nbsp;reproduce_test  
-│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└──&nbsp;thumbs  
-├──&nbsp;previews  
 ├──&nbsp;sam3_vendored  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;sam3  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;__init__.py  
@@ -380,7 +365,6 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;frame_map.json  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;mask_metadata.json  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;masks  
-│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;previews  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;progress.json  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;run_config.json  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;scene_seeds.json  

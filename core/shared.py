@@ -252,7 +252,7 @@ def build_scene_gallery_items(
     items: List[Tuple[Optional[np.ndarray], str]] = []
     index_map: List[int] = []
 
-    if not scenes:
+    if not scenes or not output_dir:
         return [], [], 1
 
     # Ensure scenes are Scene objects

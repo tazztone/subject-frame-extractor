@@ -159,6 +159,14 @@ def generate_file_tree(
         "ux_reports",
         "test_results",
         ".pytest_cache",
+        "MagicMock",
+        "custom_logs",
+        "outputs",
+        "previews",
+        "htmlcov",
+        ".hypothesis",
+        ".kilo",
+        ".ruff_cache",
     }
 
     exclude_files = {
