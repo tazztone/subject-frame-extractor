@@ -2,14 +2,21 @@
 System health checks and diagnostic report generation.
 """
 
+import gc
 import shutil
 import subprocess
 import sys
+import threading
 from collections import deque
 from pathlib import Path
-from typing import Any, Generator, List
+from typing import TYPE_CHECKING, Any, Generator, List, Optional
 
+import psutil
 import torch
+
+if TYPE_CHECKING:
+    from core.config import Config
+    from core.logger import AppLogger
 
 from core.events import ExportEvent, ExtractionEvent, PreAnalysisEvent, PropagationEvent
 from core.export import export_kept_frames
@@ -266,3 +273,55 @@ def generate_full_diagnostic_report(
 
     final_report = "\n".join(report)
     yield final_report
+
+
+class MemoryWatchdog:
+    """Background thread that monitors memory usage and logs critical warnings."""
+
+    def __init__(self, config: "Config", logger: "AppLogger"):
+        self.config = config
+        self.logger = logger
+        self.stop_event = threading.Event()
+        self.thread: Optional[threading.Thread] = None
+
+    def start(self):
+        if not self.config.monitoring_memory_watchdog_enabled:
+            return
+        self.stop_event.clear()
+        self.thread = threading.Thread(target=self._run, daemon=True)
+        self.thread.start()
+        self.logger.info("Memory watchdog started.", component="monitor")
+
+    def stop(self):
+        self.stop_event.set()
+        if self.thread:
+            self.thread.join(timeout=1.0)
+
+    def _run(self):
+        import time
+
+        while not self.stop_event.is_set():
+            # Check RAM
+            mem = psutil.virtual_memory()
+            ram_used_mb = (mem.total - mem.available) / 1024 / 1024
+            if ram_used_mb > self.config.monitoring_memory_critical_threshold_mb:
+                self.logger.critical(
+                    f"CRITICAL: System RAM usage ({ram_used_mb:.0f}MB) exceeded threshold ({self.config.monitoring_memory_critical_threshold_mb}MB)!",
+                    component="monitor",
+                )
+                gc.collect()
+            elif ram_used_mb > self.config.monitoring_memory_warning_threshold_mb:
+                self.logger.warning(f"High system RAM usage: {ram_used_mb:.0f}MB", component="monitor")
+
+            # Check GPU VRAM
+            if torch.cuda.is_available():
+                for i in range(torch.cuda.device_count()):
+                    vram_used_mb = torch.cuda.memory_reserved(i) / 1024 / 1024
+                    if vram_used_mb > self.config.monitoring_gpu_memory_critical_threshold_mb:
+                        self.logger.critical(
+                            f"CRITICAL: GPU {i} VRAM usage ({vram_used_mb:.0f}MB) exceeded threshold ({self.config.monitoring_gpu_memory_critical_threshold_mb}MB)!",
+                            component="monitor",
+                        )
+                        torch.cuda.empty_cache()
+
+            time.sleep(5.0)

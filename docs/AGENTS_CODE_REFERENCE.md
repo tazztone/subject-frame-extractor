@@ -27,6 +27,7 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`cli_commands.py`](#-corecli_commandspy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`cli_utils.py`](#-corecli_utilspy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`config.py`](#-coreconfigpy)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`context.py`](#-corecontextpy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`database.py`](#-coredatabasepy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`db_schema.py`](#-coredb_schemapy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`enums.py`](#-coreenumspy)  
@@ -527,8 +528,10 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`gallery_utils.py`](#-uigallery_utilspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;handlers  
 &nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`__init__.py`](#-uihandlers__init__py)  
+&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`filtering_handler.py`](#-uihandlersfiltering_handlerpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`pipeline_handlers.py`](#-uihandlerspipeline_handlerspy)  
-&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;[`scene_handler.py`](#-uihandlersscene_handlerpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`scene_handler.py`](#-uihandlersscene_handlerpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;[`subject_handler.py`](#-uihandlerssubject_handlerpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;└──&nbsp;tabs  
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`__init__.py`](#-uitabs__init__py)  
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`extraction_tab.py`](#-uitabsextraction_tabpy)  
@@ -710,6 +713,14 @@ class Config(BaseSettings):
         """Saves the current configuration to a JSON file."""
 ```
 
+### `📄 core/context.py`
+
+```python
+class AnalysisContext:
+    """Bundles pipeline execution parameters to deepen interfaces and manage model l..."""
+    def __init__(self, config: Config, logger: AppLogger, progress_queue: Queue, cancel_event: threading.Event, thumbnail_manager: ThumbnailManager, model_registry: ModelRegistry, cuda_available: bool, progress: Optional[Callable]=None): ...
+```
+
 ### `📄 core/database.py`
 
 ```python
@@ -805,10 +816,6 @@ class ErrorHandler:
         """Helper to call logger with or without component support."""
     def with_retry(self, max_attempts: Optional[int]=None, backoff_seconds: Optional[list]=None, recoverable_exceptions: tuple=(Exception,)):
         """Decorator that retries the function call upon failure."""
-    def with_notify(self, default_return: Any=None):
-        """Decorator that catches exceptions, logs a warning, and returns a default value."""
-    def with_fallback(self, fallback_func: Callable):
-        """Decorator that executes a fallback function if the primary function fails."""
 ```
 
 ### `📄 core/events.py`
@@ -888,6 +895,8 @@ def cluster_faces(all_faces: List[Dict[str, Any]], confidence: float=0.5) -> Tup
     """Groups detected faces into clusters based on embedding similarity."""
 def get_cluster_representative(all_faces: List[Dict[str, Any]], labels: np.ndarray, target_label: int, video_path: str, output_dir: str) -> Tuple[Optional[str], Optional[np.ndarray], str]:
     """Finds the best quality face in a cluster and saves a reference crop."""
+def scan_faces_in_session(context: 'AnalysisContext', params: 'PreAnalysisEvent') -> List[Dict[str, Any]]:
+    """Scans the video frames for faces using the face analyzer."""
 ```
 
 ### `📄 core/filtering.py`
@@ -1237,6 +1246,16 @@ class MaskingResult(BaseModel):
     """Result of the mask propagation process for a frame."""
 class PreAnalysisResult(BaseModel):
     """Typed result for the pre-analysis pipeline stage."""
+class ExtractionResult(BaseModel):
+    """Typed result for the extraction pipeline stage."""
+class PropagationResult(BaseModel):
+    """Typed result for the mask propagation pipeline stage."""
+class AnalysisResult(BaseModel):
+    """Typed result for the metadata analysis pipeline stage."""
+class PipelineProgress(BaseModel):
+    """Typed intermediate progress event emitted by running pipelines."""
+class PipelineFailure(BaseModel):
+    """Typed result representing a pipeline execution failure."""
 ```
 
 ### `📄 core/operators/__init__.py`
@@ -1497,26 +1516,21 @@ def _handle_extraction_uploads(event_dict: dict, config: Config) -> dict:
     """Helper to move uploaded video to downloads directory."""
 def _handle_pre_analysis_uploads(event_dict: dict, config: Config) -> dict:
     """Helper to move uploaded face reference image to downloads directory."""
-@handle_common_errors
-def execute_extraction(event: ExtractionEvent, progress_queue: Queue, cancel_event: threading.Event, logger: AppLogger, config: Config, thumbnail_manager: Optional[ThumbnailManager]=None, cuda_available: Optional[bool]=None, progress: Optional[Callable]=None, model_registry: Optional[ModelRegistry]=None) -> Generator[dict, None, None]: ...
-@handle_common_errors
-def execute_pre_analysis(event: PreAnalysisEvent, progress_queue: Queue, cancel_event: threading.Event, logger: AppLogger, config: Config, thumbnail_manager: ThumbnailManager, cuda_available: bool, progress: Optional[Callable]=None, model_registry: Optional[ModelRegistry]=None, loaded_models: Optional[dict]=None) -> Generator[dict, None, None]: ...
+@handle_common_errors(ExtractionResult)
+def execute_extraction(event: ExtractionEvent, context: AnalysisContext) -> Generator[BaseModel, None, None]: ...
+@handle_common_errors(PreAnalysisResult)
+def execute_pre_analysis(event: PreAnalysisEvent, context: AnalysisContext) -> Generator[BaseModel, None, None]: ...
 def validate_session_dir(path: str) -> bool: ...
 def execute_session_load(event: SessionLoadEvent | dict, logger: AppLogger) -> dict: ...
-@handle_common_errors
-def execute_propagation(event: PropagationEvent, progress_queue: Queue, cancel_event: threading.Event, logger: AppLogger, config: Config, thumbnail_manager: ThumbnailManager, cuda_available: bool, progress: Optional[Callable]=None, model_registry: Optional[ModelRegistry]=None, loaded_models: Optional[dict]=None) -> Generator[dict, None, None]: ...
-@handle_common_errors
-def execute_analysis(event: PropagationEvent, progress_queue: Queue, cancel_event: threading.Event, logger: AppLogger, config: Config, thumbnail_manager: ThumbnailManager, cuda_available: bool, progress: Optional[Callable]=None, model_registry: Optional[ModelRegistry]=None, loaded_models: Optional[dict]=None) -> Generator[dict, None, None]: ...
-class PipelineChainRunner:
-    """Chains pipeline stages, stripping intermediate done flags."""
-    def __init__(self): ...
-    def run_stage(self, stage_gen: Generator[dict, None, None], *, is_final: bool=False):
-        """Yield results from a stage, stripping 'done' on non-final stages."""
-@handle_common_errors
-def execute_analysis_orchestrator(event: PreAnalysisEvent, progress_queue: Queue, cancel_event: threading.Event, logger: AppLogger, config: Config, thumbnail_manager: ThumbnailManager, cuda_available: bool, progress: Optional[Callable]=None, model_registry: Optional[ModelRegistry]=None) -> Generator[dict, None, None]:
+@handle_common_errors(PropagationResult)
+def execute_propagation(event: PropagationEvent, context: AnalysisContext) -> Generator[BaseModel, None, None]: ...
+@handle_common_errors(AnalysisResult)
+def execute_analysis(event: PropagationEvent, context: AnalysisContext) -> Generator[BaseModel, None, None]: ...
+@handle_common_errors(AnalysisResult)
+def execute_analysis_orchestrator(event: PreAnalysisEvent, context: AnalysisContext) -> Generator[BaseModel, None, None]:
     """Orchestrates Pre-Analysis, Propagation, and Analysis stages."""
-@handle_common_errors
-def execute_full_pipeline(event: ExtractionEvent, progress_queue: Queue, cancel_event: threading.Event, logger: AppLogger, config: Config, thumbnail_manager: ThumbnailManager, cuda_available: bool, progress: Optional[Callable]=None, model_registry: Optional[ModelRegistry]=None) -> Generator[dict, None, None]:
+@handle_common_errors(AnalysisResult)
+def execute_full_pipeline(event: ExtractionEvent, context: AnalysisContext) -> Generator[BaseModel, None, None]:
     """Orchestrates the entire flow: Extraction -> Pre-Analysis -> Propagation -> An..."""
 ```
 
@@ -1525,8 +1539,15 @@ def execute_full_pipeline(event: ExtractionEvent, progress_queue: Queue, cancel_
 ```python
 """Progress Tracking Infrastructure for Frame Extractor & Analyzer"""
 _ = gettext.gettext
+class JobTracker(Protocol):
+    """Protocol defining the interface for operations progress and status tracking."""
+    def start(self, total_items: int, desc: Optional[str]=None) -> None: ...
+    def step(self, n: int=1, desc: Optional[str]=None, substage: Optional[str]=None) -> None: ...
+    def set(self, done: int, desc: Optional[str]=None, substage: Optional[str]=None) -> None: ...
+    def set_stage(self, stage: str, substage: Optional[str]=None) -> None: ...
+    def done_stage(self, final_text: Optional[str]=None) -> None: ...
 class ProgressEvent(BaseModel): ...
-class AdvancedProgressTracker:
+class AdvancedProgressTracker(JobTracker):
     """Tracks and estimates progress for long-running operations."""
     def __init__(self, progress: Optional[Callable]=None, queue: Optional[Queue]=None, logger: Optional[AppLogger]=None, ui_stage_name: str='', eta_precision: str='coarse'):
         """Initializes the progress tracker."""
@@ -1758,6 +1779,12 @@ def simulate_pipeline(config: Any, logger: Any, progress_queue: Any, cancel_even
     """Simulates the E2E pipeline with sample assets."""
 def generate_full_diagnostic_report(config: Any, logger: Any, progress_queue: Any, cancel_event: Any, thumbnail_manager: Any, cuda_available: bool) -> Generator[str, None, None]:
     """Generates a full diagnostic report as a generator."""
+class MemoryWatchdog:
+    """Background thread that monitors memory usage and logs critical warnings."""
+    def __init__(self, config: 'Config', logger: 'AppLogger'): ...
+    def start(self): ...
+    def stop(self): ...
+    def _run(self): ...
 ```
 
 ### `📄 core/utils.py`
@@ -1765,14 +1792,8 @@ def generate_full_diagnostic_report(config: Any, logger: Any, progress_queue: An
 ```python
 def _setup_triton_mock():
     """Mocks the Triton library if it's missing (e.g., on Windows or non-CUDA enviro..."""
-def handle_common_errors(func: Callable) -> Callable:
-    """Decorator to catch common exceptions and return a standardized error dictiona..."""
-class MemoryWatchdog:
-    """Background thread that monitors memory usage and logs critical warnings."""
-    def __init__(self, config: 'Config', logger: 'AppLogger'): ...
-    def start(self): ...
-    def stop(self): ...
-    def _run(self): ...
+def handle_common_errors(result_class_or_func: Any=None):
+    """Decorator to catch common exceptions and return a standardized PipelineFailur..."""
 def estimate_totals(params: 'AnalysisParameters', video_info: dict, scenes: Optional[list['Scene']]) -> dict:
     """Estimates the total work items for each pipeline stage."""
 def _to_json_safe(obj: Any) -> Any:
@@ -1861,8 +1882,6 @@ class AppUI:
         """Returns a user-friendly description for a given metric."""
     def _create_event_handlers(self):
         """Sets up all global event listeners and state management."""
-    def _run_task_with_progress(self, task_func: Callable, output_components: list, progress: Callable, *args) -> Generator[dict, None, None]:
-        """Executes a background task while streaming progress updates to the UI."""
     @safe_ui_callback('Toggle Pause')
     def _toggle_pause(self, tracker: 'AdvancedProgressTracker') -> str:
         """Toggles the pause state of the current running task."""
@@ -1902,36 +1921,15 @@ class AppUI:
         """Maps UI dropdown values to internal deduplication method names."""
     def _setup_pipeline_handlers(self):
         """Configures event handlers for starting main processing pipelines."""
-    @safe_ui_callback('Face Clustering')
-    def on_identity_confidence_change(self, confidence: float, state: ApplicationState) -> Any:
-        """Updates the face discovery gallery based on clustering confidence."""
-    @safe_ui_callback('Face Selection')
-    def on_discovered_face_select(self, state: ApplicationState, confidence: float, evt: Optional[gr.SelectData]=None) -> tuple[Optional[str], Optional[np.ndarray], str]:
-        """Handles selection of a face cluster from the discovery gallery."""
-    @safe_ui_callback('Subject Discovery')
-    def on_find_subjects_from_video(self, current_state: ApplicationState, *args) -> dict:
-        """Scans the video for subjects to populate the discovery gallery."""
     def _get_smart_mode_updates(self, is_enabled: bool) -> list[Any]:
         """Calculates slider updates when toggling 'Smart Mode'."""
     def _load_frames_into_state(self, state: ApplicationState) -> ApplicationState:
         """Load frame metadata from the analysis DB into state. Returns a new state copy."""
     def _setup_filtering_handlers(self):
         """Configures event handlers for the filtering and export tab."""
-    @safe_ui_callback('Preset Change')
-    def on_preset_changed(self, preset_name: str) -> list[Any]:
-        """Updates filter sliders when a preset is selected."""
-    @safe_ui_callback('Filter Change')
-    def on_filters_changed_wrapper(self, state: ApplicationState, gallery_view: str, show_overlay: bool, overlay_alpha: float, require_face_match: bool, dedup_thresh: int, dedup_method_ui: str, *slider_values: float) -> tuple[str, Any]:
-        """Updates the results gallery when filters change."""
     @safe_ui_callback('Visual Diff')
     def calculate_visual_diff(self, gallery: gr.Gallery, state: ApplicationState, dedup_method_ui: str, dedup_thresh: int, ssim_thresh: float, lpips_thresh: float) -> Optional[np.ndarray]:
         """Computes a side-by-side comparison image for duplicate inspection."""
-    @safe_ui_callback('Reset Filters')
-    def on_reset_filters(self, state: ApplicationState) -> tuple:
-        """Resets all filter settings to their defaults."""
-    @safe_ui_callback('Auto Thresholds')
-    def on_auto_set_thresholds(self, per_metric_values: dict, p: int, *checkbox_values: bool) -> list[Any]:
-        """Automatically sets filter thresholds based on data percentiles."""
     @safe_ui_callback('Export')
     def export_kept_frames_wrapper(self, state: ApplicationState, enable_crop: bool, crop_ars: str, crop_padding: int, enable_xmp_export: bool, require_face_match: bool, dedup_thresh: int, dedup_method_ui: str, *slider_values: float) -> dict:
         """Wrapper to execute the final frame export."""
@@ -1985,7 +1983,27 @@ def auto_set_thresholds(per_metric_values: dict, p: int, slider_keys: list[str],
 
 ```python
 """UI Handlers package for Frame Extractor."""
-__all__ = ['SceneHandler', 'PipelineHandler']
+__all__ = ['SceneHandler', 'PipelineHandler', 'SubjectHandler', 'FilteringHan...
+```
+
+### `📄 ui/handlers/filtering_handler.py`
+
+```python
+class FilteringHandler:
+    """Handles filtering logic, auto-thresholds, presets, and updates to the results..."""
+    def __init__(self, app: 'AppUI'): ...
+    @safe_ui_callback('Preset Change')
+    def on_preset_changed(self, preset_name: str) -> list[Any]:
+        """Updates filter sliders when a preset is selected."""
+    @safe_ui_callback('Filter Change')
+    def on_filters_changed_wrapper(self, state: ApplicationState, gallery_view: str, show_overlay: bool, overlay_alpha: float, require_face_match: bool, dedup_thresh: int, dedup_method_ui: str, *slider_values: float) -> tuple[str, Any]:
+        """Updates the results gallery when filters change."""
+    @safe_ui_callback('Reset Filters')
+    def on_reset_filters(self, state: ApplicationState) -> tuple:
+        """Resets all filter settings to their defaults."""
+    @safe_ui_callback('Auto Thresholds')
+    def on_auto_set_thresholds(self, per_metric_values: dict, p: int, *checkbox_values: bool) -> list[Any]:
+        """Automatically sets filter thresholds based on data percentiles."""
 ```
 
 ### `📄 ui/handlers/pipeline_handlers.py`
@@ -1997,24 +2015,24 @@ class PipelineHandler:
     @safe_ui_callback('Extraction')
     def run_extraction_wrapper(self, current_state: ApplicationState, *args, progress=None):
         """Wrapper to execute the frame extraction pipeline."""
-    def _on_extraction_success(self, result: dict, current_state: ApplicationState) -> dict:
+    def _on_extraction_success(self, result: ExtractionResult, current_state: ApplicationState) -> dict:
         """Callback for successful extraction."""
     @safe_ui_callback('Pre-Analysis')
     def run_pre_analysis_wrapper(self, current_state: ApplicationState, *args, progress=None):
         """Wrapper to execute the pre-analysis pipeline."""
-    def _on_pre_analysis_success(self, result_dict: dict, current_state: ApplicationState) -> dict:
+    def _on_pre_analysis_success(self, result: PreAnalysisResult, current_state: ApplicationState) -> dict:
         """Callback for successful pre-analysis."""
     def _propagation_button_handler(self, current_state: ApplicationState):
         """Unified guard for propagation button."""
     @safe_ui_callback('Propagation')
     def run_propagation_wrapper(self, current_state: ApplicationState, *args, progress=None):
         """Wrapper to execute the mask propagation pipeline."""
-    def _on_propagation_success(self, result: dict, current_state: ApplicationState) -> dict:
+    def _on_propagation_success(self, result: PropagationResult, current_state: ApplicationState) -> dict:
         """Callback for successful propagation."""
     @safe_ui_callback('Analysis')
     def run_analysis_wrapper(self, current_state: ApplicationState, *args, progress=None):
         """Wrapper to execute the full analysis pipeline."""
-    def _on_analysis_success(self, result: dict, current_state: ApplicationState) -> dict:
+    def _on_analysis_success(self, result: AnalysisResult, current_state: ApplicationState) -> dict:
         """Callback for successful analysis."""
     def _execute_session_load_adapter(self, event, *args, **kwargs):
         """Adapts the synchronous execute_session_load to the pipeline generator interface."""
@@ -2043,6 +2061,23 @@ class SceneHandler:
         """Toggles the included/excluded status of a scene."""
     def on_apply_bulk_scene_filters_extended(self, app_state: ApplicationState, min_mask_pct, min_face_sim, min_quality, compute_face_sim, view):
         """Applies bulk filters to scenes based on metric thresholds."""
+```
+
+### `📄 ui/handlers/subject_handler.py`
+
+```python
+class SubjectHandler:
+    """Handles subject discovery and face clustering callbacks."""
+    def __init__(self, app: 'AppUI'): ...
+    @safe_ui_callback('Face Clustering')
+    def on_identity_confidence_change(self, confidence: float, state: ApplicationState) -> Any:
+        """Updates the face discovery gallery based on clustering confidence."""
+    @safe_ui_callback('Face Selection')
+    def on_discovered_face_select(self, state: ApplicationState, confidence: float, evt: Optional[gr.SelectData]=None) -> tuple[Optional[str], Optional[np.ndarray], str]:
+        """Handles selection of a face cluster from the discovery gallery."""
+    @safe_ui_callback('Subject Discovery')
+    def on_find_subjects_from_video(self, current_state: ApplicationState, *args) -> dict:
+        """Scans the video for subjects to populate the discovery gallery."""
 ```
 
 ### `📄 ui/tabs/__init__.py`

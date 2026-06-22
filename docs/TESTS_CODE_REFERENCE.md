@@ -571,9 +571,9 @@ def test_session_load_restores_state(tmp_path):
 ```python
 project_root = Path(__file__).parent.parent
 def mock_extraction_run(self, tracker=None): ...
-def mock_pre_analysis_execution(event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress=None, model_registry=None, loaded_models=None, **kwargs): ...
-def mock_propagation_execution(event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress=None, model_registry=None, loaded_models=None, **kwargs): ...
-def mock_analysis_execution(event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress=None, model_registry=None, loaded_models=None, **kwargs): ...
+def mock_pre_analysis_execution(event, context): ...
+def mock_propagation_execution(event, context): ...
+def mock_analysis_execution(event, context): ...
 def mock_ingest_folder(folder_path, output_dir, recursive=False, thumbnails_only=True): ...
 def mock_export_xmps_for_photos(photos, star_thresholds=None): ...
 def mock_export_kept_frames(event, config, logger, progress_queue=None, cancel_event=None): ...
@@ -1763,16 +1763,6 @@ class TestErrorHandlerDecorators:
         """Test with_retry raises exception when all attempts fail."""
     def test_with_retry_custom_exceptions(self, mock_logger):
         """Test with_retry only catches specified exceptions."""
-    def test_with_fallback_primary_succeeds(self, mock_logger):
-        """Test with_fallback when primary function succeeds."""
-    def test_with_fallback_primary_fails(self, mock_logger):
-        """Test with_fallback when primary function fails."""
-    def test_with_fallback_both_fail(self, mock_logger):
-        """Test with_fallback when both primary and fallback fail."""
-    def test_with_notify_success(self, mock_logger):
-        """Test with_notify when primary function succeeds."""
-    def test_with_notify_failure(self, mock_logger):
-        """Test with_notify when primary function fails."""
 class TestErrorSeverityAndRecoveryStrategy:
     """Tests for ErrorSeverity and RecoveryStrategy enums."""
     def test_error_severity_values(self):
@@ -2823,33 +2813,33 @@ class TestPipelinesOrchestrator:
     def mock_extraction_event(self): ...
     @pytest.fixture
     def mock_pre_analysis_event(self): ...
+    @pytest.fixture
+    def context(self): ...
     @patch('core.pipelines.initialize_analysis_models')
     @patch('core.pipelines.execute_pre_analysis')
     @patch('core.pipelines.execute_propagation')
     @patch('core.pipelines.execute_analysis')
-    def test_execute_analysis_orchestrator_video_full_chain(self, mock_execute_analysis, mock_execute_propagation, mock_execute_pre_analysis, mock_init_models, mock_pre_analysis_event, mock_progress_queue, mock_cancel_event, mock_logger, mock_config, mock_thumbnail_manager, mock_model_registry):
+    def test_execute_analysis_orchestrator_video_full_chain(self, mock_execute_analysis, mock_execute_propagation, mock_execute_pre_analysis, mock_init_models, mock_pre_analysis_event, context):
         """Test full chain for video: Pre -> Prop -> Ana."""
     @patch('core.pipelines.initialize_analysis_models')
     @patch('core.pipelines.execute_pre_analysis')
     @patch('core.pipelines.execute_propagation')
     @patch('core.pipelines.execute_analysis')
-    def test_execute_analysis_orchestrator_folder_mode(self, mock_execute_analysis, mock_execute_propagation, mock_execute_pre_analysis, mock_init_models, mock_pre_analysis_event, mock_progress_queue, mock_cancel_event, mock_logger, mock_config, mock_thumbnail_manager, mock_model_registry):
+    def test_execute_analysis_orchestrator_folder_mode(self, mock_execute_analysis, mock_execute_propagation, mock_execute_pre_analysis, mock_init_models, mock_pre_analysis_event, context):
         """Test folder mode skips propagation."""
     @patch('core.pipelines.initialize_analysis_models')
     @patch('core.pipelines.execute_pre_analysis')
     @patch('core.pipelines.execute_propagation')
-    def test_execute_analysis_orchestrator_pre_analysis_failure(self, mock_execute_propagation, mock_execute_pre_analysis, mock_init_models, mock_pre_analysis_event, mock_progress_queue, mock_cancel_event, mock_logger, mock_config):
+    def test_execute_analysis_orchestrator_pre_analysis_failure(self, mock_execute_propagation, mock_execute_pre_analysis, mock_init_models, mock_pre_analysis_event, context):
         """Chain stops if Pre-Analysis does not complete."""
     @patch('core.pipelines.execute_extraction')
     @patch('core.pipelines.execute_analysis_orchestrator')
-    def test_execute_full_pipeline_success(self, mock_orchestrator, mock_execute_extraction, mock_extraction_event, mock_progress_queue, mock_cancel_event, mock_logger, mock_config, mock_thumbnail_manager):
+    def test_execute_full_pipeline_success(self, mock_orchestrator, mock_execute_extraction, mock_extraction_event, context):
         """Test full pipeline chain: Extraction -> Analysis Orchestrator."""
     @patch('core.pipelines.execute_extraction')
     @patch('core.pipelines.execute_analysis_orchestrator')
-    def test_execute_full_pipeline_extraction_failure(self, mock_orchestrator, mock_execute_extraction, mock_extraction_event, mock_progress_queue, mock_cancel_event, mock_logger, mock_config):
+    def test_execute_full_pipeline_extraction_failure(self, mock_orchestrator, mock_execute_extraction, mock_extraction_event, context):
         """Chain stops if Extraction fails."""
-    def test_pipeline_chain_runner(self):
-        """Test PipelineChainRunner's yield and done stripping logic."""
 ```
 
 ### `📄 tests/unit/test_pipelines_wrapper.py`
@@ -3422,7 +3412,7 @@ class TestStability(unittest.TestCase):
     @patch('core.batch_manager.time.sleep')
     def test_batch_manager_resource_aware_wait(self, mock_sleep, mock_ram): ...
     @patch('time.sleep', side_effect=[StopIteration])
-    @patch('core.utils.psutil.virtual_memory')
+    @patch('core.system_health.psutil.virtual_memory')
     def test_memory_watchdog(self, mock_ram, mock_sleep): ...
     def test_propagation_event_enum_validation(self): ...
 ```

@@ -2,10 +2,8 @@ from __future__ import annotations
 
 import json
 import shutil
-import threading
 from pathlib import Path
-from queue import Queue
-from typing import TYPE_CHECKING, Callable, Generator, Optional
+from typing import TYPE_CHECKING, Generator
 
 import gradio as gr
 from PIL import Image
@@ -18,8 +16,10 @@ if TYPE_CHECKING:
     from core.config import Config
     from core.events import ExtractionEvent
     from core.logger import AppLogger
-    from core.managers import ThumbnailManager
 
+from pydantic import BaseModel
+
+from core.context import AnalysisContext
 from core.events import PreAnalysisEvent, PropagationEvent, SessionLoadEvent
 from core.managers import (
     AnalysisPipeline,
@@ -39,7 +39,14 @@ from core.managers.media_session import (
 from core.managers.media_session import (
     validate_dir as _validate_session_dir,
 )
-from core.models import AnalysisParameters, PreAnalysisResult
+from core.models import (
+    AnalysisParameters,
+    AnalysisResult,
+    ExtractionResult,
+    PipelineFailure,
+    PreAnalysisResult,
+    PropagationResult,
+)
 from core.progress import AdvancedProgressTracker
 from core.utils import (
     estimate_totals,
@@ -67,18 +74,18 @@ def _handle_pre_analysis_uploads(event_dict: dict, config: Config) -> dict:
     return event_dict
 
 
-@handle_common_errors
+@handle_common_errors(ExtractionResult)
 def execute_extraction(
     event: ExtractionEvent,
-    progress_queue: Queue,
-    cancel_event: threading.Event,
-    logger: AppLogger,
-    config: Config,
-    thumbnail_manager: Optional[ThumbnailManager] = None,
-    cuda_available: Optional[bool] = None,
-    progress: Optional[Callable] = None,
-    model_registry: Optional[ModelRegistry] = None,
-) -> Generator[dict, None, None]:
+    context: AnalysisContext,
+) -> Generator[BaseModel, None, None]:
+    progress_queue = context.progress_queue
+    cancel_event = context.cancel_event
+    logger = context.logger
+    config = context.config
+    progress = context.progress
+    model_registry = context.model_registry
+
     event_dict = _handle_extraction_uploads(event.model_dump(), config)
     params = AnalysisParameters.from_ui(logger, config, **event_dict)
     tracker = AdvancedProgressTracker(progress, progress_queue, logger, ui_stage_name="Extracting")
@@ -104,32 +111,37 @@ def execute_extraction(
 
         msg = "Extraction Complete."
         logger.info(msg)
-        yield {
-            "unified_log": msg,
-            "extracted_video_path_state": result.get("video_path", ""),
-            "extracted_frames_dir_state": result["output_dir"],
-            "done": True,
-        }
+        yield ExtractionResult(
+            unified_log=msg,
+            video_path=result.get("video_path", ""),
+            output_dir=result["output_dir"],
+            done=True,
+        )
     else:
         error_log = result.get("log") if result else "Unknown error"
         msg = f"Extraction failed: {error_log}"
         logger.error(msg)
-        yield {"unified_log": msg, "done": False}
+        yield PipelineFailure(
+            unified_log=msg,
+            status_message="Extraction failed",
+            error_message=error_log,
+        )
 
 
-@handle_common_errors
+@handle_common_errors(PreAnalysisResult)
 def execute_pre_analysis(
     event: PreAnalysisEvent,
-    progress_queue: Queue,
-    cancel_event: threading.Event,
-    logger: AppLogger,
-    config: Config,
-    thumbnail_manager: ThumbnailManager,
-    cuda_available: bool,
-    progress: Optional[Callable] = None,
-    model_registry: Optional[ModelRegistry] = None,
-    loaded_models: Optional[dict] = None,
-) -> Generator[dict, None, None]:
+    context: AnalysisContext,
+) -> Generator[BaseModel, None, None]:
+    progress_queue = context.progress_queue
+    cancel_event = context.cancel_event
+    logger = context.logger
+    config = context.config
+    thumbnail_manager = context.thumbnail_manager
+    progress = context.progress
+    model_registry = context.model_registry
+    loaded_models = context.loaded_models
+
     # Import gradio only when needed to keep test dependencies light
     try:
         import gradio as gr
@@ -161,7 +173,7 @@ def execute_pre_analysis(
     msg = "Pre-Analysis Complete."
     logger.info(msg)
 
-    # Fix Issue 6: Use typed PreAnalysisResult
+    # Use typed PreAnalysisResult
     res = PreAnalysisResult(
         unified_log="Pre-Analysis Complete. (Compute Metrics to continue)",
         scenes=[s.model_dump() for s in processed],
@@ -174,7 +186,7 @@ def execute_pre_analysis(
         res.seeding_results_column = gr.update(visible=True)
         res.propagation_group = gr.update(visible=True)
 
-    yield res.model_dump()
+    yield res
 
 
 def validate_session_dir(path: str) -> bool:
@@ -188,25 +200,26 @@ def execute_session_load(event: SessionLoadEvent | dict, logger: AppLogger) -> d
     return _execute_session_load(event, logger)
 
 
-@handle_common_errors
+@handle_common_errors(PropagationResult)
 def execute_propagation(
     event: PropagationEvent,
-    progress_queue: Queue,
-    cancel_event: threading.Event,
-    logger: AppLogger,
-    config: Config,
-    thumbnail_manager: ThumbnailManager,
-    cuda_available: bool,
-    progress: Optional[Callable] = None,
-    model_registry: Optional[ModelRegistry] = None,
-    loaded_models: Optional[dict] = None,
-) -> Generator[dict, None, None]:
+    context: AnalysisContext,
+) -> Generator[BaseModel, None, None]:
+    progress_queue = context.progress_queue
+    cancel_event = context.cancel_event
+    logger = context.logger
+    config = context.config
+    thumbnail_manager = context.thumbnail_manager
+    progress = context.progress
+    model_registry = context.model_registry
+    loaded_models = context.loaded_models
+
     params = AnalysisParameters.from_ui(logger, config, **event.analysis_params.model_dump())
     is_folder = not params.video_path
     scenes = _load_analysis_scenes(event.scenes, is_folder)
 
     if not scenes:
-        yield {"done": True}
+        yield PropagationResult(unified_log="No scenes to propagate.", output_dir="", done=True)
         return
 
     tracker = AdvancedProgressTracker(progress, progress_queue, logger, ui_stage_name="Analysis")
@@ -228,36 +241,41 @@ def execute_propagation(
         n = len(list(masks_dir.glob("*.png"))) if masks_dir.exists() else 0
         msg = f"Propagation Complete. {n} masks generated."
         logger.info(msg)
-        yield {
-            "unified_log": msg,
-            "output_dir": result["output_dir"],
-            "done": True,
-        }
+        yield PropagationResult(
+            unified_log=msg,
+            output_dir=result["output_dir"],
+            done=True,
+        )
     else:
         error_msg = result.get("error") if result else "Unknown error"
         msg = f"Propagation failed: {error_msg}"
         logger.error(msg)
-        yield {"unified_log": msg, "done": False}
+        yield PipelineFailure(
+            unified_log=msg,
+            status_message="Propagation failed",
+            error_message=error_msg,
+        )
 
 
-@handle_common_errors
+@handle_common_errors(AnalysisResult)
 def execute_analysis(
     event: PropagationEvent,
-    progress_queue: Queue,
-    cancel_event: threading.Event,
-    logger: AppLogger,
-    config: Config,
-    thumbnail_manager: ThumbnailManager,
-    cuda_available: bool,
-    progress: Optional[Callable] = None,
-    model_registry: Optional[ModelRegistry] = None,
-    loaded_models: Optional[dict] = None,
-) -> Generator[dict, None, None]:
+    context: AnalysisContext,
+) -> Generator[BaseModel, None, None]:
+    progress_queue = context.progress_queue
+    cancel_event = context.cancel_event
+    logger = context.logger
+    config = context.config
+    thumbnail_manager = context.thumbnail_manager
+    progress = context.progress
+    model_registry = context.model_registry
+    loaded_models = context.loaded_models
+
     params = AnalysisParameters.from_ui(logger, config, **event.analysis_params.model_dump())
     scenes = _load_analysis_scenes(event.scenes, not params.video_path)
 
     if not scenes:
-        yield {"done": True}
+        yield AnalysisResult(unified_log="No scenes to analyze.", output_dir="", done=True)
         return
 
     tracker = AdvancedProgressTracker(progress, progress_queue, logger, ui_stage_name="Analyzing")
@@ -272,85 +290,53 @@ def execute_analysis(
     if result and result.get("done"):
         msg = "Analysis Complete."
         logger.info(msg)
-        yield {
-            "unified_log": msg,
-            "output_dir": result["output_dir"],
-            "metadata_path": str(Path(result["output_dir"]) / "metadata.db"),
-            "done": True,
-        }
+        yield AnalysisResult(
+            unified_log=msg,
+            output_dir=result["output_dir"],
+            metadata_path=str(Path(result["output_dir"]) / "metadata.db"),
+            done=True,
+        )
     else:
         error_msg = result.get("error") if result else "Unknown error"
-        yield {"unified_log": f"Analysis failed: {error_msg}", "done": False}
+        yield PipelineFailure(
+            unified_log=f"Analysis failed: {error_msg}",
+            status_message="Analysis failed",
+            error_message=error_msg,
+        )
 
 
-class PipelineChainRunner:
-    """Chains pipeline stages, stripping intermediate done flags."""
-
-    def __init__(self):
-        self.state: dict = {}
-        self.last_result: Optional[dict] = None
-
-    def run_stage(self, stage_gen: Generator[dict, None, None], *, is_final: bool = False):
-        """Yield results from a stage, stripping 'done' on non-final stages."""
-        for res in stage_gen:
-            if not isinstance(res, dict):
-                yield res
-                continue
-            self.state.update(res)
-            if res.get("done"):
-                self.last_result = res
-                if is_final:
-                    yield res
-                else:
-                    clean = {k: v for k, v in res.items() if k != "done"}
-                    if clean:
-                        yield clean
-            else:
-                yield res
-
-
-@handle_common_errors
+@handle_common_errors(AnalysisResult)
 def execute_analysis_orchestrator(
     event: PreAnalysisEvent,
-    progress_queue: Queue,
-    cancel_event: threading.Event,
-    logger: AppLogger,
-    config: Config,
-    thumbnail_manager: ThumbnailManager,
-    cuda_available: bool,
-    progress: Optional[Callable] = None,
-    model_registry: Optional[ModelRegistry] = None,
-) -> Generator[dict, None, None]:
+    context: AnalysisContext,
+) -> Generator[BaseModel, None, None]:
     """Orchestrates Pre-Analysis, Propagation, and Analysis stages."""
-    # Ensure model_registry is not None
+    logger = context.logger
+    config = context.config
+    model_registry = context.model_registry
+
     mr = model_registry or ModelRegistry(logger=logger, config=config)
-
-    # Initialize models once for all stages
     params = AnalysisParameters.from_ui(logger, config, **event.model_dump())
-    loaded_models = initialize_analysis_models(params, config, logger, mr)
 
-    runner = PipelineChainRunner()
+    if not context.loaded_models:
+        context.loaded_models = initialize_analysis_models(params, config, logger, mr)
 
     # 1. Pre-Analysis
-    pre_gen = execute_pre_analysis(
-        event,
-        progress_queue,
-        cancel_event,
-        logger,
-        config,
-        thumbnail_manager,
-        cuda_available,
-        progress,
-        mr,
-        loaded_models=loaded_models,
-    )
-    yield from runner.run_stage(pre_gen)
-    pre_result = runner.last_result
+    pre_result = None
+    pre_gen = execute_pre_analysis(event, context)
+    for update in pre_gen:
+        if isinstance(update, PreAnalysisResult):
+            pre_result = update
+        elif isinstance(update, PipelineFailure):
+            yield update
+            return
+        else:
+            yield update
 
-    if not pre_result or not pre_result.get("done"):
+    if not pre_result:
         return
 
-    scenes = pre_result.get("scenes", [])
+    scenes = pre_result.scenes
     is_video = bool(event.video_path)
 
     # 2. Propagation (if video)
@@ -362,89 +348,55 @@ def execute_analysis_orchestrator(
     )
 
     if is_video:
-        prop_gen = execute_propagation(
-            prop_event,
-            progress_queue,
-            cancel_event,
-            logger,
-            config,
-            thumbnail_manager,
-            cuda_available,
-            progress,
-            mr,
-            loaded_models=loaded_models,
-        )
-        yield from runner.run_stage(prop_gen)
+        prop_gen = execute_propagation(prop_event, context)
+        for update in prop_gen:
+            if isinstance(update, PipelineFailure):
+                yield update
+                return
+            yield update
     else:
         msg = "Mask Propagation (Skipped for Folder)"
         logger.info(msg)
-        yield {"unified_log": msg}
+        yield PropagationResult(unified_log=msg, output_dir=event.output_folder)
 
     # 3. Analysis
-    ana_gen = execute_analysis(
-        prop_event,
-        progress_queue,
-        cancel_event,
-        logger,
-        config,
-        thumbnail_manager,
-        cuda_available,
-        progress,
-        mr,
-        loaded_models=loaded_models,
-    )
-    yield from runner.run_stage(ana_gen, is_final=True)
+    ana_gen = execute_analysis(prop_event, context)
+    for update in ana_gen:
+        yield update
 
 
-@handle_common_errors
+@handle_common_errors(AnalysisResult)
 def execute_full_pipeline(
     event: ExtractionEvent,
-    progress_queue: Queue,
-    cancel_event: threading.Event,
-    logger: AppLogger,
-    config: Config,
-    thumbnail_manager: ThumbnailManager,
-    cuda_available: bool,
-    progress: Optional[Callable] = None,
-    model_registry: Optional[ModelRegistry] = None,
-) -> Generator[dict, None, None]:
+    context: AnalysisContext,
+) -> Generator[BaseModel, None, None]:
     """Orchestrates the entire flow: Extraction -> Pre-Analysis -> Propagation -> Analysis."""
-    runner = PipelineChainRunner()
 
     # 1. Extraction
-    ext_gen = execute_extraction(
-        event, progress_queue, cancel_event, logger, config, thumbnail_manager, cuda_available, progress, model_registry
-    )
-    yield from runner.run_stage(ext_gen)
-    ext_result = runner.last_result
+    ext_result = None
+    ext_gen = execute_extraction(event, context)
+    for update in ext_gen:
+        if isinstance(update, ExtractionResult):
+            ext_result = update
+        elif isinstance(update, PipelineFailure):
+            yield update
+            return
+        else:
+            yield update
 
-    if not ext_result or not ext_result.get("done"):
+    if not ext_result:
         return
 
     # 2. Build Pre-Analysis Event from Extraction Result
-    # This logic matches run_full's behavior in cli_commands.py
     pre_event = PreAnalysisEvent(
-        output_folder=ext_result["extracted_frames_dir_state"],
-        video_path=ext_result["extracted_video_path_state"],
+        output_folder=ext_result.output_dir,
+        video_path=ext_result.video_path,
         face_ref_img_path="",  # Default to "Find Prominent Person" unless provided
         primary_seed_strategy="Automatic Detection",
         resume=False,
     )
 
-    yield {"unified_log": "Moving to Analysis stages...", "done": False}
+    yield PropagationResult(unified_log="Moving to Analysis stages...")
 
     # 3. Chain to Analysis Orchestrator
-    yield from runner.run_stage(
-        execute_analysis_orchestrator(
-            pre_event,
-            progress_queue,
-            cancel_event,
-            logger,
-            config,
-            thumbnail_manager,
-            cuda_available,
-            progress,
-            model_registry,
-        ),
-        is_final=True,
-    )
+    yield from execute_analysis_orchestrator(pre_event, context)

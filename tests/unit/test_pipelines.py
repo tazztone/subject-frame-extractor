@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from core.events import ExtractionEvent, PreAnalysisEvent, PropagationEvent
+from core.models import AnalysisResult, ExtractionResult, PipelineFailure, PreAnalysisResult, PropagationResult
 from core.pipelines import (
     execute_analysis,
     execute_extraction,
@@ -46,13 +47,31 @@ def default_pre_analysis_event():
 
 @pytest.fixture
 def mock_runtime():
+    from core.context import AnalysisContext
+
+    progress_queue = Queue()
+    cancel_event = threading.Event()
+    logger = MagicMock()
+    config = MagicMock(downloads_dir="/tmp/downloads")
+    thumbnail_manager = MagicMock()
+    model_registry = MagicMock()
+    context = AnalysisContext(
+        config=config,
+        logger=logger,
+        progress_queue=progress_queue,
+        cancel_event=cancel_event,
+        thumbnail_manager=thumbnail_manager,
+        model_registry=model_registry,
+        cuda_available=True,
+    )
     return {
-        "progress_queue": Queue(),
-        "cancel_event": threading.Event(),
-        "logger": MagicMock(),
-        "config": MagicMock(downloads_dir="/tmp/downloads"),
-        "thumbnail_manager": MagicMock(),
-        "model_registry": MagicMock(),
+        "progress_queue": progress_queue,
+        "cancel_event": cancel_event,
+        "logger": logger,
+        "config": config,
+        "thumbnail_manager": thumbnail_manager,
+        "model_registry": model_registry,
+        "context": context,
     }
 
 
@@ -72,19 +91,14 @@ def test_execute_extraction_success(mock_runtime, tmp_path, default_extraction_e
         }
 
         with patch("core.fingerprint.save_fingerprint"), patch("core.fingerprint.create_fingerprint"):
-            gen = execute_extraction(
-                event=event,
-                progress_queue=mock_runtime["progress_queue"],
-                cancel_event=mock_runtime["cancel_event"],
-                logger=mock_runtime["logger"],
-                config=mock_runtime["config"],
-            )
+            gen = execute_extraction(event, mock_runtime["context"])
             results = list(gen)
 
     assert len(results) == 1
-    assert results[0]["done"] is True
-    assert "Extraction Complete" in results[0]["unified_log"]
-    assert results[0]["extracted_frames_dir_state"] == str(tmp_path / "out")
+    assert isinstance(results[0], ExtractionResult)
+    assert results[0].done is True
+    assert "Extraction Complete" in results[0].unified_log
+    assert results[0].output_dir == str(tmp_path / "out")
 
 
 def test_execute_extraction_pipeline_failure(mock_runtime, default_extraction_event):
@@ -94,17 +108,13 @@ def test_execute_extraction_pipeline_failure(mock_runtime, default_extraction_ev
         mock_pipeline = mock_pipeline_cls.return_value
         mock_pipeline.run.return_value = {"done": False, "log": "some error"}
 
-        gen = execute_extraction(
-            event=event,
-            progress_queue=mock_runtime["progress_queue"],
-            cancel_event=mock_runtime["cancel_event"],
-            logger=mock_runtime["logger"],
-            config=mock_runtime["config"],
-        )
+        gen = execute_extraction(event, mock_runtime["context"])
         results = list(gen)
 
-    assert results[0]["done"] is False
-    assert "Extraction failed: some error" in results[0]["unified_log"]
+    assert len(results) == 1
+    assert isinstance(results[0], PipelineFailure)
+    assert results[0].done is False
+    assert "Extraction failed: some error" in results[0].unified_log
 
 
 def test_execute_extraction_upload_copy(mock_runtime, tmp_path, default_extraction_event):
@@ -124,13 +134,7 @@ def test_execute_extraction_upload_copy(mock_runtime, tmp_path, default_extracti
         mock_pipeline.run.return_value = {"done": True, "output_dir": "out", "video_path": "v"}
 
         with patch("core.fingerprint.save_fingerprint"), patch("core.fingerprint.create_fingerprint"):
-            gen = execute_extraction(
-                event=event,
-                progress_queue=mock_runtime["progress_queue"],
-                cancel_event=mock_runtime["cancel_event"],
-                logger=mock_runtime["logger"],
-                config=mock_runtime["config"],
-            )
+            gen = execute_extraction(event, mock_runtime["context"])
             list(gen)
 
     assert (downloads_dir / "upload.mp4").exists()
@@ -149,19 +153,13 @@ def test_execute_pre_analysis_success(mock_runtime, tmp_path, default_pre_analys
         mock_pipeline = mock_pipeline_cls.return_value
         mock_pipeline.run.return_value = []
 
-        gen = execute_pre_analysis(
-            event=event,
-            progress_queue=mock_runtime["progress_queue"],
-            cancel_event=mock_runtime["cancel_event"],
-            logger=mock_runtime["logger"],
-            config=mock_runtime["config"],
-            thumbnail_manager=mock_runtime["thumbnail_manager"],
-            cuda_available=True,
-        )
+        gen = execute_pre_analysis(event, mock_runtime["context"])
         results = list(gen)
 
-    assert results[0]["done"] is True
-    assert "Pre-Analysis Complete" in results[0]["unified_log"]
+    assert len(results) == 1
+    assert isinstance(results[0], PreAnalysisResult)
+    assert results[0].done is True
+    assert "Pre-Analysis Complete" in results[0].unified_log
 
 
 def test_execute_propagation_no_scenes(mock_runtime, default_pre_analysis_event):
@@ -169,18 +167,12 @@ def test_execute_propagation_no_scenes(mock_runtime, default_pre_analysis_event)
     event = PropagationEvent(output_folder="/tmp/out", video_path="test.mp4", scenes=[], analysis_params=pre_event)
 
     with patch("core.pipelines._load_analysis_scenes", return_value=[]):
-        gen = execute_propagation(
-            event=event,
-            progress_queue=mock_runtime["progress_queue"],
-            cancel_event=mock_runtime["cancel_event"],
-            logger=mock_runtime["logger"],
-            config=mock_runtime["config"],
-            thumbnail_manager=mock_runtime["thumbnail_manager"],
-            cuda_available=True,
-        )
+        gen = execute_propagation(event, mock_runtime["context"])
         results = list(gen)
 
-    assert results[0]["done"] is True
+    assert len(results) == 1
+    assert isinstance(results[0], PropagationResult)
+    assert results[0].done is True
 
 
 def test_execute_analysis_success(mock_runtime, tmp_path, default_pre_analysis_event):
@@ -191,7 +183,7 @@ def test_execute_analysis_success(mock_runtime, tmp_path, default_pre_analysis_e
     event = PropagationEvent(
         output_folder=str(out_dir),
         video_path="test.mp4",
-        scenes=[{"shot_id": 1, "start_frame": 0, "end_frame": 10}],
+        scenes=[{"shot_id": 1, "start_frame": 0, "end_frame": 100}],
         analysis_params=pre_event,
     )
 
@@ -202,19 +194,13 @@ def test_execute_analysis_success(mock_runtime, tmp_path, default_pre_analysis_e
         mock_pipeline = mock_pipeline_cls.return_value
         mock_pipeline.run_analysis_only.return_value = {"done": True, "output_dir": str(out_dir)}
 
-        gen = execute_analysis(
-            event=event,
-            progress_queue=mock_runtime["progress_queue"],
-            cancel_event=mock_runtime["cancel_event"],
-            logger=mock_runtime["logger"],
-            config=mock_runtime["config"],
-            thumbnail_manager=mock_runtime["thumbnail_manager"],
-            cuda_available=True,
-        )
+        gen = execute_analysis(event, mock_runtime["context"])
         results = list(gen)
 
-    assert results[0]["done"] is True
-    assert "metadata.db" in results[0]["metadata_path"]
+    assert len(results) == 1
+    assert isinstance(results[0], AnalysisResult)
+    assert results[0].done is True
+    assert "metadata.db" in results[0].metadata_path
 
 
 def test_execute_pre_analysis_with_upload(mock_runtime, tmp_path, default_pre_analysis_event):
@@ -235,15 +221,7 @@ def test_execute_pre_analysis_with_upload(mock_runtime, tmp_path, default_pre_an
         mock_pipeline = mock_pipeline_cls.return_value
         mock_pipeline.run.return_value = []
 
-        gen = execute_pre_analysis(
-            event=event,
-            progress_queue=mock_runtime["progress_queue"],
-            cancel_event=mock_runtime["cancel_event"],
-            logger=mock_runtime["logger"],
-            config=mock_runtime["config"],
-            thumbnail_manager=mock_runtime["thumbnail_manager"],
-            cuda_available=True,
-        )
+        gen = execute_pre_analysis(event, mock_runtime["context"])
         list(gen)
 
     assert (downloads_dir / "face.jpg").exists()
@@ -282,19 +260,13 @@ def test_execute_propagation_success(mock_runtime, tmp_path, default_pre_analysi
         mock_pipeline = mock_pipeline_cls.return_value
         mock_pipeline.run_full_analysis.return_value = {"done": True, "output_dir": str(out_dir)}
 
-        gen = execute_propagation(
-            event=event,
-            progress_queue=mock_runtime["progress_queue"],
-            cancel_event=mock_runtime["cancel_event"],
-            logger=mock_runtime["logger"],
-            config=mock_runtime["config"],
-            thumbnail_manager=mock_runtime["thumbnail_manager"],
-            cuda_available=True,
-        )
+        gen = execute_propagation(event, mock_runtime["context"])
         results = list(gen)
 
-    assert results[0]["done"] is True
-    assert "1 masks generated" in results[0]["unified_log"]
+    assert len(results) == 1
+    assert isinstance(results[0], PropagationResult)
+    assert results[0].done is True
+    assert "1 masks generated" in results[0].unified_log
 
 
 def test_execute_propagation_failure(mock_runtime, default_pre_analysis_event):
@@ -312,19 +284,13 @@ def test_execute_propagation_failure(mock_runtime, default_pre_analysis_event):
         mock_pipeline = mock_pipeline_cls.return_value
         mock_pipeline.run_full_analysis.return_value = {"done": False, "error": "failed"}
 
-        gen = execute_propagation(
-            event=event,
-            progress_queue=mock_runtime["progress_queue"],
-            cancel_event=mock_runtime["cancel_event"],
-            logger=mock_runtime["logger"],
-            config=mock_runtime["config"],
-            thumbnail_manager=mock_runtime["thumbnail_manager"],
-            cuda_available=True,
-        )
+        gen = execute_propagation(event, mock_runtime["context"])
         results = list(gen)
 
-    assert results[0]["done"] is False
-    assert "Propagation failed: failed" in results[0]["unified_log"]
+    assert len(results) == 1
+    assert isinstance(results[0], PipelineFailure)
+    assert results[0].done is False
+    assert "Propagation failed: failed" in results[0].unified_log
 
 
 def test_execute_analysis_failure(mock_runtime, default_pre_analysis_event):
@@ -340,19 +306,13 @@ def test_execute_analysis_failure(mock_runtime, default_pre_analysis_event):
         mock_pipeline = mock_pipeline_cls.return_value
         mock_pipeline.run_analysis_only.return_value = {"done": False, "error": "failed"}
 
-        gen = execute_analysis(
-            event=event,
-            progress_queue=mock_runtime["progress_queue"],
-            cancel_event=mock_runtime["cancel_event"],
-            logger=mock_runtime["logger"],
-            config=mock_runtime["config"],
-            thumbnail_manager=mock_runtime["thumbnail_manager"],
-            cuda_available=True,
-        )
+        gen = execute_analysis(event, mock_runtime["context"])
         results = list(gen)
 
-    assert results[0]["done"] is False
-    assert "Analysis failed: failed" in results[0]["unified_log"]
+    assert len(results) == 1
+    assert isinstance(results[0], PipelineFailure)
+    assert results[0].done is False
+    assert "Analysis failed: failed" in results[0].unified_log
 
 
 def test_execute_propagation_is_folder(mock_runtime, default_pre_analysis_event):
@@ -369,18 +329,8 @@ def test_execute_propagation_is_folder(mock_runtime, default_pre_analysis_event)
         mock_pipeline = mock_pipeline_cls.return_value
         mock_pipeline.run_full_analysis.return_value = {"done": True, "output_dir": "/tmp/out"}
 
-        gen = execute_propagation(
-            event=event,
-            progress_queue=mock_runtime["progress_queue"],
-            cancel_event=mock_runtime["cancel_event"],
-            logger=mock_runtime["logger"],
-            config=mock_runtime["config"],
-            thumbnail_manager=mock_runtime["thumbnail_manager"],
-            cuda_available=True,
-        )
+        gen = execute_propagation(event, mock_runtime["context"])
         list(gen)
-
-    # Just verifying it doesn't crash and follows is_folder path
 
 
 def test_fingerprint_failure_is_silent(mock_runtime, tmp_path, default_extraction_event):
@@ -396,15 +346,10 @@ def test_fingerprint_failure_is_silent(mock_runtime, tmp_path, default_extractio
         }
 
         with patch("core.fingerprint.create_fingerprint", side_effect=RuntimeError("Fingerprint failed")):
-            gen = execute_extraction(
-                event=event,
-                progress_queue=mock_runtime["progress_queue"],
-                cancel_event=mock_runtime["cancel_event"],
-                logger=mock_runtime["logger"],
-                config=mock_runtime["config"],
-            )
+            gen = execute_extraction(event, mock_runtime["context"])
             results = list(gen)
 
-    # Should still succeed even if fingerprinting fails
-    assert results[0]["done"] is True
+    assert len(results) == 1
+    assert isinstance(results[0], ExtractionResult)
+    assert results[0].done is True
     mock_runtime["logger"].warning.assert_called()

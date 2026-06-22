@@ -4,12 +4,10 @@ import contextlib
 import functools
 import gc
 import inspect
-import threading
 import traceback
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
 import numpy as np
-import psutil
 import torch
 
 
@@ -49,8 +47,6 @@ def _setup_triton_mock():
 
 
 if TYPE_CHECKING:
-    from core.config import Config
-    from core.logger import AppLogger
     from core.models import AnalysisParameters, Scene
 
 # Re-export from specialized modules for backward compatibility
@@ -71,175 +67,149 @@ from core.io_utils import (  # noqa: F401
 )
 
 
-def handle_common_errors(func: Callable) -> Callable:
-    """Decorator to catch common exceptions and return a standardized error dictionary or yield it if a generator."""
+def handle_common_errors(result_class_or_func: Any = None):
+    """Decorator to catch common exceptions and return a standardized PipelineFailure or yield it if a generator."""
+    from pydantic import BaseModel
 
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        is_gen = inspect.isgeneratorfunction(func)
+    is_decorator_factory = True
+    if result_class_or_func is not None:
+        if callable(result_class_or_func):
+            if isinstance(result_class_or_func, type) and issubclass(result_class_or_func, BaseModel):
+                is_decorator_factory = True
+            else:
+                is_decorator_factory = False
 
-        # Try to find logger in args or kwargs
-        logger = kwargs.get("logger")
-        if not logger:
-            for arg in args:
-                if hasattr(arg, "critical") and hasattr(arg, "error"):
-                    logger = arg
-                    break
+    def decorator(func: Callable) -> Callable:
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            is_gen = inspect.isgeneratorfunction(func)
 
-        if is_gen:
+            # Try to find logger in args or kwargs
+            logger = kwargs.get("logger")
+            if not logger:
+                context = kwargs.get("context")
+                if context and hasattr(context, "logger"):
+                    logger = context.logger
+                else:
+                    for arg in args:
+                        if hasattr(arg, "logger"):
+                            logger = arg.logger
+                            break
+                        elif hasattr(arg, "critical") and hasattr(arg, "error"):
+                            logger = arg
+                            break
 
-            def gen_wrapper():
-                try:
-                    yield from func(*args, **kwargs)
-                except FileNotFoundError as e:
-                    msg = f"File not found: {e}"
-                    if logger:
-                        logger.error(msg)
-                    yield {
-                        "log": f"[ERROR] {msg}",
-                        "status_message": "File not found",
-                        "error_message": str(e),
-                        "done": False,
-                    }
-                except (ValueError, TypeError) as e:
-                    msg = f"Invalid input: {e}"
-                    if logger:
-                        logger.error(msg)
-                    yield {
-                        "log": f"[ERROR] {msg}",
-                        "status_message": "Invalid input",
-                        "error_message": str(e),
-                        "done": False,
-                    }
-                except RuntimeError as e:
-                    if "CUDA out of memory" in str(e):
-                        msg = "CUDA OOM"
+            if is_gen:
+
+                def gen_wrapper():
+                    try:
+                        yield from func(*args, **kwargs)
+                    except FileNotFoundError as e:
+                        msg = f"File not found: {e}"
                         if logger:
                             logger.error(msg)
-                        yield {
-                            "log": f"[ERROR] {msg}",
-                            "status_message": "GPU memory error",
-                            "error_message": "CUDA out of memory",
-                            "done": False,
-                        }
-                    else:
-                        msg = f"Runtime error: {e}"
-                        if logger:
-                            logger.error(msg)
-                        yield {
-                            "log": f"[ERROR] {msg}",
-                            "status_message": "Processing error",
-                            "error_message": str(e),
-                            "done": False,
-                        }
-                except Exception as e:
-                    import traceback
+                        from core.models import PipelineFailure
 
-                    msg = f"Unexpected error: {e}\n{traceback.format_exc()}"
-                    if logger:
-                        logger.critical(msg)
-                    else:
-                        print(f"CRITICAL: {msg}")
-                    yield {
-                        "log": f"[CRITICAL] {msg}",
-                        "status_message": "Critical error",
-                        "error_message": str(e),
-                        "done": False,
-                    }
-
-            return gen_wrapper()
-
-        try:
-            return func(*args, **kwargs)
-        except FileNotFoundError as e:
-            return {
-                "log": f"[ERROR] File not found: {e}",
-                "status_message": "File not found",
-                "error_message": str(e),
-                "done": False,
-            }
-        except (ValueError, TypeError) as e:
-            return {
-                "log": f"[ERROR] Invalid input: {e}",
-                "status_message": "Invalid input",
-                "error_message": str(e),
-                "done": False,
-            }
-        except RuntimeError as e:
-            if "CUDA out of memory" in str(e):
-                return {
-                    "log": "[ERROR] CUDA OOM",
-                    "status_message": "GPU memory error",
-                    "error_message": "CUDA out of memory",
-                    "done": False,
-                }
-            return {
-                "log": f"[ERROR] Runtime error: {e}",
-                "status_message": "Processing error",
-                "error_message": str(e),
-                "done": False,
-            }
-        except Exception as e:
-            return {
-                "log": f"[CRITICAL] Unexpected error: {e}\n{traceback.format_exc()}",
-                "status_message": "Critical error",
-                "error_message": str(e),
-                "done": False,
-            }
-
-    return wrapper
-
-
-class MemoryWatchdog:
-    """Background thread that monitors memory usage and logs critical warnings."""
-
-    def __init__(self, config: "Config", logger: "AppLogger"):
-        self.config = config
-        self.logger = logger
-        self.stop_event = threading.Event()
-        self.thread: Optional[threading.Thread] = None
-
-    def start(self):
-        if not self.config.monitoring_memory_watchdog_enabled:
-            return
-        self.stop_event.clear()
-        self.thread = threading.Thread(target=self._run, daemon=True)
-        self.thread.start()
-        self.logger.info("Memory watchdog started.", component="monitor")
-
-    def stop(self):
-        self.stop_event.set()
-        if self.thread:
-            self.thread.join(timeout=1.0)
-
-    def _run(self):
-        import time
-
-        while not self.stop_event.is_set():
-            # Check RAM
-            mem = psutil.virtual_memory()
-            ram_used_mb = (mem.total - mem.available) / 1024 / 1024
-            if ram_used_mb > self.config.monitoring_memory_critical_threshold_mb:
-                self.logger.critical(
-                    f"CRITICAL: System RAM usage ({ram_used_mb:.0f}MB) exceeded threshold ({self.config.monitoring_memory_critical_threshold_mb}MB)!",
-                    component="monitor",
-                )
-                gc.collect()
-            elif ram_used_mb > self.config.monitoring_memory_warning_threshold_mb:
-                self.logger.warning(f"High system RAM usage: {ram_used_mb:.0f}MB", component="monitor")
-
-            # Check GPU VRAM
-            if torch.cuda.is_available():
-                for i in range(torch.cuda.device_count()):
-                    vram_used_mb = torch.cuda.memory_reserved(i) / 1024 / 1024
-                    if vram_used_mb > self.config.monitoring_gpu_memory_critical_threshold_mb:
-                        self.logger.critical(
-                            f"CRITICAL: GPU {i} VRAM usage ({vram_used_mb:.0f}MB) exceeded threshold ({self.config.monitoring_gpu_memory_critical_threshold_mb}MB)!",
-                            component="monitor",
+                        yield PipelineFailure(
+                            unified_log=f"[ERROR] {msg}",
+                            status_message="File not found",
+                            error_message=str(e),
                         )
-                        torch.cuda.empty_cache()
+                    except (ValueError, TypeError) as e:
+                        msg = f"Invalid input: {e}"
+                        if logger:
+                            logger.error(msg)
+                        from core.models import PipelineFailure
 
-            time.sleep(5.0)
+                        yield PipelineFailure(
+                            unified_log=f"[ERROR] {msg}",
+                            status_message="Invalid input",
+                            error_message=str(e),
+                        )
+                    except RuntimeError as e:
+                        from core.models import PipelineFailure
+
+                        if "CUDA out of memory" in str(e):
+                            msg = "CUDA OOM"
+                            if logger:
+                                logger.error(msg)
+                            yield PipelineFailure(
+                                unified_log=f"[ERROR] {msg}",
+                                status_message="GPU memory error",
+                                error_message="CUDA out of memory",
+                            )
+                        else:
+                            msg = f"Runtime error: {e}"
+                            if logger:
+                                logger.error(msg)
+                            yield PipelineFailure(
+                                unified_log=f"[ERROR] {msg}",
+                                status_message="Processing error",
+                                error_message=str(e),
+                            )
+                    except Exception as e:
+                        from core.models import PipelineFailure
+
+                        msg = f"Unexpected error: {e}\n{traceback.format_exc()}"
+                        if logger:
+                            logger.critical(msg)
+                        else:
+                            print(f"CRITICAL: {msg}")
+                        yield PipelineFailure(
+                            unified_log=f"[CRITICAL] {msg}",
+                            status_message="Critical error",
+                            error_message=str(e),
+                        )
+
+                return gen_wrapper()
+
+            try:
+                return func(*args, **kwargs)
+            except FileNotFoundError as e:
+                from core.models import PipelineFailure
+
+                return PipelineFailure(
+                    unified_log=f"[ERROR] File not found: {e}",
+                    status_message="File not found",
+                    error_message=str(e),
+                )
+            except (ValueError, TypeError) as e:
+                from core.models import PipelineFailure
+
+                return PipelineFailure(
+                    unified_log=f"[ERROR] Invalid input: {e}",
+                    status_message="Invalid input",
+                    error_message=str(e),
+                )
+            except RuntimeError as e:
+                from core.models import PipelineFailure
+
+                if "CUDA out of memory" in str(e):
+                    return PipelineFailure(
+                        unified_log="[ERROR] CUDA OOM",
+                        status_message="GPU memory error",
+                        error_message="CUDA out of memory",
+                    )
+                return PipelineFailure(
+                    unified_log=f"[ERROR] Runtime error: {e}",
+                    status_message="Processing error",
+                    error_message=str(e),
+                )
+            except Exception as e:
+                from core.models import PipelineFailure
+
+                return PipelineFailure(
+                    unified_log=f"[CRITICAL] Unexpected error: {e}\n{traceback.format_exc()}",
+                    status_message="Critical error",
+                    error_message=str(e),
+                )
+
+        return wrapper
+
+    if is_decorator_factory:
+        return decorator
+    else:
+        return decorator(result_class_or_func)
 
 
 def estimate_totals(params: "AnalysisParameters", video_info: dict, scenes: Optional[list["Scene"]]) -> dict:

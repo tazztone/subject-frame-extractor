@@ -366,9 +366,55 @@ class PreAnalysisResult(BaseModel):
     """Typed result for the pre-analysis pipeline stage."""
 
     unified_log: str
-    scenes: List[dict]
-    output_dir: str
-    video_path: str
+    scenes: List[dict] = Field(default_factory=list)
+    output_dir: str = ""
+    video_path: str = ""
     done: bool = True
     seeding_results_column: Optional[dict] = None
     propagation_group: Optional[dict] = None
+
+
+class ExtractionResult(BaseModel):
+    """Typed result for the extraction pipeline stage."""
+
+    unified_log: str
+    video_path: str = ""
+    output_dir: str = ""
+    done: bool = True
+
+
+class PropagationResult(BaseModel):
+    """Typed result for the mask propagation pipeline stage."""
+
+    unified_log: str
+    output_dir: str = ""
+    done: bool = True
+
+
+class AnalysisResult(BaseModel):
+    """Typed result for the metadata analysis pipeline stage."""
+
+    unified_log: str
+    output_dir: str = ""
+    metadata_path: str = ""
+    done: bool = True
+
+
+class PipelineProgress(BaseModel):
+    """Typed intermediate progress event emitted by running pipelines."""
+
+    stage: str
+    substage: Optional[str] = None
+    done_count: int
+    total_count: int
+    fraction: float
+    eta_formatted: str
+
+
+class PipelineFailure(BaseModel):
+    """Typed result representing a pipeline execution failure."""
+
+    unified_log: str
+    status_message: str
+    error_message: str
+    done: bool = False

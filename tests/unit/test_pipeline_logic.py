@@ -79,7 +79,7 @@ def test_pre_analysis_result_validation():
 
     # Assert missing required field raises ValidationError
     invalid_data = valid_data.copy()
-    del invalid_data["scenes"]
+    del invalid_data["unified_log"]
     with pytest.raises(ValidationError):
         PreAnalysisResult(**invalid_data)
 

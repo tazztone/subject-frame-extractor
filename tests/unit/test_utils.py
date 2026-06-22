@@ -22,8 +22,8 @@ def test_handle_common_errors_file_not_found():
         raise FileNotFoundError("missing")
 
     res = fail_func()
-    assert res["done"] is False
-    assert "File not found" in res["status_message"]
+    assert res.done is False
+    assert "File not found" in res.status_message
 
 
 def test_handle_common_errors_value_error():
@@ -32,8 +32,8 @@ def test_handle_common_errors_value_error():
         raise ValueError("bad value")
 
     res = fail_func()
-    assert res["done"] is False
-    assert "Invalid input" in res["status_message"]
+    assert res.done is False
+    assert "Invalid input" in res.status_message
 
 
 def test_handle_common_errors_cuda_oom():
@@ -42,8 +42,8 @@ def test_handle_common_errors_cuda_oom():
         raise RuntimeError("CUDA out of memory")
 
     res = fail_func()
-    assert res["done"] is False
-    assert "GPU memory error" in res["status_message"]
+    assert res.done is False
+    assert "GPU memory error" in res.status_message
 
 
 def test_handle_common_errors_generator():
@@ -55,8 +55,8 @@ def test_handle_common_errors_generator():
     it = gen_func()
     assert next(it) == 1
     res = next(it)
-    assert res["done"] is False
-    assert "Invalid input" in res["status_message"]
+    assert res.done is False
+    assert "Invalid input" in res.status_message
 
 
 def test_estimate_totals():
@@ -123,25 +123,25 @@ def test_handle_common_errors_gen_exceptions():
     it = gen_fail(FileNotFoundError)
     assert next(it) == 1
     res = next(it)
-    assert "File not found" in res["status_message"]
+    assert "File not found" in res.status_message
 
     # Test RuntimeError (non-CUDA)
     it = gen_fail(RuntimeError)
     assert next(it) == 1
     res = next(it)
-    assert "Processing error" in res["status_message"]
+    assert "Processing error" in res.status_message
 
     # Test Generic Exception
     it = gen_fail(Exception)
     assert next(it) == 1
     res = next(it)
-    assert "Critical error" in res["status_message"]
+    assert "Critical error" in res.status_message
 
     # Test ValueError
     it = gen_fail(ValueError)
     assert next(it) == 1
     res = next(it)
-    assert "Invalid input" in res["status_message"]
+    assert "Invalid input" in res.status_message
 
 
 def test_handle_common_errors_non_gen_exceptions():
@@ -149,8 +149,8 @@ def test_handle_common_errors_non_gen_exceptions():
     def fail_func(exc_type):
         raise exc_type("fail")
 
-    assert "Runtime error" in fail_func(RuntimeError)["log"]
-    assert "Unexpected error" in fail_func(Exception)["log"]
+    assert "Runtime error" in fail_func(RuntimeError).unified_log
+    assert "Unexpected error" in fail_func(Exception).unified_log
 
 
 def test_estimate_totals_default():
@@ -188,7 +188,7 @@ def test_handle_common_errors_gen_cuda_oom():
     it = gen_oom()
     assert next(it) == 1
     res = next(it)
-    assert "GPU memory error" in res["status_message"]
+    assert "GPU memory error" in res.status_message
 
 
 def test_triton_mock_installed_when_absent(monkeypatch):

@@ -1,6 +1,7 @@
 import threading
 from unittest.mock import MagicMock, patch
 
+from core.context import AnalysisContext
 from core.events import PropagationEvent
 from core.pipelines import execute_analysis, execute_extraction
 
@@ -11,6 +12,16 @@ def test_execute_analysis_schema():
     event.scenes = []
     event.analysis_params = MagicMock()
     event.analysis_params.model_dump.return_value = {}
+
+    context = AnalysisContext(
+        config=MagicMock(),
+        logger=MagicMock(),
+        progress_queue=MagicMock(),
+        cancel_event=threading.Event(),
+        thumbnail_manager=MagicMock(),
+        model_registry=MagicMock(),
+        cuda_available=True,
+    )
 
     # Mock AnalysisParameters.from_ui
     with patch("core.pipelines.AnalysisParameters.from_ui") as mock_params_v:
@@ -29,22 +40,29 @@ def test_execute_analysis_schema():
                     mock_pipe.run_analysis_only.return_value = {"done": True, "output_dir": "/tmp/out"}
                     mock_init.return_value = mock_pipe
 
-                    gen = execute_analysis(
-                        event, MagicMock(), threading.Event(), MagicMock(), MagicMock(), MagicMock(), True
-                    )
+                    gen = execute_analysis(event, context)
 
                     results = list(gen)
                     success_yield = results[-1]
 
-                    assert success_yield["done"] is True
-                    assert "metadata_path" in success_yield
-                    assert success_yield["metadata_path"].endswith("metadata.db")
+                    assert success_yield.done is True
+                    assert success_yield.metadata_path.endswith("metadata.db")
 
 
 def test_execute_extraction_schema():
     """Verify that execute_extraction yields the expected keys."""
     event = MagicMock()
     event.model_dump.return_value = {}
+
+    context = AnalysisContext(
+        config=MagicMock(),
+        logger=MagicMock(),
+        progress_queue=MagicMock(),
+        cancel_event=threading.Event(),
+        thumbnail_manager=MagicMock(),
+        model_registry=MagicMock(),
+        cuda_available=True,
+    )
 
     with patch("core.pipelines._handle_extraction_uploads", return_value={}):
         with patch("core.pipelines.AnalysisParameters.from_ui") as mock_init_p:
@@ -56,13 +74,11 @@ def test_execute_extraction_schema():
                 mock_pipe.run.return_value = {"done": True, "output_dir": "/tmp/out", "video_path": "vid.mp4"}
                 mock_pipe_class.return_value = mock_pipe
 
-                gen = execute_extraction(
-                    event, MagicMock(), threading.Event(), MagicMock(), MagicMock(), MagicMock(), True
-                )
+                gen = execute_extraction(event, context)
 
                 results = list(gen)
                 success_yield = results[-1]
 
-                assert success_yield["done"] is True
-                assert "extracted_frames_dir_state" in success_yield
-                assert "extracted_video_path_state" in success_yield
+                assert success_yield.done is True
+                assert success_yield.output_dir == "/tmp/out"
+                assert success_yield.video_path == "vid.mp4"

@@ -245,19 +245,23 @@ class TestExecutePreAnalysis:
         mock_pipeline = mock_pipeline_cls.return_value
         mock_pipeline.run.return_value = [Scene(shot_id=0, start_frame=0, end_frame=10)]
 
-        # Act
-        gen = execute_pre_analysis(
-            event=mock_event,
+        from core.context import AnalysisContext
+
+        context = AnalysisContext(
+            config=MagicMock(),
+            logger=MagicMock(),
             progress_queue=MagicMock(),
             cancel_event=MagicMock(),
-            logger=MagicMock(),
-            config=MagicMock(),
             thumbnail_manager=MagicMock(),
+            model_registry=MagicMock(),
             cuda_available=False,
         )
+
+        # Act
+        gen = execute_pre_analysis(mock_event, context)
         results = list(gen)
 
         # Assert
         assert len(results) == 1
-        assert results[0]["done"] is True
-        assert "Pre-Analysis Complete" in results[0]["unified_log"]
+        assert results[0].done is True
+        assert "Pre-Analysis Complete" in results[0].unified_log

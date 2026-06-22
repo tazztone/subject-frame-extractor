@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.models import PreAnalysisResult
+from core.models import AnalysisResult, ExtractionResult, PreAnalysisResult, PropagationResult
 from ui.app_ui import ApplicationState, AppUI
 
 
@@ -52,7 +52,6 @@ class TestAppUIHandlers:
         app.components["unified_log"] = MagicMock()
         app.components["unified_status"] = MagicMock()
         app.components["main_tabs"] = MagicMock()
-        app.components["main_tabs"] = MagicMock()
         # app.components["stepper"] = MagicMock() # Removed from UI
         app.components["seeding_results_column"] = MagicMock()
         app.components["propagation_group"] = MagicMock()
@@ -71,10 +70,11 @@ class TestAppUIHandlers:
     def test_on_extraction_success(self, app_ui):
         """Test _on_extraction_success updates ApplicationState correctly."""
         current_state = ApplicationState()
-        result = {
-            "extracted_video_path_state": "/path/to/video.mp4",
-            "extracted_frames_dir_state": "/path/to/frames",
-        }
+        result = ExtractionResult(
+            unified_log="Extraction Complete",
+            video_path="/path/to/video.mp4",
+            output_dir="/path/to/frames",
+        )
 
         updates = app_ui.pipeline_handler._on_extraction_success(result, current_state)
 
@@ -92,7 +92,7 @@ class TestAppUIHandlers:
             video_path="/path/to/video.mp4",
         )
 
-        updates = app_ui.pipeline_handler._on_pre_analysis_success(result.model_dump(), current_state)
+        updates = app_ui.pipeline_handler._on_pre_analysis_success(result, current_state)
 
         new_state = updates[app_ui.components["application_state"]]
         assert len(new_state.scenes) == 1
@@ -101,7 +101,10 @@ class TestAppUIHandlers:
     def test_on_propagation_success(self, app_ui):
         """Test _on_propagation_success returns the state."""
         current_state = ApplicationState(analysis_output_dir="/test")
-        result = {"output_dir": "/test"}
+        result = PropagationResult(
+            unified_log="Propagation Complete",
+            output_dir="/test",
+        )
 
         updates = app_ui.pipeline_handler._on_propagation_success(result, current_state)
 
@@ -110,9 +113,11 @@ class TestAppUIHandlers:
     def test_on_analysis_success(self, app_ui):
         """Test _on_analysis_success updates ApplicationState correctly."""
         current_state = ApplicationState()
-        result = {
-            "metadata_path": "/test/metadata.db",
-        }
+        result = AnalysisResult(
+            unified_log="Analysis Complete",
+            metadata_path="/test/metadata.db",
+            output_dir="/test",
+        )
 
         updates = app_ui.pipeline_handler._on_analysis_success(result, current_state)
 
@@ -125,14 +130,18 @@ class TestAppUIHandlers:
 
         # Note: on_reset_filters is decorated with @safe_ui_callback,
         # but we can test the underlying logic if needed or the wrapped call
-        updates = app_ui.on_reset_filters(current_state)
+        updates = app_ui.filtering_handler.on_reset_filters(current_state)
 
         new_state = updates[0]  # Returns a tuple
         assert new_state.smart_filter_enabled is False
 
     def test_on_filters_changed_wrapper(self, app_ui, tmp_path):
         """Test on_filters_changed_wrapper uses ApplicationState data."""
-        with patch("ui.app_ui.on_filters_changed") as mock_on_filters:
+        with patch("ui.handlers.filtering_handler.on_filters_changed") as mock_on_filters:
+            import sys
+
+            print("MOCK:", mock_on_filters)
+            print("ACTUAL IN MODULE:", sys.modules["ui.handlers.filtering_handler"].on_filters_changed)
             # Use a dictionary that behaves like the expected return
             mock_on_filters.return_value = {"filter_status_text": "OK", "results_gallery": {"value": []}}
 
@@ -142,9 +151,13 @@ class TestAppUIHandlers:
             state = ApplicationState(all_frames_data=[{"f": 1}], analysis_output_dir=out_dir)
 
             slider_vals = [0.0, 0.0, 0.0]
-            app_ui.components["metric_sliders"] = {}
+            app_ui.components["metric_sliders"] = {
+                "slider1": MagicMock(),
+                "slider2": MagicMock(),
+                "slider3": MagicMock(),
+            }
 
-            status, gallery_update = app_ui.on_filters_changed_wrapper(
+            status, gallery_update = app_ui.filtering_handler.on_filters_changed_wrapper(
                 state, "Kept", False, 0.6, False, 5, "pHash", *slider_vals
             )
 

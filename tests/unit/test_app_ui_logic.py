@@ -165,12 +165,20 @@ class TestAppUI:
     # --- Success Callbacks ---
 
     def test_on_extraction_success(self, app_ui, app_state):
-        res = {"extracted_video_path_state": "v.mp4", "extracted_frames_dir_state": "/frames"}
+        from core.models import ExtractionResult
+
+        res = ExtractionResult(
+            unified_log="Extraction Complete",
+            video_path="v.mp4",
+            output_dir="/frames",
+        )
         updates = app_ui.pipeline_handler._on_extraction_success(res, app_state)
         new_state = updates[app_ui.components["application_state"]]
         assert new_state.extracted_video_path == "v.mp4"
 
     def test_on_pre_analysis_success(self, app_ui, app_state, tmp_path):
+        from core.models import PreAnalysisResult
+
         scenes = [
             {
                 "shot_id": 1,
@@ -180,7 +188,12 @@ class TestAppUI:
                 "seed_result": {"bbox": [0, 0, 10, 10]},
             }
         ]
-        res = {"unified_log": "Success", "scenes": scenes, "output_dir": str(tmp_path / "out"), "video_path": "vid.mp4"}
+        res = PreAnalysisResult(
+            unified_log="Success",
+            scenes=scenes,
+            output_dir=str(tmp_path / "out"),
+            video_path="vid.mp4",
+        )
 
         with patch("ui.handlers.pipeline_handlers.get_scene_status_text", return_value=("Status", "Button")):
             updates = app_ui.pipeline_handler._on_pre_analysis_success(res, app_state)

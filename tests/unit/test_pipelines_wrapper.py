@@ -22,9 +22,20 @@ def test_execute_extraction(mock_pipeline_cls, mock_config, mock_logger):
         scene_detect=False,
     )
 
-    results = list(execute_extraction(event, Queue(), threading.Event(), mock_logger, mock_config))
-    assert results[-1]["done"] is True
-    assert results[-1]["extracted_frames_dir_state"] == "/tmp/out"
+    from core.context import AnalysisContext
+
+    context = AnalysisContext(
+        config=mock_config,
+        logger=mock_logger,
+        progress_queue=Queue(),
+        cancel_event=threading.Event(),
+        thumbnail_manager=MagicMock(),
+        model_registry=MagicMock(),
+        cuda_available=False,
+    )
+    results = list(execute_extraction(event, context))
+    assert results[-1].done is True
+    assert results[-1].output_dir == "/tmp/out"
 
 
 @patch("core.pipelines.PreAnalysisPipeline")
@@ -48,10 +59,19 @@ def test_execute_pre_analysis(mock_load, mock_pipeline_cls, mock_config, mock_lo
 
     # We need to mock gr.update for gradio
     with patch("gradio.update", return_value=None):
-        results = list(
-            execute_pre_analysis(event, Queue(), threading.Event(), mock_logger, mock_config, MagicMock(), False)
+        from core.context import AnalysisContext
+
+        context = AnalysisContext(
+            config=mock_config,
+            logger=mock_logger,
+            progress_queue=Queue(),
+            cancel_event=threading.Event(),
+            thumbnail_manager=MagicMock(),
+            model_registry=MagicMock(),
+            cuda_available=False,
         )
-        assert results[-1]["done"] is True
+        results = list(execute_pre_analysis(event, context))
+        assert results[-1].done is True
 
 
 @patch("core.pipelines.AnalysisPipeline")
@@ -76,8 +96,19 @@ def test_execute_propagation(mock_vinfo, mock_load, mock_pipeline_cls, mock_conf
     )
     event = PropagationEvent(scenes=[], analysis_params=mock_params, output_folder=str(tmp_path), video_path="test.mp4")
 
-    results = list(execute_propagation(event, Queue(), threading.Event(), mock_logger, mock_config, MagicMock(), False))
-    assert results[-1]["done"] is True
+    from core.context import AnalysisContext
+
+    context = AnalysisContext(
+        config=mock_config,
+        logger=mock_logger,
+        progress_queue=Queue(),
+        cancel_event=threading.Event(),
+        thumbnail_manager=MagicMock(),
+        model_registry=MagicMock(),
+        cuda_available=False,
+    )
+    results = list(execute_propagation(event, context))
+    assert results[-1].done is True
 
 
 @patch("core.pipelines.AnalysisPipeline")
@@ -101,5 +132,16 @@ def test_execute_analysis(mock_load, mock_pipeline_cls, mock_config, mock_logger
     )
     event = PropagationEvent(scenes=[], analysis_params=mock_params, output_folder=str(tmp_path), video_path="test.mp4")
 
-    results = list(execute_analysis(event, Queue(), threading.Event(), mock_logger, mock_config, MagicMock(), False))
-    assert results[-1]["done"] is True
+    from core.context import AnalysisContext
+
+    context = AnalysisContext(
+        config=mock_config,
+        logger=mock_logger,
+        progress_queue=Queue(),
+        cancel_event=threading.Event(),
+        thumbnail_manager=MagicMock(),
+        model_registry=MagicMock(),
+        cuda_available=False,
+    )
+    results = list(execute_analysis(event, context))
+    assert results[-1].done is True

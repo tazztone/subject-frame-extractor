@@ -64,19 +64,9 @@ def mock_extraction_run(self, tracker=None):
     }
 
 
-def mock_pre_analysis_execution(
-    event,
-    progress_queue,
-    cancel_event,
-    logger,
-    config,
-    thumbnail_manager,
-    cuda_available,
-    progress=None,
-    model_registry=None,
-    loaded_models=None,
-    **kwargs,
-):
+def mock_pre_analysis_execution(event, context):
+    from core.models import PreAnalysisResult
+
     scenes = [
         Scene(
             shot_id=1,
@@ -88,51 +78,33 @@ def mock_pre_analysis_execution(
             seed_metrics={"score": 0.9},
         ).model_dump()
     ]
-    yield {
-        "unified_log": "Pre-Analysis Complete.",
-        "scenes": scenes,
-        "done": True,
-        "unified_status": "Pre-Analysis Complete",
-        "output_dir": event.output_folder,
-        "video_path": event.video_path,
-    }
+    yield PreAnalysisResult(
+        unified_log="Pre-Analysis Complete.",
+        scenes=scenes,
+        done=True,
+        output_dir=event.output_folder,
+        video_path=event.video_path,
+    )
 
 
-def mock_propagation_execution(
-    event,
-    progress_queue,
-    cancel_event,
-    logger,
-    config,
-    thumbnail_manager,
-    cuda_available,
-    progress=None,
-    model_registry=None,
-    loaded_models=None,
-    **kwargs,
-):
-    yield {
-        "unified_log": "Propagation complete.",
-        "done": True,
-        "scenes": event.scenes,
-        "unified_status": "Propagation Complete",
-    }
+def mock_propagation_execution(event, context):
+    from core.models import PropagationResult
+
+    yield PropagationResult(
+        unified_log="Propagation complete.",
+        done=True,
+        output_dir=event.output_folder,
+    )
 
 
-def mock_analysis_execution(
-    event,
-    progress_queue,
-    cancel_event,
-    logger,
-    config,
-    thumbnail_manager,
-    cuda_available,
-    progress=None,
-    model_registry=None,
-    loaded_models=None,
-    **kwargs,
-):
-    yield {"unified_log": "Analysis complete.", "done": True, "unified_status": "Analysis Complete"}
+def mock_analysis_execution(event, context):
+    from core.models import AnalysisResult
+
+    yield AnalysisResult(
+        unified_log="Analysis complete.",
+        done=True,
+        output_dir=event.output_folder,
+    )
 
 
 def mock_ingest_folder(folder_path, output_dir, recursive=False, thumbnails_only=True):

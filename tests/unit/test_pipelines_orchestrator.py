@@ -1,8 +1,17 @@
+import threading
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from core.context import AnalysisContext
 from core.events import ExtractionEvent, PreAnalysisEvent
+from core.models import (
+    AnalysisResult,
+    ExtractionResult,
+    PipelineFailure,
+    PreAnalysisResult,
+    PropagationResult,
+)
 from core.pipelines import execute_analysis_orchestrator, execute_full_pipeline
 
 
@@ -40,6 +49,18 @@ class TestPipelinesOrchestrator:
             resume=False,
         )
 
+    @pytest.fixture
+    def context(self):
+        return AnalysisContext(
+            config=MagicMock(),
+            logger=MagicMock(),
+            progress_queue=MagicMock(),
+            cancel_event=threading.Event(),
+            thumbnail_manager=MagicMock(),
+            model_registry=MagicMock(),
+            cuda_available=True,
+        )
+
     @patch("core.pipelines.initialize_analysis_models")
     @patch("core.pipelines.execute_pre_analysis")
     @patch("core.pipelines.execute_propagation")
@@ -51,48 +72,37 @@ class TestPipelinesOrchestrator:
         mock_execute_pre_analysis,
         mock_init_models,
         mock_pre_analysis_event,
-        mock_progress_queue,
-        mock_cancel_event,
-        mock_logger,
-        mock_config,
-        mock_thumbnail_manager,
-        mock_model_registry,
+        context,
     ):
         """Test full chain for video: Pre -> Prop -> Ana."""
         mock_init_models.return_value = {"models": "loaded"}
 
         # Pre-analysis yields something then sets done=True
         mock_execute_pre_analysis.side_effect = _make_gen(
-            {"unified_log": "Pre log", "done": False},
-            {"unified_log": "Pre done", "done": True, "scenes": [{"shot_id": 1}]},
+            PreAnalysisResult(
+                unified_log="Pre done", scenes=[{"shot_id": 1}], output_dir="/tmp/out", video_path="video.mp4"
+            )
         )
 
         # Propagation yields results
         mock_execute_propagation.side_effect = _make_gen(
-            {"unified_log": "Prop log", "done": False}, {"unified_log": "Prop done", "done": True}
+            PropagationResult(unified_log="Prop done", output_dir="/tmp/out")
         )
 
         # Analysis yields results
         mock_execute_analysis.side_effect = _make_gen(
-            {"unified_log": "Ana log", "done": False}, {"unified_log": "Ana done", "done": True}
+            AnalysisResult(unified_log="Ana done", output_dir="/tmp/out", metadata_path="/tmp/out/metadata.db")
         )
 
         gen = execute_analysis_orchestrator(
             event=mock_pre_analysis_event,
-            progress_queue=mock_progress_queue,
-            cancel_event=mock_cancel_event,
-            logger=mock_logger,
-            config=mock_config,
-            thumbnail_manager=mock_thumbnail_manager,
-            cuda_available=True,
-            model_registry=mock_model_registry,
+            context=context,
         )
 
         results = list(gen)
 
-        assert any(r.get("unified_log") == "Pre done" for r in results)
-        assert any(r.get("unified_log") == "Prop done" for r in results)
-        assert any(r.get("unified_log") == "Ana done" for r in results)
+        assert any(isinstance(r, PropagationResult) and r.unified_log == "Prop done" for r in results)
+        assert any(isinstance(r, AnalysisResult) and r.unified_log == "Ana done" for r in results)
 
         mock_execute_pre_analysis.assert_called_once()
         mock_execute_propagation.assert_called_once()
@@ -109,34 +119,25 @@ class TestPipelinesOrchestrator:
         mock_execute_pre_analysis,
         mock_init_models,
         mock_pre_analysis_event,
-        mock_progress_queue,
-        mock_cancel_event,
-        mock_logger,
-        mock_config,
-        mock_thumbnail_manager,
-        mock_model_registry,
+        context,
     ):
         """Test folder mode skips propagation."""
         mock_pre_analysis_event.video_path = ""  # Folder mode
         mock_init_models.return_value = {}
 
-        mock_execute_pre_analysis.side_effect = _make_gen({"done": True, "scenes": []})
-        mock_execute_analysis.side_effect = _make_gen({"done": True})
+        mock_execute_pre_analysis.side_effect = _make_gen(
+            PreAnalysisResult(unified_log="Pre done", scenes=[], output_dir="/tmp/out", video_path="")
+        )
+        mock_execute_analysis.side_effect = _make_gen(AnalysisResult(unified_log="Ana done", output_dir="/tmp/out"))
 
         gen = execute_analysis_orchestrator(
             event=mock_pre_analysis_event,
-            progress_queue=mock_progress_queue,
-            cancel_event=mock_cancel_event,
-            logger=mock_logger,
-            config=mock_config,
-            thumbnail_manager=mock_thumbnail_manager,
-            cuda_available=True,
-            model_registry=mock_model_registry,
+            context=context,
         )
 
         results = list(gen)
 
-        assert any("Skipped for Folder" in str(r.get("unified_log")) for r in results)
+        assert any(isinstance(r, PropagationResult) and "Skipped for Folder" in r.unified_log for r in results)
         mock_execute_propagation.assert_not_called()
         mock_execute_analysis.assert_called_once()
 
@@ -149,31 +150,26 @@ class TestPipelinesOrchestrator:
         mock_execute_pre_analysis,
         mock_init_models,
         mock_pre_analysis_event,
-        mock_progress_queue,
-        mock_cancel_event,
-        mock_logger,
-        mock_config,
+        context,
     ):
         """Chain stops if Pre-Analysis does not complete."""
         mock_init_models.return_value = {}
 
-        # Yields log but never yields done=True
-        mock_execute_pre_analysis.side_effect = _make_gen({"unified_log": "Failed early", "done": False})
+        # Yields failure early
+        mock_execute_pre_analysis.side_effect = _make_gen(
+            PipelineFailure(unified_log="Failed early", status_message="Error", error_message="failed")
+        )
 
         gen = execute_analysis_orchestrator(
             event=mock_pre_analysis_event,
-            progress_queue=mock_progress_queue,
-            cancel_event=mock_cancel_event,
-            logger=mock_logger,
-            config=mock_config,
-            thumbnail_manager=MagicMock(),
-            cuda_available=True,
+            context=context,
         )
 
         results = list(gen)
 
         assert len(results) == 1
-        assert results[0]["unified_log"] == "Failed early"
+        assert isinstance(results[0], PipelineFailure)
+        assert results[0].unified_log == "Failed early"
         mock_execute_propagation.assert_not_called()
 
     @patch("core.pipelines.execute_extraction")
@@ -183,39 +179,30 @@ class TestPipelinesOrchestrator:
         mock_orchestrator,
         mock_execute_extraction,
         mock_extraction_event,
-        mock_progress_queue,
-        mock_cancel_event,
-        mock_logger,
-        mock_config,
-        mock_thumbnail_manager,
+        context,
     ):
         """Test full pipeline chain: Extraction -> Analysis Orchestrator."""
         mock_execute_extraction.side_effect = _make_gen(
-            {"done": True, "extracted_frames_dir_state": "/tmp/out", "extracted_video_path_state": "v.mp4"}
+            ExtractionResult(unified_log="Ext done", video_path="v.mp4", output_dir="/tmp/out")
         )
         mock_orchestrator.side_effect = _make_gen(
-            {"unified_log": "Orchestrator working", "done": False}, {"done": True}
+            AnalysisResult(unified_log="Orchestrator working", output_dir="/tmp/out")
         )
 
         gen = execute_full_pipeline(
             event=mock_extraction_event,
-            progress_queue=mock_progress_queue,
-            cancel_event=mock_cancel_event,
-            logger=mock_logger,
-            config=mock_config,
-            thumbnail_manager=mock_thumbnail_manager,
-            cuda_available=True,
+            context=context,
         )
 
         results = list(gen)
 
-        assert any(r.get("unified_log") == "Moving to Analysis stages..." for r in results)
-        assert any(r.get("unified_log") == "Orchestrator working" for r in results)
+        assert any(
+            isinstance(r, PropagationResult) and r.unified_log == "Moving to Analysis stages..." for r in results
+        )
+        assert any(isinstance(r, AnalysisResult) and r.unified_log == "Orchestrator working" for r in results)
         mock_orchestrator.assert_called_once()
 
-        # Verify events passed to orchestrator
-        # It's called positionally in core/pipelines.py
-        # yield from execute_analysis_orchestrator(pre_event, ...)
+        # Verify event passed to orchestrator
         call_args_list = mock_orchestrator.call_args[0]
         passed_event = call_args_list[0]
         assert passed_event.output_folder == "/tmp/out"
@@ -228,53 +215,21 @@ class TestPipelinesOrchestrator:
         mock_orchestrator,
         mock_execute_extraction,
         mock_extraction_event,
-        mock_progress_queue,
-        mock_cancel_event,
-        mock_logger,
-        mock_config,
+        context,
     ):
         """Chain stops if Extraction fails."""
-        mock_execute_extraction.side_effect = _make_gen({"done": False, "unified_log": "Extraction failed"})
+        mock_execute_extraction.side_effect = _make_gen(
+            PipelineFailure(unified_log="Extraction failed", status_message="Error", error_message="failed")
+        )
 
         gen = execute_full_pipeline(
             event=mock_extraction_event,
-            progress_queue=mock_progress_queue,
-            cancel_event=mock_cancel_event,
-            logger=mock_logger,
-            config=mock_config,
-            thumbnail_manager=MagicMock(),
-            cuda_available=True,
+            context=context,
         )
 
         results = list(gen)
 
         assert len(results) == 1
-        assert results[0]["unified_log"] == "Extraction failed"
+        assert isinstance(results[0], PipelineFailure)
+        assert results[0].unified_log == "Extraction failed"
         mock_orchestrator.assert_not_called()
-
-    def test_pipeline_chain_runner(self):
-        """Test PipelineChainRunner's yield and done stripping logic."""
-        from core.pipelines import PipelineChainRunner
-
-        runner = PipelineChainRunner()
-
-        def mock_stage():
-            yield {"log": "starting", "done": False}
-            yield {"log": "middle", "done": False}
-            yield {"log": "ending", "done": True, "data": 42}
-
-        # 1. Non-final stage should yield middle states but strip 'done'
-        results = list(runner.run_stage(mock_stage(), is_final=False))
-        assert len(results) == 3
-        assert results[0] == {"log": "starting", "done": False}
-        assert results[1] == {"log": "middle", "done": False}
-        assert results[2] == {"log": "ending", "data": 42}  # done stripped!
-        assert "done" not in results[2]
-
-        assert runner.last_result == {"log": "ending", "done": True, "data": 42}
-        assert runner.state["log"] == "ending"
-
-        # 2. Final stage should propagate 'done'
-        results_final = list(runner.run_stage(mock_stage(), is_final=True))
-        assert len(results_final) == 3
-        assert results_final[2] == {"log": "ending", "done": True, "data": 42}  # done kept!

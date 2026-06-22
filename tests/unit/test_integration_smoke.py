@@ -18,25 +18,37 @@ def test_execute_extraction_smoke(mock_analysis, mock_pre_analysis, mock_extract
     from queue import Queue
 
     from core.config import Config
+    from core.events import ExtractionEvent
     from core.logger import AppLogger
-    from core.models import AnalysisParameters
 
-    mock_ui_state["video_path"] = "/fake/video.mp4"
-    mock_ui_state["output_folder"] = "/tmp/out"
+    event = ExtractionEvent(
+        source_path="/fake/video.mp4",
+        method="every_nth_frame",
+        interval=1.0,
+        nth_frame=1,
+        max_resolution="1080",
+        thumb_megapixels=0.5,
+        scene_detect=True,
+        output_folder="/tmp/out",
+    )
 
-    params = AnalysisParameters(**mock_ui_state)
+    from core.context import AnalysisContext
 
-    generator = execute_extraction(
-        params,
+    context = AnalysisContext(
+        config=MagicMock(spec=Config),
+        logger=MagicMock(spec=AppLogger),
         progress_queue=Queue(),
         cancel_event=threading.Event(),
-        logger=MagicMock(spec=AppLogger),
-        config=MagicMock(spec=Config),
+        thumbnail_manager=MagicMock(),
+        model_registry=MagicMock(),
+        cuda_available=False,
     )
+
+    generator = execute_extraction(event, context)
 
     results = list(generator)
 
     assert len(results) > 0
     final_result = results[-1]
 
-    assert final_result.get("done") is True
+    assert final_result.done is True

@@ -76,9 +76,19 @@ def run_extract(source, output, method, nth_frame, max_resolution, thumb_mp, sce
         output_folder=str(output_dir),
     )
 
-    gen = execute_extraction(
-        event, progress_queue, cancel_event, logger, config, thumbnail_manager, model_registry=model_registry
+    from core.context import AnalysisContext
+
+    context = AnalysisContext(
+        config=config,
+        logger=logger,
+        progress_queue=progress_queue,
+        cancel_event=cancel_event,
+        thumbnail_manager=thumbnail_manager,
+        model_registry=model_registry,
+        cuda_available=torch.cuda.is_available(),
     )
+
+    gen = execute_extraction(event, context)
     _run_pipeline(gen, "Extraction" if is_video else "Ingestion")
 
     frame_map_path = output_dir / "frame_map.json"
@@ -113,17 +123,19 @@ def run_analyze(session, source, face_ref, strategy, verbose, resume, force):
         click.echo("   🚀 CUDA available, using GPU acceleration")
         torch.set_float32_matmul_precision("medium")
 
-    gen = execute_analysis_orchestrator(
-        pre_event,
-        progress_queue,
-        cancel_event,
-        logger,
-        config,
-        thumbnail_manager,
-        cuda_available,
-        progress=None,
+    from core.context import AnalysisContext
+
+    context = AnalysisContext(
+        config=config,
+        logger=logger,
+        progress_queue=progress_queue,
+        cancel_event=cancel_event,
+        thumbnail_manager=thumbnail_manager,
         model_registry=model_registry,
+        cuda_available=cuda_available,
     )
+
+    gen = execute_analysis_orchestrator(pre_event, context)
     _run_pipeline(gen, "Analysis Workflow")
 
     db_path = output_dir / "metadata.db"
@@ -257,17 +269,20 @@ def run_full(source, output, face_ref, nth_frame, max_resolution, verbose, clean
         scene_detect=True if is_video else False,
         output_folder=str(output_dir),
     )
-    gen = execute_full_pipeline(
-        ext_event,
-        progress_queue,
-        cancel_event,
-        logger,
-        config,
-        thumbnail_manager,
-        cuda_available,
-        progress=None,
+
+    from core.context import AnalysisContext
+
+    context = AnalysisContext(
+        config=config,
+        logger=logger,
+        progress_queue=progress_queue,
+        cancel_event=cancel_event,
+        thumbnail_manager=thumbnail_manager,
         model_registry=model_registry,
+        cuda_available=cuda_available,
     )
+
+    gen = execute_full_pipeline(ext_event, context)
     _run_pipeline(gen, "Full Pipeline")
 
     click.secho("\n🎉 PIPELINE COMPLETE", fg="green", bold=True)

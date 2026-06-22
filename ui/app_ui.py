@@ -3,12 +3,10 @@ from __future__ import annotations
 import re
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from queue import Empty, Queue
+from queue import Queue
 from typing import Any, Callable, Dict, Generator, List, Optional, Tuple
 
-import cv2
 import gradio as gr
 import numpy as np
 import torch
@@ -22,11 +20,12 @@ from core.export import dry_run_export, export_kept_frames
 from core.logger import AppLogger
 from core.managers import ModelRegistry, ThumbnailManager
 from core.pipelines import AdvancedProgressTracker, execute_extraction
-from core.utils import MemoryWatchdog, is_image_folder
+from core.system_health import MemoryWatchdog
+from core.utils import is_image_folder
 from ui.components.log_viewer import LogViewer
 from ui.decorators import safe_ui_callback
-from ui.gallery_utils import auto_set_thresholds, on_filters_changed
-from ui.handlers import PipelineHandler, SceneHandler
+from ui.gallery_utils import on_filters_changed
+from ui.handlers import FilteringHandler, PipelineHandler, SceneHandler, SubjectHandler
 from ui.tabs import (
     ExtractionTabBuilder,
     FilteringTabBuilder,
@@ -216,6 +215,8 @@ class AppUI:
         # Handlers
         self.scene_handler = SceneHandler(self)
         self.pipeline_handler = PipelineHandler(self)
+        self.subject_handler = SubjectHandler(self)
+        self.filtering_handler = FilteringHandler(self)
 
     def preload_models(self):
         """
@@ -567,100 +568,6 @@ class AppUI:
         # Hidden radio for scene editor state compatibility
         c["run_diagnostics_button"].click(self.run_system_diagnostics, inputs=[], outputs=[c["unified_log"]])
 
-    def _run_task_with_progress(
-        self, task_func: Callable, output_components: list, progress: Callable, *args
-    ) -> Generator[dict, None, None]:
-        """
-        Executes a background task while streaming progress updates to the UI.
-
-        Args:
-            task_func: The function to execute.
-            output_components: List of components to update (deprecated).
-            progress: Gradio progress callback.
-            args: Arguments for the task function.
-
-        Yields:
-            Dictionary of UI updates.
-        """
-        self.is_busy = True
-        try:
-            self.last_run_args = args
-            self.cancel_event.clear()
-            tracker_instance = next((arg for arg in args if isinstance(arg, AdvancedProgressTracker)), None)
-            if tracker_instance:
-                tracker_instance.pause_event.set()
-            op_name = getattr(task_func, "__name__", "Unknown Task").replace("_wrapper", "").replace("_", " ").title()
-            yield {
-                self.components["cancel_button"]: gr.update(interactive=True),
-                self.components["pause_button"]: gr.update(interactive=True),
-                self.components["unified_status"]: f"**Starting: {op_name}...**",
-            }
-
-            def run_and_capture():
-                try:
-                    res = task_func(*args)
-                    if hasattr(res, "__iter__") and not isinstance(res, (dict, list, tuple, str)):
-                        for item in res:
-                            self.progress_queue.put({"ui_update": item})
-                    else:
-                        self.progress_queue.put({"ui_update": res})
-                except Exception as e:
-                    self.app_logger.error(f"Task failed: {e}", exc_info=True)
-                    self.progress_queue.put(
-                        {"ui_update": {self.components["unified_log"]: f"[CRITICAL] Task failed: {e}"}}
-                    )
-
-            with ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(run_and_capture)
-                start_time = time.time()
-                while future.running():
-                    if time.time() - start_time > 3600:
-                        self.app_logger.error("Task timed out after 1 hour")
-                        self.cancel_event.set()
-                        future.cancel()
-                        break
-                    if self.cancel_event.is_set():
-                        future.cancel()
-                        break
-                    if tracker_instance and not tracker_instance.pause_event.is_set():
-                        yield {self.components["unified_status"]: f"**Paused: {op_name}**"}
-                        time.sleep(0.2)
-                        continue
-                    try:
-                        msg, update_dict = self.progress_queue.get(timeout=0.1), {}
-                        if "ui_update" in msg:
-                            update_dict.update(msg["ui_update"])
-                        if "log" in msg:
-                            update_dict.update(self.log_viewer.get_log_update_dict(msg["log"]))
-                        if "progress" in msg:
-                            from core.progress import ProgressEvent
-
-                            p = ProgressEvent(**msg["progress"])
-                            progress(p.fraction, desc=f"{p.stage} ({p.done}/{p.total}) • {p.eta_formatted}")
-                            status_md = f"**Running: {op_name}**\n- Stage: {p.stage} ({p.done}/{p.total})\n- ETA: {p.eta_formatted}"
-                            if p.substage:
-                                status_md += f"\n- Step: {p.substage}"
-                            update_dict[self.components["unified_status"]] = status_md
-                        if update_dict:
-                            yield update_dict
-                    except Empty:
-                        pass
-                    time.sleep(0.05)
-
-                while not self.progress_queue.empty():
-                    try:
-                        msg, update_dict = self.progress_queue.get_nowait(), {}
-                        if "ui_update" in msg:
-                            update_dict.update(msg["ui_update"])
-                        if "log" in msg:
-                            update_dict.update(self.log_viewer.get_log_update_dict(msg["log"]))
-                        if update_dict:
-                            yield update_dict
-                    except Empty:
-                        break
-        finally:
-            self.is_busy = False
-
     @safe_ui_callback("Toggle Pause")
     def _toggle_pause(self, tracker: "AdvancedProgressTracker") -> str:
         """Toggles the pause state of the current running task."""
@@ -767,26 +674,51 @@ class AppUI:
         self.is_busy = True
         generator = None
         try:
-            generator = pipeline_func(
-                event,
-                self.progress_queue,
-                self.cancel_event,
-                self.app_logger,
-                self.config,
-                self.thumbnail_manager,
-                self.cuda_available,
-                progress=progress,
-                model_registry=self.model_registry,
+            from core.context import AnalysisContext
+            from core.models import (
+                AnalysisResult,
+                ExtractionResult,
+                PipelineFailure,
+                PreAnalysisResult,
+                PropagationResult,
             )
+
+            context = AnalysisContext(
+                config=self.config,
+                logger=self.app_logger,
+                progress_queue=self.progress_queue,
+                cancel_event=self.cancel_event,
+                thumbnail_manager=self.thumbnail_manager,
+                model_registry=self.model_registry,
+                cuda_available=self.cuda_available,
+                progress=progress,
+            )
+
+            generator = pipeline_func(event, context)
             for result in generator:
-                if isinstance(result, dict):
-                    if self.cancel_event.is_set():
-                        yield {self.components["unified_log"]: "Cancelled by user."}
-                        return
-                    if result.get("done"):
-                        if success_callback:
-                            yield success_callback(result)
-                        return
+                if self.cancel_event.is_set():
+                    yield {self.components["unified_log"]: "Cancelled by user."}
+                    return
+
+                if isinstance(result, PipelineFailure):
+                    yield {
+                        self.components["unified_log"]: f"❌ **Error:** {result.error_message}",
+                        self.components[
+                            "unified_status"
+                        ]: f"⚠️ Failure in {pipeline_func.__name__}: {result.status_message}",
+                    }
+                    return
+
+                if isinstance(result, (ExtractionResult, PreAnalysisResult, PropagationResult, AnalysisResult)):
+                    if success_callback:
+                        yield success_callback(result)
+                    return
+
+                if isinstance(result, dict) and result.get("done"):
+                    if success_callback:
+                        yield success_callback(result)
+                    return
+
             yield {self.components["unified_log"]: "❌ Pipeline failed unexpectedly."}
         except Exception as e:
             self.app_logger.error(f"Pipeline execution failed: {e}", exc_info=True)
@@ -974,7 +906,7 @@ class AppUI:
         c["stop_batch_button"].click(self.stop_batch_handler, inputs=[], outputs=[c["unified_log"]])
 
         c["find_people_button"].click(
-            self.on_find_subjects_from_video,
+            self.subject_handler.on_find_subjects_from_video,
             inputs=self.ana_input_components,
             outputs=[
                 c["unified_status"],
@@ -989,162 +921,15 @@ class AppUI:
 
         # We need to update on_identity_confidence_change to take/return state
         c["identity_confidence_slider"].release(
-            self.on_identity_confidence_change,
+            self.subject_handler.on_identity_confidence_change,
             inputs=[c["identity_confidence_slider"], c["application_state"]],
             outputs=[c["discovered_faces_gallery"]],
         )
         c["discovered_faces_gallery"].select(
-            self.on_discovered_face_select,
+            self.subject_handler.on_discovered_face_select,
             inputs=[c["application_state"], c["identity_confidence_slider"]],
             outputs=[c["face_ref_img_path_input"], c["face_ref_image"], c["find_people_status"]],
         )
-
-    @safe_ui_callback("Face Clustering")
-    def on_identity_confidence_change(self, confidence: float, state: ApplicationState) -> Any:
-        """Updates the face discovery gallery based on clustering confidence."""
-        all_faces = state.discovered_faces
-        if not all_faces:
-            return []
-
-        from core.face_clustering import cluster_faces
-
-        labels, cluster_map = cluster_faces(all_faces, confidence)
-        self.gallery_to_cluster_map = cluster_map
-
-        gallery_items = []
-        for idx, label in cluster_map.items():
-            cluster_faces_list = [all_faces[i] for i, l in enumerate(labels) if l == label]
-            best_face = max(cluster_faces_list, key=lambda x: x["det_score"])
-
-            thumb_rgb = self.thumbnail_manager.get(Path(best_face["thumb_path"]))
-            if thumb_rgb is not None:
-                x1, y1, x2, y2 = best_face["bbox"].astype(int)
-                face_crop = thumb_rgb[y1:y2, x1:x2]
-                gallery_items.append((face_crop, f"Person {label}"))
-
-        return gr.update(value=gallery_items)
-
-    @safe_ui_callback("Face Selection")
-    def on_discovered_face_select(
-        self, state: ApplicationState, confidence: float, evt: Optional[gr.SelectData] = None
-    ) -> tuple[Optional[str], Optional[np.ndarray], str]:
-        """Handles selection of a face cluster from the discovery gallery."""
-        all_faces = state.discovered_faces
-        if not all_faces or evt is None or evt.index is None:
-            return "", None, "⚠️ Selection Failed"
-
-        selected_label = self.gallery_to_cluster_map.get(evt.index)
-        if selected_label is None:
-            return "", None, "Selection Failed"
-
-        from core.face_clustering import cluster_faces, get_cluster_representative
-
-        labels, _ = cluster_faces(all_faces, confidence)
-
-        return get_cluster_representative(
-            all_faces, labels, selected_label, state.extracted_video_path, state.extracted_frames_dir
-        )
-
-    @safe_ui_callback("Subject Discovery")
-    def on_find_subjects_from_video(self, current_state: ApplicationState, *args) -> dict:
-        """Scans the video for subjects to populate the discovery gallery.
-
-        Returns: Dictionary of component updates.
-        """
-        new_state = current_state.model_copy()
-        c = self.components
-        self.logger.info("Scan Video for Subjects clicked")
-        params = self._create_pre_analysis_event(current_state, *args)
-        output_dir = Path(params.output_folder)
-        self.logger.info(f"Output dir: {output_dir}, exists: {output_dir.exists()}")
-        if not output_dir.exists():
-            self.logger.warning("Output directory does not exist - run extraction first")
-            msg = "**Run extraction first** - No video frames found."
-            return {
-                c["unified_status"]: "**Face Discovery Failed.** Run extraction first.",
-                c["find_people_status"]: msg,
-                c["discovered_people_group"]: gr.update(visible=False),
-                c["discovered_faces_gallery"]: [],
-                c["identity_confidence_slider"]: 0.5,
-                c["application_state"]: new_state,
-            }
-
-        from core.managers import initialize_analysis_models
-        from core.utils import create_frame_map
-
-        models = initialize_analysis_models(params.model_dump(), self.config, self.logger, self.model_registry)
-        face_analyzer = models["face_analyzer"]
-        if not face_analyzer:
-            self.logger.warning("Face analyzer not available")
-            msg = "**Face analyzer unavailable** - Check model installation."
-            return {
-                c["unified_status"]: "**Face Discovery Failed.** Face analyzer unavailable.",
-                c["find_people_status"]: msg,
-                c["discovered_people_group"]: gr.update(visible=False),
-                c["discovered_faces_gallery"]: [],
-                c["identity_confidence_slider"]: 0.5,
-                c["application_state"]: new_state,
-            }
-        frame_map = create_frame_map(output_dir, self.logger)
-        self.logger.info(f"Frame map has {len(frame_map)} frames")
-        if not frame_map:
-            msg = "**No frames found** - Run extraction first."
-            return {
-                c["unified_status"]: "**Face Discovery Failed.** No video frames found.",
-                c["find_people_status"]: msg,
-                c["discovered_people_group"]: gr.update(visible=False),
-                c["discovered_faces_gallery"]: [],
-                c["identity_confidence_slider"]: 0.5,
-                c["application_state"]: new_state,
-            }
-
-        all_faces = []
-        thumb_dir = output_dir / "thumbs"
-        for frame_num, thumb_filename in frame_map.items():
-            if frame_num % params.pre_sample_nth != 0:
-                continue
-            thumb_rgb = self.thumbnail_manager.get(thumb_dir / thumb_filename)
-            if thumb_rgb is None:
-                continue
-            faces = face_analyzer.get(cv2.cvtColor(thumb_rgb, cv2.COLOR_RGB2BGR))
-            for face in faces:
-                all_faces.append(
-                    {
-                        "frame_num": frame_num,
-                        "bbox": face.bbox,
-                        "embedding": face.normed_embedding,
-                        "det_score": face.det_score,
-                        "thumb_path": str(thumb_dir / thumb_filename),
-                    }
-                )
-
-        self.logger.info(f"Found {len(all_faces)} faces in video")
-        new_state.discovered_faces = all_faces
-
-        if not all_faces:
-            self.logger.info("No faces found in sampled frames")
-            msg = "**No faces detected** in sampled frames. Try adjusting sample rate."
-            return {
-                c["unified_status"]: "**Face Discovery Finished.** No faces found.",
-                c["find_people_status"]: msg,
-                c["discovered_people_group"]: gr.update(visible=False),
-                c["discovered_faces_gallery"]: [],
-                c["identity_confidence_slider"]: 0.5,
-                c["application_state"]: new_state,
-            }
-
-        # Get clustered faces for gallery
-        gallery_items = self.on_identity_confidence_change(0.5, new_state)
-        n_people = len(self.gallery_to_cluster_map) if hasattr(self, "gallery_to_cluster_map") else 0
-        success_msg = f"Found **{n_people} unique people** from {len(all_faces)} face detections."
-        return {
-            c["unified_status"]: success_msg,
-            c["find_people_status"]: success_msg,
-            c["discovered_people_group"]: gr.update(visible=True),
-            c["discovered_faces_gallery"]: gallery_items,
-            c["identity_confidence_slider"]: 0.5,
-            c["application_state"]: new_state,
-        }
 
     def _get_smart_mode_updates(self, is_enabled: bool) -> list[Any]:
         """Calculates slider updates when toggling 'Smart Mode'."""
@@ -1240,7 +1025,7 @@ class AppUI:
                 else control.input
                 if hasattr(control, "input")
                 else control.change
-            )(self.on_filters_changed_wrapper, fast_filter_inputs, fast_filter_outputs)
+            )(self.filtering_handler.on_filters_changed_wrapper, fast_filter_inputs, fast_filter_outputs)
 
         load_outputs = (
             [
@@ -1352,7 +1137,7 @@ class AppUI:
 
         # Reset Filters
         c["reset_filters_button"].click(
-            self.on_reset_filters,
+            self.filtering_handler.on_reset_filters,
             [c["application_state"]],
             [c["application_state"]]
             + slider_comps
@@ -1369,19 +1154,19 @@ class AppUI:
 
         # Auto Threshold
         c["apply_auto_button"].click(
-            lambda state, p, *cbs: self.on_auto_set_thresholds(state.per_metric_values, p, *cbs),
+            lambda state, p, *cbs: self.filtering_handler.on_auto_set_thresholds(state.per_metric_values, p, *cbs),
             [c["application_state"], c["auto_pctl_input"]] + list(c["metric_auto_threshold_cbs"].values()),
             slider_comps,
-        ).then(self.on_filters_changed_wrapper, fast_filter_inputs, fast_filter_outputs)
+        ).then(self.filtering_handler.on_filters_changed_wrapper, fast_filter_inputs, fast_filter_outputs)
 
         # Preset
         c["filter_preset_dropdown"].change(
-            self.on_preset_changed,
+            self.filtering_handler.on_preset_changed,
             [c["filter_preset_dropdown"]],
             [c["application_state"]]
             + slider_comps
             + [c["smart_filter_checkbox"]],  # Note: this is a bit broken as we need state to update
-        ).then(self.on_filters_changed_wrapper, fast_filter_inputs, fast_filter_outputs)
+        ).then(self.filtering_handler.on_filters_changed_wrapper, fast_filter_inputs, fast_filter_outputs)
 
         # Visual Diff
         c["calculate_diff_button"].click(
@@ -1396,103 +1181,6 @@ class AppUI:
             ],
             [c["visual_diff_image"]],
         ).then(lambda: gr.update(visible=True), None, c["visual_diff_image"])
-
-    @safe_ui_callback("Preset Change")
-    def on_preset_changed(self, preset_name: str) -> list[Any]:
-        """Updates filter sliders when a preset is selected."""
-        is_preset_active = preset_name != "None" and preset_name in self.FILTER_PRESETS
-        final_updates = []
-        slider_keys = sorted(self.components["metric_sliders"].keys())
-        preset_values = self.FILTER_PRESETS.get(preset_name, {})
-        for key in slider_keys:
-            if is_preset_active and key in preset_values:
-                val = preset_values[key]
-            else:
-                metric_key = re.sub(r"_(min|max)$", "", key)
-                default_key = "default_max" if key.endswith("_max") else "default_min"
-                val = getattr(self.config, f"filter_default_{metric_key}", {}).get(default_key, 0)
-
-            # If Preset, enable smart mode (0-100) except angles
-            if is_preset_active and "yaw" not in key and "pitch" not in key:
-                final_updates.append(
-                    gr.update(
-                        minimum=0.0,
-                        maximum=100.0,
-                        step=1.0,
-                        value=val,
-                        label=f"{self.components['metric_sliders'][key].label.split('(')[0].strip()} (%)",
-                    )
-                )
-            elif "yaw" in key or "pitch" in key:
-                final_updates.append(gr.update(value=val))
-            else:
-                f_def = getattr(self.config, f"filter_default_{re.sub(r'_(min|max)$', '', key)}", {})
-                final_updates.append(
-                    gr.update(
-                        minimum=f_def.get("min", 0),
-                        maximum=f_def.get("max", 100),
-                        step=f_def.get("step", 0.5),
-                        value=val,
-                        label=self.components["metric_sliders"][key].label.replace(" (%)", ""),
-                    )
-                )
-
-        # We return state update as first item
-        # Since we don't have the state object here, we'll need to handle it via lambda in click/change
-        # This is a bit complex for a single replace, I'll return gr.update() for now and fix state elsewhere
-        return [gr.update()] + final_updates + [gr.update(value=is_preset_active)]
-
-    @safe_ui_callback("Filter Change")
-    def on_filters_changed_wrapper(
-        self,
-        state: ApplicationState,
-        gallery_view: str,
-        show_overlay: bool,
-        overlay_alpha: float,
-        require_face_match: bool,
-        dedup_thresh: int,
-        dedup_method_ui: str,
-        *slider_values: float,
-    ) -> tuple[str, Any]:
-        """
-        Updates the results gallery when filters change.
-        """
-        all_frames_data = state.all_frames_data
-        per_metric_values = state.per_metric_values
-        output_dir = state.analysis_output_dir
-        smart_mode_enabled = state.smart_filter_enabled
-
-        slider_values_dict = {k: v for k, v in zip(sorted(self.components["metric_sliders"].keys()), slider_values)}
-        if smart_mode_enabled and per_metric_values:
-            for key, val in slider_values_dict.items():
-                if "yaw" in key or "pitch" in key:
-                    continue
-                metric_data = per_metric_values.get(re.sub(r"_(min|max)$", "", key))
-                if metric_data:
-                    try:
-                        slider_values_dict[key] = float(np.percentile(np.array(metric_data), val))
-                    except Exception:
-                        pass
-
-        dedup_method = self._map_dedup_method(dedup_method_ui)
-        result = on_filters_changed(
-            FilterEvent(
-                all_frames_data=all_frames_data,
-                per_metric_values=per_metric_values,
-                output_dir=output_dir,
-                gallery_view=gallery_view,
-                show_overlay=show_overlay,
-                overlay_alpha=overlay_alpha,
-                require_face_match=require_face_match,
-                dedup_thresh=dedup_thresh,
-                slider_values=slider_values_dict,
-                dedup_method=dedup_method,
-            ),
-            self.thumbnail_manager,
-            self.config,
-            self.logger,
-        )
-        return result["filter_status_text"], result["results_gallery"]
 
     @safe_ui_callback("Visual Diff")
     def calculate_visual_diff(
@@ -1547,44 +1235,6 @@ class AppUI:
                 comparison_image[:, w:] = img2
                 return comparison_image
         return None
-
-    @safe_ui_callback("Reset Filters")
-    def on_reset_filters(self, state: ApplicationState) -> tuple:
-        """Resets all filter settings to their defaults."""
-        c = self.components
-        slider_keys = sorted(c["metric_sliders"].keys())
-        slider_updates = []
-        for key in slider_keys:
-            metric_key = re.sub(r"_(min|max)$", "", key)
-            default_key = "default_max" if key.endswith("_max") else "default_min"
-            val = getattr(self.config, f"filter_default_{metric_key}", {}).get(default_key, 0)
-            slider_updates.append(gr.update(value=val))
-
-        acc_updates = []
-        for key in sorted(c["metric_accs"].keys()):
-            acc_updates.append(gr.update(open=(key == "quality_score")))
-
-        new_state = state.model_copy()
-        new_state.smart_filter_enabled = False
-
-        return tuple(
-            [new_state]
-            + slider_updates
-            + [5, False, "Filters Reset.", gr.update(), "Fast (pHash)"]
-            + acc_updates
-            + [False]
-        )
-
-    @safe_ui_callback("Auto Thresholds")
-    def on_auto_set_thresholds(self, per_metric_values: dict, p: int, *checkbox_values: bool) -> list[Any]:
-        """Automatically sets filter thresholds based on data percentiles."""
-        slider_keys = sorted(self.components["metric_sliders"].keys())
-        auto_threshold_cbs_keys = sorted(self.components["metric_auto_threshold_cbs"].keys())
-        selected_metrics = [
-            metric_name for metric_name, is_selected in zip(auto_threshold_cbs_keys, checkbox_values) if is_selected
-        ]
-        updates = auto_set_thresholds(per_metric_values, p, slider_keys, selected_metrics)
-        return [updates.get(f"slider_{key}", gr.update()) for key in slider_keys]
 
     @safe_ui_callback("Export")
     def export_kept_frames_wrapper(

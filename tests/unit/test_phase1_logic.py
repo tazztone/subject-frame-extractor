@@ -45,13 +45,15 @@ class TestPhase1Logic(unittest.TestCase):
     def test_on_pre_analysis_success_image_folder(self, mock_get_status):
         mock_get_status.return_value = ("status", gr.update(interactive=True))
 
-        result = {
-            "unified_log": "Pre-Analysis Complete.",
-            "scenes": [],
-            "output_dir": "/mock/images",
-            "video_path": "",
-            "done": True,
-        }
+        from core.models import PreAnalysisResult
+
+        result = PreAnalysisResult(
+            unified_log="Pre-Analysis Complete.",
+            scenes=[],
+            output_dir="/mock/images",
+            video_path="",
+            done=True,
+        )
         current_state = ApplicationState()
 
         with patch("ui.handlers.pipeline_handlers.Scene", side_effect=lambda **kwargs: kwargs):
@@ -70,13 +72,15 @@ class TestPhase1Logic(unittest.TestCase):
     def test_on_pre_analysis_success_video_folder(self, mock_get_status):
         mock_get_status.return_value = ("status", gr.update(interactive=True))
 
-        result = {
-            "unified_log": "Pre-Analysis Complete.",
-            "scenes": [],
-            "output_dir": "/mock/video",
-            "video_path": "/mock/video.mp4",
-            "done": True,
-        }
+        from core.models import PreAnalysisResult
+
+        result = PreAnalysisResult(
+            unified_log="Pre-Analysis Complete.",
+            scenes=[],
+            output_dir="/mock/video",
+            video_path="/mock/video.mp4",
+            done=True,
+        )
         current_state = ApplicationState(extracted_video_path="/mock/video.mp4")
 
         with patch("ui.handlers.pipeline_handlers.Scene", side_effect=lambda **kwargs: kwargs):

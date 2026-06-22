@@ -8,7 +8,7 @@ import gettext
 import threading
 import time
 from queue import Queue
-from typing import TYPE_CHECKING, Callable, Optional
+from typing import TYPE_CHECKING, Callable, Optional, Protocol
 
 from pydantic import BaseModel
 
@@ -16,6 +16,23 @@ if TYPE_CHECKING:
     from core.logger import AppLogger
 
 _ = gettext.gettext
+
+
+class JobTracker(Protocol):
+    """Protocol defining the interface for operations progress and status tracking."""
+
+    total: int
+    done: int
+
+    def start(self, total_items: int, desc: Optional[str] = None) -> None: ...
+
+    def step(self, n: int = 1, desc: Optional[str] = None, substage: Optional[str] = None) -> None: ...
+
+    def set(self, done: int, desc: Optional[str] = None, substage: Optional[str] = None) -> None: ...
+
+    def set_stage(self, stage: str, substage: Optional[str] = None) -> None: ...
+
+    def done_stage(self, final_text: Optional[str] = None) -> None: ...
 
 
 class ProgressEvent(BaseModel):
@@ -28,7 +45,7 @@ class ProgressEvent(BaseModel):
     eta_formatted: str = "—"
 
 
-class AdvancedProgressTracker:
+class AdvancedProgressTracker(JobTracker):
     """
     Tracks and estimates progress for long-running operations.
 

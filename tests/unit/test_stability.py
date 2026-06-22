@@ -5,7 +5,7 @@ from core.batch_manager import BatchManager, BatchStatus
 from core.config import Config
 from core.enums import SceneStatus
 from core.events import PreAnalysisEvent, PropagationEvent
-from core.utils import MemoryWatchdog
+from core.system_health import MemoryWatchdog
 
 
 class TestStability(unittest.TestCase):
@@ -51,7 +51,7 @@ class TestStability(unittest.TestCase):
         self.assertTrue(mock_sleep.called)
 
     @patch("time.sleep", side_effect=[StopIteration])
-    @patch("core.utils.psutil.virtual_memory")
+    @patch("core.system_health.psutil.virtual_memory")
     def test_memory_watchdog(self, mock_ram, mock_sleep):
         # Setup thresholds
         self.config.monitoring_memory_warning_threshold_mb = 1000
