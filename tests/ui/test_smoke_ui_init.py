@@ -22,7 +22,9 @@ def test_ui_initialization_smoke(mock_cuda):
     Verify that the UI can be built with mocked dependencies.
     This catches KeyErrors in component registration or tab building.
     """
-    config = MagicMock()
+    from core.config import Config
+
+    config = Config()
     # Provide necessary config attributes for building the UI
     config.default_tracker_model_name = "sam3"
     config.debug_mode = True

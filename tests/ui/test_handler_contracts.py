@@ -9,7 +9,9 @@ from ui.app_ui import AppUI
 
 @pytest.fixture
 def mock_app():
-    config = MagicMock()
+    from core.config import Config
+
+    config = Config()
     config.default_tracker_model_name = "sam3"
     config.models_dir = "/tmp/models"
     config.user_agent = "test"
@@ -32,12 +34,12 @@ def mock_app():
     config.default_interval = 1.0
     config.default_nth_frame = 10
     config.filter_default_quality_score = {"min": 0, "max": 100, "step": 1, "default_min": 50}
-    config.subject_detector_model = "YOLO12l-Seg"
-    config.subject_detector_class_name = "person"
-    config.subject_detector_threshold = 0.3
-    config.thumb_megapixels = 0.5
-    config.pre_analysis_enabled = True
-    config.pre_sample_nth = 1
+    config.default_subject_detector_model = "YOLO12l-Seg"
+    config.default_subject_detector_class = "person"
+    config.default_subject_detector_threshold = 0.3
+    config.default_thumb_megapixels = 0.5
+    config.default_pre_analysis_enabled = True
+    config.default_pre_sample_nth = 1
 
     logger = MagicMock()
     progress_queue = MagicMock()

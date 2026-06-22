@@ -172,7 +172,7 @@ def cleanup_port(port: int):
         pass
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="session")
 def app_server():
     """
     Starts the mock app server before tests and kills it after.

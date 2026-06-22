@@ -680,7 +680,7 @@ def switch_to_tab(page: Page, tab_name: str):
     """Robustly switch tabs in Gradio."""
 def cleanup_port(port: int):
     """Forcefully kill any process using the specified port."""
-@pytest.fixture(scope='module')
+@pytest.fixture(scope='session')
 def app_server():
     """Starts the mock app server before tests and kills it after."""
 @pytest.fixture
@@ -1160,6 +1160,7 @@ class Selectors:
     LOAD_SESSION_BUTTON = "<REDACTED_STRING>"
     MAX_RESOLUTION = "<REDACTED_STRING>"
     METHOD_INPUT = "<REDACTED_STRING>"
+    EXTRACTION_METHOD = "<REDACTED_STRING>"
     SEED_STRATEGY = "<REDACTED_STRING>"
     BEST_FRAME_STRATEGY = "<REDACTED_STRING>"
     START_PRE_ANALYSIS = "<REDACTED_STRING>"

@@ -62,7 +62,7 @@ class TestMockFilters:
         expect(smart_filter).to_be_checked()
 
         # Find the percentile component
-        pctl = page.get_by_label("Target Percentile")
+        pctl = page.get_by_label("Target Percentile").first
         expect(pctl).to_be_visible()
 
     def test_filter_preset_application(self, page: Page):

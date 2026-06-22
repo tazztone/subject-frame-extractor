@@ -33,6 +33,7 @@ class Selectors:
     LOAD_SESSION_BUTTON = "#load_session_button"
     MAX_RESOLUTION = "#max_resolution"
     METHOD_INPUT = "#method_input"
+    EXTRACTION_METHOD = "#method_input"
 
     # Subject/Scenes Tab
     SEED_STRATEGY = "#primary_seed_strategy_input"

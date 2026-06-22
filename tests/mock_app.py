@@ -167,6 +167,7 @@ def mock_pre_analysis_wrapper(self, current_state: ApplicationState, *args, **kw
 
     # Ensure progress log is visible
     self.app.progress_queue.put({"log": "[INFO] Pre-Analysis Started (MOCKED)."})
+    time.sleep(0.5)
 
     # Simulate success
     new_state = current_state.model_copy()
@@ -197,6 +198,7 @@ def mock_pre_analysis_wrapper(self, current_state: ApplicationState, *args, **kw
 
 def mock_propagation_wrapper(self, current_state: ApplicationState, *args, **kwargs):
     print("[Mock] Running Propagation Wrapper")
+    time.sleep(0.5)
     new_state = current_state.model_copy()
     msg = """<div class="success-card"><h3>Mask Propagation Complete</h3></div>"""
     yield {
@@ -208,6 +210,7 @@ def mock_propagation_wrapper(self, current_state: ApplicationState, *args, **kwa
 
 def mock_analysis_wrapper(self, current_state: ApplicationState, *args, **kwargs):
     print("[Mock] Running Analysis Wrapper")
+    time.sleep(0.5)
     new_state = current_state.model_copy()
     new_state.analysis_metadata_path = "mock_metadata.db"
     msg = """<div class="success-card"><h3>Analysis Complete</h3></div>"""
