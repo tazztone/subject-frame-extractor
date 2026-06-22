@@ -325,9 +325,9 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;dependency_links.txt  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└──&nbsp;top_level.txt  
 ├──&nbsp;scripts  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;README.md  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;diff_upstream_sam3.sh  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`generate_todo_report.py`](#-scriptsgenerate_todo_reportpy)  
-│&nbsp;&nbsp;&nbsp;├──&nbsp;jules_setup_script.sh  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;linux_run_app.sh  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;linux_setup_playwright.sh  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;linux_test_all.sh  
