@@ -298,7 +298,16 @@ _matplotlib_pyplot_mod = MagicMock(name="matplotlib.pyplot")
 _matplotlib_ticker_mod = MagicMock(name="matplotlib.ticker")
 _matplotlib_mod = _create_mock_module(
     "matplotlib",
-    {"__path__": [], "pyplot": _matplotlib_pyplot_mod, "ticker": _matplotlib_ticker_mod},
+    {
+        "__path__": [],
+        "pyplot": _matplotlib_pyplot_mod,
+        "ticker": _matplotlib_ticker_mod,
+        "figure": MagicMock(),
+        "backends": MagicMock(),
+        "get_backend": MagicMock(return_value="agg"),
+        "use": MagicMock(),
+        "rcParams": {},
+    },
 )
 
 # --- yt_dlp (wired so `from yt_dlp.utils import DownloadError` works) ---
