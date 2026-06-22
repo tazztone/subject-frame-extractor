@@ -10,7 +10,7 @@ dependencies = [
     "numba",
     "numpy>=1.26.0,<2.0.0",
     "ml-dtypes>=0.5.0",
-    "onnxruntime-gpu[cuda,cudnn]>=1.19.0",
+    "onnxruntime-gpu>=1.19.0",
     "opencv-python",
     "Pillow",
     "PyYAML",
@@ -77,7 +77,7 @@ testpaths = ["tests"]
 python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
-norecursedirs = ["SAM3_repo", ".agent", "scripts", "outputs", ".hypothesis"]
+norecursedirs = ["SAM3_repo", ".agents", "scripts", "outputs", ".hypothesis"]
 addopts = "-v --tb=short --cov=core --cov-report=term-missing --cov-report=html:htmlcov --cov-fail-under=80 --ignore=tests/e2e/ -m 'not integration and not gpu_e2e and not audit and not slow'"
 filterwarnings = [
     "ignore::DeprecationWarning:torch.jit",
@@ -126,7 +126,7 @@ exclude = [
     "SAM3_repo",
     "sam3_vendored",
     "outputs",
-    "venv",
+    ".venv",
     ".git",
     "__pycache__",
     "htmlcov",
