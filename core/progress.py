@@ -4,35 +4,15 @@ Progress Tracking Infrastructure for Frame Extractor & Analyzer
 
 from __future__ import annotations
 
-import gettext
 import threading
 import time
 from queue import Queue
-from typing import TYPE_CHECKING, Callable, Optional, Protocol
+from typing import TYPE_CHECKING, Callable, Optional
 
 from pydantic import BaseModel
 
 if TYPE_CHECKING:
     from core.logger import AppLogger
-
-_ = gettext.gettext
-
-
-class JobTracker(Protocol):
-    """Protocol defining the interface for operations progress and status tracking."""
-
-    total: int
-    done: int
-
-    def start(self, total_items: int, desc: Optional[str] = None) -> None: ...
-
-    def step(self, n: int = 1, desc: Optional[str] = None, substage: Optional[str] = None) -> None: ...
-
-    def set(self, done: int, desc: Optional[str] = None, substage: Optional[str] = None) -> None: ...
-
-    def set_stage(self, stage: str, substage: Optional[str] = None) -> None: ...
-
-    def done_stage(self, final_text: Optional[str] = None) -> None: ...
 
 
 class ProgressEvent(BaseModel):
@@ -45,7 +25,7 @@ class ProgressEvent(BaseModel):
     eta_formatted: str = "—"
 
 
-class AdvancedProgressTracker(JobTracker):
+class AdvancedProgressTracker:
     """
     Tracks and estimates progress for long-running operations.
 
@@ -186,17 +166,17 @@ class AdvancedProgressTracker(JobTracker):
 
         s_total = int(eta_s)
         if s_total < 60:
-            return _("{s}s").format(s=s_total)
+            return f"{s_total}s"
 
         m_total, s = divmod(s_total, 60)
 
         if precision == "fine":
             h, m = divmod(m_total, 60)
             if h > 0:
-                return _("{h}h {m}m {s}s").format(h=h, m=m, s=s)
-            return _("{m}m {s}s").format(m=m, s=s)
+                return f"{h}h {m}m {s}s"
+            return f"{m}m {s}s"
         else:
             if m_total < 60:
-                return _("{m}m {s}s").format(m=m_total, s=s)
+                return f"{m_total}m {s}s"
             h, m = divmod(m_total, 60)
-            return _("{h}h {m}m").format(h=h, m=m)
+            return f"{h}h {m}m"

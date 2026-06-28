@@ -80,7 +80,6 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;[`subject_masker.py`](#-corescene_utilssubject_maskerpy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`shared.py`](#-coresharedpy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`system_health.py`](#-coresystem_healthpy)  
-│&nbsp;&nbsp;&nbsp;├──&nbsp;utils  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`utils.py`](#-coreutilspy)  
 │&nbsp;&nbsp;&nbsp;└──&nbsp;[`xmp_writer.py`](#-corexmp_writerpy)  
 ├──&nbsp;docs  
@@ -1517,16 +1516,8 @@ def execute_full_pipeline(event: ExtractionEvent, context: AnalysisContext) -> G
 
 ```python
 """Progress Tracking Infrastructure for Frame Extractor & Analyzer"""
-_ = gettext.gettext
-class JobTracker(Protocol):
-    """Protocol defining the interface for operations progress and status tracking."""
-    def start(self, total_items: int, desc: Optional[str]=None) -> None: ...
-    def step(self, n: int=1, desc: Optional[str]=None, substage: Optional[str]=None) -> None: ...
-    def set(self, done: int, desc: Optional[str]=None, substage: Optional[str]=None) -> None: ...
-    def set_stage(self, stage: str, substage: Optional[str]=None) -> None: ...
-    def done_stage(self, final_text: Optional[str]=None) -> None: ...
 class ProgressEvent(BaseModel): ...
-class AdvancedProgressTracker(JobTracker):
+class AdvancedProgressTracker:
     """Tracks and estimates progress for long-running operations."""
     def __init__(self, progress: Optional[Callable]=None, queue: Optional[Queue]=None, logger: Optional[AppLogger]=None, ui_stage_name: str='', eta_precision: str='coarse'):
         """Initializes the progress tracker."""
