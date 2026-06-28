@@ -5,26 +5,10 @@ Error Handling Infrastructure for Frame Extractor & Analyzer
 import functools
 import time
 import traceback
-from enum import Enum
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
 if TYPE_CHECKING:
     from core.logger import LoggerLike
-
-
-class ErrorSeverity(Enum):
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
-    CRITICAL = "critical"
-
-
-class RecoveryStrategy(Enum):
-    RETRY = "retry"
-    FALLBACK = "fallback"
-    SKIP = "skip"
-    ABORT = "abort"
-    NOTIFY = "notify"
 
 
 class ErrorHandler:

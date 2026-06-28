@@ -1,40 +1,30 @@
 """
 Playwright UI Tests for Photo Mode.
 Verified with mock_app.py.
+Driven through ``AppDriver``; raw ``page`` retained for Photo-Mode-specific
+controls the driver does not model.
 """
 
 import pytest
-from playwright.sync_api import Page, expect
+from playwright.sync_api import expect
 
-from .conftest import BASE_URL
+from .app_driver import AppDriver
 
 # Mark all tests as e2e (requires app running)
 pytestmark = [pytest.mark.e2e, pytest.mark.skip(reason="Photo Mode is not yet integrated into the current AppUI")]
 
 
-def switch_to_tab(page: Page, tab_name: str):
-    """Switch tabs in Gradio."""
-    tab_btn = page.get_by_role("tab", name=tab_name)
-    tab_btn.wait_for(state="visible", timeout=15000)
-    if tab_btn.get_attribute("aria-selected") != "true":
-        tab_btn.click(force=True)
-        expect(tab_btn).to_have_attribute("aria-selected", "true", timeout=10000)
-    page.wait_for_timeout(1500)
-
-
 class TestPhotoWorkflow:
     """End-to-end Photo Mode UI workflow tests."""
 
-    def test_photo_mode_full_flow(self, page: Page, app_server):
+    def test_photo_mode_full_flow(self, app_driver: AppDriver):
         """Tests: Ingest -> Refresh Gallery -> Recalculate -> Export."""
-        page.goto(BASE_URL)
+        page = app_driver.page
 
         # 1. Navigate to Photo Culling tab
-        print("Step 1: Navigating to Photo Culling")
-        switch_to_tab(page, "Photo Culling")
+        app_driver.navigate("Photo Culling")
 
         # 2. Ingest Folder
-        print("Step 2: Ingesting Folder")
         import os
 
         mock_folder = "tests/ui/mock_photos"
@@ -50,39 +40,21 @@ class TestPhotoWorkflow:
         # Wait for status update
         status = page.locator("#photo_status")
         expect(status).to_contain_text("Page 1", timeout=15000)
-        print("  ✓ Ingest Complete")
 
         # 3. Verify Gallery
         page.wait_for_timeout(3000)
-
-        # Take a screenshot for visual debug
-        page.screenshot(path="tests/ui/gallery_debug.png")
-
         gallery = page.locator("#photo_gallery")
         # Gradio 5+ wraps the gallery, so we look for imgs inside
         imgs = gallery.locator("img")
-
         expect(imgs).to_have_count(5, timeout=10000)
-        print("  ✓ Gallery rendered 5 photos")
 
         # 4. Recalculate Scores
-        print("Step 4: Recalculating Scores")
-        # Adjust a slider
         page.get_by_placeholder("Min", exact=True).first.fill("80")
         page.wait_for_timeout(3000)
-        # Gradio sliders are complex, but can often be set via fill or type if they have an input
-        # Or just click a button that uses them
         recalc_btn = page.get_by_role("button", name="Recalculate Scores")
         recalc_btn.click()
 
-        # Wait for "complete" in logs or just assume it happened if no error
-        print("  ✓ Recalculate triggered")
-
         # 5. Export XMPs
-        print("Step 5: Exporting XMPs")
         export_btn = page.get_by_role("button", name="Sync XMP Sidecars")
         export_btn.click()
-
-        # In a real app we'd check the filesystem, here we just check it didn't crash
-        print("  ✓ Export triggered")
-        print("Photo Mode UI Flow Passed")
+        # In a real app we'd check the filesystem, here we just check it didn't crash.

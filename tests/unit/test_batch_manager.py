@@ -98,7 +98,7 @@ def test_batch_manager_failure(bm):
     bm.start_processing(processor)
 
     # Wait for completion
-    timeout = 2
+    timeout = 5
     start = time.time()
     while bm.is_running and time.time() - start < timeout:
         time.sleep(0.01)

@@ -8,15 +8,24 @@ from core.models import PreAnalysisResult
 from tests.mock_app import mock_extraction_wrapper, mock_pre_analysis_wrapper
 
 
+class SafeDict(dict):
+    def __missing__(self, key):
+        return key
+
+
 class MockApp:
     def __init__(self):
-        self.components = {
-            "application_state": "state_id",
-            "unified_status": "status_id",
-            "unified_log": "log_id",
-            "progress_details": "progress_id",
-        }
+        self.components = SafeDict(
+            {
+                "application_state": "state_id",
+                "unified_status": "status_id",
+                "unified_log": "log_id",
+                "progress_details": "progress_id",
+            }
+        )
         self.progress_queue = MagicMock()
+        self.cancel_event = MagicMock()
+        self.cancel_event.is_set.return_value = False
 
 
 def test_extraction_blocks_on_empty_source():
@@ -47,8 +56,8 @@ def test_extraction_success_yields_correct_status():
     # source_path is args[0]
     results = list(mock_extraction_wrapper(handler, state, "valid_video.mp4"))
 
-    assert len(results) == 1
-    yielded = results[0]
+    assert len(results) == 2
+    yielded = results[1]
 
     status_id = handler.app.components["unified_status"]
     assert "Extraction Complete" in yielded[status_id]
@@ -66,7 +75,7 @@ def test_pre_analysis_blocks_on_missing_extracted_video():
     yielded = results[0]
 
     status_id = handler.app.components["unified_status"]
-    assert "⚠️ Error: No extracted video found" in yielded[status_id]
+    assert "⚠️ Error: No extracted video or frames directory found." in yielded[status_id]
 
 
 def test_pre_analysis_result_validation():

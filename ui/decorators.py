@@ -46,6 +46,13 @@ def _handle_ui_exception(app: Any, e: Exception, context: str = "Operation") -> 
     if hasattr(app, "logger"):
         app.logger.error(error_msg)
 
+    # Put the error into the progress queue so the log viewer displays it robustly
+    if hasattr(app, "progress_queue") and app.progress_queue is not None:
+        try:
+            app.progress_queue.put({"log": f"[ERROR] {context} failed: {e}"})
+        except Exception:
+            pass
+
     # Try to return dict with component updates
     updates = {}
     if hasattr(app, "components"):

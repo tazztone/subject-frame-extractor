@@ -104,11 +104,14 @@ When mocking complex third-party packages (e.g., `mediapipe.tasks.python.vision`
 
 ## E2E Testing (Playwright)
 
-- **Port Isolation**: To prevent collisions in parallel runs (`xdist`), mock servers use the formula `8765 + worker_id`. Each worker gets a unique port (8765, 8766, etc.).
-- **Locator Protocol**: Never hardcode strings in tests. Always use `ui_locators.py` (`Labels` and `Selectors`).
+- **Interaction Layer (`AppDriver`)**: E2E tests drive the UI through `tests/ui/app_driver.py::AppDriver`, a Page-Object adapter over the Playwright `Page`. New tests should take the `app_driver` fixture (`driver = AppDriver(page)` with the app already loaded and reset to idle) and use its verbs — `extract`, `pre_analyze`, `propagate`, `analyze`, `export`, `dry_run`, `navigate`, `open_accordion`, `select_strategy`, `load_session` — plus assertions `expect_status`, `expect_log`, `expect_log_equals`, `expect_visible`, `expect_disabled`, `expect_no_error_toast`. Each verb returns `self`, so steps chain: `driver.navigate(Labels.TAB_SUBJECT).pre_analyze().expect_status(...)`. Raw `page.locator(...)` is an escape hatch for idioms the driver doesn't model (slider keyboard input, gallery `img` counts, console listeners); reach it via `driver.page`. The driver is the single owner of Gradio DOM-synchronization knowledge — a rendering change gets fixed in one method, not every test.
+- **Log Assertions**: Always read the system log via `driver.expect_log(...)` (a polling `to_contain_text` that auto-opens the System Logs accordion and tolerates LogViewer's 0.5s `gr.Timer` refresh). Do **not** use `to_have_value(re.compile(...))` snapshot reads — they race the timer. The lone exception is `driver.expect_log_equals("")` for the clear-logs empty-value assertion.
+- **Port Isolation**: To prevent collisions in parallel runs (`xdist`), mock servers use the formula `8765 + worker_id`. Each worker gets a unique port (8765, 8766, etc.). The port/URL live in `app_driver.py` (`PORT`, `BASE_URL`).
+- **Locator Protocol**: Never hardcode strings in tests. Always use `ui_locators.py` (`Labels` and `Selectors`). `AppDriver` consumes this vocabulary; it does not re-encode it.
 - **Emoji Sensitivity**: Playwright is sensitive to emojis. If a UI button adds an emoji (e.g., `🚀 Start`), the `Labels` entry must match exactly.
-- **Accordion Handling**: Use the `open_accordion(page, label)` helper in `conftest.py`. It uses `elem_id` (#system_logs_accordion) and JS state checks to handle Gradio's complex DOM.
-- **Wait Strategy**: Use `page.wait_for_timeout(ms)` for UI animations. Use `expect(locator).to_be_visible()` for backend state changes.
+- **Accordion Handling**: Use `driver.open_accordion(label)` (or the legacy `open_accordion(page, label)` shim). It resolves known `elem_id`s and uses JS state checks (`<details open>`, `aria-expanded`) so a re-click never collapses an already-open accordion.
+- **Wait Strategy**: Use `page.wait_for_timeout(ms)` for UI animations. Use `expect(locator).to_be_visible()` (or `driver.expect_visible`) for backend state changes.
+- **Legacy helpers**: `wait_for_app_ready`, `open_accordion`, and `switch_to_tab` remain in `conftest.py` as thin shims over the driver for the composite session fixtures (`extracted_session`, `analyzed_session`, `shared_analysis_session`, `full_analysis_session`); prefer `app_driver` for new tests.
 
 ## Visual Regression (`tests/ui/test_visual_regression.py`)
 
@@ -155,7 +158,7 @@ To verify that code intended to be multi-threaded is actually running in paralle
 
 The UI test suite relies on a mock Gradio server. To maintain fast CI/CD cycles:
 - **Server Polling**: The `wait_for_server` helper uses a 0.1s interval (reduced from 1s) to minimize idle time during test setup.
-- **Mock Delays**: Artificial sleeps in `tests/mock_app.py` are pinned to the minimum required for state transition (e.g., 0.01s) to prevent test bloat.
+- **Mock Delays**: The mock pipeline wrappers in `tests/mock_app.py` include small sleeps (a 0.5s pre-yield delay in pre-analysis/analysis, plus a 5×0.1s cancel-check loop in extraction/propagation). These ensure the mock generators yield intermediate state so Playwright's polling assertions (`to_contain_text(timeout=...)`) have a stable observation window and so the cancel path is reachable. Tune with care — reducing them below the reactive-cycle floor re-introduces the status-timing flakes this refactor removed.
 
 ## Common Gotchas & Troubleshooting
 

@@ -354,8 +354,7 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;├──&nbsp;conftest.py  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;e2e  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;e2e_run.py  
-│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_photo_cli.py  
-│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;verify_simple.py  
+│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;test_photo_cli.py  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;helpers  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;__init__.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;mock_env.py  
@@ -383,7 +382,6 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_full_workflow_regression.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;test_robustness.py  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;research  
-│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└──&nbsp;test_debug_sam3.py  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;results  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;e2e_output  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;failures  
@@ -391,14 +389,13 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;├──&nbsp;test_application_state.py  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;ui  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;__init__.py  
-│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;ai_ux_analyzer.py  
+│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;app_driver.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;baselines  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;conftest.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;diffs  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;mock_photos  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_accessibility.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_advanced_workflow.py  
-│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_ai_ux_audit.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_app_flow.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_bug_regression.py  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;test_busy_state.py  
@@ -792,17 +789,6 @@ def get_coco_id(name: str) -> int:
 
 ```python
 """Error Handling Infrastructure for Frame Extractor & Analyzer"""
-class ErrorSeverity(Enum):
-    LOW = "<REDACTED_STRING>"
-    MEDIUM = "<REDACTED_STRING>"
-    HIGH = "<REDACTED_STRING>"
-    CRITICAL = "<REDACTED_STRING>"
-class RecoveryStrategy(Enum):
-    RETRY = "<REDACTED_STRING>"
-    FALLBACK = "<REDACTED_STRING>"
-    SKIP = "<REDACTED_STRING>"
-    ABORT = "<REDACTED_STRING>"
-    NOTIFY = "<REDACTED_STRING>"
 class ErrorHandler:
     def __init__(self, logger: 'LoggerLike', max_attempts: int, backoff_seconds: list):
         """Initializes the ErrorHandler."""
@@ -1020,18 +1006,15 @@ __all__ = ['MediaSession', 'ThumbnailManager', 'ModelRegistry', 'SAM3Wrapper'...
 ### `📄 core/managers/analysis.py`
 
 ```python
-class Pipeline:
-    """Base class for processing pipelines."""
-    def __init__(self, config: 'Config', logger: 'AppLogger', params: 'AnalysisParameters', progress_queue: Queue, cancel_event: threading.Event): ...
 def _load_scenes(output_dir: Path) -> List[Scene]:
     """Loads scenes from scenes.json."""
-class PreAnalysisPipeline(Pipeline):
+class PreAnalysisPipeline:
     """Pipeline for pre-analyzing scenes (best frame selection, seeding)."""
     def __init__(self, config: 'Config', logger: 'AppLogger', params: 'AnalysisParameters', progress_queue: Queue, cancel_event: threading.Event, thumbnail_manager: 'ThumbnailManager', model_registry: 'ModelRegistry', loaded_models: Optional[dict]=None): ...
     def run(self, scenes: List[Scene], tracker: Optional['AdvancedProgressTracker']=None) -> List[Scene]: ...
     def _initialize_niqe_if_needed(self, device: str, is_folder_mode: bool): ...
     def _process_single_scene(self, scene: Scene, masker: 'SubjectMasker', previews_dir: Path, is_folder_mode: bool): ...
-class AnalysisPipeline(Pipeline):
+class AnalysisPipeline:
     """Pipeline for analyzing frames (pre-analysis, propagation, full analysis)."""
     def __init__(self, config: 'Config', logger: 'AppLogger', params: 'AnalysisParameters', progress_queue: Queue, cancel_event: threading.Event, thumbnail_manager: 'ThumbnailManager', model_registry: 'ModelRegistry', loaded_models: Optional[dict]=None): ...
     def _initialize_niqe_metric(self): ...

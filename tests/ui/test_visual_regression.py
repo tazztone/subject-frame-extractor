@@ -4,9 +4,8 @@ Standardized to use the new unified Selectors and Labels contract.
 """
 
 import pytest
-from playwright.sync_api import Page
 
-from .conftest import BASE_URL, open_accordion, switch_to_tab, wait_for_app_ready
+from .app_driver import AppDriver
 from .ui_locators import Labels
 
 try:
@@ -28,29 +27,28 @@ class TestVisualRegression:
         ("01_source_tab_initial", None),
         (
             "02_source_tab_with_input",
-            lambda p: p.get_by_placeholder(Labels.SOURCE_PLACEHOLDER).fill("sample_video.mp4"),
+            lambda d: d.page.get_by_placeholder(Labels.SOURCE_PLACEHOLDER).fill("sample_video.mp4"),
         ),
-        ("03_subject_tab_initial", lambda p: switch_to_tab(p, Labels.TAB_SUBJECT)),
-        ("04_subject_face_strategy", lambda p: _click_strategy(p, Labels.STRATEGY_FACE)),
-        ("05_subject_text_strategy", lambda p: _click_strategy(p, Labels.STRATEGY_TEXT)),
-        ("06_scenes_tab_initial", lambda p: switch_to_tab(p, Labels.TAB_SCENES)),
-        ("07_metrics_tab_initial", lambda p: switch_to_tab(p, Labels.TAB_METRICS)),
-        ("08_export_tab_initial", lambda p: switch_to_tab(p, Labels.TAB_EXPORT)),
-        ("09_logs_accordion_open", lambda p: open_accordion(p, Labels.SYSTEM_LOGS)),
-        ("10_help_accordion_open", lambda p: open_accordion(p, Labels.HELP_ACCORDION)),
+        ("03_subject_tab_initial", lambda d: d.navigate(Labels.TAB_SUBJECT)),
+        ("04_subject_face_strategy", lambda d: _click_strategy(d, Labels.STRATEGY_FACE)),
+        ("05_subject_text_strategy", lambda d: _click_strategy(d, Labels.STRATEGY_TEXT)),
+        ("06_scenes_tab_initial", lambda d: d.navigate(Labels.TAB_SCENES)),
+        ("07_metrics_tab_initial", lambda d: d.navigate(Labels.TAB_METRICS)),
+        ("08_export_tab_initial", lambda d: d.navigate(Labels.TAB_EXPORT)),
+        ("09_logs_accordion_open", lambda d: d.open_accordion(Labels.SYSTEM_LOGS)),
+        ("10_help_accordion_open", lambda d: d.open_accordion(Labels.HELP_ACCORDION)),
     ]
 
     @pytest.mark.skipif(not HAS_UTILS, reason="visual_test_utils dependencies not installed")
     @pytest.mark.parametrize("state_name,action", UI_STATES)
-    def test_ui_state_visual(self, page: Page, app_server, state_name, action, request):
+    def test_ui_state_visual(self, app_driver: AppDriver, state_name, action, request):
         """Capture and compare UI state screenshot."""
-        page.goto(BASE_URL)
-        wait_for_app_ready(page)
+        page = app_driver.page
 
         # Execute setup action if provided
         if action:
             try:
-                action(page)
+                action(app_driver)
                 page.wait_for_timeout(1000)  # Wait for state change/animation
             except Exception as e:
                 pytest.skip(f"Setup action failed: {e}")
@@ -87,10 +85,9 @@ class TestUIStateConsistency:
     """Test that UI remains consistent across interactions."""
 
     @pytest.mark.skipif(not HAS_UTILS, reason="visual_test_utils dependencies not installed")
-    def test_tab_switching_preserves_state(self, page: Page, app_server):
+    def test_tab_switching_preserves_state(self, app_driver: AppDriver):
         """Switching tabs and back should preserve visual state."""
-        page.goto(BASE_URL)
-        wait_for_app_ready(page)
+        page = app_driver.page
 
         # Fill in some data on Source tab
         page.get_by_placeholder(Labels.SOURCE_PLACEHOLDER).fill("test_video.mp4")
@@ -99,9 +96,9 @@ class TestUIStateConsistency:
         initial = capture_state_screenshot(page, "consistency_initial")
 
         # Switch away and back
-        switch_to_tab(page, Labels.TAB_SUBJECT)
-        switch_to_tab(page, Labels.TAB_METRICS)  # Switch to a mid-flow tab
-        switch_to_tab(page, Labels.TAB_SOURCE)
+        app_driver.navigate(Labels.TAB_SUBJECT)
+        app_driver.navigate(Labels.TAB_METRICS)  # Switch to a mid-flow tab
+        app_driver.navigate(Labels.TAB_SOURCE)
 
         # Capture return state
         returned = capture_state_screenshot(page, "consistency_returned")
@@ -118,8 +115,8 @@ class TestUIStateConsistency:
 
 
 # Helper functions for test setup
-def _click_strategy(page: Page, label: str):
+def _click_strategy(driver: AppDriver, label: str):
     """Select a subject discovery strategy."""
-    switch_to_tab(page, Labels.TAB_SUBJECT)
-    page.get_by_label(label).check(force=True)
-    page.wait_for_timeout(500)
+    driver.navigate(Labels.TAB_SUBJECT)
+    driver.page.get_by_label(label).check(force=True)
+    driver.page.wait_for_timeout(500)

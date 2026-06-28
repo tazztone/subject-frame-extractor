@@ -36,27 +36,6 @@ from core.utils import _to_json_safe
 from .model_loader import initialize_analysis_models
 
 
-class Pipeline:
-    """Base class for processing pipelines."""
-
-    def __init__(
-        self,
-        config: "Config",
-        logger: "AppLogger",
-        params: "AnalysisParameters",
-        progress_queue: Queue,
-        cancel_event: threading.Event,
-    ):
-        self.config = config
-        self.logger = logger
-        self.params = params
-        self.progress_queue = progress_queue
-        self.cancel_event = cancel_event
-        self.error_handler = ErrorHandler(
-            self.logger, self.config.retry_max_attempts, self.config.retry_backoff_seconds
-        )
-
-
 def _load_scenes(output_dir: Path) -> List[Scene]:
     """Loads scenes from scenes.json."""
     scenes_path = output_dir / "scenes.json"
@@ -67,7 +46,7 @@ def _load_scenes(output_dir: Path) -> List[Scene]:
     return [Scene(shot_id=i, start_frame=s, end_frame=e) for i, (s, e) in enumerate(scenes_data)]
 
 
-class PreAnalysisPipeline(Pipeline):
+class PreAnalysisPipeline:
     """Pipeline for pre-analyzing scenes (best frame selection, seeding)."""
 
     def __init__(
@@ -81,7 +60,14 @@ class PreAnalysisPipeline(Pipeline):
         model_registry: "ModelRegistry",
         loaded_models: Optional[dict] = None,
     ):
-        super().__init__(config, logger, params, progress_queue, cancel_event)
+        self.config = config
+        self.logger = logger
+        self.params = params
+        self.progress_queue = progress_queue
+        self.cancel_event = cancel_event
+        self.error_handler = ErrorHandler(
+            self.logger, self.config.retry_max_attempts, self.config.retry_backoff_seconds
+        )
         self.thumbnail_manager = thumbnail_manager
         self.model_registry = model_registry
         self.output_dir = Path(self.params.output_folder)
@@ -174,7 +160,7 @@ class PreAnalysisPipeline(Pipeline):
         scene.preview_path, scene.status = str(preview_path), SceneStatus.INCLUDED
 
 
-class AnalysisPipeline(Pipeline):
+class AnalysisPipeline:
     """Pipeline for analyzing frames (pre-analysis, propagation, full analysis)."""
 
     def __init__(
@@ -188,7 +174,14 @@ class AnalysisPipeline(Pipeline):
         model_registry: "ModelRegistry",
         loaded_models: Optional[dict] = None,
     ):
-        super().__init__(config, logger, params, progress_queue, cancel_event)
+        self.config = config
+        self.logger = logger
+        self.params = params
+        self.progress_queue = progress_queue
+        self.cancel_event = cancel_event
+        self.error_handler = ErrorHandler(
+            self.logger, self.config.retry_max_attempts, self.config.retry_backoff_seconds
+        )
         self.output_dir = Path(self.params.output_folder)
         self.db = Database(self.output_dir / "metadata.db", logger=self.logger)
         self.db.error_handler = self.error_handler

@@ -856,10 +856,36 @@ class AppUI:
         c = self.components
 
         # Load Session
+        extra_load_outputs = [
+            c["source_input"],
+            c["max_resolution"],
+            c["thumb_megapixels_input"],
+            c["ext_scene_detect_input"],
+            c["method_input"],
+            c["pre_analysis_enabled_input"],
+            c["pre_sample_nth_input"],
+            c["compute_face_sim"],
+            c["face_model_name_input"],
+            c["face_ref_img_path_input"],
+            c["text_prompt_input"],
+            c["best_frame_strategy_input"],
+            c["tracker_model_name_input"],
+            c["scene_face_sim_min_input"],
+        ]
+        # Include all compute metric checkboxes
+        for k in self.ana_ui_map_keys:
+            if k.startswith("compute_") and k in c:
+                extra_load_outputs.append(c[k])
+
+        load_outputs = list(self.all_outputs)
+        for comp in extra_load_outputs:
+            if comp not in load_outputs:
+                load_outputs.append(comp)
+
         c["load_session_button"].click(
             fn=self.pipeline_handler.run_session_load_wrapper,
             inputs=[c["session_path_input"], c["application_state"]],
-            outputs=self.all_outputs,
+            outputs=load_outputs,
             show_progress="hidden",
         )
 

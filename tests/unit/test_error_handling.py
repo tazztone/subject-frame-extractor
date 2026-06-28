@@ -265,29 +265,6 @@ class TestErrorHandlerDecorators:
         assert call_count == 1
 
 
-class TestErrorSeverityAndRecoveryStrategy:
-    """Tests for ErrorSeverity and RecoveryStrategy enums."""
-
-    def test_error_severity_values(self):
-        """Test ErrorSeverity enum values exist."""
-        from core.error_handling import ErrorSeverity
-
-        assert ErrorSeverity.LOW.value == "low"
-        assert ErrorSeverity.MEDIUM.value == "medium"
-        assert ErrorSeverity.HIGH.value == "high"
-        assert ErrorSeverity.CRITICAL.value == "critical"
-
-    def test_recovery_strategy_values(self):
-        """Test RecoveryStrategy enum values exist."""
-        from core.error_handling import RecoveryStrategy
-
-        assert RecoveryStrategy.RETRY.value == "retry"
-        assert RecoveryStrategy.FALLBACK.value == "fallback"
-        assert RecoveryStrategy.SKIP.value == "skip"
-        assert RecoveryStrategy.ABORT.value == "abort"
-        assert RecoveryStrategy.NOTIFY.value == "notify"
-
-
 if __name__ == "__main__":
     import pytest
 

@@ -18,8 +18,7 @@ tests
 ├──&nbsp;[`conftest.py`](#-testsconftestpy)  
 ├──&nbsp;e2e  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`e2e_run.py`](#-testse2ee2e_runpy)  
-│&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_photo_cli.py`](#-testse2etest_photo_clipy)  
-│&nbsp;&nbsp;&nbsp;└──&nbsp;[`verify_simple.py`](#-testse2everify_simplepy)  
+│&nbsp;&nbsp;&nbsp;└──&nbsp;[`test_photo_cli.py`](#-testse2etest_photo_clipy)  
 ├──&nbsp;helpers  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`__init__.py`](#-testshelpers__init__py)  
 │&nbsp;&nbsp;&nbsp;└──&nbsp;[`mock_env.py`](#-testshelpersmock_envpy)  
@@ -47,7 +46,6 @@ tests
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_full_workflow_regression.py`](#-testsregressiontest_full_workflow_regressionpy)  
 │&nbsp;&nbsp;&nbsp;└──&nbsp;[`test_robustness.py`](#-testsregressiontest_robustnesspy)  
 ├──&nbsp;research  
-│&nbsp;&nbsp;&nbsp;└──&nbsp;[`test_debug_sam3.py`](#-testsresearchtest_debug_sam3py)  
 ├──&nbsp;results  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;e2e_output  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;failures  
@@ -55,14 +53,13 @@ tests
 ├──&nbsp;[`test_application_state.py`](#-teststest_application_statepy)  
 ├──&nbsp;ui  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`__init__.py`](#-testsui__init__py)  
-│&nbsp;&nbsp;&nbsp;├──&nbsp;[`ai_ux_analyzer.py`](#-testsuiai_ux_analyzerpy)  
+│&nbsp;&nbsp;&nbsp;├──&nbsp;[`app_driver.py`](#-testsuiapp_driverpy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;baselines  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`conftest.py`](#-testsuiconftestpy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;diffs  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;mock_photos  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_accessibility.py`](#-testsuitest_accessibilitypy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_advanced_workflow.py`](#-testsuitest_advanced_workflowpy)  
-│&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_ai_ux_audit.py`](#-testsuitest_ai_ux_auditpy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_app_flow.py`](#-testsuitest_app_flowpy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_bug_regression.py`](#-testsuitest_bug_regressionpy)  
 │&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_busy_state.py`](#-testsuitest_busy_statepy)  
@@ -244,12 +241,6 @@ class TestPhotoCLI:
     def test_full_photo_cli_workflow(self, photo_test_dir, tmp_path): ...
     def test_extract_invalid_folder(self, tmp_path): ...
     def test_analyze_missing_session(self, tmp_path): ...
-```
-
-### `📄 tests/e2e/verify_simple.py`
-
-```python
-def verify_ui_simple(): ...
 ```
 
 ### `📄 tests/helpers/mock_env.py`
@@ -610,16 +601,6 @@ def test_extraction_event_validation():
     """Verify Pydantic validation for ExtractionEvent."""
 ```
 
-### `📄 tests/research/test_debug_sam3.py`
-
-```python
-sys.modules['triton'] = MagicMock()
-sys.modules['triton.language'] = MagicMock()
-REAL_VIDEO_PATH = Path('downloads/example clip 720p 2x.mp4')
-REAL_BBOX = [77, 51, 102, 153]
-def test_debug_sam3(): ...
-```
-
 ### `📄 tests/test_application_state.py`
 
 ```python
@@ -627,42 +608,68 @@ def test_push_pop_history(): ...
 def test_history_max_depth(): ...
 ```
 
-### `📄 tests/ui/ai_ux_analyzer.py`
+### `📄 tests/ui/app_driver.py`
 
 ```python
-"""AI-powered UX analysis using screenshot inspection."""
-class Severity(Enum):
-    CRITICAL = "<REDACTED_STRING>"
-    MAJOR = "<REDACTED_STRING>"
-    MINOR = "<REDACTED_STRING>"
-    INFO = "<REDACTED_STRING>"
-class Category(Enum):
-    LAYOUT = "<REDACTED_STRING>"
-    USABILITY = "<REDACTED_STRING>"
-    ACCESSIBILITY = "<REDACTED_STRING>"
-    FEEDBACK = "<REDACTED_STRING>"
-    CONTROLS = "<REDACTED_STRING>"
-    CONSISTENCY = "<REDACTED_STRING>"
-@dataclass
-class UXIssue:
-    """Represents a detected UX issue."""
-@dataclass
-class UXCheckItem:
-    """A single item in the UX checklist."""
-def analyze_screenshot_manual(screenshot_path: Path) -> List[UXIssue]:
-    """Analyze screenshot for UX issues using rule-based checks."""
-def analyze_screenshot_with_ai(screenshot_path: Path, api_key: Optional[str]=None, model: str='gpt-4-vision-preview') -> List[UXIssue]:
-    """Analyze screenshot using vision AI API."""
-def generate_issue_report(issues: List[UXIssue], title: str='UX Analysis Report') -> str:
-    """Generate markdown report of UX issues."""
+"""AppDriver — a deep Page-Object adapter over the Playwright Page."""
+TextMatch = Union[str, Pattern[str]]
+BASE_PORT = 8765
+def get_test_port() -> int:
+    """Resolve the per-worker mock-server port for parallel runs."""
+PORT = get_test_port()
+BASE_URL = f'http://127.0.0.1:{PORT}'
+class AppDriver:
+    """Adapter wrapping a Playwright ``Page`` bound to the mock Gradio app."""
+    def __init__(self, page: Page): ...
+    def locator(self, selector: str) -> Locator:
+        """Raw locator escape hatch for assertions the driver doesn't model."""
+    def goto_app(self) -> 'AppDriver':
+        """Load the app and block until it is fully hydrated and reset to idle."""
+    def navigate(self, tab_name: str) -> 'AppDriver':
+        """Switch to a main tab by label, idempotently."""
+    def open_accordion(self, label: str) -> 'AppDriver':
+        """Open a Gradio accordion if it isn't already, by label or elem_id."""
+    def extract(self, source: str | None=None, *, method: str | None=None, force: bool=False) -> 'AppDriver':
+        """Optionally pick an extraction method, fill the source, start extraction."""
+    def select_method(self, method: str) -> 'AppDriver':
+        """Choose an option from the extraction-method dropdown."""
+    def pre_analyze(self, *, force: bool=True) -> 'AppDriver':
+        """Click 'Confirm Subject' on the Subject tab."""
+    def propagate(self, *, force: bool=True) -> 'AppDriver':
+        """Click 'Propagate Masks' on the Scenes tab."""
+    def analyze(self, *, force: bool=True) -> 'AppDriver':
+        """Click 'Start Analysis' on the Metrics tab."""
+    def export(self, *, force: bool=True) -> 'AppDriver':
+        """Click the Export button on the Export tab."""
+    def dry_run(self) -> 'AppDriver':
+        """Click the Dry Run button on the Export tab."""
+    def click_cancel(self) -> 'AppDriver':
+        """Click the global Cancel button (only enabled while a pipeline runs)."""
+    def select_strategy(self, strategy_label: str) -> 'AppDriver':
+        """Select a subject-detection strategy radio (Auto/Face/Text)."""
+    def load_session(self, path: str) -> 'AppDriver':
+        """Open the session accordion, fill the path, and click Load Session."""
+    def expect_status(self, match: TextMatch, *, timeout: int=30000) -> 'AppDriver':
+        """Assert the unified status area contains ``match`` (text or regex)."""
+    def expect_log(self, match: TextMatch, *, timeout: int=10000) -> 'AppDriver':
+        """Assert the system log textarea contains ``match``."""
+    def expect_log_equals(self, text: str, *, timeout: int=5000) -> 'AppDriver':
+        """Assert the log textarea's value is exactly ``text``."""
+    def expect_disabled(self, selector: str, *, timeout: int=5000) -> 'AppDriver':
+        """Assert a control is present and disabled."""
+    def expect_enabled(self, selector: str, *, timeout: int=5000) -> 'AppDriver':
+        """Assert a control is present and enabled."""
+    def expect_visible(self, selector: str, *, timeout: int=5000) -> 'AppDriver':
+        """Assert a control is visible."""
+    def expect_no_error_toast(self) -> 'AppDriver':
+        """Assert no Gradio error toast is visible."""
+    def select_preset(self, preset_name: str) -> 'AppDriver':
+        """Choose an option from the filter preset dropdown."""
 ```
 
 ### `📄 tests/ui/conftest.py`
 
 ```python
-def get_test_port(): ...
-PORT = get_test_port()
-BASE_URL = f'http://127.0.0.1:{PORT}'
 FAILURES_DIR = Path(__file__).parent.parent.parent / 'tests' / 'results' / 'f...
 @pytest.fixture(autouse=True)
 def setup_playwright_timeout(page: Page):
@@ -672,12 +679,6 @@ def pytest_runtest_makereport(item, call):
     """Capture screenshot on test failure."""
 def wait_for_server(url, timeout=60):
     """Wait for the server to be responsive."""
-def wait_for_app_ready(page: Page):
-    """Blocks until the Gradio application is fully hydrated and ready for interaction."""
-def open_accordion(page: Page, text: str):
-    """Robustly open an accordion if it's closed."""
-def switch_to_tab(page: Page, tab_name: str):
-    """Robustly switch tabs in Gradio."""
 def cleanup_port(port: int):
     """Forcefully kill any process using the specified port."""
 @pytest.fixture(scope='session')
@@ -687,20 +688,14 @@ def app_server():
 def app_instance(app_server):
     """Retrieve the live AppUI instance from the running server."""
 @pytest.fixture
-def extracted_session(page, app_server):
-    """Fixture that provides a page with extraction already completed."""
-@pytest.fixture
-def analyzed_session(extracted_session):
-    """Fixture that provides a page with pre-analysis completed."""
+def app_driver(page: Page, app_server):
+    """Canonical E2E entry point: a Playwright page with the mock app loaded and"""
 @pytest.fixture(scope='module')
 def shared_page(browser):
     """Provides a module-scoped page to amortize browser/context startup."""
 @pytest.fixture(scope='module')
 def shared_analysis_session(shared_page, app_server):
     """Provides a shared analysis session (module-scoped)."""
-@pytest.fixture
-def full_analysis_session(analyzed_session):
-    """Fixture that provides a page with full analysis completed (ready for export)."""
 ```
 
 ### `📄 tests/ui/test_accessibility.py`
@@ -721,17 +716,17 @@ class TestAccessibilityAudit:
     """Accessibility tests for each application tab."""
     TABS = [('Source', None), ('Subject', 'Subject'), ('Scenes', 'Scenes'), ('Met...
     @pytest.mark.parametrize('tab_name,click_tab', TABS)
-    def test_tab_accessibility(self, page: Page, app_server, tab_name, click_tab):
+    def test_tab_accessibility(self, app_driver: AppDriver, tab_name, click_tab):
         """Run accessibility audit on each tab."""
-    def test_keyboard_navigation(self, page: Page, app_server):
+    def test_keyboard_navigation(self, app_driver: AppDriver):
         """Test that main elements are keyboard accessible."""
-    def test_color_contrast(self, page: Page, app_server):
+    def test_color_contrast(self, app_driver: AppDriver):
         """Check for color contrast issues."""
-    def test_form_labels(self, page: Page, app_server):
+    def test_form_labels(self, app_driver: AppDriver):
         """Check that form inputs have proper labels."""
 class TestARIACompliance:
     """Test ARIA attribute usage."""
-    def test_aria_roles(self, page: Page, app_server):
+    def test_aria_roles(self, app_driver: AppDriver):
         """Check for proper ARIA role usage."""
 ```
 
@@ -740,39 +735,13 @@ class TestARIACompliance:
 ```python
 pytestmark = pytest.mark.e2e
 class TestAdvancedWorkflow:
-    """Advanced E2E tests covering navigation restrictions and UI responsiveness usi..."""
-    def test_navigation_restrictions_error(self, page: Page, app_server):
-        """Verify that attempting to move to Subject/Analysis stage without extraction r..."""
-    def test_extraction_settings_persistence(self, page: Page, app_server):
-        """Verify that changing extraction settings is reflected in the UI and extractio..."""
-    def test_filtering_ui_responsiveness(self, page: Page, app_server):
+    """Advanced E2E tests covering navigation restrictions and UI responsiveness."""
+    def test_navigation_restrictions_error(self, app_driver: AppDriver):
+        """Verify that attempting to move to Subject/Analysis stage without extraction"""
+    def test_extraction_settings_persistence(self, app_driver: AppDriver):
+        """Verify that changing extraction settings is reflected in the UI and"""
+    def test_filtering_ui_responsiveness(self, app_driver: AppDriver):
         """Test the Metrics/Filtering tab UI controls responsiveness."""
-```
-
-### `📄 tests/ui/test_ai_ux_audit.py`
-
-```python
-"""AI-powered UX audit tests."""
-pytestmark = [pytest.mark.e2e, pytest.mark.ux_audit, pytest.mark.audit, pytes...
-@pytest.fixture
-def use_ai():
-    """Check if AI analysis should be used (API key available)."""
-class TestUXAudit:
-    """Run UX analysis on application states."""
-    @pytest.mark.skipif(not HAS_ANALYZER, reason='ai_ux_analyzer not available')
-    def test_source_tab_ux(self, page: Page, app_server, use_ai, tmp_path):
-        """Audit Source tab UX."""
-    @pytest.mark.skipif(not HAS_ANALYZER, reason='ai_ux_analyzer not available')
-    def test_scenes_tab_ux(self, page: Page, app_server, use_ai, tmp_path):
-        """Audit Scenes tab UX."""
-    @pytest.mark.skipif(not HAS_ANALYZER, reason='ai_ux_analyzer not available')
-    def test_export_tab_ux(self, page: Page, app_server, use_ai, tmp_path):
-        """Audit Export tab UX."""
-class TestFullAppAudit:
-    """Run comprehensive audit across all tabs."""
-    @pytest.mark.skipif(not HAS_ANALYZER, reason='ai_ux_analyzer not available')
-    def test_full_app_ux_audit(self, page: Page, app_server, use_ai, tmp_path):
-        """Comprehensive UX audit of entire application."""
 ```
 
 ### `📄 tests/ui/test_app_flow.py`
@@ -781,17 +750,17 @@ class TestFullAppAudit:
 """Playwright E2E Tests for main application workflow."""
 @pytest.mark.usefixtures('app_server')
 class TestMainWorkflow:
-    def test_full_user_flow(self, page: Page, app_server):
+    def test_full_user_flow(self, app_driver: AppDriver):
         """Tests the complete end-to-end workflow:"""
 @pytest.mark.usefixtures('app_server')
 class TestTabNavigation:
-    def test_all_tabs_accessible(self, page: Page, app_server):
+    def test_all_tabs_accessible(self, app_driver: AppDriver):
         """Verify each major tab can be reached."""
-    def test_tab_state_preserved(self, page: Page, app_server):
+    def test_tab_state_preserved(self, app_driver: AppDriver):
         """Verify input state is kept when switching tabs."""
 @pytest.mark.usefixtures('app_server')
 class TestErrorHandling:
-    def test_empty_source_shows_message(self, page: Page, app_server):
+    def test_empty_source_shows_message(self, app_driver: AppDriver):
         """Verify appropriate message when no source is provided."""
 ```
 
@@ -802,35 +771,35 @@ class TestErrorHandling:
 pytestmark = pytest.mark.e2e
 class TestPaginationBugRegression:
     """Tests to prevent pagination crash regression (Bug 2)."""
-    def test_next_button_on_empty_gallery_no_crash(self, page: Page, app_server):
+    def test_next_button_on_empty_gallery_no_crash(self, app_driver: AppDriver):
         """Clicking Next on empty/single-page gallery should not crash."""
-    def test_prev_button_on_page_one_no_crash(self, page: Page, app_server):
+    def test_prev_button_on_page_one_no_crash(self, app_driver: AppDriver):
         """Clicking Previous on page 1 should not crash."""
 class TestFindPeopleButtonRegression:
     """Tests to prevent Find People button regression (Bug 3)."""
-    def test_find_people_button_visible_in_face_strategy(self, page: Page, app_server):
+    def test_find_people_button_visible_in_face_strategy(self, app_driver: AppDriver):
         """Find People button should be visible when 'By Face' strategy selected."""
 class TestFilterSlidersRegression:
     """Tests to prevent filter slider bugs (Bug 4)."""
-    def test_scenes_tab_has_filter_sliders(self, page: Page, app_server):
+    def test_scenes_tab_has_filter_sliders(self, app_driver: AppDriver):
         """Scenes tab should have properly ranged filter sliders."""
-    def test_export_tab_has_filter_sliders(self, page: Page, app_server):
+    def test_export_tab_has_filter_sliders(self, app_driver: AppDriver):
         """Export tab filtering should have proper metric sliders."""
 class TestGallerySizeControlsRegression:
     """Tests to prevent gallery sizing issues (Bug 5)."""
-    def test_gallery_size_controls_exist(self, page: Page, app_server):
+    def test_gallery_size_controls_exist(self, app_driver: AppDriver):
         """Scene gallery should have columns and height controls."""
 class TestSystemLogsRegression:
     """Tests to prevent system log visibility issues (Bug 6)."""
-    def test_logs_accordion_exists(self, page: Page, app_server):
+    def test_logs_accordion_exists(self, app_driver: AppDriver):
         """System Logs accordion should be present."""
-    def test_refresh_logs_button_exists(self, page: Page, app_server):
+    def test_refresh_logs_button_exists(self, app_driver: AppDriver):
         """Refresh Logs button should be present for manual log updates."""
-    def test_clear_logs_button_works(self, page: Page, app_server):
+    def test_clear_logs_button_works(self, app_driver: AppDriver):
         """Clear Logs button should clear the log display."""
 class TestPropagationErrorHandling:
     """Tests for propagation error handling (Bug 1)."""
-    def test_propagate_button_found(self, page: Page, app_server):
+    def test_propagate_button_found(self, analyzed_session):
         """Propagate button should be present on the Scenes tab."""
 ```
 
@@ -840,9 +809,9 @@ class TestPropagationErrorHandling:
 pytestmark = pytest.mark.e2e
 class TestBusyState:
     """Tests for 'Busy' UI states during long-running tasks."""
-    def test_extraction_lock_and_unlock(self, page: Page, app_server):
+    def test_extraction_lock_and_unlock(self, app_driver: AppDriver):
         """Start extraction → Verify Start button is disabled → Verify Cancel/Pause are ..."""
-    def test_tab_switch_during_busy(self, page: Page, app_server):
+    def test_tab_switch_during_busy(self, app_driver: AppDriver):
         """Start pipeline → Switch tabs → Pipeline should continue → Switch back → Statu..."""
 ```
 
@@ -852,10 +821,10 @@ class TestBusyState:
 pytestmark = pytest.mark.e2e
 class TestCancellation:
     """Tests for the Cancel button during pipeline execution."""
-    def test_cancel_extraction_midway(self, page: Page, app_server):
+    def test_cancel_extraction_midway(self, app_driver: AppDriver):
         """Start extraction → Wait for progress → Click Cancel → Verify Cancellation sta..."""
-    def test_cancel_propagation_midway(self, page: Page, app_server):
-        """Start propagation → Click Cancel → Verify Success of subsequent retry."""
+    def test_cancel_propagation_midway(self, app_driver: AppDriver):
+        """Start propagation → Click Cancel → Verify cancellation or immediate recovery."""
 ```
 
 ### `📄 tests/ui/test_component_verification.py`
@@ -867,43 +836,43 @@ SLIDERS_BY_TAB = [(Labels.TAB_SOURCE, Selectors.THUMB_MEGAPIXELS), (Labels.TA...
 class TestSliderFunctionality:
     """Verify sliders are visible and interactive."""
     @pytest.mark.parametrize('tab,selector', SLIDERS_BY_TAB)
-    def test_slider_value_changes(self, page: Page, app_server, tab, selector):
+    def test_slider_value_changes(self, app_driver: AppDriver, tab, selector):
         """Moving a slider should update its internal value."""
 DROPDOWNS_BY_TAB = [(Labels.TAB_SOURCE, Selectors.MAX_RESOLUTION), (Labels.TA...
 class TestDropdownFunctionality:
     """Verify dropdowns exist and are interactive."""
     @pytest.mark.parametrize('tab,selector', DROPDOWNS_BY_TAB)
-    def test_dropdown_is_interactive(self, page: Page, app_server, tab, selector):
+    def test_dropdown_is_interactive(self, app_driver: AppDriver, tab, selector):
         """Dropdowns should be visible and enabled."""
 class TestFiltersFunctionality:
     """Verify filter components actually filter content."""
-    def test_scene_gallery_view_toggle(self, page: Page, app_server):
+    def test_scene_gallery_view_toggle(self, app_driver: AppDriver):
         """View toggle changes displayed scenes."""
 class TestLogsFunctionality:
     """Verify logging system works correctly."""
-    def test_logs_visible_in_accordion(self, page: Page, app_server):
+    def test_logs_visible_in_accordion(self, app_driver: AppDriver):
         """System Logs accordion contains a textbox."""
-    def test_logs_have_initial_content(self, page: Page, app_server):
+    def test_logs_have_initial_content(self, app_driver: AppDriver):
         """Logs should show initial ready message."""
-    def test_clear_logs_button(self, page: Page, app_server):
+    def test_clear_logs_button(self, app_driver: AppDriver):
         """Clear button empties log content."""
 class TestPaginationFunctionality:
     """Verify pagination controls work correctly."""
-    def test_pagination_row_exists(self, page: Page, app_server):
+    def test_pagination_row_exists(self, app_driver: AppDriver):
         """Pagination row should exist."""
-    def test_prev_next_buttons_exist(self, page: Page, app_server):
+    def test_prev_next_buttons_exist(self, app_driver: AppDriver):
         """Previous and Next pagination buttons should exist."""
 class TestButtonsFunctionality:
     """Verify buttons are clickable and perform actions."""
     CRITICAL_BUTTONS = [(Labels.TAB_SOURCE, Selectors.START_EXTRACTION), (Labels....
     @pytest.mark.parametrize('tab,selector', CRITICAL_BUTTONS)
-    def test_button_is_visible(self, page: Page, app_server, tab, selector):
+    def test_button_is_visible(self, app_driver: AppDriver, tab, selector):
         """Critical buttons should be attached to the DOM on their respective tabs."""
 class TestStrategyVisibility:
     """Verify strategy selection shows/hides appropriate UI groups."""
-    def test_face_strategy_shows_face_options(self, page: Page, app_server):
+    def test_face_strategy_shows_face_options(self, app_driver: AppDriver):
         """Selecting Face strategy should show face-specific options."""
-    def test_text_strategy_shows_text_options(self, page: Page, app_server):
+    def test_text_strategy_shows_text_options(self, app_driver: AppDriver):
         """Selecting Text strategy should show text prompt and warning."""
 ```
 
@@ -913,12 +882,12 @@ class TestStrategyVisibility:
 pytestmark = pytest.mark.e2e
 class TestErrorRecovery:
     """Tests for error paths and user recovery after pipeline/validation failures."""
-    def test_extraction_with_invalid_path_to_success(self, page: Page, app_server):
+    def test_extraction_with_invalid_path_to_success(self, app_driver: AppDriver):
         """Fill a nonsense path → Extract → Verify Error → Retry with valid path."""
-    def test_tab_jump_restriction_recovery(self, page: Page, app_server):
+    def test_tab_jump_restriction_recovery(self, app_driver: AppDriver):
         """Skip to Subject tab, click Confirm → Verify error message → Go back and extra..."""
-    def test_export_precondition_failure(self, page: Page, app_server):
-        """Go to Export tab, click Export with no data loaded → verify graceful error/wa..."""
+    def test_export_precondition_failure(self, app_driver: AppDriver):
+        """Go to Export tab, verify Export button is disabled when no data is loaded."""
 ```
 
 ### `📄 tests/ui/test_export_flow.py`
@@ -944,13 +913,13 @@ pytestmark = pytest.mark.e2e
 class TestMockFilters:
     """Harden filtering logic tests using the mock app."""
     @pytest.fixture(autouse=True)
-    def setup_mock_analysis(self, page: Page, app_server):
+    def setup_mock_analysis(self, app_driver: AppDriver):
         """Setup: Run the full mock pipeline to get frames into the state."""
-    def test_smart_filter_toggle_updates_ui(self, page: Page):
+    def test_smart_filter_toggle_updates_ui(self, app_driver: AppDriver):
         """Verify that toggling Smart Filtering enables/disables the percentile slider."""
-    def test_filter_preset_application(self, page: Page):
+    def test_filter_preset_application(self, app_driver: AppDriver):
         """Test that selecting a preset (e.g., Portrait) updates sliders."""
-    def test_gallery_count_updates_on_filter(self, page: Page):
+    def test_gallery_count_updates_on_filter(self, app_driver: AppDriver):
         """Verify that changing a filter value updates the 'Kept' count."""
 ```
 
@@ -960,7 +929,7 @@ class TestMockFilters:
 pytestmark = pytest.mark.e2e
 class TestFullWorkflowMocked:
     """Comprehensive E2E test simulating a full user journey using Playwright"""
-    def test_full_user_journey(self, page: Page, app_server):
+    def test_full_user_journey(self, app_driver: AppDriver):
         """Simulates:"""
 ```
 
@@ -980,11 +949,9 @@ def test_pipeline_wrappers_yield_component_keys(mock_app):
 ```python
 """Playwright UI Tests for Photo Mode."""
 pytestmark = [pytest.mark.e2e, pytest.mark.skip(reason='Photo Mode is not yet...
-def switch_to_tab(page: Page, tab_name: str):
-    """Switch tabs in Gradio."""
 class TestPhotoWorkflow:
     """End-to-end Photo Mode UI workflow tests."""
-    def test_photo_mode_full_flow(self, page: Page, app_server):
+    def test_photo_mode_full_flow(self, app_driver: AppDriver):
         """Tests: Ingest -> Refresh Gallery -> Recalculate -> Export."""
 ```
 
@@ -994,21 +961,21 @@ class TestPhotoWorkflow:
 pytestmark = pytest.mark.e2e
 class TestSessionPersistence:
     """Tests for session state persistence."""
-    def test_session_loader_visible(self, page: Page, app_server):
+    def test_session_loader_visible(self, app_driver: AppDriver):
         """Verify session loader accordion is visible."""
-    def test_source_input_persists(self, page: Page, app_server):
+    def test_source_input_persists(self, app_driver: AppDriver):
         """Verify source input path persists across tab switches."""
 class TestSessionRecovery:
     """Tests for session recovery scenarios."""
-    def test_app_loads_without_errors(self, page: Page, app_server):
+    def test_app_loads_without_errors(self, app_driver: AppDriver):
         """Verify app loads cleanly without console errors."""
-    def test_multiple_tab_switches(self, page: Page, app_server):
+    def test_multiple_tab_switches(self, app_driver: AppDriver):
         """Test rapid tab switching doesn't cause errors."""
 class TestWorkflowState:
     """Tests for workflow state management."""
-    def test_extraction_enables_subject_tab(self, extracted_session):
+    def test_extraction_enables_subject_tab(self, extracted_session: Page):
         """Verify Subject tab becomes usable after extraction."""
-    def test_workflow_progress_tracking(self, page: Page, app_server):
+    def test_workflow_progress_tracking(self, app_driver: AppDriver):
         """Verify workflow progress is tracked."""
 ```
 
@@ -1021,9 +988,9 @@ class TestSessionResume:
     @pytest.fixture
     def mock_session_dir(self):
         """Creates a temporary mock session directory."""
-    def test_load_session_updates_ui(self, page: Page, app_server, mock_session_dir):
+    def test_load_session_updates_ui(self, app_driver: AppDriver, mock_session_dir):
         """Verify that loading a session directory updates UI components correctly."""
-    def test_load_invalid_session_shows_error(self, page: Page, app_server):
+    def test_load_invalid_session_shows_error(self, app_driver: AppDriver):
         """Verify that loading a non-existent directory shows an error."""
 ```
 
@@ -1044,35 +1011,35 @@ def test_ui_initialization_smoke(mock_cuda):
 pytestmark = pytest.mark.e2e
 class TestInteractiveComponents:
     """Tests for individual interactive components."""
-    def test_find_people_button_visibility(self, page: Page, app_server):
+    def test_find_people_button_visibility(self, app_driver: AppDriver):
         """Verify the Find People button appears when face strategy is selected."""
-    def test_logs_accordion_works(self, page: Page, app_server):
+    def test_logs_accordion_works(self, app_driver: AppDriver):
         """Verify the System Logs accordion opens and shows content."""
 class TestWorkflowInteractions:
     """Tests for cross-component interactions."""
-    def test_face_strategy_shows_upload(self, page: Page, app_server):
+    def test_face_strategy_shows_upload(self, app_driver: AppDriver):
         """Verify that selecting Face strategy shows upload component."""
-    def test_text_strategy_shows_prompt(self, page: Page, app_server):
+    def test_text_strategy_shows_prompt(self, app_driver: AppDriver):
         """Verify that selecting Text strategy shows prompt input."""
 class TestErrorScenarios:
     """Tests for graceful error handling in UI."""
-    def test_find_people_graceful_error_handling(self, page: Page, app_server):
+    def test_find_people_graceful_error_handling(self, app_driver: AppDriver):
         """Verify that Scan Video Now handles errors gracefully when no source is set."""
 class TestGallerySliderInteractions:
     """Tests for gallery size sliders."""
-    def test_columns_slider_exists_and_interactive(self, page: Page, app_server):
+    def test_columns_slider_exists_and_interactive(self, app_driver: AppDriver):
         """Columns slider should exist and be draggable."""
-    def test_height_slider_exists_and_interactive(self, page: Page, app_server):
+    def test_height_slider_exists_and_interactive(self, app_driver: AppDriver):
         """Height slider should exist and be adjustable."""
 class TestLogRefreshMechanism:
     """Tests for log display."""
-    def test_refresh_button_updates_logs(self, page: Page, app_server):
+    def test_refresh_button_updates_logs(self, app_driver: AppDriver):
         """Clicking Refresh should drain log queue and update display."""
 class TestUIConsoleErrors:
     """Tests that monitor browser console for JavaScript errors."""
-    def test_no_console_errors_on_load(self, page: Page, app_server):
+    def test_no_console_errors_on_load(self, page, app_server):
         """Page should load without JavaScript errors."""
-    def test_no_errors_during_tab_navigation(self, page: Page, app_server):
+    def test_no_errors_during_tab_navigation(self, app_driver: AppDriver):
         """Navigating through tabs should not cause errors."""
 ```
 
@@ -1086,14 +1053,14 @@ class TestVisualRegression:
     UI_STATES = [('01_source_tab_initial', None), ('02_source_tab_with_input', la...
     @pytest.mark.skipif(not HAS_UTILS, reason='visual_test_utils dependencies not installed')
     @pytest.mark.parametrize('state_name,action', UI_STATES)
-    def test_ui_state_visual(self, page: Page, app_server, state_name, action, request):
+    def test_ui_state_visual(self, app_driver: AppDriver, state_name, action, request):
         """Capture and compare UI state screenshot."""
 class TestUIStateConsistency:
     """Test that UI remains consistent across interactions."""
     @pytest.mark.skipif(not HAS_UTILS, reason='visual_test_utils dependencies not installed')
-    def test_tab_switching_preserves_state(self, page: Page, app_server):
+    def test_tab_switching_preserves_state(self, app_driver: AppDriver):
         """Switching tabs and back should preserve visual state."""
-def _click_strategy(page: Page, label: str):
+def _click_strategy(driver: AppDriver, label: str):
     """Select a subject discovery strategy."""
 ```
 
@@ -1105,17 +1072,17 @@ pytestmark = pytest.mark.e2e
 SAMPLE_VIDEO = str(Path(__file__).parent.parent / 'assets' / 'sample.mp4')
 SAMPLE_IMAGE = str(Path(__file__).parent.parent / 'assets' / 'sample.jpg')
 @pytest.fixture
-def extracted_video_session(page: Page, app_server):
+def extracted_video_session(app_driver: AppDriver):
     """Fixture that brings the app to an 'extracted' state."""
 class TestSampleDataWorkflow:
     """Verifies the complete workflow using real sample data (mocked)."""
-    def test_full_workflow_with_sample_video(self, page: Page, app_server):
+    def test_full_workflow_with_sample_video(self, app_driver: AppDriver):
         """Test extraction -> seeding -> analysis -> export with a mock sample."""
 class TestSeedingOptions:
     """Tests different seeding options with sample data."""
-    def test_face_upload_flow(self, page: Page, app_server):
+    def test_face_upload_flow(self, app_driver: AppDriver):
         """Test uploading a reference face image."""
-    def test_text_prompt_flow(self, page: Page, app_server):
+    def test_text_prompt_flow(self, app_driver: AppDriver):
         """Test entering a text prompt."""
 ```
 
@@ -1125,9 +1092,9 @@ class TestSeedingOptions:
 pytestmark = pytest.mark.e2e
 class TestWorkflowVariants:
     """E2E tests for different input variants (Image Folders vs Videos)."""
-    def test_image_folder_workflow_skips_propagation(self, page: Page, app_server):
+    def test_image_folder_workflow_skips_propagation(self, app_driver: AppDriver):
         """Verify that selecting a folder of images skips propagation step."""
-    def test_video_workflow_shows_propagation(self, page: Page, app_server):
+    def test_video_workflow_shows_propagation(self, app_driver: AppDriver):
         """Verify that selecting a video shows propagation step."""
 ```
 
@@ -1144,8 +1111,6 @@ class Selectors:
     RESET_STATE_BUTTON = "<REDACTED_STRING>"
     REFRESH_LOGS = "<REDACTED_STRING>"
     STATUS_READY = "<REDACTED_STRING>"
-    STATUS_MSG = "<REDACTED_STRING>"
-    STATUS_ERROR = "<REDACTED_STRING>"
     STATUS_ERROR_REGEX = re.compile('⚠️|Error|Fail|Invalid', re.IGNORECASE)
     STATUS_SUCCESS_EXTRACTION = "<REDACTED_STRING>"
     STATUS_SUCCESS_PRE_ANALYSIS = "<REDACTED_STRING>"
@@ -1764,12 +1729,6 @@ class TestErrorHandlerDecorators:
         """Test with_retry raises exception when all attempts fail."""
     def test_with_retry_custom_exceptions(self, mock_logger):
         """Test with_retry only catches specified exceptions."""
-class TestErrorSeverityAndRecoveryStrategy:
-    """Tests for ErrorSeverity and RecoveryStrategy enums."""
-    def test_error_severity_values(self):
-        """Test ErrorSeverity enum values exist."""
-    def test_recovery_strategy_values(self):
-        """Test RecoveryStrategy enum values exist."""
 ```
 
 ### `📄 tests/unit/test_events.py`
@@ -2689,6 +2648,8 @@ def test_ingest_folder_nonexistent():
 ### `📄 tests/unit/test_pipeline_logic.py`
 
 ```python
+class SafeDict(dict):
+    def __missing__(self, key): ...
 class MockApp:
     def __init__(self): ...
 def test_extraction_blocks_on_empty_source():

@@ -22,6 +22,8 @@ import numpy as np
 from PIL import Image
 
 import core.export
+import core.face_clustering
+import core.filtering
 import core.fingerprint
 import core.managers
 import core.photo_utils
@@ -31,6 +33,7 @@ import core.xmp_writer
 # Import core modules early for patching
 import ui.app_ui
 import ui.handlers.pipeline_handlers as ph
+import ui.handlers.subject_handler as sh
 from core.application_state import ApplicationState
 from core.models import Scene
 from core.pipelines import ExtractionPipeline
@@ -137,13 +140,39 @@ def mock_extraction_wrapper(self, current_state: ApplicationState, *args, **kwar
         }
         return
 
-    # Small delay to ensure UI transition is detectable
-    time.sleep(0.5)
+    is_mock = effective_source.endswith(".mp4") or effective_source == "/home/user/pics"
+    if not is_mock and not os.path.exists(effective_source):
+        log_msg = f"[ERROR] Source path does not exist: {effective_source}"
+        self.app.progress_queue.put({"log": log_msg})
+        yield {
+            self.app.components["unified_status"]: "⚠️ Failure in execute_extraction",
+            self.app.components["unified_log"]: log_msg,
+        }
+        return
+
+    # Yield busy state
+    yield {
+        self.app.components["unified_status"]: "Mock Extraction",
+        self.app.components["unified_log"]: "[INFO] Mock Extraction started...",
+        self.app.components["cancel_button"]: gr.update(interactive=True),
+    }
+
+    # Small delay to ensure UI transition is detectable and allow cancel check
+    for _ in range(5):
+        time.sleep(0.1)
+        if self.app.cancel_event.is_set():
+            self.app.cancel_event.clear()
+            yield {
+                self.app.components["unified_status"]: "⚠️ Extraction Cancelled",
+                self.app.components["unified_log"]: "Cancelled by user.",
+                self.app.components["cancel_button"]: gr.update(interactive=False),
+            }
+            return
 
     # Simulate extraction results that update the state
     new_state = current_state.model_copy()
     output_dir = os.path.join(self.config.downloads_dir, "mock_video")
-    new_state.extracted_video_path = "mock_video.mp4"
+    new_state.extracted_video_path = effective_source if effective_source.endswith(".mp4") else ""
     new_state.extracted_frames_dir = output_dir
 
     msg = """<div class="success-card"><h3>Extraction Complete</h3></div>"""
@@ -152,15 +181,16 @@ def mock_extraction_wrapper(self, current_state: ApplicationState, *args, **kwar
         self.app.components["application_state"]: new_state,
         self.app.components["unified_status"]: msg,
         self.app.components["unified_log"]: "Extraction Complete.",
+        self.app.components["cancel_button"]: gr.update(interactive=False),
     }
 
 
 def mock_pre_analysis_wrapper(self, current_state: ApplicationState, *args, **kwargs):
-    if not current_state.extracted_video_path:
-        log_msg = "[ERROR] No extracted video found."
+    if not current_state.extracted_video_path and not current_state.extracted_frames_dir:
+        log_msg = "[ERROR] No extracted video or frames directory found."
         self.app.progress_queue.put({"log": log_msg})
         yield {
-            self.app.components["unified_status"]: "⚠️ Error: No extracted video found.",
+            self.app.components["unified_status"]: "⚠️ Error: No extracted video or frames directory found.",
             self.app.components["unified_log"]: log_msg,
         }
         return
@@ -171,25 +201,30 @@ def mock_pre_analysis_wrapper(self, current_state: ApplicationState, *args, **kw
 
     # Simulate success
     new_state = current_state.model_copy()
-    output_dir = getattr(current_state, "extracted_frames_dir", "/tmp/mock") or "/tmp/mock"
+    output_dir = getattr(current_state, "extracted_frames_dir", "") or "/tmp/mock"
     new_state.scenes = [
         {
             "shot_id": 1,
             "start_frame": 0,
             "end_frame": 25,
-            "status": "excluded",
-            "rejection_reasons": ["blurry"],
+            "status": "included",
+            "rejection_reasons": [],
             "preview_path": os.path.join(output_dir, "thumbs", "frame_000001.webp"),
         }
     ]
-    new_state.extracted_frames_dir = "/tmp/mock"
+    new_state.extracted_frames_dir = output_dir
+    if not new_state.extracted_video_path:
+        self.app.progress_queue.put({"log": "[INFO] Propagation is not needed for image folders."})
 
     msg = """<div class="success-card"><h3>Pre-Analysis Complete</h3></div>"""
 
+    dummy_img = os.path.join(output_dir, "thumbs", "frame_000001.webp")
     yield {
         self.app.components["application_state"]: new_state,
         self.app.components["unified_status"]: msg,
         self.app.components["unified_log"]: "Pre-Analysis Complete.",
+        self.app.components["scene_gallery"]: [(dummy_img, "Scene 1 (Included)")],
+        self.app.components["scene_filter_status"]: "1 scenes found",
         self.app.components["propagate_masks_button"]: gr.update(visible=True, interactive=True),
         self.app.components["seeding_results_column"]: gr.update(visible=True),
         self.app.components["propagation_group"]: gr.update(visible=True),
@@ -198,13 +233,31 @@ def mock_pre_analysis_wrapper(self, current_state: ApplicationState, *args, **kw
 
 def mock_propagation_wrapper(self, current_state: ApplicationState, *args, **kwargs):
     print("[Mock] Running Propagation Wrapper")
-    time.sleep(0.5)
+    yield {
+        self.app.components["unified_status"]: "Mock Propagation",
+        self.app.components["unified_log"]: "[INFO] Mock Propagation started...",
+        self.app.components["cancel_button"]: gr.update(interactive=True),
+    }
+
+    # Small delay to ensure UI transition is detectable and allow cancel check
+    for _ in range(5):
+        time.sleep(0.1)
+        if self.app.cancel_event.is_set():
+            self.app.cancel_event.clear()
+            yield {
+                self.app.components["unified_status"]: "⚠️ Propagation Cancelled",
+                self.app.components["unified_log"]: "Cancelled by user.",
+                self.app.components["cancel_button"]: gr.update(interactive=False),
+            }
+            return
+
     new_state = current_state.model_copy()
     msg = """<div class="success-card"><h3>Mask Propagation Complete</h3></div>"""
     yield {
         self.app.components["application_state"]: new_state,
         self.app.components["unified_status"]: msg,
         self.app.components["unified_log"]: "Propagation Complete.",
+        self.app.components["cancel_button"]: gr.update(interactive=False),
     }
 
 
@@ -213,11 +266,15 @@ def mock_analysis_wrapper(self, current_state: ApplicationState, *args, **kwargs
     time.sleep(0.5)
     new_state = current_state.model_copy()
     new_state.analysis_metadata_path = "mock_metadata.db"
+    new_state.analysis_output_dir = current_state.extracted_frames_dir
     msg = """<div class="success-card"><h3>Analysis Complete</h3></div>"""
     yield {
         self.app.components["application_state"]: new_state,
         self.app.components["unified_status"]: msg,
         self.app.components["unified_log"]: "Analysis Complete.",
+        self.app.components["filtering_tab"]: gr.update(interactive=True),
+        self.app.components["export_button"]: gr.update(interactive=True),
+        self.app.components["dry_run_button"]: gr.update(interactive=True),
     }
 
 
@@ -247,6 +304,28 @@ def build_mock_app(downloads_dir=None):
     core.xmp_writer.export_xmps_for_photos = mock_export_xmps_for_photos
     core.export.export_kept_frames = mock_export_kept_frames
 
+    # Patch bound imports in ui modules
+    ui.app_ui.export_kept_frames = mock_export_kept_frames
+    ui.app_ui.dry_run_export = MagicMock(return_value="🔍 Dry Run: 10 / 10 frames would be exported.")
+
+    mock_scan_faces = MagicMock(return_value=[])
+    core.face_clustering.scan_faces_in_session = mock_scan_faces
+    sh.scan_faces_in_session = mock_scan_faces
+
+    mock_frames = [
+        {
+            "id": i,
+            "filename": f"frame_{i:06d}.jpg",
+            "metrics": {
+                "quality_score": 90.0,
+                "sharpness": 80.0,
+            },
+        }
+        for i in range(10)
+    ]
+    mock_metric_values = {"quality_score": [90.0] * 10, "sharpness": [80.0] * 10}
+    core.filtering.load_and_prep_filter_data = MagicMock(return_value=(mock_frames, mock_metric_values))
+
     # 2. Instantiate
     from core.config import Config
     from core.logger import AppLogger, setup_logging
@@ -258,7 +337,9 @@ def build_mock_app(downloads_dir=None):
 
     session_log_file = setup_logging(config, progress_queue=progress_queue)
     logger = AppLogger(config, session_log_file=session_log_file)
-    cancel_event = MagicMock()
+    import threading
+
+    cancel_event = threading.Event()
     thumbnail_manager = MagicMock()
     model_registry = MagicMock()
 
@@ -290,13 +371,23 @@ def build_mock_app(downloads_dir=None):
 
                 def reset_handler():
                     app_instance.log_viewer.all_logs.clear()
+                    app_instance.log_viewer.all_logs.append("[INFO] System Reset Ready.")
+                    app_instance.cancel_event.clear()
                     while not progress_queue.empty():
                         try:
                             progress_queue.get_nowait()
                         except:
                             break
+                    import shutil
+
+                    mock_video_dir = os.path.join(app_instance.config.downloads_dir, "mock_video")
+                    if os.path.exists(mock_video_dir):
+                        try:
+                            shutil.rmtree(mock_video_dir)
+                        except Exception:
+                            pass
                     return [
-                        "System Reset Ready.",  # unified_log
+                        "[INFO] System Reset Ready.",  # unified_log
                         "System Reset Ready.",  # unified_status
                         ApplicationState(),  # application_state
                     ]

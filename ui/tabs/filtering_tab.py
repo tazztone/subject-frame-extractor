@@ -126,7 +126,13 @@ class FilteringTabBuilder:
                         continue
                     f_def = getattr(self.config, f"filter_default_{metric_name}")
 
-                    with gr.Accordion(metric_name.replace("_", " ").title(), open=is_open, visible=False) as acc:
+                    elem_id = f"accordion_{metric_name}"
+                    with gr.Accordion(
+                        metric_name.replace("_", " ").title(),
+                        open=is_open,
+                        visible=False,
+                        elem_id=elem_id,
+                    ) as acc:
                         self.app.components["metric_accs"][metric_name] = acc
                         gr.Markdown(self.app._get_metric_description(metric_name), elem_classes="metric-description")
                         with gr.Column(elem_classes="plot-and-slider-column"):

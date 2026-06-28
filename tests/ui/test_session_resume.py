@@ -4,9 +4,9 @@ import tempfile
 from pathlib import Path
 
 import pytest
-from playwright.sync_api import Page, expect
+from playwright.sync_api import expect
 
-from .conftest import BASE_URL, open_accordion, switch_to_tab, wait_for_app_ready
+from .app_driver import AppDriver
 from .ui_locators import Labels, Selectors
 
 # Mark as e2e test
@@ -57,66 +57,38 @@ class TestSessionResume:
         # Cleanup
         shutil.rmtree(temp_dir)
 
-    def test_load_session_updates_ui(self, page: Page, app_server, mock_session_dir):
+    def test_load_session_updates_ui(self, app_driver: AppDriver, mock_session_dir):
         """Verify that loading a session directory updates UI components correctly."""
-        page.goto(BASE_URL)
-        wait_for_app_ready(page)
-
-        # 1. Open Session Accordion
-        open_accordion(page, Labels.SESSION_ACCORDION)
-
-        # 2. Fill the session path input
-        session_input = page.locator(Selectors.SESSION_INPUT)
-        expect(session_input).to_be_visible()
-        session_input.fill(mock_session_dir)
-
-        # 3. Click Load (Force click to override any Gradio 5 overlays)
-        page.get_by_role("button", name="Load Session").click(force=True)
+        # 1-3. Open session accordion, fill path, click Load
+        app_driver.load_session(mock_session_dir)
 
         # 4. Verify Success Message
-        expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text("Session Loaded.", timeout=10000)
+        app_driver.expect_status("Session Loaded.", timeout=10000)
 
         # 5. Verify UI Updates (Extraction Settings)
         # MUST open the advanced accordion as it's collapsed by default
-        open_accordion(page, Labels.ADVANCED_ACCORDION)
+        app_driver.open_accordion(Labels.ADVANCED_ACCORDION)
 
         # Check Megapixels (0.8)
-        mp_input = page.locator(Selectors.THUMB_MEGAPIXELS)
+        mp_input = app_driver.page.locator(f"{Selectors.THUMB_MEGAPIXELS} input[type='number']")
         expect(mp_input).to_have_value("0.8")
 
         # 6. Verify Analysis Tab is now interactive (since metadata.db exists)
-        analysis_tab = page.get_by_role("tab", name=Labels.TAB_METRICS)
+        analysis_tab = app_driver.page.get_by_role("tab", name=Labels.TAB_METRICS)
         expect(analysis_tab).to_be_enabled()
 
         # 7. Verify Scene Gallery is populated (2 scenes)
-        switch_to_tab(page, Labels.TAB_SCENES)
-
-        # Check gallery visibility
-        gallery = page.locator(Selectors.SCENE_GALLERY)
-        expect(gallery).to_be_visible()
+        app_driver.navigate(Labels.TAB_SCENES)
+        app_driver.expect_visible(Selectors.SCENE_GALLERY)
 
         # Check gallery status text (MUST open Batch Filter accordion)
-        open_accordion(page, Labels.BATCH_FILTER_ACCORDION)
-        status_text = page.locator(Selectors.SCENE_FILTER_STATUS)
-        expect(status_text).to_contain_text("2")
+        app_driver.open_accordion(Labels.BATCH_FILTER_ACCORDION)
+        expect(app_driver.page.locator(Selectors.SCENE_FILTER_STATUS)).to_contain_text("2")
 
-    def test_load_invalid_session_shows_error(self, page: Page, app_server):
+    def test_load_invalid_session_shows_error(self, app_driver: AppDriver):
         """Verify that loading a non-existent directory shows an error."""
-        page.goto(BASE_URL)
-        wait_for_app_ready(page)
+        app_driver.load_session("/non/existent/path")
 
-        open_accordion(page, Labels.SESSION_ACCORDION)
-
-        session_input = page.locator(Selectors.SESSION_INPUT)
-        session_input.fill("/non/existent/path")
-
-        # 3. Click Load
-        page.wait_for_timeout(500)  # Let Gradio 5 stabilize
-        load_btn = page.get_by_role("button", name="Load Session")
-        expect(load_btn).to_be_visible()
-        load_btn.click(force=True)
-
-        # Verify Error in Status
-        expect(page.locator(Selectors.UNIFIED_STATUS)).to_contain_text("Error", timeout=10000)
-        # In Gradio 5, logs might be in a different element, but Selectors.LOG_TEXTAREA should find it
-        expect(page.locator(Selectors.LOG_TEXTAREA)).to_contain_text("Session directory does not exist", timeout=10000)
+        # Verify Error in Status, then detail in logs.
+        app_driver.expect_status("Failed", timeout=10000)
+        app_driver.expect_log("does not exist", timeout=10000)

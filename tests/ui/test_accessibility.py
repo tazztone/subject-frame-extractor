@@ -19,7 +19,7 @@ import json
 import pytest
 from playwright.sync_api import Page
 
-from .conftest import BASE_URL, wait_for_app_ready
+from .app_driver import AppDriver
 
 pytestmark = [pytest.mark.e2e, pytest.mark.accessibility, pytest.mark.audit, pytest.mark.slow]
 
@@ -77,17 +77,13 @@ class TestAccessibilityAudit:
     ]
 
     @pytest.mark.parametrize("tab_name,click_tab", TABS)
-    def test_tab_accessibility(self, page: Page, app_server, tab_name, click_tab):
+    def test_tab_accessibility(self, app_driver: AppDriver, tab_name, click_tab):
         """Run accessibility audit on each tab."""
-        page.goto(BASE_URL)
-        wait_for_app_ready(page)
+        page = app_driver.page
 
         # Navigate to tab
         if click_tab:
-            tab_btn = page.get_by_role("tab", name=click_tab)
-            if tab_btn.is_visible():
-                tab_btn.click(force=True)
-                page.wait_for_timeout(500)
+            app_driver.navigate(click_tab)
 
         # Inject axe-core
         if not inject_axe(page):
@@ -116,10 +112,9 @@ class TestAccessibilityAudit:
             f"{len(serious_violations)} serious accessibility violations on {tab_name} tab"
         )
 
-    def test_keyboard_navigation(self, page: Page, app_server):
+    def test_keyboard_navigation(self, app_driver: AppDriver):
         """Test that main elements are keyboard accessible."""
-        page.goto(BASE_URL)
-        wait_for_app_ready(page)
+        page = app_driver.page
 
         # Tab through main interface elements
         focusable_count = 0
@@ -132,10 +127,9 @@ class TestAccessibilityAudit:
         # Should have multiple focusable elements
         assert focusable_count >= 5, "Should have multiple keyboard-focusable elements"
 
-    def test_color_contrast(self, page: Page, app_server):
+    def test_color_contrast(self, app_driver: AppDriver):
         """Check for color contrast issues."""
-        page.goto(BASE_URL)
-        wait_for_app_ready(page)
+        page = app_driver.page
 
         if not inject_axe(page):
             pytest.skip("Could not inject axe-core")
@@ -162,10 +156,9 @@ class TestAccessibilityAudit:
 
         assert len(critical_contrast) == 0, "Critical color contrast violations found"
 
-    def test_form_labels(self, page: Page, app_server):
+    def test_form_labels(self, app_driver: AppDriver):
         """Check that form inputs have proper labels."""
-        page.goto(BASE_URL)
-        wait_for_app_ready(page)
+        page = app_driver.page
 
         if not inject_axe(page):
             pytest.skip("Could not inject axe-core")
@@ -189,10 +182,9 @@ class TestAccessibilityAudit:
 class TestARIACompliance:
     """Test ARIA attribute usage."""
 
-    def test_aria_roles(self, page: Page, app_server):
+    def test_aria_roles(self, app_driver: AppDriver):
         """Check for proper ARIA role usage."""
-        page.goto(BASE_URL)
-        wait_for_app_ready(page)
+        page = app_driver.page
 
         if not inject_axe(page):
             pytest.skip("Could not inject axe-core")

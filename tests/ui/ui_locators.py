@@ -15,8 +15,6 @@ class Selectors:
 
     # Status Message Constants (regex for robustness)
     STATUS_READY = "System Reset Ready."
-    STATUS_MSG = "#unified_status"
-    STATUS_ERROR = "#unified_status"
     STATUS_ERROR_REGEX = re.compile(r"⚠️|Error|Fail|Invalid", re.IGNORECASE)
     STATUS_SUCCESS_EXTRACTION = "Extraction Complete"
     STATUS_SUCCESS_PRE_ANALYSIS = "Pre-Analysis Complete"

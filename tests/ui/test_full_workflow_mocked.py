@@ -1,7 +1,6 @@
 import pytest
-from playwright.sync_api import Page, expect
 
-from .conftest import BASE_URL, switch_to_tab, wait_for_app_ready
+from .app_driver import AppDriver
 from .ui_locators import Labels, Selectors
 
 # Mark as e2e test
@@ -16,7 +15,7 @@ class TestFullWorkflowMocked:
     The mock app simulates backend processing without needing heavy models/GPU.
     """
 
-    def test_full_user_journey(self, page: Page, app_server):
+    def test_full_user_journey(self, app_driver: AppDriver):
         """
         Simulates:
         1. Select Video Source (Extraction)
@@ -27,59 +26,23 @@ class TestFullWorkflowMocked:
         6. Filter Results
         7. Export
         """
-        page.goto(BASE_URL)
-        wait_for_app_ready(page)
+        # 1. Source Tab — enter video path and extract
+        app_driver.extract("test_journey.mp4").expect_status(Selectors.STATUS_SUCCESS_EXTRACTION, timeout=30000)
 
-        # 1. Source Tab
-        # Enter video path
-        source_input = page.locator(Selectors.SOURCE_INPUT)
-        source_input.fill("test_journey.mp4")
+        # 2. Subject Tab — Confirm Subject
+        app_driver.navigate(Labels.TAB_SUBJECT).pre_analyze().expect_status(
+            Selectors.STATUS_SUCCESS_PRE_ANALYSIS, timeout=30000
+        )
 
-        # Click Extract Frames
-        extract_btn = page.locator(Selectors.START_EXTRACTION)
-        expect(extract_btn).to_be_visible()
-        extract_btn.click()
+        # 3. Scenes Tab — Propagate Masks
+        app_driver.navigate(Labels.TAB_SCENES).propagate().expect_status(
+            Selectors.STATUS_SUCCESS_PROPAGATION, timeout=30000
+        )
 
-        # Wait for extraction to complete
-        unified_status = page.locator(Selectors.UNIFIED_STATUS)
-        expect(unified_status).to_contain_text(Selectors.STATUS_SUCCESS_EXTRACTION, timeout=30000)
+        # 4. Metrics Tab — Start Analysis
+        app_driver.navigate(Labels.TAB_METRICS).analyze().expect_status(
+            Selectors.STATUS_SUCCESS_ANALYSIS, timeout=30000
+        )
 
-        # 2. Subject Tab
-        switch_to_tab(page, Labels.TAB_SUBJECT)
-
-        # Click "Confirm Subject"
-        pre_analyze_btn = page.locator(Selectors.START_PRE_ANALYSIS)
-        expect(pre_analyze_btn).to_be_visible(timeout=10000)
-        pre_analyze_btn.click()
-
-        expect(unified_status).to_contain_text(Selectors.STATUS_SUCCESS_PRE_ANALYSIS, timeout=30000)
-
-        # 3. Scenes Tab
-        switch_to_tab(page, Labels.TAB_SCENES)
-
-        # Click "Propagate Masks"
-        propagate_btn = page.locator(Selectors.PROPAGATE_MASKS)
-        expect(propagate_btn).to_be_visible(timeout=10000)
-        propagate_btn.click()
-
-        expect(unified_status).to_contain_text(Selectors.STATUS_SUCCESS_PROPAGATION, timeout=30000)
-
-        # 4. Metrics Tab
-        switch_to_tab(page, Labels.TAB_METRICS)
-
-        # Click "Start Analysis"
-        run_analysis_btn = page.locator(Selectors.START_ANALYSIS)
-        expect(run_analysis_btn).to_be_visible(timeout=10000)
-        run_analysis_btn.click()
-
-        expect(unified_status).to_contain_text(Selectors.STATUS_SUCCESS_ANALYSIS, timeout=30000)
-
-        # 5. Export Tab
-        switch_to_tab(page, Labels.TAB_EXPORT)
-
-        # Click "Start Export"
-        export_btn = page.locator(Selectors.EXPORT_BUTTON)
-        expect(export_btn).to_be_visible(timeout=10000)
-        export_btn.click()
-
-        expect(unified_status).to_contain_text(Selectors.STATUS_SUCCESS_EXPORT, timeout=30000)
+        # 5. Export Tab — Start Export
+        app_driver.navigate(Labels.TAB_EXPORT).export().expect_status(Selectors.STATUS_SUCCESS_EXPORT, timeout=30000)
