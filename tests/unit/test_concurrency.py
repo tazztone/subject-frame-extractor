@@ -50,24 +50,25 @@ def test_thumbnail_manager_concurrent_access(tmp_path):
         p.touch()
         files.append(p)
 
-    def worker():
-        import random
-        from unittest.mock import patch
+    from unittest.mock import patch
 
-        with patch("PIL.Image.open") as mock_open:
-            mock_img = MagicMock()
-            mock_img.convert.return_value = np.zeros((10, 10, 3), dtype=np.uint8)
-            mock_open.return_value.__enter__.return_value = mock_img
+    with patch("PIL.Image.open") as mock_open:
+        mock_img = MagicMock()
+        mock_img.convert.return_value = np.zeros((10, 10, 3), dtype=np.uint8)
+        mock_open.return_value.__enter__.return_value = mock_img
+
+        def worker():
+            import random
 
             for _ in range(accesses_per_thread):
                 f = random.choice(files)
                 manager.get(f)
 
-    threads = [threading.Thread(target=worker) for _ in range(num_threads)]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join()
+        threads = [threading.Thread(target=worker) for _ in range(num_threads)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
 
     assert len(manager.cache) <= 5
 

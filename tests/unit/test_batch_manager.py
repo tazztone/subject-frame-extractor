@@ -7,7 +7,7 @@ from core.batch_manager import BatchManager, BatchStatus
 
 @pytest.fixture
 def bm():
-    return BatchManager()
+    return BatchManager(retry_delay=0.001, poll_interval=0.001)
 
 
 def test_batch_manager_add(bm):
@@ -175,7 +175,7 @@ def test_batch_manager_retry_failure_with_logger():
     from unittest.mock import MagicMock
 
     logger_mock = MagicMock()
-    bm = BatchManager(logger=logger_mock)
+    bm = BatchManager(logger=logger_mock, retry_delay=0.001, poll_interval=0.001)
     bm.add_paths(["retry_fail.mp4"])
 
     attempts = 0
@@ -204,7 +204,7 @@ def test_batch_manager_cancel_before_loop(mock_logger):
     """Test BatchManager scheduler exits if stop event is set."""
     from unittest.mock import MagicMock
 
-    bm = BatchManager()
+    bm = BatchManager(retry_delay=0.001, poll_interval=0.001)
     bm.stop_event.set()
 
     processor_fn = MagicMock()

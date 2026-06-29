@@ -573,7 +573,7 @@ class BatchItem:
     """Represents a single item in the batch processing queue."""
 class BatchManager:
     """Manages a queue of batch processing tasks."""
-    def __init__(self, logger=None):
+    def __init__(self, logger=None, retry_delay: float=1.0, poll_interval: float=0.5):
         """Initializes the BatchManager."""
     def add_paths(self, paths: List[str]):
         """Adds a list of file paths to the batch queue."""

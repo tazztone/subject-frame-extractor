@@ -10,9 +10,6 @@ echo "----------------------------------------"
 echo "Subject Frame Extractor - Running ALL TESTS"
 echo "----------------------------------------"
 
-# Export integration mode so all child processes and xdist workers inherit it.
-export PYTEST_INTEGRATION_MODE=true
-
 # Create log directory
 LOG_DIR="tests/results/logs"
 mkdir -p "$LOG_DIR"
@@ -61,7 +58,7 @@ if [ $? -ne 0 ]; then exit 1; fi
 # 4. Regression Tests
 echo ""
 echo "--- Stage 4: Regression Tests ---"
-run_and_log "Regression" uv run --no-sync pytest tests/regression/ --no-cov "$@"
+run_and_log "Regression" env PYTEST_INTEGRATION_MODE=true uv run --no-sync pytest tests/regression/ --no-cov "$@"
 if [ $? -ne 0 ]; then exit 1; fi
 
 echo ""

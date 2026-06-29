@@ -19,7 +19,7 @@ class TestStability(unittest.TestCase):
         # Mock low RAM
         mock_ram.return_value.available = 100 * 1024 * 1024  # 100MB
 
-        bm = BatchManager(logger=self.logger)
+        bm = BatchManager(logger=self.logger, retry_delay=0.001, poll_interval=0.001)
         bm.add_paths(["test.mp4"])
 
         # We'll make it succeed after one sleep

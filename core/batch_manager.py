@@ -36,7 +36,7 @@ class BatchManager:
     """Manages a queue of batch processing tasks."""
 
     # TODO: Add resource-aware scheduling (wait for GPU or RAM availability)
-    def __init__(self, logger=None):
+    def __init__(self, logger=None, retry_delay: float = 1.0, poll_interval: float = 0.5):
         """Initializes the BatchManager."""
         self.queue: List[BatchItem] = []
         self.lock = threading.Lock()
@@ -45,6 +45,8 @@ class BatchManager:
         self.is_running = False
         self.active_items: Dict[str, BatchItem] = {}
         self.logger = logger
+        self.retry_delay = retry_delay
+        self.poll_interval = poll_interval
 
     def add_paths(self, paths: List[str]):
         """Adds a list of file paths to the batch queue."""
@@ -185,7 +187,6 @@ class BatchManager:
                             import traceback
 
                             max_retries = 3
-                            retry_delay = 1.0
 
                             for attempt in range(max_retries):
                                 try:
@@ -205,7 +206,7 @@ class BatchManager:
                                             BatchStatus.PROCESSING,
                                             f"Retrying... ({attempt + 1}/{max_retries})",
                                         )
-                                        time.sleep(retry_delay)
+                                        time.sleep(self.retry_delay)
                                     else:
                                         stack_trace = traceback.format_exc()
                                         if self.logger:
@@ -227,7 +228,7 @@ class BatchManager:
 
                         futures.append(executor.submit(task))
                     else:
-                        time.sleep(0.5)
+                        time.sleep(self.poll_interval)
 
                         all_done = True
                         with self.lock:
